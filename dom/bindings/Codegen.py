@@ -470,28 +470,14 @@ class CGNativePropertyHooks(CGThing):
 
     def __init__(self, descriptor, properties):
         CGThing.__init__(self)
+        assert descriptor.wantsXrays
         self.descriptor = descriptor
         self.properties = properties
 
     def declare(self):
-        if not self.descriptor.wantsXrays:
-            return ""
-        return dedent(
-            """
-            // We declare this as an array so that retrieving a pointer to this
-            // binding's property hooks only requires compile/link-time resolvable
-            // address arithmetic.  Declaring it as a pointer instead would require
-            // doing a run-time load to fetch a pointer to this binding's property
-            // hooks.  And then structures which embedded a pointer to this structure
-            // would require a run-time load for proper initialization, which would
-            // then induce static constructors.  Lots of static constructors.
-            extern const NativePropertyHooks sNativePropertyHooks[];
-            """
-        )
+        return ""
 
     def define(self):
-        if not self.descriptor.wantsXrays:
-            return ""
         deleteNamedProperty = "nullptr"
         if (
             self.descriptor.concrete
@@ -526,12 +512,6 @@ class CGNativePropertyHooks(CGThing):
             prototypeID += self.descriptor.name
         else:
             prototypeID += "_ID_Count"
-        parentProtoName = self.descriptor.parentPrototypeName
-        parentHooks = (
-            toBindingNamespace(parentProtoName) + "::sNativePropertyHooks"
-            if parentProtoName
-            else "nullptr"
-        )
 
         if self.descriptor.wantsXrayExpandoClass:
             expandoClass = "&sXrayExpandoObjectClass"
@@ -541,16 +521,15 @@ class CGNativePropertyHooks(CGThing):
         return fill(
             """
             bool sNativePropertiesInited = false;
-            const NativePropertyHooks sNativePropertyHooks[] = { {
+            const NativePropertyHooks sNativePropertyHooks = {
               ${resolveOwnProperty},
               ${enumerateOwnProperties},
               ${deleteNamedProperty},
               { ${regular}, ${chrome}, &sNativePropertiesInited },
               ${prototypeID},
               ${constructorID},
-              ${parentHooks},
               ${expandoClass}
-            } };
+            };
             """,
             resolveOwnProperty=resolveOwnProperty,
             enumerateOwnProperties=enumerateOwnProperties,
@@ -559,7 +538,6 @@ class CGNativePropertyHooks(CGThing):
             chrome=chrome,
             prototypeID=prototypeID,
             constructorID=constructorID,
-            parentHooks=parentHooks,
             expandoClass=expandoClass,
         )
 
@@ -568,7 +546,7 @@ def NativePropertyHooks(descriptor):
     return (
         "&sEmptyNativePropertyHooks"
         if not descriptor.wantsXrays
-        else "sNativePropertyHooks"
+        else "&sNativePropertyHooks"
     )
 
 
@@ -1425,10 +1403,7 @@ class CGHeaders(CGWrapper):
                         # just include their header if we need to have functions
                         # taking references to them declared in that header.
                         headerSet = declareIncludes
-                    if unrolled.isReadableStream():
-                        headerSet.add("mozilla/dom/ReadableStream.h")
-                    else:
-                        headerSet.add("mozilla/dom/TypedArray.h")
+                    headerSet.add("mozilla/dom/TypedArray.h")
                 else:
                     try:
                         typeDesc = config.getDescriptor(unrolled.inner.identifier.name)
@@ -1673,10 +1648,7 @@ def UnionTypes(unionTypes, config):
                     if f.isSpiderMonkeyInterface():
                         headers.add("js/RootingAPI.h")
                         headers.add("js/Value.h")
-                        if f.isReadableStream():
-                            headers.add("mozilla/dom/ReadableStream.h")
-                        else:
-                            headers.add("mozilla/dom/TypedArray.h")
+                        headers.add("mozilla/dom/TypedArray.h")
                     else:
                         try:
                             typeDesc = config.getDescriptor(f.inner.identifier.name)
@@ -1788,10 +1760,7 @@ def UnionConversions(unionTypes, config):
                 elif f.isInterface():
                     if f.isSpiderMonkeyInterface():
                         headers.add("js/RootingAPI.h")
-                        if f.isReadableStream():
-                            headers.add("mozilla/dom/ReadableStream.h")
-                        else:
-                            headers.add("mozilla/dom/TypedArray.h")
+                        headers.add("mozilla/dom/TypedArray.h")
                     elif f.inner.isExternal():
                         try:
                             typeDesc = config.getDescriptor(f.inner.identifier.name)
@@ -4429,7 +4398,7 @@ def InitUnforgeablePropertiesOnHolder(
             CGGeneric(
                 fill(
                     """
-            JS::RootedId toPrimitive(aCx,
+            JS::Rooted<JS::PropertyKey> toPrimitive(aCx,
               JS::GetWellKnownSymbolKey(aCx, JS::SymbolCode::toPrimitive));
             if (!JS_DefinePropertyById(aCx, ${holderName}, toPrimitive,
                                        JS::UndefinedHandleValue,
@@ -6248,7 +6217,7 @@ def getJSToNativeConversionInfo(
             interfaceObject = CGWrapper(
                 CGList(interfaceObject, " ||\n"),
                 pre="done = ",
-                post=";\n\n",
+                post=";\n",
                 reindent=True,
             )
         else:
@@ -9903,9 +9872,7 @@ class CGSwitch(CGList):
         if default is not None:
             self.append(
                 CGIndenter(
-                    CGWrapper(
-                        CGIndenter(default), pre="default: {\n", post="  break;\n}\n"
-                    )
+                    CGWrapper(CGIndenter(default), pre="default: {\n", post="}\n")
                 )
             )
 
@@ -9918,16 +9885,28 @@ class CGCase(CGList):
 
     Takes three constructor arguments: an expression, a CGThing for
     the body (allowed to be None if there is no body), and an optional
-    argument (defaulting to False) for whether to fall through.
+    argument for whether add a break, add fallthrough annotation or add nothing
+    (defaulting to add a break).
     """
 
-    def __init__(self, expression, body, fallThrough=False):
+    ADD_BREAK = 0
+    ADD_FALLTHROUGH = 1
+    DONT_ADD_BREAK = 2
+
+    def __init__(self, expression, body, breakOrFallthrough=ADD_BREAK):
         CGList.__init__(self, [])
+
+        assert (
+            breakOrFallthrough == CGCase.ADD_BREAK
+            or breakOrFallthrough == CGCase.ADD_FALLTHROUGH
+            or breakOrFallthrough == CGCase.DONT_ADD_BREAK
+        )
+
         self.append(CGGeneric("case " + expression + ": {\n"))
         bodyList = CGList([body])
-        if fallThrough:
+        if breakOrFallthrough == CGCase.ADD_FALLTHROUGH:
             bodyList.append(CGGeneric("[[fallthrough]];\n"))
-        else:
+        elif breakOrFallthrough == CGCase.ADD_BREAK:
             bodyList.append(CGGeneric("break;\n"))
         self.append(CGIndenter(bodyList))
         self.append(CGGeneric("}\n"))
@@ -10035,7 +10014,9 @@ class CGMethodCall(CGThing):
                         allowedArgCounts[argCountIdx + 1]
                     )
                 )
-                argCountCases.append(CGCase(str(argCount), None, True))
+                argCountCases.append(
+                    CGCase(str(argCount), None, CGCase.ADD_FALLTHROUGH)
+                )
                 continue
 
             if len(possibleSignatures) == 1:
@@ -12670,7 +12651,11 @@ class CGUnionStruct(CGThing):
 
         methods = []
         enumValues = ["eUninitialized"]
-        toJSValCases = [CGCase("eUninitialized", CGGeneric("return false;\n"))]
+        toJSValCases = [
+            CGCase(
+                "eUninitialized", CGGeneric("return false;\n"), CGCase.DONT_ADD_BREAK
+            )
+        ]
         destructorCases = [CGCase("eUninitialized", None)]
         assignmentCases = [
             CGCase(
@@ -12716,7 +12701,12 @@ class CGUnionStruct(CGThing):
                 )
             )
             toJSValCases.append(
-                CGCase("eNull", CGGeneric("rval.setNull();\n" "return true;\n"))
+                CGCase(
+                    "eNull",
+                    CGGeneric(
+                        "rval.setNull();\n" "return true;\n", CGCase.DONT_ADD_BREAK
+                    ),
+                )
             )
 
         hasObjectType = any(t.isObject() for t in self.type.flatMemberTypes)
@@ -12862,7 +12852,9 @@ class CGUnionStruct(CGThing):
 
             conversionToJS = self.getConversionToJS(vars, t)
             if conversionToJS:
-                toJSValCases.append(CGCase("e" + vars["name"], conversionToJS))
+                toJSValCases.append(
+                    CGCase("e" + vars["name"], conversionToJS, CGCase.DONT_ADD_BREAK)
+                )
             else:
                 skipToJSVal = True
 
@@ -12957,8 +12949,7 @@ class CGUnionStruct(CGThing):
                     ],
                     body=CGSwitch(
                         "mType", toJSValCases, default=CGGeneric("return false;\n")
-                    ).define()
-                    + "\nreturn false;\n",
+                    ).define(),
                     const=True,
                 )
             )
@@ -12970,13 +12961,14 @@ class CGUnionStruct(CGThing):
                 traceBody = CGSwitch(
                     "mType", traceCases, default=CGGeneric("")
                 ).define()
-            else:
-                traceBody = ""
-            methods.append(
-                ClassMethod(
-                    "TraceUnion", "void", [Argument("JSTracer*", "trc")], body=traceBody
+                methods.append(
+                    ClassMethod(
+                        "TraceUnion",
+                        "void",
+                        [Argument("JSTracer*", "trc")],
+                        body=traceBody,
+                    )
                 )
-            )
             if CGUnionStruct.isUnionCopyConstructible(self.type):
                 constructors.append(
                     ClassConstructor(
@@ -13005,10 +12997,13 @@ class CGUnionStruct(CGThing):
             disallowCopyConstruction = True
 
         if self.ownsMembers:
-            friend = (
-                "  friend void ImplCycleCollectionUnlink(%s& aUnion);\n"
-                % CGUnionStruct.unionTypeName(self.type, True)
-            )
+            if idlTypeNeedsCycleCollection(self.type):
+                friend = (
+                    "  friend void ImplCycleCollectionUnlink(%s& aUnion);\n"
+                    % CGUnionStruct.unionTypeName(self.type, True)
+                )
+            else:
+                friend = ""
         else:
             friend = "  friend class %sArgument;\n" % str(self.type)
 
@@ -16359,6 +16354,49 @@ class CGDescriptor(CGThing):
                 CGCollectJSONAttributesMethod(descriptor, defaultToJSONMethod)
             )
 
+        # Declare our DOMProxyHandler.
+        if descriptor.concrete and descriptor.proxy:
+            cgThings.append(
+                CGGeneric(
+                    fill(
+                        """
+                        static_assert(std::is_base_of_v<nsISupports, ${nativeType}>,
+                                      "We don't support non-nsISupports native classes for "
+                                      "proxy-based bindings yet");
+
+                        """,
+                        nativeType=descriptor.nativeType,
+                    )
+                )
+            )
+            if not descriptor.wrapperCache:
+                raise TypeError(
+                    "We need a wrappercache to support expandos for proxy-based "
+                    "bindings (" + descriptor.name + ")"
+                )
+            handlerThing = CGDOMJSProxyHandler(descriptor)
+            cgThings.append(CGDOMJSProxyHandlerDeclarer(handlerThing))
+            cgThings.append(CGProxyIsProxy(descriptor))
+            cgThings.append(CGProxyUnwrap(descriptor))
+
+        # Set up our Xray callbacks as needed.  This needs to come
+        # after we have our DOMProxyHandler defined.
+        if descriptor.wantsXrays:
+            if descriptor.concrete and descriptor.proxy:
+                if descriptor.needsXrayNamedDeleterHook():
+                    cgThings.append(CGDeleteNamedProperty(descriptor))
+            elif descriptor.needsXrayResolveHooks():
+                cgThings.append(CGResolveOwnPropertyViaResolve(descriptor))
+                cgThings.append(
+                    CGEnumerateOwnPropertiesViaGetOwnPropertyNames(descriptor)
+                )
+            if descriptor.wantsXrayExpandoClass:
+                cgThings.append(CGXrayExpandoJSClass(descriptor))
+
+            # Now that we have our ResolveOwnProperty/EnumerateOwnProperties stuff
+            # done, set up our NativePropertyHooks.
+            cgThings.append(CGNativePropertyHooks(descriptor, properties))
+
         if descriptor.interface.hasInterfaceObject():
             cgThings.append(CGClassConstructor(descriptor, descriptor.interface.ctor()))
             cgThings.append(CGInterfaceObjectJSClass(descriptor, properties))
@@ -16401,28 +16439,6 @@ class CGDescriptor(CGThing):
                 cgThings.append(CGDeserializer(descriptor))
 
             if descriptor.proxy:
-                cgThings.append(
-                    CGGeneric(
-                        fill(
-                            """
-                    static_assert(std::is_base_of_v<nsISupports, ${nativeType}>,
-                                      "We don't support non-nsISupports native classes for "
-                                      "proxy-based bindings yet");
-
-                    """,
-                            nativeType=descriptor.nativeType,
-                        )
-                    )
-                )
-                if not descriptor.wrapperCache:
-                    raise TypeError(
-                        "We need a wrappercache to support expandos for proxy-based "
-                        "bindings (" + descriptor.name + ")"
-                    )
-                handlerThing = CGDOMJSProxyHandler(descriptor)
-                cgThings.append(CGDOMJSProxyHandlerDeclarer(handlerThing))
-                cgThings.append(CGProxyIsProxy(descriptor))
-                cgThings.append(CGProxyUnwrap(descriptor))
                 cgThings.append(CGDOMJSProxyHandlerDefiner(handlerThing))
                 cgThings.append(CGDOMProxyJSClass(descriptor))
             else:
@@ -16440,24 +16456,6 @@ class CGDescriptor(CGThing):
                 cgThings.append(CGWrapMethod(descriptor))
             else:
                 cgThings.append(CGWrapNonWrapperCacheMethod(descriptor, properties))
-
-        # Set up our Xray callbacks as needed.  This needs to come
-        # after we have our DOMProxyHandler defined.
-        if descriptor.wantsXrays:
-            if descriptor.concrete and descriptor.proxy:
-                if descriptor.needsXrayNamedDeleterHook():
-                    cgThings.append(CGDeleteNamedProperty(descriptor))
-            elif descriptor.needsXrayResolveHooks():
-                cgThings.append(CGResolveOwnPropertyViaResolve(descriptor))
-                cgThings.append(
-                    CGEnumerateOwnPropertiesViaGetOwnPropertyNames(descriptor)
-                )
-            if descriptor.wantsXrayExpandoClass:
-                cgThings.append(CGXrayExpandoJSClass(descriptor))
-
-        # Now that we have our ResolveOwnProperty/EnumerateOwnProperties stuff
-        # done, set up our NativePropertyHooks.
-        cgThings.append(CGNativePropertyHooks(descriptor, properties))
 
         # If we're not wrappercached, we don't know how to clear our
         # cached values, since we can't get at the JSObject.
@@ -18036,17 +18034,16 @@ class CGForwardDeclarations(CGWrapper):
                         d.interface.maplikeOrSetlikeOrIterable.valueType, config
                     )
 
+            # Add the atoms cache type, even if we don't need it.
+            builder.add(d.nativeType + "Atoms", isStruct=True)
+
+            for m in d.interface.members:
+                if m.isAttr() and m.type.isObservableArray():
+                    builder.forwardDeclareForType(m.type, config)
+
         # We just about always need NativePropertyHooks
         builder.addInMozillaDom("NativePropertyHooks", isStruct=True)
         builder.addInMozillaDom("ProtoAndIfaceCache")
-        # Add the atoms cache type, even if we don't need it.
-        for d in descriptors:
-            # Iterators have native types that are template classes, so
-            # creating an 'Atoms' cache type doesn't work for them, and is one
-            # of the cases where we don't need it anyways.
-            if d.interface.isIteratorInterface():
-                continue
-            builder.add(d.nativeType + "Atoms", isStruct=True)
 
         for callback in callbacks:
             builder.addInMozillaDom(callback.identifier.name)
@@ -22060,19 +22057,20 @@ def getObservableArrayBackingObject(descriptor, attr, errorReturn="return false;
     assert attr.isAttr()
     assert attr.type.isObservableArray()
 
+    # GetObservableArrayBackingObject may return a wrapped object for Xrays, so
+    # when we create it we need to unwrap it to store the interface in the
+    # reserved slot.
     return fill(
         """
         JS::Rooted<JSObject*> backingObj(cx);
         bool created = false;
         if (!GetObservableArrayBackingObject(cx, obj, ${slot},
-                &backingObj, &created, ${namespace}::ObservableArrayProxyHandler::getInstance())) {
+                &backingObj, &created, ${namespace}::ObservableArrayProxyHandler::getInstance(),
+                self)) {
           $*{errorReturn}
         }
         if (created) {
           PreserveWrapper(self);
-          js::SetProxyReservedSlot(backingObj,
-                                   OBSERVABLE_ARRAY_DOM_INTERFACE_SLOT,
-                                   JS::PrivateValue(self));
         }
         """,
         namespace=toBindingNamespace(MakeNativeName(attr.identifier.name)),
@@ -22089,10 +22087,6 @@ def getObservableArrayGetterBody(descriptor, attr):
     assert attr.type.isObservableArray()
     return fill(
         """
-        if (xpc::WrapperFactory::IsXrayWrapper(obj)) {
-          JS_ReportErrorASCII(cx, "Accessing from Xray wrapper is not supported.");
-          return false;
-        }
         $*{getBackingObj}
         MOZ_ASSERT(!JS_IsExceptionPending(cx));
         args.rval().setObject(*backingObj);
@@ -22224,8 +22218,8 @@ class CGObservableArrayProxyHandler_OnDeleteItem(
     def __init__(self, descriptor, attr):
         args = [
             Argument("JSContext*", "aCx"),
-            Argument("JS::HandleObject", "aProxy"),
-            Argument("JS::HandleValue", "aValue"),
+            Argument("JS::Handle<JSObject*>", "aProxy"),
+            Argument("JS::Handle<JS::Value>", "aValue"),
             Argument("uint32_t", "aIndex"),
         ]
         CGObservableArrayProxyHandler_callback.__init__(
@@ -22257,10 +22251,10 @@ class CGObservableArrayProxyHandler_SetIndexedValue(
     def __init__(self, descriptor, attr):
         args = [
             Argument("JSContext*", "aCx"),
-            Argument("JS::HandleObject", "aProxy"),
-            Argument("JS::HandleObject", "aBackingList"),
+            Argument("JS::Handle<JSObject*>", "aProxy"),
+            Argument("JS::Handle<JSObject*>", "aBackingList"),
             Argument("uint32_t", "aIndex"),
-            Argument("JS::HandleValue", "aValue"),
+            Argument("JS::Handle<JS::Value>", "aValue"),
             Argument("JS::ObjectOpResult&", "aResult"),
         ]
         CGObservableArrayProxyHandler_callback.__init__(
@@ -22290,7 +22284,7 @@ class CGObservableArrayProxyHandler_SetIndexedValue(
         return dedent(
             """
             if (aIndex < oldLen) {
-              JS::RootedValue value(aCx);
+              JS::Rooted<JS::Value> value(aCx);
               if (!JS_GetElement(aCx, aBackingList, aIndex, &value)) {
                 return false;
               }

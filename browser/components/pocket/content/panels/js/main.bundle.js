@@ -162,16 +162,23 @@ function Article(props) {
     return rawSource ? `https://img-getpocket.cdn.mozilla.net/80x80/filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(rawSource)}` : null;
   }
 
+  const [thumbnailLoaded, setThumbnailLoaded] = (0,react.useState)(false);
+  const [thumbnailLoadFailed, setThumbnailLoadFailed] = (0,react.useState)(false);
   const {
     article,
     savedArticle,
     position,
     source,
     model,
-    utmParams
+    utmParams,
+    openInPocketReader
   } = props;
   const url = new URL(article.url || article.resolved_url || "");
   const urlSearchParams = new URLSearchParams(utmParams);
+
+  if (openInPocketReader && article.item_id && !url.href.match(/getpocket\.com\/read/)) {
+    url.href = `https://getpocket.com/read/${article.item_id}`;
+  }
 
   for (let [key, val] of urlSearchParams.entries()) {
     url.searchParams.set(key, val);
@@ -192,10 +199,21 @@ function Article(props) {
     source: source,
     model: model,
     utmParams: utmParams
-  }, /*#__PURE__*/react.createElement(react.Fragment, null, thumbnail ? /*#__PURE__*/react.createElement("img", {
+  }, /*#__PURE__*/react.createElement(react.Fragment, null, thumbnail && !thumbnailLoadFailed ? /*#__PURE__*/react.createElement("img", {
     className: "stp_article_list_thumb",
     src: thumbnail,
-    alt: alt
+    alt: alt,
+    width: "40",
+    height: "40",
+    onLoad: () => {
+      setThumbnailLoaded(true);
+    },
+    onError: () => {
+      setThumbnailLoadFailed(true);
+    },
+    style: {
+      visibility: thumbnailLoaded ? `visible` : `hidden`
+    }
   }) : /*#__PURE__*/react.createElement("div", {
     className: "stp_article_list_thumb_placeholder"
   }), /*#__PURE__*/react.createElement("div", {
@@ -216,7 +234,8 @@ function ArticleList(props) {
     position: position,
     source: props.source,
     model: props.model,
-    utmParams: props.utmParams
+    utmParams: props.utmParams,
+    openInPocketReader: props.openInPocketReader
   })));
 }
 
@@ -342,7 +361,8 @@ function Home(props) {
       }), articles.length > 3 ? /*#__PURE__*/react.createElement(react.Fragment, null, /*#__PURE__*/react.createElement(ArticleList_ArticleList, {
         articles: articles.slice(0, 3),
         source: "home_recent_save",
-        utmParams: utmParams
+        utmParams: utmParams,
+        openInPocketReader: true
       }), /*#__PURE__*/react.createElement("span", {
         className: "stp_button_wide"
       }, /*#__PURE__*/react.createElement(Button_Button, {
@@ -487,6 +507,10 @@ HomeOverlay.prototype = {
           topic: "must-reads"
         }]
       }), document.querySelector(`body`));
+
+      if (window?.matchMedia(`(prefers-color-scheme: dark)`).matches) {
+        document.querySelector(`body`).classList.add(`theme_dark`);
+      }
     } else {
       // For English, we have a discover topics link.
       // For non English, we don't have a link yet for this.
@@ -662,6 +686,10 @@ var SignupOverlay = function (options) {
         utmContent: utmContent,
         locale: locale
       }), document.querySelector(`body`));
+
+      if (window?.matchMedia(`(prefers-color-scheme: dark)`).matches) {
+        document.querySelector(`body`).classList.add(`theme_dark`);
+      }
     } else {
       const templateData = {
         pockethost,
@@ -989,7 +1017,8 @@ function Saved(props) {
     "data-l10n-id": "pocket-panel-button-remove"
   }))), savedStory && /*#__PURE__*/react.createElement(ArticleList_ArticleList, {
     articles: [savedStory],
-    savedArticle: true
+    openInPocketReader: true,
+    utmParams: utmParams
   }), /*#__PURE__*/react.createElement(TagPicker_TagPicker, {
     tags: [],
     itemUrl: itemUrl
@@ -1556,6 +1585,10 @@ SavedOverlay.prototype = {
         utmCampaign: utmCampaign,
         utmContent: utmContent
       }), document.querySelector(`body`));
+
+      if (window?.matchMedia(`(prefers-color-scheme: dark)`).matches) {
+        document.querySelector(`body`).classList.add(`theme_dark`);
+      }
     } else {
       // set host
       const templateData = {
@@ -1629,25 +1662,35 @@ StyleGuideOverlay.prototype = {
     // TODO: Wrap popular topics component in JSX to work without needing an explicit container hierarchy for styling
     react_dom.render( /*#__PURE__*/react.createElement("div", null, /*#__PURE__*/react.createElement("h3", null, "JSX Components:"), /*#__PURE__*/react.createElement("h4", {
       className: "stp_styleguide_h4"
-    }, "Button"), /*#__PURE__*/react.createElement(Button_Button, {
+    }, "Buttons"), /*#__PURE__*/react.createElement("h5", {
+      className: "stp_styleguide_h5"
+    }, "text"), /*#__PURE__*/react.createElement(Button_Button, {
       style: "text",
       url: "https://example.org",
       source: "styleguide"
-    }, "Text Button"), /*#__PURE__*/react.createElement("br", null), /*#__PURE__*/react.createElement(Button_Button, {
+    }, "Text Button"), /*#__PURE__*/react.createElement("h5", {
+      className: "stp_styleguide_h5"
+    }, "primary"), /*#__PURE__*/react.createElement(Button_Button, {
       style: "primary",
       url: "https://example.org",
       source: "styleguide"
-    }, "Primary Button"), /*#__PURE__*/react.createElement("br", null), /*#__PURE__*/react.createElement(Button_Button, {
+    }, "Primary Button"), /*#__PURE__*/react.createElement("h5", {
+      className: "stp_styleguide_h5"
+    }, "secondary"), /*#__PURE__*/react.createElement(Button_Button, {
       style: "secondary",
       url: "https://example.org",
       source: "styleguide"
-    }, "Secondary Button"), /*#__PURE__*/react.createElement("span", {
+    }, "Secondary Button"), /*#__PURE__*/react.createElement("h5", {
+      className: "stp_styleguide_h5"
+    }, "primary wide"), /*#__PURE__*/react.createElement("span", {
       className: "stp_button_wide"
     }, /*#__PURE__*/react.createElement(Button_Button, {
       style: "primary",
       url: "https://example.org",
       source: "styleguide"
-    }, "Primary Wide Button")), /*#__PURE__*/react.createElement("span", {
+    }, "Primary Wide Button")), /*#__PURE__*/react.createElement("h5", {
+      className: "stp_styleguide_h5"
+    }, "secondary wide"), /*#__PURE__*/react.createElement("span", {
       className: "stp_button_wide"
     }, /*#__PURE__*/react.createElement(Button_Button, {
       style: "secondary",

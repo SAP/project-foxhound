@@ -119,7 +119,6 @@ void ProxySelectionEvent(RemoteAccessible* aTarget, RemoteAccessible* aWidget,
                          uint32_t aType);
 
 #if defined(ANDROID)
-MOZ_CAN_RUN_SCRIPT
 void ProxyVirtualCursorChangeEvent(RemoteAccessible* aTarget,
                                    RemoteAccessible* aOldPosition,
                                    int32_t aOldStartOffset,
@@ -142,9 +141,7 @@ void ProxyBatch(RemoteAccessible* aDocument, const uint64_t aBatchType,
                 const nsTArray<RemoteAccessible*>& aAccessibles,
                 const nsTArray<BatchData>& aData);
 
-bool LocalizeString(
-    const char* aToken, nsAString& aLocalized,
-    const nsTArray<nsString>& aFormatString = nsTArray<nsString>());
+bool LocalizeString(const nsAString& aToken, nsAString& aLocalized);
 #endif
 
 #ifdef MOZ_WIDGET_COCOA

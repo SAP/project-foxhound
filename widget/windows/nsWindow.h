@@ -265,7 +265,8 @@ class nsWindow final : public nsBaseWidget {
   nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                        LayoutDeviceIntPoint aPoint,
                                        double aDeltaX, double aDeltaY,
-                                       int32_t aModifierFlags) override;
+                                       int32_t aModifierFlagsn,
+                                       nsIObserver* aObserver) override;
 
   void SetInputContext(const InputContext& aContext,
                        const InputContextAction& aAction) override;
@@ -370,7 +371,7 @@ class nsWindow final : public nsBaseWidget {
   void PickerOpen();
   void PickerClosed();
 
-  bool const DestroyCalled() { return mDestroyCalled; }
+  bool DestroyCalled() { return mDestroyCalled; }
 
   bool IsPopup();
   bool ShouldUseOffMainThreadCompositing() override;
@@ -615,7 +616,6 @@ class nsWindow final : public nsBaseWidget {
    * XP and Vista theming support for windows with rounded edges
    */
   void ClearThemeRegion();
-  void SetThemeRegion();
 
   /**
    * Popup hooks

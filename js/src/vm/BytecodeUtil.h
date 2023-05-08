@@ -307,7 +307,6 @@ static inline bool BytecodeFallsThrough(JSOp op) {
     case JSOp::Default:
     case JSOp::Return:
     case JSOp::RetRval:
-    case JSOp::Retsub:
     case JSOp::FinalYieldRval:
     case JSOp::Throw:
     case JSOp::ThrowMsg:
@@ -476,8 +475,11 @@ inline bool IsGetPropPC(const jsbytecode* pc) { return IsGetPropOp(JSOp(*pc)); }
 inline bool IsHiddenInitOp(JSOp op) {
   return op == JSOp::InitHiddenProp || op == JSOp::InitHiddenElem ||
          op == JSOp::InitHiddenPropGetter || op == JSOp::InitHiddenElemGetter ||
-         op == JSOp::InitHiddenPropSetter || op == JSOp::InitHiddenElemSetter ||
-         op == JSOp::InitLockedElem;
+         op == JSOp::InitHiddenPropSetter || op == JSOp::InitHiddenElemSetter;
+}
+
+inline bool IsLockedInitOp(JSOp op) {
+  return op == JSOp::InitLockedProp || op == JSOp::InitLockedElem;
 }
 
 inline bool IsStrictSetPC(jsbytecode* pc) {

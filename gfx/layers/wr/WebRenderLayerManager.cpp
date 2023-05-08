@@ -78,8 +78,7 @@ bool WebRenderLayerManager::Initialize(
 
   LayoutDeviceIntSize size = mWidget->GetClientSize();
   // Check widget size
-  if (size.width < 0 || size.width > wr::MAX_RENDER_TASK_SIZE ||
-      size.height < 0 || size.height > wr::MAX_RENDER_TASK_SIZE) {
+  if (!wr::WindowSizeSanityCheck(size.width, size.height)) {
     gfxCriticalNoteOnce << "Widget size is not valid " << size
                         << " isParent: " << XRE_IsParentProcess();
   }
@@ -114,7 +113,8 @@ bool WebRenderLayerManager::Initialize(
 
   if (textureFactoryIdentifier.mParentBackend == LayersBackend::LAYERS_NONE ||
       idNamespace.isNothing()) {
-    gfxCriticalNote << "Failed to connect WebRenderBridgeChild.";
+    gfxCriticalNote << "Failed to connect WebRenderBridgeChild. isParent="
+                    << XRE_IsParentProcess();
     aError.Append(hasInitialized ? "_POST"_ns : "_FIRST"_ns);
     return false;
   }

@@ -45,7 +45,7 @@ JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
 
 [[nodiscard]] extern bool RegExpMatcherRaw(JSContext* cx, HandleObject regexp,
                                            HandleString input,
-                                           int32_t maybeLastIndex,
+                                           int32_t lastIndex,
                                            MatchPairs* maybeMatches,
                                            MutableHandleValue output);
 

@@ -44,9 +44,11 @@
 #include "mozilla/gfx/2D.h"
 
 #include <cairo-gobject.h>
+#include <dlfcn.h>
 #include "WidgetStyleCache.h"
 #include "prenv.h"
 #include "nsCSSColorUtils.h"
+#include "mozilla/Preferences.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -677,10 +679,10 @@ nsresult nsLookAndFeel::PerThemeData::GetColor(ColorID aID,
 
     case ColorID::Threedlightshadow:
     case ColorID::MozDisabledfield:
-      aColor = NS_RGB(0xE0, 0xE0, 0xE0);
+      aColor = mIsDark ? *GenericDarkColor(aID) : NS_RGB(0xE0, 0xE0, 0xE0);
       break;
     case ColorID::Threeddarkshadow:
-      aColor = NS_RGB(0xDC, 0xDC, 0xDC);
+      aColor = mIsDark ? *GenericDarkColor(aID) : NS_RGB(0xDC, 0xDC, 0xDC);
       break;
 
     case ColorID::MozEventreerow:
@@ -1269,11 +1271,20 @@ void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
   }
 
   if (mSystemTheme.mIsDark == GetThemeIsDark()) {
-    // If the theme still didn't change enough, fall back to either Adwaita or
-    // Adwaita-dark.
-    g_object_set(settings, "gtk-theme-name",
-                 mSystemTheme.mIsDark ? "Adwaita" : "Adwaita-dark", nullptr);
+    // If the theme still didn't change enough, fall back to Adwaita with the
+    // appropriate color preference.
+    g_object_set(settings, "gtk-theme-name", "Adwaita",
+                 "gtk-application-prefer-dark-theme", !mSystemTheme.mIsDark,
+                 nullptr);
     moz_gtk_refresh();
+
+    // If it _still_ didn't change enough, and we're dark, try to set
+    // Adwaita-dark as a theme name. This might be needed in older GTK versions.
+    if (!mSystemTheme.mIsDark && !GetThemeIsDark()) {
+      g_object_set(settings, "gtk-theme-name", "Adwaita-dark", nullptr);
+      moz_gtk_refresh();
+    }
+
     fellBackToDefaultTheme = true;
   }
 
@@ -1620,7 +1631,7 @@ static void EnsureColorPairIsOpaque(nscolor& aBg, nscolor& aFg) {
   // Blend with white, ensuring the color is opaque, so that the UI doesn't have
   // to care about alpha.
   aBg = NS_ComposeColors(NS_RGB(0xff, 0xff, 0xff), aBg);
-  aFg = NS_ComposeColors(NS_RGB(0xff, 0xff, 0xff), aFg);
+  aFg = NS_ComposeColors(aBg, aFg);
 }
 
 static void PreferDarkerBackground(nscolor& aBg, nscolor& aFg) {
@@ -1903,7 +1914,6 @@ void nsLookAndFeel::PerThemeData::Init() {
       mSelectedItemText = mTextSelectedText;
     }
 
-    PreferDarkerBackground(mSelectedItem, mSelectedItemText);
     EnsureColorPairIsOpaque(mSelectedItem, mSelectedItemText);
 
     // In a similar fashion, default accent color is the selected item/text
@@ -1919,8 +1929,8 @@ void nsLookAndFeel::PerThemeData::Init() {
       mAccentColorForeground = mSelectedItemText;
     }
 
-    PreferDarkerBackground(mAccentColor, mAccentColorForeground);
     EnsureColorPairIsOpaque(mAccentColor, mAccentColorForeground);
+    PreferDarkerBackground(mAccentColor, mAccentColorForeground);
   }
 
   // Button text color

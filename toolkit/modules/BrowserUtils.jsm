@@ -20,6 +20,17 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/Region.jsm"
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "INVALID_SHAREABLE_SCHEMES",
+  "services.sync.engine.tabs.filteredSchemes",
+  "",
+  null,
+  val => {
+    return new Set(val.split("|"));
+  }
+);
+
 function stringPrefToSet(prefVal) {
   return new Set(
     prefVal
@@ -147,16 +158,9 @@ var BrowserUtils = {
     if (url.spec.length > 65535) {
       return false;
     }
-
-    let scheme = url.scheme;
-
-    return !(
-      "about" == scheme ||
-      "resource" == scheme ||
-      "chrome" == scheme ||
-      "blob" == scheme ||
-      "moz-extension" == scheme
-    );
+    // Use the same preference as synced tabs to disable what kind
+    // of tabs we can send to another device
+    return !INVALID_SHAREABLE_SCHEMES.has(url.scheme);
   },
 
   /**
@@ -179,9 +183,9 @@ var BrowserUtils = {
     function isHTMLLink(aNode) {
       // Be consistent with what nsContextMenu.js does.
       return (
-        (aNode instanceof content.HTMLAnchorElement && aNode.href) ||
-        (aNode instanceof content.HTMLAreaElement && aNode.href) ||
-        aNode instanceof content.HTMLLinkElement
+        (content.HTMLAnchorElement.isInstance(aNode) && aNode.href) ||
+        (content.HTMLAreaElement.isInstance(aNode) && aNode.href) ||
+        content.HTMLLinkElement.isInstance(aNode)
       );
     }
 

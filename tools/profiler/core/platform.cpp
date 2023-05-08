@@ -249,8 +249,8 @@ class GeckoJavaSampler
       jstring javaString =
           (jstring)(aJni->GetObjectArrayElement(aJavaArray.Get(), i));
       const char* filterString = aJni->GetStringUTFChars(javaString, 0);
-      // These strings are leaked. FIXME
-      MOZ_RELEASE_ASSERT(aCharArray.append(&filterString, 0));
+      // FIXME. These strings are leaked.
+      MOZ_RELEASE_ASSERT(aCharArray.append(filterString));
     }
   }
 
@@ -501,7 +501,6 @@ class CorePS {
     // is worthwhile:
     // - CorePS::mRegisteredPages itself (its elements' children are
     // measured above)
-    // - CorePS::mInterposeObserver
 
 #if defined(USE_LUL_STACKWALK)
     if (lul::LUL* lulPtr = sInstance->mLul; lulPtr) {
@@ -736,6 +735,12 @@ class ActivePS {
     return aFeatures;
   }
 
+  bool ShouldInterposeIOs() {
+    return ProfilerFeature::HasMainThreadIO(mFeatures) ||
+           ProfilerFeature::HasFileIO(mFeatures) ||
+           ProfilerFeature::HasFileIOAll(mFeatures);
+  }
+
   ActivePS(
       PSLockRef aLock, PowerOfTwo32 aCapacity, double aInterval,
       uint32_t aFeatures, const char** aFilters, uint32_t aFilterCount,
@@ -767,11 +772,6 @@ class ActivePS {
         // unlocks gPSMutex.
         mSamplerThread(
             NewSamplerThread(aLock, mGeneration, aInterval, aFeatures)),
-        mInterposeObserver((ProfilerFeature::HasMainThreadIO(aFeatures) ||
-                            ProfilerFeature::HasFileIO(aFeatures) ||
-                            ProfilerFeature::HasFileIOAll(aFeatures))
-                               ? new ProfilerIOInterposeObserver()
-                               : nullptr),
         mIsPaused(false),
         mIsSamplingPaused(false) {
     // Deep copy and lower-case aFilters.
@@ -785,20 +785,29 @@ class ActivePS {
     }
 
 #if !defined(RELEASE_OR_BETA)
-    if (mInterposeObserver) {
+    if (ShouldInterposeIOs()) {
       // We need to register the observer on the main thread, because we want
       // to observe IO that happens on the main thread.
       // IOInterposer needs to be initialized before calling
       // IOInterposer::Register or our observer will be silently dropped.
       if (NS_IsMainThread()) {
         IOInterposer::Init();
-        IOInterposer::Register(IOInterposeObserver::OpAll, mInterposeObserver);
+        IOInterposer::Register(IOInterposeObserver::OpAll,
+                               &ProfilerIOInterposeObserver::GetInstance());
       } else {
-        RefPtr<ProfilerIOInterposeObserver> observer = mInterposeObserver;
         NS_DispatchToMainThread(
-            NS_NewRunnableFunction("ActivePS::ActivePS", [=]() {
+            NS_NewRunnableFunction("ActivePS::ActivePS", []() {
+              // Note: This could theoretically happen after ActivePS gets
+              // destroyed, but it's ok:
+              // - The Observer always checks that the profiler is (still)
+              //   active before doing its work.
+              // - The destruction should happen on the same thread as this
+              //   construction, so the un-registration will also be dispatched
+              //   and queued on the main thread, and run after this.
               IOInterposer::Init();
-              IOInterposer::Register(IOInterposeObserver::OpAll, observer);
+              IOInterposer::Register(
+                  IOInterposeObserver::OpAll,
+                  &ProfilerIOInterposeObserver::GetInstance());
             }));
       }
     }
@@ -810,17 +819,18 @@ class ActivePS {
         !mMaybeProcessCPUCounter,
         "mMaybeProcessCPUCounter should have been deleted before ~ActivePS()");
 #if !defined(RELEASE_OR_BETA)
-    if (mInterposeObserver) {
+    if (ShouldInterposeIOs()) {
       // We need to unregister the observer on the main thread, because that's
       // where we've registered it.
       if (NS_IsMainThread()) {
         IOInterposer::Unregister(IOInterposeObserver::OpAll,
-                                 mInterposeObserver);
+                                 &ProfilerIOInterposeObserver::GetInstance());
       } else {
-        RefPtr<ProfilerIOInterposeObserver> observer = mInterposeObserver;
         NS_DispatchToMainThread(
-            NS_NewRunnableFunction("ActivePS::~ActivePS", [=]() {
-              IOInterposer::Unregister(IOInterposeObserver::OpAll, observer);
+            NS_NewRunnableFunction("ActivePS::~ActivePS", []() {
+              IOInterposer::Unregister(
+                  IOInterposeObserver::OpAll,
+                  &ProfilerIOInterposeObserver::GetInstance());
             }));
       }
     }
@@ -1413,9 +1423,6 @@ class ActivePS {
   // the SamplerThread object; the Destroy() method returns it so the caller
   // can destroy it.
   SamplerThread* const mSamplerThread;
-
-  // The interposer that records main thread I/O.
-  RefPtr<ProfilerIOInterposeObserver> mInterposeObserver;
 
   // Is the profiler fully paused?
   bool mIsPaused;
@@ -4500,6 +4507,7 @@ void SamplerThread::SpyOnUnregisteredThreads() {
       /* aProcessType = */ ProcType::Unknown,
       /* aOrigin = */ ""_ns,
       /* aWindowInfo = */ nsTArray<WindowInfo>{},
+      /* aUtilityInfo = */ nsTArray<UtilityInfo>{},
       /* aChild = */ 0
 #ifdef XP_MACOSX
       ,
@@ -5540,7 +5548,14 @@ static void locked_profiler_start(PSLockRef aLock, PowerOfTwo32 aCapacity,
 
   // Do this before the Base Profiler is stopped, to keep the existing buffer
   // (if any) alive for our use.
-  mozilla::base_profiler_markers_detail::EnsureBufferForMainThreadAddMarker();
+  if (NS_IsMainThread()) {
+    mozilla::base_profiler_markers_detail::EnsureBufferForMainThreadAddMarker();
+  } else {
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("EnsureBufferForMainThreadAddMarker",
+                               &mozilla::base_profiler_markers_detail::
+                                   EnsureBufferForMainThreadAddMarker));
+  }
 
   UniquePtr<ProfileBufferChunkManagerWithLocalLimit> baseChunkManager;
   bool profilersHandOver = false;
@@ -5871,7 +5886,15 @@ void profiler_ensure_started(PowerOfTwo32 aCapacity, double aInterval,
   SamplerThread* samplerThread = ActivePS::Destroy(aLock);
   samplerThread->Stop(aLock);
 
-  mozilla::base_profiler_markers_detail::ReleaseBufferForMainThreadAddMarker();
+  if (NS_IsMainThread()) {
+    mozilla::base_profiler_markers_detail::
+        ReleaseBufferForMainThreadAddMarker();
+  } else {
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("ReleaseBufferForMainThreadAddMarker",
+                               &mozilla::base_profiler_markers_detail::
+                                   ReleaseBufferForMainThreadAddMarker));
+  }
 
   return samplerThread;
 }
@@ -6467,6 +6490,15 @@ void profiler_record_wakeup_count(const nsACString& aProcessType) {
 
     previousThreadWakeCount += newWakeups;
   }
+
+#ifdef NIGHTLY_BUILD
+  ThreadRegistry::LockedRegistry lockedRegistry;
+  for (ThreadRegistry::OffThreadRef offThreadRef : lockedRegistry) {
+    const ThreadRegistry::UnlockedConstReaderAndAtomicRW& threadData =
+        offThreadRef.UnlockedConstReaderAndAtomicRWRef();
+    threadData.RecordWakeCount();
+  }
+#endif
 }
 
 void profiler_mark_thread_awake() {

@@ -888,6 +888,10 @@ void nsHttpHandler::InitUserAgentComponents() {
   const char* format;
 #  if defined _M_X64 || defined _M_AMD64
   format = OSCPU_WIN64;
+#  elif defined(_ARM64_)
+  // Report ARM64 Windows 11+ as x86_64 and Windows 10 as x86. Windows 11+
+  // supports x86_64 emulation, but Windows 10 only supports x86 emulation.
+  format = IsWin11OrLater() ? OSCPU_WIN64 : OSCPU_WINDOWS;
 #  else
   BOOL isWow64 = FALSE;
   if (!IsWow64Process(GetCurrentProcess(), &isWow64)) {
@@ -2263,11 +2267,6 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   if (!sss) return NS_OK;
 
   nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(aCallbacks);
-  uint32_t flags = 0;
-  if (loadContext && loadContext->UsePrivateBrowsing()) {
-    flags |= nsISocketProvider::NO_PERMANENT_STORAGE;
-  }
-
   OriginAttributes originAttributes;
   // If the principal is given, we use the originAttributes from this
   // principal. Otherwise, we use the originAttributes from the loadContext.
@@ -2281,8 +2280,8 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
       aURI, originAttributes);
 
   nsCOMPtr<nsIURI> clone;
-  if (NS_SUCCEEDED(sss->IsSecureURI(aURI, flags, originAttributes, nullptr,
-                                    nullptr, &isStsHost)) &&
+  if (NS_SUCCEEDED(sss->IsSecureURI(aURI, originAttributes, nullptr, nullptr,
+                                    &isStsHost)) &&
       isStsHost) {
     if (NS_SUCCEEDED(NS_GetSecureUpgradedURI(aURI, getter_AddRefs(clone)))) {
       aURI = clone.get();
@@ -2435,9 +2434,8 @@ nsHttpHandler::EnsureHSTSDataReadyNative(
   auto func = [callback(aCallback)](bool aResult, nsresult aStatus) {
     callback->DoCallback(aResult);
   };
-  rv = NS_ShouldSecureUpgrade(uri, nullptr, nullptr, false, false,
-                              originAttributes, shouldUpgrade, std::move(func),
-                              willCallback);
+  rv = NS_ShouldSecureUpgrade(uri, nullptr, nullptr, false, originAttributes,
+                              shouldUpgrade, std::move(func), willCallback);
   if (NS_FAILED(rv) || !willCallback) {
     aCallback->DoCallback(false);
     return rv;
@@ -2667,7 +2665,7 @@ nsresult nsHttpHandler::RescheduleTransaction(HttpTransactionShell* trans,
 }
 
 void nsHttpHandler::UpdateClassOfServiceOnTransaction(
-    HttpTransactionShell* trans, uint32_t classOfService) {
+    HttpTransactionShell* trans, const ClassOfService& classOfService) {
   mConnMgr->UpdateClassOfServiceOnTransaction(trans, classOfService);
 }
 

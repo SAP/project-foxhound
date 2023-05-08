@@ -9,26 +9,39 @@
 #include "mozilla/a11y/Accessible.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "nsAccUtils.h"
+#include "mozilla/a11y/RemoteAccessible.h"
 #include "TextLeafRange.h"
 #include "TextRange.h"
 
 namespace mozilla::a11y {
 
-int32_t HyperTextAccessibleBase::GetChildIndexAtOffset(uint32_t aOffset) const {
+void HyperTextAccessibleBase::BuildCachedHyperTextOffsets(
+    nsTArray<int32_t>& aOffsets) const {
   const Accessible* thisAcc = Acc();
   uint32_t childCount = thisAcc->ChildCount();
-  uint32_t lastTextOffset = 0;
-  for (uint32_t childIndex = 0; childIndex < childCount; ++childIndex) {
-    Accessible* child = thisAcc->ChildAt(childIndex);
-    lastTextOffset += nsAccUtils::TextLength(child);
-    if (aOffset < lastTextOffset) {
-      return childIndex;
-    }
+  int32_t lastTextOffset = 0;
+  while (aOffsets.Length() < childCount) {
+    Accessible* child = thisAcc->ChildAt(aOffsets.Length());
+    lastTextOffset += static_cast<int32_t>(nsAccUtils::TextLength(child));
+    aOffsets.AppendElement(lastTextOffset);
   }
-  if (aOffset == lastTextOffset) {
-    return childCount - 1;
+}
+
+int32_t HyperTextAccessibleBase::GetChildIndexAtOffset(uint32_t aOffset) const {
+  const auto& offsets = GetCachedHyperTextOffsets();
+  auto childCount = offsets.Length();
+  size_t index;
+  if (BinarySearch(offsets, 0, childCount, static_cast<int32_t>(aOffset),
+                   &index)) {
+    // aOffset is the exclusive end of a child, so return the child before it.
+    return static_cast<int32_t>(index < childCount - 1 ? index + 1 : index);
   }
-  return -1;
+  if (index == childCount) {
+    // aOffset is past the end of the text.
+    return -1;
+  }
+  // index points at the exclusive end after aOffset.
+  return static_cast<int32_t>(index);
 }
 
 Accessible* HyperTextAccessibleBase::GetChildAtOffset(uint32_t aOffset) const {
@@ -36,8 +49,8 @@ Accessible* HyperTextAccessibleBase::GetChildAtOffset(uint32_t aOffset) const {
   return thisAcc->ChildAt(GetChildIndexAtOffset(aOffset));
 }
 
-int32_t HyperTextAccessibleBase::GetChildOffset(const Accessible* aChild,
-                                                bool aInvalidateAfter) const {
+int32_t HyperTextAccessibleBase::GetChildOffset(
+    const Accessible* aChild) const {
   const Accessible* thisAcc = Acc();
   if (aChild->Parent() != thisAcc) {
     return -1;
@@ -46,26 +59,16 @@ int32_t HyperTextAccessibleBase::GetChildOffset(const Accessible* aChild,
   if (index == -1) {
     return -1;
   }
-  return GetChildOffset(index, aInvalidateAfter);
+  return GetChildOffset(index);
 }
 
-int32_t HyperTextAccessibleBase::GetChildOffset(uint32_t aChildIndex,
-                                                bool aInvalidateAfter) const {
+int32_t HyperTextAccessibleBase::GetChildOffset(uint32_t aChildIndex) const {
   if (aChildIndex == 0) {
     return 0;
   }
-  const Accessible* thisAcc = Acc();
-  MOZ_ASSERT(aChildIndex <= thisAcc->ChildCount());
-  uint32_t lastTextOffset = 0;
-  for (uint32_t childIndex = 0; childIndex <= aChildIndex; ++childIndex) {
-    if (childIndex == aChildIndex) {
-      return lastTextOffset;
-    }
-    Accessible* child = thisAcc->ChildAt(childIndex);
-    lastTextOffset += nsAccUtils::TextLength(child);
-  }
-  MOZ_ASSERT_UNREACHABLE();
-  return lastTextOffset;
+  MOZ_ASSERT(aChildIndex <= Acc()->ChildCount());
+  const auto& offsets = GetCachedHyperTextOffsets();
+  return offsets[aChildIndex - 1];
 }
 
 uint32_t HyperTextAccessibleBase::CharacterCount() const {
@@ -162,6 +165,86 @@ bool HyperTextAccessibleBase::CharAt(int32_t aOffset, nsAString& aChar,
     *aEndOffset = aOffset + aChar.Length();
   }
   return true;
+}
+
+LayoutDeviceIntRect HyperTextAccessibleBase::CharBounds(int32_t aOffset,
+                                                        uint32_t aCoordType) {
+  TextLeafPoint point = ToTextLeafPoint(aOffset, false);
+  if (!point.mAcc || !point.mAcc->IsRemote() ||
+      !point.mAcc->AsRemote()->mCachedFields) {
+    return LayoutDeviceIntRect();
+  }
+
+  LayoutDeviceIntRect bounds = point.CharBounds();
+  nsAccUtils::ConvertScreenCoordsTo(&bounds.x, &bounds.y, aCoordType, Acc());
+  return bounds;
+}
+
+LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
+                                                        int32_t aEndOffset,
+                                                        uint32_t aCoordType) {
+  if (CharacterCount() == 0 ||
+      (aEndOffset > -1 && aStartOffset >= aEndOffset)) {
+    return LayoutDeviceIntRect();
+  }
+
+  // Here's where things get complicated. We can't simply query the first
+  // and last character, and union their bounds. They might reside on different
+  // lines, and a simple union may yield an incorrect width. We
+  // should use the length of the longest spanned line for our width.
+  // TODO: This functionality should probably live in TextLeafRange
+  // see bug 1769824
+
+  TextLeafPoint currPoint = ToTextLeafPoint(aStartOffset, false);
+  TextLeafPoint endPoint =
+      ToTextLeafPoint(ConvertMagicOffset(aEndOffset), true);
+
+  // Step backwards from the point returned by ToTextLeafPoint above.
+  // For our purposes, `endPoint` should be inclusive.
+  endPoint = endPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR,
+                                   eDirPrevious, false);
+
+  LayoutDeviceIntRect result;
+  if (endPoint == currPoint) {
+    result = currPoint.CharBounds();
+    nsAccUtils::ConvertScreenCoordsTo(&result.x, &result.y, aCoordType, Acc());
+    return result;
+  } else if (endPoint < currPoint) {
+    return result;
+  }
+
+  bool locatedFinalLine = false;
+  result = currPoint.CharBounds();
+
+  // Union the first and last chars of each line to create a line rect. Then,
+  // union the lines together.
+  while (!locatedFinalLine) {
+    // Fetch the last point in the current line by getting the
+    // start of the next line and going back one char. We don't
+    // use BOUNDARY_LINE_END here because it is equivalent to LINE_START when
+    // the line doesn't end with a line feed character.
+    TextLeafPoint lineStartPoint =
+        currPoint.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_START, eDirNext,
+                               /* aIncludeOrigin */ false);
+    TextLeafPoint lastPointInLine = lineStartPoint.FindBoundary(
+        nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious,
+        /* aIncludeOrigin */ false);
+    if (endPoint <= lastPointInLine) {
+      lastPointInLine = endPoint;
+      locatedFinalLine = true;
+    }
+
+    LayoutDeviceIntRect currLine = currPoint.CharBounds();
+    currLine.UnionRect(currLine, lastPointInLine.CharBounds());
+    result.UnionRect(result, currLine);
+
+    currPoint = lineStartPoint;
+  }
+
+  // Calls to TextLeafPoint::CharBounds() will construct screen coordinates.
+  // Perform any additional conversions here.
+  nsAccUtils::ConvertScreenCoordsTo(&result.x, &result.y, aCoordType, Acc());
+  return result;
 }
 
 TextLeafPoint HyperTextAccessibleBase::ToTextLeafPoint(int32_t aOffset,
@@ -463,6 +546,10 @@ bool HyperTextAccessibleBase::IsValidRange(int32_t aStartOffset,
          startOffset <= endOffset && endOffset <= CharacterCount();
 }
 
+uint32_t HyperTextAccessibleBase::LinkCount() {
+  return Acc()->EmbeddedChildCount();
+}
+
 Accessible* HyperTextAccessibleBase::LinkAt(uint32_t aIndex) {
   return Acc()->EmbeddedChildAt(aIndex);
 }
@@ -529,29 +616,34 @@ already_AddRefed<AccAttributes> HyperTextAccessibleBase::TextAttributes(
   }
 
   TextLeafPoint origin = ToTextLeafPoint(static_cast<int32_t>(offset));
-  RefPtr<AccAttributes> attributes = origin.GetTextAttributes(aIncludeDefAttrs);
-  TextLeafPoint start = origin.FindTextAttrsStart(
-      eDirPrevious, /* aIncludeOrigin */ true, attributes, aIncludeDefAttrs);
+  TextLeafPoint start =
+      origin.FindTextAttrsStart(eDirPrevious, /* aIncludeOrigin */ true);
   bool ok;
   std::tie(ok, *aStartOffset) = TransformOffset(start.mAcc, start.mOffset,
                                                 /* aIsEndOffset */ false);
-  TextLeafPoint end = origin.FindTextAttrsStart(
-      eDirNext, /* aIncludeOrigin */ false, attributes, aIncludeDefAttrs);
+  TextLeafPoint end =
+      origin.FindTextAttrsStart(eDirNext, /* aIncludeOrigin */ false);
   std::tie(ok, *aEndOffset) = TransformOffset(end.mAcc, end.mOffset,
                                               /* aIsEndOffset */ true);
-  return attributes.forget();
+  return origin.GetTextAttributes(aIncludeDefAttrs);
 }
 
 void HyperTextAccessibleBase::CroppedSelectionRanges(
     nsTArray<TextRange>& aRanges) const {
   SelectionRanges(&aRanges);
   const Accessible* acc = Acc();
-  if (!acc->IsDoc()) {
-    aRanges.RemoveElementsBy([acc](auto& range) {
-      return range.StartPoint() == range.EndPoint() ||
-             !range.Crop(const_cast<Accessible*>(acc));
-    });
-  }
+  aRanges.RemoveElementsBy([acc](auto& range) {
+    if (range.StartPoint() == range.EndPoint()) {
+      return true;  // Collapsed, so remove this range.
+    }
+    // If this is the document, it contains all ranges, so there's no need to
+    // crop.
+    if (!acc->IsDoc()) {
+      // If we fail to crop, the range is outside acc, so remove it.
+      return !range.Crop(const_cast<Accessible*>(acc));
+    }
+    return false;
+  });
 }
 
 int32_t HyperTextAccessibleBase::SelectionCount() {

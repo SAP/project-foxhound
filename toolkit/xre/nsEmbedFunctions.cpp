@@ -35,7 +35,6 @@
 
 #include "nsAppRunner.h"
 #include "nsExceptionHandler.h"
-#include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsJSUtils.h"
 #include "nsWidgetsCID.h"
@@ -53,6 +52,7 @@
 #  include "chrome/common/mach_ipc_mac.h"
 #  include "gfxPlatformMac.h"
 #endif
+#include "nsX11ErrorHandler.h"
 #include "nsGDKErrorHandler.h"
 #include "base/at_exit.h"
 #include "base/message_loop.h"
@@ -87,8 +87,6 @@
 #include "mozilla/gfx/GPUProcessImpl.h"
 #include "mozilla/net/SocketProcessImpl.h"
 
-#include "GeckoProfiler.h"
-#include "BaseProfiler.h"
 #include "ProfilerControl.h"
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
@@ -530,10 +528,17 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
                   __FILE__, __LINE__);
   } else if (PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
     printf_stderr(
-        "\n\nCHILDCHILDCHILDCHILD (process type %s)\n  debug me @ %d\n\n",
+        "\n\nCHILDCHILDCHILDCHILD (process type %s)\n  debug me @ %lu\n\n",
         XRE_GetProcessTypeString(), base::GetCurrentProcId());
     ::Sleep(GetDebugChildPauseTime());
   }
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+  // The parent process already did this, but Gecko child processes on
+  // Android aren't descendants of the parent process, so they don't
+  // inherit its rlimits.
+  mozilla::startup::IncreaseDescriptorLimits();
 #endif
 
   // child processes launched by GeckoChildProcessHost get this magic
@@ -716,7 +721,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       if (XRE_GetProcessType() != GeckoProcessType_RemoteSandboxBroker) {
         // Remote sandbox launcher process doesn't have prerequisites for
         // these...
-        mozilla::FilePreferences::InitDirectoriesWhitelist();
+        mozilla::FilePreferences::InitDirectoriesAllowlist();
         mozilla::FilePreferences::InitPrefs();
         OverrideDefaultLocaleIfNeeded();
       }
@@ -958,9 +963,15 @@ bool XRE_ShutdownTestShell() {
 void XRE_InstallX11ErrorHandler() {
 #  ifdef MOZ_WIDGET_GTK
   InstallGdkErrorHandler();
-#  else
-  InstallX11ErrorHandler();
 #  endif
+
+  // Ensure our X11 error handler overrides the default GDK error handler such
+  // that errors are ignored by default. GDK will install its own error handler
+  // temporarily when pushing error traps internally as needed. This avoids us
+  // otherwise having to frequently override the error handler merely to trap
+  // errors in multiple places that would otherwise contend with GDK or other
+  // libraries that might also override the handler.
+  InstallX11ErrorHandler();
 }
 #endif
 

@@ -456,7 +456,8 @@ class GlobalHelperThreadState {
   // completed some work.
   js::ConditionVariable consumerWakeup;
 
-  void dispatch(const AutoLockHelperThreadState& locked);
+  void dispatch(JS::DispatchReason reason,
+                const AutoLockHelperThreadState& locked);
 
   void runTask(HelperThreadTask* task, AutoLockHelperThreadState& lock);
 
@@ -487,6 +488,11 @@ class GlobalHelperThreadState {
   HelperThreadTask* findHighestPriorityTask(
       const AutoLockHelperThreadState& locked);
 };
+
+static inline bool IsHelperThreadStateInitialized() {
+  extern GlobalHelperThreadState* gHelperThreadState;
+  return gHelperThreadState;
+}
 
 static inline GlobalHelperThreadState& HelperThreadState() {
   extern GlobalHelperThreadState* gHelperThreadState;
@@ -666,6 +672,14 @@ struct DelazifyTask : public mozilla::LinkedListElement<DelazifyTask>,
 
   // Record any errors happening while parsing or generating bytecode.
   OffThreadFrontendErrors errors_;
+
+  // Create a new DelazifyTask and initialize it.
+  static UniquePtr<DelazifyTask> Create(
+      JSContext* cx,
+      JSRuntime* runtime,
+      const JS::ContextOptions& contextOptions,
+      const JS::ReadOnlyCompileOptions& options,
+      const frontend::CompilationStencil& stencil);
 
   DelazifyTask(JSRuntime* runtime, const JS::ContextOptions& options);
 

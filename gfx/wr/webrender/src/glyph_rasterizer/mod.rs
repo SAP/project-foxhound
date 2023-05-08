@@ -20,6 +20,7 @@ use crate::resource_cache::CachedImageData;
 use crate::texture_cache::{TextureCache, TextureCacheHandle, Eviction, TargetShader};
 use crate::gpu_cache::GpuCache;
 use crate::profiler::{self, TransactionProfile};
+use crate::telemetry::Telemetry;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use rayon::ThreadPool;
 use rayon::prelude::*;
@@ -227,6 +228,7 @@ impl GlyphRasterizer {
         profile: &mut TransactionProfile,
     ) {
         profile.start_time(profiler::GLYPH_RESOLVE_TIME);
+        let timer_id = Telemetry::start_rasterize_glyphs_time();
 
         // Work around the borrow checker, since we call flush_glyph_requests below
         let mut pending_glyph_requests = mem::replace(
@@ -314,6 +316,7 @@ impl GlyphRasterizer {
         // we can schedule removing the fonts if needed.
         self.remove_dead_fonts();
 
+        Telemetry::stop_and_accumulate_rasterize_glyphs_time(timer_id);
         profile.end_time(profiler::GLYPH_RESOLVE_TIME);
     }
 }
@@ -585,6 +588,10 @@ impl FontKeyMap {
         self.0.write().unwrap()
     }
 
+    pub fn keys(&self) -> Vec<FontKey> {
+        self.lock().key_map.keys().cloned().collect()
+    }
+
     pub fn map_key(&self, font_key: &FontKey) -> FontKey {
         match self.lock().key_map.get(font_key) {
             Some(mapped) => mapped.font_key,
@@ -754,6 +761,10 @@ impl FontInstanceKeyMap {
         self.0.write().unwrap()
     }
 
+    pub fn keys(&self) -> Vec<FontInstanceKey> {
+        self.lock().key_map.keys().cloned().collect()
+    }
+
     pub fn map_key(&self, key: &FontInstanceKey) -> FontInstanceKey {
         match self.lock().key_map.get(key).and_then(|weak| weak.upgrade()) {
             Some(mapped) => mapped.instance_key,
@@ -840,6 +851,11 @@ impl FontInstanceMap {
     }
 
     ///
+    pub fn clear(&mut self) {
+        self.lock_mut().clear();
+    }
+
+    ///
     pub fn get_font_instance_data(&self, key: FontInstanceKey) -> Option<FontInstanceData> {
         match self.lock().get(&key) {
             Some(instance) => Some(FontInstanceData {
@@ -858,11 +874,6 @@ impl FontInstanceMap {
         }
     }
 
-    /// Replace the shared map with the provided map.
-    pub fn set_map(&mut self, map: FontInstanceMapLocked) {
-        *self.lock_mut() = map;
-    }
-
     ///
     pub fn get_font_instance(&self, instance_key: FontInstanceKey) -> Option<Arc<BaseFontInstance>> {
         let instance_map = self.lock();
@@ -870,8 +881,7 @@ impl FontInstanceMap {
     }
 
     ///
-    pub fn add_font_instance(&mut self, instance: Arc<BaseFontInstance>,
-    ) {
+    pub fn add_font_instance(&mut self, instance: Arc<BaseFontInstance>) {
         self.lock_mut().insert(instance.instance_key, instance);
     }
 
@@ -893,11 +903,6 @@ impl FontInstanceMap {
     ///
     pub fn clear_namespace(&mut self, namespace: IdNamespace) {
         self.lock_mut().retain(|key, _| key.0 != namespace);
-    }
-
-    ///
-    pub fn clone_map(&self) -> FontInstanceMapLocked {
-        self.lock().clone()
     }
 }
 

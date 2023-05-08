@@ -1474,7 +1474,10 @@
           );
           tab._pinnedUnscrollable = true;
         }
-        this.style.paddingInlineStart = width + "px";
+        this.style.setProperty(
+          "--tab-overflow-pinned-tabs-width",
+          width + "px"
+        );
       } else {
         this.removeAttribute("positionpinnedtabs");
 
@@ -1484,7 +1487,7 @@
           tab._pinnedUnscrollable = false;
         }
 
-        this.style.paddingInlineStart = "";
+        this.style.removeProperty("--tab-overflow-pinned-tabs-width");
       }
 
       if (this._lastNumPinned != numPinned) {
@@ -2093,7 +2096,10 @@
       // and make it ready to use. We only do this if the tab is selected
       // because otherwise, callers might end up unintentionally binding the
       // browser for lazy background tabs.
-      if (aTab.selected) {
+      if (!aTab.linkedPanel) {
+        if (!aTab.selected) {
+          return null;
+        }
         gBrowser._insertBrowser(aTab);
       }
       return document.getElementById(aTab.linkedPanel);

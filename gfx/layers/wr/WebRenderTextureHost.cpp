@@ -79,6 +79,10 @@ already_AddRefed<gfx::DataSourceSurface> WebRenderTextureHost::GetAsSurface() {
   return mWrappedTextureHost->GetAsSurface();
 }
 
+gfx::ColorDepth WebRenderTextureHost::GetColorDepth() const {
+  return mWrappedTextureHost->GetColorDepth();
+}
+
 gfx::YUVColorSpace WebRenderTextureHost::GetYUVColorSpace() const {
   return mWrappedTextureHost->GetYUVColorSpace();
 }
@@ -171,19 +175,6 @@ void WebRenderTextureHost::PushDisplayItems(
 bool WebRenderTextureHost::SupportsExternalCompositing(
     WebRenderBackend aBackend) {
   return mWrappedTextureHost->SupportsExternalCompositing(aBackend);
-}
-
-bool WebRenderTextureHost::NeedsYFlip() const {
-  bool yFlip = TextureHost::NeedsYFlip();
-  if (mWrappedTextureHost->AsSurfaceTextureHost()) {
-    MOZ_ASSERT(yFlip);
-    // With WebRender, SurfaceTextureHost always requests y-flip.
-    // But y-flip should not be handled, since
-    // SurfaceTexture.getTransformMatrix() is not handled yet.
-    // See Bug 1507076.
-    yFlip = false;
-  }
-  return yFlip;
 }
 
 void WebRenderTextureHost::SetAcquireFence(

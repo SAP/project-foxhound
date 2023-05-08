@@ -9,8 +9,6 @@
 #include "nsCoord.h"
 #include "nsPaper.h"
 #include "nsReadableUtils.h"
-#include "nsIPrintSession.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/RefPtr.h"
 
@@ -83,33 +81,6 @@ void nsPrintSettings::InitWithInitializer(
 nsPrintSettings::nsPrintSettings(const nsPrintSettings& aPS) { *this = aPS; }
 
 nsPrintSettings::~nsPrintSettings() = default;
-
-NS_IMETHODIMP nsPrintSettings::GetPrintSession(
-    nsIPrintSession** aPrintSession) {
-  NS_ENSURE_ARG_POINTER(aPrintSession);
-  *aPrintSession = nullptr;
-
-  nsCOMPtr<nsIPrintSession> session = do_QueryReferent(mSession);
-  if (!session) return NS_ERROR_NOT_INITIALIZED;
-  *aPrintSession = session;
-  NS_ADDREF(*aPrintSession);
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsPrintSettings::SetPrintSession(nsIPrintSession* aPrintSession) {
-  // Clearing it by passing nullptr is not allowed. That's why we
-  // use a weak ref so that it doesn't have to be cleared.
-  NS_ENSURE_ARG(aPrintSession);
-
-  mSession = do_GetWeakReference(aPrintSession);
-  if (!mSession) {
-    // This may happen if the implementation of this object does
-    // not support weak references - programmer error.
-    NS_ERROR("Could not get a weak reference from aPrintSession");
-    return NS_ERROR_FAILURE;
-  }
-  return NS_OK;
-}
 
 NS_IMETHODIMP nsPrintSettings::GetPrintReversed(bool* aPrintReversed) {
   *aPrintReversed = mPrintReversed;
@@ -547,17 +518,6 @@ NS_IMETHODIMP nsPrintSettings::SetHonorPageRuleMargins(bool aHonor) {
   return NS_OK;
 }
 
-NS_IMETHODIMP nsPrintSettings::GetIsPrintSelectionRBEnabled(
-    bool* aIsPrintSelectionRBEnabled) {
-  *aIsPrintSelectionRBEnabled = mIsPrintSelectionRBEnabled;
-  return NS_OK;
-}
-NS_IMETHODIMP nsPrintSettings::SetIsPrintSelectionRBEnabled(
-    bool aIsPrintSelectionRBEnabled) {
-  mIsPrintSelectionRBEnabled = aIsPrintSelectionRBEnabled;
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsPrintSettings::GetPrintSelectionOnly(bool* aResult) {
   *aResult = mPrintSelectionOnly;
   return NS_OK;
@@ -574,21 +534,6 @@ NS_IMETHODIMP nsPrintSettings::GetPaperId(nsAString& aPaperId) {
 }
 NS_IMETHODIMP nsPrintSettings::SetPaperId(const nsAString& aPaperId) {
   mPaperId = aPaperId;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsPrintSettings::GetIsCancelled(bool* aIsCancelled) {
-  NS_ENSURE_ARG_POINTER(aIsCancelled);
-  *aIsCancelled = mIsCancelled;
-  return NS_OK;
-}
-NS_IMETHODIMP nsPrintSettings::SetIsCancelled(bool aIsCancelled) {
-  mIsCancelled = aIsCancelled;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsPrintSettings::GetSaveOnCancel(bool* aSaveOnCancel) {
-  *aSaveOnCancel = mSaveOnCancel;
   return NS_OK;
 }
 
@@ -912,13 +857,10 @@ nsPrintSettings& nsPrintSettings::operator=(const nsPrintSettings& rhs) {
   mPrintBGImages = rhs.mPrintBGImages;
   mTitle = rhs.mTitle;
   mURL = rhs.mURL;
-  mIsCancelled = rhs.mIsCancelled;
-  mSaveOnCancel = rhs.mSaveOnCancel;
   mPrintSilent = rhs.mPrintSilent;
   mShrinkToFit = rhs.mShrinkToFit;
   mShowMarginGuides = rhs.mShowMarginGuides;
   mHonorPageRuleMargins = rhs.mHonorPageRuleMargins;
-  mIsPrintSelectionRBEnabled = rhs.mIsPrintSelectionRBEnabled;
   mPrintSelectionOnly = rhs.mPrintSelectionOnly;
   mPaperId = rhs.mPaperId;
   mPaperWidth = rhs.mPaperWidth;

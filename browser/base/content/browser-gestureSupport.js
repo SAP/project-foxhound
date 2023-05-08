@@ -677,24 +677,14 @@ var gHistorySwipeAnimation = {
    *        Whether we're dealing with a vertical swipe or not.
    */
   startAnimation: function HSA_startAnimation() {
-    // If the animation is running but we are in the process of stopping it
-    // then we want to reset and restart the animation.
-    if (this.isAnimationRunning() && !this._isStoppingAnimation) {
-      return;
-    }
-
-    let createBoxes = true;
-    if (this._isStoppingAnimation) {
-      // Boxes already exist, just need to reset them. Reset the transition that was in the process of stopping.
-      this._prevBox.style.transition = "";
-      this._nextBox.style.transition = "";
-      createBoxes = false;
-    }
-
+    // old boxes can still be around (if completing fade out for example), we
+    // always want to remove them and recreate them because they can be
+    // attached to an old browser stack that's no longer in use.
+    this._removeBoxes();
     this._isStoppingAnimation = false;
     this._canGoBack = this.canGoBack();
     this._canGoForward = this.canGoForward();
-    if (createBoxes && this.active) {
+    if (this.active) {
       this._addBoxes();
     }
     this.updateAnimation(0);
@@ -704,15 +694,26 @@ var gHistorySwipeAnimation = {
    * Stops the swipe animation.
    */
   stopAnimation: function HSA_stopAnimation() {
-    if (!this.isAnimationRunning()) {
+    if (!this.isAnimationRunning() || this._isStoppingAnimation) {
       return;
     }
 
-    let box = this._prevBox.style.opacity > 0 ? this._prevBox : this._nextBox;
-    if (box.style.opacity > 0) {
+    let prevOpacity = window
+      .getComputedStyle(this._prevBox)
+      .getPropertyValue("opacity");
+    let nextOpacity = window
+      .getComputedStyle(this._nextBox)
+      .getPropertyValue("opacity");
+    let box = null;
+    if (prevOpacity > 0) {
+      box = this._prevBox;
+    } else if (nextOpacity > 0) {
+      box = this._nextBox;
+    }
+    if (box != null) {
       this._isStoppingAnimation = true;
-      box.style.transition = "opacity 0.2s cubic-bezier(.07,.95,0,1)";
-      box.addEventListener("transitionend", this._completeFadeOut);
+      box.style.transition = "opacity 0.35s cubic-bezier(.25,.1,0.25,1)";
+      box.addEventListener("transitionend", this, true);
       box.style.opacity = 0;
     } else {
       this._isStoppingAnimation = false;
@@ -796,6 +797,14 @@ var gHistorySwipeAnimation = {
    */
   _isSupported: function HSA__isSupported() {
     return window.matchMedia("(-moz-swipe-animation-enabled)").matches;
+  },
+
+  handleEvent: function HSA_handleEvent(aEvent) {
+    switch (aEvent.type) {
+      case "transitionend":
+        this._completeFadeOut();
+        break;
+    }
   },
 
   _completeFadeOut: function HSA__completeFadeOut(aEvent) {

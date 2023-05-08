@@ -5,11 +5,15 @@
 /* import-globals-from ../head.js */
 
 /**
- * This second test will focus on removed-original.js which is an original source mapped file.
+ * This second test will focus on v1/removed-original.js which is an original source mapped file.
  * This source is mapped to replaced-bundle.js.
- * This original source is removed and another original file: new-original.js
+ * In the first reload (v2), this original source is removed and another original file: v2/new-original.js
  * will replace the content of the removed-original.js in the replaced-bundle.js generated file.
- * And finally, everything is removed, both original and generated source.
+ * And finally, in the second reload (v3) everything is removed, both original and generated source.
+ *
+ * Note that great care is done to ensure that new-original replaces removed-original with the
+ * exact same breakable lines and columns. So that the breakpoint isn't simply removed
+ * because the location is no longer breakable.
  */
 
 "use strict";
@@ -35,7 +39,14 @@ addIntegrationTask(async function testReloadingRemovedOriginalSources(
   assertPausedAtSourceAndLine(dbg, replacedSource.id, 4);
   assertTextContentOnLine(dbg, 4, 'console.log("Removed original");');
   await assertBreakpoint(dbg, 4);
+
   is(dbg.selectors.getBreakpointCount(), 1, "One breakpoint exists");
+  is(
+    dbg.client.getServerBreakpointsList().length,
+    1,
+    "One breakpoint exists on the server"
+  );
+
   let breakpoint = dbg.selectors.getBreakpointsList()[0];
   is(breakpoint.location.sourceUrl, replacedSource.url);
   is(breakpoint.location.line, 4);
@@ -53,7 +64,7 @@ addIntegrationTask(async function testReloadingRemovedOriginalSources(
   );
   const syncBp = waitForDispatch(dbg.store, "SET_BREAKPOINT");
   testServer.switchToNextVersion();
-  await reload(dbg);
+  await reload(dbg, "new-original.js");
   await syncBp;
 
   // Assert the new breakpoint being created after reload
@@ -65,7 +76,14 @@ addIntegrationTask(async function testReloadingRemovedOriginalSources(
   assertPausedAtSourceAndLine(dbg, newSource.id, 4);
   assertTextContentOnLine(dbg, 4, 'console.log("New original");');
   await assertBreakpoint(dbg, 4);
+
   is(dbg.selectors.getBreakpointCount(), 1, "One breakpoint exists");
+  is(
+    dbg.client.getServerBreakpointsList().length,
+    1,
+    "One breakpoint exists on the server"
+  );
+
   breakpoint = dbg.selectors.getBreakpointsList()[0];
   is(breakpoint.location.sourceUrl, newSource.url);
   is(breakpoint.location.line, 4);
@@ -86,7 +104,6 @@ addIntegrationTask(async function testReloadingRemovedOriginalSources(
 
   // Let some time for breakpoint syncing to be buggy and recreated unexpected breakpoint
   await wait(1000);
-
   info("Assert that sources and breakpoints are gone and we aren't paused");
   ok(
     !sourceExists(dbg, "removed-original.js"),
@@ -99,4 +116,11 @@ addIntegrationTask(async function testReloadingRemovedOriginalSources(
   );
   assertNotPaused(dbg);
   is(dbg.selectors.getBreakpointCount(), 0, "We no longer have any breakpoint");
+  // The breakpoint for the removed source still exists, atm this difficult to fix
+  // as the frontend never loads the source.
+  is(
+    dbg.client.getServerBreakpointsList().length,
+    1,
+    "One breakpoint still exists on the server"
+  );
 });

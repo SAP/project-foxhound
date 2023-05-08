@@ -668,7 +668,7 @@ inline const char* XPCJSContext::GetStringName(unsigned index) const {
 
 class MOZ_STACK_CLASS XPCCallContext final {
  public:
-  enum { NO_ARGS = (unsigned)-1 };
+  enum : unsigned { NO_ARGS = (unsigned)-1 };
 
   explicit XPCCallContext(JSContext* cx, JS::HandleObject obj = nullptr,
                           JS::HandleObject funobj = nullptr,
@@ -2255,9 +2255,7 @@ struct GlobalProperties {
   bool WebSocket : 1;
   bool Window : 1;
   bool XMLSerializer : 1;
-#ifdef MOZ_DOM_STREAMS
   bool ReadableStream : 1;
-#endif
 
   // Ad-hoc property names we implement.
   bool atob : 1;

@@ -587,14 +587,14 @@ void CodeGenerator::visitSoftDivI(LSoftDivI* ins) {
 
   if (gen->compilingWasm()) {
     masm.Push(InstanceReg);
-    int32_t framePushedAfterTls = masm.framePushed();
+    int32_t framePushedAfterInstance = masm.framePushed();
     masm.setupWasmABICall();
     masm.passABIArg(lhs);
     masm.passABIArg(rhs);
-    int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+    int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
     masm.callWithABI(mir->bytecodeOffset(),
                      wasm::SymbolicAddress::aeabi_idivmod,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
     masm.Pop(InstanceReg);
   } else {
     using Fn = int64_t (*)(int, int);
@@ -777,14 +777,14 @@ void CodeGenerator::visitSoftModI(LSoftModI* ins) {
 
   if (gen->compilingWasm()) {
     masm.Push(InstanceReg);
-    int32_t framePushedAfterTls = masm.framePushed();
+    int32_t framePushedAfterInstance = masm.framePushed();
     masm.setupWasmABICall();
     masm.passABIArg(lhs);
     masm.passABIArg(rhs);
-    int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+    int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
     masm.callWithABI(mir->bytecodeOffset(),
                      wasm::SymbolicAddress::aeabi_idivmod,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
     masm.Pop(InstanceReg);
   } else {
     using Fn = int64_t (*)(int, int);
@@ -2022,7 +2022,7 @@ void CodeGenerator::visitAsmJSLoadHeap(LAsmJSLoadHeap* ins) {
 }
 
 void CodeGenerator::visitWasmHeapBase(LWasmHeapBase* ins) {
-  MOZ_ASSERT(ins->tlsPtr()->isBogus());
+  MOZ_ASSERT(ins->instance()->isBogus());
   masm.movePtr(HeapReg, ToRegister(ins->output()));
 }
 
@@ -2058,11 +2058,10 @@ void CodeGenerator::visitWasmAddOffset(LWasmAddOffset* lir) {
 
   ScratchRegisterScope scratch(masm);
   masm.ma_add(base, Imm32(mir->offset()), out, scratch, SetCC);
-
-  Label ok;
-  masm.ma_b(&ok, Assembler::CarryClear);
-  masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
-  masm.bind(&ok);
+  OutOfLineAbortingWasmTrap* ool = new (alloc())
+      OutOfLineAbortingWasmTrap(mir->bytecodeOffset(), wasm::Trap::OutOfBounds);
+  addOutOfLineCode(ool, mir);
+  masm.ma_b(ool->entry(), Assembler::CarrySet);
 }
 
 void CodeGenerator::visitWasmAddOffset64(LWasmAddOffset64* lir) {
@@ -2074,11 +2073,10 @@ void CodeGenerator::visitWasmAddOffset64(LWasmAddOffset64* lir) {
   ScratchRegisterScope scratch(masm);
   masm.ma_add(base.low, Imm32(mir->offset()), out.low, scratch, SetCC);
   masm.ma_adc(base.high, Imm32(mir->offset() >> 32), out.high, scratch, SetCC);
-
-  Label ok;
-  masm.ma_b(&ok, Assembler::CarryClear);
-  masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
-  masm.bind(&ok);
+  OutOfLineAbortingWasmTrap* ool = new (alloc())
+      OutOfLineAbortingWasmTrap(mir->bytecodeOffset(), wasm::Trap::OutOfBounds);
+  addOutOfLineCode(ool, mir);
+  masm.ma_b(ool->entry(), Assembler::CarrySet);
 }
 
 template <typename T>
@@ -2380,15 +2378,15 @@ void CodeGenerator::visitSoftUDivOrMod(LSoftUDivOrMod* ins) {
 
   if (gen->compilingWasm()) {
     masm.Push(InstanceReg);
-    int32_t framePushedAfterTls = masm.framePushed();
+    int32_t framePushedAfterInstance = masm.framePushed();
     masm.setupWasmABICall();
     masm.passABIArg(lhs);
     masm.passABIArg(rhs);
     wasm::BytecodeOffset bytecodeOffset =
         (div ? div->bytecodeOffset() : mod->bytecodeOffset());
-    int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+    int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
     masm.callWithABI(bytecodeOffset, wasm::SymbolicAddress::aeabi_uidivmod,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
     masm.Pop(InstanceReg);
   } else {
     using Fn = int64_t (*)(int, int);
@@ -2486,9 +2484,9 @@ void CodeGenerator::visitWasmTruncateToInt32(LWasmTruncateToInt32* lir) {
 
 void CodeGenerator::visitWasmTruncateToInt64(LWasmTruncateToInt64* lir) {
   MOZ_ASSERT(gen->compilingWasm());
-  MOZ_ASSERT(ToRegister(lir->tls()) == InstanceReg);
+  MOZ_ASSERT(ToRegister(lir->instance()) == InstanceReg);
   masm.Push(InstanceReg);
-  int32_t framePushedAfterTls = masm.framePushed();
+  int32_t framePushedAfterInstance = masm.framePushed();
 
   FloatRegister input = ToFloatRegister(lir->input());
   FloatRegister inputDouble = input;
@@ -2515,26 +2513,26 @@ void CodeGenerator::visitWasmTruncateToInt64(LWasmTruncateToInt64* lir) {
   masm.setupWasmABICall();
   masm.passABIArg(inputDouble, MoveOp::DOUBLE);
 
-  int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+  int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
   if (lir->mir()->isSaturating()) {
     if (lir->mir()->isUnsigned()) {
       masm.callWithABI(mir->bytecodeOffset(),
                        wasm::SymbolicAddress::SaturatingTruncateDoubleToUint64,
-                       mozilla::Some(tlsOffset));
+                       mozilla::Some(instanceOffset));
     } else {
       masm.callWithABI(mir->bytecodeOffset(),
                        wasm::SymbolicAddress::SaturatingTruncateDoubleToInt64,
-                       mozilla::Some(tlsOffset));
+                       mozilla::Some(instanceOffset));
     }
   } else {
     if (lir->mir()->isUnsigned()) {
       masm.callWithABI(mir->bytecodeOffset(),
                        wasm::SymbolicAddress::TruncateDoubleToUint64,
-                       mozilla::Some(tlsOffset));
+                       mozilla::Some(instanceOffset));
     } else {
       masm.callWithABI(mir->bytecodeOffset(),
                        wasm::SymbolicAddress::TruncateDoubleToInt64,
-                       mozilla::Some(tlsOffset));
+                       mozilla::Some(instanceOffset));
     }
   }
 
@@ -2573,10 +2571,10 @@ void CodeGeneratorARM::visitOutOfLineWasmTruncateCheck(
 void CodeGenerator::visitInt64ToFloatingPointCall(
     LInt64ToFloatingPointCall* lir) {
   MOZ_ASSERT(gen->compilingWasm());
-  MOZ_ASSERT(ToRegister(lir->getOperand(LInt64ToFloatingPointCall::Tls)) ==
+  MOZ_ASSERT(ToRegister(lir->getOperand(LInt64ToFloatingPointCall::Instance)) ==
              InstanceReg);
   masm.Push(InstanceReg);
-  int32_t framePushedAfterTls = masm.framePushed();
+  int32_t framePushedAfterInstance = masm.framePushed();
 
   Register64 input = ToRegister64(lir->getInt64Operand(0));
 
@@ -2595,10 +2593,10 @@ void CodeGenerator::visitInt64ToFloatingPointCall(
           : (isUnsigned ? wasm::SymbolicAddress::Uint64ToDouble
                         : wasm::SymbolicAddress::Int64ToDouble);
 
-  int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+  int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
   MoveOp::Type result =
       toType == MIRType::Float32 ? MoveOp::FLOAT32 : MoveOp::DOUBLE;
-  masm.callWithABI(mir->bytecodeOffset(), callee, mozilla::Some(tlsOffset),
+  masm.callWithABI(mir->bytecodeOffset(), callee, mozilla::Some(instanceOffset),
                    result);
 
   DebugOnly<FloatRegister> output(ToFloatRegister(lir->output()));
@@ -2715,9 +2713,10 @@ void CodeGenerator::visitWasmWrapU32Index(LWasmWrapU32Index* lir) {
 
 void CodeGenerator::visitDivOrModI64(LDivOrModI64* lir) {
   MOZ_ASSERT(gen->compilingWasm());
-  MOZ_ASSERT(ToRegister(lir->getOperand(LDivOrModI64::Tls)) == InstanceReg);
+  MOZ_ASSERT(ToRegister(lir->getOperand(LDivOrModI64::Instance)) ==
+             InstanceReg);
   masm.Push(InstanceReg);
-  int32_t framePushedAfterTls = masm.framePushed();
+  int32_t framePushedAfterInstance = masm.framePushed();
 
   Register64 lhs = ToRegister64(lir->getInt64Operand(LDivOrModI64::Lhs));
   Register64 rhs = ToRegister64(lir->getInt64Operand(LDivOrModI64::Rhs));
@@ -2759,13 +2758,13 @@ void CodeGenerator::visitDivOrModI64(LDivOrModI64* lir) {
   masm.passABIArg(rhs.high);
   masm.passABIArg(rhs.low);
 
-  int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+  int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
   if (mir->isWasmBuiltinModI64()) {
     masm.callWithABI(lir->bytecodeOffset(), wasm::SymbolicAddress::ModI64,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
   } else {
     masm.callWithABI(lir->bytecodeOffset(), wasm::SymbolicAddress::DivI64,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
   }
 
   MOZ_ASSERT(ReturnReg64 == output);
@@ -2776,9 +2775,10 @@ void CodeGenerator::visitDivOrModI64(LDivOrModI64* lir) {
 
 void CodeGenerator::visitUDivOrModI64(LUDivOrModI64* lir) {
   MOZ_ASSERT(gen->compilingWasm());
-  MOZ_ASSERT(ToRegister(lir->getOperand(LDivOrModI64::Tls)) == InstanceReg);
+  MOZ_ASSERT(ToRegister(lir->getOperand(LDivOrModI64::Instance)) ==
+             InstanceReg);
   masm.Push(InstanceReg);
-  int32_t framePushedAfterTls = masm.framePushed();
+  int32_t framePushedAfterInstance = masm.framePushed();
 
   Register64 lhs = ToRegister64(lir->getInt64Operand(LDivOrModI64::Lhs));
   Register64 rhs = ToRegister64(lir->getInt64Operand(LDivOrModI64::Rhs));
@@ -2802,13 +2802,13 @@ void CodeGenerator::visitUDivOrModI64(LUDivOrModI64* lir) {
   masm.passABIArg(rhs.low);
 
   MDefinition* mir = lir->mir();
-  int32_t tlsOffset = masm.framePushed() - framePushedAfterTls;
+  int32_t instanceOffset = masm.framePushed() - framePushedAfterInstance;
   if (mir->isWasmBuiltinModI64()) {
     masm.callWithABI(lir->bytecodeOffset(), wasm::SymbolicAddress::UModI64,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
   } else {
     masm.callWithABI(lir->bytecodeOffset(), wasm::SymbolicAddress::UDivI64,
-                     mozilla::Some(tlsOffset));
+                     mozilla::Some(instanceOffset));
   }
   masm.Pop(InstanceReg);
 }

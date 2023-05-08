@@ -261,7 +261,13 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PushSubscriptionOptions" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ReadableByteStreamController",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "ReadableStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ReadableStreamBYOBReader",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ReadableStreamBYOBRequest",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ReadableStreamDefaultController",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -277,6 +283,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Response",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Scheduler", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "ServiceWorker",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ServiceWorkerGlobalScope",
@@ -287,9 +295,19 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "SubtleCrypto",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TaskController", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TaskPriorityChangeEvent", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TaskSignal", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextDecoder",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextEncoder",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TransformStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TransformStreamDefaultController",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "URL",
   // IMPORTANT: Do not change this list without review from a DOM peer!

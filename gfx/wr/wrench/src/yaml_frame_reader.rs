@@ -1349,6 +1349,9 @@ impl YamlFrameReader {
                 item
             ),
         };
+        let color = item["color"]
+            .as_colorf()
+            .unwrap_or_else(|| ColorF::WHITE);
         let stretch_size = item["stretch-size"].as_size();
         let tile_spacing = item["tile-spacing"].as_size();
         if stretch_size.is_none() && tile_spacing.is_none() {
@@ -1358,7 +1361,7 @@ impl YamlFrameReader {
                 rendering,
                 alpha_type,
                 image_key,
-                ColorF::WHITE,
+                color,
            );
         } else {
             dl.push_repeating_image(
@@ -1369,7 +1372,7 @@ impl YamlFrameReader {
                 rendering,
                 alpha_type,
                 image_key,
-                ColorF::WHITE,
+                color,
            );
         }
     }
@@ -2024,8 +2027,8 @@ impl YamlFrameReader {
         let raster_space = yaml["raster-space"]
             .as_raster_space()
             .unwrap_or(RasterSpace::Screen);
-        let is_backdrop_root = yaml["backdrop-root"].as_bool().unwrap_or(false);
         let is_blend_container = yaml["blend-container"].as_bool().unwrap_or(false);
+        let wraps_backdrop_filter = yaml["wraps-backdrop-filter"].as_bool().unwrap_or(false);
 
         if is_root {
             if let Some(vector) = yaml["scroll-offset"].as_vector() {
@@ -2045,8 +2048,8 @@ impl YamlFrameReader {
         let filter_primitives = yaml["filter-primitives"].as_vec_filter_primitive().unwrap_or_default();
 
         let mut flags = StackingContextFlags::empty();
-        flags.set(StackingContextFlags::IS_BACKDROP_ROOT, is_backdrop_root);
         flags.set(StackingContextFlags::IS_BLEND_CONTAINER, is_blend_container);
+        flags.set(StackingContextFlags::WRAPS_BACKDROP_FILTER, wraps_backdrop_filter);
 
         dl.push_stacking_context(
             bounds.min,

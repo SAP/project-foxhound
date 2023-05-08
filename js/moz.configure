@@ -202,8 +202,8 @@ def simulator(jit_enabled, simulator_enabled, target):
             die("The %s simulator only works on x86." % sim_cpu)
 
     if sim_cpu in ("arm64", "mips64", "loong64"):
-        if target.cpu != "x86_64":
-            die("The %s simulator only works on x86-64." % sim_cpu)
+        if target.cpu != "x86_64" and target.cpu != "aarch64":
+            die("The %s simulator only works on x86-64 or arm64." % sim_cpu)
 
     return namespace(**{sim_cpu: True})
 
@@ -833,6 +833,30 @@ def wasm_simd(value, jit_enabled, simulator, cranelift_enabled, target):
 set_config("ENABLE_WASM_SIMD", wasm_simd)
 set_define("ENABLE_WASM_SIMD", wasm_simd)
 
+# Whether to check for field changes in WebAssembly serialization
+#
+# See the comment for 'WASM_VERIFY_SERIALIZATION_FOR_SIZE' in WasmSerialize.cpp
+# for more background.
+# =====================================================================
+
+
+@depends(target, c_compiler, moz_debug, milestone)
+def wasm_verify_serialization_for_size(target, c_compiler, debug, milestone):
+    if (
+        debug == True
+        and target.kernel == "Linux"
+        and target.cpu == "x86_64"
+        and c_compiler
+        and c_compiler.type == "clang"
+        and milestone.is_nightly
+    ):
+        return True
+    return
+
+
+set_define(
+    "ENABLE_WASM_VERIFY_SERIALIZATION_FOR_SIZE", wasm_verify_serialization_for_size
+)
 
 # Support for Intel AVX instruction.
 #
@@ -841,8 +865,8 @@ set_define("ENABLE_WASM_SIMD", wasm_simd)
 # =====================================================
 
 
-@depends(milestone.is_nightly, "--enable-wasm-simd", "--enable-simulator", target)
-def default_wasm_avx(is_nightly, wasm_simd_enabled, simulator, target):
+@depends("--enable-wasm-simd", "--enable-simulator", target)
+def default_wasm_avx(wasm_simd_enabled, simulator, target):
     if not wasm_simd_enabled:
         return
 
@@ -850,7 +874,7 @@ def default_wasm_avx(is_nightly, wasm_simd_enabled, simulator, target):
         return
 
     if target.cpu in ("x86_64", "x86"):
-        return is_nightly
+        return True
 
 
 option(
@@ -1104,7 +1128,7 @@ set_define(
 # ======================================================
 system_lib_option("--with-system-icu", help="Use system ICU")
 
-system_icu = pkg_check_modules("MOZ_ICU", "icu-i18n >= 70.1", when="--with-system-icu")
+system_icu = pkg_check_modules("MOZ_ICU", "icu-i18n >= 71.1", when="--with-system-icu")
 
 
 @depends("--with-system-icu")

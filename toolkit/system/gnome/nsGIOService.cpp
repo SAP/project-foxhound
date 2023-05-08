@@ -6,6 +6,7 @@
 #include "nsGIOService.h"
 #include "nsString.h"
 #include "nsIURI.h"
+#include "nsIFile.h"
 #include "nsTArray.h"
 #include "nsStringEnumerator.h"
 #include "nsIMIMEInfo.h"
@@ -22,8 +23,7 @@
 #include <gio/gio.h>
 #include <gtk/gtk.h>
 #ifdef MOZ_ENABLE_DBUS
-#  include <dbus/dbus-glib.h>
-#  include <dbus/dbus-glib-lowlevel.h>
+#  include "mozilla/widget/AsyncDBus.h"
 #endif
 
 using namespace mozilla;
@@ -213,6 +213,17 @@ nsGIOMimeApp::Equals(nsIHandlerApp* aHandlerApp, bool* _retval) {
   return NS_OK;
 }
 
+static RefPtr<GAppLaunchContext> GetLaunchContext() {
+  RefPtr<GAppLaunchContext> context = dont_AddRef(g_app_launch_context_new());
+  // Unset this before launching third-party MIME handlers. Otherwise, if
+  // Thunderbird sets this in its startup script (as it does in Debian and
+  // Fedora), and Firefox does not set this in its startup script (it doesn't in
+  // Debian), then Firefox will think it is part of Thunderbird and try to make
+  // Thunderbird the default browser. See bug 1494436.
+  g_app_launch_context_unsetenv(context, "MOZ_APP_LAUNCHER");
+  return context;
+}
+
 NS_IMETHODIMP
 nsGIOMimeApp::LaunchWithURI(nsIURI* aUri,
                             mozilla::dom::BrowsingContext* aBrowsingContext) {
@@ -223,9 +234,8 @@ nsGIOMimeApp::LaunchWithURI(nsIURI* aUri,
   uris.data = const_cast<char*>(spec.get());
 
   GUniquePtr<GError> error;
-  gboolean result =
-      g_app_info_launch_uris(mApp, &uris, nullptr, getter_Transfers(error));
-
+  gboolean result = g_app_info_launch_uris(
+      mApp, &uris, GetLaunchContext().get(), getter_Transfers(error));
   if (!result) {
     g_warning("Cannot launch application: %s", error->message);
     return NS_ERROR_FAILURE;
@@ -521,13 +531,11 @@ nsGIOService::GetDescriptionForMimeType(const nsACString& aMimeType,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsGIOService::ShowURI(nsIURI* aURI) {
+nsresult nsGIOService::ShowURI(nsIURI* aURI) {
   nsAutoCString spec;
-  nsresult rv = aURI->GetSpec(spec);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(aURI->GetSpec(spec));
   GUniquePtr<GError> error;
-  if (!g_app_info_launch_default_for_uri(spec.get(), nullptr,
+  if (!g_app_info_launch_default_for_uri(spec.get(), GetLaunchContext().get(),
                                          getter_Transfers(error))) {
     g_warning("Could not launch default application for URI: %s",
               error->message);
@@ -536,13 +544,12 @@ nsGIOService::ShowURI(nsIURI* aURI) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsGIOService::ShowURIForInput(const nsACString& aUri) {
+static nsresult LaunchPath(const nsACString& aPath) {
   RefPtr<GFile> file = dont_AddRef(
-      g_file_new_for_commandline_arg(PromiseFlatCString(aUri).get()));
+      g_file_new_for_commandline_arg(PromiseFlatCString(aPath).get()));
   GUniquePtr<char> spec(g_file_get_uri(file));
   GUniquePtr<GError> error;
-  g_app_info_launch_default_for_uri(spec.get(), nullptr,
+  g_app_info_launch_default_for_uri(spec.get(), GetLaunchContext().get(),
                                     getter_Transfers(error));
   if (error) {
     g_warning("Cannot launch default application: %s", error->message);
@@ -551,27 +558,35 @@ nsGIOService::ShowURIForInput(const nsACString& aUri) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsGIOService::OrgFreedesktopFileManager1ShowItems(const nsACString& aPath) {
-#ifndef MOZ_ENABLE_DBUS
-  return NS_ERROR_FAILURE;
-#else
-  GUniquePtr<GError> error;
-  RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
-      G_BUS_TYPE_SESSION,
-      GDBusProxyFlags(G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS |
-                      G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES),
-      nullptr, "org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
-      "org.freedesktop.FileManager1", nullptr, getter_Transfers(error)));
-  if (!proxy) {
-    g_printerr("Failed to create DBUS proxy for FileManager1: %s\n",
-               error->message);
+nsresult nsGIOService::LaunchFile(const nsACString& aPath) {
+  return LaunchPath(aPath);
+}
+
+static nsresult RevealDirectory(nsIFile* aFile, bool aForce) {
+  nsAutoCString path;
+  if (bool isDir; NS_SUCCEEDED(aFile->IsDirectory(&isDir)) && isDir) {
+    MOZ_TRY(aFile->GetNativePath(path));
+    return LaunchPath(path);
+  }
+
+  if (!aForce) {
     return NS_ERROR_FAILURE;
   }
 
-  GUniquePtr<gchar> uri(
-      g_filename_to_uri(PromiseFlatCString(aPath).get(), nullptr, nullptr));
+  nsCOMPtr<nsIFile> parentDir;
+  MOZ_TRY(aFile->GetParent(getter_AddRefs(parentDir)));
+  MOZ_TRY(parentDir->GetNativePath(path));
+  return LaunchPath(path);
+}
+
+#ifdef MOZ_ENABLE_DBUS
+static nsresult RevealFileViaDBusWithProxy(GDBusProxy* aProxy, nsIFile* aFile) {
+  nsAutoCString path;
+  MOZ_TRY(aFile->GetNativePath(path));
+
+  GUniquePtr<gchar> uri(g_filename_to_uri(path.get(), nullptr, nullptr));
   if (!uri) {
+    RevealDirectory(aFile, /* aForce = */ true);
     return NS_ERROR_FAILURE;
   }
 
@@ -581,19 +596,52 @@ nsGIOService::OrgFreedesktopFileManager1ShowItems(const nsACString& aPath) {
 
   const int32_t timeout =
       StaticPrefs::widget_gtk_file_manager_show_items_timeout_ms();
-  ;
   const char* startupId = "";
-  RefPtr<GVariant> result = dont_AddRef(g_dbus_proxy_call_sync(
-      proxy, "ShowItems", g_variant_new("(ass)", &builder, startupId),
-      G_DBUS_CALL_FLAGS_NONE, timeout, nullptr, getter_Transfers(error)));
-
+  widget::DBusProxyCall(aProxy, "ShowItems",
+                        g_variant_new("(ass)", &builder, startupId),
+                        G_DBUS_CALL_FLAGS_NONE, timeout)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [](RefPtr<GVariant>&& aResult) {
+            // Do nothing, file is shown, we're done.
+          },
+          [file = RefPtr{aFile}](GUniquePtr<GError>&& aError) {
+            g_printerr("Failed to query file manager: %s\n", aError->message);
+            RevealDirectory(file, /* aForce = */ true);
+          });
   g_variant_builder_clear(&builder);
-  if (!result) {
-    g_printerr("Failed to query file manager: %s\n", error->message);
-    return NS_ERROR_FAILURE;
-  }
-
   return NS_OK;
+}
+
+static void RevealFileViaDBus(nsIFile* aFile) {
+  widget::CreateDBusProxyForBus(
+      G_BUS_TYPE_SESSION,
+      GDBusProxyFlags(G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS |
+                      G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES),
+      /* aInterfaceInfo = */ nullptr, "org.freedesktop.FileManager1",
+      "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1")
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [file = RefPtr{aFile}](RefPtr<GDBusProxy>&& aProxy) {
+            RevealFileViaDBusWithProxy(aProxy.get(), file);
+          },
+          [file = RefPtr{aFile}](GUniquePtr<GError>&& aError) {
+            g_printerr("Failed to create DBUS proxy for FileManager1: %s\n",
+                       aError->message);
+            RevealDirectory(file, /* aForce = */ true);
+          });
+}
+#endif
+
+nsresult nsGIOService::RevealFile(nsIFile* aFile) {
+#ifdef MOZ_ENABLE_DBUS
+  if (NS_SUCCEEDED(RevealDirectory(aFile, /* aForce = */ false))) {
+    return NS_OK;
+  }
+  RevealFileViaDBus(aFile);
+  return NS_OK;
+#else
+  return RevealDirectory(aFile, /* aForce = */ true);
 #endif
 }
 

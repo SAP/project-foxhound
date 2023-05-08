@@ -356,8 +356,8 @@ function rectRelativeToScreen(aElement) {
   return {
     x: (targetWindow.mozInnerScreenX + rect.left) * scale,
     y: (targetWindow.mozInnerScreenY + rect.top) * scale,
-    w: rect.width * scale,
-    h: rect.height * scale,
+    width: rect.width * scale,
+    height: rect.height * scale,
   };
 }
 
@@ -462,11 +462,12 @@ async function synthesizeNativePanGestureEvent(
   return true;
 }
 
-// Sends a native touchpad pan event.
+// Sends a native touchpad pan event and resolve the returned promise once the
+// request has been successfully made to the OS.
 // NOTE: This works only on Windows.
 // You can specify nsIDOMWindowUtils.PHASE_BEGIN, PHASE_UPDATE and PHASE_END
 // for |aPhase|.
-async function promiseNativeTouchpadPan(
+async function promiseNativeTouchpadPanEventAndWaitForObserver(
   aTarget,
   aX,
   aY,
@@ -476,7 +477,7 @@ async function promiseNativeTouchpadPan(
 ) {
   if (getPlatform() != "windows") {
     throw new Error(
-      `promiseNativeTouchpadPan doesn't work on ${getPlatform()}`
+      `promiseNativeTouchpadPanEventAndWaitForObserver doesn't work on ${getPlatform()}`
     );
   }
 
@@ -487,9 +488,54 @@ async function promiseNativeTouchpadPan(
   });
 
   const utils = utilsForTarget(aTarget);
-  utils.sendNativeTouchpadPan(aPhase, pt.x, pt.y, aDeltaX, aDeltaY, 0);
 
-  return promiseFrame();
+  return new Promise(resolve => {
+    var observer = {
+      observe(aSubject, aTopic, aData) {
+        if (aTopic == "touchpadpanevent") {
+          resolve();
+        }
+      },
+    };
+
+    utils.sendNativeTouchpadPan(
+      aPhase,
+      pt.x,
+      pt.y,
+      aDeltaX,
+      aDeltaY,
+      0,
+      observer
+    );
+  });
+}
+
+async function synthesizeSimpleGestureEvent(
+  aElement,
+  aType,
+  aX,
+  aY,
+  aDirection,
+  aDelta,
+  aModifiers,
+  aClickCount
+) {
+  let pt = await coordinatesRelativeToScreen({
+    offsetX: aX,
+    offsetY: aY,
+    target: aElement,
+  });
+
+  let utils = utilsForTarget(aElement);
+  utils.sendSimpleGestureEvent(
+    aType,
+    pt.x,
+    pt.y,
+    aDirection,
+    aDelta,
+    aModifiers,
+    aClickCount
+  );
 }
 
 // Synthesizes a native pan gesture event and resolve the returned promise once the
@@ -894,13 +940,13 @@ async function synthesizeNativePointerSequences(
   return true;
 }
 
-function synthesizeNativeTouchSequences(
+async function synthesizeNativeTouchSequences(
   aTarget,
   aPositions,
   aObserver = null,
   aTouchIds = [0]
 ) {
-  synthesizeNativePointerSequences(
+  await synthesizeNativePointerSequences(
     aTarget,
     "touch",
     aPositions,
@@ -909,7 +955,7 @@ function synthesizeNativeTouchSequences(
   );
 }
 
-function synthesizeNativePointerDrag(
+async function synthesizeNativePointerDrag(
   aTarget,
   aPointerType,
   aX,
@@ -942,7 +988,7 @@ function synthesizeNativePointerDrag(
 // Note that when calling this function you'll want to make sure that the pref
 // "apz.touch_start_tolerance" is set to 0, or some of the touchmove will get
 // consumed to overcome the panning threshold.
-function synthesizeNativeTouchDrag(
+async function synthesizeNativeTouchDrag(
   aTarget,
   aX,
   aY,
@@ -1378,7 +1424,7 @@ async function promiseNativeMouseDrag(
 // Synthesizes a native touch sequence of events corresponding to a pinch-zoom-in
 // at the given focus point. The focus point must be specified in CSS coordinates
 // relative to the document body.
-function pinchZoomInTouchSequence(focusX, focusY) {
+async function pinchZoomInTouchSequence(focusX, focusY) {
   // prettier-ignore
   var zoom_in = [
       [ { x: focusX - 25, y: focusY - 50 }, { x: focusX + 25, y: focusY + 50 } ],
@@ -1446,7 +1492,7 @@ async function pinchZoomInWithTouch(focusX, focusY) {
   let transformEndPromise = promiseTopic("APZ:TransformEnd");
 
   // Dispatch all the touch events
-  pinchZoomInTouchSequence(focusX, focusY);
+  await pinchZoomInTouchSequence(focusX, focusY);
 
   // Wait for TransformEnd to fire.
   await transformEndPromise;
@@ -1561,7 +1607,12 @@ async function synthesizeNativeTouchAndWaitForTransformEnd(
   let transformEndPromise = promiseTopic("APZ:TransformEnd");
 
   // Dispatch all the touch events
-  synthesizeNativeTouchSequences(document.body, touchSequence, null, touchIds);
+  await synthesizeNativeTouchSequences(
+    document.body,
+    touchSequence,
+    null,
+    touchIds
+  );
 
   // Wait for TransformEnd to fire.
   await transformEndPromise;
@@ -1608,19 +1659,19 @@ async function pinchZoomOutWithTouchAtCenter() {
 }
 
 // useTouchpad is only currently implemented on macOS
-function synthesizeDoubleTap(element, x, y, useTouchpad) {
+async function synthesizeDoubleTap(element, x, y, useTouchpad) {
   if (useTouchpad) {
-    synthesizeNativeTouchpadDoubleTap(element, x, y);
+    await synthesizeNativeTouchpadDoubleTap(element, x, y);
   } else {
-    synthesizeNativeTap(element, x, y);
-    synthesizeNativeTap(element, x, y);
+    await synthesizeNativeTap(element, x, y);
+    await synthesizeNativeTap(element, x, y);
   }
 }
 // useTouchpad is only currently implemented on macOS
 async function doubleTapOn(element, x, y, useTouchpad) {
   let transformEndPromise = promiseTransformEnd();
 
-  synthesizeDoubleTap(element, x, y, useTouchpad);
+  await synthesizeDoubleTap(element, x, y, useTouchpad);
 
   // Wait for the APZ:TransformEnd to fire
   await transformEndPromise;

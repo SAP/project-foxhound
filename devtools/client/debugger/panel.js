@@ -166,30 +166,20 @@ class DebuggerPanel {
     return this._unhighlight();
   }
 
-  getFrames() {
+  /**
+   * Return the Frame Actor ID of the currently selected frame,
+   * or null if the debugger isn't paused.
+   */
+  getSelectedFrameActorID() {
     const thread = this._selectors.getCurrentThread(this._getState());
-    const frames = this._selectors.getFrames(this._getState(), thread);
-
-    // Frames is null when the debugger is not paused.
-    if (!frames) {
-      return {
-        frames: [],
-        selected: -1,
-      };
-    }
-
     const selectedFrame = this._selectors.getSelectedFrame(
       this._getState(),
       thread
     );
-    const selected = frames.findIndex(frame => frame.id == selectedFrame.id);
-
-    frames.forEach(frame => {
-      frame.actor = frame.id;
-    });
-    const target = this._client.lookupTarget(thread);
-
-    return { frames, selected, target };
+    if (selectedFrame) {
+      return selectedFrame.id;
+    }
+    return null;
   }
 
   getMappedExpression(expression) {
@@ -283,6 +273,10 @@ class DebuggerPanel {
 
   getSource(sourceId) {
     return this._selectors.getSource(this._getState(), sourceId);
+  }
+
+  getLocationSource(location) {
+    return this._selectors.getLocationSource(this._getState(), location);
   }
 
   destroy() {

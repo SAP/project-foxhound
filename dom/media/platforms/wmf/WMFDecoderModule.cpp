@@ -84,7 +84,7 @@ static bool IsRemoteAcceleratedCompositor(
     return true;
   }
 
-  TextureFactoryIdentifier ident =
+  layers::TextureFactoryIdentifier ident =
       aKnowsCompositor->GetTextureFactoryIdentifier();
   return !aKnowsCompositor->UsingSoftwareWebRender() &&
          ident.mParentProcessType == GeckoProcessType_GPU;
@@ -142,7 +142,7 @@ void WMFDecoderModule::Init() {
         // E_FAIL should be logged by CreateMFTDecoder. Skipping those codes
         // will help to keep the logs readable.
         WmfDecoderModuleMarkerAndLog("WMFInit Decoder Failed",
-                                     "%s failed with code 0x%x",
+                                     "%s failed with code 0x%lx",
                                      StreamTypeToString(type), hr);
       }
     }
@@ -170,22 +170,41 @@ int WMFDecoderModule::GetNumDecoderThreads() {
 /* static */
 HRESULT WMFDecoderModule::CreateMFTDecoder(const WMFStreamType& aType,
                                            RefPtr<MFTDecoder>& aDecoder) {
+  // Do not expose any video decoder on utility process which is only for audio
+  // decoding.
+  if (XRE_IsUtilityProcess()) {
+    switch (aType) {
+      case WMFStreamType::H264:
+      case WMFStreamType::VP8:
+      case WMFStreamType::VP9:
+      case WMFStreamType::AV1:
+        return E_FAIL;
+      default:
+        break;
+    }
+  }
+
   switch (aType) {
     case WMFStreamType::H264:
       return aDecoder->Create(CLSID_CMSH264DecoderMFT);
     case WMFStreamType::VP8:
       static const uint32_t VP8_USABLE_BUILD = 16287;
       if (!IsWindowsBuildOrLater(VP8_USABLE_BUILD)) {
-        WmfDecoderModuleMarkerAndLog("WMFInit VP8 Failure",
+        WmfDecoderModuleMarkerAndLog("CreateMFTDecoder, VP8 Failure",
                                      "VP8 MFT requires Windows build %" PRId32
                                      " or later",
                                      VP8_USABLE_BUILD);
         return E_FAIL;
       }
+      if (!gfx::gfxVars::UseVP8HwDecode()) {
+        WmfDecoderModuleMarkerAndLog("CreateMFTDecoder, VP8 Failure",
+                                     "Gfx VP8 blocklist");
+        return E_FAIL;
+      }
       [[fallthrough]];
     case WMFStreamType::VP9:
       if (!sDXVAEnabled) {
-        WmfDecoderModuleMarkerAndLog("WMFInit VPx Disabled",
+        WmfDecoderModuleMarkerAndLog("CreateMFTDecoder, VPx Disabled",
                                      "%s MFT requires DXVA",
                                      StreamTypeToString(aType));
         return E_FAIL;
@@ -195,7 +214,7 @@ HRESULT WMFDecoderModule::CreateMFTDecoder(const WMFStreamType& aType,
         gfx::WMFVPXVideoCrashGuard guard;
         if (guard.Crashed()) {
           WmfDecoderModuleMarkerAndLog(
-              "WMFInit VPx Failure",
+              "CreateMFTDecoder, VPx Failure",
               "Will not use VPx MFT due to crash guard reporting a crash");
           return E_FAIL;
         }
@@ -208,7 +227,7 @@ HRESULT WMFDecoderModule::CreateMFTDecoder(const WMFStreamType& aType,
       // layers acceleration is setup. This prevents creating the AV1 decoder
       // twice.
       if (!sDXVAEnabled) {
-        WmfDecoderModuleMarkerAndLog("WMFInit AV1 Disabled",
+        WmfDecoderModuleMarkerAndLog("CreateMFTDecoder AV1 Disabled",
                                      "AV1 MFT requires DXVA");
         return E_FAIL;
       }
@@ -266,6 +285,20 @@ bool WMFDecoderModule::CanCreateMFTDecoder(const WMFStreamType& aType) {
       break;
   }
 
+  // Do not expose any video decoder on utility process which is only for audio
+  // decoding.
+  if (XRE_IsUtilityProcess()) {
+    switch (aType) {
+      case WMFStreamType::H264:
+      case WMFStreamType::VP8:
+      case WMFStreamType::VP9:
+      case WMFStreamType::AV1:
+        return false;
+      default:
+        break;
+    }
+  }
+
   return sSupportedTypes.contains(aType);
 }
 
@@ -296,14 +329,21 @@ WMFStreamType WMFDecoderModule::GetStreamTypeFromMimeType(
   return WMFStreamType::Unknown;
 }
 
-bool WMFDecoderModule::Supports(const SupportDecoderParams& aParams,
-                                DecoderDoctorDiagnostics* aDiagnostics) const {
+bool WMFDecoderModule::SupportsColorDepth(
+    gfx::ColorDepth aColorDepth, DecoderDoctorDiagnostics* aDiagnostics) const {
+  // Color depth support can be determined by creating DX decoders.
+  return true;
+}
+
+media::DecodeSupportSet WMFDecoderModule::Supports(
+    const SupportDecoderParams& aParams,
+    DecoderDoctorDiagnostics* aDiagnostics) const {
   // In GPU process, only support decoding if video. This only gives a hint of
   // what the GPU decoder *may* support. The actual check will occur in
   // CreateVideoDecoder.
   const auto& trackInfo = aParams.mConfig;
   if (XRE_IsGPUProcess() && !trackInfo.GetAsVideoInfo()) {
-    return false;
+    return media::DecodeSupport::Unsupported;
   }
 
   const auto* videoInfo = trackInfo.GetAsVideoInfo();
@@ -313,14 +353,21 @@ bool WMFDecoderModule::Supports(const SupportDecoderParams& aParams,
   // check.
   if (videoInfo && (!SupportsColorDepth(videoInfo->mColorDepth, aDiagnostics) ||
                     videoInfo->HasAlpha())) {
-    return false;
+    return media::DecodeSupport::Unsupported;
   }
 
   WMFStreamType type = GetStreamTypeFromMimeType(aParams.MimeType());
   if (type == WMFStreamType::Unknown) {
-    return false;
+    return media::DecodeSupport::Unsupported;
   }
-  return CanCreateMFTDecoder(type);
+
+  if (CanCreateMFTDecoder(type)) {
+    // TODO: Note that we do not yet distinguish between SW/HW decode support.
+    //       Will be done in bug 1754239.
+    return media::DecodeSupport::SoftwareDecode;
+  }
+
+  return media::DecodeSupport::Unsupported;
 }
 
 nsresult WMFDecoderModule::Startup() {
@@ -404,13 +451,23 @@ already_AddRefed<MediaDataDecoder> WMFDecoderModule::CreateAudioDecoder(
   return decoder.forget();
 }
 
-bool WMFDecoderModule::SupportsMimeType(
+media::DecodeSupportSet WMFDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   UniquePtr<TrackInfo> trackInfo = CreateTrackInfoWithMIMEType(aMimeType);
   if (!trackInfo) {
-    return false;
+    return media::DecodeSupport::Unsupported;
   }
-  return Supports(SupportDecoderParams(*trackInfo), aDiagnostics);
+  bool supports = Supports(SupportDecoderParams(*trackInfo), aDiagnostics) !=
+                  media::DecodeSupport::Unsupported;
+  MOZ_LOG(sPDMLog, LogLevel::Debug,
+          ("WMF decoder %s requested type '%s'",
+           supports ? "supports" : "rejects", aMimeType.BeginReading()));
+  if (!supports) {
+    return media::DecodeSupport::Unsupported;
+  }
+  // TODO: Note that we do not yet distinguish between SW/HW decode support.
+  //       Will be done in bug 1754239.
+  return media::DecodeSupport::SoftwareDecode;
 }
 
 }  // namespace mozilla

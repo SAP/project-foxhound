@@ -24,8 +24,7 @@ namespace JS {
 class CloneDataPolicy;
 }  // namespace JS
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ThreadSafeWorkerRef;
 class WorkerPrivate;
@@ -131,7 +130,7 @@ class PromiseWorkerProxy : public PromiseNativeHandler,
   typedef bool (*WriteCallbackOp)(JSContext* aCx,
                                   JSStructuredCloneWriter* aWorker,
                                   PromiseWorkerProxy* aProxy,
-                                  JS::HandleObject aObj);
+                                  JS::Handle<JSObject*> aObj);
 
   bool OnWritingThread() const override;
 
@@ -215,7 +214,6 @@ class PromiseWorkerProxy : public PromiseNativeHandler,
   // expose the lock via Lock().
   Mutex mCleanUpLock;
 };
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_PromiseWorkerProxy_h

@@ -89,6 +89,10 @@ void SandboxTestingChild::Bind(Endpoint<PSandboxTestingChild>&& aEndpoint) {
         RunTestsGenericUtility(this);
         break;
 
+      case ipc::SandboxingKind::UTILITY_AUDIO_DECODING:
+        RunTestsUtilityAudioDecoder(this);
+        break;
+
       default:
         MOZ_ASSERT(false, "Invalid SandboxingKind");
         break;
@@ -116,9 +120,9 @@ void SandboxTestingChild::Destroy() {
   sInstance = nullptr;
 }
 
-bool SandboxTestingChild::RecvShutDown() {
+ipc::IPCResult SandboxTestingChild::RecvShutDown() {
   Close();
-  return true;
+  return IPC_OK();
 }
 
 void SandboxTestingChild::ReportNoTests() {

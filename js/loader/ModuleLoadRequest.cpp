@@ -7,8 +7,10 @@
 #include "ModuleLoadRequest.h"
 
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/ScriptLoadContext.h"
 
 #include "LoadedScript.h"
+#include "LoadContextBase.h"
 #include "ModuleLoaderBase.h"
 
 namespace JS::loader {
@@ -55,16 +57,22 @@ VisitedURLSet* ModuleLoadRequest::NewVisitedSetForTopLevelImport(nsIURI* aURI) {
 ModuleLoadRequest::ModuleLoadRequest(
     nsIURI* aURI, ScriptFetchOptions* aFetchOptions,
     const mozilla::dom::SRIMetadata& aIntegrity, nsIURI* aReferrer,
-    mozilla::dom::ScriptLoadContext* aContext, bool aIsTopLevel,
-    bool aIsDynamicImport, ModuleLoaderBase* aLoader,
-    VisitedURLSet* aVisitedSet, ModuleLoadRequest* aRootModule)
+    LoadContextBase* aContext, bool aIsTopLevel, bool aIsDynamicImport,
+    ModuleLoaderBase* aLoader, VisitedURLSet* aVisitedSet,
+    ModuleLoadRequest* aRootModule)
     : ScriptLoadRequest(ScriptKind::eModule, aURI, aFetchOptions, aIntegrity,
                         aReferrer, aContext),
       mIsTopLevel(aIsTopLevel),
       mIsDynamicImport(aIsDynamicImport),
       mLoader(aLoader),
       mRootModule(aRootModule),
-      mVisitedSet(aVisitedSet) {}
+      mVisitedSet(aVisitedSet) {
+  MOZ_ASSERT(mLoader);
+}
+
+nsIGlobalObject* ModuleLoadRequest::GetGlobalObject() {
+  return mLoader->GetGlobalObject();
+}
 
 void ModuleLoadRequest::Cancel() {
   ScriptLoadRequest::Cancel();
@@ -104,9 +112,7 @@ void ModuleLoadRequest::ModuleLoaded() {
 
   LOG(("ScriptLoadRequest (%p): Module loaded", this));
 
-  nsIGlobalObject* global =
-      HasLoadContext() ? GetLoadContext()->GetWebExtGlobal() : nullptr;
-  mModuleScript = mLoader->GetFetchedModule(mURI, global);
+  mModuleScript = mLoader->GetFetchedModule(mURI);
   if (!mModuleScript || mModuleScript->HasParseError()) {
     ModuleErrored();
     return;
@@ -184,9 +190,7 @@ void ModuleLoadRequest::LoadFinished() {
     mLoader->RemoveDynamicImport(request);
   }
 
-  mLoader->ProcessLoadedModuleTree(request);
-
-  mLoader = nullptr;
+  mLoader->OnModuleLoadComplete(request);
 }
 
 void ModuleLoadRequest::ClearDynamicImport() {

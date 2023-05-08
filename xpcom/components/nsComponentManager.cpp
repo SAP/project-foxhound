@@ -178,14 +178,11 @@ class MOZ_STACK_CLASS EntryWrapper final {
    * side-steps the necessity of creating a nsIFactory instance for static
    * modules.
    */
-  nsresult CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                          void** aResult) {
+  nsresult CreateInstance(const nsIID& aIID, void** aResult) {
     if (mEntry.is<nsFactoryEntry*>()) {
-      return mEntry.as<nsFactoryEntry*>()->CreateInstance(aOuter, aIID,
-                                                          aResult);
+      return mEntry.as<nsFactoryEntry*>()->CreateInstance(aIID, aResult);
     }
-    return mEntry.as<const StaticModule*>()->CreateInstance(aOuter, aIID,
-                                                            aResult);
+    return mEntry.as<const StaticModule*>()->CreateInstance(aIID, aResult);
   }
 
   /**
@@ -226,7 +223,7 @@ class MOZ_STACK_CLASS EntryWrapper final {
 static already_AddRefed<nsIFile> GetLocationFromDirectoryService(
     const char* aProp) {
   nsCOMPtr<nsIProperties> directoryService;
-  nsDirectoryService::Create(nullptr, NS_GET_IID(nsIProperties),
+  nsDirectoryService::Create(NS_GET_IID(nsIProperties),
                              getter_AddRefs(directoryService));
 
   if (!directoryService) {
@@ -259,12 +256,7 @@ static already_AddRefed<nsIFile> CloneAndAppend(nsIFile* aBase,
 // nsComponentManagerImpl
 ////////////////////////////////////////////////////////////////////////////////
 
-nsresult nsComponentManagerImpl::Create(nsISupports* aOuter, REFNSIID aIID,
-                                        void** aResult) {
-  if (aOuter) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
+nsresult nsComponentManagerImpl::Create(REFNSIID aIID, void** aResult) {
   if (!gComponentManager) {
     return NS_ERROR_FAILURE;
   }
@@ -289,7 +281,6 @@ extern const mozilla::Module kWidgetModule;
 extern const mozilla::Module kLayoutModule;
 extern const mozilla::Module kKeyValueModule;
 extern const mozilla::Module kXREModule;
-extern const mozilla::Module kEmbeddingModule;
 
 static nsTArray<const mozilla::Module*>* sExtraStaticModules;
 
@@ -384,7 +375,6 @@ nsresult nsComponentManagerImpl::Init() {
   RegisterModule(&kLayoutModule);
   RegisterModule(&kKeyValueModule);
   RegisterModule(&kXREModule);
-  RegisterModule(&kEmbeddingModule);
 
   for (uint32_t i = 0; i < sExtraStaticModules->Length(); ++i) {
     RegisterModule((*sExtraStaticModules)[i]);
@@ -1033,9 +1023,8 @@ nsComponentManagerImpl::GetClassObjectByContractID(const char* aContractID,
  * released and not held onto for any longer.
  */
 NS_IMETHODIMP
-nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
-                                       nsISupports* aDelegate,
-                                       const nsIID& aIID, void** aResult) {
+nsComponentManagerImpl::CreateInstance(const nsCID& aClass, const nsIID& aIID,
+                                       void** aResult) {
   // test this first, since there's no point in creating a component during
   // shutdown -- whether it's available or not would depend on the order it
   // occurs in the list
@@ -1073,7 +1062,7 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
   nsresult rv;
   nsCOMPtr<nsIFactory> factory = entry->GetFactory();
   if (factory) {
-    rv = factory->CreateInstance(aDelegate, aIID, aResult);
+    rv = factory->CreateInstance(aIID, aResult);
     if (NS_SUCCEEDED(rv) && !*aResult) {
       NS_ERROR("Factory did not return an object but returned success!");
       rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
@@ -1108,7 +1097,6 @@ nsComponentManagerImpl::CreateInstance(const nsCID& aClass,
  */
 NS_IMETHODIMP
 nsComponentManagerImpl::CreateInstanceByContractID(const char* aContractID,
-                                                   nsISupports* aDelegate,
                                                    const nsIID& aIID,
                                                    void** aResult) {
   if (NS_WARN_IF(!aContractID)) {
@@ -1157,7 +1145,7 @@ nsComponentManagerImpl::CreateInstanceByContractID(const char* aContractID,
   nsresult rv;
   nsCOMPtr<nsIFactory> factory = entry->GetFactory();
   if (factory) {
-    rv = factory->CreateInstance(aDelegate, aIID, aResult);
+    rv = factory->CreateInstance(aIID, aResult);
     if (NS_SUCCEEDED(rv) && !*aResult) {
       NS_ERROR("Factory did not return an object but returned success!");
       rv = NS_ERROR_SERVICE_NOT_AVAILABLE;
@@ -1292,7 +1280,7 @@ nsresult nsComponentManagerImpl::GetServiceLocked(Maybe<MonitorAutoLock>& aLock,
     AUTO_PROFILER_MARKER_TEXT(
         "GetService", OTHER, MarkerStack::Capture(),
         nsDependentCString(nsIDToCString(aEntry.CID()).get()));
-    rv = aEntry.CreateInstance(nullptr, aIID, getter_AddRefs(service));
+    rv = aEntry.CreateInstance(aIID, getter_AddRefs(service));
   }
   if (NS_SUCCEEDED(rv) && !service) {
     NS_ERROR("Factory did not return an object but returned success");
@@ -1766,11 +1754,10 @@ already_AddRefed<nsIFactory> nsFactoryEntry::GetFactory() {
   return factory.forget();
 }
 
-nsresult nsFactoryEntry::CreateInstance(nsISupports* aOuter, const nsIID& aIID,
-                                        void** aResult) {
+nsresult nsFactoryEntry::CreateInstance(const nsIID& aIID, void** aResult) {
   nsCOMPtr<nsIFactory> factory = GetFactory();
   NS_ENSURE_TRUE(factory, NS_ERROR_FAILURE);
-  return factory->CreateInstance(aOuter, aIID, aResult);
+  return factory->CreateInstance(aIID, aResult);
 }
 
 size_t nsFactoryEntry::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {

@@ -497,6 +497,12 @@ void Scriptability::SetWindowAllowsScript(bool aAllowed) {
 }
 
 /* static */
+bool Scriptability::AllowedIfExists(JSObject* aScope) {
+  RealmPrivate* realmPrivate = RealmPrivate::Get(aScope);
+  return realmPrivate ? realmPrivate->scriptability.Allowed() : true;
+}
+
+/* static */
 Scriptability& Scriptability::Get(JSObject* aScope) {
   return RealmPrivate::Get(aScope)->scriptability;
 }
@@ -3013,19 +3019,6 @@ void XPCJSRuntime::Initialize(JSContext* cx) {
   JS_SetSetUseCounterCallback(cx, SetUseCounterCallback);
 
   js::SetWindowProxyClass(cx, &OuterWindowProxyClass);
-
-#ifndef MOZ_DOM_STREAMS
-  {
-    JS::AbortSignalIsAborted isAborted = [](JSObject* obj) {
-      dom::AbortSignal* domObj = dom::UnwrapDOMObject<dom::AbortSignal>(obj);
-      MOZ_ASSERT(domObj);
-      return domObj->Aborted();
-    };
-
-    JS::InitPipeToHandling(dom::AbortSignal_Binding::GetJSClass(), isAborted,
-                           cx);
-  }
-#endif
 
   JS::SetXrayJitInfo(&gXrayJitInfo);
   JS::SetProcessLargeAllocationFailureCallback(

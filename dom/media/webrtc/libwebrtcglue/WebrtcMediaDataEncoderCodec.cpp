@@ -106,8 +106,9 @@ static MediaDataEncoder::VPXSpecific::Complexity MapComplexity(
 
 WebrtcMediaDataEncoder::WebrtcMediaDataEncoder(
     const webrtc::SdpVideoFormat& aFormat)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
-                               "WebrtcMediaDataEncoder::mTaskQueue")),
+    : mTaskQueue(
+          TaskQueue::Create(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
+                            "WebrtcMediaDataEncoder::mTaskQueue")),
       mFactory(new PEMFactory()),
       mCallbackMutex("WebrtcMediaDataEncoderCodec encoded callback mutex"),
       mFormatParams(aFormat.parameters),
@@ -229,9 +230,8 @@ already_AddRefed<MediaDataEncoder> WebrtcMediaDataEncoder::CreateEncoder(
   }
   CreateEncoderParams params(
       mInfo, MediaDataEncoder::Usage::Realtime,
-      MakeRefPtr<TaskQueue>(
-          GetMediaThreadPool(MediaThreadType::PLATFORM_ENCODER),
-          "WebrtcMediaDataEncoder::mEncoder"),
+      TaskQueue::Create(GetMediaThreadPool(MediaThreadType::PLATFORM_ENCODER),
+                        "WebrtcMediaDataEncoder::mEncoder"),
       MediaDataEncoder::PixelFormat::YUV420P, aCodecSettings->maxFramerate,
       keyframeInterval, mBitrateAdjuster.GetTargetBitrateBps());
   switch (aCodecSettings->codecType) {
@@ -259,6 +259,15 @@ already_AddRefed<MediaDataEncoder> WebrtcMediaDataEncoder::CreateEncoder(
       MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Unsupported codec type");
   }
   return mFactory->CreateEncoder(params);
+}
+
+WebrtcVideoEncoder::EncoderInfo WebrtcMediaDataEncoder::GetEncoderInfo() const {
+  WebrtcVideoEncoder::EncoderInfo info;
+  info.supports_native_handle = false;
+  info.implementation_name = "MediaDataEncoder";
+  info.is_hardware_accelerated = false;
+  info.supports_simulcast = false;
+  return info;
 }
 
 int32_t WebrtcMediaDataEncoder::RegisterEncodeCompleteCallback(

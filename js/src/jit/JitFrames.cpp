@@ -25,6 +25,7 @@
 #include "jit/ScriptFromCalleeToken.h"
 #include "jit/Snapshots.h"
 #include "jit/VMFunctions.h"
+#include "js/Exception.h"
 #include "js/friend/DumpFunctions.h"  // js::DumpObject, js::DumpValue
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
@@ -93,6 +94,10 @@ static void CloseLiveIteratorIon(JSContext* cx,
   MOZ_ASSERT_IF(!isDestructuring, tn->stackDepth > 0);
   MOZ_ASSERT_IF(isDestructuring, tn->stackDepth > 1);
 
+  // Save any pending exception, because some recover operations call into
+  // AutoUnsafeCallWithABI functions, which don't allow pending exceptions.
+  JS::AutoSaveExceptionState savedExc(cx);
+
   SnapshotIterator si = frame.snapshotIterator();
 
   // Skip stack slots until we reach the iterator object on the stack. For
@@ -121,6 +126,9 @@ static void CloseLiveIteratorIon(JSContext* cx,
       return;
     }
   }
+
+  // Restore any pending exception before the closing the iterator.
+  savedExc.restore();
 
   if (cx->isExceptionPending()) {
     if (tn->kind() == TryNoteKind::ForIn) {
@@ -161,9 +169,9 @@ static bool ShouldBailoutForDebugger(JSContext* cx,
     return false;
   }
 
-  // Bail out if we're propagating a forced return, even if the realm is no
-  // longer a debuggee.
-  if (cx->isPropagatingForcedReturn()) {
+  // Bail out if we're propagating a forced return from an inlined frame,
+  // even if the realm is no longer a debuggee.
+  if (cx->isPropagatingForcedReturn() && frame.more()) {
     return true;
   }
 
@@ -183,6 +191,36 @@ static bool ShouldBailoutForDebugger(JSContext* cx,
   RematerializedFrame* rematFrame =
       act->lookupRematerializedFrame(frame.frame().fp(), frame.frameNo());
   return rematFrame && rematFrame->isDebuggee();
+}
+
+static void OnLeaveIonFrame(JSContext* cx, const InlineFrameIterator& frame,
+                            ResumeFromException* rfe) {
+  bool returnFromThisFrame =
+      cx->isPropagatingForcedReturn() || cx->isClosingGenerator();
+  if (!returnFromThisFrame) {
+    return;
+  }
+
+  JitActivation* act = cx->activation()->asJit();
+  RematerializedFrame* rematFrame =
+      act->getRematerializedFrame(cx, frame.frame(), frame.frameNo());
+  MOZ_ASSERT(!frame.more());
+
+  if (cx->isClosingGenerator()) {
+    HandleClosingGeneratorReturn(cx, rematFrame, /*frameOk=*/true);
+  } else {
+    cx->clearPropagatingForcedReturn();
+  }
+
+  Value& rval = rematFrame->returnValue();
+  MOZ_RELEASE_ASSERT(!rval.isMagic());
+
+  rfe->kind = ExceptionResumeKind::ForcedReturnIon;
+  rfe->framePointer = frame.frame().fp();
+  rfe->exception = rval;
+
+  act->removeIonFrameRecovery(frame.frame().jsFrame());
+  act->removeRematerializedFrame(frame.frame().fp());
 }
 
 static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
@@ -219,6 +257,11 @@ static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
         break;
 
       case TryNoteKind::Catch:
+        // If we're closing a generator, we have to skip catch blocks.
+        if (cx->isClosingGenerator()) {
+          break;
+        }
+
         if (cx->isExceptionPending()) {
           // Ion can compile try-catch, but bailing out to catch
           // exceptions is slow. Reset the warm-up counter so that if we
@@ -296,14 +339,17 @@ static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
         MOZ_CRASH("Unexpected try note");
     }
   }
+
+  OnLeaveIonFrame(cx, frame, rfe);
 }
 
 static void OnLeaveBaselineFrame(JSContext* cx, const JSJitFrameIter& frame,
                                  jsbytecode* pc, ResumeFromException* rfe,
                                  bool frameOk) {
   BaselineFrame* baselineFrame = frame.baselineFrame();
-  if (jit::DebugEpilogue(cx, baselineFrame, pc, frameOk)) {
-    rfe->kind = ResumeFromException::RESUME_FORCED_RETURN;
+  bool returnFromThisFrame = jit::DebugEpilogue(cx, baselineFrame, pc, frameOk);
+  if (returnFromThisFrame) {
+    rfe->kind = ExceptionResumeKind::ForcedReturnBaseline;
     rfe->framePointer = frame.fp() - BaselineFrame::FramePointerOffset;
     rfe->stackPointer = reinterpret_cast<uint8_t*>(baselineFrame);
   }
@@ -397,8 +443,7 @@ static bool ProcessTryNotesBaseline(JSContext* cx, const JSJitFrameIter& frame,
     MOZ_ASSERT(cx->isExceptionPending());
     switch (tn->kind()) {
       case TryNoteKind::Catch: {
-        // If we're closing a legacy generator, we have to skip catch
-        // blocks.
+        // If we're closing a generator, we have to skip catch blocks.
         if (cx->isClosingGenerator()) {
           break;
         }
@@ -414,7 +459,7 @@ static bool ProcessTryNotesBaseline(JSContext* cx, const JSJitFrameIter& frame,
         const BaselineInterpreter& interp =
             cx->runtime()->jitRuntime()->baselineInterpreter();
         frame.baselineFrame()->setInterpreterFields(*pc);
-        rfe->kind = ResumeFromException::RESUME_CATCH;
+        rfe->kind = ExceptionResumeKind::Catch;
         rfe->target = interp.interpretOpAddr().value;
         return true;
       }
@@ -425,7 +470,7 @@ static bool ProcessTryNotesBaseline(JSContext* cx, const JSJitFrameIter& frame,
         const BaselineInterpreter& interp =
             cx->runtime()->jitRuntime()->baselineInterpreter();
         frame.baselineFrame()->setInterpreterFields(*pc);
-        rfe->kind = ResumeFromException::RESUME_FINALLY;
+        rfe->kind = ExceptionResumeKind::Finally;
         rfe->target = interp.interpretOpAddr().value;
 
         // Drop the exception instead of leaking cross compartment data.
@@ -547,7 +592,7 @@ again:
       if (!ProcessTryNotesBaseline(cx, frame, ei, rfe, &pc)) {
         goto again;
       }
-      if (rfe->kind != ResumeFromException::RESUME_ENTRY_FRAME) {
+      if (rfe->kind != ExceptionResumeKind::EntryFrame) {
         // No need to increment the PCCounts number of execution here,
         // as the interpreter increments any PCCounts if present.
         MOZ_ASSERT_IF(script->hasScriptCounts(), script->maybeGetPCCounts(pc));
@@ -573,19 +618,24 @@ again:
 
 static void* GetLastProfilingFrame(ResumeFromException* rfe) {
   switch (rfe->kind) {
-    case ResumeFromException::RESUME_ENTRY_FRAME:
-    case ResumeFromException::RESUME_WASM:
+    case ExceptionResumeKind::EntryFrame:
+    case ExceptionResumeKind::Wasm:
+    case ExceptionResumeKind::WasmCatch:
       return nullptr;
 
     // The following all return into baseline frames.
-    case ResumeFromException::RESUME_CATCH:
-    case ResumeFromException::RESUME_FINALLY:
-    case ResumeFromException::RESUME_FORCED_RETURN:
+    case ExceptionResumeKind::Catch:
+    case ExceptionResumeKind::Finally:
+    case ExceptionResumeKind::ForcedReturnBaseline:
       return rfe->framePointer + BaselineFrame::FramePointerOffset;
+
+    // The frame pointer in Ion points directly to the frame header.
+    case ExceptionResumeKind::ForcedReturnIon:
+      return rfe->framePointer;
 
     // When resuming into a bailed-out ion frame, use the bailout info to
     // find the frame we are resuming into.
-    case ResumeFromException::RESUME_BAILOUT:
+    case ExceptionResumeKind::Bailout:
       return rfe->bailoutInfo->incomingStack;
   }
 
@@ -620,7 +670,7 @@ void HandleException(ResumeFromException* rfe) {
     cx->jitActivation->setLastProfilingFrame(lastProfilingFrame);
   });
 
-  rfe->kind = ResumeFromException::RESUME_ENTRY_FRAME;
+  rfe->kind = ExceptionResumeKind::EntryFrame;
 
   JitSpew(JitSpew_IonInvalidate, "handling exception");
 
@@ -641,7 +691,7 @@ void HandleException(ResumeFromException* rfe) {
       HandleExceptionWasm(cx, &iter.asWasm(), rfe);
       // If a wasm try-catch handler is found, we can immediately jump to it
       // and quit iterating through the stack.
-      if (rfe->kind == ResumeFromException::RESUME_WASM_CATCH) {
+      if (rfe->kind == ExceptionResumeKind::WasmCatch) {
         return;
       }
       if (!iter.done()) {
@@ -684,14 +734,15 @@ void HandleException(ResumeFromException* rfe) {
       for (;;) {
         HandleExceptionIon(cx, frames, rfe, &hitBailoutException);
 
-        if (rfe->kind == ResumeFromException::RESUME_BAILOUT) {
+        if (rfe->kind == ExceptionResumeKind::Bailout ||
+            rfe->kind == ExceptionResumeKind::ForcedReturnIon) {
           if (invalidated) {
             ionScript->decrementInvalidationCount(cx->gcContext());
           }
           return;
         }
 
-        MOZ_ASSERT(rfe->kind == ResumeFromException::RESUME_ENTRY_FRAME);
+        MOZ_ASSERT(rfe->kind == ExceptionResumeKind::EntryFrame);
 
         // When profiling, each frame popped needs a notification that
         // the function has exited, so invoke the probe that a function
@@ -721,8 +772,8 @@ void HandleException(ResumeFromException* rfe) {
     } else if (frame.isBaselineJS()) {
       HandleExceptionBaseline(cx, frame, prevJitFrame, rfe);
 
-      if (rfe->kind != ResumeFromException::RESUME_ENTRY_FRAME &&
-          rfe->kind != ResumeFromException::RESUME_FORCED_RETURN) {
+      if (rfe->kind != ExceptionResumeKind::EntryFrame &&
+          rfe->kind != ExceptionResumeKind::ForcedReturnBaseline) {
         return;
       }
 
@@ -734,7 +785,7 @@ void HandleException(ResumeFromException* rfe) {
       probes::ExitScript(cx, script, script->function(),
                          /* popProfilerFrame = */ false);
 
-      if (rfe->kind == ResumeFromException::RESUME_FORCED_RETURN) {
+      if (rfe->kind == ExceptionResumeKind::ForcedReturnBaseline) {
         return;
       }
     }
@@ -1627,19 +1678,10 @@ Value SnapshotIterator::allocationValue(const RValueAllocation& alloc,
       return NullValue();
 
     case RValueAllocation::DOUBLE_REG:
-      return DoubleValue(fromRegister(alloc.fpuReg()));
+      return DoubleValue(fromRegister<double>(alloc.fpuReg()));
 
-    case RValueAllocation::ANY_FLOAT_REG: {
-      union {
-        double d;
-        float f;
-      } pun;
-      MOZ_ASSERT(alloc.fpuReg().isSingle());
-      pun.d = fromRegister(alloc.fpuReg());
-      // The register contains the encoding of a float32. We just read
-      // the bits without making any conversion.
-      return Float32Value(pun.f);
-    }
+    case RValueAllocation::ANY_FLOAT_REG:
+      return Float32Value(fromRegister<float>(alloc.fpuReg()));
 
     case RValueAllocation::ANY_FLOAT_STACK:
       return Float32Value(ReadFrameFloat32Slot(fp_, alloc.stackOffset()));
@@ -1715,21 +1757,6 @@ Value SnapshotIterator::allocationValue(const RValueAllocation& alloc,
   }
 }
 
-const FloatRegisters::RegisterContent* SnapshotIterator::floatAllocationPointer(
-    const RValueAllocation& alloc) const {
-  switch (alloc.mode()) {
-    case RValueAllocation::ANY_FLOAT_REG:
-      return machine_->address(alloc.fpuReg());
-
-    case RValueAllocation::ANY_FLOAT_STACK:
-      return (FloatRegisters::RegisterContent*)AddressOfFrameSlot(
-          fp_, alloc.stackOffset());
-
-    default:
-      MOZ_CRASH("Not a float allocation.");
-  }
-}
-
 Value SnapshotIterator::maybeRead(const RValueAllocation& a,
                                   MaybeReadFallback& fallback) {
   if (allocationReadable(a)) {
@@ -1751,7 +1778,16 @@ Value SnapshotIterator::maybeRead(const RValueAllocation& a,
     MOZ_ASSERT_UNREACHABLE("All allocations should be readable.");
   }
 
-  return fallback.unreadablePlaceholder();
+  return UndefinedValue();
+}
+
+bool SnapshotIterator::tryRead(Value* result) {
+  RValueAllocation a = readAllocation();
+  if (allocationReadable(a)) {
+    *result = allocationValue(a);
+    return true;
+  }
+  return false;
 }
 
 void SnapshotIterator::writeAllocationValuePayload(
@@ -2002,7 +2038,7 @@ Value SnapshotIterator::maybeReadAllocByIndex(size_t index) {
   {
     // This MaybeReadFallback method cannot GC.
     JS::AutoSuppressGCAnalysis nogc;
-    MaybeReadFallback fallback(UndefinedValue());
+    MaybeReadFallback fallback;
     s = maybeRead(fallback);
   }
 
@@ -2198,83 +2234,93 @@ JSObject* InlineFrameIterator::computeEnvironmentChain(
 
 bool InlineFrameIterator::isFunctionFrame() const { return !!calleeTemplate_; }
 
-bool InlineFrameIterator::isModuleFrame() const { return script()->module(); }
+bool InlineFrameIterator::isModuleFrame() const { return script()->isModule(); }
 
-MachineState MachineState::FromBailout(RegisterDump::GPRArray& regs,
-                                       RegisterDump::FPUArray& fpregs) {
-  MachineState machine;
+uintptr_t* MachineState::SafepointState::addressOfRegister(Register reg) const {
+  size_t offset = regs.offsetOfPushedRegister(reg);
 
-  for (unsigned i = 0; i < Registers::Total; i++) {
-    machine.setRegisterLocation(Register::FromCode(i), &regs[i].r);
-  }
-#ifdef JS_CODEGEN_ARM
-  float* fbase = (float*)&fpregs[0];
-  for (unsigned i = 0; i < FloatRegisters::TotalDouble; i++) {
-    machine.setRegisterLocation(FloatRegister(i, FloatRegister::Double),
-                                &fpregs[i].d);
-  }
-  for (unsigned i = 0; i < FloatRegisters::TotalSingle; i++) {
-    machine.setRegisterLocation(FloatRegister(i, FloatRegister::Single),
-                                (double*)&fbase[i]);
-#  ifdef ENABLE_WASM_SIMD
-#    error "More care needed here"
-#  endif
-  }
-#elif defined(JS_CODEGEN_MIPS32)
-  for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
-    machine.setRegisterLocation(
-        FloatRegister::FromIndex(i, FloatRegister::Double), &fpregs[i]);
-    machine.setRegisterLocation(
-        FloatRegister::FromIndex(i, FloatRegister::Single), &fpregs[i]);
-#  ifdef ENABLE_WASM_SIMD
-#    error "More care needed here"
-#  endif
-  }
-#elif defined(JS_CODEGEN_MIPS64)
-  for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
-    machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Double),
-                                &fpregs[i]);
-    machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Single),
-                                &fpregs[i]);
-#  ifdef ENABLE_WASM_SIMD
-#    error "More care needed here"
-#  endif
-  }
-#elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-  for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
-    machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Single),
-                                &fpregs[i]);
-    machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Double),
-                                &fpregs[i]);
-    machine.setRegisterLocation(FloatRegister(i, FloatRegisters::Simd128),
-                                &fpregs[i]);
-  }
-#elif defined(JS_CODEGEN_ARM64)
-  for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
-    machine.setRegisterLocation(
-        FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Single),
-        &fpregs[i]);
-    machine.setRegisterLocation(
-        FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Double),
-        &fpregs[i]);
-    // No SIMD support in bailouts, SIMD is internal to wasm
-  }
-#elif defined(JS_CODEGEN_LOONG64)
-  for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
-    machine.setRegisterLocation(
-        FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Single),
-        &fpregs[i]);
-    machine.setRegisterLocation(
-        FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Double),
-        &fpregs[i]);
-  }
+  MOZ_ASSERT((offset % sizeof(uintptr_t)) == 0);
+  uint32_t index = offset / sizeof(uintptr_t);
 
-#elif defined(JS_CODEGEN_NONE)
-  MOZ_CRASH();
-#else
-#  error "Unknown architecture!"
+#ifdef DEBUG
+  // Assert correctness with a slower algorithm in debug builds.
+  uint32_t expectedIndex = 0;
+  bool found = false;
+  for (GeneralRegisterBackwardIterator iter(regs); iter.more(); ++iter) {
+    expectedIndex++;
+    if (*iter == reg) {
+      found = true;
+      break;
+    }
+  }
+  MOZ_ASSERT(found);
+  MOZ_ASSERT(expectedIndex == index);
 #endif
-  return machine;
+
+  return spillBase - index;
+}
+
+char* MachineState::SafepointState::addressOfRegister(FloatRegister reg) const {
+  // Note: this could be optimized similar to the GPR case above by implementing
+  // offsetOfPushedRegister for FloatRegisterSet. Float register sets are
+  // complicated though and this case is very uncommon: it's only reachable for
+  // exception bailouts with live float registers.
+  MOZ_ASSERT(!reg.isSimd128());
+  char* ptr = floatSpillBase;
+  for (FloatRegisterBackwardIterator iter(floatRegs); iter.more(); ++iter) {
+    ptr -= (*iter).size();
+    for (uint32_t a = 0; a < (*iter).numAlignedAliased(); a++) {
+      // Only say that registers that actually start here start here.
+      // e.g. d0 should not start at s1, only at s0.
+      FloatRegister ftmp = (*iter).alignedAliased(a);
+      if (ftmp == reg) {
+        return ptr;
+      }
+    }
+  }
+  MOZ_CRASH("Invalid register");
+}
+
+uintptr_t MachineState::read(Register reg) const {
+  if (state_.is<BailoutState>()) {
+    return state_.as<BailoutState>().regs[reg.code()].r;
+  }
+  if (state_.is<SafepointState>()) {
+    uintptr_t* addr = state_.as<SafepointState>().addressOfRegister(reg);
+    return *addr;
+  }
+  MOZ_CRASH("Invalid state");
+}
+
+template <typename T>
+T MachineState::read(FloatRegister reg) const {
+  MOZ_ASSERT(reg.size() == sizeof(T));
+
+#if !defined(JS_CODEGEN_NONE)
+  if (state_.is<BailoutState>()) {
+    uint32_t offset = reg.getRegisterDumpOffsetInBytes();
+    MOZ_ASSERT((offset % sizeof(T)) == 0);
+    MOZ_ASSERT((offset + sizeof(T)) <= sizeof(RegisterDump::FPUArray));
+
+    const BailoutState& state = state_.as<BailoutState>();
+    char* addr = reinterpret_cast<char*>(state.floatRegs.begin()) + offset;
+    return *reinterpret_cast<T*>(addr);
+  }
+  if (state_.is<SafepointState>()) {
+    char* addr = state_.as<SafepointState>().addressOfRegister(reg);
+    return *reinterpret_cast<T*>(addr);
+  }
+#endif
+  MOZ_CRASH("Invalid state");
+}
+
+void MachineState::write(Register reg, uintptr_t value) const {
+  if (state_.is<SafepointState>()) {
+    uintptr_t* addr = state_.as<SafepointState>().addressOfRegister(reg);
+    *addr = value;
+    return;
+  }
+  MOZ_CRASH("Invalid state");
 }
 
 bool InlineFrameIterator::isConstructing() const {
@@ -2321,7 +2367,7 @@ struct DumpOp {
 };
 
 void InlineFrameIterator::dump() const {
-  MaybeReadFallback fallback(UndefinedValue());
+  MaybeReadFallback fallback;
 
   if (more()) {
     fprintf(stderr, " JS frame (inlined)\n");

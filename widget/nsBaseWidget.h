@@ -182,8 +182,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   void PlaceBehind(nsTopLevelWidgetZPlacement aPlacement, nsIWidget* aWidget,
                    bool aActivate) override {}
 
-  void SetSizeMode(nsSizeMode aMode) override;
-  nsSizeMode SizeMode() override { return mSizeMode; }
   void GetWorkspaceID(nsAString& workspaceID) override;
   void MoveToWorkspace(const nsAString& workspaceID) override;
   bool IsTiled() const override { return mIsTiled; }
@@ -571,7 +569,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                        LayoutDeviceIntPoint aPoint,
                                        double aDeltaX, double aDeltaY,
-                                       int32_t aModifierFlags) override {
+                                       int32_t aModifierFlags,
+                                       nsIObserver* aObserver) override {
     MOZ_RELEASE_ASSERT(
         false, "This method is not implemented on the current platform");
     return NS_ERROR_UNEXPECTED;
@@ -594,14 +593,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   bool HasRemoteContent() const { return mHasRemoteContent; }
 
-  void NotifyRollupGeometryChange() {
-    // XULPopupManager isn't interested in this notification, so only
-    // send it if gRollupListener is set.
-    if (gRollupListener) {
-      gRollupListener->NotifyGeometryChange();
-    }
-  }
-
   /**
    * Apply the current size constraints to the given size.
    *
@@ -618,6 +609,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   CompositorBridgeChild* GetRemoteRenderer() override;
 
   void ClearCachedWebrenderResources() override;
+
+  bool SetNeedFastSnaphot() override;
 
   /**
    * Notify the widget that this window is being used with OMTC.
@@ -716,7 +709,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   nsBorderStyle mBorderStyle;
   LayoutDeviceIntRect mBounds;
   LayoutDeviceIntRect* mOriginalBounds;
-  nsSizeMode mSizeMode;
   bool mIsTiled;
   nsPopupLevel mPopupLevel;
   nsPopupType mPopupType;
@@ -729,6 +721,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   bool mIMEHasFocus;
   bool mIMEHasQuit;
   bool mIsFullyOccluded;
+  bool mNeedFastSnaphot;
   // This flag is only used when APZ is off. It indicates that the current pan
   // gesture was processed as a swipe. Sometimes the swipe animation can finish
   // before momentum events of the pan gesture have stopped firing, so this

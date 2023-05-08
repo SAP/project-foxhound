@@ -109,7 +109,8 @@ class imgFrame {
    *                         may be marked as read only if possible).
    */
   void Finish(Opacity aFrameOpacity = Opacity::SOME_TRANSPARENCY,
-              bool aFinalize = true);
+              bool aFinalize = true,
+              bool aOrientationSwapsWidthAndHeight = false);
 
   /**
    * Mark this imgFrame as aborted. This informs the imgFrame that if it isn't
@@ -150,6 +151,10 @@ class imgFrame {
   const IntRect& GetBlendRect() const { return mBlendRect; }
   IntRect GetBoundedBlendRect() const {
     return mBlendRect.Intersect(GetRect());
+  }
+  nsIntRect GetDecodedRect() const {
+    MonitorAutoLock lock(mMonitor);
+    return mDecoded;
   }
   FrameTimeout GetTimeout() const { return mTimeout; }
   BlendMethod GetBlendMethod() const { return mBlendMethod; }

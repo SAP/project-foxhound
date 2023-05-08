@@ -16,9 +16,15 @@
 
   SimpleTest.waitForExplicitFinish();
 
-  const { Services } = SpecialPowers.Cu.import("resource://gre/modules/Services.jsm");
-  const { AppConstants } = SpecialPowers.Cu.import("resource://gre/modules/AppConstants.jsm");
-  const { PlacesUtils } = SpecialPowers.Cu.import("resource://gre/modules/PlacesUtils.jsm");
+  const { Services } = SpecialPowers.ChromeUtils.import(
+    "resource://gre/modules/Services.jsm"
+  );
+  const { AppConstants } = SpecialPowers.ChromeUtils.import(
+    "resource://gre/modules/AppConstants.jsm"
+  );
+  const { PlacesUtils } = SpecialPowers.ChromeUtils.import(
+    "resource://gre/modules/PlacesUtils.jsm"
+  );
 
   // Some of the clipboard code requires reading or writing "text/unicode" when
   // actually "text/plain" is desired.
@@ -42,12 +48,9 @@
   }
 
   async function testWrite() {
-    // See bug 666254.
-    if (AppConstants.platform != "macosx") {
-      await SimpleTest.promiseClipboardChange("", () => {
-        clearClipboard();
-      });
-    }
+    await SimpleTest.promiseClipboardChange("", () => {
+      clearClipboard();
+    });
 
     let expected = "x";
     // eslint-disable-next-line no-undef
@@ -67,12 +70,9 @@
   }
 
   async function testWriteText() {
-    // See bug 666254.
-    if (AppConstants.platform != "macosx") {
-      await SimpleTest.promiseClipboardChange("", () => {
-        clearClipboard();
-      });
-    }
+    await SimpleTest.promiseClipboardChange("", () => {
+      clearClipboard();
+    });
 
     let expected = "x";
     await navigator.clipboard.writeText(expected);
@@ -108,7 +108,6 @@
   function runTest() {
     (async function() {
       await SpecialPowers.pushPrefEnv({"set": [
-        ["dom.events.asyncClipboard.read", true],
         ["dom.events.asyncClipboard.clipboardItem", true],
       ]});
       await testRead();
@@ -116,11 +115,8 @@
       await testWrite();
       await testWriteText();
 
-      // See bug 666254.
-      if (AppConstants.platform != "macosx") {
-        await testNoContentsRead();
-        await testNoContentsReadText();
-      }
+      await testNoContentsRead();
+      await testNoContentsReadText();
 
       SimpleTest.finish();
     })();

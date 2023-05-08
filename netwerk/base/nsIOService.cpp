@@ -252,7 +252,6 @@ static const char* gCallbackSecurityPrefs[] = {
     "security.ssl.enable_ocsp_stapling",
     "security.ssl.enable_ocsp_must_staple",
     "security.pki.certificate_transparency.mode",
-    "security.pki.name_matching_mode",
     nullptr,
 };
 
@@ -407,8 +406,7 @@ void nsIOService::OnTLSPrefChange(const char* aPref, void* aSelf) {
     LOG(("HandleTLSPrefChange done"));
   } else if (pref.EqualsLiteral("security.ssl.enable_ocsp_stapling") ||
              pref.EqualsLiteral("security.ssl.enable_ocsp_must_staple") ||
-             pref.EqualsLiteral("security.pki.certificate_transparency.mode") ||
-             pref.EqualsLiteral("security.pki.name_matching_mode")) {
+             pref.EqualsLiteral("security.pki.certificate_transparency.mode")) {
     SetValidationOptionsCommon();
   }
 }
@@ -646,8 +644,11 @@ void nsIOService::NotifySocketProcessPrefsChanged(const char* aName) {
     return;
   }
 
-  dom::Pref pref(nsCString(aName), /* isLocked */ false, Nothing(), Nothing());
-  Preferences::GetPreference(&pref);
+  dom::Pref pref(nsCString(aName), /* isLocked */ false,
+                 /* isSanitized */ false, Nothing(), Nothing());
+
+  Preferences::GetPreference(&pref, GeckoProcessType_Socket,
+                             /* remoteType */ ""_ns);
   auto sendPrefUpdate = [pref]() {
     Unused << gIOService->mSocketProcess->GetActor()->SendPreferenceUpdate(
         pref);

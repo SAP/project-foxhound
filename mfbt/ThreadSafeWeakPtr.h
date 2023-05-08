@@ -56,6 +56,7 @@
 #define mozilla_ThreadSafeWeakPtr_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/RefCountType.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
 
@@ -151,14 +152,15 @@ class SupportsThreadSafeWeakPtr : public detail::SupportsThreadSafeWeakPtrBase {
 
  public:
   // Compatibility with RefPtr
-  void AddRef() const {
+  MozExternalRefCountType AddRef() const {
     auto& refCnt = mWeakRef->mStrongCnt;
     MOZ_ASSERT(int32_t(refCnt) >= 0);
     MozRefCountType cnt = ++refCnt;
     detail::RefCountLogger::logAddRef(static_cast<const T*>(this), cnt);
+    return cnt;
   }
 
-  void Release() const {
+  MozExternalRefCountType Release() const {
     auto& refCnt = mWeakRef->mStrongCnt;
     MOZ_ASSERT(int32_t(refCnt) > 0);
     detail::RefCountLogger::ReleaseLogger logger(static_cast<const T*>(this));
@@ -176,12 +178,14 @@ class SupportsThreadSafeWeakPtr : public detail::SupportsThreadSafeWeakPtrBase {
       // it may still be read by mWeakRef.
       delete static_cast<const T*>(this);
     }
+    return cnt;
   }
 
   // Compatibility with wtf::RefPtr
   void ref() { AddRef(); }
   void deref() { Release(); }
   MozRefCountType refCount() const { return mWeakRef->mStrongCnt; }
+  bool hasOneRef() const { return refCount() == 1; }
 
  private:
   template <typename U>
@@ -245,6 +249,11 @@ class ThreadSafeWeakPtr {
 
   bool operator==(const RefPtr<T>& aOther) const {
     return *this == aOther.get();
+  }
+
+  friend bool operator==(const RefPtr<T>& aStrong,
+                         const ThreadSafeWeakPtr& aWeak) {
+    return aWeak == aStrong.get();
   }
 
   bool operator==(const T* aOther) const {

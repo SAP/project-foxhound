@@ -70,8 +70,7 @@
 
 using namespace mozilla::net;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 //-----------------------------------------------------------------------------
 // nsHttpTransaction <public>
@@ -115,19 +114,20 @@ void nsHttpTransaction::ResumeReading() {
 }
 
 bool nsHttpTransaction::EligibleForThrottling() const {
-  return (mClassOfService &
+  return (mClassOfServiceFlags &
           (nsIClassOfService::Throttleable | nsIClassOfService::DontThrottle |
            nsIClassOfService::Leader | nsIClassOfService::Unblocked)) ==
          nsIClassOfService::Throttleable;
 }
 
-void nsHttpTransaction::SetClassOfService(uint32_t cos) {
+void nsHttpTransaction::SetClassOfService(ClassOfService cos) {
   if (mClosed) {
     return;
   }
 
   bool wasThrottling = EligibleForThrottling();
-  mClassOfService = cos;
+  mClassOfServiceFlags = cos.Flags();
+  mClassOfServiceIncremental = cos.Incremental();
   bool isThrottling = EligibleForThrottling();
 
   if (mConnection && wasThrottling != isThrottling) {
@@ -208,7 +208,7 @@ nsresult nsHttpTransaction::Init(
     bool requestBodyHasHeaders, nsIEventTarget* target,
     nsIInterfaceRequestor* callbacks, nsITransportEventSink* eventsink,
     uint64_t topBrowsingContextId, HttpTrafficCategory trafficCategory,
-    nsIRequestContext* requestContext, uint32_t classOfService,
+    nsIRequestContext* requestContext, ClassOfService classOfService,
     uint32_t initialRwin, bool responseTimeoutEnabled, uint64_t channelId,
     TransactionObserverFunc&& transactionObserver,
     OnPushCallback&& aOnPushCallback,
@@ -298,8 +298,8 @@ nsresult nsHttpTransaction::Init(
   if (mHasRequestBody) {
     // wrap the headers and request body in a multiplexed input stream.
     nsCOMPtr<nsIMultiplexInputStream> multi;
-    rv = nsMultiplexInputStreamConstructor(
-        nullptr, NS_GET_IID(nsIMultiplexInputStream), getter_AddRefs(multi));
+    rv = nsMultiplexInputStreamConstructor(NS_GET_IID(nsIMultiplexInputStream),
+                                           getter_AddRefs(multi));
     if (NS_FAILED(rv)) return rv;
 
     rv = multi->AppendStream(headers);
@@ -663,16 +663,21 @@ void nsHttpTransaction::OnTransportStatus(nsITransport* transport,
       return;
     }
 
-    nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mRequestStream);
-    if (!seekable) {
+    nsCOMPtr<nsITellableStream> tellable = do_QueryInterface(mRequestStream);
+    if (!tellable) {
       LOG1(
           ("nsHttpTransaction::OnTransportStatus %p "
-           "SENDING_TO without seekable request stream\n",
+           "SENDING_TO without tellable request stream\n",
            this));
+      MOZ_ASSERT(
+          !mRequestStream,
+          "mRequestStream should be tellable as it was wrapped in "
+          "nsBufferedInputStream, which provides the tellable interface even "
+          "when wrapping non-tellable streams.");
       progress = 0;
     } else {
       int64_t prog = 0;
-      seekable->Tell(&prog);
+      tellable->Tell(&prog);
       progress = prog;
     }
 
@@ -834,7 +839,7 @@ nsresult nsHttpTransaction::WritePipeSegment(nsIOutputStream* stream,
 }
 
 bool nsHttpTransaction::ShouldThrottle() {
-  if (mClassOfService & nsIClassOfService::DontThrottle) {
+  if (mClassOfServiceFlags & nsIClassOfService::DontThrottle) {
     // We deliberately don't touch the throttling window here since
     // DontThrottle requests are expected to be long-standing media
     // streams and would just unnecessarily block running downloads.
@@ -857,7 +862,7 @@ bool nsHttpTransaction::ShouldThrottle() {
     return false;
   }
 
-  if (!(mClassOfService & nsIClassOfService::Throttleable) &&
+  if (!(mClassOfServiceFlags & nsIClassOfService::Throttleable) &&
       gHttpHandler->ConnMgr()->IsConnEntryUnderPressure(mConnInfo)) {
     LOG(("nsHttpTransaction::ShouldThrottle entry pressure this=%p", this));
     // This is expensive to check (two hashtable lookups) but may help
@@ -1979,7 +1984,7 @@ nsresult nsHttpTransaction::ParseLineSegment(char* segment, uint32_t len) {
       mResponseHead->Reset();
       return NS_OK;
     }
-    {
+    if (!mConnection->IsProxyConnectInProgress()) {
       MutexAutoLock lock(mLock);
       mEarlyHintObserver = nullptr;
     }
@@ -3462,5 +3467,4 @@ void nsHttpTransaction::GetHashKeyOfConnectionEntry(nsACString& aResult) {
   aResult.Assign(mHashKeyOfConnectionEntry);
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

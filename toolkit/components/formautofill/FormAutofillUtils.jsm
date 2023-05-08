@@ -52,6 +52,8 @@ const SECTION_TYPES = {
   CREDIT_CARD: "creditCard",
 };
 
+const ELIGIBLE_INPUT_TYPES = ["text", "email", "tel", "number", "month"];
+
 // The maximum length of data to be saved in a single field for preventing DoS
 // attacks that fill the user's hard drive(s).
 const MAX_FIELD_VALUE_LENGTH = 200;
@@ -438,13 +440,23 @@ this.FormAutofillUtils = {
   },
 
   /**
+   * Determines if an element can be autofilled or not.
+   *
+   * @param {HTMLElement} element
+   * @returns {boolean} true if the element can be autofilled
+   */
+  isFieldAutofillable(element) {
+    return element && !element.readOnly && !element.disabled;
+  },
+
+  /**
    *  Determines if an element is visually hidden or not.
    *
    * NOTE: this does not encompass every possible way of hiding an element.
    * Instead, we check some of the more common methods of hiding for performance reasons.
    * See Bug 1727832 for follow up.
    * @param {HTMLElement} element
-   * @returns {boolean}
+   * @returns {boolean} true if the element is visible
    */
   isFieldVisible(element) {
     if (element.hidden) {
@@ -456,19 +468,26 @@ this.FormAutofillUtils = {
     return true;
   },
 
-  ALLOWED_TYPES: ["text", "email", "tel", "number", "month"],
-  isFieldEligibleForAutofill(element) {
-    let tagName = element.tagName;
-    if (tagName == "INPUT") {
+  /**
+   * Determines if an element is eligible to be used by credit card or address autofill.
+   *
+   * @param {HTMLElement} element
+   * @returns {boolean} true if element can be used by credit card or address autofill
+   */
+  isCreditCardOrAddressFieldType(element) {
+    if (!element) {
+      return false;
+    }
+    if (HTMLInputElement.isInstance(element)) {
       // `element.type` can be recognized as `text`, if it's missing or invalid.
-      if (!this.ALLOWED_TYPES.includes(element.type)) {
+      if (!ELIGIBLE_INPUT_TYPES.includes(element.type)) {
         return false;
       }
       // If the field is visually invisible, we do not want to autofill into it.
       if (!this.isFieldVisible(element)) {
         return false;
       }
-    } else if (tagName != "SELECT") {
+    } else if (!HTMLSelectElement.isInstance(element)) {
       return false;
     }
 
@@ -1168,8 +1187,8 @@ const LabelUtils = {
 
   // An array consisting of label elements whose correponding form field doesn't
   // have an id attribute.
-  // @type {Array<HTMLLabelElement>}
-  _unmappedLabels: null,
+  // @type {Array<[HTMLLabelElement, HTMLElement]>}
+  _unmappedLabelControls: null,
 
   // A weak map consisting of label element and extracted strings pairs.
   // @type {WeakMap<HTMLLabelElement, array>}
@@ -1217,38 +1236,37 @@ const LabelUtils = {
   },
 
   generateLabelMap(doc) {
-    let mappedLabels = new Map();
-    let unmappedLabels = [];
+    this._mappedLabels = new Map();
+    this._unmappedLabelControls = [];
+    this._labelStrings = new WeakMap();
 
     for (let label of doc.querySelectorAll("label")) {
       let id = label.htmlFor;
+      let control;
       if (!id) {
-        let control = label.control;
+        control = label.control;
         if (!control) {
           continue;
         }
         id = control.id;
       }
       if (id) {
-        let labels = mappedLabels.get(id);
+        let labels = this._mappedLabels.get(id);
         if (labels) {
           labels.push(label);
         } else {
-          mappedLabels.set(id, [label]);
+          this._mappedLabels.set(id, [label]);
         }
       } else {
-        unmappedLabels.push(label);
+        // control must be non-empty here
+        this._unmappedLabelControls.push({ label, control });
       }
     }
-
-    this._mappedLabels = mappedLabels;
-    this._unmappedLabels = unmappedLabels;
-    this._labelStrings = new WeakMap();
   },
 
   clearLabelMap() {
     this._mappedLabels = null;
-    this._unmappedLabels = null;
+    this._unmappedLabelControls = null;
     this._labelStrings = null;
   },
 
@@ -1259,7 +1277,9 @@ const LabelUtils = {
 
     let id = element.id;
     if (!id) {
-      return this._unmappedLabels.filter(label => label.control == element);
+      return this._unmappedLabelControls
+        .filter(lc => lc.control == element)
+        .map(lc => lc.label);
     }
     return this._mappedLabels.get(id) || [];
   },

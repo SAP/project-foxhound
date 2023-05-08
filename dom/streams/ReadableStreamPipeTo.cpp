@@ -26,9 +26,6 @@ struct PipeToReadRequest;
 class WriteFinishedPromiseHandler;
 class ShutdownActionFinishedPromiseHandler;
 
-// TODO: Bug 1756794
-using ::ImplCycleCollectionUnlink;
-
 // https://streams.spec.whatwg.org/#readable-stream-pipe-to (Steps 14-15.)
 //
 // This class implements everything that is required to read all chunks from
@@ -602,8 +599,9 @@ void PipeToPump::OnReadFulfilled(JSContext* aCx, JS::Handle<JS::Value> aChunk,
     return;
   }
 
-  mLastWritePromise = WritableStreamDefaultWriterWrite(
-      aCx, MOZ_KnownLive(mWriter), aChunk, aRv);
+  RefPtr<WritableStreamDefaultWriter> writer = mWriter;
+  mLastWritePromise =
+      WritableStreamDefaultWriterWrite(aCx, writer, aChunk, aRv);
   if (aRv.Failed()) {
     mLastWritePromise = nullptr;
     return;
@@ -648,16 +646,7 @@ struct PipeToReadRequest : public ReadRequest {
   virtual ~PipeToReadRequest() = default;
 };
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(PipeToReadRequest)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PipeToReadRequest, ReadRequest)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPipeToPump)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PipeToReadRequest,
-                                                  ReadRequest)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPipeToPump)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED(PipeToReadRequest, ReadRequest, mPipeToPump)
 
 NS_IMPL_ADDREF_INHERITED(PipeToReadRequest, ReadRequest)
 NS_IMPL_RELEASE_INHERITED(PipeToReadRequest, ReadRequest)
@@ -698,9 +687,10 @@ void PipeToPump::Read(JSContext* aCx) {
     return;
   }
 
+  RefPtr<ReadableStreamDefaultReader> reader = mReader;
   RefPtr<ReadRequest> request = new PipeToReadRequest(this);
   ErrorResult rv;
-  ReadableStreamDefaultReaderRead(aCx, MOZ_KnownLive(mReader), request, rv);
+  ReadableStreamDefaultReaderRead(aCx, reader, request, rv);
   if (rv.MaybeSetPendingException(aCx)) {
     // XXX It's actually not quite obvious what we should do here.
     // We've got an error during reading, so on the surface it seems logical

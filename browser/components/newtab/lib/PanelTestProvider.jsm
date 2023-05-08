@@ -425,7 +425,6 @@ const MESSAGES = () => [
       screens: [
         {
           id: "AW_PIN_FIREFOX",
-          order: 0,
           content: {
             has_noodles: true,
             title: {
@@ -461,7 +460,6 @@ const MESSAGES = () => [
         },
         {
           id: "AW_SET_DEFAULT",
-          order: 1,
           content: {
             has_noodles: true,
             logo: {
@@ -469,9 +467,10 @@ const MESSAGES = () => [
               height: "100px",
             },
             title: {
+              fontSize: "36px",
+              fontWeight: 276,
               string_id: "mr1-onboarding-default-header",
             },
-            title_style: "slim larger",
             subtitle: {
               string_id: "mr1-onboarding-default-subtitle",
             },
@@ -496,7 +495,6 @@ const MESSAGES = () => [
         },
         {
           id: "BACKGROUND_IMAGE",
-          order: 2,
           content: {
             background:
               "url(chrome://activity-stream/content/data/content/assets/proton-bkg.avif) no-repeat center/cover",
@@ -525,15 +523,18 @@ const MESSAGES = () => [
         },
         {
           id: "BACKGROUND_COLOR",
-          order: 3,
           content: {
             background: "white",
             logo: {
               height: "200px",
               imageURL: "",
             },
-            title: "Peace of mind.",
-            title_style: "fancy slim larger",
+            title: {
+              fontSize: "36px",
+              fontWeight: 276,
+              raw: "Peace of mind.",
+            },
+            title_style: "fancy shine",
             text_color: "dark",
             subtitle:
               "For the best privacy protection, keep Firefox in easy reach.",

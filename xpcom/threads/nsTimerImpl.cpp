@@ -65,18 +65,12 @@ class TimerThreadWrapper {
 mozilla::StaticMutex TimerThreadWrapper::sMutex;
 
 nsresult TimerThreadWrapper::Init() {
-  nsresult rv;
   mozilla::StaticMutexAutoLock lock(sMutex);
   mThread = new TimerThread();
 
   NS_ADDREF(mThread);
-  rv = mThread->InitLocks();
 
-  if (NS_FAILED(rv)) {
-    NS_RELEASE(mThread);
-  }
-
-  return rv;
+  return NS_OK;
 }
 
 void TimerThreadWrapper::Shutdown() {
@@ -394,7 +388,6 @@ nsresult nsTimerImpl::InitCommon(const TimeDuration& aDelay, uint32_t aType,
                                  Callback&& newCallback,
                                  const MutexAutoLock& aProofOfLock) {
   if (!mEventTarget) {
-    NS_ERROR("mEventTarget is NULL");
     return NS_ERROR_NOT_INITIALIZED;
   }
 
@@ -801,13 +794,8 @@ RefPtr<nsTimer> nsTimer::WithEventTarget(nsIEventTarget* aTarget) {
 }
 
 /* static */
-nsresult nsTimer::XPCOMConstructor(nsISupports* aOuter, REFNSIID aIID,
-                                   void** aResult) {
+nsresult nsTimer::XPCOMConstructor(REFNSIID aIID, void** aResult) {
   *aResult = nullptr;
-  if (aOuter != nullptr) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
   auto timer = WithEventTarget(nullptr);
 
   return timer->QueryInterface(aIID, aResult);

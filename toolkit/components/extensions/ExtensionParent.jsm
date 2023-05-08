@@ -35,6 +35,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PerformanceCounters: "resource://gre/modules/PerformanceCounters.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
+  getErrorNameForTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetters(this, {
@@ -91,15 +92,13 @@ let GlobalManager;
 let ParentAPIManager;
 let StartupCache;
 
-const global = this;
-
 function verifyActorForContext(actor, context) {
-  if (actor instanceof JSWindowActorParent) {
+  if (JSWindowActorParent.isInstance(actor)) {
     let target = actor.browsingContext.top.embedderElement;
     if (context.parentMessageManager !== target.messageManager) {
       throw new Error("Got message on unexpected message manager");
     }
-  } else if (actor instanceof JSProcessActorParent) {
+  } else if (JSProcessActorParent.isInstance(actor)) {
     if (actor.manager.remoteType !== context.extension.remoteType) {
       throw new Error("Got message from unexpected process");
     }
@@ -301,7 +300,7 @@ const ProxyMessenger = {
       url: source.url,
     };
 
-    if (source.actor instanceof JSWindowActorParent) {
+    if (JSWindowActorParent.isInstance(source.actor)) {
       let browser = source.actor.browsingContext.top.embedderElement;
       let data =
         browser && apiManager.global.tabTracker.getBrowserData(browser);
@@ -464,6 +463,7 @@ class ProxyContextParent extends BaseContext {
   constructor(envType, extension, params, xulBrowser, principal) {
     super(envType, extension);
 
+    this.childId = params.childId;
     this.uri = Services.io.newURI(params.url);
 
     this.incognito = params.incognito;
@@ -486,8 +486,45 @@ class ProxyContextParent extends BaseContext {
     this.listenerProxies = new Map();
 
     this.pendingEventBrowser = null;
+    this.callContextData = null;
 
     apiManager.emit("proxy-context-load", this);
+  }
+
+  /**
+   * Call the `callable` parameter with `context.callContextData` set to the value passed
+   * as the first parameter of this method.
+   *
+   * `context.callContextData` is expected to:
+   * - don't be set when context.withCallContextData is being called
+   * - be set back to null right after calling the `callable` function, without
+   *   awaiting on any async code that the function may be running internally
+   *
+   * The callable method itself is responsabile of eventually retrieve the value initially set
+   * on the `context.callContextData` before any code executed asynchronously (e.g. from a
+   * callback or after awaiting internally on a promise if the `callable` function was async).
+   *
+   * @param {object} callContextData
+   * @param {boolean} callContextData.isHandlingUserInput
+   * @param {Function} callable
+   *
+   * @returns {any} Returns the value returned by calling the `callable` method.
+   */
+  withCallContextData({ isHandlingUserInput }, callable) {
+    if (this.callContextData) {
+      Cu.reportError(
+        `Unexpected pre-existing callContextData on "${this.extension?.policy.debugName}" contextId ${this.contextId}`
+      );
+    }
+
+    try {
+      this.callContextData = {
+        isHandlingUserInput,
+      };
+      return callable();
+    } finally {
+      this.callContextData = null;
+    }
   }
 
   async withPendingBrowser(browser, callable) {
@@ -776,7 +813,7 @@ ParentAPIManager = {
         "RemoveListener",
       ],
       send: ["CallResult"],
-      query: ["RunListener"],
+      query: ["RunListener", "StreamFilterSuspendCancel"],
     });
   },
 
@@ -815,6 +852,10 @@ ParentAPIManager = {
     }
   },
 
+  queryStreamFilterSuspendCancel(childId) {
+    return this.conduit.queryStreamFilterSuspendCancel(childId);
+  },
+
   recvCreateProxyContext(data, { actor, sender }) {
     let { envType, extensionId, childId, principal } = data;
     let target = actor.browsingContext?.top.embedderElement;
@@ -836,7 +877,7 @@ ParentAPIManager = {
         throw new Error(`Bad sender context envType: ${sender.envType}`);
       }
 
-      if (actor instanceof JSWindowActorParent) {
+      if (JSWindowActorParent.isInstance(actor)) {
         let processMessageManager =
           target.messageManager.processMessageManager ||
           Services.ppmm.getChildAt(0);
@@ -852,7 +893,7 @@ ParentAPIManager = {
             "Attempt to create privileged extension parent from incorrect child process"
           );
         }
-      } else if (actor instanceof JSProcessActorParent) {
+      } else if (JSProcessActorParent.isInstance(actor)) {
         if (actor.manager.remoteType !== extension.remoteType) {
           throw new Error(
             "Attempt to create privileged extension parent from incorrect child process"
@@ -985,10 +1026,15 @@ ParentAPIManager = {
 
     try {
       let args = data.args;
+      let { isHandlingUserInput = false } = data.options || {};
       let pendingBrowser = context.pendingEventBrowser;
       let fun = await context.apiCan.asyncFindAPIPath(data.path);
       let result = this.callAndLog(context, data, () => {
-        return context.withPendingBrowser(pendingBrowser, () => fun(...args));
+        return context.withPendingBrowser(pendingBrowser, () =>
+          context.withCallContextData({ isHandlingUserInput }, () =>
+            fun(...args)
+          )
+        );
       });
 
       if (data.callId) {
@@ -1046,7 +1092,7 @@ ParentAPIManager = {
           return new StructuredCloneHolder(listenerArgs);
         },
       });
-      let rv = result && result.deserialize(global);
+      let rv = result && result.deserialize(globalThis);
       ChromeUtils.addProfilerMarker(
         "ExtensionParent",
         { startTime },
@@ -1498,9 +1544,34 @@ const DebugUtils = {
     // service worker).
     if (this.hasPersistentBackgroundScript(addonId) === false) {
       const policy = WebExtensionPolicy.getByID(addonId);
-      return policy.extension.terminateBackground();
+      // When the event page is being terminated through the Devtools
+      // action, we should terminate it even if there are DevTools
+      // toolboxes attached to the extension.
+      return policy.extension.terminateBackground({
+        ignoreDevToolsAttached: true,
+      });
     }
     throw Error(`Unable to terminate background script for ${addonId}`);
+  },
+
+  /**
+   * Determine whether a devtools toolbox attached to the extension.
+   *
+   * This method is called by the background page idle timeout handler,
+   * to inhibit terminating the event page when idle while the extension
+   * developer is debugging the extension through the Addon Debugging window
+   * (similarly to how service workers are kept alive while the devtools are
+   * attached).
+   *
+   * @param {string} id
+   *        The id of the extension.
+   *
+   * @returns {boolean}
+   *          true when a devtools toolbox is attached to an extension with
+   *          the given id, false otherwise.
+   */
+  hasDevToolsAttached(id) {
+    return this.debugBrowserPromises.has(id);
   },
 
   /**
@@ -1875,6 +1946,7 @@ StartupCache = {
     "other",
     "permissions",
     "schemas",
+    "menus",
   ]),
 
   _ensureDirectoryPromise: null,
@@ -1906,6 +1978,10 @@ StartupCache = {
     let data = new Uint8Array(aomStartup.encodeBlob(this._data));
     await this._ensureDirectoryPromise;
     await IOUtils.write(this.file, data, { tmpPath: `${this.file}.tmp` });
+    Services.telemetry.scalarSet(
+      "extensions.startupCache.write_byteLength",
+      data.byteLength
+    );
   },
 
   save() {
@@ -1930,13 +2006,22 @@ StartupCache = {
   async _readData() {
     let result = new Map();
     try {
+      Glean.extensions.startupCacheLoadTime.start();
       let { buffer } = await IOUtils.read(this.file);
 
       result = aomStartup.decodeBlob(buffer);
+      Glean.extensions.startupCacheLoadTime.stop();
     } catch (e) {
-      if (!(e instanceof DOMException) || e.name !== "NotFoundError") {
+      Glean.extensions.startupCacheLoadTime.cancel();
+      if (!DOMException.isInstance(e) || e.name !== "NotFoundError") {
         Cu.reportError(e);
       }
+
+      Services.telemetry.keyedScalarAdd(
+        "extensions.startupCache.read_errors",
+        getErrorNameForTelemetry(e),
+        1
+      );
     }
 
     this._data = result;
@@ -1956,6 +2041,7 @@ StartupCache = {
       this.locales.delete(id),
       this.manifests.delete(id),
       this.permissions.delete(id),
+      this.menus.delete(id),
     ]).catch(e => {
       // Ignore the error. It happens when we try to flush the add-on
       // data after the AddonManager has flushed the entire startup cache.

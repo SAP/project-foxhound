@@ -14,6 +14,7 @@ import six
 import subprocess
 import sys
 import errno
+from pathlib import Path
 
 from mach.mixin.process import ProcessExecutionMixin
 from mozboot.mozconfig import MozconfigFindException
@@ -186,24 +187,19 @@ class MozbuildObject(ProcessExecutionMixin):
                 topsrcdir, topobjdir, mozconfig = load_mozinfo(mozinfo_path)
                 break
 
-            # We choose an arbitrary file as an indicator that this is a
-            # srcdir. We go with ourself because why not!
-            our_path = os.path.join(
-                dir_path, "python", "mozbuild", "mozbuild", "base.py"
-            )
-            if os.path.isfile(our_path):
-                topsrcdir = dir_path
-                break
-
-        # See if we're running from a Python virtualenv that's inside an objdir.
-        mozinfo_path = os.path.join(os.path.dirname(sys.prefix), "../mozinfo.json")
-        if detect_virtualenv_mozinfo and os.path.isfile(mozinfo_path):
-            topsrcdir, topobjdir, mozconfig = load_mozinfo(mozinfo_path)
+        if not topsrcdir:
+            # See if we're running from a Python virtualenv that's inside an objdir.
+            # sys.prefix would look like "$objdir/_virtualenvs/$virtualenv/".
+            # Note that virtualenv-based objdir detection work for instrumented builds,
+            # because they aren't created in the scoped "instrumentated" objdir.
+            # However, working-directory-ancestor-based objdir resolution should fully
+            # cover that case.
+            mozinfo_path = os.path.join(sys.prefix, "..", "..", "mozinfo.json")
+            if detect_virtualenv_mozinfo and os.path.isfile(mozinfo_path):
+                topsrcdir, topobjdir, mozconfig = load_mozinfo(mozinfo_path)
 
         if not topsrcdir:
-            topsrcdir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "..")
-            )
+            topsrcdir = str(Path(__file__).parent.parent.parent.parent.resolve())
 
         topsrcdir = mozpath.normsep(topsrcdir)
         if topobjdir:

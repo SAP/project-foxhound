@@ -774,8 +774,7 @@ nsresult Database::BackupAndReplaceDatabaseFile(
     rv = corruptFile->Append(corruptFilename);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = corruptFile->Remove(false);
-    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
-        rv != NS_ERROR_FILE_NOT_FOUND) {
+    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
       return rv;
     }
 
@@ -823,8 +822,7 @@ nsresult Database::BackupAndReplaceDatabaseFile(
     // Remove the broken database.
     stage = stage_removing;
     rv = databaseFile->Remove(false);
-    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
-        rv != NS_ERROR_FILE_NOT_FOUND) {
+    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
       return rv;
     }
 
@@ -882,8 +880,7 @@ nsresult Database::TryToCloneTablesFromCorruptDatabase(
   NS_ENSURE_SUCCESS(rv, rv);
   // Ensure there's no previous recover file.
   rv = recoverFile->Remove(false);
-  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
-      rv != NS_ERROR_FILE_NOT_FOUND) {
+  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
     return rv;
   }
 
@@ -1054,8 +1051,7 @@ nsresult Database::SetupDatabaseConnection(
     rv = iconsFile->Append(DATABASE_FAVICONS_FILENAME);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = iconsFile->Remove(false);
-    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
-        rv != NS_ERROR_FILE_NOT_FOUND) {
+    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
       return rv;
     }
     rv = EnsureFaviconsDatabaseAttached(aStorage);
@@ -1264,6 +1260,13 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
       }
 
       // Firefox 100 uses schema version 66
+
+      if (currentSchemaVersion < 67) {
+        rv = MigrateV67Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 103 uses schema version 67
 
       // Schema Upgrades must add migration code here.
       // >>> IMPORTANT! <<<
@@ -2518,6 +2521,25 @@ nsresult Database::MigrateV66Up() {
         "ADD COLUMN title TEXT"_ns);
     NS_ENSURE_SUCCESS(rv, rv);
   }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV67Up() {
+  // Align all input field in moz_inputhistory to lowercase. If there are
+  // multiple records that expresses the same input, use maximum use_count from
+  // them to carry on the experience of the past.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->ExecuteSimpleSQL(
+      "INSERT INTO moz_inputhistory "
+      "SELECT place_id, LOWER(input), use_count FROM moz_inputhistory "
+      "  WHERE LOWER(input) <> input "
+      "ON CONFLICT DO "
+      "  UPDATE SET use_count = MAX(use_count, EXCLUDED.use_count)"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = mMainConn->ExecuteSimpleSQL(
+      "DELETE FROM moz_inputhistory WHERE LOWER(input) <> input"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   return NS_OK;
 }
 

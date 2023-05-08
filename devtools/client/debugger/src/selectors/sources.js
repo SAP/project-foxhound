@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { createSelector } from "reselect";
+import { shallowEqual } from "../utils/shallow-equal";
 
 import {
   getPrettySourceURL,
@@ -13,13 +14,6 @@ import {
   isJavaScript,
   removeThreadActorId,
 } from "../utils/source";
-import {
-  hasResource,
-  getResource,
-  getMappedResource,
-  memoizeResourceShallow,
-  makeReduceAllQuery,
-} from "../utils/resource";
 import { stripQuery } from "../utils/url";
 
 import { findPosition } from "../utils/breakpoint/breakpointPositions";
@@ -37,17 +31,12 @@ import {
 import { getSourceTextContent } from "./sources-content";
 import { getAllThreads } from "./threads";
 
-// This is used by tabs selectors
-export const resourceAsSourceBase = memoizeResourceShallow(source => source);
-
-export function getSourceInSources(sources, id) {
-  return hasResource(sources, id)
-    ? getMappedResource(sources, id, resourceAsSourceBase)
-    : null;
+export function hasSource(state, id) {
+  return state.sources.sources.has(id);
 }
 
 export function getSource(state, id) {
-  return getSourceInSources(getSources(state), id);
+  return state.sources.sources.get(id);
 }
 
 export function getSourceFromId(state, id) {
@@ -58,6 +47,10 @@ export function getSourceFromId(state, id) {
   return source;
 }
 
+export function getLocationSource(state, location) {
+  return getSource(state, location.sourceId);
+}
+
 export function getSourceByActorId(state, actorId) {
   if (!hasSourceActor(state, actorId)) {
     return null;
@@ -66,15 +59,12 @@ export function getSourceByActorId(state, actorId) {
   return getSource(state, getSourceActor(state, actorId).source);
 }
 
-function getSourcesByURLInSources(sources, urls, url) {
+function getSourcesByURL(state, url) {
+  const urls = getUrls(state);
   if (!url || !urls[url]) {
     return [];
   }
-  return urls[url].map(id => getSourceInSources(sources, id));
-}
-
-function getSourcesByURL(state, url) {
-  return getSourcesByURLInSources(getSources(state), getUrls(state), url);
+  return urls[url].map(id => getSource(state, id));
 }
 
 export function getSourceByURL(state, url) {
@@ -82,22 +72,13 @@ export function getSourceByURL(state, url) {
   return foundSources ? foundSources[0] : null;
 }
 
-function getSpecificSourceByURLInSources(sources, urls, url, isOriginal) {
-  const foundSources = getSourcesByURLInSources(sources, urls, url);
+// This is used by tabs selectors
+export function getSpecificSourceByURL(state, url, isOriginal) {
+  const foundSources = getSourcesByURL(state, url);
   if (foundSources) {
     return foundSources.find(source => source.isOriginal == isOriginal);
   }
   return null;
-}
-
-// This is used by tabs selectors
-export function getSpecificSourceByURL(state, url, isOriginal) {
-  return getSpecificSourceByURLInSources(
-    getSources(state),
-    getUrls(state),
-    url,
-    isOriginal
-  );
 }
 
 function getOriginalSourceByURL(state, url) {
@@ -159,12 +140,8 @@ export function getHasSiblingOfSameName(state, source) {
   return getSourcesUrlsInSources(state, source.url).length > 1;
 }
 
-const querySourceList = makeReduceAllQuery(resourceAsSourceBase, sources =>
-  sources.slice()
-);
-
-// This is only used externaly by tabs selectors
-export function getSources(state) {
+// This is only used externaly by tabs and breakpointSources selectors
+export function getSourcesMap(state) {
   return state.sources.sources;
 }
 
@@ -176,9 +153,13 @@ function getPlainUrls(state) {
   return state.sources.plainUrls;
 }
 
-export function getSourceList(state) {
-  return querySourceList(getSources(state));
-}
+export const getSourceList = createSelector(
+  getSourcesMap,
+  sourcesMap => {
+    return [...sourcesMap.values()];
+  },
+  { equalityCheck: shallowEqual, resultEqualityCheck: shallowEqual }
+);
 
 export function getDisplayedSourcesList(state) {
   return Object.values(getDisplayedSources(state)).flatMap(Object.values);
@@ -195,23 +176,22 @@ export function getExtensionNameBySourceUrl(state, url) {
 
 // This is only used by tests
 export function getSourceCount(state) {
-  return getSourceList(state).length;
+  return getSourcesMap(state).size;
 }
 
-export const getSelectedLocation = createSelector(
-  state => state.sources,
-  sources => sources.selectedLocation
-);
+export function getSelectedLocation(state) {
+  return state.sources.selectedLocation;
+}
 
 export const getSelectedSource = createSelector(
   getSelectedLocation,
-  getSources,
-  (selectedLocation, sources) => {
+  getSourcesMap,
+  (selectedLocation, sourcesMap) => {
     if (!selectedLocation) {
       return;
     }
 
-    return getSourceInSources(sources, selectedLocation.sourceId);
+    return sourcesMap.get(selectedLocation.sourceId);
   }
 );
 
@@ -230,14 +210,14 @@ export function getProjectDirectoryRootName(state) {
 }
 
 const getDisplayedSourceIDs = createSelector(
-  getSources,
+  getSourcesMap,
   state => state.sources.sourcesWithUrls,
   state => state.sources.projectDirectoryRoot,
   state => state.sources.chromeAndExtensionsEnabled,
   state => state.threads.isWebExtension,
   getAllThreads,
   (
-    sources,
+    sourcesMap,
     sourcesWithUrls,
     projectDirectoryRoot,
     chromeAndExtensionsEnabled,
@@ -251,7 +231,7 @@ const getDisplayedSourceIDs = createSelector(
     const sourceIDsByThread = {};
 
     for (const id of sourcesWithUrls) {
-      const source = getSourceInSources(sources, id);
+      const source = sourcesMap.get(id);
 
       const displayed =
         isDescendantOfRoot(source, rootWithoutThreadActor) &&
@@ -273,9 +253,9 @@ const getDisplayedSourceIDs = createSelector(
 );
 
 export const getDisplayedSources = createSelector(
-  getSources,
+  getSourcesMap,
   getDisplayedSourceIDs,
-  (sources, idsByThread) => {
+  (sourcesMap, idsByThread) => {
     const result = {};
 
     for (const thread of Object.keys(idsByThread)) {
@@ -285,7 +265,7 @@ export const getDisplayedSources = createSelector(
         if (!result[thread]) {
           result[thread] = {};
         }
-        const source = getResource(sources, id);
+        const source = sourcesMap.get(id);
 
         const entry = {
           ...source,
@@ -390,12 +370,14 @@ export function getBreakableLines(state, sourceId) {
     return state.sources.breakableLines[sourceId];
   }
 
+  const sourceActorIDs = state.sources.actors[sourceId];
+  if (!sourceActorIDs?.length) {
+    return null;
+  }
+
   // We pull generated file breakable lines directly from the source actors
   // so that breakable lines can be added as new source actors on HTML loads.
-  return getBreakableLinesForSourceActors(
-    state.sourceActors,
-    state.sources.actors[sourceId]
-  );
+  return getBreakableLinesForSourceActors(state, sourceActorIDs, source.isHTML);
 }
 
 export const getSelectedBreakableLines = createSelector(

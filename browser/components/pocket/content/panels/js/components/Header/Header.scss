@@ -3,7 +3,6 @@
   justify-content: space-between;
   align-items: center;
   margin: 16px 0 12px;
-  font-size: 1em;
   font-weight: 600;
 
   .stp_header_logo {
@@ -13,7 +12,11 @@
     width: 121px;
 
     @include theme_dark {
-      background: url(../img/pocketlogo-dark.svg) bottom center no-repeat;
+      background-image: url(../img/pocketlogo-dark.svg);
     }
+  }
+
+  .stp_button {
+    margin: 0;
   }
 }

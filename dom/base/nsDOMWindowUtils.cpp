@@ -26,6 +26,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Touch.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/SharedStyleSheetCache.h"
@@ -74,9 +75,11 @@
 #include "mozilla/dom/DOMRect.h"
 #include <algorithm>
 
-#if defined(MOZ_X11) && defined(MOZ_WIDGET_GTK)
+#if defined(MOZ_WIDGET_GTK)
 #  include <gdk/gdk.h>
-#  include <gdk/gdkx.h>
+#  if defined(MOZ_X11)
+#    include <gdk/gdkx.h>
+#  endif
 #endif
 
 #include "Layers.h"
@@ -1077,6 +1080,10 @@ nsDOMWindowUtils::SendNativeTouchPoint(uint32_t aPointerId,
                                        int32_t aScreenY, double aPressure,
                                        uint32_t aOrientation,
                                        nsIObserver* aObserver) {
+  // FYI: This was designed for automated tests, but currently, this is used by
+  //      DevTools to emulate touch events from mouse events in the responsive
+  //      design mode.
+
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) {
     return NS_ERROR_FAILURE;
@@ -1181,8 +1188,8 @@ nsDOMWindowUtils::SendNativeTouchpadDoubleTap(int32_t aScreenX,
 NS_IMETHODIMP
 nsDOMWindowUtils::SendNativeTouchpadPan(uint32_t aEventPhase, int32_t aScreenX,
                                         int32_t aScreenY, double aDeltaX,
-                                        double aDeltaY,
-                                        int32_t aModifierFlags) {
+                                        double aDeltaY, int32_t aModifierFlags,
+                                        nsIObserver* aObserver) {
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) {
     return NS_ERROR_FAILURE;
@@ -1191,12 +1198,12 @@ nsDOMWindowUtils::SendNativeTouchpadPan(uint32_t aEventPhase, int32_t aScreenX,
   MOZ_ASSERT(aModifierFlags >= 0);
   NS_DispatchToMainThread(NativeInputRunnable::Create(
       NewRunnableMethod<nsIWidget::TouchpadGesturePhase, LayoutDeviceIntPoint,
-                        double, double, uint32_t>(
+                        double, double, uint32_t, nsIObserver*>(
           "nsIWidget::SynthesizeNativeTouchpadPan", widget,
           &nsIWidget::SynthesizeNativeTouchpadPan,
           (nsIWidget::TouchpadGesturePhase)aEventPhase,
           LayoutDeviceIntPoint(aScreenX, aScreenY), aDeltaX, aDeltaY,
-          aModifierFlags)));
+          aModifierFlags, aObserver)));
   return NS_OK;
 }
 
@@ -1568,17 +1575,17 @@ nsDOMWindowUtils::CompareCanvases(nsISupports* aCanvas1, nsISupports* aCanvas2,
   DataSourceSurface::ScopedMap map1(img1, DataSourceSurface::READ);
   DataSourceSurface::ScopedMap map2(img2, DataSourceSurface::READ);
 
-  if (NS_WARN_IF(!map1.IsMapped()) || NS_WARN_IF(!map2.IsMapped()) ||
-      NS_WARN_IF(map1.GetStride() != map2.GetStride())) {
+  if (NS_WARN_IF(!map1.IsMapped()) || NS_WARN_IF(!map2.IsMapped())) {
     return NS_ERROR_FAILURE;
   }
 
   int v;
   IntSize size = img1->GetSize();
-  int32_t stride = map1.GetStride();
+  int32_t stride1 = map1.GetStride();
+  int32_t stride2 = map2.GetStride();
 
   // we can optimize for the common all-pass case
-  if (stride == size.width * 4) {
+  if (stride1 == stride2 && stride1 == size.width * 4) {
     v = memcmp(map1.GetData(), map2.GetData(), size.width * size.height * 4);
     if (v == 0) {
       if (aMaxDifference) *aMaxDifference = 0;
@@ -1591,9 +1598,9 @@ nsDOMWindowUtils::CompareCanvases(nsISupports* aCanvas1, nsISupports* aCanvas2,
   uint32_t different = 0;
 
   for (int j = 0; j < size.height; j++) {
-    unsigned char* p1 = map1.GetData() + j * stride;
-    unsigned char* p2 = map2.GetData() + j * stride;
-    v = memcmp(p1, p2, stride);
+    unsigned char* p1 = map1.GetData() + j * stride1;
+    unsigned char* p2 = map2.GetData() + j * stride2;
+    v = memcmp(p1, p2, size.width * 4);
 
     if (v) {
       for (int i = 0; i < size.width; i++) {
@@ -3191,7 +3198,7 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
   if (!pseudo) {
     return NS_ERROR_FAILURE;
   }
-  RefPtr<ComputedStyle> computedStyle =
+  RefPtr<const ComputedStyle> computedStyle =
       nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(aElement, *pseudo);
   if (!computedStyle) {
     return NS_ERROR_FAILURE;
@@ -3608,7 +3615,7 @@ nsDOMWindowUtils::HandleFullscreenRequests(bool* aRetVal) {
   return NS_OK;
 }
 
-nsresult nsDOMWindowUtils::ExitFullscreen() {
+nsresult nsDOMWindowUtils::ExitFullscreen(bool aDontRestoreViewSize) {
   PROFILER_MARKER_UNTYPED("Exit fullscreen", DOM);
   nsCOMPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
@@ -3624,7 +3631,8 @@ nsresult nsDOMWindowUtils::ExitFullscreen() {
   // set the window dimensions in advance. Since the resize message
   // comes after the fullscreen change call, doing so could avoid an
   // extra resize reflow after this point.
-  PrepareForFullscreenChange(GetDocShell(), oldSize);
+  PrepareForFullscreenChange(GetDocShell(),
+                             aDontRestoreViewSize ? nsSize() : oldSize);
   Document::ExitFullscreenInDocTree(doc);
   return NS_OK;
 }
@@ -4049,6 +4057,19 @@ nsDOMWindowUtils::SetHandlingUserInput(bool aHandlingUserInput,
   RefPtr<HandlingUserInputHelper> helper(
       new HandlingUserInputHelper(aHandlingUserInput));
   helper.forget(aHelper);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::IsKeyboardEventUserActivity(Event* aEvent, bool* aResult) {
+  NS_ENSURE_STATE(aEvent);
+  if (!aEvent->AsKeyboardEvent()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  WidgetEvent* internalEvent = aEvent->WidgetEventPtr();
+  NS_ENSURE_STATE(internalEvent);
+  *aResult = EventStateManager::IsKeyboardEventUserActivity(internalEvent);
   return NS_OK;
 }
 
@@ -4744,5 +4765,24 @@ nsDOMWindowUtils::GetHasScrollLinkedEffect(bool* aResult) {
     return NS_ERROR_FAILURE;
   }
   *aResult = doc->HasScrollLinkedEffect();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetOrientationLock(uint32_t* aOrientationLock) {
+  NS_WARNING("nsDOMWindowUtils::GetOrientationLock");
+
+  nsIDocShell* docShell = GetDocShell();
+  if (!docShell) {
+    return NS_ERROR_FAILURE;
+  }
+
+  BrowsingContext* bc = docShell->GetBrowsingContext();
+  bc = bc ? bc->Top() : nullptr;
+  if (!bc) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aOrientationLock = static_cast<uint32_t>(bc->GetOrientationLock());
   return NS_OK;
 }

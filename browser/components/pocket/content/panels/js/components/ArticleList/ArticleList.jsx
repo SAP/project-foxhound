@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import React from "react";
+import React, { useState } from "react";
 import TelemetryLink from "../TelemetryLink/TelemetryLink";
 
 function ArticleUrl(props) {
@@ -34,12 +34,34 @@ function Article(props) {
       : null;
   }
 
-  const { article, savedArticle, position, source, model, utmParams } = props;
+  const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
+  const [thumbnailLoadFailed, setThumbnailLoadFailed] = useState(false);
+
+  const {
+    article,
+    savedArticle,
+    position,
+    source,
+    model,
+    utmParams,
+    openInPocketReader,
+  } = props;
+
   const url = new URL(article.url || article.resolved_url || "");
   const urlSearchParams = new URLSearchParams(utmParams);
+
+  if (
+    openInPocketReader &&
+    article.item_id &&
+    !url.href.match(/getpocket\.com\/read/)
+  ) {
+    url.href = `https://getpocket.com/read/${article.item_id}`;
+  }
+
   for (let [key, val] of urlSearchParams.entries()) {
     url.searchParams.set(key, val);
   }
+
   // Using array notation because there is a key titled `1` (`images` is an object)
   const thumbnail =
     article.thumbnail ||
@@ -51,6 +73,7 @@ function Article(props) {
     article.publisher ||
     article.domain_metadata?.name ||
     article.resolved_domain;
+
   return (
     <li className="stp_article_list_item">
       <ArticleUrl
@@ -62,8 +85,23 @@ function Article(props) {
         utmParams={utmParams}
       >
         <>
-          {thumbnail ? (
-            <img className="stp_article_list_thumb" src={thumbnail} alt={alt} />
+          {thumbnail && !thumbnailLoadFailed ? (
+            <img
+              className="stp_article_list_thumb"
+              src={thumbnail}
+              alt={alt}
+              width="40"
+              height="40"
+              onLoad={() => {
+                setThumbnailLoaded(true);
+              }}
+              onError={() => {
+                setThumbnailLoadFailed(true);
+              }}
+              style={{
+                visibility: thumbnailLoaded ? `visible` : `hidden`,
+              }}
+            />
           ) : (
             <div className="stp_article_list_thumb_placeholder" />
           )}
@@ -88,6 +126,7 @@ function ArticleList(props) {
           source={props.source}
           model={props.model}
           utmParams={props.utmParams}
+          openInPocketReader={props.openInPocketReader}
         />
       ))}
     </ul>

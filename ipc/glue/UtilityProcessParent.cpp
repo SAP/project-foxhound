@@ -36,26 +36,14 @@ bool UtilityProcessParent::SendRequestMemoryReport(
 
   PUtilityProcessParent::SendRequestMemoryReport(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
-      [&](const uint32_t& aGeneration2) {
-        if (RefPtr<UtilityProcessManager> utilitypm =
-                UtilityProcessManager::GetSingleton()) {
-          for (RefPtr<UtilityProcessParent>& parent :
-               utilitypm->GetAllProcessesProcessParent()) {
-            if (parent->mMemoryReportRequest) {
-              parent->mMemoryReportRequest->Finish(aGeneration2);
-              parent->mMemoryReportRequest = nullptr;
-            }
-          }
+      [self = RefPtr{this}](const uint32_t& aGeneration2) {
+        if (self->mMemoryReportRequest) {
+          self->mMemoryReportRequest->Finish(aGeneration2);
+          self->mMemoryReportRequest = nullptr;
         }
       },
-      [&](mozilla::ipc::ResponseRejectReason) {
-        if (RefPtr<UtilityProcessManager> utilitypm =
-                UtilityProcessManager::GetSingleton()) {
-          for (RefPtr<UtilityProcessParent>& parent :
-               utilitypm->GetAllProcessesProcessParent()) {
-            parent->mMemoryReportRequest = nullptr;
-          }
-        }
+      [self = RefPtr{this}](mozilla::ipc::ResponseRejectReason) {
+        self->mMemoryReportRequest = nullptr;
       });
 
   return true;
@@ -85,6 +73,15 @@ void UtilityProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
 
   if (aWhy == AbnormalShutdown) {
     nsAutoString dumpID;
+
+    if (mCrashReporter) {
+#if defined(MOZ_SANDBOX)
+      mCrashReporter->AddAnnotation(
+          CrashReporter::Annotation::UtilityProcessSandboxingKind,
+          (unsigned int)mHost->mSandbox);
+#endif
+    }
+
     GenerateCrashReport(OtherPid(), &dumpID);
 
     // It's okay for dumpID to be empty if there was no minidump generated

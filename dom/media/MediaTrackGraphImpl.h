@@ -36,6 +36,28 @@ template <typename T>
 class LinkedList;
 class GraphRunner;
 
+class DeviceInputTrackManager {
+ public:
+  DeviceInputTrackManager() = default;
+
+  // Returns the current NativeInputTrack.
+  NativeInputTrack* GetNativeInputTrack();
+  // Returns the DeviceInputTrack paired with the device of aID if it exists.
+  // Otherwise, returns nullptr.
+  DeviceInputTrack* GetDeviceInputTrack(CubebUtils::AudioDeviceID aID);
+  // Returns the first added NonNativeInputTrack if any. Otherwise, returns
+  // nullptr.
+  NonNativeInputTrack* GetFirstNonNativeInputTrack();
+  // Adds DeviceInputTrack to the managing list.
+  void Add(DeviceInputTrack* aTrack);
+  // Removes DeviceInputTrack from the managing list.
+  void Remove(DeviceInputTrack* aTrack);
+
+ private:
+  RefPtr<NativeInputTrack> mNativeInputTrack;
+  nsTArray<RefPtr<NonNativeInputTrack>> mNonNativeInputTracks;
+};
+
 /**
  * A per-track update message passed from the media graph thread to the
  * main thread.
@@ -399,28 +421,33 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   TrackTime PlayAudio(AudioMixer* aMixer, const TrackKeyAndVolume& aTkv,
                       GraphTime aPlayedTime);
 
-  /* Do not call this directly. For users who need to get a NativeInputTrack,
-   * use NativeInputTrack::OpenAudio() instead. This should only be used in
-   * NativeInputTrack to get the existing NativeInputTrack paired with the given
+  /* Do not call this directly. For users who need to get a DeviceInputTrack,
+   * use DeviceInputTrack::OpenAudio() instead. This should only be used in
+   * DeviceInputTrack to get the existing DeviceInputTrack paired with the given
    * device in this graph. Main thread only.*/
-  NativeInputTrack* GetNativeInputTrack();
+  DeviceInputTrack* GetDeviceInputTrackMainThread(
+      CubebUtils::AudioDeviceID aID);
+
+  /* Do not call this directly. This should only be used in DeviceInputTrack to
+   * get the existing NativeInputTrackMain thread only.*/
+  NativeInputTrack* GetNativeInputTrackMainThread();
 
   /* Runs off a message on the graph thread when something requests audio from
    * an input audio device of ID aID, and delivers the input audio frames to
    * aListener. */
-  void OpenAudioInputImpl(NativeInputTrack* aTrack);
+  void OpenAudioInputImpl(DeviceInputTrack* aTrack);
   /* Called on the main thread when something requests audio from an input
    * audio device aID. */
-  virtual void OpenAudioInput(NativeInputTrack* aTrack) override;
+  virtual void OpenAudioInput(DeviceInputTrack* aTrack) override;
 
   /* Runs off a message on the graph when input audio from aID is not needed
    * anymore, for a particular track. It can be that other tracks still need
    * audio from this audio input device. */
-  void CloseAudioInputImpl(CubebUtils::AudioDeviceID aID);
+  void CloseAudioInputImpl(DeviceInputTrack* aTrack);
   /* Called on the main thread when input audio from aID is not needed
    * anymore, for a particular track. It can be that other tracks still need
    * audio from this audio input device. */
-  virtual void CloseAudioInput(NativeInputTrack* aTrack) override;
+  virtual void CloseAudioInput(DeviceInputTrack* aTrack) override;
 
   /* Add or remove an audio output for this track. All tracks that have an
    * audio output are mixed and written to a single audio output stream. */
@@ -432,7 +459,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   /* Called on the graph thread when the input device settings should be
    * reevaluated, for example, if the channel count of the input track should
    * be changed. */
-  void ReevaluateInputDevice();
+  void ReevaluateInputDevice(CubebUtils::AudioDeviceID aID);
 
   /* Called on the graph thread when there is new output data for listeners.
    * This is the mixed audio output of this MediaTrackGraph. */
@@ -506,11 +533,9 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * channel counts requested by the listeners. The max channel count is
    * delivered to the listeners themselves, and they take care of downmixing.
    */
-  uint32_t AudioInputChannelCount();
+  uint32_t AudioInputChannelCount(CubebUtils::AudioDeviceID aID);
 
-  AudioInputType AudioInputDevicePreference();
-
-  CubebUtils::AudioDeviceID InputDeviceID() { return mInputDeviceID; }
+  AudioInputType AudioInputDevicePreference(CubebUtils::AudioDeviceID aID);
 
   double MediaTimeToSeconds(GraphTime aTime) const {
     NS_ASSERTION(aTime > -TRACK_TIME_MAX && aTime <= TRACK_TIME_MAX,
@@ -724,25 +749,12 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   nsTArray<nsCOMPtr<nsIRunnable>> mPendingUpdateRunnables;
 
   /**
-   * Devices to use for cubeb input & output, or nullptr for default device.
+   * Devices to use for cubeb output, or nullptr for default device.
    * A MediaTrackGraph always has an output (even if silent).
-   * If `mNativeInputTrackOnGraph` is not NULL, this MediaTrackGraph wants audio
-   * input.
    *
-   * All mInputDeviceID access is on the graph thread except for reads via
-   * InputDeviceID(), which are racy but used only for comparison.
-   *
-   * In any case, the number of channels to use can be queried (on the graph
-   * thread) by AudioInputChannelCount() and AudioOutputChannelCount().
+   * All mOutputDeviceID access is on the graph thread.
    */
-  std::atomic<CubebUtils::AudioDeviceID> mInputDeviceID;
   CubebUtils::AudioDeviceID mOutputDeviceID;
-
-  // Track the native input device in graph. Graph thread only.
-  // TODO: Once multiple input devices is supported,
-  // mNativeInputTrackOnGraph->mDeviceId could replace mInputDeviceID since no
-  // other thread will read mInputDeviceID.
-  RefPtr<NativeInputTrack> mNativeInputTrackOnGraph;
 
   /**
    * List of resume operations waiting for a switch to an AudioCallbackDriver.
@@ -953,6 +965,10 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
  private:
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
 
+  // Set a new native iput device when the current native input device is close.
+  // Main thread only.
+  void SetNewNativeInput();
+
   /**
    * This class uses manual memory management, and all pointers to it are raw
    * pointers. However, in order for it to implement nsIMemoryReporter, it needs
@@ -1015,10 +1031,15 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   uint32_t mMaxOutputChannelCount;
 
-  /*
-   * Hold the NativeInputTrack for a certain device.
+  /**
+   * Manage the native or non-native input device in graph. Main thread only.
    */
-  RefPtr<NativeInputTrack> mNativeInputTrackOnMain;
+  DeviceInputTrackManager mDeviceInputTrackManagerMainThread;
+
+  /**
+   * Manage the native or non-native input device in graph. Graph thread only.
+   */
+  DeviceInputTrackManager mDeviceInputTrackManagerGraphThread;
 };
 
 }  // namespace mozilla

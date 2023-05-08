@@ -26,9 +26,15 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TransformStreamDefaultController)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+TransformStream* TransformStreamDefaultController::Stream() { return mStream; }
+
 void TransformStreamDefaultController::SetStream(TransformStream& aStream) {
   MOZ_ASSERT(!mStream);
   mStream = &aStream;
+}
+
+TransformerAlgorithms* TransformStreamDefaultController::Algorithms() {
+  return mTransformerAlgorithms;
 }
 
 void TransformStreamDefaultController::SetAlgorithms(
@@ -117,7 +123,7 @@ void TransformStreamDefaultController::Enqueue(JSContext* aCx,
     TransformStreamErrorWritableAndUnblockWrite(aCx, stream, error, aRv);
 
     // Step 5.2: Throw stream.[[readable]].[[storedError]].
-    JS::RootedValue storedError(aCx, stream->Readable()->StoredError());
+    JS::Rooted<JS::Value> storedError(aCx, stream->Readable()->StoredError());
     aRv.MightThrowJSException();
     aRv.ThrowJSException(aCx, storedError);
     return;
@@ -148,7 +154,11 @@ void TransformStreamDefaultController::Error(JSContext* aCx,
   // https://streams.spec.whatwg.org/#transform-stream-default-controller-error
 
   // Perform ! TransformStreamError(controller.[[stream]], e).
-  TransformStreamError(aCx, mStream, aError, aRv);
+  // mStream is set in initialization step and only modified in cycle
+  // collection.
+  // TODO: Move mStream initialization to a method/constructor and make it
+  // MOZ_KNOWN_LIVE again. (See bug 1769854)
+  TransformStreamError(aCx, MOZ_KnownLive(mStream), aError, aRv);
 }
 
 // https://streams.spec.whatwg.org/#ts-default-controller-terminate
@@ -204,8 +214,8 @@ void SetUpTransformStreamDefaultController(
 
 // https://streams.spec.whatwg.org/#set-up-transform-stream-default-controller-from-transformer
 void SetUpTransformStreamDefaultControllerFromTransformer(
-    JSContext* aCx, TransformStream& aStream, JS::HandleObject aTransformer,
-    Transformer& aTransformerDict) {
+    JSContext* aCx, TransformStream& aStream,
+    JS::Handle<JSObject*> aTransformer, Transformer& aTransformerDict) {
   // Step 1. Let controller be a new TransformStreamDefaultController.
   auto controller =
       MakeRefPtr<TransformStreamDefaultController>(aStream.GetParentObject());

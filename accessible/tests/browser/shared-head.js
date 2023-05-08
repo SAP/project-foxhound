@@ -323,16 +323,8 @@ function loadScripts(...scripts) {
  *        a list of scripts to load into content
  */
 async function loadContentScripts(target, ...scripts) {
-  for (let script of scripts) {
-    let contentScript;
-    if (typeof script === "string") {
-      // If script string includes a .jsm extention, assume it is a module path.
-      contentScript = `${CURRENT_DIR}${script}`;
-    } else {
-      // Script is a object that has { dir, name } format.
-      contentScript = `${script.dir}${script.name}`;
-    }
-
+  for (let { script, symbol } of scripts) {
+    let contentScript = `${CURRENT_DIR}${script}`;
     let loadedScriptSet = LOADED_CONTENT_SCRIPTS.get(contentScript);
     if (!loadedScriptSet) {
       loadedScriptSet = new WeakSet();
@@ -341,9 +333,14 @@ async function loadContentScripts(target, ...scripts) {
       continue;
     }
 
-    await SpecialPowers.spawn(target, [contentScript], async _contentScript => {
-      ChromeUtils.import(_contentScript, content.window);
-    });
+    await SpecialPowers.spawn(
+      target,
+      [contentScript, symbol],
+      async (_contentScript, importSymbol) => {
+        let module = ChromeUtils.import(_contentScript);
+        content.window[importSymbol] = module[importSymbol];
+      }
+    );
     loadedScriptSet.add(target);
   }
 }
@@ -519,7 +516,10 @@ function accessibleTask(doc, task, options = {}) {
         }
 
         await SimpleTest.promiseFocus(browser);
-        await loadContentScripts(browser, "Common.jsm");
+        await loadContentScripts(browser, {
+          script: "Common.jsm",
+          symbol: "CommonUtils",
+        });
 
         if (options.chrome) {
           ok(!browser.isRemoteBrowser, "Not remote browser");
@@ -906,19 +906,19 @@ async function testBoundsInContent(iframeDocAcc, id, browser) {
       ] = LayoutUtils.getBoundsForDOMElm(_id, content.document);
 
       ok(
-        _x >= expectedX - 5 || _x <= expectedX + 5,
+        _x >= expectedX - 5 && _x <= expectedX + 5,
         "Got " + _x + ", accurate x for " + _id
       );
       ok(
-        _y >= expectedY - 5 || _y <= expectedY + 5,
+        _y >= expectedY - 5 && _y <= expectedY + 5,
         "Got " + _y + ", accurate y for " + _id
       );
       ok(
-        _width >= expectedWidth - 5 || _width <= expectedWidth + 5,
+        _width >= expectedWidth - 5 && _width <= expectedWidth + 5,
         "Got " + _width + ", accurate width for " + _id
       );
       ok(
-        _height >= expectedHeight - 5 || _height <= expectedHeight + 5,
+        _height >= expectedHeight - 5 && _height <= expectedHeight + 5,
         "Got " + _height + ", accurate height for " + _id
       );
     }

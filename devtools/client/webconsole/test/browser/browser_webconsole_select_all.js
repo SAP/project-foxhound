@@ -19,9 +19,9 @@ add_task(async function testSelectAll() {
 async function testSelectionWhenMovingBetweenBoxes(hud) {
   // Fill the console with some output.
   await clearOutput(hud);
-  await executeAndWaitForMessage(hud, "1 + 2", "3", ".result");
-  await executeAndWaitForMessage(hud, "3 + 4", "7", ".result");
-  await executeAndWaitForMessage(hud, "5 + 6", "11", ".result");
+  await executeAndWaitForResultMessage(hud, "1 + 2", "3");
+  await executeAndWaitForResultMessage(hud, "3 + 4", "7");
+  await executeAndWaitForResultMessage(hud, "5 + 6", "11");
 }
 
 function testBrowserMenuSelectAll(hud) {
@@ -29,9 +29,9 @@ function testBrowserMenuSelectAll(hud) {
   const outputContainer = ui.outputNode.querySelector(".webconsole-output");
 
   is(
-    outputContainer.childNodes.length,
+    outputContainer.querySelectorAll(".message").length,
     6,
-    "the output node contains the expected number of children"
+    "the output node contains the expected number of messages"
   );
 
   // The focus is on the JsTerm, so we need to blur it for the copy comand to
@@ -51,7 +51,13 @@ function checkMessagesSelected(outputContainer) {
   const messages = outputContainer.querySelectorAll(".message");
 
   for (const message of messages) {
-    const selected = selection.containsNode(message);
+    // Oddly, something about the top and bottom buffer having user-select be
+    // 'none' means that the messages themselves don't register as selected.
+    // However, all of their children will count as selected, which should be
+    // good enough for our purposes.
+    const selected = [...message.children].every(c =>
+      selection.containsNode(c)
+    );
     ok(selected, `Node containing text "${message.textContent}" was selected`);
   }
 }

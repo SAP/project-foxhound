@@ -191,6 +191,26 @@ nsresult nsLocalFile::RevealFile(const nsString& aResolvedPath) {
   return SUCCEEDED(hr) ? NS_OK : NS_ERROR_FAILURE;
 }
 
+// static
+void nsLocalFile::CheckForReservedFileName(nsString& aFileName) {
+  static const char* forbiddenNames[] = {
+      "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",  "COM8",
+      "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6",  "LPT7",
+      "LPT8", "LPT9", "CON",  "PRN",  "AUX",  "NUL",  "CLOCK$"};
+
+  uint32_t nameLen;
+  for (size_t n = 0; n < ArrayLength(forbiddenNames); ++n) {
+    nameLen = (uint32_t)strlen(forbiddenNames[n]);
+    if (aFileName.EqualsIgnoreCase(forbiddenNames[n], nameLen)) {
+      // invalid name is either the entire string, or a prefix with a period
+      if (aFileName.Length() == nameLen ||
+          aFileName.CharAt(nameLen) == char16_t('.')) {
+        aFileName.Truncate();
+      }
+    }
+  }
+}
+
 class nsDriveEnumerator : public nsSimpleEnumerator,
                           public nsIDirectoryEnumerator {
  public:
@@ -337,20 +357,6 @@ static nsresult ConvertWinError(DWORD aWinErr) {
       break;
   }
   return rv;
-}
-
-// as suggested in the MSDN documentation on SetFilePointer
-static __int64 MyFileSeek64(HANDLE aHandle, __int64 aDistance,
-                            DWORD aMoveMethod) {
-  LARGE_INTEGER li;
-
-  li.QuadPart = aDistance;
-  li.LowPart = SetFilePointer(aHandle, li.LowPart, &li.HighPart, aMoveMethod);
-  if (li.LowPart == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
-    li.QuadPart = -1;
-  }
-
-  return li.QuadPart;
 }
 
 // Check whether a path is a volume root. Expects paths to be \-terminated.
@@ -874,14 +880,10 @@ nsLocalFile::nsLocalFile(const nsAString& aFilePath)
   InitWithPath(aFilePath);
 }
 
-nsresult nsLocalFile::nsLocalFileConstructor(nsISupports* aOuter,
-                                             const nsIID& aIID,
+nsresult nsLocalFile::nsLocalFileConstructor(const nsIID& aIID,
                                              void** aInstancePtr) {
   if (NS_WARN_IF(!aInstancePtr)) {
     return NS_ERROR_INVALID_ARG;
-  }
-  if (NS_WARN_IF(aOuter)) {
-    return NS_ERROR_NO_AGGREGATION;
   }
 
   nsLocalFile* inst = new nsLocalFile();
@@ -1175,7 +1177,7 @@ bool nsLocalFile::CleanupCmdHandlerPath(nsAString& aCommandHandler) {
   handlerCommand.Assign(destination.get());
 
   // Remove quotes around paths
-  handlerCommand.StripChars("\"");
+  handlerCommand.StripChars(u"\"");
 
   // Strip windows host process bootstrap so we can get to the actual
   // handler.
@@ -1614,6 +1616,25 @@ nsLocalFile::SetLeafName(const nsAString& aLeafName) {
 }
 
 NS_IMETHODIMP
+nsLocalFile::GetDisplayName(nsAString& aLeafName) {
+  aLeafName.Truncate();
+
+  if (mWorkingPath.IsEmpty()) {
+    return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
+  SHFILEINFOW sfi = {};
+  DWORD_PTR result = ::SHGetFileInfoW(mWorkingPath.get(), 0, &sfi, sizeof(sfi),
+                                      SHGFI_DISPLAYNAME);
+  // If we found a display name, return that:
+  if (result) {
+    aLeafName.Assign(sfi.szDisplayName);
+    return NS_OK;
+  }
+  // Nope - fall back to the regular leaf name.
+  return GetLeafName(aLeafName);
+}
+
+NS_IMETHODIMP
 nsLocalFile::GetPath(nsAString& aResult) {
   MOZ_ASSERT_IF(
       mUseDOSDevicePathSyntax,
@@ -1655,10 +1676,9 @@ nsLocalFile::GetVersionInfoField(const char* aField, nsAString& aResult) {
     if (queryResult && translate) {
       for (int32_t i = 0; i < 2; ++i) {
         wchar_t subBlock[MAX_PATH];
-        _snwprintf(subBlock, MAX_PATH, L"\\StringFileInfo\\%04x%04x\\%s",
+        _snwprintf(subBlock, MAX_PATH, L"\\StringFileInfo\\%04x%04x\\%S",
                    (i == 0 ? translate[0].wLanguage : ::GetUserDefaultLangID()),
-                   translate[0].wCodePage,
-                   NS_ConvertASCIItoUTF16(nsDependentCString(aField)).get());
+                   translate[0].wCodePage, aField);
         subBlock[MAX_PATH - 1] = 0;
         LPVOID value = nullptr;
         UINT size;
@@ -2646,8 +2666,10 @@ nsLocalFile::SetFileSize(int64_t aFileSize) {
   // seek the file pointer to the new, desired end of file
   // and then truncate the file at that position
   nsresult rv = NS_ERROR_FAILURE;
-  aFileSize = MyFileSeek64(hFile, aFileSize, FILE_BEGIN);
-  if (aFileSize != -1 && SetEndOfFile(hFile)) {
+  LARGE_INTEGER distance;
+  distance.QuadPart = aFileSize;
+  if (SetFilePointerEx(hFile, distance, nullptr, FILE_BEGIN) &&
+      SetEndOfFile(hFile)) {
     MakeDirty();
     rv = NS_OK;
   }

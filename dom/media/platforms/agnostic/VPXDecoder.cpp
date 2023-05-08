@@ -70,7 +70,7 @@ static nsresult InitContext(vpx_codec_ctx_t* aCtx, const VideoInfo& aInfo,
 VPXDecoder::VPXDecoder(const CreateDecoderParams& aParams)
     : mImageContainer(aParams.mImageContainer),
       mImageAllocator(aParams.mKnowsCompositor),
-      mTaskQueue(new TaskQueue(
+      mTaskQueue(TaskQueue::Create(
           GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER), "VPXDecoder")),
       mInfo(aParams.VideoConfig()),
       mCodec(MimeTypeToCodec(aParams.VideoConfig().mMimeType)),
@@ -353,9 +353,9 @@ bool VPXDecoder::GetStreamInfo(Span<const uint8_t> aBuffer,
     uint16_t height = (aBuffer[8] | aBuffer[9] << 8) & 0x3fff;
 
     // aspect ratio isn't found in the VP8 frame header.
-    aInfo.mImage = aInfo.mDisplay = gfx::IntSize(width, height);
-    aInfo.mDisplayAspectRatio =
-        (float)(aInfo.mDisplay.Width()) / (float)(aInfo.mDisplay.Height());
+    aInfo.mImage = gfx::IntSize(width, height);
+    aInfo.mDisplayAndImageDifferent = false;
+    aInfo.mDisplay = aInfo.mImage;
     return true;
   }
 
@@ -445,16 +445,15 @@ bool VPXDecoder::GetStreamInfo(Span<const uint8_t> aBuffer,
   };
 
   auto render_size = [&]() {
-    bool render_and_frame_size_different = br.ReadBits(1);
-    if (render_and_frame_size_different) {
+    // render_and_frame_size_different
+    aInfo.mDisplayAndImageDifferent = br.ReadBits(1);
+    if (aInfo.mDisplayAndImageDifferent) {
       int32_t width = static_cast<int32_t>(br.ReadBits(16)) + 1;
       int32_t height = static_cast<int32_t>(br.ReadBits(16)) + 1;
       aInfo.mDisplay = gfx::IntSize(width, height);
     } else {
       aInfo.mDisplay = aInfo.mImage;
     }
-    aInfo.mDisplayAspectRatio =
-        (float)(aInfo.mDisplay.Width()) / (float)(aInfo.mDisplay.Height());
   };
 
   if (aInfo.mKeyFrame) {
@@ -566,7 +565,7 @@ bool VPXDecoder::SetVideoInfo(VideoInfo* aDestInfo, const nsAString& aCodec) {
 
   aDestInfo->mColorDepth = gfx::ColorDepthForBitDepth(info.mBitDepth);
   VPXDecoder::SetChroma(info, chroma);
-  info.mFullRange = colorSpace.mRangeId;
+  info.mFullRange = colorSpace.mRange == ColorRange::FULL;
   RefPtr<MediaByteBuffer> extraData = new MediaByteBuffer();
   VPXDecoder::GetVPCCBox(extraData, info);
   aDestInfo->mExtraData = extraData;

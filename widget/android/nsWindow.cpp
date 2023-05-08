@@ -261,7 +261,7 @@ class NPZCSupport final
 #endif  // defined(DEBUG)
 
     // Use vsync for touch resampling on API level 19 and above.
-    // See gfxAndroidPlatform::CreateHardwareVsyncSource() for comparison.
+    // See gfxAndroidPlatform::CreateGlobalHardwareVsyncSource() for comparison.
     if (jni::GetAPIVersion() >= 19) {
       mAndroidVsync = AndroidVsync::GetInstance();
     }
@@ -889,6 +889,7 @@ class LayerViewSupport final
   GeckoSession::Compositor::WeakRef mCompositor;
   Atomic<bool, ReleaseAcquire> mCompositorPaused;
   java::sdk::Surface::GlobalRef mSurface;
+  java::sdk::SurfaceControl::GlobalRef mSurfaceControl;
   // Used to communicate with the gecko compositor from the UI thread.
   // Set in NotifyCompositorCreated and cleared in NotifyCompositorSessionLost.
   RefPtr<UiCompositorControllerChild> mUiCompositorControllerChild;
@@ -1013,7 +1014,7 @@ class LayerViewSupport final
       nsWindow* gkWindow = window->GetNsWindow();
       if (gkWindow) {
         mUiCompositorControllerChild->OnCompositorSurfaceChanged(
-            gkWindow->mWidgetId, mSurface);
+            gkWindow->mWidgetId, mSurface, mSurfaceControl);
       }
     }
 
@@ -1047,6 +1048,9 @@ class LayerViewSupport final
   }
 
   java::sdk::Surface::Param GetSurface() { return mSurface; }
+  java::sdk::SurfaceControl::Param GetSurfaceControl() {
+    return mSurfaceControl;
+  }
 
  private:
   already_AddRefed<DataSourceSurface> FlipScreenPixels(
@@ -1193,10 +1197,25 @@ class LayerViewSupport final
 
   void SyncResumeResizeCompositor(
       const GeckoSession::Compositor::LocalRef& aObj, int32_t aX, int32_t aY,
-      int32_t aWidth, int32_t aHeight, jni::Object::Param aSurface) {
+      int32_t aWidth, int32_t aHeight, jni::Object::Param aSurface,
+      jni::Object::Param aSurfaceControl) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
     mSurface = java::sdk::Surface::GlobalRef::From(aSurface);
+    // Disable the SurfaceControl compositing path for now, until we have a
+    // solution to bug 1767128. This means users on Android 12 will be unable to
+    // recover from a GPU process crash (due to bug 1762025), and the parent
+    // process will crash as a result (which is no worse than not using the GPU
+    // process in the first place).
+    mSurfaceControl = nullptr;
+
+    if (mSurfaceControl) {
+      // Setting the SurfaceControl's buffer size here ensures child Surfaces
+      // created by the compositor have the correct size.
+      java::sdk::SurfaceControl::Transaction::LocalRef transaction =
+          java::sdk::SurfaceControl::Transaction::New();
+      transaction->SetBufferSize(mSurfaceControl, aWidth, aHeight)->Apply();
+    }
 
     if (mUiCompositorControllerChild) {
       if (auto window = mWindow.Access()) {
@@ -1204,7 +1223,7 @@ class LayerViewSupport final
         if (gkWindow) {
           // Send new Surface to GPU process, if one exists.
           mUiCompositorControllerChild->OnCompositorSurfaceChanged(
-              gkWindow->mWidgetId, mSurface);
+              gkWindow->mWidgetId, mSurface, mSurfaceControl);
         }
       }
 
@@ -1773,6 +1792,7 @@ nsWindow::nsWindow()
       mIsVisible(false),
       mParent(nullptr),
       mDynamicToolbarMaxHeight(0),
+      mSizeMode(nsSizeMode_Normal),
       mIsFullScreen(false),
       mCompositorWidgetDelegate(nullptr) {}
 
@@ -2096,7 +2116,7 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
     return;
   }
 
-  nsBaseWidget::SetSizeMode(aMode);
+  mSizeMode = aMode;
 
   switch (aMode) {
     case nsSizeMode_Minimized:
@@ -2389,6 +2409,13 @@ void* nsWindow::GetNativeData(uint32_t aDataType) {
       if (::mozilla::jni::NativeWeakPtr<LayerViewSupport>::Accessor lvs{
               mLayerViewSupport.Access()}) {
         return lvs->GetSurface().Get();
+      }
+      return nullptr;
+
+    case NS_JAVA_SURFACE_CONTROL:
+      if (::mozilla::jni::NativeWeakPtr<LayerViewSupport>::Accessor lvs{
+              mLayerViewSupport.Access()}) {
+        return lvs->GetSurfaceControl().Get();
       }
       return nullptr;
   }
@@ -2971,7 +2998,7 @@ void nsWindow::SetCursor(const Cursor& aCursor) {
             bitmap = java::sdk::Bitmap::CreateBitmap(
                 destDataSurface->GetSize().width,
                 destDataSurface->GetSize().height,
-                java::sdk::Config::ARGB_8888());
+                java::sdk::Bitmap::Config::ARGB_8888());
             bitmap->CopyPixelsFromBuffer(pixels);
           }
           compositor->SetPointerIcon(type, bitmap, hotspotX, hotspotY);

@@ -19,6 +19,7 @@
 #include "nsAttrValueInlines.h"
 #include "nsAtom.h"
 #include "nsUnicharUtils.h"
+#include "mozilla/BloomFilter.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ServoBindingTypes.h"
@@ -27,12 +28,12 @@
 #include "mozilla/SVGAttrValueWrapper.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/dom/CSSRuleBinding.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
 #include "nsHTMLCSSStyleSheet.h"
 #include "nsStyledElement.h"
 #include "nsIURI.h"
-#include "mozilla/dom/Document.h"
 #include "ReferrerInfo.h"
 #include <algorithm>
 
@@ -301,7 +302,8 @@ void nsAttrValue::SetTo(const nsAttrValue& aOther) {
       }
       // XXX(Bug 1631371) Check if this should use a fallible operation as it
       // pretended earlier.
-      GetAtomArrayValue()->AppendElements(*otherCont->mValue.mAtomArray);
+      *GetAtomArrayValue() = otherCont->mValue.mAtomArray->Clone();
+
       break;
     }
     case eDoubleValue: {
@@ -709,6 +711,41 @@ void nsAttrValue::GetEnumString(nsAString& aResult, bool aRealTag) const {
   MOZ_ASSERT_UNREACHABLE("couldn't find value in EnumTable");
 }
 
+void AttrAtomArray::DoRemoveDuplicates() {
+  MOZ_ASSERT(mMayContainDuplicates);
+
+  bool usingHashTable = false;
+  BitBloomFilter<8, nsAtom> filter;
+  nsTHashSet<nsPtrHashKey<nsAtom>> hash;
+
+  auto CheckDuplicate = [&](size_t i) {
+    nsAtom* atom = mArray[i];
+    if (!usingHashTable) {
+      if (!filter.mightContain(atom)) {
+        filter.add(atom);
+        return false;
+      }
+      for (size_t j = 0; j < i; ++j) {
+        hash.Insert(mArray[j]);
+      }
+      usingHashTable = true;
+    }
+    return !hash.EnsureInserted(atom);
+  };
+
+  size_t len = mArray.Length();
+  for (size_t i = 0; i < len; ++i) {
+    if (!CheckDuplicate(i)) {
+      continue;
+    }
+    mArray.RemoveElementAt(i);
+    --i;
+    --len;
+  }
+
+  mMayContainDuplicates = false;
+}
+
 uint32_t nsAttrValue::GetAtomCount() const {
   ValueType type = Type();
 
@@ -717,7 +754,7 @@ uint32_t nsAttrValue::GetAtomCount() const {
   }
 
   if (type == eAtomArray) {
-    return GetAtomArrayValue()->Length();
+    return GetAtomArrayValue()->mArray.Length();
   }
 
   return 0;
@@ -732,8 +769,7 @@ nsAtom* nsAttrValue::AtomAt(int32_t aIndex) const {
   }
 
   NS_ASSERTION(Type() == eAtomArray, "GetAtomCount must be confused");
-
-  return GetAtomArrayValue()->ElementAt(aIndex);
+  return GetAtomArrayValue()->mArray.ElementAt(aIndex);
 }
 
 uint32_t nsAttrValue::HashValue() const {
@@ -788,11 +824,8 @@ uint32_t nsAttrValue::HashValue() const {
     }
     case eAtomArray: {
       uint32_t hash = 0;
-      uint32_t count = cont->mValue.mAtomArray->Length();
-      for (RefPtr<nsAtom>*cur = cont->mValue.mAtomArray->Elements(),
-          *end = cur + count;
-           cur != end; ++cur) {
-        hash = AddToHash(hash, cur->get());
+      for (const auto& atom : cont->mValue.mAtomArray->mArray) {
+        hash = AddToHash(hash, atom.get());
       }
       return hash;
     }
@@ -1123,12 +1156,12 @@ bool nsAttrValue::Contains(nsAtom* aValue,
     }
     default: {
       if (Type() == eAtomArray) {
-        AtomArray* array = GetAtomArrayValue();
+        AttrAtomArray* array = GetAtomArrayValue();
         if (aCaseSensitive == eCaseMatters) {
-          return array->Contains(aValue);
+          return array->mArray.Contains(aValue);
         }
 
-        for (RefPtr<nsAtom>& cur : *array) {
+        for (RefPtr<nsAtom>& cur : array->mArray) {
           // For performance reasons, don't do a full on unicode case
           // insensitive string comparison. This is only used for quirks mode
           // anyway.
@@ -1157,8 +1190,8 @@ bool nsAttrValue::Contains(const nsAString& aValue) const {
     }
     default: {
       if (Type() == eAtomArray) {
-        AtomArray* array = GetAtomArrayValue();
-        return array->Contains(aValue, AtomArrayStringComparator());
+        AttrAtomArray* array = GetAtomArrayValue();
+        return array->mArray.Contains(aValue, AtomArrayStringComparator());
       }
     }
   }
@@ -1225,11 +1258,11 @@ void nsAttrValue::ParseAtomArray(const nsAString& aValue) {
     return;
   }
 
-  AtomArray* array = GetAtomArrayValue();
+  AttrAtomArray* array = GetAtomArrayValue();
 
   // XXX(Bug 1631371) Check if this should use a fallible operation as it
   // pretended earlier.
-  array->AppendElement(std::move(classAtom));
+  array->mArray.AppendElement(std::move(classAtom));
 
   // parse the rest of the classnames
   while (iter != end) {
@@ -1243,7 +1276,8 @@ void nsAttrValue::ParseAtomArray(const nsAString& aValue) {
 
     // XXX(Bug 1631371) Check if this should use a fallible operation as it
     // pretended earlier.
-    array->AppendElement(std::move(classAtom));
+    array->mArray.AppendElement(std::move(classAtom));
+    array->mMayContainDuplicates = true;
 
     // skip whitespace
     while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
@@ -1906,7 +1940,7 @@ bool nsAttrValue::EnsureEmptyAtomArray() {
   }
 
   MiscContainer* cont = EnsureEmptyMiscContainer();
-  cont->mValue.mAtomArray = new AtomArray;
+  cont->mValue.mAtomArray = new AttrAtomArray;
   cont->mType = eAtomArray;
 
   return true;
@@ -1983,7 +2017,7 @@ size_t nsAttrValue::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
         // n += container->mCSSDeclaration->SizeOfIncludingThis(aMallocSizeOf);
       } else if (Type() == eAtomArray && container->mValue.mAtomArray) {
         // Don't measure each nsAtom, they are measured separatly.
-        n += container->mValue.mAtomArray->ShallowSizeOfIncludingThis(
+        n += container->mValue.mAtomArray->mArray.ShallowSizeOfIncludingThis(
             aMallocSizeOf);
       }
       break;

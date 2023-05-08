@@ -417,7 +417,11 @@ RefPtr<GenericNonExclusivePromise> ScreenOrientation::LockDeviceOrientation(
 }
 
 void ScreenOrientation::Unlock(ErrorResult& aRv) {
-  RefPtr<Promise> p = LockInternal(hal::ScreenOrientation::None, aRv);
+  if (RefPtr<Promise> p = LockInternal(hal::ScreenOrientation::None, aRv)) {
+    // Don't end up reporting unhandled promise rejection since
+    // screen.orientation.unlock doesn't return promise.
+    MOZ_ALWAYS_TRUE(p->SetAnyPromiseIsHandled());
+  }
 }
 
 void ScreenOrientation::UnlockDeviceOrientation() {
@@ -700,6 +704,12 @@ ScreenOrientation::FullscreenEventListener::HandleEvent(Event* aEvent) {
   // got enabled if the lock call is done at the same moment.
   if (doc->Fullscreen()) {
     return NS_OK;
+  }
+
+  BrowsingContext* bc = doc->GetBrowsingContext();
+  bc = bc ? bc->Top() : nullptr;
+  if (bc) {
+    bc->SetOrientationLock(hal::ScreenOrientation::None, IgnoreErrors());
   }
 
   hal::UnlockScreenOrientation();

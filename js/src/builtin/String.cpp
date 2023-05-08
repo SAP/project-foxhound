@@ -1655,11 +1655,12 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     }
   }
 
-  JSString* res = newChars.constructed<Latin1Buffer>()
-                ? newChars.ref<Latin1Buffer>().toStringDontDeflate(cx, resultLength)
-                : newChars.ref<TwoByteBuffer>().toStringDontDeflate(cx, resultLength);
+  auto toString = [&](auto& chars) {
+    return chars.toStringDontDeflate(cx, resultLength);
+  };
 
-  // TaintFox: Add taint operation to all taint ranges of the input string.
+  JSString* res = newChars.mapNonEmpty(toString);
+    // TaintFox: Add taint operation to all taint ranges of the input string.
   res->setTaint(cx, taint);
 
   return res;

@@ -244,11 +244,11 @@ bool JSScript::functionHasParameterExprs() const {
   return scope->as<js::FunctionScope>().hasParameterExprs();
 }
 
+bool JSScript::isModule() const { return bodyScope()->is<js::ModuleScope>(); }
+
 js::ModuleObject* JSScript::module() const {
-  if (bodyScope()->is<js::ModuleScope>()) {
-    return bodyScope()->as<js::ModuleScope>().module();
-  }
-  return nullptr;
+  MOZ_ASSERT(isModule());
+  return bodyScope()->as<js::ModuleScope>().module();
 }
 
 bool JSScript::isGlobalCode() const {
@@ -831,19 +831,6 @@ void ScriptSourceObject::setPrivate(JSRuntime* rt, const Value& value) {
   rt->releaseScriptPrivate(prevValue);
   setReservedSlot(PRIVATE_SLOT, value);
   rt->addRefScriptPrivate(value);
-}
-
-JSObject* ScriptSourceObject::unwrappedElement(JSContext* cx) const {
-  JS::RootedValue privateValue(cx, getPrivate());
-  if (privateValue.isUndefined()) {
-    return nullptr;
-  }
-
-  if (cx->runtime()->sourceElementCallback) {
-    return (*cx->runtime()->sourceElementCallback)(cx, privateValue);
-  }
-
-  return nullptr;
 }
 
 class ScriptSource::LoadSourceMatcher {
@@ -1521,6 +1508,9 @@ bool ScriptSource::assignSource(JSContext* cx,
   MOZ_ASSERT(data.is<Missing>(),
              "source assignment should only occur on fresh ScriptSources");
 
+  mutedErrors_ = options.mutedErrors();
+  delazificationMode_ = options.eagerDelazificationStrategy();
+
   if (options.discardSource) {
     return true;
   }
@@ -1894,6 +1884,7 @@ bool ScriptSource::initFromOptions(JSContext* cx,
   MOZ_ASSERT(!introducerFilename_);
 
   mutedErrors_ = options.mutedErrors();
+  delazificationMode_ = options.eagerDelazificationStrategy();
 
   startLine_ = options.lineno;
   introductionType_ = options.introductionType;

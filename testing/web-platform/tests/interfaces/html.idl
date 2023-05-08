@@ -115,7 +115,7 @@ interface HTMLElement : Element {
   [CEReactions] attribute DOMString dir;
 
   // user interaction
-  [CEReactions] attribute boolean hidden;
+  [CEReactions] attribute (boolean or unrestricted double or DOMString)? hidden;
   [CEReactions] attribute boolean inert;
   undefined click();
   [CEReactions] attribute DOMString accessKey;
@@ -225,6 +225,7 @@ interface HTMLMetaElement : HTMLElement {
 interface HTMLStyleElement : HTMLElement {
   [HTMLConstructor] constructor();
 
+  attribute boolean disabled;
   [CEReactions] attribute DOMString media;
   [SameObject, PutForwards=value] readonly attribute DOMTokenList blocking;
 
@@ -491,16 +492,6 @@ interface HTMLObjectElement : HTMLElement {
   boolean checkValidity();
   boolean reportValidity();
   undefined setCustomValidity(DOMString error);
-
-  // also has obsolete members
-};
-
-[Exposed=Window]
-interface HTMLParamElement : HTMLElement {
-  [HTMLConstructor] constructor();
-
-  [CEReactions] attribute DOMString name;
-  [CEReactions] attribute DOMString value;
 
   // also has obsolete members
 };
@@ -1898,6 +1889,7 @@ typedef OnBeforeUnloadEventHandlerNonNull? OnBeforeUnloadEventHandler;
 interface mixin GlobalEventHandlers {
   attribute EventHandler onabort;
   attribute EventHandler onauxclick;
+  attribute EventHandler onbeforematch;
   attribute EventHandler onblur;
   attribute EventHandler oncancel;
   attribute EventHandler oncanplay;
@@ -2591,7 +2583,12 @@ partial interface HTMLParagraphElement {
   [CEReactions] attribute DOMString align;
 };
 
-partial interface HTMLParamElement {
+[Exposed=Window]
+interface HTMLParamElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
+  [CEReactions] attribute DOMString name;
+  [CEReactions] attribute DOMString value;
   [CEReactions] attribute DOMString type;
   [CEReactions] attribute DOMString valueType;
 };

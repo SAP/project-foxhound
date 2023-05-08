@@ -18,7 +18,7 @@ aarch64-apple-darwin)
   arch=arm64
   export MACOSX_DEPLOYMENT_TARGET=11.0
   compiler_wrapper() {
-    echo exec \$MOZ_FETCHES_DIR/clang/bin/$1 -mcpu=apple-a12 \"\$@\" > $1
+    echo exec \$MOZ_FETCHES_DIR/clang/bin/$1 -mcpu=apple-m1 \"\$@\" > $1
     chmod +x $1
   }
   compiler_wrapper clang
@@ -120,15 +120,31 @@ case "$target" in
   "
   ;;
 *-pc-windows-msvc)
+  export LD_PRELOAD="/builds/worker/fetches/liblowercase/liblowercase.so"
+  export LOWERCASE_DIRS="/builds/worker/fetches/vs"
   EXTRA_CMAKE_FLAGS="
     $EXTRA_CMAKE_FLAGS
     -DCMAKE_TOOLCHAIN_FILE=$MOZ_FETCHES_DIR/llvm-project/llvm/cmake/platforms/WinMsvc.cmake
     -DLLVM_NATIVE_TOOLCHAIN=$MOZ_FETCHES_DIR/clang
-    -DMSVC_BASE=$MOZ_FETCHES_DIR/vs2017_15.9.6/VC
-    -DWINSDK_BASE=$MOZ_FETCHES_DIR/vs2017_15.9.6/SDK
-    -DWINSDK_VER=10.0.17134.0
     -DHOST_ARCH=${target%-pc-windows-msvc}
+    -DLLVM_DISABLE_ASSEMBLY_FILES=ON
   "
+  # LLVM 15+ uses different input variables.
+  if grep -q LLVM_WINSYSROOT $MOZ_FETCHES_DIR/llvm-project/llvm/cmake/platforms/WinMsvc.cmake; then
+    EXTRA_CMAKE_FLAGS="
+      $EXTRA_CMAKE_FLAGS
+      -DLLVM_WINSYSROOT=$MOZ_FETCHES_DIR/vs
+    "
+  else
+    # WinMsvc.cmake before LLVM 15 doesn't support spaces in WINDSK_BASE.
+    ln -s "windows kits/10" $MOZ_FETCHES_DIR/vs/sdk
+    EXTRA_CMAKE_FLAGS="
+      $EXTRA_CMAKE_FLAGS
+      -DMSVC_BASE=$MOZ_FETCHES_DIR/vs/vc/tools/msvc/14.29.30133
+      -DWINSDK_BASE=$MOZ_FETCHES_DIR/vs/sdk
+      -DWINSDK_VER=10.0.19041.0
+    "
+  fi
   ;;
 *)
   echo $target is not supported yet
@@ -149,10 +165,6 @@ case "$target" in
   "
   ;;
 esac
-
-if [ -n "$TOOLTOOL_MANIFEST" ]; then
-  . $GECKO_PATH/taskcluster/scripts/misc/tooltool-download.sh
-fi
 
 mkdir build
 cd build

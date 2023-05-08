@@ -6,12 +6,16 @@ from __future__ import absolute_import, unicode_literals
 
 import os
 from unittest import mock
-from unittest.mock import Mock
 
 import pytest as pytest
 
+from buildconfig import topsrcdir
 from mozunit import main
-from mach.site import SitePackagesSource
+from mach.site import (
+    SitePackagesSource,
+    PIP_NETWORK_INSTALL_RESTRICTED_VIRTUALENVS,
+    resolve_requirements,
+)
 
 
 @pytest.mark.parametrize(
@@ -21,9 +25,9 @@ from mach.site import SitePackagesSource
         ("pip", False, False, SitePackagesSource.VENV),
         ("none", False, False, SitePackagesSource.NONE),
         (None, False, False, SitePackagesSource.VENV),
-        (None, False, True, SitePackagesSource.SYSTEM),
-        (None, True, False, SitePackagesSource.SYSTEM),
-        (None, True, True, SitePackagesSource.SYSTEM),
+        (None, False, True, SitePackagesSource.NONE),
+        (None, True, False, SitePackagesSource.NONE),
+        (None, True, True, SitePackagesSource.NONE),
     ],
 )
 def test_resolve_package_source(
@@ -37,17 +41,17 @@ def test_resolve_package_source(
             "MOZ_AUTOMATION": "1" if env_moz_automation else "",
         },
     ):
-        assert SitePackagesSource.from_environment(Mock(), "build", None) == expected
+        assert SitePackagesSource.for_mach() == expected
 
 
-def test_resolve_package_source_always_venv_for_most_sites():
-    # Only sites in PIP_NETWORK_INSTALL_RESTRICTED_VIRTUALENVS have to be able to function
-    # using only vendored packages or system packages.
-    # All others must have an associated virtualenv.
-    assert (
-        SitePackagesSource.from_environment(Mock(), "python-test", None)
-        == SitePackagesSource.VENV
-    )
+def test_all_restricted_sites_dont_have_pypi_requirements():
+    for site_name in PIP_NETWORK_INSTALL_RESTRICTED_VIRTUALENVS:
+        requirements = resolve_requirements(topsrcdir, site_name)
+        assert not requirements.pypi_requirements, (
+            'Sites that must be able to operate without "pip install" must not have any '
+            f'mandatory "pypi requirements". However, the "{site_name}" site depends on: '
+            f"{requirements.pypi_requirements}"
+        )
 
 
 if __name__ == "__main__":

@@ -21,11 +21,11 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/RWLock.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/2D.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
 #include "nsCOMPtr.h"
 #include "nsColor.h"
@@ -43,21 +43,9 @@
 #include "nscore.h"
 #include "DrawMode.h"
 
-// Only required for function bodys
-#include <stdlib.h>
-#include <string.h>
-#include <algorithm>
-#include "mozilla/Assertions.h"
-#include "mozilla/HashFunctions.h"
-#include "mozilla/ServoUtils.h"
-#include "mozilla/gfx/2D.h"
+// Only required for function bodies
 #include "gfxFontEntry.h"
 #include "gfxFontFeatures.h"
-#include "gfxFontUtils.h"
-#include "gfxPlatform.h"
-#include "nsAtom.h"
-#include "nsDebug.h"
-#include "nsMathUtils.h"
 
 class gfxContext;
 class gfxGraphiteShaper;
@@ -348,7 +336,7 @@ class gfxFontCache final
   // into the expiration queues and removed.
   void Flush() {
     {
-      mozilla::AutoWriteLock lock(mCacheLock);
+      mozilla::MutexAutoLock lock(mMutex);
       mFonts.Clear();
     }
     AgeAllGenerations();
@@ -361,7 +349,7 @@ class gfxFontCache final
 
   void RunWordCacheExpirationTimer() {
     if (!mTimerRunning) {
-      mozilla::AutoWriteLock lock(mCacheLock);
+      mozilla::MutexAutoLock lock(mMutex);
       if (!mTimerRunning && mWordCacheExpirationTimer) {
         mWordCacheExpirationTimer->InitWithNamedFuncCallback(
             WordCacheExpirationTimerCallback, this,
@@ -373,7 +361,7 @@ class gfxFontCache final
   }
   void PauseWordCacheExpirationTimer() {
     if (mTimerRunning) {
-      mozilla::AutoWriteLock lock(mCacheLock);
+      mozilla::MutexAutoLock lock(mMutex);
       if (mTimerRunning && mWordCacheExpirationTimer) {
         mWordCacheExpirationTimer->Cancel();
         mTimerRunning = false;
@@ -396,13 +384,7 @@ class gfxFontCache final
     RemoveObjectLocked(aFont, lock);
   }
 
-  mozilla::RWLock& GetCacheLock() { return mCacheLock; }
-
  protected:
-  // Guards the global font hashtable, separately from the expiration-tracker
-  // records.
-  mutable mozilla::RWLock mCacheLock = mozilla::RWLock("fontCacheLock");
-
   class MemoryReporter final : public nsIMemoryReporter {
     ~MemoryReporter() = default;
 
@@ -427,10 +409,12 @@ class gfxFontCache final
 
   // This gets called when the timeout has expired on a zero-refcount
   // font; we just delete it.
-  void NotifyExpiredLocked(gfxFont* aFont, const AutoLock&) override;
+  void NotifyExpiredLocked(gfxFont* aFont, const AutoLock&)
+      REQUIRES(mMutex) override;
   void NotifyExpired(gfxFont* aFont);
 
   void DestroyFont(gfxFont* aFont);
+  void DestroyFontLocked(gfxFont* aFont) REQUIRES(mMutex);
 
   static gfxFontCache* gGlobalCache;
 
@@ -469,11 +453,11 @@ class gfxFontCache final
     gfxFont* MOZ_UNSAFE_REF("tracking for deferred deletion") mFont;
   };
 
-  nsTHashtable<HashEntry> mFonts GUARDED_BY(mCacheLock);
+  nsTHashtable<HashEntry> mFonts GUARDED_BY(mMutex);
 
   static void WordCacheExpirationTimerCallback(nsITimer* aTimer, void* aCache);
 
-  nsCOMPtr<nsITimer> mWordCacheExpirationTimer GUARDED_BY(mCacheLock);
+  nsCOMPtr<nsITimer> mWordCacheExpirationTimer GUARDED_BY(mMutex);
   std::atomic<bool> mTimerRunning = false;
 };
 
@@ -531,6 +515,9 @@ class gfxTextPerfMetrics {
 
 namespace mozilla {
 namespace gfx {
+
+class UnscaledFont;
+
 // Flags that live in the gfxShapedText::mFlags field.
 // (Note that gfxTextRun has an additional mFlags2 field for use
 // by textrun clients like nsTextFrame.)
@@ -2120,7 +2107,7 @@ class gfxFont {
   static nsTHashSet<uint32_t>* sDefaultFeatures;
 
   RefPtr<gfxFontEntry> mFontEntry;
-  mozilla::RWLock mLock;
+  mutable mozilla::RWLock mLock;
 
   struct CacheHashKey {
     union {
@@ -2232,7 +2219,9 @@ class gfxFont {
   // so no guard is needed.
   RefPtr<gfxCharacterMap> mUnicodeRangeMap;
 
-  RefPtr<mozilla::gfx::UnscaledFont> mUnscaledFont GUARDED_BY(mLock);
+  // This is immutable once initialized by the constructor, so does not need
+  // locking.
+  RefPtr<mozilla::gfx::UnscaledFont> mUnscaledFont;
 
   mozilla::Atomic<mozilla::gfx::ScaledFont*> mAzureScaledFont;
 

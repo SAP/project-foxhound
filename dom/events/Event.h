@@ -38,8 +38,7 @@ class MessageReader;
 class MessageWriter;
 }  // namespace IPC
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BeforeUnloadEvent;
 class CustomEvent;
@@ -52,6 +51,7 @@ class EventMessageAutoOverride;
 class ExtendableEvent;
 class KeyboardEvent;
 class MouseEvent;
+class MessageEvent;
 class TimeEvent;
 class UIEvent;
 class WantsPopupControlCheck;
@@ -127,6 +127,9 @@ class Event : public nsISupports, public nsWrapperCache {
 
   // CustomEvent has a non-autogeneratable initCustomEvent.
   virtual CustomEvent* AsCustomEvent() { return nullptr; }
+
+  // MessageEvent has a non-autogeneratable initMessageEvent and more.
+  virtual MessageEvent* AsMessageEvent() { return nullptr; }
 
   void InitEvent(const nsAString& aEventTypeArg, bool aCanBubble,
                  bool aCancelable) {
@@ -397,8 +400,7 @@ class MOZ_STACK_CLASS WantsPopupControlCheck {
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Event, NS_EVENT_IID)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<mozilla::dom::Event> NS_NewDOMEvent(
     mozilla::dom::EventTarget* aOwner, nsPresContext* aPresContext,

@@ -1,6 +1,6 @@
 # 468496-1 will also detect bugs in video drivers.
 == 468496-1.html 468496-1-ref.html
-fuzzy(0-175,0-443) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 611498-1.html 611498-ref.html # Bug 1392106
+fuzzy(0-175,0-443) == 611498-1.html 611498-ref.html
 skip-if(gtkWidget||Android||isDebugBuild) fuzzy-if(appleSilicon,0-1,0-9) == 709477-1.html 709477-1-ref.html #Bug 1620096
 skip-if(!asyncPan) == 1086723.html 1086723-ref.html
 == 853889-1.html 853889-1-ref.html
@@ -35,3 +35,4 @@ fuzzy-if(useDrawSnapshot,255-255,5-5) == 1724901-1.html 1724901-1-ref.html
 pref(image.downscale-during-decode.enabled,true) skip-if(Android) fuzzy-if(useDrawSnapshot&&browserIsFission,203-203,193600-193600) HTTP == 1724901-2.html 1724901-2-ref.html
 != 1761685-1.html 1761685-1-ref.html
 == 1761460.html 1761460-ref.html
+pref(layout.css.backdrop-filter.enabled,true) == 1765862.html 1765862-ref.html

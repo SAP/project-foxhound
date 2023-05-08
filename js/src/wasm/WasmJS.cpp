@@ -239,8 +239,12 @@ static inline bool WasmDebuggerActive(JSContext* cx) {
 // default settings change.  But it should remain static.
 
 bool wasm::BaselineAvailable(JSContext* cx) {
-  // Baseline supports every feature supported by any compiler.
-  return cx->options().wasmBaseline() && BaselinePlatformSupport();
+  if (!cx->options().wasmBaseline() || !BaselinePlatformSupport()) {
+    return false;
+  }
+  bool isDisabled = false;
+  MOZ_ALWAYS_TRUE(BaselineDisabledByFeatures(cx, &isDisabled));
+  return !isDisabled;
 }
 
 bool wasm::IonAvailable(JSContext* cx) {
@@ -264,6 +268,20 @@ static inline bool Append(JSStringBuilder* reason, const char (&s)[ArrayLength],
     return false;
   }
   *sep = ',';
+  return true;
+}
+
+bool wasm::BaselineDisabledByFeatures(JSContext* cx, bool* isDisabled,
+                                      JSStringBuilder* reason) {
+  // Baseline cannot be used if we are testing serialization.
+  bool testSerialization = WasmTestSerializationFlag(cx);
+  if (reason) {
+    char sep = 0;
+    if (testSerialization && !Append(reason, "testSerialization", &sep)) {
+      return false;
+    }
+  }
+  *isDisabled = testSerialization;
   return true;
 }
 
@@ -300,9 +318,10 @@ bool wasm::CraneliftAvailable(JSContext* cx) {
 
 bool wasm::CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
                                        JSStringBuilder* reason) {
-  // Cranelift has no debugging support, no gc support, no simd, and
-  // no exceptions support.
+  // Cranelift has no debugging support, no serialization support, no gc
+  // support, no simd, and no exceptions support.
   bool debug = WasmDebuggerActive(cx);
+  bool testSerialization = WasmTestSerializationFlag(cx);
   bool functionReferences = WasmFunctionReferencesFlag(cx);
   bool gc = WasmGcFlag(cx);
 #ifdef JS_CODEGEN_ARM64
@@ -315,6 +334,9 @@ bool wasm::CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
   if (reason) {
     char sep = 0;
     if (debug && !Append(reason, "debug", &sep)) {
+      return false;
+    }
+    if (testSerialization && !Append(reason, "testSerialization", &sep)) {
       return false;
     }
     if (functionReferences && !Append(reason, "function-references", &sep)) {
@@ -330,7 +352,8 @@ bool wasm::CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
       return false;
     }
   }
-  *isDisabled = debug || functionReferences || gc || simdOnNonAarch64 || exn;
+  *isDisabled = debug || testSerialization || functionReferences || gc ||
+                simdOnNonAarch64 || exn;
   return true;
 }
 
@@ -494,10 +517,8 @@ bool js::wasm::GetImports(JSContext* cx, const Module& module,
 
   const Metadata& metadata = module.metadata();
 
-#ifdef ENABLE_WASM_EXCEPTIONS
   uint32_t tagIndex = 0;
   const TagDescVector& tags = metadata.tags;
-#endif
   uint32_t globalIndex = 0;
   const GlobalDescVector& globals = metadata.globals;
   uint32_t tableIndex = 0;
@@ -559,7 +580,6 @@ bool js::wasm::GetImports(JSContext* cx, const Module& module,
         imports->memory = &v.toObject().as<WasmMemoryObject>();
         break;
       }
-#ifdef ENABLE_WASM_EXCEPTIONS
       case DefinitionKind::Tag: {
         const uint32_t index = tagIndex++;
         if (!v.isObject() || !v.toObject().is<WasmTagObject>()) {
@@ -583,7 +603,6 @@ bool js::wasm::GetImports(JSContext* cx, const Module& module,
         }
         break;
       }
-#endif
       case DefinitionKind::Global: {
         const uint32_t index = globalIndex++;
         const GlobalDesc& global = globals[index];
@@ -1380,13 +1399,11 @@ static bool InitKindNames(JSContext* cx, KindNames* names) {
   }
   names->memory = memory->asPropertyName();
 
-#ifdef ENABLE_WASM_EXCEPTIONS
   JSAtom* tag = Atomize(cx, "tag", strlen("tag"));
   if (!tag) {
     return false;
   }
   names->tag = tag->asPropertyName();
-#endif
 
   JSAtom* type = Atomize(cx, "type", strlen("type"));
   if (!type) {
@@ -1408,10 +1425,8 @@ static JSString* KindToString(JSContext* cx, const KindNames& names,
       return names.memory;
     case DefinitionKind::Global:
       return cx->names().global;
-#ifdef ENABLE_WASM_EXCEPTIONS
     case DefinitionKind::Tag:
       return names.tag;
-#endif
   }
 
   MOZ_CRASH("invalid kind");
@@ -1445,10 +1460,8 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
   size_t numMemoryImport = 0;
   size_t numGlobalImport = 0;
   size_t numTableImport = 0;
-#  ifdef ENABLE_WASM_EXCEPTIONS
   size_t numTagImport = 0;
-#  endif  // ENABLE_WASM_EXCEPTIONS
-#endif    // ENABLE_WASM_TYPE_REFLECTIONS
+#endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
   for (const Import& import : module->imports()) {
     Rooted<IdValueVector> props(cx, IdValueVector(cx));
@@ -1508,14 +1521,12 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
         typeObj = GlobalTypeToObject(cx, global.type(), global.isMutable());
         break;
       }
-#  ifdef ENABLE_WASM_EXCEPTIONS
       case DefinitionKind::Tag: {
         size_t tagIndex = numTagImport++;
         const TagDesc& tag = metadata.tags[tagIndex];
         typeObj = TagTypeToObject(cx, tag.type->argTypes_);
         break;
       }
-#  endif  // ENABLE_WASM_EXCEPTIONS
     }
 
     if (!typeObj || !props.append(IdValuePair(NameToId(names.type),
@@ -1614,13 +1625,11 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
         typeObj = GlobalTypeToObject(cx, global.type(), global.isMutable());
         break;
       }
-#  ifdef ENABLE_WASM_EXCEPTIONS
       case DefinitionKind::Tag: {
         const TagDesc& tag = metadata.tags[exp.tagIndex()];
         typeObj = TagTypeToObject(cx, tag.type->argTypes_);
         break;
       }
-#  endif  // ENABLE_WASM_EXCEPTIONS
     }
 
     if (!typeObj || !props.append(IdValuePair(NameToId(names.type),
@@ -1784,6 +1793,12 @@ bool WasmModuleObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   Log(cx, "sync new Module() started");
 
   if (!ThrowIfNotConstructing(cx, callArgs, "Module")) {
+    return false;
+  }
+
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CSP_BLOCKED_WASM, "WebAssembly.Module");
     return false;
   }
 
@@ -2477,12 +2492,11 @@ bool WasmInstanceObject::getExportedFunction(
     }
   }
 
-  fun->setExtendedSlot(FunctionExtended::WASM_INSTANCE_SLOT,
+  fun->setExtendedSlot(FunctionExtended::WASM_INSTANCE_OBJ_SLOT,
                        ObjectValue(*instanceObj));
 
-  void* tlsData = &instanceObj->instance();
-  fun->setExtendedSlot(FunctionExtended::WASM_TLSDATA_SLOT,
-                       PrivateValue(tlsData));
+  fun->setExtendedSlot(FunctionExtended::WASM_INSTANCE_SLOT,
+                       PrivateValue((void*)&instance));
 
   if (!instanceObj->exports().putNew(funcIndex, fun)) {
     ReportOutOfMemory(cx);
@@ -2560,7 +2574,8 @@ Instance& wasm::ExportedFunctionToInstance(JSFunction* fun) {
 WasmInstanceObject* wasm::ExportedFunctionToInstanceObject(JSFunction* fun) {
   MOZ_ASSERT(fun->kind() == FunctionFlags::Wasm ||
              fun->kind() == FunctionFlags::AsmJS);
-  const Value& v = fun->getExtendedSlot(FunctionExtended::WASM_INSTANCE_SLOT);
+  const Value& v =
+      fun->getExtendedSlot(FunctionExtended::WASM_INSTANCE_OBJ_SLOT);
   return &v.toObject().as<WasmInstanceObject>();
 }
 
@@ -3550,6 +3565,12 @@ bool WasmGlobalObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 
   ValType globalType;
   if (!ToValType(cx, typeVal, &globalType)) {
+    return false;
+  }
+
+  if (!globalType.isExposable()) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_BAD_VAL_TYPE);
     return false;
   }
 
@@ -4720,6 +4741,12 @@ static bool WebAssembly_compile(JSContext* cx, unsigned argc, Value* vp) {
 
   CallArgs callArgs = CallArgsFromVp(argc, vp);
 
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CSP_BLOCKED_WASM, "WebAssembly.compile");
+    return RejectWithPendingException(cx, promise, callArgs);
+  }
+
   auto task = cx->make_unique<CompileBufferTask>(cx, promise);
   if (!task || !task->init(cx, callArgs.get(1), "WebAssembly.compile")) {
     return false;
@@ -4781,6 +4808,13 @@ static bool WebAssembly_instantiate(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
   } else {
+    if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_CSP_BLOCKED_WASM,
+                                "WebAssembly.instantiate");
+      return RejectWithPendingException(cx, promise, callArgs);
+    }
+
     auto task = cx->make_unique<CompileBufferTask>(cx, promise, importObj);
     if (!task || !task->init(cx, callArgs.get(2), "WebAssembly.instantiate")) {
       return false;
@@ -5352,6 +5386,13 @@ static bool WebAssembly_compileStreaming(JSContext* cx, unsigned argc,
 
   CallArgs callArgs = CallArgsFromVp(argc, vp);
 
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CSP_BLOCKED_WASM,
+                              "WebAssembly.compileStreaming");
+    return RejectWithPendingException(cx, promise, callArgs);
+  }
+
   if (!ResolveResponse(cx, callArgs, promise)) {
     return RejectWithPendingException(cx, promise, callArgs);
   }
@@ -5374,6 +5415,13 @@ static bool WebAssembly_instantiateStreaming(JSContext* cx, unsigned argc,
   }
 
   CallArgs callArgs = CallArgsFromVp(argc, vp);
+
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CSP_BLOCKED_WASM,
+                              "WebAssembly.instantiateStreaming");
+    return RejectWithPendingException(cx, promise, callArgs);
+  }
 
   RootedObject firstArg(cx);
   RootedObject importObj(cx);
@@ -5493,7 +5541,6 @@ static bool WebAssemblyClassFinish(JSContext* cx, HandleObject object,
     }
   }
 
-#ifdef ENABLE_WASM_EXCEPTIONS
   if (ExceptionsAvailable(cx)) {
     constexpr NameAndProtoKey exceptionEntries[] = {
         {"Tag", JSProto_WasmTag},
@@ -5505,7 +5552,6 @@ static bool WebAssemblyClassFinish(JSContext* cx, HandleObject object,
       }
     }
   }
-#endif
 
 #ifdef ENABLE_WASM_MOZ_INTGEMM
   if (MozIntGemmAvailable(cx) &&

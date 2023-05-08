@@ -474,7 +474,7 @@ bool nsDisplaySelectionOverlay::CreateWebRenderCommands(
   wr::LayoutRect bounds = wr::ToLayoutRect(LayoutDeviceRect::FromAppUnits(
       nsRect(ToReferenceFrame(), Frame()->GetSize()),
       mFrame->PresContext()->AppUnitsPerDevPixel()));
-  aBuilder.PushRect(bounds, bounds, !BackfaceIsHidden(), false,
+  aBuilder.PushRect(bounds, bounds, !BackfaceIsHidden(), false, false,
                     wr::ToColorF(ComputeColor()));
   return true;
 }
@@ -782,7 +782,7 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
     windowWidget->SetWindowShadowStyle(shadow);
 
     // For macOS, apply color scheme overrides to the top level window widget.
-    if (auto scheme = aPresContext->GetOverriddenColorScheme()) {
+    if (auto scheme = aPresContext->GetOverriddenOrEmbedderColorScheme()) {
       windowWidget->SetColorScheme(scheme);
     }
   }

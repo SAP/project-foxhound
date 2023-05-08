@@ -39,10 +39,11 @@ async function spyOnTelemetryButtonClicks(browser) {
 }
 
 async function openAboutWelcome() {
-  await pushPrefs([
-    "intl.multilingual.aboutWelcome.languageMismatchEnabled",
-    true,
-  ]);
+  await pushPrefs(
+    // Speed up the tests by disabling transitions.
+    ["browser.aboutwelcome.transitions", false],
+    ["intl.multilingual.aboutWelcome.languageMismatchEnabled", true]
+  );
   await setAboutWelcomePref(true);
 
   // Stub out the doesAppNeedPin to false so the about:welcome pages do not attempt
@@ -81,7 +82,12 @@ async function clickVisibleButton(browser, selector) {
       return null;
     }
 
-    await ContentTaskUtils.waitForCondition(getVisibleElement, selector);
+    await ContentTaskUtils.waitForCondition(
+      getVisibleElement,
+      selector,
+      200, // interval
+      100 // maxTries
+    );
     getVisibleElement().click();
   });
 }
@@ -482,6 +488,41 @@ add_task(async function test_aboutwelcome_languageSwitcher_asyncCalls() {
   ok(mockable.installLangPack.notCalled);
 
   resolveLangPacks(["es-MX", "es-ES", "fr-FR"]);
+
+  await TestUtils.waitForCondition(
+    () => mockable.installLangPack.called,
+    "installLangPack was called once"
+  );
+  ok(mockable.getAvailableLangpacks.called);
+
+  resolveInstaller();
+});
+
+/**
+ * Test that the "en-US" langpack is installed, if it's already available as the last
+ * fallback locale.
+ */
+add_task(async function test_aboutwelcome_fallback_locale() {
+  sandbox.restore();
+  const {
+    resolveLangPacks,
+    resolveInstaller,
+    mockable,
+  } = mockAddonAndLocaleAPIs({
+    systemLocale: "en-US",
+    appLocale: "it",
+  });
+
+  await openAboutWelcome();
+
+  info("Waiting for getAvailableLangpacks to be called.");
+  await TestUtils.waitForCondition(
+    () => mockable.getAvailableLangpacks.called,
+    "getAvailableLangpacks called once"
+  );
+  ok(mockable.installLangPack.notCalled);
+
+  resolveLangPacks(["en-US"]);
 
   await TestUtils.waitForCondition(
     () => mockable.installLangPack.called,

@@ -34,6 +34,10 @@ const EXPRESSIONS_BY_FILE = {
     }`,
     ],
   ]),
+  "date-time.js": new Map([
+    ["DateTime", `new Date(1459372644859)`],
+    ["InvalidDateTime", `new Date("invalid")`],
+  ]),
   "infinity.js": new Map([
     ["Infinity", `Infinity`],
     ["NegativeInfinity", `-Infinity`],
@@ -46,6 +50,50 @@ const EXPRESSIONS_BY_FILE = {
     ["False", `false`],
     ["NegZeroGrip", `1 / -Infinity`],
   ]),
+  "stylesheet.js": new Map([
+    [
+      "StyleSheet",
+      {
+        expression: `
+        (async function() {
+          const link = document.createElement("link");
+          link.setAttribute("rel", "stylesheet");
+          link.type = "text/css";
+          link.href = "https://example.com/styles.css";
+          const onStylesheetHandled = new Promise(res => {
+            // The file does not exist so we'll get an error event, but it will
+            // still be put in document.styleSheets with its src, which is what we want.
+            link.addEventListener("error", () => res(), { once: true});
+          })
+          document.head.appendChild(link);
+          await onStylesheetHandled;
+          return document.styleSheets[0];
+        })()
+  `,
+        async: true,
+      },
+    ],
+  ]),
+  "symbol.js": new Map([
+    ["Symbol", `Symbol("foo")`],
+    ["SymbolWithoutIdentifier", `Symbol()`],
+    ["SymbolWithLongString", `Symbol("aa".repeat(10000))`],
+  ]),
+  "text-node.js": new Map([
+    [
+      "testRendering",
+      `let tn = document.createTextNode("hello world");
+       document.body.append(tn);
+       tn;`,
+    ],
+    ["testRenderingDisconnected", `document.createTextNode("hello world")`],
+    ["testRenderingWithEOL", `document.createTextNode("hello\\nworld")`],
+    ["testRenderingWithDoubleQuote", `document.createTextNode('hello"world')`],
+    [
+      "testRenderingWithLongString",
+      `document.createTextNode("a\\n" + ("a").repeat(20000))`,
+    ],
+  ]),
   "undefined.js": new Map([["Undefined", `undefined`]]),
   "window.js": new Map([["Window", `window`]]),
   // XXX: File a bug blocking Bug 1671400 for enabling automatic generation for one of
@@ -53,7 +101,6 @@ const EXPRESSIONS_BY_FILE = {
   // "accessible.js",
   // "accessor.js",
   // "big-int.js",
-  // "date-time.js",
   // "document-type.js",
   // "document.js",
   // "element-node.js",
@@ -70,9 +117,6 @@ const EXPRESSIONS_BY_FILE = {
   // "object-with-url.js",
   // "promise.js",
   // "regexp.js",
-  // "stylesheet.js",
-  // "symbol.js",
-  // "text-node.js",
 };
 
 add_task(async function() {
@@ -133,8 +177,17 @@ add_task(async function() {
 async function generateStubs(commands, stubFile) {
   const stubs = new Map();
 
-  for (const [key, expression] of EXPRESSIONS_BY_FILE[stubFile]) {
-    const { result } = await commands.scriptCommand.execute(expression);
+  for (const [key, options] of EXPRESSIONS_BY_FILE[stubFile]) {
+    const expression =
+      typeof options == "string" ? options : options.expression;
+    const executeOptions = {};
+    if (options.async === true) {
+      executeOptions.mapped = { await: true };
+    }
+    const { result } = await commands.scriptCommand.execute(
+      expression,
+      executeOptions
+    );
     stubs.set(key, getCleanedPacket(stubFile, key, result));
   }
 

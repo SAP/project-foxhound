@@ -14,8 +14,8 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/dom/ScriptLoadContext.h"
 #include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/dom/ReferrerPolicyBinding.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MaybeOneOf.h"
@@ -28,14 +28,17 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "ScriptKind.h"
+#include "nsIScriptElement.h"
 
 class nsICacheInfoChannel;
 
 namespace mozilla::dom {
-
 class ScriptLoadContext;
-
 }  // namespace mozilla::dom
+
+namespace mozilla::loader {
+class ComponentLoadContext;
+}  // namespace mozilla::loader
 
 namespace JS {
 class OffThreadToken;
@@ -44,6 +47,7 @@ namespace loader {
 
 using Utf8Unit = mozilla::Utf8Unit;
 
+class LoadContextBase;
 class ModuleLoadRequest;
 class ScriptLoadRequestList;
 
@@ -53,10 +57,16 @@ class ScriptLoadRequestList;
  * with the exception of the following properties:
  *   cryptographic nonce
  *      The cryptographic nonce metadata used for the initial fetch and for
- *      fetching any imported modules. This is handled by the principal.
+ *      fetching any imported modules. As this is populated by a DOM element,
+ *      this is implemented via mozilla::dom::Element as the field
+ *      mElement. The default value is an empty string, and is indicated
+ *      when this field is a nullptr. Nonce is not represented on the dom
+ *      side as per bug 1374612.
  *   parser metadata
  *      The parser metadata used for the initial fetch and for fetching any
- *      imported modules. This is not implemented.
+ *      imported modules. This is populated from a mozilla::dom::Element and is
+ *      handled by the field mElement. The default value is an empty string,
+ *      and is indicated when this field is a nullptr.
  *   integrity metadata
  *      The integrity metadata used for the initial fetch. This is
  *      implemented in ScriptLoadRequest, as it changes for every
@@ -78,7 +88,7 @@ class ScriptFetchOptions {
   ScriptFetchOptions(mozilla::CORSMode aCORSMode,
                      enum mozilla::dom::ReferrerPolicy aReferrerPolicy,
                      nsIPrincipal* aTriggeringPrincipal,
-                     nsIGlobalObject* aWebExtGlobal = nullptr);
+                     mozilla::dom::Element* aElement = nullptr);
 
   /*
    *  The credentials mode used for the initial fetch (for module scripts)
@@ -94,15 +104,16 @@ class ScriptFetchOptions {
   const enum mozilla::dom::ReferrerPolicy mReferrerPolicy;
 
   /*
-   *  Related to cryptographic nonce, used to determine CSP
+   *  Used to determine CSP
    */
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
-
-  /* The Web Extension global -- Only used on DOM Modules.
-   *     Specifies a SandBox global with which to associate and run this script.
-   *     Propagated throughout the module tree if present. Not part of a spec.
+  /*
+   *      Represents fields populated by DOM elements (nonce, parser metadata)
+   *      Leave this field as a nullptr for any fetch that requires the
+   *      default classic script options.
+   *      (https://html.spec.whatwg.org/multipage/webappapis.html#default-classic-script-fetch-options)
    */
-  nsCOMPtr<nsIGlobalObject> mWebExtGlobal;
+  nsCOMPtr<mozilla::dom::Element> mElement;
 };
 
 /*
@@ -151,7 +162,7 @@ class ScriptLoadRequest
   ScriptLoadRequest(ScriptKind aKind, nsIURI* aURI,
                     ScriptFetchOptions* aFetchOptions,
                     const SRIMetadata& aIntegrity, nsIURI* aReferrer,
-                    mozilla::dom::ScriptLoadContext* aContext);
+                    LoadContextBase* aContext);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ScriptLoadRequest)
@@ -172,6 +183,7 @@ class ScriptLoadRequest
       mozilla::MaybeOneOf<JS::SourceText<char16_t>, JS::SourceText<Utf8Unit>>;
 
   bool IsModuleRequest() const { return mKind == ScriptKind::eModule; }
+  bool IsImportMapRequest() const { return mKind == ScriptKind::eImportMap; }
 
   ModuleLoadRequest* AsModuleRequest();
   const ModuleLoadRequest* AsModuleRequest() const;
@@ -284,12 +296,12 @@ class ScriptLoadRequest
 
   void DropBytecodeCacheReferences();
 
-  bool HasLoadContext() { return mLoadContext; }
+  bool HasLoadContext() const { return mLoadContext; }
 
-  mozilla::dom::ScriptLoadContext* GetLoadContext() {
-    MOZ_ASSERT(mLoadContext);
-    return mLoadContext;
-  }
+  bool HasScriptLoadContext() const;
+  mozilla::dom::ScriptLoadContext* GetScriptLoadContext();
+
+  mozilla::loader::ComponentLoadContext* GetComponentLoadContext();
 
   const ScriptKind mKind;  // Whether this is a classic script or a module
                            // script.
@@ -313,7 +325,8 @@ class ScriptLoadRequest
   size_t mScriptTextLength;
 
   // Holds the SRI serialized hash and the script bytecode for non-inline
-  // scripts.
+  // scripts. The data is laid out according to ScriptBytecodeDataLayout
+  // or, if compression is enabled, ScriptBytecodeCompressedDataLayout.
   mozilla::Vector<uint8_t> mScriptBytecode;
   uint32_t mBytecodeOffset;  // Offset of the bytecode in mScriptBytecode
 
@@ -336,9 +349,9 @@ class ScriptLoadRequest
   // on the cache entry, such that we can load it the next time.
   nsCOMPtr<nsICacheInfoChannel> mCacheInfo;
 
-  // ScriptLoadContext for augmenting the load depending on the loading
+  // LoadContext for augmenting the load depending on the loading
   // context (DOM, Worker, etc.)
-  RefPtr<mozilla::dom::ScriptLoadContext> mLoadContext;
+  RefPtr<LoadContextBase> mLoadContext;
 };
 
 class ScriptLoadRequestList : private mozilla::LinkedList<ScriptLoadRequest> {

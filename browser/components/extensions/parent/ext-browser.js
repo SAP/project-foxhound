@@ -755,7 +755,7 @@ class Tab extends TabBase {
   }
 
   get attention() {
-    return this.nativeTab.getAttribute("attention") === "true";
+    return this.nativeTab.hasAttribute("attention");
   }
 
   get audible() {
@@ -837,10 +837,6 @@ class Tab extends TabBase {
   get highlighted() {
     let { selected, multiselected } = this.nativeTab;
     return selected || multiselected;
-  }
-
-  get selected() {
-    return this.nativeTab.selected;
   }
 
   get status() {

@@ -70,8 +70,19 @@ static const char* kObservedPrefs[] = {PREF_SHISTORY_SIZE,
                                        PREF_FISSION_BFCACHEINPARENT, nullptr};
 
 static int32_t gHistoryMaxSize = 50;
-// List of all SHistory objects, used for content viewer cache eviction
-static LinkedList<nsSHistory> gSHistoryList;
+
+// List of all SHistory objects, used for content viewer cache eviction.
+// When being destroyed, this helper removes everything from the list to avoid
+// assertions when we leak.
+struct ListHelper {
+#ifdef DEBUG
+  ~ListHelper() { mList.clear(); }
+#endif  // DEBUG
+
+  LinkedList<nsSHistory> mList;
+};
+
+static ListHelper gSHistoryList;
 // Max viewers allowed total, across all SHistory objects - negative default
 // means we will calculate how many viewers to cache based on total memory
 int32_t nsSHistory::sHistoryMaxTotalViewers = -1;
@@ -149,11 +160,9 @@ class MOZ_STACK_CLASS SHistoryChangeNotifier {
       MOZ_ASSERT(mSHistory->HasOngoingUpdate());
       mSHistory->SetHasOngoingUpdate(false);
 
-      if (mozilla::SessionHistoryInParent() &&
-          mSHistory->GetBrowsingContext()) {
-        mSHistory->GetBrowsingContext()
-            ->Canonical()
-            ->HistoryCommitIndexAndLength();
+      RefPtr<BrowsingContext> rootBC = mSHistory->GetBrowsingContext();
+      if (mozilla::SessionHistoryInParent() && rootBC) {
+        rootBC->Canonical()->HistoryCommitIndexAndLength();
       }
     }
   }
@@ -236,7 +245,7 @@ void nsSHistory::EvictContentViewerForEntry(nsISHEntry* aEntry) {
 }
 
 nsSHistory::nsSHistory(BrowsingContext* aRootBC)
-    : mRootBC(aRootBC),
+    : mRootBC(aRootBC->Id()),
       mHasOngoingUpdate(false),
       mIndex(-1),
       mRequestedIndex(-1),
@@ -248,7 +257,7 @@ nsSHistory::nsSHistory(BrowsingContext* aRootBC)
   }
 
   // Add this new SHistory object to the list
-  gSHistoryList.insertBack(this);
+  gSHistoryList.mList.insertBack(this);
 
   // Init mHistoryTracker on setting mRootBC so we can bind its event
   // target to the tabGroup.
@@ -706,13 +715,13 @@ void nsSHistory::HandleEntriesToSwapInDocShell(
   }
 }
 
-void nsSHistory::UpdateRootBrowsingContextState() {
-  if (mRootBC && mRootBC->EverAttached()) {
+void nsSHistory::UpdateRootBrowsingContextState(BrowsingContext* aRootBC) {
+  if (aRootBC && aRootBC->EverAttached()) {
     bool sameDocument = IsEmptyOrHasEntriesForSingleTopLevelPage();
-    if (sameDocument != mRootBC->GetIsSingleToplevelInHistory()) {
+    if (sameDocument != aRootBC->GetIsSingleToplevelInHistory()) {
       // If the browsing context is discarded then its session history is
       // invalid and will go away.
-      Unused << mRootBC->SetIsSingleToplevelInHistory(sameDocument);
+      Unused << aRootBC->SetIsSingleToplevelInHistory(sameDocument);
     }
   }
 }
@@ -790,7 +799,8 @@ nsSHistory::AddEntry(nsISHEntry* aSHEntry, bool aPersist) {
 
   // If we have a root docshell, update the docshell id of the root shentry to
   // match the id of that docshell
-  if (mRootBC) {
+  RefPtr<BrowsingContext> rootBC = GetBrowsingContext();
+  if (rootBC) {
     aSHEntry->SetDocshellID(mRootDocShellID);
   }
 
@@ -1045,8 +1055,9 @@ nsSHistory::PurgeHistory(int32_t aNumEntries) {
     }
   }
 
-  if (mRootBC) {
-    mRootBC->PreOrderWalk([&docshellIDToEntry](BrowsingContext* aBC) {
+  RefPtr<BrowsingContext> rootBC = GetBrowsingContext();
+  if (rootBC) {
+    rootBC->PreOrderWalk([&docshellIDToEntry](BrowsingContext* aBC) {
       SessionHistoryEntry* entry = docshellIDToEntry.Get(aBC->GetHistoryID());
       Unused << aBC->SetHistoryEntryCount(
           entry ? uint32_t(entry->BCHistoryLength()) : 0);
@@ -1062,11 +1073,11 @@ nsSHistory::PurgeHistory(int32_t aNumEntries) {
   mRequestedIndex -= aNumEntries;
   mRequestedIndex = std::max(mRequestedIndex, -1);
 
-  if (mRootBC && mRootBC->GetDocShell()) {
-    mRootBC->GetDocShell()->HistoryPurged(aNumEntries);
+  if (rootBC && rootBC->GetDocShell()) {
+    rootBC->GetDocShell()->HistoryPurged(aNumEntries);
   }
 
-  UpdateRootBrowsingContextState();
+  UpdateRootBrowsingContextState(rootBC);
 
   return NS_OK;
 }
@@ -1244,9 +1255,15 @@ static void FinishRestore(CanonicalBrowsingContext* aBrowsingContext,
     // nsFrameLoader in the current SessionHistoryEntry.
     RefPtr<SessionHistoryEntry> currentSHEntry =
         aBrowsingContext->GetActiveSessionHistoryEntry();
-    if (aCanSave && currentSHEntry) {
-      currentSHEntry->SetFrameLoader(currentFrameLoader);
-      Unused << aBrowsingContext->SetIsInBFCache(true);
+    if (currentSHEntry) {
+      // Update layout history state now, before we change the IsInBFCache flag
+      // and the active session history entry.
+      aBrowsingContext->SynchronizeLayoutHistoryState();
+
+      if (aCanSave) {
+        currentSHEntry->SetFrameLoader(currentFrameLoader);
+        Unused << aBrowsingContext->SetIsInBFCache(true);
+      }
     }
 
     if (aBrowsingContext->IsActive()) {
@@ -1279,10 +1296,6 @@ static void FinishRestore(CanonicalBrowsingContext* aBrowsingContext,
     // The old page can't be stored in the bfcache,
     // destroy the nsFrameLoader.
     if (!aCanSave && currentFrameLoader) {
-      // Since destroying the browsing context may need to update layout
-      // history state, the browsing context needs to have still access to the
-      // correct entry.
-      aBrowsingContext->SetActiveSessionHistoryEntry(currentSHEntry);
       currentFrameLoader->Destroy();
     }
 
@@ -1593,7 +1606,7 @@ void nsSHistory::GloballyEvictContentViewers() {
 
   nsTArray<EntryAndDistance> entries;
 
-  for (auto shist : gSHistoryList) {
+  for (auto shist : gSHistoryList.mList) {
     // Maintain a list of the entries which have viewers and belong to
     // this particular shist object.  We'll add this list to the global list,
     // |entries|, eventually.
@@ -1898,8 +1911,11 @@ NS_IMETHODIMP_(void)
 nsSHistory::RemoveEntries(nsTArray<nsID>& aIDs, int32_t aStartIndex) {
   bool didRemove;
   RemoveEntries(aIDs, aStartIndex, &didRemove);
-  if (didRemove && mRootBC && mRootBC->GetDocShell()) {
-    mRootBC->GetDocShell()->DispatchLocationChangeEvent();
+  if (didRemove) {
+    RefPtr<BrowsingContext> rootBC = GetBrowsingContext();
+    if (rootBC && rootBC->GetDocShell()) {
+      rootBC->GetDocShell()->DispatchLocationChangeEvent();
+    }
   }
 }
 
@@ -2039,7 +2055,8 @@ nsresult nsSHistory::LoadEntry(int32_t aIndex, long aLoadType,
                                bool aUserActivation) {
   MOZ_LOG(gSHistoryLog, LogLevel::Debug,
           ("LoadEntry(%d, 0x%lx, %u)", aIndex, aLoadType, aHistCmd));
-  if (!mRootBC) {
+  RefPtr<BrowsingContext> rootBC = GetBrowsingContext();
+  if (!rootBC) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2114,14 +2131,14 @@ nsresult nsSHistory::LoadEntry(int32_t aIndex, long aLoadType,
 
   if (mRequestedIndex == mIndex) {
     // Possibly a reload case
-    InitiateLoad(nextEntry, mRootBC, aLoadType, aLoadResults, aLoadCurrentEntry,
+    InitiateLoad(nextEntry, rootBC, aLoadType, aLoadResults, aLoadCurrentEntry,
                  aUserActivation, requestedOffset);
     return NS_OK;
   }
 
   // Going back or forward.
   bool differenceFound = LoadDifferingEntries(
-      prevEntry, nextEntry, mRootBC, aLoadType, aLoadResults, aLoadCurrentEntry,
+      prevEntry, nextEntry, rootBC, aLoadType, aLoadResults, aLoadCurrentEntry,
       aUserActivation, requestedOffset);
   if (!differenceFound) {
     // LoadNextPossibleEntry will change the offset by one, and in order
@@ -2150,7 +2167,7 @@ bool nsSHistory::LoadDifferingEntries(nsISHEntry* aPrevEntry,
   // Check the IDs to verify if the pages are different.
   if (prevID != nextID) {
     // Set the Subframe flag if not navigating the root docshell.
-    aNextEntry->SetIsSubFrame(aParent != mRootBC);
+    aNextEntry->SetIsSubFrame(aParent->Id() != mRootBC);
     InitiateLoad(aNextEntry, aParent, aLoadType, aLoadResults,
                  aLoadCurrentEntry, aUserActivation, aOffset);
     return true;

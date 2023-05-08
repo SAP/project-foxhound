@@ -1239,7 +1239,8 @@ bool BackgroundFactoryChild::DeallocPBackgroundIDBFactoryRequestChild(
 
 PBackgroundIDBDatabaseChild*
 BackgroundFactoryChild::AllocPBackgroundIDBDatabaseChild(
-    const DatabaseSpec& aSpec, PBackgroundIDBFactoryRequestChild* aRequest) {
+    const DatabaseSpec& aSpec,
+    PBackgroundIDBFactoryRequestChild* aRequest) const {
   AssertIsOnOwningThread();
 
   auto* const request = static_cast<BackgroundFactoryRequestChild*>(aRequest);
@@ -1651,7 +1652,7 @@ BackgroundDatabaseChild::AllocPBackgroundIDBDatabaseFileChild(
 }
 
 bool BackgroundDatabaseChild::DeallocPBackgroundIDBDatabaseFileChild(
-    PBackgroundIDBDatabaseFileChild* aActor) {
+    PBackgroundIDBDatabaseFileChild* aActor) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aActor);
 
@@ -1752,7 +1753,7 @@ BackgroundDatabaseChild::RecvPBackgroundIDBVersionChangeTransactionConstructor(
 
 PBackgroundMutableFileChild*
 BackgroundDatabaseChild::AllocPBackgroundMutableFileChild(
-    const nsString& aName, const nsString& aType) {
+    const nsString& aName, const nsString& aType) const {
   AssertIsOnOwningThread();
 
   return new BackgroundMutableFileChild(aName, aType);
@@ -2265,7 +2266,7 @@ BackgroundMutableFileChild::AllocPBackgroundFileHandleChild(
 }
 
 bool BackgroundMutableFileChild::DeallocPBackgroundFileHandleChild(
-    PBackgroundFileHandleChild* aActor) {
+    PBackgroundFileHandleChild* aActor) const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aActor);
 
@@ -2662,7 +2663,7 @@ nsresult BackgroundRequestChild::PreprocessHelper::Init(
   // We use a TaskQueue here in order to be sure that the events are dispatched
   // in the correct order. This is not guaranteed in case we use the I/O thread
   // directly.
-  mTaskQueue = MakeRefPtr<TaskQueue>(target.forget(), "BackgroundRequestChild");
+  mTaskQueue = TaskQueue::Create(target.forget(), "BackgroundRequestChild");
 
   ErrorResult errorResult;
 
@@ -2749,8 +2750,9 @@ nsresult BackgroundRequestChild::PreprocessHelper::ProcessStream() {
       do_QueryInterface(mStream);
   MOZ_ASSERT(blobInputStream);
 
-  nsCOMPtr<nsIInputStream> internalInputStream =
-      blobInputStream->GetInternalStream();
+  nsCOMPtr<nsIInputStream> internalInputStream;
+  MOZ_ALWAYS_SUCCEEDS(
+      blobInputStream->TakeInternalStream(getter_AddRefs(internalInputStream)));
   MOZ_ASSERT(internalInputStream);
 
   QM_TRY(MOZ_TO_RESULT(

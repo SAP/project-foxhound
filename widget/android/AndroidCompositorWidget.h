@@ -32,10 +32,6 @@ class AndroidCompositorWidget : public CompositorWidget {
                           const layers::CompositorOptions& aOptions);
   ~AndroidCompositorWidget() override;
 
-  // Called whenever the compositor surface may have changed. The derived class
-  // should update mSurface to the new compositor surface.
-  virtual void OnCompositorSurfaceChanged() = 0;
-
   EGLNativeWindowType GetEGLNativeWindow();
 
   // CompositorWidget overrides
@@ -62,6 +58,11 @@ class AndroidCompositorWidget : public CompositorWidget {
   LayoutDeviceIntSize mClientSize;
 
   void NotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize);
+
+ private:
+  // Called whenever the compositor surface may have changed. The derived class
+  // should update mSurface to the new compositor surface.
+  virtual void OnCompositorSurfaceChanged() = 0;
 };
 
 }  // namespace widget

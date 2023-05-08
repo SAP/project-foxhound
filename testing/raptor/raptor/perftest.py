@@ -102,6 +102,7 @@ class Perftest(object):
         environment={},
         project="mozilla-central",
         verbose=False,
+        python=None,
         **kwargs
     ):
         self._remote_test_root = None
@@ -393,6 +394,11 @@ class Perftest(object):
             self.profile.merge(path)
 
         if self.config["extra_prefs"].get("fission.autostart", True):
+            self.config["extra_prefs"].update(
+                {
+                    "fission.autostart": True,
+                }
+            )
             LOG.info("Enabling fission via browser preferences")
             LOG.info("Browser preferences: {}".format(self.config["extra_prefs"]))
         self.profile.set_preferences(self.config["extra_prefs"])

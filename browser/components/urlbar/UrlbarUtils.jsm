@@ -133,7 +133,7 @@ var UrlbarUtils = {
    * histogram.
    */
   SELECTED_RESULT_TYPES: {
-    autofill: 0,
+    autofill: 0, // This is currently unused.
     bookmark: 1,
     history: 2,
     keyword: 3,
@@ -150,6 +150,13 @@ var UrlbarUtils = {
     formhistory: 14,
     dynamic: 15,
     tabtosearch: 16,
+    quicksuggest: 17,
+    autofill_adaptive: 18,
+    autofill_origin: 19,
+    autofill_url: 20,
+    autofill_about: 21,
+    autofill_other: 22,
+    autofill_preloaded: 23,
     // n_values = 32, so you'll need to create a new histogram if you need more.
   },
 
@@ -222,6 +229,19 @@ var UrlbarUtils = {
     "http:",
     "https:",
     "ftp:",
+  ],
+
+  // Valid URI schemes that are considered safe but don't contain
+  // an authority component (e.g host:port). There are many URI schemes
+  // that do not contain an authority, but these in particular have
+  // some likelihood of being entered or bookmarked by a user.
+  // `file:` is an exceptional case because an authority is optional
+  PROTOCOLS_WITHOUT_AUTHORITY: [
+    "about:",
+    "data:",
+    "file:",
+    "javascript:",
+    "view-source:",
   ],
 
   // Search mode objects corresponding to the local shortcuts in the view, in
@@ -684,7 +704,7 @@ var UrlbarUtils = {
         : UrlbarUtils.ICON.DEFAULT;
     }
     if (
-      url instanceof URL &&
+      URL.isInstance(url) &&
       UrlbarUtils.PROTOCOLS_WITH_ICONS.includes(url.protocol)
     ) {
       return "page-icon:" + url.href;
@@ -742,7 +762,7 @@ var UrlbarUtils = {
       return;
     }
 
-    if (urlOrEngine instanceof URL) {
+    if (URL.isInstance(urlOrEngine)) {
       urlOrEngine = urlOrEngine.href;
     }
 
@@ -875,7 +895,7 @@ var UrlbarUtils = {
         LEFT JOIN moz_inputhistory i ON i.place_id = h.id AND i.input = :input
         WHERE url_hash = hash(:url) AND url = :url
       `,
-        { url, input }
+        { url, input: input.toLowerCase() }
       );
     });
   },
@@ -941,11 +961,12 @@ var UrlbarUtils = {
   /**
    * Strips the prefix from a URL and returns the prefix and the remainder of the
    * URL.  "Prefix" is defined to be the scheme and colon, plus, if present, two
-   * slashes.  If the given string is not actually a URL, then an empty prefix and
-   * the string itself is returned.
+   * slashes.  If the given string is not actually a URL or it has a prefix
+   * we don't recognize, then an empty prefix and the string itself is returned.
    *
-   * @param {string} str The possible URL to strip.
-   * @returns {array} If `str` is a URL, then [prefix, remainder].  Otherwise, ["", str].
+   * @param   {string} str The possible URL to strip.
+   * @returns {array} If `str` is a URL with a prefix we recognize,
+   *          then [prefix, remainder].  Otherwise, ["", str].
    */
   stripURLPrefix(str) {
     let match = UrlbarTokenizer.REGEXP_PREFIX.exec(str);
@@ -954,9 +975,19 @@ var UrlbarUtils = {
     }
     let prefix = match[0];
     if (prefix.length < str.length && str[prefix.length] == " ") {
+      // A space following a prefix:
+      // e.g. "http:// some search string", "about: some search string"
       return ["", str];
     }
-    return [prefix, str.substr(prefix.length)];
+    if (
+      prefix.endsWith(":") &&
+      !UrlbarUtils.PROTOCOLS_WITHOUT_AUTHORITY.includes(prefix)
+    ) {
+      // Something that looks like a URI scheme but we won't treat as one:
+      // e.g. "localhost:8888"
+      return ["", str];
+    }
+    return [prefix, str.substring(prefix.length)];
   },
 
   /**
@@ -1093,12 +1124,17 @@ var UrlbarUtils = {
    * @returns {boolean} true: can autofill
    */
   canAutofillURL(url, candidate, checkFragmentOnly = false) {
-    if (
-      !checkFragmentOnly &&
-      (url.length <= candidate.length ||
-        !url.toLocaleLowerCase().startsWith(candidate.toLocaleLowerCase()))
-    ) {
-      return false;
+    if (!checkFragmentOnly) {
+      if (
+        url.length <= candidate.length ||
+        !url.toLocaleLowerCase().startsWith(candidate.toLocaleLowerCase())
+      ) {
+        return false;
+      }
+
+      if (!candidate.includes("/")) {
+        return true;
+      }
     }
 
     if (!UrlbarTokenizer.REGEXP_PREFIX.test(url)) {
@@ -1154,13 +1190,25 @@ var UrlbarUtils = {
         return result.payload.suggestion ? "searchsuggestion" : "searchengine";
       case UrlbarUtils.RESULT_TYPE.URL:
         if (result.autofill) {
-          return "autofill";
+          let { type } = result.autofill;
+          if (!type) {
+            type = "other";
+            Cu.reportError(
+              new Error(
+                "`result.autofill.type` not set, falling back to 'other'"
+              )
+            );
+          }
+          return `autofill_${type}`;
         }
         if (
           result.source == UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL &&
           result.heuristic
         ) {
           return "visiturl";
+        }
+        if (result.providerName == "UrlbarProviderQuickSuggest") {
+          return "quicksuggest";
         }
         return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
           ? "bookmark"
@@ -1337,6 +1385,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
         type: "number",
       },
       sponsoredClickUrl: {
+        type: "string",
+      },
+      sponsoredIabCategory: {
         type: "string",
       },
       sponsoredImpressionUrl: {
@@ -1844,13 +1895,14 @@ class UrlbarProvider {
    * the result, it should return false. The meaning of "blocked" depends on the
    * provider and the type of result.
    *
+   * @param {UrlbarQueryContext} queryContext
    * @param {UrlbarResult} result
-   *   The result that was picked.
+   *   The result that should be blocked.
    * @returns {boolean}
    *   Whether the result was blocked.
    * @abstract
    */
-  blockResult(result) {
+  blockResult(queryContext, result) {
     return false;
   }
 

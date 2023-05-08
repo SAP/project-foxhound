@@ -724,7 +724,7 @@ struct ReflowInput : public SizeComputationInput {
    *                           calculation.
    */
   static nscoord CalcLineHeight(nsIContent* aContent,
-                                ComputedStyle* aComputedStyle,
+                                const ComputedStyle* aComputedStyle,
                                 nsPresContext* aPresContext,
                                 nscoord aBlockBSize, float aFontSizeInflation);
 
@@ -841,6 +841,15 @@ struct ReflowInput : public SizeComputationInput {
   bool WillReflowAgainForClearance() const {
     return mDiscoveredClearance && *mDiscoveredClearance;
   }
+
+  // Returns true if we should apply automatic minimum on the block axis.
+  //
+  // The automatic minimum size in the ratio-dependent axis of a box with a
+  // preferred aspect ratio that is neither a replaced element nor a scroll
+  // container is its min-content size clamped from above by its maximum size.
+  //
+  // https://drafts.csswg.org/css-sizing-4/#aspect-ratio-minimum
+  bool ShouldApplyAutomaticMinimumOnBlockAxis() const;
 
   // Compute the offsets for a relative position element
   //

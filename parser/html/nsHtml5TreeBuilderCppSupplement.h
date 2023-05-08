@@ -7,6 +7,7 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
+#include "ErrorList.h"
 #include "nsError.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Likely.h"
@@ -1209,7 +1210,7 @@ bool nsHtml5TreeBuilder::HasScript() {
   return mOpQueue.ElementAt(len - 1).IsRunScript();
 }
 
-bool nsHtml5TreeBuilder::Flush(bool aDiscretionary) {
+mozilla::Result<bool, nsresult> nsHtml5TreeBuilder::Flush(bool aDiscretionary) {
   if (MOZ_UNLIKELY(mBuilder)) {
     MOZ_ASSERT_UNREACHABLE("Must never flush with builder.");
     return false;
@@ -1238,7 +1239,9 @@ bool nsHtml5TreeBuilder::Flush(bool aDiscretionary) {
                    "Tree builder is broken but the op in queue is not marked "
                    "as broken.");
       }
-      mOpSink->MoveOpsFrom(mOpQueue);
+      if (!mOpSink->MoveOpsFrom(mOpQueue)) {
+        return Err(NS_ERROR_OUT_OF_MEMORY);
+      }
     }
     return hasOps;
   }

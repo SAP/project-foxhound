@@ -64,7 +64,6 @@ bool IsSearchbox() const;
 nsStaticAtom* ARIARoleAtom() const;
 
 virtual mozilla::a11y::GroupPos GroupPosition() override;
-void ScrollTo(uint32_t aScrollType);
 void ScrollToPoint(uint32_t aScrollType, int32_t aX, int32_t aY);
 
 void Announce(const nsString& aAnnouncement, uint16_t aPriority);
@@ -91,13 +90,6 @@ virtual void TextBeforeOffset(int32_t aOffset,
                               nsAString& aText) override;
 
 char16_t CharAt(int32_t aOffset);
-
-LayoutDeviceIntRect TextBounds(
-    int32_t aStartOffset, int32_t aEndOffset,
-    uint32_t aCoordType =
-        nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE);
-
-LayoutDeviceIntRect CharBounds(int32_t aOffset, uint32_t aCoordType);
 
 int32_t OffsetAtPoint(int32_t aX, int32_t aY, uint32_t aCoordType);
 

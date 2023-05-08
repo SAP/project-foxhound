@@ -115,7 +115,6 @@ macro_rules! using_opcode_database {
                 (Hole, hole, NULL, 1, 0, 1, JOF_BYTE),
                 (RegExp, reg_exp, NULL, 5, 0, 1, JOF_REGEXP),
                 (Lambda, lambda, NULL, 5, 0, 1, JOF_OBJECT),
-                (LambdaArrow, lambda_arrow, NULL, 5, 1, 1, JOF_OBJECT),
                 (SetFunName, set_fun_name, NULL, 2, 2, 1, JOF_UINT8),
                 (InitHomeObject, init_home_object, NULL, 1, 2, 1, JOF_BYTE),
                 (CheckClassHeritage, check_class_heritage, NULL, 1, 1, 1, JOF_BYTE),
@@ -175,9 +174,7 @@ macro_rules! using_opcode_database {
                 (Try, try_, NULL, 1, 0, 0, JOF_BYTE),
                 (TryDestructuring, try_destructuring, NULL, 1, 0, 0, JOF_BYTE),
                 (Exception, exception, NULL, 1, 0, 1, JOF_BYTE),
-                (ResumeIndex, resume_index, NULL, 4, 0, 1, JOF_RESUMEINDEX),
                 (Finally, finally, NULL, 1, 0, 0, JOF_BYTE),
-                (Retsub, retsub, NULL, 1, 1, 0, JOF_BYTE),
                 (Uninitialized, uninitialized, NULL, 1, 0, 1, JOF_BYTE),
                 (InitLexical, init_lexical, NULL, 4, 1, 1, JOF_LOCAL|JOF_NAME),
                 (InitGLexical, init_g_lexical, NULL, 5, 1, 1, JOF_ATOM|JOF_NAME|JOF_PROPINIT|JOF_GNAME|JOF_IC),
@@ -309,7 +306,7 @@ const JOF_QARG: u32 = 11;
 /// var or block-local variable
 const JOF_LOCAL: u32 = 12;
 
-/// yield, await, or retsub resume index
+/// yield or await resume index
 const JOF_RESUMEINDEX: u32 = 13;
 
 /// inline DoubleValue

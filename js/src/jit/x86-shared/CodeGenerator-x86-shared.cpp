@@ -461,11 +461,10 @@ void CodeGenerator::visitWasmAddOffset(LWasmAddOffset* lir) {
     masm.move32(base, out);
   }
   masm.add32(Imm32(mir->offset()), out);
-
-  Label ok;
-  masm.j(Assembler::CarryClear, &ok);
-  masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
-  masm.bind(&ok);
+  OutOfLineAbortingWasmTrap* ool = new (alloc())
+      OutOfLineAbortingWasmTrap(mir->bytecodeOffset(), wasm::Trap::OutOfBounds);
+  addOutOfLineCode(ool, mir);
+  masm.j(Assembler::CarrySet, ool->entry());
 }
 
 void CodeGenerator::visitWasmAddOffset64(LWasmAddOffset64* lir) {
@@ -477,11 +476,10 @@ void CodeGenerator::visitWasmAddOffset64(LWasmAddOffset64* lir) {
     masm.move64(base, out);
   }
   masm.add64(Imm64(mir->offset()), out);
-
-  Label ok;
-  masm.j(Assembler::CarryClear, &ok);
-  masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
-  masm.bind(&ok);
+  OutOfLineAbortingWasmTrap* ool = new (alloc())
+      OutOfLineAbortingWasmTrap(mir->bytecodeOffset(), wasm::Trap::OutOfBounds);
+  addOutOfLineCode(ool, mir);
+  masm.j(Assembler::CarrySet, ool->entry());
 }
 
 void CodeGenerator::visitWasmTruncateToInt32(LWasmTruncateToInt32* lir) {
@@ -1546,7 +1544,6 @@ void CodeGenerator::visitModI(LModI* ins) {
     masm.bind(&negative);
 
     // Prevent an integer overflow exception from -2147483648 % -1
-    Label notmin;
     masm.cmp32(lhs, Imm32(INT32_MIN));
     overflow = new (alloc()) ModOverflowCheck(ins, rhs);
     masm.j(Assembler::Equal, overflow->entry());
@@ -2300,6 +2297,11 @@ void CodeGenerator::visitWasmTernarySimd128(LWasmTernarySimd128* ins) {
       masm.laneSelectSimd128(mask, lhs, rhs, dest);
       break;
     }
+    case wasm::SimdOp::I32x4DotI8x16I7x16AddS:
+      masm.dotInt8x16Int7x16ThenAdd(ToFloatRegister(ins->v0()),
+                                    ToFloatRegister(ins->v1()),
+                                    ToFloatRegister(ins->v2()));
+      break;
     default:
       MOZ_CRASH("NYI");
   }
@@ -2693,6 +2695,9 @@ void CodeGenerator::visitWasmBinarySimd128(LWasmBinarySimd128* ins) {
     case wasm::SimdOp::I16x8RelaxedQ15MulrS:
       masm.q15MulrInt16x8Relaxed(lhs, rhs, dest);
       break;
+    case wasm::SimdOp::I16x8DotI8x16I7x16S:
+      masm.dotInt8x16Int7x16(lhs, rhs, dest);
+      break;
 #  ifdef ENABLE_WASM_SIMD_WORMHOLE
     case wasm::SimdOp::MozWHSELFTEST:
       masm.loadConstantSimd128(wasm::WormholeSignature(), dest);
@@ -2701,7 +2706,7 @@ void CodeGenerator::visitWasmBinarySimd128(LWasmBinarySimd128* ins) {
       masm.vpmaddubsw(rhs, lhs, dest);
       break;
     case wasm::SimdOp::MozWHPMADDWD:
-      masm.vpmaddwd(Operand(rhs), lhs, dest);
+      masm.widenDotInt16x8(lhs, rhs, dest);
       break;
 #  endif
     default:
@@ -2718,6 +2723,7 @@ void CodeGenerator::visitWasmBinarySimd128WithConstant(
   FloatRegister lhs = ToFloatRegister(ins->lhsDest());
   const SimdConstant& rhs = ins->rhs();
   FloatRegister dest = ToFloatRegister(ins->output());
+  FloatRegister temp = ToTempFloatRegisterOrInvalid(ins->getTemp(0));
 
   switch (ins->simdOp()) {
     case wasm::SimdOp::I8x16Add:
@@ -2854,6 +2860,9 @@ void CodeGenerator::visitWasmBinarySimd128WithConstant(
       break;
     case wasm::SimdOp::I32x4LeS:
       masm.compareInt32x4(Assembler::LessThanOrEqual, lhs, rhs, dest);
+      break;
+    case wasm::SimdOp::I64x2Mul:
+      masm.mulInt64x2(lhs, rhs, dest, temp);
       break;
     case wasm::SimdOp::F32x4Eq:
       masm.compareFloat32x4(Assembler::Equal, lhs, rhs, dest);

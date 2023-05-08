@@ -35,6 +35,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/CharacterData.h"
+#include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/DebuggerNotificationBinding.h"
 #include "mozilla/dom/DocumentType.h"
@@ -143,6 +144,17 @@ bool nsINode::IsInclusiveDescendantOf(const nsINode* aNode) const {
   MOZ_ASSERT(aNode, "The node is nullptr.");
 
   for (nsINode* node : InclusiveAncestors(*this)) {
+    if (node == aNode) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool nsINode::IsInclusiveFlatTreeDescendantOf(const nsINode* aNode) const {
+  MOZ_ASSERT(aNode, "The node is nullptr.");
+
+  for (nsINode* node : InclusiveFlatTreeAncestors(*this)) {
     if (node == aNode) {
       return true;
     }

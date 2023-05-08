@@ -29,6 +29,7 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/Telemetry.h"
@@ -36,6 +37,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Base64.h"
+#include "mozilla/VsyncDispatcher.h"
 
 #include "mozilla/Logging.h"
 #include "mozilla/Components.h"
@@ -104,7 +106,8 @@
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 #include "nsIObserverService.h"
-#include "nsIScreenManager.h"
+#include "mozilla/widget/Screen.h"
+#include "mozilla/widget/ScreenManager.h"
 #include "MainThreadUtils.h"
 
 #include "nsWeakReference.h"
@@ -165,8 +168,6 @@ using namespace mozilla::gfx;
 
 gfxPlatform* gPlatform = nullptr;
 static bool gEverInitialized = false;
-
-static int32_t gLastUsedFrameRate = -1;
 
 const ContentDeviceData* gContentDeviceInitData = nullptr;
 
@@ -442,6 +443,7 @@ gfxPlatform::gfxPlatform()
       mFrameStatsCollector(this, &gfxPlatform::GetFrameStats),
       mCMSInfoCollector(this, &gfxPlatform::GetCMSSupportInfo),
       mDisplayInfoCollector(this, &gfxPlatform::GetDisplayInfo),
+      mOverlayInfoCollector(this, &gfxPlatform::GetOverlayInfo),
       mCompositorBackend(layers::LayersBackend::LAYERS_NONE),
       mScreenDepth(0) {
   mAllowDownloadableFonts = UNINITIALIZED_VALUE;
@@ -780,16 +782,6 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
 #undef REPORT_INTERNER
 #undef REPORT_DATA_STORE
 
-static void FrameRatePrefChanged(const char* aPref, void*) {
-  int32_t newRate = gfxPlatform::ForceSoftwareVsync()
-                        ? gfxPlatform::GetSoftwareVsyncRate()
-                        : -1;
-  if (newRate != gLastUsedFrameRate) {
-    gLastUsedFrameRate = newRate;
-    gfxPlatform::ReInitFrameRate();
-  }
-}
-
 void gfxPlatform::Init() {
   MOZ_RELEASE_ASSERT(!XRE_IsGPUProcess(), "GFX: Not allowed in GPU process.");
   MOZ_RELEASE_ASSERT(!XRE_IsRDDProcess(), "GFX: Not allowed in RDD process.");
@@ -932,21 +924,30 @@ void gfxPlatform::Init() {
 
   if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
     GPUProcessManager* gpu = GPUProcessManager::Get();
-    gpu->LaunchGPUProcess();
+    Unused << gpu->LaunchGPUProcess();
   }
 
   if (XRE_IsParentProcess()) {
     nsAutoCString allowlist;
     Preferences::GetCString("gfx.offscreencanvas.domain-allowlist", allowlist);
     gfxVars::SetOffscreenCanvasDomainAllowlist(allowlist);
-  }
 
-  gLastUsedFrameRate = ForceSoftwareVsync() ? GetSoftwareVsyncRate() : -1;
-  Preferences::RegisterCallback(
-      FrameRatePrefChanged,
-      nsDependentCString(StaticPrefs::GetPrefName_layout_frame_rate()));
-  // Set up the vsync source for the parent process.
-  ReInitFrameRate();
+    // Create the global vsync source and dispatcher.
+    RefPtr<VsyncSource> vsyncSource =
+        gfxPlatform::ForceSoftwareVsync()
+            ? gPlatform->GetSoftwareVsyncSource()
+            : gPlatform->GetGlobalHardwareVsyncSource();
+    gPlatform->mVsyncDispatcher = new VsyncDispatcher(vsyncSource);
+
+    // Listen for layout.frame_rate pref changes.
+    Preferences::RegisterCallback(
+        gfxPlatform::ReInitFrameRate,
+        nsDependentCString(StaticPrefs::GetPrefName_layout_frame_rate()));
+    Preferences::RegisterCallback(
+        gfxPlatform::ReInitFrameRate,
+        nsDependentCString(
+            StaticPrefs::GetPrefName_privacy_resistFingerprinting()));
+  }
 
   // Create the sRGB to output display profile transforms. They can be accessed
   // off the main thread so we want to avoid a race condition.
@@ -1039,19 +1040,19 @@ void gfxPlatform::ReportTelemetry() {
                      "GFX: Only allowed to be called from parent process.");
 
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-  nsTArray<uint32_t> displayWidths;
-  nsTArray<uint32_t> displayHeights;
-  gfxInfo->GetDisplayWidth(displayWidths);
-  gfxInfo->GetDisplayHeight(displayHeights);
 
-  uint32_t displayCount = displayWidths.Length();
-  uint32_t displayWidth = displayWidths.Length() > 0 ? displayWidths[0] : 0;
-  uint32_t displayHeight = displayHeights.Length() > 0 ? displayHeights[0] : 0;
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_COUNT, displayCount);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_HEIGHT,
-                       displayHeight);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_WIDTH,
-                       displayWidth);
+  {
+    auto& screenManager = widget::ScreenManager::GetSingleton();
+    const uint32_t screenCount = screenManager.CurrentScreenList().Length();
+    RefPtr<widget::Screen> primaryScreen = screenManager.GetPrimaryScreen();
+    const LayoutDeviceIntRect rect = primaryScreen->GetRect();
+
+    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_COUNT, screenCount);
+    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_HEIGHT,
+                         uint32_t(rect.Height()));
+    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_WIDTH,
+                         uint32_t(rect.Width()));
+  }
 
   nsString adapterDesc;
   gfxInfo->GetAdapterDescription(adapterDesc);
@@ -1238,10 +1239,19 @@ void gfxPlatform::Shutdown() {
   }
 
   if (XRE_IsParentProcess()) {
-    gPlatform->mVsyncSource->Shutdown();
+    if (gPlatform->mGlobalHardwareVsyncSource) {
+      gPlatform->mGlobalHardwareVsyncSource->Shutdown();
+    }
+    if (gPlatform->mSoftwareVsyncSource &&
+        gPlatform->mSoftwareVsyncSource !=
+            gPlatform->mGlobalHardwareVsyncSource) {
+      gPlatform->mSoftwareVsyncSource->Shutdown();
+    }
   }
 
-  gPlatform->mVsyncSource = nullptr;
+  gPlatform->mGlobalHardwareVsyncSource = nullptr;
+  gPlatform->mSoftwareVsyncSource = nullptr;
+  gPlatform->mVsyncDispatcher = nullptr;
 
   // Shut down the default GL context provider.
   GLContextProvider::Shutdown();
@@ -2446,15 +2456,6 @@ void gfxPlatform::InitGPUProcessPrefs() {
 
   FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
 
-  nsCString message;
-  nsCString failureId;
-  if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_GPU_PROCESS,
-                                        &message, failureId)) {
-    gpuProc.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
-    // Don't return early here. We must continue the checks below in case
-    // the user has force-enabled the GPU process.
-  }
-
   // We require E10S - otherwise, there is very little benefit to the GPU
   // process, since the UI process must still use acceleration for
   // performance.
@@ -2470,6 +2471,14 @@ void gfxPlatform::InitGPUProcessPrefs() {
 
   if (StaticPrefs::layers_gpu_process_force_enabled_AtStartup()) {
     gpuProc.UserForceEnable("User force-enabled via pref");
+  }
+
+  nsCString message;
+  nsCString failureId;
+  if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_GPU_PROCESS,
+                                        &message, failureId)) {
+    gpuProc.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
+    return;
   }
 
   if (IsHeadless()) {
@@ -2692,6 +2701,47 @@ void gfxPlatform::InitWebRenderConfig() {
     FeatureState& feature = gfxConfig::GetFeature(Feature::VIDEO_OVERLAY);
     feature.EnableByDefault();
     gfxVars::SetUseWebRenderDCompVideoOverlayWin(true);
+  }
+
+  bool useHwVideoZeroCopy = false;
+  if (StaticPrefs::media_wmf_zero_copy_nv12_textures_AtStartup()) {
+    // XXX relax limitation to Windows 8.1
+    if (IsWin10OrLater() && hasHardware) {
+      useHwVideoZeroCopy = true;
+    }
+
+    if (useHwVideoZeroCopy &&
+        !StaticPrefs::
+            media_wmf_zero_copy_nv12_textures_force_enabled_AtStartup()) {
+      nsCString failureId;
+      int32_t status;
+      const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+      if (NS_FAILED(gfxInfo->GetFeatureStatus(
+              nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY, failureId,
+              &status))) {
+        FeatureState& feature =
+            gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
+        feature.DisableByDefault(FeatureStatus::BlockedNoGfxInfo,
+                                 "gfxInfo is broken",
+                                 "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
+        useHwVideoZeroCopy = false;
+      } else {
+        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
+          FeatureState& feature =
+              gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
+          feature.DisableByDefault(FeatureStatus::Blocked,
+                                   "Blocklisted by gfxInfo", failureId);
+          useHwVideoZeroCopy = false;
+        }
+      }
+    }
+  }
+
+  if (useHwVideoZeroCopy) {
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
+    feature.EnableByDefault();
+    gfxVars::SetHwDecodedVideoZeroCopy(true);
   }
 
   if (Preferences::GetBool("gfx.webrender.flip-sequential", false)) {
@@ -2938,6 +2988,22 @@ bool gfxPlatform::UsesOffMainThreadCompositing() {
   return result;
 }
 
+RefPtr<mozilla::VsyncDispatcher> gfxPlatform::GetGlobalVsyncDispatcher() {
+  MOZ_ASSERT(mVsyncDispatcher,
+             "mVsyncDispatcher should have been initialized by ReInitFrameRate "
+             "during gfxPlatform init");
+  MOZ_ASSERT(XRE_IsParentProcess());
+  return mVsyncDispatcher;
+}
+
+already_AddRefed<mozilla::gfx::VsyncSource>
+gfxPlatform::GetGlobalHardwareVsyncSource() {
+  if (!mGlobalHardwareVsyncSource) {
+    mGlobalHardwareVsyncSource = CreateGlobalHardwareVsyncSource();
+  }
+  return do_AddRef(mGlobalHardwareVsyncSource);
+}
+
 /***
  * The preference "layout.frame_rate" has 3 meanings depending on the value:
  *
@@ -2947,9 +3013,13 @@ bool gfxPlatform::UsesOffMainThreadCompositing() {
  *  X = Software vsync at a rate of X times per second.
  */
 already_AddRefed<mozilla::gfx::VsyncSource>
-gfxPlatform::CreateHardwareVsyncSource() {
-  RefPtr<mozilla::gfx::VsyncSource> softwareVsync = new SoftwareVsyncSource();
-  return softwareVsync.forget();
+gfxPlatform::GetSoftwareVsyncSource() {
+  if (!mSoftwareVsyncSource) {
+    double rateInMS = 1000.0 / (double)gfxPlatform::GetSoftwareVsyncRate();
+    mSoftwareVsyncSource = new mozilla::gfx::SoftwareVsyncSource(
+        TimeDuration::FromMilliseconds(rateInMS));
+  }
+  return do_AddRef(mSoftwareVsyncSource);
 }
 
 /* static */
@@ -2959,17 +3029,26 @@ bool gfxPlatform::IsInLayoutAsapMode() {
   // the second is that the compositor goes ASAP and the refresh driver
   // goes at whatever the configurated rate is. This only checks the version
   // talos uses, which is the refresh driver and compositor are in lockstep.
+  // Ignore privacy_resistFingerprinting to preserve ASAP mode there.
   return StaticPrefs::layout_frame_rate() == 0;
+}
+
+static int LayoutFrameRateFromPrefs() {
+  auto val = StaticPrefs::layout_frame_rate();
+  if (StaticPrefs::privacy_resistFingerprinting()) {
+    val = 60;
+  }
+  return val;
 }
 
 /* static */
 bool gfxPlatform::ForceSoftwareVsync() {
-  return StaticPrefs::layout_frame_rate() > 0;
+  return LayoutFrameRateFromPrefs() > 0;
 }
 
 /* static */
 int gfxPlatform::GetSoftwareVsyncRate() {
-  int preferenceRate = StaticPrefs::layout_frame_rate();
+  int preferenceRate = LayoutFrameRateFromPrefs();
   if (preferenceRate <= 0) {
     return gfxPlatform::GetDefaultFrameRate();
   }
@@ -2980,23 +3059,23 @@ int gfxPlatform::GetSoftwareVsyncRate() {
 int gfxPlatform::GetDefaultFrameRate() { return 60; }
 
 /* static */
-void gfxPlatform::ReInitFrameRate() {
-  if (XRE_IsParentProcess()) {
-    RefPtr<VsyncSource> oldSource = gPlatform->mVsyncSource;
+void gfxPlatform::ReInitFrameRate(const char* aPrefIgnored,
+                                  void* aDataIgnored) {
+  MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
 
-    // Start a new one:
-    if (gfxPlatform::ForceSoftwareVsync()) {
-      gPlatform->mVsyncSource =
-          (gPlatform)->gfxPlatform::CreateHardwareVsyncSource();
-    } else {
-      gPlatform->mVsyncSource = gPlatform->CreateHardwareVsyncSource();
-    }
-    // Tidy up old vsync source.
-    if (oldSource) {
-      oldSource->MoveListenersToNewSource(gPlatform->mVsyncSource);
-      oldSource->Shutdown();
-    }
+  if (gPlatform->mSoftwareVsyncSource) {
+    // Update the rate of the existing software vsync source.
+    double rateInMS = 1000.0 / (double)gfxPlatform::GetSoftwareVsyncRate();
+    gPlatform->mSoftwareVsyncSource->SetVsyncRate(
+        TimeDuration::FromMilliseconds(rateInMS));
   }
+
+  // Swap out the dispatcher's underlying source.
+  RefPtr<VsyncSource> vsyncSource =
+      gfxPlatform::ForceSoftwareVsync()
+          ? gPlatform->GetSoftwareVsyncSource()
+          : gPlatform->GetGlobalHardwareVsyncSource();
+  gPlatform->mVsyncDispatcher->SetVsyncSource(vsyncSource);
 }
 
 const char* gfxPlatform::GetAzureCanvasBackend() const {
@@ -3140,18 +3219,19 @@ void gfxPlatform::GetCMSSupportInfo(mozilla::widget::InfoObject& aObj) {
 }
 
 void gfxPlatform::GetDisplayInfo(mozilla::widget::InfoObject& aObj) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+  auto& screens = widget::ScreenManager::GetSingleton().CurrentScreenList();
+  aObj.DefineProperty("DisplayCount", screens.Length());
 
-  nsTArray<nsString> displayInfo;
-  auto rv = gfxInfo->GetDisplayInfo(displayInfo);
-  if (NS_SUCCEEDED(rv)) {
-    size_t displayCount = displayInfo.Length();
-    aObj.DefineProperty("DisplayCount", displayCount);
+  size_t i = 0;
+  for (auto& screen : screens) {
+    const LayoutDeviceIntRect rect = screen->GetRect();
+    nsPrintfCString value("%dx%d@%dHz scales:%f|%f", rect.width, rect.height,
+                          screen->GetRefreshRate(),
+                          screen->GetContentsScaleFactor(),
+                          screen->GetDefaultCSSScaleFactor());
 
-    for (size_t i = 0; i < displayCount; i++) {
-      nsPrintfCString name("Display%zu", i);
-      aObj.DefineProperty(name.get(), displayInfo[i]);
-    }
+    aObj.DefineProperty(nsPrintfCString("Display%zu", i++).get(),
+                        NS_ConvertUTF8toUTF16(value));
   }
 
   // Platform display info is only currently used for about:support and getting
@@ -3159,6 +3239,36 @@ void gfxPlatform::GetDisplayInfo(mozilla::widget::InfoObject& aObj) {
   if (XRE_IsParentProcess()) {
     GetPlatformDisplayInfo(aObj);
   }
+}
+
+void gfxPlatform::GetOverlayInfo(mozilla::widget::InfoObject& aObj) {
+  if (mOverlayInfo.isNothing()) {
+    return;
+  }
+
+  auto toString = [](mozilla::layers::OverlaySupportType aType) -> const char* {
+    switch (aType) {
+      case mozilla::layers::OverlaySupportType::None:
+        return "None";
+      case mozilla::layers::OverlaySupportType::Software:
+        return "Software";
+      case mozilla::layers::OverlaySupportType::Direct:
+        return "Direct";
+      case mozilla::layers::OverlaySupportType::Scaling:
+        return "Scaling";
+      default:
+        MOZ_ASSERT_UNREACHABLE("Unexpected to be called");
+    }
+    MOZ_CRASH("Incomplete switch");
+  };
+
+  nsPrintfCString value("NV12=%s YUV2=%s BGRA8=%s RGB10A2=%s",
+                        toString(mOverlayInfo.ref().mNv12Overlay),
+                        toString(mOverlayInfo.ref().mYuy2Overlay),
+                        toString(mOverlayInfo.ref().mBgra8Overlay),
+                        toString(mOverlayInfo.ref().mRgb10a2Overlay));
+
+  aObj.DefineProperty("OverlaySupport", NS_ConvertUTF8toUTF16(value));
 }
 
 class FrameStatsComparator {
@@ -3189,9 +3299,9 @@ void gfxPlatform::NotifyFrameStats(nsTArray<FrameStats>&& aFrameStats) {
 
 /*static*/
 uint32_t gfxPlatform::TargetFrameRate() {
-  if (gPlatform && gPlatform->mVsyncSource) {
+  if (gPlatform && gPlatform->mVsyncDispatcher) {
     return round(1000.0 /
-                 gPlatform->mVsyncSource->GetVsyncRate().ToMilliseconds());
+                 gPlatform->mVsyncDispatcher->GetVsyncRate().ToMilliseconds());
   }
   return 0;
 }
@@ -3276,7 +3386,8 @@ void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
 /* static */
 bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
                                            const char* aMessage,
-                                           const nsACString& aFailureId) {
+                                           const nsACString& aFailureId,
+                                           bool aCrashAfterFinalFallback) {
   // We always want to ensure (Hardware) WebRender is disabled.
   if (gfxConfig::IsEnabled(Feature::WEBRENDER)) {
     gfxConfig::GetFeature(Feature::WEBRENDER)
@@ -3373,6 +3484,10 @@ bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
     gfxCriticalNoteOnce << "Fallback WR to SW-WR, forced";
     gfxVars::SetUseSoftwareWebRender(true);
     return true;
+  }
+
+  if (aCrashAfterFinalFallback) {
+    MOZ_CRASH("Fallback configurations exhausted");
   }
 
   // Continue using Software WebRender (disabled fallback to Basic).

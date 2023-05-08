@@ -553,7 +553,7 @@ void nsHTMLDocument::AddedForm() { ++mNumForms; }
 
 void nsHTMLDocument::RemovedForm() { --mNumForms; }
 
-int32_t nsHTMLDocument::GetNumFormsSynchronous() { return mNumForms; }
+int32_t nsHTMLDocument::GetNumFormsSynchronous() const { return mNumForms; }
 
 bool nsHTMLDocument::ResolveName(JSContext* aCx, const nsAString& aName,
                                  JS::MutableHandle<JS::Value> aRetval,

@@ -4,7 +4,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from copy import deepcopy
 import glob
 import json
@@ -141,10 +141,14 @@ class MozbuildWriter(object):
 
 
 def find_deps(all_targets, target):
-    all_deps = set([target])
-    for dep in all_targets[target]["deps"]:
-        if dep not in all_deps:
-            all_deps |= find_deps(all_targets, dep)
+    all_deps = set()
+    queue = deque([target])
+    while queue:
+        item = queue.popleft()
+        all_deps.add(item)
+        for dep in all_targets[item]["deps"]:
+            if dep not in all_deps:
+                queue.append(dep)
     return all_deps
 
 
@@ -153,7 +157,13 @@ def filter_gn_config(gn_result, config, sandbox_vars, input_vars, gn_target):
     # mozbuild configuration.
     gn_out = {"targets": {}, "sandbox_vars": sandbox_vars, "gn_gen_args": input_vars}
 
-    gn_mozbuild_vars = ("MOZ_DEBUG", "OS_TARGET", "HOST_CPU_ARCH", "CPU_ARCH")
+    gn_mozbuild_vars = (
+        "MOZ_DEBUG",
+        "OS_TARGET",
+        "HOST_CPU_ARCH",
+        "CPU_ARCH",
+        "MOZ_X11",
+    )
 
     mozbuild_args = {k: config.substs.get(k) for k in gn_mozbuild_vars}
     gn_out["mozbuild_args"] = mozbuild_args
@@ -486,6 +496,7 @@ def write_mozbuild(
                 ("OS_TARGET",),
                 ("CPU_ARCH",),
                 ("MOZ_DEBUG", "OS_TARGET"),
+                ("OS_TARGET", "MOZ_X11"),
                 ("OS_TARGET", "CPU_ARCH"),
                 ("OS_TARGET", "CPU_ARCH", "MOZ_DEBUG"),
                 ("MOZ_DEBUG", "OS_TARGET", "CPU_ARCH", "HOST_CPU_ARCH"),
@@ -572,8 +583,14 @@ def generate_gn_config(
     gn_args = "--args=%s" % " ".join(
         ["%s=%s" % (k, str_for_arg(v)) for k, v in six.iteritems(input_variables)]
     )
+    # Don't make use_x11 part of the string for openbsd to avoid creating
+    # new json files.
     gn_arg_string = "_".join(
-        [str(input_variables[k]) for k in sorted(input_variables.keys())]
+        [
+            str(input_variables[k])
+            for k in sorted(input_variables.keys())
+            if k != "use_x11" or input_variables["target_os"] != "openbsd"
+        ]
     )
     out_dir = mozpath.join(output, "gn-output")
     gen_args = [config.substs["GN"], "gen", out_dir, gn_args, "--ide=json"]

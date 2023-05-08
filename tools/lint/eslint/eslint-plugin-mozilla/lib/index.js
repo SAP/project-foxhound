@@ -25,11 +25,9 @@ module.exports = {
     "frame-script": require("../lib/environments/frame-script.js"),
     jsm: require("../lib/environments/jsm.js"),
     simpletest: require("../lib/environments/simpletest.js"),
+    sjs: require("../lib/environments/sjs.js"),
     privileged: require("../lib/environments/privileged.js"),
     xpcshell: require("../lib/environments/xpcshell.js"),
-  },
-  processors: {
-    ".xul": require("../lib/processors/xul"),
   },
   rules: {
     "avoid-Date-timing": require("../lib/rules/avoid-Date-timing"),
@@ -61,6 +59,7 @@ module.exports = {
     "reject-scriptableunicodeconverter": require("../lib/rules/reject-scriptableunicodeconverter"),
     "reject-relative-requires": require("../lib/rules/reject-relative-requires"),
     "reject-some-requires": require("../lib/rules/reject-some-requires"),
+    "reject-top-level-await": require("../lib/rules/reject-top-level-await"),
     "rejects-requires-await": require("../lib/rules/rejects-requires-await"),
     "use-cc-etc": require("../lib/rules/use-cc-etc"),
     "use-chromeutils-generateqi": require("../lib/rules/use-chromeutils-generateqi"),
@@ -68,6 +67,7 @@ module.exports = {
     "use-default-preference-values": require("../lib/rules/use-default-preference-values"),
     "use-ownerGlobal": require("../lib/rules/use-ownerGlobal"),
     "use-includes-instead-of-indexOf": require("../lib/rules/use-includes-instead-of-indexOf"),
+    "use-isInstance": require("./rules/use-isInstance"),
     "use-returnValue": require("../lib/rules/use-returnValue"),
     "use-services": require("../lib/rules/use-services"),
     "var-only-at-top-level": require("../lib/rules/var-only-at-top-level"),

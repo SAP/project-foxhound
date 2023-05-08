@@ -273,10 +273,10 @@ const uint32_t kFlushTimeoutMs = 5000;
 
 const char kPrivateBrowsingObserverTopic[] = "last-pb-context-exited";
 
-const uint32_t kDefaultShadowWrites = true;
+const bool kDefaultShadowWrites = false;
 const uint32_t kDefaultSnapshotPrefill = 16384;
 const uint32_t kDefaultSnapshotGradualPrefill = 4096;
-const uint32_t kDefaultClientValidation = true;
+const bool kDefaultClientValidation = true;
 /**
  * Should all mutations also be reflected in the "shadow" database, which is
  * the legacy webappsstore.sqlite database.  When this is enabled, users can
@@ -526,16 +526,14 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateStorageConnection(
             // to corrupted state, which is ignored here).
 
             // Usually we only use QM_OR_ELSE_LOG_VERBOSE(_IF) with Remove and
-            // NS_ERROR_FILE_NOT_FOUND/NS_ERROR_FILE_TARGET_DOES_NOT_EXIST
-            // check, but we're already in the rare case of corruption here,
-            // so the use of QM_OR_ELSE_WARN_IF is ok here.
+            // NS_ERROR_FILE_NOT_FOUND check, but we're already in the rare case
+            // of corruption here, so the use of QM_OR_ELSE_WARN_IF is ok here.
             QM_TRY(QM_OR_ELSE_WARN_IF(
                 // Expression.
                 MOZ_TO_RESULT(aUsageFile.Remove(false)),
                 // Predicate.
                 ([](const nsresult rv) {
-                  return rv == NS_ERROR_FILE_NOT_FOUND ||
-                         rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
+                  return rv == NS_ERROR_FILE_NOT_FOUND;
                 }),
                 // Fallback.
                 ErrToDefaultOk<>));
@@ -1001,23 +999,20 @@ Result<bool, nsresult> ExistsAsFile(nsIFile& aFile) {
   // This is an optimization to check both properties in one OS case, rather
   // than calling Exists first, and then IsDirectory. IsDirectory also checks
   // if the path exists. QM_OR_ELSE_WARN_IF is not used here since we just want
-  // to log NS_ERROR_FILE_NOT_FOUND/NS_ERROR_FILE_TARGET_DOES_NOT_EXIST result
-  // and not spam the reports.
-  QM_TRY_INSPECT(const auto& res,
-                 QM_OR_ELSE_LOG_VERBOSE_IF(
-                     // Expression.
-                     MOZ_TO_RESULT_INVOKE_MEMBER(aFile, IsDirectory)
-                         .map([](const bool isDirectory) {
-                           return isDirectory ? ExistsAsFileResult::IsDirectory
-                                              : ExistsAsFileResult::IsFile;
-                         }),
-                     // Predicate.
-                     ([](const nsresult rv) {
-                       return rv == NS_ERROR_FILE_NOT_FOUND ||
-                              rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
-                     }),
-                     // Fallback.
-                     ErrToOk<ExistsAsFileResult::DoesNotExist>));
+  // to log NS_ERROR_FILE_NOT_FOUND result and not spam the reports.
+  QM_TRY_INSPECT(
+      const auto& res,
+      QM_OR_ELSE_LOG_VERBOSE_IF(
+          // Expression.
+          MOZ_TO_RESULT_INVOKE_MEMBER(aFile, IsDirectory)
+              .map([](const bool isDirectory) {
+                return isDirectory ? ExistsAsFileResult::IsDirectory
+                                   : ExistsAsFileResult::IsFile;
+              }),
+          // Predicate.
+          ([](const nsresult rv) { return rv == NS_ERROR_FILE_NOT_FOUND; }),
+          // Fallback.
+          ErrToOk<ExistsAsFileResult::DoesNotExist>));
 
   QM_TRY(OkIf(res != ExistsAsFileResult::IsDirectory), Err(NS_ERROR_FAILURE));
 
@@ -2615,7 +2610,6 @@ class QuotaClient final : public mozilla::dom::quota::Client {
   static QuotaClient* sInstance;
 
   Mutex mShadowDatabaseMutex MOZ_UNANNOTATED;
-  bool mShutdownRequested;
 
  public:
   QuotaClient();
@@ -2628,32 +2622,10 @@ class QuotaClient final : public mozilla::dom::quota::Client {
     return sInstance;
   }
 
-  static bool IsShuttingDownOnBackgroundThread() {
-    AssertIsOnBackgroundThread();
-
-    if (sInstance) {
-      return sInstance->IsShuttingDown();
-    }
-
-    return QuotaManager::IsShuttingDown();
-  }
-
-  static bool IsShuttingDownOnNonBackgroundThread() {
-    MOZ_ASSERT(!IsOnBackgroundThread());
-
-    return QuotaManager::IsShuttingDown();
-  }
-
   mozilla::Mutex& ShadowDatabaseMutex() {
     MOZ_ASSERT(IsOnIOThread() || IsOnGlobalConnectionThread());
 
     return mShadowDatabaseMutex;
-  }
-
-  bool IsShuttingDown() const {
-    AssertIsOnBackgroundThread();
-
-    return mShutdownRequested;
   }
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::dom::QuotaClient, override)
@@ -4146,8 +4118,7 @@ nsresult Connection::EnsureStorageConnection() {
     }
 
     nsresult rv = directoryEntry->Remove(false);
-    if (rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
-        rv != NS_ERROR_FILE_NOT_FOUND && NS_FAILED(rv)) {
+    if (rv != NS_ERROR_FILE_NOT_FOUND && NS_FAILED(rv)) {
       NS_WARNING("Failed to remove database file!");
     }
   });
@@ -7800,8 +7771,17 @@ PrepareDatastoreOp::CompressFunction::OnFunctionCall(
 
   const nsCString& buffer = compressed.IsVoid() ? value : compressed;
 
-  nsCOMPtr<nsIVariant> result = new storage::BlobVariant(std::make_pair(
-      static_cast<const void*>(buffer.get()), int(buffer.Length())));
+  // mozStorage transforms empty blobs into null values, but our database
+  // schema doesn't allow null values. We can workaround this by storing
+  // empty buffers as UTF8 text (SQLite supports the type affinity, so the type
+  // of the column is not fixed).
+  nsCOMPtr<nsIVariant> result;
+  if (0u == buffer.Length()) {  // Otherwise empty string becomes null
+    result = new storage::UTF8TextVariant(buffer);
+  } else {
+    result = new storage::BlobVariant(std::make_pair(
+        static_cast<const void*>(buffer.get()), int(buffer.Length())));
+  }
 
   result.forget(aResult);
   return NS_OK;
@@ -8334,8 +8314,7 @@ void ArchivedOriginScope::RemoveMatches(
 QuotaClient* QuotaClient::sInstance = nullptr;
 
 QuotaClient::QuotaClient()
-    : mShadowDatabaseMutex("LocalStorage mShadowDatabaseMutex"),
-      mShutdownRequested(false) {
+    : mShadowDatabaseMutex("LocalStorage mShadowDatabaseMutex") {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!sInstance, "We expect this to be a singleton!");
 
@@ -8553,6 +8532,15 @@ nsresult QuotaClient::AboutToClearOrigins(
 
   if (!aPersistenceType.IsNull() &&
       aPersistenceType.Value() != PERSISTENCE_TYPE_DEFAULT) {
+    return NS_OK;
+  }
+
+  // There can be no data for the system principal in the archive or the shadow
+  // database. This early return silences potential warnings caused by failed
+  // `CreateAerchivedOriginScope` because it calls `GenerateOriginKey2` which
+  // doesn't support the system principal.
+  if (aOriginScope.IsOrigin() &&
+      aOriginScope.GetOrigin() == QuotaManager::GetOriginForChrome()) {
     return NS_OK;
   }
 
@@ -8790,9 +8778,6 @@ void QuotaClient::StartIdleMaintenance() { AssertIsOnBackgroundThread(); }
 void QuotaClient::StopIdleMaintenance() { AssertIsOnBackgroundThread(); }
 
 void QuotaClient::InitiateShutdown() {
-  MOZ_ASSERT(!mShutdownRequested);
-  mShutdownRequested = true;
-
   // gPrepareDatastoreOps are short lived objects running a state machine.
   // The shutdown flag is checked between states, so we don't have to notify
   // all the objects here.
@@ -8801,20 +8786,17 @@ void QuotaClient::InitiateShutdown() {
   // When the last PrepareDatastoreOp finishes, the gPrepareDatastoreOps array
   // is destroyed.
 
-  if (gPrivateDatastores) {
-    gPrivateDatastores->Clear();
-    gPrivateDatastores = nullptr;
+  if (gPreparedDatastores) {
+    gPreparedDatastores = nullptr;
   }
 
-  if (gPreparedDatastores) {
-    gPreparedDatastores->Clear();
-    gPreparedDatastores = nullptr;
+  if (gPrivateDatastores) {
+    gPrivateDatastores = nullptr;
   }
 
   RequestAllowToCloseDatabasesMatching([](const auto&) { return true; });
 
   if (gPreparedObsevers) {
-    gPreparedObsevers->Clear();
     gPreparedObsevers = nullptr;
   }
 }

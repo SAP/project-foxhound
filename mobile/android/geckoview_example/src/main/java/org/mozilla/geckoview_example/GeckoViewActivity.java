@@ -146,6 +146,13 @@ class WebExtensionManager
     return GeckoResult.allow();
   }
 
+  @Nullable
+  @Override
+  public GeckoResult<AllowOrDeny> onOptionalPrompt(
+      final @NonNull WebExtension extension, final String[] permissions, final String[] origins) {
+    return GeckoResult.allow();
+  }
+
   @Override
   public void onExtensionListUpdated() {
     refreshExtensionList();
@@ -2154,6 +2161,8 @@ public class GeckoViewActivity extends AppCompatActivity
           return "ERROR_CORRUPTED_CONTENT";
         case WebRequestError.ERROR_HTTPS_ONLY:
           return "ERROR_HTTPS_ONLY";
+        case WebRequestError.ERROR_BAD_HSTS_CERT:
+          return "ERROR_BAD_HSTS_CERT";
         default:
           return "UNKNOWN";
       }

@@ -290,8 +290,12 @@ bool HasDrawWindowPrivilege(JSContext* aCx, JSObject* /* unused */) {
                                              nsGkAtoms::all_urlsPermission);
 }
 
-bool IsOffscreenCanvasEnabled(JSContext* aCx, JSObject* /* unused */) {
+bool IsOffscreenCanvasEnabled(JSContext* aCx, JSObject* aObj) {
   if (StaticPrefs::gfx_offscreencanvas_enabled()) {
+    return true;
+  }
+
+  if (OriginTrials::IsEnabled(aCx, aObj, OriginTrial::OffscreenCanvas)) {
     return true;
   }
 
@@ -303,7 +307,8 @@ bool IsOffscreenCanvasEnabled(JSContext* aCx, JSObject* /* unused */) {
 
   if (!NS_IsMainThread()) {
     dom::WorkerPrivate* workerPrivate = dom::GetWorkerPrivateFromContext(aCx);
-    if (workerPrivate->UsesSystemPrincipal()) {
+    if (workerPrivate->UsesSystemPrincipal() ||
+        workerPrivate->OriginNoSuffix() == u"resource://pdf.js"_ns) {
       return true;
     }
 
@@ -311,7 +316,7 @@ bool IsOffscreenCanvasEnabled(JSContext* aCx, JSObject* /* unused */) {
   }
 
   nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
-  if (principal->IsSystemPrincipal()) {
+  if (principal->IsSystemPrincipal() || nsContentUtils::IsPDFJS(principal)) {
     return true;
   }
 

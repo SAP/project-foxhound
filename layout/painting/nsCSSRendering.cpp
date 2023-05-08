@@ -2137,7 +2137,7 @@ void nsCSSRendering::GetImageLayerClip(
     aClipState->mBGClipArea.Deflate(border);
 
     if (haveRoundedCorners) {
-      nsIFrame::InsetBorderRadii(aClipState->mRadii, border);
+      nsIFrame::AdjustBorderRadii(aClipState->mRadii, -border);
     }
   }
 
@@ -2628,7 +2628,7 @@ nsCSSRendering::BuildWebRenderDisplayItemsForStyleImageLayerWithSC(
   result &= state.mImageRenderer.PrepareResult();
 
   if (!state.mFillArea.IsEmpty()) {
-    return state.mImageRenderer.BuildWebRenderDisplayItemsForLayer(
+    result &= state.mImageRenderer.BuildWebRenderDisplayItemsForLayer(
         &aParams.presCtx, aBuilder, aResources, aSc, aManager, aItem,
         state.mDestArea, state.mFillArea,
         state.mAnchor + paintBorderArea.TopLeft(),
@@ -2972,6 +2972,13 @@ nsBackgroundLayerState nsCSSRendering::PrepareImageLayer(
   }
   if (aFlags & nsCSSRendering::PAINTBG_HIGH_QUALITY_SCALING) {
     irFlags |= nsImageRenderer::FLAG_HIGH_QUALITY_SCALING;
+  }
+  // Only do partial bg image drawing in content documents: non-content
+  // documents are viewed as UI of the browser and a partial draw of a bg image
+  // might look weird in that context.
+  if (StaticPrefs::layout_display_partial_background_images() &&
+      XRE_IsContentProcess() && !aPresContext->IsChrome()) {
+    irFlags |= nsImageRenderer::FLAG_DRAW_PARTIAL_FRAMES;
   }
 
   nsBackgroundLayerState state(aForFrame, &aLayer.mImage, irFlags);
@@ -4818,7 +4825,7 @@ bool nsContextBoxBlur::InsetBoxBlur(
   // input data to the blur. This way, we don't have to scale the min
   // inset blur to the invert of the dest context, then rescale it back
   // when we draw to the destination surface.
-  gfx::Size scale = aDestinationCtx->CurrentMatrix().ScaleFactors();
+  auto scale = aDestinationCtx->CurrentMatrix().ScaleFactors();
   Matrix transform = aDestinationCtx->CurrentMatrix();
 
   // XXX: we could probably handle negative scales but for now it's easier just
@@ -4842,9 +4849,9 @@ bool nsContextBoxBlur::InsetBoxBlur(
 
   for (size_t i = 0; i < 4; i++) {
     aInnerClipRectRadii[i].width =
-        std::floor(scale.width * aInnerClipRectRadii[i].width);
+        std::floor(scale.xScale * aInnerClipRectRadii[i].width);
     aInnerClipRectRadii[i].height =
-        std::floor(scale.height * aInnerClipRectRadii[i].height);
+        std::floor(scale.yScale * aInnerClipRectRadii[i].height);
   }
 
   mAlphaBoxBlur.BlurInsetBox(aDestinationCtx, transformedDestRect,

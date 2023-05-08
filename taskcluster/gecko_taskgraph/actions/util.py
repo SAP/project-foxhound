@@ -120,7 +120,7 @@ def get_pushes_from_params_input(parameters, input):
     )
 
 
-def get_pushes(project, end_id, depth):
+def get_pushes(project, end_id, depth, full_response=False):
     pushes = []
     while True:
         start_id = max(end_id - depth, 0)
@@ -138,7 +138,8 @@ def get_pushes(project, end_id, depth):
             break
 
     pushes = sorted(pushes)[-depth:]
-    return pushes
+    push_dict = {push: r.json()["pushes"][push] for push in pushes}
+    return push_dict if full_response else pushes
 
 
 def get_decision_task_id(project, push_id):
@@ -154,20 +155,6 @@ def get_tasks_with_downstream(labels, full_task_graph, label_to_taskid):
     return full_task_graph.graph.transitive_closure(
         set(labels), reverse=True
     ).nodes & set(label_to_taskid.keys())
-
-
-def get_downstream_browsertime_tasks(labels, full_task_graph, label_to_taskid):
-    # Used to gather tasks when downstream tasks need to run as well. This
-    # function is specific to browsertime as it doesn't take an intersection
-    # with existing tasks, making it possible to schedule these without
-    # previously having scheduled them.
-    return full_task_graph.graph.transitive_closure(set(labels), reverse=True).nodes
-
-
-def rename_browsertime_vismet_task(label):
-    # Vismet tasks have labels which are modified from
-    # the task label which created the data so we can undo it here
-    return label.replace("-vismet", "") + "-e10s"
 
 
 def fetch_graph_and_labels(parameters, graph_config):

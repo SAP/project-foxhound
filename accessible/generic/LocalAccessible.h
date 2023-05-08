@@ -361,10 +361,7 @@ class LocalAccessible : public nsISupports, public Accessible {
     return childCount != 0 ? LocalChildAt(childCount - 1) : nullptr;
   }
 
-  /**
-   * Return embedded accessible children count.
-   */
-  uint32_t EmbeddedChildCount();
+  virtual uint32_t EmbeddedChildCount() override;
 
   /**
    * Return embedded accessible child at the given index.
@@ -427,6 +424,9 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   /**
    * Return boundaries rect relative to the frame of the parent accessible.
+   * The returned bounds are the same regardless of whether the parent is
+   * scrolled. This means the scroll position must be later subtracted to
+   * calculate absolute coordinates.
    */
   virtual nsRect ParentRelativeBounds();
 
@@ -445,11 +445,8 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void TakeFocus() const override;
 
-  /**
-   * Scroll the accessible into view.
-   */
   MOZ_CAN_RUN_SCRIPT
-  virtual void ScrollTo(uint32_t aHow) const;
+  virtual void ScrollTo(uint32_t aHow) const override;
 
   /**
    * Scroll the accessible to the given point.
@@ -513,6 +510,8 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   //////////////////////////////////////////////////////////////////////////////
   // ActionAccessible
+
+  virtual bool HasPrimaryAction() const override;
 
   virtual uint8_t ActionCount() const override;
 
@@ -797,6 +796,8 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   virtual Maybe<float> Opacity() const override;
 
+  virtual void DOMNodeID(nsString& aID) const override;
+
  protected:
   virtual ~LocalAccessible();
 
@@ -982,8 +983,6 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   virtual AccGroupInfo* GetOrCreateGroupInfo() override;
 
-  virtual bool HasPrimaryAction() const override;
-
   virtual void ARIAGroupPosition(int32_t* aLevel, int32_t* aSetSize,
                                  int32_t* aPosInSet) const override;
 
@@ -996,7 +995,10 @@ class LocalAccessible : public nsISupports, public Accessible {
   LocalAccessible* mParent;
   nsTArray<LocalAccessible*> mChildren;
   int32_t mIndexInParent;
+
+  // These are used to determine whether to send cache updates.
   Maybe<nsRect> mBounds;
+  int32_t mFirstLineStart;
 
   /**
    * Maintain a reference to the ComputedStyle of our frame so we can

@@ -37,7 +37,11 @@ async function renderSpotlight(ready) {
 
   // Render logo element.
   let imageEl = clone.querySelector(".logo");
-  imageEl.src = logo.imageURL;
+  if (logo.imageURL) {
+    imageEl.src = logo.imageURL;
+  } else {
+    imageEl.style.visibility = "hidden";
+  }
   imageEl.style.height = imageEl.style.width = logo.size;
 
   // Set text data of an element by class name with local/remote as configured.
@@ -146,7 +150,7 @@ function renderMultistage(ready) {
   document.body.id = "root";
 
   // The content handles styling including its own modal shadowing.
-  const { classList } = gDoc.getElementById("window-modal-dialog");
+  const { classList } = browser.closest(".dialogBox");
   classList.add("noShadow");
   addEventListener("pagehide", () => classList.remove("noShadow"));
 

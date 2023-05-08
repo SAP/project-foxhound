@@ -108,27 +108,35 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
     element->HandlePrintCallback(mFrame->PresContext());
 
     if (element->IsOffscreen()) {
-      // If we are offscreen, then we display via an ImageContainer which is
-      // updated asynchronously, likely from a worker thread. There is nothing
-      // to paint until the owner attaches it.
+      // If we are offscreen, then we either display via an ImageContainer
+      // which is updated asynchronously, likely from a worker thread, or a
+      // CompositableHandle managed inside the compositor process. There is
+      // nothing to paint until the owner attaches it.
+
+      nsHTMLCanvasFrame* canvasFrame = static_cast<nsHTMLCanvasFrame*>(mFrame);
+      nsIntSize canvasSizeInPx = canvasFrame->GetCanvasSize();
+      IntrinsicSize intrinsicSize = IntrinsicSizeFromCanvasSize(canvasSizeInPx);
+      AspectRatio intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
+      nsRect area = mFrame->GetContentRectRelativeToSelf() + ToReferenceFrame();
+      nsRect dest = nsLayoutUtils::ComputeObjectDestRect(
+          area, intrinsicSize, intrinsicRatio, mFrame->StylePosition());
+      LayoutDeviceRect bounds = LayoutDeviceRect::FromAppUnits(
+          dest, mFrame->PresContext()->AppUnitsPerDevPixel());
+
       RefPtr<ImageContainer> container = element->GetImageContainer();
       if (container) {
-        nsHTMLCanvasFrame* canvasFrame =
-            static_cast<nsHTMLCanvasFrame*>(mFrame);
-        nsIntSize canvasSizeInPx = canvasFrame->GetCanvasSize();
-        IntrinsicSize intrinsicSize =
-            IntrinsicSizeFromCanvasSize(canvasSizeInPx);
-        AspectRatio intrinsicRatio =
-            IntrinsicRatioFromCanvasSize(canvasSizeInPx);
-        nsRect area =
-            mFrame->GetContentRectRelativeToSelf() + ToReferenceFrame();
-        nsRect dest = nsLayoutUtils::ComputeObjectDestRect(
-            area, intrinsicSize, intrinsicRatio, mFrame->StylePosition());
-        LayoutDeviceRect bounds = LayoutDeviceRect::FromAppUnits(
-            dest, mFrame->PresContext()->AppUnitsPerDevPixel());
         aManager->CommandBuilder().PushImage(this, container, aBuilder,
                                              aResources, aSc, bounds, bounds);
+        return true;
       }
+
+      CompositableHandle handle = element->GetCompositableHandle();
+      if (handle) {
+        aManager->CommandBuilder().PushInProcessImage(this, handle, aBuilder,
+                                                      aResources, aSc, bounds);
+        return true;
+      }
+
       return true;
     }
 
@@ -395,7 +403,7 @@ nscoord nsHTMLCanvasFrame::GetMinISize(gfxContext* aRenderingContext) {
   // min-height, and max-height properties.
   bool vertical = GetWritingMode().IsVertical();
   nscoord result;
-  if (StyleDisplay()->IsContainSize()) {
+  if (StyleDisplay()->GetContainSizeAxes().mIContained) {
     result = 0;
   } else {
     result = nsPresContext::CSSPixelsToAppUnits(
@@ -411,7 +419,7 @@ nscoord nsHTMLCanvasFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // min-height, and max-height properties.
   bool vertical = GetWritingMode().IsVertical();
   nscoord result;
-  if (StyleDisplay()->IsContainSize()) {
+  if (StyleDisplay()->GetContainSizeAxes().mIContained) {
     result = 0;
   } else {
     result = nsPresContext::CSSPixelsToAppUnits(
@@ -423,15 +431,17 @@ nscoord nsHTMLCanvasFrame::GetPrefISize(gfxContext* aRenderingContext) {
 
 /* virtual */
 IntrinsicSize nsHTMLCanvasFrame::GetIntrinsicSize() {
-  if (StyleDisplay()->IsContainSize()) {
+  const auto containAxes = StyleDisplay()->GetContainSizeAxes();
+  if (containAxes.IsBoth()) {
     return IntrinsicSize(0, 0);
   }
-  return IntrinsicSizeFromCanvasSize(GetCanvasSize());
+  return containAxes.ContainIntrinsicSize(
+      IntrinsicSizeFromCanvasSize(GetCanvasSize()), GetWritingMode());
 }
 
 /* virtual */
 AspectRatio nsHTMLCanvasFrame::GetIntrinsicRatio() const {
-  if (StyleDisplay()->IsContainSize()) {
+  if (StyleDisplay()->GetContainSizeAxes().IsAny()) {
     return AspectRatio();
   }
 
@@ -504,6 +514,12 @@ void nsHTMLCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   if (!IsVisibleForPainting()) return;
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  if (IsContentHidden()) {
+    DisplaySelectionOverlay(aBuilder, aLists.Content(),
+                            nsISelectionDisplay::DISPLAY_IMAGES);
+    return;
+  }
 
   uint32_t clipFlags =
       nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition())

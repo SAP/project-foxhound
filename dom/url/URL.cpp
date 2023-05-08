@@ -20,8 +20,7 @@
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(URL, mParent, mSearchParams)
 
@@ -432,5 +431,4 @@ nsIURI* URL::GetURI() const {
   return mURI;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

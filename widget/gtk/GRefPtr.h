@@ -9,6 +9,7 @@
 // Allows to use RefPtr<T> with various kinds of GObjects
 
 #include <gdk/gdk.h>
+#include <gio/gio.h>
 #include <gtk/gtk.h>
 #include "mozilla/RefPtr.h"
 
@@ -37,8 +38,11 @@ GOBJECT_TRAITS(GSimpleAction)
 GOBJECT_TRAITS(GSimpleActionGroup)
 GOBJECT_TRAITS(GDBusProxy)
 GOBJECT_TRAITS(GAppInfo)
+GOBJECT_TRAITS(GAppLaunchContext)
 GOBJECT_TRAITS(GdkDragContext)
+GOBJECT_TRAITS(GDBusMessage)
 GOBJECT_TRAITS(GdkPixbuf)
+GOBJECT_TRAITS(GCancellable)
 
 #ifdef MOZ_ENABLE_DBUS
 GOBJECT_TRAITS(DBusGProxy)

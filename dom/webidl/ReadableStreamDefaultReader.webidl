@@ -15,7 +15,7 @@ enum ReadableStreamType { "bytes" };
 interface mixin ReadableStreamGenericReader {
   readonly attribute Promise<void> closed;
 
-  [Throws]
+  [NewObject]
   Promise<void> cancel(optional any reason);
 };
 
@@ -25,8 +25,8 @@ interface ReadableStreamDefaultReader {
   [Throws]
   constructor(ReadableStream stream);
 
-  [Throws]
-  Promise<ReadableStreamDefaultReadResult> read();
+  [NewObject]
+  Promise<ReadableStreamReadResult> read();
 
   [Throws]
   void releaseLock();
@@ -34,7 +34,7 @@ interface ReadableStreamDefaultReader {
 ReadableStreamDefaultReader includes ReadableStreamGenericReader;
 
 
-dictionary ReadableStreamDefaultReadResult {
+dictionary ReadableStreamReadResult {
  any value;
  boolean done;
 };

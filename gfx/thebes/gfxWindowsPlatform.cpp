@@ -1074,7 +1074,7 @@ void gfxWindowsPlatform::GetDLLVersion(char16ptr_t aDLLPath,
   vers[3] = LOWORD(fileVersLS);
 
   char buf[256];
-  SprintfLiteral(buf, "%u.%u.%u.%u", vers[0], vers[1], vers[2], vers[3]);
+  SprintfLiteral(buf, "%lu.%lu.%lu.%lu", vers[0], vers[1], vers[2], vers[3]);
   aVersion.Assign(NS_ConvertUTF8toUTF16(buf));
 }
 
@@ -1789,12 +1789,12 @@ class D3DVsyncSource final : public VsyncSource {
 };  // D3DVsyncSource
 
 already_AddRefed<mozilla::gfx::VsyncSource>
-gfxWindowsPlatform::CreateHardwareVsyncSource() {
+gfxWindowsPlatform::CreateGlobalHardwareVsyncSource() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread(), "GFX: Not in main thread.");
 
   if (!DwmCompositionEnabled()) {
     NS_WARNING("DWM not enabled, falling back to software vsync");
-    return gfxPlatform::CreateHardwareVsyncSource();
+    return GetSoftwareVsyncSource();
   }
 
   RefPtr<VsyncSource> d3dVsyncSource = new D3DVsyncSource();

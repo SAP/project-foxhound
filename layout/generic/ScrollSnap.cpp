@@ -23,43 +23,48 @@ using layers::ScrollSnapInfo;
  */
 class CalcSnapPoints final {
  public:
-  CalcSnapPoints(ScrollUnit aUnit, const nsPoint& aDestination,
-                 const nsPoint& aStartPos);
+  CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
+                 const nsPoint& aDestination, const nsPoint& aStartPos);
   void AddHorizontalEdge(nscoord aEdge);
   void AddVerticalEdge(nscoord aEdge);
   void AddEdge(nscoord aEdge, nscoord aDestination, nscoord aStartPos,
                nscoord aScrollingDirection, nscoord* aBestEdge,
                nscoord* aSecondBestEdge, bool* aEdgeFound);
-  void AddEdgeInterval(nscoord aInterval, nscoord aMinPos, nscoord aMaxPos,
-                       nscoord aOffset, nscoord aDestination, nscoord aStartPos,
-                       nscoord aScrollingDirection, nscoord* aBestEdge,
-                       nscoord* aSecondBestEdge, bool* aEdgeFound);
   nsPoint GetBestEdge() const;
   nscoord XDistanceBetweenBestAndSecondEdge() const {
-    return std::abs(mBestEdge.x - mSecondBestEdge.x);
+    return std::abs(
+        NSCoordSaturatingSubtract(mSecondBestEdge.x, mBestEdge.x, nscoord_MAX));
   }
   nscoord YDistanceBetweenBestAndSecondEdge() const {
-    return std::abs(mBestEdge.y - mSecondBestEdge.y);
+    return std::abs(
+        NSCoordSaturatingSubtract(mSecondBestEdge.y, mBestEdge.y, nscoord_MAX));
   }
+  const nsPoint& Destination() const { return mDestination; }
 
  protected:
   ScrollUnit mUnit;
+  ScrollSnapFlags mSnapFlags;
   nsPoint mDestination;  // gives the position after scrolling but before
                          // snapping
   nsPoint mStartPos;     // gives the position before scrolling
   nsIntPoint mScrollingDirection;  // always -1, 0, or 1
   nsPoint mBestEdge;  // keeps track of the position of the current best edge
-  nsPoint mSecondBestEdge;    // keeps track of the position of the current
-                              // second best edge
+  nsPoint mSecondBestEdge;  // keeps track of the position of the current
+                            // second best edge on the opposite side of the best
+                            // edge
   bool mHorizontalEdgeFound;  // true if mBestEdge.x is storing a valid
                               // horizontal edge
   bool mVerticalEdgeFound;    // true if mBestEdge.y is storing a valid vertical
                               // edge
 };
 
-CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, const nsPoint& aDestination,
+CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
+                               const nsPoint& aDestination,
                                const nsPoint& aStartPos) {
+  MOZ_ASSERT(aSnapFlags != ScrollSnapFlags::Disabled);
+
   mUnit = aUnit;
+  mSnapFlags = aSnapFlags;
   mDestination = aDestination;
   mStartPos = aStartPos;
 
@@ -78,6 +83,10 @@ CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, const nsPoint& aDestination,
     mScrollingDirection.y = 1;
   }
   mBestEdge = aDestination;
+  // We use NSCoordSaturatingSubtract to calculate the distance between a given
+  // position and this second best edge position so that it can be an
+  // uninitialized value as the maximum possible value, because the first
+  // distance calculation would always be nscoord_MAX.
   mSecondBestEdge = nsPoint(nscoord_MAX, nscoord_MAX);
   mHorizontalEdgeFound = false;
   mVerticalEdgeFound = false;
@@ -102,39 +111,25 @@ void CalcSnapPoints::AddEdge(nscoord aEdge, nscoord aDestination,
                              nscoord aStartPos, nscoord aScrollingDirection,
                              nscoord* aBestEdge, nscoord* aSecondBestEdge,
                              bool* aEdgeFound) {
-  // ScrollUnit::DEVICE_PIXELS indicates that we are releasing a drag
-  // gesture or any other user input event that sets an absolute scroll
-  // position.  In this case, scroll snapping is expected to travel in any
-  // direction.  Otherwise, we will restrict the direction of the scroll
-  // snapping movement based on aScrollingDirection.
-  if (mUnit != ScrollUnit::DEVICE_PIXELS) {
-    // Unless DEVICE_PIXELS, we only want to snap to points ahead of the
-    // direction we are scrolling
-    if (aScrollingDirection == 0) {
-      // The scroll direction is neutral - will not hit a snap point.
+  if (mSnapFlags & ScrollSnapFlags::IntendedDirection) {
+    // In the case of intended direction, we only want to snap to points ahead
+    // of the direction we are scrolling.
+    if (aScrollingDirection == 0 ||
+        (aEdge - aStartPos) * aScrollingDirection <= 0) {
+      // The scroll direction is neutral - will not hit a snap point, or the
+      // edge is not in the direction we are scrolling, skip it.
       return;
     }
-    // ScrollUnit::WHOLE indicates that we are navigating to "home" or
-    // "end".  In this case, we will always select the first or last snap point
-    // regardless of the direction of the scroll.  Otherwise, we will select
-    // scroll snapping points only in the direction specified by
-    // aScrollingDirection.
-    if (mUnit != ScrollUnit::WHOLE) {
-      // Direction of the edge from the current position (before scrolling) in
-      // the direction of scrolling
-      nscoord direction = (aEdge - aStartPos) * aScrollingDirection;
-      if (direction <= 0) {
-        // The edge is not in the direction we are scrolling, skip it.
-        return;
-      }
-    }
   }
+
   if (!*aEdgeFound) {
     *aBestEdge = aEdge;
     *aEdgeFound = true;
     return;
   }
 
+  const bool isOnOppositeSide =
+      ((aEdge - aDestination) > 0) != ((*aBestEdge - aDestination) > 0);
   // A utility function to update the best and the second best edges in the
   // given conditions.
   // |aIsCloserThanBest| True if the current candidate is closer than the best
@@ -143,17 +138,26 @@ void CalcSnapPoints::AddEdge(nscoord aEdge, nscoord aDestination,
   // the second best edge.
   auto updateBestEdges = [&](bool aIsCloserThanBest, bool aIsCloserThanSecond) {
     if (aIsCloserThanBest) {
-      *aSecondBestEdge = *aBestEdge;
+      // Replace the second best edge with the current best edge only if the new
+      // best edge (aEdge) is on the opposite side of the current best edge.
+      if (isOnOppositeSide) {
+        *aSecondBestEdge = *aBestEdge;
+      }
       *aBestEdge = aEdge;
     } else if (aIsCloserThanSecond) {
-      *aSecondBestEdge = aEdge;
+      if (isOnOppositeSide) {
+        *aSecondBestEdge = aEdge;
+      }
     }
   };
 
-  if (mUnit == ScrollUnit::DEVICE_PIXELS || mUnit == ScrollUnit::LINES) {
+  if (mUnit == ScrollUnit::DEVICE_PIXELS || mUnit == ScrollUnit::LINES ||
+      mUnit == ScrollUnit::WHOLE) {
     nscoord distance = std::abs(aEdge - aDestination);
-    updateBestEdges(distance < std::abs(*aBestEdge - aDestination),
-                    distance < std::abs(*aSecondBestEdge - aDestination));
+    updateBestEdges(
+        distance < std::abs(*aBestEdge - aDestination),
+        distance < std::abs(NSCoordSaturatingSubtract(
+                       *aSecondBestEdge, aDestination, nscoord_MAX)));
   } else if (mUnit == ScrollUnit::PAGES) {
     // distance to the edge from the scrolling destination in the direction of
     // scrolling
@@ -163,7 +167,8 @@ void CalcSnapPoints::AddEdge(nscoord aEdge, nscoord aDestination,
     nscoord curOvershoot = (*aBestEdge - aDestination) * aScrollingDirection;
 
     nscoord secondOvershoot =
-        (*aSecondBestEdge - aDestination) * aScrollingDirection;
+        NSCoordSaturatingSubtract(*aSecondBestEdge, aDestination, nscoord_MAX) *
+        aScrollingDirection;
 
     // edges between the current position and the scrolling destination are
     // favoured to preserve context
@@ -176,71 +181,42 @@ void CalcSnapPoints::AddEdge(nscoord aEdge, nscoord aDestination,
     if (overshoot > 0) {
       updateBestEdges(overshoot < curOvershoot, overshoot < secondOvershoot);
     }
-  } else if (mUnit == ScrollUnit::WHOLE) {
-    // the edge closest to the top/bottom/left/right is used, depending on
-    // scrolling direction
-    if (aScrollingDirection > 0) {
-      updateBestEdges(aEdge > *aBestEdge, aEdge > *aSecondBestEdge);
-    } else if (aScrollingDirection < 0) {
-      updateBestEdges(aEdge < *aBestEdge, aEdge < *aSecondBestEdge);
-    }
   } else {
     NS_ERROR("Invalid scroll mode");
     return;
   }
 }
 
-void CalcSnapPoints::AddEdgeInterval(
-    nscoord aInterval, nscoord aMinPos, nscoord aMaxPos, nscoord aOffset,
-    nscoord aDestination, nscoord aStartPos, nscoord aScrollingDirection,
-    nscoord* aBestEdge, nscoord* aSecondBestEdge, bool* aEdgeFound) {
-  if (aInterval == 0) {
-    // When interval is 0, there are no scroll snap points.
-    // Avoid division by zero and bail.
-    return;
-  }
-
-  // The only possible candidate interval snap points are the edges immediately
-  // surrounding aDestination.
-
-  // aDestination must be clamped to the scroll
-  // range in order to handle cases where the best matching snap point would
-  // result in scrolling out of bounds.  This clamping must be prior to
-  // selecting the two interval edges.
-  nscoord clamped = std::max(std::min(aDestination, aMaxPos), aMinPos);
-
-  // Add each edge in the interval immediately before aTarget and after aTarget
-  // Do not add edges that are out of range.
-  nscoord r = (clamped + aOffset) % aInterval;
-  if (r < aMinPos) {
-    r += aInterval;
-  }
-  nscoord edge = clamped - r;
-  if (edge >= aMinPos && edge <= aMaxPos) {
-    AddEdge(edge, aDestination, aStartPos, aScrollingDirection, aBestEdge,
-            aSecondBestEdge, aEdgeFound);
-  }
-  edge += aInterval;
-  if (edge >= aMinPos && edge <= aMaxPos) {
-    AddEdge(edge, aDestination, aStartPos, aScrollingDirection, aBestEdge,
-            aSecondBestEdge, aEdgeFound);
-  }
-}
-
 static void ProcessSnapPositions(CalcSnapPoints& aCalcSnapPoints,
                                  const ScrollSnapInfo& aSnapInfo) {
-  for (auto position : aSnapInfo.mSnapPositionX) {
-    aCalcSnapPoints.AddVerticalEdge(position);
-  }
-  for (auto position : aSnapInfo.mSnapPositionY) {
-    aCalcSnapPoints.AddHorizontalEdge(position);
+  for (const auto& target : aSnapInfo.mSnapTargets) {
+    nsPoint snapPoint(target.mSnapPositionX ? *target.mSnapPositionX
+                                            : aCalcSnapPoints.Destination().x,
+                      target.mSnapPositionY ? *target.mSnapPositionY
+                                            : aCalcSnapPoints.Destination().y);
+    nsRect snappedPort = nsRect(snapPoint, aSnapInfo.mSnapportSize);
+    // Ignore snap points if snapping to the point would leave the snap area
+    // outside of the snapport.
+    // https://drafts.csswg.org/css-scroll-snap-1/#snap-scope
+    if (!snappedPort.Intersects(target.mSnapArea)) {
+      continue;
+    }
+
+    if (target.mSnapPositionX &&
+        aSnapInfo.mScrollSnapStrictnessX != StyleScrollSnapStrictness::None) {
+      aCalcSnapPoints.AddVerticalEdge(*target.mSnapPositionX);
+    }
+    if (target.mSnapPositionY &&
+        aSnapInfo.mScrollSnapStrictnessY != StyleScrollSnapStrictness::None) {
+      aCalcSnapPoints.AddHorizontalEdge(*target.mSnapPositionY);
+    }
   }
 }
 
 Maybe<nsPoint> ScrollSnapUtils::GetSnapPointForDestination(
     const ScrollSnapInfo& aSnapInfo, ScrollUnit aUnit,
-    const nsRect& aScrollRange, const nsPoint& aStartPos,
-    const nsPoint& aDestination) {
+    ScrollSnapFlags aSnapFlags, const nsRect& aScrollRange,
+    const nsPoint& aStartPos, const nsPoint& aDestination) {
   if (aSnapInfo.mScrollSnapStrictnessY == StyleScrollSnapStrictness::None &&
       aSnapInfo.mScrollSnapStrictnessX == StyleScrollSnapStrictness::None) {
     return Nothing();
@@ -250,7 +226,7 @@ Maybe<nsPoint> ScrollSnapUtils::GetSnapPointForDestination(
     return Nothing();
   }
 
-  CalcSnapPoints calcSnapPoints(aUnit, aDestination, aStartPos);
+  CalcSnapPoints calcSnapPoints(aUnit, aSnapFlags, aDestination, aStartPos);
 
   ProcessSnapPositions(calcSnapPoints, aSnapInfo);
 

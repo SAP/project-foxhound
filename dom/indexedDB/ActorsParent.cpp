@@ -78,6 +78,7 @@
 #include "mozilla/RefCountType.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RemoteLazyInputStreamParent.h"
+#include "mozilla/RemoteLazyInputStreamStorage.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/SchedulerGroup.h"
@@ -145,7 +146,6 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/mozalloc.h"
-#include "mozilla/PRemoteLazyInputStreamParent.h"
 #include "mozilla/storage/Variant.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
@@ -1583,7 +1583,7 @@ class ConnectionPool final {
 
   void PerformIdleDatabaseMaintenance(DatabaseInfo& aDatabaseInfo);
 
-  void CloseDatabase(DatabaseInfo& aDatabaseInfo);
+  void CloseDatabase(DatabaseInfo& aDatabaseInfo) const;
 
   bool CloseDatabaseWhenIdleInternal(const nsACString& aDatabaseId);
 };
@@ -2490,21 +2490,24 @@ class Database::StartTransactionOp final
 class Database::UnmapBlobCallback final
     : public RemoteLazyInputStreamParentCallback {
   SafeRefPtr<Database> mDatabase;
+  nsCOMPtr<nsISerialEventTarget> mBackgroundThread;
 
  public:
   explicit UnmapBlobCallback(SafeRefPtr<Database> aDatabase)
-      : mDatabase(std::move(aDatabase)) {
+      : mDatabase(std::move(aDatabase)),
+        mBackgroundThread(GetCurrentSerialEventTarget()) {
     AssertIsOnBackgroundThread();
   }
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Database::UnmapBlobCallback, override)
 
   void ActorDestroyed(const nsID& aID) override {
-    AssertIsOnBackgroundThread();
     MOZ_ASSERT(mDatabase);
-
-    const SafeRefPtr<Database> database = std::move(mDatabase);
-    database->UnmapBlob(aID);
+    mBackgroundThread->Dispatch(NS_NewRunnableFunction(
+        "UnmapBlobCallback", [aID, database = std::move(mDatabase)] {
+          AssertIsOnBackgroundThread();
+          database->UnmapBlob(aID);
+        }));
   }
 
  private:
@@ -3638,7 +3641,8 @@ class CreateIndexOp final : public VersionChangeTransactionOp {
 
   nsresult InsertDataFromObjectStore(DatabaseConnection* aConnection);
 
-  nsresult InsertDataFromObjectStoreInternal(DatabaseConnection* aConnection);
+  nsresult InsertDataFromObjectStoreInternal(
+      DatabaseConnection* aConnection) const;
 
   bool Init(TransactionBase& aTransaction) override;
 
@@ -3688,9 +3692,9 @@ class DeleteIndexOp final : public VersionChangeTransactionOp {
 
   ~DeleteIndexOp() override = default;
 
-  nsresult RemoveReferencesToIndex(DatabaseConnection* aConnection,
-                                   const Key& aObjectDataKey,
-                                   nsTArray<IndexDataValue>& aIndexValues);
+  nsresult RemoveReferencesToIndex(
+      DatabaseConnection* aConnection, const Key& aObjectDataKey,
+      nsTArray<IndexDataValue>& aIndexValues) const;
 
   nsresult DoDatabaseWork(DatabaseConnection* aConnection) override;
 };
@@ -3796,13 +3800,15 @@ class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
 #if defined(NS_BUILD_REFCNT_LOGGING)
     // Only for MOZ_COUNT_CTOR.
     StoredFileInfo(StoredFileInfo&& aOther)
-        : mFileInfo{std::move(aOther.mFileInfo)}, mFileActorOrInputStream {
-      std::move(aOther.mFileActorOrInputStream)
-    }
+        : mFileInfo{std::move(aOther.mFileInfo)},
+          mFileActorOrInputStream{std::move(aOther.mFileActorOrInputStream)}
 #  ifdef DEBUG
-    , mType { aOther.mType }
+          ,
+          mType{aOther.mType}
 #  endif
-    { MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo); }
+    {
+      MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
+    }
 #else
     StoredFileInfo(StoredFileInfo&&) = default;
 #endif
@@ -3915,11 +3921,11 @@ void ObjectStoreAddOrPutRequestOp::StoredFileInfo::AssertInvariants() const {
 
 ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
     SafeRefPtr<DatabaseFileInfo> aFileInfo)
-    : mFileInfo{WrapNotNull(std::move(aFileInfo))}, mFileActorOrInputStream {
-  Nothing {}
-}
+    : mFileInfo{WrapNotNull(std::move(aFileInfo))},
+      mFileActorOrInputStream{Nothing{}}
 #ifdef DEBUG
-, mType { StructuredCloneFileBase::eMutableFile }
+      ,
+      mType{StructuredCloneFileBase::eMutableFile}
 #endif
 {
   AssertIsOnBackgroundThread();
@@ -3930,11 +3936,11 @@ ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
 
 ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
     SafeRefPtr<DatabaseFileInfo> aFileInfo, RefPtr<DatabaseFile> aFileActor)
-    : mFileInfo{WrapNotNull(std::move(aFileInfo))}, mFileActorOrInputStream {
-  std::move(aFileActor)
-}
+    : mFileInfo{WrapNotNull(std::move(aFileInfo))},
+      mFileActorOrInputStream{std::move(aFileActor)}
 #ifdef DEBUG
-, mType { StructuredCloneFileBase::eBlob }
+      ,
+      mType{StructuredCloneFileBase::eBlob}
 #endif
 {
   AssertIsOnBackgroundThread();
@@ -3946,11 +3952,11 @@ ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
 ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
     SafeRefPtr<DatabaseFileInfo> aFileInfo,
     nsCOMPtr<nsIInputStream> aInputStream)
-    : mFileInfo{WrapNotNull(std::move(aFileInfo))}, mFileActorOrInputStream {
-  std::move(aInputStream)
-}
+    : mFileInfo{WrapNotNull(std::move(aFileInfo))},
+      mFileActorOrInputStream{std::move(aInputStream)}
 #ifdef DEBUG
-, mType { StructuredCloneFileBase::eStructuredClone }
+      ,
+      mType{StructuredCloneFileBase::eStructuredClone}
 #endif
 {
   AssertIsOnBackgroundThread();
@@ -4914,7 +4920,6 @@ class QuotaClient final : public mozilla::dom::quota::Client {
   RefPtr<nsThreadPool> mMaintenanceThreadPool;
   nsClassHashtable<nsRefPtrHashKey<DatabaseFileManager>, nsTArray<int64_t>>
       mPendingDeleteInfos;
-  FlippedOnce<false> mShutdownRequested;
 
  public:
   QuotaClient();
@@ -4925,31 +4930,9 @@ class QuotaClient final : public mozilla::dom::quota::Client {
     return sInstance;
   }
 
-  static bool IsShuttingDownOnBackgroundThread() {
-    AssertIsOnBackgroundThread();
-
-    if (sInstance) {
-      return sInstance->IsShuttingDown();
-    }
-
-    return QuotaManager::IsShuttingDown();
-  }
-
-  static bool IsShuttingDownOnNonBackgroundThread() {
-    MOZ_ASSERT(!IsOnBackgroundThread());
-
-    return QuotaManager::IsShuttingDown();
-  }
-
   nsIEventTarget* BackgroundThread() const {
     MOZ_ASSERT(mBackgroundThread);
     return mBackgroundThread;
-  }
-
-  bool IsShuttingDown() const {
-    AssertIsOnBackgroundThread();
-
-    return mShutdownRequested;
   }
 
   nsresult AsyncDeleteFile(DatabaseFileManager* aFileManager, int64_t aFileId);
@@ -5567,7 +5550,7 @@ class EncryptedFileBlobImpl final : public FileBlobImpl {
   }
 
   void CreateInputStream(nsIInputStream** aInputStream,
-                         ErrorResult& aRv) override {
+                         ErrorResult& aRv) const override {
     nsCOMPtr<nsIInputStream> baseInputStream;
     FileBlobImpl::CreateInputStream(getter_AddRefs(baseInputStream), aRv);
     if (NS_WARN_IF(aRv.Failed())) {
@@ -5587,7 +5570,7 @@ class EncryptedFileBlobImpl final : public FileBlobImpl {
 
   already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart, uint64_t aLength,
                                          const nsAString& aContentType,
-                                         ErrorResult& aRv) override {
+                                         ErrorResult& aRv) const override {
     MOZ_CRASH("Not implemented because this should be unreachable.");
   }
 
@@ -5718,8 +5701,7 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
 }
 
 bool IsFileNotFoundError(const nsresult aRv) {
-  return aRv == NS_ERROR_FILE_NOT_FOUND ||
-         aRv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
+  return aRv == NS_ERROR_FILE_NOT_FOUND;
 }
 
 enum struct Idempotency { Yes, No };
@@ -5739,8 +5721,8 @@ nsresult DeleteFile(nsIFile& aFile, QuotaManager* const aQuotaManager,
 
   // Callers which pass Idempotency::Yes call this function without checking if
   // the file already exists (idempotent usage). QM_OR_ELSE_WARN_IF is not used
-  // here since we just want to log NS_ERROR_FILE_NOT_FOUND and
-  // NS_ERROR_FILE_TARGET_DOES_NOT_EXIST results and not spam the reports.
+  // here since we just want to log NS_ERROR_FILE_NOT_FOUND results and not spam
+  // the reports.
   // Theoretically, there should be no QM_OR_ELSE_(WARN|LOG_VERBOSE)_IF when a
   // caller passes Idempotency::No, but it's simpler when the predicate just
   // always returns false in that case.
@@ -8675,7 +8657,7 @@ void ConnectionPool::PerformIdleDatabaseMaintenance(
       NS_DISPATCH_NORMAL));
 }
 
-void ConnectionPool::CloseDatabase(DatabaseInfo& aDatabaseInfo) {
+void ConnectionPool::CloseDatabase(DatabaseInfo& aDatabaseInfo) const {
   AssertIsOnOwningThread();
   MOZ_DIAGNOSTIC_ASSERT(!aDatabaseInfo.TotalTransactionCount());
   aDatabaseInfo.mThreadInfo.AssertValid();
@@ -9691,18 +9673,21 @@ void Database::MapBlob(const IPCBlob& aIPCBlob,
   AssertIsOnBackgroundThread();
 
   const RemoteLazyStream& stream = aIPCBlob.inputStream();
-  MOZ_ASSERT(stream.type() == RemoteLazyStream::TPRemoteLazyInputStreamParent);
+  MOZ_ASSERT(stream.type() == RemoteLazyStream::TRemoteLazyInputStream);
 
-  RemoteLazyInputStreamParent* actor =
-      static_cast<RemoteLazyInputStreamParent*>(
-          stream.get_PRemoteLazyInputStreamParent());
+  nsID id{};
+  MOZ_ALWAYS_SUCCEEDS(
+      stream.get_RemoteLazyInputStream()->GetInternalStreamID(id));
 
-  MOZ_ASSERT(!mMappedBlobs.Contains(actor->ID()));
-  mMappedBlobs.InsertOrUpdate(actor->ID(), std::move(aFileInfo));
+  MOZ_ASSERT(!mMappedBlobs.Contains(id));
+  mMappedBlobs.InsertOrUpdate(id, std::move(aFileInfo));
 
   RefPtr<UnmapBlobCallback> callback =
       new UnmapBlobCallback(SafeRefPtrFromThis());
-  actor->SetCallback(callback);
+
+  auto storage = RemoteLazyInputStreamStorage::Get();
+  MOZ_ASSERT(storage.isOk());
+  storage.inspect()->StoreCallback(id, callback);
 }
 
 void Database::Stringify(nsACString& aResult) const {
@@ -9743,25 +9728,38 @@ void Database::Stringify(nsACString& aResult) const {
 SafeRefPtr<DatabaseFileInfo> Database::GetBlob(const IPCBlob& aIPCBlob) {
   AssertIsOnBackgroundThread();
 
-  const RemoteLazyStream& stream = aIPCBlob.inputStream();
-  MOZ_ASSERT(stream.type() == RemoteLazyStream::TIPCStream);
+  RefPtr<RemoteLazyInputStream> lazyStream;
+  switch (aIPCBlob.inputStream().type()) {
+    case RemoteLazyStream::TIPCStream: {
+      const InputStreamParams& inputStreamParams =
+          aIPCBlob.inputStream().get_IPCStream().stream();
+      if (inputStreamParams.type() !=
+          InputStreamParams::TRemoteLazyInputStreamParams) {
+        return nullptr;
+      }
+      lazyStream = inputStreamParams.get_RemoteLazyInputStreamParams().stream();
+      break;
+    }
+    case RemoteLazyStream::TRemoteLazyInputStream:
+      lazyStream = aIPCBlob.inputStream().get_RemoteLazyInputStream();
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown RemoteLazyStream type");
+      return nullptr;
+  }
 
-  const IPCStream& ipcStream = stream.get_IPCStream();
-
-  const InputStreamParams& inputStreamParams = ipcStream.stream();
-  if (inputStreamParams.type() !=
-      InputStreamParams::TRemoteLazyInputStreamParams) {
+  if (!lazyStream) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected null stream");
     return nullptr;
   }
 
-  const RemoteLazyInputStreamParams& ipcBlobInputStreamParams =
-      inputStreamParams.get_RemoteLazyInputStreamParams();
-  if (ipcBlobInputStreamParams.type() !=
-      RemoteLazyInputStreamParams::TRemoteLazyInputStreamRef) {
+  nsID id{};
+  nsresult rv = lazyStream->GetInternalStreamID(id);
+  if (NS_FAILED(rv)) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Received RemoteLazyInputStream doesn't have an actor connection");
     return nullptr;
   }
-
-  const nsID& id = ipcBlobInputStreamParams.get_RemoteLazyInputStreamRef().id();
 
   const auto fileInfo = mMappedBlobs.Lookup(id);
   return fileInfo ? fileInfo->clonePtr() : nullptr;
@@ -10172,9 +10170,11 @@ mozilla::ipc::IPCResult Database::RecvBlocked() {
 
   DatabaseActorInfo* info;
   MOZ_ALWAYS_TRUE(gLiveDatabaseHashtable->Get(Id(), &info));
-
   MOZ_ASSERT(info->mLiveDatabases.Contains(this));
-  MOZ_ASSERT(info->mWaitingFactoryOp);
+
+  if (NS_WARN_IF(!info->mWaitingFactoryOp)) {
+    return IPC_FAIL(this, "Database info has no mWaitingFactoryOp!");
+  }
 
   info->mWaitingFactoryOp->NoteDatabaseBlocked(this);
 
@@ -12381,10 +12381,10 @@ Result<FileUsageType, nsresult> DatabaseFileManager::GetUsage(
         }
 
         // Usually we only use QM_OR_ELSE_LOG_VERBOSE(_IF) with Remove and
-        // NS_ERROR_FILE_NOT_FOUND/NS_ERROR_FILE_TARGET_DOES_NOT_EXIST
-        // check, but the file was found by a directory traversal and ToInteger
-        // on the name succeeded, so it should be our file and if the file
-        // disappears, the use of QM_OR_ELSE_WARN_IF is ok here.
+        // NS_ERROR_FILE_NOT_FOUND check, but the file was found by a directory
+        // traversal and ToInteger on the name succeeded, so it should be our
+        // file and if the file disappears, the use of QM_OR_ELSE_WARN_IF is ok
+        // here.
         QM_TRY_INSPECT(const auto& thisUsage,
                        QM_OR_ELSE_WARN_IF(
                            // Expression.
@@ -12394,8 +12394,7 @@ Result<FileUsageType, nsresult> DatabaseFileManager::GetUsage(
                                }),
                            // Predicate.
                            ([](const nsresult rv) {
-                             return rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST ||
-                                    rv == NS_ERROR_FILE_NOT_FOUND;
+                             return rv == NS_ERROR_FILE_NOT_FOUND;
                            }),
                            // Fallback. If the file does no longer exist, treat
                            // it as 0-sized.
@@ -12434,7 +12433,7 @@ nsresult DatabaseFileManager::SyncDeleteFile(const int64_t aId) {
 }
 
 nsresult DatabaseFileManager::SyncDeleteFile(nsIFile& aFile,
-                                             nsIFile& aJournalFile) {
+                                             nsIFile& aJournalFile) const {
   QuotaManager* const quotaManager =
       EnforcingQuota() ? QuotaManager::Get() : nullptr;
   MOZ_ASSERT_IF(EnforcingQuota(), quotaManager);
@@ -12483,7 +12482,7 @@ nsresult QuotaClient::AsyncDeleteFile(DatabaseFileManager* aFileManager,
                                       int64_t aFileId) {
   AssertIsOnBackgroundThread();
 
-  if (mShutdownRequested) {
+  if (IsShuttingDownOnBackgroundThread()) {
     // Whoops! We want to delete an IndexedDB disk-backed File but it's too late
     // to actually delete the file! This means we're going to "leak" the file
     // and leave it around when we shouldn't! (The file will stay around until
@@ -12517,7 +12516,7 @@ nsresult QuotaClient::FlushPendingFileDeletions() {
 
 nsThreadPool* QuotaClient::GetOrCreateThreadPool() {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(!mShutdownRequested);
+  MOZ_ASSERT(!IsShuttingDownOnBackgroundThread());
 
   if (!mMaintenanceThreadPool) {
     RefPtr<nsThreadPool> threadPool = new nsThreadPool();
@@ -12822,17 +12821,15 @@ nsresult QuotaClient::GetUsageForOriginInternal(
                                           databaseFilename + kSQLiteWALSuffix));
 
         // QM_OR_ELSE_WARN_IF is not used here since we just want to log
-        // NS_ERROR_FILE_NOT_FOUND/NS_ERROR_FILE_TARGET_DOES_NOT_EXIST
-        // result and not spam the reports (the -wal file doesn't have to
-        // exist).
+        // NS_ERROR_FILE_NOT_FOUND result and not spam the reports (the -wal
+        // file doesn't have to exist).
         QM_TRY_INSPECT(const int64_t& walFileSize,
                        QM_OR_ELSE_LOG_VERBOSE_IF(
                            // Expression.
                            MOZ_TO_RESULT_INVOKE_MEMBER(walFile, GetFileSize),
                            // Predicate.
                            ([](const nsresult rv) {
-                             return rv == NS_ERROR_FILE_NOT_FOUND ||
-                                    rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
+                             return rv == NS_ERROR_FILE_NOT_FOUND;
                            }),
                            // Fallback.
                            (ErrToOk<0, int64_t>)));
@@ -12896,7 +12893,10 @@ void QuotaClient::AbortAllOperations() {
 
 void QuotaClient::StartIdleMaintenance() {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(!mShutdownRequested);
+  if (IsShuttingDownOnBackgroundThread()) {
+    MOZ_ASSERT(false, "!IsShuttingDownOnBackgroundThread()");
+    return;
+  }
 
   mBackgroundThread = GetCurrentEventTarget();
 
@@ -12906,7 +12906,6 @@ void QuotaClient::StartIdleMaintenance() {
 
 void QuotaClient::StopIdleMaintenance() {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(!mShutdownRequested);
 
   if (mCurrentMaintenance) {
     mCurrentMaintenance->Abort();
@@ -12919,8 +12918,6 @@ void QuotaClient::StopIdleMaintenance() {
 
 void QuotaClient::InitiateShutdown() {
   AssertIsOnBackgroundThread();
-
-  mShutdownRequested.Flip();
 
   AbortAllOperations();
 }
@@ -18460,7 +18457,7 @@ nsresult CreateIndexOp::InsertDataFromObjectStore(
 }
 
 nsresult CreateIndexOp::InsertDataFromObjectStoreInternal(
-    DatabaseConnection* aConnection) {
+    DatabaseConnection* aConnection) const {
   MOZ_ASSERT(aConnection);
   aConnection->AssertIsOnConnectionThread();
   MOZ_ASSERT(mMaybeUniqueIndexTable);
@@ -18782,7 +18779,7 @@ DeleteIndexOp::DeleteIndexOp(SafeRefPtr<VersionChangeTransaction> aTransaction,
 
 nsresult DeleteIndexOp::RemoveReferencesToIndex(
     DatabaseConnection* aConnection, const Key& aObjectStoreKey,
-    nsTArray<IndexDataValue>& aIndexValues) {
+    nsTArray<IndexDataValue>& aIndexValues) const {
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_ASSERT(!IsOnBackgroundThread());
   MOZ_ASSERT(aConnection);

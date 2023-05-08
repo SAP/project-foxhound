@@ -1,18 +1,49 @@
+// Observes the `load` event of an EventTarget, or the finishing of a resource
+// given its url. Requires `/preload/resources/preload_helper.js` for the latter
+// usage.
 class LoadObserver {
-  constructor(object) {
+  constructor(target) {
     this.finishTime = null;
     this.load = new Promise((resolve, reject) => {
-      object.onload = ev => {
-        this.finishTime = ev.timeStamp;
-        resolve(ev);
-      };
-      object.onerror = reject;
+      if (target.addEventListener) {
+        target.addEventListener('load', ev => {
+          this.finishTime = ev.timeStamp;
+          resolve(ev);
+        });
+        target.addEventListener('error', reject);
+      } else if (typeof target === 'string') {
+        const observer = new PerformanceObserver(() => {
+          if (numberOfResourceTimingEntries(target)) {
+            this.finishTime = performance.now();
+            resolve();
+          }
+        });
+        observer.observe({type: 'resource', buffered: true});
+      } else {
+        reject('Unsupported target for LoadObserver');
+      }
     });
   }
 
   get finished() {
     return this.finishTime !== null;
   }
+}
+
+// Observes the insertion of a script/parser-blocking element into DOM via
+// MutationObserver, so that we can access the element before it's loaded.
+function nodeInserted(parentNode, predicate) {
+  return new Promise(resolve => {
+    function callback(mutationList) {
+      for (let mutation of mutationList) {
+        for (let node of mutation.addedNodes) {
+          if (predicate(node))
+            resolve(node);
+        }
+      }
+    }
+    new MutationObserver(callback).observe(parentNode, {childList: true});
+  });
 }
 
 function createAutofocusTarget() {
@@ -57,16 +88,17 @@ function createAnimationTarget() {
 // are reported by different threads.
 const epsilon = 50;
 
-function test_render_blocking(optional_element, finalTest, finalTestTitle) {
+function test_render_blocking(optionalElementOrUrl, finalTest, finalTestTitle) {
   // Ideally, we should observe the 'load' event on the specific render-blocking
   // elements. However, this is not possible for script-blocking stylesheets, so
   // we have to observe the 'load' event on 'window' instead.
-  if (!(optional_element instanceof HTMLElement)) {
+  if (!(optionalElementOrUrl instanceof HTMLElement) &&
+      typeof optionalElementOrUrl !== 'string') {
     finalTestTitle = finalTest;
-    finalTest = optional_element;
-    optional_element = undefined;
+    finalTest = optionalElementOrUrl;
+    optionalElementOrUrl = undefined;
   }
-  const loadObserver = new LoadObserver(optional_element || window);
+  const loadObserver = new LoadObserver(optionalElementOrUrl || window);
 
   promise_test(async test => {
     assert_implements(window.PerformancePaintTiming);

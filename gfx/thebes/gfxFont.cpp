@@ -108,7 +108,7 @@ NS_IMPL_ISUPPORTS(gfxFontCache::MemoryReporter, nsIMemoryReporter)
 /*virtual*/
 gfxTextRunFactory::~gfxTextRunFactory() {
   // Should not be dropped by stylo
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!Servo_IsWorkerThread());
 }
 
 NS_IMETHODIMP
@@ -234,7 +234,7 @@ bool gfxFontCache::HashEntry::KeyEquals(const KeyTypePointer aKey) const {
 gfxFont* gfxFontCache::Lookup(const gfxFontEntry* aFontEntry,
                               const gfxFontStyle* aStyle,
                               const gfxCharacterMap* aUnicodeRangeMap) {
-  AutoReadLock lock(mCacheLock);
+  MutexAutoLock lock(mMutex);
 
   Key key(aFontEntry, aStyle, aUnicodeRangeMap);
   HashEntry* entry = mFonts.GetEntry(key);
@@ -247,7 +247,7 @@ gfxFont* gfxFontCache::Lookup(const gfxFontEntry* aFontEntry,
 void gfxFontCache::AddNew(gfxFont* aFont) {
   gfxFont* oldFont;
   {
-    AutoWriteLock lock(mCacheLock);
+    MutexAutoLock lock(mMutex);
 
     Key key(aFont->GetFontEntry(), aFont->GetStyle(),
             aFont->GetUnicodeRangeMap());
@@ -287,7 +287,7 @@ void gfxFontCache::NotifyReleased(gfxFont* aFont) {
 void gfxFontCache::NotifyExpiredLocked(gfxFont* aFont, const AutoLock& aLock) {
   aFont->ClearCachedWords();
   RemoveObjectLocked(aFont, aLock);
-  DestroyFont(aFont);
+  DestroyFontLocked(aFont);
 }
 
 void gfxFontCache::NotifyExpired(gfxFont* aFont) {
@@ -296,13 +296,28 @@ void gfxFontCache::NotifyExpired(gfxFont* aFont) {
   DestroyFont(aFont);
 }
 
-void gfxFontCache::DestroyFont(gfxFont* aFont) {
-  AutoWriteLock lock(mCacheLock);
+void gfxFontCache::DestroyFontLocked(gfxFont* aFont) {
   Key key(aFont->GetFontEntry(), aFont->GetStyle(),
           aFont->GetUnicodeRangeMap());
   HashEntry* entry = mFonts.GetEntry(key);
   if (entry && entry->mFont == aFont) {
     mFonts.RemoveEntry(entry);
+  }
+  NS_ASSERTION(aFont->GetRefCount() == 0,
+               "Destroying with non-zero ref count!");
+  MutexAutoUnlock unlock(mMutex);
+  delete aFont;
+}
+
+void gfxFontCache::DestroyFont(gfxFont* aFont) {
+  {
+    MutexAutoLock lock(mMutex);
+    Key key(aFont->GetFontEntry(), aFont->GetStyle(),
+            aFont->GetUnicodeRangeMap());
+    HashEntry* entry = mFonts.GetEntry(key);
+    if (entry && entry->mFont == aFont) {
+      mFonts.RemoveEntry(entry);
+    }
   }
   NS_ASSERTION(aFont->GetRefCount() == 0,
                "Destroying with non-zero ref count!");
@@ -319,7 +334,7 @@ void gfxFontCache::WordCacheExpirationTimerCallback(nsITimer* aTimer,
 void gfxFontCache::AgeCachedWords() {
   bool allEmpty = true;
   {
-    AutoReadLock lock(mCacheLock);
+    MutexAutoLock lock(mMutex);
     for (const auto& entry : mFonts) {
       allEmpty = entry.mFont->AgeCachedWords() && allEmpty;
     }
@@ -331,7 +346,7 @@ void gfxFontCache::AgeCachedWords() {
 
 void gfxFontCache::FlushShapedWordCaches() {
   {
-    AutoReadLock lock(mCacheLock);
+    MutexAutoLock lock(mMutex);
     for (const auto& entry : mFonts) {
       entry.mFont->ClearCachedWords();
     }
@@ -340,7 +355,7 @@ void gfxFontCache::FlushShapedWordCaches() {
 }
 
 void gfxFontCache::NotifyGlyphsChanged() {
-  AutoReadLock lock(mCacheLock);
+  MutexAutoLock lock(mMutex);
   for (const auto& entry : mFonts) {
     entry.mFont->NotifyGlyphsChanged();
   }
@@ -350,7 +365,7 @@ void gfxFontCache::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                           FontCacheSizes* aSizes) const {
   // TODO: add the overhead of the expiration tracker (generation arrays)
 
-  AutoReadLock lock(mCacheLock);
+  MutexAutoLock lock(*const_cast<Mutex*>(&mMutex));
   aSizes->mFontInstances += mFonts.ShallowSizeOfExcludingThis(aMallocSizeOf);
   for (const auto& entry : mFonts) {
     entry.mFont->AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
@@ -2794,7 +2809,7 @@ bool gfxFont::AgeCachedWords() {
 }
 
 void gfxFont::NotifyGlyphsChanged() const {
-  AutoReadLock lock(const_cast<gfxFont*>(this)->mLock);
+  AutoReadLock lock(mLock);
   uint32_t i, count = mGlyphExtentsArray.Length();
   for (i = 0; i < count; ++i) {
     // Flush cached extents array
@@ -2978,7 +2993,9 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
                         RoundingFlags aRounding, gfxShapedText* aShapedText) {
   // XXX Currently, we do all vertical shaping through harfbuzz.
   // Vertical graphite support may be wanted as a future enhancement.
-  if (FontCanSupportGraphite() && !aVertical) {
+  // XXX Graphite shaping currently only supported on the main thread!
+  // Worker-thread shaping (offscreen canvas) will always go via harfbuzz.
+  if (FontCanSupportGraphite() && !aVertical && NS_IsMainThread()) {
     if (gfxPlatform::GetPlatform()->UseGraphiteShaping()) {
       gfxGraphiteShaper* shaper = mGraphiteShaper;
       if (!shaper) {
@@ -4102,7 +4119,7 @@ gfxFloat gfxFont::SynthesizeSpaceWidth(uint32_t aCh) {
 
 void gfxFont::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                      FontCacheSizes* aSizes) const {
-  AutoReadLock lock(const_cast<gfxFont*>(this)->mLock);
+  AutoReadLock lock(mLock);
   for (uint32_t i = 0; i < mGlyphExtentsArray.Length(); ++i) {
     aSizes->mFontInstances +=
         mGlyphExtentsArray[i]->SizeOfIncludingThis(aMallocSizeOf);

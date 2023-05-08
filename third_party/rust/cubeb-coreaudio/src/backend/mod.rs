@@ -409,8 +409,7 @@ extern "C" fn audiounit_input_callback(
             input_buffer_list.mBuffers[0].mDataByteSize,
             input_buffer_list.mBuffers[0].mNumberChannels,
             input_frames,
-            input_buffer_manager.available_samples()
-                / stm.core_stream_data.input_dev_desc.mChannelsPerFrame as usize
+            input_buffer_manager.available_frames()
         );
 
         // Full Duplex. We'll call data_callback in the AudioUnit output callback.
@@ -420,14 +419,14 @@ extern "C" fn audiounit_input_callback(
 
         // Input only. Call the user callback through resampler.
         // Resampler will deliver input buffer in the correct rate.
-        let mut total_input_frames = (input_buffer_manager.available_samples()
-            / stm.core_stream_data.input_dev_desc.mChannelsPerFrame as usize)
-            as i64;
-        assert!(input_frames as i64 <= total_input_frames);
-        stm.frames_read
-            .fetch_add(total_input_frames as usize, atomic::Ordering::SeqCst);
+        assert!(input_frames as usize <= input_buffer_manager.available_frames());
+        stm.frames_read.fetch_add(
+            input_buffer_manager.available_frames(),
+            atomic::Ordering::SeqCst,
+        );
+        let mut total_input_frames = input_buffer_manager.available_frames() as i64;
         let input_buffer =
-            input_buffer_manager.get_linear_data(input_buffer_manager.available_samples());
+            input_buffer_manager.get_linear_data(input_buffer_manager.available_frames());
         let outframes = stm.core_stream_data.resampler.fill(
             input_buffer,
             &mut total_input_frames,
@@ -584,7 +583,6 @@ extern "C" fn audiounit_output_callback(
     let (input_buffer, mut input_frames) = if !stm.core_stream_data.input_unit.is_null() {
         let input_buffer_manager = stm.core_stream_data.input_buffer_manager.as_mut().unwrap();
         assert_ne!(stm.core_stream_data.input_dev_desc.mChannelsPerFrame, 0);
-        let input_channels = input_buffer_manager.channel_count() as usize;
         // If the output callback came first and this is a duplex stream, we need to
         // fill in some additional silence in the resampler.
         // Otherwise, if we had more than expected callbacks in a row, or we're
@@ -595,11 +593,11 @@ extern "C" fn audiounit_output_callback(
             f64::from(stm.core_stream_data.output_stream_params.rate()),
             output_frames as usize,
         );
-        let buffered_input_frames = input_buffer_manager.available_samples() / input_channels;
+        let buffered_input_frames = input_buffer_manager.available_frames();
         // Else if the input has buffered a lot already because the output started late, we
         // need to trim the input buffer
         if prev_frames_written == 0 && buffered_input_frames > input_frames_needed as usize {
-            input_buffer_manager.trim(input_frames_needed * input_channels);
+            input_buffer_manager.trim(input_frames_needed);
             let popped_frames = buffered_input_frames - input_frames_needed as usize;
             cubeb_log!("Dropping {} frames in input buffer.", popped_frames);
         }
@@ -628,10 +626,9 @@ extern "C" fn audiounit_output_callback(
             buffered_input_frames
         };
 
-        let input_samples_needed = input_frames * input_channels;
         stm.frames_read.fetch_add(input_frames, Ordering::SeqCst);
         (
-            input_buffer_manager.get_linear_data(input_samples_needed),
+            input_buffer_manager.get_linear_data(input_frames),
             input_frames as i64,
         )
     } else {
@@ -2673,6 +2670,16 @@ impl<'ctx> CoreStreamData<'ctx> {
                 self.stm_ptr,
                 output_hw_desc
             );
+
+            // This has been observed in the wild.
+            if output_hw_desc.mChannelsPerFrame == 0 {
+                cubeb_log!(
+                    "({:p}) Output hardware description channel count is zero",
+                    self.stm_ptr
+                );
+                return Err(Error::error());
+            }
+
             // Notice: when we are using aggregate device, the output_hw_desc.mChannelsPerFrame is
             // the total of all the output channel count of the devices added in the aggregate device.
             // Due to our aggregate device settings, the data recorded by the input device's output

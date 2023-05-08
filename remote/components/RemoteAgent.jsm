@@ -11,10 +11,10 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Preferences: "resource://gre/modules/Preferences.jsm",
   Services: "resource://gre/modules/Services.jsm",
 
   CDP: "chrome://remote/content/cdp/CDP.jsm",
+  Deferred: "chrome://remote/content/shared/Sync.jsm",
   HttpServer: "chrome://remote/content/server/HTTPD.jsm",
   Log: "chrome://remote/content/shared/Log.jsm",
   WebDriverBiDi: "chrome://remote/content/webdriver-bidi/WebDriverBiDi.jsm",
@@ -37,11 +37,14 @@ const CDP_ACTIVE = 0x2;
 const DEFAULT_PORT = 9222;
 // By default force local connections only
 const LOOPBACKS = ["localhost", "127.0.0.1", "[::1]"];
-const PREF_FORCE_LOCAL = "remote.force-local";
 
-class RemoteAgentClass {
+const isRemote =
+  Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
+
+class RemoteAgentParentProcess {
   #allowHosts;
   #allowOrigins;
+  #browserStartupFinished;
   #classID;
   #enabled;
   #port;
@@ -53,6 +56,7 @@ class RemoteAgentClass {
   constructor() {
     this.#allowHosts = null;
     this.#allowOrigins = null;
+    this.#browserStartupFinished = Deferred();
     this.#classID = Components.ID("{8f685a9d-8181-46d6-a71d-869289099c6d}");
     this.#enabled = false;
     this.#port = DEFAULT_PORT;
@@ -61,6 +65,8 @@ class RemoteAgentClass {
     // Supported protocols
     this.#cdp = null;
     this.#webDriverBiDi = null;
+
+    Services.ppmm.addMessageListener("RemoteAgent:IsRunning", this);
   }
 
   get allowHosts() {
@@ -96,6 +102,16 @@ class RemoteAgentClass {
     return this.#allowOrigins;
   }
 
+  /**
+   * A promise that resolves when the initial application window has been opened.
+   *
+   * @returns {Promise}
+   *     Promise that resolves when the initial application window is open.
+   */
+  get browserStartupFinished() {
+    return this.#browserStartupFinished.promise;
+  }
+
   get cdp() {
     return this.#cdp;
   }
@@ -118,7 +134,7 @@ class RemoteAgentClass {
     return this.server?._host;
   }
 
-  get listening() {
+  get running() {
     return !!this.server && !this.server.isStopped();
   }
 
@@ -168,7 +184,7 @@ class RemoteAgentClass {
     }
   }
 
-  async listen(url) {
+  async #listen(url) {
     if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
       throw Components.Exception(
         "May only be instantiated in parent process",
@@ -176,7 +192,7 @@ class RemoteAgentClass {
       );
     }
 
-    if (this.listening) {
+    if (this.running) {
       return;
     }
 
@@ -185,7 +201,7 @@ class RemoteAgentClass {
     }
 
     let { host, port } = url;
-    if (Preferences.get(PREF_FORCE_LOCAL) && !LOOPBACKS.includes(host)) {
+    if (!LOOPBACKS.includes(host)) {
       throw Components.Exception(
         "Restricted to loopback devices",
         Cr.NS_ERROR_ILLEGAL_VALUE
@@ -203,16 +219,15 @@ class RemoteAgentClass {
 
       Services.obs.notifyObservers(null, "remote-listening", true);
 
-      await this.cdp?.start();
-      await this.webDriverBiDi?.start();
+      await Promise.all([this.webDriverBiDi?.start(), this.cdp?.start()]);
     } catch (e) {
-      await this.close();
+      await this.#stop();
       logger.error(`Unable to start remote agent: ${e.message}`, e);
     }
   }
 
-  async close() {
-    if (!this.listening) {
+  async #stop() {
+    if (!this.running) {
       return;
     }
 
@@ -300,60 +315,77 @@ class RemoteAgentClass {
         this.#enabled = this.handleRemoteDebuggingPortFlag(subject);
 
         if (this.enabled) {
-          Services.obs.addObserver(this, "remote-startup-requested");
+          Services.obs.addObserver(this, "final-ui-startup");
 
           this.#allowHosts = this.handleAllowHostsFlag(subject);
           this.#allowOrigins = this.handleAllowOriginsFlag(subject);
-        }
 
-        // Ideally we should only enable the Remote Agent when the command
-        // line argument has been specified. But to allow Browser Chrome tests
-        // to run the Remote Agent and the supported protocols also need to be
-        // initialized.
+          Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
+          Services.obs.addObserver(this, "mail-idle-startup-tasks-finished");
+          Services.obs.addObserver(this, "quit-application");
 
-        // Listen for application shutdown to also shutdown the Remote Agent
-        // and a possible running instance of httpd.js.
-        Services.obs.addObserver(this, "quit-application");
+          // With Bug 1717899 we will extend the lifetime of the Remote Agent to
+          // the whole Firefox session, which will be identical to Marionette. For
+          // now prevent logging if the component is not enabled during startup.
+          if (
+            (activeProtocols & WEBDRIVER_BIDI_ACTIVE) ===
+            WEBDRIVER_BIDI_ACTIVE
+          ) {
+            this.#webDriverBiDi = new WebDriverBiDi(this);
+            if (this.enabled) {
+              logger.debug("WebDriver BiDi enabled");
+            }
+          }
 
-        // With Bug 1717899 we will extend the lifetime of the Remote Agent to
-        // the whole Firefox session, which will be identical to Marionette. For
-        // now prevent logging if the component is not enabled during startup.
-        if (
-          (activeProtocols & WEBDRIVER_BIDI_ACTIVE) ===
-          WEBDRIVER_BIDI_ACTIVE
-        ) {
-          this.#webDriverBiDi = new WebDriverBiDi(this);
-          if (this.enabled) {
-            logger.debug("WebDriver BiDi enabled");
+          if ((activeProtocols & CDP_ACTIVE) === CDP_ACTIVE) {
+            this.#cdp = new CDP(this);
+            if (this.enabled) {
+              logger.debug("CDP enabled");
+            }
           }
         }
-
-        if ((activeProtocols & CDP_ACTIVE) === CDP_ACTIVE) {
-          this.#cdp = new CDP(this);
-          if (this.enabled) {
-            logger.debug("CDP enabled");
-          }
-        }
-
         break;
 
-      case "remote-startup-requested":
+      case "final-ui-startup":
         Services.obs.removeObserver(this, topic);
 
         try {
           let address = Services.io.newURI(`http://localhost:${this.#port}`);
-          await this.listen(address);
+          await this.#listen(address);
         } catch (e) {
           throw Error(`Unable to start remote agent: ${e}`);
         }
 
         break;
 
-      case "quit-application":
-        Services.obs.removeObserver(this, "quit-application");
-
-        this.close();
+      // Used to wait until the initial application window has been opened.
+      case "browser-idle-startup-tasks-finished":
+      case "mail-idle-startup-tasks-finished":
+        Services.obs.removeObserver(
+          this,
+          "browser-idle-startup-tasks-finished"
+        );
+        Services.obs.removeObserver(this, "mail-idle-startup-tasks-finished");
+        this.#browserStartupFinished.resolve();
         break;
+
+      // Listen for application shutdown to also shutdown the Remote Agent
+      // and a possible running instance of httpd.js.
+      case "quit-application":
+        Services.obs.removeObserver(this, topic);
+        this.#stop();
+        break;
+    }
+  }
+
+  receiveMessage({ name }) {
+    switch (name) {
+      case "RemoteAgent:IsRunning":
+        return this.running;
+
+      default:
+        logger.warn("Unknown IPC message to parent process: " + name);
+        return null;
     }
   }
 
@@ -368,7 +400,9 @@ class RemoteAgentClass {
                      which is a low-level remote debugging interface used for WebDriver
                      BiDi and CDP. Defaults to port 9222.
   --remote-allow-hosts <hosts> Values of the Host header to allow for incoming requests.
-  --remote-allow-origins <origins> Values of the Origin header to allow for incoming requests.\n`;
+                     Please read security guidelines at https://firefox-source-docs.mozilla.org/remote/Security.html
+  --remote-allow-origins <origins> Values of the Origin header to allow for incoming requests.
+                     Please read security guidelines at https://firefox-source-docs.mozilla.org/remote/Security.html\n`;
   }
 
   get QueryInterface() {
@@ -380,7 +414,33 @@ class RemoteAgentClass {
   }
 }
 
-var RemoteAgent = new RemoteAgentClass();
+class RemoteAgentContentProcess {
+  #classID;
+
+  constructor() {
+    this.#classID = Components.ID("{8f685a9d-8181-46d6-a71d-869289099c6d}");
+  }
+
+  get running() {
+    let reply = Services.cpmm.sendSyncMessage("RemoteAgent:IsRunning");
+    if (reply.length == 0) {
+      logger.warn("No reply from parent process");
+      return false;
+    }
+    return reply[0];
+  }
+
+  get QueryInterface() {
+    return ChromeUtils.generateQI(["nsIRemoteAgent"]);
+  }
+}
+
+var RemoteAgent;
+if (isRemote) {
+  RemoteAgent = new RemoteAgentContentProcess();
+} else {
+  RemoteAgent = new RemoteAgentParentProcess();
+}
 
 // This is used by the XPCOM codepath which expects a constructor
 var RemoteAgentFactory = function() {

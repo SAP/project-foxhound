@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include protocol PFileDescriptorSet;
 include protocol PBrowser;
 
 include DocAccessibleTypes;
@@ -132,6 +131,7 @@ child:
   async TakeFocus(uint64_t aID);
   async TakeSelection(uint64_t aID);
   async SetSelected(uint64_t aID, bool aSelected);
+  async ScrollTo(uint64_t aID, uint32_t aScrollType);
 
   /*
    * Verify the cache. Used for testing purposes.

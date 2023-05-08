@@ -8,6 +8,7 @@
 #include "WMFUtils.h"
 #include "mozilla/Logging.h"
 #include "nsThreadUtils.h"
+#include "mozilla/mscom/COMWrappers.h"
 #include "mozilla/mscom/Utils.h"
 #include "PlatformDecoderModule.h"
 
@@ -30,7 +31,7 @@ MFTDecoder::~MFTDecoder() {
 HRESULT MFTDecoder::Create(const GUID& aCLSID) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
 
-  HRESULT hr = CoCreateInstance(
+  HRESULT hr = mscom::wrapped::CoCreateInstance(
       aCLSID, nullptr, CLSCTX_INPROC_SERVER,
       IID_PPV_ARGS(static_cast<IMFTransform**>(getter_AddRefs(mDecoder))));
   NS_WARNING_ASSERTION(SUCCEEDED(hr), "Failed to create MFT by CLSID");
@@ -73,7 +74,7 @@ MFTDecoder::Create(const GUID& aCategory, const GUID& aInSubtype,
   delete inInfo;
   delete outInfo;
   if (FAILED(hr)) {
-    NS_WARNING(nsPrintfCString("MFTEnumEx failed with code %x", hr).get());
+    NS_WARNING(nsPrintfCString("MFTEnumEx failed with code %lx", hr).get());
     return hr;
   }
   if (actsNum == 0) {
@@ -82,7 +83,7 @@ MFTDecoder::Create(const GUID& aCategory, const GUID& aInSubtype,
   }
   auto guard = MakeScopeExit([&] {
     // Start from index 1, acts[0] will be stored as a RefPtr to release later.
-    for (int i = 1; i < actsNum; i++) {
+    for (UINT32 i = 1; i < actsNum; i++) {
       acts[i]->Release();
     }
     CoTaskMemFree(acts);
@@ -97,7 +98,7 @@ MFTDecoder::Create(const GUID& aCategory, const GUID& aInSubtype,
       IID_PPV_ARGS(static_cast<IMFTransform**>(getter_AddRefs(mDecoder))));
   NS_WARNING_ASSERTION(
       SUCCEEDED(hr),
-      nsPrintfCString("IMFActivate::ActivateObject failed with code %x", hr)
+      nsPrintfCString("IMFActivate::ActivateObject failed with code %lx", hr)
           .get());
   return hr;
 }
@@ -423,5 +424,7 @@ MFTDecoder::GetOutputMediaType(RefPtr<IMFMediaType>& aMediaType) {
   NS_ENSURE_TRUE(mDecoder, E_POINTER);
   return mDecoder->GetOutputCurrentType(0, getter_AddRefs(aMediaType));
 }
+
+#undef LOG
 
 }  // namespace mozilla

@@ -242,7 +242,10 @@ bool Module::finishTier2(const LinkData& linkData2,
   // after tier-2 has been fully cached.
 
   if (tier2Listener_) {
-    serialize(linkData2, *tier2Listener_);
+    Bytes bytes;
+    if (serialize(linkData2, &bytes)) {
+      tier2Listener_->storeOptimizedEncoding(bytes.begin(), bytes.length());
+    }
     tier2Listener_ = nullptr;
   }
   testingTier2Active_ = false;
@@ -257,144 +260,14 @@ void Module::testingBlockOnTier2Complete() const {
 }
 
 /* virtual */
-size_t Module::serializedSize(const LinkData& linkData) const {
-  JS::BuildIdCharVector buildId;
-  {
-    AutoEnterOOMUnsafeRegion oom;
-    if (!GetOptimizedEncodingBuildId(&buildId)) {
-      oom.crash("getting build id");
-    }
-  }
-
-  return SerializedPodVectorSize(buildId) + linkData.serializedSize() +
-         SerializedVectorSize(imports_) + SerializedVectorSize(exports_) +
-         SerializedVectorSize(dataSegments_) +
-         SerializedVectorSize(elemSegments_) +
-         SerializedVectorSize(customSections_) + code_->serializedSize();
-}
-
-/* virtual */
-void Module::serialize(const LinkData& linkData, uint8_t* begin,
-                       size_t size) const {
-  MOZ_RELEASE_ASSERT(!metadata().debugEnabled);
-  MOZ_RELEASE_ASSERT(code_->hasTier(Tier::Serialized));
-
-  JS::BuildIdCharVector buildId;
-  {
-    AutoEnterOOMUnsafeRegion oom;
-    if (!GetOptimizedEncodingBuildId(&buildId)) {
-      oom.crash("getting build id");
-    }
-  }
-
-  uint8_t* cursor = begin;
-  cursor = SerializePodVector(cursor, buildId);
-  cursor = linkData.serialize(cursor);
-  cursor = SerializeVector(cursor, imports_);
-  cursor = SerializeVector(cursor, exports_);
-  cursor = SerializeVector(cursor, dataSegments_);
-  cursor = SerializeVector(cursor, elemSegments_);
-  cursor = SerializeVector(cursor, customSections_);
-  cursor = code_->serialize(cursor, linkData);
-  MOZ_RELEASE_ASSERT(cursor == begin + size);
-}
-
-/* static */
-MutableModule Module::deserialize(const uint8_t* begin, size_t size) {
-  MutableMetadata metadata = js_new<Metadata>();
-  if (!metadata) {
-    return nullptr;
-  }
-
-  const uint8_t* cursor = begin;
-
-  JS::BuildIdCharVector currentBuildId;
-  if (!GetOptimizedEncodingBuildId(&currentBuildId)) {
-    return nullptr;
-  }
-
-  JS::BuildIdCharVector deserializedBuildId;
-  cursor = DeserializePodVector(cursor, &deserializedBuildId);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  MOZ_RELEASE_ASSERT(EqualContainers(currentBuildId, deserializedBuildId));
-
-  LinkData linkData(Tier::Serialized);
-  cursor = linkData.deserialize(cursor);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  ImportVector imports;
-  cursor = DeserializeVector(cursor, &imports);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  ExportVector exports;
-  cursor = DeserializeVector(cursor, &exports);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  DataSegmentVector dataSegments;
-  cursor = DeserializeVector(cursor, &dataSegments);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  ElemSegmentVector elemSegments;
-  cursor = DeserializeVector(cursor, &elemSegments);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  CustomSectionVector customSections;
-  cursor = DeserializeVector(cursor, &customSections);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  SharedCode code;
-  cursor = Code::deserialize(cursor, linkData, *metadata, &code);
-  if (!cursor) {
-    return nullptr;
-  }
-
-  MOZ_RELEASE_ASSERT(cursor == begin + size);
-  MOZ_RELEASE_ASSERT(!code->metadata().isAsmJS());
-
-  if (metadata->nameCustomSectionIndex) {
-    metadata->namePayload =
-        customSections[*metadata->nameCustomSectionIndex].payload;
-  } else {
-    MOZ_RELEASE_ASSERT(!metadata->moduleName);
-    MOZ_RELEASE_ASSERT(metadata->funcNames.empty());
-  }
-
-  return js_new<Module>(*code, std::move(imports), std::move(exports),
-                        std::move(dataSegments), std::move(elemSegments),
-                        std::move(customSections), nullptr,
-                        /* loggingDeserialized = */ true);
-}
-
-void Module::serialize(const LinkData& linkData,
-                       JS::OptimizedEncodingListener& listener) const {
-  Bytes bytes;
-  if (!bytes.resizeUninitialized(serializedSize(linkData))) {
-    return;
-  }
-
-  serialize(linkData, bytes.begin(), bytes.length());
-
-  listener.storeOptimizedEncoding(bytes.begin(), bytes.length());
-}
-
-/* virtual */
 JSObject* Module::createObject(JSContext* cx) const {
   if (!GlobalObject::ensureConstructor(cx, cx->global(), JSProto_WebAssembly)) {
+    return nullptr;
+  }
+
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CSP_BLOCKED_WASM, "WebAssembly.Module");
     return nullptr;
   }
 
@@ -454,16 +327,6 @@ void Module::addSizeOfMisc(MallocSizeOf mallocSizeOf,
            SizeOfVectorExcludingThis(dataSegments_, mallocSizeOf) +
            SizeOfVectorExcludingThis(elemSegments_, mallocSizeOf) +
            SizeOfVectorExcludingThis(customSections_, mallocSizeOf);
-}
-
-void Module::initGCMallocBytesExcludingCode() {
-  // The size doesn't have to be exact so use the serialization framework to
-  // calculate a value.
-  gcMallocBytesExcludingCode_ = sizeof(*this) + SerializedVectorSize(imports_) +
-                                SerializedVectorSize(exports_) +
-                                SerializedVectorSize(dataSegments_) +
-                                SerializedVectorSize(elemSegments_) +
-                                SerializedVectorSize(customSections_);
 }
 
 // Extracting machine code as JS object. The result has the "code" property, as
@@ -802,7 +665,6 @@ bool Module::instantiateMemory(JSContext* cx,
   return true;
 }
 
-#ifdef ENABLE_WASM_EXCEPTIONS
 bool Module::instantiateTags(JSContext* cx,
                              WasmTagObjectVector& tagObjs) const {
   size_t tagLength = metadata().tags.length();
@@ -830,7 +692,6 @@ bool Module::instantiateTags(JSContext* cx,
   }
   return true;
 }
-#endif
 
 bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
                                       Handle<WasmTableObject*> tableObj,
@@ -1128,12 +989,10 @@ static bool CreateExportObject(
         }
         break;
       }
-#ifdef ENABLE_WASM_EXCEPTIONS
       case DefinitionKind::Tag: {
         val = ObjectValue(*tagObjs[exp.tagIndex()]);
         break;
       }
-#endif
     }
 
     if (!JS_DefinePropertyById(cx, exportObj, id, val, propertyAttr)) {
@@ -1172,11 +1031,9 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   // On the contrary, all the slots of exceptionTags will be filled with
   // unique tags.
 
-#ifdef ENABLE_WASM_EXCEPTIONS
   if (!instantiateTags(cx, imports.tagObjs)) {
     return false;
   }
-#endif
 
   // Note that tableObjs is sparse: it will be null in slots that contain
   // tables that are neither exported nor imported.

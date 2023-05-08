@@ -3,14 +3,13 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { createSelector } from "reselect";
-import { shallowEqual } from "../utils/resource";
+import { shallowEqual } from "../utils/shallow-equal";
 import { getPrettySourceURL } from "../utils/source";
 
 import {
-  getSource,
+  getLocationSource,
   getSpecificSourceByURL,
-  getSources,
-  getSourceInSources,
+  getSourcesMap,
 } from "./sources";
 import { isOriginalId } from "devtools-source-map";
 import { isSimilarTab } from "../utils/tabs";
@@ -23,10 +22,10 @@ export const getSourceTabs = createSelector(
 );
 
 export const getSourcesForTabs = createSelector(
-  getSources,
+  getSourcesMap,
   getSourceTabs,
-  (sources, sourceTabs) => {
-    return sourceTabs.map(tab => getSourceInSources(sources, tab.sourceId));
+  (sourcesMap, sourceTabs) => {
+    return sourceTabs.map(tab => sourcesMap.get(tab.sourceId));
   },
   { equalityCheck: shallowEqual, resultEqualityCheck: shallowEqual }
 );
@@ -53,7 +52,7 @@ export function getNewSelectedSourceId(state, tabList) {
     return "";
   }
 
-  const selectedTab = getSource(state, selectedLocation.sourceId);
+  const selectedTab = getLocationSource(state, selectedLocation);
   if (!selectedTab) {
     return "";
   }

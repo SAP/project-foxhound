@@ -156,6 +156,11 @@ class Accessible {
   virtual GroupPos GroupPosition();
 
   /**
+   * Return embedded accessible children count.
+   */
+  virtual uint32_t EmbeddedChildCount() = 0;
+
+  /**
    * Return embedded accessible child at the given index.
    */
   virtual Accessible* EmbeddedChildAt(uint32_t aIndex) = 0;
@@ -231,9 +236,19 @@ class Accessible {
 
   virtual Maybe<float> Opacity() const = 0;
 
+  LayoutDeviceIntSize Size() const;
+
+  LayoutDeviceIntPoint Position(uint32_t aCoordType);
+
   // Methods that interact with content.
 
   virtual void TakeFocus() const = 0;
+
+  /**
+   * Scroll the accessible into view.
+   */
+  MOZ_CAN_RUN_SCRIPT
+  virtual void ScrollTo(uint32_t aHow) const = 0;
 
   /**
    * Return tag name of associated DOM node.
@@ -244,6 +259,11 @@ class Accessible {
    * Return a landmark role if applied.
    */
   virtual nsAtom* LandmarkRole() const;
+
+  /**
+   * Return the id of the dom node this accessible represents.
+   */
+  virtual void DOMNodeID(nsString& aID) const = 0;
 
   //////////////////////////////////////////////////////////////////////////////
   // ActionAccessible
@@ -436,6 +456,14 @@ class Accessible {
 
   virtual TableAccessibleBase* AsTableBase() { return nullptr; }
   virtual TableCellAccessibleBase* AsTableCellBase() { return nullptr; }
+
+#ifdef A11Y_LOG
+  /**
+   * Provide a human readable description of the accessible,
+   * including memory address, role, name, DOM tag and DOM ID.
+   */
+  void DebugDescription(nsCString& aDesc);
+#endif
 
   /**
    * Return the localized string for the given key.

@@ -287,13 +287,16 @@ class _ExperimentManager {
       active: true,
       enrollmentId: NormandyUtils.generateUuid(),
       experimentType,
-      isRollout,
       source,
       userFacingName,
       userFacingDescription,
       lastSeen: new Date().toJSON(),
       featureIds,
     };
+
+    if (typeof isRollout !== "undefined") {
+      experiment.isRollout = isRollout;
+    }
 
     // Tag this as a forced enrollment. This prevents all unenrolling unless
     // manually triggered from about:studies
@@ -349,7 +352,7 @@ class _ExperimentManager {
 
     recipe.userFacingName = `${recipe.userFacingName} - Forced enrollment`;
 
-    return this._enroll(
+    const experiment = this._enroll(
       {
         ...recipe,
         slug: `optin-${recipe.slug}`,
@@ -358,6 +361,10 @@ class _ExperimentManager {
       source,
       { force: true }
     );
+
+    Services.obs.notifyObservers(null, "nimbus:force-enroll");
+
+    return experiment;
   }
 
   /**
@@ -409,6 +416,8 @@ class _ExperimentManager {
     }
 
     TelemetryEnvironment.setExperimentInactive(slug);
+    // We also need to set the experiment inactive in the Glean Experiment API
+    Services.fog.setExperimentInactive(slug);
     this.store.updateExperiment(slug, { active: false });
 
     TelemetryEvents.sendEvent("unenroll", TELEMETRY_EVENT_OBJECT, slug, {
@@ -476,6 +485,12 @@ class _ExperimentManager {
           experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
       }
     );
+    // Report the experiment to the Glean Experiment API
+    Services.fog.setExperimentActive(experiment.slug, experiment.branch.slug, {
+      type: `${TELEMETRY_EXPERIMENT_ACTIVE_PREFIX}${experiment.experimentType}`,
+      enrollmentId:
+        experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+    });
   }
 
   /**

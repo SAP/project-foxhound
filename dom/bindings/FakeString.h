@@ -14,9 +14,7 @@
 #include "js/String.h"
 #include "nsTStringRepr.h"
 
-namespace mozilla {
-namespace dom {
-namespace binding_detail {
+namespace mozilla::dom::binding_detail {
 // A struct that has a layout compatible with nsAString, so that
 // reinterpret-casting a FakeString as a const nsAString is safe, but much
 // faster constructor and destructor behavior. FakeString uses inline storage
@@ -280,9 +278,7 @@ struct FakeString {
     }
   };
 };
-}  // namespace binding_detail
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::binding_detail
 
 template <typename CharT>
 inline void AssignFromStringBuffer(

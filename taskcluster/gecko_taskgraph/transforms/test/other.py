@@ -305,16 +305,16 @@ def setup_browsertime(config, tasks):
 
         ts = {
             "by-test-platform": {
-                "android.*": ["browsertime", "linux64-geckodriver", "linux64-node"],
-                "linux.*": ["browsertime", "linux64-geckodriver", "linux64-node"],
-                "macosx.*": ["browsertime", "macosx64-geckodriver", "macosx64-node"],
+                "android.*": ["browsertime", "linux64-geckodriver", "linux64-node-16"],
+                "linux.*": ["browsertime", "linux64-geckodriver", "linux64-node-16"],
+                "macosx.*": ["browsertime", "macosx64-geckodriver", "macosx64-node-16"],
                 "windows.*aarch64.*": [
                     "browsertime",
                     "win32-geckodriver",
-                    "win32-node",
+                    "win32-node-16",
                 ],
-                "windows.*-32.*": ["browsertime", "win32-geckodriver", "win32-node"],
-                "windows.*-64.*": ["browsertime", "win64-geckodriver", "win64-node"],
+                "windows.*-32.*": ["browsertime", "win32-geckodriver", "win32-node-16"],
+                "windows.*-64.*": ["browsertime", "win64-geckodriver", "win64-node-16"],
             },
         }
 
@@ -338,29 +338,39 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-87",
             ],
             "linux.*": [
-                "linux64-chromedriver-97",
                 "linux64-chromedriver-98",
                 "linux64-chromedriver-99",
+                "linux64-chromedriver-100",
+                "linux64-chromedriver-101",
+                "linux64-chromedriver-102",
             ],
             "macosx.*": [
-                "mac64-chromedriver-97",
                 "mac64-chromedriver-98",
                 "mac64-chromedriver-99",
+                "mac64-chromedriver-100",
+                "mac64-chromedriver-101",
+                "mac64-chromedriver-102",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-97",
                 "win32-chromedriver-98",
                 "win32-chromedriver-99",
+                "win32-chromedriver-100",
+                "win32-chromedriver-101",
+                "win32-chromedriver-102",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-97",
                 "win32-chromedriver-98",
                 "win32-chromedriver-99",
+                "win32-chromedriver-100",
+                "win32-chromedriver-101",
+                "win32-chromedriver-102",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-97",
                 "win32-chromedriver-98",
                 "win32-chromedriver-99",
+                "win32-chromedriver-100",
+                "win32-chromedriver-101",
+                "win32-chromedriver-102",
             ],
         }
 

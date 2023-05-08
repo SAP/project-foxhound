@@ -46,6 +46,21 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // textbox.  If false, autofill will be disabled.
   ["autoFill", true],
 
+  // Whether enabling adaptive history autofill. This pref is a fallback for the
+  // Nimbus variable `autoFillAdaptiveHistoryEnabled`.
+  ["autoFill.adaptiveHistory.enabled", false],
+
+  // Minimum char length of the user's search string to enable adaptive history
+  // autofill. This pref is a fallback for the Nimbus variable
+  // `autoFillAdaptiveHistoryMinCharsThreshold`.
+  ["autoFill.adaptiveHistory.minCharsThreshold", 0],
+
+  // Threshold for use count of input history that we handle as adaptive history
+  // autofill. If the use count is this value or more, it will be a candidate.
+  // Set the threshold to not be candidate the input history passed approximately
+  // 30 days since user input it as the default.
+  ["autoFill.adaptiveHistory.useCountThreshold", [0.47, "float"]],
+
   // If true, the domains of the user's installed search engines will be
   // autofilled even if the user hasn't actually visited them.
   ["autoFill.searchEngines", false],
@@ -55,7 +70,8 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // this value.  See UrlbarProviderPlaces.
   ["autoFill.stddevMultiplier", [0.0, "float"]],
 
-  // Whether best match results can be blocked.
+  // Whether best match results can be blocked. This pref is a fallback for the
+  // Nimbus variable `bestMatchBlockingEnabled`.
   ["bestMatch.blockingEnabled", false],
 
   // Whether the best match feature is enabled.
@@ -222,11 +238,29 @@ const PREF_URLBAR_DEFAULTS = new Map([
   ["suggest.topsites", true],
 
   // JSON'ed array of blocked quick suggest URL digests.
-  ["quickSuggest.blockedDigests", ""],
+  ["quicksuggest.blockedDigests", ""],
+
+  // Whether the usual non-best-match quick suggest results can be blocked. This
+  // pref is a fallback for the Nimbus variable `quickSuggestBlockingEnabled`.
+  ["quicksuggest.blockingEnabled", false],
 
   // Global toggle for whether the quick suggest feature is enabled, i.e.,
   // sponsored and recommended results related to the user's search string.
   ["quicksuggest.enabled", false],
+
+  // Whether non-sponsored quick suggest results are subject to impression
+  // frequency caps. This pref is a fallback for the Nimbus variable
+  // `quickSuggestImpressionCapsNonSponsoredEnabled`.
+  ["quicksuggest.impressionCaps.nonSponsoredEnabled", false],
+
+  // Whether sponsored quick suggest results are subject to impression frequency
+  // caps. This pref is a fallback for the Nimbus variable
+  // `quickSuggestImpressionCapsSponsoredEnabled`.
+  ["quicksuggest.impressionCaps.sponsoredEnabled", false],
+
+  // JSON'ed object of quick suggest impression stats. Used for implementing
+  // impression frequency caps for quick suggest suggestions.
+  ["quicksuggest.impressionCaps.stats", ""],
 
   // Whether to show QuickSuggest related logs.
   ["quicksuggest.log", false],
@@ -334,6 +368,7 @@ const PREF_OTHER_DEFAULTS = new Map([
 const NIMBUS_DEFAULTS = {
   experimentType: "",
   isBestMatchExperiment: false,
+  quickSuggestRemoteSettingsDataType: "data",
 };
 
 // Maps preferences under browser.urlbar.suggest to behavior names, as defined
@@ -1176,6 +1211,9 @@ class Preferences {
 
     // Some prefs may influence others.
     switch (pref) {
+      case "autoFill.adaptiveHistory.useCountThreshold":
+        this._map.delete("autoFillAdaptiveHistoryUseCountThreshold");
+        return;
       case "showSearchSuggestionsFirst":
         this.set(
           "resultGroups",
@@ -1310,6 +1348,12 @@ class Preferences {
         return this.shouldHandOffToSearchModePrefs.some(
           prefName => !this.get(prefName)
         );
+      case "autoFillAdaptiveHistoryUseCountThreshold":
+        const nimbusValue = this._nimbus
+          .autoFillAdaptiveHistoryUseCountThreshold;
+        return nimbusValue === undefined
+          ? this.get("autoFill.adaptiveHistory.useCountThreshold")
+          : parseFloat(nimbusValue);
     }
     return this._readPref(pref);
   }

@@ -141,6 +141,9 @@ let Player = {
 
     browser.setAttribute("nodefaultsrc", "true");
 
+    let playPauseBtn = document.getElementById("playpause");
+    playPauseBtn.focus({ preventFocusRing: true });
+
     // Set the specific remoteType and browsingContextGroupID to use for the
     // initial about:blank load. The combination of these two properties will
     // ensure that the browser loads in the same process as our originating
@@ -488,15 +491,6 @@ let Player = {
    *  Event context details
    */
   onMouseUp(event) {
-    if (
-      window.screenX != this.lastScreenX ||
-      window.screenY != this.lastScreenY
-    ) {
-      this.recordEvent("move", {
-        screenX: window.screenX.toString(),
-        screenY: window.screenY.toString(),
-      });
-    }
     this.lastScreenX = window.screenX;
     this.lastScreenY = window.screenY;
 

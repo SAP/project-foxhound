@@ -13,6 +13,7 @@
 
 #include "CompositorWidget.h"
 #include "MozContainer.h"
+#include "VsyncSource.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
@@ -77,6 +78,10 @@ extern mozilla::LazyLogModule gWidgetVsync;
 
 #endif /* MOZ_LOGGING */
 
+#if defined(MOZ_WAYLAND) && !defined(MOZ_X11)
+typedef uintptr_t Window;
+#endif
+
 class gfxPattern;
 class nsIFrame;
 #if !GTK_CHECK_VERSION(3, 18, 0)
@@ -102,7 +107,9 @@ namespace mozilla {
 enum class NativeKeyBindingsType : uint8_t;
 
 class TimeStamp;
+#ifdef MOZ_X11
 class CurrentX11TimeGetter;
+#endif
 }  // namespace mozilla
 
 class nsWindow final : public nsBaseWidget {
@@ -155,6 +162,7 @@ class nsWindow final : public nsBaseWidget {
   bool IsEnabled() const override;
 
   void SetZIndex(int32_t aZIndex) override;
+  nsSizeMode SizeMode() override { return mSizeMode; }
   void SetSizeMode(nsSizeMode aMode) override;
   void GetWorkspaceID(nsAString& workspaceID) override;
   void MoveToWorkspace(const nsAString& workspaceID) override;
@@ -241,7 +249,7 @@ class nsWindow final : public nsBaseWidget {
 
   void SetProgress(unsigned long progressPercent);
 
-  RefPtr<mozilla::gfx::VsyncSource> GetVsyncSource() override;
+  RefPtr<mozilla::VsyncDispatcher> GetVsyncDispatcher() override;
   bool SynchronouslyRepaintOnResize() override;
 
   void OnDPIChanged(void);
@@ -280,7 +288,9 @@ class nsWindow final : public nsBaseWidget {
 
   WidgetEventTime GetWidgetEventTime(guint32 aEventTime);
   mozilla::TimeStamp GetEventTimeStamp(guint32 aEventTime);
+#ifdef MOZ_X11
   mozilla::CurrentX11TimeGetter* GetCurrentTimeGetter();
+#endif
 
   void SetInputContext(const InputContext& aContext,
                        const InputContextAction& aAction) override;
@@ -493,7 +503,8 @@ class nsWindow final : public nsBaseWidget {
   nsWindow* GetTransientForWindowIfPopup();
   bool IsHandlingTouchSequence(GdkEventSequence* aSequence);
 
-  void ResizeInt(int aX, int aY, int aWidth, int aHeight, bool aMove);
+  void ResizeInt(const mozilla::Maybe<LayoutDeviceIntPoint>& aMove,
+                 LayoutDeviceIntSize aSize);
   void NativeMoveResizeWaylandPopup(bool aMove, bool aResize);
 
   // Returns true if the given point (in device pixels) is within a resizer
@@ -518,9 +529,16 @@ class nsWindow final : public nsBaseWidget {
   // in some reasonable time when page content is not updated.
   int mCompositorPauseTimeoutID = 0;
 
+  nsSizeMode mSizeMode = nsSizeMode_Normal;
   nsSizeMode mSizeState = nsSizeMode_Normal;
   float mAspectRatio = 0.0f;
   float mAspectRatioSaved = 0.0f;
+  // The size requested, which might not be reflected in mBounds.  Used in
+  // WaylandPopupSetDirectPosition() to remember intended size for popup
+  // positioning, in LockAspect() to remember the intended aspect ratio, and
+  // to remember a size requested while waiting for moved-to-rect when
+  // OnSizeAllocate() might change mBounds.Size().
+  LayoutDeviceIntSize mLastSizeRequest;
   nsIntPoint mClientOffset;
 
   // This field omits duplicate scroll events caused by GNOME bug 726878.
@@ -604,10 +622,8 @@ class nsWindow final : public nsBaseWidget {
   bool mNoAutoHide : 1;
   bool mMouseTransparent : 1;
   bool mIsTransparent : 1;
-  // We can't detect size state changes correctly so set this flag
-  // to force update mBounds after a size state change from a configure
-  // event.
-  bool mBoundsAreValid : 1;
+  // We can expect at least one size-allocate event after early resizes.
+  bool mHasReceivedSizeAllocate : 1;
 
   /*  Gkt creates popup in two incarnations - wl_subsurface and xdg_popup.
    *  Kind of popup is choosen before GdkWindow is mapped so we can change
@@ -685,20 +701,23 @@ class nsWindow final : public nsBaseWidget {
    * and we're waiting for move-to-rect callback.
    *
    * If another position/resize request comes between move-to-rect call and
-   * move-to-rect callback we set mNewBoundsAfterMoveToRect.
+   * move-to-rect callback we set mMovedAfterMoveToRect/mResizedAfterMoveToRect.
    */
   bool mWaitingForMoveToRectCallback : 1;
+  bool mMovedAfterMoveToRect : 1;
+  bool mResizedAfterMoveToRect : 1;
 
   // Params used for popup placemend by GdkWindowMoveToRect.
   // When popup is only resized and not positioned,
   // we need to reuse last GdkWindowMoveToRect params to avoid
   // popup movement.
   struct WaylandPopupMoveToRectParams {
-    LayoutDeviceIntRect mAnchorRect;
-    GdkGravity mAnchorRectType;
-    GdkGravity mPopupAnchorType;
-    GdkAnchorHints mHints;
-    GdkPoint mOffset;
+    LayoutDeviceIntRect mAnchorRect = {0, 0, 0, 0};
+    GdkGravity mAnchorRectType = GDK_GRAVITY_NORTH_WEST;
+    GdkGravity mPopupAnchorType = GDK_GRAVITY_NORTH_WEST;
+    GdkAnchorHints mHints = GDK_ANCHOR_SLIDE;
+    GdkPoint mOffset = {0, 0};
+    bool mAnchorSet = false;
   };
 
   WaylandPopupMoveToRectParams mPopupMoveToRectParams;
@@ -825,8 +844,6 @@ class nsWindow final : public nsBaseWidget {
   // in following popup operations unless mLayoutPopupSizeCleared is set.
   LayoutDeviceIntSize mMoveToRectPopupSize;
 
-  LayoutDeviceIntRect mNewBoundsAfterMoveToRect;
-
   /**
    * |mIMContext| takes all IME related stuff.
    *
@@ -842,7 +859,9 @@ class nsWindow final : public nsBaseWidget {
    */
   RefPtr<mozilla::widget::IMContextWrapper> mIMContext;
 
+#ifdef MOZ_X11
   mozilla::UniquePtr<mozilla::CurrentX11TimeGetter> mCurrentTimeGetter;
+#endif
   static GtkWindowDecoration sGtkWindowDecoration;
 
   static bool sTransparentMainWindow;
@@ -902,6 +921,7 @@ class nsWindow final : public nsBaseWidget {
 #endif
 #ifdef MOZ_WAYLAND
   RefPtr<mozilla::WaylandVsyncSource> mWaylandVsyncSource;
+  RefPtr<mozilla::VsyncDispatcher> mWaylandVsyncDispatcher;
   LayoutDeviceIntPoint mNativePointerLockCenter;
   zwp_locked_pointer_v1* mLockedPointer = nullptr;
   zwp_relative_pointer_v1* mRelativePointer = nullptr;

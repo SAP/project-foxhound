@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import time
+import shutil
 import sys
 from collections import defaultdict
 
@@ -81,6 +82,10 @@ PER_PROJECT_PARAMETERS = {
     "mozilla-esr91": {
         "target_tasks_method": "mozilla_esr91_tasks",
         "release_type": "esr91",
+    },
+    "mozilla-esr102": {
+        "target_tasks_method": "mozilla_esr102_tasks",
+        "release_type": "esr102",
     },
     "pine": {
         "target_tasks_method": "pine_tasks",
@@ -250,6 +255,15 @@ def taskgraph_decision(options, parameters=None):
     # write bugbug scheduling information if it was invoked
     if len(push_schedules) > 0:
         write_artifact("bugbug-push-schedules.json", push_schedules.popitem()[1])
+
+    # cache run-task & misc/fetch-content
+    scripts_root_dir = os.path.join(
+        "/builds/worker/checkouts/gecko/taskcluster/scripts"
+    )
+    run_task_file_path = os.path.join(scripts_root_dir, "run-task")
+    fetch_content_file_path = os.path.join(scripts_root_dir, "misc/fetch-content")
+    shutil.copy2(run_task_file_path, ARTIFACTS_DIR)
+    shutil.copy2(fetch_content_file_path, ARTIFACTS_DIR)
 
     # actually create the graph
     create_tasks(

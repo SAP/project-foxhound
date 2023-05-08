@@ -83,6 +83,33 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
   RefPtr<TextureHandle> mSnapshotTexture;
 
+  // UsageProfile stores per-frame counters for significant profiling events
+  // that assist in determining whether acceleration should still be used for
+  // a Canvas2D user.
+  struct UsageProfile {
+    uint32_t mFailedFrames = 0;
+    uint32_t mFrameCount = 0;
+    uint32_t mCacheMisses = 0;
+    uint32_t mCacheHits = 0;
+    uint32_t mUncachedDraws = 0;
+    uint32_t mLayers = 0;
+    uint32_t mReadbacks = 0;
+    uint32_t mFallbacks = 0;
+
+    void BeginFrame();
+    void EndFrame();
+    bool RequiresRefresh() const;
+
+    void OnCacheMiss() { ++mCacheMisses; }
+    void OnCacheHit() { ++mCacheHits; }
+    void OnUncachedDraw() { ++mUncachedDraws; }
+    void OnLayer() { ++mLayers; }
+    void OnReadback() { ++mReadbacks; }
+    void OnFallback() { ++mFallbacks; }
+  };
+
+  UsageProfile mProfile;
+
   // SharedContext stores most of the actual WebGL state that may be used by
   // any number of DrawTargetWebgl's that use it. Foremost, it holds the actual
   // WebGL client context, programs, and buffers for mapping to WebGL.
@@ -108,14 +135,20 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     // Avoid spurious state changes by caching last used state.
     RefPtr<WebGLProgramJS> mLastProgram;
     RefPtr<WebGLTextureJS> mLastTexture;
+    bool mDirtyViewport = true;
+    bool mDirtyAA = true;
 
     // WebGL shader resources
     RefPtr<WebGLBufferJS> mVertexBuffer;
     RefPtr<WebGLVertexArrayJS> mVertexArray;
     RefPtr<WebGLProgramJS> mSolidProgram;
+    RefPtr<WebGLUniformLocationJS> mSolidProgramViewport;
+    RefPtr<WebGLUniformLocationJS> mSolidProgramAA;
     RefPtr<WebGLUniformLocationJS> mSolidProgramTransform;
     RefPtr<WebGLUniformLocationJS> mSolidProgramColor;
     RefPtr<WebGLProgramJS> mImageProgram;
+    RefPtr<WebGLUniformLocationJS> mImageProgramViewport;
+    RefPtr<WebGLUniformLocationJS> mImageProgramAA;
     RefPtr<WebGLUniformLocationJS> mImageProgramTransform;
     RefPtr<WebGLUniformLocationJS> mImageProgramTexMatrix;
     RefPtr<WebGLUniformLocationJS> mImageProgramTexBounds;
@@ -125,10 +158,16 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
     // Scratch framebuffer used to wrap textures for miscellaneous utility ops.
     RefPtr<WebGLFramebufferJS> mScratchFramebuffer;
+    // Buffer filled with zero data for initializing textures.
+    RefPtr<WebGLBufferJS> mZeroBuffer;
+    IntSize mZeroSize;
 
     uint32_t mMaxTextureSize = 0;
 
+    // The current blending operation.
     CompositionOp mLastCompositionOp = CompositionOp::OP_SOURCE;
+    // The constant blend color used for the blending operation.
+    Maybe<DeviceColor> mLastBlendColor;
 
     // A most-recently-used list of allocated texture handles.
     LinkedList<RefPtr<TextureHandle>> mTextureHandles;
@@ -151,6 +190,12 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     std::vector<RefPtr<StandaloneTexture>> mStandaloneTextures;
     size_t mUsedTextureMemory = 0;
     size_t mTotalTextureMemory = 0;
+    // The total reserved memory for empty texture pages that are kept around
+    // for future allocations.
+    size_t mEmptyTextureMemory = 0;
+    // A memory pressure event may signal from another thread that caches should
+    // be cleared if possible.
+    Atomic<bool> mShouldClearCaches;
 
     const Matrix& GetTransform() const { return mCurrentTarget->mTransform; }
 
@@ -159,7 +204,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     bool Initialize();
     bool CreateShaders();
 
-    void SetBlendState(CompositionOp aOp);
+    void SetBlendState(CompositionOp aOp,
+                       const Maybe<DeviceColor>& aBlendColor = Nothing());
 
     void SetClipRect(const IntRect& aClipRect) { mClipRect = aClipRect; }
 
@@ -191,7 +237,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
     bool UploadSurface(DataSourceSurface* aData, SurfaceFormat aFormat,
                        const IntRect& aSrcRect, const IntPoint& aDstOffset,
-                       bool aInit);
+                       bool aInit, bool aZero = false);
     bool DrawRectAccel(const Rect& aRect, const Pattern& aPattern,
                        const DrawOptions& aOptions,
                        Maybe<DeviceColor> aMaskColor = Nothing(),
@@ -219,6 +265,11 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     void UnlinkSurfaceTextures();
     void UnlinkSurfaceTexture(const RefPtr<TextureHandle>& aHandle);
     void UnlinkGlyphCaches();
+
+    void OnMemoryPressure();
+    void ClearAllTextures();
+    void ClearEmptyTextureMemory();
+    void ClearCachesIfNecessary();
   };
 
   RefPtr<SharedContext> mSharedContext;
@@ -248,6 +299,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
   void BeginFrame(const IntRect& aPersistedRect);
   void EndFrame();
+  bool RequiresRefresh() const { return mProfile.RequiresRefresh(); }
 
   bool LockBits(uint8_t** aData, IntSize* aSize, int32_t* aStride,
                 SurfaceFormat* aFormat, IntPoint* aOrigin = nullptr) override;
@@ -347,6 +399,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   Maybe<layers::SurfaceDescriptor> GetFrontBuffer();
 
   bool CopySnapshotTo(DrawTarget* aDT);
+
+  void OnMemoryPressure() { mSharedContext->OnMemoryPressure(); }
 
   operator std::string() const {
     std::stringstream stream;

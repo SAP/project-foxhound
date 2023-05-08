@@ -1214,6 +1214,58 @@ extensions.updates:
     record_in_processes:
       - main
 
+extensions.startupCache:
+  write_byteLength:
+    bug_numbers:
+      - 1767336
+    description: >
+      The amount of bytes writted into the Extensions StartupCache file.
+    expires: never
+    kind: uint
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  read_errors:
+    bug_numbers:
+      - 1767336
+    description: >
+      The amount of times an unexpected error has been raised while
+      reading the Extensions StartupCache file
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  load_time:
+    bug_numbers:
+      - 1767336
+    description: >
+      Time to load and deserialize the extensions startupCache data.
+      This scalar is mirroring the never expiring Glean metric named
+      extensions.startup_cache_load_time, which is defined in
+      toolkit/components/extensions/metrics.yaml.
+      Unlike the related glean metric, this scalar has an expiring date,
+      set as a deadline to consider removing the mirrored scalar in
+      favor to just use the Glean metric).
+    expires: "109"
+    kind: uint
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+
 security:
   webauthn_used:
     bug_numbers:
@@ -1386,6 +1438,20 @@ privacy:
       experiment
     expires: "106"
     kind: uint
+    notification_emails:
+      - pbz@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  dfpi_rollout_tcpByDefault_feature:
+    bug_numbers:
+      - 1767415
+    description: >
+      Keeps track of whether the Nimbus tcpByDefault feature is enabled (true) or disabled (false) for a client.
+    expires: "108"
+    kind: boolean
     notification_emails:
       - pbz@mozilla.com
     release_channel_collection: opt-out
@@ -4248,7 +4314,7 @@ pdf.viewer:
       - 1754659
     description: >
       How many times a PDF that sends Content-Disposition: attachment is opened.
-    expires: "103"
+    expires: "109"
     kind: uint
     notification_emails:
       - rtestard@mozilla.com
@@ -5000,6 +5066,26 @@ update:
     record_in_processes:
       - main
 
+  version_pin:
+    bug_numbers:
+      - 1762957
+    description: >
+      The AppUpdatePin Enterprise Policy controls the maximum version that the
+      browser can update to. If the policy is set, this probe will report the
+      policy's value. The possible policy values are "X." and "X.Y.", where
+      X is the pinned major version and Y is the pinned minor version.
+    expires: never
+    kind: string
+    keyed: false
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - bytesized@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+
 # The following section contains search counters.
 browser.search:
   with_ads:
@@ -5728,13 +5814,14 @@ browser.searchinit:
       - 1665938
       - 1691050
       - 1725501
+      - 1763528
     description: >
       Records the WebExtension ID of a search engine where the WebExtension
       is not installed (= 1), disabled (= 2), search engine no longer specified (= 4),
       a different name (= 5), where the submission URL is different between the
       search engine and the WebExtension (= 6). The value '3' has been replaced
       by '6' to distinguish newer entries.
-    expires: "102"
+    expires: "110"
     keyed: true
     kind: uint
     notification_emails:
@@ -5927,12 +6014,32 @@ startup:
       Recorded on every run of a Firefox install on macOS, with a boolean value
       indicating whether Firefox is being run directly from .dmg without
       installing, or not.
-    expires: "99"
+    expires: "108"
     keyed: false
     kind: boolean
     notification_emails:
       - jwatt@jwatt.org
       - mbalfanz@mozilla.com
+    operating_systems:
+      - mac
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    release_channel_collection: opt-out
+
+  is_run_from_app_translocated_location:
+    bug_numbers:
+      - 1745788
+    description: >
+      Recorded on every run of a Firefox install on macOS, with a boolean value
+      indicating whether Firefox is being run from an app translocated location,
+      or not. This is always false when `is_run_from_dmg` is true.
+    expires: "108"
+    keyed: false
+    kind: boolean
+    notification_emails:
+      - spohl@mozilla.com
     operating_systems:
       - mac
     products:
@@ -6181,11 +6288,12 @@ blocklist:
       - 1649960
       - 1689274
       - 1730037
+      - 1763529
     description: >
       Keep track of the last time the "addons" remotesetting blocklist has been successfully
       updated (as a datetime string in UTC format), set to "Missing Date" when the timestamp
       couldn't be retrieved.
-    expires: "102"
+    expires: "112"
     kind: string
     release_channel_collection: opt-out
     notification_emails:
@@ -6206,11 +6314,12 @@ blocklist:
       - 1649960
       - 1689274
       - 1730037
+      - 1763529
     description: >
       Keep track of the last time the "addons-bloomfilters" remotesetting blocklist has been successfully
       updated (as a datetime string in UTC format), set to "Missing Date" when the timestamp
       couldn't be retrieved.
-    expires: "102"
+    expires: "112"
     kind: string
     release_channel_collection: opt-out
     notification_emails:
@@ -6229,10 +6338,11 @@ blocklist:
       - 1649960
       - 1689274
       - 1730037
+      - 1763529
     description: >
       Keep track of whether the addons blocklist engine uses bloom filters (blocklist v3).
       If false, the blocklist v2 is used instead.
-    expires: "102"
+    expires: "112"
     kind: boolean
     release_channel_collection: opt-out
     notification_emails:
@@ -6249,6 +6359,7 @@ blocklist:
     bug_numbers:
       - 1662857
       - 1730037
+      - 1763529
     description: >
       The source of the RemoteSettings attachment that holds the bloom filter.
       Possible values are "dump_match", "cache_match", "remote_match", "dump_fallback", "cache_fallback", "unknown".
@@ -6261,7 +6372,7 @@ blocklist:
       (e.g. because the latest version cannot be downloaded).
       "unknown" means that the bloomfilter cannot be loaded at all. This can happen if the blocklist is disabled
       via preferences or enterprise policies.
-    expires: "102"
+    expires: "112"
     kind: string
     release_channel_collection: opt-out
     notification_emails:
@@ -6278,12 +6389,13 @@ blocklist:
       - 1649960
       - 1689274
       - 1730037
+      - 1763529
     description: >
       Keep track of the generation time of the addon blocklist's bloom filter. This marks the
       point in time until which signed add-ons are recognized by the selected bloom filter from the
       addons-bloomfilters collection.
       The value is a datetime string in UTC format, or  "Missing Date" when unavailable.
-    expires: "102"
+    expires: "112"
     kind: string
     release_channel_collection: opt-out
     notification_emails:
@@ -6302,11 +6414,12 @@ blocklist:
       - 1649960
       - 1689274
       - 1730037
+      - 1763529
     description: >
       Keep track of the timestamp of the oldest stash of the addons blocklist.
       Only meaningful when mlbf_enabled is true.
       The value is a datetime string in UTC format, or "Missing Date" when unavailable.
-    expires: "102"
+    expires: "112"
     kind: string
     release_channel_collection: opt-out
     notification_emails:
@@ -6325,11 +6438,12 @@ blocklist:
       - 1649960
       - 1689274
       - 1730037
+      - 1763529
     description: >
       Keep track of the timestamp of the most recent stash of the addons blocklist.
       Only meaningful when mlbf_enabled is true.
       The value is a datetime string in UTC format, or "Missing Date" when unavailable.
-    expires: "102"
+    expires: "112"
     kind: string
     release_channel_collection: opt-out
     notification_emails:
@@ -6526,9 +6640,26 @@ urlbar.tabtosearch:
       - main
 
 urlbar.picked:
-    autofill:
+    autofill_about:
       bug_numbers:
-        - 1671508
+        - 1770483
+      description: >
+        Counts how many times an about-page autofill result (e.g.,
+        "about:config") was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    autofill_adaptive:
+      bug_numbers:
+        - 1597791
       description: >
         Counts how many times this result type was picked at a given index.
       expires: never
@@ -6536,7 +6667,78 @@ urlbar.picked:
       keyed: true
       notification_emails:
         - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    autofill_origin:
+      bug_numbers:
+        - 1597791
+      description: >
+        Counts how many times an origin (domain) autofill result (e.g.,
+        "mozilla.org") was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    autofill_other:
+      bug_numbers:
+        - 1770483
+      description: >
+        Counts how many times some other type of autofill result that does not
+        have a specific keyed scalar was picked at a given index. This is a
+        fallback that is used when the code is not properly setting a specific
+        autofill type, and it should not normally be used. If it appears in the
+        data, it means we need to investigate and fix the code that is not
+        properly setting a specific autofill type.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    autofill_preloaded:
+      bug_numbers:
+        - 1770483
+      description: >
+        Counts how many times a preloaded site autofill result was picked at a
+        given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    autofill_url:
+      bug_numbers:
+        - 1597791
+      description: >
+        Counts how many times a URL autofill result (e.g.,
+        "mozilla.org/firefox") was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6639,6 +6841,23 @@ urlbar.picked:
       notification_emails:
         - fx-search@mozilla.com
         - tbrooks@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    quicksuggest:
+      bug_numbers:
+        - 1761059
+      description: >
+        Counts how many times this result type was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search@mozilla.com
+        - adw@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -7474,6 +7693,74 @@ contextual.services.quicksuggest:
       - 'firefox'
     record_in_processes:
       - main
+  block_nonsponsored:
+    bug_numbers:
+      - 1761059
+    description: >
+      A keyed uint recording how many times the user has blocked/dismissed
+      non-sponsored Firefox Suggest results in the urlbar, including best
+      matches (a.k.a. top picks). The key is the 1-based index of each result.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - adw@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  block_nonsponsored_bestmatch:
+    bug_numbers:
+      - 1761059
+    description: >
+      A keyed uint recording how many times the user has blocked/dismissed
+      non-sponsored Firefox Suggest best match (a.k.a. top pick) results in the
+      urlbar. The key is the 1-based index of each result.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - adw@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  block_sponsored:
+    bug_numbers:
+      - 1761059
+    description: >
+      A keyed uint recording how many times the user has blocked/dismissed
+      sponsored Firefox Suggest results in the urlbar, including best matches
+      (a.k.a. top picks). The key is the 1-based index of each result.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - adw@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  block_sponsored_bestmatch:
+    bug_numbers:
+      - 1761059
+    description: >
+      A keyed uint recording how many times the user has blocked/dismissed
+      sponsored Firefox Suggest best match (a.k.a. top pick) results in the
+      urlbar. The key is the 1-based index of each result.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - adw@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
 
 power:
   cpu_time_bogus_values:
@@ -7626,40 +7913,6 @@ power:
       - 'firefox'
     record_in_processes:
       - 'all'
-
-gifft.validation:
-  main_ping_assembling:
-    bug_numbers:
-      - 1753689
-    description: >
-      The value `true` recorded when a "main" ping is about to be assembled.
-      To be used for validating GIFFT.
-    expires: "102"
-    kind: boolean
-    notification_emails:
-      - chutten@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-
-  mirror_for_main_ping_assembling:
-    bug_numbers:
-      - 1753689
-    description: >
-      The value `true` recorded when a "main" ping is about to be assembled.
-      To be used for validating GIFFT.
-      Mirror for Glean's `gifft.validation.main_ping_assembling`.
-    expires: "102"
-    kind: boolean
-    notification_emails:
-      - chutten@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
 
 # The following section is for probes testing the Telemetry system. They will not be
 # submitted in pings and are only used for testing.
@@ -8293,24 +8546,16 @@ telemetry.test:
     record_in_processes: ["all"]
     release_channel_collection: opt-out
 
-
-# The following section contains counters for corruption of internal omni jar files.
-corroborate:
-  omnijar_mismatch:
-    bug_numbers:
-      - 1608308
-    description: >-
-          Whether the build IDs of the omni jar (omni.ja) and libxul do not match.
-    expires: "80"
-    kind: boolean
-    notification_emails:
-      - rhelmer@mozilla.com
+  mirror_for_url:
+    bug_numbers: [1766980]
+    description: >
+      Test only. This is a mirror probe for a Glean Url metric.
+    expires: never
+    kind: string
+    notification_emails: [glean-team@mozilla.com]
+    products: ["firefox", "thunderbird"]
+    record_in_processes: ["all"]
     release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
 
 cache:
   integrity_check_count:

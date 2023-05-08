@@ -2209,12 +2209,6 @@ void MacroAssembler::moveSimd128(FloatRegister src, FloatRegister dest) {
   }
 }
 
-void MacroAssembler::zeroSimd128(FloatRegister dest) {
-  // Unclear what the best code is here, xor is just what we do on x86.
-  // Alternatives would be `FMOV dest.4s, #0` and `FMOV dest, xzr`.
-  Eor(Simd16B(dest), Simd16B(dest), Simd16B(dest));
-}
-
 void MacroAssembler::loadConstantSimd128(const SimdConstant& v,
                                          FloatRegister dest) {
   // Movi does not yet generate good code for many cases, bug 1664397.
@@ -3703,6 +3697,25 @@ void MacroAssembler::widenDotInt16x8(FloatRegister lhs, FloatRegister rhs,
   Smull(Simd4S(scratch), Simd4H(lhs), Simd4H(rhs));
   Smull2(Simd4S(dest), Simd8H(lhs), Simd8H(rhs));
   Addp(Simd4S(dest), Simd4S(scratch), Simd4S(dest));
+}
+
+void MacroAssembler::dotInt8x16Int7x16(FloatRegister lhs, FloatRegister rhs,
+                                       FloatRegister dest) {
+  ScratchSimd128Scope scratch(*this);
+  Smull(Simd8H(scratch), Simd8B(lhs), Simd8B(rhs));
+  Smull2(Simd8H(dest), Simd16B(lhs), Simd16B(rhs));
+  Addp(Simd8H(dest), Simd8H(scratch), Simd8H(dest));
+}
+
+void MacroAssembler::dotInt8x16Int7x16ThenAdd(FloatRegister lhs,
+                                              FloatRegister rhs,
+                                              FloatRegister dest,
+                                              FloatRegister temp) {
+  ScratchSimd128Scope scratch(*this);
+  Smull(Simd8H(scratch), Simd8B(lhs), Simd8B(rhs));
+  Smull2(Simd8H(temp), Simd16B(lhs), Simd16B(rhs));
+  Addp(Simd8H(temp), Simd8H(scratch), Simd8H(temp));
+  Sadalp(Simd4S(dest), Simd8H(temp));
 }
 
 // Floating point rounding (experimental as of August, 2020)

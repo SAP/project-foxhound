@@ -30,7 +30,7 @@ use crossbeam_utils::atomic::AtomicCell;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use moz_task::{create_background_task_queue, is_main_thread, Task, TaskRunnable};
 use nserror::{
-    nsresult, NS_ERROR_FAILURE, NS_ERROR_NOT_SAME_THREAD, NS_ERROR_NO_AGGREGATION,
+    nsresult, NS_ERROR_FAILURE, NS_ERROR_NOT_SAME_THREAD,
     NS_ERROR_NULL_POINTER, NS_ERROR_UNEXPECTED, NS_OK,
 };
 use nsstring::{nsACString, nsCStr, nsCString, nsString};
@@ -47,6 +47,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use storage_variant::VariantType;
 use thin_vec::ThinVec;
 use xpcom::interfaces::{
@@ -62,6 +63,8 @@ const PREFIX_REV_SPK: &str = "spk";
 const PREFIX_SUBJECT: &str = "subject";
 const PREFIX_CERT: &str = "cert";
 const PREFIX_DATA_TYPE: &str = "datatype";
+
+const LAST_CRLITE_UPDATE_KEY: &str = "last_crlite_update";
 
 const COVERAGE_SERIALIZATION_VERSION: u8 = 1;
 const COVERAGE_V1_ENTRY_BYTES: usize = 48;
@@ -349,8 +352,8 @@ impl SecurityState {
         pub_key: &[u8],
     ) -> Result<i16, SecurityStateError> {
         let mut digest = Sha256::default();
-        digest.input(pub_key);
-        let pub_key_hash = digest.result();
+        digest.update(pub_key);
+        let pub_key_hash = digest.finalize();
 
         let subject_pubkey = make_key!(PREFIX_REV_SPK, subject, &pub_key_hash);
         let issuer_serial = make_key!(PREFIX_REV_IS, issuer, serial);
@@ -383,9 +386,9 @@ impl SecurityState {
     fn issuer_is_enrolled(&self, subject: &[u8], pub_key: &[u8]) -> bool {
         if let Some(crlite_enrollment) = self.crlite_enrollment.as_ref() {
             let mut digest = Sha256::default();
-            digest.input(subject);
-            digest.input(pub_key);
-            let issuer_id = digest.result();
+            digest.update(subject);
+            digest.update(pub_key);
+            let issuer_id = digest.finalize();
             return crlite_enrollment.contains(&issuer_id.to_vec());
         }
         return false;
@@ -402,6 +405,47 @@ impl SecurityState {
             }
         }
         return false;
+    }
+
+    fn note_crlite_update_time(&mut self) -> Result<(), SecurityStateError> {
+        let seconds_since_epoch = Value::U64(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| SecurityStateError::from("could not get current time"))?
+                .as_secs(),
+        );
+        let env_and_store = match self.env_and_store.as_mut() {
+            Some(env_and_store) => env_and_store,
+            None => return Err(SecurityStateError::from("env and store not initialized?")),
+        };
+        let mut writer = env_and_store.env.write()?;
+        env_and_store
+            .store
+            .put(&mut writer, LAST_CRLITE_UPDATE_KEY, &seconds_since_epoch)
+            .map_err(|_| SecurityStateError::from("could not store timestamp"))?;
+        writer.commit()?;
+        Ok(())
+    }
+
+    fn is_crlite_fresh(&self) -> bool {
+        let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(t) => t.as_secs(),
+            _ => return false,
+        };
+        let env_and_store = match self.env_and_store.as_ref() {
+            Some(env_and_store) => env_and_store,
+            None => return false,
+        };
+        let reader = match env_and_store.env.read() {
+            Ok(reader) => reader,
+            _ => return false,
+        };
+        match env_and_store.store.get(&reader, LAST_CRLITE_UPDATE_KEY) {
+            Ok(Some(Value::U64(last_update))) if last_update < u64::MAX / 2 => {
+                now < last_update + 60 * 60 * 24 * 10
+            }
+            _ => false,
+        }
     }
 
     pub fn set_full_crlite_filter(
@@ -483,6 +527,7 @@ impl SecurityState {
             enrollment_file.write_all(&enrollment_bytes)?;
         }
 
+        self.note_crlite_update_time()?;
         self.load_crlite_filter()?;
         Ok(())
     }
@@ -503,7 +548,7 @@ impl SecurityState {
         let mut filter_file = File::open(path)?;
         let mut filter_bytes = Vec::new();
         let _ = filter_file.read_to_end(&mut filter_bytes)?;
-        let crlite_filter = *Cascade::from_bytes(filter_bytes)
+        let crlite_filter = Cascade::from_bytes(filter_bytes)
             .map_err(|_| SecurityStateError::from("invalid CRLite filter"))?
             .ok_or(SecurityStateError::from("expecting non-empty filter"))?;
 
@@ -599,6 +644,7 @@ impl SecurityState {
         stash_file.write_all(&stash)?;
         let crlite_stash = self.crlite_stash.get_or_insert(HashMap::new());
         load_crlite_stash_from_reader_into_map(&mut stash.as_slice(), crlite_stash)?;
+        self.note_crlite_update_time()?;
         Ok(())
     }
 
@@ -612,8 +658,8 @@ impl SecurityState {
             None => return Ok(false),
         };
         let mut digest = Sha256::default();
-        digest.input(issuer_spki);
-        let lookup_key = digest.result().as_slice().to_vec();
+        digest.update(issuer_spki);
+        let lookup_key = digest.finalize().to_vec();
         let serials = match crlite_stash.get(&lookup_key) {
             Some(serials) => serials,
             None => return Ok(false),
@@ -628,6 +674,9 @@ impl SecurityState {
         serial_number: &[u8],
         timestamps: &[CRLiteTimestamp],
     ) -> i16 {
+        if !self.is_crlite_fresh() {
+            return nsICertStorage::STATE_NO_FILTER;
+        }
         if !self.issuer_is_enrolled(issuer, issuer_spki) {
             return nsICertStorage::STATE_NOT_ENROLLED;
         }
@@ -635,15 +684,15 @@ impl SecurityState {
             return nsICertStorage::STATE_NOT_COVERED;
         }
         let mut digest = Sha256::default();
-        digest.input(issuer_spki);
-        let mut lookup_key = digest.result().as_slice().to_vec();
+        digest.update(issuer_spki);
+        let mut lookup_key = digest.finalize().to_vec();
         lookup_key.extend_from_slice(serial_number);
         debug!("CRLite lookup key: {:?}", lookup_key);
         let result = match &self.crlite_filter {
-            Some(crlite_filter) => crlite_filter.has(&lookup_key),
+            Some(crlite_filter) => crlite_filter.has(lookup_key),
             // This can only happen if the backing file was deleted or if it or our database has
             // become corrupted. In any case, we have no information.
-            None => return nsICertStorage::STATE_NOT_COVERED,
+            None => return nsICertStorage::STATE_NO_FILTER,
         };
         match result {
             true => nsICertStorage::STATE_ENFORCE,
@@ -693,8 +742,8 @@ impl SecurityState {
                 }
             };
             let mut digest = Sha256::default();
-            digest.input(&cert_der);
-            let cert_hash = digest.result();
+            digest.update(&cert_der);
+            let cert_hash = digest.finalize();
             let cert_key = make_key!(PREFIX_CERT, &cert_hash);
             let cert = Cert::new(&cert_der, &subject, *trust)?;
             env_and_store
@@ -1219,7 +1268,6 @@ impl Task for BackgroundReadStashTask {
 }
 
 fn do_construct_cert_storage(
-    _outer: *const nsISupports,
     iid: *const xpcom::nsIID,
     result: *mut *mut xpcom::reexports::libc::c_void,
 ) -> Result<(), nserror::nsresult> {
@@ -1331,17 +1379,13 @@ impl<T: Default + VariantType, F: FnOnce(&mut SecurityState) -> Result<T, Securi
 
 #[no_mangle]
 pub extern "C" fn cert_storage_constructor(
-    outer: *const nsISupports,
     iid: *const xpcom::nsIID,
     result: *mut *mut xpcom::reexports::libc::c_void,
 ) -> nserror::nsresult {
-    if !outer.is_null() {
-        return NS_ERROR_NO_AGGREGATION;
-    }
     if !is_main_thread() {
         return NS_ERROR_NOT_SAME_THREAD;
     }
-    match do_construct_cert_storage(outer, iid, result) {
+    match do_construct_cert_storage(iid, result) {
         Ok(()) => NS_OK,
         Err(e) => e,
     }

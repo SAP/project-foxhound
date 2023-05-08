@@ -362,13 +362,15 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   RefPtr<gfxCharacterMap> charmap = new gfxCharacterMap();
 
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
+  uint32_t uvsOffset = 0;
   if (hb_blob_t* cmapBlob = GetFontTable(TTAG_cmap)) {
     unsigned int length;
     const char* data = hb_blob_get_data(cmapBlob, &length);
     rv = gfxFontUtils::ReadCMAP((const uint8_t*)data, length, *charmap,
-                                mUVSOffset);
+                                uvsOffset);
     hb_blob_destroy(cmapBlob);
   }
+  mUVSOffset.exchange(uvsOffset);
 
   if (NS_SUCCEEDED(rv) && !mIsDataUserFont && !HasGraphiteTables()) {
     // For downloadable fonts, trust the author and don't
@@ -404,24 +406,28 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   }
 #endif
 
-  mHasCmapTable = NS_SUCCEEDED(rv);
-
-  if (mHasCmapTable) {
+  bool setCharMap = true;
+  if (NS_SUCCEEDED(rv)) {
     gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
     fontlist::FontList* sharedFontList = pfl->SharedFontList();
     if (!IsUserFont() && mShmemFace) {
       mShmemFace->SetCharacterMap(sharedFontList, charmap);  // async
-      if (!TrySetShmemCharacterMap()) {
-        // Temporarily retain charmap, until the shared version is
-        // ready for use.
-        mCharacterMap = charmap;
+      if (TrySetShmemCharacterMap()) {
+        setCharMap = false;
       }
     } else {
-      mCharacterMap = pfl->FindCharMap(charmap);
+      charmap = pfl->FindCharMap(charmap);
     }
+    mHasCmapTable = true;
   } else {
     // if error occurred, initialize to null cmap
-    mCharacterMap = new gfxCharacterMap();
+    charmap = new gfxCharacterMap();
+    mHasCmapTable = false;
+  }
+  if (setCharMap) {
+    if (mCharacterMap.compareExchange(nullptr, charmap.get())) {
+      Unused << charmap.forget();
+    }
   }
 
   return rv;
@@ -612,6 +618,7 @@ void FT2FontEntry::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
  */
 
 void FT2FontFamily::AddFacesToFontList(nsTArray<FontListEntry>* aFontList) {
+  AutoReadLock lock(mLock);
   for (int i = 0, n = mAvailableFonts.Length(); i < n; ++i) {
     const FT2FontEntry* fe =
         static_cast<const FT2FontEntry*>(mAvailableFonts[i].get());
@@ -938,6 +945,7 @@ gfxFT2FontList::gfxFT2FontList() : mJarModifiedTime(0) {
 }
 
 gfxFT2FontList::~gfxFT2FontList() {
+  AutoLock lock(mLock);
   if (mObserver) {
     mObserver->Remove();
   }
@@ -1162,7 +1170,9 @@ void gfxFT2FontList::AppendFacesFromFontFile(const nsCString& aFileName,
     CollectFunc unshared =
         [](const FontListEntry& aFLE, const nsCString& aPSName,
            const nsCString& aFullName, StandardFile aStdFile) {
-          PlatformFontList()->AppendFaceFromFontListEntry(aFLE, aStdFile);
+          auto* pfl = PlatformFontList();
+          pfl->mLock.AssertCurrentThreadIn();
+          pfl->AppendFaceFromFontListEntry(aFLE, aStdFile);
         };
     CollectFunc shared = [](const FontListEntry& aFLE, const nsCString& aPSName,
                             const nsCString& aFullName, StandardFile aStdFile) {
@@ -1333,7 +1343,9 @@ void gfxFT2FontList::AppendFacesFromOmnijarEntry(nsZipArchive* aArchive,
       CollectFunc unshared =
           [](const FontListEntry& aFLE, const nsCString& aPSName,
              const nsCString& aFullName, StandardFile aStdFile) {
-            PlatformFontList()->AppendFaceFromFontListEntry(aFLE, aStdFile);
+            auto* pfl = PlatformFontList();
+            pfl->mLock.AssertCurrentThreadIn();
+            pfl->AppendFaceFromFontListEntry(aFLE, aStdFile);
           };
       CollectFunc shared = [](const FontListEntry& aFLE,
                               const nsCString& aPSName,
@@ -1376,17 +1388,15 @@ void gfxFT2FontList::AppendFacesFromOmnijarEntry(nsZipArchive* aArchive,
 // Called on each family after all fonts are added to the list;
 // if aSortFaces is true this will sort faces to give priority to "standard"
 // font files.
-static void FinalizeFamilyMemberList(nsCStringHashKey::KeyType aKey,
-                                     const RefPtr<gfxFontFamily>& aFamily,
-                                     bool aSortFaces) {
-  gfxFontFamily* family = aFamily.get();
+void FT2FontFamily::FinalizeMemberList(bool aSortFaces) {
+  AutoWriteLock lock(mLock);
 
-  family->SetHasStyles(true);
+  SetHasStyles(true);
 
   if (aSortFaces) {
-    family->SortAvailableFonts();
+    SortAvailableFonts();
   }
-  family->CheckForSimpleFamily();
+  CheckForSimpleFamily();
 }
 
 void gfxFT2FontList::FindFonts() {
@@ -1634,6 +1644,7 @@ void gfxFT2FontList::AppendFaceFromFontListEntry(const FontListEntry& aFLE,
 }
 
 void gfxFT2FontList::ReadSystemFontList(dom::SystemFontList* aList) {
+  AutoLock lock(mLock);
   for (const auto& entry : mFontFamilies) {
     auto family = static_cast<FT2FontFamily*>(entry.GetData().get());
     family->AddFacesToFontList(&aList->entries());
@@ -1663,9 +1674,8 @@ nsresult gfxFT2FontList::InitFontListForPlatform() {
     // Finalize the families by sorting faces into standard order
     // and marking "simple" families.
     for (const auto& entry : mFontFamilies) {
-      nsCStringHashKey::KeyType key = entry.GetKey();
-      const RefPtr<gfxFontFamily>& family = entry.GetData();
-      FinalizeFamilyMemberList(key, family, /* aSortFaces */ true);
+      auto* family = static_cast<FT2FontFamily*>(entry.GetData().get());
+      family->FinalizeMemberList(/* aSortFaces */ true);
     }
 
     return NS_OK;
@@ -1683,9 +1693,8 @@ nsresult gfxFT2FontList::InitFontListForPlatform() {
   // We don't need to sort faces (because they were already sorted by the
   // chrome process, so we just maintain the existing order)
   for (const auto& entry : mFontFamilies) {
-    nsCStringHashKey::KeyType key = entry.GetKey();
-    const RefPtr<gfxFontFamily>& family = entry.GetData();
-    FinalizeFamilyMemberList(key, family, /* aSortFaces */ false);
+    auto* family = static_cast<FT2FontFamily*>(entry.GetData().get());
+    family->FinalizeMemberList(/* aSortFaces */ false);
   }
 
   LOG(("got font list from chrome process: %" PRIdPTR " faces in %" PRIu32
@@ -1741,10 +1750,13 @@ gfxFontEntry* gfxFT2FontList::LookupLocalFont(nsPresContext* aPresContext,
                                               WeightRange aWeightForEntry,
                                               StretchRange aStretchForEntry,
                                               SlantStyleRange aStyleForEntry) {
+  AutoLock lock(mLock);
+
   if (SharedFontList()) {
     return LookupInSharedFaceNameList(aPresContext, aFontName, aWeightForEntry,
                                       aStretchForEntry, aStyleForEntry);
   }
+
   // walk over list of names
   FT2FontEntry* fontEntry = nullptr;
   FontVisibility level =
@@ -1766,17 +1778,11 @@ gfxFontEntry* gfxFT2FontList::LookupLocalFont(nsPresContext* aPresContext,
 
     // if so, iterate over faces in this family to see if there is a match
     if (family.Equals(fullNameFamily, nsCaseInsensitiveCStringComparator)) {
-      nsTArray<RefPtr<gfxFontEntry>>& fontList = fontFamily->GetFontList();
-      int index, len = fontList.Length();
-      for (index = 0; index < len; index++) {
-        gfxFontEntry* fe = fontList[index];
-        if (!fe) {
-          continue;
-        }
-        if (fe->Name().Equals(aFontName, nsCaseInsensitiveCStringComparator)) {
-          fontEntry = static_cast<FT2FontEntry*>(fe);
-          goto searchDone;
-        }
+      gfxFontEntry* fe =
+          fontFamily->FindFont(aFontName, nsCaseInsensitiveCStringComparator);
+      if (fe) {
+        fontEntry = static_cast<FT2FontEntry*>(fe);
+        goto searchDone;
       }
     }
   }

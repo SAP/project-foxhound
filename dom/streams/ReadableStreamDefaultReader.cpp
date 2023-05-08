@@ -88,7 +88,7 @@ bool ReadableStreamReaderGenericInitialize(ReadableStreamGenericReader* aReader,
       // Step 5.1 Implicit
       // Step 5.2
       JS::RootingContext* rcx = RootingCx();
-      JS::RootedValue rootedError(rcx, aStream->StoredError());
+      JS::Rooted<JS::Value> rootedError(rcx, aStream->StoredError());
       aReader->ClosedPromise()->MaybeReject(rootedError);
 
       // Step 5.3
@@ -146,7 +146,7 @@ void Read_ReadRequest::ChunkSteps(JSContext* aCx, JS::Handle<JS::Value> aChunk,
     return;
   }
 
-  RootedDictionary<ReadableStreamDefaultReadResult> result(aCx);
+  RootedDictionary<ReadableStreamReadResult> result(aCx);
   result.mValue = chunk;
   result.mDone.Construct(false);
 
@@ -164,7 +164,7 @@ void Read_ReadRequest::CloseSteps(JSContext* aCx, ErrorResult& aRv) {
   // https://streams.spec.whatwg.org/#default-reader-read Step 3.
   // close steps:
   //  Step 1. Resolve promise with «[ "value" → undefined, "done" → true ]».
-  RootedDictionary<ReadableStreamDefaultReadResult> result(aCx);
+  RootedDictionary<ReadableStreamReadResult> result(aCx);
   result.mValue.setUndefined();
   result.mDone.Construct(true);
 
@@ -221,7 +221,7 @@ void ReadableStreamDefaultReaderRead(JSContext* aCx,
     }
 
     case ReadableStream::ReaderState::Errored: {
-      JS::RootedValue storedError(aCx, stream->StoredError());
+      JS::Rooted<JS::Value> storedError(aCx, stream->StoredError());
       aRequest->ErrorSteps(aCx, storedError, aRv);
       return;
     }

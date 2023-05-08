@@ -496,15 +496,13 @@ function TargetMixin(parentClass) {
         return;
       }
 
-      // We still need to attach workers.
       // The current class we have is actually the WorkerDescriptorFront,
       // which will morph into a target by fetching the underlying target's form.
       // Ideally, worker targets would be spawn by the server, and we would no longer
       // have the hybrid descriptor/target class which brings lots of complexity and confusion.
-      // By doing so, the "attach" would be done on the server side and would simply be
-      // part of the target actor instantiation.
-      if (this.attach) {
-        await this.attach();
+      // To be removed in bug 1651522.
+      if (this.morphWorkerDescriptorIntoWorkerTarget) {
+        await this.morphWorkerDescriptorIntoWorkerTarget();
       }
 
       const isBrowserToolbox =
@@ -532,26 +530,7 @@ function TargetMixin(parentClass) {
       if (this.isDestroyedOrBeingDestroyed()) {
         return;
       }
-      const threadFront = await this.attachThread(options);
-
-      // @backward-compat { version 86 } ThreadActor.attach no longer pause the thread,
-      //                                 so that we no longer have to resume.
-      // Once 86 is in release, we can remove the rest of this method.
-      if (this.getTrait("noPauseOnThreadActorAttach")) {
-        return;
-      }
-      try {
-        if (this.isDestroyedOrBeingDestroyed() || threadFront.isDestroyed()) {
-          return;
-        }
-        await threadFront.resume();
-      } catch (ex) {
-        if (ex.error === "wrongOrder") {
-          targetCommand.emit("target-thread-wrong-order-on-resume");
-        } else {
-          throw ex;
-        }
-      }
+      await this.attachThread(options);
     }
 
     async attachThread(options = {}) {

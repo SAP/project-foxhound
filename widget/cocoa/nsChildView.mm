@@ -222,6 +222,7 @@ nsChildView::nsChildView()
       mCompositingLock("ChildViewCompositing"),
       mBackingScaleFactor(0.0),
       mVisible(false),
+      mSizeMode(nsSizeMode_Normal),
       mDrawing(false),
       mIsDispatchPaint(false) {}
 
@@ -709,7 +710,6 @@ void nsChildView::Move(double aX, double aY) {
     [mView setFrame:DevPixelsToCocoaPoints(mBounds)];
   });
 
-  NotifyRollupGeometryChange();
   ReportMoveEvent();
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
@@ -735,7 +735,6 @@ void nsChildView::Resize(double aWidth, double aHeight, bool aRepaint) {
     [[mView pixelHostingView] setNeedsDisplay:YES];
   }
 
-  NotifyRollupGeometryChange();
   ReportSizeEvent();
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
@@ -775,7 +774,6 @@ void nsChildView::Resize(double aX, double aY, double aWidth, double aHeight, bo
     [[mView pixelHostingView] setNeedsDisplay:YES];
   }
 
-  NotifyRollupGeometryChange();
   if (isMoving) {
     ReportMoveEvent();
     if (mOnDestroyCalled) return;

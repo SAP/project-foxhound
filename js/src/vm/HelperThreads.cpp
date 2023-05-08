@@ -58,6 +58,7 @@ using mozilla::TimeStamp;
 using mozilla::Utf8Unit;
 
 using JS::CompileOptions;
+using JS::DispatchReason;
 using JS::ReadOnlyCompileOptions;
 
 namespace js {
@@ -177,7 +178,7 @@ bool GlobalHelperThreadState::submitTask(wasm::CompileTask* task,
     return false;
   }
 
-  dispatch(lock);
+  dispatch(DispatchReason::NewTask, lock);
   return true;
 }
 
@@ -205,7 +206,7 @@ bool GlobalHelperThreadState::submitTask(wasm::UniqueTier2GeneratorTask task) {
   }
   (void)task.release();
 
-  dispatch(lock);
+  dispatch(DispatchReason::NewTask, lock);
   return true;
 }
 
@@ -278,7 +279,7 @@ bool GlobalHelperThreadState::submitTask(
   // unwanted mutations.
   task->alloc().lifoAlloc()->setReadOnly();
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -301,7 +302,7 @@ bool GlobalHelperThreadState::submitTask(
     return false;
   }
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -653,41 +654,11 @@ void ParseTask::scheduleDelazifyTask(AutoLockHelperThreadState& lock) {
     JSContext* cx = TlsContext.get();
     AutoSetContextRuntime ascr(runtime);
 
-    // DelazifyTask are capturing errors. This is created here to capture errors
-    // as-if they were part of the to-be constructed DelazifyTask. This is also
-    // the reason why we move this structure to the DelazifyTask once created.
-    //
-    // In case of early failure, no errors are reported, as a DelazifyTask is an
-    // optimization and the VM should remain working even without this
-    // optimization in place.
-    OffThreadFrontendErrors errors;
-    AutoSetContextOffThreadFrontendErrors recordErrors(&errors);
-
-    task.reset(js_new<DelazifyTask>(runtime, contextOptions));
+    task = DelazifyTask::Create(cx, runtime, contextOptions, options,
+                                *stencil_);
     if (!task) {
       return;
     }
-
-    RefPtr<ScriptSource> source(stencil_->source);
-    StencilCache& cache = runtime->caches().delazificationCache;
-    if (!cache.startCaching(std::move(source))) {
-      return;
-    }
-
-    // Clone the extensible stencil to be used for eager delazification.
-    auto initial = cx->make_unique<frontend::ExtensibleCompilationStencil>(
-        cx, options, stencil_->source);
-    if (!initial->cloneFrom(cx, *stencil_)) {
-      // In case of errors, skip this and delazify on-demand.
-      return;
-    }
-
-    if (!task->init(cx, options, std::move(initial))) {
-      // In case of errors, skip this and delazify on-demand.
-      return;
-    }
-
-    task->errors_ = std::move(errors);
   }
 
   // Schedule delazification task if there is any function to delazify.
@@ -866,6 +837,42 @@ void MultiStencilsDecodeTask::parse(JSContext* cx) {
   }
 }
 
+bool js::StartOffThreadDelazification(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    const frontend::CompilationStencil& stencil) {
+
+  // Skip delazify tasks if we parse everything on-demand or ahead.
+  auto strategy = options.eagerDelazificationStrategy();
+  if (strategy == JS::DelazificationOption::OnDemandOnly ||
+      strategy == JS::DelazificationOption::ParseEverythingEagerly) {
+    return true;
+  }
+
+  // Skip delazify task if code coverage is enabled.
+  if (cx->realm()->collectCoverageForDebug()) {
+    return true;
+  }
+
+  if (!CanUseExtraThreads()) {
+    return true;
+  }
+
+  JSRuntime* runtime = cx->runtime();
+  UniquePtr<DelazifyTask> task;
+  task = DelazifyTask::Create(cx, runtime, cx->options(), options, stencil);
+  if (!task) {
+    return false;
+  }
+
+  // Schedule delazification task if there is any function to delazify.
+  if (!task->strategy->done()) {
+    AutoLockHelperThreadState lock;
+    HelperThreadState().submitTask(task.release(), lock);
+  }
+
+  return true;
+}
+
 bool DepthFirstDelazification::add(JSContext* cx,
                                    const frontend::CompilationStencil& stencil,
                                    ScriptIndex index) {
@@ -889,7 +896,8 @@ bool DepthFirstDelazification::add(JSContext* cx,
 
     ScriptIndex innerScriptIndex = index.toFunction();
     ScriptStencilRef innerScriptRef{stencil, innerScriptIndex};
-    if (innerScriptRef.scriptData().isGhost()) {
+    if (innerScriptRef.scriptData().isGhost() ||
+        !innerScriptRef.scriptData().functionFlags.isInterpreted()) {
       continue;
     }
     if (innerScriptRef.scriptData().hasSharedData()) {
@@ -910,10 +918,57 @@ bool DepthFirstDelazification::add(JSContext* cx,
   return true;
 }
 
+UniquePtr<DelazifyTask> DelazifyTask::Create(
+    JSContext* cx,
+    JSRuntime* runtime,
+    const JS::ContextOptions& contextOptions,
+    const JS::ReadOnlyCompileOptions& options,
+    const frontend::CompilationStencil& stencil)
+{
+  // DelazifyTask are capturing errors. This is created here to capture errors
+  // as-if they were part of the to-be constructed DelazifyTask. This is also
+  // the reason why we move this structure to the DelazifyTask once created.
+  //
+  // In case of early failure, no errors are reported, as a DelazifyTask is an
+  // optimization and the VM should remain working even without this
+  // optimization in place.
+  OffThreadFrontendErrors errors;
+  AutoSetContextOffThreadFrontendErrors recordErrors(&errors);
+
+  UniquePtr<DelazifyTask> task;
+  task.reset(js_new<DelazifyTask>(runtime, contextOptions));
+  if (!task) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+
+  RefPtr<ScriptSource> source(stencil.source);
+  StencilCache& cache = runtime->caches().delazificationCache;
+  if (!cache.startCaching(std::move(source))) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+
+  // Clone the extensible stencil to be used for eager delazification.
+  auto initial = cx->make_unique<frontend::ExtensibleCompilationStencil>(
+      cx, options, stencil.source);
+  if (!initial || !initial->cloneFrom(cx, stencil)) {
+    // In case of errors, skip this and delazify on-demand.
+    return nullptr;
+  }
+
+  if (!task->init(cx, options, std::move(initial))) {
+    // In case of errors, skip this and delazify on-demand.
+    return nullptr;
+  }
+
+  task->errors_ = std::move(errors);
+  return task;
+}
+
 DelazifyTask::DelazifyTask(JSRuntime* runtime,
                            const JS::ContextOptions& options)
     : runtime(runtime), contextOptions(options), merger(), errors_() {
-  AutoLockScriptData alsd(runtime);
   runtime->addParseTaskRef();
 }
 
@@ -931,6 +986,7 @@ bool DelazifyTask::init(
       // execution on the main thread.
       MOZ_CRASH("OnDemandOnly should not create a DelazifyTask.");
       break;
+    case JS::DelazificationOption::CheckConcurrentWithOnDemand:
     case JS::DelazificationOption::ConcurrentDepthFirst:
       // ConcurrentDepthFirst visit all functions to be delazified, visiting the
       // inner functions before the siblings functions.
@@ -1229,6 +1285,39 @@ void js::CancelOffThreadDelazify(JSRuntime* runtime) {
   WaitUntilEmptyFreeDelazifyTaskVector(lock);
 }
 
+static bool HasAnyDelazifyTask(JSRuntime* rt, AutoLockHelperThreadState& lock) {
+  auto& delazifyList = HelperThreadState().delazifyWorklist(lock);
+  for (auto task : delazifyList) {
+    if (task->runtimeMatches(rt)) {
+      return true;
+    }
+  }
+
+  for (auto* helper : HelperThreadState().helperTasks(lock)) {
+    if (helper->is<DelazifyTask>() &&
+        helper->as<DelazifyTask>()->runtimeMatches(rt)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void js::WaitForAllDelazifyTasks(JSRuntime* rt) {
+  AutoLockHelperThreadState lock;
+  if (!HelperThreadState().isInitialized(lock)) {
+    return;
+  }
+
+  while (true) {
+    if (!HasAnyDelazifyTask(rt, lock)) {
+      break;
+    }
+
+    HelperThreadState().wait(lock);
+  }
+}
+
 static bool QueueOffThreadParseTask(JSContext* cx, UniquePtr<ParseTask> task) {
   AutoLockHelperThreadState lock;
 
@@ -1250,14 +1339,14 @@ bool GlobalHelperThreadState::submitTask(
 
   parseWorklist(locked).back()->activate(rt);
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
 void GlobalHelperThreadState::submitTask(
     DelazifyTask* task, const AutoLockHelperThreadState& locked) {
   delazifyWorklist(locked).insertBack(task);
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
 }
 
 bool GlobalHelperThreadState::submitTask(
@@ -1265,7 +1354,7 @@ bool GlobalHelperThreadState::submitTask(
   if (!freeDelazifyTaskVector(locked).append(std::move(task))) {
     return false;
   }
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -1520,7 +1609,7 @@ void GlobalHelperThreadState::assertIsLockedByCurrentThread() const {
 #endif  // DEBUG
 
 void GlobalHelperThreadState::dispatch(
-    const AutoLockHelperThreadState& locked) {
+    DispatchReason reason, const AutoLockHelperThreadState& locked) {
   if (canStartTasks(locked) && tasksPending_ < threadCount) {
     // This doesn't guarantee that we don't dispatch more tasks to the external
     // pool than necessary if tasks are taking a long time to start, but it does
@@ -1530,7 +1619,7 @@ void GlobalHelperThreadState::dispatch(
     // The hazard analysis can't tell that the callback doesn't GC.
     JS::AutoSuppressGCAnalysis nogc;
 
-    dispatchTaskCallback();
+    dispatchTaskCallback(reason);
   }
 }
 
@@ -2098,14 +2187,14 @@ bool GlobalHelperThreadState::submitTask(
     return false;
   }
 
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
 bool GlobalHelperThreadState::submitTask(
     GCParallelTask* task, const AutoLockHelperThreadState& locked) {
   gcParallelWorklist(locked).insertBack(task);
-  dispatch(locked);
+  dispatch(DispatchReason::NewTask, locked);
   return true;
 }
 
@@ -2514,7 +2603,7 @@ bool GlobalHelperThreadState::submitTask(PromiseHelperTask* task) {
     return false;
   }
 
-  dispatch(lock);
+  dispatch(DispatchReason::NewTask, lock);
   return true;
 }
 
@@ -2620,7 +2709,7 @@ void GlobalHelperThreadState::runOneTask(AutoLockHelperThreadState& lock) {
   HelperThreadTask* task = findHighestPriorityTask(lock);
   if (task) {
     runTaskLocked(task, lock);
-    dispatch(lock);
+    dispatch(DispatchReason::FinishedTask, lock);
   }
 
   notifyAll(lock);

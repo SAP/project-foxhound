@@ -306,7 +306,7 @@ struct DIGroup {
   LayerIntRect mHitTestBounds;
   LayerIntRect mActualBounds;
   int32_t mAppUnitsPerDevPixel;
-  gfx::Size mScale;
+  gfx::MatrixScales mScale;
   ScrollableLayerGuid::ViewID mScrollId;
   CompositorHitTestInfo mHitInfo;
   LayerPoint mResidualOffset;
@@ -565,7 +565,7 @@ struct DIGroup {
     GP("\n\n");
     GP("Begin EndGroup\n");
 
-    LayoutDeviceToLayerScale2D scale(mScale.width, mScale.height);
+    auto scale = LayoutDeviceToLayerScale2D::FromUnknownScale(mScale);
 
     auto hitTestRect = mVisibleRect.Intersect(ViewAs<LayerPixel>(
         mHitTestBounds, PixelCastJustification::LayerIsImage));
@@ -648,9 +648,8 @@ struct DIGroup {
         recorder, dummyDt, mLayerBounds.ToUnknownRect());
     // Setup the gfxContext
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
-    context->SetMatrix(
-        Matrix::Scaling(mScale.width, mScale.height)
-            .PostTranslate(mResidualOffset.x, mResidualOffset.y));
+    context->SetMatrix(Matrix::Scaling(mScale).PostTranslate(
+        mResidualOffset.x, mResidualOffset.y));
 
     GP("mInvalidRect: %d %d %d %d\n", mInvalidRect.x, mInvalidRect.y,
        mInvalidRect.width, mInvalidRect.height);
@@ -663,9 +662,6 @@ struct DIGroup {
       ClearImageKey(rootManager, true);
       return;
     }
-
-    // Reset mHitInfo, it will get updated inside PaintItemRange
-    mHitInfo = CompositorHitTestInvisibleToHit;
 
     PaintItemRange(aGrouper, aStartItem, aEndItem, context, recorder,
                    rootManager, aResources);
@@ -794,16 +790,6 @@ struct DIGroup {
       GP("Trying %s %p-%d %d %d %d %d\n", item->Name(), item->Frame(),
          item->GetPerFrameKey(), bounds.x, bounds.y, bounds.XMost(),
          bounds.YMost());
-
-      if (item->HasHitTestInfo()) {
-        // Accumulate the hit-test info flags. In cases where there are multiple
-        // hittest-info display items with different flags, mHitInfo will have
-        // the union of all those flags. If that is the case, we will
-        // additionally set eIrregularArea (at the site that we use mHitInfo)
-        // so that downstream consumers of this (primarily APZ) will know that
-        // the exact shape of what gets hit with what is unknown.
-        mHitInfo += item->GetHitTestInfo().Info();
-      }
 
       if (item->GetType() == DisplayItemType::TYPE_COMPOSITOR_HITTEST_INFO) {
         continue;
@@ -1289,6 +1275,16 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
     nsDisplayItem* item = *it;
     MOZ_ASSERT(item);
 
+    if (item->HasHitTestInfo()) {
+      // Accumulate the hit-test info flags. In cases where there are multiple
+      // hittest-info display items with different flags, mHitInfo will have
+      // the union of all those flags. If that is the case, we will
+      // additionally set eIrregularArea (at the site that we use mHitInfo)
+      // so that downstream consumers of this (primarily APZ) will know that
+      // the exact shape of what gets hit with what is unknown.
+      currentGroup->mHitInfo += item->GetHitTestInfo().Info();
+    }
+
     if (startOfCurrentGroup == aList->end()) {
       startOfCurrentGroup = it;
       if (!isFirstGroup) {
@@ -1301,7 +1297,7 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
     // WebRender's anti-aliasing approximation is not very good under
     // non-uniform scales.
     bool uniformlyScaled =
-        fabs(aGroup->mScale.width - aGroup->mScale.height) < 0.1;
+        fabs(aGroup->mScale.xScale - aGroup->mScale.yScale) < 0.1;
 
     auto activity = IsItemProbablyActive(
         item, aBuilder, aResources, aSc, manager, mDisplayListBuilder,
@@ -1358,6 +1354,7 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
               groupData->mFollowingGroup.mLastVisibleRect);
       groupData->mFollowingGroup.mActualBounds = LayerIntRect();
       groupData->mFollowingGroup.mHitTestBounds = LayerIntRect();
+      groupData->mFollowingGroup.mHitInfo = currentGroup->mHitInfo;
 
       currentGroup->EndGroup(aCommandBuilder->mManager, aDisplayListBuilder,
                              aBuilder, aResources, this, startOfCurrentGroup,
@@ -1367,7 +1364,24 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
         auto spaceAndClipChain =
             mClipManager.SwitchItem(aDisplayListBuilder, item);
         wr::SpaceAndClipChainHelper saccHelper(aBuilder, spaceAndClipChain);
-        mHitTestInfoManager.ProcessItem(item, aBuilder, aDisplayListBuilder);
+        bool hasHitTest = mHitTestInfoManager.ProcessItem(item, aBuilder,
+                                                          aDisplayListBuilder);
+        // XXX - This is hacky. Some items have hit testing info on them but we
+        // also have dedicated hit testing items, the flags of which apply to
+        // the the group that contains them. We don't want layerization to
+        // affect that so if the item didn't emit any hit testing then we still
+        // push a hit test item if the previous group had some hit test flags
+        // set. This is obviously not great. Hit testing should be independent
+        // from how we layerize.
+        if (!hasHitTest &&
+            currentGroup->mHitInfo != gfx::CompositorHitTestInvisibleToHit) {
+          auto hitTestRect = item->GetBuildingRect();
+          if (!hitTestRect.IsEmpty()) {
+            currentGroup->PushHitTest(
+                aBuilder, LayoutDeviceRect::FromAppUnits(
+                              hitTestRect, currentGroup->mAppUnitsPerDevPixel));
+          }
+        }
 
         sIndent++;
         // Note: this call to CreateWebRenderCommands can recurse back into
@@ -1409,6 +1423,16 @@ bool Grouper::ConstructGroupInsideInactive(
     nsDisplayList* aList, const StackingContextHelper& aSc) {
   bool invalidated = false;
   for (nsDisplayItem* item : *aList) {
+    if (item->HasHitTestInfo()) {
+      // Accumulate the hit-test info flags. In cases where there are multiple
+      // hittest-info display items with different flags, mHitInfo will have
+      // the union of all those flags. If that is the case, we will
+      // additionally set eIrregularArea (at the site that we use mHitInfo)
+      // so that downstream consumers of this (primarily APZ) will know that
+      // the exact shape of what gets hit with what is unknown.
+      aGroup->mHitInfo += item->GetHitTestInfo().Info();
+    }
+
     bool invisible = false;
     invalidated |= ConstructItemInsideInactive(
         aCommandBuilder, aBuilder, aResources, aGroup, item, aSc, &invisible);
@@ -1580,29 +1604,23 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
       aWrappingItem->GetUntransformedBounds(aDisplayListBuilder, &snapped);
   DIGroup& group = groupData->mSubGroup;
 
-  gfx::Size scale = aSc.GetInheritedScale();
-  GP("Inherrited scale %f %f\n", scale.width, scale.height);
+  auto scale = aSc.GetInheritedScale();
+  GP("Inherited scale %f %f\n", scale.xScale, scale.yScale);
 
   auto trans =
       ViewAs<LayerPixel>(aSc.GetSnappingSurfaceTransform().GetTranslation());
   auto snappedTrans = LayerIntPoint::Floor(trans);
   LayerPoint residualOffset = trans - snappedTrans;
 
-  // XXX: we currently compute the paintRect for the entire svg, but if the svg
-  // gets split into multiple groups (blobs), then they will all inherit this
-  // overall size even though they may each be much smaller. This can lead to
-  // allocating much larger textures than necessary in webrender.
-  //
-  // Don't bother fixing this unless we run into this in the real world, though.
   auto layerBounds =
-      ScaleToOutsidePixelsOffset(groupBounds, scale.width, scale.height,
+      ScaleToOutsidePixelsOffset(groupBounds, scale.xScale, scale.yScale,
                                  appUnitsPerDevPixel, residualOffset);
 
   const nsRect& untransformedPaintRect =
       aWrappingItem->GetUntransformedPaintRect();
 
   auto visibleRect = ScaleToOutsidePixelsOffset(
-                         untransformedPaintRect, scale.width, scale.height,
+                         untransformedPaintRect, scale.xScale, scale.yScale,
                          appUnitsPerDevPixel, residualOffset)
                          .Intersect(layerBounds);
 
@@ -1611,7 +1629,7 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
   GP("VisibleRect: %d %d %d %d\n", visibleRect.x, visibleRect.y,
      visibleRect.width, visibleRect.height);
 
-  GP("Inherrited scale %f %f\n", scale.width, scale.height);
+  GP("Inherited scale %f %f\n", scale.xScale, scale.yScale);
 
   group.mInvalidRect.SetEmpty();
   if (group.mAppUnitsPerDevPixel != appUnitsPerDevPixel ||
@@ -1624,8 +1642,8 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
     }
 
     if (group.mScale != scale) {
-      GP(" Scale %f %f -> %f %f\n", group.mScale.width, group.mScale.height,
-         scale.width, scale.height);
+      GP(" Scale %f %f -> %f %f\n", group.mScale.xScale, group.mScale.yScale,
+         scale.xScale, scale.yScale);
     }
 
     if (group.mResidualOffset != residualOffset) {
@@ -1652,8 +1670,8 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
   group.mAppUnitsPerDevPixel = appUnitsPerDevPixel;
   group.mClippedImageBounds = layerBounds;
 
-  g.mTransform = Matrix::Scaling(scale.width, scale.height)
-                     .PostTranslate(residualOffset.x, residualOffset.y);
+  g.mTransform =
+      Matrix::Scaling(scale).PostTranslate(residualOffset.x, residualOffset.y);
   group.mScale = scale;
   group.mScrollId = scrollId;
   g.ConstructGroups(aDisplayListBuilder, this, aBuilder, aResources, &group,
@@ -2263,7 +2281,7 @@ static void PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
                                   const LayoutDevicePoint& aOffset,
                                   const IntRect& visibleRect,
                                   nsDisplayListBuilder* aDisplayListBuilder,
-                                  const gfx::Size& aScale,
+                                  const gfx::MatrixScales& aScale,
                                   Maybe<gfx::DeviceColor>& aHighlight) {
   MOZ_ASSERT(aDT);
 
@@ -2284,9 +2302,8 @@ static void PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
         break;
       }
 
-      context->SetMatrix(context->CurrentMatrix()
-                             .PreScale(aScale.width, aScale.height)
-                             .PreTranslate(-aOffset.x, -aOffset.y));
+      context->SetMatrix(context->CurrentMatrix().PreScale(aScale).PreTranslate(
+          -aOffset.x, -aOffset.y));
       if (aDisplayListBuilder->IsPaintingToWindow()) {
         aItem->Frame()->AddStateBits(NS_FRAME_PAINTED_THEBES);
       }
@@ -2411,14 +2428,14 @@ WebRenderCommandBuilder::GenerateFallbackData(
     return nullptr;
   }
 
-  gfx::Size scale = aSc.GetInheritedScale();
-  gfx::Size oldScale = fallbackData->mScale;
+  MatrixScales scale = aSc.GetInheritedScale();
+  MatrixScales oldScale = fallbackData->mScale;
   // We tolerate slight changes in scale so that we don't, for example,
   // rerasterize on MotionMark
-  bool differentScale = gfx::FuzzyEqual(scale.width, oldScale.width, 1e-6f) &&
-                        gfx::FuzzyEqual(scale.height, oldScale.height, 1e-6f);
+  bool differentScale = gfx::FuzzyEqual(scale.xScale, oldScale.xScale, 1e-6f) &&
+                        gfx::FuzzyEqual(scale.yScale, oldScale.yScale, 1e-6f);
 
-  LayoutDeviceToLayerScale2D layerScale(scale.width, scale.height);
+  auto layerScale = LayoutDeviceToLayerScale2D::FromUnknownScale(scale);
 
   auto trans =
       ViewAs<LayerPixel>(aSc.GetSnappingSurfaceTransform().GetTranslation());
@@ -2441,20 +2458,20 @@ WebRenderCommandBuilder::GenerateFallbackData(
   if (aBuilder.GetInheritedOpacity() == 1.0f &&
       opacity == wr::OpacityType::Opaque && snap) {
     dtRect = LayerIntRect::FromUnknownRect(
-        ScaleToNearestPixelsOffset(paintBounds, scale.width, scale.height,
+        ScaleToNearestPixelsOffset(paintBounds, scale.xScale, scale.yScale,
                                    appUnitsPerDevPixel, residualOffset));
 
     visibleRect =
         LayerIntRect::FromUnknownRect(
-            ScaleToNearestPixelsOffset(buildingRect, scale.width, scale.height,
+            ScaleToNearestPixelsOffset(buildingRect, scale.xScale, scale.yScale,
                                        appUnitsPerDevPixel, residualOffset))
             .Intersect(dtRect);
   } else {
-    dtRect = ScaleToOutsidePixelsOffset(paintBounds, scale.width, scale.height,
+    dtRect = ScaleToOutsidePixelsOffset(paintBounds, scale.xScale, scale.yScale,
                                         appUnitsPerDevPixel, residualOffset);
 
     visibleRect =
-        ScaleToOutsidePixelsOffset(buildingRect, scale.width, scale.height,
+        ScaleToOutsidePixelsOffset(buildingRect, scale.xScale, scale.yScale,
                                    appUnitsPerDevPixel, residualOffset)
             .Intersect(dtRect);
   }
@@ -2682,30 +2699,30 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
   const int32_t appUnitsPerDevPixel =
       aMaskItem->Frame()->PresContext()->AppUnitsPerDevPixel();
 
-  Size scale = aSc.GetInheritedScale();
-  Size oldScale = maskData->mScale;
+  MatrixScales scale = aSc.GetInheritedScale();
+  MatrixScales oldScale = maskData->mScale;
   // This scale determination should probably be done using
   // ChooseScaleAndSetTransform but for now we just fake it.
   // We tolerate slight changes in scale so that we don't, for example,
   // rerasterize on MotionMark
-  bool sameScale = FuzzyEqual(scale.width, oldScale.width, 1e-6f) &&
-                   FuzzyEqual(scale.height, oldScale.height, 1e-6f);
+  bool sameScale = FuzzyEqual(scale.xScale, oldScale.xScale, 1e-6f) &&
+                   FuzzyEqual(scale.yScale, oldScale.yScale, 1e-6f);
 
   LayerIntRect itemRect =
       LayerIntRect::FromUnknownRect(bounds.ScaleToOutsidePixels(
-          scale.width, scale.height, appUnitsPerDevPixel));
+          scale.xScale, scale.yScale, appUnitsPerDevPixel));
 
   LayerIntRect visibleRect =
       LayerIntRect::FromUnknownRect(
           aMaskItem->GetBuildingRect().ScaleToOutsidePixels(
-              scale.width, scale.height, appUnitsPerDevPixel))
+              scale.xScale, scale.yScale, appUnitsPerDevPixel))
           .SafeIntersect(itemRect);
 
   if (visibleRect.IsEmpty()) {
     return Nothing();
   }
 
-  LayoutDeviceToLayerScale2D layerScale(scale.width, scale.height);
+  LayoutDeviceToLayerScale2D layerScale(scale.xScale, scale.yScale);
   LayoutDeviceRect imageRect = LayerRect(visibleRect) / layerScale;
 
   nsPoint maskOffset = aMaskItem->ToReferenceFrame() - bounds.TopLeft();
@@ -2760,7 +2777,7 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
 
     context->SetMatrix(context->CurrentMatrix()
                            .PreTranslate(-itemRect.x, -itemRect.y)
-                           .PreScale(scale.width, scale.height));
+                           .PreScale(scale));
 
     bool maskPainted = false;
     bool maskIsComplete = aMaskItem->PaintMask(

@@ -40,6 +40,7 @@ class SourceSurface;
 namespace layers {
 
 class BasicLayerManager;
+class CanvasRenderer;
 class ImageClient;
 class ImageContainer;
 class WebRenderBridgeChild;
@@ -268,7 +269,7 @@ class WebRenderFallbackData : public WebRenderUserData {
   DisplayItemClip mClip;
   nsRect mBounds;
   nsRect mBuildingRect;
-  gfx::Size mScale;
+  gfx::MatrixScales mScale;
   float mOpacity;
 
  protected:
@@ -322,6 +323,7 @@ class WebRenderCanvasData : public WebRenderUserData {
   void ClearCanvasRenderer();
   WebRenderCanvasRendererAsync* GetCanvasRenderer();
   WebRenderCanvasRendererAsync* CreateCanvasRenderer();
+  bool SetCanvasRenderer(CanvasRenderer* aCanvasRenderer);
 
   void SetImageContainer(ImageContainer* aImageContainer);
   ImageContainer* GetImageContainer();
@@ -374,7 +376,7 @@ class WebRenderMaskData : public WebRenderUserData {
   LayerIntRect mItemRect;
   nsPoint mMaskOffset;
   nsStyleImageLayers mMaskStyle;
-  gfx::Size mScale;
+  gfx::MatrixScales mScale;
   bool mShouldHandleOpacity;
 };
 

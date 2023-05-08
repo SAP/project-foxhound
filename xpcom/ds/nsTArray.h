@@ -9,6 +9,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <functional>
 #include <initializer_list>
 #include <iterator>
@@ -94,7 +95,6 @@ class IndexCursorResponse;
 }  // namespace mozilla::dom
 
 namespace mozilla::ipc {
-class AutoIPCStream;
 class ContentSecurityPolicy;
 template <class T>
 class Endpoint;
@@ -825,9 +825,6 @@ struct MOZ_NEEDS_MEMMOVABLE_TYPE nsTArray_RelocationStrategy {
   struct nsTArray_RelocationStrategy<T<S>> {                        \
     using Type = nsTArray_RelocateUsingMoveConstructor<T<S>>;       \
   };
-
-// TODO mozilla::ipc::AutoIPCStream is not even movable, so memmovable use with
-// nsTArray (in StructuredCloneData) seems at least quirky
 
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR_FOR_TEMPLATE(JS::Heap)
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR_FOR_TEMPLATE(std::function)
@@ -2465,6 +2462,9 @@ auto nsTArray_Impl<E, Alloc>::ReplaceElementsAtInternal(index_type aStart,
     -> value_type* {
   if (MOZ_UNLIKELY(aStart > Length())) {
     mozilla::detail::InvalidArrayIndex_CRASH(aStart, Length());
+  }
+  if (MOZ_UNLIKELY(aCount > Length() - aStart)) {
+    mozilla::detail::InvalidArrayIndex_CRASH(aStart + aCount, Length());
   }
 
   // Adjust memory allocation up-front to catch errors.

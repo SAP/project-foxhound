@@ -15,8 +15,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsObjectLoadingContent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class FormData;
 template <typename T>
@@ -218,7 +217,6 @@ class HTMLObjectElement final : public nsGenericHTMLFormControlElement,
   bool mIsDoneAddingChildren;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_HTMLObjectElement_h

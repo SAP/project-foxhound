@@ -7,13 +7,14 @@ function onDOMLoaded() {
     window.thePKT_PANEL = thePKT_PANEL;
     thePKT_PANEL.initStyleGuide();
   }
-  window.thePKT_PANEL.create();
+  window.thePKT_PANEL.overlay.create();
 
   setupDarkModeUI();
 }
 
 function setupDarkModeUI() {
-  let isDarkModeEnabled = false; // TODO: Use browser pref for starting value
+  let isDarkModeEnabled = window?.matchMedia(`(prefers-color-scheme: dark)`)
+    .matches;
   let elDarkModeToggle = document.querySelector(`#dark_mode_toggle input`);
   let elBody = document.querySelector(`body`);
 

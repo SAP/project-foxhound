@@ -21,8 +21,7 @@
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define DOM_STORAGE_CACHE_KEEP_ALIVE_TIME_MS 20000
 
@@ -622,5 +621,4 @@ bool StorageUsage::CheckAndSetETLD1UsageDelta(
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

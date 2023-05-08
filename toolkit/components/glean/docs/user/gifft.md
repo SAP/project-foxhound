@@ -43,6 +43,7 @@ This compatibility table explains which Telemetry probe types can be mirrors for
 | [memory_distribution](https://mozilla.github.io/glean/book/user/metrics/memory_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.rst#exponential). Samples will be in `memory_unit` units. |
 | [custom_distribution](https://mozilla.github.io/glean/book/user/metrics/custom_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.rst#exponential). Samples will be used as is. Ensure the bucket count and range match. |
 | [uuid](https://mozilla.github.io/glean/book/user/metrics/uuid.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.rst). Value will be in canonical 8-4-4-4-12 format. Value is not guaranteed to be valid, and invalid values may be present in the mirrored scalar while the uuid metric remains empty. Calling `GenerateAndSet` on the uuid is not mirrored, and will log a warning. |
+| [url](https://mozilla.github.io/glean/book/user/metrics/url.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.rst). The stringified Url will be cropped to the maximum length allowed by the legacy type. |
 | [datetime](https://mozilla.github.io/glean/book/user/metrics/datetime.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.rst). Value will be in ISO8601 format. |
 | [events](https://mozilla.github.io/glean/book/user/metrics/event.html) | [Events](/toolkit/components/telemetry/collection/events.rst). The `value` field will be left empty.  |
 | [quantity](https://mozilla.github.io/glean/book/user/metrics/quantity.html) | [Scalar of kind: uint](/toolkit/components/telemetry/collection/scalars.rst) |
@@ -204,3 +205,19 @@ the value passed to the metric's Telemetry mirror will be clamped to $2^{32} - 1
 The same happens for samples in `timing_distribution` metrics:
 values passed to the Telemetry mirror histogram will saturate at $2^{32} - 1$
 until they get past $2^{64}$ when they'll overflow.
+
+### App Shutdown
+
+Telemetry only works up to
+[`ShutdownPhase::AppShutdownTelemetry` aka `profile-before-change-telemetry`][app-shutdown].
+Telemetry data recorded after that phase just aren't persisted.
+
+FOG _presently_ shuts down Glean in a later phase,
+and so is able to collect data deeper into shutdown.
+(The particular phase is not presently something anyone's asked us to guarantee,
+so that's why I'm not being precise.)
+
+What this means is that, for data recorded later in shutdown,
+Glean will report more complete information than Telemetry will.
+
+[app-shutdown]: https://searchfox.org/mozilla-central/source/xpcom/base/AppShutdown.cpp#57

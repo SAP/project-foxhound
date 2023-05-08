@@ -12,9 +12,9 @@ setInterruptCallback(function() {
   d.addDebuggee(g)
   d.getNewestFrame().onStep = function() {
     d.removeDebuggee(g);
-    return { return: 0 };
+    return { return: 42 };
   }
   return true
 });
 
-g.foo();
+assertEq(g.foo(), 42);

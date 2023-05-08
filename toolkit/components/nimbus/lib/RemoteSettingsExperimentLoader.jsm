@@ -22,7 +22,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   RemoteSettings: "resource://services-settings/remote-settings.js",
   CleanupManager: "resource://normandy/lib/CleanupManager.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  Validator: "resource://gre/modules/JsonSchema.jsm",
+  JsonSchema: "resource://gre/modules/JsonSchema.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
@@ -211,7 +211,9 @@ class _RemoteSettingsExperimentLoader {
       Cu.reportError(e);
     }
 
-    const recipeValidator = new Validator(await SCHEMAS.NimbusExperiment);
+    const recipeValidator = new JsonSchema.Validator(
+      await SCHEMAS.NimbusExperiment
+    );
 
     let matches = 0;
     let recipeMismatches = [];
@@ -361,13 +363,15 @@ class _RemoteSettingsExperimentLoader {
         let validator;
         if (validatorCache[featureId]) {
           validator = validatorCache[featureId];
-        } else if (NimbusFeatures[featureId].manifest.schema) {
-          const uri = NimbusFeatures[featureId].manifest.schema;
+        } else if (NimbusFeatures[featureId].manifest.schema?.uri) {
+          const uri = NimbusFeatures[featureId].manifest.schema.uri;
           try {
             const schema = await fetch(uri, { credentials: "omit" }).then(rsp =>
               rsp.json()
             );
-            validator = validatorCache[featureId] = new Validator(schema);
+            validator = validatorCache[featureId] = new JsonSchema.Validator(
+              schema
+            );
           } catch (e) {
             throw new Error(
               `Could not fetch schema for feature ${featureId} at "${uri}": ${e}`
@@ -378,7 +382,9 @@ class _RemoteSettingsExperimentLoader {
             featureId,
             NimbusFeatures[featureId].manifest
           );
-          validator = validatorCache[featureId] = new Validator(schema);
+          validator = validatorCache[featureId] = new JsonSchema.Validator(
+            schema
+          );
         }
 
         if (feature.enabled ?? true) {

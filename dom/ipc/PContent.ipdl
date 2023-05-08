@@ -13,12 +13,11 @@ include protocol PDocumentChannel;
 include protocol PExtensions;
 include protocol PExternalHelperApp;
 include protocol PHandlerService;
-include protocol PFileDescriptorSet;
 include protocol PHal;
 include protocol PHeapSnapshotTempFileHelper;
 include protocol PProcessHangMonitor;
 include protocol PImageBridge;
-include protocol PRemoteLazyInputStream;
+include protocol PRemotePrintJob;
 include protocol PLoginReputation;
 include protocol PMedia;
 include protocol PNecko;
@@ -26,9 +25,6 @@ include protocol PStreamFilter;
 include protocol PGMPContent;
 include protocol PGMPService;
 include protocol PGMP;
-include protocol PPrinting;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
 #ifdef MOZ_WEBSPEECH
 include protocol PSpeechSynthesis;
 #endif
@@ -463,16 +459,12 @@ sync protocol PContent
     manages PCycleCollectWithLogs;
     manages PExtensions;
     manages PExternalHelperApp;
-    manages PFileDescriptorSet;
     manages PHal;
     manages PHandlerService;
     manages PHeapSnapshotTempFileHelper;
-    manages PRemoteLazyInputStream;
+    manages PRemotePrintJob;
     manages PMedia;
     manages PNecko;
-    manages PPrinting;
-    manages PChildToParentStream;
-    manages PParentToChildStream;
 #ifdef MOZ_WEBSPEECH
     manages PSpeechSynthesis;
 #endif
@@ -543,8 +535,6 @@ child:
                            bool isForBrowser, bool isTopLevel);
 
 both:
-    async PFileDescriptorSet(FileDescriptor fd);
-
     // For parent->child, aBrowser must be non-null; aContext can
     // be null to indicate the browser's current root document, or non-null
     // to persist a subdocument.  For child->parent, arguments are
@@ -863,15 +853,11 @@ child:
     async GMPsChanged(GMPCapabilityData[] capabilities);
 
 
-    async PParentToChildStream();
-
     async ProvideAnonymousTemporaryFile(uint64_t aID, FileDescOrError aFD);
 
     async SetPermissionsWithKey(nsCString aPermissionKey, Permission[] aPermissions);
 
     async RefreshScreens(ScreenDetails[] aScreens);
-
-    async PRemoteLazyInputStream(nsID aID, uint64_t aSize);
 
     async ShareCodeCoverageMutex(CrossProcessMutexHandle handle);
     async FlushCodeCoverageCounters() returns (bool unused);
@@ -1016,27 +1002,29 @@ child:
                                       uint32_t aIndex, uint32_t aLength,
                                       nsID aChangeID);
 
-   async DispatchLocationChangeEvent(MaybeDiscardedBrowsingContext aContext);
+    async GetLayoutHistoryState(MaybeDiscardedBrowsingContext aContext)
+        returns (nsILayoutHistoryState aState);
 
-  // Dispatches a "beforeunload" event to each in-process content window in the
-  // subtree beginning at `aStartingAt`, and returns the result as documented in
-  // the `PermitUnloadResult` enum.
-  async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
-      returns (PermitUnloadResult result);
+    async DispatchLocationChangeEvent(MaybeDiscardedBrowsingContext aContext);
 
-  // Update the cached list of codec supported in the given process.
-  async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
+    // Dispatches a "beforeunload" event to each in-process content window in the
+    // subtree beginning at `aStartingAt`, and returns the result as documented in
+    // the `PermitUnloadResult` enum.
+    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
+        returns (PermitUnloadResult result);
 
-  async FlushTabState(MaybeDiscardedBrowsingContext aBrowsingContext)
-      returns(bool aHadContext);
+    // Update the cached list of codec supported in the given process.
+    async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
 
-  // Send the list of the supported mimetypes in the given process. GeckoView-specific
-  async DecoderSupportedMimeTypes(nsCString[] supportedTypes);
+    // Send the list of the supported mimetypes in the given process. GeckoView-specific
+    async DecoderSupportedMimeTypes(nsCString[] supportedTypes);
 
-  // Used to initialize the global variable in content processes with the
-  // latched value in the parent process. See dom/LocalStorageCommon.h for more
-  // details.
-  async InitNextGenLocalStorageEnabled(bool enabled);
+    // Used to initialize the global variable in content processes with the
+    // latched value in the parent process. See dom/LocalStorageCommon.h for more
+    // details.
+    async InitNextGenLocalStorageEnabled(bool enabled);
+
+  async PRemotePrintJob();
 
 parent:
 
@@ -1076,8 +1064,7 @@ parent:
 
     async InitCrashReporter(NativeThreadId tid);
 
-    sync IsSecureURI(nsIURI aURI, uint32_t aFlags,
-                     OriginAttributes aOriginAttributes)
+    sync IsSecureURI(nsIURI aURI, OriginAttributes aOriginAttributes)
         returns (bool isSecureURI);
 
     async AccumulateMixedContentHSTS(nsIURI aURI, bool aActive,
@@ -1088,10 +1075,6 @@ parent:
     async PHeapSnapshotTempFileHelper();
 
     async PNecko();
-
-    async PPrinting();
-
-    async PChildToParentStream();
 
 #ifdef MOZ_WEBSPEECH
     async PSpeechSynthesis();
@@ -1125,7 +1108,8 @@ parent:
                           nsIPrincipal triggeringPrincipal,
                           nsIPrincipal redirectPrincipal,
                           MaybeDiscardedBrowsingContext browsingContext,
-                          bool wasExternallyTriggered);
+                          bool wasExternallyTriggered,
+                          bool hasValidUserGestureActivation);
     async ExtProtocolChannelConnectParent(uint64_t registrarId);
 
     // PrefService message
@@ -1931,6 +1915,13 @@ parent:
     // format.  Not supported (or needed) on all platforms; see the
     // implementation in ContentParent::RecvGetSystemIcon for details.
     async GetSystemIcon(nsIURI aURI) returns (nsresult aResult, ByteBuf? aData);
+
+#ifdef FUZZING_SNAPSHOT
+    // Used by the child process to signal that it is ready to start fuzzing.
+    // This can in particular be used to wait for a particular event in a
+    // test document before taking the snapshot and starting e.g. IPC fuzzing.
+    async SignalFuzzingReady();
+#endif
 };
 
 }

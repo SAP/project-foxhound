@@ -30,8 +30,7 @@
 #include "nsString.h"
 #include "xpcpublic.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static constexpr auto ERROR_EMPTY_PATH =
     "PathUtils does not support empty paths"_ns;
@@ -71,10 +70,12 @@ static bool DoWindowsPathCheck() {
 #ifdef XP_WIN
 #  ifdef DEBUG
   return true;
-#  endif  // DEBUG
+#  else   // DEBUG
   return xpc::IsInAutomation();
-#endif  // XP_WIN
+#  endif  // DEBUG
+#else     // XP_WIN
   return false;
+#endif    // XP_WIN
 }
 
 /* static */
@@ -570,5 +571,4 @@ nsresult PathUtils::DirectoryCache::PopulateDirectoriesImpl(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

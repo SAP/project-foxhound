@@ -458,6 +458,9 @@ void WebRenderAPI::UpdateDebugFlags(uint32_t aFlags) {
 }
 
 void WebRenderAPI::SendTransaction(TransactionBuilder& aTxn) {
+  if (mRootApi && mRootApi->mRendererDestroyed) {
+    return;
+  }
   wr_api_send_transaction(mDocHandle, aTxn.Raw(), aTxn.UseSceneBuilderThread());
 }
 
@@ -1184,13 +1187,14 @@ wr::WrSpatialId DisplayListBuilder::DefineScrollLayer(
 void DisplayListBuilder::PushRect(const wr::LayoutRect& aBounds,
                                   const wr::LayoutRect& aClip,
                                   bool aIsBackfaceVisible,
-                                  bool aForceAntiAliasing,
+                                  bool aForceAntiAliasing, bool aIsCheckerboard,
                                   const wr::ColorF& aColor) {
   wr::LayoutRect clip = MergeClipLeaf(aClip);
   WRDL_LOG("PushRect b=%s cl=%s c=%s\n", mWrState, ToString(aBounds).c_str(),
            ToString(clip).c_str(), ToString(aColor).c_str());
   wr_dp_push_rect(mWrState, aBounds, clip, aIsBackfaceVisible,
-                  aForceAntiAliasing, &mCurrentSpaceAndClipChain, aColor);
+                  aForceAntiAliasing, aIsCheckerboard,
+                  &mCurrentSpaceAndClipChain, aColor);
 }
 
 void DisplayListBuilder::PushRoundedRect(const wr::LayoutRect& aBounds,

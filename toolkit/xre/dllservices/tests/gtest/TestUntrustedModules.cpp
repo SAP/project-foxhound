@@ -22,15 +22,15 @@ class ModuleLoadCounter final {
   nsTHashMap<nsStringCaseInsensitiveHashKey, int> mCounters;
 
  public:
-  template <int N>
+  template <size_t N>
   ModuleLoadCounter(const nsString (&aNames)[N], const int (&aCounts)[N])
       : mCounters(N) {
-    for (int i = 0; i < N; ++i) {
+    for (size_t i = 0; i < N; ++i) {
       mCounters.InsertOrUpdate(aNames[i], aCounts[i]);
     }
   }
 
-  template <int N>
+  template <size_t N>
   bool Remains(const nsString (&aNames)[N], const int (&aCounts)[N]) {
     EXPECT_EQ(mCounters.Count(), N);
     if (mCounters.Count() != N) {
@@ -38,15 +38,15 @@ class ModuleLoadCounter final {
     }
 
     bool result = true;
-    for (int i = 0; i < N; ++i) {
+    for (size_t i = 0; i < N; ++i) {
       auto entry = mCounters.Lookup(aNames[i]);
       if (!entry) {
-        wprintf(L"%s is not registered.\n", aNames[i].get());
+        wprintf(L"%s is not registered.\n", static_cast<const wchar_t*>(aNames[i].get()));
         result = false;
       } else if (*entry != aCounts[i]) {
         // We can return false, but let's print out all unmet modules
         // which may be helpful to investigate test failures.
-        wprintf(L"%s:%4d\n", aNames[i].get(), *entry);
+        wprintf(L"%s:%4d\n", static_cast<const wchar_t*>(aNames[i].get()), *entry);
         result = false;
       }
     }
@@ -208,7 +208,7 @@ class UntrustedModulesFixture : public TelemetryTestFixture {
     ModuleLoadCounter waitForOne({kTestModules[0]}, {1});
     EXPECT_TRUE(NS_SUCCEEDED(collector.Collect(waitForOne)));
     EXPECT_TRUE(waitForOne.Remains({kTestModules[0]}, {0}));
-    EXPECT_EQ(collector.Data().length(), 1);
+    EXPECT_EQ(collector.Data().length(), 1U);
 
     // Cannot "return collector.Data()[0]" as copy ctor is deleted.
     return UntrustedModulesData(std::move(collector.Data()[0]));
@@ -245,7 +245,7 @@ class UntrustedModulesFixture : public TelemetryTestFixture {
     EXPECT_TRUE(matchResult.isBoolean() && matchResult.toBoolean());
     if (!matchResult.isBoolean() || !matchResult.toBoolean()) {
       // If match failed, print out the actual JSON kindly.
-      wprintf(L"JSON: %s\n", json.get());
+      wprintf(L"JSON: %s\n", static_cast<const wchar_t*>(json.get()));
       wprintf(L"RE: %s\n", aPattern);
     }
   }
@@ -307,7 +307,7 @@ void UntrustedModulesFixture::ValidateUntrustedModules(
             &match)) {
       EXPECT_EQ(loadStatus, kKnownModules[match].mStatus);
     } else {
-      EXPECT_EQ(evt.mLoadStatus, 0);
+      EXPECT_EQ(evt.mLoadStatus, 0U);
     }
 
     if (BinarySearchIf(
@@ -329,19 +329,19 @@ void UntrustedModulesFixture::ValidateUntrustedModules(
   // No check for the mXULLoadDurationMS field because the field has a value
   // in CCov build GTest, but it is empty in non-CCov build (bug 1681936).
   EXPECT_EQ(aData.mNumEvents, aData.mEvents.length());
-  EXPECT_GT(aData.mNumEvents, 0);
+  EXPECT_GT(aData.mNumEvents, 0U);
   if (aIsTruncatedData) {
-    EXPECT_EQ(aData.mStacks.GetModuleCount(), 0);
+    EXPECT_EQ(aData.mStacks.GetModuleCount(), 0U);
     EXPECT_LE(aData.mNumEvents, UntrustedModulesData::kMaxEvents);
   } else if (numBlockedEvents == aData.mNumEvents) {
     // If all loading events were blocked or aData is truncated,
     // the stacks are empty.
-    EXPECT_EQ(aData.mStacks.GetModuleCount(), 0);
+    EXPECT_EQ(aData.mStacks.GetModuleCount(), 0U);
   } else {
-    EXPECT_GT(aData.mStacks.GetModuleCount(), 0);
+    EXPECT_GT(aData.mStacks.GetModuleCount(), 0U);
   }
-  EXPECT_EQ(aData.mSanitizationFailures, 0);
-  EXPECT_EQ(aData.mTrustTestFailures, 0);
+  EXPECT_EQ(aData.mSanitizationFailures, 0U);
+  EXPECT_EQ(aData.mTrustTestFailures, 0U);
 }
 
 BOOL CALLBACK UntrustedModulesFixture::InitialModuleLoadOnce(PINIT_ONCE, void*,

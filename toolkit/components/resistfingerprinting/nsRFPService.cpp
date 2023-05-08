@@ -156,12 +156,26 @@ nsRFPService* nsRFPService::GetOrCreate() {
   return sRFPService;
 }
 
+constexpr double RFP_TIME_ATOM_MS = 16.667;  // 60Hz, 1000/60 but rounded.
+/*
+In RFP RAF always runs at 60Hz, so we're ~0.02% off of 1000/60 here.
+```js
+extra_frames_per_frame = 16.667 / (1000/60) - 1 // 0.00028
+sec_per_extra_frame = 1 / (extra_frames_per_frame * 60) // 833.33
+min_per_extra_frame = sec_per_extra_frame / 60 // 13.89
+```
+We expect an extra frame every ~14 minutes, which is enough to be smooth.
+16.67 would be ~1.4 minutes, which is OK, but is more noticable.
+Put another way, if this is the only unacceptable hitch you have across 14
+minutes, I'm impressed, and we might revisit this.
+*/
+
 /* static */
 double nsRFPService::TimerResolution() {
   double prefValue = StaticPrefs::
       privacy_resistFingerprinting_reduceTimerPrecision_microseconds();
   if (StaticPrefs::privacy_resistFingerprinting()) {
-    return std::max(100000.0, prefValue);
+    return std::max(RFP_TIME_ATOM_MS * 1000.0, prefValue);
   }
   return prefValue;
 }
@@ -550,58 +564,13 @@ uint32_t nsRFPService::GetSpoofedPresentedFrames(double aTime, uint32_t aWidth,
                       ((100 - boundedDroppedRatio) / 100.0));
 }
 
-static uint32_t GetSpoofedVersion() {
-  // If we can't get the current Firefox version, use a hard-coded ESR version.
-  const uint32_t kKnownEsrVersion = 78;
-
-  nsresult rv;
-  nsCOMPtr<nsIXULAppInfo> appInfo =
-      do_GetService("@mozilla.org/xre/app-info;1", &rv);
-  NS_ENSURE_SUCCESS(rv, kKnownEsrVersion);
-
-  nsAutoCString appVersion;
-  rv = appInfo->GetVersion(appVersion);
-  NS_ENSURE_SUCCESS(rv, kKnownEsrVersion);
-
-  // The browser version will be spoofed as the last ESR version.
-  // By doing so, the anonymity group will cover more versions instead of one
-  // version.
-  uint32_t firefoxVersion = appVersion.ToInteger(&rv);
-  NS_ENSURE_SUCCESS(rv, kKnownEsrVersion);
-
-  // Some add-on tests set the Firefox version to low numbers like 1 or 42,
-  // which causes the spoofed version calculation's unsigned int subtraction
-  // below to wrap around zero to Firefox versions like 4294967287. This
-  // function should always return an ESR version, so return a good one now.
-  if (firefoxVersion < kKnownEsrVersion) {
-    return kKnownEsrVersion;
-  }
-
-#ifdef DEBUG
-  // If we are running in Firefox ESR, determine whether the formula of ESR
-  // version has changed.  Once changed, we must update the formula in this
-  // function.
-  if (!strcmp(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL), "esr")) {
-    MOZ_ASSERT(((firefoxVersion - kKnownEsrVersion) % 13) == 0,
-               "Please update ESR version formula in nsRFPService.cpp");
-  }
-#endif  // DEBUG
-
-  // Starting with Firefox 78, a new ESR version will be released every June.
-  // We can't accurately calculate the next ESR version, but it will be
-  // probably be every ~13 Firefox releases, assuming four-week release
-  // cycles. If this assumption is wrong, we won't need to worry about it
-  // until ESR 104±1 in 2022. :) We have a debug assert above to catch if the
-  // spoofed version doesn't match the actual ESR version then.
-  // We infer the last and closest ESR version based on this rule.
-  uint32_t spoofedVersion =
-      firefoxVersion - ((firefoxVersion - kKnownEsrVersion) % 13);
-
-  MOZ_ASSERT(spoofedVersion >= kKnownEsrVersion &&
-             spoofedVersion <= firefoxVersion &&
-             (spoofedVersion - kKnownEsrVersion) % 13 == 0);
-
-  return spoofedVersion;
+static const char* GetSpoofedVersion() {
+#ifdef ANDROID
+  // Return Desktop's ESR version.
+  return "102.0";
+#else
+  return MOZILLA_UAVERSION;
+#endif
 }
 
 /* static */
@@ -624,7 +593,7 @@ void nsRFPService::GetSpoofedUserAgent(nsACString& userAgent,
       2;
   userAgent.SetCapacity(preallocatedLength);
 
-  uint32_t spoofedVersion = GetSpoofedVersion();
+  const char* spoofedVersion = GetSpoofedVersion();
 
   // "Mozilla/5.0 (%s; rv:%d.0) Gecko/%d Firefox/%d.0"
   userAgent.AssignLiteral("Mozilla/5.0 (");
@@ -636,19 +605,17 @@ void nsRFPService::GetSpoofedUserAgent(nsACString& userAgent,
   }
 
   userAgent.AppendLiteral("; rv:");
-  userAgent.AppendInt(spoofedVersion);
-  userAgent.AppendLiteral(".0) Gecko/");
+  userAgent.Append(spoofedVersion);
+  userAgent.AppendLiteral(") Gecko/");
 
 #if defined(ANDROID)
-  userAgent.AppendInt(spoofedVersion);
-  userAgent.AppendLiteral(".0");
+  userAgent.Append(spoofedVersion);
 #else
   userAgent.AppendLiteral(LEGACY_UA_GECKO_TRAIL);
 #endif
 
   userAgent.AppendLiteral(" Firefox/");
-  userAgent.AppendInt(spoofedVersion);
-  userAgent.AppendLiteral(".0");
+  userAgent.Append(spoofedVersion);
 
   MOZ_ASSERT(userAgent.Length() <= preallocatedLength);
 }

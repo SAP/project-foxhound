@@ -454,6 +454,13 @@ bool ClientWebGLContext::UpdateWebRenderCanvasData(
     return true;
   }
 
+  if (!IsContextLost() && !renderer && mNotLost->mCanvasRenderer &&
+      aCanvasData->SetCanvasRenderer(mNotLost->mCanvasRenderer)) {
+    mNotLost->mCanvasRenderer->SetDirty();
+    mResetLayer = false;
+    return true;
+  }
+
   renderer = aCanvasData->CreateCanvasRenderer();
   if (!InitializeCanvasRenderer(aBuilder, renderer)) {
     // Clear CanvasRenderer of WebRenderCanvasData
@@ -461,8 +468,11 @@ bool ClientWebGLContext::UpdateWebRenderCanvasData(
     return false;
   }
 
+  mNotLost->mCanvasRenderer = renderer;
+
   MOZ_ASSERT(renderer);
   mResetLayer = false;
+
   return true;
 }
 
@@ -837,10 +847,19 @@ ClientWebGLContext::SetContextOptions(JSContext* cx,
     newOpts.antialias = attributes.mAntialias.Value();
   }
 
+  if (attributes.mColorSpace.WasPassed()) {
+    newOpts.colorSpace = attributes.mColorSpace.Value();
+  }
+  if (StaticPrefs::gfx_color_management_native_srgb()) {
+    newOpts.ignoreColorSpace = false;
+  }
+
   // Don't do antialiasing if we've disabled MSAA.
   if (!StaticPrefs::webgl_msaa_samples()) {
     newOpts.antialias = false;
   }
+
+  // -
 
   if (mInitialOptions && *mInitialOptions != newOpts) {
     // Err if the options asked for aren't the same as what they were
@@ -4197,6 +4216,15 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
         } else {
           return Some(
               std::string{"SurfaceDescriptorBuffer data is not Shmem."});
+        }
+      }
+
+      if (sdType == layers::SurfaceDescriptor::TSurfaceDescriptorD3D10) {
+        const auto& sdD3D = sd.get_SurfaceDescriptorD3D10();
+        const auto& inProcess = mNotLost->inProcess;
+        if (sdD3D.gpuProcessTextureId().isSome() && inProcess) {
+          return Some(
+              std::string{"gpuProcessTextureId works only in GPU process."});
         }
       }
 

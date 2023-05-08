@@ -130,9 +130,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
     this.traits = {
       networkMonitor: true,
-
-      // @backward-compat { version 100 } Expose the supported resources.
-      // This traits should be kept, but we can later remove the backward compat comment.
       resources: supportedResources,
 
       // @backward-compat { version 84 } Expose the pref value to the client.
@@ -142,9 +139,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
             "dom.worker.console.dispatch_events_to_main_thread"
           )
         : true,
-      // @backward-compat { version 86 } ThreadActor.attach no longer pauses the thread,
-      //                                 so that we no longer have to resume.
-      noPauseOnThreadActorAttach: true,
     };
   },
 
@@ -290,7 +284,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
    *
    * See BrowserTabList.prototype.getTab for the definition of these IDs.
    */
-  getTab: async function({ browserId, outerWindowID, tabId }) {
+  getTab: async function({ browserId }) {
     const tabList = this._parameters.tabList;
     if (!tabList) {
       throw {
@@ -309,8 +303,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     try {
       descriptorActor = await tabList.getTab({
         browserId,
-        outerWindowID,
-        tabId,
       });
     } catch (error) {
       if (error.error) {

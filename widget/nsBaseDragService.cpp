@@ -259,16 +259,22 @@ NS_IMETHODIMP nsBaseDragService::SetDragEndPointForTests(int32_t aScreenX,
   MOZ_ASSERT(mDoingDrag);
   MOZ_ASSERT(mSourceDocument);
   MOZ_ASSERT(mSessionIsSynthesizedForTests);
+
   if (!mDoingDrag || !mSourceDocument || !mSessionIsSynthesizedForTests) {
     return NS_ERROR_FAILURE;
   }
-  nsPresContext* presContext = mSourceDocument->GetPresContext();
-  if (NS_WARN_IF(!presContext)) {
+  nsPresContext* pc = mSourceDocument->GetPresContext();
+  if (NS_WARN_IF(!pc)) {
     return NS_ERROR_FAILURE;
   }
-  SetDragEndPoint(
-      LayoutDeviceIntPoint(presContext->CSSPixelsToDevPixels(aScreenX),
-                           presContext->CSSPixelsToDevPixels(aScreenY)));
+  auto p = LayoutDeviceIntPoint::Round(CSSIntPoint(aScreenX, aScreenY) *
+                                       pc->CSSToDevPixelScale());
+  // p is screen-relative, and we want them to be top-level-widget-relative.
+  if (nsCOMPtr<nsIWidget> widget = pc->GetRootWidget()) {
+    p -= widget->WidgetToScreenOffset();
+    p += widget->WidgetToTopLevelWidgetOffset();
+  }
+  SetDragEndPoint(p);
   return NS_OK;
 }
 
@@ -388,8 +394,7 @@ nsBaseDragService::InvokeDragSessionWithImage(
   mSourceWindowContext =
       aDOMNode ? aDOMNode->OwnerDoc()->GetWindowContext() : nullptr;
 
-  mScreenPosition.x = aDragEvent->ScreenX(CallerType::System);
-  mScreenPosition.y = aDragEvent->ScreenY(CallerType::System);
+  mScreenPosition = aDragEvent->ScreenPoint(CallerType::System);
   mInputSource = aDragEvent->MozInputSource();
 
   // If dragging within a XUL tree and no custom drag image was
@@ -437,8 +442,7 @@ nsBaseDragService::InvokeDragSessionWithRemoteImage(
   mImageOffset = CSSIntPoint(0, 0);
   mSourceWindowContext = mDragStartData->GetSourceWindowContext();
 
-  mScreenPosition.x = aDragEvent->ScreenX(CallerType::System);
-  mScreenPosition.y = aDragEvent->ScreenY(CallerType::System);
+  mScreenPosition = aDragEvent->ScreenPoint(CallerType::System);
   mInputSource = aDragEvent->MozInputSource();
 
   nsresult rv = InvokeDragSession(
@@ -656,6 +660,9 @@ nsBaseDragService::FireDragEventAtSource(EventMessage aEventMessage,
   event.mInputSource = mInputSource;
   if (aEventMessage == eDragEnd) {
     event.mRefPoint = mEndDragPoint;
+    if (widget) {
+      event.mRefPoint -= widget->WidgetToTopLevelWidgetOffset();
+    }
     event.mUserCancelled = mUserCancelled;
   }
   event.mModifiers = aKeyModifiers;
@@ -683,7 +690,7 @@ nsBaseDragService::DragMoved(int32_t aX, int32_t aY) {
           RoundedToInt(LayoutDeviceIntPoint(aX, aY) /
                        frame->PresContext()->CSSToDevPixelScale()) -
           mImageOffset;
-      (static_cast<nsMenuPopupFrame*>(frame))->MoveTo(cssPos, true);
+      static_cast<nsMenuPopupFrame*>(frame)->MoveTo(cssPos, true);
     }
   }
 
@@ -744,11 +751,9 @@ nsresult nsBaseDragService::DrawDrag(nsINode* aDOMNode,
   }
 
   // convert mouse position to dev pixels of the prescontext
-  CSSIntPoint screenPosition(aScreenPosition);
-  screenPosition.x -= mImageOffset.x;
-  screenPosition.y -= mImageOffset.y;
-  LayoutDeviceIntPoint screenPoint =
-      ConvertToUnscaledDevPixels(*aPresContext, screenPosition);
+  const CSSIntPoint screenPosition = aScreenPosition - mImageOffset;
+  const auto screenPoint = LayoutDeviceIntPoint::Round(
+      screenPosition * (*aPresContext)->CSSToDevPixelScale());
   aScreenDragRect->MoveTo(screenPoint.x, screenPoint.y);
 
   // check if drag images are disabled
@@ -920,15 +925,6 @@ nsresult nsBaseDragService::DrawDragForImage(
   }
 
   return result;
-}
-
-LayoutDeviceIntPoint nsBaseDragService::ConvertToUnscaledDevPixels(
-    nsPresContext* aPresContext, CSSIntPoint aScreenPosition) {
-  int32_t adj =
-      aPresContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom();
-  return LayoutDeviceIntPoint(
-      nsPresContext::CSSPixelsToAppUnits(aScreenPosition.x) / adj,
-      nsPresContext::CSSPixelsToAppUnits(aScreenPosition.y) / adj);
 }
 
 NS_IMETHODIMP

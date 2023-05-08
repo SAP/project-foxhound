@@ -8,8 +8,10 @@
 $break-point-small: 570px;
 $break-point-medium: 610px;
 $break-point-large: 866px;
+$container-min-width: 700px;
 $logo-size: 80px;
 $main-section-width: 504px;
+$noodle-buffer: 106px;
 
 html {
   height: 100%;
@@ -35,16 +37,12 @@ body {
 :root {
   &[dialogroot] {
     background-color: transparent;
-    min-width: $main-section-width;
-    overflow: hidden;
 
     body {
       padding: 0;
     }
 
     .onboardingContainer {
-      overflow: visible;
-
       &:dir(rtl) {
         transform: unset;
       }
@@ -55,22 +53,21 @@ body {
         &:dir(rtl) {
           transform: unset;
         }
-
-        &.with-noodles {
-          // Adjust for noodles partially extending out from the square modal
-          $noodle-buffer: 106px;
-          min-width: $main-section-width + $noodle-buffer;
-          min-height: $main-section-width + $noodle-buffer;
-        }
-
       }
     }
   }
 }
 
+// Styling for about:welcome background container
+.welcome-container {
+  .onboardingContainer {
+    min-width: $container-min-width;
+    min-height: $break-point-medium;
+  }
+}
+
 .onboardingContainer {
   text-align: center;
-  overflow-x: auto;
   height: 100vh;
 
   @media (prefers-contrast: more) {
@@ -197,6 +194,20 @@ body {
     &:dir(rtl) {
       transform: rotateY(180deg);
     }
+
+    &[pos='center'] {
+      min-width: $main-section-width;
+
+      &.with-noodles {
+        // Adjust for noodles partially extending out from the square modal
+        min-width: $main-section-width + $noodle-buffer;
+        min-height: $main-section-width + $noodle-buffer;
+
+        .section-main {
+          height: $main-section-width;
+        }
+      }
+    }
   }
 
   .brand-logo {
@@ -236,11 +247,11 @@ body {
     h1,
     h2 {
       color: var(--in-content-page-color);
+      line-height: 1.5;
     }
 
     h1 {
       font-size: 24px;
-      line-height: 1.5;
       font-weight: 600;
       margin: 0 6px;
       letter-spacing: -0.02em;
@@ -251,40 +262,33 @@ body {
       font-size: 16px;
       font-weight: normal;
       margin: 10px 6px 0;
-      line-height: 24px;
       max-width: 750px;
       letter-spacing: -0.01em;
-    }
-
-    &.larger {
-      h1 {
-        font-size: 36px;
-      }
-    }
-
-    &.slim {
-      h1 {
-        font-weight: 276;
-      }
     }
 
     &.fancy {
       h1 {
         background-image: linear-gradient(90deg, #9059FF, #FF4AA2, #FF8C00, #FF4AA2, #9059FF);
-        background-size: 400% auto;
         background-clip: text;
-        animation: shine 50s linear infinite;
+        background-size: 200%;
         @media (prefers-contrast: no-preference) {
-          -webkit-text-fill-color: transparent;
+          color: transparent;
         }
         @media (prefers-color-scheme: dark) {
           background-image: linear-gradient(90deg, #C688FF, #FF84C0, #FFBD4F, #FF84C0, #C688FF);
         }
       }
+    }
+
+    &.shine {
+      h1 {
+        animation: shine 50s linear infinite;
+        background-size: 400%;
+      }
 
       @keyframes shine {
         to {
-          background-position: 400% center;
+          background-position: 400%;
         }
       }
     }
@@ -839,6 +843,7 @@ body {
         background-size: contain;
         background-position: center;
         box-shadow: none;
+        border: 0;
       }
 
       &:not(:first-child) {
@@ -886,7 +891,7 @@ body {
 
     &.top {
       justify-content: end;
-      padding-inline-end: 30px;
+      padding-inline-end: min(150px, 500px - 70vh);
       padding-top: 4px;
       position: absolute;
       top: 10px;
@@ -897,18 +902,7 @@ body {
         color: #FFF;
 
         &:hover {
-          background-color: #5B5B66;
           color: #E0E0E6;
-        }
-
-        @media (max-height: $break-point-small) {
-          color: var(--in-content-link-color);
-
-          &:hover {
-            background-color: #5B5B66;
-            color: var(--in-content-link-color-hover);
-            text-decoration: underline;
-          }
         }
       }
     }
@@ -1047,7 +1041,7 @@ body {
 
   [pos='corner'] {
     background-color: transparent;
-    min-width: 700px;
+    min-width: $container-min-width;
 
     .section-left {
       display: flex;
@@ -1105,6 +1099,7 @@ body {
         width: 350px;
         bottom: 0;
         inset-inline-end: 30px;
+        overflow: visible;
         transition: var(--transition);
       }
 
@@ -1404,9 +1399,5 @@ body {
         transition-delay: 0.4s;
       }
     }
-  }
-
-  .screen.with-noodles:not(.corner) .section-main {
-    height: $main-section-width;
   }
 }

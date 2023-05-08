@@ -35,6 +35,39 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://mochitest.youtube.com/*browser/browser/extensions/pictureinpicture/tests/browser/test-mock-wrapper.html": {
         videoWrapperScriptPath: "video-wrappers/mock-wrapper.js",
       },
+      "https://mochitest.youtube.com/*browser/browser/extensions/pictureinpicture/tests/browser/test-toggle-visibility.html": {
+        videoWrapperScriptPath: "video-wrappers/mock-wrapper.js",
+      },
+    },
+
+    airmozilla: {
+      "https://*.mozilla.hosted.panopto.com/*": {
+        videoWrapperScriptPath: "video-wrappers/airmozilla.js",
+      },
+    },
+
+    dailymotion: {
+      "https://*.dailymotion.com/*": {
+        videoWrapperScriptPath: "video-wrappers/dailymotion.js",
+      },
+    },
+
+    funimation: {
+      "https://*.funimation.com/*": {
+        videoWrapperScriptPath: "video-wrappers/funimation.js",
+      },
+    },
+
+    hotstar: {
+      "https://*.hotstar.com/*": {
+        videoWrapperScriptPath: "video-wrappers/hotstar.js",
+      },
+    },
+
+    hulu: {
+      "https://www.hulu.com/watch/*": {
+        videoWrapperScriptPath: "video-wrappers/hulu.js",
+      },
     },
 
     instagram: {
@@ -55,6 +88,27 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://*.netflix.com/title*": { policy: TOGGLE_POLICIES.HIDDEN },
       "https://*.netflix.com/notification*": { policy: TOGGLE_POLICIES.HIDDEN },
       "https://*.netflix.com/search*": { policy: TOGGLE_POLICIES.HIDDEN },
+    },
+
+    piped: {
+      "https://*.piped.kavin.rocks/*": {
+        videoWrapperScriptPath: "video-wrappers/piped.js",
+      },
+      "https://*.piped.silkky.cloud/*": {
+        videoWrapperScriptPath: "video-wrappers/piped.js",
+      },
+    },
+
+    sonyliv: {
+      "https://*.sonyliv.com/*": {
+        videoWrapperScriptPath: "video-wrappers/sonyliv.js",
+      },
+    },
+
+    tubi: {
+      "https://*.tubitv.com/*": {
+        videoWrapperScriptPath: "video-wrappers/tubi.js",
+      },
     },
 
     twitch: {

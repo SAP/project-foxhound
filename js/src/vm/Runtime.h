@@ -322,8 +322,6 @@ struct JSRuntime {
   /* Call this to accumulate use counter data. */
   js::MainThreadData<JSSetUseCounterCallback> useCounterCallback;
 
-  js::MainThreadData<JSSourceElementCallback> sourceElementCallback;
-
  public:
   // Accumulates data for Firefox telemetry. |id| is the ID of a JS_TELEMETRY_*
   // histogram. |key| provides an additional key to identify the histogram.
@@ -334,9 +332,6 @@ struct JSRuntime {
 
   void setTelemetryCallback(JSRuntime* rt,
                             JSAccumulateTelemetryDataCallback callback);
-
-  void setSourceElementCallback(JSRuntime* rt,
-                                JSSourceElementCallback callback);
 
   // Sets the use counter for a specific feature, measuring the presence or
   // absence of usage of a feature on a specific web page and document which
@@ -468,30 +463,6 @@ struct JSRuntime {
  public:
   const JSClass* maybeWindowProxyClass() const { return windowProxyClass_; }
   void setWindowProxyClass(const JSClass* clasp) { windowProxyClass_ = clasp; }
-
- private:
-  js::WriteOnceData<const JSClass*> abortSignalClass_;
-  js::WriteOnceData<JS::AbortSignalIsAborted> abortSignalIsAborted_;
-
- public:
-  void initPipeToHandling(const JSClass* abortSignalClass,
-                          JS::AbortSignalIsAborted isAborted) {
-    MOZ_ASSERT(abortSignalClass != nullptr,
-               "doesn't make sense for an embedder to provide a null class "
-               "when specifying pipeTo handling");
-    MOZ_ASSERT(isAborted != nullptr, "must pass a valid function pointer");
-
-    abortSignalClass_ = abortSignalClass;
-    abortSignalIsAborted_ = isAborted;
-  }
-
-  const JSClass* maybeAbortSignalClass() const { return abortSignalClass_; }
-
-  bool abortSignalIsAborted(JSObject* obj) {
-    MOZ_ASSERT(abortSignalIsAborted_ != nullptr,
-               "must call initPipeToHandling first");
-    return abortSignalIsAborted_(obj);
-  }
 
  private:
   // List of non-ephemeron weak containers to sweep during
@@ -695,10 +666,16 @@ struct JSRuntime {
                           js::MutableHandleValue vp);
   void assertSelfHostedFunctionHasCanonicalName(js::HandlePropertyName name);
 
+ private:
+  void setSelfHostingStencil(
+      JS::MutableHandle<js::UniquePtr<js::frontend::CompilationInput>> input,
+      RefPtr<js::frontend::CompilationStencil>&& stencil);
+
   //-------------------------------------------------------------------------
   // Locale information
   //-------------------------------------------------------------------------
 
+ public:
   /*
    * Set the default locale for the ECMAScript Internationalization API
    * (Intl.Collator, Intl.NumberFormat, Intl.DateTimeFormat).

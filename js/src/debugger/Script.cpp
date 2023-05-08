@@ -488,8 +488,8 @@ bool DebuggerScript::CallData::getGlobal() {
 
 bool DebuggerScript::CallData::getFormat() {
   args.rval().setString(referent.get().match(
-      [=](BaseScript*&) { return cx->names().js.get(); },
-      [=](WasmInstanceObject*&) { return cx->names().wasm.get(); }));
+      [this](BaseScript*&) { return cx->names().js.get(); },
+      [this](WasmInstanceObject*&) { return cx->names().wasm.get(); }));
   return true;
 }
 
@@ -1509,7 +1509,6 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::GetAliasedDebugVar:
     case JSOp::GetAliasedVar:
     case JSOp::Uint24:
-    case JSOp::ResumeIndex:
     case JSOp::Int32:
     case JSOp::LoopHead:
     case JSOp::GetElem:
@@ -1531,7 +1530,6 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::ToAsyncIter:
     case JSOp::ToPropertyKey:
     case JSOp::Lambda:
-    case JSOp::LambdaArrow:
     case JSOp::PushLexicalEnv:
     case JSOp::PopLexicalEnv:
     case JSOp::FreshenLexicalEnv:
@@ -1589,7 +1587,6 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::AsyncResolve:
     case JSOp::Finally:
     case JSOp::GetRval:
-    case JSOp::Retsub:
     case JSOp::ThrowMsg:
     case JSOp::ForceInterpreter:
 #ifdef ENABLE_RECORD_TUPLE

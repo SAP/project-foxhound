@@ -42,9 +42,9 @@
 #include "wasm/WasmConstants.h"
 #include "wasm/WasmException.h"
 #include "wasm/WasmExprType.h"
+#include "wasm/WasmInstanceData.h"
 #include "wasm/WasmMemory.h"
 #include "wasm/WasmModuleTypes.h"
-#include "wasm/WasmTlsData.h"    // UniqueTlsData
 #include "wasm/WasmTypeDecls.h"  // MutableHandleWasmInstanceObject
 #include "wasm/WasmValType.h"
 #include "wasm/WasmValue.h"
@@ -126,6 +126,8 @@ bool WasmCompilerForAsmJSAvailable(JSContext* cx);
 // otherwise true, with the result in `*isDisabled` and optionally the reason in
 // `*reason`.
 
+bool BaselineDisabledByFeatures(JSContext* cx, bool* isDisabled,
+                                JSStringBuilder* reason = nullptr);
 bool IonDisabledByFeatures(JSContext* cx, bool* isDisabled,
                            JSStringBuilder* reason = nullptr);
 bool CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,

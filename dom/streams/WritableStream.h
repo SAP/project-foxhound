@@ -19,16 +19,14 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
-#ifndef MOZ_DOM_STREAMS
-#  error "Shouldn't be compiling with this header without MOZ_DOM_STREAMS set"
-#endif
-
 namespace mozilla::dom {
 
 class Promise;
 class WritableStreamDefaultController;
 class WritableStreamDefaultWriter;
 class UnderlyingSinkAlgorithmsBase;
+class UniqueMessagePortId;
+class MessagePort;
 
 class WritableStream : public nsISupports, public nsWrapperCache {
  public:
@@ -45,7 +43,6 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   enum class WriterState { Writable, Closed, Erroring, Errored };
 
   // Slot Getter/Setters:
- public:
   bool Backpressure() const { return mBackpressure; }
   void SetBackpressure(bool aBackpressure) { mBackpressure = aBackpressure; }
 
@@ -80,7 +77,7 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   void SetState(const WriterState& aState) { mState = aState; }
 
   JS::Value StoredError() const { return mStoredError; }
-  void SetStoredError(JS::HandleValue aStoredError) {
+  void SetStoredError(JS::Handle<JS::Value> aStoredError) {
     mStoredError = aStoredError;
   }
 
@@ -137,7 +134,15 @@ class WritableStream : public nsISupports, public nsWrapperCache {
   // WritableStreamUpdateBackpressure
   void UpdateBackpressure(bool aBackpressure, ErrorResult& aRv);
 
- public:
+  // [Transferable]
+  // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-steps
+  MOZ_CAN_RUN_SCRIPT bool Transfer(JSContext* aCx,
+                                   UniqueMessagePortId& aPortId);
+  // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-receiving-steps
+  static MOZ_CAN_RUN_SCRIPT bool ReceiveTransfer(
+      JSContext* aCx, nsIGlobalObject* aGlobal, MessagePort& aPort,
+      JS::MutableHandle<JSObject*> aReturnObject);
+
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
   JSObject* WrapObject(JSContext* aCx,
@@ -164,7 +169,7 @@ class WritableStream : public nsISupports, public nsWrapperCache {
  private:
   bool mBackpressure = false;
   RefPtr<Promise> mCloseRequest;
-  MOZ_KNOWN_LIVE RefPtr<WritableStreamDefaultController> mController;
+  RefPtr<WritableStreamDefaultController> mController;
   RefPtr<Promise> mInFlightWriteRequest;
   RefPtr<Promise> mInFlightCloseRequest;
 

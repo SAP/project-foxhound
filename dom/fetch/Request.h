@@ -17,8 +17,7 @@
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/SafeRefPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Headers;
 class InternalHeaders;
@@ -139,7 +138,6 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
   RefPtr<AbortSignal> mSignal;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_Request_h

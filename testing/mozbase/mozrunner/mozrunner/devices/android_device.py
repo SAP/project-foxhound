@@ -262,7 +262,9 @@ def _maybe_update_host_utils(build_obj):
 
     # Compare, prompt, update
     if existing_version and manifest_version:
-        manifest_version = manifest_version[: len(existing_version)]
+        hu_version_regex = "host-utils-([\d\.]*)"
+        manifest_version = float(re.search(hu_version_regex, manifest_version).group(1))
+        existing_version = float(re.search(hu_version_regex, existing_version).group(1))
         if existing_version < manifest_version:
             _log_info("Your host utilities are out of date!")
             _log_info(
@@ -652,6 +654,7 @@ class AndroidEmulator(object):
         if os.path.exists(self.avd_path):
             _log_debug("AVD found at %s" % self.avd_path)
             return True
+        _log_warning("Could not find AVD at %s" % self.avd_path)
         return False
 
     def start(self, gpu_arg=None):

@@ -47,7 +47,7 @@
         <div class="wordmark"></div>
       </div>
       <div class="search-inner-wrapper">
-        <button id="search-handoff-button" class="search-handoff-button" tabindex="-1">
+        <button id="search-handoff-button" class="search-handoff-button" tabindex="-1" aria-hidden="true">
           <div class="fake-textbox"></div>
           <input id="fake-editable" class="fake-editable" tabindex="-1" aria-hidden="true" />
           <div class="fake-caret"></div>
@@ -62,13 +62,13 @@
 
     <div class="promo" hidden>
       <div class="promo-image-large">
-        <img src="" alt="" />
+        <img src="" alt="" role="presentation" />
       </div>
       <div class="promo-content">
         <h1 id="promo-header"></h1>
         <p id="private-browsing-vpn-text" class="vpn-promo"></p>
         <div class="promo-cta">
-          <button id="private-browsing-vpn-link" class="vpn-promo button"></button>
+          <button id="private-browsing-vpn-link" class="vpn-promo primary button"></button>
           <div class="promo-image-small">
             <img src="" alt="" />
           </div>

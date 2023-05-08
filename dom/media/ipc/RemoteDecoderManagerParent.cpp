@@ -15,12 +15,17 @@
 #include "RemoteVideoDecoder.h"
 #include "VideoUtils.h"  // for MediaThreadType
 #include "mozilla/RDDParent.h"
+#include "mozilla/ipc/UtilityProcessChild.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/VideoBridgeChild.h"
 #include "mozilla/layers/VideoBridgeParent.h"
+
+#ifdef MOZ_WMF
+#  include "MFMediaEngineParent.h"
+#endif
 
 namespace mozilla {
 
@@ -70,7 +75,7 @@ bool RemoteDecoderManagerParent::StartupThreads() {
     return false;
   }
 
-  sRemoteDecoderManagerParentThread = new TaskQueue(
+  sRemoteDecoderManagerParentThread = TaskQueue::Create(
       GetMediaThreadPool(MediaThreadType::SUPERVISOR), "RemVidParent");
   if (XRE_IsGPUProcess()) {
     MOZ_ALWAYS_SUCCEEDS(
@@ -117,6 +122,7 @@ PDMFactory& RemoteDecoderManagerParent::EnsurePDMFactory() {
 bool RemoteDecoderManagerParent::CreateForContent(
     Endpoint<PRemoteDecoderManagerParent>&& aEndpoint) {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_RDD ||
+             XRE_GetProcessType() == GeckoProcessType_Utility ||
              XRE_GetProcessType() == GeckoProcessType_GPU);
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -159,17 +165,21 @@ RemoteDecoderManagerParent::RemoteDecoderManagerParent(
     nsISerialEventTarget* aThread)
     : mThread(aThread) {
   MOZ_COUNT_CTOR(RemoteDecoderManagerParent);
-  auto& registrar = XRE_IsGPUProcess()
-                        ? GPUParent::GetSingleton()->AsyncShutdownService()
-                        : RDDParent::GetSingleton()->AsyncShutdownService();
+  auto& registrar =
+      XRE_IsGPUProcess() ? GPUParent::GetSingleton()->AsyncShutdownService()
+      : XRE_IsUtilityProcess()
+          ? UtilityProcessChild::GetSingleton()->AsyncShutdownService()
+          : RDDParent::GetSingleton()->AsyncShutdownService();
   registrar.Register(this);
 }
 
 RemoteDecoderManagerParent::~RemoteDecoderManagerParent() {
   MOZ_COUNT_DTOR(RemoteDecoderManagerParent);
-  auto& registrar = XRE_IsGPUProcess()
-                        ? GPUParent::GetSingleton()->AsyncShutdownService()
-                        : RDDParent::GetSingleton()->AsyncShutdownService();
+  auto& registrar =
+      XRE_IsGPUProcess() ? GPUParent::GetSingleton()->AsyncShutdownService()
+      : XRE_IsUtilityProcess()
+          ? UtilityProcessChild::GetSingleton()->AsyncShutdownService()
+          : RDDParent::GetSingleton()->AsyncShutdownService();
   registrar.Deregister(this);
 }
 
@@ -181,10 +191,11 @@ void RemoteDecoderManagerParent::ActorDestroy(
 PRemoteDecoderParent* RemoteDecoderManagerParent::AllocPRemoteDecoderParent(
     const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
     const CreateDecoderParams::OptionSet& aOptions,
-    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier) {
+    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
+    const Maybe<uint64_t>& aMediaEngineId) {
   RefPtr<TaskQueue> decodeTaskQueue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
-                    "RemoteVideoDecoderParent::mDecodeTaskQueue");
+      TaskQueue::Create(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "RemoteVideoDecoderParent::mDecodeTaskQueue");
 
   if (aRemoteDecoderInfo.type() ==
       RemoteDecoderInfoIPDL::TVideoDecoderInfoIPDL) {
@@ -192,13 +203,14 @@ PRemoteDecoderParent* RemoteDecoderManagerParent::AllocPRemoteDecoderParent(
         aRemoteDecoderInfo.get_VideoDecoderInfoIPDL();
     return new RemoteVideoDecoderParent(
         this, decoderInfo.videoInfo(), decoderInfo.framerate(), aOptions,
-        aIdentifier, sRemoteDecoderManagerParentThread, decodeTaskQueue);
+        aIdentifier, sRemoteDecoderManagerParentThread, decodeTaskQueue,
+        aMediaEngineId);
   }
 
   if (aRemoteDecoderInfo.type() == RemoteDecoderInfoIPDL::TAudioInfo) {
     return new RemoteAudioDecoderParent(
         this, aRemoteDecoderInfo.get_AudioInfo(), aOptions,
-        sRemoteDecoderManagerParentThread, decodeTaskQueue);
+        sRemoteDecoderManagerParentThread, decodeTaskQueue, aMediaEngineId);
   }
 
   MOZ_CRASH("unrecognized type of RemoteDecoderInfoIPDL union");
@@ -209,6 +221,23 @@ bool RemoteDecoderManagerParent::DeallocPRemoteDecoderParent(
     PRemoteDecoderParent* actor) {
   RemoteDecoderParent* parent = static_cast<RemoteDecoderParent*>(actor);
   parent->Destroy();
+  return true;
+}
+
+PMFMediaEngineParent* RemoteDecoderManagerParent::AllocPMFMediaEngineParent() {
+#ifdef MOZ_WMF
+  return new MFMediaEngineParent(this);
+#else
+  return nullptr;
+#endif
+}
+
+bool RemoteDecoderManagerParent::DeallocPMFMediaEngineParent(
+    PMFMediaEngineParent* actor) {
+#ifdef MOZ_WMF
+  MFMediaEngineParent* parent = static_cast<MFMediaEngineParent*>(actor);
+  parent->Destroy();
+#endif
   return true;
 }
 

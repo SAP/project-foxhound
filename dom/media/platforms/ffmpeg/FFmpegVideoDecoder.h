@@ -53,7 +53,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   ~FFmpegVideoDecoder();
 
   RefPtr<InitPromise> Init() override;
-  void InitCodecContext() override;
+  void InitCodecContext() REQUIRES(sMutex) override;
   nsCString GetDescriptionName() const override {
 #ifdef USING_MOZFFVPX
     return "ffvpx video decoder"_ns;
@@ -108,6 +108,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
     nsAutoCString dummy;
     return IsHardwareAccelerated(dummy);
   }
+  void UpdateDecodeTimes(TimeStamp aDecodeStart);
 
 #if LIBAVCODEC_VERSION_MAJOR >= 57 && LIBAVUTIL_VERSION_MAJOR >= 56
   layers::TextureClient* AllocateTextureClientForImage(
@@ -144,6 +145,16 @@ class FFmpegVideoDecoder<LIBAV_VER>
   RefPtr<KnowsCompositor> mImageAllocator;
   RefPtr<ImageContainer> mImageContainer;
   VideoInfo mInfo;
+  int mDecodedFrames;
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+  int mDecodedFramesLate;
+  // Tracks when decode time of recent frame and averange decode time of
+  // previous frames is bigger than frame interval,
+  // i.e. we fail to decode in time.
+  // We switch to SW decode when we hit HW_DECODE_LATE_FRAMES treshold.
+  int mMissedDecodeInAverangeTime;
+#endif
+  float mAverangeDecodeTime;
 
   class PtsCorrectionContext {
    public:

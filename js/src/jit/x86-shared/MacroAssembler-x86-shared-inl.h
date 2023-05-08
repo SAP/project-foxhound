@@ -9,6 +9,8 @@
 
 #include "jit/x86-shared/MacroAssembler-x86-shared.h"
 
+#include "mozilla/MathAlgorithms.h"
+
 namespace js {
 namespace jit {
 
@@ -1228,7 +1230,7 @@ void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {
 //
 // For the time being, we always choose the integer interpretation when we are
 // forced to choose blind, but whether that is right or wrong depends on the
-// application.  This applies to moveSimd128, zeroSimd128, loadConstantSimd128,
+// application.  This applies to moveSimd128, loadConstantSimd128,
 // loadUnalignedSimd128, and storeUnalignedSimd128, at least.
 //
 // SSE4.1 or better is assumed.
@@ -1242,10 +1244,6 @@ void MacroAssembler::moveSimd128(FloatRegister src, FloatRegister dest) {
 }
 
 // Constants.  See comments above regarding integer operation.
-
-void MacroAssembler::zeroSimd128(FloatRegister dest) {
-  MacroAssemblerX86Shared::zeroSimd128Int(dest);
-}
 
 void MacroAssembler::loadConstantSimd128(const SimdConstant& v,
                                          FloatRegister dest) {
@@ -1512,6 +1510,13 @@ void MacroAssembler::reverseInt64x2(FloatRegister src, FloatRegister dest) {
   vpshufbSimd128(SimdConstant::CreateX16((const int8_t*)lanes), src, dest);
 }
 
+// Any lane true, ie any bit set
+
+void MacroAssembler::anyTrueSimd128(FloatRegister src, Register dest) {
+  vptest(src, src);
+  emitSetRegisterIf(Condition::NonZero, dest);
+}
+
 // All lanes true
 
 void MacroAssembler::allTrueInt8x16(FloatRegister src, Register dest) {
@@ -1521,11 +1526,9 @@ void MacroAssembler::allTrueInt8x16(FloatRegister src, Register dest) {
   // Set FFh if byte==0 otherwise 00h
   // Operand ordering constraint: lhs==output
   vpcmpeqb(Operand(src), xtmp, xtmp);
-  // Get all bytes' high bits
-  vpmovmskb(xtmp, dest);
-  // Now set dest to 1 if it is zero, otherwise to zero.
-  testl(dest, dest);
-  emitSetRegisterIfZero(dest);
+  // Check if xtmp is 0.
+  vptest(xtmp, xtmp);
+  emitSetRegisterIf(Condition::Zero, dest);
 }
 
 void MacroAssembler::allTrueInt16x8(FloatRegister src, Register dest) {
@@ -1535,11 +1538,9 @@ void MacroAssembler::allTrueInt16x8(FloatRegister src, Register dest) {
   // Set FFFFh if word==0 otherwise 0000h
   // Operand ordering constraint: lhs==output
   vpcmpeqw(Operand(src), xtmp, xtmp);
-  // Get all bytes' high bits
-  vpmovmskb(xtmp, dest);
-  // Now set dest to 1 if it is zero, otherwise to zero.
-  testl(dest, dest);
-  emitSetRegisterIfZero(dest);
+  // Check if xtmp is 0.
+  vptest(xtmp, xtmp);
+  emitSetRegisterIf(Condition::Zero, dest);
 }
 
 void MacroAssembler::allTrueInt32x4(FloatRegister src, Register dest) {
@@ -1549,11 +1550,9 @@ void MacroAssembler::allTrueInt32x4(FloatRegister src, Register dest) {
   // Set FFFFFFFFh if doubleword==0 otherwise 00000000h
   // Operand ordering constraint: lhs==output
   vpcmpeqd(Operand(src), xtmp, xtmp);
-  // Get all bytes' high bits
-  vpmovmskb(xtmp, dest);
-  // Now set dest to 1 if it is zero, otherwise to zero.
-  testl(dest, dest);
-  emitSetRegisterIfZero(dest);
+  // Check if xtmp is 0.
+  vptest(xtmp, xtmp);
+  emitSetRegisterIf(Condition::Zero, dest);
 }
 
 void MacroAssembler::allTrueInt64x2(FloatRegister src, Register dest) {
@@ -1563,11 +1562,9 @@ void MacroAssembler::allTrueInt64x2(FloatRegister src, Register dest) {
   // Set FFFFFFFFFFFFFFFFh if quadword==0 otherwise 0000000000000000h
   // Operand ordering constraint: lhs==output
   vpcmpeqq(Operand(src), xtmp, xtmp);
-  // Get all bytes' high bits
-  vpmovmskb(xtmp, dest);
-  // Now set dest to 1 if it is zero, otherwise to zero.
-  testl(dest, dest);
-  emitSetRegisterIfZero(dest);
+  // Check if xtmp is 0.
+  vptest(xtmp, xtmp);
+  emitSetRegisterIf(Condition::Zero, dest);
 }
 
 // Bitmask
@@ -1750,6 +1747,84 @@ void MacroAssembler::mulInt64x2(FloatRegister lhs, FloatRegister rhs,
   vpaddq(Operand(temp2), dest, dest);      // dest =
                                            //    <(DG+CH)_low+CG_high CG_low>
                                            //    <(BE+AF)_low+AE_high AE_low>
+}
+
+void MacroAssembler::mulInt64x2(FloatRegister lhs, const SimdConstant& rhs,
+                                FloatRegister dest, FloatRegister temp) {
+  // Check if we can specialize that to less than eight instructions
+  // (in comparison with the above mulInt64x2 version).
+  const int64_t* c = static_cast<const int64_t*>(rhs.bytes());
+  const int64_t val = c[0];
+  if (val == c[1]) {
+    switch (mozilla::CountPopulation64(val)) {
+      case 0:  // val == 0
+        vpxor(Operand(dest), dest, dest);
+        return;
+      case 64:  // val == -1
+        negInt64x2(lhs, dest);
+        return;
+      case 1:  // val == power of 2
+        if (val == 1) {
+          moveSimd128Int(lhs, dest);
+        } else {
+          lhs = moveSimd128IntIfNotAVX(lhs, dest);
+          vpsllq(Imm32(mozilla::CountTrailingZeroes64(val)), lhs, dest);
+        }
+        return;
+      case 2: {
+        // Constants with 2 bits set, such as 3, 5, 10, etc.
+        int i0 = mozilla::CountTrailingZeroes64(val);
+        int i1 = mozilla::CountTrailingZeroes64(val & (val - 1));
+        FloatRegister lhsForTemp = moveSimd128IntIfNotAVX(lhs, temp);
+        vpsllq(Imm32(i1), lhsForTemp, temp);
+        lhs = moveSimd128IntIfNotAVX(lhs, dest);
+        if (i0 > 0) {
+          vpsllq(Imm32(i0), lhs, dest);
+          lhs = dest;
+        }
+        vpaddq(Operand(temp), lhs, dest);
+        return;
+      }
+      case 63: {
+        // Some constants with 1 bit unset, such as -2, -3, -5, etc.
+        FloatRegister lhsForTemp = moveSimd128IntIfNotAVX(lhs, temp);
+        vpsllq(Imm32(mozilla::CountTrailingZeroes64(~val)), lhsForTemp, temp);
+        negInt64x2(lhs, dest);
+        vpsubq(Operand(temp), dest, dest);
+        return;
+      }
+    }
+  }
+
+  // lhs = <D C> <B A>
+  // rhs = <H G> <F E>
+  // result = <(DG+CH)_low+CG_high CG_low> <(BE+AF)_low+AE_high AE_low>
+
+  if ((c[0] >> 32) == 0 && (c[1] >> 32) == 0) {
+    // If the H and F == 0, simplify calculations:
+    //   result = <DG_low+CG_high CG_low> <BE_low+AE_high AE_low>
+    const int64_t rhsShifted[2] = {c[0] << 32, c[1] << 32};
+    FloatRegister lhsForTemp = moveSimd128IntIfNotAVX(lhs, temp);
+    vpmulldSimd128(SimdConstant::CreateSimd128(rhsShifted), lhsForTemp, temp);
+    vpmuludqSimd128(rhs, lhs, dest);
+    vpaddq(Operand(temp), dest, dest);
+    return;
+  }
+
+  const int64_t rhsSwapped[2] = {
+      static_cast<int64_t>(static_cast<uint64_t>(c[0]) >> 32) | (c[0] << 32),
+      static_cast<int64_t>(static_cast<uint64_t>(c[1]) >> 32) | (c[1] << 32),
+  };  // rhsSwapped = <G H> <E F>
+  FloatRegister lhsForTemp = moveSimd128IntIfNotAVX(lhs, temp);
+  vpmulldSimd128(SimdConstant::CreateSimd128(rhsSwapped), lhsForTemp,
+                 temp);                // temp = <DG CH> <BE AF>
+  vphaddd(Operand(temp), temp, temp);  // temp = <xx xx> <DG+CH BE+AF>
+  vpmovzxdq(Operand(temp), temp);      // temp = <0 DG+CG> <0 BE+AF>
+  vpmuludqSimd128(rhs, lhs, dest);     // dest = <CG_high CG_low>
+                                       //        <AE_high AE_low>
+  vpsllq(Imm32(32), temp, temp);       // temp = <(DG+CH)_low 0>
+                                       //        <(BE+AF)_low 0>
+  vpaddq(Operand(temp), dest, dest);
 }
 
 // Code generation from the PR: https://github.com/WebAssembly/simd/pull/376.
@@ -2738,6 +2813,27 @@ void MacroAssembler::widenDotInt16x8(FloatRegister lhs, const SimdConstant& rhs,
                                      FloatRegister dest) {
   binarySimd128(lhs, rhs, dest, &MacroAssembler::vpmaddwd,
                 &MacroAssembler::vpmaddwdSimd128);
+}
+
+void MacroAssembler::dotInt8x16Int7x16(FloatRegister lhs, FloatRegister rhs,
+                                       FloatRegister dest) {
+  ScratchSimd128Scope scratch(*this);
+  if (lhs == dest && !HasAVX()) {
+    moveSimd128Int(lhs, scratch);
+    lhs = scratch;
+  }
+  rhs = moveSimd128IntIfNotAVX(rhs, dest);
+  vpmaddubsw(lhs, rhs, dest);
+}
+
+void MacroAssembler::dotInt8x16Int7x16ThenAdd(FloatRegister lhs,
+                                              FloatRegister rhs,
+                                              FloatRegister dest) {
+  ScratchSimd128Scope scratch(*this);
+  rhs = moveSimd128IntIfNotAVX(rhs, scratch);
+  vpmaddubsw(lhs, rhs, scratch);
+  vpmaddwdSimd128(SimdConstant::SplatX8(1), scratch, scratch);
+  vpaddd(Operand(scratch), dest, dest);
 }
 
 // Rounding

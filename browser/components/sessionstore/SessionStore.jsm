@@ -1081,6 +1081,7 @@ var SessionStoreInternal = {
           // Non-SHIP code calls this when the frame script is unloaded.
           this.onFinalTabStateUpdateComplete(aSubject);
         }
+        this._notifyOfClosedObjectsChange();
         break;
     }
   },
@@ -1376,8 +1377,11 @@ var SessionStoreInternal = {
 
         this.onTabStateUpdate(browser.permanentKey, browser.ownerGlobal, data);
 
+        // SHIP code will call this when it receives "browser-shutdown-tabstate-updated"
         if (data.isFinal) {
-          this.onFinalTabStateUpdateComplete(browser);
+          if (!Services.appinfo.sessionHistoryInParent) {
+            this.onFinalTabStateUpdateComplete(browser);
+          }
         } else if (data.flushID) {
           // This is an update kicked off by an async flush request. Notify the
           // TabStateFlusher so that it can finish the request and notify its
@@ -2531,6 +2535,9 @@ var SessionStoreInternal = {
     if (!isPrivateWindow && tabState.isPrivate) {
       return;
     }
+    if (aTab == aWindow.gFirefoxViewTab) {
+      return;
+    }
 
     let permanentKey = aTab.linkedBrowser.permanentKey;
 
@@ -2588,19 +2595,30 @@ var SessionStoreInternal = {
     gBrowser.tabContainer.updateTabIndicatorAttr(aTab);
 
     let { userTypedValue = null, userTypedClear = 0 } = browser;
+    let hasStartedLoad = browser.didStartLoadSinceLastUserTyping();
 
     let cacheState = TabStateCache.get(browser.permanentKey);
 
-    // cache the userTypedValue either if the there is no cache state at all
-    // (e.g. if it was already discarded before we got to cache its state) or
+    // Cache the browser userTypedValue either if there is no cache state
+    // at all (e.g. if it was already discarded before we got to cache its state)
     // or it may have been created but not including a userTypedValue (e.g.
     // for a private tab we will cache `isPrivate: true` as soon as the tab
     // is opened).
     //
-    // In both cases we want to be sure that we are caching the userTypedValue
-    // if the browser element has one, otherwise the lazy tab will not be
-    // restored with the expected url once activated again (e.g. See Bug 1724205).
-    if (userTypedValue && !cacheState?.userTypedValue) {
+    // But only if:
+    //
+    // - if there is no cache state yet (which is unfortunately required
+    //   for tabs discarded immediately after creation by extensions, see
+    //   Bug 1422588).
+    //
+    // - or the user typed value was already being loaded (otherwise the lazy
+    //   tab will not be restored with the expected url once activated again,
+    //   see Bug 1724205).
+    let shouldUpdateCacheState =
+      userTypedValue &&
+      (!cacheState || (hasStartedLoad && !cacheState.userTypedValue));
+
+    if (shouldUpdateCacheState) {
       // Discard was likely called before state can be cached.  Update
       // the persistent tab state cache with browser information so a
       // restore will be successful.  This information is necessary for
@@ -4100,6 +4118,9 @@ var SessionStoreInternal = {
 
     // update the internal state data for this window
     for (let tab of tabs) {
+      if (tab == aWindow.gFirefoxViewTab) {
+        continue;
+      }
       let tabData = TabState.collect(tab, TAB_CUSTOM_VALUES.get(tab));
       tabMap.set(tab, tabData);
       tabsData.push(tabData);
@@ -4330,7 +4351,7 @@ var SessionStoreInternal = {
    * @returns a flag indicates whether a connection has been made
    */
   prepareConnectionToHost(tab, url) {
-    if (!url.startsWith("about:")) {
+    if (url && !url.startsWith("about:")) {
       let principal = Services.scriptSecurityManager.createNullPrincipal({
         userContextId: tab.userContextId,
       });
@@ -5490,7 +5511,6 @@ var SessionStoreInternal = {
         aTabState.entries.length == 1 &&
         (aTabState.entries[0].url == "about:blank" ||
           aTabState.entries[0].url == "about:newtab" ||
-          aTabState.entries[0].url == "about:printpreview" ||
           aTabState.entries[0].url == "about:privatebrowsing") &&
         !aTabState.userTypedValue
       )
@@ -5515,10 +5535,7 @@ var SessionStoreInternal = {
       aTabState.userTypedValue ||
       (aTabState.attributes && aTabState.attributes.customizemode == "true") ||
       (aTabState.entries.length &&
-        !(
-          aTabState.entries[0].url == "about:printpreview" ||
-          aTabState.entries[0].url == "about:privatebrowsing"
-        ))
+        aTabState.entries[0].url != "about:privatebrowsing")
     );
   },
 
@@ -6278,27 +6295,6 @@ var SessionStoreInternal = {
 
     // Notify the tabbrowser that the tab chrome has been restored.
     let tabData = TabState.collect(tab, TAB_CUSTOM_VALUES.get(tab));
-
-    // wall-paper fix for bug 439675: make sure that the URL to be loaded
-    // is always visible in the address bar if no other value is present
-    let activePageData = tabData.entries[tabData.index - 1] || null;
-    let uri = activePageData ? activePageData.url || null : null;
-    // NB: we won't set initial URIs (about:home, about:newtab, etc.) here
-    // because their load will not normally trigger a location bar clearing
-    // when they finish loading (to avoid race conditions where we then
-    // clear user input instead), so we shouldn't set them here either.
-    // They also don't fall under the issues in bug 439675 where user input
-    // needs to be preserved if the load doesn't succeed.
-    // We also don't do this for remoteness updates, where it should not
-    // be necessary.
-    if (
-      !browser.userTypedValue &&
-      uri &&
-      !data.isRemotenessUpdate &&
-      !win.gInitialPages.includes(uri)
-    ) {
-      browser.userTypedValue = uri;
-    }
 
     // Update tab label and icon again after the tab history was updated.
     this.updateTabLabelAndIcon(tab, tabData);

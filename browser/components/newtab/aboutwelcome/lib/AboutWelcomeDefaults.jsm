@@ -19,32 +19,32 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 const DEFAULT_WELCOME_CONTENT = {
   id: "DEFAULT_ABOUTWELCOME_PROTON",
   template: "multistage",
-  transitions: true,
+  // Allow tests to easily disable transitions.
+  transitions: Services.prefs.getBoolPref(
+    "browser.aboutwelcome.transitions",
+    true
+  ),
   backdrop:
-    "#F9F9FB url('chrome://activity-stream/content/data/content/assets/fx100-noodles.svg') center/cover no-repeat fixed",
+    "#212121 url('chrome://activity-stream/content/data/content/assets/proton-bkg.avif') center/cover no-repeat fixed",
   screens: [
     {
       id: "AW_PIN_FIREFOX",
-      order: 0,
       content: {
         position: "corner",
         logo: {},
         title: {
-          string_id: "onboarding-welcome-header",
-        },
-        subtitle: {
-          string_id: "fx100-thank-you-subtitle",
+          string_id: "mr1-onboarding-pin-header",
         },
         hero_text: {
-          string_id: "fx100-thank-you-hero-text",
-          color: "#321C64",
-          zap: true,
-          fontSize: "clamp(48px, 7vw, 137px)",
+          string_id: "mr1-welcome-screen-hero-text",
+        },
+        help_text: {
+          string_id: "mr1-onboarding-welcome-image-caption",
         },
         has_noodles: true,
         primary_button: {
           label: {
-            string_id: "fx100-thank-you-pin-primary-button-label",
+            string_id: "mr1-onboarding-pin-primary-button-label",
           },
           action: {
             navigate: true,
@@ -62,7 +62,6 @@ const DEFAULT_WELCOME_CONTENT = {
         secondary_button_top: {
           label: {
             string_id: "mr1-onboarding-sign-in-button-label",
-            color: "#321C64",
           },
           action: {
             data: {
@@ -76,7 +75,6 @@ const DEFAULT_WELCOME_CONTENT = {
     },
     {
       id: "AW_LANGUAGE_MISMATCH",
-      order: 1,
       content: {
         logo: {},
         title: { string_id: "onboarding-live-language-header" },
@@ -98,7 +96,6 @@ const DEFAULT_WELCOME_CONTENT = {
     },
     {
       id: "AW_SET_DEFAULT",
-      order: 2,
       content: {
         logo: {},
         title: {
@@ -129,7 +126,6 @@ const DEFAULT_WELCOME_CONTENT = {
     },
     {
       id: "AW_IMPORT_SETTINGS",
-      order: 3,
       content: {
         logo: {},
         title: {
@@ -162,7 +158,6 @@ const DEFAULT_WELCOME_CONTENT = {
     },
     {
       id: "AW_CHOOSE_THEME",
-      order: 4,
       content: {
         logo: {},
         title: {
@@ -230,7 +225,7 @@ const DEFAULT_WELCOME_CONTENT = {
         },
         primary_button: {
           label: {
-            string_id: "mr1-onboarding-theme-primary-button-label",
+            string_id: "onboarding-theme-primary-button-label",
           },
           action: {
             navigate: true,
@@ -341,16 +336,12 @@ async function prepareContentForReact(content) {
     return content;
   }
 
-  // Helper to find screens to remove and adjust screen order.
+  // Helper to find screens and remove them where applicable.
   function removeScreens(check) {
     const { screens } = content;
-    let removed = 0;
     for (let i = 0; i < screens?.length; i++) {
       if (check(screens[i])) {
         screens.splice(i--, 1);
-        removed++;
-      } else if (screens[i].order) {
-        screens[i].order -= removed;
       }
     }
   }

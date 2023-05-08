@@ -205,6 +205,7 @@ var whitelist = [
 
   // Files from upstream library
   { file: "resource://pdf.js/web/debugger.js" },
+  { file: "resource://pdf.js/web/debugger.css" },
 
   // resource://app/modules/translation/TranslationContentHandler.jsm
   { file: "resource://app/modules/translation/BingTranslator.jsm" },
@@ -350,8 +351,6 @@ for (let entry of ignorableWhitelist) {
 }
 
 if (!isDevtools) {
-  // services/sync/modules/main.js
-  whitelist.add("resource://services-sync/service.js");
   // services/sync/modules/service.js
   for (let module of [
     "addons.js",

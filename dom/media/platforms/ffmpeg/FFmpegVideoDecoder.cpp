@@ -13,11 +13,11 @@
 #include "VideoUtils.h"
 #include "VPXDecoder.h"
 #include "mozilla/layers/KnowsCompositor.h"
-#if defined(MOZ_AV1) && defined(FFVPX_VERSION) && defined(MOZ_WAYLAND)
-#  include "AOMDecoder.h"
-#endif
 #if LIBAVCODEC_VERSION_MAJOR >= 57
 #  include "mozilla/layers/TextureClient.h"
+#endif
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+#  include "mozilla/ProfilerMarkers.h"
 #endif
 #ifdef MOZ_WAYLAND_USE_VAAPI
 #  include "H264.h"
@@ -25,6 +25,12 @@
 #  include "mozilla/widget/DMABufLibWrapper.h"
 #  include "FFmpegVideoFramePool.h"
 #  include "va/va.h"
+#endif
+
+#if defined(MOZ_AV1) && defined(MOZ_WAYLAND) && \
+    (defined(FFVPX_VERSION) || LIBAVCODEC_VERSION_MAJOR >= 59)
+#  define FFMPEG_AV1_DECODE 1
+#  include "AOMDecoder.h"
 #endif
 
 #include "libavutil/pixfmt.h"
@@ -55,9 +61,10 @@ typedef int VAStatus;
 #  define VA_EXPORT_SURFACE_SEPARATE_LAYERS 0x0004
 #  define VA_STATUS_SUCCESS 0x00000000
 #endif
-
 // Use some extra HW frames for potential rendering lags.
 #define EXTRA_HW_FRAMES 6
+// Defines number of delayed frames until we switch back to SW decode.
+#define HW_DECODE_LATE_FRAMES 15
 
 #if LIBAVCODEC_VERSION_MAJOR >= 57 && LIBAVUTIL_VERSION_MAJOR >= 56
 #  define CUSTOMIZED_BUFFER_ALLOCATION 1
@@ -382,6 +389,12 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(
       mImageAllocator(aAllocator),
       mImageContainer(aImageContainer),
       mInfo(aConfig),
+      mDecodedFrames(0),
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+      mDecodedFramesLate(0),
+      mMissedDecodeInAverangeTime(0),
+#endif
+      mAverangeDecodeTime(0),
       mLowLatency(aLowLatency) {
   FFMPEG_LOG("FFmpegVideoDecoder::FFmpegVideoDecoder MIME %s Codec ID %d",
              aConfig.mMimeType.get(), mCodecID);
@@ -768,12 +781,47 @@ static int64_t GetFramePts(AVFrame* aFrame) {
 #endif
 }
 
+void FFmpegVideoDecoder<LIBAV_VER>::UpdateDecodeTimes(TimeStamp aDecodeStart) {
+  mDecodedFrames++;
+  float decodeTime = (TimeStamp::Now() - aDecodeStart).ToMilliseconds();
+  mAverangeDecodeTime =
+      (mAverangeDecodeTime * (mDecodedFrames - 1) + decodeTime) /
+      mDecodedFrames;
+  FFMPEG_LOG(
+      "Frame decode finished, time %.2f ms averange decode time %.2f ms "
+      "decoded %d frames\n",
+      decodeTime, mAverangeDecodeTime, mDecodedFrames);
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+  if (mFrame->pkt_duration > 0) {
+    // Switch frame duration to ms
+    float frameDuration = mFrame->pkt_duration / 1000.0f;
+    if (frameDuration < decodeTime) {
+      PROFILER_MARKER_TEXT("FFmpegVideoDecoder::DoDecode", MEDIA_PLAYBACK, {},
+                           "frame decode takes too long");
+      mDecodedFramesLate++;
+      if (frameDuration < mAverangeDecodeTime) {
+        mMissedDecodeInAverangeTime++;
+      }
+      FFMPEG_LOG(
+          "  slow decode: failed to decode in time, frame duration %.2f ms, "
+          "decode time %.2f\n",
+          frameDuration, decodeTime);
+      FFMPEG_LOG("  frames: all decoded %d late decoded %d over averange %d\n",
+                 mDecodedFrames, mDecodedFramesLate,
+                 mMissedDecodeInAverangeTime);
+    }
+  }
+#endif
+}
+
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame,
     MediaDataDecoder::DecodedData& aResults) {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   AVPacket packet;
   mLib->av_init_packet(&packet);
+
+  TimeStamp decodeStart = TimeStamp::Now();
 
   packet.data = aData;
   packet.size = aSize;
@@ -789,11 +837,12 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     // In theory, avcodec_send_packet could sent -EAGAIN should its internal
     // buffers be full. In practice this can't happen as we only feed one frame
     // at a time, and we immediately call avcodec_receive_frame right after.
-    FFMPEG_LOG("avcodec_send_packet error: %d", res);
+    char errStr[AV_ERROR_MAX_STRING_SIZE];
+    mLib->av_strerror(res, errStr, AV_ERROR_MAX_STRING_SIZE);
+    FFMPEG_LOG("avcodec_send_packet error: %s", errStr);
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
-                       RESULT_DETAIL("avcodec_send_packet error: %d", res));
+                       RESULT_DETAIL("avcodec_send_packet error: %s", errStr));
   }
-
   if (aGotFrame) {
     *aGotFrame = false;
   }
@@ -825,14 +874,28 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
       return NS_OK;
     }
     if (res < 0) {
-      FFMPEG_LOG("  avcodec_receive_frame error: %d", res);
-      return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
-                         RESULT_DETAIL("avcodec_receive_frame error: %d", res));
+      char errStr[AV_ERROR_MAX_STRING_SIZE];
+      mLib->av_strerror(res, errStr, AV_ERROR_MAX_STRING_SIZE);
+      FFMPEG_LOG("  avcodec_receive_frame error: %s", errStr);
+      return MediaResult(
+          NS_ERROR_DOM_MEDIA_DECODE_ERR,
+          RESULT_DETAIL("avcodec_receive_frame error: %s", errStr));
     }
+
+    UpdateDecodeTimes(decodeStart);
+    decodeStart = TimeStamp::Now();
 
     MediaResult rv;
 #  ifdef MOZ_WAYLAND_USE_VAAPI
     if (IsHardwareAccelerated()) {
+      if (mMissedDecodeInAverangeTime > HW_DECODE_LATE_FRAMES) {
+        PROFILER_MARKER_TEXT("FFmpegVideoDecoder::DoDecode", MEDIA_PLAYBACK, {},
+                             "Fallback to SW decode");
+        FFMPEG_LOG("  HW decoding is slow, switch back to SW decode");
+        return MediaResult(
+            NS_ERROR_DOM_MEDIA_DECODE_ERR,
+            RESULT_DETAIL("HW decoding is slow, switch back to SW decode"));
+      }
       rv = CreateImageVAAPI(mFrame->pkt_pos, GetFramePts(mFrame),
                             mFrame->pkt_duration, aResults);
       // If VA-API playback failed, just quit. Decoder is going to be restarted
@@ -887,7 +950,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 
   if (bytesConsumed < 0) {
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
-                       RESULT_DETAIL("FFmpeg video error:%d", bytesConsumed));
+                       RESULT_DETAIL("FFmpeg video error: %d", bytesConsumed));
   }
 
   if (!decoded) {
@@ -896,6 +959,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     }
     return NS_OK;
   }
+
+  UpdateDecodeTimes(decodeStart);
 
   // If we've decoded a frame then we need to output it
   int64_t pts =
@@ -989,7 +1054,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
 #if LIBAVCODEC_VERSION_MAJOR >= 57
       || mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P12LE
 #endif
-#if defined(MOZ_AV1) && defined(FFVPX_VERSION) && defined(MOZ_WAYLAND)
+#if defined(FFMPEG_AV1_DECODE)
       || mCodecContext->pix_fmt == AV_PIX_FMT_GBRP
 #endif
   ) {
@@ -1094,7 +1159,7 @@ bool FFmpegVideoDecoder<LIBAV_VER>::GetVAAPISurfaceDescriptor(
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImageVAAPI(
     int64_t aOffset, int64_t aPts, int64_t aDuration,
     MediaDataDecoder::DecodedData& aResults) {
-  FFMPEG_LOG("VA-API Got one frame output with pts=%" PRId64 "dts=%" PRId64
+  FFMPEG_LOG("VA-API Got one frame output with pts=%" PRId64 " dts=%" PRId64
              " duration=%" PRId64 " opaque=%" PRId64,
              aPts, mFrame->pkt_dts, aDuration, mCodecContext->reordered_opaque);
 
@@ -1106,8 +1171,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImageVAAPI(
   }
 
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-  auto surface = mVideoFramePool->GetVideoFrameSurface(vaDesc, mCodecContext,
-                                                       mFrame, mLib);
+  auto surface = mVideoFramePool->GetVideoFrameSurface(
+      vaDesc, mFrame->width, mFrame->height, mCodecContext, mFrame, mLib);
   if (!surface) {
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
                        RESULT_DETAIL("VAAPI dmabuf allocation error"));
@@ -1160,7 +1225,7 @@ AVCodecID FFmpegVideoDecoder<LIBAV_VER>::GetCodecId(
   }
 #endif
 
-#if defined(MOZ_AV1) && defined(FFVPX_VERSION) && defined(MOZ_WAYLAND)
+#if defined(FFMPEG_AV1_DECODE)
   if (AOMDecoder::IsAV1(aMimeType)) {
     return AV_CODEC_ID_AV1;
   }

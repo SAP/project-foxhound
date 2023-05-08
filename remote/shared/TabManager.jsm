@@ -13,6 +13,8 @@ var { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 
+  AppInfo: "chrome://remote/content/marionette/appinfo.js",
+  EventPromise: "chrome://remote/content/shared/Sync.jsm",
   MobileTabBrowser: "chrome://remote/content/shared/MobileTabBrowser.jsm",
 });
 
@@ -121,15 +123,35 @@ var TabManager = {
     return null;
   },
 
-  addTab({ userContextId }) {
-    const window = Services.wm.getMostRecentWindow(null);
+  /**
+   * Create a new tab.
+   *
+   * @param {Object} options
+   * @param {Boolean=} options.focus
+   *     Set to true if the new tab should be focused (selected). Defaults to
+   *     false.
+   * @param {Number} options.userContextId
+   *     The user context (container) id.
+   * @param {window=} options.window
+   *     The window where the new tab will open. Defaults to Services.wm.getMostRecentWindow
+   *     if no window is provided.
+   */
+  async addTab(options = {}) {
+    const {
+      focus = false,
+      userContextId,
+      window = Services.wm.getMostRecentWindow(null),
+    } = options;
     const tabBrowser = this.getTabBrowser(window);
 
     const tab = tabBrowser.addTab("about:blank", {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       userContextId,
     });
-    this.selectTab(tab);
+
+    if (focus) {
+      await this.selectTab(tab);
+    }
 
     return tab;
   },
@@ -183,7 +205,9 @@ var TabManager = {
   /**
    * Retrieve the unique id for the given xul browser element. The id is a
    * dynamically generated uuid associated with the permanentKey property of the
-   * given browser element.
+   * given browser element. This method is preferable over getIdForBrowsingContext
+   * in case of working with browser element of a tab, since we can not guarantee
+   * that browsing context is attached to it.
    *
    * @param {xul:browser} browserElement
    *     The <xul:browser> for which we want to retrieve the id.
@@ -200,19 +224,6 @@ var TabManager = {
       browserUniqueIds.set(key, uuid.substring(1, uuid.length - 1));
     }
     return browserUniqueIds.get(key);
-  },
-
-  /**
-   * Retrieve the unique id for the browser element owning the provided browsing
-   * context.
-   *
-   * @param {BrowsingContext} browsingContext
-   *     The browsing context for which we want to retrieve the (browser) uuid.
-   * @return {String} The unique id for the browser owning the browsing context.
-   */
-  getBrowserIdForBrowsingContext(browsingContext) {
-    const contentBrowser = browsingContext.top.embedderElement;
-    return this.getIdForBrowser(contentBrowser);
   },
 
   /**
@@ -253,13 +264,50 @@ var TabManager = {
     return count;
   },
 
+  /**
+   * Remove the given tab.
+   *
+   * @param {Tab} tab
+   *     Tab to remove.
+   */
   removeTab(tab) {
-    const tabBrowser = this.getTabBrowser(tab.ownerGlobal);
+    const ownerWindow = this._getWindowForTab(tab);
+    const tabBrowser = this.getTabBrowser(ownerWindow);
     tabBrowser.removeTab(tab);
   },
 
+  /**
+   * Select the given tab.
+   *
+   * @param {Tab} tab
+   *     Tab to select.
+   *
+   * @returns {Promise}
+   *     Promise that resolves when the given tab has been selected.
+   */
   selectTab(tab) {
-    const tabBrowser = this.getTabBrowser(tab.ownerGlobal);
+    const ownerWindow = this._getWindowForTab(tab);
+    const tabBrowser = this.getTabBrowser(ownerWindow);
+
+    if (tab === tabBrowser.selectedTab) {
+      return Promise.resolve();
+    }
+
+    const selected = new EventPromise(ownerWindow, "TabSelect");
     tabBrowser.selectedTab = tab;
+    return selected;
+  },
+
+  supportsTabs() {
+    // TODO: Only Firefox supports adding tabs at the moment.
+    // Geckoview support should be added via Bug 1506782.
+    return AppInfo.name === "Firefox";
+  },
+
+  _getWindowForTab(tab) {
+    // `.linkedBrowser.ownerGlobal` works both with Firefox Desktop and Mobile.
+    // Other accessors (eg `.ownerGlobal` or `.browser.ownerGlobal`) fail on one
+    // of the platforms.
+    return tab.linkedBrowser.ownerGlobal;
   },
 };

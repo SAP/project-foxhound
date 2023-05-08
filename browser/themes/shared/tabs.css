@@ -17,6 +17,10 @@
   --tabpanel-background-color: #F9F9FB;
 }
 
+#tabbrowser-tabpanels browser {
+  color-scheme: env(-moz-content-preferred-color-scheme);
+}
+
 @media (-moz-content-prefers-color-scheme: dark) {
   :root {
     /* --tabpanel-background-color matches $in-content-page-background in newtab
@@ -44,6 +48,8 @@
 #tabbrowser-tabs {
   --tab-min-width: 76px;
   --tab-loading-fill: #0A84FF;
+  --tab-overflow-pinned-tabs-width: 0px;
+  padding-inline: var(--tab-overflow-pinned-tabs-width) 0;
 }
 
 #tabbrowser-tabpanels {
@@ -87,14 +93,17 @@
   background-color: transparent;
   border-radius: 0;
   border-width: 0;
-  margin: 0 !important /* override tabbox.css */;
-  padding: 0 !important /* override tabbox.css */;
-  padding-inline: 2px !important;
+  margin: 0;
+  padding: 0 2px;
   -moz-box-align: stretch;
   /* Needed so that overflowing content overflows towards the end rather than
      getting centered. That prevents tab opening animation from looking off at
      the start, see bug 1759221. */
   -moz-box-pack: start;
+  overflow: clip;
+  /* Needed to avoid clipping the tab-background shadow, which has a 4px blur
+   * (we only have 2px padding in the inline direction) */
+  overflow-clip-margin: 2px;
   min-height: var(--tab-min-height);
 }
 
@@ -541,16 +550,19 @@
   margin-block: var(--tab-block-margin);
 }
 
-:root[sizemode=maximized] .tabbrowser-tab {
-  margin-top: 0 !important;
-}
-
 /* Selected tab and tab hover */
 
+#TabsToolbar #firefox-view-button:hover:not([open]) > .toolbarbutton-icon,
+.tabbrowser-tab:hover > .tab-stack > .tab-background:not([selected=true], [multiselected]) {
+  background-color: color-mix(in srgb, currentColor 11%, transparent);
+}
+
+#TabsToolbar #firefox-view-button[open] > .toolbarbutton-icon,
 #tabbrowser-tabs:not([noshadowfortests]) .tab-background:is([selected], [multiselected]) {
   box-shadow: 0 0 4px rgba(0,0,0,.4);
 }
 
+#TabsToolbar #firefox-view-button[open] > .toolbarbutton-icon,
 .tab-background:is([selected], [multiselected]) {
   background-color: var(--tab-selected-bgcolor, var(--toolbar-bgcolor));
   background-image: var(--tab-selected-bgimage, var(--toolbar-bgimage));
@@ -558,15 +570,25 @@
   background-repeat: repeat-x;
 }
 
+.tabbrowser-tab:is([selected], [multiselected]):-moz-lwtheme {
+  color: var(--lwt-tab-text, var(--toolbar-color));
+}
+
 @media (prefers-contrast) {
-  .tab-background:is([selected], [multiselected]),
+  #TabsToolbar #firefox-view-button:is([open], :hover) > .toolbarbutton-icon,
+  .tab-background[selected],
   .tabbrowser-tab:hover > .tab-stack > .tab-background {
-    border: 1px solid currentColor;
+    outline: 1px solid currentColor;
+    outline-offset: -1px;
   }
 }
 
-.tabbrowser-tab:hover > .tab-stack > .tab-background:not([selected=true], [multiselected]) {
-  background-color: color-mix(in srgb, currentColor 11%, transparent);
+@media not (prefers-contrast) {
+  #TabsToolbar #firefox-view-button[open] > .toolbarbutton-icon:-moz-lwtheme,
+  .tab-background[selected]:-moz-lwtheme {
+    outline: 1px solid var(--lwt-tab-line-color, var(--lwt-tabs-border-color, currentColor));
+    outline-offset: -1px;
+  }
 }
 
 /* Add a focus outline on top of the multiselected tabs, with the currently selected
@@ -581,22 +603,11 @@
   outline-offset: -2px;
 }
 
-/* Selected tab with lightweight theme */
-
-.tabbrowser-tab:is([selected], [multiselected]):-moz-lwtheme {
-  color: var(--lwt-tab-text, var(--toolbar-color));
-}
-
-@media not (prefers-contrast) {
-  .tab-background:is([selected], [multiselected]):-moz-lwtheme {
-    border: 1px solid var(--lwt-tab-line-color, var(--lwt-tabs-border-color, currentColor));
-  }
-}
-
 /*
  * LightweightThemeConsumer will set the current lightweight theme's header
  * image to the lwt-header-image variable, used in each of the following rulesets.
  */
+#TabsToolbar #firefox-view-button[open] > .toolbarbutton-icon:-moz-lwtheme,
 #tabbrowser-tabs:not([movingtab]) > #tabbrowser-arrowscrollbox > .tabbrowser-tab > .tab-stack > .tab-background[multiselected=true]:-moz-lwtheme,
 #tabbrowser-tabs:not([movingtab]) > #tabbrowser-arrowscrollbox > .tabbrowser-tab > .tab-stack > .tab-background[selected=true]:-moz-lwtheme {
   background-attachment: scroll, scroll, fixed;
@@ -667,6 +678,18 @@
   .titlebar-spacer[type="post-tabs"] {
     display: none;
   }
+}
+
+/* Firefox View button */
+
+:is(#firefox-view-button, #wrapper-firefox-view-button) + #tabbrowser-tabs {
+  border-inline-start: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  padding-inline-start: calc(var(--tab-overflow-pinned-tabs-width) + 4px);
+  margin-inline-start: 4px;
+}
+
+:root[privatebrowsingmode=temporary] #firefox-view-button {
+  display: none;
 }
 
 /* Tab bar scroll arrows */

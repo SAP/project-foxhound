@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <type_traits>
 
 #include "jit/arm/Architecture-arm.h"
 #include "jit/arm/disasm/Disasm-arm.h"
@@ -179,9 +180,9 @@ static constexpr Register ABINonVolatileReg = r6;
 // and non-volatile registers.
 static constexpr Register ABINonArgReturnVolatileReg = lr;
 
-// TLS pointer argument register for WebAssembly functions. This must not alias
-// any other register used for passing function arguments or return values.
-// Preserved by WebAssembly functions.
+// Instance pointer argument register for WebAssembly functions. This must not
+// alias any other register used for passing function arguments or return
+// values. Preserved by WebAssembly functions.
 static constexpr Register InstanceReg = r9;
 
 // Registers used for wasm table calls. These registers must be disjoint
@@ -1960,7 +1961,11 @@ class InstDTR : public Instruction {
   // TODO: Replace the initialization with something that is safer.
   InstDTR(LoadStore ls, IsByte_ ib, Index mode, Register rt, DTRAddr addr,
           Assembler::Condition c)
-      : Instruction(ls | ib | mode | RT(rt) | addr.encode() | IsDTR, c) {}
+      : Instruction(std::underlying_type_t<LoadStore>(ls) |
+                        std::underlying_type_t<IsByte_>(ib) |
+                        std::underlying_type_t<Index>(mode) | RT(rt) |
+                        addr.encode() | IsDTR,
+                    c) {}
 
   static bool IsTHIS(const Instruction& i);
   static InstDTR* AsTHIS(const Instruction& i);

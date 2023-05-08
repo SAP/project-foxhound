@@ -58,25 +58,6 @@ void gfxFT2FontBase::UnlockFTFace() const
   mFTFace->Unlock();
 }
 
-gfxFT2FontEntryBase::CmapCacheSlot* gfxFT2FontEntryBase::GetCmapCacheSlot(
-    uint32_t aCharCode) {
-  // This cache algorithm and size is based on what is done in
-  // cairo_scaled_font_text_to_glyphs and pango_fc_font_real_get_glyph.  I
-  // think the concept is that adjacent characters probably come mostly from
-  // one Unicode block.  This assumption is probably not so valid with
-  // scripts with large character sets as used for East Asian languages.
-  if (!mCmapCache) {
-    mCmapCache = mozilla::MakeUnique<CmapCacheSlot[]>(kNumCmapCacheSlots);
-
-    // Invalidate slot 0 by setting its char code to something that would
-    // never end up in slot 0.  All other slots are already invalid
-    // because they have mCharCode = 0 and a glyph for char code 0 will
-    // always be in the slot 0.
-    mCmapCache[0].mCharCode = 1;
-  }
-  return &mCmapCache[aCharCode % kNumCmapCacheSlots];
-}
-
 static FT_ULong GetTableSizeFromFTFace(SharedFTFace* aFace,
                                        uint32_t aTableTag) {
   if (!aFace) {
@@ -112,17 +93,44 @@ nsresult gfxFT2FontEntryBase::CopyFaceTable(SharedFTFace* aFace,
   return NS_OK;
 }
 
-uint32_t gfxFT2FontBase::GetGlyph(uint32_t aCharCode) {
-  // FcFreeTypeCharIndex needs to lock the FT_Face and can end up searching
-  // through all the postscript glyph names in the font.  Therefore use a
-  // lightweight cache, which is stored on the font entry.
-  auto* slot = static_cast<gfxFT2FontEntryBase*>(mFontEntry.get())
-                   ->GetCmapCacheSlot(aCharCode);
-  if (slot->mCharCode != aCharCode) {
-    slot->mCharCode = aCharCode;
-    slot->mGlyphIndex = gfxFT2LockedFace(this).GetGlyph(aCharCode);
+uint32_t gfxFT2FontEntryBase::GetGlyph(uint32_t aCharCode,
+                                       gfxFT2FontBase* aFont) {
+  const uint32_t slotIndex = aCharCode % kNumCmapCacheSlots;
+  {
+    // Try to read a cached entry without taking an exclusive lock.
+    AutoReadLock lock(mLock);
+    if (mCmapCache) {
+      const auto& slot = mCmapCache[slotIndex];
+      if (slot.mCharCode == aCharCode) {
+        return slot.mGlyphIndex;
+      }
+    }
   }
-  return slot->mGlyphIndex;
+
+  // Create/update the charcode-to-glyphid cache.
+  AutoWriteLock lock(mLock);
+
+  // This cache algorithm and size is based on what is done in
+  // cairo_scaled_font_text_to_glyphs and pango_fc_font_real_get_glyph.  I
+  // think the concept is that adjacent characters probably come mostly from
+  // one Unicode block.  This assumption is probably not so valid with
+  // scripts with large character sets as used for East Asian languages.
+  if (!mCmapCache) {
+    mCmapCache = mozilla::MakeUnique<CmapCacheSlot[]>(kNumCmapCacheSlots);
+
+    // Invalidate slot 0 by setting its char code to something that would
+    // never end up in slot 0.  All other slots are already invalid
+    // because they have mCharCode = 0 and a glyph for char code 0 will
+    // always be in the slot 0.
+    mCmapCache[0].mCharCode = 1;
+  }
+
+  auto& slot = mCmapCache[slotIndex];
+  if (slot.mCharCode != aCharCode) {
+    slot.mCharCode = aCharCode;
+    slot.mGlyphIndex = gfxFT2LockedFace(aFont).GetGlyph(aCharCode);
+  }
+  return slot.mGlyphIndex;
 }
 
 // aScale is intended for a 16.16 x/y_scale of an FT_Size_Metrics
@@ -638,6 +646,17 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
   if (!aBounds) {
     flags |= FT_LOAD_ADVANCE_ONLY;
   }
+
+  // Whether to disable subpixel positioning
+  bool roundX = ShouldRoundXOffset(nullptr);
+
+  // Workaround for FT_Load_Glyph not setting linearHoriAdvance for SVG glyphs.
+  // See https://gitlab.freedesktop.org/freetype/freetype/-/issues/1156.
+  if (!roundX &&
+      GetFontEntry()->HasFontTable(TRUETYPE_TAG('S', 'V', 'G', ' '))) {
+    flags &= ~FT_LOAD_COLOR;
+  }
+
   if (Factory::LoadFTGlyph(face.get(), aGID, flags) != FT_Err_Ok) {
     // FT_Face was somehow broken/invalid? Don't try to access glyph slot.
     // This probably shouldn't happen, but does: see bug 1440938.
@@ -647,8 +666,6 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
 
   // Whether to interpret hinting settings (i.e. not printing)
   bool hintMetrics = ShouldHintMetrics();
-  // Whether to disable subpixel positioning
-  bool roundX = ShouldRoundXOffset(nullptr);
   // No hinting disables X and Y hinting. Light disables only X hinting.
   bool unhintedY = (mFTLoadFlags & FT_LOAD_NO_HINTING) != 0;
   bool unhintedX =
@@ -713,6 +730,18 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
  */
 const gfxFT2FontBase::GlyphMetrics& gfxFT2FontBase::GetCachedGlyphMetrics(
     uint16_t aGID, IntRect* aBounds) const {
+  {
+    // Try to read cached metrics without exclusive locking.
+    AutoReadLock lock(mLock);
+    if (mGlyphMetrics) {
+      if (auto metrics = mGlyphMetrics->Lookup(aGID)) {
+        return metrics.Data();
+      }
+    }
+  }
+
+  // We need to create/update the cache.
+  AutoWriteLock lock(mLock);
   if (!mGlyphMetrics) {
     mGlyphMetrics =
         mozilla::MakeUnique<nsTHashMap<nsUint32HashKey, GlyphMetrics>>(128);
@@ -729,10 +758,6 @@ const gfxFT2FontBase::GlyphMetrics& gfxFT2FontBase::GetCachedGlyphMetrics(
     }
     return metrics;
   });
-}
-
-int32_t gfxFT2FontBase::GetGlyphWidth(uint16_t aGID) {
-  return GetCachedGlyphMetrics(aGID).mAdvance;
 }
 
 bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,

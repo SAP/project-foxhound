@@ -73,11 +73,6 @@ class HyperTextAccessible : public AccessibleWrap,
   // HyperLinkAccessible
 
   /**
-   * Return link count within this hypertext accessible.
-   */
-  uint32_t LinkCount() { return EmbeddedChildCount(); }
-
-  /**
    * Return link accessible at the given index.
    */
   LocalAccessible* LinkAt(uint32_t aIndex) { return EmbeddedChildAt(aIndex); }
@@ -164,12 +159,10 @@ class HyperTextAccessible : public AccessibleWrap,
 
   virtual already_AddRefed<AccAttributes> DefaultTextAttributes() override;
 
+  virtual void InvalidateCachedHyperTextOffsets() override { mOffsets.Clear(); }
+
   // HyperTextAccessibleBase provides an overload which takes an Accessible.
   using HyperTextAccessibleBase::GetChildOffset;
-  virtual int32_t GetChildOffset(uint32_t aChildIndex,
-                                 bool aInvalidateAfter = false) const override;
-
-  virtual int32_t GetChildIndexAtOffset(uint32_t aOffset) const override;
 
   virtual LocalAccessible* GetChildAtOffset(uint32_t aOffset) const override {
     return LocalChildAt(GetChildIndexAtOffset(aOffset));
@@ -180,20 +173,13 @@ class HyperTextAccessible : public AccessibleWrap,
    */
   int32_t OffsetAtPoint(int32_t aX, int32_t aY, uint32_t aCoordType);
 
-  /**
-   * Return a rect (in dev pixels) of the given text range relative given
-   * coordinate system.
-   */
   LayoutDeviceIntRect TextBounds(
       int32_t aStartOffset, int32_t aEndOffset,
       uint32_t aCoordType =
-          nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE);
+          nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE) override;
 
-  /**
-   * Return a rect (in dev pixels) for character at given offset relative given
-   * coordinate system.
-   */
-  LayoutDeviceIntRect CharBounds(int32_t aOffset, uint32_t aCoordType) {
+  LayoutDeviceIntRect CharBounds(int32_t aOffset,
+                                 uint32_t aCoordType) override {
     int32_t endOffset = aOffset == static_cast<int32_t>(CharacterCount())
                             ? aOffset
                             : aOffset + 1;
@@ -438,11 +424,18 @@ class HyperTextAccessible : public AccessibleWrap,
   // HyperTextAccessibleBase
   virtual const Accessible* Acc() const override { return this; }
 
+  virtual const nsTArray<int32_t>& GetCachedHyperTextOffsets() const override {
+    if (mOffsets.IsEmpty()) {
+      BuildCachedHyperTextOffsets(mOffsets);
+    }
+    return mOffsets;
+  }
+
  private:
   /**
    * End text offsets array.
    */
-  mutable nsTArray<uint32_t> mOffsets;
+  mutable nsTArray<int32_t> mOffsets;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

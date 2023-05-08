@@ -11,11 +11,11 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { ServiceRequest } = ChromeUtils.import(
   "resource://gre/modules/ServiceRequest.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  SharedUtils: "resource://services-settings/SharedUtils.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -45,19 +45,7 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   });
 });
 
-// Overriding the server URL is normally disabled on Beta and Release channels,
-// except under some conditions.
-XPCOMUtils.defineLazyGetter(this, "allowServerURLOverride", () => {
-  if (!AppConstants.RELEASE_OR_BETA) {
-    // Always allow to override the server URL on Nightly/DevEdition.
-    return true;
-  }
-
-  if (AppConstants.MOZ_APP_NAME === "thunderbird") {
-    // Always allow to override the server URL for Thunderbird.
-    return true;
-  }
-
+XPCOMUtils.defineLazyGetter(this, "isRunningTests", () => {
   const env = Cc["@mozilla.org/process/environment;1"].getService(
     Ci.nsIEnvironment
   );
@@ -66,6 +54,24 @@ XPCOMUtils.defineLazyGetter(this, "allowServerURLOverride", () => {
     // usually true when running tests.
     return true;
   }
+  return false;
+});
+
+// Overriding the server URL is normally disabled on Beta and Release channels,
+// except under some conditions.
+XPCOMUtils.defineLazyGetter(this, "allowServerURLOverride", () => {
+  if (!AppConstants.RELEASE_OR_BETA) {
+    // Always allow to override the server URL on Nightly/DevEdition.
+    return true;
+  }
+
+  if (isRunningTests) {
+    return true;
+  }
+
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
 
   if (env.get("MOZ_REMOTE_SETTINGS_DEVTOOLS") === "1") {
     // Allow to override the server URL when using remote settings devtools.
@@ -78,7 +84,15 @@ XPCOMUtils.defineLazyGetter(this, "allowServerURLOverride", () => {
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "gServerURL",
-  "services.settings.server"
+  "services.settings.server",
+  AppConstants.REMOTE_SETTINGS_SERVER_URL
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gPreviewEnabled",
+  "services.settings.preview_enabled",
+  false
 );
 
 function _isUndefined(value) {
@@ -89,7 +103,7 @@ var Utils = {
   get SERVER_URL() {
     return allowServerURLOverride
       ? gServerURL
-      : "https://firefox.settings.services.mozilla.com/v1";
+      : AppConstants.REMOTE_SETTINGS_SERVER_URL;
   },
 
   CHANGES_PATH: "/buckets/monitor/collections/changes/changeset",
@@ -98,6 +112,76 @@ var Utils = {
    * Logger instance.
    */
   log,
+
+  get CERT_CHAIN_ROOT_IDENTIFIER() {
+    if (this.SERVER_URL == AppConstants.REMOTE_SETTINGS_SERVER_URL) {
+      return Ci.nsIContentSignatureVerifier.ContentSignatureProdRoot;
+    }
+    if (this.SERVER_URL.includes("stage.")) {
+      return Ci.nsIContentSignatureVerifier.ContentSignatureStageRoot;
+    }
+    if (this.SERVER_URL.includes("dev.")) {
+      return Ci.nsIContentSignatureVerifier.ContentSignatureDevRoot;
+    }
+    let env = Cc["@mozilla.org/process/environment;1"].getService(
+      Ci.nsIEnvironment
+    );
+    if (env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+      return Ci.nsIX509CertDB.AppXPCShellRoot;
+    }
+    return Ci.nsIContentSignatureVerifier.ContentSignatureLocalRoot;
+  },
+
+  get LOAD_DUMPS() {
+    // Load dumps only if pulling data from the production server, or in tests.
+    return (
+      this.SERVER_URL == AppConstants.REMOTE_SETTINGS_SERVER_URL ||
+      isRunningTests
+    );
+  },
+
+  get PREVIEW_MODE() {
+    // We want to offer the ability to set preview mode via a preference
+    // for consumers who want to pull from the preview bucket on startup.
+    if (_isUndefined(this._previewModeEnabled) && allowServerURLOverride) {
+      return gPreviewEnabled;
+    }
+    return !!this._previewModeEnabled;
+  },
+
+  /**
+   * Internal method to enable pulling data from preview buckets.
+   * @param enabled
+   */
+  enablePreviewMode(enabled) {
+    const bool2str = v =>
+      // eslint-disable-next-line no-nested-ternary
+      _isUndefined(v) ? "unset" : v ? "enabled" : "disabled";
+    this.log.debug(
+      `Preview mode: ${bool2str(this._previewModeEnabled)} -> ${bool2str(
+        enabled
+      )}`
+    );
+    this._previewModeEnabled = enabled;
+  },
+
+  /**
+   * Returns the actual bucket name to be used. When preview mode is enabled,
+   * this adds the *preview* suffix.
+   *
+   * See also `SharedUtils.loadJSONDump()` which strips the preview suffix to identify
+   * the packaged JSON file.
+   *
+   * @param bucketName the client bucket
+   * @returns the final client bucket depending whether preview mode is enabled.
+   */
+  actualBucketName(bucketName) {
+    let actual = bucketName.replace("-preview", "");
+    if (this.PREVIEW_MODE) {
+      actual += "-preview";
+    }
+    return actual;
+  },
 
   /**
    * Check if network is down.
@@ -202,7 +286,6 @@ var Utils = {
    */
   async hasLocalData(client) {
     const timestamp = await client.db.getLastModified();
-    // Note: timestamp will be 0 if empty JSON dump is loaded.
     return timestamp !== null;
   },
 
@@ -255,17 +338,12 @@ var Utils = {
     const identifier = `${bucket}/${collection}`;
     let lastModified = this._dumpStats[identifier];
     if (lastModified === undefined) {
-      try {
-        let res = await fetch(
-          `resource://app/defaults/settings/${bucket}/${collection}.json`
-        );
-        let records = (await res.json()).data;
-        // Records in dumps are sorted by last_modified, newest first.
-        // https://searchfox.org/mozilla-central/rev/5b3444ad300e244b5af4214212e22bd9e4b7088a/taskcluster/docker/periodic-updates/scripts/periodic_file_updates.sh#304
-        lastModified = records[0]?.last_modified || 0;
-      } catch (e) {
-        lastModified = -1;
-      }
+      const { timestamp: dumpTimestamp } = await SharedUtils.loadJSONDump(
+        bucket,
+        collection
+      );
+      // Client recognize -1 as missing dump.
+      lastModified = dumpTimestamp ?? -1;
       this._dumpStats[identifier] = lastModified;
     }
     return lastModified;

@@ -118,6 +118,64 @@ Changelog
 .. _1755100: https://bugzilla.mozilla.org/show_bug.cgi?id=1755100
 .. _1756917: https://bugzilla.mozilla.org/show_bug.cgi?id=1756917
 
+contextual.services.quicksuggest.block_nonsponsored
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user dismisses ("blocks") a
+non-sponsored suggestion, including both best matches and the usual
+non-best-match suggestions. Each key is the index at which a suggestion appeared
+in the results (1-based), and the corresponding value is the number of
+dismissals at that index.
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1761059_]
+
+.. _1761059: https://bugzilla.mozilla.org/show_bug.cgi?id=1761059
+
+contextual.services.quicksuggest.block_nonsponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user dismisses ("blocks") a
+non-sponsored best match. Each key is the index at which a suggestion appeared
+in the results (1-based), and the corresponding value is the number of
+dismissals at that index.
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1761059_]
+
+.. _1761059: https://bugzilla.mozilla.org/show_bug.cgi?id=1761059
+
+contextual.services.quicksuggest.block_sponsored
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user dismisses ("blocks") a
+sponsored suggestion, including both best matches and the usual non-best-match
+suggestions. Each key is the index at which a suggestion appeared in the results
+(1-based), and the corresponding value is the number of dismissals at that
+index.
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1761059_]
+
+.. _1761059: https://bugzilla.mozilla.org/show_bug.cgi?id=1761059
+
+contextual.services.quicksuggest.block_sponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user dismisses ("blocks") a
+sponsored best match. Each key is the index at which a suggestion appeared in
+the results (1-based), and the corresponding value is the number of dismissals
+at that index.
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1761059_]
+
+.. _1761059: https://bugzilla.mozilla.org/show_bug.cgi?id=1761059
+
 contextual.services.quicksuggest.click
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -332,6 +390,102 @@ Changelog
 .. _1693126: https://bugzilla.mozilla.org/show_bug.cgi?id=1693126
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
 .. _1740965: https://bugzilla.mozilla.org/show_bug.cgi?id=1740965
+
+contextservices.quicksuggest.engagement
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This event is recorded when an engagement occurs in the address bar while a
+Firefox Suggest suggestion is present. In other words, it is recorded in two
+cases:
+
+- The user picks a Firefox Suggest suggestion or a related UI element like its
+  help button.
+- While a Firefox Suggest suggestion is present in the address bar, the user
+  picks some other row.
+
+The event's objects are the following possible values:
+
+:block:
+  The user dismissed ("blocked") the suggestion.
+:click:
+  The user picked the suggestion.
+:help:
+  The user picked the suggestion's help button.
+:impression_only:
+  The user picked some other row.
+
+The event's ``extra`` contains the following properties:
+
+:match_type:
+  "best-match" if the suggestion was a best match or "firefox-suggest" if it was
+  a non-best-match suggestion.
+:position:
+  The index of the suggestion in the list of results (1-based).
+:suggestion_type:
+  The type of suggestion, one of: "sponsored", "nonsponsored"
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1761059_]
+
+.. _1761059: https://bugzilla.mozilla.org/show_bug.cgi?id=1761059
+
+contextservices.quicksuggest.impression_cap
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This event is recorded when an event related to an impression cap occurs. The
+event's objects are the following possible values:
+
+:hit:
+  Recorded when an impression cap is hit.
+:reset:
+  Recorded when a cap's counter is reset because its interval period has
+  elapsed. The implementation may batch multiple consecutive reset events for a
+  cap in a single telemetry event; see the ``eventCount`` discussion below.
+  Reset events are reported only when a cap's interval period elapses while
+  Firefox is running.
+
+The event's ``extra`` contains the following properties:
+
+:count:
+  The number of impressions during the cap's interval period.
+:eventCount:
+  The number of impression cap events reported in the telemetry event. This is
+  necessary because the implementation may batch multiple consecutive "reset"
+  events for a cap in a single telemetry event. When that occurs, this value
+  will be greater than 1, ``startDate`` will be the timestamp at which the
+  first event's interval period started, ``eventDate`` will be the timestamp at
+  which the last event's interval period ended, and ``count`` will be the number
+  of impressions during the first event's interval period. (The implementation
+  guarantees that reset events are batched only when the number of impressions
+  for all subsequent interval periods is zero.) For "hit" events,
+  ``eventCount`` will always be 1.
+:eventDate:
+  The event's timestamp, in number of milliseconds since Unix epoch. For "reset"
+  events, this is the timestamp at which the cap's interval period ended. If
+  ``eventCount`` is greater than 1, it's the timestamp at which the last
+  interval period ended. For "hit" events, this is the timestamp at which the
+  cap was hit.
+:impressionDate:
+  The timestamp of the most recent impression, in number of milliseconds since
+  Unix epoch.
+:intervalSeconds:
+  The number of seconds in the cap's interval period. For lifetime caps, this
+  value will be "Infinity".
+:maxCount:
+  The maximum number of impressions allowed in the cap's interval period.
+:startDate:
+  The timestamp at which the cap's interval period started, in number of
+  milliseconds since Unix epoch.
+:type:
+  The type of cap, one of: "sponsored", "nonsponsored"
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1761058_, 1765881_]
+
+.. _1761058: https://bugzilla.mozilla.org/show_bug.cgi?id=1761058
+.. _1765881: https://bugzilla.mozilla.org/show_bug.cgi?id=1765881
 
 contextservices.quicksuggest.opt_in_dialog
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -597,11 +751,43 @@ Changelog
 Contextual Services Pings
 -------------------------
 
-The following custom pings record impressions and clicks on Firefox Suggest
-suggestions. For general information on custom ping telemetry in Firefox, see
+The following custom telemetry pings are recorded for Firefox Suggest
+suggestions. For general information on custom telemetry pings in Firefox, see
 the `Custom Ping`_ document.
 
 .. _Custom Ping: https://docs.telemetry.mozilla.org/cookbooks/new_ping.html#sending-a-custom-ping
+
+Block
+~~~~~
+
+A block ping is recorded when the user dismisses ("blocks") a suggestion. Its
+payload includes the following:
+
+:advertiser:
+  The name of the suggestion's advertiser.
+:block_id:
+  A unique identifier for the suggestion (a.k.a. a keywords block).
+:context_id:
+  A UUID representing this user. Note that it's not client_id, nor can it be
+  used to link to a client_id.
+:iab_category:
+  The suggestion's category, either "22 - Shopping" or "5 - Education".
+:match_type:
+  "best-match" if the suggestion was a best match or "firefox-suggest" if it was
+  a non-best-match suggestion.
+:position:
+  The index of the suggestion in the list of results (1-based).
+:request_id:
+  A request identifier for each API request to Merino. This is only included for
+  suggestions provided by Merino.
+:scenario:
+  The user's Suggest scenario, either "offline" or "online".
+
+Changelog
+  Firefox 101.0
+    Introduced. [Bug 1764669_]
+
+.. _1764669: https://bugzilla.mozilla.org/show_bug.cgi?id=1764669
 
 Click
 ~~~~~
@@ -660,6 +846,8 @@ following two conditions hold:
 - At the time the user completed the engagement, a suggestion was present in the
   results.
 
+It is also recorded when the user dismisses ("blocks") a suggestion.
+
 The impression ping payload contains the following:
 
 :advertiser:
@@ -670,7 +858,9 @@ The impression ping payload contains the following:
   A UUID representing this user. Note that it's not client_id, nor can it be
   used to link to a client_id.
 :is_clicked:
-  Whether or not the user also clicked the suggestion.
+  Whether or not the user also clicked the suggestion. When true, we will also
+  send a separate click ping. When the impression ping is recorded because the
+  user dismissed ("blocked") the suggestion, this will be false.
 :matched_keywords (**Removed from Firefox 97**):
   The matched keywords that lead to the suggestion. This is only included when
   the user has opted in to data collection and the suggestion is provided by
@@ -727,6 +917,10 @@ Changelog
   Firefox 99.0
     ``match_type`` is added to the payload. [Bug 1754622_]
 
+  Firefox 101.0
+    The impression ping is now also recorded when the user dismisses ("blocks")
+    a suggestion. [Bug 1761059_]
+
 .. _1689365: https://bugzilla.mozilla.org/show_bug.cgi?id=1689365
 .. _1725492: https://bugzilla.mozilla.org/show_bug.cgi?id=1725492
 .. _1728188: https://bugzilla.mozilla.org/show_bug.cgi?id=1728188
@@ -735,42 +929,62 @@ Changelog
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
 .. _1748348: https://bugzilla.mozilla.org/show_bug.cgi?id=1748348
 .. _1754622: https://bugzilla.mozilla.org/show_bug.cgi?id=1754622
+.. _1761059: https://bugzilla.mozilla.org/show_bug.cgi?id=1761059
 
 Nimbus Exposure Event
 ---------------------
 
 A `Nimbus exposure event`_ is recorded once per app session when the user first
 encounters the UI of an experiment in which they're enrolled. The timing of the
-event depends on the experiment.
+event depends on the experiment and branch.
 
-Listed below are the slugs of supported experiments along with details on when
-their exposure events are recorded.
+There are two Nimbus variables that determine the timing of the event:
+``experimentType`` and the deprecated ``isBestMatchExperiment``. To determine
+when the exposure event is recorded for a specific experiment and branch,
+examine the experiment's recipe and look for one of these variables.
 
-:firefox-suggest-best-match_:
+Listed below are the supported values of ``experimentType`` and
+``isBestMatchExperiment`` along with details on when their corresponding
+exposure events are recorded.
+
+:experimentType = "best-match":
   If the user is in a treatment branch and they did not disable best match, the
   event is recorded the first time they trigger a best match; if the user is in
   a treatment branch and they did disable best match, the event is not recorded
   at all. If the user is in the control branch, the event is recorded the first
   time they would have triggered a best match. (Users in the control branch
   cannot "disable" best match since the feature is totally hidden from them.)
+:experimentType = "modal":
+  If the user is in a treatment branch, the event is recorded when they are
+  shown an opt-in modal. If the user is in the control branch, the event is
+  recorded every time they would have been shown a modal, which is on every
+  startup where another non-Suggest modal does not appear.
+:isBestMatchExperiment = true:
+  This is a deprecated version of ``experimentType == "best-match"``.
 :All other experiments:
   For all other experiments not listed above, the event is recorded the first
   time the user triggers a Firefox Suggest suggestion.
 
 Changelog
   Firefox 92.0
-    Introduced. [Bug 1724076_, 1727392_]
+    Introduced. The event is always recorded the first time the user triggers
+    a Firefox Suggest suggestion regardless of the experiment they are enrolled
+    in. [Bug 1724076_, 1727392_]
 
   Firefox 99.0
-    Support for the firefox-suggest-best-match_ experiment is added. [Bug
-    1752953_]
+    The ``isBestMatchExperiment = true`` case is added. [Bug 1752953_]
+
+  Firefox 100.0
+    The ``experimentType = "modal"`` case is added.
+    ``isBestMatchExperiment = true`` is deprecated in favor of
+    ``experimentType = "best-match"``. [Bug 1760596_]
 
 .. _Nimbus exposure event: https://experimenter.info/jetstream/jetstream/#enrollment-vs-exposure
-.. _firefox-suggest-best-match: https://experimenter.services.mozilla.com/nimbus/firefox-suggest-best-match/
 
 .. _1724076: https://bugzilla.mozilla.org/show_bug.cgi?id=1724076
 .. _1727392: https://bugzilla.mozilla.org/show_bug.cgi?id=1727392
 .. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
+.. _1760596: https://bugzilla.mozilla.org/show_bug.cgi?id=1760596
 
 Merino Search Queries
 ---------------------

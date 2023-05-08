@@ -1656,7 +1656,7 @@ JS_PUBLIC_API bool JS_HasInstance(JSContext* cx, HandleObject obj,
                                   HandleValue value, bool* bp) {
   AssertHeapIsIdle();
   cx->check(obj, value);
-  return HasInstance(cx, obj, value, bp);
+  return InstanceofOperator(cx, obj, value, bp);
 }
 
 JS_PUBLIC_API JSObject* JS_GetConstructor(JSContext* cx, HandleObject proto) {
@@ -2320,6 +2320,7 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
   borrowBuffer = rhs.borrowBuffer;
   usePinnedBytecode = rhs.usePinnedBytecode;
   allocateInstantiationStorage = rhs.allocateInstantiationStorage;
+  deoptimizeModuleGlobalVars = rhs.deoptimizeModuleGlobalVars;
 
   introductionType = rhs.introductionType;
   introductionLineno = rhs.introductionLineno;
@@ -2397,7 +2398,8 @@ JS::CompileOptions::CompileOptions(JSContext* cx) : ReadOnlyCompileOptions() {
     asmJSOption = !cx->options().asmJS()
                       ? AsmJSOption::DisabledByAsmJSPref
                       : AsmJSOption::DisabledByNoWasmCompiler;
-  } else if (cx->realm() && cx->realm()->debuggerObservesAsmJS()) {
+  } else if (cx->realm() && (cx->realm()->debuggerObservesWasm() ||
+                             cx->realm()->debuggerObservesAsmJS())) {
     asmJSOption = AsmJSOption::DisabledByDebugger;
   } else {
     asmJSOption = AsmJSOption::Enabled;

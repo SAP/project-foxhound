@@ -2,10 +2,6 @@ appdirs==1.4.4
 attrs==19.2.0
 blessings==1.7
 cbor2==4.0.1
-# Though we don't depend on colorama directly, we need to explicitly
-# define it here because it's needed by other dependencies on
-# Windows systems.
-colorama==0.4.4
 compare-locales==8.2.1
 cookies==2.2.1
 cram==0.7
@@ -41,7 +37,7 @@ setuptools==51.2.0
 six==1.13.0
 slugid==2.0.0
 taskcluster==44.2.2
-taskcluster-taskgraph==1.2.0
+taskcluster-taskgraph==1.4.0
 taskcluster-urls==13.0.1
 tqdm==4.62.3
 urllib3==1.26

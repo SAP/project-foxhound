@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 import argparse
 import json
 import logging
@@ -55,7 +57,6 @@ def load_commands():
                     "parse_known": props.get("parse_known", False),
                     "help": props.get("help"),
                     "virtualenv": props.get("virtualenv", True),
-                    "install": props.get("install", []),
                     "requirements": [os.path.join(base_dir, item)
                                      for item in props.get("requirements", [])]
                 }
@@ -63,7 +64,7 @@ def load_commands():
                 rv[command]["conditional_requirements"] = load_conditional_requirements(
                     props, base_dir)
 
-                if rv[command]["install"] or rv[command]["requirements"] or rv[command]["conditional_requirements"]:
+                if rv[command]["requirements"] or rv[command]["conditional_requirements"]:
                     assert rv[command]["virtualenv"]
     return rv
 
@@ -101,7 +102,7 @@ def import_command(prog, command, props):
     script = getattr(mod, props["script"])
     if props["parser"] is not None:
         parser = getattr(mod, props["parser"])()
-        parser.prog = "%s %s" % (os.path.basename(prog), command)
+        parser.prog = f"{os.path.basename(prog)} {command}"
     else:
         parser = None
 
@@ -118,11 +119,17 @@ def create_complete_parser():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()
 
+    # We should already be in a virtual environment from the top-level
+    # `wpt build-docs` command but we need to look up the environment to
+    # find out where it's located.
+    venv_path = os.environ["VIRTUAL_ENV"]
+    venv = virtualenv.Virtualenv(venv_path, True)
+
     for command in commands:
         props = commands[command]
 
-        if props["virtualenv"]:
-            setup_virtualenv(None, False, props)
+        for path in props.get("requirements", []):
+            venv.install_requirements(path)
 
         subparser = import_command('wpt', command, props)[1]
         if not subparser:
@@ -149,8 +156,6 @@ def setup_virtualenv(path, skip_venv_setup, props):
     venv = virtualenv.Virtualenv(path, should_skip_setup)
     if not should_skip_setup:
         venv.start()
-        for name in props["install"]:
-            venv.install(name)
         for path in props["requirements"]:
             venv.install_requirements(path)
     return venv

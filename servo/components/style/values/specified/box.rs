@@ -708,33 +708,30 @@ impl AnimationIterationCount {
     PartialEq,
     SpecifiedValueInfo,
     ToComputedValue,
+    ToCss,
     ToResolvedValue,
     ToShmem,
 )]
 #[value_info(other_values = "none")]
-pub struct AnimationName(pub Option<KeyframesName>);
+pub struct AnimationName(pub KeyframesName);
 
 impl AnimationName {
     /// Get the name of the animation as an `Atom`.
     pub fn as_atom(&self) -> Option<&Atom> {
-        self.0.as_ref().map(|n| n.as_atom())
+        if self.is_none() {
+            return None;
+        }
+        Some(self.0.as_atom())
     }
 
     /// Returns the `none` value.
     pub fn none() -> Self {
-        AnimationName(None)
+        AnimationName(KeyframesName::none())
     }
-}
 
-impl ToCss for AnimationName {
-    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
-    where
-        W: Write,
-    {
-        match self.0 {
-            Some(ref name) => name.to_css(dest),
-            None => dest.write_str("none"),
-        }
+    /// Returns whether this is the none value.
+    pub fn is_none(&self) -> bool {
+        self.0.is_none()
     }
 }
 
@@ -744,12 +741,86 @@ impl Parse for AnimationName {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         if let Ok(name) = input.try_parse(|input| KeyframesName::parse(context, input)) {
-            return Ok(AnimationName(Some(name)));
+            return Ok(AnimationName(name));
         }
 
         input.expect_ident_matching("none")?;
-        Ok(AnimationName(None))
+        Ok(AnimationName(KeyframesName::none()))
     }
+}
+
+/// A value for the <Scroller> used in scroll().
+///
+/// https://drafts.csswg.org/scroll-animations-1/rewrite#typedef-scroller
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(u8)]
+pub enum Scroller {
+    /// The nearest ancestor scroll container. (Default.)
+    Nearest,
+    /// The document viewport as the scroll container.
+    Root,
+    // FIXME: Bug 1764450: Once we support container-name CSS property (Bug 1744224), we may add
+    // <custom-ident> here, based on the result of the spec issue:
+    // https://github.com/w3c/csswg-drafts/issues/7046
+}
+
+impl Default for Scroller {
+    fn default() -> Self {
+        Self::Nearest
+    }
+}
+
+/// A value for the <Axis> used in scroll().
+///
+/// https://drafts.csswg.org/scroll-animations-1/rewrite#typedef-axis
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(u8)]
+pub enum ScrollAxis {
+    /// The block axis of the scroll container. (Default.)
+    Block,
+    /// The inline axis of the scroll container.
+    Inline,
+    /// The vertical block axis of the scroll container.
+    Vertical,
+    /// The horizontal axis of the scroll container.
+    Horizontal,
+}
+
+impl Default for ScrollAxis {
+    fn default() -> Self {
+        Self::Block
+    }
+}
+
+#[inline]
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == Default::default()
 }
 
 /// A value for the <single-animation-timeline>.
@@ -773,10 +844,15 @@ impl Parse for AnimationName {
 pub enum AnimationTimeline {
     /// Use default timeline. The animation’s timeline is a DocumentTimeline.
     Auto,
-    /// The animation is not associated with a timeline.
-    None,
     /// The scroll-timeline name
     Timeline(TimelineName),
+    /// The scroll() notation
+    /// https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-notation
+    #[css(function)]
+    Scroll(
+        #[css(skip_if = "is_default")] ScrollAxis,
+        #[css(skip_if = "is_default")] Scroller,
+    ),
 }
 
 impl AnimationTimeline {
@@ -797,16 +873,30 @@ impl Parse for AnimationTimeline {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         // We are using the same parser for TimelineName and KeyframesName, but animation-timeline
-        // accepts "auto", so need to manually parse this. (We can not derive Parse because
-        // TimelineName excludes only "none" keyword.)
+        // accepts "auto", so need to manually parse this. (We can not derive
+        // Parse because TimelineName excludes only the "none" keyword).
+        //
         // FIXME: Bug 1733260: we may drop None based on the spec issue:
-        // Note: https://github.com/w3c/csswg-drafts/issues/6674.
+        // https://github.com/w3c/csswg-drafts/issues/6674
+        //
+        // If `none` is removed, then we could potentially shrink this the same
+        // way we deal with animation-name.
         if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
             return Ok(Self::Auto);
         }
 
         if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
-            return Ok(Self::None);
+            return Ok(AnimationTimeline::Timeline(TimelineName::none()));
+        }
+
+        // https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-notation
+        if input.try_parse(|i| i.expect_function_matching("scroll")).is_ok() {
+            return input.parse_nested_block(|i| {
+                Ok(Self::Scroll(
+                    i.try_parse(ScrollAxis::parse).unwrap_or(ScrollAxis::Block),
+                    i.try_parse(Scroller::parse).unwrap_or(Scroller::Nearest),
+                ))
+            });
         }
 
         TimelineName::parse(context, input).map(AnimationTimeline::Timeline)
@@ -1221,7 +1311,9 @@ impl Parse for WillChange {
                 &["will-change", "none", "all", "auto"],
             )?;
 
-            if ident.0 == atom!("scroll-position") {
+            if context.in_ua_sheet() && ident.0 == atom!("-moz-fixed-pos-containing-block") {
+                bits |= WillChangeBits::FIXPOS_CB_NON_SVG;
+            } else if ident.0 == atom!("scroll-position") {
                 bits |= WillChangeBits::SCROLL;
             } else {
                 bits |= change_bits_for_maybe_property(&parser_ident, context);
@@ -1267,22 +1359,26 @@ impl TouchAction {
 
 bitflags! {
     #[derive(MallocSizeOf, Parse, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
-    #[css(bitflags(single = "none,strict,content", mixed="size,layout,paint"))]
+    #[css(bitflags(single = "none,strict,content", mixed="size,layout,paint,inline-size", overlapping_bits))]
     #[repr(C)]
     /// Constants for contain: https://drafts.csswg.org/css-contain/#contain-property
     pub struct Contain: u8 {
         /// `none` variant, just for convenience.
         const NONE = 0;
-        /// 'size' variant, turns on size containment
-        const SIZE = 1 << 0;
+        /// `inline-size` variant, turns on single-axis inline size containment
+        const INLINE_SIZE = 1 << 0;
+        /// `block-size` variant, turns on single-axis block size containment, internal only
+        const BLOCK_SIZE = 1 << 1;
         /// `layout` variant, turns on layout containment
-        const LAYOUT = 1 << 1;
+        const LAYOUT = 1 << 2;
         /// `paint` variant, turns on paint containment
-        const PAINT = 1 << 2;
+        const PAINT = 1 << 3;
+        /// 'size' variant, turns on size containment
+        const SIZE = 1 << 4 | Contain::INLINE_SIZE.bits | Contain::BLOCK_SIZE.bits;
+        /// `content` variant, turns on layout and paint containment
+        const CONTENT = 1 << 5 | Contain::LAYOUT.bits | Contain::PAINT.bits;
         /// `strict` variant, turns on all types of containment
-        const STRICT = 1 << 3 | Contain::LAYOUT.bits | Contain::PAINT.bits | Contain::SIZE.bits;
-        /// 'content' variant, turns on layout and paint containment
-        const CONTENT = 1 << 4 | Contain::LAYOUT.bits | Contain::PAINT.bits;
+        const STRICT = 1 << 6 | Contain::LAYOUT.bits | Contain::PAINT.bits | Contain::SIZE.bits;
     }
 }
 

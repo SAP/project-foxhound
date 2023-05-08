@@ -31,7 +31,6 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/gfx/XlibDisplay.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -42,9 +41,12 @@
 #include "nsMathUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsUnicodeProperties.h"
+#include "prenv.h"
 #include "VsyncSource.h"
+#include "mozilla/WidgetUtilsGtk.h"
 
 #ifdef MOZ_X11
+#  include "mozilla/gfx/XlibDisplay.h"
 #  include <gdk/gdkx.h>
 #  include <X11/extensions/Xrandr.h>
 #  include "cairo-xlib.h"
@@ -277,6 +279,11 @@ void gfxPlatformGtk::InitWebRenderConfig() {
   }
 
   FeatureState& feature = gfxConfig::GetFeature(Feature::WEBRENDER_COMPOSITOR);
+#ifdef RELEASE_OR_BETA
+  feature.ForceDisable(FeatureStatus::Blocked,
+                       "Cannot be enabled in release or beta",
+                       "FEATURE_FAILURE_DISABLE_RELEASE_OR_BETA"_ns);
+#else
   if (feature.IsEnabled()) {
     if (!(gfxConfig::IsEnabled(Feature::WEBRENDER) ||
           gfxConfig::IsEnabled(Feature::WEBRENDER_SOFTWARE))) {
@@ -287,7 +294,7 @@ void gfxPlatformGtk::InitWebRenderConfig() {
                            "Wayland support missing",
                            "FEATURE_FAILURE_NO_WAYLAND"_ns);
     }
-#ifdef MOZ_WAYLAND
+#  ifdef MOZ_WAYLAND
     else if (gfxConfig::IsEnabled(Feature::WEBRENDER) &&
              !gfxConfig::IsEnabled(Feature::DMABUF)) {
       // We use zwp_linux_dmabuf_v1 and GBM directly to manage FBOs. In theory
@@ -301,8 +308,10 @@ void gfxPlatformGtk::InitWebRenderConfig() {
                            "Requires wp_viewporter protocol support",
                            "FEATURE_FAILURE_REQUIRES_WPVIEWPORTER"_ns);
     }
-#endif
+#  endif  // MOZ_WAYLAND
   }
+#endif    // RELEASE_OR_BETA
+
   gfxVars::SetUseWebRenderCompositor(feature.IsEnabled());
 }
 
@@ -325,7 +334,6 @@ already_AddRefed<gfxASurface> gfxPlatformGtk::CreateOffscreenSurface(
 
   RefPtr<gfxASurface> newSurface;
   bool needsClear = true;
-#ifdef MOZ_X11
   // XXX we really need a different interface here, something that passes
   // in more context, including the display and/or target surface type that
   // we should try to match
@@ -336,7 +344,6 @@ already_AddRefed<gfxASurface> gfxPlatformGtk::CreateOffscreenSurface(
     // waste time clearing again
     needsClear = false;
   }
-#endif
 
   if (!newSurface) {
     // We couldn't create a native surface for whatever reason;
@@ -852,12 +859,11 @@ class GtkVsyncSource final : public VsyncSource {
   bool mVsyncEnabled;
 };
 
-class XrandrSoftwareVsyncSource final : public SoftwareVsyncSource {
+class XrandrSoftwareVsyncSource final
+    : public mozilla::gfx::SoftwareVsyncSource {
  public:
-  XrandrSoftwareVsyncSource() {
+  XrandrSoftwareVsyncSource() : SoftwareVsyncSource(ComputeVsyncRate()) {
     MOZ_ASSERT(NS_IsMainThread());
-
-    UpdateVsyncRate();
 
     GdkScreen* defaultScreen = gdk_screen_get_default();
     g_signal_connect(defaultScreen, "monitors-changed",
@@ -868,7 +874,7 @@ class XrandrSoftwareVsyncSource final : public SoftwareVsyncSource {
   // Request the current refresh rate via xrandr. It is hard to find the
   // "correct" one, thus choose the highest one, assuming this will usually
   // give the best user experience.
-  void UpdateVsyncRate() {
+  static mozilla::TimeDuration ComputeVsyncRate() {
     struct _XDisplay* dpy = gdk_x11_get_default_xdisplay();
 
     // Use the default software refresh rate as lower bound. Allowing lower
@@ -917,13 +923,13 @@ class XrandrSoftwareVsyncSource final : public SoftwareVsyncSource {
     }
 
     const double rate = 1000.0 / highestRefreshRate;
-    mVsyncRate = mozilla::TimeDuration::FromMilliseconds(rate);
+    return mozilla::TimeDuration::FromMilliseconds(rate);
   }
 
   static void monitors_changed(GdkScreen* aScreen, gpointer aClosure) {
     XrandrSoftwareVsyncSource* self =
         static_cast<XrandrSoftwareVsyncSource*>(aClosure);
-    self->UpdateVsyncRate();
+    self->SetVsyncRate(ComputeVsyncRate());
   }
 
   // from xrandr.c
@@ -951,12 +957,15 @@ class XrandrSoftwareVsyncSource final : public SoftwareVsyncSource {
     return rate;
   }
 };
+#endif
 
-already_AddRefed<gfx::VsyncSource> gfxPlatformGtk::CreateHardwareVsyncSource() {
+already_AddRefed<gfx::VsyncSource>
+gfxPlatformGtk::CreateGlobalHardwareVsyncSource() {
+#ifdef MOZ_X11
   if (IsHeadless() || IsWaylandDisplay()) {
     // On Wayland we can not create a global hardware based vsync source, thus
     // use a software based one here. We create window specific ones later.
-    return gfxPlatform::CreateHardwareVsyncSource();
+    return GetSoftwareVsyncSource();
   }
 
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
@@ -981,15 +990,17 @@ already_AddRefed<gfx::VsyncSource> gfxPlatformGtk::CreateHardwareVsyncSource() {
     RefPtr<GtkVsyncSource> vsyncSource = new GtkVsyncSource();
     if (!vsyncSource->Setup()) {
       NS_WARNING("Failed to setup GLContext, falling back to software vsync.");
-      return gfxPlatform::CreateHardwareVsyncSource();
+      return GetSoftwareVsyncSource();
     }
     return vsyncSource.forget();
   }
 
   RefPtr<VsyncSource> softwareVsync = new XrandrSoftwareVsyncSource();
   return softwareVsync.forget();
-}
+#else
+  return CreateSoftwareVsyncSource();
 #endif
+}
 
 void gfxPlatformGtk::BuildContentDeviceData(ContentDeviceData* aOut) {
   gfxPlatform::BuildContentDeviceData(aOut);

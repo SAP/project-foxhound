@@ -38,6 +38,7 @@
 #include "js/Object.h"     // JS::GetCompartment
 #include "js/StructuredClone.h"
 #include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsGlobalWindow.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsJSEnvironment.h"
@@ -282,6 +283,10 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PromiseNativeThenHandlerBase)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(PromiseNativeThenHandlerBase)
+  tmp->Trace(aCallbacks, aClosure);
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
 NS_IMPL_CYCLE_COLLECTING_ADDREF(PromiseNativeThenHandlerBase)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PromiseNativeThenHandlerBase)
 
@@ -391,29 +396,62 @@ namespace {
 
 class PromiseNativeHandlerShim final : public PromiseNativeHandler {
   RefPtr<PromiseNativeHandler> mInner;
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  enum InnerState{
+      NotCleared,
+      ClearedFromResolve,
+      ClearedFromReject,
+      ClearedFromCC,
+  };
+  InnerState mState = NotCleared;
+#endif
 
   ~PromiseNativeHandlerShim() = default;
 
  public:
   explicit PromiseNativeHandlerShim(PromiseNativeHandler* aInner)
       : mInner(aInner) {
-    MOZ_ASSERT(mInner);
+    MOZ_DIAGNOSTIC_ASSERT(mInner);
   }
 
   MOZ_CAN_RUN_SCRIPT
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
                         ErrorResult& aRv) override {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    MOZ_DIAGNOSTIC_ASSERT(mState != ClearedFromResolve);
+    MOZ_DIAGNOSTIC_ASSERT(mState != ClearedFromReject);
+    MOZ_DIAGNOSTIC_ASSERT(mState != ClearedFromCC);
+#else
+    if (!mInner) {
+      return;
+    }
+#endif
     RefPtr<PromiseNativeHandler> inner = std::move(mInner);
     inner->ResolvedCallback(aCx, aValue, aRv);
     MOZ_ASSERT(!mInner);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    mState = ClearedFromResolve;
+#endif
   }
 
   MOZ_CAN_RUN_SCRIPT
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
                         ErrorResult& aRv) override {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    MOZ_DIAGNOSTIC_ASSERT(mState != ClearedFromResolve);
+    MOZ_DIAGNOSTIC_ASSERT(mState != ClearedFromReject);
+    MOZ_DIAGNOSTIC_ASSERT(mState != ClearedFromCC);
+#else
+    if (!mInner) {
+      return;
+    }
+#endif
     RefPtr<PromiseNativeHandler> inner = std::move(mInner);
     inner->RejectedCallback(aCx, aValue, aRv);
     MOZ_ASSERT(!mInner);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    mState = ClearedFromReject;
+#endif
   }
 
   bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
@@ -425,7 +463,16 @@ class PromiseNativeHandlerShim final : public PromiseNativeHandler {
   NS_DECL_CYCLE_COLLECTION_CLASS(PromiseNativeHandlerShim)
 };
 
-NS_IMPL_CYCLE_COLLECTION(PromiseNativeHandlerShim, mInner)
+NS_IMPL_CYCLE_COLLECTION_CLASS(PromiseNativeHandlerShim)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PromiseNativeHandlerShim)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mInner)
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  tmp->mState = ClearedFromCC;
+#endif
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(PromiseNativeHandlerShim)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInner)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(PromiseNativeHandlerShim)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(PromiseNativeHandlerShim)

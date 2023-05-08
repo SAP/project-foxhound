@@ -41,6 +41,12 @@ class index_t {
 class HyperTextAccessibleBase {
  public:
   /**
+   * Invalidate cached HyperText offsets. This should be called whenever a
+   * child is added or removed or the text of a text leaf child is changed.
+   */
+  virtual void InvalidateCachedHyperTextOffsets() = 0;
+
+  /**
    * Return child accessible at the given text offset.
    *
    * @param  aOffset  [in] the given text offset
@@ -59,17 +65,13 @@ class HyperTextAccessibleBase {
    * accessible.
    *
    * @param  aChild           [in] accessible child to get text offset for
-   * @param  aInvalidateAfter [in, optional] indicates whether invalidate
-   *                           cached offsets for next siblings of the child
    */
-  int32_t GetChildOffset(const Accessible* aChild,
-                         bool aInvalidateAfter = false) const;
+  int32_t GetChildOffset(const Accessible* aChild) const;
 
   /**
    * Return text offset for the child accessible index.
    */
-  virtual int32_t GetChildOffset(uint32_t aChildIndex,
-                                 bool aInvalidateAfter = false) const;
+  virtual int32_t GetChildOffset(uint32_t aChildIndex) const;
 
   /**
    * Return character count within the hypertext accessible.
@@ -97,6 +99,20 @@ class HyperTextAccessibleBase {
    */
   bool CharAt(int32_t aOffset, nsAString& aChar,
               int32_t* aStartOffset = nullptr, int32_t* aEndOffset = nullptr);
+
+  /**
+   * Return a rect (in dev pixels) for character at given offset relative
+   * given coordinate system.
+   */
+  virtual LayoutDeviceIntRect CharBounds(int32_t aOffset, uint32_t aCoordType);
+
+  /**
+   * Return a rect (in dev pixels) of the given text range relative given
+   * coordinate system.
+   */
+  virtual LayoutDeviceIntRect TextBounds(int32_t aStartOffset,
+                                         int32_t aEndOffset,
+                                         uint32_t aCoordType);
 
   /**
    * Get a TextLeafPoint for a given offset in this HyperTextAccessible.
@@ -128,6 +144,11 @@ class HyperTextAccessibleBase {
    */
   bool IsValidOffset(int32_t aOffset);
   bool IsValidRange(int32_t aStartOffset, int32_t aEndOffset);
+
+  /**
+   * Return link count within this hypertext accessible.
+   */
+  uint32_t LinkCount();
 
   /**
    * Return link accessible at the given index.
@@ -184,6 +205,20 @@ class HyperTextAccessibleBase {
         const_cast<const HyperTextAccessibleBase*>(this)->Acc();
     return const_cast<Accessible*>(acc);
   }
+
+  /**
+   * Get the cached map of child indexes to HyperText offsets. If the cache
+   * hasn't been built yet, build it.
+   * This is an array which contains the exclusive end offset for each child.
+   * That is, the start offset for child c is array index c - 1.
+   */
+  virtual const nsTArray<int32_t>& GetCachedHyperTextOffsets() const = 0;
+
+  /**
+   * Build the HyperText offsets cache. This should only be called by
+   * GetCachedHyperTextOffsets.
+   */
+  void BuildCachedHyperTextOffsets(nsTArray<int32_t>& aOffsets) const;
 
  private:
   /**

@@ -242,7 +242,7 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
       bailoutInfo->bailoutKind = mozilla::Some(BailoutKind::Finally);
     }
 
-    rfe->kind = ResumeFromException::RESUME_BAILOUT;
+    rfe->kind = ExceptionResumeKind::Bailout;
     rfe->target = cx->runtime()->jitRuntime()->getBailoutTail().value;
     rfe->bailoutInfo = bailoutInfo;
   } else {
@@ -262,22 +262,16 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
   return success;
 }
 
-// Initialize the decl env Object, call object, and any arguments obj of the
-// current frame.
+// Initialize the NamedLambdaObject and CallObject of the current frame if
+// needed.
 bool jit::EnsureHasEnvironmentObjects(JSContext* cx, AbstractFramePtr fp) {
   // Ion does not compile eval scripts.
   MOZ_ASSERT(!fp.isEvalFrame());
 
-  if (fp.isFunctionFrame()) {
-    // Ion does not handle extra var environments due to parameter
-    // expressions yet.
-    MOZ_ASSERT(!fp.callee()->needsExtraBodyVarEnvironment());
-
-    if (!fp.hasInitialEnvironment() &&
-        fp.callee()->needsFunctionEnvironmentObjects()) {
-      if (!fp.initFunctionEnvironmentObjects(cx)) {
-        return false;
-      }
+  if (fp.isFunctionFrame() && !fp.hasInitialEnvironment() &&
+      fp.callee()->needsFunctionEnvironmentObjects()) {
+    if (!fp.initFunctionEnvironmentObjects(cx)) {
+      return false;
     }
   }
 

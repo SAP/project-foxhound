@@ -14,8 +14,6 @@
 namespace js {
 namespace jit {
 
-// Must be a callee-saved register for preservation around generateEnterJIT().
-static constexpr Register BaselineFrameReg = s0;
 static constexpr Register BaselineStackReg = sp;
 
 // ValueOperands R0, R1, and R2.
@@ -29,13 +27,6 @@ static constexpr ValueOperand R2(a0);
 // These use registers that are not preserved across calls.
 static constexpr Register ICTailCallReg = ra;
 static constexpr Register ICStubReg = t0;
-
-// ExtractTemps must be callee-save registers:
-// ICSetProp_Native::Compiler::generateStubCode() stores the object
-// in ExtractTemp0, but then calls callTypeUpdateIC(), which clobbers
-// caller-save registers.
-static constexpr Register ExtractTemp0 = s7;
-static constexpr Register ExtractTemp1 = s8;
 
 // Note that ICTailCallReg is actually just the link register.
 // In LoongArch code emission, we do not clobber ICTailCallReg since we keep

@@ -5,7 +5,6 @@ const DID_SEE_ABOUT_WELCOME_PREF = "trailhead.firstrun.didSeeAboutWelcome";
 const TEST_PROTON_CONTENT = [
   {
     id: "AW_STEP1",
-    order: 0,
     content: {
       position: "corner",
       title: "Step 1",
@@ -33,7 +32,6 @@ const TEST_PROTON_CONTENT = [
   },
   {
     id: "AW_STEP2",
-    order: 1,
     content: {
       title: "Step 2",
       primary_button: {
@@ -50,7 +48,6 @@ const TEST_PROTON_CONTENT = [
   },
   {
     id: "AW_STEP3",
-    order: 2,
     content: {
       title: "Step 3",
       tiles: {
@@ -88,7 +85,6 @@ const TEST_PROTON_CONTENT = [
   },
   {
     id: "AW_STEP4",
-    order: 3,
     auto_advance: "primary_button",
     content: {
       title: "Step 4",
@@ -345,6 +341,11 @@ add_task(async function test_AWMultistage_Primary_Action() {
       impressionCall.args[1].message_id,
       "DEFAULT_ABOUTWELCOME_PROTON_SITES",
       "SITES MessageId sent in impression event telemetry"
+    );
+    Assert.equal(
+      impressionCall.args[1].event_context.page,
+      "about:welcome",
+      "event context page set to 'about:welcome'"
     );
   }
 
@@ -681,3 +682,28 @@ test_newtab(
   },
   "about:welcome"
 );
+
+add_task(async function test_send_aboutwelcome_as_page_in_event_telemetry() {
+  const sandbox = sinon.createSandbox();
+  let browser = await openAboutWelcome();
+  let aboutWelcomeActor = await getAboutWelcomeParent(browser);
+  // Stub AboutWelcomeParent Content Message Handler
+  let telemetryStub = sandbox.stub(aboutWelcomeActor, "onContentMessage");
+
+  await onButtonClick(browser, "button.primary");
+
+  Assert.equal(
+    telemetryStub.lastCall.args[1].event,
+    "CLICK_BUTTON",
+    "Event telemetry sent on primary button press"
+  );
+  Assert.equal(
+    telemetryStub.lastCall.args[1].event_context.page,
+    "about:welcome",
+    "Event context page set to 'about:welcome' in event telemetry"
+  );
+
+  registerCleanupFunction(() => {
+    sandbox.restore();
+  });
+});

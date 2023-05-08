@@ -170,7 +170,7 @@ nsresult DataStorage::Init() {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  mBackgroundTaskQueue = new TaskQueue(target.forget(), "PSM DataStorage");
+  mBackgroundTaskQueue = TaskQueue::Create(target.forget(), "PSM DataStorage");
 
   // For test purposes, we can set the write timer to be very fast.
   uint32_t timerDelayMS = Preferences::GetInt("test.datastorage.write_timer_ms",
@@ -260,9 +260,7 @@ DataStorage::Reader::Run() {
   nsCOMPtr<nsIInputStream> fileInputStream;
   rv = NS_NewLocalFileInputStream(getter_AddRefs(fileInputStream), file);
   // If we failed for some reason other than the file doesn't exist, bail.
-  if (NS_WARN_IF(NS_FAILED(rv) &&
-                 rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&  // on Unix
-                 rv != NS_ERROR_FILE_NOT_FOUND)) {             // on Windows
+  if (NS_WARN_IF(NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND)) {
     return rv;
   }
 
@@ -418,6 +416,7 @@ nsresult DataStorage::Reader::ParseLine(nsDependentCSubstring& aLine,
 }
 
 nsresult DataStorage::AsyncReadData(const MutexAutoLock& /*aProofOfLock*/) {
+  mMutex.AssertCurrentThreadOwns();
   // Allocate a Reader so that even if it isn't dispatched,
   // the data-storage-ready notification will be fired and Get
   // will be able to proceed (this happens in its destructor).
@@ -583,6 +582,7 @@ nsresult DataStorage::Put(const nsCString& aKey, const nsCString& aValue,
 nsresult DataStorage::PutInternal(const nsCString& aKey, Entry& aEntry,
                                   DataStorageType aType,
                                   const MutexAutoLock& aProofOfLock) {
+  mMutex.AssertCurrentThreadOwns();
   DataStorageTable& table = GetTableForType(aType, aProofOfLock);
   table.InsertOrUpdate(aKey, aEntry);
 
@@ -685,6 +685,7 @@ DataStorage::Writer::Run() {
 }
 
 nsresult DataStorage::AsyncWriteData(const MutexAutoLock& /*aProofOfLock*/) {
+  mMutex.AssertCurrentThreadOwns();
   if (!mPendingWrite || mShuttingDown || !mBackingFile) {
     return NS_OK;
   }

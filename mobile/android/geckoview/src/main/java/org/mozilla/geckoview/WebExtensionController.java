@@ -285,13 +285,26 @@ public class WebExtensionController {
       return null;
     }
 
-    /*
-    TODO: Bug 1601420
+    /**
+     * Called whenever permissions are requested. This is intended as an opportunity for the app to
+     * prompt the user for the permissions required by this extension at runtime.
+     *
+     * @param extension The {@link WebExtension} that is about to be installed. You can use {@link
+     *     WebExtension#metaData} to gather information about this extension when building the user
+     *     prompt dialog.
+     * @param permissions The permissions that are requested.
+     * @param origins The requested host permissions.
+     * @return A {@link GeckoResult} that completes to either {@link AllowOrDeny#ALLOW ALLOW} if the
+     *     request should be approved or {@link AllowOrDeny#DENY DENY} if the request should be
+     *     denied. A null value will be interpreted as {@link AllowOrDeny#DENY DENY}.
+     */
+    @Nullable
     default GeckoResult<AllowOrDeny> onOptionalPrompt(
-            WebExtension extension,
-            String[] optionalPermissions) {
-        return null;
-    } */
+        final @NonNull WebExtension extension,
+        final @NonNull String[] permissions,
+        final @NonNull String[] origins) {
+      return null;
+    }
   }
 
   public interface DebuggerDelegate {
@@ -755,13 +768,16 @@ public class WebExtensionController {
               } else if ("GeckoView:WebExtension:Download".equals(event)) {
                 download(message, extension);
                 return;
+              } else if ("GeckoView:WebExtension:OptionalPrompt".equals(event)) {
+                optionalPrompt(message, extension);
+                return;
               }
 
               // GeckoView:WebExtension:Connect and GeckoView:WebExtension:Message
               // are handled below.
               final String nativeApp = bundle.getString("nativeApp");
               if (nativeApp == null) {
-                if (BuildConfig.DEBUG) {
+                if (BuildConfig.DEBUG_BUILD) {
                   throw new RuntimeException("Missing required nativeApp message parameter.");
                 }
                 callback.sendError("Missing nativeApp parameter.");
@@ -773,7 +789,7 @@ public class WebExtensionController {
                   fromBundle(extension, senderBundle, session);
               if (sender == null) {
                 if (callback != null) {
-                  if (BuildConfig.DEBUG) {
+                  if (BuildConfig.DEBUG_BUILD) {
                     try {
                       Log.e(
                           LOGTAG, "Could not find recipient for message: " + bundle.toJSONObject());
@@ -798,7 +814,7 @@ public class WebExtensionController {
     if (extensionBundle == null
         || !extensionBundle.containsKey("webExtensionId")
         || !extensionBundle.containsKey("locationURI")) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new RuntimeException("Missing webExtensionId or locationURI");
       }
 
@@ -834,7 +850,7 @@ public class WebExtensionController {
     final String[] newPermissions = message.getStringArray("newPermissions");
     final String[] newOrigins = message.getStringArray("newOrigins");
     if (currentBundle == null || updatedBundle == null) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new RuntimeException("Missing bundle");
       }
 
@@ -863,6 +879,34 @@ public class WebExtensionController {
     }
 
     callback.resolveTo(
+        promptResponse.map(
+            allowOrDeny -> {
+              final GeckoBundle response = new GeckoBundle(1);
+              response.putBoolean("allow", AllowOrDeny.ALLOW.equals(allowOrDeny));
+              return response;
+            }));
+  }
+
+  private void optionalPrompt(final Message message, final WebExtension extension) {
+    if (mPromptDelegate == null) {
+      Log.e(
+          LOGTAG,
+          "Tried to request optional permissions for extension "
+              + extension.id
+              + " but no delegate is registered");
+      return;
+    }
+
+    final String[] permissions =
+        message.bundle.getBundle("permissions").getStringArray("permissions");
+    final String[] origins = message.bundle.getBundle("permissions").getStringArray("origins");
+    final GeckoResult<AllowOrDeny> promptResponse =
+        mPromptDelegate.onOptionalPrompt(extension, permissions, origins);
+    if (promptResponse == null) {
+      return;
+    }
+
+    message.callback.resolveTo(
         promptResponse.map(
             allowOrDeny -> {
               final GeckoBundle response = new GeckoBundle(1);
@@ -1086,7 +1130,7 @@ public class WebExtensionController {
     }
 
     if (environmentType == WebExtension.MessageSender.ENV_TYPE_UNKNOWN) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new RuntimeException("Missing or unknown envType: " + envType);
       }
 
@@ -1107,7 +1151,7 @@ public class WebExtensionController {
           sender.containsKey("frameId") && sender.getInt("frameId", -1) != -1;
       final boolean hasUrl = sender.containsKey("url");
       if (!hasFrameId || !hasUrl) {
-        if (BuildConfig.DEBUG) {
+        if (BuildConfig.DEBUG_BUILD) {
           throw new RuntimeException(
               "Missing sender information. hasFrameId: " + hasFrameId + " hasUrl: " + hasUrl);
         }

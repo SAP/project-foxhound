@@ -410,29 +410,22 @@
 <groupbox id="downloadsGroup" data-category="paneGeneral" hidden="true">
   <label><html:h2 data-l10n-id="download-header"/></label>
 
-  <radiogroup id="saveWhere"
-              preference="browser.download.useDownloadDir">
-    <hbox>
-      <radio id="saveTo"
-             value="true"
-             data-l10n-id="download-save-to"/>
-      <html:input id="downloadFolder"
-                  type="text"
-                  readonly="readonly"
-                  aria-labelledby="saveTo"/>
-      <button id="chooseFolder"
-              is="highlightable-button"
-              class="accessory-button"
-              data-l10n-id="download-choose-folder"/>
-    </hbox>
-    <!-- Additional radio button added to support CloudStorage - Bug 1357171 -->
-    <radio id="saveToCloud"
-           value="true"
-           hidden="true"/>
-    <radio id="alwaysAsk"
-           value="false"
-           data-l10n-id="download-always-ask-where"/>
-  </radiogroup>
+  <hbox id="saveWhere">
+    <label id="saveTo"
+           control="downloadFolder"
+           data-l10n-id="download-save-where"/>
+    <html:input id="downloadFolder"
+                type="text"
+                readonly="readonly"
+                aria-labelledby="saveTo"/>
+    <button id="chooseFolder"
+            is="highlightable-button"
+            class="accessory-button"
+            data-l10n-id="download-choose-folder"/>
+  </hbox>
+  <checkbox id="alwaysAsk"
+            data-l10n-id="download-always-ask-where"
+            preference="browser.download.useDownloadDir"/>
 </groupbox>
 
 <groupbox id="applicationsGroup" data-category="paneGeneral" hidden="true">
@@ -453,6 +446,17 @@
   </listheader>
   <richlistbox id="handlersView"
                preference="pref.downloads.disable_button.edit_actions"/>
+  <description id="handleNewFileTypesDesc"
+               data-l10n-id="applications-handle-new-file-types-description"/>
+  <radiogroup id="handleNewFileTypes"
+              preference="browser.download.always_ask_before_handling_new_types">
+    <radio id="saveForNewTypes"
+           value="false"
+           data-l10n-id="applications-save-for-new-types"/>
+    <radio id="askBeforeHandling"
+           value="true"
+           data-l10n-id="applications-ask-before-handling"/>
+  </radiogroup>
 </groupbox>
 
 

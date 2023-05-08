@@ -46,8 +46,7 @@ class nsIInterceptedBodyCallback;
     }                                                \
   }
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 class HttpBackgroundChannelChild;
 
@@ -104,6 +103,8 @@ class HttpChannelChild final : public PHttpChannelChild,
   NS_IMETHOD SetClassFlags(uint32_t inFlags) override;
   NS_IMETHOD AddClassFlags(uint32_t inFlags) override;
   NS_IMETHOD ClearClassFlags(uint32_t inFlags) override;
+  NS_IMETHOD SetClassOfService(ClassOfService inCos) override;
+  NS_IMETHOD SetIncremental(bool inIncremental) override;
   // nsIResumableChannel
   NS_IMETHOD ResumeAt(uint64_t startPos, const nsACString& entityID) override;
 
@@ -111,8 +112,6 @@ class HttpChannelChild final : public PHttpChannelChild,
                              bool aRespectBeforeConnect) override;
 
   [[nodiscard]] bool IsSuspended();
-
-  void OnCopyComplete(nsresult aStatus) override;
 
   // Callback while background channel is ready.
   void OnBackgroundChildReady(HttpBackgroundChannelChild* aBgChild);
@@ -441,7 +440,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpChannelChild, HTTP_CHANNEL_CHILD_IID)
 
 inline bool HttpChannelChild::IsSuspended() { return mSuspendCount != 0; }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net
 
 #endif  // mozilla_net_HttpChannelChild_h

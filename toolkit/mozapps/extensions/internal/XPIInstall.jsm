@@ -1020,9 +1020,6 @@ function recursiveRemove(aFile) {
     // If the file has already gone away then don't worry about it, this can
     // happen on OSX where the resource fork is automatically moved with the
     // data fork for the file. See bug 733436.
-    if (e.result == Cr.NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
-      return;
-    }
     if (e.result == Cr.NS_ERROR_FILE_NOT_FOUND) {
       return;
     }
@@ -1280,7 +1277,8 @@ class AddonInstall {
    * @param {object} [options.icons]
    *        Optional icons for the add-on
    * @param {string} [options.version]
-   *        An optional version for the add-on
+   *        The expected version for the add-on.
+   *        Required for updates, i.e. when existingAddon is set.
    * @param {Object?} [options.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
@@ -1614,6 +1612,13 @@ class AddonInstall {
           return Promise.reject([
             AddonManager.ERROR_UNEXPECTED_ADDON_TYPE,
             `Refusing to change addon type from ${this.existingAddon.type} to ${this.addon.type}`,
+          ]);
+        }
+
+        if (this.version !== this.addon.version) {
+          return Promise.reject([
+            AddonManager.ERROR_UNEXPECTED_ADDON_VERSION,
+            `Expected addon version ${this.version} instead of ${this.addon.version}`,
           ]);
         }
       }
@@ -2213,7 +2218,8 @@ var DownloadAddonInstall = class extends AddonInstall {
    * @param {Object} [options.icons]
    *        Optional icons for the add-on
    * @param {string} [options.version]
-   *        An optional version for the add-on
+   *        The expected version for the add-on.
+   *        Required for updates, i.e. when existingAddon is set.
    * @param {function(string) : Promise<void>} [options.promptHandler]
    *        A callback to prompt the user before installing.
    * @param {boolean} [options.sendCookies]

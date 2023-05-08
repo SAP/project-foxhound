@@ -1018,6 +1018,20 @@ bool OptimizeMIR(MIRGenerator* mir) {
     }
   }
 
+  // Remove trivially dead resume point operands before folding tests, so the
+  // latter pass can optimize more aggressively.
+  if (!mir->compilingWasm()) {
+    if (!EliminateTriviallyDeadResumePointOperands(mir, graph)) {
+      return false;
+    }
+    gs.spewPass("Eliminate trivially dead resume point operands");
+    AssertBasicGraphCoherency(graph);
+
+    if (mir->shouldCancel("Eliminate trivially dead resume point operands")) {
+      return false;
+    }
+  }
+
   {
     AutoTraceLog log(logger, TraceLogger_FoldTests);
     if (!FoldTests(graph)) {
@@ -1171,6 +1185,9 @@ bool OptimizeMIR(MIRGenerator* mir) {
       if (!EliminateDeadResumePointOperands(mir, graph)) {
         return false;
       }
+
+      gs.spewPass("Eliminate dead resume point operands");
+      AssertExtendedGraphCoherency(graph);
 
       if (mir->shouldCancel("Eliminate dead resume point operands")) {
         return false;
@@ -1792,14 +1809,6 @@ static bool CanIonCompileOrInlineScript(JSScript* script, const char** reason) {
     // object as scope chain, this is not valid when the script has a
     // non-syntactic global scope.
     *reason = "has non-syntactic global scope";
-    return false;
-  }
-
-  if (script->functionHasExtraBodyVarScope() &&
-      script->functionExtraBodyVarScope()->hasEnvironment()) {
-    // This restriction will be lifted when intra-function scope chains
-    // are compilable by Ion. See bug 1273858.
-    *reason = "has extra var environment";
     return false;
   }
 

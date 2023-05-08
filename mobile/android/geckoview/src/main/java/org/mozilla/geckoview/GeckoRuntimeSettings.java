@@ -483,7 +483,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   /* package */ final Pref<Boolean> mInputAutoZoom = new Pref<>("formhelper.autozoom", true);
   /* package */ final Pref<Boolean> mDoubleTapZooming =
       new Pref<>("apz.allow_double_tap_zooming", true);
-  /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>("gl.msaa-level", 0);
+  /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>("webgl.msaa-samples", 4);
   /* package */ final Pref<Boolean> mTelemetryEnabled =
       new Pref<>("toolkit.telemetry.geckoview.streaming", false);
   /* package */ final Pref<String> mGeckoViewLogLevel = new Pref<>("geckoview.logging", "Debug");
@@ -952,7 +952,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
   private float sanitizeFontSizeFactor(final float fontSizeFactor) {
     if (fontSizeFactor < 0) {
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         throw new IllegalArgumentException("fontSizeFactor cannot be < 0");
       } else {
         Log.e(LOGTAG, "fontSizeFactor cannot be < 0");

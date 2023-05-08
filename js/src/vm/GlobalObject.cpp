@@ -217,6 +217,27 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
   }
 }
 
+static bool ShouldFreezeBuiltin(JSProtoKey key) {
+  switch (key) {
+    case JSProto_Object:
+    case JSProto_Array:
+    case JSProto_Function:
+      return true;
+    default:
+      return false;
+  }
+}
+
+static unsigned GetAttrsForResolvedGlobal(GlobalObject* global,
+                                          JSProtoKey key) {
+  unsigned attrs = JSPROP_RESOLVING;
+  if (global->realm()->creationOptions().freezeBuiltins() &&
+      ShouldFreezeBuiltin(key)) {
+    attrs |= JSPROP_PERMANENT | JSPROP_READONLY;
+  }
+  return attrs;
+}
+
 /* static*/
 bool GlobalObject::resolveConstructor(JSContext* cx,
                                       Handle<GlobalObject*> global,
@@ -329,7 +350,8 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
   if (isObjectOrFunction) {
     if (clasp->specShouldDefineConstructor()) {
       RootedValue ctorValue(cx, ObjectValue(*ctor));
-      if (!DefineDataProperty(cx, global, id, ctorValue, JSPROP_RESOLVING)) {
+      unsigned attrs = GetAttrsForResolvedGlobal(global, key);
+      if (!DefineDataProperty(cx, global, id, ctorValue, attrs)) {
         return false;
       }
     }
@@ -370,6 +392,12 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
     }
   }
 
+  if (ShouldFreezeBuiltin(key)) {
+    if (!JS::MaybeFreezeCtorAndPrototype(cx, ctor, proto)) {
+      return false;
+    }
+  }
+
   if (!isObjectOrFunction) {
     // Any operations that modifies the global object should be placed
     // after any other fallible operations.
@@ -395,7 +423,8 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
 
       if (shouldReallyDefine) {
         RootedValue ctorValue(cx, ObjectValue(*ctor));
-        if (!DefineDataProperty(cx, global, id, ctorValue, JSPROP_RESOLVING)) {
+        unsigned attrs = GetAttrsForResolvedGlobal(global, key);
+        if (!DefineDataProperty(cx, global, id, ctorValue, attrs)) {
           return false;
         }
       }
@@ -577,6 +606,10 @@ GlobalObject* GlobalObject::createInternal(JSContext* cx,
   }
   global->data().emptyGlobalScope.init(emptyGlobalScope);
 
+  if (!GlobalObject::createIntrinsicsHolder(cx, global)) {
+    return nullptr;
+  }
+
   if (!JSObject::setQualifiedVarObj(cx, global)) {
     return nullptr;
   }
@@ -668,20 +701,6 @@ bool GlobalObject::initStandardClasses(JSContext* cx,
       }
     }
   }
-  return true;
-}
-
-/* static */
-bool GlobalObject::isRuntimeCodeGenEnabled(JSContext* cx, HandleString code,
-                                           Handle<GlobalObject*> global) {
-  // If there are callbacks, make sure that the CSP callback is installed
-  // and that it permits runtime code generation.
-  JSCSPEvalChecker allows =
-      cx->runtime()->securityCallbacks->contentSecurityPolicyAllows;
-  if (allows) {
-    return allows(cx, code);
-  }
-
   return true;
 }
 
@@ -838,28 +857,24 @@ bool GlobalObject::addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name) {
 }
 
 /* static */
-NativeObject* GlobalObject::getIntrinsicsHolder(JSContext* cx,
-                                                Handle<GlobalObject*> global) {
-  if (NativeObject* holder = global->data().intrinsicsHolder) {
-    return holder;
-  }
-
+bool GlobalObject::createIntrinsicsHolder(JSContext* cx,
+                                          Handle<GlobalObject*> global) {
   Rooted<NativeObject*> intrinsicsHolder(
       cx, NewPlainObjectWithProto(cx, nullptr, TenuredObject));
   if (!intrinsicsHolder) {
-    return nullptr;
+    return false;
   }
 
   // Define a top-level property 'undefined' with the undefined value.
   if (!DefineDataProperty(cx, intrinsicsHolder, cx->names().undefined,
                           UndefinedHandleValue,
                           JSPROP_PERMANENT | JSPROP_READONLY)) {
-    return nullptr;
+    return false;
   }
 
   // Install the intrinsics holder on the global.
   global->data().intrinsicsHolder.init(intrinsicsHolder);
-  return intrinsicsHolder;
+  return true;
 }
 
 /* static */
@@ -868,12 +883,7 @@ bool GlobalObject::getSelfHostedFunction(JSContext* cx,
                                          HandlePropertyName selfHostedName,
                                          HandleAtom name, unsigned nargs,
                                          MutableHandleValue funVal) {
-  bool exists = false;
-  if (!GlobalObject::maybeGetIntrinsicValue(cx, global, selfHostedName, funVal,
-                                            &exists)) {
-    return false;
-  }
-  if (exists) {
+  if (global->maybeGetIntrinsicValue(selfHostedName, funVal.address(), cx)) {
     RootedFunction fun(cx, &funVal.toObject().as<JSFunction>());
     if (fun->explicitName() == name) {
       return true;
@@ -924,12 +934,6 @@ bool GlobalObject::getIntrinsicValueSlow(JSContext* cx,
   // If this is a C++ intrinsic, simply define the function on the intrinsics
   // holder.
   if (const JSFunctionSpec* spec = js::FindIntrinsicSpec(name)) {
-    RootedNativeObject holder(cx,
-                              GlobalObject::getIntrinsicsHolder(cx, global));
-    if (!holder) {
-      return false;
-    }
-
     RootedId id(cx, NameToId(name));
     RootedFunction fun(cx, JS::NewFunctionFromSpec(cx, spec, id));
     if (!fun) {
@@ -949,11 +953,7 @@ bool GlobalObject::getIntrinsicValueSlow(JSContext* cx,
   // defining the intrinsic. For instance, cloning can call NewArray, which
   // resolves Array.prototype, which defines some self-hosted functions. If this
   // happens we use the value already defined on the intrinsics holder.
-  bool exists = false;
-  if (!GlobalObject::maybeGetIntrinsicValue(cx, global, name, value, &exists)) {
-    return false;
-  }
-  if (exists) {
+  if (global->maybeGetIntrinsicValue(name, value.address(), cx)) {
     return true;
   }
 
@@ -965,10 +965,7 @@ bool GlobalObject::addIntrinsicValue(JSContext* cx,
                                      Handle<GlobalObject*> global,
                                      HandlePropertyName name,
                                      HandleValue value) {
-  RootedNativeObject holder(cx, GlobalObject::getIntrinsicsHolder(cx, global));
-  if (!holder) {
-    return false;
-  }
+  RootedNativeObject holder(cx, &global->getIntrinsicsHolder());
 
   RootedId id(cx, NameToId(name));
   MOZ_ASSERT(!holder->containsPure(id));

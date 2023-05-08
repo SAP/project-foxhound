@@ -14,10 +14,8 @@
 #include "IMFYCbCrImage.h"
 #include "ImageContainer.h"
 #include "Layers.h"
-#include "MP4Decoder.h"
 #include "MediaInfo.h"
 #include "MediaTelemetryConstants.h"
-#include "VPXDecoder.h"
 #include "VideoUtils.h"
 #include "WMFDecoderModule.h"
 #include "WMFUtils.h"
@@ -141,7 +139,7 @@ WMFVideoMFTManager::WMFVideoMFTManager(
       mDXVAEnabled(aDXVAEnabled &&
                    !aOptions.contains(
                        CreateDecoderParams::Option::HardwareDecoderNotAllowed)),
-      mNoCopyNV12Texture(false),
+      mZeroCopyNV12Texture(false),
       mFramerate(aFramerate),
       mLowLatency(aOptions.contains(CreateDecoderParams::Option::LowLatency))
 // mVideoStride, mVideoWidth, mVideoHeight, mUseHwAccel are initialized in
@@ -264,30 +262,6 @@ MediaResult WMFVideoMFTManager::ValidateVideoInfo() {
         }
       }
       break;
-    case WMFStreamType::VP9:
-      if (mVideoInfo.mExtraData && !mVideoInfo.mExtraData->IsEmpty()) {
-        // Read VP codec configuration to allow us to fail before decoding an
-        // unsupported sample.
-        VPXDecoder::VPXStreamInfo vpxInfo;
-        VPXDecoder::ReadVPCCBox(vpxInfo, mVideoInfo.mExtraData);
-
-        // Check for VPX MFT's supported profiles.
-        if (vpxInfo.mProfile != 0 && vpxInfo.mProfile != 2) {
-          return MediaResult(
-              NS_ERROR_DOM_MEDIA_FATAL_ERR,
-              RESULT_DETAIL("Can only decode VP9 streams in profiles 0 or 2."));
-        }
-
-        // Profiles 0 and 2 should always use 4:2:0, but in case we somehow get
-        // a compatible profile with incompatible subsampling, fail here.
-        if (!vpxInfo.mSubSampling_x || !vpxInfo.mSubSampling_y) {
-          return MediaResult(
-              NS_ERROR_DOM_MEDIA_FATAL_ERR,
-              RESULT_DETAIL(
-                  "Can't decode VP9 stream encoded in YUV 4:2:2 or 4:4:4."));
-        }
-      }
-      break;
     default:
       break;
   }
@@ -361,10 +335,10 @@ MediaResult WMFVideoMFTManager::InitInternal() {
       }
     }
 
-    if (StaticPrefs::media_wmf_no_copy_nv12_textures() && mKnowsCompositor &&
+    if (gfxVars::HwDecodedVideoZeroCopy() && mKnowsCompositor &&
         mKnowsCompositor->UsingHardwareWebRender() && mDXVA2Manager &&
-        mDXVA2Manager->IsD3D11() && XRE_IsGPUProcess()) {
-      mNoCopyNV12Texture = true;
+        mDXVA2Manager->SupportsZeroCopyNV12Texture()) {
+      mZeroCopyNV12Texture = true;
       const int kOutputBufferSize = 10;
 
       // Each picture buffer can store a sample, plus one in
@@ -390,7 +364,7 @@ MediaResult WMFVideoMFTManager::InitInternal() {
         mUseHwAccel = true;
       } else {
         mDXVAFailureReason = nsPrintfCString(
-            "MFT_MESSAGE_SET_D3D_MANAGER failed with code %X", hr);
+            "MFT_MESSAGE_SET_D3D_MANAGER failed with code %lX", hr);
       }
     } else {
       mDXVAFailureReason.AssignLiteral(
@@ -401,7 +375,7 @@ MediaResult WMFVideoMFTManager::InitInternal() {
   if (!mDXVAFailureReason.IsEmpty()) {
     // DXVA failure reason being set can mean that D3D11 failed, or that DXVA is
     // entirely disabled.
-    LOG(nsPrintfCString("DXVA failure: %s", mDXVAFailureReason.get()).get());
+    LOG("DXVA failure: %s", mDXVAFailureReason.get());
   }
 
   if (!mUseHwAccel) {
@@ -444,7 +418,7 @@ MediaResult WMFVideoMFTManager::InitInternal() {
       MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                   RESULT_DETAIL("Fail to get the output media type.")));
 
-  if (mUseHwAccel && !CanUseDXVA(inputType, outputType, mFramerate)) {
+  if (mUseHwAccel && !CanUseDXVA(inputType, outputType)) {
     LOG("DXVA manager determined that the input type was unsupported in "
         "hardware, retrying init without DXVA.");
     mDXVAEnabled = false;
@@ -510,6 +484,12 @@ WMFVideoMFTManager::SetDecoderMediaTypes() {
                           mVideoInfo.ImageRect().height);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
+  UINT32 fpsDenominator = 1000;
+  UINT32 fpsNumerator = static_cast<uint32_t>(mFramerate * fpsDenominator);
+  hr = MFSetAttributeRatio(inputType, MF_MT_FRAME_RATE, fpsNumerator,
+                           fpsDenominator);
+  NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+
   RefPtr<IMFMediaType> outputType;
   hr = wmf::MFCreateMediaType(getter_AddRefs(outputType));
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
@@ -522,11 +502,27 @@ WMFVideoMFTManager::SetDecoderMediaTypes() {
                           mVideoInfo.ImageRect().height);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
-  GUID outputSubType = mUseHwAccel ? MFVideoFormat_NV12 : MFVideoFormat_YV12;
+  hr = MFSetAttributeRatio(outputType, MF_MT_FRAME_RATE, fpsNumerator,
+                           fpsDenominator);
+  NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+
+  GUID outputSubType = [&]() {
+    switch (mVideoInfo.mColorDepth) {
+      case gfx::ColorDepth::COLOR_8:
+        return mUseHwAccel ? MFVideoFormat_NV12 : MFVideoFormat_YV12;
+      case gfx::ColorDepth::COLOR_10:
+        return MFVideoFormat_P010;
+      case gfx::ColorDepth::COLOR_12:
+      case gfx::ColorDepth::COLOR_16:
+        return MFVideoFormat_P016;
+      default:
+        MOZ_ASSERT_UNREACHABLE("Unexpected color depth");
+    }
+  }();
   hr = outputType->SetGUID(MF_MT_SUBTYPE, outputSubType);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
-  if (mNoCopyNV12Texture) {
+  if (mZeroCopyNV12Texture) {
     RefPtr<IMFAttributes> attr(mDecoder->GetOutputStreamAttributes());
     if (attr) {
       hr = attr->SetUINT32(MF_SA_D3D11_SHARED_WITHOUT_MUTEX, TRUE);
@@ -550,16 +546,6 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
   if (!mDecoder) {
     // This can happen during shutdown.
     return E_FAIL;
-  }
-
-  if (mStreamType == WMFStreamType::VP9 && aSample->mKeyframe) {
-    // Check the VP9 profile. the VP9 MFT can only handle correctly profile 0
-    // and 2 (yuv420 8/10/12 bits)
-    int profile =
-        VPXDecoder::GetVP9Profile(Span(aSample->Data(), aSample->Size()));
-    if (profile != 0 && profile != 2) {
-      return E_FAIL;
-    }
   }
 
   RefPtr<IMFSample> inputSample;
@@ -599,16 +585,10 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
 // that new decoders are created if the resolution changes. Then we could move
 // this check into Init and consolidate the main thread blocking code.
 bool WMFVideoMFTManager::CanUseDXVA(IMFMediaType* aInputType,
-                                    IMFMediaType* aOutputType,
-                                    float aFramerate) {
+                                    IMFMediaType* aOutputType) {
   MOZ_ASSERT(mDXVA2Manager);
-  // Check if we're able to use hardware decoding with H264 or AV1.
-  // TODO: Do the same for VPX, if the VPX MFT has a slow software fallback?
-  if (mStreamType == WMFStreamType::H264 || mStreamType == WMFStreamType::AV1) {
-    return mDXVA2Manager->SupportsConfig(aInputType, aOutputType, aFramerate);
-  }
-
-  return true;
+  // Check if we're able to use hardware decoding for the current codec config.
+  return mDXVA2Manager->SupportsConfig(mVideoInfo, aInputType, aOutputType);
 }
 
 TimeUnit WMFVideoMFTManager::GetSampleDurationOrLastKnownDuration(
@@ -790,7 +770,7 @@ WMFVideoMFTManager::CreateD3DVideoFrame(IMFSample* aSample,
   gfx::IntRect pictureRegion =
       mVideoInfo.ScaledImageRect(mImageSize.width, mImageSize.height);
   RefPtr<Image> image;
-  if (mNoCopyNV12Texture) {
+  if (mZeroCopyNV12Texture && mDXVA2Manager->SupportsZeroCopyNV12Texture()) {
     hr = mDXVA2Manager->WrapTextureWithImage(aSample, pictureRegion,
                                              getter_AddRefs(image));
   } else {
@@ -961,6 +941,9 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
 }
 
 void WMFVideoMFTManager::Shutdown() {
+  if (mDXVA2Manager) {
+    mDXVA2Manager->BeforeShutdownVideoMFTDecoder();
+  }
   mDecoder = nullptr;
   mDXVA2Manager.reset();
 }
@@ -974,14 +957,49 @@ bool WMFVideoMFTManager::IsHardwareAccelerated(
 nsCString WMFVideoMFTManager::GetDescriptionName() const {
   nsCString failureReason;
   bool hw = IsHardwareAccelerated(failureReason);
-  return nsPrintfCString("wmf %s codec %s video decoder - %s",
+
+  const char* formatName = [&]() {
+    if (!mDecoder) {
+      return "not initialized";
+    }
+    GUID format = mDecoder->GetOutputMediaSubType();
+    if (format == MFVideoFormat_NV12) {
+      if (!gfx::DeviceManagerDx::Get()->CanUseNV12()) {
+        return "nv12->argb32";
+      }
+      return "nv12";
+    }
+    if (format == MFVideoFormat_P010) {
+      if (!gfx::DeviceManagerDx::Get()->CanUseP010()) {
+        return "p010->argb32";
+      }
+      return "p010";
+    }
+    if (format == MFVideoFormat_P016) {
+      if (!gfx::DeviceManagerDx::Get()->CanUseP016()) {
+        return "p016->argb32";
+      }
+      return "p016";
+    }
+    if (format == MFVideoFormat_YV12) {
+      return "yv12";
+    }
+    return "unknown";
+  }();
+
+  const char* dxvaName = [&]() {
+    if (!mDXVA2Manager) {
+      return "no DXVA";
+    }
+    if (mDXVA2Manager->IsD3D11()) {
+      return "D3D11";
+    }
+    return "D3D9";
+  }();
+
+  return nsPrintfCString("wmf %s codec %s video decoder - %s, %s",
                          WMFDecoderModule::StreamTypeToString(mStreamType),
-                         hw ? "hardware" : "software",
-                         hw ? StaticPrefs::media_wmf_use_nv12_format() &&
-                                      gfx::DeviceManagerDx::Get()->CanUseNV12()
-                                  ? "nv12"
-                                  : "rgba32"
-                            : "yuv420");
+                         hw ? "hardware" : "software", dxvaName, formatName);
 }
 
 }  // namespace mozilla

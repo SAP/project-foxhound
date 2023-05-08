@@ -51,7 +51,7 @@ var PlacesTestUtils = Object.freeze({
       let place;
       if (
         obj instanceof Ci.nsIURI ||
-        obj instanceof URL ||
+        URL.isInstance(obj) ||
         typeof obj == "string"
       ) {
         place = { uri: obj };
@@ -61,14 +61,17 @@ var PlacesTestUtils = Object.freeze({
         throw new Error("Unsupported type passed to addVisits");
       }
 
+      let referrer;
       let info = { url: place.uri || place.url };
       let spec =
         info.url instanceof Ci.nsIURI ? info.url.spec : new URL(info.url).href;
       info.title = "title" in place ? place.title : "test visit for " + spec;
       if (typeof place.referrer == "string") {
-        place.referrer = Services.io.newURI(place.referrer);
-      } else if (place.referrer && place.referrer instanceof URL) {
-        place.referrer = Services.io.newURI(place.referrer.href);
+        referrer = Services.io.newURI(place.referrer);
+      } else if (place.referrer) {
+        referrer = URL.isInstance(place.referrer)
+          ? Services.io.newURI(place.referrer.href)
+          : place.referrer;
       }
       let visitDate = place.visitDate;
       if (visitDate) {
@@ -92,7 +95,7 @@ var PlacesTestUtils = Object.freeze({
         {
           transition: place.transition,
           date: visitDate,
-          referrer: place.referrer,
+          referrer,
         },
       ];
       infos.push(info);
@@ -505,6 +508,15 @@ var PlacesTestUtils = Object.freeze({
         PlacesUtils.metadata.cache.clear();
       }
     );
+  },
+
+  /**
+   * Clear moz_inputhistory table.
+   */
+  async clearInputHistory() {
+    await PlacesUtils.withConnectionWrapper("test:clearInputHistory", db => {
+      return db.executeCached("DELETE FROM moz_inputhistory");
+    });
   },
 
   /**

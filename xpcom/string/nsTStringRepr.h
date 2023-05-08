@@ -367,6 +367,101 @@ class nsTStringRepr {
                 reinterpret_cast<uintptr_t>(mData));
   }
 
+  /**
+   *  Search for the given substring within this string.
+   *
+   *  @param   aString is substring to be sought in this
+   *  @param   aIgnoreCase selects case sensitivity
+   *  @param   aOffset tells us where in this string to start searching
+   *  @param   aCount tells us how far from the offset we are to search. Use
+   *           -1 to search the whole string.
+   *  @return  offset in string, or kNotFound
+   */
+  int32_t Find(const nsTStringRepr<char>& aString, bool aIgnoreCase = false,
+               int32_t aOffset = 0, int32_t aCount = -1) const;
+  int32_t Find(const char* aString, bool aIgnoreCase = false,
+               int32_t aOffset = 0, int32_t aCount = -1) const;
+
+  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
+  int32_t Find(const self_type& aString, int32_t aOffset = 0,
+               int32_t aCount = -1) const;
+  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
+  int32_t Find(const char_type* aString, int32_t aOffset = 0,
+               int32_t aCount = -1) const;
+#ifdef MOZ_USE_CHAR16_WRAPPER
+  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
+  int32_t Find(char16ptr_t aString, int32_t aOffset = 0,
+               int32_t aCount = -1) const {
+    return Find(static_cast<const char16_t*>(aString), aOffset, aCount);
+  }
+#endif
+
+  /**
+   * This methods scans the string backwards, looking for the given string
+   *
+   * @param   aString is substring to be sought in this
+   * @param   aIgnoreCase tells us whether or not to do caseless compare
+   * @param   aOffset tells us where in this string to start searching.
+   *          Use -1 to search from the end of the string.
+   * @param   aCount tells us how many iterations to make starting at the
+   *          given offset.
+   * @return  offset in string, or kNotFound
+   */
+
+  // Case aIgnoreCase option only with char versions
+  int32_t RFind(const nsTStringRepr<char>& aString, bool aIgnoreCase = false,
+                int32_t aOffset = -1, int32_t aCount = -1) const;
+  int32_t RFind(const char* aCString, bool aIgnoreCase = false,
+                int32_t aOffset = -1, int32_t aCount = -1) const;
+
+  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
+  int32_t RFind(const self_type& aString, int32_t aOffset = -1,
+                int32_t aCount = -1) const;
+  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
+  int32_t RFind(const char_type* aString, int32_t aOffset = -1,
+                int32_t aCount = -1) const;
+
+  /**
+   *  Search for given char within this string
+   *
+   *  @param   aChar is the character to search for
+   *  @param   aOffset tells us where in this string to start searching
+   *  @param   aCount tells us how far from the offset we are to search.
+   *           Use -1 to search the whole string.
+   *  @return  offset in string, or kNotFound
+   */
+
+  // int32_t FindChar( char16_t aChar, int32_t aOffset=0,
+  //                   int32_t aCount=-1 ) const;
+  int32_t RFindChar(char16_t aChar, int32_t aOffset = -1,
+                    int32_t aCount = -1) const;
+
+  /**
+   * This method searches this string for the first character found in
+   * the given string.
+   *
+   * @param aString contains set of chars to be found
+   * @param aOffset tells us where in this string to start searching
+   *        (counting from left)
+   * @return offset in string, or kNotFound
+   */
+
+  int32_t FindCharInSet(const char_type* aString, int32_t aOffset = 0) const;
+  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
+  int32_t FindCharInSet(const char* aSet, int32_t aOffset = 0) const;
+
+  /**
+   * This method searches this string for the last character found in
+   * the given string.
+   *
+   * @param aString contains set of chars to be found
+   * @param aOffset tells us where in this string to start searching
+   *        (counting from left)
+   * @return offset in string, or kNotFound
+   */
+
+  int32_t RFindCharInSet(const char_type* aString, int32_t aOffset = -1) const;
+
  protected:
   nsTStringRepr() = delete;  // Never instantiate directly
 

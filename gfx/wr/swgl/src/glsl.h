@@ -402,6 +402,12 @@ struct vec2_scalar {
   friend vec2_scalar operator-(vec2_scalar a, vec2_scalar b) {
     return vec2_scalar(a.x - b.x, a.y - b.y);
   }
+  friend vec2_scalar operator-(vec2_scalar a, float b) {
+    return vec2_scalar(a.x - b, a.y - b);
+  }
+  friend vec2_scalar operator-(float a, vec2_scalar b) {
+    return vec2_scalar(a - b.x, a - b.y);
+  }
   friend vec2_scalar operator+(vec2_scalar a, vec2_scalar b) {
     return vec2_scalar(a.x + b.x, a.y + b.y);
   }
@@ -866,9 +872,15 @@ struct ivec2_scalar {
   friend ivec2_scalar operator+(ivec2_scalar a, ivec2_scalar b) {
     return ivec2_scalar{a.x + b.x, a.y + b.y};
   }
+  friend ivec2_scalar operator+(ivec2_scalar a, int b) {
+    return ivec2_scalar{a.x + b, a.y + b};
+  }
 
   friend ivec2_scalar operator-(ivec2_scalar a, ivec2_scalar b) {
     return ivec2_scalar{a.x - b.x, a.y - b.y};
+  }
+  friend ivec2_scalar operator-(ivec2_scalar a, int b) {
+    return ivec2_scalar{a.x - b, a.y - b};
   }
 
   friend bool operator==(const ivec2_scalar& l, const ivec2_scalar& r) {
@@ -1424,10 +1436,19 @@ struct vec3_scalar {
   friend vec3_scalar operator-(vec3_scalar a, vec3_scalar b) {
     return vec3_scalar{a.x - b.x, a.y - b.y, a.z - b.z};
   }
+  friend vec3_scalar operator-(vec3_scalar a, float b) {
+    return vec3_scalar{a.x - b, a.y - b, a.z - b};
+  }
   friend vec3_scalar operator+(vec3_scalar a, vec3_scalar b) {
     return vec3_scalar{a.x + b.x, a.y + b.y, a.z + b.z};
   }
+  friend vec3_scalar operator+(vec3_scalar a, float b) {
+    return vec3_scalar{a.x + b, a.y + b, a.z + b};
+  }
 
+  friend vec3_scalar operator/(vec3_scalar a, vec3_scalar b) {
+    return vec3_scalar{a.x / b.x, a.y / b.y, a.z / b.z};
+  }
   friend vec3_scalar operator/(vec3_scalar a, float b) {
     return vec3_scalar{a.x / b, a.y / b, a.z / b};
   }
@@ -1724,6 +1745,9 @@ struct vec4_scalar {
   friend vec4_scalar operator*(vec4_scalar a, float b) {
     return vec4_scalar{a.x * b, a.y * b, a.z * b, a.w * b};
   }
+  friend vec4_scalar operator*(float a, vec4_scalar b) {
+    return vec4_scalar{a * b.x, a * b.y, a * b.z, a * b.w};
+  }
   vec4_scalar& operator*=(float a) {
     x *= a;
     y *= a;
@@ -1735,12 +1759,21 @@ struct vec4_scalar {
   friend vec4_scalar operator-(vec4_scalar a, vec4_scalar b) {
     return vec4_scalar{a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
   }
+  friend vec4_scalar operator-(vec4_scalar a, float b) {
+    return vec4_scalar{a.x - b, a.y - b, a.z - b, a.w - b};
+  }
   friend vec4_scalar operator+(vec4_scalar a, vec4_scalar b) {
     return vec4_scalar{a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+  }
+  friend vec4_scalar operator+(vec4_scalar a, float b) {
+    return vec4_scalar{a.x + b, a.y + b, a.z + b, a.w + b};
   }
 
   friend vec4_scalar operator/(vec4_scalar a, vec4_scalar b) {
     return vec4_scalar{a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w};
+  }
+  friend vec4_scalar operator/(vec4_scalar a, float b) {
+    return vec4_scalar{a.x / b, a.y / b, a.z / b, a.w / b};
   }
 
   vec4_scalar& operator+=(vec4_scalar a) {
@@ -2255,14 +2288,9 @@ struct mat2_scalar {
   vec2_scalar data[2];
 
   mat2_scalar() = default;
-  IMPLICIT constexpr mat2_scalar(float a) {
-    data[0] = vec2_scalar(a);
-    data[1] = vec2_scalar(a);
-  }
-  constexpr mat2_scalar(vec2_scalar a, vec2_scalar b) {
-    data[0] = a;
-    data[1] = b;
-  }
+  IMPLICIT constexpr mat2_scalar(float a)
+      : data{vec2_scalar(a), vec2_scalar(a)} {}
+  constexpr mat2_scalar(vec2_scalar a, vec2_scalar b) : data{a, b} {}
   IMPLICIT mat2_scalar(const mat4_scalar& mat);
 
   vec2_scalar& operator[](int index) { return data[index]; }
@@ -2352,11 +2380,8 @@ struct mat3_scalar {
   vec3_scalar data[3];
 
   mat3_scalar() = default;
-  constexpr mat3_scalar(vec3_scalar a, vec3_scalar b, vec3_scalar c) {
-    data[0] = a;
-    data[1] = b;
-    data[2] = c;
-  }
+  constexpr mat3_scalar(vec3_scalar a, vec3_scalar b, vec3_scalar c)
+      : data{a, b, c} {}
   IMPLICIT mat3_scalar(const mat4_scalar& mat);
 
   vec3_scalar& operator[](int index) { return data[index]; }
@@ -2453,11 +2478,8 @@ struct mat3x4_scalar {
   vec4_scalar data[3];
 
   mat3x4_scalar() = default;
-  constexpr mat3x4_scalar(vec4_scalar a, vec4_scalar b, vec4_scalar c) {
-    data[0] = a;
-    data[1] = b;
-    data[2] = c;
-  }
+  constexpr mat3x4_scalar(vec4_scalar a, vec4_scalar b, vec4_scalar c)
+      : data{a, b, c} {}
 
   auto& operator[](int index) { return data[index]; }
   constexpr auto operator[](int index) const { return data[index]; }
@@ -2496,12 +2518,8 @@ struct mat4x3_scalar {
 
   mat4x3_scalar() = default;
   constexpr mat4x3_scalar(vec3_scalar a, vec3_scalar b, vec3_scalar c,
-                          vec3_scalar d) {
-    data[0] = a;
-    data[1] = b;
-    data[2] = c;
-    data[3] = d;
-  }
+                          vec3_scalar d)
+      : data{a, b, c, d} {}
 
   auto& operator[](int index) { return data[index]; }
   constexpr auto operator[](int index) const { return data[index]; }
@@ -2535,24 +2553,16 @@ struct mat4_scalar {
 
   mat4_scalar() = default;
   constexpr mat4_scalar(vec4_scalar a, vec4_scalar b, vec4_scalar c,
-                        vec4_scalar d) {
-    data[0] = a;
-    data[1] = b;
-    data[2] = c;
-    data[3] = d;
-  }
+                        vec4_scalar d)
+      : data{a, b, c, d} {}
 
   vec4_scalar& operator[](int index) { return data[index]; }
   const vec4_scalar& operator[](int index) const { return data[index]; }
 
   static mat4_scalar load_from_ptr(const float* f) {
-    mat4_scalar m;
-    // XXX: hopefully this is in the right order
-    m.data[0] = vec4_scalar{f[0], f[1], f[2], f[3]};
-    m.data[1] = vec4_scalar{f[4], f[5], f[6], f[7]};
-    m.data[2] = vec4_scalar{f[8], f[9], f[10], f[11]};
-    m.data[3] = vec4_scalar{f[12], f[13], f[14], f[15]};
-    return m;
+    return mat4_scalar(
+        vec4_scalar::load_from_ptr(&f[0]), vec4_scalar::load_from_ptr(&f[4]),
+        vec4_scalar::load_from_ptr(&f[8]), vec4_scalar::load_from_ptr(&f[12]));
   }
 
   friend vec4_scalar operator*(mat4_scalar m, vec4_scalar v) {

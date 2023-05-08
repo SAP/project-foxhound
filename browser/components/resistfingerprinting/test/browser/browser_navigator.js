@@ -13,6 +13,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/AppConstants.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "WindowsVersionInfo",
+  "resource://gre/modules/components-utils/WindowsVersionInfo.jsm"
+);
+
 let expectedResults;
 
 let osVersion = Services.sysinfo.get("version");
@@ -66,14 +72,17 @@ const SPOOFED_PLATFORM = {
   other: "Linux x86_64",
 };
 
-// If comparison with this value fails in the future,
-// it's time to evaluate if exposing a new Windows
-// version to the Web is appropriate. See
+// If comparison with the WindowsOscpu value fails in the future, it's time to
+// evaluate if exposing a new Windows version to the Web is appropriate. See
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1693295
-const WindowsOscpu =
-  cpuArch == "x86_64"
-    ? `Windows NT ${osVersion}; Win64; x64`
-    : `Windows NT ${osVersion}`;
+let WindowsOscpu = null;
+if (AppConstants.platform == "win") {
+  let isWin11 = WindowsVersionInfo.get().buildNumber >= 22000;
+  WindowsOscpu =
+    cpuArch == "x86_64" || (cpuArch == "aarch64" && isWin11)
+      ? `Windows NT ${osVersion}; Win64; x64`
+      : `Windows NT ${osVersion}`;
+}
 
 const DEFAULT_OSCPU = {
   linux: `Linux ${cpuArch}`,
@@ -123,7 +132,7 @@ const CONST_VENDOR = "";
 const CONST_VENDORSUB = "";
 
 const appVersion = parseInt(Services.appinfo.version);
-const spoofedVersion = appVersion - ((appVersion - 78) % 13);
+const spoofedVersion = AppConstants.platform == "android" ? "102" : appVersion;
 
 const LEGACY_UA_GECKO_TRAIL = "20100101";
 
@@ -283,38 +292,38 @@ async function testWorkerNavigator() {
   is(
     result.appVersion,
     expectedResults.appVersion,
-    `Checking ${testDesc} navigator.appVersion.`
+    `Checking ${testDesc} worker navigator.appVersion.`
   );
   is(
     result.platform,
     expectedResults.platform,
-    `Checking ${testDesc} navigator.platform.`
+    `Checking ${testDesc} worker navigator.platform.`
   );
   is(
     result.userAgent,
     expectedResults.userAgentNavigator,
-    `Checking ${testDesc} navigator.userAgent.`
+    `Checking ${testDesc} worker navigator.userAgent.`
   );
   is(
     result.hardwareConcurrency,
     expectedResults.hardwareConcurrency,
-    `Checking ${testDesc} navigator.hardwareConcurrency.`
+    `Checking ${testDesc} worker navigator.hardwareConcurrency.`
   );
 
   is(
     result.appCodeName,
     CONST_APPCODENAME,
-    "Navigator.appCodeName reports correct constant value."
+    "worker Navigator.appCodeName reports correct constant value."
   );
   is(
     result.appName,
     CONST_APPNAME,
-    "Navigator.appName reports correct constant value."
+    "worker Navigator.appName reports correct constant value."
   );
   is(
     result.product,
     CONST_PRODUCT,
-    "Navigator.product reports correct constant value."
+    "worker Navigator.product reports correct constant value."
   );
 
   BrowserTestUtils.removeTab(tab);
@@ -357,6 +366,47 @@ add_task(async function setupDefaultUserAgent() {
   await testUserAgentHeader();
 
   await testWorkerNavigator();
+});
+
+add_task(async function setupRFPExemptions() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.resistFingerprinting", true],
+      ["privacy.resistFingerprinting.testGranularityMask", 4],
+      ["privacy.resistFingerprinting.exemptedDomains", "example.net"],
+    ],
+  });
+
+  let spoofedGeckoTrail = SPOOFED_UA_GECKO_TRAIL[AppConstants.platform];
+
+  let spoofedUserAgentNavigator = `Mozilla/5.0 (${
+    SPOOFED_UA_NAVIGATOR_OS[AppConstants.platform]
+  }; rv:${spoofedVersion}.0) Gecko/${spoofedGeckoTrail} Firefox/${spoofedVersion}.0`;
+
+  let spoofedUserAgentHeader = `Mozilla/5.0 (${
+    SPOOFED_UA_HTTPHEADER_OS[AppConstants.platform]
+  }; rv:${spoofedVersion}.0) Gecko/${spoofedGeckoTrail} Firefox/${spoofedVersion}.0`;
+
+  expectedResults = {
+    testDesc: "spoofed",
+    appVersion: SPOOFED_APPVERSION[AppConstants.platform],
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    mimeTypesLength: 2,
+    oscpu: SPOOFED_OSCPU[AppConstants.platform],
+    platform: SPOOFED_PLATFORM[AppConstants.platform],
+    pluginsLength: 5,
+    userAgentNavigator: spoofedUserAgentNavigator,
+    userAgentHeader: spoofedUserAgentHeader,
+  };
+
+  await testNavigator();
+
+  await testUserAgentHeader();
+
+  await testWorkerNavigator();
+
+  // Pop exempted domains
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function setupResistFingerprinting() {

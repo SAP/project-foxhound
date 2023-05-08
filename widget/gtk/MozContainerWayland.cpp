@@ -247,9 +247,11 @@ static void moz_container_wayland_frame_callback_handler(
     g_clear_pointer(&wl_container->frame_callback_handler, wl_callback_destroy);
     // It's possible that container is already unmapped so quit in such case.
     if (!wl_container->surface) {
-      LOGWAYLAND("  container in unmapped, quit.");
-      MOZ_DIAGNOSTIC_ASSERT(wl_container->initial_draw_cbs.empty(),
-                            "MozContainer should be unmapped.");
+      LOGWAYLAND("  container is unmapped, quit.");
+      if (!wl_container->initial_draw_cbs.empty()) {
+        NS_WARNING("Unmapping MozContainer with active draw callback!");
+        wl_container->initial_draw_cbs.clear();
+      }
       return;
     }
     if (wl_container->ready_to_draw) {
@@ -356,6 +358,10 @@ static gboolean moz_container_wayland_map_event(GtkWidget* widget,
 
   LOGWAYLAND("%s [%p]\n", __FUNCTION__,
              (void*)moz_container_get_nsWindow(MOZ_CONTAINER(widget)));
+
+  // We need to mark MozContainer as mapped to make sure
+  // moz_container_wayland_unmap() is called on hide/withdraw.
+  gtk_widget_set_mapped(widget, TRUE);
 
   // Don't create wl_subsurface in map_event when it's already created or
   // if we create it for the first time.
@@ -523,6 +529,12 @@ void moz_container_wayland_set_scale_factor_locked(MozContainer* container) {
 
     LOGWAYLAND("%s [%p] scale %d\n", __FUNCTION__,
                (void*)moz_container_get_nsWindow(container), scale);
+    // There is a chance that the attached wl_buffer has not yet been doubled
+    // on the main thread when scale factor changed to 2. This leads to
+    // crash with the following message:
+    // Buffer size (AxB) must be an integer multiple of the buffer_scale (2)
+    // Removing the possibly wrong wl_buffer to prevent that crash:
+    wl_surface_attach(wl_container->surface, nullptr, 0, 0);
     wl_surface_set_buffer_scale(wl_container->surface, scale);
     wl_container->buffer_scale = scale;
   }

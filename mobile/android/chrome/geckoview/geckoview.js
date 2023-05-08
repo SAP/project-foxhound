@@ -468,7 +468,12 @@ class ModuleInfo {
       throw new Error(`No impl for message: ${aMessage.name}.`);
     }
 
-    this._impl.receiveMessage(aMessage);
+    try {
+      this._impl.receiveMessage(aMessage);
+    } catch (error) {
+      warn`this._impl.receiveMessage failed ${aMessage.name}`;
+      throw error;
+    }
   }
 
   onContentModuleLoaded() {
@@ -506,6 +511,14 @@ function createBrowser() {
   browser.setAttribute("remote", "true");
   browser.setAttribute("remoteType", E10SUtils.DEFAULT_REMOTE_TYPE);
   browser.setAttribute("messagemanagergroup", "browsers");
+
+  // This is only needed for mochitests, so that they honor the
+  // prefers-color-scheme.content-override pref. GeckoView doesn't set this
+  // pref to anything other than the default value otherwise.
+  browser.setAttribute(
+    "style",
+    "color-scheme: env(-moz-content-preferred-color-scheme)"
+  );
 
   return browser;
 }
@@ -605,6 +618,9 @@ function startup() {
       onEnable: {
         actors: {
           ScrollDelegate: {
+            parent: {
+              moduleURI: "resource:///actors/ScrollDelegateParent.jsm",
+            },
             child: {
               moduleURI: "resource:///actors/ScrollDelegateChild.jsm",
               events: {
@@ -619,8 +635,12 @@ function startup() {
     {
       name: "GeckoViewSelectionAction",
       onEnable: {
+        resource: "resource://gre/modules/GeckoViewSelectionAction.jsm",
         actors: {
           SelectionActionDelegate: {
+            parent: {
+              moduleURI: "resource:///actors/SelectionActionDelegateParent.jsm",
+            },
             child: {
               moduleURI: "resource:///actors/SelectionActionDelegateChild.jsm",
               events: {
@@ -671,6 +691,9 @@ function startup() {
       onInit: {
         actors: {
           GeckoViewAutoFill: {
+            parent: {
+              moduleURI: "resource:///actors/GeckoViewAutoFillParent.jsm",
+            },
             child: {
               moduleURI: "resource:///actors/GeckoViewAutoFillChild.jsm",
               events: {
@@ -713,6 +736,9 @@ function startup() {
         resource: "resource://gre/modules/GeckoViewMediaControl.jsm",
         actors: {
           MediaControlDelegate: {
+            parent: {
+              moduleURI: "resource:///actors/MediaControlDelegateParent.jsm",
+            },
             child: {
               moduleURI: "resource:///actors/MediaControlDelegateChild.jsm",
               events: {
@@ -843,18 +869,6 @@ function startup() {
         "browser-idle-startup-tasks-finished"
       )
     );
-
-    InitLater(() => {
-      // This lets Marionette and the Remote Agent (used for our CDP and the
-      // upcoming WebDriver BiDi implementation) start listening (when enabled).
-      // Both GeckoView and these two remote protocols do most of their
-      // initialization in "profile-after-change", and there is no order enforced
-      // between them.  Therefore we defer asking both components to startup
-      // until after all "profile-after-change" handlers (including this one)
-      // have completed.
-      Services.obs.notifyObservers(null, "marionette-startup-requested");
-      Services.obs.notifyObservers(null, "remote-startup-requested");
-    });
   });
 
   // Move focus to the content window at the end of startup,

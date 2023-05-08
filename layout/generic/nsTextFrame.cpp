@@ -7866,12 +7866,24 @@ nsresult nsTextFrame::GetCharacterRectsInRange(int32_t aInOffset,
     if (mTextRun->IsVertical()) {
       rect.width = mRect.width;
       rect.height = iSize;
+      if (mTextRun->IsInlineReversed()) {
+        // The iterator above returns a point with the origin at the
+        // bottom left instead of the top left. Move the origin to the top left
+        // by subtracting the character's height.
+        rect.y -= rect.height;
+      }
     } else {
       rect.width = iSize;
       rect.height = mRect.height;
-
       if (Style()->IsTextCombined()) {
         rect.width *= GetTextCombineScaleFactor(this);
+      }
+      if (mTextRun->IsInlineReversed()) {
+        // The iterator above returns a point with the origin at the
+        // top right instead of the top left. Move the origin to the top left by
+        // subtracting the character's width. This is intentionally done after
+        // GetTextCombineScaleFactor() so we use the final, scaled width.
+        rect.x -= rect.width;
       }
     }
     aRects.AppendElement(rect);
@@ -10199,7 +10211,6 @@ nsIFrame::RenderedText nsTextFrame::GetRenderedText(
   uint32_t offsetInRenderedString = 0;
   bool haveOffsets = false;
 
-  Maybe<nsBlockFrame::AutoLineCursorSetup> autoLineCursor;
   for (textFrame = this; textFrame;
        textFrame = textFrame->GetNextContinuation()) {
     if (textFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
@@ -10225,8 +10236,7 @@ nsIFrame::RenderedText nsTextFrame::GetRenderedText(
       if (thisLc != lineContainer) {
         // Setup line cursor when needed.
         lineContainer = thisLc;
-        autoLineCursor.reset();
-        autoLineCursor.emplace(lineContainer);
+        lineContainer->SetupLineCursorForQuery();
       }
       LineStartsOrEndsAtHardLineBreak(textFrame, lineContainer,
                                       &startsAtHardBreak, &endsAtHardBreak);

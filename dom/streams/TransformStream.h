@@ -15,19 +15,20 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
-#ifndef MOZ_DOM_STREAMS
-#  error "Shouldn't be compiling with this header without MOZ_DOM_STREAMS set"
-#endif
-
 namespace mozilla::dom {
 
 class WritableStream;
 class ReadableStream;
+class UniqueMessagePortId;
+class MessagePort;
 
 class TransformStream final : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TransformStream)
+
+  TransformStream(nsIGlobalObject* aGlobal, ReadableStream* aReadable,
+                  WritableStream* aWritable);
 
   // Internal slot accessors
   bool Backpressure() const { return mBackpressure; }
@@ -45,6 +46,16 @@ class TransformStream final : public nsISupports, public nsWrapperCache {
   }
   MOZ_KNOWN_LIVE ReadableStream* Readable() { return mReadable; }
   MOZ_KNOWN_LIVE WritableStream* Writable() { return mWritable; }
+
+  // [Transferable]
+  // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-steps
+  MOZ_CAN_RUN_SCRIPT bool Transfer(JSContext* aCx,
+                                   UniqueMessagePortId& aPortId1,
+                                   UniqueMessagePortId& aPortId2);
+  // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-receiving-steps
+  static MOZ_CAN_RUN_SCRIPT bool ReceiveTransfer(
+      JSContext* aCx, nsIGlobalObject* aGlobal, MessagePort& aPort1,
+      MessagePort& aPort2, JS::MutableHandle<JSObject*> aReturnObject);
 
  protected:
   ~TransformStream();
@@ -69,8 +80,8 @@ class TransformStream final : public nsISupports, public nsWrapperCache {
               const QueuingStrategy& aWritableStrategy,
               const QueuingStrategy& aReadableStrategy, ErrorResult& aRv);
 
-  already_AddRefed<ReadableStream> GetReadable(ErrorResult& aRv);
-  already_AddRefed<WritableStream> GetWritable(ErrorResult& aRv);
+  already_AddRefed<ReadableStream> GetReadable();
+  already_AddRefed<WritableStream> GetWritable();
 
  private:
   nsCOMPtr<nsIGlobalObject> mGlobal;
@@ -79,18 +90,18 @@ class TransformStream final : public nsISupports, public nsWrapperCache {
   // MOZ_KNOWN_LIVE for slots that will never be reassigned
   bool mBackpressure = false;
   RefPtr<Promise> mBackpressureChangePromise;
-  MOZ_KNOWN_LIVE RefPtr<TransformStreamDefaultController> mController;
-  MOZ_KNOWN_LIVE RefPtr<ReadableStream> mReadable;
-  MOZ_KNOWN_LIVE RefPtr<WritableStream> mWritable;
+  RefPtr<TransformStreamDefaultController> mController;
+  RefPtr<ReadableStream> mReadable;
+  RefPtr<WritableStream> mWritable;
 };
 
 MOZ_CAN_RUN_SCRIPT void TransformStreamErrorWritableAndUnblockWrite(
-    JSContext* aCx, TransformStream* aStream, JS::HandleValue aError,
+    JSContext* aCx, TransformStream* aStream, JS::Handle<JS::Value> aError,
     ErrorResult& aRv);
 
 MOZ_CAN_RUN_SCRIPT void TransformStreamError(JSContext* aCx,
                                              TransformStream* aStream,
-                                             JS::HandleValue aError,
+                                             JS::Handle<JS::Value> aError,
                                              ErrorResult& aRv);
 
 void TransformStreamSetBackpressure(TransformStream* aStream,

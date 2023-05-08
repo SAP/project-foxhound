@@ -43,9 +43,7 @@ enum class SectionId {
   Code = 10,
   Data = 11,
   DataCount = 12,
-#ifdef ENABLE_WASM_EXCEPTIONS
   Tag = 13,
-#endif
 };
 
 // WebAssembly type encodings are all single-byte negative SLEB128s, hence:
@@ -177,9 +175,7 @@ enum class DefinitionKind {
   Table = 0x01,
   Memory = 0x02,
   Global = 0x03,
-#ifdef ENABLE_WASM_EXCEPTIONS
   Tag = 0x04,
-#endif
 };
 
 enum class GlobalTypeImmediate { IsMutable = 0x1, AllowedMask = 0x1 };
@@ -219,11 +215,9 @@ enum class ElemSegmentPayload : uint32_t {
   ElemExpression = 0x4,
 };
 
-#ifdef ENABLE_WASM_EXCEPTIONS
 enum class TagKind {
   Exception = 0x0,
 };
-#endif
 
 enum class Op {
   // Control flow operators
@@ -233,12 +227,10 @@ enum class Op {
   Loop = 0x03,
   If = 0x04,
   Else = 0x05,
-#ifdef ENABLE_WASM_EXCEPTIONS
   Try = 0x06,
   Catch = 0x07,
   Throw = 0x08,
   Rethrow = 0x09,
-#endif
   End = 0x0b,
   Br = 0x0c,
   BrIf = 0x0d,
@@ -249,11 +241,9 @@ enum class Op {
   Call = 0x10,
   CallIndirect = 0x11,
 
-// Additional exception operators
-#ifdef ENABLE_WASM_EXCEPTIONS
+  // Additional exception operators
   Delegate = 0x18,
   CatchAll = 0x19,
-#endif
 
   // Parametric operators
   Drop = 0x1a,
@@ -776,9 +766,10 @@ enum class SimdOp {
   F64x2RelaxedMin = 0x10f,
   F64x2RelaxedMax = 0x110,
   I16x8RelaxedQ15MulrS = 0x111,
-// Dot product = 0x112-0x115
-// bfloat16 dot product = 0x116
-// Reserved for Relaxed SIMD = 0x117-0x12f
+  I16x8DotI8x16I7x16S = 0x112,
+  I32x4DotI8x16I7x16AddS = 0x113,
+// bfloat16 dot product = 0x114
+// Reserved for Relaxed SIMD = 0x115-0x12f
 
 // Unused = 0x130 and up
 

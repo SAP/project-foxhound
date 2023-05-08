@@ -177,7 +177,9 @@ pub fn update_prim_visibility(
                 frame_context.spatial_tree,
             );
 
-            let surface_local_rect = surfaces[raster_config.surface_index.0].local_rect.cast_unit();
+            let surface_local_rect = surfaces[raster_config.surface_index.0]
+                .unclipped_local_rect
+                .cast_unit();
 
             // Let the picture cache know that we are pushing an off-screen
             // surface, so it can treat dependencies of surface atomically.
@@ -358,6 +360,7 @@ pub fn update_prim_visibility(
                 &frame_state.surface_stack,
                 &mut frame_state.composite_state,
                 &mut frame_state.gpu_cache,
+                &mut frame_state.scratch.primitive,
                 is_root_tile_cache,
                 surfaces,
             );

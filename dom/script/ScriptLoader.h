@@ -11,6 +11,7 @@
 #include "js/loader/LoadedScript.h"
 #include "js/loader/ScriptKind.h"
 #include "js/loader/ScriptLoadRequest.h"
+#include "mozilla/dom/ScriptLoadContext.h"
 #include "nsCOMPtr.h"
 #include "nsRefPtrHashtable.h"
 #include "nsIScriptElement.h"
@@ -133,6 +134,12 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   NS_DECL_CYCLE_COLLECTION_CLASS(ScriptLoader)
 
   /**
+   * Called when the document that owns this script loader changes global. The
+   * argument is null when the document is detached from a window.
+   */
+  void SetGlobalObject(nsIGlobalObject* aGlobalObject);
+
+  /**
    * The loader maintains a weak reference to the document with
    * which it is initialized. This call forces the reference to
    * be dropped.
@@ -201,6 +208,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   }
 
   ModuleLoader* GetModuleLoader() { return mModuleLoader; }
+
+  void RegisterContentScriptModuleLoader(ModuleLoader* aLoader);
 
   /**
    *  Check whether to speculatively OMT parse scripts as soon as
@@ -320,7 +329,12 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   /**
    * Returns wether any request is queued, and not executed yet.
    */
-  bool HasPendingRequests();
+  bool HasPendingRequests() const;
+
+  /**
+   * Returns wether there are any dynamic module import requests pending.
+   */
+  bool HasPendingDynamicImports() const;
 
   /**
    * Processes any pending requests that are ready for processing.
@@ -419,7 +433,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   nsIURI* GetBaseURI() const override;
 
  private:
-  virtual ~ScriptLoader();
+  ~ScriptLoader();
 
   already_AddRefed<ScriptLoadRequest> CreateLoadRequest(
       ScriptKind aKind, nsIURI* aURI, nsIScriptElement* aElement,
@@ -537,6 +551,11 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
 
   void ReportErrorToConsole(ScriptLoadRequest* aRequest,
                             nsresult aResult) const override;
+
+  void ReportWarningToConsole(
+      ScriptLoadRequest* aRequest, const char* aMessageName,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>()) const override;
+
   void ReportPreloadErrorsToConsole(ScriptLoadRequest* aRequest);
 
   nsresult AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
@@ -613,14 +632,9 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   void GiveUpBytecodeEncoding();
 
   already_AddRefed<nsIGlobalObject> GetGlobalForRequest(
-      ScriptLoadRequest* aRequest) override;
+      ScriptLoadRequest* aRequest);
 
-  // This is a marker class to ensure proper handling of requests with a
-  // WebExtGlobal.
-  enum class WebExtGlobal { Ignore, Handled };
-
-  already_AddRefed<nsIScriptGlobalObject> GetScriptGlobalObject(
-      WebExtGlobal aWebExtGlobal);
+  already_AddRefed<nsIScriptGlobalObject> GetScriptGlobalObject();
 
   // Fill in CompileOptions, as well as produce the introducer script for
   // subsequent calls to UpdateDebuggerMetadata
@@ -725,6 +739,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   RefPtr<AsyncCompileShutdownObserver> mShutdownObserver;
 
   RefPtr<ModuleLoader> mModuleLoader;
+  nsTArray<RefPtr<ModuleLoader>> mWebExtModuleLoaders;
 
   // Logging
  public:

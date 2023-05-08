@@ -152,7 +152,7 @@ static void GetDefaultPrinterNameFromGlobalPrinters(nsAString& aPrinterName) {
 
 //------------------------------------------------------------------
 // Displays the native Print Dialog
-static nsresult ShowNativePrintDialog(HWND aHWnd,
+static nsresult ShowNativePrintDialog(HWND aHWnd, bool aHaveSelection,
                                       nsIPrintSettings* aPrintSettings) {
   // NS_ENSURE_ARG_POINTER(aHWnd);
   NS_ENSURE_ARG_POINTER(aPrintSettings);
@@ -220,7 +220,7 @@ static nsresult ShowNativePrintDialog(HWND aHWnd,
                   PD_COLLATE | PD_NOCURRENTPAGE;
 
   // If there is a current selection then enable the "Selection" radio button
-  if (!aPrintSettings->GetIsPrintSelectionRBEnabled()) {
+  if (!aHaveSelection) {
     prntdlg.Flags |= PD_NOSELECTION;
   }
 
@@ -279,14 +279,11 @@ static nsresult ShowNativePrintDialog(HWND aHWnd,
     result = ::PrintDlgExW(&prntdlg);
   }
 
-  auto cancelOnExit = mozilla::MakeScopeExit([&] {
-    ::SetFocus(aHWnd);
-    aPrintSettings->SetIsCancelled(true);
-  });
+  auto cancelOnExit = mozilla::MakeScopeExit([&] { ::SetFocus(aHWnd); });
 
   if (NS_WARN_IF(!SUCCEEDED(result))) {
 #ifdef DEBUG
-    printf_stderr("PrintDlgExW failed with %x\n", result);
+    printf_stderr("PrintDlgExW failed with %lx\n", result);
 #endif
     return NS_ERROR_FAILURE;
   }
@@ -366,8 +363,9 @@ static nsresult ShowNativePrintDialog(HWND aHWnd,
 //----------------------------------------------------------------------------------
 //-- Show Print Dialog
 //----------------------------------------------------------------------------------
-nsresult NativeShowPrintDialog(HWND aHWnd, nsIPrintSettings* aPrintSettings) {
-  nsresult rv = ShowNativePrintDialog(aHWnd, aPrintSettings);
+nsresult NativeShowPrintDialog(HWND aHWnd, bool aHaveSelection,
+                               nsIPrintSettings* aPrintSettings) {
+  nsresult rv = ShowNativePrintDialog(aHWnd, aHaveSelection, aPrintSettings);
   if (aHWnd) {
     ::DestroyWindow(aHWnd);
   }

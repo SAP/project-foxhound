@@ -11,6 +11,8 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"  // for LaunchUtilityProcess
 #include "mozilla/ipc/UtilityProcessParent.h"
+#include "mozilla/ipc/UtilityAudioDecoderChild.h"
+#include "mozilla/ipc/UtilityAudioDecoderParent.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
@@ -92,13 +94,10 @@ void UtilityProcessManager::OnPreferenceChange(const char16_t* aData) {
   // We know prefs are ASCII here.
   NS_LossyConvertUTF16toASCII strData(aData);
 
-  // A pref changed. If it is useful to do so, inform child processes.
-  if (!dom::ContentParent::ShouldSyncPreference(strData.Data())) {
-    return;
-  }
-
-  mozilla::dom::Pref pref(strData, /* isLocked */ false, Nothing(), Nothing());
-  Preferences::GetPreference(&pref);
+  mozilla::dom::Pref pref(strData, /* isLocked */ false,
+                          /* isSanitized */ false, Nothing(), Nothing());
+  Preferences::GetPreference(&pref, GeckoProcessType_Utility,
+                             /* remoteType */ ""_ns);
 
   for (auto& p : mProcesses) {
     if (!p) {
@@ -127,6 +126,7 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
   MOZ_ASSERT(NS_IsMainThread());
 
   if (IsShutdown()) {
+    NS_WARNING("Reject early LaunchProcess() for Shutdown");
     return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
                                                        __func__);
   }
@@ -134,6 +134,7 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
   RefPtr<ProcessFields> p = GetProcess(aSandbox);
   if (p && p->mNumProcessAttempts) {
     // We failed to start the Utility process earlier, abort now.
+    NS_WARNING("Reject LaunchProcess() for earlier mNumProcessAttempts");
     return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
                                                        __func__);
   }
@@ -157,6 +158,7 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
   if (!p->mProcess->Launch(extraArgs)) {
     p->mNumProcessAttempts++;
     DestroyProcess(aSandbox);
+    NS_WARNING("Reject LaunchProcess() for mNumProcessAttempts++");
     return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
                                                        __func__);
   }
@@ -166,11 +168,13 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
       GetMainThreadSerialEventTarget(), __func__,
       [self, p, aSandbox](bool) {
         if (self->IsShutdown()) {
+          NS_WARNING("Reject LaunchProcess() after LaunchPromise() for Shutdown");
           return GenericNonExclusivePromise::CreateAndReject(
               NS_ERROR_NOT_AVAILABLE, __func__);
         }
 
         if (self->IsProcessDestroyed(aSandbox)) {
+          NS_WARNING("Reject LaunchProcess() after LaunchPromise() for destroyed process");
           return GenericNonExclusivePromise::CreateAndReject(
               NS_ERROR_NOT_AVAILABLE, __func__);
         }
@@ -188,10 +192,6 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
         CrashReporter::AnnotateCrashReport(
             CrashReporter::Annotation::UtilityProcessStatus, "Running"_ns);
 
-        CrashReporter::AnnotateCrashReport(
-            CrashReporter::Annotation::UtilityProcessSandboxingKind,
-            (unsigned int)aSandbox);
-
         return GenericNonExclusivePromise::CreateAndResolve(true, __func__);
       },
       [self, p, aSandbox](nsresult aError) {
@@ -199,10 +199,113 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessManager::LaunchProcess(
           p->mNumProcessAttempts++;
           self->DestroyProcess(aSandbox);
         }
+        NS_WARNING("Reject LaunchProcess() for LaunchPromise() rejection");
         return GenericNonExclusivePromise::CreateAndReject(aError, __func__);
       });
 
   return p->mLaunchPromise;
+}
+
+template <typename Actor>
+RefPtr<GenericNonExclusivePromise> UtilityProcessManager::StartUtility(
+    RefPtr<Actor> aActor, SandboxingKind aSandbox) {
+  if (!aActor) {
+    MOZ_ASSERT(false, "Actor singleton failure");
+    return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                       __func__);
+  }
+
+  if (aActor->CanSend()) {
+    // Actor has already been setup, so we:
+    //   - know the process has been launched
+    //   - the ipc actors are ready
+    return GenericNonExclusivePromise::CreateAndResolve(true, __func__);
+  }
+
+  RefPtr<UtilityProcessManager> self = this;
+  return LaunchProcess(aSandbox)->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [self, aActor, aSandbox]() {
+        RefPtr<UtilityProcessParent> utilityParent =
+            self->GetProcessParent(aSandbox);
+
+        // It is possible if multiple processes concurrently request a utility
+        // actor that the previous CanSend() check returned false for both but
+        // that by the time we have started our process for real, one of them
+        // has already been able to establish the IPC connection and thus we
+        // would perform more than one Open() call.
+        //
+        // The tests within browser_utility_multipleAudio.js should be able to
+        // catch that behavior.
+        if (!aActor->CanSend()) {
+          nsresult rv = aActor->BindToUtilityProcess(utilityParent);
+          if (NS_FAILED(rv)) {
+            MOZ_ASSERT(false, "Protocol endpoints failure");
+            return GenericNonExclusivePromise::CreateAndReject(rv, __func__);
+          }
+
+          MOZ_DIAGNOSTIC_ASSERT(aActor->CanSend(), "IPC established for actor");
+          self->RegisterActor(utilityParent, aActor->GetActorName());
+        }
+
+        return GenericNonExclusivePromise::CreateAndResolve(true, __func__);
+      },
+      [self](nsresult aError) {
+        if (!self->IsShutdown()) {
+          MOZ_ASSERT_UNREACHABLE("Failure when starting actor");
+        }
+        NS_WARNING("Reject StartUtility() for LaunchProcess() rejection");
+        return GenericNonExclusivePromise::CreateAndReject(aError, __func__);
+      });
+}
+
+RefPtr<UtilityProcessManager::AudioDecodingPromise>
+UtilityProcessManager::StartAudioDecoding(base::ProcessId aOtherProcess) {
+  RefPtr<UtilityProcessManager> self = this;
+  RefPtr<UtilityAudioDecoderChild> uadc =
+      UtilityAudioDecoderChild::GetSingleton();
+  MOZ_ASSERT(uadc, "Unable to get a singleton for UtilityAudioDecoderChild");
+  return StartUtility(uadc, SandboxingKind::UTILITY_AUDIO_DECODING)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [self, uadc, aOtherProcess]() {
+            base::ProcessId process =
+                self->GetProcessParent(SandboxingKind::UTILITY_AUDIO_DECODING)
+                    ->OtherPid();
+
+            if (!uadc->CanSend()) {
+              MOZ_ASSERT(false, "UtilityAudioDecoderChild lost in the middle");
+              return AudioDecodingPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                           __func__);
+            }
+
+            Endpoint<PRemoteDecoderManagerChild> childPipe;
+            Endpoint<PRemoteDecoderManagerParent> parentPipe;
+            nsresult rv = PRemoteDecoderManager::CreateEndpoints(
+                process, aOtherProcess, &parentPipe, &childPipe);
+            if (NS_FAILED(rv)) {
+              MOZ_ASSERT(false, "Could not create content remote decoder");
+              return AudioDecodingPromise::CreateAndReject(rv, __func__);
+            }
+
+            if (!uadc->SendNewContentRemoteDecoderManager(
+                    std::move(parentPipe))) {
+              MOZ_ASSERT(false, "SendNewContentRemoteDecoderManager failure");
+              return AudioDecodingPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                           __func__);
+            }
+
+            return AudioDecodingPromise::CreateAndResolve(std::move(childPipe),
+                                                          __func__);
+          },
+          [self](nsresult aError) {
+            if (!self->IsShutdown()) {
+              MOZ_ASSERT_UNREACHABLE(
+                  "PUtilityAudioDecoder: failure when starting actor");
+            }
+            NS_WARNING("Reject StartAudioDecoding() for StartUtility() rejection");
+            return AudioDecodingPromise::CreateAndReject(aError, __func__);
+          });
 }
 
 bool UtilityProcessManager::IsProcessLaunching(SandboxingKind aSandbox) {
@@ -282,7 +385,6 @@ void UtilityProcessManager::DestroyProcess(SandboxingKind aSandbox) {
 
   RefPtr<ProcessFields> p = GetProcess(aSandbox);
   if (!p) {
-    MOZ_CRASH("Cannot get no ProcessFields");
     return;
   }
 

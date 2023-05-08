@@ -622,7 +622,8 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
                                           nsImageFrame::Kind aKind,
                                           const nsImageFrame& aFrame) {
   const ComputedStyle& style = *aFrame.Style();
-  if (style.StyleDisplay()->IsContainSize()) {
+  const auto containAxes = style.StyleDisplay()->GetContainSizeAxes();
+  if (containAxes.IsBoth()) {
     return IntrinsicSize(0, 0);
   }
 
@@ -648,19 +649,23 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
       ScaleIntrinsicSizeForDensity(intrinsicSize,
                                    aFrame.GetImageFromStyle()->GetResolution());
     }
-    return intrinsicSize;
+    return containAxes.ContainIntrinsicSize(intrinsicSize,
+                                            aFrame.GetWritingMode());
   }
 
   if (aKind == nsImageFrame::Kind::ListStyleImage) {
     // Note: images are handled above, this handles gradients etc.
     nscoord defaultLength = ListImageDefaultLength(aFrame);
-    return IntrinsicSize(defaultLength, defaultLength);
+    return containAxes.ContainIntrinsicSize(
+        IntrinsicSize(defaultLength, defaultLength), aFrame.GetWritingMode());
   }
 
   if (aFrame.ShouldShowBrokenImageIcon()) {
     nscoord edgeLengthToUse = nsPresContext::CSSPixelsToAppUnits(
         ICON_SIZE + (2 * (ICON_PADDING + ALT_BORDER_WIDTH)));
-    return IntrinsicSize(edgeLengthToUse, edgeLengthToUse);
+    return containAxes.ContainIntrinsicSize(
+        IntrinsicSize(edgeLengthToUse, edgeLengthToUse),
+        aFrame.GetWritingMode());
   }
 
   if (aUseMappedRatio && style.StylePosition()->mAspectRatio.HasRatio()) {
@@ -700,7 +705,7 @@ static AspectRatio ComputeIntrinsicRatio(imgIContainer* aImage,
                                          bool aUseMappedRatio,
                                          const nsImageFrame& aFrame) {
   const ComputedStyle& style = *aFrame.Style();
-  if (style.StyleDisplay()->IsContainSize()) {
+  if (style.StyleDisplay()->GetContainSizeAxes().IsAny()) {
     return AspectRatio();
   }
 
@@ -1075,14 +1080,18 @@ void nsImageFrame::MaybeDecodeForPredictedSize() {
 
   // OK, we're ready to decode. Compute the scale to the screen...
   mozilla::PresShell* presShell = PresContext()->PresShell();
-  LayoutDeviceToScreenScale2D resolutionToScreen(
-      presShell->GetCumulativeResolution() *
-      nsLayoutUtils::GetTransformToAncestorScaleExcludingAnimated(this));
+  MatrixScalesDouble scale =
+      ScaleFactor<UnknownUnits, UnknownUnits>(
+          presShell->GetCumulativeResolution()) *
+      nsLayoutUtils::GetTransformToAncestorScaleExcludingAnimated(this);
+  auto resolutionToScreen =
+      ViewAs<LayoutDeviceToScreenScale2D>(scale.ConvertTo<float>());
 
   // If we are in a remote browser, then apply scaling from ancestor browsers
   if (BrowserChild* browserChild = BrowserChild::GetFrom(presShell)) {
-    resolutionToScreen.xScale *= browserChild->GetEffectsInfo().mScaleX;
-    resolutionToScreen.yScale *= browserChild->GetEffectsInfo().mScaleY;
+    resolutionToScreen =
+        resolutionToScreen * ViewAs<ScreenToScreenScale2D>(
+                                 browserChild->GetEffectsInfo().mRasterScale);
   }
 
   // ...and this frame's content box...
@@ -1137,7 +1146,7 @@ bool nsImageFrame::IsForMarkerPseudo() const {
 }
 
 void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
-  if (StyleDisplay()->IsContainSize()) {
+  if (StyleDisplay()->GetContainSizeAxes().IsBoth()) {
     // If we have 'contain:size', then our intrinsic size and ratio are 0,0
     // regardless of what our underlying image may think.
     mIntrinsicSize = IntrinsicSize(0, 0);
@@ -2284,9 +2293,17 @@ already_AddRefed<imgIRequest> nsImageFrame::GetCurrentRequest() const {
 
 void nsImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                     const nsDisplayListSet& aLists) {
-  if (!IsVisibleForPainting()) return;
+  if (!IsVisibleForPainting()) {
+    return;
+  }
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  if (IsContentHidden()) {
+    DisplaySelectionOverlay(aBuilder, aLists.Content(),
+                            nsISelectionDisplay::DISPLAY_IMAGES);
+    return;
+  }
 
   uint32_t clipFlags =
       nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition())

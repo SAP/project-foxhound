@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define UNICODE
+
 #include "nsWindowsShellService.h"
 
 #include "BinaryPath.h"
@@ -52,6 +54,7 @@ PSSTDAPI PropVariantToString(REFPROPVARIANT propvar, PWSTR psz, UINT cch);
 #  include <Lmcons.h>  // For UNLEN
 #endif
 
+#include <comutil.h>
 #include <objbase.h>
 #include <shlobj.h>
 #include <knownfolders.h>
@@ -92,6 +95,11 @@ PSSTDAPI PropVariantToString(REFPROPVARIANT propvar, PWSTR psz, UINT cch);
 
 using mozilla::IsWin8OrLater;
 using namespace mozilla;
+
+struct SysFreeStringDeleter {
+  void operator()(BSTR aPtr) { ::SysFreeString(aPtr); }
+};
+using BStrPtr = mozilla::UniquePtr<OLECHAR, SysFreeStringDeleter>;
 
 NS_IMPL_ISUPPORTS(nsWindowsShellService, nsIToolkitShellService,
                   nsIShellService, nsIWindowsShellService)
@@ -797,7 +805,7 @@ static nsresult CreateShortcutImpl(
   // TODO: Properly escape quotes in the string, see bug 1604287.
   nsString arguments;
   for (auto& arg : aArguments) {
-    arguments.AppendPrintf("\"%S\" ", arg.get());
+    arguments.AppendPrintf("\"%S\" ", static_cast<const wchar_t*>(arg.get()));
   }
 
   link->SetArguments(arguments.get());
@@ -959,7 +967,7 @@ static nsresult GetShortcutPath(int aCSIDL, bool aPrivateBrowsing,
 //   NS_ERROR_FILE_ALREADY_EXISTS if the shortcut exists but doesn't match the
 //                                current app
 //   NS_OK if the shortcut matches
-static nsresult GetMatchingShortcut(int aCSIDL, const nsAutoString& aAUMID,
+static nsresult GetMatchingShortcut(int aCSIDL, const nsAString& aAUMID,
                                     const wchar_t aExePath[MAXPATHLEN],
                                     bool aPrivateBrowsing,
                                     /* out */ nsAutoString& aShortcutPath) {
@@ -1042,47 +1050,84 @@ static nsresult GetMatchingShortcut(int aCSIDL, const nsAutoString& aAUMID,
 }
 static nsresult PinCurrentAppToTaskbarWin7(bool aCheckOnly,
                                            nsAutoString aShortcutPath) {
-  // Currently disabled due to
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1763573 At the time of
-  // writing, the only callers eat any errors from here so it's safe to return
-  // one. This is a short term workaround to confirm that this code is indeed
-  // causing the bug above. If it is, we'll rework this code to avoid it.
-  return NS_ERROR_ABORT;
-
-  // This is a less generalized version of the code from the NSIS
-  // Invoke Shell Verb plugin.
-  // https://nsis.sourceforge.io/Invoke_Shell_Verb_plugin
-  VARIANT dir;
-  RefPtr<Folder> folder = nullptr;
-  RefPtr<FolderItem> folderItem = nullptr;
-  RefPtr<FolderItemVerbs> verbs = nullptr;
-  RefPtr<FolderItemVerb> fiVerb = nullptr;
-  RefPtr<IShellDispatch> shellDisp = nullptr;
   nsModuleHandle shellInst(LoadLibraryW(L"shell32.dll"));
-  wchar_t shortcutDir[MAX_PATH + 1], linkName[MAX_PATH + 1];
-  WCHAR verbName[100];
 
-  // Pull the actual verb name that we need to use later
-  int rv = LoadStringW(shellInst.get(), PIN_TO_TASKBAR_SHELL_VERB, verbName,
-                       sizeof(verbName) / sizeof(verbName[0]));
-  if (!rv) return NS_ERROR_NOT_AVAILABLE;
-
-  HRESULT hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER,
-                                IID_IShellDispatch, getter_AddRefs(shellDisp));
+  RefPtr<IShellWindows> shellWindows;
+  HRESULT hr =
+      ::CoCreateInstance(CLSID_ShellWindows, nullptr, CLSCTX_LOCAL_SERVER,
+                         IID_IShellWindows, getter_AddRefs(shellWindows));
   if (FAILED(hr)) return NS_ERROR_FAILURE;
-  wcscpy_s(shortcutDir, MAX_PATH + 1, aShortcutPath.get());
-  PathRemoveFileSpecW(shortcutDir);
 
+  // 1. Find the shell view for the desktop.
+  _variant_t loc(int(CSIDL_DESKTOP));
+  _variant_t empty;
+  long hwnd;
+  RefPtr<IDispatch> dispDesktop;
+  hr = shellWindows->FindWindowSW(&loc, &empty, SWC_DESKTOP, &hwnd,
+                                  SWFO_NEEDDISPATCH,
+                                  getter_AddRefs(dispDesktop));
+  if (FAILED(hr) || hr == S_FALSE) return NS_ERROR_FAILURE;
+
+  RefPtr<IServiceProvider> servProv;
+  hr = dispDesktop->QueryInterface(IID_IServiceProvider,
+                                   getter_AddRefs(servProv));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  RefPtr<IShellBrowser> browser;
+  hr = servProv->QueryService(SID_STopLevelBrowser, IID_IShellBrowser,
+                              getter_AddRefs(browser));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  RefPtr<IShellView> activeShellView;
+  hr = browser->QueryActiveShellView(getter_AddRefs(activeShellView));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  // 2. Get the automation object for the desktop.
+  RefPtr<IDispatch> dispView;
+  hr = activeShellView->GetItemObject(SVGIO_BACKGROUND, IID_IDispatch,
+                                      getter_AddRefs(dispView));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  RefPtr<IShellFolderViewDual> folderView;
+  hr = dispView->QueryInterface(IID_IShellFolderViewDual,
+                                getter_AddRefs(folderView));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  // 3. Get the interface to IShellDispatch
+  RefPtr<IDispatch> dispShell;
+  hr = folderView->get_Application(getter_AddRefs(dispShell));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  RefPtr<IShellDispatch2> shellDisp;
+  hr =
+      dispShell->QueryInterface(IID_IShellDispatch2, getter_AddRefs(shellDisp));
+  if (FAILED(hr)) return NS_ERROR_FAILURE;
+
+  wchar_t shortcutDir[MAX_PATH + 1];
+  wcscpy_s(shortcutDir, MAX_PATH + 1, aShortcutPath.get());
+  if (!PathRemoveFileSpecW(shortcutDir)) return NS_ERROR_FAILURE;
+
+  VARIANT dir;
   dir.vt = VT_BSTR;
-  dir.bstrVal = shortcutDir;
+  BStrPtr bstrShortcutDir = BStrPtr(SysAllocString(shortcutDir));
+  if (bstrShortcutDir.get() == NULL) return NS_ERROR_FAILURE;
+  dir.bstrVal = bstrShortcutDir.get();
+
+  RefPtr<Folder> folder;
   hr = shellDisp->NameSpace(dir, getter_AddRefs(folder));
   if (FAILED(hr)) return NS_ERROR_FAILURE;
 
+  wchar_t linkName[MAX_PATH + 1];
   wcscpy_s(linkName, MAX_PATH + 1, aShortcutPath.get());
   PathStripPathW(linkName);
-  hr = folder->ParseName(linkName, getter_AddRefs(folderItem));
+  BStrPtr bstrLinkName = BStrPtr(SysAllocString(linkName));
+  if (bstrLinkName.get() == NULL) return NS_ERROR_FAILURE;
+
+  RefPtr<FolderItem> folderItem;
+  hr = folder->ParseName(bstrLinkName.get(), getter_AddRefs(folderItem));
   if (FAILED(hr)) return NS_ERROR_FAILURE;
 
+  RefPtr<FolderItemVerbs> verbs;
   hr = folderItem->Verbs(getter_AddRefs(verbs));
   if (FAILED(hr)) return NS_ERROR_FAILURE;
 
@@ -1090,22 +1135,29 @@ static nsresult PinCurrentAppToTaskbarWin7(bool aCheckOnly,
   hr = verbs->get_Count(&count);
   if (FAILED(hr)) return NS_ERROR_FAILURE;
 
-  int i;
+  WCHAR verbName[100];
+  if (!LoadStringW(shellInst.get(), PIN_TO_TASKBAR_SHELL_VERB, verbName,
+                   ARRAYSIZE(verbName))) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
   VARIANT v;
   v.vt = VT_I4;
-  BSTR name;
-  for (i = 0; i < count; ++i) {
+  BStrPtr name;
+  for (long i = 0; i < count; ++i) {
+    RefPtr<FolderItemVerb> fiVerb;
     v.lVal = i;
     hr = verbs->Item(v, getter_AddRefs(fiVerb));
-    if (FAILED(hr) || fiVerb == nullptr) {
-      continue;
-    }
-
-    hr = fiVerb->get_Name(&name);
     if (FAILED(hr)) {
       continue;
     }
-    if (!wcscmp((WCHAR*)name, verbName)) {
+
+    BSTR tmpName;
+    hr = fiVerb->get_Name(&tmpName);
+    if (FAILED(hr)) {
+      continue;
+    }
+    name = BStrPtr(tmpName);
+    if (!wcscmp((WCHAR*)name.get(), verbName)) {
       if (aCheckOnly) {
         // we've done as much as we can without actually
         // changing anything
@@ -1198,17 +1250,11 @@ static nsresult PinCurrentAppToTaskbarWin10(bool aCheckOnly,
 }
 
 static nsresult PinCurrentAppToTaskbarImpl(bool aCheckOnly,
-                                           bool aPrivateBrowsing) {
-  if (IsWin10OrLater() && !IsWin10Sep2018UpdateOrLater()) {
-    // First available on 1809
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
-  nsAutoString aumid;
-  if (NS_WARN_IF(!mozilla::widget::WinTaskbar::GenerateAppUserModelID(
-          aumid, aPrivateBrowsing))) {
-    return NS_ERROR_FAILURE;
-  }
+                                           bool aPrivateBrowsing,
+                                           const nsAString& aAppUserModelId) {
+  MOZ_DIAGNOSTIC_ASSERT(
+      !NS_IsMainThread(),
+      "PinCurrentAppToTaskbarImpl should be called off main thread only");
 
   wchar_t exePath[MAXPATHLEN] = {};
   if (NS_WARN_IF(NS_FAILED(BinaryPath::GetLong(exePath)))) {
@@ -1220,12 +1266,12 @@ static nsresult PinCurrentAppToTaskbarImpl(bool aCheckOnly,
   int shortcutCSIDLs[] = {CSIDL_COMMON_PROGRAMS, CSIDL_PROGRAMS,
                           CSIDL_COMMON_DESKTOPDIRECTORY,
                           CSIDL_DESKTOPDIRECTORY};
-  for (int i = 0; i < ArrayLength(shortcutCSIDLs); ++i) {
+  for (size_t i = 0; i < ArrayLength(shortcutCSIDLs); ++i) {
     // GetMatchingShortcut may fail when the exe path doesn't match, even
     // if it refers to the same file. This should be rare, and the worst
     // outcome would be failure to pin, so the risk is acceptable.
-    nsresult rv = GetMatchingShortcut(shortcutCSIDLs[i], aumid, exePath,
-                                      aPrivateBrowsing, shortcutPath);
+    nsresult rv = GetMatchingShortcut(shortcutCSIDLs[i], aAppUserModelId,
+                                      exePath, aPrivateBrowsing, shortcutPath);
     if (NS_SUCCEEDED(rv)) {
       break;
     } else {
@@ -1281,8 +1327,9 @@ static nsresult PinCurrentAppToTaskbarImpl(bool aCheckOnly,
     // needs an index.
     iconIndex--;
 
-    rv = CreateShortcutImpl(exeFile, arguments, desc, exeFile, iconIndex, aumid,
-                            FOLDERID_StartMenu, linkName, shortcutPath);
+    rv = CreateShortcutImpl(exeFile, arguments, desc, exeFile, iconIndex,
+                            aAppUserModelId, FOLDERID_StartMenu, linkName,
+                            shortcutPath);
     if (!NS_SUCCEEDED(rv)) {
       return NS_ERROR_FILE_NOT_FOUND;
     }
@@ -1295,15 +1342,81 @@ static nsresult PinCurrentAppToTaskbarImpl(bool aCheckOnly,
   }
 }
 
-NS_IMETHODIMP
-nsWindowsShellService::PinCurrentAppToTaskbar(bool aPrivateBrowsing = false) {
-  return PinCurrentAppToTaskbarImpl(/* aCheckOnly */ false, aPrivateBrowsing);
+static nsresult PinCurrentAppToTaskbarAsyncImpl(bool aCheckOnly,
+                                                bool aPrivateBrowsing,
+                                                JSContext* aCx,
+                                                dom::Promise** aPromise) {
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
+
+  // First available on 1809
+  if (IsWin10OrLater() && !IsWin10Sep2018UpdateOrLater()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  ErrorResult rv;
+  RefPtr<dom::Promise> promise =
+      dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
+
+  if (MOZ_UNLIKELY(rv.Failed())) {
+    return rv.StealNSResult();
+  }
+
+  nsAutoString aumid;
+  if (NS_WARN_IF(!mozilla::widget::WinTaskbar::GenerateAppUserModelID(
+          aumid, aPrivateBrowsing))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
+      "CheckPinCurrentAppToTaskbarAsync promise", promise);
+
+  NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "CheckPinCurrentAppToTaskbarAsync",
+          [aCheckOnly, aPrivateBrowsing, aumid = nsString{aumid},
+           promiseHolder = std::move(promiseHolder)] {
+            nsresult rv = NS_ERROR_FAILURE;
+            HRESULT hr = CoInitialize(nullptr);
+
+            if (SUCCEEDED(hr)) {
+              rv = PinCurrentAppToTaskbarImpl(aCheckOnly, aPrivateBrowsing,
+                                              aumid);
+              CoUninitialize();
+            }
+
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "CheckPinCurrentAppToTaskbarAsync callback",
+                [rv, promiseHolder = std::move(promiseHolder)] {
+                  dom::Promise* promise = promiseHolder.get()->get();
+
+                  if (NS_SUCCEEDED(rv)) {
+                    promise->MaybeResolveWithUndefined();
+                  } else {
+                    promise->MaybeReject(rv);
+                  }
+                }));
+          }),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
+
+  promise.forget(aPromise);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsWindowsShellService::CheckPinCurrentAppToTaskbar(
-    bool aPrivateBrowsing = false) {
-  return PinCurrentAppToTaskbarImpl(/* aCheckOnly */ true, aPrivateBrowsing);
+nsWindowsShellService::PinCurrentAppToTaskbarAsync(bool aPrivateBrowsing,
+                                                   JSContext* aCx,
+                                                   dom::Promise** aPromise) {
+  return PinCurrentAppToTaskbarAsyncImpl(/* aCheckOnly */ false,
+                                         aPrivateBrowsing, aCx, aPromise);
+}
+
+NS_IMETHODIMP
+nsWindowsShellService::CheckPinCurrentAppToTaskbarAsync(
+    bool aPrivateBrowsing, JSContext* aCx, dom::Promise** aPromise) {
+  return PinCurrentAppToTaskbarAsyncImpl(/* aCheckOnly = */ true,
+                                         aPrivateBrowsing, aCx, aPromise);
 }
 
 static bool IsCurrentAppPinnedToTaskbarSync(const nsAutoString& aumid) {
@@ -1487,7 +1600,7 @@ nsWindowsShellService::ClassifyShortcut(const nsAString& aPath,
                  {FOLDERID_UserPinned, u"\\TaskBar\\", u"Taskbar"},
                  {FOLDERID_UserPinned, u"\\StartMenu\\", u"StartMenu"}};
 
-  for (int i = 0; i < ArrayLength(folders); ++i) {
+  for (size_t i = 0; i < ArrayLength(folders); ++i) {
     nsAutoString knownPath;
 
     // These flags are chosen to avoid I/O, see bug 1363398.

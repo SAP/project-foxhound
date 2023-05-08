@@ -6,10 +6,15 @@
 #include "Accessible.h"
 #include "AccGroupInfo.h"
 #include "ARIAMap.h"
+#include "nsAccUtils.h"
 #include "States.h"
 #include "mozilla/a11y/HyperTextAccessibleBase.h"
 #include "mozilla/Components.h"
 #include "nsIStringBundle.h"
+
+#ifdef A11Y_LOG
+#  include "nsAccessibilityService.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -90,6 +95,14 @@ bool Accessible::HasGenericType(AccGenericType aType) const {
   const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
   return (mGenericTypes & aType) ||
          (roleMapEntry && roleMapEntry->IsOfType(aType));
+}
+
+LayoutDeviceIntSize Accessible::Size() const { return Bounds().Size(); }
+
+LayoutDeviceIntPoint Accessible::Position(uint32_t aCoordType) {
+  LayoutDeviceIntPoint point = Bounds().TopLeft();
+  nsAccUtils::ConvertScreenCoordsTo(&point.x, &point.y, aCoordType, this);
+  return point;
 }
 
 bool Accessible::IsTextRole() {
@@ -294,6 +307,38 @@ void Accessible::GetPositionAndSetSize(int32_t* aPosInSet, int32_t* aSetSize) {
   }
 }
 
+#ifdef A11Y_LOG
+void Accessible::DebugDescription(nsCString& aDesc) {
+  aDesc.Truncate();
+  aDesc.AppendPrintf("[%p] ", this);
+  nsAutoString role;
+  GetAccService()->GetStringRole(Role(), role);
+  aDesc.Append(NS_ConvertUTF16toUTF8(role));
+
+  if (nsAtom* tagAtom = TagName()) {
+    nsAutoCString tag;
+    tagAtom->ToUTF8String(tag);
+    aDesc.AppendPrintf(" %s", tag.get());
+
+    nsAutoString id;
+    DOMNodeID(id);
+    if (!id.IsEmpty()) {
+      aDesc.Append("#");
+      aDesc.Append(NS_ConvertUTF16toUTF8(id));
+    }
+  }
+  nsAutoString id;
+
+  nsAutoString name;
+  Name(name);
+  if (!name.IsEmpty()) {
+    aDesc.Append(" '");
+    aDesc.Append(NS_ConvertUTF16toUTF8(name));
+    aDesc.Append("'");
+  }
+}
+#endif
+
 void Accessible::TranslateString(const nsString& aKey, nsAString& aStringOut) {
   nsCOMPtr<nsIStringBundleService> stringBundleService =
       components::StringBundle::Service();
@@ -312,7 +357,9 @@ void Accessible::TranslateString(const nsString& aKey, nsAString& aStringOut) {
 }
 
 const Accessible* Accessible::ActionAncestor() const {
-  for (Accessible* parent = Parent(); parent && !parent->IsDoc();
+  // We do want to consider a click handler on the document. However, we don't
+  // want to walk outside of this document, so we stop if we see an OuterDoc.
+  for (Accessible* parent = Parent(); parent && !parent->IsOuterDoc();
        parent = parent->Parent()) {
     if (parent->HasPrimaryAction()) {
       return parent;

@@ -301,6 +301,8 @@ void AddrHostRecord::ResolveComplete() {
 
   if (mResolverType == DNSResolverType::TRR) {
     if (mTRRSuccess) {
+      MOZ_DIAGNOSTIC_ASSERT(mTRRSkippedReason ==
+                            mozilla::net::TRRSkippedReason::TRR_OK);
       uint32_t millis = static_cast<uint32_t>(mTrrDuration.ToMilliseconds());
       Telemetry::Accumulate(Telemetry::DNS_TRR_LOOKUP_TIME3,
                             TRRService::ProviderKey(), millis);
@@ -317,7 +319,7 @@ void AddrHostRecord::ResolveComplete() {
     Telemetry::Accumulate(Telemetry::TRR_SKIP_REASON_TRR_FIRST2,
                           TRRService::ProviderKey(),
                           static_cast<uint32_t>(mTRRSkippedReason));
-    if (!mTRRSuccess) {
+    if (!mTRRSuccess && LoadNativeUsed()) {
       Telemetry::Accumulate(
           mNativeSuccess ? Telemetry::TRR_SKIP_REASON_NATIVE_SUCCESS
                          : Telemetry::TRR_SKIP_REASON_NATIVE_FAILED,
@@ -359,12 +361,6 @@ void AddrHostRecord::ResolveComplete() {
       if (mTRRSuccess) {
         Telemetry::Accumulate(Telemetry::TRR_ATTEMPT_COUNT,
                               TRRService::ProviderKey(), mTrrAttempts);
-      } else if (LoadNativeUsed()) {
-        Telemetry::Accumulate(mNativeSuccess
-                                  ? Telemetry::TRR_SKIP_REASON_NATIVE_SUCCESS
-                                  : Telemetry::TRR_SKIP_REASON_NATIVE_FAILED,
-                              TRRService::ProviderKey(),
-                              static_cast<uint32_t>(mTRRSkippedReason));
       }
     }
   }

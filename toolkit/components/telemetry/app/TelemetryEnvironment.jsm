@@ -6,8 +6,6 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryEnvironment", "Policy"];
 
-const myScope = this;
-
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { TelemetryUtils } = ChromeUtils.import(
@@ -254,6 +252,11 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.search.widget.inNavBar", { what: RECORD_DEFAULTPREF_VALUE }],
   ["browser.startup.homepage", { what: RECORD_PREF_STATE }],
   ["browser.startup.page", { what: RECORD_PREF_VALUE }],
+  ["browser.urlbar.autoFill", { what: RECORD_DEFAULTPREF_VALUE }],
+  [
+    "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
   [
     "browser.urlbar.quicksuggest.onboardingDialogChoice",
     { what: RECORD_DEFAULTPREF_VALUE },
@@ -280,9 +283,12 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["dom.ipc.plugins.enabled", { what: RECORD_PREF_VALUE }],
   ["dom.ipc.processCount", { what: RECORD_PREF_VALUE }],
   ["dom.max_script_run_time", { what: RECORD_PREF_VALUE }],
+  ["extensions.InstallTrigger.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.InstallTriggerImpl.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.autoDisableScopes", { what: RECORD_PREF_VALUE }],
-  ["extensions.enabledScopes", { what: RECORD_PREF_VALUE }],
   ["extensions.blocklist.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.enabledScopes", { what: RECORD_PREF_VALUE }],
+  ["extensions.eventPages.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.formautofill.addresses.enabled", { what: RECORD_PREF_VALUE }],
   [
     "extensions.formautofill.addresses.capture.enabled",
@@ -294,8 +300,7 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
     { what: RECORD_PREF_VALUE },
   ],
   ["extensions.formautofill.creditCards.used", { what: RECORD_PREF_VALUE }],
-  ["extensions.InstallTrigger.enabled", { what: RECORD_PREF_VALUE }],
-  ["extensions.InstallTriggerImpl.enabled", { what: RECORD_PREF_VALUE }],
+  ["extensions.manifestV3.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.strictCompatibility", { what: RECORD_PREF_VALUE }],
   ["extensions.update.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.update.url", { what: RECORD_PREF_VALUE }],
@@ -321,6 +326,16 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["layers.prefer-d3d9", { what: RECORD_PREF_VALUE }],
   ["layers.prefer-opengl", { what: RECORD_PREF_VALUE }],
   ["layout.css.devPixelsPerPx", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.enabled", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastInstallFailed", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastInstallStart", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastDownload", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastDownloadFailed", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastDownloadFailReason", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastUpdate", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.visible", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-manager.lastCheck", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-manager.lastEmptyCheck", { what: RECORD_PREF_VALUE }],
   ["network.http.windows-sso.enabled", { what: RECORD_PREF_VALUE }],
   ["network.proxy.autoconfig_url", { what: RECORD_PREF_STATE }],
   ["network.proxy.http", { what: RECORD_PREF_STATE }],
@@ -374,7 +389,7 @@ const SEARCH_ENGINE_MODIFIED_TOPIC = "browser-search-engine-modified";
 const SEARCH_SERVICE_TOPIC = "browser-search-service";
 const SESSIONSTORE_WINDOWS_RESTORED_TOPIC = "sessionstore-windows-restored";
 const PREF_CHANGED_TOPIC = "nsPref:changed";
-const BLOCKLIST_LOADED_TOPIC = "plugin-blocklist-loaded";
+const GMP_PROVIDER_REGISTERED_TOPIC = "gmp-provider-registered";
 const AUTO_UPDATE_PREF_CHANGE_TOPIC =
   UpdateUtils.PER_INSTALLATION_PREFS["app.update.auto"].observerTopic;
 const BACKGROUND_UPDATE_PREF_CHANGE_TOPIC =
@@ -570,7 +585,7 @@ function EnvironmentAddonBuilder(environment) {
 
   // Have we added an observer to listen for blocklist changes that still needs to be
   // removed:
-  this._blocklistObserverAdded = false;
+  this._gmpProviderObserverAdded = false;
 
   // Set to true once initial load is complete and we're watching for changes.
   this._loaded = false;
@@ -594,7 +609,7 @@ EnvironmentAddonBuilder.prototype = {
       try {
         this._shutdownState = "Awaiting _updateAddons";
         // Gather initial addons details
-        await this._updateAddons(true);
+        await this._updateAddons();
 
         if (!this._environment._addonsAreFull) {
           // The addon database has not been loaded, wait for it to
@@ -653,9 +668,9 @@ EnvironmentAddonBuilder.prototype = {
   // nsIObserver
   observe(aSubject, aTopic, aData) {
     this._environment._log.trace("observe - Topic " + aTopic);
-    if (aTopic == BLOCKLIST_LOADED_TOPIC) {
-      Services.obs.removeObserver(this, BLOCKLIST_LOADED_TOPIC);
-      this._blocklistObserverAdded = false;
+    if (aTopic == GMP_PROVIDER_REGISTERED_TOPIC) {
+      Services.obs.removeObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
+      this._gmpProviderObserverAdded = false;
       let gmpPluginsPromise = this._getActiveGMPlugins();
       gmpPluginsPromise.then(
         gmpPlugins => {
@@ -707,8 +722,8 @@ EnvironmentAddonBuilder.prototype = {
   _shutdownBlocker() {
     if (this._loaded) {
       AddonManager.removeAddonListener(this);
-      if (this._blocklistObserverAdded) {
-        Services.obs.removeObserver(this, BLOCKLIST_LOADED_TOPIC);
+      if (this._gmpProviderObserverAdded) {
+        Services.obs.removeObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
       }
     }
 
@@ -726,21 +741,17 @@ EnvironmentAddonBuilder.prototype = {
    * This should only be called from _pendingTask; otherwise we risk
    * running this during addon manager shutdown.
    *
-   * @param {boolean} [atStartup]
-   *        True if this is the first check we're performing at startup. In that
-   *        situation, we defer some more expensive initialization.
-   *
    * @returns Promise<Object> This returns a Promise resolved with a status object with the following members:
    *   changed - Whether the environment changed.
    *   oldEnvironment - Only set if a change occured, contains the environment data before the change.
    */
-  async _updateAddons(atStartup) {
+  async _updateAddons() {
     this._environment._log.trace("_updateAddons");
 
     let addons = {
       activeAddons: await this._getActiveAddons(),
       theme: await this._getActiveTheme(),
-      activeGMPlugins: await this._getActiveGMPlugins(atStartup),
+      activeGMPlugins: await this._getActiveGMPlugins(),
     };
 
     let result = {
@@ -756,7 +767,7 @@ EnvironmentAddonBuilder.prototype = {
       this._environment._log.trace("_updateAddons: addons differ");
       result.oldEnvironment = Cu.cloneInto(
         this._environment._currentEnvironment,
-        myScope
+        {}
       );
     }
     this._environment._currentEnvironment.addons = addons;
@@ -874,22 +885,18 @@ EnvironmentAddonBuilder.prototype = {
   /**
    * Get the GMPlugins data in object form.
    *
-   * @param {boolean} [atStartup]
-   *        True if this is the first check we're performing at startup. In that
-   *        situation, we defer some more expensive initialization.
-   *
    * @return Object containing the GMPlugins data.
    *
    * This should only be called from _pendingTask; otherwise we risk
    * running this during addon manager shutdown.
    */
-  async _getActiveGMPlugins(atStartup) {
+  async _getActiveGMPlugins() {
     // If we haven't yet loaded the blocklist, pass back dummy data for now,
     // and add an observer to update this data as soon as we get it.
-    if (atStartup || !Services.blocklist.isLoaded) {
-      if (!this._blocklistObserverAdded) {
-        Services.obs.addObserver(this, BLOCKLIST_LOADED_TOPIC);
-        this._blocklistObserverAdded = true;
+    if (!AddonManager.hasProvider("GMPProvider")) {
+      if (!this._gmpProviderObserverAdded) {
+        Services.obs.addObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
+        this._gmpProviderObserverAdded = true;
       }
       return {
         "dummy-gmp": {
@@ -1009,7 +1016,7 @@ EnvironmentCache.prototype = {
    * @returns object
    */
   get currentEnvironment() {
-    return Cu.cloneInto(this._currentEnvironment, myScope);
+    return Cu.cloneInto(this._currentEnvironment, {});
   },
 
   /**
@@ -1154,7 +1161,7 @@ EnvironmentCache.prototype = {
       }
     }
 
-    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
+    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, {});
     // Add the experiment annotation.
     let experiments = this._currentEnvironment.experiments || {};
     experiments[saneId] = { branch: saneBranch };
@@ -1174,7 +1181,7 @@ EnvironmentCache.prototype = {
     let experiments = this._currentEnvironment.experiments || {};
     if (id in experiments) {
       // Only attempt to notify if a previous annotation was found and removed.
-      let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
+      let oldEnvironment = Cu.cloneInto(this._currentEnvironment, {});
       // Remove the experiment annotation.
       delete this._currentEnvironment.experiments[id];
       // Notify of the change.
@@ -1186,7 +1193,7 @@ EnvironmentCache.prototype = {
   },
 
   getActiveExperiments() {
-    return Cu.cloneInto(this._currentEnvironment.experiments || {}, myScope);
+    return Cu.cloneInto(this._currentEnvironment.experiments || {}, {});
   },
 
   shutdown() {
@@ -1198,10 +1205,10 @@ EnvironmentCache.prototype = {
    * Only used in tests, set the preferences to watch.
    * @param aPreferences A map of preferences names and their recording policy.
    */
-  async _watchPreferences(aPreferences) {
+  _watchPreferences(aPreferences) {
     this._stopWatchingPrefs();
     this._watchedPrefs = aPreferences;
-    await this._updateSettings();
+    this._updateSettings();
     this._startWatchingPrefs();
   },
 
@@ -1282,7 +1289,7 @@ EnvironmentCache.prototype = {
 
   _onPrefChanged(aData) {
     this._log.trace("_onPrefChanged");
-    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
+    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, {});
     this._currentEnvironment.settings.userPrefs[aData] = this._getPrefValue(
       aData,
       this._watchedPrefs.get(aData).what
@@ -1413,7 +1420,7 @@ EnvironmentCache.prototype = {
   /**
    * Update the default search engine value.
    */
-  async _updateSearchEngine() {
+  _updateSearchEngine() {
     if (!this._canQuerySearch) {
       this._log.trace("_updateSearchEngine - ignoring early call");
       return;
@@ -1430,7 +1437,7 @@ EnvironmentCache.prototype = {
     this._currentEnvironment.settings = this._currentEnvironment.settings || {};
 
     // Update the search engine entry in the current environment.
-    const defaultEngineInfo = await Services.search.getDefaultEngineInfo();
+    const defaultEngineInfo = Services.search.getDefaultEngineInfo();
     this._currentEnvironment.settings.defaultSearchEngine =
       defaultEngineInfo.defaultSearchEngine;
     this._currentEnvironment.settings.defaultSearchEngineData = {
@@ -1450,12 +1457,12 @@ EnvironmentCache.prototype = {
   /**
    * Update the default search engine value and trigger the environment change.
    */
-  async _onSearchEngineChange() {
+  _onSearchEngineChange() {
     this._log.trace("_onSearchEngineChange");
 
     // Finally trigger the environment change notification.
-    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
-    await this._updateSearchEngine();
+    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, {});
+    this._updateSearchEngine();
     this._onEnvironmentChange("search-engine-changed", oldEnvironment);
   },
 
@@ -1468,7 +1475,7 @@ EnvironmentCache.prototype = {
     this._log.trace("_onCompositorProcessAborted");
 
     // Trigger the environment change notification.
-    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, myScope);
+    let oldEnvironment = Cu.cloneInto(this._currentEnvironment, {});
     this._updateGraphicsFeatures();
     this._onEnvironmentChange("gfx-features-changed", oldEnvironment);
   },
@@ -1575,7 +1582,7 @@ EnvironmentCache.prototype = {
   /**
    * Update the cached settings data.
    */
-  async _updateSettings() {
+  _updateSettings() {
     let updateChannel = null;
     try {
       updateChannel = Utils.getUpdateChannel();
@@ -1616,7 +1623,7 @@ EnvironmentCache.prototype = {
       this._updateAttribution();
     }
     this._updateDefaultBrowser();
-    await this._updateSearchEngine();
+    this._updateSearchEngine();
     this._loadAsyncUpdateSettingsFromCache();
   },
 
@@ -1699,10 +1706,12 @@ EnvironmentCache.prototype = {
 
     let attributionData = {};
     for (let key in data) {
-      attributionData[key] = limitStringToLength(
-        data[key],
-        MAX_ATTRIBUTION_STRING_LENGTH
-      );
+      attributionData[key] =
+        // At least one of these may be boolean, and limitStringToLength
+        // returns null for non-string inputs.
+        typeof data[key] === "string"
+          ? limitStringToLength(data[key], MAX_ATTRIBUTION_STRING_LENGTH)
+          : data[key];
     }
     this._currentEnvironment.settings.attribution = attributionData;
   },

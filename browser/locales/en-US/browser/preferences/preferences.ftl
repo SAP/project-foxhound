@@ -339,8 +339,7 @@ files-and-applications-title = Files and Applications
 
 download-header = Downloads
 
-download-save-to =
-    .label = Save files to
+download-save-where = Save files to
     .accesskey = v
 
 download-choose-folder =
@@ -453,6 +452,16 @@ applications-use-os-default-label =
     .value = { applications-use-os-default.label }
 
 ##
+
+applications-handle-new-file-types-description = What should { -brand-short-name } do with other files?
+
+applications-save-for-new-types =
+    .label = Save files
+    .accesskey = S
+
+applications-ask-before-handling =
+    .label = Ask whether to open or save files
+    .accesskey = A
 
 drm-content-header = Digital Rights Management (DRM) Content
 
@@ -1404,8 +1413,3 @@ httpsonly-radio-disabled =
 desktop-folder-name = Desktop
 downloads-folder-name = Downloads
 choose-download-folder-title = Choose Download Folder:
-
-# Variables:
-#   $service-name (String) - Name of a cloud storage provider like Dropbox, Google Drive, etc...
-save-files-to-cloud-storage =
-    .label = Save files to { $service-name }

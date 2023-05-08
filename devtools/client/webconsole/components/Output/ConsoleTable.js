@@ -8,9 +8,9 @@ const {
   createFactory,
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const { getArrayTypeNames } = require("devtools/shared/webconsole/messages");
 const {
   l10n,
-  getArrayTypeNames,
   getDescriptorValue,
 } = require("devtools/client/webconsole/utils/messages");
 loader.lazyGetter(this, "MODE", function() {
@@ -38,6 +38,7 @@ class ConsoleTable extends Component {
       parameters: PropTypes.array.isRequired,
       serviceContainer: PropTypes.object.isRequired,
       id: PropTypes.string.isRequired,
+      setExpanded: PropTypes.func,
     };
   }
 
@@ -66,7 +67,7 @@ class ConsoleTable extends Component {
   }
 
   getRows(columns, items) {
-    const { dispatch, serviceContainer } = this.props;
+    const { dispatch, serviceContainer, setExpanded } = this.props;
 
     return items.map((item, index) => {
       const cells = [];
@@ -83,6 +84,7 @@ class ConsoleTable extends Component {
                 useQuotes: false,
                 serviceContainer,
                 dispatch,
+                setExpanded,
               });
 
         cells.push(

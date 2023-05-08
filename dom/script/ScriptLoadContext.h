@@ -11,8 +11,8 @@
 #include "js/RootingAPI.h"
 #include "js/SourceText.h"
 #include "js/TypeDecls.h"
+#include "js/loader/LoadContextBase.h"
 #include "js/loader/ScriptKind.h"
-#include "js/loader/ScriptLoadRequest.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CORSMode.h"
@@ -27,21 +27,15 @@
 #include "mozilla/Vector.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIGlobalObject.h"
 #include "nsIScriptElement.h"
-#include "js/loader/ScriptKind.h"
 
 class nsICacheInfoChannel;
 
 namespace JS {
 class OffThreadToken;
-namespace loader {
-class ScriptLoadRequest;
-}
 }  // namespace JS
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Element;
 
@@ -80,28 +74,23 @@ class Element;
  *
  */
 
-class ScriptLoadContext : public PreloaderBase {
+class ScriptLoadContext : public JS::loader::LoadContextBase,
+                          public PreloaderBase {
  protected:
   virtual ~ScriptLoadContext();
 
  public:
-  explicit ScriptLoadContext(Element* aElement);
+  explicit ScriptLoadContext();
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ScriptLoadContext)
-
-  void SetRequest(JS::loader::ScriptLoadRequest* aRequest);
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ScriptLoadContext,
+                                           JS::loader::LoadContextBase)
 
   // PreloaderBase
   static void PrioritizeAsPreload(nsIChannel* aChannel);
   virtual void PrioritizeAsPreload() override;
 
   bool IsPreload() const;
-
-  // This will return nullptr in most cases,
-  // unless this is a module being imported by a WebExtension content script.
-  // In that case it's the Sandbox global executing that code.
-  nsIGlobalObject* GetWebExtGlobal() const;
 
   bool CompileStarted() const;
 
@@ -160,7 +149,7 @@ class ScriptLoadContext : public PreloaderBase {
   }
 
   // Used to output a string for the Gecko Profiler.
-  void GetProfilerLabel(nsACString& aOutString);
+  void GetProfilerLabel(nsACString& aOutString) override;
 
   void MaybeCancelOffThreadScript();
 
@@ -193,9 +182,6 @@ class ScriptLoadContext : public PreloaderBase {
 
   // Set on scripts and top level modules.
   bool mIsPreload;
-  nsCOMPtr<Element> mElement;
-
-  RefPtr<JS::loader::ScriptLoadRequest> mRequest;
 
   // Non-null if there is a document that this request is blocking from loading.
   RefPtr<Document> mLoadBlockedDocument;
@@ -205,7 +191,6 @@ class ScriptLoadContext : public PreloaderBase {
   nsresult mUnreportedPreloadError;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ScriptLoadContext_h

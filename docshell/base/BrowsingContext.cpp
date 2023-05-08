@@ -21,6 +21,7 @@
 #endif
 #include "mozilla/AppShutdown.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/BrowserHost.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
@@ -36,11 +37,12 @@
 #include "mozilla/dom/MediaDevices.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SessionStoreChild.h"
 #include "mozilla/dom/SessionStorageManager.h"
-#include "mozilla/dom/SessionStoreDataCollector.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/UserActivationIPCUtils.h"
 #include "mozilla/dom/WindowBinding.h"
+#include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WindowProxyHolder.h"
@@ -703,8 +705,8 @@ void BrowsingContext::SetEmbedderElement(Element* aEmbedder) {
       }
       txn.SetMessageManagerGroup(messageManagerGroup);
 
-      bool useGlobalHistory = !aEmbedder->HasAttr(
-          kNameSpaceID_None, nsGkAtoms::disableglobalhistory);
+      bool useGlobalHistory =
+          !aEmbedder->HasAttr(nsGkAtoms::disableglobalhistory);
       txn.SetUseGlobalHistory(useGlobalHistory);
     }
 
@@ -2277,44 +2279,6 @@ void BrowsingContext::IncrementHistoryEntryCountForBrowsingContext() {
   Unused << SetHistoryEntryCount(GetHistoryEntryCount() + 1);
 }
 
-void BrowsingContext::FlushSessionStore() {
-  nsTArray<RefPtr<BrowserChild>> nestedBrowserChilds;
-
-  PreOrderWalk([&](BrowsingContext* aContext) {
-    BrowserChild* browserChild = BrowserChild::GetFrom(aContext->GetDocShell());
-    if (browserChild && browserChild->GetBrowsingContext() == aContext) {
-      nestedBrowserChilds.AppendElement(browserChild);
-    }
-
-    if (aContext->CreatedDynamically()) {
-      return WalkFlag::Skip;
-    }
-
-    WindowContext* windowContext = aContext->GetCurrentWindowContext();
-    if (!windowContext) {
-      return WalkFlag::Skip;
-    }
-
-    WindowGlobalChild* windowChild = windowContext->GetWindowGlobalChild();
-    if (!windowChild) {
-      return WalkFlag::Next;
-    }
-
-    RefPtr<SessionStoreDataCollector> collector =
-        windowChild->GetSessionStoreDataCollector();
-    if (!collector) {
-      return WalkFlag::Next;
-    }
-
-    collector->Flush();
-    return WalkFlag::Next;
-  });
-
-  for (auto& child : nestedBrowserChilds) {
-    child->UpdateSessionStore();
-  }
-}
-
 std::tuple<bool, bool> BrowsingContext::CanFocusCheck(CallerType aCallerType) {
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (!fm) {
@@ -2635,6 +2599,20 @@ nsresult BrowsingContext::ResetGVAutoplayRequestStatus() {
   return txn.Commit(this);
 }
 
+void BrowsingContext::DidSet(FieldIndex<IDX_SessionStoreEpoch>,
+                             uint32_t aOldValue) {
+  if (!mCurrentWindowContext) {
+    return;
+  }
+  SessionStoreChild* sessionStoreChild =
+      SessionStoreChild::From(mCurrentWindowContext->GetWindowGlobalChild());
+  if (!sessionStoreChild) {
+    return;
+  }
+
+  sessionStoreChild->SetEpoch(GetSessionStoreEpoch());
+}
+
 void BrowsingContext::DidSet(FieldIndex<IDX_GVAudibleAutoplayRequestStatus>) {
   MOZ_ASSERT(IsTop(),
              "Should only set GVAudibleAutoplayRequestStatus in the top-level "
@@ -2664,25 +2642,29 @@ void BrowsingContext::DidSet(FieldIndex<IDX_ExplicitActive>,
   if (IsTop()) {
     Group()->UpdateToplevelsSuspendedIfNeeded();
 
+    if (XRE_IsParentProcess()) {
+      auto* bc = Canonical();
+      if (BrowserParent* bp = bc->GetBrowserParent()) {
+        bp->RecomputeProcessPriority();
 #if defined(XP_WIN) && defined(ACCESSIBILITY)
-    if (XRE_IsParentProcess() && a11y::Compatibility::IsDolphin()) {
-      // update active accessible documents on windows
-      if (BrowserParent* bp = Canonical()->GetBrowserParent()) {
-        if (a11y::DocAccessibleParent* tabDoc =
-                bp->GetTopLevelDocAccessible()) {
-          HWND window = tabDoc->GetEmulatedWindowHandle();
-          MOZ_ASSERT(window);
-          if (window) {
-            if (isActive) {
-              a11y::nsWinUtils::ShowNativeWindow(window);
-            } else {
-              a11y::nsWinUtils::HideNativeWindow(window);
+        if (a11y::Compatibility::IsDolphin()) {
+          // update active accessible documents on windows
+          if (a11y::DocAccessibleParent* tabDoc =
+                  bp->GetTopLevelDocAccessible()) {
+            HWND window = tabDoc->GetEmulatedWindowHandle();
+            MOZ_ASSERT(window);
+            if (window) {
+              if (isActive) {
+                a11y::nsWinUtils::ShowNativeWindow(window);
+              } else {
+                a11y::nsWinUtils::HideNativeWindow(window);
+              }
             }
           }
         }
+#endif
       }
     }
-#endif
   }
 
   PreOrderWalk([&](BrowsingContext* aContext) {
@@ -2781,19 +2763,21 @@ bool BrowsingContext::CanSet(FieldIndex<IDX_TouchEventsOverrideInternal>,
   return XRE_IsParentProcess() && !aSource;
 }
 
+void BrowsingContext::DidSet(FieldIndex<IDX_EmbedderColorScheme>,
+                             dom::PrefersColorSchemeOverride aOldValue) {
+  if (GetEmbedderColorScheme() == aOldValue) {
+    return;
+  }
+  PresContextAffectingFieldChanged();
+}
+
 void BrowsingContext::DidSet(FieldIndex<IDX_PrefersColorSchemeOverride>,
                              dom::PrefersColorSchemeOverride aOldValue) {
   MOZ_ASSERT(IsTop());
   if (PrefersColorSchemeOverride() == aOldValue) {
     return;
   }
-  PreOrderWalk([&](BrowsingContext* aContext) {
-    if (nsIDocShell* shell = aContext->GetDocShell()) {
-      if (nsPresContext* pc = shell->GetPresContext()) {
-        pc->RecomputeBrowsingContextDependentData();
-      }
-    }
-  });
+  PresContextAffectingFieldChanged();
 }
 
 void BrowsingContext::DidSet(FieldIndex<IDX_MediumOverride>,
@@ -2802,13 +2786,7 @@ void BrowsingContext::DidSet(FieldIndex<IDX_MediumOverride>,
   if (GetMediumOverride() == aOldValue) {
     return;
   }
-  PreOrderWalk([&](BrowsingContext* aContext) {
-    if (nsIDocShell* shell = aContext->GetDocShell()) {
-      if (nsPresContext* pc = shell->GetPresContext()) {
-        pc->RecomputeBrowsingContextDependentData();
-      }
-    }
-  });
+  PresContextAffectingFieldChanged();
 }
 
 void BrowsingContext::DidSet(FieldIndex<IDX_DisplayMode>,
@@ -2878,7 +2856,10 @@ void BrowsingContext::DidSet(FieldIndex<IDX_OverrideDPPX>, float aOldValue) {
   if (GetOverrideDPPX() == aOldValue) {
     return;
   }
+  PresContextAffectingFieldChanged();
+}
 
+void BrowsingContext::PresContextAffectingFieldChanged() {
   PreOrderWalk([&](BrowsingContext* aContext) {
     if (nsIDocShell* shell = aContext->GetDocShell()) {
       if (nsPresContext* pc = shell->GetPresContext()) {
@@ -3075,6 +3056,10 @@ mozilla::dom::TouchEventsOverride BrowsingContext::TouchEventsOverride() const {
   }
 
   return mozilla::dom::TouchEventsOverride::None;
+}
+
+bool BrowsingContext::TargetTopLevelLinkClicksToBlank() const {
+  return Top()->GetTargetTopLevelLinkClicksToBlankInternal();
 }
 
 // We map `watchedByDevTools` WebIDL attribute to `watchedByDevToolsInternal`
@@ -3404,6 +3389,17 @@ void BrowsingContext::AddDeprioritizedLoadRunner(nsIRunnable* aRunner) {
       EventQueuePriority::Idle);
 }
 
+bool BrowsingContext::IsDynamic() const {
+  const BrowsingContext* current = this;
+  do {
+    if (current->CreatedDynamically()) {
+      return true;
+    }
+  } while ((current = current->GetParent()));
+
+  return false;
+}
+
 bool BrowsingContext::GetOffsetPath(nsTArray<uint32_t>& aPath) const {
   for (const BrowsingContext* current = this; current && current->GetParent();
        current = current->GetParent()) {
@@ -3476,6 +3472,13 @@ void BrowsingContext::DidSet(FieldIndex<IDX_HasSessionHistory>,
   }
 }
 
+bool BrowsingContext::CanSet(
+    FieldIndex<IDX_TargetTopLevelLinkClicksToBlankInternal>,
+    const bool& aTargetTopLevelLinkClicksToBlankInternal,
+    ContentParent* aSource) {
+  return XRE_IsParentProcess() && !aSource && IsTop();
+}
+
 bool BrowsingContext::CanSet(FieldIndex<IDX_BrowserId>, const uint32_t& aValue,
                              ContentParent* aSource) {
   // We should only be able to set this for toplevel contexts which don't have
@@ -3510,7 +3513,7 @@ bool BrowsingContext::IsPopupAllowed() {
 bool BrowsingContext::ShouldAddEntryForRefresh(
     nsIURI* aCurrentURI, const SessionHistoryInfo& aInfo) {
   return ShouldAddEntryForRefresh(aCurrentURI, aInfo.GetURI(),
-                                  aInfo.GetPostData());
+                                  aInfo.HasPostData());
 }
 
 /* static */

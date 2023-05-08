@@ -197,10 +197,12 @@ bool nsVideoFrame::ReflowFinished() {
     return Some(f->GetSize());
   };
 
+  AutoTArray<nsCOMPtr<nsIRunnable>, 2> events;
+
   if (auto size = GetSize(mCaptionDiv)) {
     if (*size != mCaptionTrackedSize) {
       mCaptionTrackedSize = *size;
-      nsContentUtils::AddScriptRunner(
+      events.AppendElement(
           new DispatchResizeEvent(mCaptionDiv, u"resizecaption"_ns));
     }
   }
@@ -208,9 +210,12 @@ bool nsVideoFrame::ReflowFinished() {
   if (auto size = GetSize(controls)) {
     if (*size != mControlsTrackedSize) {
       mControlsTrackedSize = *size;
-      nsContentUtils::AddScriptRunner(
+      events.AppendElement(
           new DispatchResizeEvent(controls, u"resizevideocontrols"_ns));
     }
+  }
+  for (auto& event : events) {
+    nsContentUtils::AddScriptRunner(event.forget());
   }
   return false;
 }
@@ -306,7 +311,7 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
         // Resolve our own BSize based on the controls' size in the
         // same axis. Unless we're size-contained, in which case we
         // have to behave as if we have an intrinsic size of 0.
-        if (aReflowInput.mStyleDisplay->IsContainSize()) {
+        if (aReflowInput.mStyleDisplay->GetContainSizeAxes().mBContained) {
           contentBoxBSize = 0;
         } else {
           contentBoxBSize = myWM.IsOrthogonalTo(wm) ? kidDesiredSize.ISize(wm)
@@ -319,7 +324,10 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                         ReflowChildFlags::Default);
 
       if (child->GetSize() != oldChildSize) {
-        MOZ_ASSERT(child->IsPrimaryFrame(),
+        // We might find non-primary frames in printing due to
+        // ReplicateFixedFrames, but we don't care about that.
+        MOZ_ASSERT(child->IsPrimaryFrame() ||
+                       PresContext()->IsPrintingOrPrintPreview(),
                    "We only look at the primary frame in ReflowFinished");
         if (!mReflowCallbackPosted) {
           mReflowCallbackPosted = true;
@@ -386,19 +394,11 @@ nsIFrame::SizeComputationResult nsVideoFrame::ComputeSize(
 
 nscoord nsVideoFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result;
+  // Bind the result variable to a RAII-based debug object - the variable
+  // therefore must match the function's return value.
   DISPLAY_MIN_INLINE_SIZE(this, result);
-
-  nsSize size = kFallbackIntrinsicSize;
-  if (HasVideoElement()) {
-    size = GetVideoIntrinsicSize();
-  } else {
-    // We expect last and only child of audio elements to be control if
-    // "controls" attribute is present.
-    if (StyleDisplay()->IsContainSize() || !mFrames.LastChild()) {
-      size = nsSize();
-    }
-  }
-
+  // This call handles size-containment
+  nsSize size = GetVideoIntrinsicSize();
   result = GetWritingMode().IsVertical() ? size.height : size.width;
   return result;
 }
@@ -420,8 +420,8 @@ AspectRatio nsVideoFrame::GetIntrinsicRatio() const {
     return AspectRatio();
   }
 
-  // 'contain:size' replaced elements have no intrinsic ratio.
-  if (StyleDisplay()->IsContainSize()) {
+  // 'contain:[inline-]size' replaced elements have no intrinsic ratio.
+  if (StyleDisplay()->GetContainSizeAxes().IsAny()) {
     return AspectRatio();
   }
 
@@ -463,23 +463,32 @@ bool nsVideoFrame::ShouldDisplayPoster() const {
 }
 
 nsSize nsVideoFrame::GetVideoIntrinsicSize() const {
-  // 'contain:size' replaced elements have intrinsic size 0,0.
-  if (StyleDisplay()->IsContainSize()) {
-    return nsSize(0, 0);
+  const auto containAxes = StyleDisplay()->GetContainSizeAxes();
+  const auto isVideo = HasVideoElement();
+  // Intrinsic size will be 0,0 if the element is:
+  // - Size-contained, or
+  // - An audio element with no "controls" attribute, distinguished by the last
+  // and only child being the control.
+  if (containAxes.IsBoth() || (!isVideo && !mFrames.LastChild())) {
+    return {};
+  }
+
+  auto wm = GetWritingMode();
+  if (!isVideo) {
+    return containAxes.ContainSize(kFallbackIntrinsicSize, wm);
   }
 
   HTMLVideoElement* element = static_cast<HTMLVideoElement*>(GetContent());
   if (Maybe<CSSIntSize> size = element->GetVideoSize()) {
-    return CSSPixel::ToAppUnits(*size);
+    return containAxes.ContainSize(CSSPixel::ToAppUnits(*size), wm);
   }
 
   if (ShouldDisplayPoster()) {
     if (Maybe<nsSize> imgSize = PosterImageSize()) {
-      return *imgSize;
+      return containAxes.ContainSize(*imgSize, wm);
     }
   }
-
-  return kFallbackIntrinsicSize;
+  return containAxes.ContainSize(kFallbackIntrinsicSize, wm);
 }
 
 IntrinsicSize nsVideoFrame::GetIntrinsicSize() {
@@ -694,6 +703,10 @@ void nsVideoFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DO_GLOBAL_REFLOW_COUNT_DSP("nsVideoFrame");
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  if (IsContentHidden()) {
+    return;
+  }
 
   const bool shouldDisplayPoster = ShouldDisplayPoster();
 

@@ -25,8 +25,7 @@ class ModuleLoadRequest;
 }  // namespace loader
 }  // namespace JS
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ScriptLoader;
 class SRIMetadata;
@@ -40,7 +39,12 @@ class ModuleLoader final : public JS::loader::ModuleLoaderBase {
   virtual ~ModuleLoader();
 
  public:
-  explicit ModuleLoader(ScriptLoader* aLoader);
+  enum Kind { Normal, WebExtension };
+
+  ModuleLoader(ScriptLoader* aLoader, nsIGlobalObject* aGlobalObject,
+               Kind aKind);
+
+  Kind GetKind() const { return mKind; }
 
   ScriptLoader* GetScriptLoader();
 
@@ -48,9 +52,9 @@ class ModuleLoader final : public JS::loader::ModuleLoaderBase {
 
   nsresult StartFetch(ModuleLoadRequest* aRequest) override;
 
-  void ProcessLoadedModuleTree(ModuleLoadRequest* aRequest) override;
+  void OnModuleLoadComplete(ModuleLoadRequest* aRequest) override;
 
-  nsresult CompileOrFinishModuleScript(
+  nsresult CompileFetchedModule(
       JSContext* aCx, JS::Handle<JSObject*> aGlobal,
       JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
       JS::MutableHandle<JSObject*> aModuleScript) override;
@@ -71,9 +75,15 @@ class ModuleLoader final : public JS::loader::ModuleLoaderBase {
       JS::Handle<JS::Value> aReferencingPrivate,
       JS::Handle<JSString*> aSpecifier,
       JS::Handle<JSObject*> aPromise) override;
+
+  static ModuleLoader* From(ModuleLoaderBase* aLoader) {
+    return static_cast<ModuleLoader*>(aLoader);
+  }
+
+ private:
+  const Kind mKind;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_ModuleLoader_h

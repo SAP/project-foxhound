@@ -32,11 +32,10 @@ class TestVsyncObserver : public VsyncObserver {
   TestVsyncObserver()
       : mDidGetVsyncNotification(false), mVsyncMonitor("VsyncMonitor") {}
 
-  virtual bool NotifyVsync(const VsyncEvent& aVsync) override {
+  virtual void NotifyVsync(const VsyncEvent& aVsync) override {
     MonitorAutoLock lock(mVsyncMonitor);
     mDidGetVsyncNotification = true;
     mVsyncMonitor.Notify();
-    return true;
   }
 
   void WaitForVsyncNotification() {
@@ -74,12 +73,14 @@ class VsyncTester : public ::testing::Test {
  protected:
   explicit VsyncTester() {
     gfxPlatform::GetPlatform();
-    mVsyncSource = gfxPlatform::GetPlatform()->GetHardwareVsync();
+    mVsyncDispatcher = gfxPlatform::GetPlatform()->GetGlobalVsyncDispatcher();
+    mVsyncSource = mVsyncDispatcher->GetCurrentVsyncSource();
     MOZ_RELEASE_ASSERT(mVsyncSource, "GFX: Vsync source not found.");
   }
 
   virtual ~VsyncTester() { mVsyncSource = nullptr; }
 
+  RefPtr<VsyncDispatcher> mVsyncDispatcher;
   RefPtr<VsyncSource> mVsyncSource;
 };
 
@@ -117,7 +118,7 @@ TEST_F(VsyncTester, CompositorGetVsyncNotifications) {
   ASSERT_FALSE(mVsyncSource->IsVsyncEnabled());
 
   RefPtr<CompositorVsyncDispatcher> vsyncDispatcher =
-      new CompositorVsyncDispatcher();
+      new CompositorVsyncDispatcher(mVsyncDispatcher);
   RefPtr<TestVsyncObserver> testVsyncObserver = new TestVsyncObserver();
 
   vsyncDispatcher->SetCompositorVsyncObserver(testVsyncObserver);
@@ -127,10 +128,11 @@ TEST_F(VsyncTester, CompositorGetVsyncNotifications) {
   testVsyncObserver->WaitForVsyncNotification();
   ASSERT_TRUE(testVsyncObserver->DidGetVsyncNotification());
 
+  vsyncDispatcher->SetCompositorVsyncObserver(nullptr);
+  FlushMainThreadLoop();
+
   vsyncDispatcher = nullptr;
   testVsyncObserver = nullptr;
-
-  mVsyncSource->DisableVsync();
   ASSERT_FALSE(mVsyncSource->IsVsyncEnabled());
 }
 
@@ -139,23 +141,20 @@ TEST_F(VsyncTester, ChildRefreshDriverGetVsyncNotifications) {
   mVsyncSource->DisableVsync();
   ASSERT_FALSE(mVsyncSource->IsVsyncEnabled());
 
-  RefPtr<RefreshTimerVsyncDispatcher> vsyncDispatcher =
-      mVsyncSource->GetRefreshTimerVsyncDispatcher();
-  ASSERT_TRUE(vsyncDispatcher != nullptr);
+  ASSERT_TRUE(mVsyncDispatcher != nullptr);
 
   RefPtr<TestVsyncObserver> testVsyncObserver = new TestVsyncObserver();
-  vsyncDispatcher->AddVsyncObserver(testVsyncObserver);
+  mVsyncDispatcher->AddVsyncObserver(testVsyncObserver);
   ASSERT_TRUE(mVsyncSource->IsVsyncEnabled());
 
   testVsyncObserver->WaitForVsyncNotification();
   ASSERT_TRUE(testVsyncObserver->DidGetVsyncNotification());
 
-  vsyncDispatcher->RemoveVsyncObserver(testVsyncObserver);
+  mVsyncDispatcher->RemoveVsyncObserver(testVsyncObserver);
   testVsyncObserver->ResetVsyncNotification();
   testVsyncObserver->WaitForVsyncNotification();
   ASSERT_FALSE(testVsyncObserver->DidGetVsyncNotification());
 
-  vsyncDispatcher = nullptr;
   testVsyncObserver = nullptr;
 
   mVsyncSource->DisableVsync();

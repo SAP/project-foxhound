@@ -11,6 +11,8 @@
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/gfx/GPUParent.h"
+#include "mozilla/gfx/Matrix.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/webrender/RenderD3D11TextureHost.h"
 #include "mozilla/webrender/RenderTextureHost.h"
@@ -104,7 +106,7 @@ bool DCLayerTree::Initialize(HWND aHwnd, nsACString& aError) {
       (IDCompositionDesktopDevice**)getter_AddRefs(desktopDevice));
   if (FAILED(hr)) {
     aError.Assign(nsPrintfCString(
-        "DCLayerTree(get IDCompositionDesktopDevice failed %x)", hr));
+        "DCLayerTree(get IDCompositionDesktopDevice failed %lx)", hr));
     return false;
   }
 
@@ -112,14 +114,14 @@ bool DCLayerTree::Initialize(HWND aHwnd, nsACString& aError) {
                                           getter_AddRefs(mCompositionTarget));
   if (FAILED(hr)) {
     aError.Assign(nsPrintfCString(
-        "DCLayerTree(create DCompositionTarget failed %x)", hr));
+        "DCLayerTree(create DCompositionTarget failed %lx)", hr));
     return false;
   }
 
   hr = mCompositionDevice->CreateVisual(getter_AddRefs(mRootVisual));
   if (FAILED(hr)) {
     aError.Assign(nsPrintfCString(
-        "DCLayerTree(create root DCompositionVisual failed %x)", hr));
+        "DCLayerTree(create root DCompositionVisual failed %lx)", hr));
     return false;
   }
 
@@ -127,7 +129,7 @@ bool DCLayerTree::Initialize(HWND aHwnd, nsACString& aError) {
       mCompositionDevice->CreateVisual(getter_AddRefs(mDefaultSwapChainVisual));
   if (FAILED(hr)) {
     aError.Assign(nsPrintfCString(
-        "DCLayerTree(create swap chain DCompositionVisual failed %x)", hr));
+        "DCLayerTree(create swap chain DCompositionVisual failed %lx)", hr));
     return false;
   }
 
@@ -225,6 +227,8 @@ bool DCLayerTree::InitializeVideoOverlaySupport() {
                                  &info->mNv12OverlaySupportFlags);
     output3->CheckOverlaySupport(DXGI_FORMAT_YUY2, mDevice,
                                  &info->mYuy2OverlaySupportFlags);
+    output3->CheckOverlaySupport(DXGI_FORMAT_B8G8R8A8_UNORM, mDevice,
+                                 &info->mBgra8OverlaySupportFlags);
     output3->CheckOverlaySupport(DXGI_FORMAT_R10G10B10A2_UNORM, mDevice,
                                  &info->mRgb10a2OverlaySupportFlags);
 
@@ -268,6 +272,11 @@ bool DCLayerTree::InitializeVideoOverlaySupport() {
   info->mSupportsOverlays = info->mSupportsHardwareOverlays;
 
   sGpuOverlayInfo = std::move(info);
+
+  if (auto* gpuParent = gfx::GPUParent::GetSingleton()) {
+    gpuParent->NotifyOverlayInfo(GetOverlayInfo());
+  }
+
   return true;
 }
 
@@ -699,6 +708,40 @@ bool DCLayerTree::SupportsHardwareOverlays() {
 
 DXGI_FORMAT DCLayerTree::GetOverlayFormatForSDR() {
   return sGpuOverlayInfo->mOverlayFormatUsed;
+}
+
+static layers::OverlaySupportType FlagsToOverlaySupportType(
+    UINT aFlags, bool aSoftwareOverlaySupported) {
+  if (aFlags & DXGI_OVERLAY_SUPPORT_FLAG_SCALING) {
+    return layers::OverlaySupportType::Scaling;
+  }
+  if (aFlags & DXGI_OVERLAY_SUPPORT_FLAG_DIRECT) {
+    return layers::OverlaySupportType::Direct;
+  }
+  if (aSoftwareOverlaySupported) {
+    return layers::OverlaySupportType::Software;
+  }
+  return layers::OverlaySupportType::None;
+}
+
+layers::OverlayInfo DCLayerTree::GetOverlayInfo() {
+  layers::OverlayInfo info;
+
+  info.mSupportsOverlays = sGpuOverlayInfo->mSupportsHardwareOverlays;
+  info.mNv12Overlay =
+      FlagsToOverlaySupportType(sGpuOverlayInfo->mNv12OverlaySupportFlags,
+                                /* aSoftwareOverlaySupported */ false);
+  info.mYuy2Overlay =
+      FlagsToOverlaySupportType(sGpuOverlayInfo->mYuy2OverlaySupportFlags,
+                                /* aSoftwareOverlaySupported */ false);
+  info.mBgra8Overlay =
+      FlagsToOverlaySupportType(sGpuOverlayInfo->mBgra8OverlaySupportFlags,
+                                /* aSoftwareOverlaySupported */ true);
+  info.mRgb10a2Overlay =
+      FlagsToOverlaySupportType(sGpuOverlayInfo->mRgb10a2OverlaySupportFlags,
+                                /* aSoftwareOverlaySupported */ false);
+
+  return info;
 }
 
 DCSurface::DCSurface(wr::DeviceIntSize aTileSize,

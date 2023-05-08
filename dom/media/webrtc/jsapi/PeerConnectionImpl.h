@@ -17,6 +17,7 @@
 #include "nsIUUIDGenerator.h"
 #include "nsIThread.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Attributes.h"
 
 // Work around nasty macro in webrtc/voice_engine/voice_engine_defines.h
 #ifdef GetLastError
@@ -29,9 +30,12 @@
 
 #include "mozilla/ErrorResult.h"
 #include "jsapi/PacketDumper.h"
+#include "mozilla/dom/RTCPeerConnectionBinding.h"  // mozPacketDumpType, maybe move?
+#include "mozilla/dom/PeerConnectionImplBinding.h"  // ChainedOperation
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "PrincipalChangeObserver.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/net/DataChannel.h"
@@ -47,7 +51,7 @@
 #include "MediaTransportHandler.h"
 #include "nsIHttpChannelInternal.h"
 #include "RTCDtlsTransport.h"
-#include "TransceiverImpl.h"
+#include "RTCRtpTransceiver.h"
 
 namespace test {
 #ifdef USE_FAKE_PCOBSERVER
@@ -162,8 +166,7 @@ struct PeerConnectionAutoTimer {
 class PeerConnectionImpl final
     : public nsISupports,
       public nsWrapperCache,
-      public mozilla::DataChannelConnection::DataConnectionListener,
-      public dom::PrincipalChangeObserver<dom::MediaStreamTrack> {
+      public mozilla::DataChannelConnection::DataConnectionListener {
   struct Internal;  // Avoid exposing c includes to bindings
 
  public:
@@ -273,17 +276,12 @@ class PeerConnectionImpl final
 
   void CloseStreams(ErrorResult& rv) { rv = CloseStreams(); }
 
-  already_AddRefed<TransceiverImpl> CreateTransceiverImpl(
-      const nsAString& aKind, dom::MediaStreamTrack* aSendTrack,
-      ErrorResult& rv);
+  already_AddRefed<dom::RTCRtpTransceiver> AddTransceiver(
+      const dom::RTCRtpTransceiverInit& aInit, const nsAString& aKind,
+      dom::MediaStreamTrack* aSendTrack, ErrorResult& aRv);
 
-  bool CheckNegotiationNeeded(ErrorResult& rv);
-
-  NS_IMETHODIMP_TO_ERRORRESULT(ReplaceTrackNoRenegotiation, ErrorResult& rv,
-                               TransceiverImpl& aTransceiver,
-                               mozilla::dom::MediaStreamTrack* aWithTrack) {
-    rv = ReplaceTrackNoRenegotiation(aTransceiver, aWithTrack);
-  }
+  bool CheckNegotiationNeeded();
+  bool CreatedSender(const dom::RTCRtpSender& aSender) const;
 
   // test-only
   NS_IMETHODIMP_TO_ERRORRESULT(EnablePacketDump, ErrorResult& rv,
@@ -382,6 +380,9 @@ class PeerConnectionImpl final
     rv = SetConfiguration(aConfiguration);
   }
 
+  void RestartIce();
+  void RestartIceNoRenegotiationNeeded();
+
   void RecordEndOfCallTelemetry();
 
   nsresult InitializeDataChannel();
@@ -393,6 +394,66 @@ class PeerConnectionImpl final
                                       uint16_t aMaxTime, uint16_t aMaxNum,
                                       bool aExternalNegotiated,
                                       uint16_t aStream);
+
+  // Base class for chained operations. Necessary right now because some
+  // operations come from JS (in the form of dom::ChainedOperation), and others
+  // come from c++ (dom::ChainedOperation is very unwieldy and arcane to build
+  // in c++). Once we stop using JSImpl, we should be able to simplify this.
+  class Operation : public dom::PromiseNativeHandler {
+   public:
+    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+    NS_DECL_CYCLE_COLLECTION_CLASS(Operation)
+    Operation(PeerConnectionImpl* aPc, ErrorResult& aError);
+    MOZ_CAN_RUN_SCRIPT
+    void Call(ErrorResult& aError);
+    dom::Promise* GetPromise() { return mPromise; }
+    MOZ_CAN_RUN_SCRIPT
+    void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                          ErrorResult& aRv) override;
+
+    MOZ_CAN_RUN_SCRIPT
+    void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                          ErrorResult& aRv) override;
+
+   protected:
+    MOZ_CAN_RUN_SCRIPT
+    virtual RefPtr<dom::Promise> CallImpl(ErrorResult& aError) = 0;
+    virtual ~Operation();
+    // This is the promise p from https://w3c.github.io/webrtc-pc/#dfn-chain
+    // This will be a content promise, since we return this to the caller of
+    // Chain.
+    RefPtr<dom::Promise> mPromise;
+    RefPtr<PeerConnectionImpl> mPc;
+  };
+
+  class JSOperation final : public Operation {
+   public:
+    JSOperation(PeerConnectionImpl* aPc, dom::ChainedOperation& aOp,
+                ErrorResult& aError);
+    NS_DECL_ISUPPORTS_INHERITED
+    NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(JSOperation, Operation)
+
+   private:
+    MOZ_CAN_RUN_SCRIPT
+    RefPtr<dom::Promise> CallImpl(ErrorResult& aError) override;
+    ~JSOperation() = default;
+    RefPtr<dom::ChainedOperation> mOperation;
+  };
+
+  MOZ_CAN_RUN_SCRIPT
+  already_AddRefed<dom::Promise> Chain(dom::ChainedOperation& aOperation,
+                                       ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT
+  already_AddRefed<dom::Promise> Chain(const RefPtr<Operation>& aOperation,
+                                       ErrorResult& aError);
+  already_AddRefed<dom::Promise> MakePromise(ErrorResult& aError) const;
+
+  void UpdateNegotiationNeeded();
+
+  void GetTransceivers(
+      nsTArray<RefPtr<dom::RTCRtpTransceiver>>& aTransceiversOut) {
+    aTransceiversOut = mTransceivers.Clone();
+  }
 
   // Gets the RTC Signaling State of the JSEP session
   dom::RTCSignalingState GetSignalingState() const;
@@ -411,10 +472,8 @@ class PeerConnectionImpl final
 
   RefPtr<dom::RTCStatsReportPromise> GetStats(dom::MediaStreamTrack* aSelector,
                                               bool aInternalStats);
-  void CollectConduitTelemetryData();
 
-  // for monitoring changes in track ownership
-  virtual void PrincipalChanged(dom::MediaStreamTrack* aTrack) override;
+  void CollectConduitTelemetryData();
 
   void OnMediaError(const std::string& aError);
 
@@ -451,8 +510,6 @@ class PeerConnectionImpl final
   PeerConnectionImpl(const PeerConnectionImpl& rhs);
   PeerConnectionImpl& operator=(PeerConnectionImpl);
 
-  nsTArray<RefPtr<dom::RTCStatsPromise>> GetSenderStats(
-      const RefPtr<TransceiverImpl>& aTransceiver);
   RefPtr<dom::RTCStatsPromise> GetDataChannelStats(
       const RefPtr<DataChannelConnection>& aDataChannelConnection,
       const DOMHighResTimeStamp aTimestamp);
@@ -484,9 +541,6 @@ class PeerConnectionImpl final
                                     bool* client) const;
 
   nsresult AddRtpTransceiverToJsepSession(RefPtr<JsepTransceiver>& transceiver);
-  already_AddRefed<TransceiverImpl> CreateTransceiverImpl(
-      JsepTransceiver* aJsepTransceiver, dom::MediaStreamTrack* aSendTrack,
-      ErrorResult& aRv);
 
   void RecordIceRestartStatistics(JsepSdpType type);
 
@@ -494,6 +548,10 @@ class PeerConnectionImpl final
 
   dom::Sequence<dom::RTCSdpParsingErrorInternal> GetLastSdpParsingErrors()
       const;
+
+  MOZ_CAN_RUN_SCRIPT
+  void RunNextOperation(ErrorResult& aError);
+
   // Timecard used to measure processing time. This should be the first class
   // attribute so that we accurately measure the time required to instantiate
   // any other attributes of this class.
@@ -666,22 +724,14 @@ class PeerConnectionImpl final
   // any time, not just when an offer/answer exchange completes.
   nsresult UpdateMediaPipelines();
 
-  nsresult AddTransceiver(JsepTransceiver* aJsepTransceiver,
-                          dom::MediaStreamTrack* aSendTrack,
-                          SharedWebrtcState* aSharedWebrtcState,
-                          RTCStatsIdGenerator* aIdGenerator,
-                          RefPtr<TransceiverImpl>* aTransceiverImpl);
+  already_AddRefed<dom::RTCRtpTransceiver> CreateTransceiver(
+      JsepTransceiver* aJsepTransceiver,
+      const dom::RTCRtpTransceiverInit& aInit,
+      dom::MediaStreamTrack* aSendTrack, ErrorResult& aRv);
 
   std::string GetTransportIdMatchingSendTrack(
       const dom::MediaStreamTrack& aTrack) const;
 
-  // In cases where the peer isn't yet identified, we disable the pipeline (not
-  // the stream, that would potentially affect others), so that it sends
-  // black/silence.  Once the peer is identified, re-enable those streams.
-  // aTrack will be set if this update came from a principal change on aTrack.
-  void UpdateSinkIdentity_m(const dom::MediaStreamTrack* aTrack,
-                            nsIPrincipal* aPrincipal,
-                            const PeerIdentity* aSinkIdentity);
   // this determines if any track is peerIdentity constrained
   bool AnyLocalTrackHasPeerIdentity() const;
 
@@ -694,7 +744,13 @@ class PeerConnectionImpl final
   // See Bug 1642419, this can be removed when all sites are working with RTX.
   bool mRtxIsAllowed = true;
 
-  nsTArray<RefPtr<TransceiverImpl>> mTransceivers;
+  nsTArray<RefPtr<Operation>> mOperations;
+  bool mChainingOperation = false;
+  bool mUpdateNegotiationNeededFlagOnEmptyChain = false;
+  bool mNegotiationNeeded = false;
+  std::set<std::pair<std::string, std::string>> mLocalIceCredentialsToReplace;
+
+  nsTArray<RefPtr<dom::RTCRtpTransceiver>> mTransceivers;
   std::map<std::string, RefPtr<dom::RTCDtlsTransport>>
       mTransportIdToRTCDtlsTransport;
 

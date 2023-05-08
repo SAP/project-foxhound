@@ -4,6 +4,10 @@
 
 # Features must be added here to be accessible through the NimbusFeature API.
 
+"no-feature-firefox-desktop":
+  description: A dummy feature for experiments that target no feature.
+  hasExposure: false
+  variables: {}
 testFeature:
   description: Test only feature
   hasExposure: false
@@ -34,6 +38,21 @@ urlbar:
     the event is recorded once per app session when the user first encounters
     the UI of the experiment in which they're enrolled.
   variables:
+    autoFillAdaptiveHistoryEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.autoFill.adaptiveHistory.enabled
+      description: Whether enabling adaptive history autofill.
+    autoFillAdaptiveHistoryMinCharsThreshold:
+      type: int
+      fallbackPref: browser.urlbar.autoFill.adaptiveHistory.minCharsThreshold
+      description: Minimum char length of the user's search string to trigger adaptive history autofill.
+    autoFillAdaptiveHistoryUseCountThreshold:
+      type: string
+      description: This value assumes float expression like "0.47". Threshold for use count of input history that we handle as adaptive history autofill. If the use count is this value or more, it will be a candidate.
+    bestMatchBlockingEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.bestMatch.blockingEnabled
+      description: Whether best match Suggest suggestions can be blocked.
     bestMatchEnabled:
       type: boolean
       fallbackPref: browser.urlbar.bestMatch.enabled
@@ -67,6 +86,10 @@ urlbar:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.allowPositionInSuggestions
       description: Whether quick suggest results can be shown in position specified in the suggestions.
+    quickSuggestBlockingEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.quicksuggest.blockingEnabled
+      description: Whether the usual non-best-match Suggest suggestions can be blocked.
     quickSuggestDataCollectionEnabled:
       type: boolean
       description: Whether data collection should be enabled by default. If this variable is specified, it will override the value implied by the scenario. It will never override the user's local preference to disable (or enable) data collection, if the user has already toggled that preference.
@@ -74,6 +97,14 @@ urlbar:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.enabled
       description: Gate for the Firefox Suggest feature as a whole. If false, the Firefox Suggest preferences UI and Suggest suggestions will not be shown. If true, the preferences UI will be shown, and the user can turn suggestions on or off.
+    quickSuggestImpressionCapsSponsoredEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.quicksuggest.impressionCaps.sponsoredEnabled
+      description: Whether sponsored suggestions are subject to impression frequency caps. If false, sponsored suggestions can be shown an unlimited number of times over any given period. If true, sponsored suggestion impressions will be subject to the caps in the remote settings configuration.
+    quickSuggestImpressionCapsNonSponsoredEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.quicksuggest.impressionCaps.nonSponsoredEnabled
+      description: Whether non-sponsored suggestions are subject to impression frequency caps. If false, non-sponsored suggestions can be shown an unlimited number of times over any given period. If true, non-sponsored suggestion impressions will be subject to the caps in the remote settings configuration.
     quickSuggestNonSponsoredEnabled:
       type: boolean
       description: Whether non-sponsored suggestions should be enabled by default. If this variable is specified, it will override the value implied by the scenario. It will never override the user's local preference to disable (or enable) non-sponsored suggestions, if the user has already toggled that preference.
@@ -87,6 +118,9 @@ urlbar:
       type: string
       description: >-
         Specify the messages/UI variation for QuickSuggest onboarding dialog. This value is case insensitive.
+    quickSuggestRemoteSettingsDataType:
+      type: string
+      description: The `type` of the suggestions data in remote settings. If not specified, "data" is used.
     quickSuggestRemoteSettingsEnabled:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.remoteSettings.enabled
@@ -204,6 +238,10 @@ pocketNewtab:
       type: string
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.spoc-positions
       description: CSV string of spoc position indexes on newtab grid
+    widgetPositions:
+      type: string
+      fallbackPref: browser.newtabpage.activity-stream.discoverystream.widget-positions
+      description: CSV string of widget position indexes on newtab grid
     compactLayout:
       type: boolean
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.compactLayout.enabled
@@ -306,6 +344,12 @@ pocketNewtab:
         browser.newtabpage.activity-stream.discoverystream.newSponsoredLabel.enabled
       description: >-
         Updates the sponsored label position to below the image for Pocket cards on newtab.
+    sendToPocket:
+      type: boolean
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled
+      description: >-
+        Decides what to do when a logged out user click "Save to Pocket" from a Pocket card.
     recsPersonalized:
       type: boolean
       fallbackPref: >-
@@ -465,12 +509,22 @@ tcpPreferences:
       type: boolean
       fallbackPref: "privacy.restrict3rdpartystorage.rollout.preferences.TCPToggleInStandard"
       description: "Turn on the section in about:preferences"
+tcpByDefault:
+  description: "Enables TCP by default by updating the default pref value of network.cookie.cookieBehavior."
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    enabled:
+      type: boolean
+      description: "Enables TCP by default"
 cfr:
   description: "Doorhanger message template for Messaging System"
   hasExposure: true
   exposureDescription: "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
   isEarlyStartup: false
-  schema: "resource://activity-stream/schemas/CFR/ExtensionDoorhanger.schema.json"
+  schema:
+    uri: "resource://activity-stream/schemas/CFR/ExtensionDoorhanger.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/templates/CFR/templates/ExtensionDoorhanger.schema.json"
   variables: {}
 "moments-page":
   description: "Message with URL data for Messaging System"
@@ -478,7 +532,9 @@ cfr:
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
   isEarlyStartup: false
-  schema: "resource://activity-stream/schemas/OnboardingMessage/UpdateAction.schema.json"
+  schema:
+    uri: "resource://activity-stream/schemas/OnboardingMessage/UpdateAction.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/templates/OnboardingMessage/UpdateAction.schema.json"
   variables: {}
 infobar:
   description: "Message template for Messaging System"
@@ -486,7 +542,9 @@ infobar:
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
   isEarlyStartup: false
-  schema: "resource://activity-stream/schemas/CFR/InfoBar.schema.json"
+  schema:
+    uri: "resource://activity-stream/schemas/CFR/InfoBar.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/templates/CFR/templates/InfoBar.schema.json"
   variables: {}
 spotlight:
   description: "Modal message template for Messaging System"
@@ -494,7 +552,9 @@ spotlight:
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
   isEarlyStartup: false
-  schema: "resource://activity-stream/schemas/OnboardingMessage/Spotlight.schema.json"
+  schema:
+    uri: "resource://activity-stream/schemas/OnboardingMessage/Spotlight.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/templates/OnboardingMessage/Spotlight.schema.json"
   variables: {}
 pbNewtab:
   description: Message shown on the PB newtab for Messaging System
@@ -502,7 +562,9 @@ pbNewtab:
   exposureDescription: >-
     Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched.
   isEarlyStartup: false
-  schema: "resource://activity-stream/schemas/PBNewtab/NewtabPromoMessage.schema.json"
+  schema:
+    uri: "resource://activity-stream/schemas/PBNewtab/NewtabPromoMessage.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/templates/PBNewtab/NewtabPromoMessage.schema.json"
   variables: {}
 syncAfterTabChange:
   description: "Schedule a sync after any tab change"

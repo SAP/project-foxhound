@@ -108,7 +108,7 @@ class ImageLoadTask final : public MicroTaskRunnable {
     return global && global->IsInSyncOperation();
   }
 
-  bool AlwaysLoad() { return mAlwaysLoad; }
+  bool AlwaysLoad() const { return mAlwaysLoad; }
 
  private:
   ~ImageLoadTask() = default;

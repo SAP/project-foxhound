@@ -2,7 +2,7 @@
             BASE_URL, TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3, TEST_ADDRESS_4, TEST_ADDRESS_5, TEST_ADDRESS_CA_1, TEST_ADDRESS_DE_1,
             TEST_ADDRESS_IE_1,
             TEST_CREDIT_CARD_1, TEST_CREDIT_CARD_2, TEST_CREDIT_CARD_3, TEST_CREDIT_CARD_4, TEST_CREDIT_CARD_5,
-            FORM_URL, CREDITCARD_FORM_URL, CREDITCARD_FORM_IFRAME_URL
+            FORM_URL, CREDITCARD_FORM_URL, CREDITCARD_FORM_IFRAME_URL, CREDITCARD_FORM_COMBINED_EXPIRY_URL,
             FTU_PREF, ENABLED_AUTOFILL_ADDRESSES_PREF,
             AUTOFILL_ADDRESSES_AVAILABLE_PREF,
             ENABLED_AUTOFILL_ADDRESSES_SUPPORTED_COUNTRIES_PREF,
@@ -10,10 +10,11 @@
             SUPPORTED_COUNTRIES_PREF,
             SYNC_USERNAME_PREF, SYNC_ADDRESSES_PREF, SYNC_CREDITCARDS_PREF, SYNC_CREDITCARDS_AVAILABLE_PREF, CREDITCARDS_USED_STATUS_PREF,
             sleep, waitForStorageChangedEvents, waitForAutofill, focusUpdateSubmitForm, runAndWaitForAutocompletePopupOpen,
-            openPopupOn, openPopupForSubframe, closePopup, closePopupForSubframe,
-            clickDoorhangerButton, getAddresses, saveAddress, removeAddresses, saveCreditCard,
+            openPopupOn, openPopupOnSubframe, closePopup, closePopupForSubframe,
+            clickDoorhangerButton, getAddresses, saveAddress, removeAddresses, saveCreditCard, setStorage,
             getDisplayedPopupItems, getDoorhangerCheckbox, waitForPopupEnabled,
-            getNotification, promiseNotificationShown, getDoorhangerButton, removeAllRecords, expectWarningText, testDialog */
+            getNotification, waitForPopupShown, getDoorhangerButton, removeAllRecords, expectWarningText, testDialog,
+            TIMEOUT_ENSURE_PROFILE_NOT_SAVED TIMEOUT_ENSURE_CC_EDIT_DIALOG_NOT_CLOSED */
 
 "use strict";
 
@@ -48,6 +49,10 @@ const CREDITCARD_FORM_IFRAME_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
   "creditCard/autocomplete_creditcard_iframe.html";
+const CREDITCARD_FORM_COMBINED_EXPIRY_URL =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "creditCard/autocomplete_creditcard_cc_exp_field.html";
 
 const FTU_PREF = "extensions.formautofill.firstTimeUse";
 const CREDITCARDS_USED_STATUS_PREF = "extensions.formautofill.creditCards.used";
@@ -188,6 +193,12 @@ const MAIN_BUTTON = "button";
 const SECONDARY_BUTTON = "secondaryButton";
 const MENU_BUTTON = "menubutton";
 
+/**
+ * Collection of timeouts that are used to ensure something should not happen.
+ */
+const TIMEOUT_ENSURE_PROFILE_NOT_SAVED = 1000;
+const TIMEOUT_ENSURE_CC_EDIT_DIALOG_NOT_CLOSED = 500;
+
 function getDisplayedPopupItems(
   browser,
   selector = ".autocomplete-richlistitem"
@@ -232,8 +243,6 @@ async function waitForStorageChangedEvents(...eventTypes) {
 /**
  * Wait until the element found matches the expected autofill value
  *
- * Note. This function assumes the element is in a form whose id is "form"
- *
  * @param {Object} target
  *        The target in which to run the task.
  * @param {string} selector
@@ -247,10 +256,9 @@ async function waitForAutofill(target, selector, value) {
     val
   ) {
     await ContentTaskUtils.waitForCondition(() => {
-      let form = content.document.getElementById("form");
-      let element = form.querySelector(selector);
+      let element = content.document.querySelector(selector);
       return element.value == val;
-    }, "Credit card detail never fills");
+    }, "Autofill never fills");
   });
 }
 
@@ -270,6 +278,8 @@ async function waitForAutofill(target, selector, value) {
  * @param {string} args.formId
  *        The id of the form to be updated. This function uses "form" if
  *        this argument is not present
+ * @param {string} args.formSelector
+ *        A selector used to query the form element
  * @param {Object} args.newValues
  *        Elements to be updated. Key is the element selector, value is the
  *        new value of the element.
@@ -294,10 +304,15 @@ async function focusUpdateSubmitForm(target, args, submit = true) {
   let alreadyFocused = await SpecialPowers.spawn(target, [args], obj => {
     let focused = false;
 
-    let formId = obj.formId ?? "form";
-    let form = content.document.getElementById(formId);
+    let form;
+    if (obj.formSelector) {
+      form = content.document.querySelector(obj.formSelector);
+    } else {
+      form = content.document.getElementById(obj.formId ?? "form");
+    }
     let element = form.querySelector(obj.focusSelector);
     if (element != content.document.activeElement) {
+      info(`focus on element (id=${element.id})`);
       element.focus();
     } else {
       focused = true;
@@ -325,8 +340,13 @@ async function focusUpdateSubmitForm(target, args, submit = true) {
 
   if (submit) {
     await SpecialPowers.spawn(target, [args], obj => {
-      let formId = obj.formId ?? "form";
-      let form = content.document.getElementById(formId);
+      let form;
+      if (obj.formSelector) {
+        form = content.document.querySelector(obj.formSelector);
+      } else {
+        form = content.document.getElementById(obj.formId ?? "form");
+      }
+      info(`submit form (id=${form.id})`);
       form.querySelector("input[type=submit]").click();
     });
   }
@@ -442,6 +462,7 @@ async function runAndWaitForAutocompletePopupOpen(browser, taskFn) {
           return (
             (item.getAttribute("originaltype") == "autofill-profile" ||
               item.getAttribute("originaltype") == "autofill-insecureWarning" ||
+              item.getAttribute("originaltype") == "autofill-clear-button" ||
               item.getAttribute("originaltype") == "autofill-footer") &&
             item.hasAttribute("formautofillattached")
           );
@@ -505,7 +526,7 @@ async function openPopupOn(browser, selector) {
   await childNotifiedPromise;
 }
 
-async function openPopupForSubframe(browser, frameBrowsingContext, selector) {
+async function openPopupOnSubframe(browser, frameBrowsingContext, selector) {
   let childNotifiedPromise = waitPopupStateInChild(
     frameBrowsingContext,
     "FormAutoComplete:PopupOpened"
@@ -516,7 +537,7 @@ async function openPopupForSubframe(browser, frameBrowsingContext, selector) {
   await runAndWaitForAutocompletePopupOpen(browser, async () => {
     await focusAndWaitForFieldsIdentified(frameBrowsingContext, selector);
     if (!selector.includes("cc-")) {
-      info(`openPopupForSubframe: before VK_DOWN on ${selector}`);
+      info(`openPopupOnSubframe: before VK_DOWN on ${selector}`);
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, frameBrowsingContext);
     }
   });
@@ -624,7 +645,7 @@ function getNotification(index = 0) {
   return notifications[index];
 }
 
-function promiseNotificationShown() {
+function waitForPopupShown() {
   return BrowserTestUtils.waitForEvent(PopupNotifications.panel, "popupshown");
 }
 
@@ -672,6 +693,17 @@ function getDoorhangerButton(button) {
   return getNotification()[button];
 }
 
+/**
+ * Removes all addresses and credit cards from storage.
+ *
+ * **NOTE: If you add or update a record in a test, then you must wait for the
+ * respective storage event to fire before calling this function.**
+ * This is because this function doesn't guarantee that a record that
+ * is about to be added or update will also be removed,
+ * since the add or update is triggered by an asynchronous call.
+ *
+ * @see waitForStorageChangedEvents for more details about storage events to wait for
+ */
 async function removeAllRecords() {
   let addresses = await getAddresses();
   if (addresses.length) {
@@ -730,6 +762,21 @@ async function testDialog(url, testFn, arg = undefined) {
   let unloadPromise = BrowserTestUtils.waitForEvent(win, "unload");
   await testFn(win);
   return unloadPromise;
+}
+
+/**
+ * Initializes the test storage for a task.
+ *
+ * @param {...Object} items Can either be credit card or address objects
+ */
+async function setStorage(...items) {
+  for (let item of items) {
+    if (item["cc-number"]) {
+      await saveCreditCard(item);
+    } else {
+      await saveAddress(item);
+    }
+  }
 }
 
 add_setup(function() {

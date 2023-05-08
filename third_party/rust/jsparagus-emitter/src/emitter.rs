@@ -754,11 +754,6 @@ impl InstructionWriter {
         self.write_g_c_thing_index(func_index);
     }
 
-    pub fn lambda_arrow(&mut self, func_index: GCThingIndex) {
-        self.emit_op(Opcode::LambdaArrow);
-        self.write_g_c_thing_index(func_index);
-    }
-
     pub fn set_fun_name(&mut self, prefix_kind: FunctionPrefixKind) {
         self.emit_op(Opcode::SetFunName);
         self.write_u8(prefix_kind as u8);
@@ -1022,17 +1017,8 @@ impl InstructionWriter {
         self.emit_op(Opcode::Exception);
     }
 
-    pub fn resume_index(&mut self, resume_index: u24) {
-        self.emit_op(Opcode::ResumeIndex);
-        self.write_u24(resume_index);
-    }
-
     pub fn finally(&mut self) {
         self.emit_op(Opcode::Finally);
-    }
-
-    pub fn retsub(&mut self) {
-        self.emit_op(Opcode::Retsub);
     }
 
     pub fn uninitialized(&mut self) {

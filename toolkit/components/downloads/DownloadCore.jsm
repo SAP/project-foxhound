@@ -285,6 +285,15 @@ Download.prototype = {
   launchWhenSucceeded: false,
 
   /**
+   * When a download starts, we typically want to automatically open the
+   * downloads panel if the pref browser.download.alwaysOpenPanel is enabled.
+   * However, there are conditions where we want to prevent this. For example, a
+   * false value can prevent the downloads panel from opening when an add-on
+   * creates a download without user input as part of some background operation.
+   */
+  openDownloadsListOnStart: true,
+
+  /**
    * This represents the MIME type of the download.
    */
   contentType: null,
@@ -614,8 +623,9 @@ Download.prototype = {
         );
       } else if (
         Services.prefs.getBoolPref("browser.helperApps.deleteTempFileOnExit") &&
-        !Services.prefs.getBoolPref(
-          "browser.download.improvements_to_download_panel"
+        Services.prefs.getBoolPref(
+          "browser.download.start_downloads_in_tmp_dir",
+          false
         )
       ) {
         gExternalAppLauncher.deleteTemporaryFileOnExit(
@@ -1334,6 +1344,7 @@ const kPlainSerializableDownloadProperties = [
   "launchWhenSucceeded",
   "contentType",
   "handleInternally",
+  "openDownloadsListOnStart",
 ];
 
 /**
@@ -1486,6 +1497,11 @@ DownloadSource.prototype = {
   cookieJarSettings: null,
 
   /**
+   * Represents the authentication header of the download source, could be null if
+   * the download source had no authentication header.
+   */
+  authHeader: null,
+  /**
    * Returns a static representation of the current object state.
    *
    * @return A JavaScript object that can be serialized to JSON.
@@ -1622,6 +1638,10 @@ DownloadSource.fromSerializable = function(aSerializable) {
       }
     }
 
+    if ("authHeader" in aSerializable) {
+      source.authHeader = aSerializable.authHeader;
+    }
+
     deserializeUnknownProperties(
       source,
       aSerializable,
@@ -1629,7 +1649,8 @@ DownloadSource.fromSerializable = function(aSerializable) {
         property != "url" &&
         property != "isPrivate" &&
         property != "referrerInfo" &&
-        property != "cookieJarSettings"
+        property != "cookieJarSettings" &&
+        property != "authHeader"
     );
   }
 
@@ -2448,6 +2469,18 @@ DownloadCopySaver.prototype = {
         ) {
           channel.loadInfo.cookieJarSettings =
             download.source.cookieJarSettings;
+        }
+        if (
+          channel instanceof Ci.nsIHttpChannel &&
+          download.source.authHeader
+        ) {
+          try {
+            channel.setRequestHeader(
+              "Authorization",
+              download.source.authHeader,
+              true
+            );
+          } catch (e) {}
         }
 
         if (download.source.userContextId) {

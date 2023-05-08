@@ -633,7 +633,7 @@ var Bookmarks = Object.freeze({
 
         let url = "";
         if (item.type == Bookmarks.TYPE_BOOKMARK) {
-          url = item.url instanceof URL ? item.url.href : item.url;
+          url = URL.isInstance(item.url) ? item.url.href : item.url;
         }
 
         notifications.push(
@@ -1435,7 +1435,7 @@ var Bookmarks = Object.freeze({
     if (numberOfItems === undefined) {
       throw new Error("numberOfItems argument is required");
     }
-    if (!typeof numberOfItems === "number" || numberOfItems % 1 !== 0) {
+    if (typeof numberOfItems !== "number" || numberOfItems % 1 !== 0) {
       throw new Error("numberOfItems argument must be an integer");
     }
     if (numberOfItems <= 0) {
@@ -1845,7 +1845,7 @@ var Bookmarks = Object.freeze({
     }
 
     if (query.url) {
-      if (typeof query.url === "string" || query.url instanceof URL) {
+      if (typeof query.url === "string" || URL.isInstance(query.url)) {
         query.url = new URL(query.url).href;
       } else if (query.url instanceof Ci.nsIURI) {
         query.url = query.url.spec;

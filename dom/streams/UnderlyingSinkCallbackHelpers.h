@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_UnderlyingSinkCallbackHelpers_h
 #define mozilla_dom_UnderlyingSinkCallbackHelpers_h
 
-#include "js/loader/ModuleMapKey.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnderlyingSinkBinding.h"
@@ -56,7 +55,7 @@ class UnderlyingSinkAlgorithms final : public UnderlyingSinkAlgorithmsBase {
       UnderlyingSinkAlgorithms, UnderlyingSinkAlgorithmsBase)
 
   UnderlyingSinkAlgorithms(nsIGlobalObject* aGlobal,
-                           JS::HandleObject aUnderlyingSink,
+                           JS::Handle<JSObject*> aUnderlyingSink,
                            UnderlyingSink& aUnderlyingSinkDict)
       : mGlobal(aGlobal), mUnderlyingSink(aUnderlyingSink) {
     // Step 6. (implicit Step 2.)

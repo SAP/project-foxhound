@@ -102,7 +102,7 @@ class VideoFrameSurface<LIBAV_VER> {
 
   const RefPtr<DMABufSurface> mSurface;
   const FFmpegLibWrapper* mLib;
-  AVBufferRef* mAVHWDeviceContext;
+  AVBufferRef* mAVHWFrameContext;
   AVBufferRef* mHWAVBuffer;
 };
 
@@ -114,8 +114,9 @@ class VideoFramePool<LIBAV_VER> {
   ~VideoFramePool();
 
   RefPtr<VideoFrameSurface<LIBAV_VER>> GetVideoFrameSurface(
-      VADRMPRIMESurfaceDescriptor& aVaDesc, AVCodecContext* aAVCodecContext,
-      AVFrame* aAVFrame, FFmpegLibWrapper* aLib);
+      VADRMPRIMESurfaceDescriptor& aVaDesc, int aWidth, int aHeight,
+      AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
+      FFmpegLibWrapper* aLib);
   void ReleaseUnusedVAAPIFrames();
 
  private:

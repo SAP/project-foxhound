@@ -25,6 +25,7 @@
 #include "wasm/WasmCode.h"
 #include "wasm/WasmException.h"
 #include "wasm/WasmJS.h"
+#include "wasm/WasmSerialize.h"
 #include "wasm/WasmTable.h"
 
 namespace JS {
@@ -115,9 +116,7 @@ class Module : public JS::WasmModule {
                             const JSFunctionVector& funcImports) const;
   bool instantiateMemory(JSContext* cx,
                          MutableHandleWasmMemoryObject memory) const;
-#ifdef ENABLE_WASM_EXCEPTIONS
   bool instantiateTags(JSContext* cx, WasmTagObjectVector& tagObjs) const;
-#endif
   bool instantiateImportedTable(JSContext* cx, const TableDesc& td,
                                 Handle<WasmTableObject*> table,
                                 WasmTableObjectVector* tableObjs,
@@ -186,10 +185,7 @@ class Module : public JS::WasmModule {
 
   // Code caching support.
 
-  size_t serializedSize(const LinkData& linkData) const;
-  void serialize(const LinkData& linkData, uint8_t* begin, size_t size) const;
-  void serialize(const LinkData& linkData,
-                 JS::OptimizedEncodingListener& listener) const;
+  [[nodiscard]] bool serialize(const LinkData& linkData, Bytes* bytes) const;
   static RefPtr<Module> deserialize(const uint8_t* begin, size_t size);
   bool loggingDeserialized() const { return loggingDeserialized_; }
 
@@ -213,6 +209,8 @@ class Module : public JS::WasmModule {
   // Generated code analysis support:
 
   bool extractCode(JSContext* cx, Tier tier, MutableHandleValue vp) const;
+
+  WASM_DECLARE_FRIEND_SERIALIZE_ARGS(Module, const wasm::LinkData& linkData);
 };
 
 using MutableModule = RefPtr<Module>;

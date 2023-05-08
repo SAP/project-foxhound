@@ -113,6 +113,7 @@ class MOZ_RAII FallbackICCodeCompiler final {
 
 AllocatableGeneralRegisterSet BaselineICAvailableGeneralRegs(size_t numInputs) {
   AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+  MOZ_ASSERT(!regs.has(FramePointer));
 #if defined(JS_CODEGEN_ARM)
   MOZ_ASSERT(!regs.has(BaselineStackReg));
   MOZ_ASSERT(!regs.has(ICTailCallReg));
@@ -128,12 +129,7 @@ AllocatableGeneralRegisterSet BaselineICAvailableGeneralRegs(size_t numInputs) {
 #else
   MOZ_ASSERT(!regs.has(BaselineStackReg));
 #endif
-  regs.take(BaselineFrameReg);
   regs.take(ICStubReg);
-#ifdef JS_CODEGEN_X64
-  regs.take(ExtractTemp0);
-  regs.take(ExtractTemp1);
-#endif
 
   switch (numInputs) {
     case 0:
@@ -586,10 +582,10 @@ void FallbackICCodeCompiler::leaveStubFrame(MacroAssembler& masm,
 void FallbackICCodeCompiler::pushStubPayload(MacroAssembler& masm,
                                              Register scratch) {
   if (inStubFrame_) {
-    masm.loadPtr(Address(BaselineFrameReg, 0), scratch);
+    masm.loadPtr(Address(FramePointer, 0), scratch);
     masm.pushBaselineFramePtr(scratch, scratch);
   } else {
-    masm.pushBaselineFramePtr(BaselineFrameReg, scratch);
+    masm.pushBaselineFramePtr(FramePointer, scratch);
   }
 }
 
@@ -710,7 +706,7 @@ bool FallbackICCodeCompiler::emitGetElem(bool hasReceiver) {
     masm.pushValue(R1);  // Index
     masm.pushValue(Address(masm.getStackPointer(), sizeof(Value) * 5));  // Obj
     masm.push(ICStubReg);
-    masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+    masm.pushBaselineFramePtr(FramePointer, R0.scratchReg());
 
     using Fn =
         bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*, HandleValue,
@@ -727,7 +723,7 @@ bool FallbackICCodeCompiler::emitGetElem(bool hasReceiver) {
     masm.pushValue(R1);
     masm.pushValue(R0);
     masm.push(ICStubReg);
-    masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+    masm.pushBaselineFramePtr(FramePointer, R0.scratchReg());
 
     using Fn = bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*,
                         HandleValue, HandleValue, MutableHandleValue);
@@ -835,12 +831,6 @@ bool DoSetElemFallback(JSContext* cx, BaselineFrame* frame,
                                       JSOp(*pc) == JSOp::StrictSetElem)) {
       return false;
     }
-  }
-
-  // Don't try to attach stubs that wish to be hidden. We don't know how to
-  // have different enumerability in the stubs for the moment.
-  if (op == JSOp::InitHiddenElem) {
-    return true;
   }
 
   // Overwrite the object on the stack (pushed for the decompiler) with the rhs.
@@ -1275,7 +1265,7 @@ bool FallbackICCodeCompiler::emitGetProp(bool hasReceiver) {
     masm.pushValue(R0);
     masm.pushValue(R1);
     masm.push(ICStubReg);
-    masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+    masm.pushBaselineFramePtr(FramePointer, R0.scratchReg());
 
     using Fn = bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*,
                         HandleValue, MutableHandleValue, MutableHandleValue);
@@ -1289,7 +1279,7 @@ bool FallbackICCodeCompiler::emitGetProp(bool hasReceiver) {
     // Push arguments.
     masm.pushValue(R0);
     masm.push(ICStubReg);
-    masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+    masm.pushBaselineFramePtr(FramePointer, R0.scratchReg());
 
     using Fn = bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*,
                         MutableHandleValue, MutableHandleValue);
@@ -1391,7 +1381,7 @@ bool DoSetPropFallback(JSContext* cx, BaselineFrame* frame,
 
   if (op == JSOp::InitProp || op == JSOp::InitLockedProp ||
       op == JSOp::InitHiddenProp) {
-    if (!InitPropertyOperation(cx, op, obj, name, rhs)) {
+    if (!InitPropertyOperation(cx, pc, obj, name, rhs)) {
       return false;
     }
   } else if (op == JSOp::SetName || op == JSOp::StrictSetName ||
@@ -1720,30 +1710,30 @@ bool FallbackICCodeCompiler::emitCall(bool isSpread, bool isConstructing) {
     // Push a stub frame so that we can perform a non-tail call.
     enterStubFrame(masm, R1.scratchReg());
 
-    // Use BaselineFrameReg instead of BaselineStackReg, because
-    // BaselineFrameReg and BaselineStackReg hold the same value just after
+    // Use FramePointer instead of BaselineStackReg, because
+    // FramePointer and BaselineStackReg hold the same value just after
     // calling enterStubFrame.
 
     // newTarget
     uint32_t valueOffset = 0;
     if (isConstructing) {
-      masm.pushValue(Address(BaselineFrameReg, STUB_FRAME_SIZE));
+      masm.pushValue(Address(FramePointer, STUB_FRAME_SIZE));
       valueOffset++;
     }
 
     // array
-    masm.pushValue(Address(BaselineFrameReg,
-                           valueOffset * sizeof(Value) + STUB_FRAME_SIZE));
+    masm.pushValue(
+        Address(FramePointer, valueOffset * sizeof(Value) + STUB_FRAME_SIZE));
     valueOffset++;
 
     // this
-    masm.pushValue(Address(BaselineFrameReg,
-                           valueOffset * sizeof(Value) + STUB_FRAME_SIZE));
+    masm.pushValue(
+        Address(FramePointer, valueOffset * sizeof(Value) + STUB_FRAME_SIZE));
     valueOffset++;
 
     // callee
-    masm.pushValue(Address(BaselineFrameReg,
-                           valueOffset * sizeof(Value) + STUB_FRAME_SIZE));
+    masm.pushValue(
+        Address(FramePointer, valueOffset * sizeof(Value) + STUB_FRAME_SIZE));
     valueOffset++;
 
     masm.push(masm.getStackPointer());
@@ -1926,7 +1916,7 @@ bool DoInstanceOfFallback(JSContext* cx, BaselineFrame* frame,
 
   RootedObject obj(cx, &rhs.toObject());
   bool cond = false;
-  if (!HasInstance(cx, obj, lhs, &cond)) {
+  if (!InstanceofOperator(cx, obj, lhs, &cond)) {
     return false;
   }
 
@@ -2385,7 +2375,7 @@ bool FallbackICCodeCompiler::emit_NewArray() {
   EmitRestoreTailCallReg(masm);
 
   masm.push(ICStubReg);  // stub.
-  masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
+  masm.pushBaselineFramePtr(FramePointer, R0.scratchReg());
 
   using Fn =
       bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*, MutableHandleValue);

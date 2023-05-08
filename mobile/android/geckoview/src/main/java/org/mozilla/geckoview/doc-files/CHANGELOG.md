@@ -13,11 +13,69 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v102
+- Added [`DateTimePrompt.stepValue`][102.1] to export [`step`][102.2] attribute of input element.
+  ([bug 1499635]({{bugzilla}}1499635))
+- Deprecated [`onLocationChange(2)`][102.3], please use [`onLocationChange(3)`][102.4].
+- Added [`GeckoSession.setPriorityHint`][102.5] function to set the session to either high priority or default.
+- [`WebRequestError.ERROR_HTTPS_ONLY`][102.6] now has error category
+  `ERROR_CATEGORY_NETWORK` rather than `ERROR_CATEGORY_SECURITY`.
+- ⚠️ The Autofill.Delegate API now receives a [`AutofillNode`][102.7] object instead of
+  the entire [`Node`][102.8] structure. The `onAutofill` delegate method is now split
+  into several methods: [`onNodeAdd`][102.9], [`onNodeBlur`][102.10],
+  [`onNodeFocus`][102.11], [`onNodeRemove`][102.12], [`onNodeUpdate`][102.13],
+  [`onSessionCancel`][102.14], [`onSessionCommit`][102.15],
+  [`onSessionStart`][102.16].
+- Added [`PromptInstanceDelegate.onPromptUpdate`][102.17] to allow GeckoView to update current prompts.
+  ([bug 1758800]({{bugzilla}}1758800))
+- Deprecated [`GeckoSession.autofill`][102.18], use [`Autofill.Session.autofill`][102.19] instead.
+  ([bug 1770010]({{bugzilla}}1770010))
+- Added [`WebRequestError.ERROR_BAD_HSTS_CERT`][102.20] error code to notify the app of a connection to a site that does not allow error overrides.
+  ([bug 1721220]({{bugzilla}}1721220))
+
+[102.1]: {{javadoc_uri}}/GeckoSession.PromptDelegate.DateTimePrompt.html#stepValue
+[102.2]: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/date#step
+[102.3]: {{javadoc_uri}}/GeckoSession.NavigationDelegate.html#onLocationChange(org.mozilla.geckoview.GeckoSession,java.lang.String)
+[102.4]: {{javadoc_uri}}/GeckoSession.NavigationDelegate.html#onLocationChange(org.mozilla.geckoview.GeckoSession,java.lang.String,java.util.List)
+[102.5]: {{javadoc_uri}}/GeckoSession.html#setPriorityHint(int)
+[102.6]: {{javadoc_uri}}/WebRequestError.html#ERROR_HTTPS_ONLY
+[102.7]: {{javadoc_uri}}/Autofill.AutofillNode.html
+[102.8]: {{javadoc_uri}}/Autofill.Node.html
+[102.9]: {{javadoc_uri}}/Autofill.Delegate.html#onNodeAdd(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.Autofill.Node,org.mozilla.geckoview.Autofill.NodeData)
+[102.10]: {{javadoc_uri}}/Autofill.Delegate.html#onNodeBlur(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.Autofill.Node,org.mozilla.geckoview.Autofill.NodeData)
+[102.11]: {{javadoc_uri}}/Autofill.Delegate.html#onNodeFocus(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.Autofill.Node,org.mozilla.geckoview.Autofill.NodeData)
+[102.12]: {{javadoc_uri}}/Autofill.Delegate.html#onNodeRemove(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.Autofill.Node,org.mozilla.geckoview.Autofill.NodeData)
+[102.13]: {{javadoc_uri}}/Autofill.Delegate.html#onNodeUpdate(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.Autofill.Node,org.mozilla.geckoview.Autofill.NodeData)
+[102.14]: {{javadoc_uri}}/Autofill.Delegate.html#onSessionCancel(org.mozilla.geckoview.GeckoSession)
+[102.15]: {{javadoc_uri}}/Autofill.Delegate.html#onSessionCommit(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.Autofill.Node,org.mozilla.geckoview.Autofill.NodeData)
+[102.16]: {{javadoc_uri}}/Autofill.Delegate.html#onSessionStart(org.mozilla.geckoview.GeckoSession)
+[102.17]: {{javadoc_uri}}/GeckoSession.PromptDelegate.PromptInstanceDelegate.html#onPromptUpdate(org.mozilla.geckoview.GeckoSession.PromptDelegate.BasePrompt)
+[102.18]: {{javadoc_uri}}/GeckoSession.html#autofill(android.util.SparseArray)
+[102.19]: {{javadoc_uri}}/Autofill.Session.html#autofill(android.util.SparseArray)
+[102.20]: {{javadoc_uri}}/WebRequestError.html#ERROR_BAD_HSTS_CERT
+
+## v101
+- Added [`GeckoDisplay.surfaceChanged`][101.1] function taking new type [`GeckoDisplay.SurfaceInfo`][101.2].
+  This allows the caller to provide a [`SurfaceControl`][101.3] object, which must be set on SDK level 29 and
+  above when rendering in to a `SurfaceView`.
+  ([bug 1762424]({{bugzilla}}1762424))
+- ⚠️ Deprecated old `GeckoDisplay.surfaceChanged` functions [[1]][101.4] [[2]][101.5].
+- Add [`WebExtensionController.optionalPrompt`][101.6] to allow handling of optional permission requests from extensions.
+
+[101.1]: {{javadoc_uri}}/GeckoDisplay.html#surfaceChanged(org.mozilla.geckoview.GeckoDisplay.SurfaceInfo)
+[101.2]: {{javadoc_uri}}/GeckoDisplay.SurfaceInfo.html
+[101.3]: https://developer.android.com/reference/android/view/SurfaceControl
+[101.4]: {{javadoc_uri}}/GeckoDisplay.html#surfaceChanged(android.view.Surface,int,int)
+[101.5]: {{javadoc_uri}}/GeckoDisplay.html#surfaceChanged(android.view.Surface,int,int,int,int)
+[101.6]: {{javadoc_uri}}/WebExtensionController.html#optionalPrompt(org.mozilla.geckoview.WebExtension.Message,org.mozilla.geckoview.WebExtension)
+
 ## v100
 - ⚠️ Changed [`GeckoSession.isOpen`][100.1] to `@UiThread`.
 - [`WebNotification`][100.2] now implements [`Parcelable`][100.3] to support
   persisting notifications and responding to them while the browser is not
   running.
+- Removed deprecated `GeckoRuntime.EXTRA_CRASH_FATAL`
+- Removed deprecated `MediaSource.rawId`
 
 [100.1]: {{javadoc_uri}}/GeckoSession.html#isOpen()
 [100.2]: {{javadoc_uri}}/WebNotification.html
@@ -1149,4 +1207,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: 68503adf56bf73da9de696e2d9d725368e27008d
+[api-version]: d06ece1a8d568d3c62ee1f6786f4ffe13476b29f

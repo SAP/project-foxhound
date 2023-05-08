@@ -158,7 +158,6 @@ var snapshotFormatters = {
       disabledByE10sEnv: "fission-status-disabled-by-e10s-env",
       enabledByEnv: "fission-status-enabled-by-env",
       disabledByEnv: "fission-status-disabled-by-env",
-      disabledBySafeMode: "fission-status-disabled-by-safe-mode",
       enabledByDefault: "fission-status-enabled-by-default",
       disabledByDefault: "fission-status-disabled-by-default",
       enabledByUserPref: "fission-status-enabled-by-user-pref",
@@ -1060,7 +1059,7 @@ var snapshotFormatters = {
     if (!AppConstants.ENABLE_WEBDRIVER) {
       return;
     }
-    $("remote-debugging-accepting-connections").textContent = data.listening;
+    $("remote-debugging-accepting-connections").textContent = data.running;
     $("remote-debugging-url").textContent = data.url;
   },
 

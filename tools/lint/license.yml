@@ -71,11 +71,13 @@ license:
         - .ftl
         - .h
         - .html
+        - .java
         - .js
         - .jsm
         - .jsx
         - .m
         - .mm
+        - .mjs
         - .properties
         - .py
         - .rs

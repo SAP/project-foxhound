@@ -12,11 +12,8 @@ include protocol PDocAccessible;
 #endif
 include protocol PFilePicker;
 include protocol PRemotePrintJob;
-include protocol PChildToParentStream;
-include protocol PParentToChildStream;
-include protocol PFileDescriptorSet;
-include protocol PRemoteLazyInputStream;
 include protocol PPaymentRequest;
+include protocol PSessionStore;
 include protocol PWindowGlobal;
 include protocol PBrowserBridge;
 include protocol PVsync;
@@ -44,6 +41,7 @@ include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 
+using struct nsID from "nsID.h";
 using mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
@@ -190,6 +188,7 @@ struct PrintPreviewResultInfo
 
     manages PFilePicker;
     manages PPaymentRequest;
+    manages PSessionStore;
     manages PWindowGlobal;
     manages PBrowserBridge;
     manages PVsync;
@@ -473,7 +472,16 @@ parent:
 
     async __delete__();
 
-    async ReplyKeyEvent(WidgetKeyboardEvent event);
+    /**
+     * Send a reply of keyboard event to the parent.  Then, parent can consider
+     * whether the event should kick a shortcut key or ignore.
+     *
+     * @param aEvent    The event which was sent from the parent and handled
+     *                  in a remote process.
+     * @param aUUI      The UUID which was generated when aEvent was sent to
+     *                  a remote process.
+     */
+    async ReplyKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
 
     /**
      * Retrieves edit commands for the key combination represented by aEvent.
@@ -536,7 +544,8 @@ parent:
     async SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                       LayoutDeviceIntPoint aPoint,
                                       double aDeltaX, double aDeltaY,
-                                      int32_t aModifierFlags);
+                                      int32_t aModifierFlags,
+                                      uint64_t aObserverId);
 
     async LockNativePointer();
     async UnlockNativePointer();
@@ -574,9 +583,6 @@ parent:
 
     async NavigationFinished();
 
-    async SessionStoreUpdate(nsCString? aDocShellCaps, bool? aPrivatedMode,
-                             bool aNeedCollectSHistory, uint32_t aEpoch);
-
     async IntrinsicSizeOrRatioChanged(IntrinsicSize? aIntrinsicSize,
                                       AspectRatio? aIntrinsicRatio);
 
@@ -594,7 +600,6 @@ parent:
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
-    async UpdateEpoch(uint32_t aEpoch);
     async UpdateSHistory();
     async CloneDocumentTreeIntoSelf(MaybeDiscardedBrowsingContext aBc, PrintData aPrintData) returns(bool aSuccess);
     async UpdateRemotePrintSettings(PrintData aPrintData);
@@ -789,9 +794,17 @@ child:
                                                       ScrollableLayerGuid aGuid,
                                                       uint64_t aInputBlockId);
 
+    /**
+     * Send a keyboard event which reporesents a user input to a remote process.
+     *
+     * @param aEvent    The event which user typed a key.
+     * @param aUUID     A UUID which is generated in the parent at sending it.
+     *                  This must be specified when the child sends a reply
+     *                  event to the parent.
+     */
     [Priority=input]
-    async RealKeyEvent(WidgetKeyboardEvent event);
-    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent event);
+    async RealKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
+    async NormalPriorityRealKeyEvent(WidgetKeyboardEvent aEvent, nsID aUUID);
 
     [Priority=input]
     async MouseWheelEvent(WidgetWheelEvent event,
@@ -1014,6 +1027,9 @@ parent:
 
     /** Fetches the visited status for an array of URIs (Android-only). */
     async QueryVisitedState(nsIURI[] aURIs);
+
+    /** Create a session store for a browser child. */
+    async PSessionStore();
 
     /**
      * Construct a new WindowGlobal for an existing global in the content process

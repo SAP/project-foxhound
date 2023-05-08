@@ -8,6 +8,7 @@
 #include "mozilla/gfx/PrintTargetPDF.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Services.h"
+#include "mozilla/GUniquePtr.h"
 #include "mozilla/WidgetUtilsGtk.h"
 
 #include "plstr.h"
@@ -16,6 +17,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIObserverService.h"
 #include "nsPrintfCString.h"
+#include "nsQueryObject.h"
 #include "nsReadableUtils.h"
 #include "nsThreadUtils.h"
 
@@ -124,14 +126,15 @@ struct {
 #undef DECLARE_KNOWN_MONOCHROME_SETTING
 
 // https://developer.gnome.org/gtk3/stable/GtkPaperSize.html#gtk-paper-size-new-from-ipp
-static GtkPaperSize* GtkPaperSizeFromIpp(const gchar* aIppName, gdouble aWidth,
-                                         gdouble aHeight) {
+static GUniquePtr<GtkPaperSize> GtkPaperSizeFromIpp(const gchar* aIppName,
+                                                    gdouble aWidth,
+                                                    gdouble aHeight) {
   static auto sPtr = (GtkPaperSize * (*)(const gchar*, gdouble, gdouble))
       dlsym(RTLD_DEFAULT, "gtk_paper_size_new_from_ipp");
   if (gtk_check_version(3, 16, 0)) {
     return nullptr;
   }
-  return sPtr(aIppName, aWidth, aHeight);
+  return GUniquePtr<GtkPaperSize>(sPtr(aIppName, aWidth, aHeight));
 }
 
 static bool PaperSizeAlmostEquals(GtkPaperSize* aSize,
@@ -149,43 +152,70 @@ static bool PaperSizeAlmostEquals(GtkPaperSize* aSize,
   return true;
 }
 
-// This is a horrible workaround for some printer driver bugs that treat
-// custom page sizes different to standard ones. If our paper object matches
-// one of a standard one, use a standard paper size object instead.
+// Prefer the ppd name because some printers don't deal well even with standard
+// ipp names.
+static GUniquePtr<GtkPaperSize> PpdSizeFromIppName(const gchar* aIppName) {
+  static constexpr struct {
+    const char* mCups;
+    const char* mGtk;
+  } kMap[] = {
+      {CUPS_MEDIA_A3, GTK_PAPER_NAME_A3},
+      {CUPS_MEDIA_A4, GTK_PAPER_NAME_A4},
+      {CUPS_MEDIA_A5, GTK_PAPER_NAME_A5},
+      {CUPS_MEDIA_LETTER, GTK_PAPER_NAME_LETTER},
+      {CUPS_MEDIA_LEGAL, GTK_PAPER_NAME_LEGAL},
+      // Other gtk sizes with no standard CUPS constant: _EXECUTIVE and _B5
+  };
+
+  for (const auto& entry : kMap) {
+    if (!strcmp(entry.mCups, aIppName)) {
+      return GUniquePtr<GtkPaperSize>(gtk_paper_size_new(entry.mGtk));
+    }
+  }
+
+  return nullptr;
+}
+
+// This is a horrible workaround for some printer driver bugs that treat custom
+// page sizes different to standard ones. If our paper object matches one of a
+// standard one, use a standard paper size object instead.
 //
-// See bug 414314 and bug 1691798 for more info.
-static GtkPaperSize* GetStandardGtkPaperSize(GtkPaperSize* aGeckoPaperSize) {
+// We prefer ppd to ipp to custom sizes.
+//
+// See bug 414314, bug 1691798, and bug 1717292 for more info.
+static GUniquePtr<GtkPaperSize> GetStandardGtkPaperSize(
+    GtkPaperSize* aGeckoPaperSize) {
+  // We should get an ipp name from cups, try to get a ppd from that first.
   const gchar* geckoName = gtk_paper_size_get_name(aGeckoPaperSize);
-
-  // We try ipp size first because that's the names we get from CUPS, and
-  // because even though gtk_paper_size_new deals with ipp, it has rounding
-  // issues, see https://gitlab.gnome.org/GNOME/gtk/-/issues/3685.
-  GtkPaperSize* size = GtkPaperSizeFromIpp(
-      geckoName, gtk_paper_size_get_width(aGeckoPaperSize, GTK_UNIT_POINTS),
-      gtk_paper_size_get_height(aGeckoPaperSize, GTK_UNIT_POINTS));
-  if (size && !gtk_paper_size_is_custom(size)) {
-    return size;
+  if (auto ppd = PpdSizeFromIppName(geckoName)) {
+    return ppd;
   }
 
-  if (size) {
-    gtk_paper_size_free(size);
+  // We try gtk_paper_size_new_from_ipp next, because even though
+  // gtk_paper_size_new tries to deal with ipp, it has some rounding issues that
+  // the ipp equivalent doesn't have, see
+  // https://gitlab.gnome.org/GNOME/gtk/-/issues/3685.
+  if (auto ipp = GtkPaperSizeFromIpp(
+          geckoName, gtk_paper_size_get_width(aGeckoPaperSize, GTK_UNIT_POINTS),
+          gtk_paper_size_get_height(aGeckoPaperSize, GTK_UNIT_POINTS))) {
+    if (!gtk_paper_size_is_custom(ipp.get())) {
+      if (auto ppd = PpdSizeFromIppName(gtk_paper_size_get_name(ipp.get()))) {
+        return ppd;
+      }
+      return ipp;
+    }
   }
 
-  size = gtk_paper_size_new(geckoName);
-  if (gtk_paper_size_is_equal(size, aGeckoPaperSize)) {
-    return size;
-  }
-
+  GUniquePtr<GtkPaperSize> size(gtk_paper_size_new(geckoName));
   // gtk_paper_size_is_equal compares just paper names. The name in Gecko
   // might come from CUPS, which is an ipp size, and gets normalized by gtk.
-  //
   // So check also for the same actual paper size.
-  if (PaperSizeAlmostEquals(aGeckoPaperSize, size)) {
+  if (gtk_paper_size_is_equal(size.get(), aGeckoPaperSize) ||
+      PaperSizeAlmostEquals(aGeckoPaperSize, size.get())) {
     return size;
   }
 
-  // Not the same after all, so use our custom paper size.
-  gtk_paper_size_free(size);
+  // Not the same after all, so use our custom paper sizes instead.
   return nullptr;
 }
 
@@ -194,19 +224,20 @@ static GtkPaperSize* GetStandardGtkPaperSize(GtkPaperSize* aGeckoPaperSize) {
  *  @update   dc 2/15/98
  *  @update   syd 3/2/99
  */
-NS_IMETHODIMP nsDeviceContextSpecGTK::Init(nsIWidget* aWidget,
-                                           nsIPrintSettings* aPS,
+NS_IMETHODIMP nsDeviceContextSpecGTK::Init(nsIPrintSettings* aPS,
                                            bool aIsPrintPreview) {
-  mPrintSettings = do_QueryInterface(aPS);
-  if (!mPrintSettings) {
+  RefPtr<nsPrintSettingsGTK> settings = do_QueryObject(aPS);
+  if (!settings) {
     return NS_ERROR_NO_INTERFACE;
   }
+  mPrintSettings = aPS;
 
-  mGtkPrintSettings = mPrintSettings->GetGtkPrintSettings();
-  mGtkPageSetup = mPrintSettings->GetGtkPageSetup();
+  mGtkPrintSettings = settings->GetGtkPrintSettings();
+  mGtkPageSetup = settings->GetGtkPageSetup();
 
   GtkPaperSize* geckoPaperSize = gtk_page_setup_get_paper_size(mGtkPageSetup);
-  GtkPaperSize* gtkPaperSize = GetStandardGtkPaperSize(geckoPaperSize);
+  GUniquePtr<GtkPaperSize> gtkPaperSize =
+      GetStandardGtkPaperSize(geckoPaperSize);
 
   mGtkPageSetup = gtk_page_setup_copy(mGtkPageSetup);
   mGtkPrintSettings = gtk_print_settings_copy(mGtkPrintSettings);
@@ -225,14 +256,11 @@ NS_IMETHODIMP nsDeviceContextSpecGTK::Init(nsIWidget* aWidget,
     nsPrinterCUPS::ForEachExtraMonochromeSetting(applySetting);
   }
 
-  GtkPaperSize* properPaperSize = gtkPaperSize ? gtkPaperSize : geckoPaperSize;
+  GtkPaperSize* properPaperSize =
+      gtkPaperSize ? gtkPaperSize.get() : geckoPaperSize;
   gtk_print_settings_set_paper_size(mGtkPrintSettings, properPaperSize);
   gtk_page_setup_set_paper_size_and_default_margins(mGtkPageSetup,
                                                     properPaperSize);
-  if (gtkPaperSize) {
-    gtk_paper_size_free(gtkPaperSize);
-  }
-
   return NS_OK;
 }
 
@@ -254,7 +282,7 @@ gboolean nsDeviceContextSpecGTK::PrinterEnumerator(GtkPrinter* aPrinter,
     NS_ConvertUTF16toUTF8 requestedName(printerName);
     const char* currentName = gtk_printer_get_name(aPrinter);
     if (requestedName.Equals(currentName)) {
-      spec->mPrintSettings->SetGtkPrinter(aPrinter);
+      nsPrintSettingsGTK::From(spec->mPrintSettings)->SetGtkPrinter(aPrinter);
 
       // Bug 1145916 - attempting to kick off a print job for this printer
       // during this tick of the event loop will result in the printer backend
@@ -273,9 +301,9 @@ gboolean nsDeviceContextSpecGTK::PrinterEnumerator(GtkPrinter* aPrinter,
 }
 
 void nsDeviceContextSpecGTK::StartPrintJob() {
-  GtkPrintJob* job =
-      gtk_print_job_new(mTitle.get(), mPrintSettings->GetGtkPrinter(),
-                        mGtkPrintSettings, mGtkPageSetup);
+  GtkPrintJob* job = gtk_print_job_new(
+      mTitle.get(), nsPrintSettingsGTK::From(mPrintSettings)->GetGtkPrinter(),
+      mGtkPrintSettings, mGtkPageSetup);
 
   if (!gtk_print_job_set_source_file(job, mSpoolName.get(), nullptr)) return;
 
@@ -319,7 +347,7 @@ NS_IMETHODIMP nsDeviceContextSpecGTK::EndDocument() {
       // content process side. In that case, we need to enumerate the printers
       // on the content side, and find a printer with a matching name.
 
-      if (mPrintSettings->GetGtkPrinter()) {
+      if (nsPrintSettingsGTK::From(mPrintSettings)->GetGtkPrinter()) {
         // We have a printer, so we can print right away.
         StartPrintJob();
       } else {

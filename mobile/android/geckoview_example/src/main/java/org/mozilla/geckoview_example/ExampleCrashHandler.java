@@ -47,8 +47,6 @@ public class ExampleCrashHandler extends Service {
       Log.d(LOGTAG, "Dump File: " + mCrashIntent.getStringExtra(GeckoRuntime.EXTRA_MINIDUMP_PATH));
       Log.d(LOGTAG, "Extras File: " + mCrashIntent.getStringExtra(GeckoRuntime.EXTRA_EXTRAS_PATH));
       Log.d(
-          LOGTAG, "Fatal: " + mCrashIntent.getBooleanExtra(GeckoRuntime.EXTRA_CRASH_FATAL, false));
-      Log.d(
           LOGTAG,
           "Process Type: " + mCrashIntent.getStringExtra(GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE));
 
@@ -77,7 +75,7 @@ public class ExampleCrashHandler extends Service {
       startForeground(NOTIFY_ID, notification);
     } else if (ACTION_REPORT_CRASH.equals(intent.getAction())) {
       StrictMode.ThreadPolicy oldPolicy = null;
-      if (BuildConfig.DEBUG) {
+      if (BuildConfig.DEBUG_BUILD) {
         oldPolicy = StrictMode.getThreadPolicy();
 
         // We do some disk I/O and network I/O on the main thread, but it's fine.

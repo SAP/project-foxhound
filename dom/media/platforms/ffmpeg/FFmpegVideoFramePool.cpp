@@ -23,7 +23,7 @@ RefPtr<layers::Image> VideoFrameSurface<LIBAV_VER>::GetAsImage() {
 VideoFrameSurface<LIBAV_VER>::VideoFrameSurface(DMABufSurface* aSurface)
     : mSurface(aSurface),
       mLib(nullptr),
-      mAVHWDeviceContext(nullptr),
+      mAVHWFrameContext(nullptr),
       mHWAVBuffer(nullptr) {
   // Create global refcount object to track mSurface usage over
   // gects rendering engine. We can't release it until it's used
@@ -38,16 +38,22 @@ VideoFrameSurface<LIBAV_VER>::VideoFrameSurface(DMABufSurface* aSurface)
 void VideoFrameSurface<LIBAV_VER>::LockVAAPIData(
     AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
     FFmpegLibWrapper* aLib) {
-  FFMPEG_LOG("VideoFrameSurface: VAAPI locking dmabuf surface UID = %d",
-             mSurface->GetUID());
+  MOZ_DIAGNOSTIC_ASSERT(aAVCodecContext->hw_frames_ctx);
   mLib = aLib;
-  mAVHWDeviceContext = aLib->av_buffer_ref(aAVCodecContext->hw_device_ctx);
+  mAVHWFrameContext = aLib->av_buffer_ref(aAVCodecContext->hw_frames_ctx);
   mHWAVBuffer = aLib->av_buffer_ref(aAVFrame->buf[0]);
+  FFMPEG_LOG(
+      "VideoFrameSurface: VAAPI locking dmabuf surface UID = %d "
+      "mAVHWFrameContext %p mHWAVBuffer %p",
+      mSurface->GetUID(), mAVHWFrameContext, mHWAVBuffer);
 }
 
 void VideoFrameSurface<LIBAV_VER>::ReleaseVAAPIData(bool aForFrameRecycle) {
-  FFMPEG_LOG("VideoFrameSurface: VAAPI releasing dmabuf surface UID = %d",
-             mSurface->GetUID());
+  FFMPEG_LOG(
+      "VideoFrameSurface: VAAPI releasing dmabuf surface UID = %d "
+      "aForFrameRecycle %d mLib %p mAVHWFrameContext %p mHWAVBuffer %p",
+      mSurface->GetUID(), aForFrameRecycle, mLib, mAVHWFrameContext,
+      mHWAVBuffer);
 
   // It's possible to unref GPU data while IsUsed() is still set.
   // It can happens when VideoFramePool is deleted while decoder shutdown
@@ -57,7 +63,8 @@ void VideoFrameSurface<LIBAV_VER>::ReleaseVAAPIData(bool aForFrameRecycle) {
   // is closed.
   if (mLib) {
     mLib->av_buffer_unref(&mHWAVBuffer);
-    mLib->av_buffer_unref(&mAVHWDeviceContext);
+    mLib->av_buffer_unref(&mAVHWFrameContext);
+    mLib = nullptr;
   }
 
   // If we want to recycle the frame, make sure it's not used
@@ -106,8 +113,9 @@ VideoFramePool<LIBAV_VER>::GetFreeVideoFrameSurface() {
 
 RefPtr<VideoFrameSurface<LIBAV_VER>>
 VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
-    VADRMPRIMESurfaceDescriptor& aVaDesc, AVCodecContext* aAVCodecContext,
-    AVFrame* aAVFrame, FFmpegLibWrapper* aLib) {
+    VADRMPRIMESurfaceDescriptor& aVaDesc, int aWidth, int aHeight,
+    AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
+    FFmpegLibWrapper* aLib) {
   if (aVaDesc.fourcc != VA_FOURCC_NV12 && aVaDesc.fourcc != VA_FOURCC_YV12 &&
       aVaDesc.fourcc != VA_FOURCC_P010) {
     FFMPEG_LOG("Unsupported VA-API surface format %d", aVaDesc.fourcc);
@@ -119,7 +127,7 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
       GetFreeVideoFrameSurface();
   if (!videoSurface) {
     RefPtr<DMABufSurfaceYUV> surface =
-        DMABufSurfaceYUV::CreateYUVSurface(aVaDesc);
+        DMABufSurfaceYUV::CreateYUVSurface(aVaDesc, aWidth, aHeight);
     if (!surface) {
       return nullptr;
     }
@@ -137,7 +145,7 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
     mDMABufSurfaces.AppendElement(std::move(surf));
   } else {
     RefPtr<DMABufSurfaceYUV> surface = videoSurface->GetDMABufSurface();
-    if (!surface->UpdateYUVData(aVaDesc)) {
+    if (!surface->UpdateYUVData(aVaDesc, aWidth, aHeight)) {
       return nullptr;
     }
     FFMPEG_LOG("Reusing VA-API DMABufSurface UID = %d", surface->GetUID());

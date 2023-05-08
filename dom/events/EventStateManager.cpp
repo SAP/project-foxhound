@@ -12,6 +12,7 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/Hal.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/MiscEvents.h"
@@ -42,6 +43,7 @@
 #include "mozilla/dom/UIEventBinding.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WheelEventBinding.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -185,6 +187,13 @@ UITimerCallback::Notify(nsITimer* aTimer) {
   } else {
     obs->NotifyObservers(nullptr, "user-interaction-active", nullptr);
     EventStateManager::UpdateUserActivityTimer();
+
+    if (XRE_IsParentProcess()) {
+      hal::BatteryInformation batteryInfo;
+      hal::GetCurrentBatteryInformation(&batteryInfo);
+      glean::power_battery::percentage_when_user_active.AccumulateSamples(
+          {uint64_t(batteryInfo.level() * 100)});
+    }
   }
   mPreviousCount = gMouseOrKeyboardEventCounter;
   return NS_OK;
@@ -430,12 +439,14 @@ static bool IsMessageGamepadUserActivity(EventMessage aMessage) {
          aMessage == eGamepadAxisMove;
 }
 
-// We ignore things that shouldn't cause popups, but also things that look
-// like shortcut presses. In some obscure cases these may actually be
-// website input, but any meaningful website will have other input anyway,
-// and we can't very well tell whether shortcut input was supposed to be
-// directed at chrome or the document.
-static bool IsKeyboardEventUserActivity(WidgetEvent* aEvent) {
+// static
+bool EventStateManager::IsKeyboardEventUserActivity(WidgetEvent* aEvent) {
+  // We ignore things that shouldn't cause popups, but also things that look
+  // like shortcut presses. In some obscure cases these may actually be
+  // website input, but any meaningful website will have other input anyway,
+  // and we can't very well tell whether shortcut input was supposed to be
+  // directed at chrome or the document.
+
   WidgetKeyboardEvent* keyEvent = aEvent->AsKeyboardEvent();
   // Access keys should be treated as page interaction.
   if (keyEvent->ModifiersMatchWithAccessKey(AccessKeyType::eContent)) {
@@ -491,7 +502,7 @@ static void OnTypingInteractionEnded() {
 }
 
 static void HandleKeyUpInteraction(WidgetKeyboardEvent* aKeyEvent) {
-  if (IsKeyboardEventUserActivity(aKeyEvent)) {
+  if (EventStateManager::IsKeyboardEventUserActivity(aKeyEvent)) {
     TimeStamp now = TimeStamp::Now();
     if (gTypingEndTime.IsNull()) {
       gTypingEndTime = now;
@@ -2910,17 +2921,17 @@ void EventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
     actualDevPixelScrollAmount.y = 0;
   }
 
-  nsIScrollbarMediator::ScrollSnapMode snapMode =
-      nsIScrollbarMediator::DISABLE_SNAP;
+  ScrollSnapFlags snapFlags = ScrollSnapFlags::Disabled;
   mozilla::ScrollOrigin origin = mozilla::ScrollOrigin::NotSpecified;
   switch (aEvent->mDeltaMode) {
     case WheelEvent_Binding::DOM_DELTA_LINE:
       origin = mozilla::ScrollOrigin::MouseWheel;
-      snapMode = nsIScrollableFrame::ENABLE_SNAP;
+      snapFlags = ScrollSnapFlags::IntendedDirection;
       break;
     case WheelEvent_Binding::DOM_DELTA_PAGE:
       origin = mozilla::ScrollOrigin::Pages;
-      snapMode = nsIScrollableFrame::ENABLE_SNAP;
+      snapFlags = ScrollSnapFlags::IntendedDirection |
+                  ScrollSnapFlags::IntendedEndPosition;
       break;
     case WheelEvent_Binding::DOM_DELTA_PIXEL:
       origin = mozilla::ScrollOrigin::Pixels;
@@ -2982,7 +2993,7 @@ void EventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
   nsIntPoint overflow;
   aScrollableFrame->ScrollBy(actualDevPixelScrollAmount,
                              ScrollUnit::DEVICE_PIXELS, mode, &overflow, origin,
-                             momentum, snapMode);
+                             momentum, snapFlags);
 
   if (!scrollFrameWeak.IsAlive()) {
     // If the scroll causes changing the layout, we can think that the event
@@ -3490,10 +3501,11 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
             // focused frame
             EnsureDocument(mPresContext);
             if (mDocument) {
+              nsCOMPtr<nsPIDOMWindowOuter> outerWindow = mDocument->GetWindow();
 #ifdef XP_MACOSX
               if (!activeContent || !activeContent->IsXULElement())
 #endif
-                fm->ClearFocus(mDocument->GetWindow());
+                fm->ClearFocus(outerWindow);
               // Prevent switch frame if we're already not in the foreground tab
               // and we're in a content process.
               // TODO: If we were inactive frame in this tab, and now in
@@ -3503,7 +3515,7 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
               //       for doing this.  Therefore, we should skip setting focus
               //       to clicked document for now.
               if (XRE_IsParentProcess() || IsInActiveTab(mDocument)) {
-                fm->SetFocusedWindow(mDocument->GetWindow());
+                fm->SetFocusedWindow(outerWindow);
               }
             }
           }
@@ -3957,7 +3969,10 @@ bool EventStateManager::IsTargetCrossProcess(WidgetGUIEvent* aEvent) {
 }
 
 void EventStateManager::NotifyDestroyPresContext(nsPresContext* aPresContext) {
-  IMEStateManager::OnDestroyPresContext(aPresContext);
+  RefPtr<nsPresContext> presContext = aPresContext;
+  if (presContext) {
+    IMEStateManager::OnDestroyPresContext(*presContext);
+  }
   if (mHoverContent) {
     // Bug 70855: Presentation is going away, possibly for a reframe.
     // Reset the hover state so that if we're recreating the presentation,
@@ -3966,7 +3981,7 @@ void EventStateManager::NotifyDestroyPresContext(nsPresContext* aPresContext) {
     SetContentState(nullptr, NS_EVENT_STATE_HOVER);
   }
   mPointersEnterLeaveHelper.Clear();
-  PointerEventHandler::NotifyDestroyPresContext(aPresContext);
+  PointerEventHandler::NotifyDestroyPresContext(presContext);
 }
 
 void EventStateManager::SetPresContext(nsPresContext* aPresContext) {
@@ -4759,6 +4774,9 @@ void EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
     // we've dispatched a synthetic mouse movement, so we can cancel it
     // in the other branch here.
     sSynthCenteringPoint = center;
+    // XXX Once we fix XXX comments in SetPointerLock about this API, we could
+    //     restrict that this API works only in the automation mode or in the
+    //     pointer locked situation.
     aMouseEvent->mWidget->SynthesizeNativeMouseMove(
         center + aMouseEvent->mWidget->WidgetToScreenOffset(), nullptr);
   } else if (aMouseEvent->mRefPoint == sSynthCenteringPoint) {
@@ -4891,6 +4909,9 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // Fire a synthetic mouse move to ensure event state is updated. We first
     // set the mouse to the center of the window, so that the mouse event
     // doesn't report any movement.
+    // XXX Cannot we do synthesize the native mousemove in the parent process
+    //     with calling LockNativePointer below?  Then, we could make this API
+    //     work only in the automation mode.
     sLastRefPoint = GetWindowClientRectCenter(aWidget);
     aWidget->SynthesizeNativeMouseMove(
         sLastRefPoint + aWidget->WidgetToScreenOffset(), nullptr);
@@ -4917,6 +4938,9 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // locking pointer, it has its initial value.
     sSynthCenteringPoint = kInvalidRefPoint;
     if (aWidget) {
+      // XXX Cannot we do synthesize the native mousemove in the parent process
+      //     with calling `UnlockNativePointer` above?  Then, we could make this
+      //     API work only in the automation mode.
       aWidget->SynthesizeNativeMouseMove(
           sPreLockPoint + aWidget->WidgetToScreenOffset(), nullptr);
     }
@@ -5530,12 +5554,6 @@ static Element* GetLabelTarget(nsIContent* aPossibleLabel) {
 }
 
 /* static */
-void EventStateManager::SetFullscreenState(Element* aElement,
-                                           bool aIsFullscreen) {
-  DoStateChange(aElement, NS_EVENT_STATE_FULLSCREEN, aIsFullscreen);
-}
-
-/* static */
 inline void EventStateManager::DoStateChange(Element* aElement,
                                              EventStates aState,
                                              bool aAddState) {
@@ -5812,12 +5830,15 @@ void EventStateManager::ContentRemoved(Document* aDocument,
     element->LeaveLink(element->GetPresContext(Element::eForComposedDoc));
   }
 
-  IMEStateManager::OnRemoveContent(mPresContext, aContent);
+  if (RefPtr<nsPresContext> presContext = mPresContext) {
+    IMEStateManager::OnRemoveContent(*presContext, *aContent);
+  }
 
   // inform the focus manager that the content is being removed. If this
   // content is focused, the focus will be removed without firing events.
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm) fm->ContentRemoved(aDocument, aContent);
+  if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+    fm->ContentRemoved(aDocument, aContent);
+  }
 
   RemoveNodeFromChainIfNeeded(NS_EVENT_STATE_HOVER, aContent, true);
   RemoveNodeFromChainIfNeeded(NS_EVENT_STATE_ACTIVE, aContent, true);

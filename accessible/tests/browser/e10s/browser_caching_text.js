@@ -26,6 +26,7 @@ ef gh</pre>
 <p id="linksStartEnd"><a href="https://example.com/">a</a>b<a href="https://example.com/">c</a></p>
 <p id="linksBreaking">a<a href="https://example.com/">b<br>c</a>d</p>
 <p id="p">a<br role="presentation">b</p>
+<p id="leafThenWrap" style="font-family: monospace; width: 2ch; word-break: break-word;"><span>a</span>bc</p>
   `,
   async function(browser, docAcc) {
     for (const id of ["br", "pre"]) {
@@ -157,6 +158,62 @@ ef gh</pre>
       [1, 2, "b", 1, 2],
     ]);
     testTextAtOffset(p, BOUNDARY_PARAGRAPH, [[0, 2, "ab", 0, 2]]);
+    const leafThenWrap = findAccessibleChildByID(docAcc, "leafThenWrap");
+    testTextAtOffset(leafThenWrap, BOUNDARY_LINE_START, [
+      [0, 1, "ab", 0, 2],
+      [2, 3, "c", 2, 3],
+    ]);
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test line offsets after text mutation.
+ */
+addAccessibleTask(
+  `
+<p id="initBr"><br></p>
+<p id="rewrap" style="font-family: monospace; width: 2ch; word-break: break-word;"><span id="rewrap1">ac</span>def</p>
+  `,
+  async function(browser, docAcc) {
+    const initBr = findAccessibleChildByID(docAcc, "initBr");
+    testTextAtOffset(initBr, BOUNDARY_LINE_START, [
+      [0, 0, "\n", 0, 1],
+      [1, 1, "", 1, 1],
+    ]);
+    info("initBr: Inserting text before br");
+    let reordered = waitForEvent(EVENT_REORDER, initBr);
+    await invokeContentTask(browser, [], () => {
+      const initBrNode = content.document.getElementById("initBr");
+      initBrNode.insertBefore(
+        content.document.createTextNode("a"),
+        initBrNode.firstElementChild
+      );
+    });
+    await reordered;
+    testTextAtOffset(initBr, BOUNDARY_LINE_START, [
+      [0, 1, "a\n", 0, 2],
+      [2, 2, "", 2, 2],
+    ]);
+
+    const rewrap = findAccessibleChildByID(docAcc, "rewrap");
+    testTextAtOffset(rewrap, BOUNDARY_LINE_START, [
+      [0, 1, "ac", 0, 2],
+      [2, 3, "de", 2, 4],
+      [4, 5, "f", 4, 5],
+    ]);
+    info("rewrap: Changing ac to abc");
+    reordered = waitForEvent(EVENT_REORDER, rewrap);
+    await invokeContentTask(browser, [], () => {
+      const rewrap1 = content.document.getElementById("rewrap1");
+      rewrap1.textContent = "abc";
+    });
+    await reordered;
+    testTextAtOffset(rewrap, BOUNDARY_LINE_START, [
+      [0, 1, "ab", 0, 2],
+      [2, 3, "cd", 2, 4],
+      [4, 6, "ef", 4, 6],
+    ]);
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );
@@ -170,14 +227,16 @@ addAccessibleTask(
     const container = findAccessibleChildByID(docAcc, "container", [
       nsIAccessibleHyperText,
     ]);
+    is(container.linkCount, 1, "container linkCount is 1");
     let link = container.getLinkAt(0);
-    queryInterfaces(link, [nsIAccessible]);
+    queryInterfaces(link, [nsIAccessible, nsIAccessibleHyperText]);
     is(getAccessibleDOMNodeID(link), "link", "LinkAt 0 is the link");
     is(container.getLinkIndex(link), 0, "getLinkIndex for link is 0");
     is(link.startIndex, 1, "link's startIndex is 1");
     is(link.endIndex, 2, "link's endIndex is 2");
     is(container.getLinkIndexAtOffset(1), 0, "getLinkIndexAtOffset(1) is 0");
     is(container.getLinkIndexAtOffset(0), -1, "getLinkIndexAtOffset(0) is -1");
+    is(link.linkCount, 0, "link linkCount is 0");
   },
   {
     chrome: true,
@@ -210,6 +269,8 @@ addAccessibleTask(
   }
 );
 
+const boldAttrs = { "font-weight": "700" };
+
 /**
  * Test text attribute methods.
  */
@@ -229,7 +290,6 @@ addAccessibleTask(
       "font-style": "normal",
       "font-weight": "400",
     };
-    const boldAttrs = { "font-weight": "700" };
 
     const plain = findAccessibleChildByID(docAcc, "plain");
     testDefaultTextAttrs(plain, defAttrs, true);
@@ -276,6 +336,103 @@ addAccessibleTask(
     testTextAttrs(fontFamilies, 0, {}, defAttrs, 0, 2, true);
     testTextAttrs(fontFamilies, 2, {}, defAttrs, 2, 6, true);
     testTextAttrs(fontFamilies, 6, {}, defAttrs, 6, 8, true);
+  },
+  {
+    chrome: true,
+    topLevel: isCacheEnabled,
+    iframe: isCacheEnabled,
+    remoteIframe: isCacheEnabled,
+  }
+);
+
+/**
+ * Test spelling errors.
+ */
+addAccessibleTask(
+  `
+<textarea id="textarea" spellcheck="true">test tset tset test</textarea>
+<div contenteditable id="editable" spellcheck="true">plain<span> ts</span>et <b>bold</b></div>
+  `,
+  async function(browser, docAcc) {
+    const misspelledAttrs = { invalid: "spelling" };
+
+    const textarea = findAccessibleChildByID(docAcc, "textarea");
+    info("Focusing textarea");
+    let spellingChanged = waitForEvent(EVENT_TEXT_ATTRIBUTE_CHANGED, textarea);
+    textarea.takeFocus();
+    await spellingChanged;
+    testTextAttrs(textarea, 0, {}, {}, 0, 5, true); // "test "
+    testTextAttrs(textarea, 5, misspelledAttrs, {}, 5, 9, true); // "tset"
+    testTextAttrs(textarea, 9, {}, {}, 9, 10, true); // " "
+    testTextAttrs(textarea, 10, misspelledAttrs, {}, 10, 14, true); // "tset"
+    testTextAttrs(textarea, 14, {}, {}, 14, 19, true); // " test"
+
+    // Test removal of a spelling error.
+    info('textarea: Changing first "tset" to "test"');
+    // setTextRange fires multiple EVENT_TEXT_ATTRIBUTE_CHANGED, so replace by
+    // selecting and typing instead.
+    spellingChanged = waitForEvent(EVENT_TEXT_ATTRIBUTE_CHANGED, textarea);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("textarea").setSelectionRange(5, 9);
+    });
+    EventUtils.sendString("test");
+    // Move the cursor to trigger spell check.
+    EventUtils.synthesizeKey("KEY_ArrowRight");
+    await spellingChanged;
+    testTextAttrs(textarea, 0, {}, {}, 0, 10, true); // "test test "
+    testTextAttrs(textarea, 10, misspelledAttrs, {}, 10, 14, true); // "tset"
+    testTextAttrs(textarea, 14, {}, {}, 14, 19, true); // " test"
+
+    // Test addition of a spelling error.
+    info('textarea: Changing it back to "tset"');
+    spellingChanged = waitForEvent(EVENT_TEXT_ATTRIBUTE_CHANGED, textarea);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("textarea").setSelectionRange(5, 9);
+    });
+    EventUtils.sendString("tset");
+    EventUtils.synthesizeKey("KEY_ArrowRight");
+    await spellingChanged;
+    testTextAttrs(textarea, 0, {}, {}, 0, 5, true); // "test "
+    testTextAttrs(textarea, 5, misspelledAttrs, {}, 5, 9, true); // "tset"
+    testTextAttrs(textarea, 9, {}, {}, 9, 10, true); // " "
+    testTextAttrs(textarea, 10, misspelledAttrs, {}, 10, 14, true); // "tset"
+    testTextAttrs(textarea, 14, {}, {}, 14, 19, true); // " test"
+
+    // Ensure that changing the text without changing any spelling errors
+    // correctly updates offsets.
+    info('textarea: Changing first "test" to "the"');
+    // Spelling errors don't change, so we won't get
+    // EVENT_TEXT_ATTRIBUTE_CHANGED. We change the text, wait for the insertion
+    // and then select a character so we know when the change is done.
+    let inserted = waitForEvent(EVENT_TEXT_INSERTED, textarea);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("textarea").setSelectionRange(0, 4);
+    });
+    EventUtils.sendString("the");
+    await inserted;
+    let selected = waitForEvent(EVENT_TEXT_SELECTION_CHANGED, textarea);
+    EventUtils.synthesizeKey("KEY_ArrowRight", { shiftKey: true });
+    await selected;
+    testTextAttrs(textarea, 0, {}, {}, 0, 4, true); // "the "
+    testTextAttrs(textarea, 4, misspelledAttrs, {}, 4, 8, true); // "tset"
+    testTextAttrs(textarea, 8, {}, {}, 8, 9, true); // " "
+    testTextAttrs(textarea, 9, misspelledAttrs, {}, 9, 13, true); // "tset"
+    testTextAttrs(textarea, 13, {}, {}, 13, 18, true); // " test"
+
+    const editable = findAccessibleChildByID(docAcc, "editable");
+    info("Focusing editable");
+    spellingChanged = waitForEvent(EVENT_TEXT_ATTRIBUTE_CHANGED, editable);
+    editable.takeFocus();
+    await spellingChanged;
+    // Test normal text and spelling errors crossing text nodes.
+    testTextAttrs(editable, 0, {}, {}, 0, 6, true); // "plain "
+    // Ensure we detect the spelling error even though there is a style change
+    // after it.
+    testTextAttrs(editable, 6, misspelledAttrs, {}, 6, 10, true); // "tset"
+    testTextAttrs(editable, 10, {}, {}, 10, 11, true); // " "
+    // Ensure a style change is still detected in the presence of a spelling
+    // error.
+    testTextAttrs(editable, 11, boldAttrs, {}, 11, 15, true); // "bold"
   },
   {
     chrome: true,
@@ -753,6 +910,8 @@ addAccessibleTask(
 </div>
   `,
   async function(browser, docAcc) {
+    queryInterfaces(docAcc, [nsIAccessibleText]);
+
     const textarea = findAccessibleChildByID(docAcc, "textarea", [
       nsIAccessibleText,
     ]);
@@ -762,6 +921,7 @@ addAccessibleTask(
     await caretMoved;
     testSelectionRange(browser, textarea, textarea, 0, textarea, 0);
     is(textarea.selectionCount, 0, "textarea selectionCount is 0");
+    is(docAcc.selectionCount, 0, "document selectionCount is 0");
 
     info("Selecting a in textarea");
     let selChanged = waitForSelectionChange(textarea);
@@ -803,6 +963,7 @@ addAccessibleTask(
     testSelectionRange(browser, editable, p1, 0, p1, 0);
     is(editable.selectionCount, 0, "editable selectionCount is 0");
     is(p1.selectionCount, 0, "p1 selectionCount is 0");
+    is(docAcc.selectionCount, 0, "document selectionCount is 0");
 
     info("Selecting a in editable");
     selChanged = waitForSelectionChange(p1);

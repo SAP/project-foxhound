@@ -105,7 +105,7 @@ async function setup(configuration) {
   const client = RemoteSettings("nimbus-desktop-experiments");
   await client.db.importChanges(
     {},
-    42,
+    Date.now(),
     configuration || [REMOTE_CONFIGURATION_FOO, REMOTE_CONFIGURATION_BAR],
     {
       clear: true,
@@ -207,6 +207,18 @@ add_task(async function test_remote_fetch_and_ready() {
       }
     ),
     "should call setExperimentActive with `bar` feature"
+  );
+
+  // Test Glean experiment API interaction
+  Assert.equal(
+    Services.fog.testGetExperimentData(REMOTE_CONFIGURATION_FOO.slug).branch,
+    REMOTE_CONFIGURATION_FOO.branches[0].slug,
+    "Glean.setExperimentActive called with `foo` feature"
+  );
+  Assert.equal(
+    Services.fog.testGetExperimentData(REMOTE_CONFIGURATION_BAR.slug).branch,
+    REMOTE_CONFIGURATION_BAR.branches[0].slug,
+    "Glean.setExperimentActive called with `bar` feature"
   );
 
   Assert.equal(fooInstance.getVariable("remoteValue"), 42, "Has rollout value");

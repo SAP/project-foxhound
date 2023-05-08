@@ -219,9 +219,9 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   {
     // Handle Interpreter -> Baseline OSR.
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+    MOZ_ASSERT(!regs.has(r11));
     regs.take(JSReturnOperand);
     regs.takeUnchecked(OsrFrameReg);
-    regs.take(r11);
     regs.take(ReturnReg);
 
     const Address slot_numStackValues(r11,
@@ -483,9 +483,7 @@ void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm,
     ScratchRegisterScope scratch(masm);
     masm.ma_and(Imm32(CalleeTokenMask), r1, r6, scratch);
   }
-  masm.ma_ldr(DTRAddr(r6, DtrOffImm(JSFunction::offsetOfFlagsAndArgCount())),
-              r6);
-  masm.ma_lsr(Imm32(JSFunction::ArgCountShift), r6, r6);
+  masm.loadFunctionArgCount(r6, r6);
 
   masm.ma_sub(r6, r8, r2);
 

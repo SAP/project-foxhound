@@ -37,8 +37,7 @@ class nsIGlobalObject;
 #define JSCLASS_DOM_GLOBAL JSCLASS_USERBIT1
 #define JSCLASS_IS_DOMIFACEANDPROTOJSCLASS JSCLASS_USERBIT2
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /**
  * Returns true if code running in the given JSContext is allowed to access
@@ -440,10 +439,6 @@ struct NativePropertyHooks {
   // constructors::id::_ID_Count.
   constructors::ID mConstructorID;
 
-  // The NativePropertyHooks instance for the parent interface (for
-  // ShimInterfaceInfo).
-  const NativePropertyHooks* mProtoHooks;
-
   // The JSClass to use for expandos on our Xrays.  Can be null, in which case
   // Xrays will use a default class of their choice.
   const JSClass* mXrayExpandoClass;
@@ -602,7 +597,6 @@ inline ProtoAndIfaceCache* GetProtoAndIfaceCache(JSObject* global) {
       JS::GetReservedSlot(global, DOM_PROTOTYPE_SLOT).toPrivate());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_DOMJSClass_h */

@@ -25,11 +25,27 @@ already_AddRefed<Promise> TransformerAlgorithms::TransformCallback(
   if (!mTransformCallback) {
     // Step 2.1. Let result be
     // TransformStreamDefaultControllerEnqueue(controller, chunk).
-    // TODO
+    aController.Enqueue(aCx, aChunk, aRv);
 
     // Step 2.2. If result is an abrupt completion, return a promise rejected
     // with result.[[Value]].
-    // TODO
+    if (aRv.MaybeSetPendingException(aCx)) {
+      JS::Rooted<JS::Value> error(aCx);
+      if (!JS_GetPendingException(aCx, &error)) {
+        // Uncatchable exception; we should mark aRv and return.
+        aRv.StealExceptionFromJSContext(aCx);
+        return nullptr;
+      }
+      JS_ClearPendingException(aCx);
+
+      RefPtr<Promise> promise =
+          Promise::Create(aController.GetParentObject(), aRv);
+      if (aRv.Failed()) {
+        return nullptr;
+      }
+      promise->MaybeReject(error);
+      return promise.forget();
+    }
 
     // Step 2.3. Otherwise, return a promise resolved with undefined.
     return Promise::CreateResolvedWithUndefined(aController.GetParentObject(),
@@ -39,7 +55,7 @@ already_AddRefed<Promise> TransformerAlgorithms::TransformCallback(
   // an algorithm which takes an argument chunk and returns the result of
   // invoking transformerDict["transform"] with argument list « chunk,
   // controller » and callback this value transformer.
-  JS::RootedObject thisObj(aCx, mTransformer);
+  JS::Rooted<JSObject*> thisObj(aCx, mTransformer);
   return MOZ_KnownLive(mTransformCallback)
       ->Call(thisObj, aChunk, aController, aRv,
              "TransformStreamDefaultController.[[transformAlgorithm]]",
@@ -59,7 +75,7 @@ already_AddRefed<Promise> TransformerAlgorithms::FlushCallback(
   // Step 5. If transformerDict["flush"] exists, set flushAlgorithm to an
   // algorithm which returns the result of invoking transformerDict["flush"]
   // with argument list « controller » and callback this value transformer.
-  JS::RootedObject thisObj(aCx, mTransformer);
+  JS::Rooted<JSObject*> thisObj(aCx, mTransformer);
   return MOZ_KnownLive(mFlushCallback)
       ->Call(thisObj, aController, aRv,
              "TransformStreamDefaultController.[[flushAlgorithm]]",

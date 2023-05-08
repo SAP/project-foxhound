@@ -14,46 +14,46 @@
 
 #include "js/OffThreadScriptCompilation.h"
 #include "js/SourceText.h"
-#include "js/loader/ScriptLoadRequest.h"
+#include "js/loader/LoadContextBase.h"
+#include "js/loader/ModuleLoadRequest.h"
 
+#include "ScriptLoadContext.h"
 #include "ModuleLoadRequest.h"
 #include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
 #include "nsISupportsPriority.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //////////////////////////////////////////////////////////////
 // ScriptLoadContext
 //////////////////////////////////////////////////////////////
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ScriptLoadContext)
-NS_INTERFACE_MAP_END
-
-NS_IMPL_CYCLE_COLLECTING_ADDREF(ScriptLoadContext)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(ScriptLoadContext)
+NS_INTERFACE_MAP_END_INHERITING(JS::loader::LoadContextBase)
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(ScriptLoadContext)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ScriptLoadContext)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLoadBlockedDocument, mRequest, mElement)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ScriptLoadContext,
+                                                JS::loader::LoadContextBase)
   if (Runnable* runnable = tmp->mRunnable.exchange(nullptr)) {
     runnable->Release();
   }
   tmp->MaybeUnblockOnload();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(ScriptLoadContext)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLoadBlockedDocument, mRequest, mElement)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ScriptLoadContext,
+                                                  JS::loader::LoadContextBase)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLoadBlockedDocument)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(ScriptLoadContext)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_ADDREF_INHERITED(ScriptLoadContext, JS::loader::LoadContextBase)
+NS_IMPL_RELEASE_INHERITED(ScriptLoadContext, JS::loader::LoadContextBase)
 
-ScriptLoadContext::ScriptLoadContext(Element* aElement)
-    : mScriptMode(ScriptMode::eBlocking),
+ScriptLoadContext::ScriptLoadContext()
+    : JS::loader::LoadContextBase(JS::loader::ContextKind::Window),
+      mScriptMode(ScriptMode::eBlocking),
       mScriptFromHead(false),
       mIsInline(true),
       mInDeferList(false),
@@ -67,8 +67,6 @@ ScriptLoadContext::ScriptLoadContext(Element* aElement)
       mRunnable(nullptr),
       mLineNo(1),
       mIsPreload(false),
-      mElement(aElement),
-      mRequest(nullptr),
       mUnreportedPreloadError(NS_OK) {}
 
 ScriptLoadContext::~ScriptLoadContext() {
@@ -127,11 +125,6 @@ void ScriptLoadContext::MaybeCancelOffThreadScript() {
   mOffThreadToken = nullptr;
 }
 
-void ScriptLoadContext::SetRequest(JS::loader::ScriptLoadRequest* aRequest) {
-  MOZ_ASSERT(!mRequest);
-  mRequest = aRequest;
-}
-
 void ScriptLoadContext::SetScriptMode(bool aDeferAttr, bool aAsyncAttr,
                                       bool aLinkPreload) {
   if (aLinkPreload) {
@@ -167,15 +160,11 @@ bool ScriptLoadContext::IsPreload() const {
   if (mRequest->IsModuleRequest() && !mRequest->IsTopLevel()) {
     JS::loader::ModuleLoadRequest* root =
         mRequest->AsModuleRequest()->GetRootModule();
-    return root->GetLoadContext()->IsPreload();
+    return root->GetScriptLoadContext()->IsPreload();
   }
 
   MOZ_ASSERT_IF(mIsPreload, !GetScriptElement());
   return mIsPreload;
-}
-
-nsIGlobalObject* ScriptLoadContext::GetWebExtGlobal() const {
-  return mRequest->mFetchOptions->mWebExtGlobal;
 }
 
 bool ScriptLoadContext::CompileStarted() const {
@@ -184,12 +173,8 @@ bool ScriptLoadContext::CompileStarted() const {
 }
 
 nsIScriptElement* ScriptLoadContext::GetScriptElement() const {
-  if (mRequest->IsModuleRequest() && !mRequest->IsTopLevel()) {
-    JS::loader::ModuleLoadRequest* root =
-        mRequest->AsModuleRequest()->GetRootModule();
-    return root->GetLoadContext()->GetScriptElement();
-  }
-  nsCOMPtr<nsIScriptElement> scriptElement = do_QueryInterface(mElement);
+  nsCOMPtr<nsIScriptElement> scriptElement =
+      do_QueryInterface(mRequest->mFetchOptions->mElement);
   return scriptElement;
 }
 
@@ -197,8 +182,9 @@ void ScriptLoadContext::SetIsLoadRequest(nsIScriptElement* aElement) {
   MOZ_ASSERT(aElement);
   MOZ_ASSERT(!GetScriptElement());
   MOZ_ASSERT(IsPreload());
-  // TODO: How to allow both to access fetch options
-  mElement = do_QueryInterface(aElement);
+  // We are not tracking our own element, and are relying on the one in
+  // FetchOptions.
+  mRequest->mFetchOptions->mElement = do_QueryInterface(aElement);
   mIsPreload = false;
 }
 
@@ -240,5 +226,4 @@ void ScriptLoadContext::GetProfilerLabel(nsACString& aOutString) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

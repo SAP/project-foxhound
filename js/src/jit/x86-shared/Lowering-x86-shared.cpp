@@ -539,14 +539,16 @@ void LIRGeneratorX86Shared::lowerWasmBuiltinTruncateToInt32(
       Assembler::HasSSE3() ? LDefinition::BogusTemp() : tempDouble();
   if (opd->type() == MIRType::Double) {
     define(new (alloc()) LWasmBuiltinTruncateDToInt32(
-               useRegister(opd), useFixed(ins->tls(), InstanceReg), maybeTemp),
+               useRegister(opd), useFixed(ins->instance(), InstanceReg),
+               maybeTemp),
            ins);
     return;
   }
 
-  define(new (alloc()) LWasmBuiltinTruncateFToInt32(
-             useRegister(opd), useFixed(ins->tls(), InstanceReg), maybeTemp),
-         ins);
+  define(
+      new (alloc()) LWasmBuiltinTruncateFToInt32(
+          useRegister(opd), useFixed(ins->instance(), InstanceReg), maybeTemp),
+      ins);
 }
 
 void LIRGeneratorX86Shared::lowerTruncateDToInt32(MTruncateToInt32* ins) {
@@ -842,6 +844,13 @@ void LIRGenerator::visitWasmTernarySimd128(MWasmTernarySimd128* ins) {
       defineReuseInput(lir, ins, LWasmTernarySimd128::V0);
       break;
     }
+    case wasm::SimdOp::I32x4DotI8x16I7x16AddS: {
+      auto* lir = new (alloc()) LWasmTernarySimd128(
+          ins->simdOp(), useRegister(ins->v0()), useRegister(ins->v1()),
+          useRegisterAtStart(ins->v2()));
+      defineReuseInput(lir, ins, LWasmTernarySimd128::V2);
+      break;
+    }
     case wasm::SimdOp::I8x16RelaxedLaneSelect:
     case wasm::SimdOp::I16x8RelaxedLaneSelect:
     case wasm::SimdOp::I32x4RelaxedLaneSelect:
@@ -1109,6 +1118,7 @@ void LIRGenerator::visitWasmBinarySimd128(MWasmBinarySimd128* ins) {
     case wasm::SimdOp::F64x2RelaxedMin:
     case wasm::SimdOp::F64x2RelaxedMax:
     case wasm::SimdOp::I16x8RelaxedQ15MulrS:
+    case wasm::SimdOp::I16x8DotI8x16I7x16S:
     case wasm::SimdOp::MozWHPMADDUBSW:
     case wasm::SimdOp::MozWHPMADDWD:
       if (isThreeOpAllowed()) {
@@ -1286,6 +1296,7 @@ bool MWasmBinarySimd128::specializeForConstantRhs() {
     case wasm::SimdOp::I32x4Ne:
     case wasm::SimdOp::I32x4GtS:
     case wasm::SimdOp::I32x4LeS:
+    case wasm::SimdOp::I64x2Mul:
     case wasm::SimdOp::F32x4Eq:
     case wasm::SimdOp::F32x4Ne:
     case wasm::SimdOp::F32x4Lt:
@@ -1321,19 +1332,29 @@ void LIRGenerator::visitWasmBinarySimd128WithConstant(
   MOZ_ASSERT(lhs->type() == MIRType::Simd128);
   MOZ_ASSERT(ins->type() == MIRType::Simd128);
 
+  // Allocate temp registers
+  LDefinition tempReg = LDefinition::BogusTemp();
+  switch (ins->simdOp()) {
+    case wasm::SimdOp::I64x2Mul:
+      tempReg = tempSimd128();
+      break;
+    default:
+      break;
+  }
+
   if (isThreeOpAllowed()) {
     // The non-destructive versions of instructions will be available
     // when AVX is enabled.
     LAllocation lhsAlloc = useRegisterAtStart(lhs);
-    auto* lir =
-        new (alloc()) LWasmBinarySimd128WithConstant(lhsAlloc, ins->rhs());
+    auto* lir = new (alloc())
+        LWasmBinarySimd128WithConstant(lhsAlloc, ins->rhs(), tempReg);
     define(lir, ins);
   } else {
     // Always beneficial to reuse the lhs register here, see discussion in
     // visitWasmBinarySimd128() and also code in specializeForConstantRhs().
     LAllocation lhsDestAlloc = useRegisterAtStart(lhs);
-    auto* lir =
-        new (alloc()) LWasmBinarySimd128WithConstant(lhsDestAlloc, ins->rhs());
+    auto* lir = new (alloc())
+        LWasmBinarySimd128WithConstant(lhsDestAlloc, ins->rhs(), tempReg);
     defineReuseInput(lir, ins, LWasmBinarySimd128WithConstant::LhsDest);
   }
 #else

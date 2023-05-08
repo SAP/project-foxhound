@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_UnderlyingSourceCallbackHelpers_h
 #define mozilla_dom_UnderlyingSourceCallbackHelpers_h
 
-#include "js/loader/ModuleMapKey.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
@@ -63,7 +62,7 @@ class UnderlyingSourceAlgorithms final : public UnderlyingSourceAlgorithmsBase {
       UnderlyingSourceAlgorithms, UnderlyingSourceAlgorithmsBase)
 
   UnderlyingSourceAlgorithms(nsIGlobalObject* aGlobal,
-                             JS::HandleObject aUnderlyingSource,
+                             JS::Handle<JSObject*> aUnderlyingSource,
                              UnderlyingSource& aUnderlyingSourceDict)
       : mGlobal(aGlobal), mUnderlyingSource(aUnderlyingSource) {
     // Step 6. (implicit Step 2.)

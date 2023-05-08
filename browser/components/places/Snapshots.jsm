@@ -24,6 +24,15 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 /**
+ * @typedef {object} Recommendation
+ *   A snapshot recommendation with an associated score.
+ * @property {Snapshot} snapshot
+ *   The recommended snapshot.
+ * @property {number} score
+ *   The score for this snapshot.
+ */
+
+/**
  * @typedef {object} SnapshotCriteria
  *   A set of tests to check if a set of interactions are a snapshot.
  * @property {string} property
@@ -53,13 +62,46 @@ XPCOMUtils.defineLazyGetter(this, "logConsole", function() {
 /**
  * Snapshots are considered overlapping if interactions took place within snapshot_overlap_limit milleseconds of each other.
  * Default to a half-hour on each end of the interactions.
- *
  */
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "snapshot_overlap_limit",
   "browser.places.interactions.snapshotOverlapLimit",
   1800000 // 1000 * 60 * 30
+);
+
+/**
+ * Interval for the timeOfDay heuristic interval. The heuristic looks for
+ * interactions within these milliseconds from the current time.
+ * This interval is split in half, thus if it's 3pm, with a 1 hour interval, it
+ * looks for snapshots between 2:30pm and 3:30 pm.
+ */
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "snapshot_timeofday_interval_seconds",
+  "browser.places.interactions.snapshotTimeOfDayIntervalSeconds",
+  3600
+);
+/**
+ * Maximum number of past days to look for timeOfDay snapshots.
+ * Returning very old snapshots from the past may not be particularly useful
+ * for the user.
+ */
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "snapshot_timeofday_limit_days",
+  "browser.places.interactions.snapshotTimeOfDayLimitDays",
+  45
+);
+/**
+ * Expected number of interactions with a page during snapshot_timeofday_limit_days
+ * to assign maximum score. Less than these will cause a gradual reduced score.
+ */
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "snapshot_timeofday_expected_interactions",
+  "browser.places.interactions.snapshotTimeOfDayExpectedInteractions",
+  10
 );
 
 const DEFAULT_CRITERIA = [
@@ -148,6 +190,12 @@ const Snapshots = new (class Snapshots {
     if (!PlacesPreviews.enabled) {
       PageThumbs.addExpirationFilter(this);
     }
+
+    this.recommendationSources = {
+      Overlapping: this.#queryOverlapping.bind(this),
+      CommonReferrer: this.#queryCommonReferrer.bind(this),
+      TimeOfDay: this.#queryTimeOfDay.bind(this),
+    };
   }
 
   #notify(topic, urls) {
@@ -396,33 +444,58 @@ const Snapshots = new (class Snapshots {
   }
 
   /**
-   * Deletes a snapshot, creating a tombstone. Note, the caller is expected
-   * to take account of the userPersisted value for a Snapshot when appropriate.
+   * Deletes one or more snapshots.
+   * By default this creates a tombstone rather than removing the entry, so that
+   * heuristics can take into account user removed snapshots.
+   * Note, the caller is expected to take account of the userPersisted value
+   * for a Snapshot when appropriate.
    *
-   * @param {string} url
-   *   The url of the snapshot to delete.
+   * @param {string|Array<string>} urls
+   *   The url of the snapshot to delete, or an Array of urls.
+   * @param {boolean} removeFromStore
+   *   Whether the snapshot should actually be removed rather than tombston-ed.
    */
-  async delete(url) {
-    url = this.stripFragments(url);
-    await PlacesUtils.withConnectionWrapper("Snapshots: delete", async db => {
-      let placeId = (
-        await db.executeCached(
+  async delete(urls, removeFromStore = false) {
+    if (!Array.isArray(urls)) {
+      urls = [urls];
+    }
+    urls = urls.map(this.stripFragments);
+
+    let placeIdsSQLFragment = `
+    SELECT id FROM moz_places
+    WHERE url_hash IN (${PlacesUtils.sqlBindPlaceholders(
+      urls,
+      "hash(",
+      ")"
+    )}) AND url IN (${PlacesUtils.sqlBindPlaceholders(urls)})`;
+    let queryArgs = removeFromStore
+      ? [
+          `DELETE FROM moz_places_metadata_snapshots
+         WHERE place_id IN (${placeIdsSQLFragment})
+         RETURNING place_id`,
+          [...urls, ...urls],
+        ]
+      : [
           `UPDATE moz_places_metadata_snapshots
-           SET removed_at = :removedAt
-           WHERE place_id = (SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url)
-           RETURNING place_id`,
-          { removedAt: Date.now(), url }
-        )
-      )[0].getResultByName("place_id");
+         SET removed_at = ?
+         WHERE place_id IN (${placeIdsSQLFragment})
+         RETURNING place_id`,
+          [Date.now(), ...urls, ...urls],
+        ];
+
+    await PlacesUtils.withConnectionWrapper("Snapshots: delete", async db => {
+      let placeIds = (await db.executeCached(...queryArgs)).map(r =>
+        r.getResultByName("place_id")
+      );
       // Remove orphan page data.
       await db.executeCached(
         `DELETE FROM moz_places_metadata_snapshots_extra
-         WHERE place_id = :placeId`,
-        { placeId }
+         WHERE place_id IN (${PlacesUtils.sqlBindPlaceholders(placeIds)})`,
+        placeIds
       );
     });
 
-    this.#notify("places-snapshots-deleted", [url]);
+    this.#notify("places-snapshots-deleted", urls);
   }
 
   /**
@@ -480,9 +553,18 @@ const Snapshots = new (class Snapshots {
    *   Restrict the snapshots to those with a particular type of page data available.
    * @param {number} [options.group]
    *   Restrict the snapshots to those within a particular group.
+   * @param {boolean} [includeSnapshotsInUserManagedGroups]
+   *   Whether snapshots that are in a user managed group should be included.
+   *   Snapshots that are part of multiple groups are excluded even if only one
+   *   of the groups is user managed.
+   *   This is ignored if a specific .group id is passed. Defaults to true.
    * @param {boolean} [options.includeHiddenInGroup]
    *   Only applies when querying a particular group. Pass true to include
    *   snapshots that are hidden in the group.
+   * @param {boolean} [options.includeUserPersisted]
+   *   Whether to include user persisted snapshots.
+   * @param {number} [options.lastInteractionBefore]
+   *   Restrict to snaphots whose last interaction was before the given time.
    * @param {boolean} [options.sortDescending]
    *   Whether or not to sortDescending. Defaults to true.
    * @param {string} [options.sortBy]
@@ -496,7 +578,10 @@ const Snapshots = new (class Snapshots {
     includeTombstones = false,
     type = undefined,
     group = undefined,
+    includeSnapshotsInUserManagedGroups = true,
     includeHiddenInGroup = false,
+    includeUserPersisted = true,
+    lastInteractionBefore = undefined,
     sortDescending = true,
     sortBy = "last_interaction_at",
   } = {}) {
@@ -511,6 +596,15 @@ const Snapshots = new (class Snapshots {
       clauses.push("removed_at IS NULL");
     }
 
+    if (!includeUserPersisted) {
+      clauses.push("user_persisted = :user_persisted");
+      bindings.user_persisted = this.USER_PERSISTED.NO;
+    }
+    if (lastInteractionBefore) {
+      clauses.push("last_interaction_at < :last_interaction_before");
+      bindings.last_interaction_before = lastInteractionBefore;
+    }
+
     if (type) {
       clauses.push("type = :type");
       bindings.type = type;
@@ -519,12 +613,20 @@ const Snapshots = new (class Snapshots {
     if (group) {
       clauses.push("group_id = :group");
       if (!includeHiddenInGroup) {
-        clauses.push("g.hidden = 0");
+        clauses.push("gs.hidden = 0");
       }
       bindings.group = group;
       joins.push(
-        "LEFT JOIN moz_places_metadata_groups_to_snapshots g USING(place_id)"
+        "LEFT JOIN moz_places_metadata_groups_to_snapshots gs USING(place_id)"
       );
+    } else if (!includeSnapshotsInUserManagedGroups) {
+      // TODO: if we change the way to define user managed groups, we should
+      // update this condition.
+      clauses.push(`NOT EXISTS(
+        SELECT 1 FROM moz_places_metadata_snapshots_groups g
+        JOIN moz_places_metadata_groups_to_snapshots gs ON g.id = gs.group_id
+        WHERE gs.place_id = h.id AND builder == 'user'
+      )`);
     }
 
     if (limit != -1) {
@@ -543,7 +645,7 @@ const Snapshots = new (class Snapshots {
              h.visit_count
       FROM moz_places_metadata_snapshots s
       JOIN moz_places h ON h.id = s.place_id
-      LEFT JOIN moz_places_metadata_snapshots_extra e ON e.place_id = s.place_id
+      LEFT JOIN moz_places_metadata_snapshots_extra e USING(place_id)
       ${joins.join(" ")}
       ${whereStatement}
       GROUP BY s.place_id
@@ -582,20 +684,23 @@ const Snapshots = new (class Snapshots {
   }
 
   /**
-   * Queries snapshots that were browsed within an hour of visiting the given context url
+   * Queries snapshots that were browsed within an hour of visiting the given
+   * context url
    *
-   *   For example, if a user visited Site A two days ago, we would generate a list of snapshots that were visited within an hour of that visit.
-   *   Site A may have also been visited four days ago, we would like to see what websites were browsed then.
+   * For example, if a user visited Site A two days ago, we would generate a
+   * list of snapshots that were visited within an hour of that visit.
+   * Site A may have also been visited four days ago, we would like to see what
+   * websites were browsed then.
    *
-   * @param {string} context_url
-   *   the url that we're collection snapshots whose interactions overlapped
-   * @returns {Snapshot[]}
+   * @param {SelectionContext} selectionContext
+   *   the selection context to inform recommendations
+   * @returns {Recommendation[]}
    *   Returns array of overlapping snapshots in order of descending overlappingVisitScore (Calculated as 1.0 to 0.0, as the overlap gap goes to snapshot_overlap_limit)
    */
-  async queryOverlapping(context_url) {
-    let current_id = await this.queryPlaceIdFromUrl(context_url);
+  async #queryOverlapping(selectionContext) {
+    let current_id = await this.queryPlaceIdFromUrl(selectionContext.url);
     if (current_id == -1) {
-      logConsole.debug(`PlaceId not found for url ${context_url}`);
+      logConsole.debug(`PlaceId not found for url ${selectionContext.url}`);
       return [];
     }
 
@@ -637,26 +742,27 @@ const Snapshots = new (class Snapshots {
 
     if (!rows.length) {
       logConsole.debug("No overlapping snapshots");
-      return [];
     }
 
-    return rows.map(row =>
-      this.#translateRow(row, { includeOverlappingVisitScore: true })
-    );
+    return rows.map(row => ({
+      snapshot: this.#translateRow(row),
+      score: row.getResultByName("overlappingVisitScore"),
+    }));
   }
 
   /**
-   * Queries snapshots which have interactions sharing a common referrer with the context url's interactions
+   * Queries snapshots which have interactions sharing a common referrer with
+   * the context url's interactions
    *
-   * @param {string} context_url
-   *   the url that we're collecting snapshots for
-   * @returns {Snapshot[]}
+   * @param {SelectionContext} selectionContext
+   *   the selection context to inform recommendations
+   * @returns {Recommendation[]}
    *   Returns array of snapshots with the common referrer
    */
-  async queryCommonReferrer(context_url) {
+  async #queryCommonReferrer(selectionContext) {
     let db = await PlacesUtils.promiseDBConnection();
 
-    let context_place_id = await this.queryPlaceIdFromUrl(context_url);
+    let context_place_id = await this.queryPlaceIdFromUrl(selectionContext.url);
     if (context_place_id == -1) {
       return [];
     }
@@ -681,11 +787,121 @@ const Snapshots = new (class Snapshots {
       { context_place_id }
     );
 
-    return rows.map(row => {
-      let snapshot = this.#translateRow(row);
-      snapshot.commonReferrerScore = 1.0;
-      return snapshot;
+    if (!rows.length) {
+      logConsole.debug("No common referrer snapshots");
+    }
+
+    return rows.map(row => ({
+      snapshot: this.#translateRow(row),
+      score: 1.0,
+    }));
+  }
+
+  /**
+   * Queries snapshots that were browsed within an hour of the current time of
+   * day, but on a previous day.
+   *
+   * @param {SelectionContext} selectionContext
+   *   the selection context to inform recommendations
+   * @returns {Recommendation[]}
+   *   Returns array of snapshots with the common referrer
+   */
+  async #queryTimeOfDay(selectionContext) {
+    let db = await PlacesUtils.promiseDBConnection();
+
+    // The query applies the current time to a past date, then calculates the
+    // time bracket starting from there. This should be more robust to DST
+    // changes than using the number of seconds from start of day.
+    let rows = await db.executeCached(
+      `
+      WITH times AS (
+        SELECT time(:context_time_s, 'unixepoch') AS time
+      )
+      SELECT h.id, h.url AS url, IFNULL(s.title, h.title) AS title, s.created_at,
+            removed_at, s.document_type, first_interaction_at, last_interaction_at,
+            user_persisted, description, site_name, preview_image_url, h.visit_count,
+            (SELECT group_concat('[' || e.type || ', ' || e.data || ']')
+             FROM moz_places_metadata_snapshots
+             LEFT JOIN moz_places_metadata_snapshots_extra e USING(place_id)
+             WHERE place_id = h.id) AS page_data,
+            count(*) AS interactions
+      FROM moz_places_metadata_snapshots s
+      JOIN moz_places h ON h.id = s.place_id
+      LEFT JOIN times
+      JOIN moz_places_metadata i USING(place_id)
+      WHERE url_hash <> hash(:context_url)
+        AND i.created_at
+          BETWEEN unixepoch('now', 'utc', 'start of day', '-' || :days_limit || ' days') * 1000
+          AND (:context_time_s - :interval_s / 2) * 1000 /* don't match the current interval */
+        AND i.created_at
+          BETWEEN (unixepoch(date(i.created_at / 1000, 'unixepoch') || " " || time) - :interval_s / 2) * 1000
+              AND (unixepoch(date(i.created_at / 1000, 'unixepoch') || " " || time) + :interval_s / 2) * 1000
+      GROUP BY s.place_id
+    `,
+      {
+        context_url: selectionContext.url,
+        context_time_s: parseInt(selectionContext.time / 1000),
+        interval_s: snapshot_timeofday_interval_seconds,
+        days_limit: snapshot_timeofday_limit_days,
+      }
+    );
+
+    if (!rows.length) {
+      logConsole.debug("No timeOfDay snapshots");
+    }
+
+    let interactionCounts = { min: 1, max: 1 };
+    let entries = rows.map(row => {
+      let interactions = row.getResultByName("interactions");
+      interactionCounts.max = Math.max(interactionCounts.max, interactions);
+      interactionCounts.min = Math.min(interactionCounts.min, interactions);
+      return {
+        snapshot: this.#translateRow(row),
+        interactions,
+      };
     });
+
+    // Add a score to each result.
+    // For small intervals it doesn't make sense to use a bell curve giving
+    // more weight to the exact time, but if we start evaluating much larger
+    // intervals in the future, it may be worth investigating.
+    // For now instead we assign a score based on the number of interactions
+    // with the page during `snapshot_timeofday_limit_days`.
+    entries.forEach(e => {
+      e.score = this.timeOfDayScore(e.interactions, interactionCounts);
+    });
+    return entries;
+  }
+
+  /**
+   * Calculate score for a timeOfDay entry, based on the number of interactions.
+   *
+   * @param {number} interactions
+   *  The number of interactions with the page.
+   * @param {number} min
+   *  The minimum number of interactions during snapshot_timeofday_limit_days.
+   * @param {number} max
+   *  The maximum number of interactions during snapshot_timeofday_limit_days.
+   * @returns {float} Calculated score for the page.
+   * @note This function is useful for testing scores.
+   */
+  timeOfDayScore(interactions, { min, max }) {
+    // Assign score 1.0 to the pages having more than max / 2 interactions,
+    // other pages get a decreasing score between 0.5 and 1.0.
+    let score = 1.0;
+    if (interactions < max / 2) {
+      score = 0.5 * (1 + (interactions - min) / (max - min));
+    }
+    // If the number of interactions is lower than `snapshot_timeofday_expected_interactions`
+    // threshold, apply a penalty to the score.
+    if (interactions < snapshot_timeofday_expected_interactions) {
+      score *=
+        0.5 *
+        (1 +
+          (interactions - 1) / (snapshot_timeofday_expected_interactions - 1));
+    }
+    // Round to 2 decimal positions.
+    return Math.round(score * 1e2) / 1e2;
   }
 
   /**
@@ -693,12 +909,9 @@ const Snapshots = new (class Snapshots {
    *
    * @param {object} row
    *   The database row to translate.
-   * @param {object} [options]
-   * @param {boolean} [options.includeOverlappingVisitScore]
-   *   Whether to retrieve the overlappingVisitScore field
    * @returns {Snapshot}
    */
-  #translateRow(row, { includeOverlappingVisitScore = false } = {}) {
+  #translateRow(row) {
     // Maps data type to data.
     let pageData;
     let pageDataStr = row.getResultByName("page_data");
@@ -709,11 +922,6 @@ const Snapshots = new (class Snapshots {
       } catch (e) {
         logConsole.error(e);
       }
-    }
-
-    let overlappingVisitScore = 0;
-    if (includeOverlappingVisitScore) {
-      overlappingVisitScore = row.getResultByName("overlappingVisitScore");
     }
 
     let snapshot = {
@@ -732,7 +940,6 @@ const Snapshots = new (class Snapshots {
       ),
       documentType: row.getResultByName("document_type"),
       userPersisted: row.getResultByName("user_persisted"),
-      overlappingVisitScore,
       pageData: pageData ?? new Map(),
       visitCount: row.getResultByName("visit_count"),
     };

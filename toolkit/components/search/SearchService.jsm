@@ -281,6 +281,9 @@ SearchService.prototype = {
     } else {
       this._initObservers.reject(this._initRV);
     }
+
+    this._recordTelemetryData();
+
     Services.obs.notifyObservers(
       null,
       SearchUtils.TOPIC_SEARCH_SERVICE,
@@ -561,6 +564,7 @@ SearchService.prototype = {
     // config. These values will be compared after engines are loaded.
     let prevMetaData = { ...settings?.metaData };
     let prevCurrentEngine = prevMetaData.current;
+    let prevAppDefaultEngine = prevMetaData?.appDefaultEngine;
 
     logConsole.debug("_loadEngines: start");
     let { engines, privateDefault } = await this._fetchEngineSelectorEngines();
@@ -595,26 +599,85 @@ SearchService.prototype = {
 
     logConsole.debug("_loadEngines: done");
 
-    // If the defaultEngine has changed and the user's search settings are the
-    // same, notify user their engine has been removed.
     let newCurrentEngine = this._getEngineDefault(false)?.name;
+    this._settings.setAttribute(
+      "appDefaultEngine",
+      this.originalDefaultEngine?.name
+    );
 
     if (
-      prevCurrentEngine &&
-      newCurrentEngine &&
-      newCurrentEngine !== prevCurrentEngine &&
-      prevMetaData &&
-      settings.metaData &&
-      !this._hasUserMetaDataChanged(prevMetaData) &&
-      Services.prefs.getBoolPref("browser.search.removeEngineInfobar.enabled")
+      this._shouldDisplayRemovalOfEngineNotificationBox(
+        settings,
+        prevMetaData,
+        newCurrentEngine,
+        prevCurrentEngine,
+        prevAppDefaultEngine
+      )
     ) {
       this._showRemovalOfSearchEngineNotificationBox(
-        prevCurrentEngine,
+        prevCurrentEngine || prevAppDefaultEngine,
         newCurrentEngine
       );
     }
   },
+  /**
+   * Helper function to determine if the removal of search engine notification
+   * box should be displayed.
+   *
+   * @param { object } settings
+   *   The user's search engine settings.
+   * @param { object } prevMetaData
+   *   The user's previous search settings metadata.
+   * @param { object } newCurrentEngine
+   *   The user's new current default engine.
+   * @param { object } prevCurrentEngine
+   *   The user's previous default engine.
+   * @param { object } prevAppDefaultEngine
+   *   The user's previous app default engine.
+   * @returns { boolean }
+   *   Return true if the previous default engine has been removed and
+   *   notification box should be displayed.
+   */
+  _shouldDisplayRemovalOfEngineNotificationBox(
+    settings,
+    prevMetaData,
+    newCurrentEngine,
+    prevCurrentEngine,
+    prevAppDefaultEngine
+  ) {
+    if (
+      !Services.prefs.getBoolPref("browser.search.removeEngineInfobar.enabled")
+    ) {
+      return false;
+    }
 
+    // If for some reason we were unable to install any engines and hence no
+    // default engine, do not display the notification box
+    if (!newCurrentEngine) {
+      return false;
+    }
+
+    // If the user's previous engine is different than the new current engine,
+    // or if the user was using the app default engine and the app default
+    // engine is different than the new current engine, we check if the user's
+    // settings metadata has been upddated.
+    if (
+      (prevCurrentEngine && prevCurrentEngine !== newCurrentEngine) ||
+      (!prevCurrentEngine &&
+        prevAppDefaultEngine &&
+        prevAppDefaultEngine !== newCurrentEngine)
+    ) {
+      // Check settings metadata to detect an update to locale. Sometimes when
+      // the user changes their locale it causes a change in engines.
+      // If there is no update to settings metadata then the engine change was
+      // caused by an update to config rather than a user changing their locale.
+      if (!this._didSettingsMetaDataUpdate(prevMetaData)) {
+        return true;
+      }
+    }
+
+    return false;
+  },
   /**
    * Loads engines as specified by the configuration. We only expect
    * configured engines here, user engines should not be listed.
@@ -840,7 +903,7 @@ SearchService.prototype = {
       if (
         prevMetaData &&
         settings.metaData &&
-        !this._hasUserMetaDataChanged(prevMetaData) &&
+        !this._didSettingsMetaDataUpdate(prevMetaData) &&
         Services.prefs.getBoolPref("browser.search.removeEngineInfobar.enabled")
       ) {
         this._showRemovalOfSearchEngineNotificationBox(
@@ -902,6 +965,13 @@ SearchService.prototype = {
       }
       SearchUtils.notifyAction(engine, SearchUtils.MODIFIED_TYPE.REMOVED);
     }
+
+    // Save app default engine to the user's settings metaData incase it has
+    // been updated
+    this._settings.setAttribute(
+      "appDefaultEngine",
+      this.originalDefaultEngine?.name
+    );
 
     this._dontSetUseSavedOrder = false;
     // Clear out the sorted engines settings, so that we re-sort it if necessary.
@@ -2320,6 +2390,12 @@ SearchService.prototype = {
       newName
     );
 
+    // Only do this if we're initialized though - this function can get called
+    // during initalization.
+    if (this._initialized) {
+      this._recordTelemetryData();
+    }
+
     SearchUtils.notifyAction(
       this[currentEngine],
       SearchUtils.MODIFIED_TYPE[privateMode ? "DEFAULT_PRIVATE" : "DEFAULT"]
@@ -2392,10 +2468,12 @@ SearchService.prototype = {
         this.defaultPrivateEngine,
         SearchUtils.MODIFIED_TYPE.DEFAULT_PRIVATE
       );
+      // Also update the telemetry data.
+      this._recordTelemetryData();
     }
   },
 
-  async _getEngineInfo(engine) {
+  _getEngineInfo(engine) {
     if (!engine) {
       // The defaultEngine getter will throw if there's no engine at all,
       // which shouldn't happen unless an add-on or a test deleted all of them.
@@ -2468,8 +2546,8 @@ SearchService.prototype = {
     return [engine.telemetryId, engineData];
   },
 
-  async getDefaultEngineInfo() {
-    let [telemetryId, defaultSearchEngineData] = await this._getEngineInfo(
+  getDefaultEngineInfo() {
+    let [telemetryId, defaultSearchEngineData] = this._getEngineInfo(
       this.defaultEngine
     );
     const result = {
@@ -2481,12 +2559,56 @@ SearchService.prototype = {
       let [
         privateTelemetryId,
         defaultPrivateSearchEngineData,
-      ] = await this._getEngineInfo(this.defaultPrivateEngine);
+      ] = this._getEngineInfo(this.defaultPrivateEngine);
       result.defaultPrivateSearchEngine = privateTelemetryId;
       result.defaultPrivateSearchEngineData = defaultPrivateSearchEngineData;
     }
 
     return result;
+  },
+
+  /**
+   * Records the user's current default engine (normal and private) data to
+   * telemetry.
+   */
+  _recordTelemetryData() {
+    let info = this.getDefaultEngineInfo();
+
+    Glean.searchEngineDefault.engineId.set(info.defaultSearchEngine);
+    Glean.searchEngineDefault.displayName.set(
+      info.defaultSearchEngineData.name
+    );
+    Glean.searchEngineDefault.loadPath.set(
+      info.defaultSearchEngineData.loadPath
+    );
+    Glean.searchEngineDefault.submissionUrl.set(
+      info.defaultSearchEngineData.submissionURL
+    );
+    Glean.searchEngineDefault.verified.set(info.defaultSearchEngineData.origin);
+
+    Glean.searchEnginePrivate.engineId.set(
+      info.defaultPrivateSearchEngine ?? ""
+    );
+
+    if (info.defaultPrivateSearchEngineData) {
+      Glean.searchEnginePrivate.displayName.set(
+        info.defaultPrivateSearchEngineData.name
+      );
+      Glean.searchEnginePrivate.loadPath.set(
+        info.defaultPrivateSearchEngineData.loadPath
+      );
+      Glean.searchEnginePrivate.submissionUrl.set(
+        info.defaultPrivateSearchEngineData.submissionURL
+      );
+      Glean.searchEnginePrivate.verified.set(
+        info.defaultPrivateSearchEngineData.origin
+      );
+    } else {
+      Glean.searchEnginePrivate.displayName.set("");
+      Glean.searchEnginePrivate.loadPath.set("");
+      Glean.searchEnginePrivate.submissionUrl.set("");
+      Glean.searchEnginePrivate.verified.set("");
+    }
   },
 
   /**
@@ -2875,7 +2997,7 @@ SearchService.prototype = {
    *    Returns true if metaData has different property values than
    *    the cached _metaData.
    */
-  _hasUserMetaDataChanged(metaData) {
+  _didSettingsMetaDataUpdate(metaData) {
     let metaDataProperties = [
       "locale",
       "region",

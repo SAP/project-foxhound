@@ -48,7 +48,9 @@ namespace mozilla::dom {
 // DOM module loader
 //////////////////////////////////////////////////////////////
 
-ModuleLoader::ModuleLoader(ScriptLoader* aLoader) : ModuleLoaderBase(aLoader) {}
+ModuleLoader::ModuleLoader(ScriptLoader* aLoader,
+                           nsIGlobalObject* aGlobalObject, Kind aKind)
+    : ModuleLoaderBase(aLoader, aGlobalObject), mKind(aKind) {}
 
 ScriptLoader* ModuleLoader::GetScriptLoader() {
   return static_cast<ScriptLoader*>(mLoader.get());
@@ -111,18 +113,30 @@ nsresult ModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
   nsresult rv = GetScriptLoader()->StartLoadInternal(aRequest, securityFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // https://wicg.github.io/import-maps/#document-acquiring-import-maps
+  //
+  // An import map is accepted if and only if it is added (i.e., its
+  // corresponding script element is added) before the first module load is
+  // started, even if the loading of the import map file doesn’t finish before
+  // the first module load is started.
+  if (!aRequest->GetScriptLoadContext()->IsPreload()) {
+    LOG(("ScriptLoadRequest (%p): SetAcquiringImportMaps false", aRequest));
+    SetAcquiringImportMaps(false);
+  }
+
   LOG(("ScriptLoadRequest (%p): Start fetching module", aRequest));
 
   return NS_OK;
 }
 
-void ModuleLoader::ProcessLoadedModuleTree(ModuleLoadRequest* aRequest) {
+void ModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->IsReadyToRun());
 
   if (aRequest->IsTopLevel()) {
     if (aRequest->IsDynamicImport() ||
-        (aRequest->GetLoadContext()->mIsInline &&
-         aRequest->GetLoadContext()->GetParserCreated() == NOT_FROM_PARSER)) {
+        (aRequest->GetScriptLoadContext()->mIsInline &&
+         aRequest->GetScriptLoadContext()->GetParserCreated() ==
+             NOT_FROM_PARSER)) {
       GetScriptLoader()->RunScriptWhenSafe(aRequest);
     } else {
       GetScriptLoader()->MaybeMoveToLoadedList(aRequest);
@@ -130,35 +144,37 @@ void ModuleLoader::ProcessLoadedModuleTree(ModuleLoadRequest* aRequest) {
     }
   }
 
-  aRequest->GetLoadContext()->MaybeUnblockOnload();
+  aRequest->GetScriptLoadContext()->MaybeUnblockOnload();
 }
 
-nsresult ModuleLoader::CompileOrFinishModuleScript(
+nsresult ModuleLoader::CompileFetchedModule(
     JSContext* aCx, JS::Handle<JSObject*> aGlobal, JS::CompileOptions& aOptions,
-    ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModule) {
-  if (aRequest->GetLoadContext()->mWasCompiledOMT) {
+    ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleOut) {
+  if (aRequest->GetScriptLoadContext()->mWasCompiledOMT) {
     JS::Rooted<JS::InstantiationStorage> storage(aCx);
 
     RefPtr<JS::Stencil> stencil;
     if (aRequest->IsTextSource()) {
       stencil = JS::FinishCompileModuleToStencilOffThread(
-          aCx, aRequest->GetLoadContext()->mOffThreadToken, storage.address());
+          aCx, aRequest->GetScriptLoadContext()->mOffThreadToken,
+          storage.address());
     } else {
       MOZ_ASSERT(aRequest->IsBytecode());
       stencil = JS::FinishDecodeStencilOffThread(
-          aCx, aRequest->GetLoadContext()->mOffThreadToken, storage.address());
+          aCx, aRequest->GetScriptLoadContext()->mOffThreadToken,
+          storage.address());
     }
 
-    aRequest->GetLoadContext()->mOffThreadToken = nullptr;
+    aRequest->GetScriptLoadContext()->mOffThreadToken = nullptr;
 
     if (!stencil) {
       return NS_ERROR_FAILURE;
     }
 
     JS::InstantiateOptions instantiateOptions(aOptions);
-    aModule.set(JS::InstantiateModuleStencil(aCx, instantiateOptions, stencil,
-                                             storage.address()));
-    if (!aModule) {
+    aModuleOut.set(JS::InstantiateModuleStencil(aCx, instantiateOptions,
+                                                stencil, storage.address()));
+    if (!aModuleOut) {
       return NS_ERROR_FAILURE;
     }
 
@@ -182,11 +198,10 @@ nsresult ModuleLoader::CompileOrFinishModuleScript(
     nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    stencil = maybeSource.constructed<SourceText<char16_t>>()
-                  ? JS::CompileModuleScriptToStencil(
-                        aCx, aOptions, maybeSource.ref<SourceText<char16_t>>())
-                  : JS::CompileModuleScriptToStencil(
-                        aCx, aOptions, maybeSource.ref<SourceText<Utf8Unit>>());
+    auto compile = [&](auto& source) {
+      return JS::CompileModuleScriptToStencil(aCx, aOptions, source);
+    };
+    stencil = maybeSource.mapNonEmpty(compile);
   } else {
     MOZ_ASSERT(aRequest->IsBytecode());
     JS::DecodeOptions decodeOptions(aOptions);
@@ -210,8 +225,9 @@ nsresult ModuleLoader::CompileOrFinishModuleScript(
   }
 
   JS::InstantiateOptions instantiateOptions(aOptions);
-  aModule.set(JS::InstantiateModuleStencil(aCx, instantiateOptions, stencil));
-  if (!aModule) {
+  aModuleOut.set(
+      JS::InstantiateModuleStencil(aCx, instantiateOptions, stencil));
+  if (!aModuleOut) {
     return NS_ERROR_FAILURE;
   }
 
@@ -240,12 +256,11 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateTopLevel(
 
 already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateStaticImport(
     nsIURI* aURI, ModuleLoadRequest* aParent) {
-  RefPtr<ScriptLoadContext> newContext =
-      new ScriptLoadContext(aParent->GetLoadContext()->mElement);
+  RefPtr<ScriptLoadContext> newContext = new ScriptLoadContext();
   newContext->mIsInline = false;
   // Propagated Parent values. TODO: allow child modules to use root module's
   // script mode.
-  newContext->mScriptMode = aParent->GetLoadContext()->mScriptMode;
+  newContext->mScriptMode = aParent->GetScriptLoadContext()->mScriptMode;
 
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
       aURI, aParent->mFetchOptions, SRIMetadata(), aParent->mURI, newContext,
@@ -263,15 +278,13 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
   MOZ_ASSERT(aSpecifier);
   MOZ_ASSERT(aPromise);
 
-  RefPtr<ScriptFetchOptions> options;
+  RefPtr<ScriptFetchOptions> options = nullptr;
   nsIURI* baseURL = nullptr;
-  RefPtr<ScriptLoadContext> context;
+  RefPtr<ScriptLoadContext> context = new ScriptLoadContext();
 
   if (aMaybeActiveScript) {
     options = aMaybeActiveScript->GetFetchOptions();
     baseURL = aMaybeActiveScript->BaseURL();
-    nsCOMPtr<Element> element = aMaybeActiveScript->GetScriptElement();
-    context = new ScriptLoadContext(element);
   } else {
     // We don't have a referencing script so fall back on using
     // options from the document. This can happen when the user
@@ -279,24 +292,14 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
     // there.
     Document* document = GetScriptLoader()->GetDocument();
 
-    // Use the document's principal for all loads, except WebExtension
-    // content-scripts.
-    // Only remember the global for content-scripts as well.
-    nsCOMPtr<nsIPrincipal> principal = nsContentUtils::SubjectPrincipal(aCx);
-    nsCOMPtr<nsIGlobalObject> global = xpc::CurrentNativeGlobal(aCx);
-    if (!BasePrincipal::Cast(principal)->ContentScriptAddonPolicy()) {
-      principal = document->NodePrincipal();
-      MOZ_ASSERT(global);
-      global = nullptr;  // Null global is the usual case for most loads.
-    } else {
-      MOZ_ASSERT(
-          xpc::IsWebExtensionContentScriptSandbox(global->GetGlobalJSObject()));
-    }
+    nsCOMPtr<nsIPrincipal> principal = GetGlobalObject()->PrincipalOrNull();
+    MOZ_ASSERT_IF(GetKind() == WebExtension,
+                  BasePrincipal::Cast(principal)->ContentScriptAddonPolicy());
+    MOZ_ASSERT_IF(GetKind() == Normal, principal == document->NodePrincipal());
 
     options = new ScriptFetchOptions(
-        mozilla::CORS_NONE, document->GetReferrerPolicy(), principal, global);
+        mozilla::CORS_NONE, document->GetReferrerPolicy(), principal, nullptr);
     baseURL = document->GetDocBaseURI();
-    context = new ScriptLoadContext(nullptr);
   }
 
   context->mIsInline = false;

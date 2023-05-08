@@ -49,14 +49,9 @@ body[lwt-newtab-brighttext] {
 
 :root[dialogroot] {
   background-color: transparent;
-  min-width: 504px;
-  overflow: hidden;
 }
 :root[dialogroot] body {
   padding: 0;
-}
-:root[dialogroot] .onboardingContainer {
-  overflow: visible;
 }
 :root[dialogroot] .onboardingContainer:dir(rtl) {
   transform: unset;
@@ -67,14 +62,14 @@ body[lwt-newtab-brighttext] {
 :root[dialogroot] .onboardingContainer .screen:dir(rtl) {
   transform: unset;
 }
-:root[dialogroot] .onboardingContainer .screen.with-noodles {
-  min-width: 610px;
+
+.welcome-container .onboardingContainer {
+  min-width: 700px;
   min-height: 610px;
 }
 
 .onboardingContainer {
   text-align: center;
-  overflow-x: auto;
   height: 100vh;
   --transition: 0.6s opacity, 0.6s scale, 0.6s rotate, 0.6s translate;
 }
@@ -186,6 +181,16 @@ body[lwt-newtab-brighttext] {
 .onboardingContainer .screen:dir(rtl) {
   transform: rotateY(180deg);
 }
+.onboardingContainer .screen[pos=center] {
+  min-width: 504px;
+}
+.onboardingContainer .screen[pos=center].with-noodles {
+  min-width: 610px;
+  min-height: 610px;
+}
+.onboardingContainer .screen[pos=center].with-noodles .section-main {
+  height: 504px;
+}
 .onboardingContainer .brand-logo {
   margin-block: 60px 10px;
   transition: var(--transition);
@@ -218,10 +223,10 @@ body[lwt-newtab-brighttext] {
 .onboardingContainer .welcome-text h1,
 .onboardingContainer .welcome-text h2 {
   color: var(--in-content-page-color);
+  line-height: 1.5;
 }
 .onboardingContainer .welcome-text h1 {
   font-size: 24px;
-  line-height: 1.5;
   font-weight: 600;
   margin: 0 6px;
   letter-spacing: -0.02em;
@@ -231,25 +236,17 @@ body[lwt-newtab-brighttext] {
   font-size: 16px;
   font-weight: normal;
   margin: 10px 6px 0;
-  line-height: 24px;
   max-width: 750px;
   letter-spacing: -0.01em;
 }
-.onboardingContainer .welcome-text.larger h1 {
-  font-size: 36px;
-}
-.onboardingContainer .welcome-text.slim h1 {
-  font-weight: 276;
-}
 .onboardingContainer .welcome-text.fancy h1 {
   background-image: linear-gradient(90deg, #9059FF, #FF4AA2, #FF8C00, #FF4AA2, #9059FF);
-  background-size: 400% auto;
   background-clip: text;
-  animation: shine 50s linear infinite;
+  background-size: 200%;
 }
 @media (prefers-contrast: no-preference) {
   .onboardingContainer .welcome-text.fancy h1 {
-    -webkit-text-fill-color: transparent;
+    color: transparent;
   }
 }
 @media (prefers-color-scheme: dark) {
@@ -257,9 +254,13 @@ body[lwt-newtab-brighttext] {
     background-image: linear-gradient(90deg, #C688FF, #FF84C0, #FFBD4F, #FF84C0, #C688FF);
   }
 }
+.onboardingContainer .welcome-text.shine h1 {
+  animation: shine 50s linear infinite;
+  background-size: 400%;
+}
 @keyframes shine {
   to {
-    background-position: 400% center;
+    background-position: 400%;
   }
 }
 .onboardingContainer .screen.light-text .welcome-text.fancy h1 {
@@ -678,6 +679,7 @@ body[lwt-newtab-brighttext] {
   background-size: contain;
   background-position: center;
   box-shadow: none;
+  border: 0;
 }
 .onboardingContainer .mobile-download-buttons li:not(:first-child) {
   margin-inline: 5px 0;
@@ -719,7 +721,7 @@ body[lwt-newtab-brighttext] {
 }
 .onboardingContainer .secondary-cta.top {
   justify-content: end;
-  padding-inline-end: 30px;
+  padding-inline-end: min(150px, 500px - 70vh);
   padding-top: 4px;
   position: absolute;
   top: 10px;
@@ -730,18 +732,7 @@ body[lwt-newtab-brighttext] {
   color: #FFF;
 }
 .onboardingContainer .secondary-cta.top button:hover {
-  background-color: #5B5B66;
   color: #E0E0E6;
-}
-@media (max-height: 570px) {
-  .onboardingContainer .secondary-cta.top button {
-    color: var(--in-content-link-color);
-  }
-  .onboardingContainer .secondary-cta.top button:hover {
-    background-color: #5B5B66;
-    color: var(--in-content-link-color-hover);
-    text-decoration: underline;
-  }
 }
 .onboardingContainer .secondary-cta span {
   color: var(--grey-subtitle-1);
@@ -903,6 +894,7 @@ body[lwt-newtab-brighttext] {
   width: 350px;
   bottom: 0;
   inset-inline-end: 30px;
+  overflow: visible;
   transition: var(--transition);
 }
 .onboardingContainer [pos=corner] .section-main .brand-logo {
@@ -1124,7 +1116,4 @@ body[lwt-newtab-brighttext] {
   opacity: 0;
   translate: 0 calc(2 * var(--translate));
   transition-delay: 0.4s;
-}
-.onboardingContainer .screen.with-noodles:not(.corner) .section-main {
-  height: 504px;
 }

@@ -286,11 +286,8 @@ bool IonSetPropertyIC::update(JSContext* cx, HandleScript outerScript,
       InitGlobalLexicalOperation(cx, &cx->global()->lexicalEnvironment(),
                                  script, pc, rhs);
     } else if (IsPropertyInitOp(JSOp(*pc))) {
-      // This might be a JSOp::InitElem op with a constant string id. We
-      // can't call InitPropertyOperation here as that function is
-      // specialized for JSOp::Init*Prop (it does not support arbitrary
-      // objects that might show up here).
-      if (!InitElemOperation(cx, pc, obj, idVal, rhs)) {
+      RootedPropertyName name(cx, idVal.toString()->asAtom().asPropertyName());
+      if (!InitPropertyOperation(cx, pc, obj, name, rhs)) {
         return false;
       }
     } else {
@@ -456,7 +453,7 @@ bool IonInstanceOfIC::update(JSContext* cx, HandleScript outerScript,
 
   TryAttachIonStub<InstanceOfIRGenerator>(cx, ic, ionScript, lhs, rhs);
 
-  return HasInstance(cx, rhs, lhs, res);
+  return InstanceofOperator(cx, rhs, lhs, res);
 }
 
 /*  static */

@@ -97,13 +97,10 @@ class nsPrintSettings : public nsIPrintSettings {
   bool mPrintBGColors = false;
   bool mPrintBGImages = false;
 
-  bool mIsCancelled = false;
-  bool mSaveOnCancel = true;
   bool mPrintSilent = false;
   bool mShrinkToFit = true;
   bool mShowMarginGuides = false;
   bool mHonorPageRuleMargins = true;
-  bool mIsPrintSelectionRBEnabled = false;
   bool mPrintSelectionOnly = false;
 
   int32_t mPrintPageDelay = 50;  // XXX Do we really want this?

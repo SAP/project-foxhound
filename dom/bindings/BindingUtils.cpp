@@ -199,8 +199,9 @@ static bool ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
   const ErrNum errorNumber = MSG_METHOD_THIS_DOES_NOT_IMPLEMENT_INTERFACE;
   MOZ_RELEASE_ASSERT(GetErrorArgCount(errorNumber) == 2);
   JS_ReportErrorNumberUC(aCx, GetErrorMessage, nullptr,
-                         static_cast<unsigned>(errorNumber), funcNameStr.get(),
-                         ifaceName.get());
+                         static_cast<unsigned>(errorNumber),
+                         static_cast<const char16_t*>(funcNameStr.get()),
+                         static_cast<const char16_t*>(ifaceName.get()));
   return false;
 }
 
@@ -2433,7 +2434,10 @@ static bool CallOrdinaryHasInstance(JSContext* cx, JS::CallArgs& args) {
   return true;
 }
 
-bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
+using CheckInstanceFallback = bool (*)(JSContext* cx, JS::CallArgs& args);
+
+static bool InterfaceCheckInstance(JSContext* cx, unsigned argc, JS::Value* vp,
+                                   CheckInstanceFallback fallback) {
   JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
   // If the thing we were passed is not an object, return false like
   // OrdinaryHasInstance does.
@@ -2450,31 +2454,31 @@ bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
   }
 
   // If "this" doesn't have a DOMIfaceAndProtoJSClass, it's not a DOM
-  // constructor, so just fall back to OrdinaryHasInstance.  But note that we
-  // should CheckedUnwrapStatic here, because otherwise we won't get the right
-  // answers.  The static version is OK, because we're looking for DOM
-  // constructors, which are not cross-origin objects.
+  // constructor, so just fall back.  But note that we should
+  // CheckedUnwrapStatic here, because otherwise we won't get the right answers.
+  // The static version is OK, because we're looking for DOM constructors, which
+  // are not cross-origin objects.
   JS::Rooted<JSObject*> thisObj(
       cx, js::CheckedUnwrapStatic(&args.thisv().toObject()));
   if (!thisObj) {
     // Just fall back on the normal thing, in case it still happens to work.
-    return CallOrdinaryHasInstance(cx, args);
+    return fallback(cx, args);
   }
 
   const JSClass* thisClass = JS::GetClass(thisObj);
 
   if (!IsDOMIfaceAndProtoClass(thisClass)) {
-    return CallOrdinaryHasInstance(cx, args);
+    return fallback(cx, args);
   }
 
   const DOMIfaceAndProtoJSClass* clasp =
       DOMIfaceAndProtoJSClass::FromJSClass(thisClass);
 
   // If "this" isn't a DOM constructor or is a constructor for an interface
-  // without a prototype, just fall back to OrdinaryHasInstance.
+  // without a prototype, just fall back.
   if (clasp->mType != eInterface ||
       clasp->mPrototypeID == prototypes::id::_ID_Count) {
-    return CallOrdinaryHasInstance(cx, args);
+    return fallback(cx, args);
   }
 
   JS::Rooted<JSObject*> instance(cx, &args[0].toObject());
@@ -2492,7 +2496,14 @@ bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
     return true;
   }
 
-  return CallOrdinaryHasInstance(cx, args);
+  return fallback(cx, args);
+}
+
+bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
+  return InterfaceCheckInstance(cx, argc, vp,
+                                [](JSContext* cx, JS::CallArgs& args) {
+                                  return CallOrdinaryHasInstance(cx, args);
+                                });
 }
 
 bool InterfaceHasInstance(JSContext* cx, int prototypeID, int depth,
@@ -2508,54 +2519,11 @@ bool InterfaceHasInstance(JSContext* cx, int prototypeID, int depth,
 }
 
 bool InterfaceIsInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
-  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
-
-  // If the thing we were passed is not an object, return false.
-  if (!args.get(0).isObject()) {
-    args.rval().setBoolean(false);
-    return true;
-  }
-
-  // If "this" isn't a DOM constructor or is a constructor for an interface
-  // without a prototype, return false.
-  if (!args.thisv().isObject()) {
-    args.rval().setBoolean(false);
-    return true;
-  }
-
-  // CheckedUnwrapStatic is fine, since we're just interested in finding out
-  // whether this is a DOM constructor.
-  JS::Rooted<JSObject*> thisObj(
-      cx, js::CheckedUnwrapStatic(&args.thisv().toObject()));
-  if (!thisObj) {
-    args.rval().setBoolean(false);
-    return true;
-  }
-
-  const JSClass* thisClass = JS::GetClass(thisObj);
-  if (!IsDOMIfaceAndProtoClass(thisClass)) {
-    args.rval().setBoolean(false);
-    return true;
-  }
-
-  const DOMIfaceAndProtoJSClass* clasp =
-      DOMIfaceAndProtoJSClass::FromJSClass(thisClass);
-
-  if (clasp->mType != eInterface ||
-      clasp->mPrototypeID == prototypes::id::_ID_Count) {
-    args.rval().setBoolean(false);
-    return true;
-  }
-
-  JS::Rooted<JSObject*> instance(cx, &args[0].toObject());
-  const DOMJSClass* domClass = GetDOMClass(
-      js::UncheckedUnwrap(instance, /* stopAtWindowProxy = */ false));
-
-  bool isInstance = domClass && domClass->mInterfaceChain[clasp->mDepth] ==
-                                    clasp->mPrototypeID;
-
-  args.rval().setBoolean(isInstance);
-  return true;
+  return InterfaceCheckInstance(cx, argc, vp,
+                                [](JSContext*, JS::CallArgs& args) {
+                                  args.rval().setBoolean(false);
+                                  return true;
+                                });
 }
 
 bool ReportLenientThisUnwrappingFailure(JSContext* cx, JSObject* obj) {
@@ -2820,7 +2788,7 @@ bool MayResolveGlobal(const JSAtomState& aNames, jsid aId,
   return JS_MayResolveStandardClass(aNames, aId, aMaybeObj);
 }
 
-bool EnumerateGlobal(JSContext* aCx, JS::HandleObject aObj,
+bool EnumerateGlobal(JSContext* aCx, JS::Handle<JSObject*> aObj,
                      JS::MutableHandleVector<jsid> aProperties,
                      bool aEnumerableOnly) {
   MOZ_ASSERT(JS_IsGlobalObject(aObj),
@@ -3571,22 +3539,29 @@ bool GetSetlikeBackingObject(JSContext* aCx, JS::Handle<JSObject*> aObj,
 }
 
 static inline JSObject* NewObservableArrayProxyObject(
-    JSContext* aCx, const ObservableArrayProxyHandler* aHandler) {
-  JS::RootedObject target(aCx, JS::NewArrayObject(aCx, 0));
+    JSContext* aCx, const ObservableArrayProxyHandler* aHandler, void* aOwner) {
+  JS::Rooted<JSObject*> target(aCx, JS::NewArrayObject(aCx, 0));
   if (NS_WARN_IF(!target)) {
     return nullptr;
   }
 
-  JS::RootedValue targetValue(aCx, JS::ObjectValue(*target));
-  return js::NewProxyObject(aCx, aHandler, targetValue, nullptr);
+  JS::Rooted<JS::Value> targetValue(aCx, JS::ObjectValue(*target));
+  JS::Rooted<JSObject*> proxy(
+      aCx, js::NewProxyObject(aCx, aHandler, targetValue, nullptr));
+  if (!proxy) {
+    return nullptr;
+  }
+  js::SetProxyReservedSlot(proxy, OBSERVABLE_ARRAY_DOM_INTERFACE_SLOT,
+                           JS::PrivateValue(aOwner));
+  return proxy;
 }
 
 bool GetObservableArrayBackingObject(
     JSContext* aCx, JS::Handle<JSObject*> aObj, size_t aSlotIndex,
     JS::MutableHandle<JSObject*> aBackingObj, bool* aBackingObjCreated,
-    const ObservableArrayProxyHandler* aHandler) {
+    const ObservableArrayProxyHandler* aHandler, void* aOwner) {
   return GetBackingObject<NewObservableArrayProxyObject>(
-      aCx, aObj, aSlotIndex, aBackingObj, aBackingObjCreated, aHandler);
+      aCx, aObj, aSlotIndex, aBackingObj, aBackingObjCreated, aHandler, aOwner);
 }
 
 bool ForEachHandler(JSContext* aCx, unsigned aArgc, JS::Value* aVp) {

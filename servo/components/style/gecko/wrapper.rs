@@ -70,6 +70,8 @@ use crate::values::specified::length::FontBaseSize;
 use crate::values::{AtomIdent, AtomString};
 use crate::CaseSensitivityExt;
 use crate::LocalName;
+use app_units::Au;
+use euclid::default::Size2D;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use fxhash::FxHashMap;
 use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
@@ -324,6 +326,11 @@ impl<'ln> GeckoNode<'ln> {
     fn is_in_shadow_tree(&self) -> bool {
         use crate::gecko_bindings::structs::NODE_IS_IN_SHADOW_TREE;
         self.flags() & (NODE_IS_IN_SHADOW_TREE as u32) != 0
+    }
+
+    #[inline]
+    fn is_connected(&self) -> bool {
+        self.get_bool_flag(nsINode_BooleanFlag::IsConnected)
     }
 
     /// WARNING: This logic is duplicated in Gecko's FlattenedTreeParentIsParent.
@@ -1165,6 +1172,21 @@ impl<'le> TElement for GeckoElement<'le> {
         }
     }
 
+    #[inline]
+    fn primary_box_size(&self) -> Size2D<Au> {
+        if !self.as_node().is_connected() {
+            return Size2D::zero();
+        }
+
+        unsafe {
+            let frame = self.0._base._base._base.__bindgen_anon_1.mPrimaryFrame.as_ref();
+            if frame.is_null() {
+                return Size2D::zero();
+            }
+            Size2D::new(Au((**frame).mRect.width), Au((**frame).mRect.height))
+        }
+    }
+
     /// Return the list of slotted nodes of this node.
     #[inline]
     fn slotted_nodes(&self) -> &[Self::ConcreteNode] {
@@ -1528,11 +1550,6 @@ impl<'le> TElement for GeckoElement<'le> {
         self.is_root_of_native_anonymous_subtree()
     }
 
-    fn set_selector_flags(&self, flags: ElementSelectorFlags) {
-        debug_assert!(!flags.is_empty());
-        self.set_flags(selector_flags_to_node_flags(flags));
-    }
-
     #[inline]
     fn may_have_animations(&self) -> bool {
         if let Some(pseudo) = self.implemented_pseudo_element() {
@@ -1631,7 +1648,7 @@ impl<'le> TElement for GeckoElement<'le> {
     ) -> bool {
         use crate::properties::LonghandIdSet;
 
-        let after_change_box_style = after_change_style.get_box();
+        let after_change_ui_style = after_change_style.get_ui();
         let existing_transitions = self.css_transitions_info();
         let mut transitions_to_keep = LonghandIdSet::new();
         for transition_property in after_change_style.transition_properties() {
@@ -1641,7 +1658,7 @@ impl<'le> TElement for GeckoElement<'le> {
             transitions_to_keep.insert(physical_longhand);
             if self.needs_transitions_update_per_property(
                 physical_longhand,
-                after_change_box_style.transition_combined_duration_at(transition_property.index),
+                after_change_ui_style.transition_combined_duration_at(transition_property.index),
                 before_change_style,
                 after_change_style,
                 &existing_transitions,
@@ -1962,6 +1979,11 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         None
     }
 
+    fn set_selector_flags(&self, flags: ElementSelectorFlags) {
+        debug_assert!(!flags.is_empty());
+        self.set_flags(selector_flags_to_node_flags(flags));
+    }
+
     fn attr_matches(
         &self,
         ns: &NamespaceConstraint<&Namespace>,
@@ -2074,15 +2096,11 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         self.local_name() == other.local_name() && self.namespace() == other.namespace()
     }
 
-    fn match_non_ts_pseudo_class<F>(
+    fn match_non_ts_pseudo_class(
         &self,
         pseudo_class: &NonTSPseudoClass,
         context: &mut MatchingContext<Self::Impl>,
-        flags_setter: &mut F,
-    ) -> bool
-    where
-        F: FnMut(&Self, ElementSelectorFlags),
-    {
+    ) -> bool {
         use selectors::matching::*;
         match *pseudo_class {
             NonTSPseudoClass::Autofill |
@@ -2138,7 +2156,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 self.is_link() && context.visited_handling().matches_visited()
             },
             NonTSPseudoClass::MozFirstNode => {
-                flags_setter(self, ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                if context.needs_selector_flags() {
+                    self.apply_selector_flags(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                }
                 let mut elem = self.as_node();
                 while let Some(prev) = elem.prev_sibling() {
                     if prev.contains_non_whitespace_content() {
@@ -2149,7 +2169,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 true
             },
             NonTSPseudoClass::MozLastNode => {
-                flags_setter(self, ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                if context.needs_selector_flags() {
+                    self.apply_selector_flags(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR);
+                }
                 let mut elem = self.as_node();
                 while let Some(next) = elem.next_sibling() {
                     if next.contains_non_whitespace_content() {
@@ -2160,7 +2182,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 true
             },
             NonTSPseudoClass::MozOnlyWhitespace => {
-                flags_setter(self, ElementSelectorFlags::HAS_EMPTY_SELECTOR);
+                if context.needs_selector_flags() {
+                    self.apply_selector_flags(ElementSelectorFlags::HAS_EMPTY_SELECTOR);
+                }
                 if self
                     .as_node()
                     .dom_children()

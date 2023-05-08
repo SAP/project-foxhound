@@ -25,6 +25,11 @@
 
 #include "MessageLink.h"  // for HasResultCodes
 #include "mozilla/ipc/ScopedPort.h"
+#include "nsITargetShutdownTask.h"
+
+#ifdef FUZZING_SNAPSHOT
+#  include "mozilla/fuzzing/IPCFuzzController.h"
+#endif
 
 class MessageLoop;
 
@@ -260,8 +265,9 @@ class MessageChannel : HasResultCodes {
     return mBuildIDsConfirmedMatch;
   }
 
-  // Synchronously send |msg| (i.e., wait for |reply|)
-  bool Send(UniquePtr<Message> aMsg, Message* aReply) EXCLUDES(*mMonitor);
+  // Synchronously send |aMsg| (i.e., wait for |aReply|)
+  bool Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply)
+      EXCLUDES(*mMonitor);
 
   bool CanSend() const EXCLUDES(*mMonitor);
 
@@ -322,6 +328,13 @@ class MessageChannel : HasResultCodes {
    */
   bool IsCrossProcess() const REQUIRES(*mMonitor);
   void SetIsCrossProcess(bool aIsCrossProcess) REQUIRES(*mMonitor);
+
+#ifdef FUZZING_SNAPSHOT
+  Maybe<mojo::core::ports::PortName> GetPortName() {
+    MonitorAutoLock lock(*mMonitor);
+    return mLink->GetPortName();
+  }
+#endif
 
 #ifdef OS_WIN
   struct MOZ_STACK_CLASS SyncStackFrame {
@@ -384,19 +397,19 @@ class MessageChannel : HasResultCodes {
   void ProcessPendingRequests(ActorLifecycleProxy* aProxy,
                               AutoEnterTransaction& aTransaction)
       REQUIRES(*mMonitor);
-  bool ProcessPendingRequest(ActorLifecycleProxy* aProxy, Message&& aUrgent)
-      REQUIRES(*mMonitor);
+  bool ProcessPendingRequest(ActorLifecycleProxy* aProxy,
+                             UniquePtr<Message> aUrgent) REQUIRES(*mMonitor);
 
   void EnqueuePendingMessages() REQUIRES(*mMonitor);
 
   // Dispatches an incoming message to its appropriate handler.
-  void DispatchMessage(ActorLifecycleProxy* aProxy, Message&& aMsg)
+  void DispatchMessage(ActorLifecycleProxy* aProxy, UniquePtr<Message> aMsg)
       REQUIRES(*mMonitor);
 
   // DispatchMessage will route to one of these functions depending on the
   // protocol type of the message.
   void DispatchSyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg,
-                           Message*& aReply) EXCLUDES(*mMonitor);
+                           UniquePtr<Message>& aReply) EXCLUDES(*mMonitor);
   void DispatchAsyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg)
       EXCLUDES(*mMonitor);
 
@@ -468,7 +481,7 @@ class MessageChannel : HasResultCodes {
 
   bool WasTransactionCanceled(int transaction);
   bool ShouldDeferMessage(const Message& aMsg) REQUIRES(*mMonitor);
-  void OnMessageReceivedFromLink(Message&& aMsg) REQUIRES(*mMonitor);
+  void OnMessageReceivedFromLink(UniquePtr<Message> aMsg) REQUIRES(*mMonitor);
   void OnChannelErrorFromLink() REQUIRES(*mMonitor);
 
  private:
@@ -497,7 +510,7 @@ class MessageChannel : HasResultCodes {
                       public nsIRunnablePriority,
                       public nsIRunnableIPCMessageType {
    public:
-    explicit MessageTask(MessageChannel* aChannel, Message&& aMessage);
+    explicit MessageTask(MessageChannel* aChannel, UniquePtr<Message> aMessage);
     MessageTask() = delete;
     MessageTask(const MessageTask&) = delete;
 
@@ -514,8 +527,14 @@ class MessageChannel : HasResultCodes {
       return mScheduled;
     }
 
-    Message& Msg() { return mMessage; }
-    const Message& Msg() const { return mMessage; }
+    UniquePtr<Message>& Msg() REQUIRES(*mMonitor) {
+      MOZ_DIAGNOSTIC_ASSERT(mMessage, "message was moved");
+      return mMessage;
+    }
+    const UniquePtr<Message>& Msg() const REQUIRES(*mMonitor) {
+      MOZ_DIAGNOSTIC_ASSERT(mMessage, "message was moved");
+      return mMessage;
+    }
 
     void AssertMonitorHeld(const RefCountedMonitor& aMonitor) REQUIRES(aMonitor)
         ASSERT_CAPABILITY(*mMonitor) {
@@ -523,7 +542,7 @@ class MessageChannel : HasResultCodes {
     }
 
    private:
-    ~MessageTask() = default;
+    ~MessageTask();
 
     MessageChannel* Channel() REQUIRES(*mMonitor) {
       mMonitor->AssertCurrentThreadOwns();
@@ -537,13 +556,36 @@ class MessageChannel : HasResultCodes {
     // The channel which this MessageTask is associated with. Only valid while
     // `mMonitor` is held, and this MessageTask `isInList()`.
     MessageChannel* const mChannel;
-    Message mMessage;
+    UniquePtr<Message> mMessage GUARDED_BY(*mMonitor);
+    uint32_t const mPriority;
     bool mScheduled : 1 GUARDED_BY(*mMonitor);
+#ifdef FUZZING_SNAPSHOT
+    const bool mIsFuzzMsg;
+    bool mFuzzStopped GUARDED_BY(*mMonitor);
+#endif
   };
 
   bool ShouldRunMessage(const Message& aMsg) REQUIRES(*mMonitor);
   void RunMessage(ActorLifecycleProxy* aProxy, MessageTask& aTask)
       REQUIRES(*mMonitor);
+
+  class WorkerTargetShutdownTask final : public nsITargetShutdownTask {
+   public:
+    NS_DECL_THREADSAFE_ISUPPORTS
+
+    WorkerTargetShutdownTask(nsISerialEventTarget* aTarget,
+                             MessageChannel* aChannel);
+
+    void TargetShutdown() override;
+    void Clear();
+
+   private:
+    ~WorkerTargetShutdownTask() = default;
+
+    const nsCOMPtr<nsISerialEventTarget> mTarget;
+    // Cleared by MessageChannel before it is destroyed.
+    MessageChannel* MOZ_NON_OWNING_REF mChannel;
+  };
 
   typedef LinkedList<RefPtr<MessageTask>> MessageQueue;
   typedef std::map<size_t, UniquePtr<UntypedCallbackHolder>> CallbackMap;
@@ -575,6 +617,9 @@ class MessageChannel : HasResultCodes {
   // changed, and we can only call Open() once.  We shouldn't be accessing
   // from multiple threads before Open().
   nsCOMPtr<nsISerialEventTarget> mWorkerThread;
+
+  // Shutdown task to close the channel before mWorkerThread goes away.
+  RefPtr<WorkerTargetShutdownTask> mShutdownTask GUARDED_BY(*mMonitor);
 
   // Timeout periods are broken up in two to prevent system suspension from
   // triggering an abort. This method (called by WaitForEvent with a 'did

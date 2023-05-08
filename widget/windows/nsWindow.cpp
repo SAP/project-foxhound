@@ -538,7 +538,7 @@ class TIPMessageHandler {
     // want to block, and the aHwnd is a nsWindow that belongs to the current
     // thread.
     if (!aMsgResult || aMsgCode != WM_GETOBJECT ||
-        static_cast<DWORD>(aLParam) != OBJID_CLIENT ||
+        static_cast<LONG>(aLParam) != OBJID_CLIENT ||
         !WinUtils::GetNSWindowPtr(aHwnd) ||
         ::GetWindowThreadProcessId(aHwnd, nullptr) != ::GetCurrentThreadId() ||
         !IsA11yBlocked()) {
@@ -650,9 +650,22 @@ static bool IsMouseVanishKey(WPARAM aVirtKey) {
     case VK_RMENU:
     case VK_LWIN:
     case VK_RWIN:
+    case VK_INSERT:
+    case VK_DELETE:
+    case VK_HOME:
+    case VK_END:
+    case VK_ESCAPE:
+    case VK_PRINT:
+    case VK_UP:
+    case VK_DOWN:
+    case VK_LEFT:
+    case VK_RIGHT:
+    case VK_PRIOR:  // PgUp
+    case VK_NEXT:   // PgDn
       return false;
     default:
-      return true;
+      // Return true unless Ctrl is pressed
+      return (GetKeyState(VK_CONTROL) & 0x8000) != 0x8000;
   }
 }
 
@@ -660,6 +673,19 @@ static bool IsMouseVanishKey(WPARAM aVirtKey) {
  * Hide/unhide the cursor if the correct Windows and Firefox settings are set.
  */
 static void MaybeHideCursor(bool aShouldHide) {
+  static bool sMouseExists =
+      []{
+        // Before the first call to ShowCursor, the visibility count is 0
+        // if there is a mouse installed and -1 if not.
+        int count = ::ShowCursor(FALSE);
+        ::ShowCursor(TRUE);
+        return count == -1;
+      }();
+
+  if (!sMouseExists) {
+    return;
+  }
+
   static bool sIsHidden = false;
   bool shouldHide = aShouldHide &&
                     StaticPrefs::widget_windows_hide_cursor_when_typing() &&
@@ -1316,7 +1342,7 @@ DWORD nsWindow::WindowStyle() {
 
     default:
       NS_ERROR("unknown border style");
-      // fall through
+      [[fallthrough]];
 
     case eWindowType_toplevel:
     case eWindowType_invisible:
@@ -1399,7 +1425,7 @@ DWORD nsWindow::WindowExStyle() {
     }
     default:
       NS_ERROR("unknown border style");
-      // fall through
+      [[fallthrough]];
 
     case eWindowType_toplevel:
     case eWindowType_invisible:
@@ -1785,74 +1811,15 @@ bool nsWindow::IsVisible() const { return mIsVisible; }
  *
  **************************************************************/
 
-static bool ShouldHaveRoundedMenuDropShadow(nsWindow* aWindow) {
-  nsView* view = nsView::GetViewFor(aWindow);
-  return view && view->GetFrame() &&
-         view->GetFrame()->StyleUIReset()->mWindowShadow ==
-             StyleWindowShadow::Cliprounded;
-}
-
 // XP and Vista visual styles sometimes require window clipping regions to be
 // applied for proper transparency. These routines are called on size and move
 // operations.
 // XXX this is apparently still needed in Windows 7 and later
 void nsWindow::ClearThemeRegion() {
-  if (mWindowType == eWindowType_popup &&
-      (mPopupType == ePopupTypeMenu || mPopupType == ePopupTypePanel) &&
-      ShouldHaveRoundedMenuDropShadow(this)) {
+  if (!HasGlass() &&
+      (mWindowType == eWindowType_popup && !IsPopupWithTitleBar() &&
+       (mPopupType == ePopupTypeTooltip || mPopupType == ePopupTypePanel))) {
     SetWindowRgn(mWnd, nullptr, false);
-  } else if (!HasGlass() &&
-             (mWindowType == eWindowType_popup && !IsPopupWithTitleBar() &&
-              (mPopupType == ePopupTypeTooltip ||
-               mPopupType == ePopupTypePanel))) {
-    SetWindowRgn(mWnd, nullptr, false);
-  }
-}
-
-void nsWindow::SetThemeRegion() {
-  // Clip the window to the rounded rect area of the popup if needed.
-  if (mWindowType == eWindowType_popup &&
-      (mPopupType == ePopupTypeMenu || mPopupType == ePopupTypePanel)) {
-    nsView* view = nsView::GetViewFor(this);
-    if (view) {
-      LayoutDeviceIntSize size =
-          nsLayoutUtils::GetBorderRadiusForMenuDropShadow(view->GetFrame());
-      if (size.width || size.height) {
-        int32_t width =
-            NSToIntRound(size.width * GetDesktopToDeviceScale().scale);
-        int32_t height =
-            NSToIntRound(size.height * GetDesktopToDeviceScale().scale);
-        HRGN region = CreateRoundRectRgn(0, 0, mBounds.Width() + 1,
-                                         mBounds.Height() + 1, width, height);
-        if (!SetWindowRgn(mWnd, region, false)) {
-          DeleteObject(region);  // region setting failed so delete the region.
-        }
-      }
-    }
-  }
-
-  // Popup types that have a visual styles region applied (bug 376408). This can
-  // be expanded for other window types as needed. The regions are applied
-  // generically to the base window so default constants are used for part and
-  // state. At some point we might need part and state values from
-  // nsNativeThemeWin's GetThemePartAndState, but currently windows that change
-  // shape based on state haven't come up.
-  else if (!HasGlass() &&
-           (mWindowType == eWindowType_popup && !IsPopupWithTitleBar() &&
-            (mPopupType == ePopupTypeTooltip ||
-             mPopupType == ePopupTypePanel))) {
-    HRGN hRgn = nullptr;
-    RECT rect = {0, 0, mBounds.Width(), mBounds.Height()};
-
-    HDC dc = ::GetDC(mWnd);
-    GetThemeBackgroundRegion(nsUXThemeData::GetTheme(eUXTooltip), dc,
-                             TTP_STANDARD, TS_NORMAL, &rect, &hRgn);
-    if (hRgn) {
-      if (!SetWindowRgn(mWnd, hRgn,
-                        false))  // do not delete or alter hRgn if accepted.
-        DeleteObject(hRgn);
-    }
-    ::ReleaseDC(mWnd, dc);
   }
 }
 
@@ -1878,7 +1845,7 @@ BOOL CALLBACK nsWindow::RegisterTouchForDescendants(HWND aWnd, LPARAM aMsg) {
 
 void nsWindow::LockAspectRatio(bool aShouldLock) {
   if (aShouldLock) {
-    mAspectRatio = (float)mBounds.Height() / (float)mBounds.Width();
+    mAspectRatio = (float)mBounds.Width() / (float)mBounds.Height();
   } else {
     mAspectRatio = 0.0;
   }
@@ -2049,13 +2016,10 @@ void nsWindow::Move(double aX, double aY) {
       if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
         ChangedDPI();
       }
-
-      SetThemeRegion();
     }
 
     ResizeDirectManipulationViewport();
   }
-  NotifyRollupGeometryChange();
 }
 
 // Resize this component
@@ -2118,15 +2082,12 @@ void nsWindow::Resize(double aWidth, double aHeight, bool aRepaint) {
       if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
         ChangedDPI();
       }
-      SetThemeRegion();
     }
 
     ResizeDirectManipulationViewport();
   }
 
   if (aRepaint) Invalidate();
-
-  NotifyRollupGeometryChange();
 }
 
 // Resize this component
@@ -2208,15 +2169,12 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
         ::SetWindowPos(mTransitionWnd, HWND_TOPMOST, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
       }
-      SetThemeRegion();
     }
 
     ResizeDirectManipulationViewport();
   }
 
   if (aRepaint) Invalidate();
-
-  NotifyRollupGeometryChange();
 }
 
 mozilla::Maybe<bool> nsWindow::IsResizingNativeWidget() {
@@ -2627,6 +2585,12 @@ LayoutDeviceIntRect nsWindow::GetBounds() {
     }
   }
   rect.MoveTo(r.left, r.top);
+  if (mCompositorSession &&
+      !wr::WindowSizeSanityCheck(rect.width, rect.height)) {
+    gfxCriticalNoteOnce << "Invalid size" << rect << " size mode "
+                        << mFrameState->GetSizeMode();
+  }
+
   return rect;
 }
 
@@ -2889,15 +2853,28 @@ bool nsWindow::UpdateNonClientMargins(int32_t aSizeMode, bool aReflowWindow) {
     mNonClientOffset.left = mHorResizeMargin;
     mNonClientOffset.right = mHorResizeMargin;
   } else if (aSizeMode == nsSizeMode_Maximized) {
-    // Remove the default frame from the top of our maximized window.  This
-    // makes the whole caption part of our client area, allowing us to draw
-    // in the whole caption area.  Use default frame size on left, right, and
-    // bottom. The reason this works is that, for maximized windows,
-    // Windows positions them so that their frames fall off the screen.
-    // This gives the illusion of windows having no frames when they are
-    // maximized.  If we try to mess with the frame sizes by setting these
-    // offsets to positive values, our client area will fall off the screen.
-    mNonClientOffset.top = mCaptionHeight;
+    // On Windows 10+, we make the entire frame part of the client area.
+    // We leave the default frame sizes for left, right and bottom since
+    // Windows will automagically position the edges "offscreen" for maximized
+    // windows.
+    // On versions prior to Windows 10, we add padding to the widget to
+    // circumvent a bug in DwmDefWindowProc (see
+    // nsNativeThemeWin::GetWidgetPadding).  We "undo" that padding in
+    // WM_NCCALCSIZE by adding the caption (as well as the sizing frame) to the
+    // client area.
+    // The padding is not needed on Win10+ because we handle window buttons
+    // non-natively in the theme.  It also does not work on Win10+ -- it
+    // exposes a new issue where widget edges would sometimes appear to bleed
+    // into other displays (bug 1614218).
+    int verticalResize = 0;
+    if (IsWin10OrLater()) {
+      verticalResize =
+          WinUtils::GetSystemMetricsForDpi(SM_CYFRAME, dpi) +
+          (hasCaption ? WinUtils::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+                      : 0);
+    }
+
+    mNonClientOffset.top = mCaptionHeight - verticalResize;
     mNonClientOffset.bottom = 0;
     mNonClientOffset.left = 0;
     mNonClientOffset.right = 0;
@@ -3057,8 +3034,8 @@ void nsWindow::InvalidateNonClientRegion() {
   GetWindowRect(mWnd, &rect);
   rect.top += mCaptionHeight;
   rect.right -= mHorResizeMargin;
-  rect.bottom -= mHorResizeMargin;
-  rect.left += mVertResizeMargin;
+  rect.bottom -= mVertResizeMargin;
+  rect.left += mHorResizeMargin;
   MapWindowPoints(nullptr, mWnd, (LPPOINT)&rect, 2);
   HRGN clientRgn = CreateRectRgnIndirect(&rect);
   CombineRgn(winRgn, winRgn, clientRgn, RGN_DIFF);
@@ -3381,7 +3358,7 @@ void nsWindow::UpdateGlass() {
         margins.cxRightWidth += kGlassMarginAdjustment;
         margins.cyBottomHeight += kGlassMarginAdjustment;
       }
-      // Fall through
+      [[fallthrough]];
     case eTransparencyGlass:
       policy = DWMNCRP_ENABLED;
       break;
@@ -5208,6 +5185,13 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
         gfxDWriteFont::UpdateSystemTextVars();
         break;
       }
+      if (wParam == SPI_SETWORKAREA) {
+        // NB: We also refresh screens on WM_DISPLAYCHANGE but the rcWork
+        // values are sometimes wrong at that point.  This message then
+        // arrives soon afterward, when we can get the right rcWork values.
+        ScreenHelperWin::RefreshScreens();
+        break;
+      }
       if (auto lParamString = reinterpret_cast<const wchar_t*>(lParam)) {
         if (!wcscmp(lParamString, L"ImmersiveColorSet")) {
           // This affects system colors (-moz-win-accentcolor), so gotta pass
@@ -5597,6 +5581,7 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
       }
       // We've transitioned from non-client to outside of the window, so
       // fall-through to the WM_MOUSELEAVE handler.
+      [[fallthrough]];
     }
     case WM_MOUSELEAVE: {
       if (!mMousePresent) break;
@@ -5827,23 +5812,23 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
         if (wParam == WMSZ_LEFT || wParam == WMSZ_RIGHT ||
             wParam == WMSZ_TOPLEFT || wParam == WMSZ_BOTTOMLEFT) {
           newWidth = rect->right - rect->left;
-          newHeight = newWidth * mAspectRatio;
+          newHeight = newWidth / mAspectRatio;
           if (newHeight < mSizeConstraints.mMinSize.height) {
             newHeight = mSizeConstraints.mMinSize.height;
-            newWidth = newHeight / mAspectRatio;
+            newWidth = newHeight * mAspectRatio;
           } else if (newHeight > mSizeConstraints.mMaxSize.height) {
             newHeight = mSizeConstraints.mMaxSize.height;
-            newWidth = newHeight / mAspectRatio;
+            newWidth = newHeight * mAspectRatio;
           }
         } else {
           newHeight = rect->bottom - rect->top;
-          newWidth = newHeight / mAspectRatio;
+          newWidth = newHeight * mAspectRatio;
           if (newWidth < mSizeConstraints.mMinSize.width) {
             newWidth = mSizeConstraints.mMinSize.width;
-            newHeight = newWidth * mAspectRatio;
+            newHeight = newWidth / mAspectRatio;
           } else if (newWidth > mSizeConstraints.mMaxSize.width) {
             newWidth = mSizeConstraints.mMaxSize.width;
-            newHeight = newWidth * mAspectRatio;
+            newHeight = newWidth / mAspectRatio;
           }
         }
 
@@ -5926,10 +5911,6 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case WM_DISPLAYCHANGE: {
       ScreenHelperWin::RefreshScreens();
-      nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-      if (gfxInfo) {
-        gfxInfo->RefreshMonitors();
-      }
       if (mWidgetListener) {
         mWidgetListener->UIResolutionChanged();
       }
@@ -6692,7 +6673,9 @@ nsresult nsWindow::SynthesizeNativeMouseScrollEvent(
 nsresult nsWindow::SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
                                                LayoutDeviceIntPoint aPoint,
                                                double aDeltaX, double aDeltaY,
-                                               int32_t aModifierFlags) {
+                                               int32_t aModifierFlags,
+                                               nsIObserver* aObserver) {
+  AutoObserverNotifier notifier(aObserver, "touchpadpanevent");
   DirectManipulationOwner::SynthesizeNativeTouchpadPan(
       this, aEventPhase, aPoint, aDeltaX, aDeltaY, aModifierFlags);
   return NS_OK;
@@ -6847,7 +6830,7 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp) {
       // has changed such that it violates the aspect ratio constraint. If so,
       // queue up an event to enforce the aspect ratio constraint and repaint.
       // When resized with Windows Aero Snap, we are in the NOT_RESIZING state.
-      float newAspectRatio = (float)newHeight / newWidth;
+      float newAspectRatio = (float)newWidth / newHeight;
       if (mResizeState == NOT_RESIZING && mAspectRatio != newAspectRatio) {
         // Hold a reference to self alive and pass it into the lambda to make
         // sure this nsIWidget stays alive long enough to run this function.
@@ -6855,7 +6838,7 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp) {
         NS_DispatchToMainThread(NS_NewRunnableFunction(
             "EnforceAspectRatio", [self, this, newWidth]() -> void {
               if (mWnd) {
-                Resize(newWidth, newWidth * mAspectRatio, true);
+                Resize(newWidth, newWidth / mAspectRatio, true);
               }
             }));
       }

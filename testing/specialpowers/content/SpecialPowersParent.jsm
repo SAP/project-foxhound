@@ -1058,12 +1058,11 @@ class SpecialPowersParent extends JSWindowActorParent {
 
         case "SPCleanUpSTSData": {
           let origin = aMessage.data.origin;
-          let flags = aMessage.data.flags;
           let uri = Services.io.newURI(origin);
           let sss = Cc["@mozilla.org/ssservice;1"].getService(
             Ci.nsISiteSecurityService
           );
-          sss.resetState(uri, flags);
+          sss.resetState(uri);
           return undefined;
         }
 
@@ -1229,6 +1228,12 @@ class SpecialPowersParent extends JSWindowActorParent {
           let id = aMessage.data.id;
           let extension = this._extensions.get(id);
           return extension.terminateBackground();
+        }
+
+        case "SPExtensionWakeupBackground": {
+          let id = aMessage.data.id;
+          let extension = this._extensions.get(id);
+          return extension.wakeupBackground();
         }
 
         case "SetAsDefaultAssertHandler": {

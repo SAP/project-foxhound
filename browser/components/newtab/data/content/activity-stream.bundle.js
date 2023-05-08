@@ -6864,7 +6864,13 @@ class DSLinkMenu extends (external_React_default()).PureComponent {
       index,
       dispatch
     } = this.props;
-    const TOP_STORIES_CONTEXT_MENU_OPTIONS = ["CheckBookmark", "CheckArchiveFromPocket", ...(this.props.saveToPocketCard ? ["CheckDeleteFromPocket"] : ["CheckSavedToPocket"]), "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", ...(this.props.showPrivacyInfo ? ["ShowPrivacyInfo"] : [])];
+    let pocketMenuOptions = [];
+
+    if (this.props.pocket_button_enabled) {
+      pocketMenuOptions = this.props.saveToPocketCard ? ["CheckDeleteFromPocket"] : ["CheckSavedToPocket"];
+    }
+
+    const TOP_STORIES_CONTEXT_MENU_OPTIONS = ["CheckBookmark", "CheckArchiveFromPocket", ...pocketMenuOptions, "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", ...(this.props.showPrivacyInfo ? ["ShowPrivacyInfo"] : [])];
     const type = this.props.type || "DISCOVERY_STREAM";
     const title = this.props.title || this.props.source;
     return /*#__PURE__*/external_React_default().createElement("div", {
@@ -6963,6 +6969,8 @@ class ImpressionStats_ImpressionStats extends (external_React_default()).PureCom
     if (this._needsImpressionStats(cards)) {
       props.dispatch(actionCreators.DiscoveryStreamImpressionStats({
         source: props.source.toUpperCase(),
+        window_inner_width: window.innerWidth,
+        window_inner_height: window.innerHeight,
         tiles: cards.map(link => ({
           id: link.id,
           pos: link.pos,
@@ -7613,6 +7621,8 @@ class _DSCard extends (external_React_default()).PureComponent {
       this.props.dispatch(actionCreators.ImpressionStats({
         source: this.props.is_video ? "CARDGRID_VIDEO" : this.props.type.toUpperCase(),
         click: 0,
+        window_inner_width: this.props.windowObj.innerWidth,
+        window_inner_height: this.props.windowObj.innerHeight,
         tiles: [{
           id: this.props.id,
           pos: this.props.pos,
@@ -7869,7 +7879,8 @@ class _DSCard extends (external_React_default()).PureComponent {
       showPrivacyInfo: !!this.props.flightId,
       onMenuUpdate: this.onMenuUpdate,
       onMenuShow: this.onMenuShow,
-      saveToPocketCard: saveToPocketCard
+      saveToPocketCard: saveToPocketCard,
+      pocket_button_enabled: this.props.pocket_button_enabled
     }))), !saveToPocketCard && /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
       id: this.props.id,
       index: this.props.pos,
@@ -7885,7 +7896,8 @@ class _DSCard extends (external_React_default()).PureComponent {
       showPrivacyInfo: !!this.props.flightId,
       hostRef: this.contextMenuButtonHostRef,
       onMenuUpdate: this.onMenuUpdate,
-      onMenuShow: this.onMenuShow
+      onMenuShow: this.onMenuShow,
+      pocket_button_enabled: this.props.pocket_button_enabled
     }));
   }
 
@@ -7997,10 +8009,21 @@ class DSEmptyState extends (external_React_default()).PureComponent {
   }
 
 }
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+function TopicsWidget(props) {
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "ds-topics-widget"
+  });
+}
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -8047,6 +8070,8 @@ class CardGrid extends (external_React_default()).PureComponent {
   }
 
   renderCards() {
+    var _widgets$positions, _widgets$data;
+
     let {
       items
     } = this.props;
@@ -8066,7 +8091,8 @@ class CardGrid extends (external_React_default()).PureComponent {
       descLines,
       readTime,
       essentialReadsHeader,
-      editorsPicksHeader
+      editorsPicksHeader,
+      widgets
     } = this.props;
     let showLastCardMessage = lastCardMessageEnabled;
 
@@ -8107,6 +8133,7 @@ class CardGrid extends (external_React_default()).PureComponent {
         context_type: rec.context_type,
         bookmarkGuid: rec.bookmarkGuid,
         engagement: rec.engagement,
+        pocket_button_enabled: this.props.pocket_button_enabled,
         display_engagement_labels: this.props.display_engagement_labels,
         hideDescriptions: hideDescriptions,
         saveToPocketCard: saveToPocketCard,
@@ -8138,6 +8165,32 @@ class CardGrid extends (external_React_default()).PureComponent {
       cards.splice(cards.length - 1, 1, /*#__PURE__*/external_React_default().createElement(LastCardMessage, {
         key: `dscard-last-${cards.length - 1}`
       }));
+    }
+
+    if (widgets !== null && widgets !== void 0 && (_widgets$positions = widgets.positions) !== null && _widgets$positions !== void 0 && _widgets$positions.length && widgets !== null && widgets !== void 0 && (_widgets$data = widgets.data) !== null && _widgets$data !== void 0 && _widgets$data.length) {
+      let positionIndex = 0;
+
+      for (const widget of widgets.data) {
+        let widgetComponent = null;
+        const position = widgets.positions[positionIndex]; // Stop if we run out of positions to place widgets.
+
+        if (!position) {
+          break;
+        }
+
+        switch (widget === null || widget === void 0 ? void 0 : widget.type) {
+          case "TopicsWidget":
+            widgetComponent = /*#__PURE__*/external_React_default().createElement(TopicsWidget, null);
+            break;
+        }
+
+        if (widgetComponent) {
+          // We found a widget, so up the position for next try.
+          positionIndex++; // We replace an existing card with the widget.
+
+          cards.splice(position.index, 1, widgetComponent);
+        }
+      }
     } // Used for CSS overrides to default styling (eg: "hero")
 
 
@@ -8306,7 +8359,8 @@ class CollectionCardGrid extends (external_React_default()).PureComponent {
   render() {
     const {
       data,
-      dismissible
+      dismissible,
+      pocket_button_enabled
     } = this.props;
 
     if (this.state.dismissed || !data || !data.spocs || !data.spocs[0] || // We only display complete collections.
@@ -8369,6 +8423,7 @@ class CollectionCardGrid extends (external_React_default()).PureComponent {
     const collectionGrid = /*#__PURE__*/external_React_default().createElement("div", {
       className: "ds-collection-card-grid"
     }, /*#__PURE__*/external_React_default().createElement(CardGrid, {
+      pocket_button_enabled: pocket_button_enabled,
       title: title,
       context: sponsoredByMessage,
       data: recsData,
@@ -13503,6 +13558,7 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           type: component.type,
           items: component.properties.items,
           cta_variant: component.cta_variant,
+          pocket_button_enabled: component.pocketButtonEnabled,
           display_engagement_labels: ENGAGEMENT_LABEL_ENABLED,
           dismissible: this.props.DiscoveryStream.isCollectionDismissible,
           dispatch: this.props.dispatch
@@ -13515,6 +13571,7 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           display_variant: component.properties.display_variant,
           data: component.data,
           feed: component.feed,
+          widgets: component.widgets,
           border: component.properties.border,
           type: component.type,
           dispatch: this.props.dispatch,
@@ -13536,6 +13593,7 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           lastCardMessageEnabled: component.lastCardMessageEnabled,
           saveToPocketCard: component.saveToPocketCard,
           cta_variant: component.cta_variant,
+          pocket_button_enabled: component.pocketButtonEnabled,
           display_engagement_labels: ENGAGEMENT_LABEL_ENABLED
         });
 
@@ -13924,21 +13982,10 @@ class ContentSection extends (external_React_default()).PureComponent {
   }
 
 }
-;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/ColorwayCloset/ColorwayCloset.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-const ColorwayCloset = ({
-  dispatch
-}) => /*#__PURE__*/external_React_default().createElement("div", {
-  id: "colorway-closet"
-}, "Colorway Closet Placeholder");
 ;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/CustomizeMenu.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 
 
@@ -13990,9 +14037,7 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
       className: "close-button",
       "data-l10n-id": "newtab-custom-close-button",
       ref: c => this.closeButton = c
-    }), this.props.showColorwayCloset ? /*#__PURE__*/external_React_default().createElement(ColorwayCloset, {
-      dispatch: this.props.dispatch
-    }) : /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null), /*#__PURE__*/external_React_default().createElement(BackgroundsSection, null), /*#__PURE__*/external_React_default().createElement(ContentSection, {
+    }), /*#__PURE__*/external_React_default().createElement(BackgroundsSection, null), /*#__PURE__*/external_React_default().createElement(ContentSection, {
       openPreferences: this.props.openPreferences,
       setPref: this.props.setPref,
       enabledSections: this.props.enabledSections,
@@ -14405,7 +14450,6 @@ class BaseContent extends (external_React_default()).PureComponent {
     const noSectionsEnabled = !prefs["feeds.topsites"] && !pocketEnabled && filteredSections.filter(section => section.enabled).length === 0;
     const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
     const showCustomizationMenu = this.state.customizeMenuVisible;
-    const showColorwayCloset = prefs["colorway-closet.enabled"];
     const enabledSections = {
       topSitesEnabled: prefs["feeds.topsites"],
       pocketEnabled: prefs["feeds.section.topstories"],
@@ -14428,8 +14472,7 @@ class BaseContent extends (external_React_default()).PureComponent {
       enabledSections: enabledSections,
       pocketRegion: pocketRegion,
       mayHaveSponsoredTopSites: mayHaveSponsoredTopSites,
-      showing: showCustomizationMenu,
-      showColorwayCloset: showColorwayCloset
+      showing: showCustomizationMenu
     }), /*#__PURE__*/external_React_default().createElement("div", {
       className: outerClassName,
       onClick: this.closeCustomizationMenu

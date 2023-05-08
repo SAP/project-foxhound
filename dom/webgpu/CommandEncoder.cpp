@@ -15,8 +15,7 @@
 #include "mozilla/webgpu/ffi/wgpu.h"
 #include "ipc/WebGPUChild.h"
 
-namespace mozilla {
-namespace webgpu {
+namespace mozilla::webgpu {
 
 GPU_IMPL_CYCLE_COLLECTION(CommandEncoder, mParent, mBridge)
 GPU_IMPL_JS_WRAP(CommandEncoder)
@@ -100,11 +99,10 @@ CommandEncoder::CommandEncoder(Device* const aParent,
 CommandEncoder::~CommandEncoder() { Cleanup(); }
 
 void CommandEncoder::Cleanup() {
-  if (mValid && mParent) {
+  if (mValid) {
     mValid = false;
-    auto bridge = mParent->GetBridge();
-    if (bridge && bridge->IsOpen()) {
-      bridge->SendCommandEncoderDestroy(mId);
+    if (mBridge->IsOpen()) {
+      mBridge->SendCommandEncoderDestroy(mId);
     }
   }
 }
@@ -114,7 +112,7 @@ void CommandEncoder::CopyBufferToBuffer(const Buffer& aSource,
                                         const Buffer& aDestination,
                                         BufferAddress aDestinationOffset,
                                         BufferAddress aSize) {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     ffi::wgpu_command_encoder_copy_buffer_to_buffer(
         aSource.mId, aSourceOffset, aDestination.mId, aDestinationOffset, aSize,
@@ -127,7 +125,7 @@ void CommandEncoder::CopyBufferToTexture(
     const dom::GPUImageCopyBuffer& aSource,
     const dom::GPUImageCopyTexture& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     ffi::wgpu_command_encoder_copy_buffer_to_texture(
         ConvertBufferCopyView(aSource), ConvertTextureCopyView(aDestination),
@@ -144,7 +142,7 @@ void CommandEncoder::CopyTextureToBuffer(
     const dom::GPUImageCopyTexture& aSource,
     const dom::GPUImageCopyBuffer& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     ffi::wgpu_command_encoder_copy_texture_to_buffer(
         ConvertTextureCopyView(aSource), ConvertBufferCopyView(aDestination),
@@ -156,7 +154,7 @@ void CommandEncoder::CopyTextureToTexture(
     const dom::GPUImageCopyTexture& aSource,
     const dom::GPUImageCopyTexture& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     ffi::wgpu_command_encoder_copy_texture_to_texture(
         ConvertTextureCopyView(aSource), ConvertTextureCopyView(aDestination),
@@ -171,7 +169,7 @@ void CommandEncoder::CopyTextureToTexture(
 }
 
 void CommandEncoder::PushDebugGroup(const nsAString& aString) {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     const NS_ConvertUTF16toUTF8 utf8(aString);
     ffi::wgpu_command_encoder_push_debug_group(utf8.get(), ToFFI(&bb));
@@ -179,14 +177,14 @@ void CommandEncoder::PushDebugGroup(const nsAString& aString) {
   }
 }
 void CommandEncoder::PopDebugGroup() {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     ffi::wgpu_command_encoder_pop_debug_group(ToFFI(&bb));
     mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
   }
 }
 void CommandEncoder::InsertDebugMarker(const nsAString& aString) {
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     ipc::ByteBuf bb;
     const NS_ConvertUTF16toUTF8 utf8(aString);
     ffi::wgpu_command_encoder_insert_debug_marker(utf8.get(), ToFFI(&bb));
@@ -219,7 +217,7 @@ already_AddRefed<RenderPassEncoder> CommandEncoder::BeginRenderPass(
 
 void CommandEncoder::EndComputePass(ffi::WGPUComputePass& aPass,
                                     ErrorResult& aRv) {
-  if (!mValid) {
+  if (!mValid || !mBridge->IsOpen()) {
     return aRv.ThrowInvalidStateError("Command encoder is not valid");
   }
 
@@ -230,7 +228,7 @@ void CommandEncoder::EndComputePass(ffi::WGPUComputePass& aPass,
 
 void CommandEncoder::EndRenderPass(ffi::WGPURenderPass& aPass,
                                    ErrorResult& aRv) {
-  if (!mValid) {
+  if (!mValid || !mBridge->IsOpen()) {
     return aRv.ThrowInvalidStateError("Command encoder is not valid");
   }
 
@@ -242,7 +240,7 @@ void CommandEncoder::EndRenderPass(ffi::WGPURenderPass& aPass,
 already_AddRefed<CommandBuffer> CommandEncoder::Finish(
     const dom::GPUCommandBufferDescriptor& aDesc) {
   RawId id = 0;
-  if (mValid) {
+  if (mValid && mBridge->IsOpen()) {
     mValid = false;
     id = mBridge->CommandEncoderFinish(mId, mParent->mId, aDesc);
   }
@@ -251,5 +249,4 @@ already_AddRefed<CommandBuffer> CommandEncoder::Finish(
   return comb.forget();
 }
 
-}  // namespace webgpu
-}  // namespace mozilla
+}  // namespace mozilla::webgpu

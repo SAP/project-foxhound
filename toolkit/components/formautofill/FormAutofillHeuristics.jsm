@@ -568,6 +568,8 @@ class FieldScanner {
 this.FormAutofillHeuristics = {
   RULES: null,
 
+  CREDIT_CARD_FIELDNAMES: [],
+  ADDRESS_FIELDNAMES: [],
   /**
    * Try to find a contiguous sub-array within an array.
    *
@@ -879,7 +881,11 @@ this.FormAutofillHeuristics = {
 
     // The heuristic below should be covered by fathom rules, so we can skip doing
     // it.
-    if (FormAutofillUtils.isFathomCreditCardsEnabled()) {
+    if (
+      FormAutofillUtils.isFathomCreditCardsEnabled() &&
+      creditCardRulesets.types.includes(detail.fieldName)
+    ) {
+      fieldScanner.parsingIndex++;
       return true;
     }
 
@@ -1037,7 +1043,7 @@ this.FormAutofillHeuristics = {
    */
   getFormInfo(form, allowDuplicates = false) {
     const eligibleFields = Array.from(form.elements).filter(elem =>
-      FormAutofillUtils.isFieldEligibleForAutofill(elem)
+      FormAutofillUtils.isCreditCardOrAddressFieldType(elem)
     );
 
     if (eligibleFields.length <= 0) {
@@ -1071,53 +1077,24 @@ this.FormAutofillHeuristics = {
     return fieldScanner.getSectionFieldDetails();
   },
 
-  _regExpTableHashValue(...signBits) {
-    return signBits.reduce((p, c, i) => p | (!!c << i), 0);
-  },
-
-  _setRegExpListCache(regexps, b0, b1, b2) {
-    if (!this._regexpList) {
-      this._regexpList = [];
+  _getPossibleFieldNames(element) {
+    let fieldNames = [];
+    let isAutoCompleteOff =
+      element.autocomplete == "off" || element.form?.autocomplete == "off";
+    if (
+      FormAutofill.isAutofillCreditCardsAvailable &&
+      (!isAutoCompleteOff || FormAutofill.creditCardsAutocompleteOff)
+    ) {
+      fieldNames.push(...this.CREDIT_CARD_FIELDNAMES);
     }
-    this._regexpList[this._regExpTableHashValue(b0, b1, b2)] = regexps;
-  },
-
-  _getRegExpListCache(b0, b1, b2) {
-    if (!this._regexpList) {
-      return null;
-    }
-    return this._regexpList[this._regExpTableHashValue(b0, b1, b2)] || null;
-  },
-
-  _getPossibleFieldNames(isAutoCompleteOff, elementTagName) {
-    let isSelectElem = elementTagName == "SELECT";
-    let regExpListCache = this._getRegExpListCache(
-      isAutoCompleteOff,
-      FormAutofill.isAutofillCreditCardsAvailable,
-      isSelectElem
-    );
-    if (regExpListCache) {
-      return regExpListCache;
-    }
-    const FIELDNAMES_IGNORING_AUTOCOMPLETE_OFF = [
-      "cc-name",
-      "cc-number",
-      "cc-exp-month",
-      "cc-exp-year",
-      "cc-exp",
-      "cc-type",
-    ];
-    let regexps = isAutoCompleteOff
-      ? FIELDNAMES_IGNORING_AUTOCOMPLETE_OFF
-      : Object.keys(this.RULES);
-
-    if (!FormAutofill.isAutofillCreditCardsAvailable) {
-      regexps = regexps.filter(
-        name => !FormAutofillUtils.isCreditCardField(name)
-      );
+    if (
+      FormAutofill.isAutofillAddressesAvailable &&
+      (!isAutoCompleteOff || FormAutofill.addressesAutocompleteOff)
+    ) {
+      fieldNames.push(...this.ADDRESS_FIELDNAMES);
     }
 
-    if (isSelectElem) {
+    if (HTMLSelectElement.isInstance(element)) {
       const FIELDNAMES_FOR_SELECT_ELEMENT = [
         "address-level1",
         "address-level2",
@@ -1127,22 +1104,15 @@ this.FormAutofillHeuristics = {
         "cc-exp",
         "cc-type",
       ];
-      regexps = regexps.filter(name =>
+      fieldNames = fieldNames.filter(name =>
         FIELDNAMES_FOR_SELECT_ELEMENT.includes(name)
       );
     }
 
-    this._setRegExpListCache(
-      regexps,
-      isAutoCompleteOff,
-      FormAutofill.isAutofillCreditCardsAvailable,
-      isSelectElem
-    );
-
-    return regexps;
+    return fieldNames;
   },
 
-  getInfo(element, sacnner) {
+  getInfo(element, scanner) {
     function infoRecordWithFieldName(fieldName) {
       return {
         fieldName,
@@ -1169,32 +1139,25 @@ this.FormAutofillHeuristics = {
       return null;
     }
 
-    let isAutoCompleteOff =
-      element.autocomplete == "off" ||
-      (element.form && element.form.autocomplete == "off");
+    let fields = this._getPossibleFieldNames(element);
 
     // "email" type of input is accurate for heuristics to determine its Email
     // field or not. However, "tel" type is used for ZIP code for some web site
     // (e.g. HomeDepot, BestBuy), so "tel" type should be not used for "tel"
     // prediction.
-    if (element.type == "email" && !isAutoCompleteOff) {
+    if (element.type == "email" && fields.includes("email")) {
       return infoRecordWithFieldName("email");
     }
-
-    let fields = this._getPossibleFieldNames(
-      isAutoCompleteOff,
-      element.tagName
-    );
 
     if (FormAutofillUtils.isFathomCreditCardsEnabled()) {
       // We don't care fields that are not supported by fathom
       let fathomFields = fields.filter(r =>
         creditCardRulesets.types.includes(r)
       );
-      let fathomField = sacnner.getFathomField(element, fathomFields);
+      let matchedFieldName = scanner.getFathomField(element, fathomFields);
       // At this point, use fathom's recommendation if it has one
-      if (fathomField) {
-        return infoRecordWithFieldName(fathomField);
+      if (matchedFieldName) {
+        return infoRecordWithFieldName(matchedFieldName);
       }
 
       // TODO: Do we want to run old heuristics for fields that fathom isn't confident?
@@ -1408,22 +1371,29 @@ XPCOMUtils.defineLazyGetter(FormAutofillHeuristics, "RULES", () => {
   return sandbox.HeuristicsRegExp.RULES;
 });
 
-XPCOMUtils.defineLazyGetter(FormAutofillHeuristics, "_prefEnabled", () => {
-  return Services.prefs.getBoolPref(PREF_HEURISTICS_ENABLED);
-});
+XPCOMUtils.defineLazyGetter(
+  FormAutofillHeuristics,
+  "CREDIT_CARD_FIELDNAMES",
+  () =>
+    Object.keys(FormAutofillHeuristics.RULES).filter(name =>
+      FormAutofillUtils.isCreditCardField(name)
+    )
+);
 
-Services.prefs.addObserver(PREF_HEURISTICS_ENABLED, () => {
-  FormAutofillHeuristics._prefEnabled = Services.prefs.getBoolPref(
-    PREF_HEURISTICS_ENABLED
-  );
-});
+XPCOMUtils.defineLazyGetter(FormAutofillHeuristics, "ADDRESS_FIELDNAMES", () =>
+  Object.keys(FormAutofillHeuristics.RULES).filter(name =>
+    FormAutofillUtils.isAddressField(name)
+  )
+);
 
-XPCOMUtils.defineLazyGetter(FormAutofillHeuristics, "_sectionEnabled", () => {
-  return Services.prefs.getBoolPref(PREF_SECTION_ENABLED);
-});
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillHeuristics,
+  "_prefEnabled",
+  PREF_HEURISTICS_ENABLED
+);
 
-Services.prefs.addObserver(PREF_SECTION_ENABLED, () => {
-  FormAutofillHeuristics._sectionEnabled = Services.prefs.getBoolPref(
-    PREF_SECTION_ENABLED
-  );
-});
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofillHeuristics,
+  "_sectionEnabled",
+  PREF_SECTION_ENABLED
+);

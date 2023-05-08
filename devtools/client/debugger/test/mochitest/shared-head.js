@@ -1161,7 +1161,7 @@ function clickElementInTab(selector) {
 
 const isLinux = Services.appinfo.OS === "Linux";
 const isMac = Services.appinfo.OS === "Darwin";
-const cmdOrCtrl = isLinux ? { ctrlKey: true } : { metaKey: true };
+const cmdOrCtrl = isMac ? { metaKey: true } : { ctrlKey: true };
 const shiftOrAlt = isMac
   ? { accelKey: true, shiftKey: true }
   : { accelKey: true, altKey: true };
@@ -1488,7 +1488,6 @@ const selectors = {
   stepIn: ".stepIn.active",
   replayPrevious: ".replay-previous.active",
   replayNext: ".replay-next.active",
-  toggleBreakpoints: ".breakpoints-toggle",
   prettyPrintButton: ".source-footer .prettyPrint",
   sourceMapLink: ".source-footer .mapped-source",
   sourcesFooter: ".sources-panel .source-footer",
@@ -2002,7 +2001,6 @@ async function expandSourceTree(dbg) {
   );
   for (const rootNode of rootNodes) {
     await expandAllSourceNodes(dbg, rootNode);
-    await wait(250);
   }
 }
 
@@ -2019,21 +2017,51 @@ async function waitForSourcesInSourceTree(
   { noExpand = false } = {}
 ) {
   info(`waiting for ${sources.length} files in the source tree`);
-  await waitFor(async () => {
-    if (!noExpand) {
-      await expandSourceTree(dbg);
-    }
+  function getDisplayedSources() {
     // Replace some non visible space characters that prevents Array.includes from working correctly
-    const displayedSources = [...findAllElements(dbg, "sourceTreeFiles")].map(
-      e => {
-        return e.textContent.trim().replace(/^[\s\u200b]*/g, "");
+    return [...findAllElements(dbg, "sourceTreeFiles")].map(e => {
+      return e.textContent.trim().replace(/^[\s\u200b]*/g, "");
+    });
+  }
+  try {
+    // Use custom timeout and retry count for waitFor as the test method is slow to resolve
+    // and default value makes the timeout unecessarily long
+    await waitFor(
+      async () => {
+        if (!noExpand) {
+          await expandSourceTree(dbg);
+        }
+        const displayedSources = getDisplayedSources();
+        return (
+          displayedSources.length == sources.length &&
+          sources.every(source => displayedSources.includes(source))
+        );
+      },
+      null,
+      100,
+      50
+    );
+  } catch (e) {
+    // Craft a custom error message to help understand what's wrong with the Source Tree content
+    const displayedSources = getDisplayedSources();
+    let msg = "Invalid Source Tree Content.\n";
+    const missingElements = [];
+    for (const source of sources) {
+      const idx = displayedSources.indexOf(source);
+      if (idx != -1) {
+        displayedSources.splice(idx, 1);
+      } else {
+        missingElements.push(source);
       }
-    );
-    return (
-      displayedSources.length == sources.length &&
-      sources.every(source => displayedSources.includes(source))
-    );
-  });
+    }
+    if (missingElements.length > 0) {
+      msg += "Missing elements: " + missingElements.join(", ") + "\n";
+    }
+    if (displayedSources.length > 0) {
+      msg += "Unexpected elements: " + displayedSources.join(", ");
+    }
+    throw new Error(msg);
+  }
 }
 
 async function waitForNodeToGainFocus(dbg, index) {
@@ -2185,10 +2213,20 @@ async function hasConsoleMessage({ toolbox }, msg) {
 }
 
 function evaluateExpressionInConsole(hud, expression) {
+  const seenMessages = new Set(
+    JSON.parse(
+      hud.ui.outputNode
+        .querySelector("[data-visible-messages]")
+        .getAttribute("data-visible-messages")
+    )
+  );
   const onResult = new Promise(res => {
     const onNewMessage = messages => {
       for (const message of messages) {
-        if (message.node.classList.contains("result")) {
+        if (
+          message.node.classList.contains("result") &&
+          !seenMessages.has(message.node.getAttribute("data-message-id"))
+        ) {
           hud.ui.off("new-messages", onNewMessage);
           res(message.node);
         }
@@ -2301,10 +2339,37 @@ function createVersionizedHttpTestServer(testFolderName) {
     if (request.path == "/" || request.path == "/index.html") {
       response.setHeader("Content-Type", "text/html");
     }
-    const url = `${URL_ROOT}${testFolderName}/v${currentVersion}${request.path}`;
-    info(`[test-http-server] serving: ${url}`);
-    const content = await fetch(url);
-    const text = await content.text();
+    // If a query string is passed, lookup with a matching file, if available
+    // The '?' is replaced by '.'
+    let fetchResponse;
+    if (request.queryString) {
+      const url = `${URL_ROOT}${testFolderName}/v${currentVersion}${request.path}.${request.queryString}`;
+      try {
+        fetchResponse = await fetch(url);
+        // Log this only if the request succeed
+        info(`[test-http-server] serving: ${url}`);
+      } catch (e) {
+        // Ignore any error and proceed without the query string
+        fetchResponse = null;
+      }
+    }
+    if (!fetchResponse) {
+      const url = `${URL_ROOT}${testFolderName}/v${currentVersion}${request.path}`;
+      info(`[test-http-server] serving: ${url}`);
+      fetchResponse = await fetch(url);
+    }
+
+    // Ensure forwarding the response headers generated by the other http server
+    // (this can be especially useful when query .sjs files)
+    for (const [name, value] of fetchResponse.headers.entries()) {
+      response.setHeader(name, value);
+    }
+
+    // Override cache settings so that versionized requests are never cached
+    // and we get brand new content for any request.
+    response.setHeader("Cache-Control", "no-store");
+
+    const text = await fetchResponse.text();
     response.write(text);
     response.finish();
   });

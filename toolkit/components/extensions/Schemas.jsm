@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const global = this;
-
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -1143,13 +1141,14 @@ const FORMATS = {
   },
 
   contentSecurityPolicy(string, context) {
-    // Manifest V3 extension_pages allows localhost.  When sandbox is
+    // Manifest V3 extension_pages allows localhost and WASM.  When sandbox is
     // implemented, or any other V3 or later directive, the flags
     // logic will need to be updated.
     let flags =
       context.manifestVersion < 3
         ? Ci.nsIAddonContentPolicy.CSP_ALLOW_ANY
-        : Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST;
+        : Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST |
+          Ci.nsIAddonContentPolicy.CSP_ALLOW_WASM;
     let error = contentPolicyService.validateAddonCSP(string, flags);
     if (error != null) {
       // The CSP validation error is not reported as part of the "choices" error message,
@@ -1373,6 +1372,7 @@ class Type extends Entry {
       "deprecated",
       "preprocess",
       "postprocess",
+      "privileged",
       "allowedContexts",
       "min_manifest_version",
       "max_manifest_version",
@@ -2013,12 +2013,21 @@ class ObjectType extends Type {
           `Property "${prop}" is unsupported in Manifest Version ${context.manifestVersion}`,
           `not contain an unsupported "${prop}" property`
         );
-        if (context.manifestVersion === 2) {
-          // Existing MV2 extensions might have some of the new MV3 properties.
-          // Since we've ignored them till now, we should just warn and bail.
-          this.logWarning(context, forceString(error.error));
-          return;
+
+        this.logWarning(context, forceString(error.error));
+        if (this.additionalProperties) {
+          // When `additionalProperties` is set to UnrecognizedProperty, the
+          // caller (i.e. ObjectType's normalize method) assigns the original
+          // value to `result[prop]`. Erase the property now to prevent
+          // `result[prop]` from becoming anything other than `undefined.
+          //
+          // A warning was already logged above, so we do not need to also log
+          // "An unexpected property was found in the WebExtension manifest."
+          remainingProps.delete(prop);
         }
+        // When `additionalProperties` is not set, ObjectType's normalize method
+        // will return an error because prop is still in remainingProps.
+        return;
       }
     } else if (unsupported) {
       if (prop in properties) {
@@ -2680,7 +2689,7 @@ class CallEntry extends Entry {
         // For Chrome compatibility, use the default value if null or undefined
         // is explicitly passed but is not a valid argument in this position.
         if (parameter.optional && (arg === null || arg === undefined)) {
-          fixedArgs[parameterIndex] = Cu.cloneInto(parameter.default, global);
+          fixedArgs[parameterIndex] = Cu.cloneInto(parameter.default, {});
         } else {
           return false;
         }
@@ -3501,7 +3510,7 @@ class SchemaRoot extends Namespace {
     for (let [key, schema] of this.schemaJSON.entries()) {
       try {
         if (typeof schema.deserialize === "function") {
-          schema = schema.deserialize(global, isParentProcess);
+          schema = schema.deserialize(globalThis, isParentProcess);
 
           // If we're in the parent process, we need to keep the
           // StructuredCloneHolder blob around in order to send to future child
@@ -3756,6 +3765,7 @@ this.Schemas = {
       "OptionalPermission",
       "PermissionNoPrompt",
       "OptionalPermissionNoPrompt",
+      "PermissionPrivileged",
     ]
   ) {
     const ns = this.getNamespace("manifest");

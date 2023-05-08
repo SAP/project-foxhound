@@ -21,8 +21,7 @@
 #include "nsNetUtil.h"
 #include "nsIThreadRetargetableStreamListener.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 NS_IMPL_ADDREF(HttpTransactionParent)
 NS_INTERFACE_MAP_BEGIN(HttpTransactionParent)
@@ -88,7 +87,7 @@ nsresult HttpTransactionParent::Init(
     bool requestBodyHasHeaders, nsIEventTarget* target,
     nsIInterfaceRequestor* callbacks, nsITransportEventSink* eventsink,
     uint64_t topLevelOuterContentWindowId, HttpTrafficCategory trafficCategory,
-    nsIRequestContext* requestContext, uint32_t classOfService,
+    nsIRequestContext* requestContext, ClassOfService classOfService,
     uint32_t initialRwin, bool responseTimeoutEnabled, uint64_t channelId,
     TransactionObserverFunc&& transactionObserver,
     OnPushCallback&& aOnPushCallback,
@@ -111,9 +110,9 @@ nsresult HttpTransactionParent::Init(
   HttpConnectionInfoCloneArgs infoArgs;
   nsHttpConnectionInfo::SerializeHttpConnectionInfo(cinfo, infoArgs);
 
-  mozilla::ipc::AutoIPCStream autoStream;
-  if (requestBody &&
-      !autoStream.Serialize(requestBody, SocketProcessParent::GetSingleton())) {
+  Maybe<mozilla::ipc::IPCStream> ipcStream;
+  if (!mozilla::ipc::SerializeIPCStream(do_AddRef(requestBody), ipcStream,
+                                        /* aAllowLazy */ false)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -145,10 +144,8 @@ nsresult HttpTransactionParent::Init(
 
   // TODO: Figure out if we have to implement nsIThreadRetargetableRequest in
   // bug 1544378.
-  if (!SendInit(caps, infoArgs, *requestHead,
-                requestBody ? Some(autoStream.TakeValue()) : Nothing(),
-                requestContentLength, requestBodyHasHeaders,
-                topLevelOuterContentWindowId,
+  if (!SendInit(caps, infoArgs, *requestHead, ipcStream, requestContentLength,
+                requestBodyHasHeaders, topLevelOuterContentWindowId,
                 static_cast<uint8_t>(trafficCategory), requestContextID,
                 classOfService, initialRwin, responseTimeoutEnabled, mChannelId,
                 !!mTransactionObserver, pushedStreamArg, throttleQueue,
@@ -880,5 +877,4 @@ void HttpTransactionParent::HandleAsyncAbort() {
 
 bool HttpTransactionParent::GetSupportsHTTP3() { return mSupportsHTTP3; }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

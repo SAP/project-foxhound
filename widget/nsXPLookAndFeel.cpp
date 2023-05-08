@@ -431,8 +431,9 @@ static constexpr struct {
       widget::ThemeChangeKind::MediaQueriesOnly;
 } kMediaQueryPrefs[] = {
     {"browser.display.windows.native_menus"_ns},
-    {"browser.proton.places-tooltip.enabled"_ns},
-    {"layout.css.prefers-color-scheme.content-override"_ns},
+    // Affects env().
+    {"layout.css.prefers-color-scheme.content-override"_ns,
+     widget::ThemeChangeKind::Style},
     // Affects media queries and scrollbar sizes, so gotta relayout.
     {"widget.gtk.overlay-scrollbars.enabled"_ns,
      widget::ThemeChangeKind::StyleAndLayout},
@@ -671,6 +672,8 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozButtonactivetext:
       color = kWindowText;
       break;
+    case ColorID::Buttonshadow:
+    case ColorID::Threedshadow:
     case ColorID::Threedlightshadow:  // --in-content-box-border-color computed
                                       // with kWindowText above
                                       // kWindowBackground.

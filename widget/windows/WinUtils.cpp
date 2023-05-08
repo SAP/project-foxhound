@@ -524,7 +524,7 @@ void WinUtils::LogW(const wchar_t* fmt, ...) {
       NS_ASSERTION(gWindowsLog,
                    "Called WinUtils Log() but Widget "
                    "log module doesn't exist!");
-      MOZ_LOG(gWindowsLog, LogLevel::Error, (utf8));
+      MOZ_LOG(gWindowsLog, LogLevel::Error, ("%s", utf8));
     }
     delete[] utf8;
   }
@@ -557,7 +557,7 @@ void WinUtils::Log(const char* fmt, ...) {
   NS_ASSERTION(gWindowsLog,
                "Called WinUtils Log() but Widget "
                "log module doesn't exist!");
-  MOZ_LOG(gWindowsLog, LogLevel::Error, (buffer));
+  MOZ_LOG(gWindowsLog, LogLevel::Error, ("%s", buffer));
   delete[] buffer;
 }
 
@@ -1978,7 +1978,7 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
 
   if (handle == INVALID_HANDLE_VALUE) {
-    LOG_E("Failed to open file handle to resolve path. GetLastError=%d",
+    LOG_E("Failed to open file handle to resolve path. GetLastError=%lu",
           GetLastError());
     return false;
   }
@@ -1986,7 +1986,7 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
   DWORD pathLen = GetFinalPathNameByHandleW(
       handle, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
   if (pathLen == 0 || pathLen >= MAX_PATH) {
-    LOG_E("GetFinalPathNameByHandleW failed. GetLastError=%d", GetLastError());
+    LOG_E("GetFinalPathNameByHandleW failed. GetLastError=%lu", GetLastError());
     return false;
   }
   aPath = path;
@@ -2316,59 +2316,6 @@ void WinUtils::EnableWindowOcclusion(const bool aEnable) {
   }
   ::EnumWindows(EnumUpdateWindowOcclusionProc,
                 reinterpret_cast<LPARAM>(&aEnable));
-}
-
-void WinUtils::GetDisplayOrientation(const char16ptr_t aName,
-                                     hal::ScreenOrientation& aOrientation,
-                                     uint16_t& aAngle) {
-  aOrientation = hal::ScreenOrientation::None;
-  aAngle = 0;
-
-  DEVMODEW mode = {.dmSize = sizeof(DEVMODEW)};
-  if (!EnumDisplaySettingsW(aName, ENUM_CURRENT_SETTINGS, &mode)) {
-    return;
-  }
-  MOZ_ASSERT(mode.dmFields & DM_DISPLAYORIENTATION);
-
-  // conver to default/natural size
-  if (mode.dmDisplayOrientation == DMDO_90 ||
-      mode.dmDisplayOrientation == DMDO_270) {
-    DWORD temp = mode.dmPelsHeight;
-    mode.dmPelsHeight = mode.dmPelsWidth;
-    mode.dmPelsWidth = temp;
-  }
-
-  bool defaultIsLandscape = mode.dmPelsWidth >= mode.dmPelsHeight;
-  switch (mode.dmDisplayOrientation) {
-    case DMDO_DEFAULT:
-      aOrientation = defaultIsLandscape
-                         ? hal::ScreenOrientation::LandscapePrimary
-                         : hal::ScreenOrientation::PortraitPrimary;
-      aAngle = 0;
-      break;
-    case DMDO_90:
-      aOrientation = defaultIsLandscape
-                         ? hal::ScreenOrientation::PortraitPrimary
-                         : hal::ScreenOrientation::LandscapeSecondary;
-      aAngle = 270;
-      break;
-    case DMDO_180:
-      aOrientation = defaultIsLandscape
-                         ? hal::ScreenOrientation::LandscapeSecondary
-                         : hal::ScreenOrientation::PortraitSecondary;
-      aAngle = 180;
-      break;
-    case DMDO_270:
-      aOrientation = defaultIsLandscape
-                         ? hal::ScreenOrientation::PortraitSecondary
-                         : hal::ScreenOrientation::LandscapePrimary;
-      aAngle = 90;
-      break;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unexpected angle");
-      break;
-  }
-  return;
 }
 
 }  // namespace widget

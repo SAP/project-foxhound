@@ -32,6 +32,12 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+/* import-globals-from ../../../webconsole/test/browser/shared-head.js */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/shared-head.js",
+  this
+);
+
 /**
  * Helper function for `_loadAllIntegrationTests`.
  *
@@ -95,4 +101,41 @@ async function runAllIntegrationTests(testFolder, env) {
     info(` ==> Running integration task '${task.name}'`);
     await task(testServer, testUrl, env);
   }
+}
+
+/**
+ * Install a Web Extension which will run a content script against any test page
+ * served from https://example.com
+ *
+ * This content script is meant to be debuggable when devtools.chrome.enabled is true.
+ */
+async function installAndStartContentScriptExtension() {
+  function contentScript() {
+    console.log("content script loads");
+
+    // This listener prevents the source from being garbage collected
+    // and be missing from the scripts returned by `dbg.findScripts()`
+    // in `ThreadActor._discoverSources`.
+    window.onload = () => {};
+  }
+
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      name: "Test content script extension",
+      content_scripts: [
+        {
+          js: ["content_script.js"],
+          matches: ["https://example.com/*"],
+          run_at: "document_start",
+        },
+      ],
+    },
+    files: {
+      "content_script.js": contentScript,
+    },
+  });
+
+  await extension.startup();
+
+  return extension;
 }

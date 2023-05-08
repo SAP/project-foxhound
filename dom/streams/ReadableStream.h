@@ -19,10 +19,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
-#ifndef MOZ_DOM_STREAMS
-#  error "Shouldn't be compiling with this header without MOZ_DOM_STREAMS set"
-#endif
-
 namespace mozilla::dom {
 
 class Promise;
@@ -41,6 +37,8 @@ using OwningReadableStreamReader =
     OwningReadableStreamDefaultReaderOrReadableStreamBYOBReader;
 class NativeUnderlyingSource;
 class BodyStreamHolder;
+class UniqueMessagePortId;
+class MessagePort;
 
 class ReadableStream final : public nsISupports, public nsWrapperCache {
  public:
@@ -60,13 +58,14 @@ class ReadableStream final : public nsISupports, public nsWrapperCache {
 
   // Slot Getter/Setters:
  public:
-  ReadableStreamController* Controller() { return mController; }
+  MOZ_KNOWN_LIVE ReadableStreamController* Controller() { return mController; }
   ReadableStreamDefaultController* DefaultController() {
     MOZ_ASSERT(mController && mController->IsDefault());
     return mController->AsDefault();
   }
-  void SetController(ReadableStreamController* aController) {
-    mController = aController;
+  void SetController(ReadableStreamController& aController) {
+    MOZ_ASSERT(!mController);
+    mController = &aController;
   }
 
   bool Disturbed() const { return mDisturbed; }
@@ -81,7 +80,7 @@ class ReadableStream final : public nsISupports, public nsWrapperCache {
   void SetState(const ReaderState& aState) { mState = aState; }
 
   JS::Value StoredError() const { return mStoredError; }
-  void SetStoredError(JS::HandleValue aStoredError) {
+  void SetStoredError(JS::Handle<JS::Value> aStoredError) {
     mStoredError = aStoredError;
   }
 
@@ -97,6 +96,15 @@ class ReadableStream final : public nsISupports, public nsWrapperCache {
   bool HasNativeUnderlyingSource() { return mNativeUnderlyingSource; }
 
   void ReleaseObjects();
+
+  // [Transferable]
+  // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-steps
+  MOZ_CAN_RUN_SCRIPT bool Transfer(JSContext* aCx,
+                                   UniqueMessagePortId& aPortId);
+  // https://html.spec.whatwg.org/multipage/structured-data.html#transfer-receiving-steps
+  static MOZ_CAN_RUN_SCRIPT bool ReceiveTransfer(
+      JSContext* aCx, nsIGlobalObject* aGlobal, MessagePort& aPort,
+      JS::MutableHandle<JSObject*> aReturnObject);
 
  public:
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
