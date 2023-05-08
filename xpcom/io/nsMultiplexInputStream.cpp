@@ -66,7 +66,8 @@ class nsMultiplexInputStream final : public nsIMultiplexInputStream,
   void AsyncWaitCompleted();
 
   // This is used for nsIAsyncInputStreamLength::AsyncLengthWait
-  void AsyncWaitCompleted(int64_t aLength, const MutexAutoLock& aProofOfLock);
+  void AsyncWaitCompleted(int64_t aLength, const MutexAutoLock& aProofOfLock)
+      REQUIRES(mLock);
 
   struct StreamData {
     nsresult Initialize(nsIInputStream* aOriginalStream) {
@@ -103,7 +104,7 @@ class nsMultiplexInputStream final : public nsIMultiplexInputStream,
     uint64_t mCurrentPos;
   };
 
-  Mutex& GetLock() { return mLock; }
+  Mutex& GetLock() RETURN_CAPABILITY(mLock) { return mLock; }
 
  private:
   ~nsMultiplexInputStream() = default;
@@ -112,7 +113,7 @@ class nsMultiplexInputStream final : public nsIMultiplexInputStream,
 
   // This method updates mSeekableStreams, mTellableStreams,
   // mIPCSerializableStreams and mCloneableStreams values.
-  void UpdateQIMap(StreamData& aStream);
+  void UpdateQIMap(StreamData& aStream) REQUIRES(mLock);
 
   struct MOZ_STACK_CLASS ReadSegmentsState {
     nsCOMPtr<nsIInputStream> mThisStream;
@@ -141,23 +142,24 @@ class nsMultiplexInputStream final : public nsIMultiplexInputStream,
 
   Mutex mLock;  // Protects access to all data members.
 
-  nsTArray<StreamData> mStreams;
+  nsTArray<StreamData> mStreams GUARDED_BY(mLock);
 
-  uint32_t mCurrentStream;
-  bool mStartedReadingCurrent;
-  nsresult mStatus;
-  nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback;
-  uint32_t mAsyncWaitFlags;
-  uint32_t mAsyncWaitRequestedCount;
-  nsCOMPtr<nsIEventTarget> mAsyncWaitEventTarget;
-  nsCOMPtr<nsIInputStreamLengthCallback> mAsyncWaitLengthCallback;
+  uint32_t mCurrentStream GUARDED_BY(mLock);
+  bool mStartedReadingCurrent GUARDED_BY(mLock);
+  nsresult mStatus GUARDED_BY(mLock);
+  nsCOMPtr<nsIInputStreamCallback> mAsyncWaitCallback GUARDED_BY(mLock);
+  uint32_t mAsyncWaitFlags GUARDED_BY(mLock);
+  uint32_t mAsyncWaitRequestedCount GUARDED_BY(mLock);
+  nsCOMPtr<nsIEventTarget> mAsyncWaitEventTarget GUARDED_BY(mLock);
+  nsCOMPtr<nsIInputStreamLengthCallback> mAsyncWaitLengthCallback
+      GUARDED_BY(mLock);
 
   class AsyncWaitLengthHelper;
-  RefPtr<AsyncWaitLengthHelper> mAsyncWaitLengthHelper;
+  RefPtr<AsyncWaitLengthHelper> mAsyncWaitLengthHelper GUARDED_BY(mLock);
 
-  uint32_t mSeekableStreams;
-  uint32_t mIPCSerializableStreams;
-  uint32_t mCloneableStreams;
+  uint32_t mSeekableStreams GUARDED_BY(mLock);
+  uint32_t mIPCSerializableStreams GUARDED_BY(mLock);
+  uint32_t mCloneableStreams GUARDED_BY(mLock);
 
   // These are Atomics so that we can check them in QueryInterface without
   // taking a lock (to look at mStreams.Length() and the numbers above)
@@ -1390,6 +1392,8 @@ nsMultiplexInputStream::AsyncLengthWait(nsIInputStreamLengthCallback* aCallback,
 
 void nsMultiplexInputStream::AsyncWaitCompleted(
     int64_t aLength, const MutexAutoLock& aProofOfLock) {
+  mLock.AssertCurrentThreadOwns();
+
   nsCOMPtr<nsIInputStreamLengthCallback> callback;
   callback.swap(mAsyncWaitLengthCallback);
 

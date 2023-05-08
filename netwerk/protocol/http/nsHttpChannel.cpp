@@ -661,7 +661,7 @@ nsresult nsHttpChannel::ContinueOnBeforeConnect(bool aShouldUpgrade,
   if (mUpgradeProtocolCallback) {
     // Websockets can run over HTTP/2, but other upgrades can't.
     if (mUpgradeProtocol.EqualsLiteral("websocket") &&
-        gHttpHandler->IsH2WebsocketsEnabled()) {
+        StaticPrefs::network_http_http2_websockets()) {
       // Need to tell the conn manager that we're ok with http/2 even with
       // the allow keepalive bit not set. That bit needs to stay off,
       // though, in case we end up having to fallback to http/1.1 (where
@@ -1253,8 +1253,9 @@ nsresult nsHttpChannel::SetupTransaction() {
 
   // create the transaction object
   if (nsIOService::UseSocketProcess()) {
-    MOZ_ASSERT(gIOService->SocketProcessReady(),
-               "Socket process should be ready.");
+    if (NS_WARN_IF(!gIOService->SocketProcessReady())) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
 
     nsCOMPtr<nsIParentChannel> parentChannel;
     NS_QueryNotificationCallbacks(this, parentChannel);
@@ -6872,6 +6873,9 @@ nsHttpChannel::OnStartRequest(nsIRequest* request) {
           NS_SUCCEEDED(mStatus));
       StoreHasHTTPSRR(true);
     }
+
+    StoreLoadedBySocketProcess(mTransaction->AsHttpTransactionParent() !=
+                               nullptr);
   }
 
   // don't enter this block if we're reading from the cache...

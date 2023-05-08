@@ -360,7 +360,7 @@ class nsPipe final : public nsIPipe {
   // in mInputList as a weak ref.
   RefPtr<nsPipeInputStream> mOriginalInput;
 
-  ReentrantMonitor mReentrantMonitor;
+  ReentrantMonitor mReentrantMonitor MOZ_UNANNOTATED;
   nsSegmentedBuffer mBuffer;
 
   // The maximum number of segments to allow to be buffered in advance
@@ -1800,19 +1800,10 @@ nsPipeOutputStream::WriteSegments(nsReadSegmentFun aReader, void* aClosure,
   return rv;
 }
 
-static nsresult nsReadFromRawBuffer(nsIOutputStream* aOutStr, void* aClosure,
-                                    char* aToRawSegment, uint32_t aOffset,
-                                    uint32_t aCount, uint32_t* aReadCount) {
-  const char* fromBuf = (const char*)aClosure;
-  memcpy(aToRawSegment, &fromBuf[aOffset], aCount);
-  *aReadCount = aCount;
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsPipeOutputStream::Write(const char* aFromBuf, uint32_t aBufLen,
                           uint32_t* aWriteCount) {
-  return WriteSegments(nsReadFromRawBuffer, (void*)aFromBuf, aBufLen,
+  return WriteSegments(NS_CopyBufferToSegment, (void*)aFromBuf, aBufLen,
                        aWriteCount);
 }
 
@@ -1822,17 +1813,11 @@ nsPipeOutputStream::Flush(void) {
   return NS_OK;
 }
 
-static nsresult nsReadFromInputStream(nsIOutputStream* aOutStr, void* aClosure,
-                                      char* aToRawSegment, uint32_t aOffset,
-                                      uint32_t aCount, uint32_t* aReadCount) {
-  nsIInputStream* fromStream = (nsIInputStream*)aClosure;
-  return fromStream->Read(aToRawSegment, aCount, aReadCount);
-}
-
 NS_IMETHODIMP
 nsPipeOutputStream::WriteFrom(nsIInputStream* aFromStream, uint32_t aCount,
                               uint32_t* aWriteCount) {
-  return WriteSegments(nsReadFromInputStream, aFromStream, aCount, aWriteCount);
+  return WriteSegments(NS_CopyStreamToSegment, aFromStream, aCount,
+                       aWriteCount);
 }
 
 NS_IMETHODIMP

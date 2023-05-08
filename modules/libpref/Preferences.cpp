@@ -49,6 +49,7 @@
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsCRT.h"
 #include "nsTHashMap.h"
 #include "nsDirectoryServiceDefs.h"
@@ -1586,6 +1587,14 @@ static nsresult pref_SetPref(const nsCString& aPrefName, PrefType aType,
   MOZ_ASSERT(NS_IsMainThread());
 
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads)) {
+    printf(
+        "pref_SetPref: Attempt to write pref %s after XPCOMShutdownThreads "
+        "started.\n",
+        aPrefName.get());
+    if (nsContentUtils::IsInitialized()) {
+      xpc_DumpJSStack(true, true, false);
+    }
+    MOZ_ASSERT(false, "Late preference writes should be avoided.");
     return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
 
@@ -2485,6 +2494,16 @@ nsPrefBranch::PrefHasUserValue(const char* aPrefName, bool* aRetVal) {
 }
 
 NS_IMETHODIMP
+nsPrefBranch::PrefHasDefaultValue(const char* aPrefName, bool* aRetVal) {
+  NS_ENSURE_ARG_POINTER(aRetVal);
+  NS_ENSURE_ARG(aPrefName);
+
+  const PrefName& pref = GetPrefName(aPrefName);
+  *aRetVal = Preferences::HasDefaultValue(pref.get());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsPrefBranch::LockPref(const char* aPrefName) {
   NS_ENSURE_ARG(aPrefName);
 
@@ -2992,7 +3011,7 @@ class PreferencesWriter final {
   static Atomic<int> sPendingWriteCount;
 
   // See PWRunnable::Run for details on why we need this lock.
-  static StaticMutex sWritingToFile;
+  static StaticMutex sWritingToFile MOZ_UNANNOTATED;
 };
 
 Atomic<PrefSaveData*> PreferencesWriter::sPendingWriteData(nullptr);
@@ -3527,14 +3546,17 @@ NS_IMPL_ISUPPORTS(Preferences, nsIPrefService, nsIObserver, nsIPrefBranch,
                   nsISupportsWeakReference)
 
 /* static */
-void Preferences::SerializePreferences(nsCString& aStr) {
+void Preferences::SerializePreferences(
+    nsCString& aStr,
+    const std::function<bool(const char*)>& aShouldSerializeFn) {
   MOZ_RELEASE_ASSERT(InitStaticMembers());
 
   aStr.Truncate();
 
   for (auto iter = HashTable()->iter(); !iter.done(); iter.next()) {
     Pref* pref = iter.get().get();
-    if (!pref->IsTypeNone() && pref->HasAdvisablySizedValues()) {
+    if (!pref->IsTypeNone() && pref->HasAdvisablySizedValues() &&
+        aShouldSerializeFn(pref->Name())) {
       pref->SerializeAndAppend(aStr);
     }
   }
@@ -4047,11 +4069,6 @@ void Preferences::ReadUserOverridePrefs() {
 
   aFile->AppendNative("user.js"_ns);
   rv = openPrefFile(aFile, PrefValueKind::User);
-  if (rv != NS_ERROR_FILE_NOT_FOUND) {
-    // If the file exists and was at least partially read, record that in
-    // telemetry as it may be a sign of pref injection.
-    Telemetry::ScalarSet(Telemetry::ScalarID::PREFERENCES_READ_USER_JS, true);
-  }
 }
 
 nsresult Preferences::MakeBackupPrefFile(nsIFile* aFile) {
@@ -5000,6 +5017,14 @@ bool Preferences::HasUserValue(const char* aPrefName) {
 }
 
 /* static */
+bool Preferences::HasDefaultValue(const char* aPrefName) {
+  NS_ENSURE_TRUE(InitStaticMembers(), false);
+
+  Maybe<PrefWrapper> pref = pref_Lookup(aPrefName);
+  return pref.isSome() && pref->HasDefaultValue();
+}
+
+/* static */
 int32_t Preferences::GetType(const char* aPrefName) {
   NS_ENSURE_TRUE(InitStaticMembers(), nsIPrefBranch::PREF_INVALID);
 
@@ -5335,7 +5360,7 @@ static void InitAlwaysPref(const nsCString& aName, T* aCache,
 }
 
 static Atomic<bool> sOncePrefRead(false);
-static StaticMutex sOncePrefMutex;
+static StaticMutex sOncePrefMutex MOZ_UNANNOTATED;
 
 namespace StaticPrefs {
 

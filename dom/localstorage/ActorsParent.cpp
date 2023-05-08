@@ -435,24 +435,33 @@ nsresult UpgradeSchemaFrom4_0To5_0(mozIStorageConnection* aConnection) {
   AssertIsOnIOThread();
   MOZ_ASSERT(aConnection);
 
-  // Rename old data
+  // Recreate data table in new format following steps at
+  // https://www.sqlite.org/lang_altertable.html
+  // section "Making Other Kinds Of Table Schema Changes"
   QM_TRY(MOZ_TO_RESULT(aConnection->ExecuteSimpleSQL(
-      "ALTER TABLE data RENAME TO legacy_data;"_ns)));
-
-  // Recreate data table in new format
-  QM_TRY(MOZ_TO_RESULT(CreateDataTable(aConnection)));
+      "CREATE TABLE migrated_data"
+      "( key TEXT PRIMARY KEY"
+      ", utf16_length INTEGER NOT NULL"
+      ", conversion_type INTEGER NOT NULL"
+      ", compression_type INTEGER NOT NULL"
+      ", last_access_time INTEGER NOT NULL DEFAULT 0"
+      ", value BLOB NOT NULL"
+      ");"_ns)));
 
   // Reinsert old data, all legacy data is UTF8
   static_assert(1u ==
                 static_cast<uint8_t>(LSValue::ConversionType::UTF16_UTF8));
   QM_TRY(MOZ_TO_RESULT(aConnection->ExecuteSimpleSQL(
-      "INSERT INTO data (key, utf16_length, conversion_type, compression_type, "
-      "last_access_time, value) "
+      "INSERT INTO migrated_data (key, utf16_length, conversion_type, "
+      "compression_type, last_access_time, value) "
       "SELECT key, utf16Length, 1, compressed, lastAccessTime, value "
-      "FROM legacy_data;"_ns)));
+      "FROM data;"_ns)));
 
-  QM_TRY(MOZ_TO_RESULT(
-      aConnection->ExecuteSimpleSQL("DROP TABLE legacy_data;"_ns)));
+  QM_TRY(MOZ_TO_RESULT(aConnection->ExecuteSimpleSQL("DROP TABLE data;"_ns)));
+
+  // Rename to data
+  QM_TRY(MOZ_TO_RESULT(aConnection->ExecuteSimpleSQL(
+      "ALTER TABLE migrated_data RENAME TO data;"_ns)));
 
   QM_TRY(MOZ_TO_RESULT(aConnection->SetSchemaVersion(MakeSchemaVersion(5, 0))));
 
@@ -504,9 +513,9 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateStorageConnection(
       auto connection,
       OrElseIf(
           // Expression.
-          MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(nsCOMPtr<mozIStorageConnection>,
-                                            storageService, OpenDatabase,
-                                            &aDBFile),
+          MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+              nsCOMPtr<mozIStorageConnection>, storageService, OpenDatabase,
+              &aDBFile, mozIStorageService::CONNECTION_DEFAULT),
           // Predicate.
           IsDatabaseCorruptionError,
           // Fallback.
@@ -540,7 +549,7 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateStorageConnection(
 
             QM_TRY_RETURN(MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                 nsCOMPtr<mozIStorageConnection>, storageService, OpenDatabase,
-                &aDBFile));
+                &aDBFile, mozIStorageService::CONNECTION_DEFAULT));
           })));
 
   QM_TRY(MOZ_TO_RESULT(SetDefaultPragmas(connection)));
@@ -693,9 +702,10 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> GetStorageConnection(
                                          MOZ_SELECT_OVERLOAD(do_GetService),
                                          MOZ_STORAGE_SERVICE_CONTRACTID));
 
-  QM_TRY_UNWRAP(auto connection, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
-                                     nsCOMPtr<mozIStorageConnection>, ss,
-                                     OpenDatabase, databaseFile));
+  QM_TRY_UNWRAP(auto connection,
+                MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+                    nsCOMPtr<mozIStorageConnection>, ss, OpenDatabase,
+                    databaseFile, mozIStorageService::CONNECTION_DEFAULT));
 
   QM_TRY(MOZ_TO_RESULT(SetDefaultPragmas(connection)));
 
@@ -744,8 +754,9 @@ CreateArchiveStorageConnection(const nsAString& aStoragePath) {
       auto connection,
       QM_OR_ELSE_WARN_IF(
           // Expression.
-          MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(nsCOMPtr<mozIStorageConnection>, ss,
-                                            OpenUnsharedDatabase, archiveFile),
+          MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+              nsCOMPtr<mozIStorageConnection>, ss, OpenUnsharedDatabase,
+              archiveFile, mozIStorageService::CONNECTION_DEFAULT),
           // Predicate.
           IsDatabaseCorruptionError,
           // Fallback. Don't throw an error, leave a corrupted ls-archive
@@ -839,8 +850,9 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateShadowStorageConnection(
       auto connection,
       QM_OR_ELSE_WARN_IF(
           // Expression.
-          MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(nsCOMPtr<mozIStorageConnection>, ss,
-                                            OpenUnsharedDatabase, shadowFile),
+          MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+              nsCOMPtr<mozIStorageConnection>, ss, OpenUnsharedDatabase,
+              shadowFile, mozIStorageService::CONNECTION_DEFAULT),
           // Predicate.
           IsDatabaseCorruptionError,
           // Fallback.
@@ -850,7 +862,7 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateShadowStorageConnection(
 
             QM_TRY_RETURN(MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                 nsCOMPtr<mozIStorageConnection>, ss, OpenUnsharedDatabase,
-                shadowFile));
+                shadowFile, mozIStorageService::CONNECTION_DEFAULT));
           })));
 
   QM_TRY(MOZ_TO_RESULT(SetShadowJournalMode(connection)));
@@ -879,7 +891,8 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> CreateShadowStorageConnection(
 
         QM_TRY_UNWRAP(connection, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                                       nsCOMPtr<mozIStorageConnection>, ss,
-                                      OpenUnsharedDatabase, shadowFile));
+                                      OpenUnsharedDatabase, shadowFile,
+                                      mozIStorageService::CONNECTION_DEFAULT));
 
         QM_TRY(MOZ_TO_RESULT(SetShadowJournalMode(connection)));
 
@@ -910,7 +923,8 @@ Result<nsCOMPtr<mozIStorageConnection>, nsresult> GetShadowStorageConnection(
                                          MOZ_STORAGE_SERVICE_CONTRACTID));
 
   QM_TRY_RETURN(MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
-      nsCOMPtr<mozIStorageConnection>, ss, OpenUnsharedDatabase, shadowFile));
+      nsCOMPtr<mozIStorageConnection>, ss, OpenUnsharedDatabase, shadowFile,
+      mozIStorageService::CONNECTION_DEFAULT));
 }
 
 nsresult AttachShadowDatabase(const nsAString& aBasePath,
@@ -1354,7 +1368,7 @@ class Connection final : public CachingDatabaseConnection {
  * origin, so we need to queue a runnable and wait our turn.)
  */
 class Connection::InitTemporaryOriginHelper final : public Runnable {
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor mMonitor MOZ_UNANNOTATED;
   const OriginMetadata mOriginMetadata;
   nsString mOriginDirectoryPath;
   nsresult mIOThreadResultCode;
@@ -1548,6 +1562,8 @@ class Datastore final
 
   void NoteFinishedPreparedDatastore(PreparedDatastore* aPreparedDatastore);
 
+  bool HasOtherProcessDatabases(Database* aDatabase);
+
   void NoteLiveDatabase(Database* aDatabase);
 
   void NoteFinishedDatabase(Database* aDatabase);
@@ -1573,10 +1589,10 @@ class Datastore final
   //////////////////////////////////////////////////////////////////////////////
   // Mutation Methods
   //
-  // These are only called during Snapshot::RecvCheckpoint
+  // These are only called during Snapshot::Checkpoint
 
   /**
-   * Used by Snapshot::RecvCheckpoint to set a key/value pair as part of a an
+   * Used by Snapshot::Checkpoint to set a key/value pair as part of an
    * explicit batch.
    */
   void SetItem(Database* aDatabase, const nsString& aKey,
@@ -1586,7 +1602,7 @@ class Datastore final
 
   void Clear(Database* aDatabase);
 
-  void BeginUpdateBatch(int64_t aSnapshotInitialUsage);
+  void BeginUpdateBatch(int64_t aSnapshotUsage);
 
   int64_t EndUpdateBatch(int64_t aSnapshotPeakUsage);
 
@@ -1622,6 +1638,8 @@ class Datastore final
 
   void NotifySnapshots(Database* aDatabase, const nsAString& aKey,
                        const LSValue& aOldValue, bool aAffectsOrder);
+
+  void NoteChangedDatabaseMap();
 };
 
 class PrivateDatastore {
@@ -1932,6 +1950,13 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
   bool mLoadKeysReceived;
   bool mSentMarkDirty;
 
+  /**
+   * True if there are Database objects in other content processes. The value
+   * never gets updated, we instead mark snapshots as dirty when Database
+   * objects are added or removed. Marking snapshots as dirty forces creation
+   * of new snapshots for new tasks.
+   */
+  bool mHasOtherProcessDatabases;
   bool mHasOtherProcessObservers;
 
  public:
@@ -1940,11 +1965,12 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
 
   void Init(nsTHashtable<nsStringHashKey>& aLoadedItems,
             nsTHashSet<nsString>&& aUnknownItems, uint32_t aNextLoadIndex,
-            uint32_t aTotalLength, int64_t aInitialUsage, int64_t aPeakUsage,
-            LSSnapshot::LoadState aLoadState, bool aHasOtherProcessObservers) {
+            uint32_t aTotalLength, int64_t aUsage, int64_t aPeakUsage,
+            LSSnapshot::LoadState aLoadState, bool aHasOtherProcessDatabases,
+            bool aHasOtherProcessObservers) {
     AssertIsOnBackgroundThread();
-    MOZ_ASSERT(aInitialUsage >= 0);
-    MOZ_ASSERT(aPeakUsage >= aInitialUsage);
+    MOZ_ASSERT(aUsage >= 0);
+    MOZ_ASSERT(aPeakUsage >= aUsage);
     MOZ_ASSERT_IF(aLoadState != LSSnapshot::LoadState::AllOrderedItems,
                   aNextLoadIndex < aTotalLength);
     MOZ_ASSERT(mTotalLength == 0);
@@ -1955,7 +1981,7 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
     mUnknownItems = std::move(aUnknownItems);
     mNextLoadIndex = aNextLoadIndex;
     mTotalLength = aTotalLength;
-    mUsage = aInitialUsage;
+    mUsage = aUsage;
     mPeakUsage = aPeakUsage;
     if (aLoadState == LSSnapshot::LoadState::AllOrderedKeys) {
       MOZ_ASSERT(mUnknownItems.Count() == 0);
@@ -1968,6 +1994,7 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
       mLoadedAllItems = true;
       mLoadKeysReceived = true;
     }
+    mHasOtherProcessDatabases = aHasOtherProcessDatabases;
     mHasOtherProcessObservers = aHasOtherProcessObservers;
   }
 
@@ -1987,6 +2014,12 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
     return mSentMarkDirty;
   }
 
+  bool HasOtherProcessDatabases() const {
+    AssertIsOnBackgroundThread();
+
+    return mHasOtherProcessDatabases;
+  }
+
   bool HasOtherProcessObservers() const {
     AssertIsOnBackgroundThread();
 
@@ -1999,6 +2032,11 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
   // Reference counted.
   ~Snapshot();
 
+  mozilla::ipc::IPCResult Checkpoint(nsTArray<LSWriteInfo>&& aWriteInfos);
+
+  mozilla::ipc::IPCResult CheckpointAndNotify(
+      nsTArray<LSWriteAndNotifyInfo>&& aWriteAndNotifyInfos);
+
   void Finish();
 
   // IPDL methods are only called by IPDL.
@@ -2006,13 +2044,21 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
 
   mozilla::ipc::IPCResult RecvDeleteMe() override;
 
-  mozilla::ipc::IPCResult RecvCheckpoint(
+  mozilla::ipc::IPCResult RecvAsyncCheckpoint(
       nsTArray<LSWriteInfo>&& aWriteInfos) override;
 
-  mozilla::ipc::IPCResult RecvCheckpointAndNotify(
+  mozilla::ipc::IPCResult RecvAsyncCheckpointAndNotify(
       nsTArray<LSWriteAndNotifyInfo>&& aWriteAndNotifyInfos) override;
 
-  mozilla::ipc::IPCResult RecvFinish() override;
+  mozilla::ipc::IPCResult RecvSyncCheckpoint(
+      nsTArray<LSWriteInfo>&& aWriteInfos) override;
+
+  mozilla::ipc::IPCResult RecvSyncCheckpointAndNotify(
+      nsTArray<LSWriteAndNotifyInfo>&& aWriteAndNotifyInfos) override;
+
+  mozilla::ipc::IPCResult RecvAsyncFinish() override;
+
+  mozilla::ipc::IPCResult RecvSyncFinish() override;
 
   mozilla::ipc::IPCResult RecvLoaded() override;
 
@@ -2024,8 +2070,6 @@ class Snapshot final : public PBackgroundLSSnapshotParent {
 
   mozilla::ipc::IPCResult RecvIncreasePeakUsage(const int64_t& aMinSize,
                                                 int64_t* aSize) override;
-
-  mozilla::ipc::IPCResult RecvPing() override;
 };
 
 class Observer final : public PBackgroundLSObserverParent {
@@ -2432,6 +2476,19 @@ class PreloadedOp : public LSSimpleRequestBase {
   void GetResponse(LSSimpleRequestResponse& aResponse) override;
 };
 
+class GetStateOp : public LSSimpleRequestBase {
+  nsCString mOrigin;
+
+ public:
+  GetStateOp(const LSSimpleRequestParams& aParams,
+             const Maybe<ContentParentId>& aContentParentId);
+
+ private:
+  nsresult Start() override;
+
+  void GetResponse(LSSimpleRequestResponse& aResponse) override;
+};
+
 /*******************************************************************************
  * Other class declarations
  ******************************************************************************/
@@ -2557,7 +2614,7 @@ class QuotaClient final : public mozilla::dom::quota::Client {
 
   static QuotaClient* sInstance;
 
-  Mutex mShadowDatabaseMutex;
+  Mutex mShadowDatabaseMutex MOZ_UNANNOTATED;
   bool mShutdownRequested;
 
  public:
@@ -3440,6 +3497,14 @@ PBackgroundLSSimpleRequestParent* AllocPBackgroundLSSimpleRequestParent(
           new PreloadedOp(aParams, contentParentId);
 
       actor = std::move(preloadedOp);
+
+      break;
+    }
+
+    case LSSimpleRequestParams::TLSSimpleRequestGetStateParams: {
+      RefPtr<GetStateOp> getStateOp = new GetStateOp(aParams, contentParentId);
+
+      actor = std::move(getStateOp);
 
       break;
     }
@@ -4523,6 +4588,20 @@ void Datastore::NoteFinishedPreparedDatastore(
   MaybeClose();
 }
 
+bool Datastore::HasOtherProcessDatabases(Database* aDatabase) {
+  AssertIsOnBackgroundThread();
+
+  PBackgroundParent* databaseBackgroundActor = aDatabase->Manager();
+
+  for (Database* database : mDatabases) {
+    if (database->Manager() != databaseBackgroundActor) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void Datastore::NoteLiveDatabase(Database* aDatabase) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aDatabase);
@@ -4531,6 +4610,8 @@ void Datastore::NoteLiveDatabase(Database* aDatabase) {
   MOZ_ASSERT(!mClosed);
 
   mDatabases.Insert(aDatabase);
+
+  NoteChangedDatabaseMap();
 }
 
 void Datastore::NoteFinishedDatabase(Database* aDatabase) {
@@ -4542,6 +4623,8 @@ void Datastore::NoteFinishedDatabase(Database* aDatabase) {
   MOZ_ASSERT(!mClosed);
 
   mDatabases.Remove(aDatabase);
+
+  NoteChangedDatabaseMap();
 
   QuotaManager::MaybeRecordQuotaClientShutdownStep(quota::Client::LS,
                                                    "Database finished"_ns);
@@ -4921,14 +5004,15 @@ void Datastore::Clear(Database* aDatabase) {
   }
 }
 
-void Datastore::BeginUpdateBatch(int64_t aSnapshotInitialUsage) {
+void Datastore::BeginUpdateBatch(int64_t aSnapshotUsage) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aSnapshotInitialUsage >= 0);
+  // Don't assert `aSnapshotUsage >= 0`, it can be negative when multiple
+  // snapshots are operating in parallel.
   MOZ_ASSERT(!mClosed);
   MOZ_ASSERT(mUpdateBatchUsage == -1);
   MOZ_ASSERT(!mInUpdateBatch);
 
-  mUpdateBatchUsage = aSnapshotInitialUsage;
+  mUpdateBatchUsage = aSnapshotUsage;
 
   if (IsPersistent()) {
     mConnection->BeginUpdateBatch();
@@ -5237,6 +5321,24 @@ void Datastore::NotifySnapshots(Database* aDatabase, const nsAString& aKey,
   }
 }
 
+void Datastore::NoteChangedDatabaseMap() {
+  AssertIsOnBackgroundThread();
+
+  for (Database* database : mActiveDatabases) {
+    Snapshot* snapshot = database->GetSnapshot();
+    MOZ_ASSERT(snapshot);
+
+    if (snapshot->IsDirty()) {
+      continue;
+    }
+
+    if (snapshot->HasOtherProcessDatabases() !=
+        HasOtherProcessDatabases(database)) {
+      snapshot->MarkDirty();
+    }
+  }
+}
+
 /*******************************************************************************
  * PreparedDatastore
  ******************************************************************************/
@@ -5499,9 +5601,9 @@ mozilla::ipc::IPCResult Database::RecvPBackgroundLSSnapshotConstructor(
 
   uint32_t totalLength = mDatastore->GetLength();
 
-  int64_t initialUsage = mDatastore->GetUsage();
+  int64_t usage = mDatastore->GetUsage();
 
-  int64_t peakUsage = initialUsage;
+  int64_t peakUsage = usage;
 
   if (aIncreasePeakUsage) {
     int64_t size =
@@ -5510,20 +5612,22 @@ mozilla::ipc::IPCResult Database::RecvPBackgroundLSSnapshotConstructor(
     peakUsage += size;
   }
 
+  bool hasOtherProcessDatabases = mDatastore->HasOtherProcessDatabases(this);
   bool hasOtherProcessObservers = mDatastore->HasOtherProcessObservers(this);
 
   snapshot->Init(loadedItems, std::move(unknownItems), nextLoadIndex,
-                 totalLength, initialUsage, peakUsage, loadState,
-                 hasOtherProcessObservers);
+                 totalLength, usage, peakUsage, loadState,
+                 hasOtherProcessDatabases, hasOtherProcessObservers);
 
   RegisterSnapshot(snapshot);
 
   aInitInfo->addKeyToUnknownItems() = addKeyToUnknownItems;
   aInitInfo->itemInfos() = std::move(itemInfos);
   aInitInfo->totalLength() = totalLength;
-  aInitInfo->initialUsage() = initialUsage;
+  aInitInfo->usage() = usage;
   aInitInfo->peakUsage() = peakUsage;
   aInitInfo->loadState() = loadState;
+  aInitInfo->hasOtherProcessDatabases() = hasOtherProcessDatabases;
   aInitInfo->hasOtherProcessObservers() = hasOtherProcessObservers;
 
   return IPC_OK();
@@ -5633,10 +5737,11 @@ mozilla::ipc::IPCResult Snapshot::RecvDeleteMe() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult Snapshot::RecvCheckpoint(
+mozilla::ipc::IPCResult Snapshot::Checkpoint(
     nsTArray<LSWriteInfo>&& aWriteInfos) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(mUsage >= 0);
+  // Don't assert `mUsage >= 0`, it can be negative when multiple snapshots are
+  // operating in parallel.
   MOZ_ASSERT(mPeakUsage >= mUsage);
 
   if (NS_WARN_IF(aWriteInfos.IsEmpty())) {
@@ -5685,10 +5790,11 @@ mozilla::ipc::IPCResult Snapshot::RecvCheckpoint(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult Snapshot::RecvCheckpointAndNotify(
+mozilla::ipc::IPCResult Snapshot::CheckpointAndNotify(
     nsTArray<LSWriteAndNotifyInfo>&& aWriteAndNotifyInfos) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(mUsage >= 0);
+  // Don't assert `mUsage >= 0`, it can be negative when multiple snapshots are
+  // operating in parallel.
   MOZ_ASSERT(mPeakUsage >= mUsage);
 
   if (NS_WARN_IF(aWriteAndNotifyInfos.IsEmpty())) {
@@ -5751,11 +5857,45 @@ mozilla::ipc::IPCResult Snapshot::RecvCheckpointAndNotify(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult Snapshot::RecvFinish() {
+mozilla::ipc::IPCResult Snapshot::RecvAsyncCheckpoint(
+    nsTArray<LSWriteInfo>&& aWriteInfos) {
+  return Checkpoint(std::move(aWriteInfos));
+}
+
+mozilla::ipc::IPCResult Snapshot::RecvAsyncCheckpointAndNotify(
+    nsTArray<LSWriteAndNotifyInfo>&& aWriteAndNotifyInfos) {
+  return CheckpointAndNotify(std::move(aWriteAndNotifyInfos));
+}
+
+mozilla::ipc::IPCResult Snapshot::RecvSyncCheckpoint(
+    nsTArray<LSWriteInfo>&& aWriteInfos) {
+  return Checkpoint(std::move(aWriteInfos));
+}
+
+mozilla::ipc::IPCResult Snapshot::RecvSyncCheckpointAndNotify(
+    nsTArray<LSWriteAndNotifyInfo>&& aWriteAndNotifyInfos) {
+  return CheckpointAndNotify(std::move(aWriteAndNotifyInfos));
+}
+
+mozilla::ipc::IPCResult Snapshot::RecvAsyncFinish() {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(mFinishReceived)) {
-    return IPC_FAIL(this, "mFinishReceived already set!");
+    MOZ_ASSERT_UNLESS_FUZZING(false);
+    return IPC_FAIL(this, "Already finished");
+  }
+
+  Finish();
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Snapshot::RecvSyncFinish() {
+  AssertIsOnBackgroundThread();
+
+  if (NS_WARN_IF(mFinishReceived)) {
+    MOZ_ASSERT_UNLESS_FUZZING(false);
+    return IPC_FAIL(this, "Already finished");
   }
 
   Finish();
@@ -5984,15 +6124,6 @@ mozilla::ipc::IPCResult Snapshot::RecvIncreasePeakUsage(const int64_t& aMinSize,
   mPeakUsage += size;
 
   *aSize = size;
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult Snapshot::RecvPing() {
-  AssertIsOnBackgroundThread();
-
-  // Do nothing here. This is purely a sync message allowing the child to
-  // confirm that the actor has received previous async message.
 
   return IPC_OK();
 }
@@ -7819,6 +7950,18 @@ bool LSSimpleRequestBase::VerifyRequestParams() {
       break;
     }
 
+    case LSSimpleRequestParams::TLSSimpleRequestGetStateParams: {
+      const LSSimpleRequestGetStateParams& params =
+          mParams.get_LSSimpleRequestGetStateParams();
+
+      if (NS_WARN_IF(!VerifyPrincipalInfo(
+              params.principalInfo(), params.storagePrincipalInfo(), false))) {
+        return false;
+      }
+
+      break;
+    }
+
     default:
       MOZ_CRASH("Should never get here!");
   }
@@ -7971,6 +8114,60 @@ void PreloadedOp::GetResponse(LSSimpleRequestResponse& aResponse) {
   preloadedResponse.preloaded() = preloaded;
 
   aResponse = preloadedResponse;
+}
+
+/*******************************************************************************
+ * GetStateOp
+ ******************************************************************************/
+
+GetStateOp::GetStateOp(const LSSimpleRequestParams& aParams,
+                       const Maybe<ContentParentId>& aContentParentId)
+    : LSSimpleRequestBase(aParams, aContentParentId) {
+  MOZ_ASSERT(aParams.type() ==
+             LSSimpleRequestParams::TLSSimpleRequestGetStateParams);
+}
+
+nsresult GetStateOp::Start() {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mState == State::StartingRequest);
+  MOZ_ASSERT(!QuotaClient::IsShuttingDownOnBackgroundThread());
+  MOZ_ASSERT(MayProceed());
+
+  const LSSimpleRequestGetStateParams& params =
+      mParams.get_LSSimpleRequestGetStateParams();
+
+  const PrincipalInfo& storagePrincipalInfo = params.storagePrincipalInfo();
+
+  MOZ_ASSERT(
+      storagePrincipalInfo.type() == PrincipalInfo::TSystemPrincipalInfo ||
+      storagePrincipalInfo.type() == PrincipalInfo::TContentPrincipalInfo);
+  mOrigin = storagePrincipalInfo.type() == PrincipalInfo::TSystemPrincipalInfo
+                ? nsCString{QuotaManager::GetOriginForChrome()}
+                : QuotaManager::GetOriginFromValidatedPrincipalInfo(
+                      storagePrincipalInfo);
+
+  mState = State::SendingResults;
+  MOZ_ALWAYS_SUCCEEDS(OwningEventTarget()->Dispatch(this, NS_DISPATCH_NORMAL));
+
+  return NS_OK;
+}
+
+void GetStateOp::GetResponse(LSSimpleRequestResponse& aResponse) {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mState == State::SendingResults);
+  MOZ_ASSERT(NS_SUCCEEDED(ResultCode()));
+  MOZ_ASSERT(!QuotaClient::IsShuttingDownOnBackgroundThread());
+  MOZ_ASSERT(MayProceed());
+
+  LSSimpleRequestGetStateResponse getStateResponse;
+
+  if (RefPtr<Datastore> datastore = GetDatastore(mOrigin)) {
+    if (!datastore->IsClosed()) {
+      getStateResponse.itemInfos() = datastore->GetOrderedItems().Clone();
+    }
+  }
+
+  aResponse = getStateResponse;
 }
 
 /*******************************************************************************

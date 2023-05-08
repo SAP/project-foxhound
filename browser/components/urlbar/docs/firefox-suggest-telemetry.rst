@@ -84,6 +84,40 @@ The following scalars are recorded for Firefox Suggest. For general information
 on scalar telemetry in Firefox, see the
 :doc:`/toolkit/components/telemetry/collection/scalars` document.
 
+browser.ui.interaction.preferences_panePrivacy
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user clicks a Firefox Suggest
+checkbox or toggle switch in the preferences UI. Keys are the following:
+
+:firefoxSuggestBestMatch:
+  This key is incremented when the "Top pick" checkbox is clicked.
+:firefoxSuggestBestMatchLearnMore:
+  This key is incremented when opening the learn more link for best match.
+:firefoxSuggestDataCollectionToggle:
+  This key is incremented when the toggle switch for data collection
+  is clicked.
+:firefoxSuggestNonsponsoredToggle:
+  This key is incremented when the toggle switch for non-sponsored suggestions
+  is clicked.
+:firefoxSuggestSponsoredToggle:
+  This key is incremented when the toggle switch for sponsored suggestions
+  is clicked.
+
+Changelog
+  Firefox 94.0.2
+    Introduced firefoxSuggestDataCollectionToggle,
+    firefoxSuggestNonsponsoredToggle and firefoxSuggestSponsoredToggle.
+    [Bug 1735976_]
+
+  Firefox 99.0
+    Introduced firefoxSuggestBestMatch. [Bug 1755100_]
+    Introduced firefoxSuggestBestMatchLearnMore. [Bug 1756917_]
+
+.. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
+.. _1755100: https://bugzilla.mozilla.org/show_bug.cgi?id=1755100
+.. _1756917: https://bugzilla.mozilla.org/show_bug.cgi?id=1756917
+
 contextual.services.quicksuggest.click
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -96,6 +130,32 @@ Changelog
     Introduced. [Bug 1693927_]
 
 .. _1693927: https://bugzilla.mozilla.org/show_bug.cgi?id=1693927
+
+contextual.services.quicksuggest.click_nonsponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user picks a non-sponsored best
+match. Each key is the index at which a suggestion appeared in the results
+(1-based), and the corresponding value is the number of clicks at that index.
+
+Changelog
+  Firefox 99.0
+    Introduced. [Bug 1752953_]
+
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
+
+contextual.services.quicksuggest.click_sponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user picks a sponsored best
+match. Each key is the index at which a suggestion appeared in the results
+(1-based), and the corresponding value is the number of clicks at that index.
+
+Changelog
+  Firefox 99.0
+    Introduced. [Bug 1752953_]
+
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
 
 contextual.services.quicksuggest.help
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -110,6 +170,34 @@ Changelog
     Introduced. [Bug 1693927_]
 
 .. _1693927: https://bugzilla.mozilla.org/show_bug.cgi?id=1693927
+
+contextual.services.quicksuggest.help_nonsponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user picks the help button in a
+non-sponsored best match. Each key is the index at which a suggestion appeared
+in the results (1-based), and the corresponding value is the number of help
+button clicks at that index.
+
+Changelog
+  Firefox 99.0
+    Introduced. [Bug 1752953_]
+
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
+
+contextual.services.quicksuggest.help_sponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar is incremented each time the user picks the help button in a
+sponsored best match. Each key is the index at which a suggestion appeared in
+the results (1-based), and the corresponding value is the number of help button
+clicks at that index.
+
+Changelog
+  Firefox 99.0
+    Introduced. [Bug 1752953_]
+
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
 
 contextual.services.quicksuggest.impression
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -130,6 +218,48 @@ Changelog
     Introduced. [Bug 1693927_]
 
 .. _1693927: https://bugzilla.mozilla.org/show_bug.cgi?id=1693927
+
+contextual.services.quicksuggest.impression_nonsponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar records non-sponsored best match impressions. It is
+incremented each time the user is shown a non-sponsored best match and the
+following two conditions hold:
+
+- The user has completed an engagement with the address bar by picking a result
+  in it or by pressing the Enter key.
+- At the time the user completed the engagement, a non-sponsored best match was
+  present in the results.
+
+Each key is the index at which a suggestion appeared in the results (1-based),
+and the corresponding value is the number of impressions at that index.
+
+Changelog
+  Firefox 99.0
+    Introduced. [Bug 1752953_]
+
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
+
+contextual.services.quicksuggest.impression_sponsored_bestmatch
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This keyed scalar records sponsored best match impressions. It is incremented
+each time the user is shown a sponsored best match and the following two
+conditions hold:
+
+- The user has completed an engagement with the address bar by picking a result
+  in it or by pressing the Enter key.
+- At the time the user completed the engagement, a sponsored best match was
+  present in the results.
+
+Each key is the index at which a suggestion appeared in the results (1-based),
+and the corresponding value is the number of impressions at that index.
+
+Changelog
+  Firefox 99.0
+    Introduced. [Bug 1752953_]
+
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
 
 Events
 ------
@@ -215,11 +345,11 @@ The event's objects are the following:
 :accept_2:
   The user accepted the dialog and opted in.
 :close_1:
-  The user clicked close button or something similar link on introduction
+  The user clicked close button or something similar link on the introduction
   section. The user remains opted out in this case.
 :dismiss_1:
   The user dismissed the dialog by pressing the Escape key or some unknown way
-  on introduction section. The user remains opted out in this case.
+  on the introduction section. The user remains opted out in this case.
 :dismiss_2:
   The user dismissed the dialog by pressing the Escape key or some unknown way
   on main section. The user remains opted out in this case.
@@ -234,8 +364,12 @@ The event's objects are the following:
 :learn_more:
   The user clicked "Learn more". The user remains opted out in this case. This
   object was removed in Firefox 96.0.2.
+:learn_more_1:
+  The user clicked "Learn more" on the introduction section. The user remains
+  opted out in this case.
 :learn_more_2:
-  The user clicked "Learn more". The user remains opted out in this case.
+  The user clicked "Learn more" on the main section. The user remains opted out
+  in this case.
 :not_now:
   The dialog was dismissed in some way without opting in. This object was
   removed in Firefox 94.0.
@@ -267,9 +401,16 @@ Changelog
     ``close_1``, ``not_now_2``, ``dismiss_1`` and ``dismiss_2``.
     [Bug 1745026_]
 
+  Firefox 100.0
+    Objects changed to: ``accept_2``, ``reject_2``, ``learn_more_1``,
+    ``learn_more_2``, ``close_1``, ``not_now_2``, ``dismiss_1`` and
+    ``dismiss_2``.
+    [Bug 1761171_]
+
 .. _1723860: https://bugzilla.mozilla.org/show_bug.cgi?id=1723860
 .. _1733687: https://bugzilla.mozilla.org/show_bug.cgi?id=1733687
 .. _1745026: https://bugzilla.mozilla.org/show_bug.cgi?id=1745026
+.. _1761171: https://bugzilla.mozilla.org/show_bug.cgi?id=1761171
 
 contextservices.quicksuggest.sponsored_toggled
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -322,11 +463,11 @@ string-valued pref with the following possible values:
 :accept_2:
   The user accepted the dialog and opted in.
 :close_1:
-  The user clicked close button or something similar link on introduction
+  The user clicked close button or something similar link on the introduction
   section. The user remains opted out in this case.
 :dismiss_1:
   The user dismissed the dialog by pressing the Escape key or some unknown way
-  on introduction section. The user remains opted out in this case.
+  on the introduction section. The user remains opted out in this case.
 :dismiss_2:
   The user dismissed the dialog by pressing the Escape key or some unknown way
   on main section. The user remains opted out in this case.
@@ -341,8 +482,12 @@ string-valued pref with the following possible values:
 :learn_more:
   The user clicked "Learn more". The user remains opted out in this case. This
   object was removed in Firefox 96.0.2.
+:learn_more_1:
+  The user clicked "Learn more" on the introduction section. The user remains
+  opted out in this case.
 :learn_more_2:
-  The user clicked "Learn more". The user remains opted out in this case.
+  The user clicked "Learn more" on the main section. The user remains opted out
+  in this case.
 :not_now_2:
   The user clicked "Not now" link on main section. The user remains opted out in
   this case.
@@ -365,8 +510,12 @@ Changelog
     ``dismissed_escape_key``, ``dismissed_other``, ``learn_more``,
     ``not_now_link``, ``settings``. [Bug 1745026_]
 
+  Firefox 100.0
+    Added ``learn_more_1``. [Bug 1761171_]
+
 .. _1734447: https://bugzilla.mozilla.org/show_bug.cgi?id=1734447
 .. _1745026: https://bugzilla.mozilla.org/show_bug.cgi?id=1745026
+.. _1761171: https://bugzilla.mozilla.org/show_bug.cgi?id=1761171
 
 browser.urlbar.quicksuggest.dataCollection.enabled
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -467,6 +616,9 @@ the following:
 :context_id:
   A UUID representing this user. Note that it's not client_id, nor can it be
   used to link to a client_id.
+:match_type:
+  "best-match" if the suggestion was a best match or "firefox-suggest" if it was
+  a non-best-match suggestion.
 :position:
   The index of the suggestion in the list of results (1-based).
 :reporting_url:
@@ -489,9 +641,13 @@ Changelog
   Firefox 94.0.2
     ``request_id`` is added to the payload. [Bug 1736117_]
 
+  Firefox 99.0
+    ``match_type`` is added to the payload. [Bug 1754622_]
+
 .. _1689365: https://bugzilla.mozilla.org/show_bug.cgi?id=1689365
 .. _1729576: https://bugzilla.mozilla.org/show_bug.cgi?id=1729576
 .. _1736117: https://bugzilla.mozilla.org/show_bug.cgi?id=1736117
+.. _1754622: https://bugzilla.mozilla.org/show_bug.cgi?id=1754622
 
 Impression
 ~~~~~~~~~~
@@ -519,6 +675,9 @@ The impression ping payload contains the following:
   The matched keywords that lead to the suggestion. This is only included when
   the user has opted in to data collection and the suggestion is provided by
   remote settings.
+:match_type:
+  "best-match" if the suggestion was a best match or "firefox-suggest" if it was
+  a non-best-match suggestion.
 :position:
   The index of the suggestion in the list of results (1-based).
 :reporting_url:
@@ -565,6 +724,9 @@ Changelog
     - Stop sending ``search_query`` and ``matched_keywords`` in the custom
       impression ping for Firefox Suggest. [Bug 1748348_]
 
+  Firefox 99.0
+    ``match_type`` is added to the payload. [Bug 1754622_]
+
 .. _1689365: https://bugzilla.mozilla.org/show_bug.cgi?id=1689365
 .. _1725492: https://bugzilla.mozilla.org/show_bug.cgi?id=1725492
 .. _1728188: https://bugzilla.mozilla.org/show_bug.cgi?id=1728188
@@ -572,22 +734,43 @@ Changelog
 .. _1736117: https://bugzilla.mozilla.org/show_bug.cgi?id=1736117
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
 .. _1748348: https://bugzilla.mozilla.org/show_bug.cgi?id=1748348
+.. _1754622: https://bugzilla.mozilla.org/show_bug.cgi?id=1754622
 
 Nimbus Exposure Event
 ---------------------
 
-A `Nimbus exposure event`_ is recorded the first time a user query matches a
-Firefox Suggest suggestion while the user is enrolled in a Nimbus experiment or
-rollout. At most one event per app session is recorded.
+A `Nimbus exposure event`_ is recorded once per app session when the user first
+encounters the UI of an experiment in which they're enrolled. The timing of the
+event depends on the experiment.
 
-.. _Nimbus exposure event: https://experimenter.info/jetstream/jetstream/#enrollment-vs-exposure
+Listed below are the slugs of supported experiments along with details on when
+their exposure events are recorded.
+
+:firefox-suggest-best-match_:
+  If the user is in a treatment branch and they did not disable best match, the
+  event is recorded the first time they trigger a best match; if the user is in
+  a treatment branch and they did disable best match, the event is not recorded
+  at all. If the user is in the control branch, the event is recorded the first
+  time they would have triggered a best match. (Users in the control branch
+  cannot "disable" best match since the feature is totally hidden from them.)
+:All other experiments:
+  For all other experiments not listed above, the event is recorded the first
+  time the user triggers a Firefox Suggest suggestion.
 
 Changelog
   Firefox 92.0
     Introduced. [Bug 1724076_, 1727392_]
 
+  Firefox 99.0
+    Support for the firefox-suggest-best-match_ experiment is added. [Bug
+    1752953_]
+
+.. _Nimbus exposure event: https://experimenter.info/jetstream/jetstream/#enrollment-vs-exposure
+.. _firefox-suggest-best-match: https://experimenter.services.mozilla.com/nimbus/firefox-suggest-best-match/
+
 .. _1724076: https://bugzilla.mozilla.org/show_bug.cgi?id=1724076
 .. _1727392: https://bugzilla.mozilla.org/show_bug.cgi?id=1727392
+.. _1752953: https://bugzilla.mozilla.org/show_bug.cgi?id=1752953
 
 Merino Search Queries
 ---------------------

@@ -10,8 +10,6 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-const VERSION_PREF = "browser.places.snapshots.version";
-
 XPCOMUtils.defineLazyModuleGetters(this, {
   BackgroundPageThumbs: "resource://gre/modules/BackgroundPageThumbs.jsm",
   CommonNames: "resource:///modules/CommonNames.jsm",
@@ -287,6 +285,18 @@ const Snapshots = new (class Snapshots {
   }
 
   /**
+   * Returns the url up until, but not including, any hash mark identified fragments
+   * For example, given  http://www.example.org/foo.html#bar, this function will return http://www.example.org/foo.html
+   * @param {string} url
+   *   The url associated with the snapshot.
+   * @returns {string}
+   *  The url up until, but not including, any fragments
+   */
+  stripFragments(url) {
+    return url?.split("#")[0];
+  }
+
+  /**
    * Adds a new snapshot.
    *
    * If the snapshot already exists, and this is a user-persisted addition,
@@ -306,6 +316,9 @@ const Snapshots = new (class Snapshots {
     if (!url) {
       throw new Error("Missing url parameter to Snapshots.add()");
     }
+
+    url = this.stripFragments(url);
+
     if (!InteractionsBlocklist.canRecordUrl(url)) {
       throw new Error("This url cannot be added to snapshots");
     }
@@ -378,7 +391,7 @@ const Snapshots = new (class Snapshots {
     if (placeId) {
       await this.#addPageData([{ placeId, url }]);
 
-      this.#notify("places-snapshots-added", [url]);
+      this.#notify("places-snapshots-added", [{ url, userPersisted }]);
     }
   }
 
@@ -390,6 +403,7 @@ const Snapshots = new (class Snapshots {
    *   The url of the snapshot to delete.
    */
   async delete(url) {
+    url = this.stripFragments(url);
     await PlacesUtils.withConnectionWrapper("Snapshots: delete", async db => {
       let placeId = (
         await db.executeCached(
@@ -421,6 +435,7 @@ const Snapshots = new (class Snapshots {
    * @returns {?Snapshot}
    */
   async get(url, includeTombstones = false) {
+    url = this.stripFragments(url);
     let db = await PlacesUtils.promiseDBConnection();
     let extraWhereCondition = "";
 
@@ -463,6 +478,16 @@ const Snapshots = new (class Snapshots {
    *   Whether to include tombstones in the snapshots to obtain.
    * @param {number} [options.type]
    *   Restrict the snapshots to those with a particular type of page data available.
+   * @param {number} [options.group]
+   *   Restrict the snapshots to those within a particular group.
+   * @param {boolean} [options.includeHiddenInGroup]
+   *   Only applies when querying a particular group. Pass true to include
+   *   snapshots that are hidden in the group.
+   * @param {boolean} [options.sortDescending]
+   *   Whether or not to sortDescending. Defaults to true.
+   * @param {string} [options.sortBy]
+   *   A string to choose what to sort the snapshots by, e.g. "last_interaction_at"
+   *   By default results are sorted by last_interaction_at.
    * @returns {Snapshot[]}
    *   Returns snapshots in order of descending last interaction time.
    */
@@ -470,12 +495,16 @@ const Snapshots = new (class Snapshots {
     limit = 100,
     includeTombstones = false,
     type = undefined,
+    group = undefined,
+    includeHiddenInGroup = false,
+    sortDescending = true,
+    sortBy = "last_interaction_at",
   } = {}) {
-    await this.#ensureVersionUpdates();
     let db = await PlacesUtils.promiseDBConnection();
 
     let clauses = [];
     let bindings = {};
+    let joins = [];
     let limitStatement = "";
 
     if (!includeTombstones) {
@@ -487,6 +516,17 @@ const Snapshots = new (class Snapshots {
       bindings.type = type;
     }
 
+    if (group) {
+      clauses.push("group_id = :group");
+      if (!includeHiddenInGroup) {
+        clauses.push("g.hidden = 0");
+      }
+      bindings.group = group;
+      joins.push(
+        "LEFT JOIN moz_places_metadata_groups_to_snapshots g USING(place_id)"
+      );
+    }
+
     if (limit != -1) {
       limitStatement = "LIMIT :limit";
       bindings.limit = limit;
@@ -496,7 +536,7 @@ const Snapshots = new (class Snapshots {
 
     let rows = await db.executeCached(
       `
-      SELECT h.url AS url, IFNULL(s.title, h.title) AS title, created_at,
+      SELECT h.url, IFNULL(s.title, h.title) AS title, created_at,
              removed_at, document_type, first_interaction_at, last_interaction_at,
              user_persisted, description, site_name, preview_image_url,
              group_concat('[' || e.type || ', ' || e.data || ']') AS page_data,
@@ -504,9 +544,10 @@ const Snapshots = new (class Snapshots {
       FROM moz_places_metadata_snapshots s
       JOIN moz_places h ON h.id = s.place_id
       LEFT JOIN moz_places_metadata_snapshots_extra e ON e.place_id = s.place_id
+      ${joins.join(" ")}
       ${whereStatement}
       GROUP BY s.place_id
-      ORDER BY last_interaction_at DESC
+      ORDER BY ${sortBy} ${sortDescending ? "DESC" : "ASC"}
       ${limitStatement}
     `,
       bindings
@@ -524,7 +565,6 @@ const Snapshots = new (class Snapshots {
    *   place_id of the given url or -1 if not found
    */
   async queryPlaceIdFromUrl(url) {
-    await this.#ensureVersionUpdates();
     let db = await PlacesUtils.promiseDBConnection();
 
     let rows = await db.executeCached(
@@ -553,8 +593,6 @@ const Snapshots = new (class Snapshots {
    *   Returns array of overlapping snapshots in order of descending overlappingVisitScore (Calculated as 1.0 to 0.0, as the overlap gap goes to snapshot_overlap_limit)
    */
   async queryOverlapping(context_url) {
-    await this.#ensureVersionUpdates();
-
     let current_id = await this.queryPlaceIdFromUrl(context_url);
     if (current_id == -1) {
       logConsole.debug(`PlaceId not found for url ${context_url}`);
@@ -608,26 +646,18 @@ const Snapshots = new (class Snapshots {
   }
 
   /**
-   * Queries snapshots which have interactions sharing a common referrer with the context url
+   * Queries snapshots which have interactions sharing a common referrer with the context url's interactions
    *
    * @param {string} context_url
    *   the url that we're collecting snapshots for
-   * @param {string} referrer_url
-   *   the referrer of the url we're collecting snapshots for (may be empty)
    * @returns {Snapshot[]}
    *   Returns array of snapshots with the common referrer
    */
-  async queryCommonReferrer(context_url, referrer_url) {
-    await this.#ensureVersionUpdates();
+  async queryCommonReferrer(context_url) {
     let db = await PlacesUtils.promiseDBConnection();
 
     let context_place_id = await this.queryPlaceIdFromUrl(context_url);
     if (context_place_id == -1) {
-      return [];
-    }
-
-    let context_referrer_id = await this.queryPlaceIdFromUrl(referrer_url);
-    if (context_referrer_id == -1) {
       return [];
     }
 
@@ -642,10 +672,13 @@ const Snapshots = new (class Snapshots {
       ON h.id = s.place_id
       LEFT JOIN moz_places_metadata_snapshots_extra e
       ON e.place_id = s.place_id
-      WHERE s.place_id != :context_place_id AND s.place_id IN (SELECT DISTINCT place_id FROM moz_places_metadata WHERE referrer_place_id = :context_referrer_id)
+      WHERE s.place_id IN (
+        SELECT p1.place_id FROM moz_places_metadata p1 JOIN moz_places_metadata p2 USING (referrer_place_id)
+        WHERE p2.place_id = :context_place_id AND p1.place_id <> :context_place_id
+      )
       GROUP BY s.place_id
     `,
-      { context_referrer_id, context_place_id }
+      { context_place_id }
     );
 
     return rows.map(row => {
@@ -653,37 +686,6 @@ const Snapshots = new (class Snapshots {
       snapshot.commonReferrerScore = 1.0;
       return snapshot;
     });
-  }
-
-  /**
-   * Ensures that the database is migrated to the latest version. Migrations
-   * should be exception-safe: don't throw an uncaught Error, or else we'll skip
-   * subsequent migrations.
-   */
-  async #ensureVersionUpdates() {
-    let dbVersion = Services.prefs.getIntPref(VERSION_PREF, 0);
-    try {
-      if (dbVersion < 1) {
-        try {
-          // Delete legacy keyframes.sqlite DB.
-          let profileDir = await PathUtils.getProfileDir();
-          let pathToKeyframes = PathUtils.join(profileDir, "keyframes.sqlite");
-          await IOUtils.remove(pathToKeyframes);
-        } catch (ex) {
-          console.warn(`Failed to delete keyframes.sqlite: ${ex}`);
-        }
-      }
-    } finally {
-      Services.prefs.setIntPref(VERSION_PREF, this.currentVersion);
-    }
-  }
-
-  /**
-   * Returns the database's most recent version number.
-   * @returns {number}
-   */
-  get currentVersion() {
-    return 1;
   }
 
   /**
@@ -931,7 +933,12 @@ const Snapshots = new (class Snapshots {
       await this.#addPageData(insertedUrls);
       this.#notify(
         "places-snapshots-added",
-        insertedUrls.map(result => result.url)
+        insertedUrls.map(result => {
+          return {
+            url: result.url,
+            userPersisted: this.USER_PERSISTED.NO,
+          };
+        })
       );
     }
   }

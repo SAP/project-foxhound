@@ -70,7 +70,7 @@ function getPrintSettings(settings, filePath) {
   printSettings.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
   printSettings.printerName = "marionette";
   printSettings.printSilent = true;
-  printSettings.printToFile = true;
+  printSettings.outputDestination = Ci.nsIPrintSettings.kOutputDestinationFile;
   printSettings.toFileName = filePath;
 
   // Setting the paperSizeUnit to kPaperSizeMillimeters doesn't work on mac
@@ -197,9 +197,8 @@ function parseRanges(ranges) {
 
 print.printToFile = async function(browser, settings) {
   // Create a unique filename for the temporary PDF file
-  const tempDir = await PathUtils.getTempDir();
   const filePath = await IOUtils.createUniqueFile(
-    tempDir,
+    PathUtils.tempDir,
     "marionette.pdf",
     0o600
   );

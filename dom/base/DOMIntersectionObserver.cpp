@@ -15,7 +15,6 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -107,12 +106,6 @@ already_AddRefed<DOMIntersectionObserver> DOMIntersectionObserver::Constructor(
       observer->mRoot = aOptions.mRoot.Value().GetAsElement();
     } else {
       MOZ_ASSERT(aOptions.mRoot.Value().IsDocument());
-      if (!StaticPrefs::
-              dom_IntersectionObserverExplicitDocumentRoot_enabled()) {
-        aRv.ThrowTypeError<dom::MSG_DOES_NOT_IMPLEMENT_INTERFACE>(
-            "'root' member of IntersectionObserverInit", "Element");
-        return nullptr;
-      }
       observer->mRoot = aOptions.mRoot.Value().GetAsDocument();
     }
   }
@@ -586,8 +579,8 @@ void DOMIntersectionObserver::Update(Document* aDocument,
   for (const auto side : mozilla::AllPhysicalSides()) {
     nscoord basis = side == eSideTop || side == eSideBottom ? rootRect.Height()
                                                             : rootRect.Width();
-    rootMargin.Side(side) =
-        mRootMargin.Get(side).Resolve(basis, NSToCoordRoundWithClamp);
+    rootMargin.Side(side) = mRootMargin.Get(side).Resolve(
+        basis, static_cast<nscoord (*)(float)>(NSToCoordRoundWithClamp));
   }
 
   // 2. For each target in observer’s internal [[ObservationTargets]] slot,
@@ -724,17 +717,17 @@ void DOMIntersectionObserver::QueueIntersectionObserverEntry(
     bool aIsIntersecting, double aIntersectionRatio) {
   RefPtr<DOMRect> rootBounds;
   if (aRootRect.isSome()) {
-    rootBounds = new DOMRect(this);
+    rootBounds = new DOMRect(mOwner);
     rootBounds->SetLayoutRect(aRootRect.value());
   }
-  RefPtr<DOMRect> boundingClientRect = new DOMRect(this);
+  RefPtr<DOMRect> boundingClientRect = new DOMRect(mOwner);
   boundingClientRect->SetLayoutRect(aTargetRect);
-  RefPtr<DOMRect> intersectionRect = new DOMRect(this);
+  RefPtr<DOMRect> intersectionRect = new DOMRect(mOwner);
   if (aIntersectionRect.isSome()) {
     intersectionRect->SetLayoutRect(aIntersectionRect.value());
   }
   RefPtr<DOMIntersectionObserverEntry> entry = new DOMIntersectionObserverEntry(
-      this, time, rootBounds.forget(), boundingClientRect.forget(),
+      mOwner, time, rootBounds.forget(), boundingClientRect.forget(),
       intersectionRect.forget(), aIsIntersecting, aTarget, aIntersectionRatio);
   mQueuedEntries.AppendElement(entry.forget());
 }

@@ -24,6 +24,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/BitSet.h"
+#include "mozilla/OriginTrials.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/CallState.h"
 #include "mozilla/EventStates.h"
@@ -357,26 +358,9 @@ enum class DeprecatedOperations : uint16_t {
 #define NS_DOCUMENT_STATE_LTR_LOCALE NS_DEFINE_EVENT_STATE_MACRO(2)
 // Lightweight-theme status.
 #define NS_DOCUMENT_STATE_LWTHEME NS_DEFINE_EVENT_STATE_MACRO(3)
-#define NS_DOCUMENT_STATE_LWTHEME_BRIGHTTEXT NS_DEFINE_EVENT_STATE_MACRO(4)
-#define NS_DOCUMENT_STATE_LWTHEME_DARKTEXT NS_DEFINE_EVENT_STATE_MACRO(5)
 
 #define NS_DOCUMENT_STATE_ALL_LOCALEDIR_BITS \
   (NS_DOCUMENT_STATE_RTL_LOCALE | NS_DOCUMENT_STATE_LTR_LOCALE)
-#define NS_DOCUMENT_STATE_ALL_LWTHEME_BITS                            \
-  (NS_DOCUMENT_STATE_LWTHEME | NS_DOCUMENT_STATE_LWTHEME_BRIGHTTEXT | \
-   NS_DOCUMENT_STATE_LWTHEME_DARKTEXT)
-
-class DocHeaderData {
- public:
-  DocHeaderData(nsAtom* aField, const nsAString& aData)
-      : mField(aField), mData(aData), mNext(nullptr) {}
-
-  ~DocHeaderData(void) { delete mNext; }
-
-  RefPtr<nsAtom> mField;
-  nsString mData;
-  DocHeaderData* mNext;
-};
 
 class ExternalResourceMap {
   using SubDocEnumFunc = FunctionRef<CallState(Document&)>;
@@ -3046,17 +3030,13 @@ class Document : public nsINode,
     SetStateObject(aDocument->mStateObjectContainer);
   }
 
-  enum class DocumentTheme { None, Neutral, Dark, Bright };
-
   /**
-   * Returns DocumentTheme::None if there is no lightweight theme specified,
-   * Dark for a dark theme, Bright for a light theme, and Neutral for any other
-   * theme. This is used to determine the state of the pseudoclasses
-   * :-moz-lwtheme and :-moz-lwtheme-*text.
+   * Returns true if there is a lightweight theme specified. This is used to
+   * determine the state of the :-moz-lwtheme pseudo-class.
    */
-  DocumentTheme GetDocumentLWTheme() const;
+  bool ComputeDocumentLWTheme() const;
   void ResetDocumentLWTheme() {
-    UpdateDocumentStates(NS_DOCUMENT_STATE_ALL_LWTHEME_BITS, true);
+    UpdateDocumentStates(NS_DOCUMENT_STATE_LWTHEME, true);
   }
 
   // Whether we're a media document or not.
@@ -3183,7 +3163,7 @@ class Document : public nsINode,
   // features values changing.
   void NotifyMediaFeatureValuesChanged();
 
-  nsresult GetStateObject(nsIVariant** aResult);
+  nsresult GetStateObject(JS::MutableHandle<JS::Value> aState);
 
   nsDOMNavigationTiming* GetNavigationTiming() const { return mTiming; }
 
@@ -3694,8 +3674,8 @@ class Document : public nsINode,
 
   bool HasScriptsBlockedBySandbox();
 
-  void ReportHasScrollLinkedEffect();
-  bool HasScrollLinkedEffect() const { return mHasScrollLinkedEffect; }
+  void ReportHasScrollLinkedEffect(const TimeStamp& aTimeStamp);
+  bool HasScrollLinkedEffect() const;
 
 #ifdef DEBUG
   void AssertDocGroupMatchesKey() const;
@@ -3909,6 +3889,8 @@ class Document : public nsINode,
 
  public:
   bool IsThirdPartyForFlashClassifier();
+
+  const OriginTrials& Trials() const { return mTrials; }
 
  private:
   void DoCacheAllKnownLangPrefs();
@@ -4423,6 +4405,8 @@ class Document : public nsINode,
   NotNull<const Encoding*> mCharacterSet;
   int32_t mCharacterSetSource;
 
+  OriginTrials mTrials;
+
   // This is just a weak pointer; the parent document owns its children.
   Document* mParentDocument;
 
@@ -4502,6 +4486,9 @@ class Document : public nsINode,
   // Last time this document or a one of its sub-documents was focused.  If
   // focus has never occurred then mLastFocusTime.IsNull() will be true.
   TimeStamp mLastFocusTime;
+
+  // Last time we found any scroll linked effect in this document.
+  TimeStamp mLastScrollLinkedEffectDetectionTime;
 
   EventStates mDocumentState{NS_DOCUMENT_STATE_LTR_LOCALE};
 
@@ -4660,9 +4647,6 @@ class Document : public nsINode,
   // True if we have fired the DOMContentLoaded event, or don't plan to fire one
   // (e.g. we're not being parsed at all).
   bool mDidFireDOMContentLoaded : 1;
-
-  // True if ReportHasScrollLinkedEffect() has been called.
-  bool mHasScrollLinkedEffect : 1;
 
   // True if we have frame request callbacks scheduled with the refresh driver.
   // This should generally be updated only via
@@ -4823,9 +4807,6 @@ class Document : public nsINode,
 
   // Currently active onload blockers.
   uint32_t mOnloadBlockCount;
-
-  // Onload blockers which haven't been activated yet.
-  uint32_t mAsyncOnloadBlockCount;
 
   // Tracks if we are currently processing any document.write calls (either
   // implicit or explicit). Note that if a write call writes out something which
@@ -5007,7 +4988,7 @@ class Document : public nsINode,
   nsString mBaseTarget;
 
   nsCOMPtr<nsIStructuredCloneContainer> mStateObjectContainer;
-  nsCOMPtr<nsIVariant> mStateObjectCached;
+  Maybe<JS::Heap<JS::Value>> mStateObjectCached;
 
   uint32_t mInSyncOperationCount;
 
@@ -5101,7 +5082,8 @@ class Document : public nsINode,
 
   PLDHashTable* mSubDocuments;
 
-  DocHeaderData* mHeaderData;
+  class HeaderData;
+  UniquePtr<HeaderData> mHeaderData;
 
   // For determining if this is a flash document which should be
   // blocked based on its principal.

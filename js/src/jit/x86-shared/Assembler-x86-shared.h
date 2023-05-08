@@ -263,6 +263,10 @@ class CPUInfo {
     SetMaxEnabledSSEVersion(SSE4_1);
     avxEnabled = false;
   }
+  static void SetAVXDisabled() {
+    MOZ_ASSERT(!FlagsHaveBeenComputed());
+    avxEnabled = false;
+  }
   static void SetAVXEnabled() {
     MOZ_ASSERT(!FlagsHaveBeenComputed());
     avxEnabled = true;
@@ -4503,6 +4507,12 @@ class AssemblerX86Shared : public AssemblerShared {
       default:
         MOZ_CRASH("unexpected operand kind");
     }
+  }
+  void vblendvpd(FloatRegister mask, FloatRegister src1, FloatRegister src0,
+                 FloatRegister dest) {
+    MOZ_ASSERT(HasSSE41());
+    masm.vblendvpd_rr(mask.encoding(), src1.encoding(), src0.encoding(),
+                      dest.encoding());
   }
   void vmovsldup(FloatRegister src, FloatRegister dest) {
     MOZ_ASSERT(HasSSE3());

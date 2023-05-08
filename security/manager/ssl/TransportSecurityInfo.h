@@ -126,7 +126,7 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   Atomic<bool> mCanceled;
 
  protected:
-  mutable ::mozilla::Mutex mMutex;
+  mutable ::mozilla::Mutex mMutex MOZ_UNANNOTATED;
 
   uint16_t mCipherSuite;
   uint16_t mProtocolVersion;
@@ -169,10 +169,10 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   }
 
   template <typename P>
-  static bool ReadParamAtomicHelper(const IPC::Message* aMsg,
-                                    PickleIterator* aIter, Atomic<P>& atomic) {
+  static bool ReadParamAtomicHelper(IPC::MessageReader* aReader,
+                                    Atomic<P>& atomic) {
     P tmpStore;
-    bool result = ReadParam(aMsg, aIter, &tmpStore);
+    bool result = ReadParam(aReader, &tmpStore);
     if (result == false) {
       return result;
     }
@@ -236,7 +236,7 @@ class RememberCertErrorsTable {
   }
 
  private:
-  Mutex mMutex;
+  Mutex mMutex MOZ_UNANNOTATED;
 
   static RememberCertErrorsTable* sInstance;
 };

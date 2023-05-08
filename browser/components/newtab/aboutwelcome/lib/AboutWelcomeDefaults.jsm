@@ -20,27 +20,31 @@ const DEFAULT_WELCOME_CONTENT = {
   id: "DEFAULT_ABOUTWELCOME_PROTON",
   template: "multistage",
   transitions: true,
-  background_url:
-    "chrome://activity-stream/content/data/content/assets/proton-bkg.avif",
+  backdrop:
+    "#F9F9FB url('chrome://activity-stream/content/data/content/assets/fx100-noodles.svg') center/cover no-repeat fixed",
   screens: [
     {
       id: "AW_PIN_FIREFOX",
       order: 0,
       content: {
+        position: "corner",
+        logo: {},
         title: {
-          string_id: "mr1-onboarding-pin-header",
+          string_id: "onboarding-welcome-header",
+        },
+        subtitle: {
+          string_id: "fx100-thank-you-subtitle",
         },
         hero_text: {
-          string_id: "mr1-welcome-screen-hero-text",
+          string_id: "fx100-thank-you-hero-text",
+          color: "#321C64",
+          zap: true,
+          fontSize: "clamp(48px, 7vw, 137px)",
         },
-        help_text: {
-          text: {
-            string_id: "mr1-onboarding-welcome-image-caption",
-          },
-        },
+        has_noodles: true,
         primary_button: {
           label: {
-            string_id: "mr1-onboarding-pin-primary-button-label",
+            string_id: "fx100-thank-you-pin-primary-button-label",
           },
           action: {
             navigate: true,
@@ -58,6 +62,7 @@ const DEFAULT_WELCOME_CONTENT = {
         secondary_button_top: {
           label: {
             string_id: "mr1-onboarding-sign-in-button-label",
+            color: "#321C64",
           },
           action: {
             data: {
@@ -70,15 +75,39 @@ const DEFAULT_WELCOME_CONTENT = {
       },
     },
     {
-      id: "AW_SET_DEFAULT",
+      id: "AW_LANGUAGE_MISMATCH",
       order: 1,
       content: {
+        logo: {},
+        title: { string_id: "onboarding-live-language-header" },
+        has_noodles: true,
+        languageSwitcher: {
+          downloading: {
+            string_id: "onboarding-live-language-button-label-downloading",
+          },
+          cancel: {
+            string_id: "onboarding-live-language-secondary-cancel-download",
+          },
+          waiting: { string_id: "onboarding-live-language-waiting-button" },
+          skip: { string_id: "onboarding-live-language-skip-button-label" },
+          action: {
+            navigate: true,
+          },
+        },
+      },
+    },
+    {
+      id: "AW_SET_DEFAULT",
+      order: 2,
+      content: {
+        logo: {},
         title: {
           string_id: "mr1-onboarding-default-header",
         },
         subtitle: {
           string_id: "mr1-onboarding-default-subtitle",
         },
+        has_noodles: true,
         primary_button: {
           label: {
             string_id: "mr1-onboarding-default-primary-button-label",
@@ -100,14 +129,16 @@ const DEFAULT_WELCOME_CONTENT = {
     },
     {
       id: "AW_IMPORT_SETTINGS",
-      order: 2,
+      order: 3,
       content: {
+        logo: {},
         title: {
           string_id: "mr1-onboarding-import-header",
         },
         subtitle: {
           string_id: "mr1-onboarding-import-subtitle",
         },
+        has_noodles: true,
         primary_button: {
           label: {
             string_id:
@@ -131,14 +162,16 @@ const DEFAULT_WELCOME_CONTENT = {
     },
     {
       id: "AW_CHOOSE_THEME",
-      order: 3,
+      order: 4,
       content: {
+        logo: {},
         title: {
           string_id: "mr1-onboarding-theme-header",
         },
         subtitle: {
           string_id: "mr1-onboarding-theme-subtitle",
         },
+        has_noodles: true,
         tiles: {
           type: "theme",
           action: {
@@ -222,12 +255,13 @@ async function getAddonFromRepository(data) {
   if (addonInfo.sourceURI.scheme !== "https") {
     return null;
   }
+
   return {
     name: addonInfo.name,
     url: addonInfo.sourceURI.spec,
     iconURL: addonInfo.icons["64"] || addonInfo.icons["32"],
     type: addonInfo.type,
-    themePreviewInfo: addonInfo.previews,
+    screenshots: addonInfo.screenshots,
   };
 }
 
@@ -402,7 +436,30 @@ async function prepareContentForReact(content) {
   if (Services.locale.appLocaleAsBCP47.split("-")[0] !== "en") {
     delete content.screens?.find(
       screen => screen.content?.help_text?.deleteIfNotEn
-    )?.content.help_text.text;
+    )?.content.help_text;
+  }
+
+  let shouldRemoveLanguageMismatchScreen = true;
+  if (content.languageMismatchEnabled) {
+    const screen = content?.screens?.find(s => s.id === "AW_LANGUAGE_MISMATCH");
+    if (screen && content.appAndSystemLocaleInfo.canLiveReload) {
+      // Add the display names for the OS and Firefox languages, like "American English".
+      function addMessageArgs(obj) {
+        for (const value of Object.values(obj)) {
+          if (value?.string_id) {
+            value.args = content.appAndSystemLocaleInfo.displayNames;
+          }
+        }
+      }
+
+      addMessageArgs(screen.content.languageSwitcher);
+      addMessageArgs(screen.content);
+      shouldRemoveLanguageMismatchScreen = false;
+    }
+  }
+
+  if (shouldRemoveLanguageMismatchScreen) {
+    removeScreens(screen => screen.id === "AW_LANGUAGE_MISMATCH");
   }
 
   return content;

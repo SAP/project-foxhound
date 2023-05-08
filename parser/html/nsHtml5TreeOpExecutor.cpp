@@ -150,8 +150,7 @@ nsHtml5TreeOpExecutor::WillParse() {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP
-nsHtml5TreeOpExecutor::WillBuildModel(nsDTDMode aDTDMode) {
+nsresult nsHtml5TreeOpExecutor::WillBuildModel() {
   mDocument->AddObserver(this);
   WillBuildModelImpl();
   GetDocument()->BeginLoad();
@@ -298,8 +297,7 @@ nsHtml5TreeOpExecutor::DidBuildModel(bool aTerminated) {
                 Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_HTML::TldInitial);
           }
           break;
-        // Deliberately no final version of ASCII
-        case kCharsetFromFinalAutoDetectionWouldHaveBeenUTF8:
+        case kCharsetFromFinalAutoDetectionWouldHaveBeenUTF8InitialWasASCII:
           if (plain) {
             LOGCHARDETNG(("TEXT::UtfFinal"));
             Telemetry::AccumulateCategorical(
@@ -323,6 +321,19 @@ nsHtml5TreeOpExecutor::DidBuildModel(bool aTerminated) {
                     GenericFinal);
           }
           break;
+        case kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8GenericInitialWasASCII:
+          if (plain) {
+            LOGCHARDETNG(("TEXT::GenericFinalA"));
+            Telemetry::AccumulateCategorical(
+                Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_TEXT::
+                    GenericFinalA);
+          } else {
+            LOGCHARDETNG(("HTML::GenericFinalA"));
+            Telemetry::AccumulateCategorical(
+                Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_HTML::
+                    GenericFinalA);
+          }
+          break;
         case kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8Content:
           if (plain) {
             LOGCHARDETNG(("TEXT::ContentFinal"));
@@ -336,6 +347,19 @@ nsHtml5TreeOpExecutor::DidBuildModel(bool aTerminated) {
                     ContentFinal);
           }
           break;
+        case kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8ContentInitialWasASCII:
+          if (plain) {
+            LOGCHARDETNG(("TEXT::ContentFinalA"));
+            Telemetry::AccumulateCategorical(
+                Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_TEXT::
+                    ContentFinalA);
+          } else {
+            LOGCHARDETNG(("HTML::ContentFinalA"));
+            Telemetry::AccumulateCategorical(
+                Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_HTML::
+                    ContentFinalA);
+          }
+          break;
         case kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8DependedOnTLD:
           if (plain) {
             LOGCHARDETNG(("TEXT::TldFinal"));
@@ -345,6 +369,17 @@ nsHtml5TreeOpExecutor::DidBuildModel(bool aTerminated) {
             LOGCHARDETNG(("HTML::TldFinal"));
             Telemetry::AccumulateCategorical(
                 Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_HTML::TldFinal);
+          }
+          break;
+        case kCharsetFromFinalAutoDetectionWouldNotHaveBeenUTF8DependedOnTLDInitialWasASCII:
+          if (plain) {
+            LOGCHARDETNG(("TEXT::TldFinalA"));
+            Telemetry::AccumulateCategorical(
+                Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_TEXT::TldFinalA);
+          } else {
+            LOGCHARDETNG(("HTML::TldFinalA"));
+            Telemetry::AccumulateCategorical(
+                Telemetry::LABELS_ENCODING_DETECTION_OUTCOME_HTML::TldFinalA);
           }
           break;
         default:
@@ -382,10 +417,8 @@ nsHtml5TreeOpExecutor::WillInterrupt() {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP
-nsHtml5TreeOpExecutor::WillResume() {
+void nsHtml5TreeOpExecutor::WillResume() {
   MOZ_ASSERT_UNREACHABLE("Don't call. For interface compat only.");
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -1286,10 +1319,6 @@ void nsHtml5TreeOpExecutor::UpdateReferrerInfoFromMeta(
 }
 
 void nsHtml5TreeOpExecutor::AddSpeculationCSP(const nsAString& aCSP) {
-  if (!StaticPrefs::security_csp_enable()) {
-    return;
-  }
-
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   nsresult rv = NS_OK;

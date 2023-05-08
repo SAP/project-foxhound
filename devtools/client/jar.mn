@@ -393,6 +393,7 @@ devtools.jar:
     content/aboutdebugging/src/components/debugtarget/DebugTargetItem.css (aboutdebugging/src/components/debugtarget/DebugTargetItem.css)
     content/aboutdebugging/src/components/debugtarget/DebugTargetList.css (aboutdebugging/src/components/debugtarget/DebugTargetList.css)
     content/aboutdebugging/src/components/debugtarget/DebugTargetPane.css (aboutdebugging/src/components/debugtarget/DebugTargetPane.css)
+    content/aboutdebugging/src/components/debugtarget/ExtensionDetail.css (aboutdebugging/src/components/debugtarget/ExtensionDetail.css)
     content/aboutdebugging/src/components/debugtarget/FieldPair.css (aboutdebugging/src/components/debugtarget/FieldPair.css)
     content/aboutdebugging/src/components/debugtarget/ServiceWorkerAction.css (aboutdebugging/src/components/debugtarget/ServiceWorkerAction.css)
     content/aboutdebugging/src/components/debugtarget/TemporaryExtensionInstallSection.css (aboutdebugging/src/components/debugtarget/TemporaryExtensionInstallSection.css)
@@ -418,7 +419,6 @@ devtools.jar:
     content/webconsole/components/App.css (webconsole/components/App.css)
 
     # Netmonitor
-    content/netmonitor/src/assets/styles/httpi.css (netmonitor/src/assets/styles/httpi.css)
     content/netmonitor/src/assets/styles/netmonitor.css (netmonitor/src/assets/styles/netmonitor.css)
     content/netmonitor/src/assets/styles/NetworkActionBar.css (netmonitor/src/assets/styles/NetworkActionBar.css)
     content/netmonitor/src/assets/styles/RequestBlockingPanel.css (netmonitor/src/assets/styles/RequestBlockingPanel.css)

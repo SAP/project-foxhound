@@ -112,7 +112,7 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 // Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
 void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
   JXL_CHECK_IMAGE_INITIALIZED(ycbcr, rect);
-  const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) df;
+  const HWY_CAPPED(float, kBlockDim) df;
   const size_t S = Lanes(df);  // Step.
 
   const size_t xsize = rect.xsize();
@@ -180,14 +180,9 @@ HWY_EXPORT(HasFastXYBTosRGB8);
 bool HasFastXYBTosRGB8() { return HWY_DYNAMIC_DISPATCH(HasFastXYBTosRGB8)(); }
 
 HWY_EXPORT(FastXYBTosRGB8);
-void FastXYBTosRGB8(const Image3F& input, const Rect& input_rect,
-                    const Rect& output_buf_rect, const ImageF* alpha,
-                    const Rect& alpha_rect, bool is_rgba,
-                    uint8_t* JXL_RESTRICT output_buf, size_t xsize,
-                    size_t output_stride) {
-  return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(
-      input, input_rect, output_buf_rect, alpha, alpha_rect, is_rgba,
-      output_buf, xsize, output_stride);
+void FastXYBTosRGB8(const float* input[4], uint8_t* output, bool is_rgba,
+                    size_t xsize) {
+  return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(input, output, is_rgba, xsize);
 }
 
 void OpsinParams::Init(float intensity_target) {

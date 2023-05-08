@@ -121,7 +121,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
    * having the callback implementation return without doing anything).
    */
   nsresult ResolveHost(const nsACString& aHost, const nsACString& trrServer,
-                       uint16_t type,
+                       int32_t aPort, uint16_t type,
                        const mozilla::OriginAttributes& aOriginAttributes,
                        uint16_t flags, uint16_t af,
                        nsResolveHostCallback* callback);
@@ -292,7 +292,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   uint32_t mDefaultCacheLifetime = 0;  // granularity seconds
   uint32_t mDefaultGracePeriod = 0;    // granularity seconds
   // mutable so SizeOfIncludingThis can be const
-  mutable Mutex mLock{"nsHostResolver.mLock"};
+  mutable Mutex mLock MOZ_UNANNOTATED{"nsHostResolver.mLock"};
   CondVar mIdleTaskCV;
   nsRefPtrHashtable<nsGenericHashKey<nsHostKey>, nsHostRecord> mRecordDB;
   PRTime mCreationTime;

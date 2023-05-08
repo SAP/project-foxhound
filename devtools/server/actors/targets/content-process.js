@@ -152,10 +152,11 @@ const ContentProcessTargetActor = TargetActorMixin(
       return {
         actor: this.actorID,
         consoleActor: this._consoleActor.actorID,
-        threadActor: this.threadActor.actorID,
+        isXpcShellTarget: this.isXpcShellTarget,
         memoryActor: this.memoryActor.actorID,
         processID: Services.appinfo.processID,
         remoteType: Services.appinfo.remoteType,
+        threadActor: this.threadActor.actorID,
 
         traits: {
           networkMonitor: false,
@@ -212,7 +213,7 @@ const ContentProcessTargetActor = TargetActorMixin(
       if (this.isDestroyed()) {
         return;
       }
-      Resources.unwatchAllTargetResources(this);
+      Resources.unwatchAllResources(this);
 
       Actor.prototype.destroy.call(this);
 

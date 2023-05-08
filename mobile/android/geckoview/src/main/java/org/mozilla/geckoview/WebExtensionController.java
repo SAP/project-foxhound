@@ -962,7 +962,9 @@ public class WebExtensionController {
     message.callback.sendSuccess(null);
   }
 
-  /* package */ void newTab(final Message message, final WebExtension extension) {
+  /* package */
+  @SuppressLint("WrongThread") // for .isOpen
+  void newTab(final Message message, final WebExtension extension) {
     final GeckoBundle bundle = message.bundle;
 
     final WebExtension.TabDelegate delegate = mListener.getTabDelegate(extension);
@@ -1085,7 +1087,7 @@ public class WebExtensionController {
 
     if (environmentType == WebExtension.MessageSender.ENV_TYPE_UNKNOWN) {
       if (BuildConfig.DEBUG) {
-        throw new RuntimeException("Missing or unknown envType.");
+        throw new RuntimeException("Missing or unknown envType: " + envType);
       }
 
       return null;
@@ -1100,13 +1102,14 @@ public class WebExtensionController {
       // If session is present we are either receiving this message from a content script or
       // an extension page, let's make sure we have the proper identification so that
       // embedders can check the origin of this message.
-      if (!sender.containsKey("frameId")
-          || !sender.containsKey("url")
-          ||
-          // -1 is an invalid frame id
-          sender.getInt("frameId", -1) == -1) {
+      // -1 is an invalid frame id
+      final boolean hasFrameId =
+          sender.containsKey("frameId") && sender.getInt("frameId", -1) != -1;
+      final boolean hasUrl = sender.containsKey("url");
+      if (!hasFrameId || !hasUrl) {
         if (BuildConfig.DEBUG) {
-          throw new RuntimeException("Missing sender information.");
+          throw new RuntimeException(
+              "Missing sender information. hasFrameId: " + hasFrameId + " hasUrl: " + hasUrl);
         }
 
         // This message does not have the proper identification and may be compromised,

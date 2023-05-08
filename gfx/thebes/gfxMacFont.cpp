@@ -14,6 +14,7 @@
 #include "gfxPlatformMac.h"
 #include "gfxContext.h"
 #include "gfxFontUtils.h"
+#include "gfxHarfBuzzShaper.h"
 #include "gfxMacPlatformFontList.h"
 #include "gfxFontConstants.h"
 #include "gfxTextRun.h"
@@ -319,7 +320,7 @@ void gfxMacFont::InitMetrics() {
     if (aspect > 0.0) {
       // If we created a shaper above (to measure glyphs), discard it so we
       // get a new one for the adjusted scaling.
-      mHarfBuzzShaper = nullptr;
+      delete mHarfBuzzShaper.exchange(nullptr);
       mAdjustedSize = mStyle.GetAdjustedSize(aspect);
       mFUnitsConvFactor = mAdjustedSize / upem;
       if (static_cast<MacOSFontEntry*>(mFontEntry.get())->IsCFF()) {
@@ -382,18 +383,22 @@ void gfxMacFont::InitMetrics() {
     mMetrics.ideographicWidth = -1.0;
   }
 
-  if (IsSyntheticBold()) {
-    mMetrics.spaceWidth += GetSyntheticBoldOffset();
-    mMetrics.aveCharWidth += GetSyntheticBoldOffset();
-    mMetrics.maxAdvance += GetSyntheticBoldOffset();
-    if (mMetrics.zeroWidth > 0) {
-      mMetrics.zeroWidth += GetSyntheticBoldOffset();
-    }
-  }
-
   CalculateDerivedMetrics(mMetrics);
 
   SanitizeMetrics(&mMetrics, mFontEntry->mIsBadUnderlineFont);
+
+  if (ApplySyntheticBold()) {
+    auto delta = GetSyntheticBoldOffset();
+    mMetrics.spaceWidth += delta;
+    mMetrics.aveCharWidth += delta;
+    mMetrics.maxAdvance += delta;
+    if (mMetrics.zeroWidth > 0) {
+      mMetrics.zeroWidth += delta;
+    }
+    if (mMetrics.ideographicWidth > 0) {
+      mMetrics.ideographicWidth += delta;
+    }
+  }
 
 #if 0
     fprintf (stderr, "Font: %p (%s) size: %f\n", this,
@@ -514,7 +519,8 @@ int32_t gfxMacFont::GetGlyphWidth(uint16_t aGID) {
   return advance.width * 0x10000;
 }
 
-bool gfxMacFont::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds, bool aTight) {
+bool gfxMacFont::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
+                                bool aTight) const {
   CGRect bb;
   if (!::CGFontGetGlyphBBoxes(mCGFont, &aGID, 1, &bb)) {
     return false;
@@ -577,21 +583,27 @@ void gfxMacFont::InitMetricsFromPlatform() {
 
 already_AddRefed<ScaledFont> gfxMacFont::GetScaledFont(
     const TextRunDrawParams& aRunParams) {
-  if (!mAzureScaledFont) {
-    gfxFontEntry* fe = GetFontEntry();
-    bool hasColorGlyphs = fe->HasColorBitmapTable() || fe->TryGetColorGlyphs();
-    mAzureScaledFont = Factory::CreateScaledFontForMacFont(
-        GetCGFontRef(), GetUnscaledFont(), GetAdjustedSize(),
-        ToDeviceColor(mFontSmoothingBackgroundColor),
-        !mStyle.useGrayscaleAntialiasing, IsSyntheticBold(), hasColorGlyphs);
-    if (!mAzureScaledFont) {
-      return nullptr;
-    }
-    InitializeScaledFont();
+  if (ScaledFont* scaledFont = mAzureScaledFont) {
+    return do_AddRef(scaledFont);
   }
 
-  RefPtr<ScaledFont> scaledFont(mAzureScaledFont);
-  return scaledFont.forget();
+  gfxFontEntry* fe = GetFontEntry();
+  bool hasColorGlyphs = fe->HasColorBitmapTable() || fe->TryGetColorGlyphs();
+  RefPtr<ScaledFont> newScaledFont = Factory::CreateScaledFontForMacFont(
+      GetCGFontRef(), GetUnscaledFont(), GetAdjustedSize(),
+      ToDeviceColor(mFontSmoothingBackgroundColor),
+      !mStyle.useGrayscaleAntialiasing, ApplySyntheticBold(), hasColorGlyphs);
+  if (!newScaledFont) {
+    return nullptr;
+  }
+
+  InitializeScaledFont(newScaledFont);
+
+  if (mAzureScaledFont.compareExchange(nullptr, newScaledFont.get())) {
+    Unused << newScaledFont.forget();
+  }
+  ScaledFont* scaledFont = mAzureScaledFont;
+  return do_AddRef(scaledFont);
 }
 
 bool gfxMacFont::ShouldRoundXOffset(cairo_t* aCairo) const {

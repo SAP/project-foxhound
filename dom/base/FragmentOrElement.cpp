@@ -63,7 +63,6 @@
 #include "mozilla/MouseEvents.h"
 #include "nsAttrValueOrString.h"
 #include "nsQueryObject.h"
-#include "nsXULElement.h"
 #include "nsFrameSelection.h"
 #ifdef DEBUG
 #  include "nsRange.h"
@@ -250,13 +249,14 @@ dom::Element* nsIContent::GetEditingHost() {
     return doc->GetBodyElement();
   }
 
-  nsIContent* content = this;
+  dom::Element* editableParentElement = nullptr;
   for (dom::Element* parent = GetParentElement();
        parent && parent->HasFlag(NODE_IS_EDITABLE);
-       parent = content->GetParentElement()) {
-    content = parent;
+       parent = editableParentElement->GetParentElement()) {
+    editableParentElement = parent;
   }
-  return content->AsElement();
+  return editableParentElement ? editableParentElement
+                               : dom::Element::FromNode(this);
 }
 
 nsresult nsIContent::LookupNamespaceURIInternal(
@@ -1035,11 +1035,6 @@ bool nsIContent::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   if (aTabIndex) {
     *aTabIndex = -1;  // Default, not tabbable
   }
-  return false;
-}
-
-bool FragmentOrElement::IsLink(nsIURI** aURI) const {
-  *aURI = nullptr;
   return false;
 }
 

@@ -298,8 +298,6 @@ class MOZ_STATIC_CLASS OpToFallbackKindTable {
     setKind(JSOp::Call, BaselineICFallbackKind::Call);
     setKind(JSOp::CallIgnoresRv, BaselineICFallbackKind::Call);
     setKind(JSOp::CallIter, BaselineICFallbackKind::Call);
-    setKind(JSOp::FunCall, BaselineICFallbackKind::Call);
-    setKind(JSOp::FunApply, BaselineICFallbackKind::Call);
     setKind(JSOp::Eval, BaselineICFallbackKind::Call);
     setKind(JSOp::StrictEval, BaselineICFallbackKind::Call);
 
@@ -1586,8 +1584,7 @@ bool DoCallFallback(JSContext* cx, BaselineFrame* frame, ICFallbackStub* stub,
     }
   } else {
     MOZ_ASSERT(op == JSOp::Call || op == JSOp::CallIgnoresRv ||
-               op == JSOp::CallIter || op == JSOp::FunCall ||
-               op == JSOp::FunApply || op == JSOp::Eval ||
+               op == JSOp::CallIter || op == JSOp::Eval ||
                op == JSOp::StrictEval);
     if (op == JSOp::CallIter && callee.isPrimitive()) {
       MOZ_ASSERT(argc == 0, "thisv must be on top of the stack");

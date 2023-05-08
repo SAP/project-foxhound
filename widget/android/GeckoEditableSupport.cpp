@@ -701,10 +701,10 @@ void GeckoEditableSupport::FlushIMEChanges(FlushChangesFlag aFlags) {
         return;
       }
 
-      selStart = static_cast<int32_t>(
-          querySelectedTextEvent.mReply->SelectionStartOffset());
-      selEnd = static_cast<int32_t>(
-          querySelectedTextEvent.mReply->SelectionEndOffset());
+      selStart =
+          static_cast<int32_t>(querySelectedTextEvent.mReply->AnchorOffset());
+      selEnd =
+          static_cast<int32_t>(querySelectedTextEvent.mReply->FocusOffset());
     }
 
     if (aFlags == FLUSH_FLAG_RECOVER && textTransaction.IsValid()) {
@@ -795,24 +795,40 @@ void GeckoEditableSupport::UpdateCompositionRects() {
   RefPtr<TextComposition> composition(GetComposition());
   NS_ENSURE_TRUE_VOID(mDispatcher && widget);
 
-  if (!composition) {
-    return;
+  jni::ObjectArray::LocalRef rects;
+  if (composition) {
+    nsEventStatus status = nsEventStatus_eIgnore;
+    uint32_t offset = composition->NativeOffsetOfStartComposition();
+    WidgetQueryContentEvent queryTextRectsEvent(true, eQueryTextRectArray,
+                                                widget);
+    queryTextRectsEvent.InitForQueryTextRectArray(
+        offset, composition->String().Length());
+    widget->DispatchEvent(&queryTextRectsEvent, status);
+    rects = ConvertRectArrayToJavaRectFArray(
+        queryTextRectsEvent.Succeeded()
+            ? queryTextRectsEvent.mReply->mRectArray
+            : CopyableTArray<mozilla::LayoutDeviceIntRect>());
+  } else {
+    rects = ConvertRectArrayToJavaRectFArray(
+        CopyableTArray<mozilla::LayoutDeviceIntRect>());
   }
 
+  WidgetQueryContentEvent queryCaretRectEvent(true, eQueryCaretRect, widget);
+  WidgetQueryContentEvent::Options options;
+  options.mRelativeToInsertionPoint = true;
+  queryCaretRectEvent.InitForQueryCaretRect(0, options);
+
   nsEventStatus status = nsEventStatus_eIgnore;
-  uint32_t offset = composition->NativeOffsetOfStartComposition();
-  WidgetQueryContentEvent queryTextRectsEvent(true, eQueryTextRectArray,
-                                              widget);
-  queryTextRectsEvent.InitForQueryTextRectArray(offset,
-                                                composition->String().Length());
-  widget->DispatchEvent(&queryTextRectsEvent, status);
+  widget->DispatchEvent(&queryCaretRectEvent, status);
+  auto caretRect =
+      queryCaretRectEvent.Succeeded()
+          ? java::sdk::RectF::New(queryCaretRectEvent.mReply->mRect.x,
+                                  queryCaretRectEvent.mReply->mRect.y,
+                                  queryCaretRectEvent.mReply->mRect.XMost(),
+                                  queryCaretRectEvent.mReply->mRect.YMost())
+          : java::sdk::RectF::New();
 
-  auto rects = ConvertRectArrayToJavaRectFArray(
-      queryTextRectsEvent.Succeeded()
-          ? queryTextRectsEvent.mReply->mRectArray
-          : CopyableTArray<mozilla::LayoutDeviceIntRect>());
-
-  mEditable->UpdateCompositionRects(rects);
+  mEditable->UpdateCompositionRects(rects, caretRect);
 }
 
 void GeckoEditableSupport::OnImeSynchronize() {
@@ -1341,10 +1357,14 @@ nsresult GeckoEditableSupport::NotifyIME(
       ALOGIME("IME: NOTIFY_IME_OF_SELECTION_CHANGE: SelectionChangeData=%s",
               ToString(aNotification.mSelectionChangeData).c_str());
 
-      mCachedSelection.mStartOffset =
-          aNotification.mSelectionChangeData.StartOffset();
-      mCachedSelection.mEndOffset =
-          aNotification.mSelectionChangeData.EndOffset();
+      if (aNotification.mSelectionChangeData.HasRange()) {
+        mCachedSelection.mStartOffset = static_cast<int32_t>(
+            aNotification.mSelectionChangeData.AnchorOffset());
+        mCachedSelection.mEndOffset = static_cast<int32_t>(
+            aNotification.mSelectionChangeData.FocusOffset());
+      } else {
+        mCachedSelection.Reset();
+      }
 
       PostFlushIMEChanges();
       mIMESelectionChanged = true;

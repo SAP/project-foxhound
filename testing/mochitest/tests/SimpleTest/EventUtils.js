@@ -1032,7 +1032,7 @@ function synthesizeNativeTap(
     return;
   }
 
-  let scale = utils.screenPixelsPerCSSPixel;
+  let scale = aWindow.devicePixelRatio;
   let rect = aTarget.getBoundingClientRect();
   let x = (aWindow.mozInnerScreenX + rect.left + aOffsetX) * scale;
   let y = (aWindow.mozInnerScreenY + rect.top + aOffsetY) * scale;
@@ -1056,8 +1056,7 @@ function synthesizeNativeMouseEvent(aParams, aCallback = null) {
     atCenter, // Instead of offsetX/Y, synthesize the event at center of `target`
     screenX, // X offset in screen (in CSS pixels if `scale` is "screenPixelsPerCSSPixel*"), offsetX/Y nor atCenter must not be set if this is set
     screenY, // Y offset in screen (in CSS pixels if `scale` is "screenPixelsPerCSSPixel*"), offsetX/Y nor atCenter must not be set if this is set
-    // If scale is "screenPixelsPerCSSPixel", it'll be used.
-    // If scale is "screenPixelsPerCSSPixelNoOverride", it'll be used.
+    // If scale is "screenPixelsPerCSSPixel", devicePixelRatio will be used.
     // If scale is "inScreenPixels", clientX/Y nor scaleX/Y are not adjusted with screenPixelsPerCSSPixel*.
     scale = "screenPixelsPerCSSPixel",
     button = 0, // if "click", "mousedown", "mouseup", set same value as DOM MouseEvent.button
@@ -1117,10 +1116,7 @@ function synthesizeNativeMouseEvent(aParams, aCallback = null) {
       return 1.0;
     }
     if (scale === "screenPixelsPerCSSPixel") {
-      return utils.screenPixelsPerCSSPixel;
-    }
-    if (scale === "screenPixelsPerCSSPixelNoOverride") {
-      return utils.screenPixelsPerCSSPixelNoOverride;
+      return win.devicePixelRatio;
     }
     throw Error(`invalid scale value (${scale}) is specified`);
   })();

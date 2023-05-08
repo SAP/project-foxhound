@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
+"use strict";
+
 add_task(async function() {
   const dbg = await initDebugger("doc-html-breakpoints.html");
 
@@ -25,18 +27,30 @@ add_task(async function() {
 
   invokeInTab("test1");
   await waitForPaused(dbg);
-  assertPausedLocation(dbg);
+  assertPausedAtSourceAndLine(
+    dbg,
+    findSource(dbg, "doc-html-breakpoints.html").id,
+    8
+  );
   await resume(dbg);
 
   await waitForBreakableLine(dbg, "doc-html-breakpoints.html", 14);
   invokeInTab("test3");
   await waitForPaused(dbg);
-  assertPausedLocation(dbg);
+  assertPausedAtSourceAndLine(
+    dbg,
+    findSource(dbg, "doc-html-breakpoints.html").id,
+    14
+  );
   await resume(dbg);
 
   await waitForBreakableLine(dbg, "doc-html-breakpoints.html", 20);
   invokeInTab("test4");
   await waitForPaused(dbg);
-  assertPausedLocation(dbg);
+  assertPausedAtSourceAndLine(
+    dbg,
+    findSource(dbg, "doc-html-breakpoints.html").id,
+    20
+  );
   await resume(dbg);
 });

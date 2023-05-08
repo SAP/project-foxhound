@@ -57,7 +57,6 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mLoadId(nullptr),
       mFirstProxy(nullptr),
       mValidator(nullptr),
-      mInnerWindowId(0),
       mCORSMode(CORS_NONE),
       mImageErrorCode(NS_OK),
       mImageAvailable(false),
@@ -69,7 +68,8 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mIsInCache(false),
       mDecodeRequested(false),
       mNewPartPending(false),
-      mHadInsecureRedirect(false) {
+      mHadInsecureRedirect(false),
+      mInnerWindowId(0) {
   LOG_FUNC(gImgLog, "imgRequest::imgRequest()");
 }
 
@@ -83,13 +83,12 @@ imgRequest::~imgRequest() {
     LOG_FUNC(gImgLog, "imgRequest::~imgRequest()");
 }
 
-nsresult imgRequest::Init(nsIURI* aURI, nsIURI* aFinalURI,
-                          bool aHadInsecureRedirect, nsIRequest* aRequest,
-                          nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
-                          mozilla::dom::Document* aLoadingDocument,
-                          nsIPrincipal* aTriggeringPrincipal,
-                          mozilla::CORSMode aCORSMode,
-                          nsIReferrerInfo* aReferrerInfo) {
+nsresult imgRequest::Init(
+    nsIURI* aURI, nsIURI* aFinalURI, bool aHadInsecureRedirect,
+    nsIRequest* aRequest, nsIChannel* aChannel, imgCacheEntry* aCacheEntry,
+    mozilla::dom::Document* aLoadingDocument,
+    nsIPrincipal* aTriggeringPrincipal, mozilla::CORSMode aCORSMode,
+    nsIReferrerInfo* aReferrerInfo) NO_THREAD_SAFETY_ANALYSIS {
   MOZ_ASSERT(NS_IsMainThread(), "Cannot use nsIURI off main thread!");
   // Init() can only be called once, and that's before it can be used off
   // mainthread
@@ -274,6 +273,16 @@ nsresult imgRequest::RemoveProxy(imgRequestProxy* proxy, nsresult aStatus) {
   }
 
   return NS_OK;
+}
+
+uint64_t imgRequest::InnerWindowID() const {
+  MutexAutoLock lock(mMutex);
+  return mInnerWindowId;
+}
+
+void imgRequest::SetInnerWindowID(uint64_t aInnerWindowId) {
+  MutexAutoLock lock(mMutex);
+  mInnerWindowId = aInnerWindowId;
 }
 
 void imgRequest::CancelAndAbort(nsresult aStatus) {
@@ -821,7 +830,7 @@ static NewPartResult PrepareForNewPart(nsIRequest* aRequest,
                                        nsIURI* aURI, bool aIsMultipart,
                                        image::Image* aExistingImage,
                                        ProgressTracker* aProgressTracker,
-                                       uint32_t aInnerWindowId) {
+                                       uint64_t aInnerWindowId) {
   NewPartResult result(aExistingImage);
 
   if (aInStr) {
@@ -960,6 +969,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
   RefPtr<ProgressTracker> progressTracker;
   bool isMultipart = false;
   bool newPartPending = false;
+  uint64_t innerWindowId = 0;
 
   // Retrieve and update our state.
   {
@@ -969,6 +979,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
     isMultipart = mIsMultiPartChannel;
     newPartPending = mNewPartPending;
     mNewPartPending = false;
+    innerWindowId = mInnerWindowId;
   }
 
   // If this is a new part, we need to sniff its content type and create an
@@ -976,7 +987,7 @@ imgRequest::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
   if (newPartPending) {
     NewPartResult result =
         PrepareForNewPart(aRequest, aInStr, aCount, mURI, isMultipart, image,
-                          progressTracker, mInnerWindowId);
+                          progressTracker, innerWindowId);
     bool succeeded = result.mSucceeded;
 
     if (result.mImage) {

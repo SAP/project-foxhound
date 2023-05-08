@@ -102,23 +102,19 @@ int nsNSSComponent::mInstanceCount = 0;
 // Forward declaration.
 nsresult CommonInit();
 
-// Take an nsIFile and get a c-string representation of the location of that
-// file (encapsulated in an nsACString). This function handles a
-// platform-specific issue on Windows where Unicode characters that cannot be
-// mapped to the system's codepage will be dropped, resulting in a c-string
-// that is useless to describe the location of the file in question.
+// Take an nsIFile and get a UTF-8-encoded c-string representation of the
+// location of that file (encapsulated in an nsACString).
 // This operation is generally to be avoided, except when interacting with
 // third-party or legacy libraries that cannot handle `nsIFile`s (such as NSS).
+// |result| is encoded in UTF-8.
 nsresult FileToCString(const nsCOMPtr<nsIFile>& file, nsACString& result) {
 #ifdef XP_WIN
-  // Native path will drop Unicode characters that cannot be mapped to system's
-  // codepage, using short (canonical) path as workaround.
-  nsCOMPtr<nsILocalFileWin> fileWin = do_QueryInterface(file);
-  if (!fileWin) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("couldn't get nsILocalFileWin"));
-    return NS_ERROR_FAILURE;
+  nsAutoString path;
+  nsresult rv = file->GetPath(path);
+  if (NS_SUCCEEDED(rv)) {
+    CopyUTF16toUTF8(path, result);
   }
-  return fileWin->GetNativeCanonicalPath(result);
+  return rv;
 #else
   return file->GetNativePath(result);
 #endif
@@ -733,8 +729,8 @@ class LoadLoadableCertsTask final : public Runnable {
   RefPtr<nsNSSComponent> mNSSComponent;
   bool mImportEnterpriseRoots;
   uint32_t mFamilySafetyMode;
-  Vector<nsCString> mPossibleLoadableRootsLocations;
-  Maybe<nsCString> mOSClientCertsModuleLocation;
+  Vector<nsCString> mPossibleLoadableRootsLocations;  // encoded in UTF-8
+  Maybe<nsCString> mOSClientCertsModuleLocation;      // encoded in UTF-8
 };
 
 nsresult LoadLoadableCertsTask::Dispatch() {
@@ -805,6 +801,7 @@ LoadLoadableCertsTask::Run() {
 
 // Returns by reference the path to the desired directory, based on the current
 // settings in the directory service.
+// |result| is encoded in UTF-8.
 static nsresult GetDirectoryPath(const char* directoryKey, nsCString& result) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -921,7 +918,7 @@ nsresult nsNSSComponent::BlockUntilLoadableCertsLoaded() {
 }
 
 #ifndef MOZ_NO_SMART_CARDS
-static StaticMutex sCheckForSmartCardChangesMutex;
+static StaticMutex sCheckForSmartCardChangesMutex MOZ_UNANNOTATED;
 static TimeStamp sLastCheckedForSmartCardChanges = TimeStamp::Now();
 #endif
 
@@ -938,10 +935,8 @@ nsresult nsNSSComponent::CheckForSmartCardChanges() {
     sLastCheckedForSmartCardChanges = now;
   }
 
-  // SECMOD_UpdateSlotList attempts to acquire the list lock as well,
-  // so we have to do this in two steps. The lock protects the list itself, so
-  // if we get our own owned references to the modules we're interested in,
-  // there's no thread safety concern here.
+  // SECMOD_UpdateSlotList attempts to acquire the list lock as well, so we
+  // have to do this in three steps.
   Vector<UniqueSECMODModule> modulesWithRemovableSlots;
   {
     AutoSECMODListReadLock secmodLock;
@@ -959,6 +954,9 @@ nsresult nsNSSComponent::CheckForSmartCardChanges() {
   for (auto& module : modulesWithRemovableSlots) {
     // Best-effort.
     Unused << SECMOD_UpdateSlotList(module.get());
+  }
+  AutoSECMODListReadLock secmodLock;
+  for (auto& module : modulesWithRemovableSlots) {
     for (int i = 0; i < module->slotCount; i++) {
       // We actually don't care about the return value here - we just need to
       // call this to get NSS to update its view of this slot.
@@ -972,6 +970,7 @@ nsresult nsNSSComponent::CheckForSmartCardChanges() {
 
 // Returns by reference the path to the directory containing the file that has
 // been loaded as MOZ_DLL_PREFIX nss3 MOZ_DLL_SUFFIX.
+// |result| is encoded in UTF-8.
 static nsresult GetNSS3Directory(nsCString& result) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -1006,6 +1005,7 @@ static nsresult GetNSS3Directory(nsCString& result) {
 // The loadable roots library is probably in the same directory we loaded the
 // NSS shared library from, but in some cases it may be elsewhere. This function
 // enumerates and returns the possible locations as nsCStrings.
+// |possibleLoadableRootsLocations| is encoded in UTF-8.
 static nsresult ListPossibleLoadableRootsLocations(
     Vector<nsCString>& possibleLoadableRootsLocations) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -1540,6 +1540,7 @@ void nsNSSComponent::setValidationOptions(
     case CRLiteMode::Disabled:
     case CRLiteMode::TelemetryOnly:
     case CRLiteMode::Enforce:
+    case CRLiteMode::ConfirmRevocations:
       break;
     default:
       crliteMode = defaultCRLiteMode;
@@ -2163,7 +2164,7 @@ void IntermediatePreloadingHealerCallback(nsITimer*, void*) {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("IntermediatePreloadingHealerCallback"));
 
-  if (AppShutdown::IsShuttingDown()) {
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("Exiting healer due to app shutdown"));
     return;
@@ -2192,7 +2193,7 @@ void IntermediatePreloadingHealerCallback(nsITimer*, void*) {
   // is a preloaded intermediate.
   for (CERTCertListNode* n = CERT_LIST_HEAD(softokenCertificates);
        !CERT_LIST_END(n, softokenCertificates); n = CERT_LIST_NEXT(n)) {
-    if (AppShutdown::IsShuttingDown()) {
+    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
               ("Exiting healer due to app shutdown"));
       return;
@@ -2244,7 +2245,7 @@ void IntermediatePreloadingHealerCallback(nsITimer*, void*) {
     }
   }
   for (const auto& certToDelete : certsToDelete) {
-    if (AppShutdown::IsShuttingDown()) {
+    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
               ("Exiting healer due to app shutdown"));
       return;

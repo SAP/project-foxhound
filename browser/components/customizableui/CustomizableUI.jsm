@@ -49,6 +49,8 @@ const kPrefSidebarButtonUsed = "browser.engagement.sidebar-button.has-used";
 
 const kExpectedWindowURL = AppConstants.BROWSER_CHROME_URL;
 
+const global = this;
+
 var gDefaultTheme;
 var gSelectedTheme;
 
@@ -192,13 +194,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let scope = {};
-  ChromeUtils.import("resource://gre/modules/Console.jsm", scope);
+  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   let consoleOptions = {
     maxLogLevel: gDebuggingEnabled ? "all" : "log",
     prefix: "CustomizableUI",
   };
-  return new scope.ConsoleAPI(consoleOptions);
+  return new ConsoleAPI(consoleOptions);
 });
 
 var CustomizableUIInternal = {
@@ -4628,6 +4629,34 @@ var CustomizableUI = {
 
   getCustomizationTarget(aElement) {
     return CustomizableUIInternal.getCustomizationTarget(aElement);
+  },
+
+  getTestOnlyInternalProp(aProp) {
+    if (
+      !Cu.isInAutomation ||
+      ![
+        "CustomizableUIInternal",
+        "gAreas",
+        "gFuturePlacements",
+        "gPalette",
+        "gPlacements",
+        "gSavedState",
+        "gSeenWidgets",
+        "kVersion",
+      ].includes(aProp)
+    ) {
+      return null;
+    }
+    return global[aProp];
+  },
+  setTestOnlyInternalProp(aProp, aValue) {
+    if (
+      !Cu.isInAutomation ||
+      !["gSavedState", "kVersion", "gDirty"].includes(aProp)
+    ) {
+      return;
+    }
+    global[aProp] = aValue;
   },
 };
 Object.freeze(CustomizableUI);

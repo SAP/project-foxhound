@@ -42,7 +42,13 @@ async function addGroupTest(shouldRebuild) {
     await DomainGroupBuilder.rebuild(snapshots);
   } else {
     await DomainGroupBuilder.update({
-      addedUrls: new Set(TEST_URLS),
+      addedItems: new Set(
+        TEST_URLS.map(url => {
+          return {
+            url,
+          };
+        })
+      ),
       removedUrls: new Set(),
     });
   }
@@ -55,9 +61,15 @@ async function addGroupTest(shouldRebuild) {
   assertSnapshotGroup(groups[0], {
     title: "example",
     builder: "domain",
-    builderMetadata: { domain: "example.com" },
-    urls: TEST_URLS,
+    builderMetadata: { title: "example", domain: "example.com" },
   });
+
+  let urls = await SnapshotGroups.getUrls({ id: groups[0].id });
+  Assert.deepEqual(
+    urls.sort(),
+    TEST_URLS.sort(),
+    "Should have inserted the expected URLs"
+  );
 }
 
 async function modifyGroupTest(shouldRebuild) {
@@ -70,7 +82,7 @@ async function modifyGroupTest(shouldRebuild) {
     await DomainGroupBuilder.rebuild(snapshots);
   } else {
     await DomainGroupBuilder.update({
-      addedUrls: new Set([TEST_URLS_EXTRA]),
+      addedItems: new Set([{ url: TEST_URLS_EXTRA }]),
       removedUrls: new Set(),
     });
   }
@@ -83,11 +95,14 @@ async function modifyGroupTest(shouldRebuild) {
   assertSnapshotGroup(groups[0], {
     title: "example",
     builder: "domain",
-    builderMetadata: { domain: "example.com" },
-    // TODO: Replace when updateUrls API has been implemented.
-    urls: TEST_URLS,
-    // urls: [...TEST_URLS, TEST_URLS_EXTRA],
+    builderMetadata: { title: "example", domain: "example.com" },
   });
+  let urls = await SnapshotGroups.getUrls({ id: groups[0].id });
+  Assert.deepEqual(
+    urls.sort(),
+    [...TEST_URLS, TEST_URLS_EXTRA].sort(),
+    "Should have inserted the expected URLs"
+  );
 }
 
 async function deleteGroupTest(shouldRebuild) {
@@ -102,7 +117,7 @@ async function deleteGroupTest(shouldRebuild) {
     await DomainGroupBuilder.rebuild(snapshots);
   } else {
     await DomainGroupBuilder.update({
-      addedUrls: new Set(),
+      addedItems: new Set(),
       removedUrls: new Set([TEST_URLS_EXTRA, ...TEST_URLS]),
     });
   }

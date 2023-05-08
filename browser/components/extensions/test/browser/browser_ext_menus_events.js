@@ -21,7 +21,7 @@ async function grantOptionalPermission(extension, permissions) {
 
 var someOtherTab, testTab;
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.manifestV3.enabled", true]],
   });
@@ -765,6 +765,7 @@ add_task(async function test_show_hide_editable_selection() {
         [],
         function() {
           let node = content.document.getElementById("editabletext");
+          node.scrollIntoView();
           node.select();
           node.focus();
           return node.value;
@@ -811,6 +812,7 @@ add_task(async function test_show_hide_video() {
         video.controls = true;
         video.src = VIDEO_URL;
         content.document.body.appendChild(video);
+        video.scrollIntoView();
         video.focus();
       });
 
@@ -854,6 +856,7 @@ add_task(async function test_show_hide_audio() {
         audio.controls = true;
         audio.src = AUDIO_URL;
         content.document.body.appendChild(audio);
+        audio.scrollIntoView();
         audio.focus();
       });
 

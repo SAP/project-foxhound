@@ -8,8 +8,6 @@
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 
-#include "WorkerPrivate.h"
-#include "WorkerRunnable.h"
 #include "mozilla/dom/ReferrerInfo.h"
 
 namespace mozilla {
@@ -118,6 +116,16 @@ WorkerEventTarget::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
 
 NS_IMETHODIMP
 WorkerEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+WorkerEventTarget::RegisterShutdownTask(nsITargetShutdownTask*) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+WorkerEventTarget::UnregisterShutdownTask(nsITargetShutdownTask*) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

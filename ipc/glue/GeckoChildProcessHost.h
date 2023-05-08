@@ -215,7 +215,7 @@ class GeckoChildProcessHost : public ChildProcessHost,
     // is well.
     PROCESS_CONNECTED,
     PROCESS_ERROR
-  } mProcessState;
+  } mProcessState GUARDED_BY(mMonitor);
 
   void PrepareLaunch();
 
@@ -286,7 +286,7 @@ class GeckoChildProcessHost : public ChildProcessHost,
 
   static uint32_t sNextUniqueID;
   static StaticAutoPtr<LinkedList<GeckoChildProcessHost>>
-      sGeckoChildProcessHosts;
+      sGeckoChildProcessHosts GUARDED_BY(sMutex);
   static StaticMutex sMutex;
 };
 

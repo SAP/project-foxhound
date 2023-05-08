@@ -10,13 +10,19 @@
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
-  UrlbarProviderQuickSuggest:
-    "resource:///modules/UrlbarProviderQuickSuggest.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 const TEST_URL = "http://example.com/quicksuggest?q=frabbits";
-const TEST_SEARCH_STRING = "frab";
+const TEST_SEARCH_STRING = "fra";
+
+const BEST_MATCH_SPONSORED_URL = "http://example.com/sponsored-best-match";
+const BEST_MATCH_SPONSORED_SEARCH_STRING = "sponsoredbestmatch";
+
+const BEST_MATCH_NONSPONSORED_URL =
+  "http://example.com/nonsponsored-best-match";
+const BEST_MATCH_NONSPONSORED_SEARCH_STRING = "nonsponsoredbestmatch";
+
 const TEST_DATA = [
   {
     id: 1,
@@ -26,6 +32,27 @@ const TEST_DATA = [
     click_url: "http://click.reporting.test.com/",
     impression_url: "http://impression.reporting.test.com/",
     advertiser: "Test-Advertiser",
+  },
+  {
+    id: 2,
+    url: BEST_MATCH_SPONSORED_URL,
+    title: "Sponsored best match",
+    keywords: [BEST_MATCH_SPONSORED_SEARCH_STRING],
+    click_url: "http://click.reporting.test.com/",
+    impression_url: "http://impression.reporting.test.com/",
+    advertiser: "Test-Advertiser",
+    _test_is_best_match: true,
+  },
+  {
+    id: 3,
+    url: BEST_MATCH_NONSPONSORED_URL,
+    title: "Non-sponsored best match",
+    keywords: [BEST_MATCH_NONSPONSORED_SEARCH_STRING],
+    click_url: "http://click.reporting.test.com/",
+    impression_url: "http://impression.reporting.test.com/",
+    advertiser: "Test-Advertiser",
+    iab_category: "5 - Education",
+    _test_is_best_match: true,
   },
 ];
 
@@ -313,19 +340,95 @@ add_task(async function click_mouse_online_dataCollectionEnabled() {
   });
 });
 
-async function doClickTest({ useKeyboard, scenario }) {
+// Tests impression and click (keyboard) telemetry for sponsored best matches.
+add_task(async function bestMatch_sponsored_keyboard() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  await QuickSuggestTestUtils.setScenario("offline");
+  await doClickTest({
+    useKeyboard: true,
+    scenario: "offline",
+    searchString: BEST_MATCH_SPONSORED_SEARCH_STRING,
+    url: BEST_MATCH_SPONSORED_URL,
+    block_id: 2,
+    isSponsored: true,
+    isBestMatch: true,
+  });
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+// Tests impression and click (mouse) telemetry for sponsored best matches.
+add_task(async function bestMatch_sponsored_mouse() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  await QuickSuggestTestUtils.setScenario("offline");
+  await doClickTest({
+    useKeyboard: false,
+    scenario: "offline",
+    searchString: BEST_MATCH_SPONSORED_SEARCH_STRING,
+    url: BEST_MATCH_SPONSORED_URL,
+    block_id: 2,
+    isSponsored: true,
+    isBestMatch: true,
+  });
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+// Tests impression and click (keyboard) telemetry for non-sponsored best
+// matches.
+add_task(async function bestMatch_nonsponsored_keyboard() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  await QuickSuggestTestUtils.setScenario("offline");
+  await doClickTest({
+    useKeyboard: true,
+    scenario: "offline",
+    searchString: BEST_MATCH_NONSPONSORED_SEARCH_STRING,
+    url: BEST_MATCH_NONSPONSORED_URL,
+    block_id: 3,
+    isSponsored: false,
+    isBestMatch: true,
+  });
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+// Tests impression and click (mouse) telemetry for non-sponsored best matches.
+add_task(async function bestMatch_nonsponsored_mouse() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  await QuickSuggestTestUtils.setScenario("offline");
+  await doClickTest({
+    useKeyboard: false,
+    scenario: "offline",
+    searchString: BEST_MATCH_NONSPONSORED_SEARCH_STRING,
+    url: BEST_MATCH_NONSPONSORED_URL,
+    block_id: 3,
+    isSponsored: false,
+    isBestMatch: true,
+  });
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+async function doClickTest({
+  useKeyboard,
+  scenario,
+  block_id = undefined,
+  isSponsored = true,
+  isBestMatch = false,
+  searchString = TEST_SEARCH_STRING,
+  url = TEST_URL,
+}) {
   await BrowserTestUtils.withNewTab("about:blank", async () => {
     spy.resetHistory();
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
-      value: TEST_SEARCH_STRING,
+      value: searchString,
       fireInputEvent: true,
     });
+
     let index = 1;
     let result = await QuickSuggestTestUtils.assertIsQuickSuggest({
       window,
       index,
-      url: TEST_URL,
+      url,
+      isSponsored,
+      isBestMatch,
     });
     await UrlbarTestUtils.promisePopupClose(window, () => {
       if (useKeyboard) {
@@ -335,16 +438,47 @@ async function doClickTest({ useKeyboard, scenario }) {
         EventUtils.synthesizeMouseAtCenter(result.element.row, {});
       }
     });
-    QuickSuggestTestUtils.assertScalars({
+
+    let scalars = {
       [QuickSuggestTestUtils.SCALARS.IMPRESSION]: index + 1,
       [QuickSuggestTestUtils.SCALARS.CLICK]: index + 1,
-    });
+    };
+    if (isBestMatch) {
+      if (isSponsored) {
+        scalars = {
+          ...scalars,
+          [QuickSuggestTestUtils.SCALARS.IMPRESSION_SPONSORED_BEST_MATCH]:
+            index + 1,
+          [QuickSuggestTestUtils.SCALARS.CLICK_SPONSORED_BEST_MATCH]: index + 1,
+        };
+      } else {
+        scalars = {
+          ...scalars,
+          [QuickSuggestTestUtils.SCALARS.IMPRESSION_NONSPONSORED_BEST_MATCH]:
+            index + 1,
+          [QuickSuggestTestUtils.SCALARS.CLICK_NONSPONSORED_BEST_MATCH]:
+            index + 1,
+        };
+      }
+    }
+    QuickSuggestTestUtils.assertScalars(scalars);
+
+    let match_type = isBestMatch ? "best-match" : "firefox-suggest";
     QuickSuggestTestUtils.assertImpressionPing({
       index,
       spy,
       scenario,
+      block_id,
+      match_type,
+      is_clicked: true,
     });
-    QuickSuggestTestUtils.assertClickPing({ index, spy, scenario });
+    QuickSuggestTestUtils.assertClickPing({
+      index,
+      spy,
+      scenario,
+      block_id,
+      match_type,
+    });
   });
 
   await PlacesUtils.history.clear();
@@ -390,7 +524,11 @@ add_task(async function click_beforeSearchSuggestions() {
         [QuickSuggestTestUtils.SCALARS.IMPRESSION]: index + 1,
         [QuickSuggestTestUtils.SCALARS.CLICK]: index + 1,
       });
-      QuickSuggestTestUtils.assertImpressionPing({ index, spy });
+      QuickSuggestTestUtils.assertImpressionPing({
+        index,
+        spy,
+        is_clicked: true,
+      });
       QuickSuggestTestUtils.assertClickPing({ index, spy });
     });
   });
@@ -413,7 +551,7 @@ add_task(async function help_keyboard() {
     index,
     url: TEST_URL,
   });
-  let helpButton = result.element.row._elements.get("helpButton");
+  let helpButton = result.element.row._buttons.get("help");
   Assert.ok(helpButton, "The result has a help button");
   let helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
   await UrlbarTestUtils.promisePopupClose(window, () => {
@@ -451,7 +589,7 @@ add_task(async function help_mouse() {
     index,
     url: TEST_URL,
   });
-  let helpButton = result.element.row._elements.get("helpButton");
+  let helpButton = result.element.row._buttons.get("help");
   Assert.ok(helpButton, "The result has a help button");
   let helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
   await UrlbarTestUtils.promisePopupClose(window, () => {
@@ -471,6 +609,202 @@ add_task(async function help_mouse() {
   QuickSuggestTestUtils.assertNoClickPing(spy);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   await PlacesUtils.history.clear();
+});
+
+// Tests the sponsored best match help scalar by picking a sponsored best match
+// help button with the keyboard.
+add_task(async function bestMatch_sponsored_help_keyboard() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  spy.resetHistory();
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: BEST_MATCH_SPONSORED_SEARCH_STRING,
+    fireInputEvent: true,
+  });
+  let index = 1;
+  let result = await QuickSuggestTestUtils.assertIsQuickSuggest({
+    window,
+    index,
+    url: BEST_MATCH_SPONSORED_URL,
+    isSponsored: true,
+    isBestMatch: true,
+  });
+  let helpButton = result.element.row._buttons.get("help");
+  Assert.ok(helpButton, "The result has a help button");
+  let helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: 2 });
+    EventUtils.synthesizeKey("KEY_Enter");
+  });
+  await helpLoadPromise;
+  Assert.equal(
+    gBrowser.currentURI.spec,
+    QuickSuggestTestUtils.LEARN_MORE_URL,
+    "Help URL loaded"
+  );
+  QuickSuggestTestUtils.assertScalars({
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION_SPONSORED_BEST_MATCH]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP_SPONSORED_BEST_MATCH]: index + 1,
+  });
+  QuickSuggestTestUtils.assertImpressionPing({
+    index,
+    spy,
+    block_id: 2,
+    match_type: "best-match",
+  });
+  QuickSuggestTestUtils.assertNoClickPing(spy);
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await PlacesUtils.history.clear();
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+// Tests the sponsored best match help scalar by picking a sponsored best match
+// help button with the mouse.
+add_task(async function bestMatch_sponsored_help_mouse() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  spy.resetHistory();
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: BEST_MATCH_SPONSORED_SEARCH_STRING,
+    fireInputEvent: true,
+  });
+  let index = 1;
+  let result = await QuickSuggestTestUtils.assertIsQuickSuggest({
+    window,
+    index,
+    url: BEST_MATCH_SPONSORED_URL,
+    isSponsored: true,
+    isBestMatch: true,
+  });
+  let helpButton = result.element.row._buttons.get("help");
+  Assert.ok(helpButton, "The result has a help button");
+  let helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeMouseAtCenter(helpButton, {});
+  });
+  await helpLoadPromise;
+  Assert.equal(
+    gBrowser.currentURI.spec,
+    QuickSuggestTestUtils.LEARN_MORE_URL,
+    "Help URL loaded"
+  );
+  QuickSuggestTestUtils.assertScalars({
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION_SPONSORED_BEST_MATCH]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP_SPONSORED_BEST_MATCH]: index + 1,
+  });
+  QuickSuggestTestUtils.assertImpressionPing({
+    index,
+    spy,
+    block_id: 2,
+    match_type: "best-match",
+  });
+  QuickSuggestTestUtils.assertNoClickPing(spy);
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await PlacesUtils.history.clear();
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+// Tests the non-sponsored best match help scalar by picking a non-sponsored
+// best match help button with the keyboard.
+add_task(async function bestMatch_nonsponsored_help_keyboard() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  spy.resetHistory();
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: BEST_MATCH_NONSPONSORED_SEARCH_STRING,
+    fireInputEvent: true,
+  });
+  let index = 1;
+  let result = await QuickSuggestTestUtils.assertIsQuickSuggest({
+    window,
+    index,
+    url: BEST_MATCH_NONSPONSORED_URL,
+    isSponsored: false,
+    isBestMatch: true,
+  });
+  let helpButton = result.element.row._buttons.get("help");
+  Assert.ok(helpButton, "The result has a help button");
+  let helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_ArrowDown", { repeat: 2 });
+    EventUtils.synthesizeKey("KEY_Enter");
+  });
+  await helpLoadPromise;
+  Assert.equal(
+    gBrowser.currentURI.spec,
+    QuickSuggestTestUtils.LEARN_MORE_URL,
+    "Help URL loaded"
+  );
+  QuickSuggestTestUtils.assertScalars({
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION_NONSPONSORED_BEST_MATCH]:
+      index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP_NONSPONSORED_BEST_MATCH]: index + 1,
+  });
+  QuickSuggestTestUtils.assertImpressionPing({
+    index,
+    spy,
+    block_id: 3,
+    match_type: "best-match",
+  });
+  QuickSuggestTestUtils.assertNoClickPing(spy);
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await PlacesUtils.history.clear();
+  UrlbarPrefs.clear("bestMatch.enabled");
+});
+
+// Tests the non-sponsored best match help scalar by picking a non-sponsored
+// best match help button with the mouse.
+add_task(async function bestMatch_nonsponsored_help_mouse() {
+  UrlbarPrefs.set("bestMatch.enabled", true);
+  spy.resetHistory();
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: BEST_MATCH_NONSPONSORED_SEARCH_STRING,
+    fireInputEvent: true,
+  });
+  let index = 1;
+  let result = await QuickSuggestTestUtils.assertIsQuickSuggest({
+    window,
+    index,
+    url: BEST_MATCH_NONSPONSORED_URL,
+    isSponsored: false,
+    isBestMatch: true,
+  });
+  let helpButton = result.element.row._buttons.get("help");
+  Assert.ok(helpButton, "The result has a help button");
+  let helpLoadPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeMouseAtCenter(helpButton, {});
+  });
+  await helpLoadPromise;
+  Assert.equal(
+    gBrowser.currentURI.spec,
+    QuickSuggestTestUtils.LEARN_MORE_URL,
+    "Help URL loaded"
+  );
+  QuickSuggestTestUtils.assertScalars({
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.IMPRESSION_NONSPONSORED_BEST_MATCH]:
+      index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP]: index + 1,
+    [QuickSuggestTestUtils.SCALARS.HELP_NONSPONSORED_BEST_MATCH]: index + 1,
+  });
+  QuickSuggestTestUtils.assertImpressionPing({
+    index,
+    spy,
+    block_id: 3,
+    match_type: "best-match",
+  });
+  QuickSuggestTestUtils.assertNoClickPing(spy);
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await PlacesUtils.history.clear();
+  UrlbarPrefs.clear("bestMatch.enabled");
 });
 
 // Tests telemetry recorded when toggling the
@@ -608,95 +942,159 @@ add_task(async function dataCollectionToggled() {
   UrlbarPrefs.set("quicksuggest.dataCollection.enabled", !enabled);
 });
 
+// Tests telemetry recorded when clicking the checkbox for best match in
+// preferences UI. The telemetry will be stored as following keyed scalar.
+// scalar: browser.ui.interaction.preferences_panePrivacy
+// key:    firefoxSuggestBestMatch
+add_task(async function bestmatchCheckbox() {
+  // Set the initial enabled status.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.bestMatch.enabled", true]],
+  });
+
+  // Open preferences page for best match.
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:preferences#privacy",
+    true
+  );
+
+  for (let i = 0; i < 2; i++) {
+    Services.telemetry.clearScalars();
+
+    // Click on the checkbox.
+    const doc = gBrowser.selectedBrowser.contentDocument;
+    const checkboxId = "firefoxSuggestBestMatch";
+    const checkbox = doc.getElementById(checkboxId);
+    checkbox.scrollIntoView();
+    await BrowserTestUtils.synthesizeMouseAtCenter(
+      "#" + checkboxId,
+      {},
+      gBrowser.selectedBrowser
+    );
+
+    TelemetryTestUtils.assertKeyedScalar(
+      TelemetryTestUtils.getProcessScalars("parent", true, true),
+      "browser.ui.interaction.preferences_panePrivacy",
+      checkboxId,
+      1
+    );
+  }
+
+  // Clean up.
+  gBrowser.removeCurrentTab();
+  await SpecialPowers.popPrefEnv();
+});
+
+// Tests telemetry recorded when opening the learn more link for best match in
+// the preferences UI. The telemetry will be stored as following keyed scalar.
+// scalar: browser.ui.interaction.preferences_panePrivacy
+// key:    firefoxSuggestBestMatchLearnMore
+add_task(async function bestmatchLearnMore() {
+  // Set the initial enabled status.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.bestMatch.enabled", true]],
+  });
+
+  // Open preferences page for best match.
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:preferences#privacy",
+    true
+  );
+
+  // Click on the learn more link.
+  Services.telemetry.clearScalars();
+  const learnMoreLinkId = "firefoxSuggestBestMatchLearnMore";
+  const doc = gBrowser.selectedBrowser.contentDocument;
+  const link = doc.getElementById(learnMoreLinkId);
+  link.scrollIntoView();
+  const onLearnMoreOpenedByClick = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    QuickSuggestTestUtils.BEST_MATCH_LEARN_MORE_URL
+  );
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    "#" + learnMoreLinkId,
+    {},
+    gBrowser.selectedBrowser
+  );
+  TelemetryTestUtils.assertKeyedScalar(
+    TelemetryTestUtils.getProcessScalars("parent", true, true),
+    "browser.ui.interaction.preferences_panePrivacy",
+    "firefoxSuggestBestMatchLearnMore",
+    1
+  );
+  await onLearnMoreOpenedByClick;
+  gBrowser.removeCurrentTab();
+
+  // Type enter key on the learm more link.
+  Services.telemetry.clearScalars();
+  link.focus();
+  const onLearnMoreOpenedByKey = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    QuickSuggestTestUtils.BEST_MATCH_LEARN_MORE_URL
+  );
+  await BrowserTestUtils.synthesizeKey(
+    "KEY_Enter",
+    {},
+    gBrowser.selectedBrowser
+  );
+  TelemetryTestUtils.assertKeyedScalar(
+    TelemetryTestUtils.getProcessScalars("parent", true, true),
+    "browser.ui.interaction.preferences_panePrivacy",
+    "firefoxSuggestBestMatchLearnMore",
+    1
+  );
+  await onLearnMoreOpenedByKey;
+  gBrowser.removeCurrentTab();
+
+  // Clean up.
+  gBrowser.removeCurrentTab();
+  await SpecialPowers.popPrefEnv();
+});
+
 // Tests the Nimbus exposure event gets recorded after a quick suggest result
 // impression.
 add_task(async function nimbusExposure() {
-  // Exposure event recording is queued to the idle thread, so wait for idle
-  // before we start so any events from previous tasks will have been recorded
-  // and won't interfere with this task.
-  await new Promise(resolve => Services.tm.idleDispatchToMainThread(resolve));
+  await QuickSuggestTestUtils.clearExposureEvent();
 
-  Services.telemetry.clearEvents();
-  NimbusFeatures.urlbar._didSendExposureEvent = false;
-  UrlbarProviderQuickSuggest._recordedExposureEvent = false;
-  let doExperimentCleanup = await QuickSuggestTestUtils.enrollExperiment({
+  await QuickSuggestTestUtils.withExperiment({
     valueOverrides: {
       quickSuggestEnabled: true,
       quickSuggestShouldShowOnboardingDialog: false,
     },
+    callback: async () => {
+      // No exposure event should be recorded after only enrolling.
+      await QuickSuggestTestUtils.assertExposureEvent(false);
+
+      // Do a search that doesn't trigger a quick suggest result. No exposure
+      // event should be recorded.
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: "nimbusExposure no result",
+        fireInputEvent: true,
+      });
+      await QuickSuggestTestUtils.assertNoQuickSuggestResults(window);
+      await UrlbarTestUtils.promisePopupClose(window);
+      QuickSuggestTestUtils.assertExposureEvent(false);
+
+      // Do a search that does trigger a quick suggest result. The exposure
+      // event should be recorded.
+      await UrlbarTestUtils.promiseAutocompleteResultPopup({
+        window,
+        value: TEST_SEARCH_STRING,
+        fireInputEvent: true,
+      });
+      await QuickSuggestTestUtils.assertIsQuickSuggest({
+        window,
+        index: 1,
+        url: TEST_URL,
+      });
+      await QuickSuggestTestUtils.assertExposureEvent(true, "control");
+
+      await UrlbarTestUtils.promisePopupClose(window);
+    },
   });
-
-  // This filter is needed to exclude the enrollment event.
-  let filter = {
-    category: "normandy",
-    method: "expose",
-    object: "nimbus_experiment",
-  };
-
-  // No exposure event should be recorded after only enrolling.
-  Assert.ok(
-    !UrlbarProviderQuickSuggest._recordedExposureEvent,
-    "_recordedExposureEvent remains false after enrolling"
-  );
-  TelemetryTestUtils.assertEvents([], filter);
-
-  // Do a search that doesn't trigger a quick suggest result. No exposure event
-  // should be recorded.
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
-    value: "nimbusExposure no result",
-    fireInputEvent: true,
-  });
-  await QuickSuggestTestUtils.assertNoQuickSuggestResults(window);
-  await UrlbarTestUtils.promisePopupClose(window);
-  Assert.ok(
-    !UrlbarProviderQuickSuggest._recordedExposureEvent,
-    "_recordedExposureEvent remains false after no quick suggest result"
-  );
-  TelemetryTestUtils.assertEvents([], filter);
-
-  // Do a search that does trigger a quick suggest result. The exposure event
-  // should be recorded.
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
-    value: TEST_SEARCH_STRING,
-    fireInputEvent: true,
-  });
-  await QuickSuggestTestUtils.assertIsQuickSuggest({
-    window,
-    index: 1,
-    url: TEST_URL,
-  });
-  Assert.ok(
-    UrlbarProviderQuickSuggest._recordedExposureEvent,
-    "_recordedExposureEvent is true after showing quick suggest result"
-  );
-
-  // The event recording is queued to the idle thread when the search starts, so
-  // likewise queue the assert to idle instead of doing it immediately.
-  await new Promise(resolve => {
-    Services.tm.idleDispatchToMainThread(() => {
-      TelemetryTestUtils.assertEvents(
-        [
-          {
-            category: "normandy",
-            method: "expose",
-            object: "nimbus_experiment",
-            extra: {
-              branchSlug: "control",
-              featureId: "urlbar",
-            },
-          },
-        ],
-        filter
-      );
-      resolve();
-    });
-  });
-
-  await UrlbarTestUtils.promisePopupClose(window);
-
-  await doExperimentCleanup();
 });
 
 // The "firefox-suggest-update" notification should cause TelemetryEnvironment

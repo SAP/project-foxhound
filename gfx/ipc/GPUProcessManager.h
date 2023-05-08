@@ -16,7 +16,6 @@
 #include "mozilla/gfx/Point.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/TaskFactory.h"
-#include "mozilla/ipc/Transport.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "nsIObserver.h"
@@ -94,13 +93,16 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   // Ensure that GPU-bound methods can be used. If no GPU process is being
   // used, or one is launched and ready, this function returns immediately.
   // Otherwise it blocks until the GPU process has finished launching.
+  // If the GPU process is enabled but has not yet been launched then this will
+  // launch the process. If that is not desired then check that return value of
+  // Process() is non-null before calling.
   bool EnsureGPUReady();
 
   already_AddRefed<CompositorSession> CreateTopLevelCompositor(
       nsBaseWidget* aWidget, WebRenderLayerManager* aLayerManager,
       CSSToLayoutDeviceScale aScale, const CompositorOptions& aOptions,
       bool aUseExternalSurfaceSize, const gfx::IntSize& aSurfaceSize,
-      bool* aRetry);
+      uint64_t aInnerWindowId, bool* aRetry);
 
   bool CreateContentBridges(
       base::ProcessId aOtherProcess,
@@ -231,8 +233,8 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   void RegisterInProcessSession(InProcessCompositorSession* aSession);
   void UnregisterInProcessSession(InProcessCompositorSession* aSession);
 
-  void RebuildRemoteSessions();
-  void RebuildInProcessSessions();
+  void DestroyRemoteCompositorSessions();
+  void DestroyInProcessCompositorSessions();
 
   // Returns true if we crossed the threshold such that we should disable
   // acceleration.
@@ -263,6 +265,8 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   void DestroyProcess(bool aUnexpectedShutdown = false);
 
   void HandleProcessLost();
+  // Reinitialize rendering following a GPU process loss.
+  void ReinitializeRendering();
 
   void EnsureVsyncIOThread();
   void ShutdownVsyncIOThread();
@@ -281,7 +285,7 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
       nsBaseWidget* aWidget, WebRenderLayerManager* aLayerManager,
       const LayersId& aRootLayerTreeId, CSSToLayoutDeviceScale aScale,
       const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
-      const gfx::IntSize& aSurfaceSize);
+      const gfx::IntSize& aSurfaceSize, uint64_t aInnerWindowId);
 
   DISALLOW_COPY_AND_ASSIGN(GPUProcessManager);
 
@@ -318,6 +322,9 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
 
   uint32_t mDeviceResetCount;
   TimeStamp mDeviceResetLastTime;
+
+  // Keeps track of whether not the application is in the foreground on android.
+  bool mAppInForeground;
 
   // Fields that are associated with the current GPU process.
   GPUProcessHost* mProcess;

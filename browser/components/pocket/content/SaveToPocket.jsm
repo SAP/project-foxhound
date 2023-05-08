@@ -57,6 +57,7 @@ var PocketCustomizableWidget = {
 
         frame.setAttribute("type", "content");
         frame.setAttribute("remote", true);
+        frame.setAttribute("autocompletepopup", "PopupAutoComplete");
         panelNode.appendChild(frame);
 
         SaveToPocket.onShownInToolbarPanel(panelNode, frame);
@@ -311,8 +312,15 @@ var SaveToPocket = {
         break;
       }
       case "Reader:Clicked-pocket-button": {
-        // Saves the currently viewed page.
-        Pocket.savePage(message.target);
+        let pocketPanel = message.target.ownerDocument.querySelector(
+          "#customizationui-widget-panel"
+        );
+        if (pocketPanel?.getAttribute("panelopen")) {
+          pocketPanel.hidePopup();
+        } else {
+          // Saves the currently viewed page.
+          Pocket.savePage(message.target);
+        }
         break;
       }
     }

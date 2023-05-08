@@ -55,8 +55,8 @@ void MacroAssemblerX86Shared::splatX4(FloatRegister input,
     vbroadcastss(Operand(input), output);
     return;
   }
-  asMasm().moveSimd128Float(input.asSimd128(), output);
-  vshufps(0, output, output, output);
+  input = asMasm().moveSimd128FloatIfNotAVX(input.asSimd128(), output);
+  vshufps(0, input, input, output);
 }
 
 void MacroAssemblerX86Shared::splatX2(FloatRegister input,
@@ -133,40 +133,44 @@ void MacroAssemblerX86Shared::extractLaneInt8x16(FloatRegister input,
   }
 }
 
-void MacroAssemblerX86Shared::replaceLaneFloat32x4(FloatRegister rhs,
-                                                   FloatRegister lhsDest,
-                                                   unsigned lane) {
-  MOZ_ASSERT(lhsDest.isSimd128() && rhs.isSingle());
+void MacroAssemblerX86Shared::replaceLaneFloat32x4(unsigned lane,
+                                                   FloatRegister lhs,
+                                                   FloatRegister rhs,
+                                                   FloatRegister dest) {
+  MOZ_ASSERT(lhs.isSimd128() && rhs.isSingle());
 
   if (lane == 0) {
-    if (rhs.asSimd128() == lhsDest) {
+    if (rhs.asSimd128() == lhs) {
       // no-op, although this should not normally happen for type checking
       // reasons higher up in the stack.
+      moveSimd128Float(lhs, dest);
     } else {
       // move low dword of value into low dword of output
-      vmovss(rhs, lhsDest, lhsDest);
+      vmovss(rhs, lhs, dest);
     }
   } else {
-    vinsertps(vinsertpsMask(0, lane), rhs, lhsDest, lhsDest);
+    vinsertps(vinsertpsMask(0, lane), rhs, lhs, dest);
   }
 }
 
-void MacroAssemblerX86Shared::replaceLaneFloat64x2(FloatRegister rhs,
-                                                   FloatRegister lhsDest,
-                                                   unsigned lane) {
-  MOZ_ASSERT(lhsDest.isSimd128() && rhs.isDouble());
+void MacroAssemblerX86Shared::replaceLaneFloat64x2(unsigned lane,
+                                                   FloatRegister lhs,
+                                                   FloatRegister rhs,
+                                                   FloatRegister dest) {
+  MOZ_ASSERT(lhs.isSimd128() && rhs.isDouble());
 
   if (lane == 0) {
-    if (rhs.asSimd128() == lhsDest) {
+    if (rhs.asSimd128() == lhs) {
       // no-op, although this should not normally happen for type checking
       // reasons higher up in the stack.
+      moveSimd128Float(lhs, dest);
     } else {
       // move low qword of value into low qword of output
-      vmovsd(rhs, lhsDest, lhsDest);
+      vmovsd(rhs, lhs, dest);
     }
   } else {
     // move low qword of value into high qword of output
-    vshufpd(0, rhs, lhsDest, lhsDest);
+    vshufpd(0, rhs, lhs, dest);
   }
 }
 
@@ -191,9 +195,9 @@ void MacroAssemblerX86Shared::blendInt16x8(FloatRegister lhs, FloatRegister rhs,
   vpblendw(mask, rhs, lhs, output);
 }
 
-void MacroAssemblerX86Shared::laneSelectSimd128(FloatRegister lhs,
+void MacroAssemblerX86Shared::laneSelectSimd128(FloatRegister mask,
+                                                FloatRegister lhs,
                                                 FloatRegister rhs,
-                                                FloatRegister mask,
                                                 FloatRegister output) {
   vpblendvb(mask, lhs, rhs, output);
 }
@@ -251,8 +255,9 @@ void MacroAssemblerX86Shared::compareInt8x16(FloatRegister lhs, Operand rhs,
         loadAlignedSimd128Int(rhs, scratch);
       }
       // src := src > lhs (i.e. lhs < rhs)
-      vpcmpgtb(Operand(lhs), scratch, scratch);
-      moveSimd128Int(scratch, output);
+      FloatRegister outputTemp = selectDestIfAVX(scratch, output);
+      vpcmpgtb(Operand(lhs), scratch, outputTemp);
+      moveSimd128Int(outputTemp, output);
       break;
     }
     case Assembler::Condition::NotEqual:
@@ -279,22 +284,42 @@ void MacroAssemblerX86Shared::compareInt8x16(FloatRegister lhs, Operand rhs,
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     case Assembler::Above:
-      vpmaxub(rhs, lhs, output);
-      vpcmpeqb(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpminub(rhs, lhs, output);
+        vpcmpeqb(Operand(lhs), output, output);
+      } else {
+        vpmaxub(rhs, lhs, output);
+        vpcmpeqb(rhs, output, output);
+      }
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     case Assembler::BelowOrEqual:
-      vpmaxub(rhs, lhs, output);
-      vpcmpeqb(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpminub(rhs, lhs, output);
+        vpcmpeqb(Operand(lhs), output, output);
+      } else {
+        vpmaxub(rhs, lhs, output);
+        vpcmpeqb(rhs, output, output);
+      }
       break;
     case Assembler::Below:
-      vpminub(rhs, lhs, output);
-      vpcmpeqb(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpmaxub(rhs, lhs, output);
+        vpcmpeqb(Operand(lhs), output, output);
+      } else {
+        vpminub(rhs, lhs, output);
+        vpcmpeqb(rhs, output, output);
+      }
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     case Assembler::AboveOrEqual:
-      vpminub(rhs, lhs, output);
-      vpcmpeqb(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpmaxub(rhs, lhs, output);
+        vpcmpeqb(Operand(lhs), output, output);
+      } else {
+        vpminub(rhs, lhs, output);
+        vpcmpeqb(rhs, output, output);
+      }
       break;
     default:
       MOZ_CRASH("unexpected condition op");
@@ -351,8 +376,9 @@ void MacroAssemblerX86Shared::compareInt16x8(FloatRegister lhs, Operand rhs,
         loadAlignedSimd128Int(rhs, scratch);
       }
       // src := src > lhs (i.e. lhs < rhs)
-      vpcmpgtw(Operand(lhs), scratch, scratch);
-      moveSimd128Int(scratch, output);
+      FloatRegister outputTemp = selectDestIfAVX(scratch, output);
+      vpcmpgtw(Operand(lhs), scratch, outputTemp);
+      moveSimd128Int(outputTemp, output);
       break;
     }
     case Assembler::Condition::NotEqual:
@@ -379,22 +405,42 @@ void MacroAssemblerX86Shared::compareInt16x8(FloatRegister lhs, Operand rhs,
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     case Assembler::Above:
-      vpmaxuw(rhs, lhs, output);
-      vpcmpeqw(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpminuw(rhs, lhs, output);
+        vpcmpeqw(Operand(lhs), output, output);
+      } else {
+        vpmaxuw(rhs, lhs, output);
+        vpcmpeqw(rhs, output, output);
+      }
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     case Assembler::BelowOrEqual:
-      vpmaxuw(rhs, lhs, output);
-      vpcmpeqw(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpminuw(rhs, lhs, output);
+        vpcmpeqw(Operand(lhs), output, output);
+      } else {
+        vpmaxuw(rhs, lhs, output);
+        vpcmpeqw(rhs, output, output);
+      }
       break;
     case Assembler::Below:
-      vpminuw(rhs, lhs, output);
-      vpcmpeqw(rhs, output, output);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpmaxuw(rhs, lhs, output);
+        vpcmpeqw(Operand(lhs), output, output);
+      } else {
+        vpminuw(rhs, lhs, output);
+        vpcmpeqw(rhs, output, output);
+      }
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     case Assembler::AboveOrEqual:
-      vpminuw(rhs, lhs, lhs);
-      vpcmpeqw(rhs, lhs, lhs);
+      if (rhs.kind() == Operand::FPREG && ToSimdFloatRegister(rhs) == output) {
+        vpmaxuw(rhs, lhs, output);
+        vpcmpeqw(Operand(lhs), output, output);
+      } else {
+        vpminuw(rhs, lhs, output);
+        vpcmpeqw(rhs, output, output);
+      }
       break;
     default:
       MOZ_CRASH("unexpected condition op");
@@ -450,8 +496,9 @@ void MacroAssemblerX86Shared::compareInt32x4(FloatRegister lhs, Operand rhs,
         loadAlignedSimd128Int(rhs, scratch);
       }
       // src := src > lhs (i.e. lhs < rhs)
-      vpcmpgtd(Operand(lhs), scratch, scratch);
-      moveSimd128Int(scratch, output);
+      FloatRegister outputTemp = selectDestIfAVX(scratch, output);
+      vpcmpgtd(Operand(lhs), scratch, outputTemp);
+      moveSimd128Int(outputTemp, output);
       break;
     }
     case Assembler::Condition::NotEqual:
@@ -571,9 +618,9 @@ void MacroAssemblerX86Shared::compareForOrderingInt64x2(
   static const SimdConstant allOnes = SimdConstant::SplatX4(-1);
   // The pseudo code is for (e.g. > comparison):
   //  __m128i pcmpgtq_sse2 (__m128i a, __m128i b) {
-  //      __m128i r = _mm_and_si128(_mm_cmpeq_epi32(a, b), _mm_sub_epi64(b,
-  //      a)); r = _mm_or_si128(r, _mm_cmpgt_epi32(a, b)); return
-  //      _mm_shuffle_epi32(r, _MM_SHUFFLE(3,3,1,1));
+  //    __m128i r = _mm_and_si128(_mm_cmpeq_epi32(a, b), _mm_sub_epi64(b, a));
+  //    r = _mm_or_si128(r, _mm_cmpgt_epi32(a, b));
+  //    return _mm_shuffle_epi32(r, _MM_SHUFFLE(3,3,1,1));
   //  }
   // Credits to https://stackoverflow.com/a/65175746
   switch (cond) {
@@ -583,8 +630,8 @@ void MacroAssemblerX86Shared::compareForOrderingInt64x2(
       vpsubq(Operand(lhs), temp1, temp1);
       vpcmpeqd(rhs, temp2, temp2);
       vandpd(temp2, temp1, temp1);
-      asMasm().moveSimd128(lhs, output);
-      vpcmpgtd(rhs, output, output);
+      lhs = asMasm().moveSimd128IntIfNotAVX(lhs, output);
+      vpcmpgtd(rhs, lhs, output);
       vpor(Operand(temp1), output, output);
       vpshufd(MacroAssembler::ComputeShuffleMask(1, 1, 3, 3), output, output);
       break;
@@ -593,8 +640,8 @@ void MacroAssemblerX86Shared::compareForOrderingInt64x2(
       vmovdqa(Operand(lhs), temp2);
       vpcmpgtd(Operand(lhs), temp1, temp1);
       vpcmpeqd(Operand(rhs), temp2, temp2);
-      asMasm().moveSimd128(lhs, output);
-      vpsubq(rhs, output, output);
+      lhs = asMasm().moveSimd128IntIfNotAVX(lhs, output);
+      vpsubq(rhs, lhs, output);
       vandpd(temp2, output, output);
       vpor(Operand(temp1), output, output);
       vpshufd(MacroAssembler::ComputeShuffleMask(1, 1, 3, 3), output, output);
@@ -604,8 +651,8 @@ void MacroAssemblerX86Shared::compareForOrderingInt64x2(
       vmovdqa(Operand(lhs), temp2);
       vpcmpgtd(Operand(lhs), temp1, temp1);
       vpcmpeqd(Operand(rhs), temp2, temp2);
-      asMasm().moveSimd128(lhs, output);
-      vpsubq(rhs, output, output);
+      lhs = asMasm().moveSimd128IntIfNotAVX(lhs, output);
+      vpsubq(rhs, lhs, output);
       vandpd(temp2, output, output);
       vpor(Operand(temp1), output, output);
       vpshufd(MacroAssembler::ComputeShuffleMask(1, 1, 3, 3), output, output);
@@ -617,10 +664,35 @@ void MacroAssemblerX86Shared::compareForOrderingInt64x2(
       vpsubq(Operand(lhs), temp1, temp1);
       vpcmpeqd(rhs, temp2, temp2);
       vandpd(temp2, temp1, temp1);
-      asMasm().moveSimd128(lhs, output);
-      vpcmpgtd(rhs, output, output);
+      lhs = asMasm().moveSimd128IntIfNotAVX(lhs, output);
+      vpcmpgtd(rhs, lhs, output);
       vpor(Operand(temp1), output, output);
       vpshufd(MacroAssembler::ComputeShuffleMask(1, 1, 3, 3), output, output);
+      asMasm().bitwiseXorSimd128(output, allOnes, output);
+      break;
+    default:
+      MOZ_CRASH("unexpected condition op");
+  }
+}
+
+void MacroAssemblerX86Shared::compareForOrderingInt64x2AVX(
+    FloatRegister lhs, FloatRegister rhs, Assembler::Condition cond,
+    FloatRegister output) {
+  MOZ_ASSERT(HasSSE42());
+  static const SimdConstant allOnes = SimdConstant::SplatX4(-1);
+  switch (cond) {
+    case Assembler::Condition::GreaterThan:
+      vpcmpgtq(Operand(rhs), lhs, output);
+      break;
+    case Assembler::Condition::LessThan:
+      vpcmpgtq(Operand(lhs), rhs, output);
+      break;
+    case Assembler::Condition::GreaterThanOrEqual:
+      vpcmpgtq(Operand(lhs), rhs, output);
+      asMasm().bitwiseXorSimd128(output, allOnes, output);
+      break;
+    case Assembler::Condition::LessThanOrEqual:
+      vpcmpgtq(Operand(rhs), lhs, output);
       asMasm().bitwiseXorSimd128(output, allOnes, output);
       break;
     default:
@@ -703,27 +775,28 @@ void MacroAssemblerX86Shared::compareFloat64x2(FloatRegister lhs, Operand rhs,
   // Move lhs to output if lhs!=output; move rhs out of the way if rhs==output.
   // This is bad, but Ion does not need this fixup.
   ScratchSimd128Scope scratch(asMasm());
-  if (!lhs.aliases(output)) {
+  if (!HasAVX() && !lhs.aliases(output)) {
     if (rhs.kind() == Operand::FPREG &&
         output.aliases(FloatRegister::FromCode(rhs.fpu()))) {
       vmovapd(rhs, scratch);
       rhs = Operand(scratch);
     }
     vmovapd(lhs, output);
+    lhs = output;
   }
 
   switch (cond) {
     case Assembler::Condition::Equal:
-      vcmpeqpd(rhs, output, output);
+      vcmpeqpd(rhs, lhs, output);
       break;
     case Assembler::Condition::LessThan:
-      vcmpltpd(rhs, output, output);
+      vcmpltpd(rhs, lhs, output);
       break;
     case Assembler::Condition::LessThanOrEqual:
-      vcmplepd(rhs, output, output);
+      vcmplepd(rhs, lhs, output);
       break;
     case Assembler::Condition::NotEqual:
-      vcmpneqpd(rhs, output, output);
+      vcmpneqpd(rhs, lhs, output);
       break;
     case Assembler::Condition::GreaterThanOrEqual:
     case Assembler::Condition::GreaterThan:
@@ -850,6 +923,45 @@ void MacroAssemblerX86Shared::minMaxFloat32x4(bool isMin, FloatRegister lhs,
   /* clang-format on */
 }
 
+void MacroAssemblerX86Shared::minMaxFloat32x4AVX(bool isMin, FloatRegister lhs,
+                                                 FloatRegister rhs,
+                                                 FloatRegister temp1,
+                                                 FloatRegister temp2,
+                                                 FloatRegister output) {
+  ScratchSimd128Scope scratch(asMasm());
+  Label l;
+  SimdConstant quietBits(SimdConstant::SplatX4(int32_t(0x00400000)));
+
+  /* clang-format off */ /* leave my comments alone */
+  FloatRegister lhsCopy = moveSimd128FloatIfEqual(lhs, scratch, output);
+  // Allow rhs be assigned to scratch when rhs == lhs and == output --
+  // don't make a special case since the semantics require setup QNaN bits.
+  FloatRegister rhsCopy = moveSimd128FloatIfEqual(rhs, scratch, output);
+  if (isMin) {
+    vminps(Operand(rhs), lhs, temp2);             // min lhs, rhs
+    vminps(Operand(lhs), rhs, temp1);             // min rhs, lhs
+  } else {
+    vmaxps(Operand(rhs), lhs, temp2);             // max lhs, rhs
+    vmaxps(Operand(lhs), rhs, temp1);             // max rhs, lhs
+  }
+  vorps(temp1, temp2, output);                    // fix min(-0, 0) with OR
+  vcmpunordps(Operand(rhsCopy), lhsCopy, temp1);  // lhs UNORD rhs
+  vptest(temp1, temp1);                           // check if any unordered
+  j(Assembler::Equal, &l);                        //   and exit if not
+
+  // Slow path.
+  // output has result for non-NaN lanes, garbage in NaN lanes.
+  // temp1 has lhs UNORD rhs.
+  // temp2 is dead.
+  vcmpunordps(Operand(lhsCopy), lhsCopy, temp2);  // find NaN lanes in lhs
+  vblendvps(temp2, lhsCopy, rhsCopy, temp2);      //   add other lines from rhs
+  asMasm().vporSimd128(quietBits, temp2, temp2);  // setup QNaN bits in NaN lanes
+  vblendvps(temp1, temp2, output, output);        // replace NaN lines from temp2
+
+  bind(&l);
+  /* clang-format on */
+}
+
 // Exactly as above.
 void MacroAssemblerX86Shared::minMaxFloat64x2(bool isMin, FloatRegister lhs,
                                               Operand rhs, FloatRegister temp1,
@@ -903,32 +1015,87 @@ void MacroAssemblerX86Shared::minMaxFloat64x2(bool isMin, FloatRegister lhs,
   /* clang-format on */
 }
 
-void MacroAssemblerX86Shared::minFloat32x4(FloatRegister lhs, Operand rhs,
-                                           FloatRegister temp1,
-                                           FloatRegister temp2,
-                                           FloatRegister output) {
-  minMaxFloat32x4(/*isMin=*/true, lhs, rhs, temp1, temp2, output);
+void MacroAssemblerX86Shared::minMaxFloat64x2AVX(bool isMin, FloatRegister lhs,
+                                                 FloatRegister rhs,
+                                                 FloatRegister temp1,
+                                                 FloatRegister temp2,
+                                                 FloatRegister output) {
+  ScratchSimd128Scope scratch(asMasm());
+  Label l;
+  SimdConstant quietBits(SimdConstant::SplatX2(int64_t(0x0008000000000000ull)));
+
+  /* clang-format off */ /* leave my comments alone */
+  FloatRegister lhsCopy = moveSimd128FloatIfEqual(lhs, scratch, output);
+  // Allow rhs be assigned to scratch when rhs == lhs and == output --
+  // don't make a special case since the semantics require setup QNaN bits.
+  FloatRegister rhsCopy = moveSimd128FloatIfEqual(rhs, scratch, output);
+  if (isMin) {
+    vminpd(Operand(rhs), lhs, temp2);             // min lhs, rhs
+    vminpd(Operand(lhs), rhs, temp1);             // min rhs, lhs
+  } else {
+    vmaxpd(Operand(rhs), lhs, temp2);             // max lhs, rhs
+    vmaxpd(Operand(lhs), rhs, temp1);             // max rhs, lhs
+  }
+  vorpd(temp1, temp2, output);                    // fix min(-0, 0) with OR
+  vcmpunordpd(Operand(rhsCopy), lhsCopy, temp1);  // lhs UNORD rhs
+  vptest(temp1, temp1);                           // check if any unordered
+  j(Assembler::Equal, &l);                        //   and exit if not
+
+  // Slow path.
+  // output has result for non-NaN lanes, garbage in NaN lanes.
+  // temp1 has lhs UNORD rhs.
+  // temp2 is dead.
+  vcmpunordpd(Operand(lhsCopy), lhsCopy, temp2);  // find NaN lanes in lhs
+  vblendvpd(temp2, lhsCopy, rhsCopy, temp2);      //   add other lines from rhs
+  asMasm().vporSimd128(quietBits, temp2, temp2);  // setup QNaN bits in NaN lanes
+  vblendvpd(temp1, temp2, output, output);        // replace NaN lines from temp2
+
+  bind(&l);
+  /* clang-format on */
 }
 
-void MacroAssemblerX86Shared::maxFloat32x4(FloatRegister lhs, Operand rhs,
+void MacroAssemblerX86Shared::minFloat32x4(FloatRegister lhs, FloatRegister rhs,
                                            FloatRegister temp1,
                                            FloatRegister temp2,
                                            FloatRegister output) {
-  minMaxFloat32x4(/*isMin=*/false, lhs, rhs, temp1, temp2, output);
+  if (HasAVX()) {
+    minMaxFloat32x4AVX(/*isMin=*/true, lhs, rhs, temp1, temp2, output);
+    return;
+  }
+  minMaxFloat32x4(/*isMin=*/true, lhs, Operand(rhs), temp1, temp2, output);
 }
 
-void MacroAssemblerX86Shared::minFloat64x2(FloatRegister lhs, Operand rhs,
+void MacroAssemblerX86Shared::maxFloat32x4(FloatRegister lhs, FloatRegister rhs,
                                            FloatRegister temp1,
                                            FloatRegister temp2,
                                            FloatRegister output) {
-  minMaxFloat64x2(/*isMin=*/true, lhs, rhs, temp1, temp2, output);
+  if (HasAVX()) {
+    minMaxFloat32x4AVX(/*isMin=*/false, lhs, rhs, temp1, temp2, output);
+    return;
+  }
+  minMaxFloat32x4(/*isMin=*/false, lhs, Operand(rhs), temp1, temp2, output);
 }
 
-void MacroAssemblerX86Shared::maxFloat64x2(FloatRegister lhs, Operand rhs,
+void MacroAssemblerX86Shared::minFloat64x2(FloatRegister lhs, FloatRegister rhs,
                                            FloatRegister temp1,
                                            FloatRegister temp2,
                                            FloatRegister output) {
-  minMaxFloat64x2(/*isMin=*/false, lhs, rhs, temp1, temp2, output);
+  if (HasAVX()) {
+    minMaxFloat64x2AVX(/*isMin=*/true, lhs, rhs, temp1, temp2, output);
+    return;
+  }
+  minMaxFloat64x2(/*isMin=*/true, lhs, Operand(rhs), temp1, temp2, output);
+}
+
+void MacroAssemblerX86Shared::maxFloat64x2(FloatRegister lhs, FloatRegister rhs,
+                                           FloatRegister temp1,
+                                           FloatRegister temp2,
+                                           FloatRegister output) {
+  if (HasAVX()) {
+    minMaxFloat64x2AVX(/*isMin=*/false, lhs, rhs, temp1, temp2, output);
+    return;
+  }
+  minMaxFloat64x2(/*isMin=*/false, lhs, Operand(rhs), temp1, temp2, output);
 }
 
 void MacroAssemblerX86Shared::packedShiftByScalarInt8x16(
@@ -967,17 +1134,22 @@ void MacroAssemblerX86Shared::packedLeftShiftByScalarInt8x16(
 void MacroAssemblerX86Shared::packedLeftShiftByScalarInt8x16(
     Imm32 count, FloatRegister src, FloatRegister dest) {
   MOZ_ASSERT(count.value <= 7);
-  asMasm().moveSimd128(src, dest);
+  if (MOZ_UNLIKELY(count.value == 0)) {
+    moveSimd128Int(src, dest);
+    return;
+  }
+  src = asMasm().moveSimd128IntIfNotAVX(src, dest);
   // Use the doubling trick for low shift counts, otherwise mask off the bits
   // that are shifted out of the low byte of each word and use word shifts.  The
   // optimal cutoff remains to be explored.
   if (count.value <= 3) {
-    for (int32_t shift = count.value; shift > 0; --shift) {
-      asMasm().addInt8x16(dest, dest);
+    vpaddb(Operand(src), src, dest);
+    for (int32_t shift = count.value - 1; shift > 0; --shift) {
+      vpaddb(Operand(dest), dest, dest);
     }
   } else {
-    asMasm().bitwiseAndSimd128(
-        dest, SimdConstant::SplatX16(0xFF >> count.value), dest);
+    asMasm().bitwiseAndSimd128(src, SimdConstant::SplatX16(0xFF >> count.value),
+                               dest);
     vpsllw(count, dest, dest);
   }
 }
@@ -1070,10 +1242,10 @@ void MacroAssemblerX86Shared::packedRightShiftByScalarInt64x2(
     FloatRegister in, Register count, FloatRegister temp, FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
   vmovd(count, temp);
-  asMasm().moveSimd128(in, dest);
   asMasm().signReplicationInt64x2(in, scratch);
+  in = asMasm().moveSimd128FloatIfNotAVX(in, dest);
   // Invert if negative, shift all, invert back if negative.
-  vpxor(Operand(scratch), dest, dest);
+  vpxor(Operand(scratch), in, dest);
   vpsrlq(temp, dest, dest);
   vpxor(Operand(scratch), dest, dest);
 }
@@ -1088,10 +1260,10 @@ void MacroAssemblerX86Shared::packedUnsignedRightShiftByScalarInt64x2(
 void MacroAssemblerX86Shared::packedRightShiftByScalarInt64x2(
     Imm32 count, FloatRegister src, FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().moveSimd128(src, dest);
   asMasm().signReplicationInt64x2(src, scratch);
   // Invert if negative, shift all, invert back if negative.
-  vpxor(Operand(scratch), dest, dest);
+  src = asMasm().moveSimd128FloatIfNotAVX(src, dest);
+  vpxor(Operand(scratch), src, dest);
   vpsrlq(Imm32(count.value & 63), dest, dest);
   vpxor(Operand(scratch), dest, dest);
 }
@@ -1104,11 +1276,16 @@ void MacroAssemblerX86Shared::selectSimd128(FloatRegister mask,
   // Normally the codegen will attempt to enforce these register assignments so
   // that the moves are avoided.
 
-  asMasm().moveSimd128Int(onTrue, output);
-  asMasm().moveSimd128Int(mask, temp);
+  onTrue = asMasm().moveSimd128IntIfNotAVX(onTrue, output);
+  if (MOZ_UNLIKELY(mask == onTrue)) {
+    vpor(Operand(onFalse), onTrue, output);
+    return;
+  }
 
-  vpand(Operand(temp), output, output);
-  vpandn(Operand(onFalse), temp, temp);
+  mask = asMasm().moveSimd128IntIfNotAVX(mask, temp);
+
+  vpand(Operand(mask), onTrue, output);
+  vpandn(Operand(onFalse), mask, temp);
   vpor(Operand(temp), output, output);
 }
 
@@ -1131,7 +1308,6 @@ void MacroAssemblerX86Shared::unsignedConvertInt32x4ToFloat32x4(
 void MacroAssemblerX86Shared::truncSatFloat32x4ToInt32x4(FloatRegister src,
                                                          FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().moveSimd128Float(src, dest);
 
   // The cvttps2dq instruction is the workhorse but does not handle NaN or out
   // of range values as we need it to.  We want to saturate too-large positive
@@ -1139,9 +1315,10 @@ void MacroAssemblerX86Shared::truncSatFloat32x4ToInt32x4(FloatRegister src,
   // become 0.
 
   // Convert NaN to 0 by masking away values that compare unordered to itself.
-  vmovaps(dest, scratch);
+  vmovaps(src, scratch);
   vcmpeqps(Operand(scratch), scratch, scratch);
-  vpand(Operand(scratch), dest, dest);
+  src = asMasm().moveSimd128FloatIfNotAVX(src, dest);
+  vpand(Operand(scratch), src, dest);
 
   // Compute the complement of each non-NaN lane's sign bit, we'll need this to
   // correct the result of cvttps2dq.  All other output bits are garbage.
@@ -1165,7 +1342,7 @@ void MacroAssemblerX86Shared::truncSatFloat32x4ToInt32x4(FloatRegister src,
 void MacroAssemblerX86Shared::unsignedTruncSatFloat32x4ToInt32x4(
     FloatRegister src, FloatRegister temp, FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().moveSimd128Float(src, dest);
+  src = asMasm().moveSimd128FloatIfNotAVX(src, dest);
 
   // The cvttps2dq instruction is the workhorse but does not handle NaN or out
   // of range values as we need it to.  We want to saturate too-large positive
@@ -1173,7 +1350,7 @@ void MacroAssemblerX86Shared::unsignedTruncSatFloat32x4ToInt32x4(
 
   // Convert NaN and negative values to zeroes in dest.
   vpxor(Operand(scratch), scratch, scratch);
-  vmaxps(Operand(scratch), dest, dest);
+  vmaxps(Operand(scratch), src, dest);
 
   // Place the largest positive signed integer in all lanes in scratch.
   // We use it to bias the conversion to handle edge cases.
@@ -1217,14 +1394,14 @@ void MacroAssemblerX86Shared::unsignedTruncSatFloat32x4ToInt32x4(
 void MacroAssemblerX86Shared::unsignedTruncSatFloat32x4ToInt32x4Relaxed(
     FloatRegister src, FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().moveSimd128Float(src, dest);
+  src = asMasm().moveSimd128FloatIfNotAVX(src, dest);
 
   // Place lanes below 80000000h into dest, otherwise into scratch.
   // Keep dest or scratch 0 as default.
   asMasm().loadConstantSimd128Float(SimdConstant::SplatX4(0x4f000000), scratch);
   vcmpltps(Operand(src), scratch, scratch);
   vpand(Operand(src), scratch, scratch);
-  vpxor(Operand(scratch), dest, dest);
+  vpxor(Operand(scratch), src, dest);
 
   // Convert lanes below 80000000h into unsigned int without issues.
   vcvttps2dq(dest, dest);
@@ -1267,10 +1444,10 @@ void MacroAssemblerX86Shared::truncSatFloat64x2ToInt32x4(FloatRegister src,
 void MacroAssemblerX86Shared::unsignedTruncSatFloat64x2ToInt32x4(
     FloatRegister src, FloatRegister temp, FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().moveSimd128Float(src, dest);
+  src = asMasm().moveSimd128FloatIfNotAVX(src, dest);
 
   vxorpd(scratch, scratch, scratch);
-  vmaxpd(Operand(scratch), dest, dest);
+  vmaxpd(Operand(scratch), src, dest);
 
   asMasm().loadConstantSimd128Float(SimdConstant::SplatX2(4294967295.0), temp);
   vminpd(Operand(temp), dest, dest);
@@ -1284,11 +1461,10 @@ void MacroAssemblerX86Shared::unsignedTruncSatFloat64x2ToInt32x4(
 void MacroAssemblerX86Shared::unsignedTruncSatFloat64x2ToInt32x4Relaxed(
     FloatRegister src, FloatRegister dest) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().moveSimd128Float(src, dest);
 
   // The same as unsignedConvertInt32x4ToFloat64x2, but without NaN
   // and out-of-bounds checks.
-  vroundpd(SSERoundingMode::Trunc, Operand(dest), dest);
+  vroundpd(SSERoundingMode::Trunc, Operand(src), dest);
   asMasm().loadConstantSimd128Float(SimdConstant::SplatX2(4503599627370496.0),
                                     scratch);
   vaddpd(Operand(scratch), dest, dest);
@@ -1299,9 +1475,9 @@ void MacroAssemblerX86Shared::popcntInt8x16(FloatRegister src,
                                             FloatRegister temp,
                                             FloatRegister output) {
   ScratchSimd128Scope scratch(asMasm());
-  asMasm().loadConstantSimd128Float(SimdConstant::SplatX16(0x0f), scratch);
-  asMasm().moveSimd128Int(src, temp);
-  vpand(scratch, temp, temp);
+  asMasm().loadConstantSimd128Int(SimdConstant::SplatX16(0x0f), scratch);
+  FloatRegister srcForTemp = asMasm().moveSimd128IntIfNotAVX(src, temp);
+  vpand(scratch, srcForTemp, temp);
   vpandn(src, scratch, scratch);
   int8_t counts[] = {0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4};
   asMasm().loadConstantSimd128(SimdConstant::CreateX16(counts), output);

@@ -20,6 +20,11 @@ ChromeUtils.defineModuleGetter(
   "TestUtils",
   "resource://testing-common/TestUtils.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "FileUtils",
+  "resource://gre/modules/FileUtils.jsm"
+);
 
 function whenNewWindowLoaded(aOptions, aCallback) {
   let win = OpenBrowserWindow(aOptions);
@@ -55,9 +60,23 @@ async function openAboutPrivateBrowsing() {
   return { win, tab };
 }
 
+/**
+ * Wrapper for openAboutPrivateBrowsing that returns after render is complete
+ */
+async function openTabAndWaitForRender() {
+  let { win, tab } = await openAboutPrivateBrowsing();
+  await SpecialPowers.spawn(tab, [], async function() {
+    // Wait for render to complete
+    await ContentTaskUtils.waitForCondition(() =>
+      content.document.documentElement.hasAttribute(
+        "PrivateBrowsingRenderComplete"
+      )
+    );
+  });
+  return { win, tab };
+}
+
 function newDirectory() {
-  let FileUtils = ChromeUtils.import("resource://gre/modules/FileUtils.jsm", {})
-    .FileUtils;
   let tmpDir = FileUtils.getDir("TmpD", [], true);
   let dir = tmpDir.clone();
   dir.append("testdir");
@@ -66,8 +85,6 @@ function newDirectory() {
 }
 
 function newFileInDirectory(aDir) {
-  let FileUtils = ChromeUtils.import("resource://gre/modules/FileUtils.jsm", {})
-    .FileUtils;
   let file = aDir.clone();
   file.append("testfile");
   file.createUnique(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_FILE);

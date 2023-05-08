@@ -75,7 +75,6 @@ class TPSTestRunner(object):
         "extensions.update.notifyUser": False,
         "services.sync.firstSync": "notReady",
         "services.sync.lastversion": "1.0",
-        "services.sync.autoconnectDelay": 60 * 60 * 10,
         "toolkit.startup.max_resumed_crashes": -1,
         # hrm - not sure what the release/beta channels will do?
         "xpinstall.signatures.required": False,
@@ -425,11 +424,7 @@ class TPSTestRunner(object):
         else:
             try:
 
-                if self.numfailed > 0 or self.numpassed == 0:
-                    To = self.config["email"].get("notificationlist")
-                else:
-                    To = self.config["email"].get("passednotificationlist")
-                self.writeToResultFile(self.postdata, sendTo=To)
+                self.writeToResultFile(self.postdata)
             except Exception:
                 traceback.print_exc()
                 try:

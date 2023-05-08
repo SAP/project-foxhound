@@ -20,9 +20,9 @@
  *
  * Wasm-internal ABI.
  *
- * This section pertains to calls from one wasm function to another, and to
- * wasm's view of the situation when calling into wasm from JS and C++.  Calls
- * to JS and to C++ have other conventions.
+ * The *Wasm-internal ABI* is the ABI a wasm function assumes when it is
+ * entered, and the one it assumes when it is making a call to what it believes
+ * is another wasm function.
  *
  * We pass the first function arguments in registers (GPR and FPU both) and the
  * rest on the stack, generally according to platform ABI conventions (which can
@@ -94,7 +94,7 @@
  *     |          Caller TLS slot          |   \
  *     |          Callee TLS slot          |   | \
  *     +-----------------------------------+   |  \
- *     |       Shadowstack area (Win64)    |   |  wasm::FrameWithTls
+ *     |       Shadowstack area (Win64)    |   |  wasm::FrameWithInstances
  *     |            (32 bytes)             |   |  /
  *     +-----------------------------------+   | /  <= SP "Before call"
  *     |          Return address           |   //   <= SP "After call"
@@ -105,7 +105,7 @@
  *     |             ....                  |
  *     +-----------------------------------+    <=  SP
  *
- * The FrameWithTls is a struct with four fields: the saved FP, the return
+ * The FrameWithInstances is a struct with four fields: the saved FP, the return
  * address, and the two TLS slots; the shadow stack area is there only on Win64
  * and is unused by wasm but is part of the native ABI, with which the wasm ABI
  * is mostly compatible.  The slots for caller and callee TLS are only populated
@@ -133,10 +133,10 @@
  * References in the multi-return area are covered by the caller's map, as these
  * slots outlive the call.
  *
- * The address "Before call", ie the part of the FrameWithTls above the Frame,
- * must be aligned to WasmStackAlignment, and everything follows from that, with
- * padding inserted for alignment as required for stack arguments.  In turn
- * WasmStackAlignment is at least as large as the largest parameter type.
+ * The address "Before call", ie the part of the FrameWithInstances above the
+ * Frame, must be aligned to WasmStackAlignment, and everything follows from
+ * that, with padding inserted for alignment as required for stack arguments. In
+ * turn WasmStackAlignment is at least as large as the largest parameter type.
  *
  * The address of the multiple-results area is currently 8-byte aligned by Ion
  * and its alignment in baseline is uncertain, see bug 1747787.  Result values
@@ -146,6 +146,112 @@
  *
  * In the wasm-internal ABI, the ARM64 PseudoStackPointer (PSP) is garbage on
  * entry but must be synced with the real SP at the point the function returns.
+ *
+ *
+ * The Wasm Builtin ABIs.
+ *
+ * Also see `[SMDOC] Process-wide builtin thunk set` in WasmBuiltins.cpp.
+ *
+ * The *Wasm-builtin ABIs* comprise the ABIs used when wasm makes calls directly
+ * to the C++ runtime (but not to the JS interpreter), including instance
+ * methods, helpers for operations such as 64-bit division on 32-bit systems,
+ * allocation and writer barriers, conversions to/from JS values, special
+ * fast-path JS imports, and trap handling.
+ *
+ * The callee of a builtin call will always assume the C/C++ ABI.  Therefore
+ * every volatile (caller-saves) register that wasm uses must be saved across
+ * the call, the stack must be aligned as for a C/C++-ABI call before the call,
+ * and any ABI registers the callee expect to have specific values must be set
+ * up (eg the frame pointer, if the C/C++ ABI assumes it is set).
+ *
+ * Most builtin calls are straightforward: the wasm caller knows that it is
+ * performing a call, and so it saves live registers, moves arguments into ABI
+ * locations, etc, before calling.  Abstractions in the masm make sure to pass
+ * the instance pointer to an instance "method" call and to restore the
+ * InstanceReg and HeapReg after the call.  In these straightforward cases,
+ * calling the builtin additionally amounts to:
+ *
+ *  - exiting the wasm activation
+ *  - adjusting parameter values to account for platform weirdness (FP arguments
+ *    are handled differently in the C/C++ ABIs on ARM and x86-32 than in the
+ *    Wasm ABI)
+ *  - copying stack arguments into place for the C/C++ ABIs
+ *  - making the call
+ *  - adjusting the return values on return
+ *  - re-entering the wasm activation and returning to the wasm caller
+ *
+ * The steps above are performed by the *builtin thunk* for the builtin and the
+ * builtin itself is said to be *thunked*.  Going via the thunk is simple and,
+ * except for always having to copy stack arguments on x86-32 and the extra call
+ * in the thunk, close to as fast as we can make it without heroics.  Except for
+ * the arithmetic helpers on 32-bit systems, most builtins are rarely used, are
+ * asm.js-specific, or are expensive anyway, and the overhead of the extra call
+ * doesn't matter.
+ *
+ * A few builtins for special purposes are *unthunked* and fall into two
+ * classes: they would normally be thunked but are used in circumstances where
+ * the VM is in an unusual state; or they do their work within the activation.
+ *
+ * In the former class, we find the debug trap handler, which must preserve all
+ * live registers because it is called in contexts where live registers have not
+ * been saved; argument coercion functions, which are called while a call frame
+ * is being built for a JS->Wasm or Wasm->JS call; and other routines that have
+ * special needs for constructing the call.  These all exit the activation, but
+ * handle the exit specially.
+ *
+ * In the latter class, we find two functions that abandon the VM state and
+ * unwind the activation, HandleThrow and HandleTrap; and some debug print
+ * functions that do not affect the VM state at all.
+ *
+ * To summarize, when wasm calls a builtin thunk the stack will end up looking
+ * like this from within the C++ code:
+ *
+ *      |                         |
+ *      +-------------------------+
+ *      |        Wasm frame       |
+ *      +-------------------------+
+ *      |    Thunk frame (exit)   |
+ *      +-------------------------+
+ *      |   Builtin frame (C++)   |
+ *      +-------------------------+  <= SP
+ *
+ * There is an assumption in the profiler (in initFromExitFP) that an exit has
+ * left precisely one frame on the stack for the thunk itself.  There may be
+ * additional assumptions elsewhere, not yet found.
+ *
+ * Very occasionally, Wasm will call C++ without going through the builtin
+ * thunks, and this can be a source of problems.  The one case I know about
+ * right now is that the JS pre-barrier filtering code is called directly from
+ * Wasm, see bug 1464157.
+ *
+ *
+ * Wasm stub ABIs.
+ *
+ * Also see `[SMDOC] Exported wasm functions and the jit-entry stubs` in
+ * WasmJS.cpp.
+ *
+ * The "stub ABIs" are not properly speaking ABIs themselves, but ABI
+ * converters.  An "entry" stub calls in to wasm and an "exit" stub calls out
+ * from wasm.  The entry stubs must convert from whatever data formats the
+ * caller has to wasm formats (and in the future must provide some kind of type
+ * checking for pointer types); the exit stubs convert from wasm formats to the
+ * callee's expected format.
+ *
+ * There are different entry paths from the JS interpreter (using the C++ ABI
+ * and data formats) and from jitted JS code (using the JIT ABI and data
+ * formats); indeed there is a "normal" JitEntry path ("JitEntry") that will
+ * perform argument and return value conversion, and the "fast" JitEntry path
+ * ("DirectCallFromJit") that is only used when it is known that the JIT will
+ * only pass and receive wasm-compatible data and no conversion is needed.
+ *
+ * Similarly, there are different exit paths to the interpreter (using the C++
+ * ABI and data formats) and to JS JIT code (using the JIT ABI and data
+ * formats).  Also, builtin calls described above are themselves a type of exit,
+ * and builtin thunks are properly a type of exit stub.
+ *
+ * Data conversions are difficult because the VM is in an intermediate state
+ * when they happen, we want them to be fast when possible, and some conversions
+ * can re-enter both JS code and wasm code.
  */
 
 #ifndef wasm_frame_h
@@ -162,7 +268,7 @@
 namespace js {
 namespace wasm {
 
-struct TlsData;
+class Instance;
 
 // Bit set as the lowest bit of a frame pointer, used in two different mutually
 // exclusive situations:
@@ -176,37 +282,6 @@ struct TlsData;
 // exitFP.
 
 constexpr uintptr_t ExitOrJitEntryFPTag = 0x1;
-
-// Tag for determining whether trampoline frame is on the stack or not.
-constexpr uintptr_t TrampolineFpTag = 0x2;
-
-#if defined(JS_CODEGEN_X86)
-// In a normal call without an indirect stub, SP is 16-byte aligned before the
-// call, and after the call SP is (16 - 4) bytes aligned because the call
-// instruction pushes the return address. The callee expects SP to be (16 - 4)
-// bytes aligned for the checkedCallEntry and to be (16 - 8) byte aligned for
-// the tailCheckedEntry.
-//
-// When we call the indirect stub instead of the callee, SP is still 16 bytes
-// aligned before the call.  Then we push two Frames - one for the stub and one
-// on the callee's behalf. Since each frame is (8) bytes aligned, the resulting
-// SP will be also aligned on (16) when we jump into callee, so we will hit the
-// alignment assert.
-//
-// To prevent this we allocate additional (8) bytes to satisfy the callee's
-// expectations about SP.  This allocation is implemented locally right at the
-// call site in the generated stub.  Every computation of the size of a
-// trampoline's interstitial frame must take this extra space into account.
-//
-// (TODO: There are too many constants involved in these calculations, some of
-// the values the constants represent could change.  It would be nice to derive
-// some of these constants instead of using them literally.  But if the
-// underlying values change incompatibly, then the alignment assertions in
-// generated code will save us.)
-constexpr uint32_t IndirectStubAdditionalAlignment = 8u;
-#else
-constexpr uint32_t IndirectStubAdditionalAlignment = 0u;
-#endif
 
 // wasm::Frame represents the bytes pushed by the call instruction and the
 // fixed prologue generated by wasm::GenerateCallablePrologue.
@@ -250,27 +325,12 @@ class Frame {
   uint8_t* rawCaller() const { return callerFP_; }
 
   Frame* wasmCaller() const {
-    MOZ_ASSERT(!callerIsExitOrJitEntryFP() && !callerIsTrampolineFP());
+    MOZ_ASSERT(!callerIsExitOrJitEntryFP());
     return reinterpret_cast<Frame*>(callerFP_);
-  }
-
-  Frame* trampolineCaller() const {
-    MOZ_ASSERT(callerIsTrampolineFP());
-    return reinterpret_cast<Frame*>(reinterpret_cast<uintptr_t>(callerFP_) &
-                                    ~TrampolineFpTag);
   }
 
   bool callerIsExitOrJitEntryFP() const {
     return isExitOrJitEntryFP(callerFP_);
-  }
-
-  bool callerIsTrampolineFP() const { return isTrampolineFP(callerFP_); }
-
-  size_t numberOfTrampolineSlots() const {
-    return callerIsTrampolineFP()
-               ? ((sizeof(Frame) + IndirectStubAdditionalAlignment) /
-                  sizeof(void*))
-               : 0;
   }
 
   uint8_t* jitEntryCaller() const { return toJitEntryCaller(callerFP_); }
@@ -290,10 +350,6 @@ class Frame {
                                       ~ExitOrJitEntryFPTag);
   }
 
-  static bool isTrampolineFP(const void* fp) {
-    return reinterpret_cast<uintptr_t>(fp) & TrampolineFpTag;
-  }
-
   static uint8_t* addExitOrJitEntryFPTag(const Frame* fp) {
     MOZ_ASSERT(!isExitOrJitEntryFP(fp));
     return reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(fp) |
@@ -305,51 +361,57 @@ static_assert(!std::is_polymorphic_v<Frame>, "Frame doesn't need a vtable.");
 static_assert(sizeof(Frame) == 2 * sizeof(void*),
               "Frame is a two pointer structure");
 
-class FrameWithTls : public Frame {
+// Note that sizeof(FrameWithInstances) does not account for ShadowStackSpace.
+// Use FrameWithInstances::sizeOf() if you are not incorporating
+// ShadowStackSpace through other means (eg the ABIArgIter).
+
+class FrameWithInstances : public Frame {
   // `ShadowStackSpace` bytes will be allocated here on Win64, at higher
   // addresses than Frame and at lower addresses than the TLS fields.
 
   // The TLS area MUST be two pointers exactly.
-  TlsData* calleeTls_;
-  TlsData* callerTls_;
+  Instance* calleeInstance_;
+  Instance* callerInstance_;
 
  public:
-  TlsData* calleeTls() { return calleeTls_; }
-  TlsData* callerTls() { return callerTls_; }
+  Instance* calleeInstance() { return calleeInstance_; }
+  Instance* callerInstance() { return callerInstance_; }
 
   constexpr static uint32_t sizeOf() {
-    return sizeof(wasm::FrameWithTls) + js::jit::ShadowStackSpace;
+    return sizeof(wasm::FrameWithInstances) + js::jit::ShadowStackSpace;
   }
 
-  constexpr static uint32_t sizeOfTlsFields() {
-    return sizeof(wasm::FrameWithTls) - sizeof(wasm::Frame);
+  constexpr static uint32_t sizeOfInstanceFields() {
+    return sizeof(wasm::FrameWithInstances) - sizeof(wasm::Frame);
   }
 
-  constexpr static uint32_t calleeTlsOffset() {
-    return offsetof(FrameWithTls, calleeTls_) + js::jit::ShadowStackSpace;
+  constexpr static uint32_t calleeInstanceOffset() {
+    return offsetof(FrameWithInstances, calleeInstance_) +
+           js::jit::ShadowStackSpace;
   }
 
-  constexpr static uint32_t calleeTlsOffsetWithoutFrame() {
-    return calleeTlsOffset() - sizeof(wasm::Frame);
+  constexpr static uint32_t calleeInstanceOffsetWithoutFrame() {
+    return calleeInstanceOffset() - sizeof(wasm::Frame);
   }
 
-  constexpr static uint32_t callerTlsOffset() {
-    return offsetof(FrameWithTls, callerTls_) + js::jit::ShadowStackSpace;
+  constexpr static uint32_t callerInstanceOffset() {
+    return offsetof(FrameWithInstances, callerInstance_) +
+           js::jit::ShadowStackSpace;
   }
 
-  constexpr static uint32_t callerTlsOffsetWithoutFrame() {
-    return callerTlsOffset() - sizeof(wasm::Frame);
+  constexpr static uint32_t callerInstanceOffsetWithoutFrame() {
+    return callerInstanceOffset() - sizeof(wasm::Frame);
   }
 };
 
-static_assert(FrameWithTls::calleeTlsOffsetWithoutFrame() ==
+static_assert(FrameWithInstances::calleeInstanceOffsetWithoutFrame() ==
                   js::jit::ShadowStackSpace,
               "Callee tls stored right above the return address.");
-static_assert(FrameWithTls::callerTlsOffsetWithoutFrame() ==
+static_assert(FrameWithInstances::callerInstanceOffsetWithoutFrame() ==
                   js::jit::ShadowStackSpace + sizeof(void*),
               "Caller tls stored right above the callee tls.");
 
-static_assert(FrameWithTls::sizeOfTlsFields() == 2 * sizeof(void*),
+static_assert(FrameWithInstances::sizeOfInstanceFields() == 2 * sizeof(void*),
               "There are only two additional slots");
 
 #if defined(JS_CODEGEN_ARM64)

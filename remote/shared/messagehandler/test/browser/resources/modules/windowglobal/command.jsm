@@ -10,7 +10,7 @@ const { Module } = ChromeUtils.import(
   "chrome://remote/content/shared/messagehandler/Module.jsm"
 );
 
-class Command extends Module {
+class CommandModule extends Module {
   constructor(messageHandler) {
     super(messageHandler);
     this._testCategorySessionData = [];
@@ -41,9 +41,9 @@ class Command extends Module {
     }
 
     if (params.category === "browser_session_data_browser_element") {
-      BrowsingContext.get(
-        this.messageHandler.contextId
-      ).window.hasSessionDataFlag = true;
+      this.emitEvent("received-session-data", {
+        contextId: this.messageHandler.contextId,
+      });
     }
 
     return {};
@@ -83,4 +83,4 @@ class Command extends Module {
   }
 }
 
-const command = Command;
+const command = CommandModule;

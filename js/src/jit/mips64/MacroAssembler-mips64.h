@@ -11,7 +11,6 @@
 #include "jit/MoveResolver.h"
 #include "vm/BytecodeUtil.h"
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -817,10 +816,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
 
   void moveFloat32(FloatRegister src, FloatRegister dest) {
     as_movs(dest, src);
-  }
-
-  void loadWasmPinnedRegsFromTls() {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
   }
 
   // Instrumentation for entering and leaving the profiler.

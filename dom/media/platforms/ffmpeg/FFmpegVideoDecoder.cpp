@@ -39,6 +39,9 @@
 #  define AV_PIX_FMT_YUV444P10LE PIX_FMT_YUV444P10LE
 #  define AV_PIX_FMT_NONE PIX_FMT_NONE
 #endif
+#if LIBAVCODEC_VERSION_MAJOR > 58
+#  define AV_PIX_FMT_VAAPI_VLD AV_PIX_FMT_VAAPI
+#endif
 #include "mozilla/PodOperations.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
@@ -345,20 +348,23 @@ void FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::Reset() {
 
 #ifdef MOZ_WAYLAND_USE_VAAPI
 void FFmpegVideoDecoder<LIBAV_VER>::InitHWDecodingPrefs() {
+  if (!mEnableHardwareDecoding) {
+    FFMPEG_LOG("VAAPI is disabled by parent decoder module.");
+    return;
+  }
   bool isHardwareWebRenderUsed = mImageAllocator &&
                                  (mImageAllocator->GetCompositorBackendType() ==
                                   layers::LayersBackend::LAYERS_WR) &&
                                  !mImageAllocator->UsingSoftwareWebRender();
   if (!isHardwareWebRenderUsed) {
     mEnableHardwareDecoding = false;
-    FFMPEG_LOG("Hardware WebRender is off, disabled DMABuf & VAAPI.");
+    FFMPEG_LOG("Hardware WebRender is off, VAAPI is disabled");
     return;
   }
 
-  if (mEnableHardwareDecoding &&
-      !widget::GetDMABufDevice()->IsDMABufVAAPIEnabled()) {
+  if (!widget::GetDMABufDevice()->IsDMABufVAAPIEnabled()) {
     mEnableHardwareDecoding = false;
-    FFMPEG_LOG("VA-API is disabled by pref.");
+    FFMPEG_LOG("VA-API is disabled by preference.");
   }
 }
 #endif
@@ -377,6 +383,8 @@ FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(
       mImageContainer(aImageContainer),
       mInfo(aConfig),
       mLowLatency(aLowLatency) {
+  FFMPEG_LOG("FFmpegVideoDecoder::FFmpegVideoDecoder MIME %s Codec ID %d",
+             aConfig.mMimeType.get(), mCodecID);
   // Use a new MediaByteBuffer as the object will be modified during
   // initialization.
   mExtraData = new MediaByteBuffer;
@@ -493,20 +501,8 @@ static bool IsYUV420Sampling(const AVPixelFormat& aFormat) {
 }
 
 layers::TextureClient*
-FFmpegVideoDecoder<LIBAV_VER>::AllocateTextueClientForImage(
+FFmpegVideoDecoder<LIBAV_VER>::AllocateTextureClientForImage(
     struct AVCodecContext* aCodecContext, PlanarYCbCrImage* aImage) {
-  layers::PlanarYCbCrData data =
-      CreateEmptyPlanarYCbCrData(aCodecContext, mInfo);
-  // Allocate a shmem buffer for image.
-  if (!aImage->CreateEmptyBuffer(data)) {
-    return nullptr;
-  }
-  return aImage->GetTextureClient(mImageAllocator);
-}
-
-layers::PlanarYCbCrData
-FFmpegVideoDecoder<LIBAV_VER>::CreateEmptyPlanarYCbCrData(
-    struct AVCodecContext* aCodecContext, const VideoInfo& aInfo) {
   MOZ_ASSERT(
       IsColorFormatSupportedForUsingCustomizedBuffer(aCodecContext->pix_fmt));
 
@@ -536,59 +532,58 @@ FFmpegVideoDecoder<LIBAV_VER>::CreateEmptyPlanarYCbCrData(
   // plane Cb/Cr
   // width 1280 height  720 -> adjusted-width 1280 adjusted-height 736
   layers::PlanarYCbCrData data;
-  auto paddedYSize =
+  const auto yDims =
       gfx::IntSize{aCodecContext->coded_width, aCodecContext->coded_height};
+  auto paddedYSize = yDims;
   mLib->avcodec_align_dimensions(aCodecContext, &paddedYSize.width,
                                  &paddedYSize.height);
-  data.mYSize = gfx::IntSize{paddedYSize.Width(), paddedYSize.Height()};
-  data.mYStride = data.mYSize.Width() * bytesPerChannel;
-  data.mCroppedYSize = Some(
-      gfx::IntSize{aCodecContext->coded_width, aCodecContext->coded_height});
+  data.mYStride = paddedYSize.Width() * bytesPerChannel;
 
   MOZ_ASSERT(
       IsColorFormatSupportedForUsingCustomizedBuffer(aCodecContext->pix_fmt));
-  const auto yDims =
-      gfx::IntSize{aCodecContext->coded_width, aCodecContext->coded_height};
   auto uvDims = yDims;
   if (IsYUV420Sampling(aCodecContext->pix_fmt)) {
     uvDims.width = (uvDims.width + 1) / 2;
     uvDims.height = (uvDims.height + 1) / 2;
+    data.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
   }
   auto paddedCbCrSize = uvDims;
   mLib->avcodec_align_dimensions(aCodecContext, &paddedCbCrSize.width,
                                  &paddedCbCrSize.height);
-  data.mCbCrSize =
-      gfx::IntSize{paddedCbCrSize.Width(), paddedCbCrSize.Height()};
-  data.mCbCrStride = data.mCbCrSize.Width() * bytesPerChannel;
-  data.mCroppedCbCrSize = Some(gfx::IntSize{uvDims.Width(), uvDims.Height()});
+  data.mCbCrStride = paddedCbCrSize.Width() * bytesPerChannel;
 
   // Setting other attributes
-  data.mPicSize =
-      gfx::IntSize{aCodecContext->coded_width, aCodecContext->coded_height};
-  const gfx::IntRect picture =
-      aInfo.ScaledImageRect(data.mPicSize.Width(), data.mPicSize.Height());
-  data.mPicX = picture.x;
-  data.mPicY = picture.y;
-  data.mStereoMode = aInfo.mStereoMode;
+  data.mPictureRect = gfx::IntRect(
+      mInfo.ScaledImageRect(aCodecContext->width, aCodecContext->height)
+          .TopLeft(),
+      gfx::IntSize(aCodecContext->width, aCodecContext->height));
+  data.mStereoMode = mInfo.mStereoMode;
   if (aCodecContext->colorspace != AVCOL_SPC_UNSPECIFIED) {
     data.mYUVColorSpace =
         TransferAVColorSpaceToYUVColorSpace(aCodecContext->colorspace);
   } else {
-    data.mYUVColorSpace = aInfo.mColorSpace ? *aInfo.mColorSpace
-                                            : DefaultColorSpace(data.mPicSize);
+    data.mYUVColorSpace = mInfo.mColorSpace
+                              ? *mInfo.mColorSpace
+                              : DefaultColorSpace(data.mPictureRect.Size());
   }
   data.mColorDepth = GetColorDepth(aCodecContext->pix_fmt);
   data.mColorRange = aCodecContext->color_range == AVCOL_RANGE_JPEG
                          ? gfx::ColorRange::FULL
                          : gfx::ColorRange::LIMITED;
+
   FFMPEG_LOGV(
       "Created plane data, YSize=(%d, %d), CbCrSize=(%d, %d), "
       "CroppedYSize=(%d, %d), CroppedCbCrSize=(%d, %d), ColorDepth=%hhu",
-      data.mYSize.Width(), data.mYSize.Height(), data.mCbCrSize.Width(),
-      data.mCbCrSize.Height(), data.mCroppedYSize->Width(),
-      data.mCroppedYSize->Height(), data.mCroppedCbCrSize->Width(),
-      data.mCroppedCbCrSize->Height(), static_cast<uint8_t>(data.mColorDepth));
-  return data;
+      paddedYSize.Width(), paddedYSize.Height(), paddedCbCrSize.Width(),
+      paddedCbCrSize.Height(), data.YPictureSize().Width(),
+      data.YPictureSize().Height(), data.CbCrPictureSize().Width(),
+      data.CbCrPictureSize().Height(), static_cast<uint8_t>(data.mColorDepth));
+
+  // Allocate a shmem buffer for image.
+  if (!aImage->CreateEmptyBuffer(data, paddedYSize, paddedCbCrSize)) {
+    return nullptr;
+  }
+  return aImage->GetTextureClient(mImageAllocator);
 }
 
 int FFmpegVideoDecoder<LIBAV_VER>::GetVideoBuffer(
@@ -652,7 +647,7 @@ int FFmpegVideoDecoder<LIBAV_VER>::GetVideoBuffer(
   }
 
   RefPtr<layers::TextureClient> texture =
-      AllocateTextueClientForImage(aCodecContext, image);
+      AllocateTextureClientForImage(aCodecContext, image);
   if (!texture) {
     FFMPEG_LOG("Failed to allocate a texture client");
     return AVERROR(EINVAL);
@@ -662,11 +657,11 @@ int FFmpegVideoDecoder<LIBAV_VER>::GetVideoBuffer(
     FFMPEG_LOG("Failed to lock the texture");
     return AVERROR(EINVAL);
   }
+  auto autoUnlock = MakeScopeExit([&] { texture->Unlock(); });
 
   layers::MappedYCbCrTextureData mapped;
   if (!texture->BorrowMappedYCbCrData(mapped)) {
     FFMPEG_LOG("Failed to borrow mapped data for the texture");
-    texture->Unlock();
     return AVERROR(EINVAL);
   }
 
@@ -697,7 +692,8 @@ int FFmpegVideoDecoder<LIBAV_VER>::GetVideoBuffer(
   }
 
   FFMPEG_LOG("Created av buffer, buf=%p, data=%p, image=%p, sz=%d",
-             aFrame->buf[0], aFrame->data[0], image.get(), dataSize.value());
+             aFrame->buf[0], aFrame->data[0], imageWrapper.get(),
+             dataSize.value());
   mAllocatedImages.Insert(imageWrapper.get());
   mIsUsingShmemBufferForDecode = Some(true);
   return 0;
@@ -764,6 +760,14 @@ void FFmpegVideoDecoder<LIBAV_VER>::InitVAAPICodecContext() {
 }
 #endif
 
+static int64_t GetFramePts(AVFrame* aFrame) {
+#if LIBAVCODEC_VERSION_MAJOR > 58
+  return aFrame->pts;
+#else
+  return aFrame->pkt_pts;
+#endif
+}
+
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame,
     MediaDataDecoder::DecodedData& aResults) {
@@ -802,7 +806,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 #  ifdef MOZ_WAYLAND_USE_VAAPI
     // Create VideoFramePool in case we need it.
     if (!mVideoFramePool && mEnableHardwareDecoding) {
-      mVideoFramePool = MakeUnique<VideoFramePool>();
+      mVideoFramePool = MakeUnique<VideoFramePool<LIBAV_VER>>();
     }
 
     // Release unused VA-API surfaces before avcodec_receive_frame() as
@@ -829,7 +833,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     MediaResult rv;
 #  ifdef MOZ_WAYLAND_USE_VAAPI
     if (IsHardwareAccelerated()) {
-      rv = CreateImageVAAPI(mFrame->pkt_pos, mFrame->pkt_pts,
+      rv = CreateImageVAAPI(mFrame->pkt_pos, GetFramePts(mFrame),
                             mFrame->pkt_duration, aResults);
       // If VA-API playback failed, just quit. Decoder is going to be restarted
       // without VA-API.
@@ -842,8 +846,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     } else
 #  endif
     {
-      rv = CreateImage(mFrame->pkt_pos, mFrame->pkt_pts, mFrame->pkt_duration,
-                       aResults);
+      rv = CreateImage(mFrame->pkt_pos, GetFramePts(mFrame),
+                       mFrame->pkt_duration, aResults);
     }
     if (NS_FAILED(rv)) {
       return rv;
@@ -877,9 +881,9 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
       "DoDecodeFrame:decode_video: rv=%d decoded=%d "
       "(Input: pts(%" PRId64 ") dts(%" PRId64 ") Output: pts(%" PRId64
       ") "
-      "opaque(%" PRId64 ") pkt_pts(%" PRId64 ") pkt_dts(%" PRId64 "))",
+      "opaque(%" PRId64 ") pts(%" PRId64 ") pkt_dts(%" PRId64 "))",
       bytesConsumed, decoded, packet.pts, packet.dts, mFrame->pts,
-      mFrame->reordered_opaque, mFrame->pkt_pts, mFrame->pkt_dts);
+      mFrame->reordered_opaque, mFrame->pts, mFrame->pkt_dts);
 
   if (bytesConsumed < 0) {
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
@@ -894,7 +898,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
   }
 
   // If we've decoded a frame then we need to output it
-  int64_t pts = mPtsContext.GuessCorrectPts(mFrame->pkt_pts, mFrame->pkt_dts);
+  int64_t pts =
+      mPtsContext.GuessCorrectPts(GetFramePts(mFrame), mFrame->pkt_dts);
   // Retrieve duration from dts.
   // We use the first entry found matching this dts (this is done to
   // handle damaged file with multiple frames with the same dts)
@@ -918,25 +923,43 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 }
 
 gfx::YUVColorSpace FFmpegVideoDecoder<LIBAV_VER>::GetFrameColorSpace() const {
+  AVColorSpace colorSpace = AVCOL_SPC_UNSPECIFIED;
+#if LIBAVCODEC_VERSION_MAJOR > 58
+  colorSpace = mFrame->colorspace;
+#else
   if (mLib->av_frame_get_colorspace) {
-    switch (mLib->av_frame_get_colorspace(mFrame)) {
-#if LIBAVCODEC_VERSION_MAJOR >= 55
-      case AVCOL_SPC_BT2020_NCL:
-      case AVCOL_SPC_BT2020_CL:
-        return gfx::YUVColorSpace::BT2020;
-#endif
-      case AVCOL_SPC_BT709:
-        return gfx::YUVColorSpace::BT709;
-      case AVCOL_SPC_SMPTE170M:
-      case AVCOL_SPC_BT470BG:
-        return gfx::YUVColorSpace::BT601;
-      case AVCOL_SPC_RGB:
-        return gfx::YUVColorSpace::Identity;
-      default:
-        break;
-    }
+    colorSpace = (AVColorSpace)mLib->av_frame_get_colorspace(mFrame);
   }
-  return DefaultColorSpace({mFrame->width, mFrame->height});
+#endif
+  switch (colorSpace) {
+#if LIBAVCODEC_VERSION_MAJOR >= 55
+    case AVCOL_SPC_BT2020_NCL:
+    case AVCOL_SPC_BT2020_CL:
+      return gfx::YUVColorSpace::BT2020;
+#endif
+    case AVCOL_SPC_BT709:
+      return gfx::YUVColorSpace::BT709;
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_BT470BG:
+      return gfx::YUVColorSpace::BT601;
+    case AVCOL_SPC_RGB:
+      return gfx::YUVColorSpace::Identity;
+    default:
+      return DefaultColorSpace({mFrame->width, mFrame->height});
+  }
+}
+
+gfx::ColorRange FFmpegVideoDecoder<LIBAV_VER>::GetFrameColorRange() const {
+  AVColorRange range = AVCOL_RANGE_UNSPECIFIED;
+#if LIBAVCODEC_VERSION_MAJOR > 58
+  range = mFrame->color_range;
+#else
+  if (mLib->av_frame_get_color_range) {
+    range = (AVColorRange)mLib->av_frame_get_color_range(mFrame);
+  }
+#endif
+  return range == AVCOL_RANGE_JPEG ? gfx::ColorRange::FULL
+                                   : gfx::ColorRange::LIMITED;
 }
 
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
@@ -986,6 +1009,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
              || mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P12LE
 #endif
   ) {
+    b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH;
     b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = (mFrame->width + 1) >> 1;
     b.mPlanes[1].mHeight = b.mPlanes[2].mHeight = mFrame->height;
     if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV422P10LE) {
@@ -997,6 +1021,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
     }
 #endif
   } else {
+    b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
     b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = (mFrame->width + 1) >> 1;
     b.mPlanes[1].mHeight = b.mPlanes[2].mHeight = (mFrame->height + 1) >> 1;
     if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV420P10LE) {
@@ -1009,33 +1034,28 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
 #endif
   }
   b.mYUVColorSpace = GetFrameColorSpace();
-
-  if (mLib->av_frame_get_color_range) {
-    auto range = mLib->av_frame_get_color_range(mFrame);
-    b.mColorRange = range == AVCOL_RANGE_JPEG ? gfx::ColorRange::FULL
-                                              : gfx::ColorRange::LIMITED;
-  }
+  b.mColorRange = GetFrameColorRange();
 
   RefPtr<VideoData> v;
 #ifdef CUSTOMIZED_BUFFER_ALLOCATION
-  if (mIsUsingShmemBufferForDecode && *mIsUsingShmemBufferForDecode) {
+  bool requiresCopy = false;
+#  ifdef XP_MACOSX
+  // Bug 1765388: macOS needs to generate a MacIOSurfaceImage in order to
+  // properly display HDR video. The later call to ::CreateAndCopyData does
+  // that. If this shared memory buffer path also generated a
+  // MacIOSurfaceImage, then we could use it for HDR.
+  requiresCopy = (b.mColorDepth != gfx::ColorDepth::COLOR_8);
+#  endif
+  if (mIsUsingShmemBufferForDecode && *mIsUsingShmemBufferForDecode &&
+      !requiresCopy) {
     RefPtr<ImageBufferWrapper> wrapper = static_cast<ImageBufferWrapper*>(
         mLib->av_buffer_get_opaque(mFrame->buf[0]));
     MOZ_ASSERT(wrapper);
-    auto* image = wrapper->AsPlanarYCbCrImage();
-    RefPtr<layers::TextureClient> texture = image->GetTextureClient(nullptr);
-    if (!texture) {
-      NS_WARNING("Failed to get the texture client!");
-    } else {
-      // Texture was locked to ensure no one can modify or access texture's data
-      // except ffmpeg decoder. After finisheing decoding, texture's data would
-      // be avaliable for accessing for everyone so we unlock texture.
-      texture->Unlock();
-      v = VideoData::CreateFromImage(
-          mInfo.mDisplay, aOffset, TimeUnit::FromMicroseconds(aPts),
-          TimeUnit::FromMicroseconds(aDuration), image, !!mFrame->key_frame,
-          TimeUnit::FromMicroseconds(-1));
-    }
+    FFMPEG_LOGV("Create a video data from a shmem image=%p", wrapper.get());
+    v = VideoData::CreateFromImage(
+        mInfo.mDisplay, aOffset, TimeUnit::FromMicroseconds(aPts),
+        TimeUnit::FromMicroseconds(aDuration), wrapper->AsImage(),
+        !!mFrame->key_frame, TimeUnit::FromMicroseconds(-1));
   }
 #endif
   if (!v) {
@@ -1093,13 +1113,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImageVAAPI(
                        RESULT_DETAIL("VAAPI dmabuf allocation error"));
   }
   surface->SetYUVColorSpace(GetFrameColorSpace());
-
-  if (mLib->av_frame_get_color_range) {
-    auto range = mLib->av_frame_get_color_range(mFrame);
-    surface->SetColorRange(range == AVCOL_RANGE_JPEG
-                               ? gfx::ColorRange::FULL
-                               : gfx::ColorRange::LIMITED);
-  }
+  surface->SetColorRange(GetFrameColorRange());
 
   RefPtr<VideoData> vp = VideoData::CreateFromImage(
       mInfo.mDisplay, aOffset, TimeUnit::FromMicroseconds(aPts),

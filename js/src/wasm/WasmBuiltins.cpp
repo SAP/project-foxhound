@@ -39,6 +39,7 @@
 #include "vm/ErrorObject.h"
 #include "wasm/TypedObject.h"
 #include "wasm/WasmCodegenTypes.h"
+#include "wasm/WasmDebug.h"
 #include "wasm/WasmDebugFrame.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmStubs.h"
@@ -46,6 +47,7 @@
 #include "debugger/DebugAPI-inl.h"
 #include "vm/ErrorObject-inl.h"
 #include "vm/Stack-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace jit;
@@ -226,11 +228,12 @@ const SymbolicAddressSignature SASigTableFill = {
     _FailOnNegI32,
     5,
     {_PTR, _I32, _RoN, _I32, _I32, _END}};
-const SymbolicAddressSignature SASigTableGet = {SymbolicAddress::TableGet,
-                                                _RoN,
-                                                _FailOnInvalidRef,
-                                                3,
-                                                {_PTR, _I32, _I32, _END}};
+const SymbolicAddressSignature SASigTableGetFunc = {
+    SymbolicAddress::TableGetFunc,
+    _RoN,
+    _FailOnInvalidRef,
+    3,
+    {_PTR, _I32, _I32, _END}};
 const SymbolicAddressSignature SASigTableGrow = {
     SymbolicAddress::TableGrow,
     _I32,
@@ -243,13 +246,12 @@ const SymbolicAddressSignature SASigTableInit = {
     _FailOnNegI32,
     6,
     {_PTR, _I32, _I32, _I32, _I32, _I32, _END}};
-const SymbolicAddressSignature SASigTableSet = {SymbolicAddress::TableSet,
-                                                _VOID,
-                                                _FailOnNegI32,
-                                                4,
-                                                {_PTR, _I32, _RoN, _I32, _END}};
-const SymbolicAddressSignature SASigTableSize = {
-    SymbolicAddress::TableSize, _I32, _Infallible, 2, {_PTR, _I32, _END}};
+const SymbolicAddressSignature SASigTableSetFunc = {
+    SymbolicAddress::TableSetFunc,
+    _VOID,
+    _FailOnNegI32,
+    4,
+    {_PTR, _I32, _RoN, _I32, _END}};
 const SymbolicAddressSignature SASigRefFunc = {
     SymbolicAddress::RefFunc, _RoN, _FailOnInvalidRef, 2, {_PTR, _I32, _END}};
 const SymbolicAddressSignature SASigPreBarrierFiltering = {
@@ -260,6 +262,12 @@ const SymbolicAddressSignature SASigPreBarrierFiltering = {
     {_PTR, _PTR, _END}};
 const SymbolicAddressSignature SASigPostBarrier = {
     SymbolicAddress::PostBarrier, _VOID, _Infallible, 2, {_PTR, _PTR, _END}};
+const SymbolicAddressSignature SASigPostBarrierPrecise = {
+    SymbolicAddress::PostBarrierPrecise,
+    _VOID,
+    _Infallible,
+    3,
+    {_PTR, _PTR, _RoN, _END}};
 const SymbolicAddressSignature SASigPostBarrierFiltering = {
     SymbolicAddress::PostBarrierFiltering,
     _VOID,
@@ -270,29 +278,13 @@ const SymbolicAddressSignature SASigStructNew = {
     SymbolicAddress::StructNew, _RoN, _FailOnNullPtr, 2, {_PTR, _RoN, _END}};
 #ifdef ENABLE_WASM_EXCEPTIONS
 const SymbolicAddressSignature SASigExceptionNew = {
-    SymbolicAddress::ExceptionNew,
-    _RoN,
-    _FailOnNullPtr,
-    3,
-    {_PTR, _I32, _I32, _END}};
+    SymbolicAddress::ExceptionNew, _RoN, _FailOnNullPtr, 2, {_PTR, _RoN, _END}};
 const SymbolicAddressSignature SASigThrowException = {
     SymbolicAddress::ThrowException,
     _VOID,
     _FailOnNegI32,
     2,
     {_PTR, _RoN, _END}};
-const SymbolicAddressSignature SASigConsumePendingException = {
-    SymbolicAddress::ConsumePendingException,
-    _I32,
-    _Infallible,
-    1,
-    {_PTR, _END}};
-const SymbolicAddressSignature SASigPushRefIntoExn = {
-    SymbolicAddress::PushRefIntoExn,
-    _VOID,
-    _FailOnNegI32,
-    3,
-    {_PTR, _RoN, _RoN, _END}};
 #endif
 const SymbolicAddressSignature SASigArrayNew = {SymbolicAddress::ArrayNew,
                                                 _RoN,
@@ -394,7 +386,7 @@ static bool WasmHandleDebugTrap() {
   JSContext* cx = TlsContext.get();  // Cold code
   JitActivation* activation = CallingActivation(cx);
   Frame* fp = activation->wasmExitFP();
-  Instance* instance = GetNearestEffectiveTls(fp)->instance;
+  Instance* instance = GetNearestEffectiveInstance(fp);
   const Code& code = instance->code();
   MOZ_ASSERT(code.metadata().debugEnabled);
 
@@ -560,23 +552,19 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
         RootedAnyRef ref(cx, AnyRef::null());
         if (!BoxAnyRef(cx, exn, &ref)) {
           MOZ_ASSERT(cx->isThrowingOutOfMemory());
+          hasCatchableException = false;
           continue;
         }
 
-        iter.tls()->pendingException = ref.get().asJSObject();
+        MOZ_ASSERT(iter.instance() == iter.instance());
+        iter.instance()->setPendingException(ref);
 
         rfe->kind = ResumeFromException::RESUME_WASM_CATCH;
         rfe->framePointer = (uint8_t*)iter.frame();
-        rfe->tlsData = iter.instance()->tlsData();
+        rfe->tlsData = iter.instance();
 
-        size_t offsetAdjustment = 0;
-        if (iter.frame()->callerIsTrampolineFP()) {
-          offsetAdjustment =
-              FrameWithTls::sizeOfTlsFields() + IndirectStubAdditionalAlignment;
-        }
         rfe->stackPointer =
-            (uint8_t*)(rfe->framePointer -
-                       (tryNote->framePushed + offsetAdjustment));
+            (uint8_t*)(rfe->framePointer - tryNote->framePushed);
         rfe->target = iter.instance()->codeBase(tier) + tryNote->entryPoint;
 
         // Make sure to clear trapping state if we got here due to a trap.
@@ -710,8 +698,8 @@ static void* WasmHandleTrap() {
     case Trap::CheckInterrupt:
       return CheckInterrupt(cx, activation);
     case Trap::StackOverflow: {
-      // TlsData::setInterrupt() causes a fake stack overflow. Since
-      // TlsData::setInterrupt() is called racily, it's possible for a real
+      // Instance::setInterrupt() causes a fake stack overflow. Since
+      // Instance::setInterrupt() is called racily, it's possible for a real
       // stack overflow to trap, followed by a racy call to setInterrupt().
       // Thus, we must check for a real stack overflow first before we
       // CheckInterrupt() and possibly resume execution.
@@ -719,7 +707,7 @@ static void* WasmHandleTrap() {
       if (!recursion.check(cx)) {
         return nullptr;
       }
-      if (activation->wasmExitTls()->isInterrupted()) {
+      if (activation->wasmExitInstance()->isInterrupted()) {
         return CheckInterrupt(cx, activation);
       }
       ReportTrapError(cx, JSMSG_OVER_RECURSED);
@@ -793,11 +781,11 @@ static void* BoxValue_Anyref(Value* rawVal) {
   return result.get().forCompiledCode();
 }
 
-static int32_t CoerceInPlace_JitEntry(int funcExportIndex, TlsData* tlsData,
+static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* tlsData,
                                       Value* argv) {
   JSContext* cx = TlsContext.get();  // Cold code
 
-  const Code& code = tlsData->instance->code();
+  const Code& code = tlsData->code();
   const FuncExport& fe =
       code.metadata(code.stableTier()).funcExports[funcExportIndex];
 
@@ -999,6 +987,7 @@ void wasm::PrintText(const char* out) { fprintf(stderr, "%s", out); }
 #endif
 
 void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
+  // See NeedsBuiltinThunk for a classification of the different names here.
   switch (imm) {
     case SymbolicAddress::HandleDebugTrap:
       *abiType = Args_General0;
@@ -1238,22 +1227,18 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralInt32Int32Int32Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigTableInit));
       return FuncCast(Instance::tableInit, *abiType);
-    case SymbolicAddress::TableGet:
+    case SymbolicAddress::TableGetFunc:
       *abiType = Args_General_GeneralInt32Int32;
-      MOZ_ASSERT(*abiType == ToABIType(SASigTableGet));
-      return FuncCast(Instance::tableGet, *abiType);
+      MOZ_ASSERT(*abiType == ToABIType(SASigTableGetFunc));
+      return FuncCast(Instance::tableGetFunc, *abiType);
     case SymbolicAddress::TableGrow:
       *abiType = Args_Int32_GeneralGeneralInt32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigTableGrow));
       return FuncCast(Instance::tableGrow, *abiType);
-    case SymbolicAddress::TableSet:
+    case SymbolicAddress::TableSetFunc:
       *abiType = Args_Int32_GeneralInt32GeneralInt32;
-      MOZ_ASSERT(*abiType == ToABIType(SASigTableSet));
-      return FuncCast(Instance::tableSet, *abiType);
-    case SymbolicAddress::TableSize:
-      *abiType = Args_Int32_GeneralInt32;
-      MOZ_ASSERT(*abiType == ToABIType(SASigTableSize));
-      return FuncCast(Instance::tableSize, *abiType);
+      MOZ_ASSERT(*abiType == ToABIType(SASigTableSetFunc));
+      return FuncCast(Instance::tableSetFunc, *abiType);
     case SymbolicAddress::RefFunc:
       *abiType = Args_General_GeneralInt32;
       MOZ_ASSERT(*abiType == ToABIType(SASigRefFunc));
@@ -1262,6 +1247,10 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralGeneral;
       MOZ_ASSERT(*abiType == ToABIType(SASigPostBarrier));
       return FuncCast(Instance::postBarrier, *abiType);
+    case SymbolicAddress::PostBarrierPrecise:
+      *abiType = Args_Int32_GeneralGeneralGeneral;
+      MOZ_ASSERT(*abiType == ToABIType(SASigPostBarrierPrecise));
+      return FuncCast(Instance::postBarrierPrecise, *abiType);
     case SymbolicAddress::PreBarrierFiltering:
       *abiType = Args_Int32_GeneralGeneral;
       MOZ_ASSERT(*abiType == ToABIType(SASigPreBarrierFiltering));
@@ -1293,21 +1282,13 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
 
 #if defined(ENABLE_WASM_EXCEPTIONS)
     case SymbolicAddress::ExceptionNew:
-      *abiType = Args_General_GeneralInt32Int32;
+      *abiType = Args_General2;
       MOZ_ASSERT(*abiType == ToABIType(SASigExceptionNew));
       return FuncCast(Instance::exceptionNew, *abiType);
     case SymbolicAddress::ThrowException:
       *abiType = Args_Int32_GeneralGeneral;
       MOZ_ASSERT(*abiType == ToABIType(SASigThrowException));
       return FuncCast(Instance::throwException, *abiType);
-    case SymbolicAddress::ConsumePendingException:
-      *abiType = Args_Int32_General;
-      MOZ_ASSERT(*abiType == ToABIType(SASigConsumePendingException));
-      return FuncCast(Instance::consumePendingException, *abiType);
-    case SymbolicAddress::PushRefIntoExn:
-      *abiType = Args_Int32_GeneralGeneralGeneral;
-      MOZ_ASSERT(*abiType == ToABIType(SASigPushRefIntoExn));
-      return FuncCast(Instance::pushRefIntoExn, *abiType);
 #endif
 
 #ifdef WASM_CODEGEN_DEBUG
@@ -1364,26 +1345,42 @@ bool wasm::IsRoundingFunction(SymbolicAddress callee, jit::RoundingMode* mode) {
 }
 
 bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
-  // Some functions don't want to a thunk, because they already have one or
-  // they don't have frame info.
+  // Also see "The Wasm Builtin ABIs" in WasmFrame.h.
   switch (sym) {
-    case SymbolicAddress::HandleDebugTrap:        // GenerateDebugTrapStub
-    case SymbolicAddress::HandleThrow:            // GenerateThrowStub
-    case SymbolicAddress::HandleTrap:             // GenerateTrapExit
-    case SymbolicAddress::CallImport_General:     // GenerateImportInterpExit
-    case SymbolicAddress::CoerceInPlace_ToInt32:  // GenerateImportJitExit
-    case SymbolicAddress::CoerceInPlace_ToNumber:
-    case SymbolicAddress::CoerceInPlace_ToBigInt:
-    case SymbolicAddress::BoxValue_Anyref:
+    // No thunk, because these are data addresses
     case SymbolicAddress::InlineTypedObjectClass:
+      return false;
+
+    // No thunk, because they do their work within the activation
+    case SymbolicAddress::HandleThrow:  // GenerateThrowStub
+    case SymbolicAddress::HandleTrap:   // GenerateTrapExit
+      return false;
+
+    // No thunk, because some work has to be done within the activation before
+    // the activation exit: when called, arbitrary wasm registers are live and
+    // must be saved, and the stack pointer may not be aligned for any ABI.
+    case SymbolicAddress::HandleDebugTrap:  // GenerateDebugTrapStub
+
+    // No thunk, because their caller manages the activation exit explicitly
+    case SymbolicAddress::CallImport_General:      // GenerateImportInterpExit
+    case SymbolicAddress::CoerceInPlace_ToInt32:   // GenerateImportJitExit
+    case SymbolicAddress::CoerceInPlace_ToNumber:  // GenerateImportJitExit
+    case SymbolicAddress::CoerceInPlace_ToBigInt:  // GenerateImportJitExit
+    case SymbolicAddress::BoxValue_Anyref:         // GenerateImportJitExit
+      return false;
+
 #ifdef WASM_CODEGEN_DEBUG
-    case SymbolicAddress::PrintI32:
+    // No thunk, because they call directly into C++ code that does not interact
+    // with the rest of the VM at all.
+    case SymbolicAddress::PrintI32:  // Debug stub printers
     case SymbolicAddress::PrintPtr:
     case SymbolicAddress::PrintF32:
     case SymbolicAddress::PrintF64:
-    case SymbolicAddress::PrintText:  // Used only in stubs
-#endif
+    case SymbolicAddress::PrintText:
       return false;
+#endif
+
+    // Everyone else gets a thunk to handle the exit from the activation
     case SymbolicAddress::ToInt32:
     case SymbolicAddress::DivI64:
     case SymbolicAddress::UDivI64:
@@ -1447,21 +1444,19 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::TableCopy:
     case SymbolicAddress::ElemDrop:
     case SymbolicAddress::TableFill:
-    case SymbolicAddress::TableGet:
+    case SymbolicAddress::TableGetFunc:
     case SymbolicAddress::TableGrow:
     case SymbolicAddress::TableInit:
-    case SymbolicAddress::TableSet:
-    case SymbolicAddress::TableSize:
+    case SymbolicAddress::TableSetFunc:
     case SymbolicAddress::RefFunc:
     case SymbolicAddress::PreBarrierFiltering:
     case SymbolicAddress::PostBarrier:
+    case SymbolicAddress::PostBarrierPrecise:
     case SymbolicAddress::PostBarrierFiltering:
     case SymbolicAddress::StructNew:
 #ifdef ENABLE_WASM_EXCEPTIONS
     case SymbolicAddress::ExceptionNew:
     case SymbolicAddress::ThrowException:
-    case SymbolicAddress::ConsumePendingException:
-    case SymbolicAddress::PushRefIntoExn:
 #endif
     case SymbolicAddress::ArrayNew:
     case SymbolicAddress::RefTest:
@@ -1471,6 +1466,7 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
       FOR_EACH_INTRINSIC(OP)
 #undef OP
       return true;
+
     case SymbolicAddress::Limit:
       break;
   }
@@ -1479,6 +1475,8 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
 }
 
 // ============================================================================
+// [SMDOC] JS Fast Wasm Imports
+//
 // JS builtins that can be imported by wasm modules and called efficiently
 // through thunks. These thunks conform to the internal wasm ABI and thus can be
 // patched in for import calls. Calling a JS builtin through a thunk is much
@@ -1598,7 +1596,7 @@ static bool PopulateTypedNatives(TypedNativeToFuncPtrMap* typedNatives) {
 #undef FOR_EACH_BINARY_NATIVE
 
 // ============================================================================
-// Process-wide builtin thunk set
+// [SMDOC] Process-wide builtin thunk set
 //
 // Thunks are inserted between wasm calls and the C++ callee and achieve two
 // things:
@@ -1619,7 +1617,7 @@ static bool PopulateTypedNatives(TypedNativeToFuncPtrMap* typedNatives) {
 //  - no problems toggling W^X permissions which, because of multiple executing
 //    threads, would require each thunk allocation to be on its own page
 // The cost for creating all thunks at once is relatively low since all thunks
-// fit within the smallest executable quanta (64k).
+// fit within the smallest executable-code allocation quantum (64k).
 
 using TypedNativeToCodeRangeMap =
     HashMap<TypedNative, uint32_t, TypedNative, SystemAllocPolicy>;

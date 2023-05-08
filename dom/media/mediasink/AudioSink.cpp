@@ -115,6 +115,10 @@ bool AudioSink::HasUnplayedFrames() {
          (mAudioStream && mAudioStream->GetPositionInFrames() + 1 < mWritten);
 }
 
+TimeUnit AudioSink::UnplayedDuration() const {
+  return TimeUnit::FromMicroseconds(AudioQueuedInRingBufferMS());
+}
+
 void AudioSink::Shutdown() {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
 
@@ -251,6 +255,7 @@ uint32_t AudioSink::PopFrames(AudioDataValue* aBuffer, uint32_t aFrames,
 
 bool AudioSink::Ended() const {
   // Return true when error encountered so AudioStream can start draining.
+  // Both atomic so we don't need locking
   return mProcessedQueueFinished || mErrored;
 }
 
@@ -416,7 +421,7 @@ void AudioSink::NotifyAudioNeeded() {
     }
   }
 
-  if (mAudioQueue.IsFinished()) {
+  if (mAudioQueue.IsFinished() && mAudioQueue.GetSize() == 0) {
     // We have reached the end of the data, drain the resampler.
     DrainConverter(SampleToFrame(mProcessedSPSCQueue->AvailableWrite()));
     mProcessedQueueFinished = true;
@@ -484,16 +489,7 @@ uint32_t AudioSink::DrainConverter(uint32_t aMaxFrames) {
 
   RefPtr<AudioData> data =
       CreateAudioFromBuffer(std::move(convertedData), lastPacket);
-  if (!data) {
-    return 0;
-  }
-  int framesToEnqueue = static_cast<int>(data->mChannels * data->Frames());
-  DebugOnly<int> rv =
-      mProcessedSPSCQueue->Enqueue(data->Data().Elements(), framesToEnqueue);
-  NS_WARNING_ASSERTION(
-      rv == static_cast<int>(data->Frames() * data->mChannels),
-      "AudioSink ring buffer over-run when draining, can't push new data");
-  return data->Frames();
+  return PushProcessedAudio(data);
 }
 
 void AudioSink::GetDebugInfo(dom::MediaSinkDebugInfo& aInfo) {

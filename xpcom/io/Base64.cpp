@@ -581,8 +581,8 @@ nsresult Base64Decode(const char* aBase64, uint32_t aBase64Len, char** aBinary,
   return NS_OK;
 }
 
-template <typename T>
-static nsresult Base64DecodeString(const T& aBase64, T& aBinary) {
+template <typename T, typename U>
+static nsresult Base64DecodeString(const T& aBase64, U& aBinary) {
   aBinary.Truncate();
 
   // Check for overflow.
@@ -627,6 +627,10 @@ nsresult Base64Decode(const nsACString& aBase64, nsACString& aBinary) {
 }
 
 nsresult Base64Decode(const nsAString& aBase64, nsAString& aBinary) {
+  return Base64DecodeString(aBase64, aBinary);
+}
+
+nsresult Base64Decode(const nsAString& aBase64, nsACString& aBinary) {
   return Base64DecodeString(aBase64, aBinary);
 }
 

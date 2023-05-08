@@ -844,12 +844,11 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvColHeaderCells(
     const uint64_t& aID, nsTArray<uint64_t>* aCells) {
   TableCellAccessible* acc = IdToTableCellAccessible(aID);
   if (acc) {
-    AutoTArray<LocalAccessible*, 10> headerCells;
+    AutoTArray<Accessible*, 10> headerCells;
     acc->ColHeaderCells(&headerCells);
     aCells->SetCapacity(headerCells.Length());
-    for (uint32_t i = 0; i < headerCells.Length(); ++i) {
-      aCells->AppendElement(
-          reinterpret_cast<uint64_t>(headerCells[i]->UniqueID()));
+    for (Accessible* header : headerCells) {
+      aCells->AppendElement(header->ID());
     }
   }
 
@@ -860,12 +859,11 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvRowHeaderCells(
     const uint64_t& aID, nsTArray<uint64_t>* aCells) {
   TableCellAccessible* acc = IdToTableCellAccessible(aID);
   if (acc) {
-    AutoTArray<LocalAccessible*, 10> headerCells;
+    AutoTArray<Accessible*, 10> headerCells;
     acc->RowHeaderCells(&headerCells);
     aCells->SetCapacity(headerCells.Length());
-    for (uint32_t i = 0; i < headerCells.Length(); ++i) {
-      aCells->AppendElement(
-          reinterpret_cast<uint64_t>(headerCells[i]->UniqueID()));
+    for (Accessible* header : headerCells) {
+      aCells->AppendElement(header->ID());
     }
   }
 
@@ -1106,11 +1104,11 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvTableSelectedCells(
     const uint64_t& aID, nsTArray<uint64_t>* aCellIDs) {
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    AutoTArray<LocalAccessible*, 30> cells;
+    AutoTArray<Accessible*, 30> cells;
     acc->SelectedCells(&cells);
     aCellIDs->SetCapacity(cells.Length());
-    for (uint32_t i = 0; i < cells.Length(); ++i) {
-      aCellIDs->AppendElement(reinterpret_cast<uint64_t>(cells[i]->UniqueID()));
+    for (Accessible* cell : cells) {
+      aCellIDs->AppendElement(cell->ID());
     }
   }
 
@@ -1206,9 +1204,9 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkTableColumnHeader(
 #ifdef MOZ_ACCESSIBILITY_ATK
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    LocalAccessible* header = AccessibleWrap::GetColumnHeader(acc, aCol);
+    Accessible* header = AccessibleWrap::GetColumnHeader(acc, aCol);
     if (header) {
-      *aHeader = reinterpret_cast<uint64_t>(header->UniqueID());
+      *aHeader = header->ID();
       *aOk = true;
     }
   }
@@ -1225,9 +1223,9 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvAtkTableRowHeader(
 #ifdef MOZ_ACCESSIBILITY_ATK
   TableAccessible* acc = IdToTableAccessible(aID);
   if (acc) {
-    LocalAccessible* header = AccessibleWrap::GetRowHeader(acc, aRow);
+    Accessible* header = AccessibleWrap::GetRowHeader(acc, aRow);
     if (header) {
-      *aHeader = reinterpret_cast<uint64_t>(header->UniqueID());
+      *aHeader = header->ID();
       *aOk = true;
     }
   }
@@ -1240,12 +1238,12 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectedItems(
     const uint64_t& aID, nsTArray<uint64_t>* aSelectedItemIDs) {
   LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
-    AutoTArray<LocalAccessible*, 10> selectedItems;
+    AutoTArray<Accessible*, 10> selectedItems;
     acc->SelectedItems(&selectedItems);
     aSelectedItemIDs->SetCapacity(selectedItems.Length());
-    for (size_t i = 0; i < selectedItems.Length(); ++i) {
+    for (Accessible* item : selectedItems) {
       aSelectedItemIDs->AppendElement(
-          reinterpret_cast<uint64_t>(selectedItems[i]->UniqueID()));
+          reinterpret_cast<uint64_t>(item->AsLocal()->UniqueID()));
     }
   }
 
@@ -1266,16 +1264,13 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectedItemCount(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvGetSelectedItem(
     const uint64_t& aID, const uint32_t& aIndex, uint64_t* aSelected,
     bool* aOk) {
-  *aSelected = 0;
-  *aOk = false;
   LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
-    LocalAccessible* item = acc->GetSelectedItem(aIndex);
-    if (item) {
-      *aSelected = reinterpret_cast<uint64_t>(item->UniqueID());
-      *aOk = true;
-    }
+    Accessible* selected = acc->GetSelectedItem(aIndex);
+    *aSelected = reinterpret_cast<uint64_t>(selected->AsLocal()->UniqueID());
   }
+
+  *aOk = !!acc;
 
   return IPC_OK();
 }
@@ -1330,26 +1325,6 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvUnselectAll(const uint64_t& aID,
   LocalAccessible* acc = IdToAccessibleSelect(aID);
   if (acc) {
     *aSuccess = acc->UnselectAll();
-  }
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult DocAccessibleChild::RecvTakeSelection(
-    const uint64_t& aID) {
-  LocalAccessible* acc = IdToAccessible(aID);
-  if (acc) {
-    acc->TakeSelection();
-  }
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult DocAccessibleChild::RecvSetSelected(
-    const uint64_t& aID, const bool& aSelect) {
-  LocalAccessible* acc = IdToAccessible(aID);
-  if (acc) {
-    acc->SetSelected(aSelect);
   }
 
   return IPC_OK();

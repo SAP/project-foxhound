@@ -4,11 +4,7 @@
 
 "use strict";
 
-const EXPORTED_SYMBOLS = [
-  "KeywordTree",
-  "ONBOARDING_CHOICE",
-  "UrlbarQuickSuggest",
-];
+const EXPORTED_SYMBOLS = ["ONBOARDING_CHOICE", "UrlbarQuickSuggest"];
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -20,6 +16,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   QUICK_SUGGEST_SOURCE: "resource:///modules/UrlbarProviderQuickSuggest.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   Services: "resource://gre/modules/Services.jsm",
+  TaskQueue: "resource:///modules/UrlbarUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProviderQuickSuggest:
     "resource:///modules/UrlbarProviderQuickSuggest.jsm",
@@ -50,6 +47,7 @@ const ONBOARDING_CHOICE = {
   CLOSE_1: "close_1",
   DISMISS_1: "dismiss_1",
   DISMISS_2: "dismiss_2",
+  LEARN_MORE_1: "learn_more_1",
   LEARN_MORE_2: "learn_more_2",
   NOT_NOW_2: "not_now_2",
   REJECT_2: "reject_2",
@@ -65,7 +63,7 @@ const ONBOARDING_URI =
 const SUGGESTION_SCORE = 0.2;
 
 /**
- * Fetches the suggestions data from RemoteSettings and builds the tree
+ * Fetches the suggestions data from RemoteSettings and builds the structures
  * to provide suggestions for UrlbarProviderQuickSuggest.
  */
 class Suggestions {
@@ -73,7 +71,7 @@ class Suggestions {
     UrlbarPrefs.addObserver(this);
     NimbusFeatures.urlbar.onUpdate(() => this._queueSettingsSetup());
 
-    this._queueSettingsTask(() => {
+    this._settingsTaskQueue.queue(() => {
       return new Promise(resolve => {
         Services.tm.idleDispatchToMainThread(() => {
           this._queueSettingsSetup();
@@ -98,12 +96,21 @@ class Suggestions {
    *   Resolves when any ongoing updates to the suggestions data are done.
    */
   get readyPromise() {
-    if (!this._settingsTaskQueue.length) {
-      return Promise.resolve();
-    }
-    return new Promise(resolve => {
-      this._emptySettingsTaskQueueCallbacks.push(resolve);
-    });
+    return this._settingsTaskQueue.emptyPromise;
+  }
+
+  /**
+   * @returns {object}
+   *   Global quick suggest configuration from remote settings:
+   *   {
+   *     best_match: {
+   *       min_search_string_length,
+   *       blocked_suggestion_ids,
+   *     },
+   *   }
+   */
+  get config() {
+    return this._config;
   }
 
   /**
@@ -111,20 +118,17 @@ class Suggestions {
    *
    * @param {string} phrase
    *   The search string.
+   * @returns {object}
+   *   The matched suggestion object or null if none.
    */
   async query(phrase) {
     log.info("Handling query for", phrase);
     phrase = phrase.toLowerCase();
-    let resultID = this._tree.get(phrase);
-    if (resultID === null) {
-      return null;
-    }
-    let result = this._results.get(resultID);
+    let result = this._resultsByKeyword.get(phrase);
     if (!result) {
       return null;
     }
     return {
-      is_best_match: result._test_is_best_match,
       full_keyword: this.getFullKeyword(phrase, result.keywords),
       title: result.title,
       url: result.url,
@@ -137,7 +141,25 @@ class Suggestions {
       source: QUICK_SUGGEST_SOURCE.REMOTE_SETTINGS,
       icon: await this._fetchIcon(result.icon),
       position: result.position,
+      _test_is_best_match: result._test_is_best_match,
     };
+  }
+
+  /**
+   * Records the Nimbus exposure event if it hasn't already been recorded during
+   * the app session. This method actually queues the recording on idle because
+   * it's potentially an expensive operation.
+   */
+  ensureExposureEventRecorded() {
+    // `recordExposureEvent()` makes sure only one event is recorded per app
+    // session even if it's called many times, but since it may be expensive, we
+    // also keep `_recordedExposureEvent`.
+    if (!this._recordedExposureEvent) {
+      this._recordedExposureEvent = true;
+      Services.tm.idleDispatchToMainThread(() =>
+        NimbusFeatures.urlbar.recordExposureEvent({ once: true })
+      );
+    }
   }
 
   /**
@@ -212,12 +234,10 @@ class Suggestions {
     // to be initialized.
     await UrlbarPrefs.firefoxSuggestScenarioStartupPromise;
 
-    // If quicksuggest is not available, the onboarding dialog is configured to
-    // be skipped, the user has already seen the dialog, or has otherwise opted
-    // in already, then we won't show the quicksuggest onboarding.
+    // If the feature is disabled, the user has already seen the dialog, or the
+    // user has already opted in, don't show the onboarding.
     if (
       !UrlbarPrefs.get(FEATURE_AVAILABLE) ||
-      !UrlbarPrefs.get("quickSuggestShouldShowOnboardingDialog") ||
       UrlbarPrefs.get(SEEN_DIALOG_PREF) ||
       UrlbarPrefs.get("quicksuggest.dataCollection.enabled")
     ) {
@@ -238,6 +258,14 @@ class Suggestions {
 
     // Don't show the dialog on top of about:welcome for new users.
     if (win.gBrowser?.currentURI?.spec == "about:welcome") {
+      return false;
+    }
+
+    if (UrlbarPrefs.get("experimentType") === "modal") {
+      this.ensureExposureEventRecorded();
+    }
+
+    if (!UrlbarPrefs.get("quickSuggestShouldShowOnboardingDialog")) {
       return false;
     }
 
@@ -263,6 +291,7 @@ class Suggestions {
     UrlbarPrefs.set("quicksuggest.dataCollection.enabled", optedIn);
 
     switch (params.choice) {
+      case ONBOARDING_CHOICE.LEARN_MORE_1:
       case ONBOARDING_CHOICE.LEARN_MORE_2:
         win.openTrustedLinkIn(UrlbarProviderQuickSuggest.helpUrl, "tab", {
           fromChrome: true,
@@ -312,25 +341,27 @@ class Suggestions {
   // The RemoteSettings client.
   _rs = null;
 
-  // Queue of callback functions for serializing access to remote settings and
-  // related data. See _queueSettingsTask().
-  _settingsTaskQueue = [];
+  // Task queue for serializing access to remote settings and related data.
+  // Methods in this class should use this when they need to to modify or access
+  // the settings client. It ensures settings accesses are serialized, do not
+  // overlap, and happen only one at a time. It also lets clients, especially
+  // tests, use this class without having to worry about whether a settings sync
+  // or initialization is ongoing; see `readyPromise`.
+  _settingsTaskQueue = new TaskQueue();
 
-  // Functions to call when the settings task queue becomes empty.
-  _emptySettingsTaskQueueCallbacks = [];
+  // Configuration data synced from remote settings.
+  _config = {};
 
-  // Maps from result IDs to the corresponding results.
-  _results = new Map();
-
-  // A tree that maps keywords to a result.
-  _tree = new KeywordTree();
+  // Maps from keywords to their corresponding results. Keywords are unique in
+  // the underlying data, so a keyword will only ever map to one result.
+  _resultsByKeyword = new Map();
 
   /**
    * Queues a task to ensure our remote settings client is initialized or torn
    * down as appropriate.
    */
   _queueSettingsSetup() {
-    this._queueSettingsTask(() => {
+    this._settingsTaskQueue.queue(() => {
       let enabled =
         UrlbarPrefs.get(FEATURE_AVAILABLE) &&
         (UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") ||
@@ -349,15 +380,15 @@ class Suggestions {
   }
 
   /**
-   * Queues a task to (re)create the results map and keyword tree from the
-   * remote settings data plus any other work that needs to be done on sync.
+   * Queues a task to populate the results map from the remote settings data
+   * plus any other work that needs to be done on sync.
    *
    * @param {object} [event]
    *   The event object passed to the "sync" event listener if you're calling
    *   this from the listener.
    */
   _queueSettingsSync(event = null) {
-    this._queueSettingsTask(async () => {
+    this._settingsTaskQueue.queue(async () => {
       // Remove local files of deleted records
       if (event?.data?.deleted) {
         await Promise.all(
@@ -367,12 +398,20 @@ class Suggestions {
         );
       }
 
-      let data = await this._rs.get({ filters: { type: "data" } });
-      let icons = await this._rs.get({ filters: { type: "icon" } });
-      await Promise.all(icons.map(r => this._rs.attachments.download(r)));
+      let [configArray, data] = await Promise.all([
+        this._rs.get({ filters: { type: "configuration" } }),
+        this._rs.get({ filters: { type: "data" } }),
+        this._rs
+          .get({ filters: { type: "icon" } })
+          .then(icons =>
+            Promise.all(icons.map(i => this._rs.attachments.download(i)))
+          ),
+      ]);
 
-      this._results = new Map();
-      this._tree = new KeywordTree();
+      log.debug("Got configuration:", configArray);
+      this._config = configArray?.[0]?.configuration || {};
+
+      this._resultsByKeyword.clear();
 
       for (let record of data) {
         let { buffer } = await this._rs.attachments.download(record, {
@@ -385,60 +424,18 @@ class Suggestions {
   }
 
   /**
-   * Adds a list of result objects to the results map and keyword tree. This
-   * method is also used by tests to set up mock suggestions.
+   * Adds a list of result objects to the results map. This method is also used
+   * by tests to set up mock suggestions.
    *
    * @param {array} results
    *   Array of result objects.
    */
   _addResults(results) {
     for (let result of results) {
-      this._results.set(result.id, result);
       for (let keyword of result.keywords) {
-        this._tree.set(keyword, result.id);
+        this._resultsByKeyword.set(keyword, result);
       }
     }
-  }
-
-  /**
-   * Adds a function to the remote settings task queue. Methods in this class
-   * should call this when they need to to modify or access the settings client.
-   * It ensures settings accesses are serialized, do not overlap, and happen
-   * only one at a time. It also lets clients, especially tests, use this class
-   * without having to worry about whether a settings sync or initialization is
-   * ongoing; see `readyPromise`.
-   *
-   * @param {function} callback
-   *   The function to queue.
-   */
-  _queueSettingsTask(callback) {
-    this._settingsTaskQueue.push(callback);
-    if (this._settingsTaskQueue.length == 1) {
-      this._doNextSettingsTask();
-    }
-  }
-
-  /**
-   * Calls the next function in the settings task queue and recurses until the
-   * queue is empty. Once empty, all empty-queue callback functions are called.
-   */
-  async _doNextSettingsTask() {
-    if (!this._settingsTaskQueue.length) {
-      while (this._emptySettingsTaskQueueCallbacks.length) {
-        let callback = this._emptySettingsTaskQueueCallbacks.shift();
-        callback();
-      }
-      return;
-    }
-
-    let task = this._settingsTaskQueue[0];
-    try {
-      await task();
-    } catch (error) {
-      log.error(error);
-    }
-    this._settingsTaskQueue.shift();
-    this._doNextSettingsTask();
   }
 
   /**
@@ -460,168 +457,6 @@ class Suggestions {
       return null;
     }
     return this._rs.attachments.download(record);
-  }
-}
-
-// Token used as a key to store results within the Map, cannot be used
-// within a keyword.
-const RESULT_KEY = "^";
-
-/**
- * This is an implementation of a Map based Tree. We can store
- * multiple keywords that point to a single term, for example:
- *
- *   tree.add("headphones", "headphones");
- *   tree.add("headph", "headphones");
- *   tree.add("earphones", "headphones");
- *
- *   tree.get("headph") == "headphones"
- *
- * The tree can store multiple prefixes to a term efficiently
- * so ["hea", "head", "headp", "headph", "headpho", ...] wont lead
- * to duplication in memory. The tree will only return a result
- * for keywords that have been explcitly defined and not attempt
- * to guess based on prefix.
- *
- * Once a tree have been build, it can be flattened with `.flatten`
- * the tree can then be serialised and deserialised with `.toJSON`
- * and `.fromJSON`.
- */
-class KeywordTree {
-  constructor() {
-    this.tree = new Map();
-  }
-
-  /*
-   * Set a keyword for a result.
-   */
-  set(keyword, id) {
-    if (keyword.includes(RESULT_KEY)) {
-      throw new Error(`"${RESULT_KEY}" is reserved`);
-    }
-    let tree = this.tree;
-    for (let x = 0, c = ""; (c = keyword.charAt(x)); x++) {
-      let child = tree.get(c) || new Map();
-      tree.set(c, child);
-      tree = child;
-    }
-    tree.set(RESULT_KEY, id);
-  }
-
-  /**
-   * Get the result for a given phrase.
-   *
-   * @param {string} query
-   *   The query string.
-   * @returns {*}
-   *   The matching result in the tree or null if there isn't a match.
-   */
-  get(query) {
-    query = query.trimStart() + RESULT_KEY;
-    let node = this.tree;
-    let phrase = "";
-    while (phrase.length < query.length) {
-      // First, assume the tree isn't flattened and try to look up the next char
-      // in the query.
-      let key = query[phrase.length];
-      let child = node.get(key);
-      if (!child) {
-        // Not found, so fall back to looking through all of the node's keys.
-        key = null;
-        for (let childKey of node.keys()) {
-          let childPhrase = phrase + childKey;
-          if (childPhrase == query.substring(0, childPhrase.length)) {
-            key = childKey;
-            break;
-          }
-        }
-        if (!key) {
-          return null;
-        }
-        child = node.get(key);
-      }
-      node = child;
-      phrase += key;
-    }
-    if (phrase.length != query.length) {
-      return null;
-    }
-    // At this point, `node` is the found result.
-    return node;
-  }
-
-  /*
-   * We flatten the tree by combining consecutive single branch keywords
-   * with the same results into a longer keyword. so ["a", ["b", ["c"]]]
-   * becomes ["abc"], we need to be careful that the result matches so
-   * if a prefix search for "hello" only starts after 2 characters it will
-   * be flattened to ["he", ["llo"]].
-   */
-  flatten() {
-    this._flatten("", this.tree, null);
-  }
-
-  /**
-   * Recursive flatten() helper.
-   *
-   * @param {string} key
-   *   The key for `node` in `parent`.
-   * @param {Map} node
-   *   The currently visited node.
-   * @param {Map} parent
-   *   The parent of `node`, or null if `node` is the root.
-   */
-  _flatten(key, node, parent) {
-    // Flatten the node's children.  We need to store node.entries() in an array
-    // rather than iterating over them directly because _flatten() can modify
-    // them during iteration.
-    for (let [childKey, child] of [...node.entries()]) {
-      if (childKey != RESULT_KEY) {
-        this._flatten(childKey, child, node);
-      }
-    }
-    // If the node has a single child, then replace the node in `parent` with
-    // the child.
-    if (node.size == 1 && parent) {
-      parent.delete(key);
-      let childKey = [...node.keys()][0];
-      parent.set(key + childKey, node.get(childKey));
-    }
-  }
-
-  /*
-   * Turn a tree into a serialisable JSON object.
-   */
-  toJSONObject(map = this.tree) {
-    let tmp = {};
-    for (let [key, val] of map) {
-      if (val instanceof Map) {
-        tmp[key] = this.toJSONObject(val);
-      } else {
-        tmp[key] = val;
-      }
-    }
-    return tmp;
-  }
-
-  /*
-   * Build a tree from a serialisable JSON object that was built
-   * with `toJSON`.
-   */
-  fromJSON(json) {
-    this.tree = this.JSONObjectToMap(json);
-  }
-
-  JSONObjectToMap(obj) {
-    let map = new Map();
-    for (let key of Object.keys(obj)) {
-      if (typeof obj[key] == "object") {
-        map.set(key, this.JSONObjectToMap(obj[key]));
-      } else {
-        map.set(key, obj[key]);
-      }
-    }
-    return map;
   }
 }
 

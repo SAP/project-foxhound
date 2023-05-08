@@ -38,11 +38,6 @@ add_task(function test_setup() {
     true
   );
 
-  Services.prefs.setBoolPref(
-    "toolkit.telemetry.testing.overrideProductsCheck",
-    true
-  );
-
   // We need to initialize it once, otherwise operations will be stuck in the pre-init queue.
   // On Android FOG is set up through head.js.
   if (AppConstants.platform != "android") {
@@ -53,7 +48,7 @@ add_task(function test_setup() {
 add_task(function test_gifft_counter() {
   Glean.testOnlyIpc.aCounter.add(20);
   Assert.equal(20, Glean.testOnlyIpc.aCounter.testGetValue());
-  Assert.equal(20, scalarValue("telemetry.test.unsigned_int_kind"));
+  Assert.equal(20, scalarValue("telemetry.test.mirror_for_counter"));
 });
 
 add_task(function test_gifft_boolean() {
@@ -253,7 +248,9 @@ add_task(function test_gifft_labeled_counter() {
     "Can't get the value when you're error'd"
   );
 
-  let value = keyedScalarValue("telemetry.test.keyed_unsigned_int");
+  let value = keyedScalarValue(
+    "telemetry.test.another_mirror_for_labeled_counter"
+  );
   Assert.deepEqual(
     {
       a_label: 4,
@@ -376,7 +373,7 @@ add_task(
       /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
       "Can't get the value when you're error'd"
     );
-    Assert.equal(undefined, scalarValue("telemetry.test.unsigned_int_kind"));
+    Assert.equal(undefined, scalarValue("telemetry.test.mirror_for_counter"));
     // Clear the error state
     Services.fog.testResetFOG();
 
@@ -393,7 +390,7 @@ add_task(
       Glean.testOnlyIpc.aCounter.testGetValue()
     );
     // Telemetry will have wrapped around to 1
-    Assert.equal(1, scalarValue("telemetry.test.unsigned_int_kind"));
+    Assert.equal(1, scalarValue("telemetry.test.mirror_for_counter"));
 
     // 2) Quantity: i64 (saturates), mirrored to uint Scalar: u32 (overflows)
     // 2.1) Negative parameters refused.
@@ -455,5 +452,31 @@ add_task(
     // 4) Timespan
     // ( Can't overflow time without finding a way to get TimeStamp to think
     // we're 2^32 milliseconds later without waiting a month )
+
+    // 5) TimingDistribution
+    // ( Can't overflow time with start() and stopAndAccumulate() without
+    // waiting for ages. But we _do_ have a test-only raw API...)
+    // The max sample for timing_distribution is 600000000000.
+    // The type for timing_distribution samples is i64.
+    // This means when we explore the edges of GIFFT's limits, we're well past
+    // Glean's limits. All we can get out of Glean is errors.
+    // (Which is good for data, difficult for tests.)
+    // But GIFFT should properly saturate in Telemetry at i32::max,
+    // so we shall test that.
+    Glean.testOnlyIpc.aTimingDist.testAccumulateRawMillis(Math.pow(2, 31) + 1);
+    Glean.testOnlyIpc.aTimingDist.testAccumulateRawMillis(Math.pow(2, 32) + 1);
+    Assert.throws(
+      () => Glean.testOnlyIpc.aTimingDist.testGetValue(),
+      /NS_ERROR_LOSS_OF_SIGNIFICANT_DATA/,
+      "Can't get the value when you're error'd"
+    );
+    let snapshot = Telemetry.getHistogramById(
+      "TELEMETRY_TEST_EXPONENTIAL"
+    ).snapshot();
+    Assert.equal(
+      snapshot.values["2147483646"],
+      2,
+      "samples > i32::max should end up in the top bucket"
+    );
   }
 );

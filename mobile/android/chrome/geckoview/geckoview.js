@@ -493,7 +493,10 @@ class ModuleInfo {
 function createBrowser() {
   const browser = (window.browser = document.createXULElement("browser"));
   // Identify this `<browser>` element uniquely to Marionette, devtools, etc.
-  browser.permanentKey = {};
+  // Use the JSM global to create the permanentKey, so that if the
+  // permanentKey is held by something after this window closes, it
+  // doesn't keep the window alive. See also Bug 1501789.
+  browser.permanentKey = new (Cu.getGlobalForObject(Services).Object)();
 
   browser.setAttribute("nodefaultsrc", "true");
   browser.setAttribute("type", "content");
@@ -533,6 +536,7 @@ function startup() {
               },
             },
             allFrames: true,
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -557,6 +561,7 @@ function startup() {
               },
             },
             allFrames: true,
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -590,6 +595,7 @@ function startup() {
                 pageshow: { capture: false, mozSystemGroup: true },
               },
             },
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -605,6 +611,7 @@ function startup() {
                 mozvisualscroll: { mozSystemGroup: true },
               },
             },
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -623,6 +630,7 @@ function startup() {
               },
             },
             allFrames: true,
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -694,6 +702,7 @@ function startup() {
               },
             },
             allFrames: true,
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -712,6 +721,7 @@ function startup() {
               },
             },
             allFrames: true,
+            messageManagerGroups: ["browsers"],
           },
         },
       },
@@ -732,6 +742,24 @@ function startup() {
               },
             },
             allFrames: true,
+            messageManagerGroups: ["browsers"],
+          },
+        },
+      },
+    },
+    {
+      name: "GeckoViewPrompter",
+      onInit: {
+        actors: {
+          GeckoViewPrompter: {
+            parent: {
+              moduleURI: "resource:///actors/GeckoViewPrompterParent.jsm",
+            },
+            child: {
+              moduleURI: "resource:///actors/GeckoViewPrompterChild.jsm",
+            },
+            allFrames: true,
+            includeChrome: true,
           },
         },
       },
@@ -755,6 +783,10 @@ function startup() {
 
   // Allows actors to access ModuleManager.
   window.moduleManager = ModuleManager;
+
+  window.prompts = () => {
+    return window.ModuleManager.getActor("GeckoViewPrompter").getPrompts();
+  };
 
   Services.tm.dispatchToMainThread(() => {
     // This should always be the first thing we do here - any additional delayed

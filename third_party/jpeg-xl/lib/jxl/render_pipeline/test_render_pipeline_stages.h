@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "lib/jxl/render_pipeline/render_pipeline_stage.h"
 
 namespace jxl {
@@ -38,6 +37,8 @@ class UpsampleXSlowStage : public RenderPipelineStage {
       }
     }
   }
+
+  const char* GetName() const override { return "TEST::UpsampleXSlowStage"; }
 
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
     return RenderPipelineChannelMode::kInOut;
@@ -73,6 +74,8 @@ class UpsampleYSlowStage : public RenderPipelineStage {
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
     return RenderPipelineChannelMode::kInOut;
   }
+
+  const char* GetName() const override { return "TEST::UpsampleYSlowStage"; }
 };
 
 class Check0FinalStage : public RenderPipelineStage {
@@ -92,6 +95,7 @@ class Check0FinalStage : public RenderPipelineStage {
   RenderPipelineChannelMode GetChannelMode(size_t c) const final {
     return RenderPipelineChannelMode::kInput;
   }
+  const char* GetName() const override { return "TEST::Check0FinalStage"; }
 };
 
 }  // namespace jxl

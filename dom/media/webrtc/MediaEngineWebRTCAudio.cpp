@@ -9,7 +9,6 @@
 #include <algorithm>
 
 #include "AudioConverter.h"
-#include "DeviceInputTrack.h"
 #include "MediaManager.h"
 #include "MediaTrackGraphImpl.h"
 #include "MediaTrackConstraints.h"
@@ -244,14 +243,14 @@ void MediaEngineWebRTCMicrophoneSource::ApplySettings(
             mInputProcessing->ApplyConfig(mTrack->GraphImpl(),
                                           mAudioProcessingConfig);
             {
-              TRACE("SetPassThrough")
-              mInputProcessing->SetPassThrough(mTrack->GraphImpl(),
-                                               mPassThrough);
-            }
-            {
               TRACE("SetRequestedInputChannelCount");
               mInputProcessing->SetRequestedInputChannelCount(
                   mTrack->GraphImpl(), mRequestedInputChannelCount);
+            }
+            {
+              TRACE("SetPassThrough")
+              mInputProcessing->SetPassThrough(mTrack->GraphImpl(),
+                                               mPassThrough);
             }
           }
         };
@@ -418,6 +417,8 @@ nsresult MediaEngineWebRTCMicrophoneSource::Start() {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
+  ApplySettings(mCurrentPrefs);
+
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       __func__, [inputProcessing = mInputProcessing, deviceID, track = mTrack,
                  principal = mPrincipal] {
@@ -429,8 +430,6 @@ nsresult MediaEngineWebRTCMicrophoneSource::Start() {
             track, inputProcessing, StartStopMessage::Start));
         track->ConnectDeviceInput(deviceID, inputProcessing, principal);
       }));
-
-  ApplySettings(mCurrentPrefs);
 
   MOZ_ASSERT(mState != kReleased);
   mState = kStarted;
@@ -456,10 +455,10 @@ nsresult MediaEngineWebRTCMicrophoneSource::Stop() {
           return;
         }
 
-        track->GraphImpl()->AppendMessage(MakeUnique<StartStopMessage>(
-            track, inputProcessing, StartStopMessage::Stop));
         MOZ_ASSERT(track->DeviceId().value() == deviceInfo->DeviceID());
         track->DisconnectDeviceInput();
+        track->GraphImpl()->AppendMessage(MakeUnique<StartStopMessage>(
+            track, inputProcessing, StartStopMessage::Stop));
       }));
 
   MOZ_ASSERT(mState == kStarted, "Should be started when stopping");
@@ -751,9 +750,8 @@ void AudioInputProcessing::ProcessOutputData(MediaTrackGraphImpl* aGraph,
                                              size_t aFrames, TrackRate aRate,
                                              uint32_t aChannels) {
   MOZ_ASSERT(aGraph->OnGraphThread());
-  MOZ_ASSERT(mEnabled);
 
-  if (PassThrough(aGraph)) {
+  if (!mEnabled || PassThrough(aGraph)) {
     return;
   }
 
@@ -1340,11 +1338,11 @@ nsresult AudioProcessingTrack::ConnectDeviceInput(
     NS_WARNING("Failed to open audio device.");
     return r.unwrapErr();
   }
-  RefPtr<NativeInputTrack> input = r.unwrap();
-  MOZ_ASSERT(input);
-  LOG("Open device %p (InputTrack=%p) for Mic source %p", aId, input.get(),
-      this);
-  mPort = AllocateInputPort(input.get());
+  mDeviceInputTrack = r.unwrap();
+  MOZ_ASSERT(mDeviceInputTrack);
+  LOG("Open device %p (InputTrack=%p) for Mic source %p", aId,
+      mDeviceInputTrack.get(), this);
+  mPort = AllocateInputPort(mDeviceInputTrack.get());
   return NS_OK;
 }
 
@@ -1356,11 +1354,11 @@ void AudioProcessingTrack::DisconnectDeviceInput() {
   }
   MOZ_ASSERT(mPort);
   MOZ_ASSERT(mDeviceId.isSome());
-  RefPtr<NativeInputTrack> input(mPort->GetSource()->AsNativeInputTrack());
   LOG("Close device %p (InputTrack=%p) for Mic source %p ", *mDeviceId,
-      input.get(), this);
+      mDeviceInputTrack.get(), this);
   mPort->Destroy();
-  NativeInputTrack::CloseAudio(std::move(input), mInputListener.get());
+  NativeInputTrack::CloseAudio(std::move(mDeviceInputTrack),
+                               mInputListener.get());
   mInputListener = nullptr;
   mDeviceId = Nothing();
 }
@@ -1430,3 +1428,8 @@ void MediaEngineWebRTCAudioCaptureSource::GetSettings(
 }
 
 }  // namespace mozilla
+
+// Don't allow our macros to leak into other cpps in our unified build unit.
+#undef MAX_CHANNELS
+#undef MONO
+#undef MAX_SAMPLING_FREQ

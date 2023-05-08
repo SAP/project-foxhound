@@ -18,6 +18,7 @@
 namespace mozilla {
 namespace a11y {
 
+class TextRange;
 class xpcAccessibleGeneric;
 
 #if !defined(XP_WIN)
@@ -107,7 +108,7 @@ class DocAccessibleParent : public RemoteAccessible,
       const LayoutDeviceIntRect& aCaretRect,
 #endif
       const int32_t& aOffset, const bool& aIsSelectionCollapsed,
-      const bool& aIsAtEndOfLine) final;
+      const bool& aIsAtEndOfLine, const int32_t& aGranularity) final;
 
   virtual mozilla::ipc::IPCResult RecvTextChangeEvent(
       const uint64_t& aID, const nsString& aStr, const int32_t& aStart,
@@ -152,10 +153,10 @@ class DocAccessibleParent : public RemoteAccessible,
   virtual mozilla::ipc::IPCResult RecvAnnouncementEvent(
       const uint64_t& aID, const nsString& aAnnouncement,
       const uint16_t& aPriority) override;
+#endif
 
   virtual mozilla::ipc::IPCResult RecvTextSelectionChangeEvent(
       const uint64_t& aID, nsTArray<TextRangeData>&& aSelection) override;
-#endif
 
   mozilla::ipc::IPCResult RecvRoleChangedEvent(const a11y::role& aRole) final;
 
@@ -280,6 +281,13 @@ class DocAccessibleParent : public RemoteAccessible,
 #endif
 
   // Accessible
+  virtual Accessible* Parent() const override {
+    if (IsTopLevel()) {
+      return OuterDocOfRemoteBrowser();
+    }
+    return RemoteParent();
+  }
+
   virtual int32_t IndexInParent() const override {
     if (IsTopLevel() && OuterDocOfRemoteBrowser()) {
       // An OuterDoc can only have 1 child.
@@ -313,6 +321,8 @@ class DocAccessibleParent : public RemoteAccessible,
   }
 
   bool IsCaretAtEndOfLine() const { return mIsCaretAtEndOfLine; }
+
+  virtual void SelectionRanges(nsTArray<TextRange>* aRanges) const override;
 
  private:
   ~DocAccessibleParent() {
@@ -388,6 +398,7 @@ class DocAccessibleParent : public RemoteAccessible,
   uint64_t mCaretId;
   int32_t mCaretOffset;
   bool mIsCaretAtEndOfLine;
+  nsTArray<TextRangeData> mTextSelections;
 
   static uint64_t sMaxDocID;
   static nsTHashMap<nsUint64HashKey, DocAccessibleParent*>& LiveDocs() {

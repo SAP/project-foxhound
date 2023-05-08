@@ -22,14 +22,6 @@ const gActionDescrMap = {
   cycle: "Cycle",
 };
 
-const isCacheEnabled = Services.prefs.getBoolPref(
-  "accessibility.cache.enabled",
-  false
-);
-// Some RemoteAccessible methods aren't supported on Windows when the cache is
-// disabled.
-const isWinNoCache = !isCacheEnabled && AppConstants.platform == "win";
-
 async function testActions(browser, docAcc, id, expectedActions, domEvents) {
   const acc = findAccessibleChildByID(docAcc, id);
   is(acc.actionCount, expectedActions.length, "Correct action count");
@@ -163,6 +155,20 @@ addAccessibleTask(
     acc = findAccessibleChildByID(docAcc, "onclick_img");
     await untilCacheIs(() => acc.actionCount, 1, "img has 1 actions");
     await _testActions("onclick_img", ["showlongdesc"]);
+
+    // Remove 'href' from link and test linkable child
+    acc = findAccessibleChildByID(docAcc, "link1");
+    is(
+      acc.firstChild.getActionName(0),
+      "jump",
+      "linkable child has jump action"
+    );
+    await invokeContentTask(browser, [], () => {
+      let link1 = content.document.getElementById("link1");
+      link1.removeAttribute("href");
+    });
+    await untilCacheIs(() => acc.actionCount, 0, "link has no actions");
+    is(acc.firstChild.actionCount, 0, "linkable child's actions removed");
   },
   {
     chrome: true,

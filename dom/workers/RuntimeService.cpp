@@ -47,7 +47,6 @@
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
-#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
@@ -142,7 +141,7 @@ const uint32_t kNoIndex = uint32_t(-1);
 uint32_t gMaxWorkersPerDomain = MAX_WORKERS_PER_DOMAIN;
 
 // Does not hold an owning reference.
-RuntimeService* gRuntimeService = nullptr;
+Atomic<RuntimeService*> gRuntimeService(nullptr);
 
 // Only true during the call to Init.
 bool gRuntimeServiceDuringInit = false;
@@ -834,14 +833,11 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
       return;  // Initialize() must have failed
     }
 
-    // The worker global should be unrooted and the shutdown cycle collection
-    // should break all remaining cycles. The superclass destructor will run
-    // the GC one final time and finalize any JSObjects that were participating
-    // in cycles that were broken during CC shutdown.
-    nsCycleCollector_shutdown();
-
-    // The CC is shut down, and the superclass destructor will GC, so make sure
-    // we don't try to CC again.
+    // We expect to come here with the cycle collector already shut down.
+    // The superclass destructor will run the GC one final time and finalize any
+    // JSObjects that were participating in cycles that were broken during CC
+    // shutdown.
+    // Make sure we don't try to CC again.
     mWorkerPrivate = nullptr;
   }
 
@@ -1025,15 +1021,14 @@ RuntimeService::RuntimeService()
       mShuttingDown(false),
       mNavigatorPropertiesLoaded(false) {
   AssertIsOnMainThread();
-  NS_ASSERTION(!gRuntimeService, "More than one service!");
+  MOZ_ASSERT(!GetService(), "More than one service!");
 }
 
 RuntimeService::~RuntimeService() {
   AssertIsOnMainThread();
 
   // gRuntimeService can be null if Init() fails.
-  NS_ASSERTION(!gRuntimeService || gRuntimeService == this,
-               "More than one service!");
+  MOZ_ASSERT(!GetService() || GetService() == this, "More than one service!");
 
   gRuntimeService = nullptr;
 }
@@ -1045,9 +1040,9 @@ RuntimeService* RuntimeService::GetOrCreateService() {
   if (!gRuntimeService) {
     // The observer service now owns us until shutdown.
     gRuntimeService = new RuntimeService();
-    if (NS_FAILED(gRuntimeService->Init())) {
+    if (NS_FAILED((*gRuntimeService).Init())) {
       NS_WARNING("Failed to initialize!");
-      gRuntimeService->Cleanup();
+      (*gRuntimeService).Cleanup();
       gRuntimeService = nullptr;
       return nullptr;
     }
@@ -1588,7 +1583,7 @@ class CrashIfHangingRunnable : public WorkerControlRunnable {
   void PostDispatch(WorkerPrivate* aWorkerPrivate,
                     bool aDispatchResult) override {}
 
-  Monitor mMonitor;
+  Monitor mMonitor MOZ_UNANNOTATED;
   nsCString mMsg;
   FlippedOnce<false> mHasMsg;
 };
@@ -2180,20 +2175,61 @@ WorkerThreadPrimaryRunnable::Run() {
       // visible to the cycle collector, so we need to make sure to clear the
       // debugger event queue before we try to destroy the context. If we don't,
       // the garbage collector will crash.
+      // Note that this just releases the runnables and does not execute them.
       mWorkerPrivate->ClearDebuggerEventQueue();
-
-      // Perform a full GC. This will collect the main worker global and CC,
-      // which should break all cycles that touch JS.
-      JS_GC(cx, JS::GCReason::WORKER_SHUTDOWN);
 
       // Before shutting down the cycle collector we need to do one more pass
       // through the event loop to clean up any C++ objects that need deferred
       // cleanup.
-      mWorkerPrivate->ClearMainEventQueue(WorkerPrivate::WorkerRan);
+      NS_ProcessPendingEvents(nullptr);
 
-      // Now WorkerJSContext goes out of scope and its destructor will shut
-      // down the cycle collector. This breaks any remaining cycles and collects
-      // any remaining C++ objects.
+      // At this point we expect the scopes to be alive if they were ever
+      // created successfully, keep weak references.
+      nsWeakPtr globalScopeSentinel =
+          do_GetWeakReference(mWorkerPrivate->GlobalScope());
+      nsWeakPtr debuggerScopeSentinel =
+          do_GetWeakReference(mWorkerPrivate->DebuggerGlobalScope());
+      MOZ_ASSERT(!mWorkerPrivate->GlobalScope() || globalScopeSentinel);
+      MOZ_ASSERT(!mWorkerPrivate->DebuggerGlobalScope() ||
+                 debuggerScopeSentinel);
+
+      // To our best knowledge nobody should need a reference to our globals
+      // now (NS_ProcessPendingEvents is the last expected potential usage)
+      // and we can unroot them.
+      mWorkerPrivate->UnrootGlobalScopes();
+
+      // Perform a full GC. This will collect the main worker global and CC,
+      // which should break all cycles that touch JS.
+      JS::PrepareForFullGC(cx);
+      JS::NonIncrementalGC(cx, JS::GCOptions::Shutdown,
+                           JS::GCReason::WORKER_SHUTDOWN);
+
+      // The worker global should be unrooted and the shutdown of cycle
+      // collection should break all the remaining cycles.
+      nsCycleCollector_shutdown();
+
+      // Check sentinels if we actually removed all global scope references.
+      nsCOMPtr<DOMEventTargetHelper> globalScopeAlive =
+          do_QueryReferent(globalScopeSentinel);
+      MOZ_ASSERT(!globalScopeAlive);
+      nsCOMPtr<DOMEventTargetHelper> debuggerScopeAlive =
+          do_QueryReferent(debuggerScopeSentinel);
+      MOZ_ASSERT(!debuggerScopeAlive);
+
+      // Guard us against further usage of scopes' mWorkerPrivate in non-debug.
+      if (globalScopeAlive) {
+        static_cast<WorkerGlobalScopeBase*>(globalScopeAlive.get())
+            ->NoteWorkerTerminated();
+        globalScopeAlive = nullptr;
+      }
+      if (debuggerScopeAlive) {
+        static_cast<WorkerGlobalScopeBase*>(debuggerScopeAlive.get())
+            ->NoteWorkerTerminated();
+        debuggerScopeAlive = nullptr;
+      }
+
+      // Now WorkerJSContext goes out of scope. Do not use any cycle
+      // collectable objects nor JS after this point!
     }
   }
 

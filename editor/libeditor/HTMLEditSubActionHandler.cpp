@@ -233,11 +233,13 @@ void HTMLEditor::OnStartToHandleTopLevelEditSubAction(
       "EditorBase::OnStartToHandleTopLevelEditSubAction() failed");
 
   // Remember where our selection was before edit action took place:
-  if (GetCompositionStartPoint().IsSet()) {
+  const auto atCompositionStart =
+      GetFirstIMESelectionStartPoint<EditorRawDOMPoint>();
+  if (atCompositionStart.IsSet()) {
     // If there is composition string, let's remember current composition
     // range.
     TopLevelEditSubActionDataRef().mSelectedRange->StoreRange(
-        GetCompositionStartPoint(), GetCompositionEndPoint());
+        atCompositionStart, GetLastIMESelectionEndPoint<EditorRawDOMPoint>());
   } else {
     // Get the selection location
     // XXX This may occur so that I think that we shouldn't throw exception
@@ -522,7 +524,7 @@ nsresult HTMLEditor::OnEndHandlingTopLevelEditSubActionInternal() {
         //       causes running mutation event listeners which are really
         //       expensive.
         // Adjust end of composition string if there is composition string.
-        EditorDOMPoint pointToAdjust(GetCompositionEndPoint());
+        auto pointToAdjust = GetLastIMESelectionEndPoint<EditorDOMPoint>();
         if (!pointToAdjust.IsInContentNode()) {
           // Otherwise, adjust current selection start point.
           pointToAdjust = EditorBase::GetStartPoint(SelectionRef());
@@ -1127,7 +1129,8 @@ EditActionResult HTMLEditor::HandleInsertText(
   }
 
   if (aEditSubAction == EditSubAction::eInsertTextComingFromIME) {
-    EditorRawDOMPoint compositionStartPoint = GetCompositionStartPoint();
+    auto compositionStartPoint =
+        GetFirstIMESelectionStartPoint<EditorRawDOMPoint>();
     if (!compositionStartPoint.IsSet()) {
       compositionStartPoint = pointToInsert;
     }
@@ -1146,7 +1149,7 @@ EditActionResult HTMLEditor::HandleInsertText(
       return EditActionHandled(rv);
     }
 
-    EditorRawDOMPoint compositionEndPoint = GetCompositionEndPoint();
+    auto compositionEndPoint = GetLastIMESelectionEndPoint<EditorRawDOMPoint>();
     if (!compositionEndPoint.IsSet()) {
       compositionEndPoint = compositionStartPoint;
     }
@@ -1158,8 +1161,8 @@ EditActionResult HTMLEditor::HandleInsertText(
       return EditActionHandled(rv);
     }
 
-    compositionStartPoint = GetCompositionStartPoint();
-    compositionEndPoint = GetCompositionEndPoint();
+    compositionStartPoint = GetFirstIMESelectionStartPoint<EditorRawDOMPoint>();
+    compositionEndPoint = GetLastIMESelectionEndPoint<EditorRawDOMPoint>();
     if (NS_WARN_IF(!compositionStartPoint.IsSet()) ||
         NS_WARN_IF(!compositionEndPoint.IsSet())) {
       // Mutation event listener has changed the DOM tree...
@@ -1224,10 +1227,12 @@ EditActionResult HTMLEditor::HandleInsertText(
         // is it a return?
         if (subStr.Equals(newlineStr)) {
           Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-              InsertBRElementWithTransaction(currentPoint, nsIEditor::eNone);
+              InsertBRElement(WithTransaction::Yes, currentPoint,
+                              nsIEditor::eNone);
           if (resultOfInsertingBRElement.isErr()) {
             NS_WARNING(
-                "HTMLEditor::InsertBRElementWithTransaction(eNone) failed");
+                "HTMLEditor::InsertBRElement(WithTransaction::Yes, eNone) "
+                "failed");
             return EditActionHandled(resultOfInsertingBRElement.unwrapErr());
           }
           pos++;
@@ -1392,7 +1397,8 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
   // XXX This may be called by execCommand() with "insertLineBreak".
   //     In such case, naming the transaction "TypingTxnName" is odd.
   AutoPlaceholderBatch treatAsOneTransaction(*this, *nsGkAtoms::TypingTxnName,
-                                             ScrollSelectionIntoView::Yes);
+                                             ScrollSelectionIntoView::Yes,
+                                             __FUNCTION__);
 
   // calling it text insertion to trigger moz br treatment by rules
   // XXX Why do we use EditSubAction::eInsertText here?  Looks like
@@ -1442,12 +1448,12 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
   if (GetDefaultParagraphSeparator() == ParagraphSeparator::br ||
       !HTMLEditUtils::ShouldInsertLinefeedCharacter(atStartOfSelection,
                                                     *editingHost)) {
-    // InsertBRElementWithTransaction() will set selection after the new <br>
-    // element.
+    // InsertBRElement() will set selection after the new <br> element.
     Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-        InsertBRElementWithTransaction(atStartOfSelection, nsIEditor::eNext);
+        InsertBRElement(WithTransaction::Yes, atStartOfSelection,
+                        nsIEditor::eNext);
     if (resultOfInsertingBRElement.isErr()) {
-      NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+      NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
       return resultOfInsertingBRElement.unwrapErr();
     }
     MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -1519,7 +1525,8 @@ EditActionResult HTMLEditor::InsertParagraphSeparatorAsSubAction() {
   // XXX This may be called by execCommand() with "insertParagraph".
   //     In such case, naming the transaction "TypingTxnName" is odd.
   AutoPlaceholderBatch treatAsOneTransaction(*this, *nsGkAtoms::TypingTxnName,
-                                             ScrollSelectionIntoView::Yes);
+                                             ScrollSelectionIntoView::Yes,
+                                             __FUNCTION__);
 
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
@@ -1768,9 +1775,9 @@ EditActionResult HTMLEditor::InsertParagraphSeparatorAsSubAction() {
     EditorDOMPoint endOfBlockParent;
     endOfBlockParent.SetToEndOf(editableBlockElement);
     Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-        InsertBRElementWithTransaction(endOfBlockParent);
+        InsertBRElement(WithTransaction::Yes, endOfBlockParent);
     if (resultOfInsertingBRElement.isErr()) {
-      NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+      NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
       return EditActionIgnored(resultOfInsertingBRElement.unwrapErr());
     }
     MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -1862,9 +1869,9 @@ nsresult HTMLEditor::HandleInsertBRElement(const EditorDOMPoint& aPointToBreak,
   RefPtr<Element> brElement;
   if (IsInPlaintextMode()) {
     Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-        InsertBRElementWithTransaction(aPointToBreak);
+        InsertBRElement(WithTransaction::Yes, aPointToBreak);
     if (resultOfInsertingBRElement.isErr()) {
-      NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+      NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
       return resultOfInsertingBRElement.unwrapErr();
     }
     MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -2081,10 +2088,11 @@ nsresult HTMLEditor::HandleInsertLinefeed(const EditorDOMPoint& aPointToBreak,
         AutoTrackDOMPoint trackingNewCaretPosition(RangeUpdaterRef(),
                                                    &newCaretPosition);
         Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-            InsertBRElementWithTransaction(newCaretPosition,
-                                           nsIEditor::ePrevious);
+            InsertBRElement(WithTransaction::Yes, newCaretPosition,
+                            nsIEditor::ePrevious);
         if (resultOfInsertingBRElement.isErr()) {
-          NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+          NS_WARNING(
+              "HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
           return resultOfInsertingBRElement.unwrapErr();
         }
         MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -2195,9 +2203,9 @@ EditActionResult HTMLEditor::SplitMailCiteElements(
       EditorDOMPoint endOfPreviousNodeOfSplitPoint;
       endOfPreviousNodeOfSplitPoint.SetToEndOf(previousNodeOfSplitPoint);
       Result<RefPtr<Element>, nsresult> resultOfInsertingInvisibleBRElement =
-          InsertBRElementWithTransaction(endOfPreviousNodeOfSplitPoint);
+          InsertBRElement(WithTransaction::Yes, endOfPreviousNodeOfSplitPoint);
       if (resultOfInsertingInvisibleBRElement.isErr()) {
-        NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+        NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
         return EditActionIgnored(
             resultOfInsertingInvisibleBRElement.unwrapErr());
       }
@@ -2209,10 +2217,10 @@ EditActionResult HTMLEditor::SplitMailCiteElements(
   // left cite hasn't been created because the split point was start of the
   // cite node, <br> should be inserted before the current cite.
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      InsertBRElementWithTransaction(
-          splitCiteNodeResult.AtSplitPoint<EditorDOMPoint>());
+      InsertBRElement(WithTransaction::Yes,
+                      splitCiteNodeResult.AtSplitPoint<EditorDOMPoint>());
   if (resultOfInsertingBRElement.isErr()) {
-    NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+    NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
     return EditActionIgnored(resultOfInsertingBRElement.unwrapErr());
   }
   MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -2271,9 +2279,10 @@ EditActionResult HTMLEditor::SplitMailCiteElements(
           forwardScanFromPointAfterNewBRElementResult
               .ReachedCurrentBlockBoundary()) {
         Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-            InsertBRElementWithTransaction(pointToCreateNewBRElement);
+            InsertBRElement(WithTransaction::Yes, pointToCreateNewBRElement);
         if (resultOfInsertingBRElement.isErr()) {
-          NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+          NS_WARNING(
+              "HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
           return EditActionIgnored(resultOfInsertingBRElement.unwrapErr());
         }
         MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -2821,9 +2830,11 @@ nsresult HTMLEditor::InsertBRElementIfHardLineIsEmptyAndEndsWithBlockBoundary(
   }
 
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      InsertBRElementWithTransaction(aPointToInsert, nsIEditor::ePrevious);
+      InsertBRElement(WithTransaction::Yes, aPointToInsert,
+                      nsIEditor::ePrevious);
   if (resultOfInsertingBRElement.isErr()) {
-    NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+    NS_WARNING(
+        "HTMLEditor::InsertBRElement(WithTransaction::Yes, ePrevious) failed");
     return resultOfInsertingBRElement.unwrapErr();
   }
   MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -2856,8 +2867,8 @@ EditActionResult HTMLEditor::MakeOrChangeListAndListItemAsSubAction(
     return EditActionIgnored();
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
 
   // XXX EditSubAction::eCreateOrChangeDefinitionListItem and
   //     EditSubAction::eCreateOrChangeList are treated differently in
@@ -3035,10 +3046,35 @@ EditActionResult HTMLEditor::ChangeSelectedHardLinesToList(
       return EditActionCanceled();
     }
 
+    RefPtr<Element> newListItemElement;
     Result<RefPtr<Element>, nsresult> newListElementOrError =
         InsertElementWithSplittingAncestorsWithTransaction(
             aListElementTagName, atStartOfSelection,
-            BRElementNextToSplitPoint::Keep);
+            BRElementNextToSplitPoint::Keep,
+            // MOZ_CAN_RUN_SCRIPT_BOUNDARY due to bug 1758868
+            [&newListItemElement, &aListItemElementTagName](
+                HTMLEditor& aHTMLEditor, Element& aListElement,
+                const EditorDOMPoint& aPointToInsert)
+                MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+                  const auto withTransaction = aListElement.IsInComposedDoc()
+                                                   ? WithTransaction::Yes
+                                                   : WithTransaction::No;
+                  Result<RefPtr<Element>, nsresult> listItemElementOrError =
+                      aHTMLEditor.CreateAndInsertElement(
+                          withTransaction, aListItemElementTagName,
+                          EditorDOMPoint(&aListElement, 0u));
+                  if (listItemElementOrError.isErr()) {
+                    NS_WARNING(
+                        nsPrintfCString(
+                            "HTMLEditor::CreateAndInsertElement(%s) failed",
+                            ToString(withTransaction).c_str())
+                            .get());
+                    return listItemElementOrError.unwrapErr();
+                  }
+                  MOZ_ASSERT(listItemElementOrError.inspect());
+                  newListItemElement = listItemElementOrError.unwrap();
+                  return NS_OK;
+                });
     if (MOZ_UNLIKELY(newListElementOrError.isErr())) {
       NS_WARNING(
           nsPrintfCString(
@@ -3050,23 +3086,11 @@ EditActionResult HTMLEditor::ChangeSelectedHardLinesToList(
     }
     MOZ_ASSERT(newListElementOrError.inspect());
 
-    Result<RefPtr<Element>, nsresult> newListItemElementOrError =
-        CreateAndInsertElementWithTransaction(
-            aListItemElementTagName,
-            EditorDOMPoint(newListElementOrError.inspect(), 0));
-    if (newListItemElementOrError.isErr()) {
-      NS_WARNING("HTMLEditor::CreateAndInsertElementWithTransaction() failed");
-      return EditActionResult(newListItemElementOrError.unwrapErr());
-    }
-    MOZ_ASSERT(newListItemElementOrError.inspect());
-
     // remember our new block for postprocessing
-    TopLevelEditSubActionDataRef().mNewBlockElement =
-        newListItemElementOrError.inspect();
+    TopLevelEditSubActionDataRef().mNewBlockElement = newListItemElement;
     // Put selection in new list item and don't restore the Selection.
     restoreSelectionLater.Abort();
-    nsresult rv = CollapseSelectionToStartOf(
-        MOZ_KnownLive(*newListItemElementOrError.inspect()));
+    nsresult rv = CollapseSelectionToStartOf(*newListItemElement);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "HTMLEditor::CollapseSelectionToStartOf() failed");
     return EditActionResult(rv);
@@ -3203,12 +3227,13 @@ EditActionResult HTMLEditor::ChangeSelectedHardLinesToList(
           }
           MOZ_ASSERT(splitListItemParentResult.DidSplit());
           Result<RefPtr<Element>, nsresult> maybeNewListElement =
-              CreateAndInsertElementWithTransaction(
-                  aListElementTagName,
+              CreateAndInsertElement(
+                  WithTransaction::Yes, aListElementTagName,
                   splitListItemParentResult.AtNextContent<EditorDOMPoint>());
           if (maybeNewListElement.isErr()) {
             NS_WARNING(
-                "HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+                "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) "
+                "failed");
             return EditActionResult(maybeNewListElement.unwrapErr());
           }
           MOZ_ASSERT(maybeNewListElement.inspect());
@@ -3449,8 +3474,8 @@ nsresult HTMLEditor::RemoveListAtSelectionAsSubAction() {
     return result.Rv();
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eRemoveList, nsIEditor::eNext, ignoredError);
@@ -3620,10 +3645,10 @@ nsresult HTMLEditor::FormatBlockContainerWithTransaction(nsAtom& blockType) {
       }
       // Put a <br> element at the split point
       Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-          InsertBRElementWithTransaction(
-              splitNodeResult.AtSplitPoint<EditorDOMPoint>());
+          InsertBRElement(WithTransaction::Yes,
+                          splitNodeResult.AtSplitPoint<EditorDOMPoint>());
       if (resultOfInsertingBRElement.isErr()) {
-        NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+        NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
         return resultOfInsertingBRElement.unwrapErr();
       }
       MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -3757,8 +3782,8 @@ nsresult HTMLEditor::MaybeInsertPaddingBRElementForEmptyLastLineAtSelection() {
 EditActionResult HTMLEditor::IndentAsSubAction() {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eIndent, nsIEditor::eNext, ignoredError);
@@ -4425,8 +4450,8 @@ nsresult HTMLEditor::HandleHTMLIndentAtSelectionInternal() {
 EditActionResult HTMLEditor::OutdentAsSubAction() {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eOutdent, nsIEditor::eNext, ignoredError);
@@ -5191,8 +5216,8 @@ nsresult HTMLEditor::CreateStyleForInsertText(
 EditActionResult HTMLEditor::AlignAsSubAction(const nsAString& aAlignType) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eSetOrClearAlignment, nsIEditor::eNext,
@@ -5675,23 +5700,31 @@ nsresult HTMLEditor::AlignBlockContentsWithDivElement(
   // Otherwise, we need to insert a `<div>` element to set `align` attribute.
   // XXX Don't insert the new `<div>` element until we set `align` attribute
   //     for avoiding running mutation event listeners.
-  Result<RefPtr<Element>, nsresult> maybeNewDivElement =
-      CreateAndInsertElementWithTransaction(*nsGkAtoms::div,
-                                            EditorDOMPoint(&aBlockElement, 0));
+  Result<RefPtr<Element>, nsresult> maybeNewDivElement = CreateAndInsertElement(
+      WithTransaction::Yes, *nsGkAtoms::div, EditorDOMPoint(&aBlockElement, 0u),
+      // MOZ_CAN_RUN_SCRIPT_BOUNDARY due to bug 1758868
+      [&aAlignType](HTMLEditor& aHTMLEditor, Element& aDivElement,
+                    const EditorDOMPoint&) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+        // If aDivElement has not been connected yet, we do not need
+        // transaction of setting align attribute here.
+        nsresult rv = aHTMLEditor.SetAttributeOrEquivalent(
+            &aDivElement, nsGkAtoms::align, aAlignType,
+            !aDivElement.IsInComposedDoc());
+        NS_WARNING_ASSERTION(
+            NS_SUCCEEDED(rv),
+            nsPrintfCString("EditorBase::SetAttributeOrEquivalent(nsGkAtoms:: "
+                            "align, \"...\", %s) failed",
+                            !aDivElement.IsInComposedDoc() ? "true" : "false")
+                .get());
+        return rv;
+      });
   if (maybeNewDivElement.isErr()) {
     NS_WARNING(
-        "HTMLEditor::CreateAndInsertElementWithTransaction(nsGkAtoms::div) "
-        "failed");
+        "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes, "
+        "nsGkAtoms::div) failed");
     return maybeNewDivElement.unwrapErr();
   }
   MOZ_ASSERT(maybeNewDivElement.inspect());
-  nsresult rv =
-      SetAttributeOrEquivalent(MOZ_KnownLive(maybeNewDivElement.inspect()),
-                               nsGkAtoms::align, aAlignType, false);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::SetAttributeOrEquivalent(nsGkAtoms::align) failed");
-    return rv;
-  }
   // XXX This is tricky and does not work with mutation event listeners.
   //     But I'm not sure what we should do if new content is inserted.
   //     Anyway, I don't think that we should move editable contents
@@ -6913,26 +6946,41 @@ nsresult HTMLEditor::HandleInsertParagraphInHeadingElement(
       nsStaticAtom& paraAtom = DefaultParagraphSeparatorTagName();
       // We want a wrapper element even if we separate with <br>
       Result<RefPtr<Element>, nsresult> maybeNewParagraphElement =
-          CreateAndInsertElementWithTransaction(&paraAtom == nsGkAtoms::br
-                                                    ? *nsGkAtoms::p
-                                                    : MOZ_KnownLive(paraAtom),
-                                                atHeader.NextPoint());
+          CreateAndInsertElement(
+              WithTransaction::Yes,
+              &paraAtom == nsGkAtoms::br ? *nsGkAtoms::p
+                                         : MOZ_KnownLive(paraAtom),
+              atHeader.NextPoint(),
+              // MOZ_CAN_RUN_SCRIPT_BOUNDARY due to bug 1758868
+              [](HTMLEditor& aHTMLEditor, Element& aDivOrParagraphElement,
+                 const EditorDOMPoint&) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+                // We don't make inserting new <br> element undoable
+                // because removing the new element from the DOM tree
+                // gets same result for the user if aDivOrParagraphElement
+                // has not been connected yet.
+                const auto withTransaction =
+                    aDivOrParagraphElement.IsInComposedDoc()
+                        ? WithTransaction::Yes
+                        : WithTransaction::No;
+                Result<RefPtr<Element>, nsresult> brElementOrError =
+                    aHTMLEditor.InsertBRElement(
+                        withTransaction,
+                        EditorDOMPoint(&aDivOrParagraphElement, 0u));
+                if (brElementOrError.isErr()) {
+                  NS_WARNING(
+                      nsPrintfCString("HTMLEditor::InsertBRElement(%s) failed",
+                                      ToString(withTransaction).c_str())
+                          .get());
+                  return brElementOrError.unwrapErr();
+                }
+                return NS_OK;
+              });
       if (maybeNewParagraphElement.isErr()) {
         NS_WARNING(
-            "HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+            "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) failed");
         return maybeNewParagraphElement.unwrapErr();
       }
       MOZ_ASSERT(maybeNewParagraphElement.inspect());
-
-      // Append a <br> to it
-      Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-          InsertBRElementWithTransaction(
-              EditorDOMPoint(maybeNewParagraphElement.inspect(), 0));
-      if (resultOfInsertingBRElement.isErr()) {
-        NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
-        return resultOfInsertingBRElement.unwrapErr();
-      }
-      MOZ_ASSERT(resultOfInsertingBRElement.inspect());
 
       // Set selection to before the break
       nsresult rv = CollapseSelectionToStartOf(
@@ -7153,9 +7201,9 @@ EditActionResult HTMLEditor::HandleInsertParagraphInParagraph(
     }
 
     Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-        InsertBRElementWithTransaction(pointToInsertBR);
+        InsertBRElement(WithTransaction::Yes, pointToInsertBR);
     if (resultOfInsertingBRElement.isErr()) {
-      NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+      NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
       return EditActionResult(resultOfInsertingBRElement.unwrapErr());
     }
     MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -7344,25 +7392,41 @@ nsresult HTMLEditor::HandleInsertParagraphInListItemElement(
     nsStaticAtom& paraAtom = DefaultParagraphSeparatorTagName();
     // We want a wrapper even if we separate with <br>
     Result<RefPtr<Element>, nsresult> maybeNewParagraphElement =
-        CreateAndInsertElementWithTransaction(&paraAtom == nsGkAtoms::br
-                                                  ? *nsGkAtoms::p
-                                                  : MOZ_KnownLive(paraAtom),
-                                              atNextSiblingOfLeftList);
+        CreateAndInsertElement(
+            WithTransaction::Yes,
+            &paraAtom == nsGkAtoms::br ? *nsGkAtoms::p
+                                       : MOZ_KnownLive(paraAtom),
+            atNextSiblingOfLeftList,
+            // MOZ_CAN_RUN_SCRIPT_BOUNDARY due to bug 1758868
+            [](HTMLEditor& aHTMLEditor, Element& aDivOrParagraphElement,
+               const EditorDOMPoint&) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+              // We don't make inserting new <br> element undoable because
+              // removing the new element from the DOM tree gets same result
+              // for the user if aDivOrParagraphElement has not been
+              // connected yet.
+              const auto withTransaction =
+                  aDivOrParagraphElement.IsInComposedDoc()
+                      ? WithTransaction::Yes
+                      : WithTransaction::No;
+              Result<RefPtr<Element>, nsresult> brElementOrError =
+                  aHTMLEditor.InsertBRElement(
+                      withTransaction,
+                      EditorDOMPoint(&aDivOrParagraphElement, 0u));
+              if (brElementOrError.isErr()) {
+                NS_WARNING(
+                    nsPrintfCString("HTMLEditor::InsertBRElement(%s) failed",
+                                    ToString(withTransaction).c_str())
+                        .get());
+                return brElementOrError.unwrapErr();
+              }
+              return NS_OK;
+            });
     if (maybeNewParagraphElement.isErr()) {
-      NS_WARNING("HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+      NS_WARNING(
+          "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) failed");
       return maybeNewParagraphElement.unwrapErr();
     }
     MOZ_ASSERT(maybeNewParagraphElement.inspect());
-
-    // Append a <br> to it
-    Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-        InsertBRElementWithTransaction(
-            EditorDOMPoint(maybeNewParagraphElement.inspect(), 0));
-    if (resultOfInsertingBRElement.isErr()) {
-      NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
-      return resultOfInsertingBRElement.unwrapErr();
-    }
-    MOZ_ASSERT(resultOfInsertingBRElement.inspect());
 
     // Set selection to before the break
     rv = CollapseSelectionToStartOf(
@@ -7429,12 +7493,14 @@ nsresult HTMLEditor::HandleInsertParagraphInListItemElement(
           EditorDOMPoint atNextListItem(list, aListItem.GetNextSibling(),
                                         itemOffset + 1u);
           Result<RefPtr<Element>, nsresult> maybeNewListItemElement =
-              CreateAndInsertElementWithTransaction(
+              CreateAndInsertElement(
+                  WithTransaction::Yes,
                   MOZ_KnownLive(*nextDefinitionListItemTagName),
                   atNextListItem);
           if (maybeNewListItemElement.isErr()) {
             NS_WARNING(
-                "HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+                "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) "
+                "failed");
             return maybeNewListItemElement.unwrapErr();
           }
           MOZ_ASSERT(maybeNewListItemElement.inspect());
@@ -7994,7 +8060,8 @@ SplitNodeResult HTMLEditor::MaybeSplitAncestorsForInsertWithTransaction(
   // ancestor nodes.  In this case, we should return the given split point
   // as is.
   if (pointToInsert.GetContainer() == aStartOfDeepestRightNode.GetContainer()) {
-    return SplitNodeResult(aStartOfDeepestRightNode);
+    return SplitNodeResult::NotHandled(aStartOfDeepestRightNode,
+                                       SplitNodeDirection::LeftNodeIsNewOne);
   }
 
   SplitNodeResult splitNodeResult = SplitNodeDeepWithTransaction(
@@ -8009,7 +8076,8 @@ SplitNodeResult HTMLEditor::MaybeSplitAncestorsForInsertWithTransaction(
 Result<RefPtr<Element>, nsresult>
 HTMLEditor::InsertElementWithSplittingAncestorsWithTransaction(
     nsAtom& aTagName, const EditorDOMPoint& aPointToInsert,
-    BRElementNextToSplitPoint aBRElementNextToSplitPoint) {
+    BRElementNextToSplitPoint aBRElementNextToSplitPoint,
+    const InitializeInsertingElement& aInitializer) {
   MOZ_ASSERT(aPointToInsert.IsSetAndValid());
 
   SplitNodeResult splitNodeResult =
@@ -8065,10 +8133,11 @@ HTMLEditor::InsertElementWithSplittingAncestorsWithTransaction(
     }
   }
 
-  Result<RefPtr<Element>, nsresult> newElementOrError =
-      CreateAndInsertElementWithTransaction(aTagName, splitPoint);
+  Result<RefPtr<Element>, nsresult> newElementOrError = CreateAndInsertElement(
+      WithTransaction::Yes, aTagName, splitPoint, aInitializer);
   if (MOZ_UNLIKELY(newElementOrError.isErr())) {
-    NS_WARNING("HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+    NS_WARNING(
+        "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) failed");
     return newElementOrError;
   }
   MOZ_ASSERT(newElementOrError.inspect());
@@ -8865,9 +8934,9 @@ nsresult HTMLEditor::RemoveEmptyNodesIn(nsRange& aRange) {
       // We are deleting a cite that has just a `<br>`.  We want to delete cite,
       // but preserve `<br>`.
       Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-          InsertBRElementWithTransaction(EditorDOMPoint(emptyCite));
+          InsertBRElement(WithTransaction::Yes, EditorDOMPoint(emptyCite));
       if (resultOfInsertingBRElement.isErr()) {
-        NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+        NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
         return resultOfInsertingBRElement.unwrapErr();
       }
       MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -9159,9 +9228,9 @@ nsresult HTMLEditor::InsertBRElementIfEmptyBlockElement(Element& aElement) {
   }
 
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      InsertBRElementWithTransaction(EditorDOMPoint(&aElement, 0));
+      InsertBRElement(WithTransaction::Yes, EditorDOMPoint(&aElement, 0u));
   if (resultOfInsertingBRElement.isErr()) {
-    NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+    NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
     return resultOfInsertingBRElement.unwrapErr();
   }
   MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -9329,10 +9398,10 @@ nsresult HTMLEditor::EnsureHardLineBeginsWithFirstChildOf(
   }
 
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      InsertBRElementWithTransaction(
-          EditorDOMPoint(&aRemovingContainerElement, 0));
+      InsertBRElement(WithTransaction::Yes,
+                      EditorDOMPoint(&aRemovingContainerElement, 0u));
   if (resultOfInsertingBRElement.isErr()) {
-    NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+    NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
     return resultOfInsertingBRElement.unwrapErr();
   }
   MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -9366,10 +9435,10 @@ nsresult HTMLEditor::EnsureHardLineEndsWithLastChildOf(
   }
 
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      InsertBRElementWithTransaction(
-          EditorDOMPoint::AtEndOf(aRemovingContainerElement));
+      InsertBRElement(WithTransaction::Yes,
+                      EditorDOMPoint::AtEndOf(aRemovingContainerElement));
   if (resultOfInsertingBRElement.isErr()) {
-    NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+    NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
     return resultOfInsertingBRElement.unwrapErr();
   }
   MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -9515,8 +9584,8 @@ nsresult HTMLEditor::ChangeMarginStart(Element& aElement,
 EditActionResult HTMLEditor::SetSelectionToAbsoluteAsSubAction() {
   MOZ_ASSERT(IsTopLevelEditSubActionDataAvailable());
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eSetPositionToAbsolute, nsIEditor::eNext,
@@ -9765,12 +9834,13 @@ nsresult HTMLEditor::MoveSelectedContentsToDivElementToMakeItAbsolutePosition(
           targetDivElement = newDivElementOrError.unwrap();
         }
         Result<RefPtr<Element>, nsresult> maybeNewListElement =
-            CreateAndInsertElementWithTransaction(
-                MOZ_KnownLive(*ULOrOLOrDLTagName),
-                EditorDOMPoint::AtEndOf(targetDivElement));
+            CreateAndInsertElement(WithTransaction::Yes,
+                                   MOZ_KnownLive(*ULOrOLOrDLTagName),
+                                   EditorDOMPoint::AtEndOf(targetDivElement));
         if (maybeNewListElement.isErr()) {
           NS_WARNING(
-              "HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+              "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) "
+              "failed");
           return maybeNewListElement.unwrapErr();
         }
         MOZ_ASSERT(maybeNewListElement.inspect());
@@ -9846,12 +9916,13 @@ nsresult HTMLEditor::MoveSelectedContentsToDivElementToMakeItAbsolutePosition(
         }
         // XXX So, createdListElement may be set to a non-list element.
         Result<RefPtr<Element>, nsresult> maybeNewListElement =
-            CreateAndInsertElementWithTransaction(
-                MOZ_KnownLive(*containerName),
-                EditorDOMPoint::AtEndOf(targetDivElement));
+            CreateAndInsertElement(WithTransaction::Yes,
+                                   MOZ_KnownLive(*containerName),
+                                   EditorDOMPoint::AtEndOf(targetDivElement));
         if (maybeNewListElement.isErr()) {
           NS_WARNING(
-              "HTMLEditor::CreateAndInsertElementWithTransaction() failed");
+              "HTMLEditor::CreateAndInsertElement(WithTransaction::Yes) "
+              "failed");
           return maybeNewListElement.unwrapErr();
         }
         MOZ_ASSERT(maybeNewListElement.inspect());
@@ -9920,8 +9991,8 @@ nsresult HTMLEditor::MoveSelectedContentsToDivElementToMakeItAbsolutePosition(
 EditActionResult HTMLEditor::SetSelectionToStaticAsSubAction() {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eSetPositionToStatic, nsIEditor::eNext,
@@ -9999,8 +10070,8 @@ EditActionResult HTMLEditor::SetSelectionToStaticAsSubAction() {
 EditActionResult HTMLEditor::AddZIndexAsSubAction(int32_t aChange) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this,

@@ -64,6 +64,7 @@
 #include "nsLinebreakConverter.h"
 #include "nsLiteralString.h"
 #include "nsNetUtil.h"
+#include "nsPrintfCString.h"
 #include "nsRange.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
@@ -147,8 +148,8 @@ nsresult HTMLEditor::LoadHTML(const nsAString& aInputString) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eInsertHTMLSource, nsIEditor::eNext, ignoredError);
@@ -504,8 +505,8 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
 
   // force IME commit; set up rules sniffing and batching
   mHTMLEditor.CommitComposition();
-  AutoPlaceholderBatch treatAsOneTransaction(mHTMLEditor,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      mHTMLEditor, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       MOZ_KnownLive(mHTMLEditor), EditSubAction::ePasteHTMLContent,
@@ -1513,8 +1514,8 @@ nsresult HTMLEditor::BlobReader::OnResult(const nsACString& aResult) {
     return EditorBase::ToGenericNSResult(rv);
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*mHTMLEditor,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *mHTMLEditor, ScrollSelectionIntoView::Yes, __FUNCTION__);
   EditorDOMPoint pointToInsert(mPointToInsert);
   rv = MOZ_KnownLive(mHTMLEditor)
            ->DoInsertHTMLWithContext(stuffToPaste, u""_ns, u""_ns,
@@ -1730,8 +1731,8 @@ nsresult HTMLEditor::InsertObject(const nsACString& aType, nsISupports* aObject,
       return rv;
     }
 
-    AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                               ScrollSelectionIntoView::Yes);
+    AutoPlaceholderBatch treatAsOneTransaction(
+        *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
     rv = DoInsertHTMLWithContext(
         stuffToPaste, u""_ns, u""_ns, NS_LITERAL_STRING_FROM_CSTRING(kFileMime),
         aPointToInsert, aDoDeleteSelection, aIsSafe, false);
@@ -1806,7 +1807,7 @@ nsresult HTMLEditor::InsertFromTransferable(nsITransferable* aTransferable,
                                   getter_Copies(cfcontext));
         if (NS_SUCCEEDED(rv) && !cffragment.IsEmpty()) {
           AutoPlaceholderBatch treatAsOneTransaction(
-              *this, ScrollSelectionIntoView::Yes);
+              *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
           // If we have our private HTML flavor, we will only use the fragment
           // from the CF_HTML. The rest comes from the clipboard.
           if (aHavePrivateHTMLFlavor) {
@@ -1850,7 +1851,7 @@ nsresult HTMLEditor::InsertFromTransferable(nsITransferable* aTransferable,
 
       if (!stuffToPaste.IsEmpty()) {
         AutoPlaceholderBatch treatAsOneTransaction(
-            *this, ScrollSelectionIntoView::Yes);
+            *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
         if (bestFlavor.EqualsLiteral(kHTMLMime)) {
           nsresult rv = DoInsertHTMLWithContext(
               stuffToPaste, aContextStr, aInfoStr, flavor, EditorDOMPoint(),
@@ -2208,8 +2209,8 @@ nsresult HTMLEditor::PasteTransferableAsAction(nsITransferable* aTransferable,
   RefPtr<DataTransfer> dataTransfer = GetInputEventDataTransfer();
   if (dataTransfer->HasFile() && dataTransfer->MozItemCount() > 0) {
     // Now aTransferable has moved to DataTransfer. Use DataTransfer.
-    AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                               ScrollSelectionIntoView::Yes);
+    AutoPlaceholderBatch treatAsOneTransaction(
+        *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
 
     rv = InsertFromDataTransfer(dataTransfer, 0, nullptr, EditorDOMPoint(),
                                 true);
@@ -2437,8 +2438,8 @@ nsresult HTMLEditor::PasteAsQuotationAsAction(int32_t aClipboardType,
 
   UndefineCaretBidiLevel();
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eInsertQuotation, nsIEditor::eNext, ignoredError);
@@ -2479,25 +2480,37 @@ nsresult HTMLEditor::PasteAsQuotationAsAction(int32_t aClipboardType,
   // Remove Selection and create `<blockquote type="cite">` now.
   // XXX Why don't we insert the `<blockquote>` into the DOM tree after
   //     pasting the content in clipboard into it?
-  RefPtr<Element> newBlockquoteElement =
-      DeleteSelectionAndCreateElement(*nsGkAtoms::blockquote);
-  if (!newBlockquoteElement) {
+  Result<RefPtr<Element>, nsresult> blockquoteElementOrError =
+      DeleteSelectionAndCreateElement(
+          *nsGkAtoms::blockquote,
+          // MOZ_CAN_RUN_SCRIPT_BOUNDARY due to bug 1758868
+          [](HTMLEditor&, Element& aBlockquoteElement, const EditorDOMPoint&)
+              MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+                DebugOnly<nsresult> rvIgnored = aBlockquoteElement.SetAttr(
+                    kNameSpaceID_None, nsGkAtoms::type, u"cite"_ns,
+                    aBlockquoteElement.IsInComposedDoc());
+                NS_WARNING_ASSERTION(
+                    NS_SUCCEEDED(rvIgnored),
+                    nsPrintfCString(
+                        "Element::SetAttr(nsGkAtoms::type, \"cite\", %s) "
+                        "failed, but ignored",
+                        aBlockquoteElement.IsInComposedDoc() ? "true" : "false")
+                        .get());
+                return NS_OK;
+              });
+  if (MOZ_UNLIKELY(blockquoteElementOrError.isErr() ||
+                   NS_WARN_IF(Destroyed()))) {
     NS_WARNING(
         "HTMLEditor::DeleteSelectionAndCreateElement(nsGkAtoms::blockquote) "
         "failed");
-    return NS_ERROR_FAILURE;
+    return Destroyed() ? NS_ERROR_EDITOR_DESTROYED
+                       : blockquoteElementOrError.unwrapErr();
   }
-  DebugOnly<nsresult> rvIgnored = newBlockquoteElement->SetAttr(
-      kNameSpaceID_None, nsGkAtoms::type, u"cite"_ns, true);
-  if (NS_WARN_IF(Destroyed())) {
-    return EditorBase::ToGenericNSResult(NS_ERROR_EDITOR_DESTROYED);
-  }
-  NS_WARNING_ASSERTION(
-      NS_SUCCEEDED(rvIgnored),
-      "Element::SetAttr(nsGkAtoms::type, cite) failed, but ignored");
+  MOZ_ASSERT(blockquoteElementOrError.inspect());
 
   // Collapse Selection in the new `<blockquote>` element.
-  rv = CollapseSelectionToStartOf(*newBlockquoteElement);
+  rv = CollapseSelectionToStartOf(
+      MOZ_KnownLive(*blockquoteElementOrError.inspect()));
   if (NS_FAILED(rv)) {
     NS_WARNING("HTMLEditor::CollapseSelectionToStartOf() failed");
     return rv;
@@ -2567,8 +2580,8 @@ nsresult HTMLEditor::PasteAsPlaintextQuotation(int32_t aSelectionType) {
     return NS_OK;
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   rv = InsertAsPlaintextQuotation(stuffToPaste, true, 0);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::InsertAsPlaintextQuotation() failed");
@@ -2663,9 +2676,9 @@ nsresult HTMLEditor::InsertTextWithQuotations(
 
   // The whole operation should be undoable in one transaction:
   // XXX Why isn't enough to use only AutoPlaceholderBatch here?
-  AutoTransactionBatch bundleAllTransactions(*this);
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoTransactionBatch bundleAllTransactions(*this, __FUNCTION__);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
 
   rv = InsertTextWithQuotationsInternal(aStringToInsert);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -2785,8 +2798,8 @@ nsresult HTMLEditor::InsertAsQuotation(const nsAString& aQuotedText,
           "CanHandleAndMaybeDispatchBeforeInputEvent(), failed");
       return EditorBase::ToGenericNSResult(rv);
     }
-    AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                               ScrollSelectionIntoView::Yes);
+    AutoPlaceholderBatch treatAsOneTransaction(
+        *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
     rv = InsertAsPlaintextQuotation(aQuotedText, true, aNodeInserted);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "HTMLEditor::InsertAsPlaintextQuotation() failed");
@@ -2802,8 +2815,8 @@ nsresult HTMLEditor::InsertAsQuotation(const nsAString& aQuotedText,
     return EditorBase::ToGenericNSResult(rv);
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   nsAutoString citation;
   rv = InsertAsCitedQuotationInternal(aQuotedText, citation, false,
                                       aNodeInserted);
@@ -2881,44 +2894,54 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
   // We could use 100vw, but 98vw avoids a horizontal scroll bar where possible.
   // All this is done to wrap overlong lines to the screen and not to the
   // container element, the width-restricted body.
-  RefPtr<Element> newSpanElement =
-      DeleteSelectionAndCreateElement(*nsGkAtoms::span);
-  NS_WARNING_ASSERTION(
-      newSpanElement,
-      "HTMLEditor::DeleteSelectionAndCreateElement() failed, but ignored");
+  Result<RefPtr<Element>, nsresult> spanElementOrError =
+      DeleteSelectionAndCreateElement(
+          *nsGkAtoms::span, [](HTMLEditor&, Element& aSpanElement,
+                               const EditorDOMPoint& aPointToInsert) {
+            // Add an attribute on the pre node so we'll know it's a quotation.
+            DebugOnly<nsresult> rvIgnored = aSpanElement.SetAttr(
+                kNameSpaceID_None, nsGkAtoms::mozquote, u"true"_ns,
+                aSpanElement.IsInComposedDoc());
+            NS_WARNING_ASSERTION(
+                NS_SUCCEEDED(rvIgnored),
+                nsPrintfCString(
+                    "Element::SetAttr(nsGkAtoms::mozquote, \"true\", %s) "
+                    "failed",
+                    aSpanElement.IsInComposedDoc() ? "true" : "false")
+                    .get());
+            // Allow wrapping on spans so long lines get wrapped to the screen.
+            if (aPointToInsert.IsContainerHTMLElement(nsGkAtoms::body)) {
+              DebugOnly<nsresult> rvIgnored = aSpanElement.SetAttr(
+                  kNameSpaceID_None, nsGkAtoms::style,
+                  nsLiteralString(u"white-space: pre-wrap; display: block; "
+                                  u"width: 98vw;"),
+                  false);
+              NS_WARNING_ASSERTION(
+                  NS_SUCCEEDED(rvIgnored),
+                  "Element::SetAttr(nsGkAtoms::style, \"pre-wrap, block\", "
+                  "false) failed, but ignored");
+            } else {
+              DebugOnly<nsresult> rvIgnored =
+                  aSpanElement.SetAttr(kNameSpaceID_None, nsGkAtoms::style,
+                                       u"white-space: pre-wrap;"_ns, false);
+              NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
+                                   "Element::SetAttr(nsGkAtoms::style, "
+                                   "\"pre-wrap\", false) failed, but ignored");
+            }
+            return NS_OK;
+          });
+  NS_WARNING_ASSERTION(spanElementOrError.isOk(),
+                       "HTMLEditor::DeleteSelectionAndCreateElement(nsGkAtoms::"
+                       "span) failed, but ignored");
 
   // If this succeeded, then set selection inside the pre
   // so the inserted text will end up there.
   // If it failed, we don't care what the return value was,
   // but we'll fall through and try to insert the text anyway.
-  if (newSpanElement) {
-    // Add an attribute on the pre node so we'll know it's a quotation.
-    DebugOnly<nsresult> rvIgnored = newSpanElement->SetAttr(
-        kNameSpaceID_None, nsGkAtoms::mozquote, u"true"_ns, true);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                         "Element::SetAttr(nsGkAtoms::mozquote, true) failed");
-    // Allow wrapping on spans so long lines get wrapped to the screen.
-    nsCOMPtr<nsINode> parentNode = newSpanElement->GetParentNode();
-    if (parentNode && parentNode->IsHTMLElement(nsGkAtoms::body)) {
-      DebugOnly<nsresult> rvIgnored = newSpanElement->SetAttr(
-          kNameSpaceID_None, nsGkAtoms::style,
-          nsLiteralString(
-              u"white-space: pre-wrap; display: block; width: 98vw;"),
-          true);
-      NS_WARNING_ASSERTION(
-          NS_SUCCEEDED(rvIgnored),
-          "Element::SetAttr(nsGkAtoms::style) failed, but ignored");
-    } else {
-      DebugOnly<nsresult> rvIgnored =
-          newSpanElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style,
-                                  u"white-space: pre-wrap;"_ns, true);
-      NS_WARNING_ASSERTION(
-          NS_SUCCEEDED(rvIgnored),
-          "Element::SetAttr(nsGkAtoms::style) failed, but ignored");
-    }
-
-    // and set the selection inside it:
-    rv = CollapseSelectionToStartOf(*newSpanElement);
+  if (spanElementOrError.isOk()) {
+    MOZ_ASSERT(spanElementOrError.inspect());
+    rv = CollapseSelectionToStartOf(
+        MOZ_KnownLive(*spanElementOrError.inspect()));
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return NS_ERROR_EDITOR_DESTROYED;
     }
@@ -2927,6 +2950,8 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
         "HTMLEditor::CollapseSelectionToStartOf() failed, but ignored");
   }
 
+  // TODO: We should insert text at specific point rather than at selection.
+  //       Then, we can do this before inserting the <span> element.
   if (aAddCites) {
     rv = InsertWithQuotationsAsSubAction(aQuotedText);
     if (NS_FAILED(rv)) {
@@ -2942,13 +2967,13 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
   }
 
   // XXX Why don't we check this before inserting the quoted text?
-  if (!newSpanElement) {
+  if (spanElementOrError.isErr()) {
     return NS_OK;
   }
 
   // Set the selection to just after the inserted node:
   EditorRawDOMPoint afterNewSpanElement(
-      EditorRawDOMPoint::After(*newSpanElement));
+      EditorRawDOMPoint::After(*spanElementOrError.inspect()));
   NS_WARNING_ASSERTION(
       afterNewSpanElement.IsSet(),
       "Failed to set after the new <span> element, but ignored");
@@ -2966,7 +2991,7 @@ nsresult HTMLEditor::InsertAsPlaintextQuotation(const nsAString& aQuotedText,
   // That's okay because the routines that use aAddCites
   // don't need to know the inserted node.
   if (aNodeInserted) {
-    newSpanElement.forget(aNodeInserted);
+    spanElementOrError.unwrap().forget(aNodeInserted);
   }
 
   return NS_OK;
@@ -3019,9 +3044,9 @@ NS_IMETHODIMP HTMLEditor::Rewrap(bool aRespectNewlines) {
   // The whole operation in InsertTextWithQuotationsInternal() should be
   // undoable in one transaction.
   // XXX Why isn't enough to use only AutoPlaceholderBatch here?
-  AutoTransactionBatch bundleAllTransactions(*this);
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoTransactionBatch bundleAllTransactions(*this, __FUNCTION__);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   rv = InsertTextWithQuotationsInternal(wrapped);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::InsertTextWithQuotationsInternal() failed");
@@ -3049,8 +3074,8 @@ NS_IMETHODIMP HTMLEditor::InsertAsCitedQuotation(const nsAString& aQuotedText,
       return EditorBase::ToGenericNSResult(rv);
     }
 
-    AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                               ScrollSelectionIntoView::Yes);
+    AutoPlaceholderBatch treatAsOneTransaction(
+        *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
     rv = InsertAsPlaintextQuotation(aQuotedText, true, aNodeInserted);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "HTMLEditor::InsertAsPlaintextQuotation() failed");
@@ -3066,8 +3091,8 @@ NS_IMETHODIMP HTMLEditor::InsertAsCitedQuotation(const nsAString& aQuotedText,
     return EditorBase::ToGenericNSResult(rv);
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   rv = InsertAsCitedQuotationInternal(aQuotedText, aCitation, aInsertHTML,
                                       aNodeInserted);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -3131,47 +3156,58 @@ nsresult HTMLEditor::InsertAsCitedQuotationInternal(
     }
   }
 
-  RefPtr<Element> newBlockquoteElement =
-      DeleteSelectionAndCreateElement(*nsGkAtoms::blockquote);
-  if (NS_WARN_IF(Destroyed())) {
-    return NS_ERROR_EDITOR_DESTROYED;
-  }
-  if (!newBlockquoteElement) {
+  Result<RefPtr<Element>, nsresult> blockquoteElementOrError =
+      DeleteSelectionAndCreateElement(
+          *nsGkAtoms::blockquote,
+          // MOZ_CAN_RUN_SCRIPT_BOUNDARY due to bug 1758868
+          [&aCitation](HTMLEditor&, Element& aBlockquoteElement,
+                       const EditorDOMPoint&) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+            // Try to set type=cite.  Ignore it if this fails.
+            DebugOnly<nsresult> rvIgnored = aBlockquoteElement.SetAttr(
+                kNameSpaceID_None, nsGkAtoms::type, u"cite"_ns,
+                aBlockquoteElement.IsInComposedDoc());
+            NS_WARNING_ASSERTION(
+                NS_SUCCEEDED(rvIgnored),
+                nsPrintfCString(
+                    "Element::SetAttr(nsGkAtoms::type, \"cite\", %s) failed, "
+                    "but ignored",
+                    aBlockquoteElement.IsInComposedDoc() ? "true" : "false")
+                    .get());
+            if (!aCitation.IsEmpty()) {
+              DebugOnly<nsresult> rvIgnored = aBlockquoteElement.SetAttr(
+                  kNameSpaceID_None, nsGkAtoms::cite, aCitation,
+                  aBlockquoteElement.IsInComposedDoc());
+              NS_WARNING_ASSERTION(
+                  NS_SUCCEEDED(rvIgnored),
+                  nsPrintfCString(
+                      "Element::SetAttr(nsGkAtoms::cite, \"...\", %s) failed, "
+                      "but ignored",
+                      aBlockquoteElement.IsInComposedDoc() ? "true" : "false")
+                      .get());
+            }
+            return NS_OK;
+          });
+  if (MOZ_UNLIKELY(blockquoteElementOrError.isErr() ||
+                   NS_WARN_IF(Destroyed()))) {
     NS_WARNING(
         "HTMLEditor::DeleteSelectionAndCreateElement(nsGkAtoms::blockquote) "
         "failed");
-    return NS_ERROR_FAILURE;
+    return Destroyed() ? NS_ERROR_EDITOR_DESTROYED
+                       : blockquoteElementOrError.unwrapErr();
   }
-
-  // Try to set type=cite.  Ignore it if this fails.
-  DebugOnly<nsresult> rvIgnored = newBlockquoteElement->SetAttr(
-      kNameSpaceID_None, nsGkAtoms::type, u"cite"_ns, true);
-  if (NS_WARN_IF(Destroyed())) {
-    return NS_ERROR_EDITOR_DESTROYED;
-  }
-  NS_WARNING_ASSERTION(
-      NS_SUCCEEDED(rvIgnored),
-      "Element::SetAttr(nsGkAtoms::type, cite) failed, but ignored");
-
-  if (!aCitation.IsEmpty()) {
-    DebugOnly<nsresult> rvIgnored = newBlockquoteElement->SetAttr(
-        kNameSpaceID_None, nsGkAtoms::cite, aCitation, true);
-    if (NS_WARN_IF(Destroyed())) {
-      return NS_ERROR_EDITOR_DESTROYED;
-    }
-    NS_WARNING_ASSERTION(
-        NS_SUCCEEDED(rvIgnored),
-        "Element::SetAttr(nsGkAtoms::cite) failed, but ignored");
-  }
+  MOZ_ASSERT(blockquoteElementOrError.inspect());
 
   // Set the selection inside the blockquote so aQuotedText will go there:
-  rv = CollapseSelectionTo(EditorRawDOMPoint(newBlockquoteElement, 0));
+  rv = CollapseSelectionTo(
+      EditorRawDOMPoint(blockquoteElementOrError.inspect(), 0u));
   if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::CollapseSelectionTo() failed, but ignored");
 
+  // TODO: We should insert text at specific point rather than at selection.
+  //       Then, we can do this before inserting the <blockquote> element.
   if (aInsertHTML) {
     rv = LoadHTML(aQuotedText);
     if (NS_WARN_IF(Destroyed())) {
@@ -3193,14 +3229,9 @@ nsresult HTMLEditor::InsertAsCitedQuotationInternal(
     }
   }
 
-  // XXX Why don't we check this before inserting aQuotedText?
-  if (!newBlockquoteElement) {
-    return NS_OK;
-  }
-
   // Set the selection to just after the inserted node:
   EditorRawDOMPoint afterNewBlockquoteElement(
-      EditorRawDOMPoint::After(newBlockquoteElement));
+      EditorRawDOMPoint::After(blockquoteElementOrError.inspect()));
   NS_WARNING_ASSERTION(
       afterNewBlockquoteElement.IsSet(),
       "Failed to set after new <blockquote> element, but ignored");
@@ -3215,7 +3246,7 @@ nsresult HTMLEditor::InsertAsCitedQuotationInternal(
   }
 
   if (aNodeInserted) {
-    newBlockquoteElement.forget(aNodeInserted);
+    blockquoteElementOrError.unwrap().forget(aNodeInserted);
   }
 
   return NS_OK;

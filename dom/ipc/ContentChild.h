@@ -57,16 +57,6 @@ class PScriptCacheChild;
 namespace widget {
 enum class ThemeChangeKind : uint8_t;
 }
-
-#if !defined(XP_WIN)
-// Returns whether or not the currently running build is an unpackaged
-// developer build. This check is implemented by looking for omni.ja in the
-// the obj/dist dir. We use this routine to detect when the build dir will
-// use symlinks to the repo and object dir. On Windows, dev builds don't
-// use symlinks.
-bool IsDevelopmentBuild();
-#endif /* !XP_WIN */
-
 namespace dom {
 
 namespace ipc {
@@ -124,7 +114,8 @@ class ContentChild final : public PContentChild,
             bool aIsForBrowser);
 
   void InitXPCOM(XPCOMInitData&& aXPCOMInit,
-                 const mozilla::dom::ipc::StructuredCloneData& aInitialData);
+                 const mozilla::dom::ipc::StructuredCloneData& aInitialData,
+                 bool aIsReadyForBackgroundProcessing);
 
   void InitSharedUASheets(Maybe<base::SharedMemoryHandle>&& aHandle,
                           uintptr_t aAddress);
@@ -428,6 +419,8 @@ class ContentChild final : public PContentChild,
                                                const uint32_t& aChangeType,
                                                nsIURI* aDomain);
 
+  mozilla::ipc::IPCResult RecvShutdownConfirmedHP();
+
   mozilla::ipc::IPCResult RecvShutdown();
 
   mozilla::ipc::IPCResult RecvInvokeDragSession(
@@ -465,6 +458,8 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvNetworkLinkTypeChange(const uint32_t& aType);
   uint32_t NetworkLinkType() const { return mNetworkLinkType; }
+
+  mozilla::ipc::IPCResult RecvSocketProcessCrashed();
 
   // Get the directory for IndexedDB files. We query the parent for this and
   // cache the value
@@ -534,6 +529,7 @@ class ContentChild final : public PContentChild,
 #if defined(XP_WIN)
   mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
       GetUntrustedModulesDataResolver&& aResolver);
+  mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
 
   mozilla::ipc::IPCResult RecvSetXPCOMProcessAttributes(
@@ -541,7 +537,8 @@ class ContentChild final : public PContentChild,
       FullLookAndFeel&& aLookAndFeelData, SystemFontList&& aFontList,
       Maybe<base::SharedMemoryHandle>&& aSharedUASheetHandle,
       const uintptr_t& aSharedUASheetAddress,
-      nsTArray<base::SharedMemoryHandle>&& aSharedFontListBlocks);
+      nsTArray<base::SharedMemoryHandle>&& aSharedFontListBlocks,
+      const bool& aIsReadyForBackgroundProcessing);
 
   mozilla::ipc::IPCResult RecvProvideAnonymousTemporaryFile(
       const uint64_t& aID, const FileDescOrError& aFD);

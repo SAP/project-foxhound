@@ -153,7 +153,7 @@ void TypedArrayObject::assertZeroLengthArrayData() const {
 }
 #endif
 
-void TypedArrayObject::finalize(JSFreeOp* fop, JSObject* obj) {
+void TypedArrayObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   MOZ_ASSERT(!IsInsideNursery(obj));
   TypedArrayObject* curObj = &obj->as<TypedArrayObject>();
 
@@ -173,7 +173,7 @@ void TypedArrayObject::finalize(JSFreeOp* fop, JSObject* obj) {
   // Free the data slot pointer if it does not point into the old JSObject.
   if (!curObj->hasInlineElements()) {
     size_t nbytes = RoundUp(curObj->byteLength(), sizeof(Value));
-    fop->free_(obj, curObj->elements(), nbytes, MemoryUse::TypedArrayElements);
+    gcx->free_(obj, curObj->elements(), nbytes, MemoryUse::TypedArrayElements);
   }
 }
 
@@ -1156,7 +1156,7 @@ static JSObject* GetBufferSpeciesConstructor(
     if (GetOwnPropertyPure(cx, proto, NameToId(cx->names().constructor), &ctor,
                            &found) &&
         ctor.isObject() && &ctor.toObject() == defaultCtor) {
-      jsid speciesId = SYMBOL_TO_JSID(cx->wellKnownSymbols().species);
+      jsid speciesId = PropertyKey::Symbol(cx->wellKnownSymbols().species);
       JSFunction* getter;
       if (GetOwnGetterPure(cx, defaultCtor, speciesId, &getter) && getter &&
           IsArrayBufferSpecies(cx, getter)) {
@@ -1371,7 +1371,7 @@ template <typename T>
 
   // Step 5.
   RootedValue callee(cx);
-  RootedId iteratorId(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator));
+  RootedId iteratorId(cx, PropertyKey::Symbol(cx->wellKnownSymbols().iterator));
   if (!GetProperty(cx, other, other, iteratorId, &callee)) {
     return nullptr;
   }
@@ -2251,7 +2251,6 @@ static const JSClassOps TypedArrayClassOps = {
     nullptr,                       // mayResolve
     TypedArrayObject::finalize,    // finalize
     nullptr,                       // call
-    nullptr,                       // hasInstance
     nullptr,                       // construct
     ArrayBufferViewObject::trace,  // trace
 };

@@ -33,6 +33,7 @@
 
 #ifdef XP_WIN
 #  include "mozilla/layers/D3D11ShareHandleImage.h"
+#  include "mozilla/layers/D3D11TextureIMFSampleImage.h"
 #  include "mozilla/layers/D3D11YCbCrImage.h"
 #endif
 
@@ -86,6 +87,16 @@ const char* const kFragBody_RGBA =
     void main(void)                                                          \n\
     {                                                                        \n\
         FRAG_COLOR = TEXTURE(uTex0, vTexCoord0);                             \n\
+    }                                                                        \n\
+";
+const char* const kFragBody_BGRA =
+    "\
+    VARYING vec2 vTexCoord0;                                                 \n\
+    uniform SAMPLER uTex0;                                                   \n\
+                                                                             \n\
+    void main(void)                                                          \n\
+    {                                                                        \n\
+        FRAG_COLOR = TEXTURE(uTex0, vTexCoord0).bgra;                        \n\
     }                                                                        \n\
 ";
 const char* const kFragBody_CrYCb =
@@ -325,7 +336,11 @@ class ScopedDrawBlitState final {
     }
 
     mGL.fGetBooleanv(LOCAL_GL_COLOR_WRITEMASK, colorMask);
-    mGL.fColorMask(true, true, true, true);
+    if (mGL.IsSupported(GLFeature::draw_buffers_indexed)) {
+      mGL.fColorMaski(0, true, true, true, true);
+    } else {
+      mGL.fColorMask(true, true, true, true);
+    }
 
     mGL.fGetIntegerv(LOCAL_GL_VIEWPORT, viewport);
     MOZ_ASSERT(destSize.width && destSize.height);
@@ -346,7 +361,12 @@ class ScopedDrawBlitState final {
       mGL.SetEnabled(LOCAL_GL_RASTERIZER_DISCARD, rasterizerDiscard.value());
     }
 
-    mGL.fColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+    if (mGL.IsSupported(GLFeature::draw_buffers_indexed)) {
+      mGL.fColorMaski(0, colorMask[0], colorMask[1], colorMask[2],
+                      colorMask[3]);
+    } else {
+      mGL.fColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+    }
     mGL.fViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
   }
 };
@@ -777,6 +797,10 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
     case ImageFormat::D3D11_SHARE_HANDLE_TEXTURE:
       return BlitImage(static_cast<layers::D3D11ShareHandleImage*>(srcImage),
                        destSize, destOrigin);
+    case ImageFormat::D3D11_TEXTURE_IMF_SAMPLE:
+      return BlitImage(
+          static_cast<layers::D3D11TextureIMFSampleImage*>(srcImage), destSize,
+          destOrigin);
     case ImageFormat::D3D11_YCBCR_IMAGE:
       return BlitImage(static_cast<layers::D3D11YCbCrImage*>(srcImage),
                        destSize, destOrigin);
@@ -784,6 +808,7 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
       return false;  // todo
 #else
     case ImageFormat::D3D11_SHARE_HANDLE_TEXTURE:
+    case ImageFormat::D3D11_TEXTURE_IMF_SAMPLE:
     case ImageFormat::D3D11_YCBCR_IMAGE:
     case ImageFormat::D3D9_RGB32_TEXTURE:
       MOZ_ASSERT(false);
@@ -879,26 +904,34 @@ bool GLBlitHelper::BlitPlanarYCbCr(const PlanarYCbCrData& yuvData,
 
   // --
 
-  if (yuvData.mYSkip || yuvData.mCbSkip || yuvData.mCrSkip ||
-      yuvData.mYSize.width < 0 || yuvData.mYSize.height < 0 ||
-      yuvData.mCbCrSize.width < 0 || yuvData.mCbCrSize.height < 0 ||
+  auto ySize = yuvData.YDataSize();
+  auto cbcrSize = yuvData.CbCrDataSize();
+  if (yuvData.mYSkip || yuvData.mCbSkip || yuvData.mCrSkip || ySize.width < 0 ||
+      ySize.height < 0 || cbcrSize.width < 0 || cbcrSize.height < 0 ||
       yuvData.mYStride < 0 || yuvData.mCbCrStride < 0) {
     gfxCriticalError() << "Unusual PlanarYCbCrData: " << yuvData.mYSkip << ","
                        << yuvData.mCbSkip << "," << yuvData.mCrSkip << ", "
-                       << yuvData.mYSize.width << "," << yuvData.mYSize.height
-                       << ", " << yuvData.mCbCrSize.width << ","
-                       << yuvData.mCbCrSize.height << ", " << yuvData.mYStride
-                       << "," << yuvData.mCbCrStride;
+                       << ySize.width << "," << ySize.height << ", "
+                       << cbcrSize.width << "," << cbcrSize.height << ", "
+                       << yuvData.mYStride << "," << yuvData.mCbCrStride;
     return false;
   }
 
   gfx::IntSize divisors;
-  if (!GuessDivisors(yuvData.mYSize, yuvData.mCbCrSize, &divisors)) {
-    gfxCriticalError() << "GuessDivisors failed:" << yuvData.mYSize.width << ","
-                       << yuvData.mYSize.height << ", "
-                       << yuvData.mCbCrSize.width << ","
-                       << yuvData.mCbCrSize.height;
-    return false;
+  switch (yuvData.mChromaSubsampling) {
+    case gfx::ChromaSubsampling::FULL:
+      divisors = gfx::IntSize(1, 1);
+      break;
+    case gfx::ChromaSubsampling::HALF_WIDTH:
+      divisors = gfx::IntSize(2, 1);
+      break;
+    case gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT:
+      divisors = gfx::IntSize(2, 2);
+      break;
+    default:
+      gfxCriticalError() << "Unknown chroma subsampling:"
+                         << int(yuvData.mChromaSubsampling);
+      return false;
   }
 
   // --
@@ -921,8 +954,9 @@ bool GLBlitHelper::BlitPlanarYCbCr(const PlanarYCbCrData& yuvData,
 
   const ScopedSaveMultiTex saveTex(mGL, 3, LOCAL_GL_TEXTURE_2D);
   const ResetUnpackState reset(mGL);
-  const gfx::IntSize yTexSize(yuvData.mYStride, yuvData.mYSize.height);
-  const gfx::IntSize uvTexSize(yuvData.mCbCrStride, yuvData.mCbCrSize.height);
+  const gfx::IntSize yTexSize(yuvData.mYStride, yuvData.YDataSize().height);
+  const gfx::IntSize uvTexSize(yuvData.mCbCrStride,
+                               yuvData.CbCrDataSize().height);
 
   if (yTexSize != mYuvUploads_YSize || uvTexSize != mYuvUploads_UVSize) {
     mYuvUploads_YSize = yTexSize;
@@ -962,7 +996,7 @@ bool GLBlitHelper::BlitPlanarYCbCr(const PlanarYCbCrData& yuvData,
 
   // --
 
-  const auto& clipRect = yuvData.GetPictureRect();
+  const auto& clipRect = yuvData.mPictureRect;
   const auto srcOrigin = OriginPos::BottomLeft;
   const bool yFlip = (destOrigin != srcOrigin);
 
@@ -1120,8 +1154,9 @@ bool GLBlitHelper::BlitImage(MacIOSurface* const iosurf,
 void GLBlitHelper::DrawBlitTextureToFramebuffer(const GLuint srcTex,
                                                 const gfx::IntSize& srcSize,
                                                 const gfx::IntSize& destSize,
-                                                const GLenum srcTarget) const {
-  const char* fragHeader;
+                                                const GLenum srcTarget,
+                                                const bool srcIsBGRA) const {
+  const char* fragHeader = nullptr;
   Mat3 texMatrix0;
   switch (srcTarget) {
     case LOCAL_GL_TEXTURE_2D:
@@ -1136,7 +1171,8 @@ void GLBlitHelper::DrawBlitTextureToFramebuffer(const GLuint srcTex,
       gfxCriticalError() << "Unexpected srcTarget: " << srcTarget;
       return;
   }
-  const auto& prog = GetDrawBlitProg({fragHeader, kFragBody_RGBA});
+  const char* fragBody = srcIsBGRA ? kFragBody_BGRA : kFragBody_RGBA;
+  const auto& prog = GetDrawBlitProg({fragHeader, fragBody});
 
   const ScopedSaveMultiTex saveTex(mGL, 1, srcTarget);
   mGL->fBindTexture(srcTarget, srcTex);

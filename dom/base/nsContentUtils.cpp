@@ -272,6 +272,7 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsIContentSink.h"
 #include "nsIContentViewer.h"
+#include "nsICryptoHMAC.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
@@ -292,6 +293,7 @@
 #include "nsIInputStream.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsIKeyModule.h"
 #include "nsILoadContext.h"
 #include "nsILoadGroup.h"
 #include "nsILoadInfo.h"
@@ -302,7 +304,6 @@
 #include "nsIObjectLoadingContent.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
-#include "nsIParser.h"
 #include "nsIParserUtils.h"
 #include "nsIPermissionManager.h"
 #include "nsIPluginTag.h"
@@ -349,7 +350,7 @@
 #include "nsNodeInfoManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIDOMWindowInlines.h"
-#include "nsParserCIID.h"
+#include "nsParser.h"
 #include "nsParserConstants.h"
 #include "nsPluginHost.h"
 #include "nsPoint.h"
@@ -455,13 +456,14 @@ bool nsContentUtils::sGettersDecodeURLHash = true;
 bool nsContentUtils::sBypassCSSOMOriginCheck = false;
 #endif
 
-nsCString* nsContentUtils::sJSBytecodeMimeType = nullptr;
+nsCString* nsContentUtils::sJSScriptBytecodeMimeType = nullptr;
+nsCString* nsContentUtils::sJSModuleBytecodeMimeType = nullptr;
 
 nsContentUtils::UserInteractionObserver*
     nsContentUtils::sUserInteractionObserver = nullptr;
 
 nsHtml5StringParser* nsContentUtils::sHTMLFragmentParser = nullptr;
-nsIParser* nsContentUtils::sXMLFragmentParser = nullptr;
+nsParser* nsContentUtils::sXMLFragmentParser = nullptr;
 nsIFragmentContentSink* nsContentUtils::sXMLFragmentSink = nullptr;
 bool nsContentUtils::sFragmentParsingActive = false;
 
@@ -599,8 +601,6 @@ static const nsAttrValue::EnumTable kAutocompleteContactFieldHintTable[] = {
     {nullptr, 0}};
 
 namespace {
-
-static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
 static PLDHashTable* sEventListenerManagersHash;
 
@@ -827,7 +827,8 @@ nsresult nsContentUtils::Init() {
 
 bool nsContentUtils::InitJSBytecodeMimeType() {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!sJSBytecodeMimeType);
+  MOZ_ASSERT(!sJSScriptBytecodeMimeType);
+  MOZ_ASSERT(!sJSModuleBytecodeMimeType);
 
   JS::BuildIdCharVector jsBuildId;
   if (!JS::GetScriptTranscodingBuildId(&jsBuildId)) {
@@ -835,8 +836,10 @@ bool nsContentUtils::InitJSBytecodeMimeType() {
   }
 
   nsDependentCSubstring jsBuildIdStr(jsBuildId.begin(), jsBuildId.length());
-  sJSBytecodeMimeType =
-      new nsCString("javascript/moz-bytecode-"_ns + jsBuildIdStr);
+  sJSScriptBytecodeMimeType =
+      new nsCString("javascript/moz-script-bytecode-"_ns + jsBuildIdStr);
+  sJSModuleBytecodeMimeType =
+      new nsCString("javascript/moz-module-bytecode-"_ns + jsBuildIdStr);
   return true;
 }
 
@@ -1947,8 +1950,11 @@ void nsContentUtils::Shutdown() {
   delete sModifierSeparator;
   sModifierSeparator = nullptr;
 
-  delete sJSBytecodeMimeType;
-  sJSBytecodeMimeType = nullptr;
+  delete sJSScriptBytecodeMimeType;
+  sJSScriptBytecodeMimeType = nullptr;
+
+  delete sJSModuleBytecodeMimeType;
+  sJSModuleBytecodeMimeType = nullptr;
 
   NS_IF_RELEASE(sSameOriginChecker);
 
@@ -2202,7 +2208,8 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIPrincipal* aPrincipal) {
 }
 
 /* static */
-bool nsContentUtils::ShouldResistFingerprinting(char* aChar) {
+bool nsContentUtils::ShouldResistFingerprinting(const char* aJustification) {
+  // See comment in header file for information about usage
   return ShouldResistFingerprinting();
 }
 
@@ -2216,13 +2223,14 @@ inline void LogDomainAndPrefList(const char* exemptedDomainsPrefName,
            PromiseFlatCString(list).get()));
 }
 
+// These constants are used for privacy.resistFingerprinting.testGranularityMask
+const unsigned int sWebExtensionExemptMask = 0x01;
+const unsigned int sNonPBMExemptMask = 0x02;
+const unsigned int sSpecificDomainsExemptMask = 0x04;
+
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel) {
-  const unsigned int webExtensionExemptMask = 0x01;
-  const unsigned int nonPBMExemptMask = 0x02;
-  const unsigned int specificDomainsExemptMask = 0x04;
-
-  if (!ShouldResistFingerprinting()) {
+  if (!ShouldResistFingerprinting("Legacy quick-check")) {
     return false;
   }
 
@@ -2236,7 +2244,7 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel) {
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
   if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
-      nonPBMExemptMask) {
+      sNonPBMExemptMask) {
     // if non-PBM exempt mask is true, exempt non-PBM channels.
     if (loadInfo->GetOriginAttributes().mPrivateBrowsingId == 0) {
       return false;
@@ -2270,14 +2278,14 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel) {
     }
 
     if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
-        webExtensionExemptMask) {
+        sWebExtensionExemptMask) {
       if (channelURI->SchemeIs("web-extension")) {
         return false;
       }
     }
 
     if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
-        specificDomainsExemptMask) {
+        sSpecificDomainsExemptMask) {
       nsAutoCString list;
       Preferences::GetCString(exemptedDomainsPrefName, list);
       ToLowerCase(list);
@@ -2293,49 +2301,58 @@ bool nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel) {
 
     return !isExemptDomain;
   }
+
   // Case 2: Subresource Load
+  return ShouldResistFingerprinting(loadInfo->GetLoadingPrincipal(),
+                                    loadInfo->GetOriginAttributes());
+}
 
-  nsIPrincipal* loadingPrincipal = loadInfo->GetLoadingPrincipal();
-  // If it is not a document load then we are promised that the
-  // loadingPrincipal is not null.
-  MOZ_RELEASE_ASSERT(
-      loadingPrincipal,
-      "Got NULL loadingPrincipal in "
-      "nsContentUtils::ShouldResistFingerprinting(nsIChannel* aChannel)");
-
-  if (loadingPrincipal->IsSystemPrincipal()) {
-    MOZ_LOG(nsContentUtils::ResistFingerprintingLog(), LogLevel::Info,
-            ("Called nsContentUtils::ShouldResistFingerprinting(nsIChannel* "
-             "aChannel) with a system loadingPrincipal"));
+/* static */
+bool nsContentUtils::ShouldResistFingerprinting(
+    nsIPrincipal* aPrincipal,
+    const mozilla::OriginAttributes& aOriginAttributes) {
+  if (!ShouldResistFingerprinting("Legacy quick-check")) {
     return false;
   }
 
   if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
-      webExtensionExemptMask) {
-    if (BasePrincipal::Cast(loadingPrincipal)->AddonPolicy()) {
+      sNonPBMExemptMask) {
+    // if non-PBM exempt mask is true, exempt non-PBM channels.
+    if (aOriginAttributes.mPrivateBrowsingId == 0) {
       return false;
     }
   }
 
+  // Exclude internal schemes
+  if (aPrincipal->SchemeIs("about") || aPrincipal->SchemeIs("chrome") ||
+      aPrincipal->SchemeIs("resource") || aPrincipal->SchemeIs("view-source")) {
+    return false;
+  }
+
   if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
-      specificDomainsExemptMask) {
-    loadingPrincipal->IsURIInPrefList(exemptedDomainsPrefName, &isExemptDomain);
+      sWebExtensionExemptMask) {
+    if (BasePrincipal::Cast(aPrincipal)->AddonPolicy()) {
+      return false;
+    }
+  }
+
+  bool isExemptDomain = false;
+  const char* exemptedDomainsPrefName =
+      "privacy.resistFingerprinting.exemptedDomains";
+
+  if (StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
+      sSpecificDomainsExemptMask) {
+    aPrincipal->IsURIInPrefList(exemptedDomainsPrefName, &isExemptDomain);
 
     if (MOZ_LOG_TEST(nsContentUtils::ResistFingerprintingLog(),
                      mozilla::LogLevel::Debug)) {
       nsAutoCString origin;
-      loadingPrincipal->GetAsciiOrigin(origin);
+      aPrincipal->GetAsciiOrigin(origin);
       LogDomainAndPrefList(exemptedDomainsPrefName, origin, isExemptDomain);
     }
   }
 
   return !isExemptDomain;
-}
-
-/* static */
-bool nsContentUtils::UseStandinsForNativeColors() {
-  return ShouldResistFingerprinting() ||
-         StaticPrefs::ui_use_standins_for_native_colors();
 }
 
 /* static */
@@ -3766,8 +3783,12 @@ bool nsContentUtils::IsDraggableImage(nsIContent* aContent) {
 
 // static
 bool nsContentUtils::IsDraggableLink(const nsIContent* aContent) {
-  nsCOMPtr<nsIURI> absURI;
-  return aContent->IsLink(getter_AddRefs(absURI));
+  const auto* element = Element::FromNode(*aContent);
+  if (!element || !element->IsLink()) {
+    return false;
+  }
+  nsCOMPtr<nsIURI> absURI = element->GetHrefURI();
+  return !!absURI;
 }
 
 // static
@@ -3831,8 +3852,8 @@ bool nsContentUtils::IsExactSitePermDeny(nsIPrincipal* aPrincipal,
                       true);
 }
 
-bool nsContentUtils::HasExactSitePerm(nsIPrincipal* aPrincipal,
-                                      const nsACString& aType) {
+bool nsContentUtils::HasSitePerm(nsIPrincipal* aPrincipal,
+                                 const nsACString& aType) {
   if (!aPrincipal) {
     return false;
   }
@@ -3842,8 +3863,7 @@ bool nsContentUtils::HasExactSitePerm(nsIPrincipal* aPrincipal,
   NS_ENSURE_TRUE(permMgr, false);
 
   uint32_t perm;
-  nsresult rv =
-      permMgr->TestExactPermissionFromPrincipal(aPrincipal, aType, &perm);
+  nsresult rv = permMgr->TestPermissionFromPrincipal(aPrincipal, aType, &perm);
   NS_ENSURE_SUCCESS(rv, false);
 
   return perm != nsIPermissionManager::UNKNOWN_ACTION;
@@ -5211,7 +5231,7 @@ nsresult nsContentUtils::ParseFragmentXML(const nsAString& aSourceBuffer,
   mozilla::AutoRestore<bool> guard(nsContentUtils::sFragmentParsingActive);
   nsContentUtils::sFragmentParsingActive = true;
   if (!sXMLFragmentParser) {
-    nsCOMPtr<nsIParser> parser = do_CreateInstance(kCParserCID);
+    RefPtr<nsParser> parser = new nsParser();
     parser.forget(&sXMLFragmentParser);
     // sXMLFragmentParser now owns the parser
   }
@@ -7718,6 +7738,27 @@ nsresult nsContentUtils::CalculateBufferSizeForImage(
   return NS_OK;
 }
 
+static already_AddRefed<DataSourceSurface> ShmemToDataSurface(
+    Shmem& aData, uint32_t aStride, const IntSize& aImageSize,
+    SurfaceFormat aFormat) {
+  if (!aData.IsReadable() || !aImageSize.width || !aImageSize.height) {
+    return nullptr;
+  }
+
+  // Validate shared memory buffer size
+  size_t imageBufLen = 0;
+  size_t maxBufLen = 0;
+  if (NS_FAILED(nsContentUtils::CalculateBufferSizeForImage(
+          aStride, aImageSize, aFormat, &maxBufLen, &imageBufLen))) {
+    return nullptr;
+  }
+  if (imageBufLen > aData.Size<uint8_t>()) {
+    return nullptr;
+  }
+  return CreateDataSourceSurfaceFromData(aImageSize, aFormat,
+                                         aData.get<uint8_t>(), aStride);
+}
+
 nsresult nsContentUtils::DataTransferItemToImage(
     const IPCDataTransferItem& aItem, imgIContainer** aContainer) {
   MOZ_ASSERT(aItem.data().type() == IPCDataTransferData::TShmem);
@@ -7725,27 +7766,12 @@ nsresult nsContentUtils::DataTransferItemToImage(
 
   const IPCDataTransferImage& imageDetails = aItem.imageDetails();
   const IntSize size(imageDetails.width(), imageDetails.height());
-  if (!size.width || !size.height) {
+  RefPtr<DataSourceSurface> image =
+      ShmemToDataSurface(aItem.data().get_Shmem(), imageDetails.stride(), size,
+                         imageDetails.format());
+  if (!image) {
     return NS_ERROR_FAILURE;
   }
-
-  Shmem data = aItem.data().get_Shmem();
-
-  // Validate shared memory buffer size
-  size_t imageBufLen = 0;
-  size_t maxBufLen = 0;
-  nsresult rv = CalculateBufferSizeForImage(imageDetails.stride(), size,
-                                            imageDetails.format(), &maxBufLen,
-                                            &imageBufLen);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  if (imageBufLen > data.Size<uint8_t>()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  RefPtr<DataSourceSurface> image = CreateDataSourceSurfaceFromData(
-      size, imageDetails.format(), data.get<uint8_t>(), imageDetails.stride());
 
   RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(image, size);
   nsCOMPtr<imgIContainer> imageContainer =
@@ -7876,7 +7902,7 @@ void nsContentUtils::TransferableToIPCTransferable(
             aChild ? static_cast<IShmemAllocator*>(aChild)
                    : static_cast<IShmemAllocator*>(aParent);
         Maybe<Shmem> surfaceData =
-            GetSurfaceData(dataSurface, &length, &stride, allocator);
+            GetSurfaceData(*dataSurface, &length, &stride, allocator);
 
         if (surfaceData.isNothing()) {
           continue;
@@ -8040,21 +8066,20 @@ struct GetSurfaceDataShmem {
  */
 template <typename GetSurfaceDataContext = GetSurfaceDataRawBuffer>
 typename GetSurfaceDataContext::ReturnType GetSurfaceDataImpl(
-    mozilla::gfx::DataSourceSurface* aSurface, size_t* aLength,
-    int32_t* aStride,
+    DataSourceSurface& aSurface, size_t* aLength, int32_t* aStride,
     GetSurfaceDataContext aContext = GetSurfaceDataContext()) {
   mozilla::gfx::DataSourceSurface::MappedSurface map;
-  if (!aSurface->Map(mozilla::gfx::DataSourceSurface::MapType::READ, &map)) {
+  if (!aSurface.Map(mozilla::gfx::DataSourceSurface::MapType::READ, &map)) {
     return GetSurfaceDataContext::NullValue();
   }
 
   size_t bufLen = 0;
   size_t maxBufLen = 0;
   nsresult rv = nsContentUtils::CalculateBufferSizeForImage(
-      map.mStride, aSurface->GetSize(), aSurface->GetFormat(), &maxBufLen,
+      map.mStride, aSurface.GetSize(), aSurface.GetFormat(), &maxBufLen,
       &bufLen);
   if (NS_FAILED(rv)) {
-    aSurface->Unmap();
+    aSurface.Unmap();
     return GetSurfaceDataContext::NullValue();
   }
 
@@ -8071,25 +8096,45 @@ typename GetSurfaceDataContext::ReturnType GetSurfaceDataImpl(
   *aLength = maxBufLen;
   *aStride = map.mStride;
 
-  aSurface->Unmap();
+  aSurface.Unmap();
   return surfaceData;
 }
 }  // Anonymous namespace.
 
-mozilla::UniquePtr<char[]> nsContentUtils::GetSurfaceData(
-    NotNull<mozilla::gfx::DataSourceSurface*> aSurface, size_t* aLength,
-    int32_t* aStride) {
+UniquePtr<char[]> nsContentUtils::GetSurfaceData(DataSourceSurface& aSurface,
+                                                 size_t* aLength,
+                                                 int32_t* aStride) {
   return GetSurfaceDataImpl(aSurface, aLength, aStride);
 }
 
-Maybe<Shmem> nsContentUtils::GetSurfaceData(
-    mozilla::gfx::DataSourceSurface* aSurface, size_t* aLength,
-    int32_t* aStride, IShmemAllocator* aAllocator) {
+Maybe<Shmem> nsContentUtils::GetSurfaceData(DataSourceSurface& aSurface,
+                                            size_t* aLength, int32_t* aStride,
+                                            IShmemAllocator* aAllocator) {
   return GetSurfaceDataImpl(aSurface, aLength, aStride,
                             GetSurfaceDataShmem(aAllocator));
 }
 
-mozilla::Modifiers nsContentUtils::GetWidgetModifiers(int32_t aModifiers) {
+Maybe<ShmemImage> nsContentUtils::SurfaceToIPCImage(
+    DataSourceSurface& aSurface, IShmemAllocator* aAllocator) {
+  size_t len = 0;
+  int32_t stride = 0;
+  auto mem = GetSurfaceData(aSurface, &len, &stride, aAllocator);
+  if (!mem) {
+    return Nothing();
+  }
+  return Some(ShmemImage{*mem, uint32_t(stride), aSurface.GetFormat(),
+                         ImageIntSize::FromUnknownSize(aSurface.GetSize())});
+}
+
+already_AddRefed<DataSourceSurface> nsContentUtils::IPCImageToSurface(
+    ShmemImage&& aImage, IShmemAllocator* aAllocator) {
+  auto release =
+      MakeScopeExit([&] { aAllocator->DeallocShmem(aImage.data()); });
+  return ShmemToDataSurface(aImage.data(), aImage.stride(),
+                            aImage.size().ToUnknownSize(), aImage.format());
+}
+
+Modifiers nsContentUtils::GetWidgetModifiers(int32_t aModifiers) {
   Modifiers result = 0;
   if (aModifiers & nsIDOMWindowUtils::MODIFIER_SHIFT) {
     result |= mozilla::MODIFIER_SHIFT;
@@ -10644,6 +10689,48 @@ nsCString nsContentUtils::TruncatedURLForDisplay(nsIURI* aURL, size_t aMaxLen) {
     spec.Truncate(std::min(aMaxLen, spec.Length()));
   }
   return spec;
+}
+
+/* static */
+nsresult nsContentUtils::AnonymizeId(nsAString& aId,
+                                     const nsACString& aOriginKey,
+                                     OriginFormat aFormat) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult rv;
+  nsCOMPtr<nsIKeyObjectFactory> factory =
+      do_GetService("@mozilla.org/security/keyobjectfactory;1", &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCString rawKey;
+  if (aFormat == OriginFormat::Base64) {
+    rv = Base64Decode(aOriginKey, rawKey);
+    NS_ENSURE_SUCCESS(rv, rv);
+  } else {
+    rawKey = aOriginKey;
+  }
+
+  nsCOMPtr<nsIKeyObject> key;
+  rv = factory->KeyFromString(nsIKeyObject::HMAC, rawKey, getter_AddRefs(key));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsICryptoHMAC> hasher =
+      do_CreateInstance(NS_CRYPTO_HMAC_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = hasher->Init(nsICryptoHMAC::SHA256, key);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  NS_ConvertUTF16toUTF8 id(aId);
+  rv = hasher->Update(reinterpret_cast<const uint8_t*>(id.get()), id.Length());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCString mac;
+  rv = hasher->Finish(true, mac);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  CopyUTF8toUTF16(mac, aId);
+  return NS_OK;
 }
 
 namespace mozilla {

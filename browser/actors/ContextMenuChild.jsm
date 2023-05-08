@@ -28,9 +28,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyGetter(this, "PageMenuChild", () => {
-  let tmp = {};
-  ChromeUtils.import("resource://gre/modules/PageMenu.jsm", tmp);
-  return new tmp.PageMenuChild();
+  let pageMenu = ChromeUtils.import("resource://gre/modules/PageMenu.jsm");
+  return new pageMenu.PageMenuChild();
 });
 
 let contextMenus = new WeakMap();
@@ -138,6 +137,19 @@ class ContextMenuChild extends JSWindowActorChild {
                   "pictureinpicture.opened_method",
                   "contextmenu",
                   1
+                );
+                let args = {
+                  method: "contextMenu",
+                  firstTimeToggle: (!Services.prefs.getBoolPref(
+                    "media.videocontrols.picture-in-picture.video-toggle.has-used"
+                  )).toString(),
+                };
+                Services.telemetry.recordEvent(
+                  "pictureinpicture",
+                  "opened_method",
+                  "method",
+                  null,
+                  args
                 );
                 let event = new this.contentWindow.CustomEvent(
                   "MozTogglePictureInPicture",
@@ -365,6 +377,7 @@ class ContextMenuChild extends JSWindowActorChild {
       this.context.linkProtocol &&
       !(
         this.context.linkProtocol == "mailto" ||
+        this.context.linkProtocol == "tel" ||
         this.context.linkProtocol == "javascript" ||
         this.context.linkProtocol == "news" ||
         this.context.linkProtocol == "snews"
@@ -776,8 +789,8 @@ class ContextMenuChild extends JSWindowActorChild {
     const context = this.context;
 
     context.timeStamp = aEvent.timeStamp;
-    context.screenX = aEvent.screenX;
-    context.screenY = aEvent.screenY;
+    context.screenXDevPx = aEvent.screenX * this.contentWindow.devicePixelRatio;
+    context.screenYDevPx = aEvent.screenY * this.contentWindow.devicePixelRatio;
     context.mozInputSource = aEvent.mozInputSource;
 
     let node = aEvent.composedTarget;
@@ -860,6 +873,7 @@ class ContextMenuChild extends JSWindowActorChild {
     context.onLink = false;
     context.onLoadedImage = false;
     context.onMailtoLink = false;
+    context.onTelLink = false;
     context.onMozExtLink = false;
     context.onNumeric = false;
     context.onPassword = false;
@@ -1145,6 +1159,7 @@ class ContextMenuChild extends JSWindowActorChild {
           context.linkTextStr = this._getLinkText();
           context.linkProtocol = this._getLinkProtocol();
           context.onMailtoLink = context.linkProtocol == "mailto";
+          context.onTelLink = context.linkProtocol == "tel";
           context.onMozExtLink = context.linkProtocol == "moz-extension";
           context.onSaveableLink = this._isLinkSaveable(context.link);
 

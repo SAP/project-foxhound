@@ -1337,10 +1337,12 @@ void nsDragService::SourceEndDragSession(GdkDragContext* aContext,
     gint x, y;
     GdkDisplay* display = gdk_display_get_default();
     GdkScreen* screen = gdk_display_get_default_screen(display);
-    GdkWindow* window = gdk_screen_get_root_window(screen);
-    gdk_window_get_device_position(window, widget::GdkGetPointer(), &x, &y,
+    GtkWindow* window = GetGtkWindow(mSourceDocument);
+    GdkWindow* gdkWindow = window ? gtk_widget_get_window(GTK_WIDGET(window))
+                                  : gdk_screen_get_root_window(screen);
+    gdk_window_get_device_position(gdkWindow, widget::GdkGetPointer(), &x, &y,
                                    nullptr);
-    gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
+    gint scale = gdk_window_get_scale_factor(gdkWindow);
     SetDragEndPoint(LayoutDeviceIntPoint(x * scale, y * scale));
     LOGDRAGSERVICE(("guess drag end point %d %d\n", x * scale, y * scale));
   }
@@ -1818,14 +1820,13 @@ void nsDragService::SourceDataGet(GtkWidget* aWidget, GdkDragContext* aContext,
         LOGDRAGSERVICE(("  do_QueryInterface failed\n"));
         return;
       }
-      GdkPixbuf* pixbuf = nsImageToPixbuf::ImageToPixbuf(image);
+      RefPtr<GdkPixbuf> pixbuf = nsImageToPixbuf::ImageToPixbuf(image);
       if (!pixbuf) {
         LOGDRAGSERVICE(("  ImageToPixbuf failed\n"));
         return;
       }
       gtk_selection_data_set_pixbuf(aSelectionData, pixbuf);
       LOGDRAGSERVICE(("  image data set\n"));
-      g_object_unref(pixbuf);
     } else {
       void* tmpData = nullptr;
       uint32_t tmpDataLen = 0;
@@ -1953,12 +1954,11 @@ void nsDragService::SetDragIcon(GdkDragContext* aContext) {
     }
   } else if (surface) {
     if (!SetAlphaPixmap(surface, aContext, offsetX, offsetY, dragRect)) {
-      GdkPixbuf* dragPixbuf = nsImageToPixbuf::SourceSurfaceToPixbuf(
+      RefPtr<GdkPixbuf> dragPixbuf = nsImageToPixbuf::SourceSurfaceToPixbuf(
           surface, dragRect.width, dragRect.height);
       if (dragPixbuf) {
         LOGDRAGSERVICE(("  set drag pixbuf"));
         gtk_drag_set_icon_pixbuf(aContext, dragPixbuf, offsetX, offsetY);
-        g_object_unref(dragPixbuf);
       }
     }
   }
@@ -2107,7 +2107,7 @@ gboolean nsDragService::ScheduleDropEvent(nsWindow* aWindow,
     return FALSE;
   }
 
-  SetDragEndPoint(aWindowPoint + aWindow->WidgetToScreenOffset());
+  SetDragEndPoint(aWindowPoint);
 
   // We'll reply with gtk_drag_finish().
   return TRUE;

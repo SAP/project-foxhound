@@ -33,7 +33,7 @@ class WorkerCSPEventListener final : public nsICSPEventListener {
   Mutex mMutex;
 
   // Protected by mutex.
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<WeakWorkerRef> mWorkerRef GUARDED_BY(mMutex);
 };
 
 }  // namespace dom

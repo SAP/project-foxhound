@@ -9,6 +9,7 @@
 #include "AudioPacketizer.h"
 #include "AudioSegment.h"
 #include "AudioDeviceInfo.h"
+#include "DeviceInputTrack.h"
 #include "MediaEngineWebRTC.h"
 #include "MediaTrackListener.h"
 #include "modules/audio_processing/include/audio_processing.h"
@@ -89,7 +90,8 @@ class MediaEngineWebRTCMicrophoneSource : public MediaEngineSource {
   // Current state of the resource for this source.
   MediaEngineSourceState mState;
 
-  // The current preferences for the APM's various processing stages.
+  // The current preferences that will be forwarded to mAudioProcessingConfig
+  // below.
   MediaEnginePrefs mCurrentPrefs;
 
   // The AudioProcessingTrack used to inteface with the MediaTrackGraph. Set in
@@ -179,8 +181,7 @@ class AudioInputProcessing : public AudioDataListener {
   // mAudioProcessing. Not used if the processing is bypassed.
   Maybe<AudioPacketizer<AudioDataValue, float>> mPacketizerOutput;
   // The number of channels asked for by content, after clamping to the range of
-  // legal channel count for this particular device. This is the number of
-  // channels of the input buffer passed as parameter in NotifyInputData.
+  // legal channel count for this particular device.
   uint32_t mRequestedInputChannelCount;
   // mSkipProcessing is true if none of the processing passes are enabled,
   // because of prefs or constraints. This allows simply copying the audio into
@@ -224,6 +225,10 @@ class AudioProcessingTrack : public ProcessedMediaTrack {
   // Only accessed on the main thread. Link to the track producing raw audio
   // input data. Graph thread should use mInputs to get the source
   RefPtr<MediaInputPort> mPort;
+
+  // Only accessed on the main thread. This is the track producing raw audio
+  // input data. Graph thread should MediaInputPort::GetSource() to get this
+  RefPtr<NativeInputTrack> mDeviceInputTrack;
 
   // Only accessed on the main thread. Used for bookkeeping on main thread, such
   // that DisconnectDeviceInput can be idempotent.

@@ -7,6 +7,9 @@
 #include "SandboxTestingChild.h"
 
 #include "mozilla/StaticPrefs_security.h"
+#ifdef XP_MACOSX
+#  include "nsCocoaFeatures.h"
+#endif
 #include "nsXULAppAPI.h"
 
 #ifdef XP_UNIX
@@ -23,7 +26,11 @@
 #    include <sys/syscall.h>
 #    include <sys/un.h>
 #    include "mozilla/ProcInfo_linux.h"
-#  endif  // XP_LINUX
+#    ifdef MOZ_X11
+#      include "X11/Xlib.h"
+#      include "X11UndefineNone.h"
+#    endif  // MOZ_X11
+#  endif    // XP_LINUX
 #  include <sys/socket.h>
 #  include <sys/stat.h>
 #  include <sys/types.h>
@@ -32,11 +39,27 @@
 #endif
 
 #ifdef XP_MACOSX
+#  include <spawn.h>
+#  include <CoreFoundation/CoreFoundation.h>
 #  include <CoreGraphics/CoreGraphics.h>
+namespace ApplicationServices {
+#  include <ApplicationServices/ApplicationServices.h>
+}
 #endif
 
 #ifdef XP_WIN
 #  include <stdio.h>
+#  include <winternl.h>
+
+#  include "mozilla/DynamicallyLinkedFunctionPtr.h"
+#  include "nsAppDirectoryServiceDefs.h"
+#endif
+
+constexpr bool kIsDebug =
+#ifdef DEBUG
+    true;
+#else
+    false;
 #endif
 
 namespace mozilla {
@@ -57,10 +80,207 @@ static void RunTestsSched(SandboxTestingChild* child) {
     return sched_getparam((pid_t)(syscall(__NR_gettid) - 1), &param_pid_Ntid);
   });
 }
+#endif
+
+// Tests that apply to every process type (more or less)
+static void RunGenericTests(SandboxTestingChild* child, bool aIsGMP = false) {
+#ifdef XP_LINUX
+  // Check ABI issues with 32-bit arguments on 64-bit platforms.
+  if (sizeof(void*) == 8) {
+    static constexpr uint64_t kHighBits = 0xDEADBEEF00000000;
+
+    struct timespec ts0, ts1;
+    child->ErrnoTest("high_bits_gettime"_ns, true, [&] {
+      return syscall(__NR_clock_gettime, kHighBits | CLOCK_MONOTONIC, &ts0);
+    });
+    // Try to make sure we got the correct clock by reading it again and
+    // comparing to see if the times are vaguely similar.
+    int rv = clock_gettime(CLOCK_MONOTONIC, &ts1);
+    MOZ_RELEASE_ASSERT(rv == 0);
+    MOZ_RELEASE_ASSERT(ts0.tv_sec <= ts1.tv_sec + 1);
+    MOZ_RELEASE_ASSERT(ts1.tv_sec <= ts0.tv_sec + 60);
+
+    // Check some non-zeroth arguments.  (fcntl is convenient for
+    // this, but GMP has a stricter policy, so skip it there.)
+    if (!aIsGMP) {
+      int flags;
+      child->ErrnoTest("high_bits_fcntl_getfl"_ns, true, [&] {
+        flags = syscall(__NR_fcntl, 0, kHighBits | F_GETFL);
+        return flags;
+      });
+      MOZ_RELEASE_ASSERT(flags == fcntl(0, F_GETFL));
+
+      int fds[2];
+      rv = pipe(fds);
+      MOZ_RELEASE_ASSERT(rv >= 0);
+      child->ErrnoTest("high_bits_fcntl_setfl"_ns, true, [&] {
+        return syscall(__NR_fcntl, fds[0], kHighBits | F_SETFL,
+                       kHighBits | O_NONBLOCK);
+      });
+      flags = fcntl(fds[0], F_GETFL);
+      MOZ_RELEASE_ASSERT(flags >= 0);
+      MOZ_RELEASE_ASSERT(flags & O_NONBLOCK);
+    }
+  }
 #endif  // XP_LINUX
+}
+
+#ifdef XP_WIN
+/**
+ * Uses NtCreateFile directly to test file system brokering.
+ *
+ */
+static void FileTest(const nsCString& aName, const char* aSpecialDirName,
+                     const nsString& aRelativeFilePath, ACCESS_MASK aAccess,
+                     bool aExpectSuccess, SandboxTestingChild* aChild) {
+  static const StaticDynamicallyLinkedFunctionPtr<decltype(&NtCreateFile)>
+      pNtCreateFile(L"ntdll.dll", "NtCreateFile");
+  static const StaticDynamicallyLinkedFunctionPtr<decltype(&NtClose)> pNtClose(
+      L"ntdll.dll", "NtClose");
+
+  // Start the filename with the NT namespace
+  nsString testFilename(u"\\??\\"_ns);
+  nsString dirPath;
+  aChild->SendGetSpecialDirectory(nsDependentCString(aSpecialDirName),
+                                  &dirPath);
+  testFilename.Append(dirPath);
+  testFilename.AppendLiteral("\\");
+  testFilename.Append(aRelativeFilePath);
+
+  UNICODE_STRING uniFileName;
+  ::RtlInitUnicodeString(&uniFileName, testFilename.get());
+
+  OBJECT_ATTRIBUTES objectAttributes;
+  InitializeObjectAttributes(&objectAttributes, &uniFileName,
+                             OBJ_CASE_INSENSITIVE, nullptr, nullptr);
+
+  HANDLE fileHandle = INVALID_HANDLE_VALUE;
+  IO_STATUS_BLOCK ioStatusBlock = {};
+
+  ULONG createOptions = StringEndsWith(testFilename, u"\\"_ns) ||
+                                StringEndsWith(testFilename, u"/"_ns)
+                            ? FILE_DIRECTORY_FILE
+                            : FILE_NON_DIRECTORY_FILE;
+  NTSTATUS status = pNtCreateFile(
+      &fileHandle, aAccess, &objectAttributes, &ioStatusBlock, nullptr, 0, 0,
+      FILE_OPEN_IF, createOptions | FILE_SYNCHRONOUS_IO_NONALERT, nullptr, 0);
+
+  if (fileHandle != INVALID_HANDLE_VALUE) {
+    pNtClose(fileHandle);
+  }
+
+  nsCString accessString;
+  if ((aAccess & FILE_GENERIC_READ) == FILE_GENERIC_READ) {
+    accessString.AppendLiteral("r");
+  }
+  if ((aAccess & FILE_GENERIC_WRITE) == FILE_GENERIC_WRITE) {
+    accessString.AppendLiteral("w");
+  }
+  if ((aAccess & FILE_GENERIC_EXECUTE) == FILE_GENERIC_EXECUTE) {
+    accessString.AppendLiteral("e");
+  }
+
+  nsCString msgRelPath = NS_ConvertUTF16toUTF8(aRelativeFilePath);
+  for (size_t i = 0, j = 0; i < aRelativeFilePath.Length(); ++i, ++j) {
+    if (aRelativeFilePath[i] == u'\\') {
+      msgRelPath.Insert('\\', j++);
+    }
+  }
+
+  nsCString message;
+  message.AppendPrintf(
+      "Special dir: %s, file: %s, access: %s , returned status: %lx",
+      aSpecialDirName, msgRelPath.get(), accessString.get(), status);
+
+  aChild->SendReportTestResults(aName, aExpectSuccess == NT_SUCCESS(status),
+                                message);
+}
+#endif
+
+#ifdef XP_MACOSX
+/*
+ * Test if this process can launch another process with posix_spawnp,
+ * exec, and LSOpenCFURLRef. All launches are expected to fail. In processes
+ * where the sandbox permits reading of file metadata (content processes at
+ * this time), we expect the posix_spawnp error to be EPERM. In processes
+ * without that permission, we expect ENOENT. Changing the sandbox policy
+ * may break this assumption, but the important aspect to test for is that the
+ * launch is not permitted.
+ */
+void RunMacTestLaunchProcess(SandboxTestingChild* child,
+                             int aPosixSpawnExpectedError = ENOENT) {
+  // Test that posix_spawnp fails
+  char* argv[2];
+  argv[0] = const_cast<char*>("bash");
+  argv[1] = NULL;
+  int rv = posix_spawnp(NULL, "/bin/bash", NULL, NULL, argv, NULL);
+  nsPrintfCString posixSpawnMessage("posix_spawnp returned %d, expected %d", rv,
+                                    aPosixSpawnExpectedError);
+  child->SendReportTestResults("posix_spawnp test"_ns,
+                               rv == aPosixSpawnExpectedError,
+                               posixSpawnMessage);
+
+  // Test that exec fails
+  child->ErrnoTest("execv /bin/bash test"_ns, false, [&] {
+    char* argvp = NULL;
+    return execv("/bin/bash", &argvp);
+  });
+
+  // Test that launching an application using LSOpenCFURLRef fails
+  char* uri;
+  if (nsCocoaFeatures::OnCatalinaOrLater()) {
+    uri = const_cast<char*>("/System/Applications/Utilities/Console.app");
+  } else {
+    uri = const_cast<char*>("/Applications/Utilities/Console.app");
+  }
+  CFStringRef filePath = ::CFStringCreateWithCString(kCFAllocatorDefault, uri,
+                                                     kCFStringEncodingUTF8);
+  CFURLRef urlRef = ::CFURLCreateWithFileSystemPath(
+      kCFAllocatorDefault, filePath, kCFURLPOSIXPathStyle, false);
+  if (!urlRef) {
+    child->SendReportTestResults("LSOpenCFURLRef"_ns, false,
+                                 "CFURLCreateWithFileSystemPath failed"_ns);
+    return;
+  }
+
+  OSStatus status = ApplicationServices::LSOpenCFURLRef(urlRef, NULL);
+  ::CFRelease(urlRef);
+  nsPrintfCString lsMessage(
+      "LSOpenCFURLRef returned %d, "
+      "expected kLSServerCommunicationErr (%d)",
+      status, ApplicationServices::kLSServerCommunicationErr);
+  child->SendReportTestResults(
+      "LSOpenCFURLRef"_ns,
+      status == ApplicationServices::kLSServerCommunicationErr, lsMessage);
+}
+
+/*
+ * Test if this process can connect to the macOS window server.
+ * When |aShouldHaveAccess| is true, the test passes if access is __permitted__.
+ * When |aShouldHaveAccess| is false, the test passes if access is __blocked__.
+ */
+void RunMacTestWindowServer(SandboxTestingChild* child,
+                            bool aShouldHaveAccess = false) {
+  // CGSessionCopyCurrentDictionary() returns NULL when a
+  // connection to the window server is not available.
+  CFDictionaryRef windowServerDict = CGSessionCopyCurrentDictionary();
+  bool gotWindowServerDetails = (windowServerDict != nullptr);
+  bool testPassed = (gotWindowServerDetails == aShouldHaveAccess);
+  child->SendReportTestResults(
+      "CGSessionCopyCurrentDictionary"_ns, testPassed,
+      gotWindowServerDetails
+          ? "dictionary returned, access is permitted"_ns
+          : "no dictionary returned, access appears blocked"_ns);
+  if (windowServerDict != nullptr) {
+    CFRelease(windowServerDict);
+  }
+}
+#endif /* XP_MACOSX */
 
 void RunTestsContent(SandboxTestingChild* child) {
   MOZ_ASSERT(child, "No SandboxTestingChild*?");
+
+  RunGenericTests(child);
 
 #ifdef XP_UNIX
   struct stat st;
@@ -103,6 +323,14 @@ void RunTestsContent(SandboxTestingChild* child) {
       MAKE_THREAD_CPUCLOCK((pid_t)syscall(__NR_gettid), CPUCLOCK_SCHED);
   child->ErrnoTest("clock_gettime_thread"_ns, true,
                    [&] { return clock_gettime(thread, &tthread); });
+
+  // getcpu is allowed
+  // We're using syscall directly because:
+  // - sched_getcpu uses vdso and as a result doesn't go through the sandbox.
+  // - getcpu isn't defined in the header files we're using yet.
+  int c;
+  child->ErrnoTest("getcpu"_ns, true,
+                   [&] { return syscall(SYS_getcpu, &c, NULL, NULL); });
 
   // An abstract socket that does not starts with '/', so we don't want it to
   // work.
@@ -183,30 +411,54 @@ void RunTestsContent(SandboxTestingChild* child) {
                        return fd;
                      });
   }
-#  endif  // XP_LINUX
+
+#    ifdef MOZ_X11
+  // Check that X11 access is blocked (bug 1129492).
+  // This will fail if security.sandbox.content.headless is turned off.
+  if (PR_GetEnv("DISPLAY")) {
+    Display* disp = XOpenDisplay(nullptr);
+
+    child->SendReportTestResults(
+        "x11_access"_ns, !disp,
+        disp ? "XOpenDisplay succeeded"_ns : "XOpenDisplay failed"_ns);
+    if (disp) {
+      XCloseDisplay(disp);
+    }
+  }
+#    endif  // MOZ_X11
+#  endif    // XP_LINUX
 
 #  ifdef XP_MACOSX
-  // Test that content processes can not connect to the macOS window server.
-  // CGSessionCopyCurrentDictionary() returns NULL when a connection to the
-  // window server is not available.
-  CFDictionaryRef windowServerDict = CGSessionCopyCurrentDictionary();
-  bool gotWindowServerDetails = (windowServerDict != nullptr);
-  child->SendReportTestResults(
-      "CGSessionCopyCurrentDictionary"_ns, !gotWindowServerDetails,
-      gotWindowServerDetails ? "Failed: dictionary unexpectedly returned"_ns
-                             : "Succeeded: no dictionary returned"_ns);
-  if (windowServerDict != nullptr) {
-    CFRelease(windowServerDict);
-  }
+  RunMacTestLaunchProcess(child, EPERM);
+  RunMacTestWindowServer(child);
 #  endif
 
-#else   // XP_UNIX
-  child->ReportNoTests();
-#endif  // XP_UNIX
+#elif XP_WIN
+  FileTest("read from chrome"_ns, NS_APP_USER_CHROME_DIR, u"sandboxTest.txt"_ns,
+           FILE_GENERIC_READ, true, child);
+  FileTest("read from profile via relative path"_ns, NS_APP_USER_CHROME_DIR,
+           u"..\\sandboxTest.txt"_ns, FILE_GENERIC_READ, false, child);
+  // The profile dir is the parent of the chrome dir.
+  FileTest("read from chrome using forward slash"_ns,
+           NS_APP_USER_PROFILE_50_DIR, u"chrome/sandboxTest.txt"_ns,
+           FILE_GENERIC_READ, false, child);
+
+  // Note: these only pass in DEBUG builds because we allow write access to the
+  // temp dir for certain test logs and that is where the profile is created.
+  FileTest("read from profile"_ns, NS_APP_USER_PROFILE_50_DIR,
+           u"sandboxTest.txt"_ns, FILE_GENERIC_READ, kIsDebug, child);
+  FileTest("read/write from chrome"_ns, NS_APP_USER_CHROME_DIR,
+           u"sandboxTest.txt"_ns, FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+           kIsDebug, child);
+#else
+    child->ReportNoTests();
+#endif
 }
 
 void RunTestsSocket(SandboxTestingChild* child) {
   MOZ_ASSERT(child, "No SandboxTestingChild*?");
+
+  RunGenericTests(child);
 
 #ifdef XP_UNIX
   child->ErrnoTest("getaddrinfo"_ns, true, [&] {
@@ -249,15 +501,27 @@ void RunTestsSocket(SandboxTestingChild* child) {
                        return fd;
                      });
   }
-#  endif  // XP_LINUX
 
+  // getcpu is allowed
+  // We're using syscall directly because:
+  // - sched_getcpu uses vdso and as a result doesn't go through the sandbox.
+  // - getcpu isn't defined in the header files we're using yet.
+  int c;
+  child->ErrnoTest("getcpu"_ns, true,
+                   [&] { return syscall(SYS_getcpu, &c, NULL, NULL); });
+#  endif  // XP_LINUX
+#elif XP_MACOSX
+  RunMacTestLaunchProcess(child);
+  RunMacTestWindowServer(child);
 #else   // XP_UNIX
-  child->ReportNoTests();
+    child->ReportNoTests();
 #endif  // XP_UNIX
 }
 
 void RunTestsRDD(SandboxTestingChild* child) {
   MOZ_ASSERT(child, "No SandboxTestingChild*?");
+
+  RunGenericTests(child);
 
 #ifdef XP_UNIX
 #  ifdef XP_LINUX
@@ -298,14 +562,27 @@ void RunTestsRDD(SandboxTestingChild* child) {
     return ioctl(0, _IOW('b', 0, uint64_t), nullptr);
   });
 
-#  endif  // XP_LINUX
-#else     // XP_UNIX
+  // getcpu is allowed
+  // We're using syscall directly because:
+  // - sched_getcpu uses vdso and as a result doesn't go through the sandbox.
+  // - getcpu isn't defined in the header files we're using yet.
+  int c;
+  child->ErrnoTest("getcpu"_ns, true,
+                   [&] { return syscall(SYS_getcpu, &c, NULL, NULL); });
+#  elif XP_MACOSX
+  RunMacTestLaunchProcess(child);
+  RunMacTestWindowServer(child);
+#  endif
+#else  // XP_UNIX
   child->ReportNoTests();
 #endif
 }
 
 void RunTestsGMPlugin(SandboxTestingChild* child) {
   MOZ_ASSERT(child, "No SandboxTestingChild*?");
+
+  RunGenericTests(child, /* aIsGMP = */ true);
+
 #ifdef XP_UNIX
 #  ifdef XP_LINUX
   struct utsname utsname_res = {};
@@ -345,14 +622,20 @@ void RunTestsGMPlugin(SandboxTestingChild* child) {
                        return fd;
                      });
   }
-#  endif  // XP_LINUX
-#else     // XP_UNIX
+#  elif XP_MACOSX  // XP_LINUX
+  RunMacTestLaunchProcess(child);
+  /* The Mac GMP process requires access to the window server */
+  RunMacTestWindowServer(child, true /* aShouldHaveAccess */);
+#  endif           // XP_MACOSX
+#else              // XP_UNIX
   child->ReportNoTests();
 #endif
 }
 
-void RunTestsUtility(SandboxTestingChild* child) {
+void RunTestsGenericUtility(SandboxTestingChild* child) {
   MOZ_ASSERT(child, "No SandboxTestingChild*?");
+
+  RunGenericTests(child);
 
 #ifdef XP_UNIX
 #  ifdef XP_LINUX
@@ -366,9 +649,11 @@ void RunTestsUtility(SandboxTestingChild* child) {
     int rv = getrusage(RUSAGE_SELF, &res);
     return rv;
   });
-#  endif  // XP_LINUX
-#else     // XP_UNIX
-#  ifdef XP_WIN
+#  elif XP_MACOSX  // XP_LINUX
+  RunMacTestLaunchProcess(child);
+  RunMacTestWindowServer(child);
+#  endif           // XP_MACOSX
+#elif XP_WIN       // XP_UNIX
   child->ErrnoValueTest("write_only"_ns, EACCES, [&] {
     FILE* rv = fopen("test_sandbox.txt", "w");
     if (rv != nullptr) {
@@ -377,10 +662,9 @@ void RunTestsUtility(SandboxTestingChild* child) {
     }
     return -1;
   });
-#  else   // XP_WIN
-  child->ReportNoTests();
-#  endif  // XP_WIN
-#endif
+#else              // XP_UNIX
+    child->ReportNoTests();
+#endif             // XP_MACOSX
 }
 
 }  // namespace mozilla

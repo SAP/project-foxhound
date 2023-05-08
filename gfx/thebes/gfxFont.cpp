@@ -13,6 +13,7 @@
 #include "mozilla/intl/Segmenter.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/SVGContextPaint.h"
 
 #include "mozilla/Logging.h"
@@ -179,7 +180,8 @@ void gfxFontCache::Shutdown() {
 }
 
 gfxFontCache::gfxFontCache(nsIEventTarget* aEventTarget)
-    : gfxFontCacheExpirationTracker(aEventTarget) {
+    : ExpirationTrackerImpl<gfxFont, 3, Lock, AutoLock>(
+          FONT_TIMEOUT_SECONDS * 1000, "gfxFontCache", aEventTarget) {
   nsCOMPtr<nsIObserverService> obs = GetObserverService();
   if (obs) {
     obs->AddObserver(new Observer, "memory-pressure", false);
@@ -232,25 +234,34 @@ bool gfxFontCache::HashEntry::KeyEquals(const KeyTypePointer aKey) const {
 gfxFont* gfxFontCache::Lookup(const gfxFontEntry* aFontEntry,
                               const gfxFontStyle* aStyle,
                               const gfxCharacterMap* aUnicodeRangeMap) {
+  AutoReadLock lock(mCacheLock);
+
   Key key(aFontEntry, aStyle, aUnicodeRangeMap);
   HashEntry* entry = mFonts.GetEntry(key);
 
   Telemetry::Accumulate(Telemetry::FONT_CACHE_HIT, entry != nullptr);
-  if (!entry) return nullptr;
 
-  return entry->mFont;
+  return entry ? entry->mFont : nullptr;
 }
 
 void gfxFontCache::AddNew(gfxFont* aFont) {
-  Key key(aFont->GetFontEntry(), aFont->GetStyle(),
-          aFont->GetUnicodeRangeMap());
-  HashEntry* entry = mFonts.PutEntry(key);
-  if (!entry) return;
-  gfxFont* oldFont = entry->mFont;
-  entry->mFont = aFont;
-  // Assert that we can find the entry we just put in (this fails if the key
-  // has a NaN float value in it, e.g. 'sizeAdjust').
-  MOZ_ASSERT(entry == mFonts.GetEntry(key));
+  gfxFont* oldFont;
+  {
+    AutoWriteLock lock(mCacheLock);
+
+    Key key(aFont->GetFontEntry(), aFont->GetStyle(),
+            aFont->GetUnicodeRangeMap());
+    HashEntry* entry = mFonts.PutEntry(key);
+    if (!entry) {
+      return;
+    }
+    oldFont = entry->mFont;
+    entry->mFont = aFont;
+    // Assert that we can find the entry we just put in (this fails if the key
+    // has a NaN float value in it, e.g. 'sizeAdjust').
+    MOZ_ASSERT(entry == mFonts.GetEntry(key));
+  }
+
   // If someone's asked us to replace an existing font entry, then that's a
   // bit weird, but let it happen, and expire the old font if it's not used.
   if (oldFont && oldFont->GetExpirationState()->IsTracked()) {
@@ -262,8 +273,7 @@ void gfxFontCache::AddNew(gfxFont* aFont) {
 }
 
 void gfxFontCache::NotifyReleased(gfxFont* aFont) {
-  nsresult rv = AddObject(aFont);
-  if (NS_FAILED(rv)) {
+  if (NS_FAILED(AddObject(aFont))) {
     // We couldn't track it for some reason. Kill it now.
     DestroyFont(aFont);
   }
@@ -274,6 +284,12 @@ void gfxFontCache::NotifyReleased(gfxFont* aFont) {
   // expire and be deleted.
 }
 
+void gfxFontCache::NotifyExpiredLocked(gfxFont* aFont, const AutoLock& aLock) {
+  aFont->ClearCachedWords();
+  RemoveObjectLocked(aFont, aLock);
+  DestroyFont(aFont);
+}
+
 void gfxFontCache::NotifyExpired(gfxFont* aFont) {
   aFont->ClearCachedWords();
   RemoveObject(aFont);
@@ -281,6 +297,7 @@ void gfxFontCache::NotifyExpired(gfxFont* aFont) {
 }
 
 void gfxFontCache::DestroyFont(gfxFont* aFont) {
+  AutoWriteLock lock(mCacheLock);
   Key key(aFont->GetFontEntry(), aFont->GetStyle(),
           aFont->GetUnicodeRangeMap());
   HashEntry* entry = mFonts.GetEntry(key);
@@ -295,24 +312,35 @@ void gfxFontCache::DestroyFont(gfxFont* aFont) {
 /*static*/
 void gfxFontCache::WordCacheExpirationTimerCallback(nsITimer* aTimer,
                                                     void* aCache) {
-  bool allEmpty = true;
   gfxFontCache* cache = static_cast<gfxFontCache*>(aCache);
-  for (const auto& entry : cache->mFonts) {
-    allEmpty = entry.mFont->AgeCachedWords() && allEmpty;
+  cache->AgeCachedWords();
+}
+
+void gfxFontCache::AgeCachedWords() {
+  bool allEmpty = true;
+  {
+    AutoReadLock lock(mCacheLock);
+    for (const auto& entry : mFonts) {
+      allEmpty = entry.mFont->AgeCachedWords() && allEmpty;
+    }
   }
   if (allEmpty) {
-    cache->PauseWordCacheExpirationTimer();
+    PauseWordCacheExpirationTimer();
   }
 }
 
 void gfxFontCache::FlushShapedWordCaches() {
-  for (const auto& entry : mFonts) {
-    entry.mFont->ClearCachedWords();
+  {
+    AutoReadLock lock(mCacheLock);
+    for (const auto& entry : mFonts) {
+      entry.mFont->ClearCachedWords();
+    }
   }
   PauseWordCacheExpirationTimer();
 }
 
 void gfxFontCache::NotifyGlyphsChanged() {
+  AutoReadLock lock(mCacheLock);
   for (const auto& entry : mFonts) {
     entry.mFont->NotifyGlyphsChanged();
   }
@@ -322,6 +350,7 @@ void gfxFontCache::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                           FontCacheSizes* aSizes) const {
   // TODO: add the overhead of the expiration tracker (generation arrays)
 
+  AutoReadLock lock(mCacheLock);
   aSizes->mFontInstances += mFonts.ShallowSizeOfExcludingThis(aMallocSizeOf);
   for (const auto& entry : mFonts) {
     entry.mFont->AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
@@ -816,6 +845,7 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
                  gfxFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
                  AntialiasOption anAAOption)
     : mFontEntry(aFontEntry),
+      mLock("gfxFont lock"),
       mUnscaledFont(aUnscaledFont),
       mStyle(*aFontStyle),
       mAdjustedSize(-1.0),       // negative to indicate "not yet initialized"
@@ -844,6 +874,18 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
 
 gfxFont::~gfxFont() {
   mFontEntry->NotifyFontDestroyed(this);
+
+  // Delete objects owned through atomic pointers. (Some of these may be null,
+  // but that's OK.)
+  delete mVerticalMetrics.exchange(nullptr);
+  delete mHarfBuzzShaper.exchange(nullptr);
+  delete mGraphiteShaper.exchange(nullptr);
+  delete mMathTable.exchange(nullptr);
+  delete mNonAAFont.exchange(nullptr);
+
+  if (auto* scaledFont = mAzureScaledFont.exchange(nullptr)) {
+    scaledFont->Release();
+  }
 
   if (mGlyphChangeObservers) {
     for (const auto& key : *mGlyphChangeObservers) {
@@ -899,26 +941,37 @@ gfxFont::RoundingFlags gfxFont::GetRoundOffsetsToPixels(
   }
 }
 
+gfxHarfBuzzShaper* gfxFont::GetHarfBuzzShaper() {
+  if (!mHarfBuzzShaper) {
+    auto* shaper = new gfxHarfBuzzShaper(this);
+    shaper->Initialize();
+    if (!mHarfBuzzShaper.compareExchange(nullptr, shaper)) {
+      delete shaper;
+    }
+  }
+  gfxHarfBuzzShaper* shaper = mHarfBuzzShaper;
+  return shaper->IsInitialized() ? shaper : nullptr;
+}
+
 gfxFloat gfxFont::GetGlyphAdvance(uint16_t aGID, bool aVertical) {
   if (!aVertical && ProvidesGlyphWidths()) {
     return GetGlyphWidth(aGID) / 65536.0;
   }
   if (mFUnitsConvFactor < 0.0f) {
-    GetMetrics(nsFontMetrics::eHorizontal);
+    // Metrics haven't been initialized; lock while we do that.
+    AutoWriteLock lock(mLock);
+    if (mFUnitsConvFactor < 0.0f) {
+      GetMetrics(nsFontMetrics::eHorizontal);
+    }
   }
   NS_ASSERTION(mFUnitsConvFactor >= 0.0f,
                "missing font unit conversion factor");
-  if (!mHarfBuzzShaper) {
-    mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
+  if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
+    return (aVertical ? shaper->GetGlyphVAdvance(aGID)
+                      : shaper->GetGlyphHAdvance(aGID)) /
+           65536.0;
   }
-  gfxHarfBuzzShaper* shaper =
-      static_cast<gfxHarfBuzzShaper*>(mHarfBuzzShaper.get());
-  if (!shaper->Initialize()) {
-    return 0;
-  }
-  return (aVertical ? shaper->GetGlyphVAdvance(aGID)
-                    : shaper->GetGlyphHAdvance(aGID)) /
-         65536.0;
+  return 0.0;
 }
 
 gfxFloat gfxFont::GetCharAdvance(uint32_t aUnicode, bool aVertical) {
@@ -926,15 +979,9 @@ gfxFloat gfxFont::GetCharAdvance(uint32_t aUnicode, bool aVertical) {
   if (ProvidesGetGlyph()) {
     gid = GetGlyph(aUnicode, 0);
   } else {
-    if (!mHarfBuzzShaper) {
-      mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
+    if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
+      gid = shaper->GetNominalGlyph(aUnicode);
     }
-    gfxHarfBuzzShaper* shaper =
-        static_cast<gfxHarfBuzzShaper*>(mHarfBuzzShaper.get());
-    if (!shaper->Initialize()) {
-      return -1.0;
-    }
-    gid = shaper->GetNominalGlyph(aUnicode);
   }
   if (!gid) {
     return -1.0;
@@ -1149,8 +1196,9 @@ static const hb_tag_t defaultFeatures[] = {
     HB_TAG('t', 'j', 'm', 'o'), HB_TAG('v', 'a', 't', 'u'),
     HB_TAG('v', 'e', 'r', 't'), HB_TAG('v', 'j', 'm', 'o')};
 
-void gfxFont::CheckForFeaturesInvolvingSpace() {
-  mFontEntry->mHasSpaceFeaturesInitialized = true;
+void gfxFont::CheckForFeaturesInvolvingSpace() const {
+  auto setInitializedFlag =
+      MakeScopeExit([&]() { mFontEntry->mHasSpaceFeaturesInitialized = true; });
 
   bool log = LOG_FONTINIT_ENABLED();
   TimeStamp start;
@@ -1277,7 +1325,7 @@ void gfxFont::CheckForFeaturesInvolvingSpace() {
   }
 }
 
-bool gfxFont::HasSubstitutionRulesWithSpaceLookups(Script aRunScript) {
+bool gfxFont::HasSubstitutionRulesWithSpaceLookups(Script aRunScript) const {
   NS_ASSERTION(GetFontEntry()->mHasSpaceFeaturesInitialized,
                "need to initialize space lookup flags");
   NS_ASSERTION(aRunScript < Script::NUM_SCRIPT_CODES, "weird script code");
@@ -1304,7 +1352,8 @@ bool gfxFont::HasSubstitutionRulesWithSpaceLookups(Script aRunScript) {
   return false;
 }
 
-tainted_boolean_hint gfxFont::SpaceMayParticipateInShaping(Script aRunScript) {
+tainted_boolean_hint gfxFont::SpaceMayParticipateInShaping(
+    Script aRunScript) const {
   // avoid checking fonts known not to include default space-dependent features
   if (MOZ_UNLIKELY(mFontEntry->mSkipDefaultFeatureSpaceCheck)) {
     if (!mKerningSet && mStyle.featureSettings.IsEmpty() &&
@@ -1444,12 +1493,8 @@ bool gfxFont::SupportsSubSuperscript(uint32_t aSubSuperscript,
     return true;
   }
 
-  if (!mHarfBuzzShaper) {
-    mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
-  }
-  gfxHarfBuzzShaper* shaper =
-      static_cast<gfxHarfBuzzShaper*>(mHarfBuzzShaper.get());
-  if (!shaper->Initialize()) {
+  gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
+  if (!shaper) {
     return false;
   }
 
@@ -1493,21 +1538,16 @@ bool gfxFont::FeatureWillHandleChar(Script aRunScript, uint32_t aFeature,
     return true;
   }
 
-  if (!mHarfBuzzShaper) {
-    mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
-  }
-  gfxHarfBuzzShaper* shaper =
-      static_cast<gfxHarfBuzzShaper*>(mHarfBuzzShaper.get());
-  if (!shaper->Initialize()) {
-    return false;
+  if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
+    // get the hbset containing input glyphs for the feature
+    const hb_set_t* inputGlyphs =
+        mFontEntry->InputsForOpenTypeFeature(aRunScript, aFeature);
+
+    hb_codepoint_t gid = shaper->GetNominalGlyph(aUnicode);
+    return hb_set_has(inputGlyphs, gid);
   }
 
-  // get the hbset containing input glyphs for the feature
-  const hb_set_t* inputGlyphs =
-      mFontEntry->InputsForOpenTypeFeature(aRunScript, aFeature);
-
-  hb_codepoint_t gid = shaper->GetNominalGlyph(aUnicode);
-  return hb_set_has(inputGlyphs, gid);
+  return false;
 }
 
 bool gfxFont::HasFeatureSet(uint32_t aFeature, bool& aFeatureOn) {
@@ -2259,11 +2299,12 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     fontParams.contextPaint = contextPaint.get();
   }
 
-  // Synthetic-bold strikes are each offset one device pixel in run direction.
-  // (these values are only needed if IsSyntheticBold() is true)
-  // WebRender handles synthetic bold independently via FontInstanceFlags,
-  // so just ignore requests in that case.
-  if (IsSyntheticBold() && !textDrawer) {
+  // Synthetic-bold strikes are each offset one device pixel in run direction
+  // (these values are only needed if ApplySyntheticBold() is true).
+  // If drawing via webrender, it will do multistrike internally so we don't
+  // need to handle it here.
+  bool doMultistrikeBold = ApplySyntheticBold() && !textDrawer;
+  if (doMultistrikeBold) {
     gfx::Float xscale = CalcXScale(aRunParams.context->GetDrawTarget());
     fontParams.synBoldOnePixelOffset = aRunParams.direction * xscale;
     if (xscale != 0.0) {
@@ -2461,11 +2502,8 @@ bool gfxFont::HasColorGlyphFor(uint32_t aCh, uint32_t aNextCh) {
     return true;
   }
   // Use harfbuzz shaper to look up the default glyph ID for the character.
-  if (!mHarfBuzzShaper) {
-    mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
-  }
-  auto* shaper = static_cast<gfxHarfBuzzShaper*>(mHarfBuzzShaper.get());
-  if (!shaper->Initialize()) {
+  auto* shaper = GetHarfBuzzShaper();
+  if (!shaper) {
     return false;
   }
   uint32_t gid = 0;
@@ -2530,15 +2568,22 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
   // This is only used by MathML layout at present.
   if (aBoundingBoxType == TIGHT_HINTED_OUTLINE_EXTENTS &&
       mAntialiasOption != kAntialiasNone) {
-    if (!mNonAAFont) {
-      mNonAAFont = CopyWithAntialiasOption(kAntialiasNone);
+    gfxFont* nonAA = mNonAAFont;
+    if (!nonAA) {
+      nonAA = CopyWithAntialiasOption(kAntialiasNone);
+      if (nonAA) {
+        if (!mNonAAFont.compareExchange(nullptr, nonAA)) {
+          delete nonAA;
+          nonAA = mNonAAFont;
+        }
+      }
     }
     // if font subclass doesn't implement CopyWithAntialiasOption(),
     // it will return null and we'll proceed to use the existing font
-    if (mNonAAFont) {
-      return mNonAAFont->Measure(aTextRun, aStart, aEnd,
-                                 TIGHT_HINTED_OUTLINE_EXTENTS, aRefDrawTarget,
-                                 aSpacing, aOrientation);
+    if (nonAA) {
+      return nonAA->Measure(aTextRun, aStart, aEnd,
+                            TIGHT_HINTED_OUTLINE_EXTENTS, aRefDrawTarget,
+                            aSpacing, aOrientation);
     }
   }
 
@@ -2732,6 +2777,7 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
 }
 
 bool gfxFont::AgeCachedWords() {
+  mozilla::AutoWriteLock lock(mLock);
   if (mWordCache) {
     for (auto it = mWordCache->Iter(); !it.Done(); it.Next()) {
       CacheHashEntry* entry = it.Get();
@@ -2747,7 +2793,8 @@ bool gfxFont::AgeCachedWords() {
   return true;
 }
 
-void gfxFont::NotifyGlyphsChanged() {
+void gfxFont::NotifyGlyphsChanged() const {
+  AutoReadLock lock(const_cast<gfxFont*>(this)->mLock);
   uint32_t i, count = mGlyphExtentsArray.Length();
   for (i = 0; i < count; ++i) {
     // Flush cached extents array
@@ -2782,53 +2829,86 @@ gfxShapedWord* gfxFont::GetShapedWord(
     Script aRunScript, nsAtom* aLanguage, bool aVertical,
     int32_t aAppUnitsPerDevUnit, gfx::ShapedTextFlags aFlags,
     RoundingFlags aRounding, gfxTextPerfMetrics* aTextPerf GFX_MAYBE_UNUSED) {
-  // if the cache is getting too big, flush it and start over
-  uint32_t wordCacheMaxEntries =
-      gfxPlatform::GetPlatform()->WordCacheMaxEntries();
-  if (mWordCache->Count() > wordCacheMaxEntries) {
-    NS_WARNING("flushing shaped-word cache");
-    ClearCachedWords();
-  }
-
-  // if there's a cached entry for this word, just return it
   CacheHashKey key(aText, aLength, aHash, aRunScript, aLanguage,
                    aAppUnitsPerDevUnit, aFlags, aRounding);
-
-  CacheHashEntry* entry = mWordCache->PutEntry(key, fallible);
-  if (!entry) {
-    NS_WARNING("failed to create word cache entry - expect missing text");
-    return nullptr;
-  }
-  gfxShapedWord* sw = entry->mShapedWord.get();
-
-  if (sw) {
-    sw->ResetAge();
+  {
+    // If we have a word cache, attempt to look up the word in it.
+    AutoReadLock lock(mLock);
+    if (mWordCache) {
+      // if there's a cached entry for this word, just return it
+      if (CacheHashEntry* entry = mWordCache->GetEntry(key)) {
+        gfxShapedWord* sw = entry->mShapedWord.get();
+        sw->ResetAge();
 #ifndef RELEASE_OR_BETA
-    if (aTextPerf) {
-      aTextPerf->current.wordCacheHit++;
+        if (aTextPerf) {
+          // XXX we should make sure this is atomic
+          aTextPerf->current.wordCacheHit++;
+        }
+#endif
+        return sw;
+      }
     }
-#endif
-    return sw;
   }
 
-#ifndef RELEASE_OR_BETA
-  if (aTextPerf) {
-    aTextPerf->current.wordCacheMiss++;
-  }
-#endif
+  // We didn't find a cached word (or don't even have a cache yet), so create
+  // a new gfxShapedWord and cache it. We don't have to lock during shaping,
+  // only when it comes time to cache the new entry.
 
-  sw = gfxShapedWord::Create(aText, aLength, aRunScript, aLanguage,
-                             aAppUnitsPerDevUnit, aFlags, aRounding);
-  entry->mShapedWord.reset(sw);
+  gfxShapedWord* sw =
+      gfxShapedWord::Create(aText, aLength, aRunScript, aLanguage,
+                            aAppUnitsPerDevUnit, aFlags, aRounding);
   if (!sw) {
     NS_WARNING("failed to create gfxShapedWord - expect missing text");
     return nullptr;
   }
-
   DebugOnly<bool> ok = ShapeText(aDrawTarget, aText, 0, aLength, aRunScript,
                                  aLanguage, aVertical, aRounding, sw);
-
   NS_WARNING_ASSERTION(ok, "failed to shape word - expect garbled text");
+
+  {
+    // We're going to cache the new shaped word, so lock for writing now.
+    AutoWriteLock lock(mLock);
+    if (!mWordCache) {
+      mWordCache = MakeUnique<nsTHashtable<CacheHashEntry>>();
+    } else {
+      // If the cache is getting too big, flush it and start over.
+      uint32_t wordCacheMaxEntries =
+          gfxPlatform::GetPlatform()->WordCacheMaxEntries();
+      if (mWordCache->Count() > wordCacheMaxEntries) {
+        // Flush the cache if it is getting overly big.
+        NS_WARNING("flushing shaped-word cache");
+        ClearCachedWordsLocked();
+      }
+    }
+    CacheHashEntry* entry = mWordCache->PutEntry(key, fallible);
+    if (!entry) {
+      NS_WARNING("failed to create word cache entry - expect missing text");
+      delete sw;
+      return nullptr;
+    }
+
+    // It's unlikely, but maybe another thread got there before us...
+    if (entry->mShapedWord) {
+      // Just discard the newly-created word, and use the existing one.
+      delete sw;
+      sw = entry->mShapedWord.get();
+      sw->ResetAge();
+#ifndef RELEASE_OR_BETA
+      if (aTextPerf) {
+        aTextPerf->current.wordCacheHit++;
+      }
+#endif
+      return sw;
+    }
+
+    entry->mShapedWord.reset(sw);
+
+#ifndef RELEASE_OR_BETA
+    if (aTextPerf) {
+      aTextPerf->current.wordCacheMiss++;
+    }
+#endif
+  }
 
   gfxFontCache::GetCache()->RunWordCacheExpirationTimer();
 
@@ -2900,13 +2980,18 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
   // Vertical graphite support may be wanted as a future enhancement.
   if (FontCanSupportGraphite() && !aVertical) {
     if (gfxPlatform::GetPlatform()->UseGraphiteShaping()) {
-      if (!mGraphiteShaper) {
-        mGraphiteShaper = MakeUnique<gfxGraphiteShaper>(this);
-        Telemetry::ScalarAdd(Telemetry::ScalarID::BROWSER_USAGE_GRAPHITE, 1);
+      gfxGraphiteShaper* shaper = mGraphiteShaper;
+      if (!shaper) {
+        shaper = new gfxGraphiteShaper(this);
+        if (mGraphiteShaper.compareExchange(nullptr, shaper)) {
+          Telemetry::ScalarAdd(Telemetry::ScalarID::BROWSER_USAGE_GRAPHITE, 1);
+        } else {
+          delete shaper;
+          shaper = mGraphiteShaper;
+        }
       }
-      if (mGraphiteShaper->ShapeText(aDrawTarget, aText, aOffset, aLength,
-                                     aScript, aLanguage, aVertical, aRounding,
-                                     aShapedText)) {
+      if (shaper->ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
+                            aLanguage, aVertical, aRounding, aShapedText)) {
         PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
                          aShapedText);
         return true;
@@ -2914,12 +2999,10 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
     }
   }
 
-  if (!mHarfBuzzShaper) {
-    mHarfBuzzShaper = MakeUnique<gfxHarfBuzzShaper>(this);
-  }
-  if (mHarfBuzzShaper->ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
-                                 aLanguage, aVertical, aRounding,
-                                 aShapedText)) {
+  gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
+  if (shaper &&
+      shaper->ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
+                        aLanguage, aVertical, aRounding, aShapedText)) {
     PostShapingFixup(aDrawTarget, aText, aOffset, aLength, aVertical,
                      aShapedText);
     if (GetFontEntry()->HasTrackingTable()) {
@@ -2946,7 +3029,7 @@ bool gfxFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
 void gfxFont::PostShapingFixup(DrawTarget* aDrawTarget, const char16_t* aText,
                                uint32_t aOffset, uint32_t aLength,
                                bool aVertical, gfxShapedText* aShapedText) {
-  if (IsSyntheticBold()) {
+  if (ApplySyntheticBold()) {
     const Metrics& metrics = GetMetrics(aVertical ? nsFontMetrics::eVertical
                                                   : nsFontMetrics::eHorizontal);
     if (metrics.maxAdvance > metrics.aveCharWidth) {
@@ -3156,8 +3239,6 @@ bool gfxFont::SplitAndInitTextRun(
                                        vertical, rounding, aTextRun);
     }
   }
-
-  InitWordCache();
 
   // the only flags we care about for ShapedWord construction/caching
   gfx::ShapedTextFlags flags = aTextRun->GetFlags();
@@ -3473,7 +3554,7 @@ bool gfxFont::InitFakeSmallCapsRun(
                               aSyntheticUpper);
 }
 
-gfxFont* gfxFont::GetSmallCapsFont() {
+gfxFont* gfxFont::GetSmallCapsFont() const {
   gfxFontStyle style(*GetStyle());
   style.size *= SMALL_CAPS_SCALE_FACTOR;
   style.variantCaps = NS_FONT_VARIANT_CAPS_NORMAL;
@@ -3481,7 +3562,7 @@ gfxFont* gfxFont::GetSmallCapsFont() {
   return fe->FindOrMakeFont(&style, mUnicodeRangeMap);
 }
 
-gfxFont* gfxFont::GetSubSuperscriptFont(int32_t aAppUnitsPerDevPixel) {
+gfxFont* gfxFont::GetSubSuperscriptFont(int32_t aAppUnitsPerDevPixel) const {
   gfxFontStyle style(*GetStyle());
   style.AdjustForSubSuperscript(aAppUnitsPerDevPixel);
   gfxFontEntry* fe = GetFontEntry();
@@ -3489,6 +3570,16 @@ gfxFont* gfxFont::GetSubSuperscriptFont(int32_t aAppUnitsPerDevPixel) {
 }
 
 gfxGlyphExtents* gfxFont::GetOrCreateGlyphExtents(int32_t aAppUnitsPerDevUnit) {
+  {
+    AutoReadLock lock(mLock);
+    uint32_t i, count = mGlyphExtentsArray.Length();
+    for (i = 0; i < count; ++i) {
+      if (mGlyphExtentsArray[i]->GetAppUnitsPerDevUnit() == aAppUnitsPerDevUnit)
+        return mGlyphExtentsArray[i].get();
+    }
+  }
+  AutoWriteLock lock(mLock);
+  // Re-check in case of race.
   uint32_t i, count = mGlyphExtentsArray.Length();
   for (i = 0; i < count; ++i) {
     if (mGlyphExtentsArray[i]->GetAppUnitsPerDevUnit() == aAppUnitsPerDevUnit)
@@ -3820,8 +3911,7 @@ void gfxFont::CreateVerticalMetrics() {
   const uint32_t kOS_2TableTag = TRUETYPE_TAG('O', 'S', '/', '2');
   uint32_t len;
 
-  mVerticalMetrics = MakeUnique<Metrics>();
-  auto* metrics = mVerticalMetrics.get();
+  auto* metrics = new Metrics();
   ::memset(metrics, 0, sizeof(Metrics));
 
   // Some basic defaults, in case the font lacks any real metrics tables.
@@ -3968,6 +4058,10 @@ void gfxFont::CreateVerticalMetrics() {
   metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
   metrics->xHeight = metrics->emHeight / 2;
   metrics->capHeight = metrics->maxAscent;
+
+  if (!mVerticalMetrics.compareExchange(nullptr, metrics)) {
+    delete metrics;
+  }
 }
 
 gfxFloat gfxFont::SynthesizeSpaceWidth(uint32_t aCh) {
@@ -4008,6 +4102,7 @@ gfxFloat gfxFont::SynthesizeSpaceWidth(uint32_t aCh) {
 
 void gfxFont::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                      FontCacheSizes* aSizes) const {
+  AutoReadLock lock(const_cast<gfxFont*>(this)->mLock);
   for (uint32_t i = 0; i < mGlyphExtentsArray.Length(); ++i) {
     aSizes->mFontInstances +=
         mGlyphExtentsArray[i]->SizeOfIncludingThis(aMallocSizeOf);
@@ -4024,6 +4119,7 @@ void gfxFont::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
 }
 
 void gfxFont::AddGlyphChangeObserver(GlyphChangeObserver* aObserver) {
+  AutoWriteLock lock(mLock);
   if (!mGlyphChangeObservers) {
     mGlyphChangeObservers = MakeUnique<nsTHashSet<GlyphChangeObserver*>>();
   }
@@ -4031,6 +4127,7 @@ void gfxFont::AddGlyphChangeObserver(GlyphChangeObserver* aObserver) {
 }
 
 void gfxFont::RemoveGlyphChangeObserver(GlyphChangeObserver* aObserver) {
+  AutoWriteLock lock(mLock);
   NS_ASSERTION(mGlyphChangeObservers, "No observers registered");
   NS_ASSERTION(mGlyphChangeObservers->Contains(aObserver),
                "Observer not registered");
@@ -4170,17 +4267,21 @@ void gfxFontStyle::AdjustForSubSuperscript(int32_t aAppUnitsPerDevPixel) {
 }
 
 bool gfxFont::TryGetMathTable() {
-  if (!mMathInitialized) {
-    mMathInitialized = true;
-
-    hb_face_t* face = GetFontEntry()->GetHBFace();
-    if (face) {
-      if (hb_ot_math_has_data(face)) {
-        mMathTable = MakeUnique<gfxMathTable>(face, GetAdjustedSize());
-      }
-      hb_face_destroy(face);
-    }
+  if (mMathInitialized) {
+    return !!mMathTable;
   }
+
+  hb_face_t* face = GetFontEntry()->GetHBFace();
+  if (face) {
+    if (hb_ot_math_has_data(face)) {
+      auto* mathTable = new gfxMathTable(face, GetAdjustedSize());
+      if (!mMathTable.compareExchange(nullptr, mathTable)) {
+        delete mathTable;
+      }
+    }
+    hb_face_destroy(face);
+  }
+  mMathInitialized = true;
 
   return !!mMathTable;
 }

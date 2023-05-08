@@ -598,8 +598,14 @@ bool TaskController::HasMainThreadPendingTasks() {
   return false;
 }
 
+uint64_t TaskController::PendingMainthreadTaskCountIncludingSuspended() {
+  MutexAutoLock lock(mGraphMutex);
+  return mMainThreadTasks.size();
+}
+
 bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
     const MutexAutoLock& aProofOfLock) {
+  mGraphMutex.AssertCurrentThreadOwns();
   // Block to make it easier to jump to our cleanup.
   bool taskRan = false;
   do {
@@ -654,6 +660,8 @@ bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
     mIdleTaskManager->State().ForgetPendingTaskGuarantee();
 
     if (mMainThreadTasks.empty()) {
+      ++mRunOutOfMTTasksCounter;
+
       // XXX the IdlePeriodState API demands we have a MutexAutoUnlock for it.
       // Otherwise we could perhaps just do this after we exit the locked block,
       // by pushing the lock down into this method.  Though it's not clear that
@@ -669,6 +677,8 @@ bool TaskController::ExecuteNextTaskOnlyMainThreadInternal(
 
 bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
     const MutexAutoLock& aProofOfLock) {
+  mGraphMutex.AssertCurrentThreadOwns();
+
   nsCOMPtr<nsIThread> mainIThread;
   NS_GetMainThread(getter_AddRefs(mainIThread));
 

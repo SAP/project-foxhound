@@ -152,6 +152,8 @@ class MarionetteParentProcess {
           Services.obs.addObserver(this, "toplevel-window-ready");
           Services.obs.addObserver(this, "marionette-startup-requested");
 
+          RecommendedPreferences.applyPreferences(RECOMMENDED_PREFS);
+
           // Only set preferences to preserve in a new profile
           // when Marionette is enabled.
           for (let [pref, value] of EnvironmentPrefs.from(ENV_PRESERVE_PREFS)) {
@@ -278,8 +280,6 @@ class MarionetteParentProcess {
       await startupRecorder;
       logger.trace(`All scripts recorded.`);
 
-      RecommendedPreferences.applyPreferences(RECOMMENDED_PREFS);
-
       try {
         this.server = new TCPListener(MarionettePrefs.port);
         this.server.start();
@@ -297,8 +297,10 @@ class MarionetteParentProcess {
       logger.debug("Marionette is listening");
 
       // Write Marionette port to MarionetteActivePort file within the profile.
-      const profileDir = await PathUtils.getProfileDir();
-      this._activePortPath = PathUtils.join(profileDir, "MarionetteActivePort");
+      this._activePortPath = PathUtils.join(
+        PathUtils.profileDir,
+        "MarionetteActivePort"
+      );
 
       const data = `${this.server.port}`;
       try {

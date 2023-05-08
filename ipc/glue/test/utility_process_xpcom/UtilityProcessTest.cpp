@@ -35,13 +35,18 @@ UtilityProcessTest::StartProcess(JSContext* aCx,
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [promise, utilityProc]() {
-            Maybe<int32_t> utilityPid = utilityProc->ProcessPid();
-            promise->MaybeResolve(*utilityPid);
+            Maybe<int32_t> utilityPid =
+                utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
+            if (utilityPid.isSome()) {
+              promise->MaybeResolve(*utilityPid);
+            } else {
+              promise->MaybeReject(NS_ERROR_NOT_AVAILABLE);
+            }
           },
           [promise](nsresult aError) {
             MOZ_ASSERT_UNREACHABLE(
                 "UtilityProcessTest; failure to get Utility process");
-            promise->MaybeRejectWithUndefined();
+            promise->MaybeReject(aError);
           });
 
   promise.forget(aOutPromise);
@@ -54,8 +59,9 @@ UtilityProcessTest::StopProcess() {
       UtilityProcessManager::GetSingleton();
   MOZ_ASSERT(utilityProc, "No UtilityprocessManager?");
 
-  utilityProc->CleanShutdown();
-  Maybe<int32_t> utilityPid = utilityProc->ProcessPid();
+  utilityProc->CleanShutdown(SandboxingKind::GENERIC_UTILITY);
+  Maybe<int32_t> utilityPid =
+      utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
   MOZ_RELEASE_ASSERT(utilityPid.isNothing(),
                      "Should not have a utility process PID anymore");
 

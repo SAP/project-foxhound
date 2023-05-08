@@ -132,7 +132,9 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
   size_t anim_chunks = 0;
   int W = 0, H = 0;
 
-  for (auto& frame : io->frames) {
+  for (size_t i = 0; i < io->frames.size(); i++) {
+    auto& frame = io->frames[i];
+    if (!have_anim && i + 1 < io->frames.size()) continue;
     png_structp png_ptr;
     png_infop info_ptr;
 
@@ -258,7 +260,7 @@ Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
     }
 
     count++;
-    if (count == io->frames.size()) png_write_end(png_ptr, NULL);
+    if (count == io->frames.size() || !have_anim) png_write_end(png_ptr, NULL);
 
     png_destroy_write_struct(&png_ptr, &info_ptr);
   }

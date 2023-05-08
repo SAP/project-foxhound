@@ -39,16 +39,14 @@
 #include "builtin/streams/ReadableStream.h"  // js::ReadableStream
 #include "builtin/streams/ReadableStreamController.h"  // js::Readable{StreamDefault,ByteStream}Controller
 #include "builtin/streams/ReadableStreamReader.h"  // js::ReadableStreamDefaultReader
-#include "builtin/streams/WritableStream.h"        // js::WritableStream
-#include "builtin/streams/WritableStreamDefaultController.h"  // js::WritableStreamDefaultController
-#include "builtin/streams/WritableStreamDefaultWriter.h"  // js::WritableStreamDefaultWriter
 #include "builtin/Symbol.h"
 #include "builtin/WeakMapObject.h"
 #include "builtin/WeakRefObject.h"
 #include "builtin/WeakSetObject.h"
 #include "debugger/DebugAPI.h"
 #include "frontend/CompilationStencil.h"
-#include "gc/FreeOp.h"
+#include "gc/FinalizationObservers.h"
+#include "gc/GCContext.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/WindowProxy.h"    // js::ToWindowProxyIfWindow
 #include "js/PropertyAndElement.h"    // JS_DefineFunctions, JS_DefineProperties
@@ -73,7 +71,7 @@
 #  include "vm/TupleType.h"
 #endif
 
-#include "gc/FreeOp-inl.h"
+#include "gc/GCContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -190,7 +188,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_RelativeTimeFormat:
       return false;
 #endif
-
+#ifndef MOZ_DOM_STREAMS
     case JSProto_ReadableStream:
     case JSProto_ReadableStreamDefaultReader:
     case JSProto_ReadableStreamDefaultController:
@@ -198,14 +196,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_ByteLengthQueuingStrategy:
     case JSProto_CountQueuingStrategy:
       return !cx->realm()->creationOptions().getStreamsEnabled();
-
-    case JSProto_WritableStream:
-    case JSProto_WritableStreamDefaultController:
-    case JSProto_WritableStreamDefaultWriter: {
-      const auto& realmOptions = cx->realm()->creationOptions();
-      return !realmOptions.getStreamsEnabled() ||
-             !realmOptions.getWritableStreamsEnabled();
-    }
+#endif
 
     // Return true if the given constructor has been disabled at run-time.
     case JSProto_Atomics:
@@ -769,8 +760,8 @@ bool js::DefinePropertiesAndFunctions(JSContext* cx, HandleObject obj,
 }
 
 bool js::DefineToStringTag(JSContext* cx, HandleObject obj, JSAtom* tag) {
-  RootedId toStringTagId(cx,
-                         SYMBOL_TO_JSID(cx->wellKnownSymbols().toStringTag));
+  RootedId toStringTagId(
+      cx, PropertyKey::Symbol(cx->wellKnownSymbols().toStringTag));
   RootedValue tagString(cx, StringValue(tag));
   return DefineDataProperty(cx, obj, toStringTagId, tagString, JSPROP_READONLY);
 }
@@ -823,6 +814,16 @@ RegExpStatics* GlobalObject::getRegExpStatics(JSContext* cx,
   }
 
   return global->data().regExpStatics.get();
+}
+
+gc::FinalizationRegistryGlobalData*
+GlobalObject::getOrCreateFinalizationRegistryData() {
+  if (!data().finalizationRegistryData) {
+    data().finalizationRegistryData =
+        MakeUnique<gc::FinalizationRegistryGlobalData>(zone());
+  }
+
+  return maybeFinalizationRegistryData();
 }
 
 bool GlobalObject::addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name) {
@@ -1023,17 +1024,17 @@ JSObject* GlobalObject::createAsyncIteratorPrototype(
   return proto;
 }
 
-void GlobalObject::releaseData(JSFreeOp* fop) {
+void GlobalObject::releaseData(JS::GCContext* gcx) {
   GlobalObjectData* data = maybeData();
   setReservedSlot(GLOBAL_DATA_SLOT, PrivateValue(nullptr));
-  fop->delete_(this, data, MemoryUse::GlobalObjectData);
+  gcx->delete_(this, data, MemoryUse::GlobalObjectData);
 }
 
 GlobalObjectData::GlobalObjectData(Zone* zone) : varNames(zone) {}
 
-void GlobalObjectData::trace(JSTracer* trc) {
-  // Atoms are always tenured.
-  if (!JS::RuntimeHeapIsMinorCollecting()) {
+void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
+  // Atoms are always tenured so don't need to be traced during minor GC.
+  if (trc->runtime()->heapState() != JS::HeapState::MinorCollecting) {
     varNames.trace(trc);
   }
 
@@ -1086,6 +1087,10 @@ void GlobalObjectData::trace(JSTracer* trc) {
 
   TraceNullableEdge(trc, &selfHostingScriptSource,
                     "self-hosting-script-source");
+
+  if (finalizationRegistryData) {
+    finalizationRegistryData->trace(trc);
+  }
 }
 
 void GlobalObjectData::addSizeOfIncludingThis(

@@ -67,11 +67,11 @@ class WebGPUParent final : public PWebGPUParent {
   ipc::IPCResult RecvDeviceCreateSwapChain(RawId aSelfId, RawId aQueueId,
                                            const layers::RGBDescriptor& aDesc,
                                            const nsTArray<RawId>& aBufferIds,
-                                           ExternalImageId aExternalId);
-  ipc::IPCResult RecvSwapChainPresent(wr::ExternalImageId aExternalId,
+                                           const CompositableHandle& aHandle);
+  ipc::IPCResult RecvSwapChainPresent(const CompositableHandle& aHandle,
                                       RawId aTextureId,
                                       RawId aCommandEncoderId);
-  ipc::IPCResult RecvSwapChainDestroy(wr::ExternalImageId aExternalId);
+  ipc::IPCResult RecvSwapChainDestroy(const CompositableHandle& aHandle);
 
   ipc::IPCResult RecvDeviceAction(RawId aSelf, const ipc::ByteBuf& aByteBuf);
   ipc::IPCResult RecvDeviceActionWithAck(
@@ -97,7 +97,7 @@ class WebGPUParent final : public PWebGPUParent {
   void MaintainDevices();
   bool ForwardError(RawId aDeviceID, ErrorBuffer& aError);
 
-  const ffi::WGPUGlobal* const mContext;
+  UniquePtr<ffi::WGPUGlobal> mContext;
   base::RepeatingTimer<WebGPUParent> mTimer;
   /// Shmem associated with a mappable buffer has to be owned by one of the
   /// processes. We keep it here for every mappable buffer while the buffer is

@@ -139,7 +139,6 @@
 }
 
 .controlBar {
-  position: relative;
   display: flex;
   box-sizing: border-box;
   justify-content: center;
@@ -155,6 +154,8 @@
 }
 
 .controlBar > .button {
+  /* Prevent #textTrackListContainer from blocking clicks on controls */
+  z-index: 1;
   height: 100%;
   min-width: var(--button-size);
   min-height: var(--button-size);
@@ -321,6 +322,15 @@
   background: none;
 }
 
+.bufferBar::-moz-progress-bar {
+  background-color: rgba(255,255,255,0.3);
+  border-radius: calc(var(--track-size) / 2);
+}
+
+.progressBar::-moz-progress-bar {
+  background-color: #00b6f0;
+}
+
 .scrubber:hover::-moz-range-thumb,
 .volumeControl:hover::-moz-range-thumb {
   background-color: #48a0f7;
@@ -351,14 +361,18 @@
   background-color: rgba(0,0,0,0.7);
 }
 
+@media (prefers-contrast) {
+  /* Show a border in high contrast mode since background-colors
+     are not shown. */
+  .scrubber::-moz-range-track,
+  .volumeControl::-moz-range-track {
+    border: 1px solid;
+  }
 
-.bufferBar::-moz-progress-bar {
-  background-color: rgba(255,255,255,0.3);
-  border-radius: calc(var(--track-size) / 2);
-}
-
-.progressBar::-moz-progress-bar {
-  background-color: #00b6f0;
+  .scrubber::-moz-range-progress,
+  .volumeControl::-moz-range-progress {
+    border: 2px solid;
+  }
 }
 
 .textTrackListContainer {
@@ -407,7 +421,7 @@
   background-color: #444;
 }
 
-.textTrackList > .textTrackItem[on] {
+.textTrackList > .textTrackItem[aria-checked="true"] {
   color: #48a0f7;
 }
 
@@ -427,12 +441,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-%ifdef XP_MACOSX
-.positionDurationBox {
-  font-size-adjust: unset;
-  font-family: "Helvetica Neue", "Helvetica", sans-serif;
+@media (-moz-platform: macos) {
+  .positionDurationBox {
+    font-size-adjust: unset;
+    font-family: "Helvetica Neue", "Helvetica", sans-serif;
+  }
 }
-%endif
 
 .duration {
   display: inline-block;
@@ -602,14 +616,12 @@
   display: inline;
 }
 
-%ifdef XP_WIN
-@media (-moz-windows-default-theme: 0) {
+@media (-moz-platform: windows) and (-moz-windows-default-theme: 0) {
   .controlsSpacer,
   .clickToPlay {
     background-color: transparent;
   }
 }
-%endif
 
 .pip-wrapper {
   position: absolute;
@@ -622,12 +634,12 @@
   top: calc(70% - 40px);
   opacity: 0;
   padding-inline: 0;
-  margin-right: 8px;
   transition: opacity 200ms;
   --pip-icon-size: 24px;
   --pip-icon-width-with-margins: calc(2 * var(--pip-toggle-margin) + var(--pip-icon-size));
   --pip-highlight-width: 2px;
   --pip-toggle-margin: 8px;
+  --pip-toggle-distanceFromVideoEdge: 18px;
   --pip-highlight-style: solid rgba(0, 254, 255, 1);
 }
 
@@ -656,11 +668,12 @@
 }
 
 .pip-wrapper[position="right"] {
-  right: 40px;
+  /* move from the right by total width of pip toggle so that it is at least visible in the video element */
+  right: calc(var(--pip-icon-width-with-margins) + var(--pip-toggle-distanceFromVideoEdge));
 }
 
 .pip-wrapper[position="left"] {
-  left: 12px;
+  left: var(--pip-toggle-distanceFromVideoEdge);
 }
 
 .pip-expanded,
@@ -746,7 +759,8 @@
 }
 
 .pip-wrapper[position="right"] > .pip-expanded {
-  translate: calc(-100% + 48px);
+
+  translate: calc(-100% + var(--pip-icon-width-with-margins));
   transform-origin: right;
   justify-content: right;
 }

@@ -36,14 +36,43 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 // See LOG_LEVELS in Console.jsm. Common examples: "all", "debug", "info", "warn", "error".
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   const { ConsoleAPI } = ChromeUtils.import(
-    "resource://gre/modules/Console.jsm",
-    {}
+    "resource://gre/modules/Console.jsm"
   );
   return new ConsoleAPI({
     maxLogLevel: "warn",
     maxLogLevelPref: "services.settings.loglevel",
     prefix: "services.settings",
   });
+});
+
+// Overriding the server URL is normally disabled on Beta and Release channels,
+// except under some conditions.
+XPCOMUtils.defineLazyGetter(this, "allowServerURLOverride", () => {
+  if (!AppConstants.RELEASE_OR_BETA) {
+    // Always allow to override the server URL on Nightly/DevEdition.
+    return true;
+  }
+
+  if (AppConstants.MOZ_APP_NAME === "thunderbird") {
+    // Always allow to override the server URL for Thunderbird.
+    return true;
+  }
+
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  if (env.get("MOZ_DISABLE_NONLOCAL_CONNECTIONS") === "1") {
+    // Allow to override the server URL if non-local connections are disabled,
+    // usually true when running tests.
+    return true;
+  }
+
+  if (env.get("MOZ_REMOTE_SETTINGS_DEVTOOLS") === "1") {
+    // Allow to override the server URL when using remote settings devtools.
+    return true;
+  }
+
+  return false;
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -58,17 +87,9 @@ function _isUndefined(value) {
 
 var Utils = {
   get SERVER_URL() {
-    const env = Cc["@mozilla.org/process/environment;1"].getService(
-      Ci.nsIEnvironment
-    );
-    const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
-    const isNotThunderbird = AppConstants.MOZ_APP_NAME != "thunderbird";
-    return AppConstants.RELEASE_OR_BETA &&
-      !Cu.isInAutomation &&
-      !isXpcshell &&
-      isNotThunderbird
-      ? "https://firefox.settings.services.mozilla.com/v1"
-      : gServerURL;
+    return allowServerURLOverride
+      ? gServerURL
+      : "https://firefox.settings.services.mozilla.com/v1";
   },
 
   CHANGES_PATH: "/buckets/monitor/collections/changes/changeset",

@@ -201,7 +201,7 @@ static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
     // know. This is because we might not be able to fully reconstruct up
     // to the stack depth at the snapshot, as we could've thrown in the
     // middle of a call.
-    ExceptionBailoutInfo propagateInfo;
+    ExceptionBailoutInfo propagateInfo(cx);
     if (ExceptionHandlerBailout(cx, frame, rfe, propagateInfo)) {
       return;
     }
@@ -231,7 +231,7 @@ static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
 
           // Bailout at the start of the catch block.
           jsbytecode* catchPC = script->offsetToPC(tn->start + tn->length);
-          ExceptionBailoutInfo excInfo(frame.frameNo(), catchPC,
+          ExceptionBailoutInfo excInfo(cx, frame.frameNo(), catchPC,
                                        tn->stackDepth);
           if (ExceptionHandlerBailout(cx, frame, rfe, excInfo)) {
             // Record exception locations to allow scope unwinding in
@@ -247,6 +247,44 @@ static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
           MOZ_ASSERT(cx->isExceptionPending());
         }
         break;
+
+      case TryNoteKind::Finally: {
+        if (!cx->isExceptionPending()) {
+          // We don't catch uncatchable exceptions.
+          break;
+        }
+
+        script->resetWarmUpCounterToDelayIonCompilation();
+
+        if (*hitBailoutException) {
+          break;
+        }
+
+        // Bailout at the start of the finally block.
+        jsbytecode* finallyPC = script->offsetToPC(tn->start + tn->length);
+        ExceptionBailoutInfo excInfo(cx, frame.frameNo(), finallyPC,
+                                     tn->stackDepth);
+
+        RootedValue exception(cx);
+        if (!cx->getPendingException(&exception)) {
+          exception = UndefinedValue();
+        }
+        excInfo.setFinallyException(exception.get());
+        cx->clearPendingException();
+
+        if (ExceptionHandlerBailout(cx, frame, rfe, excInfo)) {
+          // Record exception locations to allow scope unwinding in
+          // |FinishBailoutToBaseline|
+          rfe->bailoutInfo->tryPC =
+              UnwindEnvironmentToTryPc(frame.script(), tn);
+          rfe->bailoutInfo->faultPC = frame.pc();
+          return;
+        }
+
+        *hitBailoutException = true;
+        MOZ_ASSERT(cx->isExceptionPending());
+        break;
+      }
 
       case TryNoteKind::ForOf:
       case TryNoteKind::Loop:
@@ -648,8 +686,7 @@ void HandleException(ResumeFromException* rfe) {
 
         if (rfe->kind == ResumeFromException::RESUME_BAILOUT) {
           if (invalidated) {
-            ionScript->decrementInvalidationCount(
-                cx->runtime()->defaultFreeOp());
+            ionScript->decrementInvalidationCount(cx->gcContext());
           }
           return;
         }
@@ -678,7 +715,7 @@ void HandleException(ResumeFromException* rfe) {
       // If invalidated, decrement the number of frames remaining on the
       // stack for the given IonScript.
       if (invalidated) {
-        ionScript->decrementInvalidationCount(cx->runtime()->defaultFreeOp());
+        ionScript->decrementInvalidationCount(cx->gcContext());
       }
 
     } else if (frame.isBaselineJS()) {
@@ -1024,13 +1061,15 @@ static void TraceIonICCallFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   TraceRoot(trc, layout->stubCode(), "ion-ic-call-code");
 }
 
-#ifdef JS_CODEGEN_MIPS32
+#if defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_MIPS32)
 uint8_t* alignDoubleSpill(uint8_t* pointer) {
   uintptr_t address = reinterpret_cast<uintptr_t>(pointer);
-  address &= ~(ABIStackAlignment - 1);
+  address &= ~(uintptr_t(ABIStackAlignment) - 1);
   return reinterpret_cast<uint8_t*>(address);
 }
+#endif
 
+#ifdef JS_CODEGEN_MIPS32
 static void TraceJitExitFrameCopiedArguments(JSTracer* trc,
                                              const VMFunctionData* f,
                                              ExitFooterFrame* footer) {
@@ -1816,6 +1855,10 @@ uint32_t SnapshotIterator::pcOffset() const {
   return resumePoint()->pcOffset();
 }
 
+ResumeMode SnapshotIterator::resumeMode() const {
+  return resumePoint()->mode();
+}
+
 void SnapshotIterator::skipInstruction() {
   MOZ_ASSERT(snapshot_.numAllocationsRead() == 0);
   size_t numOperands = instruction()->numOperands();
@@ -2042,25 +2085,24 @@ void InlineFrameIterator::findNextFrame() {
 
   size_t i = 1;
   for (; i <= remaining && si_.moreFrames(); i++) {
+    ResumeMode mode = si_.resumeMode();
     MOZ_ASSERT(IsIonInlinableOp(JSOp(*pc_)));
 
     // Recover the number of actual arguments from the script.
-    if (JSOp(*pc_) != JSOp::FunApply) {
+    if (IsInvokeOp(JSOp(*pc_))) {
+      MOZ_ASSERT(mode == ResumeMode::InlinedStandardCall ||
+                 mode == ResumeMode::InlinedFunCall);
       numActualArgs_ = GET_ARGC(pc_);
-    }
-    if (JSOp(*pc_) == JSOp::FunCall) {
-      if (numActualArgs_ > 0) {
+      if (mode == ResumeMode::InlinedFunCall && numActualArgs_ > 0) {
         numActualArgs_--;
       }
     } else if (IsGetPropPC(pc_) || IsGetElemPC(pc_)) {
+      MOZ_ASSERT(mode == ResumeMode::InlinedAccessor);
       numActualArgs_ = 0;
-    } else if (IsSetPropPC(pc_)) {
+    } else {
+      MOZ_RELEASE_ASSERT(IsSetPropPC(pc_));
+      MOZ_ASSERT(mode == ResumeMode::InlinedAccessor);
       numActualArgs_ = 1;
-    }
-
-    if (numActualArgs_ == 0xbadbad) {
-      MOZ_CRASH(
-          "Couldn't deduce the number of arguments of an ionmonkey frame");
     }
 
     // Skip over non-argument slots, as well as |this|.
@@ -2216,6 +2258,15 @@ MachineState MachineState::FromBailout(RegisterDump::GPRArray& regs,
         FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Double),
         &fpregs[i]);
     // No SIMD support in bailouts, SIMD is internal to wasm
+  }
+#elif defined(JS_CODEGEN_LOONG64)
+  for (unsigned i = 0; i < FloatRegisters::TotalPhys; i++) {
+    machine.setRegisterLocation(
+        FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Single),
+        &fpregs[i]);
+    machine.setRegisterLocation(
+        FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Double),
+        &fpregs[i]);
   }
 
 #elif defined(JS_CODEGEN_NONE)

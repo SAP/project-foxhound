@@ -81,8 +81,6 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   void OnServerClose(const uint16_t& aCode, const nsCString& aReason);
   void AsyncOpenFailed();
 
-  bool IsOnTargetThread();
-
   void MaybeReleaseIPCObject();
 
   // This function tries to get a labeled event target for |mNeckoTarget|.
@@ -100,7 +98,7 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
   // This variable is protected by mutex.
   enum { Opened, Closing, Closed } mIPCState;
 
-  mozilla::Mutex mMutex;
+  mozilla::Mutex mMutex MOZ_UNANNOTATED;
 
   friend class StartEvent;
   friend class StopEvent;

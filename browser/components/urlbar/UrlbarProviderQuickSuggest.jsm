@@ -17,6 +17,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
   Services: "resource://gre/modules/Services.jsm",
   SkippableTimer: "resource:///modules/UrlbarUtils.jsm",
+  TaskQueue: "resource:///modules/UrlbarUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarQuickSuggest: "resource:///modules/UrlbarQuickSuggest.jsm",
   UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
@@ -24,7 +25,11 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["AbortController", "fetch"]);
+XPCOMUtils.defineLazyGlobalGetters(this, [
+  "AbortController",
+  "crypto",
+  "fetch",
+]);
 
 const TIMESTAMP_TEMPLATE = "%YYYYMMDDHH%";
 const TIMESTAMP_LENGTH = 10;
@@ -40,10 +45,23 @@ const TELEMETRY_MERINO_RESPONSE = "FX_URLBAR_MERINO_RESPONSE";
 const TELEMETRY_REMOTE_SETTINGS_LATENCY =
   "FX_URLBAR_QUICK_SUGGEST_REMOTE_SETTINGS_LATENCY_MS";
 
-const TELEMETRY_SCALAR_IMPRESSION =
-  "contextual.services.quicksuggest.impression";
-const TELEMETRY_SCALAR_CLICK = "contextual.services.quicksuggest.click";
-const TELEMETRY_SCALAR_HELP = "contextual.services.quicksuggest.help";
+const TELEMETRY_SCALARS = {
+  IMPRESSION: "contextual.services.quicksuggest.impression",
+  IMPRESSION_SPONSORED_BEST_MATCH:
+    "contextual.services.quicksuggest.impression_sponsored_bestmatch",
+  IMPRESSION_NONSPONSORED_BEST_MATCH:
+    "contextual.services.quicksuggest.impression_nonsponsored_bestmatch",
+  CLICK: "contextual.services.quicksuggest.click",
+  CLICK_SPONSORED_BEST_MATCH:
+    "contextual.services.quicksuggest.click_sponsored_bestmatch",
+  CLICK_NONSPONSORED_BEST_MATCH:
+    "contextual.services.quicksuggest.click_nonsponsored_bestmatch",
+  HELP: "contextual.services.quicksuggest.help",
+  HELP_SPONSORED_BEST_MATCH:
+    "contextual.services.quicksuggest.help_sponsored_bestmatch",
+  HELP_NONSPONSORED_BEST_MATCH:
+    "contextual.services.quicksuggest.help_nonsponsored_bestmatch",
+};
 
 const TELEMETRY_EVENT_CATEGORY = "contextservices.quicksuggest";
 
@@ -62,7 +80,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     super(...args);
     this._updateExperimentState();
     UrlbarPrefs.addObserver(this);
-    NimbusFeatures.urlbar.onUpdate(this._updateExperimentState);
+    NimbusFeatures.urlbar.onUpdate(() => this._updateExperimentState());
   }
 
   /**
@@ -88,6 +106,31 @@ class ProviderQuickSuggest extends UrlbarProvider {
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       "firefox-suggest"
     );
+  }
+
+  /**
+   * @returns {string} The help URL for the Quick Suggest best match feature.
+   */
+  get bestMatchHelpUrl() {
+    return this.helpUrl;
+  }
+
+  /**
+   * @returns {string} The timestamp template string used in quick suggest URLs.
+   */
+  get timestampTemplate() {
+    return TIMESTAMP_TEMPLATE;
+  }
+
+  /**
+   * @returns {number} The length of the timestamp in quick suggest URLs.
+   */
+  get timestampLength() {
+    return TIMESTAMP_LENGTH;
+  }
+
+  get telemetryScalars() {
+    return { ...TELEMETRY_SCALARS };
   }
 
   /**
@@ -160,17 +203,29 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Filter suggestions, keeping in mind both the remote settings and Merino
     // fetches return null when there are no matches. Take the remaining one
     // with the largest score.
-    let suggestion = allSuggestions
-      .flat()
-      .filter(s => s && this._canAddSuggestion(s))
+    allSuggestions = await Promise.all(
+      allSuggestions
+        .flat()
+        .map(async s => (s && (await this._canAddSuggestion(s)) ? s : null))
+    );
+    if (instance != this.queryInstance) {
+      return;
+    }
+    const suggestion = allSuggestions
+      .filter(Boolean)
       .sort((a, b) => b.score - a.score)[0];
+
     if (!suggestion) {
       return;
     }
 
+    // Replace the suggestion's template substrings, but first save the original
+    // URL before its timestamp template is replaced.
+    let originalUrl = suggestion.url;
     this._replaceSuggestionTemplates(suggestion);
 
     let payload = {
+      originalUrl,
       url: suggestion.url,
       urlTimestampIndex: suggestion.urlTimestampIndex,
       icon: suggestion.icon,
@@ -185,9 +240,23 @@ class ProviderQuickSuggest extends UrlbarProvider {
       requestId: suggestion.request_id,
     };
 
-    let isBestMatch =
-      suggestion.is_best_match && UrlbarPrefs.get("bestMatchEnabled");
-    if (isBestMatch) {
+    // Determine if the suggestion itself is a best match.
+    let isSuggestionBestMatch = false;
+    if (typeof suggestion._test_is_best_match == "boolean") {
+      isSuggestionBestMatch = suggestion._test_is_best_match;
+    } else if (UrlbarQuickSuggest.config.best_match) {
+      let { best_match } = UrlbarQuickSuggest.config;
+      isSuggestionBestMatch =
+        best_match.min_search_string_length <= searchString.length &&
+        !best_match.blocked_suggestion_ids.includes(suggestion.block_id);
+    }
+
+    // Determine if the urlbar result should be a best match.
+    let isResultBestMatch =
+      isSuggestionBestMatch &&
+      UrlbarPrefs.get("bestMatchEnabled") &&
+      UrlbarPrefs.get("suggest.bestmatch");
+    if (isResultBestMatch) {
       // Show the result as a best match. Best match titles don't include the
       // `full_keyword`, and the user's search string is highlighted.
       payload.title = [suggestion.title, UrlbarUtils.HIGHLIGHT.TYPED];
@@ -207,7 +276,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
       ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
     );
 
-    if (isBestMatch) {
+    if (isResultBestMatch) {
       result.isBestMatch = true;
       result.suggestedIndex = 1;
     } else if (
@@ -228,16 +297,105 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     this._addedResultInLastQuery = true;
 
-    // Record the Nimbus "exposure" event. Note that `recordExposureEvent` will
-    // make sure only one event gets recorded even it is called multiple times
-    // in the same browser session. However, it's an expensive call regardless,
-    // so do it only once per browser session and do it on idle.
-    if (!this._recordedExposureEvent) {
-      this._recordedExposureEvent = true;
-      Services.tm.idleDispatchToMainThread(() =>
-        NimbusFeatures.urlbar.recordExposureEvent({ once: true })
-      );
+    // The user triggered a suggestion. Depending on the experiment the user is
+    // enrolled in (if any), we may need to record the Nimbus exposure event.
+    //
+    // If the user is in a best match experiment:
+    //   Record if the suggestion is itself a best match and either of the
+    //   following are true:
+    //   * The best match feature is enabled (i.e., the user is in a treatment
+    //     branch), and the user has not disabled best match
+    //   * The best match feature is disabled (i.e., the user is in the control
+    //     branch)
+    // Else if the user is not in a modal experiment:
+    //   Record the event
+    if (
+      UrlbarPrefs.get("isBestMatchExperiment") ||
+      UrlbarPrefs.get("experimentType") === "best-match"
+    ) {
+      if (
+        isSuggestionBestMatch &&
+        (!UrlbarPrefs.get("bestMatchEnabled") ||
+          UrlbarPrefs.get("suggest.bestmatch"))
+      ) {
+        UrlbarQuickSuggest.ensureExposureEventRecorded();
+      }
+    } else if (UrlbarPrefs.get("experimentType") !== "modal") {
+      UrlbarQuickSuggest.ensureExposureEventRecorded();
     }
+  }
+
+  /**
+   * Called when the result's block button is picked. If the provider can block
+   * the result, it should do so and return true. If the provider cannot block
+   * the result, it should return false. The meaning of "blocked" depends on the
+   * provider and the type of result.
+   *
+   * @param {UrlbarResult} result
+   *   The result that was picked.
+   * @returns {boolean}
+   *   Whether the result was blocked.
+   */
+  blockResult(result) {
+    if (!UrlbarPrefs.get("bestMatch.blockingEnabled")) {
+      this.logger.info("Blocking disabled, ignoring key shortcut");
+      return false;
+    }
+
+    this.logger.info("Blocking result: " + JSON.stringify(result));
+    this.blockSuggestion(result.payload.originalUrl);
+    return true;
+  }
+
+  /**
+   * Blocks a suggestion.
+   *
+   * @param {string} originalUrl
+   *   The suggestion's original URL with its unreplaced timestamp template.
+   */
+  async blockSuggestion(originalUrl) {
+    this.logger.debug(`Queueing blockSuggestion: ${originalUrl}`);
+    await this._blockTaskQueue.queue(async () => {
+      this.logger.info(`Blocking suggestion: ${originalUrl}`);
+      let digest = await this._getDigest(originalUrl);
+      this.logger.debug(`Got digest for '${originalUrl}': ${digest}`);
+      this._blockedDigests.add(digest);
+      let json = JSON.stringify([...this._blockedDigests]);
+      UrlbarPrefs.set("quickSuggest.blockedDigests", json);
+      this.logger.debug(`All blocked suggestions: ${json}`);
+    });
+  }
+
+  /**
+   * Gets whether a suggestion is blocked.
+   *
+   * @param {string} originalUrl
+   *   The suggestion's original URL with its unreplaced timestamp template.
+   * @returns {boolean}
+   *   Whether the suggestion is blocked.
+   */
+  async isSuggestionBlocked(originalUrl) {
+    this.logger.debug(`Queueing isSuggestionBlocked: ${originalUrl}`);
+    return this._blockTaskQueue.queue(async () => {
+      this.logger.info(`Getting blocked status: ${originalUrl}`);
+      let digest = await this._getDigest(originalUrl);
+      this.logger.debug(`Got digest for '${originalUrl}': ${digest}`);
+      let isBlocked = this._blockedDigests.has(digest);
+      this.logger.info(`Blocked status for '${originalUrl}': ${isBlocked}`);
+      return isBlocked;
+    });
+  }
+
+  /**
+   * Unblocks all suggestions.
+   */
+  async clearBlockedSuggestions() {
+    this.logger.debug(`Queueing clearBlockedSuggestions`);
+    await this._blockTaskQueue.queue(() => {
+      this.logger.info(`Clearing all blocked suggestions`);
+      this._blockedDigests.clear();
+      UrlbarPrefs.clear("quickSuggest.blockedDigests");
+    });
   }
 
   /**
@@ -290,62 +448,88 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // add 1 to the 0-based resultIndex.
     let telemetryResultIndex = resultIndex + 1;
 
-    // impression scalar
+    // impression scalars
     Services.telemetry.keyedScalarAdd(
-      TELEMETRY_SCALAR_IMPRESSION,
+      TELEMETRY_SCALARS.IMPRESSION,
       telemetryResultIndex,
       1
     );
-
-    if (details.selIndex == resultIndex) {
-      // click or help scalar
+    if (result.isBestMatch) {
       Services.telemetry.keyedScalarAdd(
-        details.selType == "help"
-          ? TELEMETRY_SCALAR_HELP
-          : TELEMETRY_SCALAR_CLICK,
+        result.payload.isSponsored
+          ? TELEMETRY_SCALARS.IMPRESSION_SPONSORED_BEST_MATCH
+          : TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED_BEST_MATCH,
         telemetryResultIndex,
         1
       );
     }
 
+    if (details.selIndex == resultIndex) {
+      // click or help scalars
+      Services.telemetry.keyedScalarAdd(
+        details.selType == "help"
+          ? TELEMETRY_SCALARS.HELP
+          : TELEMETRY_SCALARS.CLICK,
+        telemetryResultIndex,
+        1
+      );
+      if (result.isBestMatch) {
+        if (details.selType == "help") {
+          Services.telemetry.keyedScalarAdd(
+            result.payload.isSponsored
+              ? TELEMETRY_SCALARS.HELP_SPONSORED_BEST_MATCH
+              : TELEMETRY_SCALARS.HELP_NONSPONSORED_BEST_MATCH,
+            telemetryResultIndex,
+            1
+          );
+        } else {
+          Services.telemetry.keyedScalarAdd(
+            result.payload.isSponsored
+              ? TELEMETRY_SCALARS.CLICK_SPONSORED_BEST_MATCH
+              : TELEMETRY_SCALARS.CLICK_NONSPONSORED_BEST_MATCH,
+            telemetryResultIndex,
+            1
+          );
+        }
+      }
+    }
+
     // Send the custom impression and click pings
     if (!isPrivate) {
-      let isQuickSuggestLinkClicked =
+      let is_clicked =
         details.selIndex == resultIndex && details.selType !== "help";
-      let {
-        sponsoredAdvertiser,
-        sponsoredImpressionUrl,
-        sponsoredClickUrl,
-        sponsoredBlockId,
-        requestId,
-      } = result.payload;
-      // Always use lowercase to make the reporting consistent
-      let advertiser = sponsoredAdvertiser.toLocaleLowerCase();
-
       let scenario = UrlbarPrefs.get("quicksuggest.scenario");
+      let match_type = result.isBestMatch ? "best-match" : "firefox-suggest";
+
+      // Always use lowercase to make the reporting consistent
+      let advertiser = result.payload.sponsoredAdvertiser.toLocaleLowerCase();
+
       // impression
       PartnerLinkAttribution.sendContextualServicesPing(
         {
-          scenario,
           advertiser,
-          block_id: sponsoredBlockId,
+          is_clicked,
+          match_type,
+          scenario,
+          block_id: result.payload.sponsoredBlockId,
           position: telemetryResultIndex,
-          reporting_url: sponsoredImpressionUrl,
-          is_clicked: isQuickSuggestLinkClicked,
-          request_id: requestId,
+          reporting_url: result.payload.sponsoredImpressionUrl,
+          request_id: result.payload.requestId,
         },
         CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION
       );
+
       // click
-      if (isQuickSuggestLinkClicked) {
+      if (is_clicked) {
         PartnerLinkAttribution.sendContextualServicesPing(
           {
-            scenario,
             advertiser,
-            block_id: sponsoredBlockId,
+            match_type,
+            scenario,
+            block_id: result.payload.sponsoredBlockId,
             position: telemetryResultIndex,
-            reporting_url: sponsoredClickUrl,
-            request_id: requestId,
+            reporting_url: result.payload.sponsoredClickUrl,
+            request_id: result.payload.requestId,
           },
           CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION
         );
@@ -361,6 +545,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
    */
   onPrefChanged(pref) {
     switch (pref) {
+      case "quickSuggest.blockedDigests":
+        this.logger.debug(
+          "browser.urlbar.quickSuggest.blockedDigests changed, loading digests"
+        );
+        this._loadBlockedDigests();
+        break;
       case "quicksuggest.dataCollection.enabled":
         if (!UrlbarPrefs.updatingFirefoxSuggestScenario) {
           Services.telemetry.recordEvent(
@@ -655,12 +845,13 @@ class ProviderQuickSuggest extends UrlbarProvider {
    * @returns {boolean}
    *   Whether the suggestion can be added.
    */
-  _canAddSuggestion(suggestion) {
+  async _canAddSuggestion(suggestion) {
     return (
-      (suggestion.is_sponsored &&
+      ((suggestion.is_sponsored &&
         UrlbarPrefs.get("suggest.quicksuggest.sponsored")) ||
-      (!suggestion.is_sponsored &&
-        UrlbarPrefs.get("suggest.quicksuggest.nonsponsored"))
+        (!suggestion.is_sponsored &&
+          UrlbarPrefs.get("suggest.quicksuggest.nonsponsored"))) &&
+      !(await this.isSuggestionBlocked(suggestion.url))
     );
   }
 
@@ -707,6 +898,47 @@ class ProviderQuickSuggest extends UrlbarProvider {
   }
 
   /**
+   * Loads blocked suggestion digests from the pref into `_blockedDigests`.
+   */
+  async _loadBlockedDigests() {
+    this.logger.debug(`Queueing _loadBlockedDigests`);
+    await this._blockTaskQueue.queue(() => {
+      this.logger.info(`Loading blocked suggestion digests`);
+      let json = UrlbarPrefs.get("quickSuggest.blockedDigests");
+      this.logger.debug(
+        `browser.urlbar.quickSuggest.blockedDigests value: ${json}`
+      );
+      if (!json) {
+        this.logger.info(`There are no blocked suggestion digests`);
+        this._blockedDigests.clear();
+      } else {
+        try {
+          this._blockedDigests = new Set(JSON.parse(json));
+          this.logger.info(`Successfully loaded blocked suggestion digests`);
+        } catch (error) {
+          this.logger.error(
+            `Error loading blocked suggestion digests: ${error}`
+          );
+        }
+      }
+    });
+  }
+
+  /**
+   * Returns the SHA-1 digest of a string as a 40-character hex-encoded string.
+   *
+   * @param {string} string
+   * @returns {string}
+   *   The hex-encoded digest of the given string.
+   */
+  async _getDigest(string) {
+    let stringArray = new TextEncoder().encode(string);
+    let hashBuffer = await crypto.subtle.digest("SHA-1", stringArray);
+    let hashArray = new Uint8Array(hashBuffer);
+    return Array.from(hashArray, b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /**
    * Updates state based on the `browser.urlbar.quicksuggest.enabled` pref.
    * Enable/disable event telemetry and ensure QuickSuggest module is loaded
    * when enabled.
@@ -722,11 +954,30 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // input. Referencing it here will trigger its import and init.
     if (UrlbarPrefs.get("quickSuggestEnabled")) {
       UrlbarQuickSuggest; // eslint-disable-line no-unused-expressions
+      this._loadBlockedDigests();
     }
   }
 
   // Whether we added a result during the most recent query.
   _addedResultInLastQuery = false;
+
+  // Set of digests of the original URLs of blocked suggestions. A suggestion's
+  // "original URL" is its URL straight from the source with an unreplaced
+  // timestamp template. For details on the digests, see `_getDigest()`.
+  //
+  // The only reason we use URL digests is that suggestions currently do not
+  // have persistent IDs. We could use the URLs themselves but SHA-1 digests are
+  // only 40 chars long, so they save a little space. This is also consistent
+  // with how blocked tiles on the newtab page are stored, but they use MD5. We
+  // do *not* store digests for any security or obfuscation reason.
+  //
+  // This value is serialized as a JSON'ed array to the
+  // `browser.urlbar.quickSuggest.blockedDigests` pref.
+  _blockedDigests = new Set();
+
+  // Used to serialize access to blocked suggestions. This is only necessary
+  // because getting a suggestion's URL digest is async.
+  _blockTaskQueue = new TaskQueue();
 }
 
 var UrlbarProviderQuickSuggest = new ProviderQuickSuggest();

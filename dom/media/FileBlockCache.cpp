@@ -31,8 +31,7 @@ static void CloseFD(PRFileDesc* aFD) {
 }
 
 void FileBlockCache::SetCacheFile(PRFileDesc* aFD) {
-  LOG("SetFD(aFD=%p) mBackgroundET=%p", aFD, mBackgroundET.get());
-
+  LOG("SetCacheFile aFD=%p", aFD);
   if (!aFD) {
     // Failed to get a temporary file. Shutdown.
     Close();
@@ -44,6 +43,8 @@ void FileBlockCache::SetCacheFile(PRFileDesc* aFD) {
   }
   {
     MutexAutoLock lock(mDataMutex);
+    LOG("SetFileCache mBackgroundET=%p, mIsWriteScheduled %d",
+        mBackgroundET.get(), mIsWriteScheduled);
     if (mBackgroundET) {
       // Still open, complete the initialization.
       mInitialized = true;
@@ -317,8 +318,8 @@ nsresult FileBlockCache::MoveBlockInFile(int32_t aSourceBlockIndex,
 }
 
 void FileBlockCache::PerformBlockIOs() {
-  MOZ_ASSERT(mBackgroundET->IsOnCurrentThread());
   MutexAutoLock mon(mDataMutex);
+  MOZ_ASSERT(mBackgroundET->IsOnCurrentThread());
   NS_ASSERTION(mIsWriteScheduled, "Should report write running or scheduled.");
 
   LOG("Run() mFD=%p mBackgroundET=%p", mFD, mBackgroundET.get());
@@ -366,12 +367,12 @@ void FileBlockCache::PerformBlockIOs() {
         MoveBlockInFile(change->mSourceBlockIndex, blockIndex);
       }
     }
-    mChangeIndexList.pop_front();
+    mChangeIndexList.pop_front();  // MonitorAutoUnlock above
     // If a new change has not been made to the block while we dropped
     // mDataMutex, clear reference to the old change. Otherwise, the old
     // reference has been cleared already.
-    if (mBlockChanges[blockIndex] == change) {
-      mBlockChanges[blockIndex] = nullptr;
+    if (mBlockChanges[blockIndex] == change) {  // MonitorAutoUnlock above
+      mBlockChanges[blockIndex] = nullptr;      // MonitorAutoUnlock above
     }
   }
 
@@ -388,6 +389,7 @@ nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
 
   mIsReading = true;
   auto exitRead = MakeScopeExit([&] {
+    mDataMutex.AssertCurrentThreadOwns();
     mIsReading = false;
     if (!mChangeIndexList.empty()) {
       // mReading has stopped or prevented pending writes, resume them.

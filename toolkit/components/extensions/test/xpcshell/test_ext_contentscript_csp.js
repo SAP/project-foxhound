@@ -7,12 +7,6 @@ const { TestUtils } = ChromeUtils.import(
 );
 
 Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-// Since we're not using AOM, and MV3 forces event pages, bypass
-// delayed-startup for MV3 test.  These tests do not rely on startup events.
-Services.prefs.setBoolPref(
-  "extensions.webextensions.background-delayed-startup",
-  false
-);
 
 const server = createHttpServer({
   hosts: ["example.com", "csplog.example.net"],
@@ -411,8 +405,10 @@ async function runCSPTest(test) {
       ],
       permissions: ["webRequest", "webRequestBlocking"],
       host_permissions: ["<all_urls>"],
+      granted_host_permissions: true,
       background: { scripts: ["background.js"] },
     },
+    temporarilyInstalled: true,
     files: {
       "content_script.js": `
       (${contentScript})(${JSON.stringify(test.report)}).then(() => {

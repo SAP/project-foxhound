@@ -495,7 +495,7 @@ static bool SandboxCloneInto(JSContext* cx, unsigned argc, Value* vp) {
   return xpc::CloneInto(cx, args[0], args[1], options, args.rval());
 }
 
-static void sandbox_finalize(JSFreeOp* fop, JSObject* obj) {
+static void sandbox_finalize(JS::GCContext* gcx, JSObject* obj) {
   SandboxPrivate* priv = SandboxPrivate::GetPrivate(obj);
   if (!priv) {
     // priv can be null if CreateSandboxObject fails in the middle.
@@ -531,7 +531,6 @@ static const JSClassOps SandboxClassOps = {
     JS_MayResolveStandardClass,      // mayResolve
     sandbox_finalize,                // finalize
     nullptr,                         // call
-    nullptr,                         // hasInstance
     nullptr,                         // construct
     JS_GlobalObjectTraceHook,        // trace
 };

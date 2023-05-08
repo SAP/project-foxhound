@@ -130,7 +130,7 @@ struct AccessCheck {
 struct FunctionCall {
   explicit FunctionCall(uint32_t lineOrBytecode)
       : lineOrBytecode(lineOrBytecode),
-        isInterModule(false),
+        restoreRegisterStateAndRealm(false),
         usesSystemAbi(false),
 #ifdef JS_CODEGEN_ARM
         hardFP(true),
@@ -141,13 +141,23 @@ struct FunctionCall {
 
   uint32_t lineOrBytecode;
   WasmABIArgGenerator abi;
-  bool isInterModule;
+  bool restoreRegisterStateAndRealm;
   bool usesSystemAbi;
 #ifdef JS_CODEGEN_ARM
   bool hardFP;
 #endif
   size_t frameAlignAdjustment;
   size_t stackArgAreaSize;
+};
+
+enum class PostBarrierKind {
+  // Remove an existing store buffer entry if the new value does not require
+  // one. This is required to preserve invariants with HeapPtr when used for
+  // movable storage.
+  Precise,
+  // Add a store buffer entry if the new value requires it, but do not attempt
+  // to remove a pre-existing entry.
+  Imprecise,
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -197,6 +207,10 @@ struct BaseCompiler final {
   // Prologue and epilogue offsets, initialized during prologue and epilogue
   // generation and only used by the caller.
   FuncOffsets offsets_;
+
+  // We call this address from the breakable point when the breakpoint handler
+  // is not null.
+  NonAssertingLabel debugTrapStub_;
 
   // BaselineCompileFunctions() "lends" us the StkVector to use in this
   // BaseCompiler object, and that is installed in |stk_| in our constructor.
@@ -605,6 +619,7 @@ struct BaseCompiler final {
   inline void pushI32(int32_t v);
   inline void pushI64(int64_t v);
   inline void pushRef(intptr_t v);
+  inline void pushPtr(intptr_t v);
   inline void pushF64(double v);
   inline void pushF32(float v);
 #ifdef ENABLE_WASM_SIMD
@@ -891,7 +906,10 @@ struct BaseCompiler final {
 
   // Insert a breakpoint almost anywhere.  This will create a call, with all the
   // overhead that entails.
-  inline void insertBreakablePoint(CallSiteDesc::Kind kind);
+  void insertBreakablePoint(CallSiteDesc::Kind kind);
+
+  // Insert code at the end of a function for breakpoint filtering.
+  void insertBreakpointStub();
 
   // Debugger API used at the return point: shuffle register return values off
   // to memory for the debugger to see; and get them back again.
@@ -913,7 +931,8 @@ struct BaseCompiler final {
   //
   // Calls.
 
-  void beginCall(FunctionCall& call, UseABI useABI, InterModule interModule);
+  void beginCall(FunctionCall& call, UseABI useABI,
+                 RestoreRegisterStateAndRealm restoreRegisterStateAndRealm);
   void endCall(FunctionCall& call, size_t stackSpace);
   void startCallArgs(size_t stackArgAreaSizeUnaligned, FunctionCall* call);
   ABIArg reservePointerArgument(FunctionCall* call);
@@ -923,8 +942,9 @@ struct BaseCompiler final {
 
   // Precondition for the call*() methods: sync()
 
-  CodeOffset callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
-                          const Stk& indexVal, const FunctionCall& call);
+  void callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
+                    const Stk& indexVal, const FunctionCall& call,
+                    CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
   CodeOffset callImport(unsigned globalDataOffset, const FunctionCall& call);
   CodeOffset builtinCall(SymbolicAddress builtin, const FunctionCall& call);
   CodeOffset builtinInstanceMethodCall(const SymbolicAddressSignature& builtin,
@@ -965,9 +985,9 @@ struct BaseCompiler final {
   // Immediate-to-register moves.
   //
   // The compiler depends on moveImm32() clearing the high bits of a 64-bit
-  // register on 64-bit systems except MIPS64 where high bits are sign extended
-  // from lower bits, see doc block "64-bit GPRs carrying 32-bit values" in
-  // MacroAssembler.h.
+  // register on 64-bit systems except MIPS64 And LoongArch64 where high bits
+  // are sign extended from lower bits, see doc block "64-bit GPRs carrying
+  // 32-bit values" in MacroAssembler.h.
 
   inline void moveImm32(int32_t v, RegI32 dest);
   inline void moveImm64(int64_t v, RegI64 dest);
@@ -1066,7 +1086,16 @@ struct BaseCompiler final {
   //
   // Global variable access.
 
-  Address addressOfGlobalVar(const GlobalDesc& global, RegI32 tmp);
+  Address addressOfGlobalVar(const GlobalDesc& global, RegPtr tmp);
+
+  //////////////////////////////////////////////////////////////////////
+  //
+  // Table access.
+
+  Address addressOfTableField(const TableDesc& table, uint32_t fieldOffset,
+                              RegPtr tls);
+  void loadTableLength(const TableDesc& table, RegPtr tls, RegI32 length);
+  void loadTableElements(const TableDesc& table, RegPtr tls, RegPtr elements);
 
   //////////////////////////////////////////////////////////////////////
   //
@@ -1092,7 +1121,7 @@ struct BaseCompiler final {
   void boundsCheck4GBOrLargerAccess(RegPtr tls, RegI64 ptr, Label* ok);
   void boundsCheckBelow4GBAccess(RegPtr tls, RegI64 ptr, Label* ok);
 
-#if defined(RABALDR_HAS_HEAPREG)
+#if defined(WASM_HAS_HEAPREG)
   template <typename RegIndexType>
   BaseIndex prepareAtomicMemoryAccess(MemoryAccessDesc* access,
                                       AccessCheck* check, RegPtr tls,
@@ -1220,13 +1249,16 @@ struct BaseCompiler final {
   // at the end of a series of catch blocks (if none matched the exception).
   [[nodiscard]] bool throwFrom(RegRef exn, uint32_t lineOrBytecode);
 
-  // Load a pending exception object from the TlsData.
-  void loadPendingException(Register dest);
+  // Load the specified tag object from the Instance.
+  void loadTag(RegPtr tlsData, uint32_t tagIndex, RegRef tagDst);
+
+  // Load the pending exception state from the Instance and then reset it.
+  void consumePendingException(RegRef* exnDst, RegRef* tagDst);
 #endif
 
   ////////////////////////////////////////////////////////////
   //
-  // Object support.
+  // Barriers support.
 
   // This emits a GC pre-write barrier.  The pre-barrier is needed when we
   // replace a member field with a new value, and the previous field value
@@ -1241,13 +1273,41 @@ struct BaseCompiler final {
   // update.  This function preserves that register.
   void emitPreBarrier(RegPtr valueAddr);
 
-  // This frees the register `valueAddr`.
-  [[nodiscard]] bool emitPostBarrierCall(RegPtr valueAddr);
+  // This emits a GC post-write barrier. The post-barrier is needed when we
+  // replace a member field with a new value, the new value is in the nursery,
+  // and the containing object is a tenured object. The field must then be
+  // added to the store buffer so that the nursery can be correctly collected.
+  // The field might belong to an object or be a stack slot or a register or a
+  // heap allocated value.
+  //
+  // For the difference between 'precise' and 'imprecise', look at the
+  // documentation on PostBarrierKind.
+  //
+  // `object` is a pointer to the object that contains the field. It is used, if
+  // present, to skip adding a store buffer entry when the containing object is
+  // in the nursery. This register is preserved by this function.
+  // `valueAddr` is the address of the location that we are writing to. This
+  // register is consumed by this function.
+  // `prevValue` is the value that existed in the field before `value` was
+  // stored. This register is consumed by this function.
+  // `value` is the value that was stored in the field. This register is
+  // preserved by this function.
+  [[nodiscard]] bool emitPostBarrierImprecise(const Maybe<RegRef>& object,
+                                     RegPtr valueAddr, RegRef value);
+  [[nodiscard]] bool emitPostBarrierPrecise(const Maybe<RegRef>& object,
+                                            RegPtr valueAddr, RegRef prevValue, RegRef value);
 
-  // Emits a store to a JS object pointer at the address valueAddr, which is
-  // inside the GC cell `object`. Preserves `object` and `value`.
+  // Emits a store to a JS object pointer at the address `valueAddr`, which is
+  // inside the GC cell `object`.
+  //
+  // Preserves `object` and `value`. Consumes `valueAddr`.
   [[nodiscard]] bool emitBarrieredStore(const Maybe<RegRef>& object,
-                                        RegPtr valueAddr, RegRef value);
+                                        RegPtr valueAddr, RegRef value,
+                                        PostBarrierKind kind);
+
+  // Emits a store of nullptr to a JS object pointer at the address valueAddr.
+  // Preserves `valueAddr`.
+  void emitBarrieredClear(RegPtr valueAddr);
 
   ////////////////////////////////////////////////////////////
   //
@@ -1525,6 +1585,10 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitTableSet();
   [[nodiscard]] bool emitTableSize();
 
+  void emitTableBoundsCheck(const TableDesc& table, RegI32 index, RegPtr tls);
+  [[nodiscard]] bool emitTableGetAnyRef(uint32_t tableIndex);
+  [[nodiscard]] bool emitTableSetAnyRef(uint32_t tableIndex);
+
 #ifdef ENABLE_WASM_GC
   [[nodiscard]] bool emitStructNewWithRtt();
   [[nodiscard]] bool emitStructNewDefaultWithRtt();
@@ -1577,7 +1641,7 @@ struct BaseCompiler final {
 #  endif
 #endif
 
-  [[nodiscard]] bool emitIntrinsic(IntrinsicOp op);
+  [[nodiscard]] bool emitIntrinsic();
 };
 
 }  // namespace wasm

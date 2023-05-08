@@ -517,7 +517,7 @@ void gfxTextRun::DrawPartialLigature(gfxFont* aFont, Range aRange,
 // check whether the text run needs to be explicitly composited in order to
 // support opacity.
 static bool HasSyntheticBoldOrColor(gfxFont* aFont) {
-  if (aFont->IsSyntheticBold()) {
+  if (aFont->ApplySyntheticBold()) {
     return true;
   }
   gfxFontEntry* fe = aFont->GetFontEntry();
@@ -1548,7 +1548,6 @@ void gfxTextRun::SetSpaceGlyph(gfxFont* aFont, DrawTarget* aDrawTarget,
     return;
   }
 
-  aFont->InitWordCache();
   static const uint8_t space = ' ';
   gfx::ShapedTextFlags flags =
       gfx::ShapedTextFlags::TEXT_IS_8BIT | aOrientation;
@@ -2200,7 +2199,10 @@ gfxFont* gfxFontGroup::GetDefaultFont() {
     } else {
       gfxFontEntry* fe = pfl->GetDefaultFontEntry();
       if (fe) {
-        return fe->FindOrMakeFont(&mStyle);
+        gfxFont* f = fe->FindOrMakeFont(&mStyle);
+        if (f) {
+          return f;
+        }
       }
     }
   }
@@ -3328,7 +3330,7 @@ gfxFont* gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh,
   gfxFont* font = WhichPrefFontSupportsChar(aCh, aNextCh, presentation);
   if (font) {
     if (PrefersColor(presentation) &&
-        Preferences::HasUserValue("font.name-list.emoji")) {
+        gfxPlatformFontList::PlatformFontList()->EmojiPrefHasUserValue()) {
       // For emoji, always accept the font from preferences if it's explicitly
       // user-set, even if it isn't actually a color-emoji font, as some users
       // may want to set their emoji font preference to a monochrome font like

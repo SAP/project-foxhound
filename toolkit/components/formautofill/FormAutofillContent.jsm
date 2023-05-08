@@ -54,6 +54,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "CreditCardTelemetry",
+  "resource://autofill/FormAutofillTelemetryUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "FormLikeFactory",
   "resource://gre/modules/FormLikeFactory.jsm"
 );
@@ -180,8 +185,6 @@ AutofillProfileAutoCompleteSearch.prototype = {
       savedFieldNames,
     } = FormAutofillContent;
     this.forceStop = false;
-
-    this.debug("startSearch: for", searchString, "with input", activeInput);
 
     let isAddressField = FormAutofillUtils.isAddressField(
       activeFieldDetail.fieldName
@@ -327,7 +330,6 @@ AutofillProfileAutoCompleteSearch.prototype = {
    *          Promise that resolves when addresses returned from parent process.
    */
   _getRecords(input, data) {
-    this.debug("_getRecords with data:", data);
     if (!input) {
       return [];
     }
@@ -575,49 +577,7 @@ var FormAutofillContent = {
       return;
     }
 
-    records.creditCard.forEach(record => {
-      let extra = {
-        // Fields which have been filled manually.
-        fields_not_auto: "0",
-        // Fields which have been autofilled.
-        fields_auto: "0",
-        // Fields which have been autofilled and then modified.
-        fields_modified: "0",
-      };
-
-      if (record.guid !== null) {
-        // If the `guid` is not null, it means we're editing an existing record.
-        // In that case, all fields in the record are autofilled, and fields in
-        // `untouchedFields` are unmodified.
-        let totalCount = handler.form.elements.length;
-        let autofilledCount = Object.keys(record.record).length;
-        let unmodifiedCount = record.untouchedFields.length;
-
-        extra.fields_not_auto = (totalCount - autofilledCount).toString();
-        extra.fields_auto = autofilledCount.toString();
-        extra.fields_modified = (autofilledCount - unmodifiedCount).toString();
-      } else {
-        // If the `guid` is null, we're filling a new form.
-        // In that case, all not-null fields are manually filled.
-        extra.fields_not_auto = Array.from(handler.form.elements)
-          .filter(element => !!element.value?.trim().length)
-          .length.toString();
-      }
-
-      Services.telemetry.recordEvent(
-        "creditcard",
-        "submitted",
-        "cc_form",
-        record.flowId,
-        extra
-      );
-    });
-    if (records.creditCard.length) {
-      Services.telemetry.scalarAdd(
-        "formautofill.creditCards.submitted_sections_count",
-        records.creditCard.length
-      );
-    }
+    CreditCardTelemetry.recordFormSubmitted(records, handler.form.elements);
 
     this._onFormSubmit(records, domWin, handler.timeStartedFillingMS);
   },
@@ -701,8 +661,7 @@ var FormAutofillContent = {
       this.debug("updateActiveElement: skipping check; autofill is imminent");
     } else if (element.value?.length !== 0) {
       this.debug(
-        "updateActiveElement: Not opening popup because field is " +
-          `not empty: element.value = "${element.value}"`
+        `updateActiveElement: Not opening popup because field is not empty.`
       );
     } else {
       this.debug(
@@ -786,8 +745,7 @@ var FormAutofillContent = {
 
   identifyAutofillFields(element) {
     this.debug(
-      "identifyAutofillFields:",
-      String(element.ownerDocument.location)
+      `identifyAutofillFields: ${element.ownerDocument.location?.hostname}`
     );
 
     if (DELEGATE_AUTOCOMPLETE || !this.savedFieldNames) {
@@ -812,7 +770,6 @@ var FormAutofillContent = {
     let validDetails = formHandler.collectFormFields();
 
     this._formsDetails.set(formHandler.form.rootElement, formHandler);
-    this.debug("Adding form handler to _formsDetails:", formHandler);
 
     validDetails.forEach(detail =>
       this._markAsAutofillField(detail.elementWeakRef.get())
@@ -827,6 +784,14 @@ var FormAutofillContent = {
     }
 
     this.activeSection.clearPopulatedForm();
+
+    let fieldName = FormAutofillContent.activeFieldDetail?.fieldName;
+    if (FormAutofillUtils.isCreditCardField(fieldName)) {
+      CreditCardTelemetry.recordFormCleared(
+        this.activeSection?.flowId,
+        fieldName
+      );
+    }
   },
 
   previewProfile(doc) {
@@ -899,12 +864,13 @@ var FormAutofillContent = {
       formFillController.passwordPopupAutomaticallyOpened
     );
 
-    Services.telemetry.recordEvent(
-      "creditcard",
-      "popup_shown",
-      "cc_form",
-      this.activeSection.flowId
-    );
+    let fieldName = FormAutofillContent.activeFieldDetail?.fieldName;
+    if (FormAutofillUtils.isCreditCardField(fieldName)) {
+      CreditCardTelemetry.recordPopupShown(
+        this.activeSection?.flowId,
+        fieldName
+      );
+    }
   },
 
   _markAsAutofillField(field) {

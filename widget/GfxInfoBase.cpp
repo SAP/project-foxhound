@@ -17,7 +17,6 @@
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 #include "nsString.h"
-#include "nsThreadUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsVersionComparator.h"
 #include "mozilla/Services.h"
@@ -30,9 +29,7 @@
 #include "nsIXULAppInfo.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
@@ -212,9 +209,10 @@ static const char* GetPrefNameForFeature(int32_t aFeature) {
       name = BLOCKLIST_PREF_BRANCH "dx.p016";
       break;
     case nsIGfxInfo::FEATURE_VP8_HW_DECODE:
+      name = BLOCKLIST_PREF_BRANCH "vp8.hw-decode";
+      break;
     case nsIGfxInfo::FEATURE_VP9_HW_DECODE:
-      // We don't provide prefs for these features as these are
-      // not handling downloadable blocklist.
+      name = BLOCKLIST_PREF_BRANCH "vp9.hw-decode";
       break;
     case nsIGfxInfo::FEATURE_GL_SWIZZLE:
       name = BLOCKLIST_PREF_BRANCH "gl.swizzle";
@@ -236,6 +234,15 @@ static const char* GetPrefNameForFeature(int32_t aFeature) {
       break;
     case nsIGfxInfo::FEATURE_DMABUF:
       name = BLOCKLIST_PREF_BRANCH "dmabuf";
+      break;
+    case nsIGfxInfo::FEATURE_VAAPI:
+      name = BLOCKLIST_PREF_BRANCH "vaapi";
+      break;
+    case nsIGfxInfo::FEATURE_WEBGPU:
+      name = BLOCKLIST_PREF_BRANCH "webgpu";
+      break;
+    case nsIGfxInfo::FEATURE_VIDEO_OVERLAY:
+      name = BLOCKLIST_PREF_BRANCH "video-overlay";
       break;
     case nsIGfxInfo::FEATURE_WEBRENDER_SHADER_CACHE:
       name = BLOCKLIST_PREF_BRANCH "webrender.program-binary-disk";
@@ -469,8 +476,12 @@ static int32_t BlocklistFeatureToGfxFeature(const nsAString& aFeature) {
   if (aFeature.EqualsLiteral("DX_NV12")) {
     return nsIGfxInfo::FEATURE_DX_NV12;
   }
-  // We do not support FEATURE_VP8_HW_DECODE and FEATURE_VP9_HW_DECODE
-  // in downloadable blocklist.
+  if (aFeature.EqualsLiteral("VP8_HW_DECODE")) {
+    return nsIGfxInfo::FEATURE_VP8_HW_DECODE;
+  }
+  if (aFeature.EqualsLiteral("VP9_HW_DECODE")) {
+    return nsIGfxInfo::FEATURE_VP9_HW_DECODE;
+  }
   if (aFeature.EqualsLiteral("GL_SWIZZLE")) {
     return nsIGfxInfo::FEATURE_GL_SWIZZLE;
   }
@@ -488,6 +499,15 @@ static int32_t BlocklistFeatureToGfxFeature(const nsAString& aFeature) {
   }
   if (aFeature.EqualsLiteral("DMABUF")) {
     return nsIGfxInfo::FEATURE_DMABUF;
+  }
+  if (aFeature.EqualsLiteral("VAAPI")) {
+    return nsIGfxInfo::FEATURE_VAAPI;
+  }
+  if (aFeature.EqualsLiteral("WEBGPU")) {
+    return nsIGfxInfo::FEATURE_WEBGPU;
+  }
+  if (aFeature.EqualsLiteral("VIDEO_OVERLAY")) {
+    return nsIGfxInfo::FEATURE_VIDEO_OVERLAY;
   }
   if (aFeature.EqualsLiteral("WEBRENDER_PARTIAL_PRESENT")) {
     return nsIGfxInfo::FEATURE_WEBRENDER_PARTIAL_PRESENT;
@@ -1233,7 +1253,8 @@ bool GfxInfoBase::DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
 }
 
 bool GfxInfoBase::IsFeatureAllowlisted(int32_t aFeature) const {
-  return aFeature == nsIGfxInfo::FEATURE_WEBRENDER;
+  return aFeature == nsIGfxInfo::FEATURE_WEBRENDER ||
+         aFeature == nsIGfxInfo::FEATURE_VIDEO_OVERLAY;
 }
 
 nsresult GfxInfoBase::GetFeatureStatusImpl(
@@ -1373,6 +1394,9 @@ void GfxInfoBase::EvaluateDownloadedBlocklist(
                         nsIGfxInfo::FEATURE_ALLOW_WEBGL_OUT_OF_PROCESS,
                         nsIGfxInfo::FEATURE_X11_EGL,
                         nsIGfxInfo::FEATURE_DMABUF,
+                        nsIGfxInfo::FEATURE_VAAPI,
+                        nsIGfxInfo::FEATURE_WEBGPU,
+                        nsIGfxInfo::FEATURE_VIDEO_OVERLAY,
                         nsIGfxInfo::FEATURE_WEBRENDER_PARTIAL_PRESENT,
                         0};
 
@@ -1888,29 +1912,6 @@ GfxInfoBase::ControlGPUProcessForXPCShell(bool aEnable, bool* _retval) {
   }
 
   *_retval = true;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfoBase::EnsureGPUProcessReadyForTests(JSContext* cx,
-                                           dom::Promise** aPromise) {
-  GPUProcessManager* gpm = GPUProcessManager::Get();
-  if (!gpm) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  ErrorResult rv;
-  RefPtr<dom::Promise> promise =
-      dom::Promise::Create(xpc::CurrentNativeGlobal(cx), rv);
-  if (NS_WARN_IF(rv.Failed())) {
-    return rv.StealNSResult();
-  }
-
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      "GfxInfoBase::EnsureGPUProcessReadyForTests",
-      [promise, gpm]() { promise->MaybeResolve(gpm->EnsureGPUReady()); }));
-
-  promise.forget(aPromise);
   return NS_OK;
 }
 

@@ -333,32 +333,34 @@ class AliasSet {
         1 << 9,                  // An array buffer view's length or byteOffset
     WasmGlobalCell = 1 << 10,    // A wasm global cell
     WasmTableElement = 1 << 11,  // An element of a wasm table
-    WasmStackResult = 1 << 12,   // A stack result from the current function
+    WasmTableMeta = 1 << 12,     // A wasm table elements pointer and
+                                 // length field, in Tls.
+    WasmStackResult = 1 << 13,   // A stack result from the current function
 
     // JSContext's exception state. This is used on instructions like MThrow
     // or MNewArrayDynamicLength that throw exceptions (other than OOM) but have
     // no other side effect, to ensure that they get their own up-to-date resume
     // point. (This resume point will be used when constructing the Baseline
     // frame during exception bailouts.)
-    ExceptionState = 1 << 13,
+    ExceptionState = 1 << 14,
 
     // Used for instructions that load the privateSlot of DOM proxies and
     // the ExpandoAndGeneration.
-    DOMProxyExpando = 1 << 14,
+    DOMProxyExpando = 1 << 15,
 
     // Hash table of a Map or Set object.
-    MapOrSetHashTable = 1 << 15,
+    MapOrSetHashTable = 1 << 16,
 
     // Internal state of the random number generator
-    RNG = 1 << 16,
+    RNG = 1 << 17,
 
     // The pendingException slot on the wasm tls object.
-    WasmPendingException = 1 << 17,
+    WasmPendingException = 1 << 18,
 
     Last = WasmPendingException,
 
     Any = Last | (Last - 1),
-    NumCategories = 18,
+    NumCategories = 19,
 
     // Indicates load or store.
     Store_ = 1 << 31
@@ -6163,42 +6165,9 @@ class MStringReplace : public MTernaryInstruction,
   bool possiblyCalls() const override { return true; }
 };
 
-struct LambdaFunctionInfo {
-  // The functions used in lambdas are the canonical original function in
-  // the script, and are immutable except for delazification. Record this
-  // information while still on the main thread to avoid races.
- private:
-  CompilerFunction fun_;
-
- public:
-  js::BaseScript* baseScript;
-  js::FunctionFlags flags;
-  uint16_t nargs;
-
-  LambdaFunctionInfo(JSFunction* fun, BaseScript* baseScript,
-                     FunctionFlags flags, uint16_t nargs)
-      : fun_(fun), baseScript(baseScript), flags(flags), nargs(nargs) {}
-
-  LambdaFunctionInfo(const LambdaFunctionInfo& other)
-      : fun_(static_cast<JSFunction*>(other.fun_)),
-        baseScript(other.baseScript),
-        flags(other.flags),
-        nargs(other.nargs) {}
-
-  // Be careful when calling this off-thread. Don't call any JSFunction*
-  // methods that depend on script/lazyScript - this can race with
-  // delazification on the main thread.
-  JSFunction* funUnsafe() const { return fun_; }
-
- private:
-  void operator=(const LambdaFunctionInfo&) = delete;
-};
-
 class MLambda : public MBinaryInstruction, public SingleObjectPolicy::Data {
-  const LambdaFunctionInfo info_;
-
-  MLambda(MDefinition* envChain, MConstant* cst, const LambdaFunctionInfo& info)
-      : MBinaryInstruction(classOpcode, envChain, cst), info_(info) {
+  MLambda(MDefinition* envChain, MConstant* cst)
+      : MBinaryInstruction(classOpcode, envChain, cst) {
     setResultType(MIRType::Object);
   }
 
@@ -6208,7 +6177,10 @@ class MLambda : public MBinaryInstruction, public SingleObjectPolicy::Data {
   NAMED_OPERANDS((0, environmentChain))
 
   MConstant* functionOperand() const { return getOperand(1)->toConstant(); }
-  const LambdaFunctionInfo& info() const { return info_; }
+  JSFunction* templateFunction() const {
+    return &functionOperand()->toObject().as<JSFunction>();
+  }
+
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
   bool canRecoverOnBailout() const override { return true; }
@@ -6217,12 +6189,8 @@ class MLambda : public MBinaryInstruction, public SingleObjectPolicy::Data {
 class MLambdaArrow
     : public MTernaryInstruction,
       public MixPolicy<ObjectPolicy<0>, BoxPolicy<1>, ObjectPolicy<2>>::Data {
-  const LambdaFunctionInfo info_;
-
-  MLambdaArrow(MDefinition* envChain, MDefinition* newTarget, MConstant* cst,
-               const LambdaFunctionInfo& info)
-      : MTernaryInstruction(classOpcode, envChain, newTarget, cst),
-        info_(info) {
+  MLambdaArrow(MDefinition* envChain, MDefinition* newTarget, MConstant* cst)
+      : MTernaryInstruction(classOpcode, envChain, newTarget, cst) {
     setResultType(MIRType::Object);
   }
 
@@ -6232,7 +6200,10 @@ class MLambdaArrow
   NAMED_OPERANDS((0, environmentChain), (1, newTargetDef))
 
   MConstant* functionOperand() const { return getOperand(2)->toConstant(); }
-  const LambdaFunctionInfo& info() const { return info_; }
+  JSFunction* templateFunction() const {
+    return &functionOperand()->toObject().as<JSFunction>();
+  }
+
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
   bool canRecoverOnBailout() const override { return true; }
@@ -6540,7 +6511,6 @@ class MLoadElementAndUnbox : public MBinaryInstruction,
     if (mode_ == MUnbox::Fallible) {
       setGuard();
     }
-    setBailoutKind(BailoutKind::UnboxFolding);
   }
 
  public:
@@ -6928,7 +6898,8 @@ class MLoadTypedArrayElementHole : public MBinaryInstruction,
     return congruentIfOperandsEqual(other);
   }
   AliasSet getAliasSet() const override {
-    return AliasSet::Load(AliasSet::UnboxedElement);
+    return AliasSet::Load(AliasSet::UnboxedElement | AliasSet::ObjectFields |
+                          AliasSet::ArrayBufferViewLengthOrOffset);
   }
   bool canProduceFloat32() const override {
     return arrayType_ == Scalar::Float32;
@@ -7171,7 +7142,6 @@ class MLoadFixedSlotAndUnbox : public MUnaryInstruction,
     if (mode_ == MUnbox::Fallible) {
       setGuard();
     }
-    setBailoutKind(BailoutKind::UnboxFolding);
   }
 
  public:
@@ -7215,7 +7185,6 @@ class MLoadDynamicSlotAndUnbox : public MUnaryInstruction,
     if (mode_ == MUnbox::Fallible) {
       setGuard();
     }
-    setBailoutKind(BailoutKind::UnboxFolding);
   }
 
  public:
@@ -8477,13 +8446,6 @@ class MResumePoint final : public MNode
                            public InlineForwardListNode<MResumePoint>
 #endif
 {
- public:
-  enum Mode {
-    ResumeAt,     // Resume until before the current instruction
-    ResumeAfter,  // Resume after the current instruction
-    Outer         // State before inlining.
-  };
-
  private:
   friend class MBasicBlock;
   friend void AssertBasicGraphCoherency(MIRGraph& graph, bool force);
@@ -8497,9 +8459,9 @@ class MResumePoint final : public MNode
 
   jsbytecode* pc_;
   MInstruction* instruction_;
-  Mode mode_;
+  ResumeMode mode_;
 
-  MResumePoint(MBasicBlock* block, jsbytecode* pc, Mode mode);
+  MResumePoint(MBasicBlock* block, jsbytecode* pc, ResumeMode mode);
   void inherit(MBasicBlock* state);
 
   // Calling isDefinition or isResumePoint on MResumePoint is unnecessary.
@@ -8523,7 +8485,7 @@ class MResumePoint final : public MNode
 
  public:
   static MResumePoint* New(TempAllocator& alloc, MBasicBlock* block,
-                           jsbytecode* pc, Mode mode);
+                           jsbytecode* pc, ResumeMode mode);
 
   MBasicBlock* block() const { return resumePointBlock(); }
 
@@ -8568,7 +8530,7 @@ class MResumePoint final : public MNode
     MOZ_ASSERT(instruction_);
     instruction_ = nullptr;
   }
-  Mode mode() const { return mode_; }
+  ResumeMode mode() const { return mode_; }
 
   void releaseUses() {
     for (size_t i = 0, e = numOperands(); i < e; i++) {
@@ -9021,11 +8983,12 @@ class MWasmLoadTls : public MUnaryInstruction, public NoTypePolicy::Data {
         aliases_(aliases) {
     // Different Tls data have different alias classes and only those classes
     // are allowed.
-    MOZ_ASSERT(aliases_.flags() ==
-                   AliasSet::Load(AliasSet::WasmHeapMeta).flags() ||
-               aliases_.flags() ==
-                   AliasSet::Load(AliasSet::WasmPendingException).flags() ||
-               aliases_.flags() == AliasSet::None().flags());
+    MOZ_ASSERT(
+        aliases_.flags() == AliasSet::Load(AliasSet::WasmHeapMeta).flags() ||
+        aliases_.flags() == AliasSet::Load(AliasSet::WasmTableMeta).flags() ||
+        aliases_.flags() ==
+            AliasSet::Load(AliasSet::WasmPendingException).flags() ||
+        aliases_.flags() == AliasSet::None().flags());
 
     // The only types supported at the moment.
     MOZ_ASSERT(type == MIRType::Pointer || type == MIRType::Int32 ||
@@ -9050,6 +9013,35 @@ class MWasmLoadTls : public MUnaryInstruction, public NoTypePolicy::Data {
   HashNumber valueHash() const override {
     return addU32ToHash(HashNumber(op()), offset());
   }
+
+  AliasSet getAliasSet() const override { return aliases_; }
+};
+
+class MWasmStoreTls : public MBinaryInstruction, public NoTypePolicy::Data {
+  uint32_t offset_;
+  AliasSet aliases_;
+
+  explicit MWasmStoreTls(MDefinition* tlsPointer, MDefinition* value,
+                         uint32_t offset, MIRType type, AliasSet aliases)
+      : MBinaryInstruction(classOpcode, tlsPointer, value),
+        offset_(offset),
+        aliases_(aliases) {
+    // Different Tls data have different alias classes and only those classes
+    // are allowed.
+    MOZ_ASSERT(aliases_.flags() ==
+               AliasSet::Store(AliasSet::WasmPendingException).flags());
+
+    // The only types supported at the moment.
+    MOZ_ASSERT(type == MIRType::Pointer || type == MIRType::Int32 ||
+               type == MIRType::Int64 || type == MIRType::RefOrNull);
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmStoreTls)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, tlsPtr), (1, value))
+
+  uint32_t offset() const { return offset_; }
 
   AliasSet getAliasSet() const override { return aliases_; }
 };
@@ -9085,12 +9077,21 @@ class MWasmHeapBase : public MUnaryInstruction, public NoTypePolicy::Data {
 // For memory64, bounds check nodes are always of type Int64.
 
 class MWasmBoundsCheck : public MBinaryInstruction, public NoTypePolicy::Data {
+ public:
+  enum Target {
+    Memory,
+    Table,
+  };
+
+ private:
   wasm::BytecodeOffset bytecodeOffset_;
+  Target target_;
 
   explicit MWasmBoundsCheck(MDefinition* index, MDefinition* boundsCheckLimit,
-                            wasm::BytecodeOffset bytecodeOffset)
+                            wasm::BytecodeOffset bytecodeOffset, Target target)
       : MBinaryInstruction(classOpcode, index, boundsCheckLimit),
-        bytecodeOffset_(bytecodeOffset) {
+        bytecodeOffset_(bytecodeOffset),
+        target_(target) {
     MOZ_ASSERT(index->type() == boundsCheckLimit->type());
 
     // Bounds check is effectful: it throws for OOB.
@@ -9107,6 +9108,8 @@ class MWasmBoundsCheck : public MBinaryInstruction, public NoTypePolicy::Data {
   NAMED_OPERANDS((0, index), (1, boundsCheckLimit))
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  bool isMemory() const { return target_ == MWasmBoundsCheck::Memory; }
 
   bool isRedundant() const { return !isGuard(); }
 
@@ -9582,6 +9585,25 @@ class MWasmLoadGlobalCell : public MUnaryInstruction,
   AliasType mightAlias(const MDefinition* def) const override;
 };
 
+class MWasmLoadTableElement : public MBinaryInstruction,
+                              public NoTypePolicy::Data {
+  MWasmLoadTableElement(MDefinition* elements, MDefinition* index)
+      : MBinaryInstruction(classOpcode, elements, index) {
+    setResultType(MIRType::RefOrNull);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmLoadTableElement)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, elements))
+  NAMED_OPERANDS((1, index))
+
+  AliasSet getAliasSet() const override {
+    return AliasSet::Load(AliasSet::WasmTableElement);
+  }
+};
+
 class MWasmStoreGlobalVar : public MBinaryInstruction,
                             public NoTypePolicy::Data {
   MWasmStoreGlobalVar(unsigned globalDataOffset, MDefinition* value,
@@ -9671,6 +9693,38 @@ class MWasmDerivedPointer : public MUnaryInstruction,
 
   ALLOW_CLONE(MWasmDerivedPointer)
 };
+
+class MWasmDerivedIndexPointer : public MBinaryInstruction,
+                                 public NoTypePolicy::Data {
+  MWasmDerivedIndexPointer(MDefinition* base, MDefinition* index, Scale scale)
+      : MBinaryInstruction(classOpcode, base, index), scale_(scale) {
+    setResultType(MIRType::Pointer);
+    setMovable();
+  }
+
+  Scale scale_;
+
+ public:
+  INSTRUCTION_HEADER(WasmDerivedIndexPointer)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, base))
+  NAMED_OPERANDS((1, index))
+
+  Scale scale() const { return scale_; }
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  bool congruentTo(const MDefinition* ins) const override {
+    return congruentIfOperandsEqual(ins) &&
+           ins->toWasmDerivedIndexPointer()->scale() == scale();
+  }
+
+  ALLOW_CLONE(MWasmDerivedIndexPointer)
+};
+
+// Stores a reference to an address. This performs a pre-barrier on the address,
+// but not a post-barrier. A post-barrier must be performed separately, if it's
+// required.
 
 class MWasmStoreRef : public MAryInstruction<3>, public NoTypePolicy::Data {
   AliasSet::Flag aliasSet_;
@@ -10083,6 +10137,10 @@ class MWasmTernarySimd128 : public MTernaryInstruction,
   // as a shuffle and it is profitable to specialize it on this platform, return
   // true and the appropriate shuffle mask.
   bool specializeBitselectConstantMaskAsShuffle(int8_t shuffle[16]);
+  // Checks if more relaxed version of lane select can be used. It returns true
+  // if a bit mask input expected to be all 0s or 1s for entire 8-bit lanes,
+  // false otherwise.
+  bool canRelaxBitselect();
 #endif
 
   wasm::SimdOp simdOp() const { return simdOp_; }
@@ -10422,52 +10480,21 @@ class MIonToWasmCall final : public MVariadicInstruction,
 #endif
 };
 
-// Wasm Exception Handling
-
-// Get a pointer to an exception's data pointer stored in an ArrayBufferObject.
-class MWasmExceptionDataPointer : public MUnaryInstruction,
-                                  public NoTypePolicy::Data {
-  explicit MWasmExceptionDataPointer(MDefinition* exn)
-      : MUnaryInstruction(classOpcode, exn) {
-    MOZ_ASSERT(exn != nullptr);
-    MOZ_ASSERT(exn->type() == MIRType::RefOrNull);
-    setResultType(MIRType::Pointer);
-    // This guard below is crucial in keeping the exception live where this
-    // instruction is being used to load and store values from the exception
-    // buffer.
-    setGuard();  // Not movable, not removable for the above reasons.
-  }
-
- public:
-  INSTRUCTION_HEADER(WasmExceptionDataPointer)
-  TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, exn))
-
-  AliasSet getAliasSet() const override {
-    return AliasSet::Load(AliasSet::Any);
-  }
-};
-
-// Load a Wasm numeric or Simd128 value from an MWasmExceptionDataPointer.
-class MWasmLoadExceptionDataValue : public MUnaryInstruction,
-                                    public NoTypePolicy::Data {
+// Load a field stored at a fixed offset on a wasm object. This field may be
+// any value type, including references. No barriers are performed.
+class MWasmLoadObjectField : public MUnaryInstruction,
+                             public NoTypePolicy::Data {
   uint32_t offset_;
 
-  MWasmLoadExceptionDataValue(MDefinition* exnDataPtr, uint32_t offset,
-                              MIRType type)
-      : MUnaryInstruction(classOpcode, exnDataPtr), offset_(offset) {
-    MOZ_ASSERT(IsNumberType(type) || type == MIRType::Simd128);
+  MWasmLoadObjectField(MDefinition* obj, uint32_t offset, MIRType type)
+      : MUnaryInstruction(classOpcode, obj), offset_(offset) {
     setResultType(type);
-    // This guard below is crucial in keeping this loading instruction in an
-    // area where the MWasmExceptionDataPointer exnDataPtr's exn argument is
-    // live.
-    setGuard();  // Not movable, not removable for the above reasons.
   }
 
  public:
-  INSTRUCTION_HEADER(WasmLoadExceptionDataValue)
+  INSTRUCTION_HEADER(WasmLoadObjectField)
   TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, exnDataPtr))
+  NAMED_OPERANDS((0, obj))
 
   uint32_t offset() const { return offset_; }
 
@@ -10476,85 +10503,96 @@ class MWasmLoadExceptionDataValue : public MUnaryInstruction,
   }
 };
 
-// Store a Wasm numeric or Simd128 value to an MWasmExceptionDataPointer.
-class MWasmStoreExceptionDataValue : public MBinaryInstruction,
-                                     public NoTypePolicy::Data {
+// Load a field stored at a fixed offset within a wasm object's data buffer.
+// This field may be any value type, including references. No barriers are
+// performed.
+//
+// This instruction takes the object owner of the data buffer as an input but
+// does not generate code to access it. This instruction extends the lifetime
+// of the owner object so that it cannot be collected while the data buffer
+// pointer is live.
+class MWasmLoadObjectDataField : public MBinaryInstruction,
+                                 public NoTypePolicy::Data {
   uint32_t offset_;
 
-  MWasmStoreExceptionDataValue(MDefinition* exnDataPtr, uint32_t offset,
-                               MDefinition* value)
-      : MBinaryInstruction(classOpcode, exnDataPtr, value), offset_(offset) {
-    // Even though an AliasSet::Store makes the instruction effectful thus not
-    // removable, we set an additional guard as a precaution measure to make
-    // sure the exception which is the argument of exnDataPtr is still live.
-    setGuard();  // Not removable, not movable.
+  MWasmLoadObjectDataField(MDefinition* obj, MDefinition* data, uint32_t offset,
+                           MIRType type)
+      : MBinaryInstruction(classOpcode, obj, data), offset_(offset) {
+    setResultType(type);
   }
 
  public:
-  INSTRUCTION_HEADER(WasmStoreExceptionDataValue)
+  INSTRUCTION_HEADER(WasmLoadObjectDataField)
   TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, exnDataPtr), (1, value))
+  NAMED_OPERANDS((0, obj), (1, data))
 
   uint32_t offset() const { return offset_; }
-
-  // Using AliasSet::Store marks the instruction as effectful, which makes it
-  // non removable.
-  AliasSet getAliasSet() const override {
-    return AliasSet::Store(AliasSet::Any);
-  }
-};
-
-// Get a pointer to an exception's refs pointer stored in an ArrayObject.
-class MWasmExceptionRefsPointer : public MUnaryInstruction,
-                                  public NoTypePolicy::Data {
-  uint32_t refCount_ = 0;
-
-  MWasmExceptionRefsPointer(MDefinition* exn, uint32_t refCount)
-      : MUnaryInstruction(classOpcode, exn), refCount_(refCount) {
-    setResultType(MIRType::Pointer);
-    // This guard below is crucial in keeping the exception live where this
-    // instruction is being used to load values from the exception's refs array.
-    setGuard();  // Not movable, not removable for the above reasons.
-  }
-
- public:
-  INSTRUCTION_HEADER(WasmExceptionRefsPointer)
-  TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, exn))
-
-  uint32_t refCount() const { return refCount_; }
-  AliasSet getAliasSet() const override {
-    return AliasSet::Store(AliasSet::Any);
-  }
-};
-
-// Load a Wasm reference or rtt value from an MWasmExceptionRefsPointer.
-class MWasmLoadExceptionRefsValue : public MUnaryInstruction,
-                                    public NoTypePolicy::Data {
-  int32_t offset_;
-
-  MWasmLoadExceptionRefsValue(MDefinition* exnRefsPtr, int32_t offset)
-      : MUnaryInstruction(classOpcode, exnRefsPtr), offset_(offset) {
-    setResultType(MIRType::RefOrNull);
-    // This guard below is crucial in keeping this loading instruction in an
-    // area where the MWasmExceptionRefsPointer exnRefsPtr's exn argument is
-    // live.
-    setGuard();  // Not movable, not removable for the above reasons.
-  }
-
- public:
-  INSTRUCTION_HEADER(WasmLoadExceptionRefsValue)
-  TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, exnRefsPtr))
-
-  int32_t offset() const { return offset_; }
 
   AliasSet getAliasSet() const override {
     return AliasSet::Load(AliasSet::Any);
   }
 };
 
-// End Wasm Exception Handling
+// Store a value to a field at a fixed offset within a wasm object's data
+// buffer. This field may be any value type, _excluding_ references. References
+// _must_ use the 'Ref' variant of this instruction.
+//
+// This instruction takes the object owner of the data buffer as an input but
+// does not generate code to access it. This instruction extends the lifetime
+// of the owner object so that it cannot be collected while the data buffer
+// pointer is live.
+class MWasmStoreObjectDataField : public MTernaryInstruction,
+                                  public NoTypePolicy::Data {
+  uint32_t offset_;
+
+  MWasmStoreObjectDataField(MDefinition* obj, MDefinition* data,
+                            uint32_t offset, MDefinition* value)
+      : MTernaryInstruction(classOpcode, obj, data, value), offset_(offset) {
+    MOZ_ASSERT(value->type() != MIRType::RefOrNull);
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmStoreObjectDataField)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, obj), (1, data), (2, value))
+
+  uint32_t offset() const { return offset_; }
+
+  AliasSet getAliasSet() const override {
+    return AliasSet::Store(AliasSet::Any);
+  }
+};
+
+// Store a reference value to a field within a wasm object's data buffer. This
+// instruction emits a pre-barrier. A post barrier _must_ be performed
+// separately.
+//
+// This instruction takes the object owner of the data buffer as an input but
+// does not generate code to access it. This instruction extends the lifetime
+// of the owner object so that it cannot be collected while the data buffer
+// pointer is live.
+class MWasmStoreObjectDataRefField : public MAryInstruction<4>,
+                                     public NoTypePolicy::Data {
+  MWasmStoreObjectDataRefField(MDefinition* tls, MDefinition* obj,
+                               MDefinition* valueAddr, MDefinition* value)
+      : MAryInstruction<4>(classOpcode) {
+    MOZ_ASSERT(valueAddr->type() == MIRType::Pointer);
+    MOZ_ASSERT(value->type() == MIRType::RefOrNull);
+    initOperand(0, tls);
+    initOperand(1, obj);
+    initOperand(2, valueAddr);
+    initOperand(3, value);
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmStoreObjectDataRefField)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, tls), (1, obj), (2, valueAddr), (3, value))
+
+  AliasSet getAliasSet() const override {
+    return AliasSet::Store(AliasSet::Any);
+  }
+};
 
 #undef INSTRUCTION_HEADER
 

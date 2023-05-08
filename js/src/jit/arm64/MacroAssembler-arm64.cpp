@@ -266,9 +266,8 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
   syncStackPtr();
   Br(x0);
 
-  // If we found a finally block, this must be a baseline frame.
-  // Push two values expected by JSOp::Retsub: BooleanValue(true)
-  // and the exception.
+  // If we found a finally block, this must be a baseline frame. Push two
+  // values expected by JSOp::Retsub: the exception and BooleanValue(true).
   bind(&finally);
   ARMRegister exception = x1;
   Ldr(exception, MemOperand(PseudoStackPointer64,
@@ -282,8 +281,8 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
       MemOperand(PseudoStackPointer64,
                  offsetof(ResumeFromException, stackPointer)));
   syncStackPtr();
-  pushValue(BooleanValue(true));
   push(exception);
+  pushValue(BooleanValue(true));
   Br(x0);
 
   // Only used in debug mode. Return BaselineFrame->returnValue() to the caller.
@@ -3141,6 +3140,12 @@ void MacroAssembler::copySignFloat32(FloatRegister lhs, FloatRegister rhs,
   bit(ARMFPRegister(output.encoding(), vixl::VectorFormat::kFormat8B),
       ARMFPRegister(rhs.encoding(), vixl::VectorFormat::kFormat8B),
       ARMFPRegister(scratch.encoding(), vixl::VectorFormat::kFormat8B));
+}
+
+void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
+                                        Register pointer) {
+  Add(ARMRegister(pointer, 64), ARMRegister(pointer, 64),
+      Operand(ARMRegister(indexTemp32, 64), vixl::LSL, shift));
 }
 
 //}}} check_macroassembler_style

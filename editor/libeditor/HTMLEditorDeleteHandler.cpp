@@ -4694,35 +4694,43 @@ MoveNodeResult HTMLEditor::MoveOneHardLineContents(
     MoveToEndOfContainer
         aMoveToEndOfContainer /* = MoveToEndOfContainer::No */) {
   MOZ_ASSERT(IsEditActionDataAvailable());
+  MOZ_ASSERT(aPointToInsert.IsSetAndValid());
 
+  EditorDOMPoint pointToInsert(aPointToInsert);
   AutoTArray<OwningNonNull<nsIContent>, 64> arrayOfContents;
-  nsresult rv = SplitInlinesAndCollectEditTargetNodesInOneHardLine(
-      aPointInHardLine, arrayOfContents, EditSubAction::eMergeBlockContents,
-      HTMLEditor::CollectNonEditableNodes::Yes);
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "HTMLEditor::SplitInlinesAndCollectEditTargetNodesInOneHardLine("
-        "eMergeBlockContents, CollectNonEditableNodes::Yes) failed");
-    return MoveNodeResult(rv);
+  {
+    AutoTrackDOMPoint tackPointToInsert(RangeUpdaterRef(), &pointToInsert);
+    nsresult rv = SplitInlinesAndCollectEditTargetNodesInOneHardLine(
+        aPointInHardLine, arrayOfContents, EditSubAction::eMergeBlockContents,
+        HTMLEditor::CollectNonEditableNodes::Yes);
+    if (NS_FAILED(rv)) {
+      NS_WARNING(
+          "HTMLEditor::SplitInlinesAndCollectEditTargetNodesInOneHardLine("
+          "eMergeBlockContents, CollectNonEditableNodes::Yes) failed");
+      return MoveNodeResult(rv);
+    }
+  }
+  if (!pointToInsert.IsSetAndValid()) {
+    return MoveNodeResult(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
   }
   if (arrayOfContents.IsEmpty()) {
-    return MoveNodeIgnored(aPointToInsert);
+    return MoveNodeIgnored(pointToInsert);
   }
 
-  uint32_t offset = aPointToInsert.Offset();
+  uint32_t offset = pointToInsert.Offset();
   MoveNodeResult result;
   for (auto& content : arrayOfContents) {
     if (aMoveToEndOfContainer == MoveToEndOfContainer::Yes) {
       // For backward compatibility, we should move contents to end of the
       // container if this is called with MoveToEndOfContainer::Yes.
-      offset = aPointToInsert.GetContainer()->Length();
+      offset = pointToInsert.GetContainer()->Length();
     }
     // get the node to act on
     if (HTMLEditUtils::IsBlockElement(content)) {
       // For block nodes, move their contents only, then delete block.
       result |= MoveChildrenWithTransaction(
           MOZ_KnownLive(*content->AsElement()),
-          EditorDOMPoint(aPointToInsert.GetContainer(), offset));
+          EditorDOMPoint(pointToInsert.GetContainer(), offset));
       if (result.Failed()) {
         NS_WARNING("HTMLEditor::MoveChildrenWithTransaction() failed");
         return result;
@@ -4743,7 +4751,7 @@ MoveNodeResult HTMLEditor::MoveOneHardLineContents(
         // Mutation event listener may make `offset` value invalid with
         // removing some previous children while we call
         // `DeleteNodeWithTransaction()` so that we should adjust it here.
-        offset = std::min(offset, aPointToInsert.GetContainer()->Length());
+        offset = std::min(offset, pointToInsert.GetContainer()->Length());
       }
       continue;
     }
@@ -4752,7 +4760,7 @@ MoveNodeResult HTMLEditor::MoveOneHardLineContents(
     // keep it alive.
     MoveNodeResult moveNodeResult = MoveNodeOrChildrenWithTransaction(
         MOZ_KnownLive(content),
-        EditorDOMPoint(aPointToInsert.GetContainer(), offset));
+        EditorDOMPoint(pointToInsert.GetContainer(), offset));
     if (NS_WARN_IF(moveNodeResult.EditorDestroyed())) {
       return MoveNodeResult(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -5085,9 +5093,9 @@ nsresult HTMLEditor::DeleteMostAncestorMailCiteElementIfEmpty(
   }
 
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      InsertBRElementWithTransaction(atEmptyMailCiteElement);
+      InsertBRElement(WithTransaction::Yes, atEmptyMailCiteElement);
   if (resultOfInsertingBRElement.isErr()) {
-    NS_WARNING("HTMLEditor::InsertBRElementWithTransaction() failed");
+    NS_WARNING("HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
     return resultOfInsertingBRElement.unwrapErr();
   }
   MOZ_ASSERT(resultOfInsertingBRElement.inspect());
@@ -5249,9 +5257,11 @@ HTMLEditor::AutoDeleteRangesHandler::AutoEmptyBlockAncestorDeleter::
     return RefPtr<Element>();
   }
   Result<RefPtr<Element>, nsresult> resultOfInsertingBRElement =
-      aHTMLEditor.InsertBRElementWithTransaction(atParentOfEmptyListItem);
-  NS_WARNING_ASSERTION(resultOfInsertingBRElement.isOk(),
-                       "HTMLEditor::InsertBRElementWithTransaction() failed");
+      aHTMLEditor.InsertBRElement(WithTransaction::Yes,
+                                  atParentOfEmptyListItem);
+  NS_WARNING_ASSERTION(
+      resultOfInsertingBRElement.isOk(),
+      "HTMLEditor::InsertBRElement(WithTransaction::Yes) failed");
   MOZ_ASSERT_IF(resultOfInsertingBRElement.isOk(),
                 resultOfInsertingBRElement.inspect());
   return resultOfInsertingBRElement;

@@ -3340,7 +3340,7 @@ MUrsh* MUrsh::NewWasm(TempAllocator& alloc, MDefinition* left,
 }
 
 MResumePoint* MResumePoint::New(TempAllocator& alloc, MBasicBlock* block,
-                                jsbytecode* pc, Mode mode) {
+                                jsbytecode* pc, ResumeMode mode) {
   MResumePoint* resume = new (alloc) MResumePoint(block, pc, mode);
   if (!resume->init(alloc)) {
     block->discardPreAllocatedResumePoint(resume);
@@ -3350,7 +3350,7 @@ MResumePoint* MResumePoint::New(TempAllocator& alloc, MBasicBlock* block,
   return resume;
 }
 
-MResumePoint::MResumePoint(MBasicBlock* block, jsbytecode* pc, Mode mode)
+MResumePoint::MResumePoint(MBasicBlock* block, jsbytecode* pc, ResumeMode mode)
     : MNode(block, Kind::ResumePoint),
       pc_(pc),
       instruction_(nullptr),
@@ -3400,18 +3400,15 @@ void MResumePoint::dump(GenericPrinter& out) const {
   out.printf("resumepoint mode=");
 
   switch (mode()) {
-    case MResumePoint::ResumeAt:
+    case ResumeMode::ResumeAt:
       if (instruction_) {
-        out.printf("At(%u)", instruction_->id());
+        out.printf("ResumeAt(%u)", instruction_->id());
       } else {
-        out.printf("At");
+        out.printf("ResumeAt");
       }
       break;
-    case MResumePoint::ResumeAfter:
-      out.printf("After");
-      break;
-    case MResumePoint::Outer:
-      out.printf("Outer");
+    default:
+      out.put(ResumeModeToString(mode()));
       break;
   }
 
@@ -4958,11 +4955,15 @@ bool MWasmLoadGlobalCell::congruentTo(const MDefinition* ins) const {
 
 #ifdef ENABLE_WASM_SIMD
 MDefinition* MWasmTernarySimd128::foldsTo(TempAllocator& alloc) {
-  if (simdOp() == wasm::SimdOp::V128Bitselect &&
-      v2()->op() == MDefinition::Opcode::WasmFloatConstant) {
-    int8_t shuffle[16];
-    if (specializeBitselectConstantMaskAsShuffle(shuffle)) {
-      return BuildWasmShuffleSimd128(alloc, shuffle, v0(), v1());
+  if (simdOp() == wasm::SimdOp::V128Bitselect) {
+    if (v2()->op() == MDefinition::Opcode::WasmFloatConstant) {
+      int8_t shuffle[16];
+      if (specializeBitselectConstantMaskAsShuffle(shuffle)) {
+        return BuildWasmShuffleSimd128(alloc, shuffle, v0(), v1());
+      }
+    } else if (canRelaxBitselect()) {
+      return MWasmTernarySimd128::New(alloc, v0(), v1(), v2(),
+                                      wasm::SimdOp::I8x16RelaxedLaneSelect);
     }
   }
   return this;
@@ -5237,13 +5238,14 @@ void MStoreDynamicSlot::printOpcode(GenericPrinter& out) const {
 #endif
 
 MDefinition* MGuardFunctionScript::foldsTo(TempAllocator& alloc) {
-  if (input()->isLambda() &&
-      input()->toLambda()->info().baseScript == expected()) {
-    return input();
+  MDefinition* in = input();
+  if (in->isLambda() &&
+      in->toLambda()->templateFunction()->baseScript() == expected()) {
+    return in;
   }
-  if (input()->isLambdaArrow() &&
-      input()->toLambdaArrow()->info().baseScript == expected()) {
-    return input();
+  if (in->isLambdaArrow() &&
+      in->toLambdaArrow()->templateFunction()->baseScript() == expected()) {
+    return in;
   }
   return this;
 }

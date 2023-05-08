@@ -80,6 +80,7 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla += [
+    "public/BaseAndGeckoProfilerDetail.h",
     "public/BaseProfileJSONWriter.h",
     "public/BaseProfilerCounts.h",
     "public/BaseProfilerDetail.h",
@@ -88,6 +89,7 @@ EXPORTS.mozilla += [
     "public/BaseProfilerMarkersDetail.h",
     "public/BaseProfilerMarkersPrerequisites.h",
     "public/BaseProfilerMarkerTypes.h",
+    "public/BaseProfilerRAIIMacro.h",
     "public/BaseProfilerState.h",
     "public/BaseProfilerUtils.h",
     "public/BlocksRingBuffer.h",
@@ -103,11 +105,13 @@ EXPORTS.mozilla += [
     "public/ProfileBufferEntrySerialization.h",
     "public/ProfileBufferIndex.h",
     "public/ProfileChunkedBuffer.h",
+    "public/ProfileChunkedBufferDetail.h",
     "public/ProgressLogger.h",
     "public/ProportionValue.h",
 ]
 
 UNIFIED_SOURCES += [
+    "core/BaseAndGeckoProfilerDetail.cpp",
     "core/ProfilerUtils.cpp",
 ]
 

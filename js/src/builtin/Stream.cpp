@@ -352,7 +352,8 @@ static const JSPropertySpec ReadableByteStreamController_properties[] = {
 static const JSFunctionSpec ReadableByteStreamController_methods[] = {
     JS_FS_END};
 
-static void ReadableByteStreamControllerFinalize(JSFreeOp* fop, JSObject* obj) {
+static void ReadableByteStreamControllerFinalize(JS::GCContext* gcx,
+                                                 JSObject* obj) {
   ReadableByteStreamController& controller =
       obj->as<ReadableByteStreamController>();
 
@@ -377,7 +378,6 @@ static const JSClassOps ReadableByteStreamControllerClassOps = {
     nullptr,                               // mayResolve
     ReadableByteStreamControllerFinalize,  // finalize
     nullptr,                               // call
-    nullptr,                               // hasInstance
     nullptr,                               // construct
     nullptr,                               // trace
 };
@@ -436,12 +436,7 @@ JS_STREAMS_CLASS_SPEC(ReadableByteStreamController, 0, SlotCount,
       size_t bytesWritten;
       {
         AutoRealm ar(cx, unwrappedStream);
-        JS::AutoSuppressGCAnalysis suppressGC(cx);
-        JS::AutoCheckCannotGC noGC;
-        bool dummy;
-        void* buffer = JS_GetArrayBufferViewData(view, &dummy, noGC);
-
-        source->writeIntoReadRequestBuffer(cx, unwrappedStream, buffer,
+        source->writeIntoReadRequestBuffer(cx, unwrappedStream, view,
                                            queueTotalSize, &bytesWritten);
       }
 

@@ -148,6 +148,17 @@ async function testCpu(element, total, slope, assumptions) {
   info(
     `Testing CPU display ${element.textContent} - ${element.title} vs total ${total}, slope ${slope}`
   );
+  let barWidth = getComputedStyle(element).getPropertyValue("--bar-width");
+  if (slope) {
+    Assert.greater(
+      Number.parseFloat(barWidth),
+      0,
+      "The bar width should be > 0 when there is some CPU use"
+    );
+  } else {
+    Assert.equal(barWidth, "-0.5", "There should be no CPU bar displayed");
+  }
+
   if (element.textContent == "(measuring)") {
     info("Still measuring");
     return;
@@ -418,15 +429,16 @@ async function testAboutProcessesWithConfig({ showAllFrames, showThreads }) {
       skipAnimation: true,
     });
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    let p = BrowserTestUtils.browserLoaded(
+      tab.linkedBrowser,
+      true /* includeSubFrames */
+    );
     await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
       // Open an in-process iframe to test toolkit.aboutProcesses.showAllSubframes
       let frame = content.document.createElement("iframe");
       content.document.body.appendChild(frame);
     });
-    await BrowserTestUtils.browserLoaded(
-      tab.linkedBrowser,
-      true /* includeSubFrames */
-    );
+    await p;
     return tab;
   })();
 

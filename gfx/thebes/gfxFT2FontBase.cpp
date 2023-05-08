@@ -10,6 +10,7 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "gfxFontConstants.h"
 #include "gfxFontUtils.h"
+#include "gfxHarfBuzzShaper.h"
 #include <algorithm>
 #include <dlfcn.h>
 
@@ -41,7 +42,8 @@ gfxFT2FontBase::gfxFT2FontBase(
 
 gfxFT2FontBase::~gfxFT2FontBase() { mFTFace->ForgetLockOwner(this); }
 
-FT_Face gfxFT2FontBase::LockFTFace() {
+FT_Face gfxFT2FontBase::LockFTFace() const
+    CAPABILITY_ACQUIRE(mFTFace) NO_THREAD_SAFETY_ANALYSIS {
   if (!mFTFace->Lock(this)) {
     FT_Set_Transform(mFTFace->GetFace(), nullptr, nullptr);
 
@@ -51,7 +53,10 @@ FT_Face gfxFT2FontBase::LockFTFace() {
   return mFTFace->GetFace();
 }
 
-void gfxFT2FontBase::UnlockFTFace() { mFTFace->Unlock(); }
+void gfxFT2FontBase::UnlockFTFace() const
+    CAPABILITY_RELEASE(mFTFace) NO_THREAD_SAFETY_ANALYSIS {
+  mFTFace->Unlock();
+}
 
 gfxFT2FontEntryBase::CmapCacheSlot* gfxFT2FontEntryBase::GetCmapCacheSlot(
     uint32_t aCharCode) {
@@ -257,7 +262,7 @@ void gfxFT2FontBase::InitMetrics() {
     if (aspect > 0.0) {
       // If we created a shaper above (to measure glyphs), discard it so we
       // get a new one for the adjusted scaling.
-      mHarfBuzzShaper = nullptr;
+      delete mHarfBuzzShaper.exchange(nullptr);
       mAdjustedSize = mStyle.GetAdjustedSize(aspect);
       // Ensure the FT_Face will be reconfigured for the new size next time we
       // need to use it.
@@ -549,10 +554,6 @@ void gfxFT2FontBase::InitMetrics() {
 #endif
 }
 
-const gfxFont::Metrics& gfxFT2FontBase::GetHorizontalMetrics() {
-  return mMetrics;
-}
-
 uint32_t gfxFT2FontBase::GetGlyph(uint32_t unicode,
                                   uint32_t variation_selector) {
   if (variation_selector) {
@@ -593,7 +594,7 @@ bool gfxFT2FontBase::ShouldRoundXOffset(cairo_t* aCairo) const {
                    gfx_text_subpixel_position_force_enabled_AtStartup()));
 }
 
-FT_Vector gfxFT2FontBase::GetEmboldenStrength(FT_Face aFace) {
+FT_Vector gfxFT2FontBase::GetEmboldenStrength(FT_Face aFace) const {
   FT_Vector strength = {0, 0};
   if (!mEmbolden) {
     return strength;
@@ -624,7 +625,7 @@ FT_Vector gfxFT2FontBase::GetEmboldenStrength(FT_Face aFace) {
 }
 
 bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
-                                       IntRect* aBounds) {
+                                       IntRect* aBounds) const {
   gfxFT2LockedFace face(this);
   MOZ_ASSERT(face.get());
   if (!face.get()) {
@@ -711,7 +712,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
  * FreeType for the glyph extents and initialize the glyph metrics.
  */
 const gfxFT2FontBase::GlyphMetrics& gfxFT2FontBase::GetCachedGlyphMetrics(
-    uint16_t aGID, IntRect* aBounds) {
+    uint16_t aGID, IntRect* aBounds) const {
   if (!mGlyphMetrics) {
     mGlyphMetrics =
         mozilla::MakeUnique<nsTHashMap<nsUint32HashKey, GlyphMetrics>>(128);
@@ -735,7 +736,7 @@ int32_t gfxFT2FontBase::GetGlyphWidth(uint16_t aGID) {
 }
 
 bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
-                                    bool aTight) {
+                                    bool aTight) const {
   IntRect bounds;
   const GlyphMetrics& metrics = GetCachedGlyphMetrics(aGID, &bounds);
   if (!metrics.HasValidBounds()) {

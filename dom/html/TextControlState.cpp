@@ -34,6 +34,7 @@
 #include "nsIScrollableFrame.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/InputEventOptions.h"
+#include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Event.h"
@@ -1004,10 +1005,10 @@ TextInputListener::HandleEvent(Event* aEvent) {
       return false;
     }
 
-    nsIWidget::NativeKeyBindingsType nativeKeyBindingsType =
+    NativeKeyBindingsType nativeKeyBindingsType =
         aTextControlElement.IsTextArea()
-            ? nsIWidget::NativeKeyBindingsForMultiLineEditor
-            : nsIWidget::NativeKeyBindingsForSingleLineEditor;
+            ? NativeKeyBindingsType::MultiLineEditor
+            : NativeKeyBindingsType::SingleLineEditor;
 
     nsIWidget* widget = widgetKeyEvent->mWidget;
     // If the event is created by chrome script, the widget is nullptr.
@@ -2335,7 +2336,8 @@ void TextControlState::SetRangeText(const nsAString& aReplacement,
   Selection* selection =
       mSelCon ? mSelCon->GetSelection(SelectionType::eNormal) : nullptr;
   SelectionBatcher selectionBatcher(
-      selection, nsISelectionListener::JS_REASON);  // no-op if nullptr
+      selection, __FUNCTION__,
+      nsISelectionListener::JS_REASON);  // no-op if nullptr
 
   MOZ_ASSERT(aStart <= aEnd);
   value.Replace(aStart, aEnd - aStart, aReplacement);
@@ -2788,7 +2790,7 @@ bool TextControlState::SetValueWithTextEditor(
   // FYI: It's safe to use raw pointer for selection here because
   //      SelectionBatcher will grab it with RefPtr.
   Selection* selection = mSelCon->GetSelection(SelectionType::eNormal);
-  SelectionBatcher selectionBatcher(selection);
+  SelectionBatcher selectionBatcher(selection, __FUNCTION__);
 
   // get the flags, remove readonly, disabled and max-length,
   // set the value, restore flags

@@ -17,6 +17,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SwipeTracker.h"
 #include "mozilla/TextEventDispatcher.h"
@@ -1572,7 +1573,7 @@ bool nsChildView::GetEditCommands(NativeKeyBindingsType aType, const WidgetKeybo
   Maybe<WritingMode> writingMode;
   if (aEvent.NeedsToRemapNavigationKey()) {
     if (RefPtr<TextEventDispatcher> dispatcher = GetTextEventDispatcher()) {
-      writingMode = dispatcher->MaybeWritingModeAtSelection();
+      writingMode = dispatcher->MaybeQueryWritingModeAtSelection();
     }
   }
 
@@ -1614,7 +1615,7 @@ void nsChildView::ConfigureAPZCTreeManager() { nsBaseWidget::ConfigureAPZCTreeMa
 
 void nsChildView::ConfigureAPZControllerThread() { nsBaseWidget::ConfigureAPZControllerThread(); }
 
-bool nsChildView::PreRender(WidgetRenderingContext* aContext) {
+bool nsChildView::PreRender(WidgetRenderingContext* aContext) NO_THREAD_SAFETY_ANALYSIS {
   // The lock makes sure that we don't attempt to tear down the view while
   // compositing. That would make us unable to call postRender on it when the
   // composition is done, thus keeping the GL context locked forever.
@@ -1627,7 +1628,9 @@ bool nsChildView::PreRender(WidgetRenderingContext* aContext) {
   return true;
 }
 
-void nsChildView::PostRender(WidgetRenderingContext* aContext) { mCompositingLock.Unlock(); }
+void nsChildView::PostRender(WidgetRenderingContext* aContext) NO_THREAD_SAFETY_ANALYSIS {
+  mCompositingLock.Unlock();
+}
 
 RefPtr<layers::NativeLayerRoot> nsChildView::GetNativeLayerRoot() { return mNativeLayerRoot; }
 
@@ -2738,21 +2741,17 @@ NSEvent* gLastDragMouseDownEvent = nil;  // [strong]
 }
 
 - (bool)shouldConsiderStartingSwipeFromEvent:(NSEvent*)anEvent {
-  // This method checks whether the AppleEnableSwipeNavigateWithScrolls global
-  // preference is set.  If it isn't, fluid swipe tracking is disabled, and a
-  // horizontal two-finger gesture is always a scroll (even in Safari).  This
-  // preference can't (currently) be set from the Preferences UI -- only using
-  // 'defaults write'.
-  if (![NSEvent isSwipeTrackingFromScrollEventsEnabled]) {
-    return false;
-  }
-
   // Only initiate horizontal tracking for gestures that have just begun --
   // otherwise a scroll to one side of the page can have a swipe tacked on
   // to it.
+  // [NSEvent isSwipeTrackingFromScrollEventsEnabled] checks whether the
+  // AppleEnableSwipeNavigateWithScrolls global preference is set.  If it isn't,
+  // fluid swipe tracking is disabled, and a horizontal two-finger gesture is
+  // always a scroll (even in Safari).  This preference can't (currently) be set
+  // from the Preferences UI -- only using 'defaults write'.
   NSEventPhase eventPhase = [anEvent phase];
   return [anEvent type] == NSEventTypeScrollWheel && eventPhase == NSEventPhaseBegan &&
-         [anEvent hasPreciseScrollingDeltas];
+         [anEvent hasPreciseScrollingDeltas] && [NSEvent isSwipeTrackingFromScrollEventsEnabled];
 }
 
 - (void)setUsingOMTCompositor:(BOOL)aUseOMTC {
@@ -3244,19 +3243,6 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
     if (!shouldIgnoreDeltas) {
       panEvent.mPanDisplacement = preciseDelta;
       panEvent.SetLineOrPageDeltas(lineOrPageDelta.x, lineOrPageDelta.y);
-    }
-
-    if (panEvent.mType == PanGestureInput::PANGESTURE_END) {
-      // Check if there's a momentum start event in the event queue, so that we
-      // can annotate this event.
-      NSEvent* nextWheelEvent = [NSApp nextEventMatchingMask:NSEventMaskScrollWheel
-                                                   untilDate:[NSDate distantPast]
-                                                      inMode:NSDefaultRunLoopMode
-                                                     dequeue:NO];
-      if (nextWheelEvent &&
-          PanGestureTypeForEvent(nextWheelEvent) == PanGestureInput::PANGESTURE_MOMENTUMSTART) {
-        panEvent.mFollowedByMomentum = true;
-      }
     }
 
     bool canTriggerSwipe = [self shouldConsiderStartingSwipeFromEvent:theEvent] &&
@@ -4281,14 +4267,16 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
   }
 
   if (mDragService) {
-    // set the dragend point from the current mouse location
     RefPtr<nsDragService> dragService = static_cast<nsDragService*>(mDragService);
-    FlipCocoaScreenCoordinate(aPoint);
-    dragService->SetDragEndPoint(gfx::IntPoint::Round(aPoint.x, aPoint.y));
 
+    // Set the dragend point from the current mouse location
+    // FIXME(emilio): Weird that we wouldn't use aPoint instead? Seems to work
+    // locally as well...
+    // NSPoint pnt = aPoint;
     NSPoint pnt = [NSEvent mouseLocation];
+    NSPoint locationInWindow = nsCocoaUtils::ConvertPointFromScreen([self window], pnt);
     FlipCocoaScreenCoordinate(pnt);
-    dragService->SetDragEndPoint(gfx::IntPoint::Round(pnt.x, pnt.y));
+    dragService->SetDragEndPoint([self convertWindowCoordinates:locationInWindow]);
 
     // XXX: dropEffect should be updated per |aOperation|.
     // As things stand though, |aOperation| isn't well handled within "our"

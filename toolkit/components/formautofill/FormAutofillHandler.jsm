@@ -29,6 +29,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "CreditCardTelemetry",
+  "resource://autofill/FormAutofillTelemetryUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "FormAutofillHeuristics",
   "resource://autofill/FormAutofillHeuristics.jsm"
 );
@@ -307,11 +312,6 @@ class FormAutofillSection {
             profile[key] = profile[key] % Math.pow(10, maxLength);
             break;
           default:
-            log.warn(
-              "adaptFieldMaxLength: Don't know how to truncate",
-              typeof profile[key],
-              profile[key]
-            );
         }
       } else {
         delete profile[key];
@@ -342,10 +342,9 @@ class FormAutofillSection {
     }
 
     if (!(await this.prepareFillingProfile(profile))) {
-      log.debug("profile cannot be filled", profile);
+      log.debug("profile cannot be filled");
       return false;
     }
-    log.debug("profile in autofillFields:", profile);
 
     let focusedInput = focusedDetail.elementWeakRef.get();
 
@@ -424,13 +423,14 @@ class FormAutofillSection {
    *        A profile to be previewed with
    */
   previewFormFields(profile) {
-    log.debug("preview profile: ", profile);
-
     this.preparePreviewProfile(profile);
 
     for (let fieldDetail of this.fieldDetails) {
       let element = fieldDetail.elementWeakRef.get();
-      let value = profile[fieldDetail.fieldName] || "";
+      let value =
+        profile[`${fieldDetail.fieldName}-formatted`] ||
+        profile[fieldDetail.fieldName] ||
+        "";
 
       // Skip the field that is null
       if (!element) {
@@ -465,7 +465,7 @@ class FormAutofillSection {
    * Clear preview text and background highlight of all fields.
    */
   clearPreviewedFormFields() {
-    log.debug("clear previewed fields in:", this.form);
+    log.debug("clear previewed fields");
 
     for (let fieldDetail of this.fieldDetails) {
       let element = fieldDetail.elementWeakRef.get();
@@ -687,14 +687,9 @@ class FormAutofillSection {
         this._changeFieldState(targetFieldDetail, FIELD_STATES.NORMAL);
 
         if (isCreditCardField) {
-          Services.telemetry.recordEvent(
-            "creditcard",
-            "filled_modified",
-            "cc_form",
+          CreditCardTelemetry.recordFilledModified(
             this.flowId,
-            {
-              field_name: targetFieldDetail.fieldName,
-            }
+            targetFieldDetail.fieldName
           );
         }
 
@@ -740,6 +735,12 @@ class FormAutofillSection {
       option.hasAttribute("selected")
     );
     element.value = selected ? selected.value : element.options[0].value;
+    element.dispatchEvent(
+      new element.ownerGlobal.Event("input", { bubbles: true })
+    );
+    element.dispatchEvent(
+      new element.ownerGlobal.Event("change", { bubbles: true })
+    );
   }
 }
 
@@ -763,7 +764,7 @@ class FormAutofillAddressSection extends FormAutofillSection {
   isRecordCreatable(record) {
     if (
       record.country &&
-      !FormAutofill.supportedCountries.includes(record.country)
+      !FormAutofill.isAutofillAddressesAvailableInCountry(record.country)
     ) {
       // We don't want to save data in the wrong fields due to not having proper
       // heuristic regexes in countries we don't yet support.
@@ -991,28 +992,7 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
       return;
     }
 
-    // Record which fields could be identified
-    let identified = new Set();
-    fieldDetails.forEach(detail => identified.add(detail.fieldName));
-    Services.telemetry.recordEvent(
-      "creditcard",
-      "detected",
-      "cc_form",
-      this.flowId,
-      {
-        cc_name_found: identified.has("cc-name") ? "true" : "false",
-        cc_number_found: identified.has("cc-number") ? "true" : "false",
-        cc_exp_found:
-          identified.has("cc-exp") ||
-          (identified.has("cc-exp-month") && identified.has("cc-exp-year"))
-            ? "true"
-            : "false",
-      }
-    );
-    Services.telemetry.scalarAdd(
-      "formautofill.creditCards.detected_sections_count",
-      1
-    );
+    CreditCardTelemetry.recordFormDetected(this.flowId, fieldDetails);
 
     // Check whether the section is in an <iframe>; and, if so,
     // watch for the <iframe> to pagehide.
@@ -1079,7 +1059,14 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
     );
   }
 
-  creditCardExpDateTransformer(profile) {
+  /**
+   * Handles credit card expiry date transformation when
+   * the expiry date exists in a cc-exp field.
+   *
+   * @param {object} profile
+   * @memberof FormAutofillCreditCardSection
+   */
+  creditCardExpiryDateTransformer(profile) {
     if (!profile["cc-exp"]) {
       return;
     }
@@ -1153,23 +1140,31 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
     }
   }
 
-  creditCardExpMonthTransformer(profile) {
-    if (!profile["cc-exp-month"]) {
-      return;
-    }
-
-    let detail = this.getFieldDetailByName("cc-exp-month");
-    if (!detail) {
-      return;
-    }
-
-    let element = detail.elementWeakRef.get();
-
+  /**
+   * Handles credit card expiry date transformation when the expiry date exists in
+   * the separate cc-exp-month and cc-exp-year fields
+   *
+   * @param {object} profile
+   * @memberof FormAutofillCreditCardSection
+   */
+  creditCardExpMonthAndYearTransformer(profile) {
+    const getInputElementByField = (field, self) => {
+      if (!field) {
+        return null;
+      }
+      let detail = self.getFieldDetailByName(field);
+      if (!detail) {
+        return null;
+      }
+      let element = detail.elementWeakRef.get();
+      return element.tagName === "INPUT" ? element : null;
+    };
+    let month = getInputElementByField("cc-exp-month", this);
     // If the expiration month element is an input,
     // then we examine any placeholder to see if we should format the expiration month
     // as a zero padded string in order to autofill correctly.
-    if (element.tagName === "INPUT") {
-      let placeholder = element.placeholder;
+    if (month) {
+      let placeholder = month.placeholder;
 
       // Checks for 'MM' placeholder and converts the month to a two digit string.
       let result = /(?<!.)mm(?!.)/i.test(placeholder);
@@ -1177,6 +1172,22 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
         profile["cc-exp-month-formatted"] = profile["cc-exp-month"]
           .toString()
           .padStart(2, "0");
+      }
+    }
+
+    let year = getInputElementByField("cc-exp-year", this);
+    // If the expiration year element is an input,
+    // then we examine any placeholder to see if we should format the expiration year
+    // as a zero padded string in order to autofill correctly.
+    if (year) {
+      let placeholder = year.placeholder;
+
+      // Checks for 'YY'|'AA'|'JJ' placeholder and converts the year to a two digit string using the last two digits.
+      let result = /(?<!.)(yy|aa|jj)(?!.)/i.test(placeholder);
+      if (result) {
+        profile["cc-exp-year-formatted"] = profile["cc-exp-year"]
+          .toString()
+          .substring(2);
       }
     }
   }
@@ -1214,8 +1225,8 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
     // This ensures that the expiry value that is cached in the matchSelectOptions
     // matches the expiry value that is stored in the profile ensuring that autofill works
     // correctly when dealing with option elements.
-    this.creditCardExpDateTransformer(profile);
-    this.creditCardExpMonthTransformer(profile);
+    this.creditCardExpiryDateTransformer(profile);
+    this.creditCardExpMonthAndYearTransformer(profile);
     this.matchSelectOptions(profile);
     this.adaptFieldMaxLength(profile);
   }
@@ -1300,44 +1311,10 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
       return false;
     }
 
-    // Calculate values for telemetry
-    let extra = {
-      cc_name: "unavailable",
-      cc_number: "unavailable",
-      cc_exp: "unavailable",
-    };
-
-    for (let fieldDetail of this.fieldDetails) {
-      let element = fieldDetail.elementWeakRef.get();
-      let state = profile[fieldDetail.fieldName] ? "filled" : "not_filled";
-      if (
-        fieldDetail.state == FIELD_STATES.NORMAL &&
-        (ChromeUtils.getClassName(element) == "HTMLSelectElement" ||
-          (ChromeUtils.getClassName(element) == "HTMLInputElement" &&
-            element.value.length))
-      ) {
-        state = "user_filled";
-      }
-      switch (fieldDetail.fieldName) {
-        case "cc-name":
-          extra.cc_name = state;
-          break;
-        case "cc-number":
-          extra.cc_number = state;
-          break;
-        case "cc-exp":
-        case "cc-exp-month":
-        case "cc-exp-year":
-          extra.cc_exp = state;
-          break;
-      }
-    }
-    Services.telemetry.recordEvent(
-      "creditcard",
-      "filled",
-      "cc_form",
+    CreditCardTelemetry.recordFormFilled(
       this.flowId,
-      extra
+      this.fieldDetails,
+      profile
     );
     return true;
   }
@@ -1611,7 +1588,7 @@ class FormAutofillHandler {
         throw new Error("Unknown section type");
       }
     }
-    log.debug("Create records:", records);
+
     return records;
   }
 }

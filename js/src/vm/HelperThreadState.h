@@ -232,8 +232,6 @@ class GlobalHelperThreadState {
                                size_t threadCount, size_t stackSize,
                                const AutoLockHelperThreadState& lock);
 
-  [[nodiscard]] bool ensureContextList(size_t count,
-                                       const AutoLockHelperThreadState& lock);
   JSContext* getFirstUnusedContext(AutoLockHelperThreadState& locked);
   void destroyHelperContexts(AutoLockHelperThreadState& lock);
 
@@ -502,7 +500,8 @@ class MOZ_RAII AutoSetHelperThreadContext {
   AutoLockHelperThreadState& lock;
 
  public:
-  explicit AutoSetHelperThreadContext(AutoLockHelperThreadState& lock);
+  AutoSetHelperThreadContext(const JS::ContextOptions& options,
+                             AutoLockHelperThreadState& lock);
   ~AutoSetHelperThreadContext();
 };
 
@@ -527,6 +526,9 @@ struct ParseTask : public mozilla::LinkedListElement<ParseTask>,
                    public HelperThreadTask {
   ParseTaskKind kind;
   JS::OwningCompileOptions options;
+
+  // Context options from the main thread.
+  const JS::ContextOptions contextOptions;
 
   // HelperThreads are shared between all runtimes in the process so explicitly
   // track which one we are associated with.
@@ -652,6 +654,9 @@ struct DelazifyTask : public mozilla::LinkedListElement<DelazifyTask>,
   // track which one we are associated with.
   JSRuntime* runtime = nullptr;
 
+  // Context options originally from the main thread.
+  const JS::ContextOptions contextOptions;
+
   // Queue of functions to be processed while delazifying.
   UniquePtr<DelazifyStrategy> strategy;
 
@@ -662,7 +667,7 @@ struct DelazifyTask : public mozilla::LinkedListElement<DelazifyTask>,
   // Record any errors happening while parsing or generating bytecode.
   OffThreadFrontendErrors errors_;
 
-  explicit DelazifyTask(JSRuntime* runtime);
+  DelazifyTask(JSRuntime* runtime, const JS::ContextOptions& options);
 
   [[nodiscard]] bool init(
       JSContext* cx, const JS::ReadOnlyCompileOptions& options,

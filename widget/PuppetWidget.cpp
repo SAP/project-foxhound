@@ -14,6 +14,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
+#include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SchedulerGroup.h"
@@ -751,7 +752,8 @@ nsresult PuppetWidget::NotifyIMEOfFocusChange(
   bool gotFocus = aIMENotification.mMessage == NOTIFY_IME_OF_FOCUS;
   if (gotFocus) {
     // When IME gets focus, we should initialize all information of the
-    // content.
+    // content, however, it may fail to get it because the editor may have
+    // already been blurred.
     if (NS_WARN_IF(!mContentCache.CacheAll(this, &aIMENotification))) {
       return NS_ERROR_FAILURE;
     }
@@ -835,11 +837,7 @@ nsresult PuppetWidget::NotifyIMEOfSelectionChange(
 
   // Note that selection change must be notified after text change if it occurs.
   // Therefore, we don't need to query text content again here.
-  mContentCache.SetSelection(
-      this, aIMENotification.mSelectionChangeData.mOffset,
-      aIMENotification.mSelectionChangeData.Length(),
-      aIMENotification.mSelectionChangeData.mReversed,
-      aIMENotification.mSelectionChangeData.GetWritingMode());
+  mContentCache.SetSelection(this, aIMENotification.mSelectionChangeData);
 
   mBrowserChild->SendNotifyIMESelection(mContentCache, aIMENotification);
 
@@ -929,8 +927,8 @@ void PuppetWidget::SetCursor(const Cursor& aCursor) {
     if (surface) {
       if (RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface()) {
         hasCustomCursor = true;
-        customCursorData = nsContentUtils::GetSurfaceData(
-            WrapNotNull(dataSurface), &length, &stride);
+        customCursorData =
+            nsContentUtils::GetSurfaceData(*dataSurface, &length, &stride);
         customCursorSize = dataSurface->GetSize();
         format = dataSurface->GetFormat();
       }
@@ -947,6 +945,7 @@ void PuppetWidget::SetCursor(const Cursor& aCursor) {
     return;
   }
   mCursor = aCursor;
+  mUpdateCursor = false;
 }
 
 void PuppetWidget::SetChild(PuppetWidget* aChild) {

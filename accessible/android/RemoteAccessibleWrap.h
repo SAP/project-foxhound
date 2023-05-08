@@ -37,6 +37,8 @@ class RemoteAccessibleWrap : public AccessibleWrap {
 
   virtual ENameValueFlag Name(nsString& aName) const override;
 
+  virtual void Description(nsString& aDescription) const override;
+
   virtual void Value(nsString& aValue) const override;
 
   virtual uint64_t State() override;
@@ -59,7 +61,7 @@ class RemoteAccessibleWrap : public AccessibleWrap {
   virtual bool GetSelectionBounds(int32_t* aStartOffset,
                                   int32_t* aEndOffset) override;
 
-  virtual void PivotTo(int32_t aGranularity, bool aForward,
+  virtual bool PivotTo(int32_t aGranularity, bool aForward,
                        bool aInclusive) override;
 
   virtual void NavigateText(int32_t aGranularity, int32_t aStartOffset,

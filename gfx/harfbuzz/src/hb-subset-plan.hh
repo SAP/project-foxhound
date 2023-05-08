@@ -78,6 +78,7 @@ struct hb_subset_plan_t
   hb_set_t *_glyphset;
   hb_set_t *_glyphset_gsub;
   hb_set_t *_glyphset_mathed;
+  hb_set_t *_glyphset_colred;
 
   //active lookups we'd like to retain
   hb_map_t *gsub_lookups;
@@ -196,14 +197,5 @@ struct hb_subset_plan_t
     return hb_face_builder_add_table (dest, tag, contents);
   }
 };
-
-typedef struct hb_subset_plan_t hb_subset_plan_t;
-
-HB_INTERNAL hb_subset_plan_t *
-hb_subset_plan_create (hb_face_t           *face,
-		       const hb_subset_input_t   *input);
-
-HB_INTERNAL void
-hb_subset_plan_destroy (hb_subset_plan_t *plan);
 
 #endif /* HB_SUBSET_PLAN_HH */

@@ -89,15 +89,15 @@ void PreventGCDuringInteractiveDebug() { TlsContext.get()->suppressGC++; }
 
 #endif
 
-void js::ReleaseAllJITCode(JSFreeOp* fop) {
-  js::CancelOffThreadIonCompile(fop->runtime());
+void js::ReleaseAllJITCode(JS::GCContext* gcx) {
+  js::CancelOffThreadIonCompile(gcx->runtime());
 
-  for (ZonesIter zone(fop->runtime(), SkipAtoms); !zone.done(); zone.next()) {
+  for (ZonesIter zone(gcx->runtime(), SkipAtoms); !zone.done(); zone.next()) {
     zone->setPreservingCode(false);
-    zone->discardJitCode(fop);
+    zone->discardJitCode(gcx);
   }
 
-  for (RealmsIter realm(fop->runtime()); !realm.done(); realm.next()) {
+  for (RealmsIter realm(gcx->runtime()); !realm.done(); realm.next()) {
     if (jit::JitRealm* jitRealm = realm->jitRealm()) {
       jitRealm->discardStubs();
     }
@@ -266,12 +266,17 @@ JS_PUBLIC_API void JS::SkipZoneForGC(JSContext* cx, Zone* zone) {
   zone->unscheduleGC();
 }
 
+static inline void CheckGCOptions(JS::GCOptions options) {
+  MOZ_ASSERT(options == JS::GCOptions::Normal ||
+             options == JS::GCOptions::Shrink ||
+             options == JS::GCOptions::Shutdown);
+}
+
 JS_PUBLIC_API void JS::NonIncrementalGC(JSContext* cx, JS::GCOptions options,
                                         GCReason reason) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(options == JS::GCOptions::Normal ||
-             options == JS::GCOptions::Shrink);
+  CheckGCOptions(options);
 
   cx->runtime()->gc.gc(options, reason);
 
@@ -283,8 +288,7 @@ JS_PUBLIC_API void JS::StartIncrementalGC(JSContext* cx, JS::GCOptions options,
                                           const js::SliceBudget& budget) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(options == JS::GCOptions::Normal ||
-             options == JS::GCOptions::Shrink);
+  CheckGCOptions(options);
 
   cx->runtime()->gc.startGC(options, reason, budget);
 }
@@ -710,7 +714,7 @@ JS_PUBLIC_API void js::gc::FinalizeDeadNurseryObject(JSContext* cx,
   MOZ_ASSERT(!IsForwarded(obj));
 
   const JSClass* jsClass = JS::GetClass(obj);
-  jsClass->doFinalize(cx->defaultFreeOp(), obj);
+  jsClass->doFinalize(cx->gcContext(), obj);
 }
 
 JS_PUBLIC_API void js::gc::SetPerformanceHint(JSContext* cx,

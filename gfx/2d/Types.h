@@ -41,6 +41,7 @@ enum class SurfaceType : int8_t {
   DATA_SHARED_WRAPPER,    /* Shared memory mapped in from another process */
   BLOB_IMAGE,             /* Recorded blob image */
   DATA_MAPPED,            /* Data surface wrapping a ScopedMap */
+  WEBGL,                  /* Surface wrapping a DrawTargetWebgl texture */
 };
 
 enum class SurfaceFormat : int8_t {
@@ -348,6 +349,15 @@ enum class ColorDepth : uint8_t {
   _Last = COLOR_16,
 };
 
+enum class TransferFunction : uint8_t {
+  SRGB,
+  PQ,
+  HLG,
+  _First = SRGB,
+  _Last = HLG,
+  Default = SRGB,
+};
+
 enum class ColorRange : uint8_t {
   LIMITED,
   FULL,
@@ -504,6 +514,27 @@ static inline uint32_t RescalingFactorForColorDepth(ColorDepth aColorDepth) {
       break;
   }
   return factor;
+}
+
+enum class ChromaSubsampling : uint8_t {
+  FULL,
+  HALF_WIDTH,
+  HALF_WIDTH_AND_HEIGHT,
+  _First = FULL,
+  _Last = HALF_WIDTH_AND_HEIGHT,
+};
+
+template <typename T>
+static inline T ChromaSize(const T& aYSize, ChromaSubsampling aSubsampling) {
+  switch (aSubsampling) {
+    case ChromaSubsampling::FULL:
+      return aYSize;
+    case ChromaSubsampling::HALF_WIDTH:
+      return T((aYSize.width + 1) / 2, aYSize.height);
+    case ChromaSubsampling::HALF_WIDTH_AND_HEIGHT:
+      return T((aYSize.width + 1) / 2, (aYSize.height + 1) / 2);
+  }
+  MOZ_CRASH("bad ChromaSubsampling");
 }
 
 enum class FilterType : int8_t {

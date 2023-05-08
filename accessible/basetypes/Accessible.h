@@ -24,6 +24,8 @@ class AccGroupInfo;
 class HyperTextAccessibleBase;
 class LocalAccessible;
 class RemoteAccessible;
+class TableAccessibleBase;
+class TableCellAccessibleBase;
 
 /**
  * Name type flags.
@@ -74,6 +76,13 @@ class Accessible {
              uint8_t aRoleMapEntryIndex);
 
  public:
+  /**
+   * Return an id for this Accessible which is unique within the document.
+   * Use nsAccUtils::GetAccessibleByID to retrieve an Accessible given an id
+   * returned from this method.
+   */
+  virtual uint64_t ID() const = 0;
+
   virtual Accessible* Parent() const = 0;
 
   virtual role Role() const = 0;
@@ -99,6 +108,21 @@ class Accessible {
   inline Accessible* LastChild() const {
     uint32_t childCount = ChildCount();
     return childCount ? ChildAt(childCount - 1) : nullptr;
+  }
+
+  /**
+   * Return true if this Accessible is before another Accessible in the tree.
+   */
+  bool IsBefore(const Accessible* aAcc) const;
+
+  bool IsAncestorOf(const Accessible* aAcc) const {
+    for (const Accessible* parent = aAcc->Parent(); parent;
+         parent = parent->Parent()) {
+      if (parent == this) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -153,6 +177,11 @@ class Accessible {
    */
   virtual void Description(nsString& aDescription) const = 0;
 
+  /**
+   * Get the value of this accessible.
+   */
+  virtual void Value(nsString& aValue) const = 0;
+
   virtual double CurValue() const = 0;
   virtual double MinValue() const = 0;
   virtual double MaxValue() const = 0;
@@ -188,9 +217,19 @@ class Accessible {
   virtual uint32_t StartOffset();
 
   /**
+   * Return the end offset of the link within the parent
+   * HyperTextAccessibleBase.
+   */
+  virtual uint32_t EndOffset();
+
+  /**
    * Return object attributes for the accessible.
    */
   virtual already_AddRefed<AccAttributes> Attributes() = 0;
+
+  virtual already_AddRefed<nsAtom> DisplayStyle() const = 0;
+
+  virtual Maybe<float> Opacity() const = 0;
 
   // Methods that interact with content.
 
@@ -200,6 +239,11 @@ class Accessible {
    * Return tag name of associated DOM node.
    */
   virtual nsAtom* TagName() const = 0;
+
+  /**
+   * Return a landmark role if applied.
+   */
+  virtual nsAtom* LandmarkRole() const;
 
   //////////////////////////////////////////////////////////////////////////////
   // ActionAccessible
@@ -227,6 +271,53 @@ class Accessible {
    * Invoke the accessible action.
    */
   virtual bool DoAction(uint8_t aIndex) const = 0;
+
+  //////////////////////////////////////////////////////////////////////////////
+  // SelectAccessible
+
+  /**
+   * Return an array of selected items.
+   */
+  virtual void SelectedItems(nsTArray<Accessible*>* aItems) = 0;
+
+  /**
+   * Return the number of selected items.
+   */
+  virtual uint32_t SelectedItemCount() = 0;
+
+  /**
+   * Return selected item at the given index.
+   */
+  virtual Accessible* GetSelectedItem(uint32_t aIndex) = 0;
+
+  /**
+   * Determine if item at the given index is selected.
+   */
+  virtual bool IsItemSelected(uint32_t aIndex) = 0;
+
+  /**
+   * Add item at the given index the selection. Return true if success.
+   */
+  virtual bool AddItemToSelection(uint32_t aIndex) = 0;
+
+  /**
+   * Remove item at the given index from the selection. Return if success.
+   */
+  virtual bool RemoveItemFromSelection(uint32_t aIndex) = 0;
+
+  /**
+   * Select all items. Return true if success.
+   */
+  virtual bool SelectAll() = 0;
+
+  /**
+   * Unselect all items. Return true if success.
+   */
+  virtual bool UnselectAll() = 0;
+
+  virtual void TakeSelection() = 0;
+
+  virtual void SetSelected(bool aSelect) = 0;
 
   // Type "is" methods
 
@@ -338,10 +429,13 @@ class Accessible {
   virtual bool IsRemote() const = 0;
   RemoteAccessible* AsRemote();
 
-  bool IsLocal() { return !IsRemote(); }
+  bool IsLocal() const { return !IsRemote(); }
   LocalAccessible* AsLocal();
 
   virtual HyperTextAccessibleBase* AsHyperTextBase() { return nullptr; }
+
+  virtual TableAccessibleBase* AsTableBase() { return nullptr; }
+  virtual TableCellAccessibleBase* AsTableCellBase() { return nullptr; }
 
   /**
    * Return the localized string for the given key.
@@ -383,6 +477,20 @@ class Accessible {
    * @param  aSetSize   [out] the group size
    */
   virtual void GetPositionAndSetSize(int32_t* aPosInSet, int32_t* aSetSize);
+
+  /**
+   * Return the nearest ancestor that has a primary action, or null.
+   */
+  const Accessible* ActionAncestor() const;
+
+  /**
+   * Return true if accessible has a primary action directly related to it, like
+   * "click", "activate", "press", "jump", "open", "close", etc. A non-primary
+   * action would be a complementary one like "showlongdesc".
+   * If an accessible has an action that is associated with an ancestor, it is
+   * not a primary action either.
+   */
+  virtual bool HasPrimaryAction() const = 0;
 
  private:
   static const uint8_t kTypeBits = 6;

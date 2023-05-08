@@ -210,7 +210,7 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   ReentrantMonitor mReentrantMonitor{"nsHttpConnectionMgr.mReentrantMonitor"};
   // This is used as a flag that we're shut down, and no new events should be
   // dispatched.
-  nsCOMPtr<nsIEventTarget> mSocketThreadTarget;
+  nsCOMPtr<nsIEventTarget> mSocketThreadTarget GUARDED_BY(mReentrantMonitor);
 
   Atomic<bool, mozilla::Relaxed> mIsShuttingDown{false};
 

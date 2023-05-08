@@ -4,19 +4,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ReadableStream.h"
 #include "js/Exception.h"
 #include "js/TypeDecls.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/ReadIntoRequest.h"
+#include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBReader.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/ReadableStreamGenericReader.h"
 #include "mozilla/dom/ReadableStreamTee.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/ReadableByteStreamController.h"
+#include "mozilla/dom/TeeState.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
 #include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
@@ -24,56 +26,25 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ReadableStreamDefaultTeePullAlgorithm)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(ReadableStreamDefaultTeeSourceAlgorithms,
+                                   UnderlyingSourceAlgorithmsBase, mTeeState)
+NS_IMPL_ADDREF_INHERITED(ReadableStreamDefaultTeeSourceAlgorithms,
+                         UnderlyingSourceAlgorithmsBase)
+NS_IMPL_RELEASE_INHERITED(ReadableStreamDefaultTeeSourceAlgorithms,
+                          UnderlyingSourceAlgorithmsBase)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(
+    ReadableStreamDefaultTeeSourceAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsBase)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
-    ReadableStreamDefaultTeePullAlgorithm, UnderlyingSourcePullCallbackHelper)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTeeState)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
-    ReadableStreamDefaultTeePullAlgorithm, UnderlyingSourcePullCallbackHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTeeState)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_ADDREF_INHERITED(ReadableStreamDefaultTeePullAlgorithm,
-                         UnderlyingSourcePullCallbackHelper)
-NS_IMPL_RELEASE_INHERITED(ReadableStreamDefaultTeePullAlgorithm,
-                          UnderlyingSourcePullCallbackHelper)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ReadableStreamDefaultTeePullAlgorithm)
-NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourcePullCallbackHelper)
-
-already_AddRefed<Promise> ReadableStreamDefaultTeePullAlgorithm::PullCallback(
-    JSContext* aCx, nsIGlobalObject* aGlobal, ErrorResult& aRv) {
-  // https://streams.spec.whatwg.org/#abstract-opdef-readablestreamdefaulttee
-  // Pull Algorithm Steps:
-
-  // Step 13.1:
-  if (mTeeState->Reading()) {
-    // Step 13.1.1
-    mTeeState->SetReadAgain(true);
-
-    // Step 13.1.2
-    return Promise::CreateResolvedWithUndefined(aGlobal, aRv);
+already_AddRefed<Promise>
+ReadableStreamDefaultTeeSourceAlgorithms::PullCallback(
+    JSContext* aCx, ReadableStreamController& aController, ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = aController.GetParentObject();
+  mTeeState->PullCallback(aCx, global, aRv);
+  if (!aRv.Failed()) {
+    return Promise::CreateResolvedWithUndefined(global, aRv);
   }
-
-  // Step 13.2:
-  mTeeState->SetReading(true);
-
-  // Step 13.3:
-  RefPtr<ReadRequest> readRequest =
-      new ReadableStreamDefaultTeeReadRequest(mTeeState);
-
-  // Step 13.4:
-  RefPtr<ReadableStreamGenericReader> reader(mTeeState->GetReader());
-  ReadableStreamDefaultReaderRead(aCx, reader, readRequest, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-
-  // Step 13.5
-  return Promise::CreateResolvedWithUndefined(aGlobal, aRv);
+  return nullptr;
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(ReadableStreamDefaultTeeReadRequest)
@@ -99,7 +70,8 @@ void ReadableStreamDefaultTeeReadRequest::ChunkSteps(
   // Step 1.
   class ReadableStreamDefaultTeeReadRequestChunkSteps
       : public MicroTaskRunnable {
-    RefPtr<TeeState> mTeeState;
+    // Virtually const, but is cycle collected
+    MOZ_KNOWN_LIVE RefPtr<TeeState> mTeeState;
     JS::PersistentRooted<JS::Value> mChunk;
 
    public:
@@ -152,16 +124,10 @@ void ReadableStreamDefaultTeeReadRequest::ChunkSteps(
 
       // Step 7. If |readAgain| is true, perform |pullAlgorithm|.
       if (mTeeState->ReadAgain()) {
-        RefPtr<ReadableStreamDefaultTeePullAlgorithm> pullAlgorithm(
-            mTeeState->PullAlgorithm());
         IgnoredErrorResult rv;
         nsCOMPtr<nsIGlobalObject> global(
             mTeeState->GetStream()->GetParentObject());
-        // MG:XXX: A future refactoring could rewrite pull callbacks innards to
-        // not produce this promise, which is currently always a promise
-        // resolved with undefined.
-        RefPtr<Promise> ignoredPromise =
-            pullAlgorithm->PullCallback(cx, global, rv);
+        mTeeState->PullCallback(cx, global, rv);
         (void)NS_WARN_IF(rv.Failed());
       }
     }
@@ -222,7 +188,8 @@ MOZ_CAN_RUN_SCRIPT void PullWithDefaultReader(JSContext* aCx,
                                               ErrorResult& aRv);
 MOZ_CAN_RUN_SCRIPT void PullWithBYOBReader(JSContext* aCx, TeeState* aTeeState,
                                            JS::HandleObject aView,
-                                           bool aForBranch2, ErrorResult& aRv);
+                                           TeeBranch aForBranch,
+                                           ErrorResult& aRv);
 
 // Algorithm described in
 // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee, Steps
@@ -235,15 +202,14 @@ MOZ_CAN_RUN_SCRIPT void PullWithBYOBReader(JSContext* aCx, TeeState* aTeeState,
 // NativeByteStreamTeePullAlgorithm, which implements
 // UnderlyingSourcePullCallbackHelper is the version which provies the return
 // promise.
-MOZ_CAN_RUN_SCRIPT void ByteStreamTeePullAlgorithm(JSContext* aCx, size_t index,
+MOZ_CAN_RUN_SCRIPT void ByteStreamTeePullAlgorithm(JSContext* aCx,
+                                                   TeeBranch aForBranch,
                                                    TeeState* aTeeState,
                                                    ErrorResult& aRv) {
-  MOZ_ASSERT(index == 1 || index == 2);
-
   // Step {17,18}.1: If reading is true,
   if (aTeeState->Reading()) {
     // Step {17,18}.1.1: Set readAgainForBranch{1,2} to true.
-    aTeeState->SetReadAgainForBranch(index, true);
+    aTeeState->SetReadAgainForBranch(aForBranch, true);
 
     // Step {17,18}.1.1: Return a promise resolved with undefined.
     return;
@@ -256,7 +222,7 @@ MOZ_CAN_RUN_SCRIPT void ByteStreamTeePullAlgorithm(JSContext* aCx, size_t index,
   // !ReadableByteStreamControllerGetBYOBRequest(branch{1,2}.[[controller]]).
   RefPtr<ReadableStreamBYOBRequest> byobRequest =
       ReadableByteStreamControllerGetBYOBRequest(
-          aCx, aTeeState->Branch(index)->Controller()->AsByte(), aRv);
+          aCx, aTeeState->Branch(aForBranch)->Controller()->AsByte(), aRv);
   if (aRv.Failed()) {
     return;
   }
@@ -266,71 +232,114 @@ MOZ_CAN_RUN_SCRIPT void ByteStreamTeePullAlgorithm(JSContext* aCx, size_t index,
     PullWithDefaultReader(aCx, aTeeState, aRv);
   } else {
     // Step {17,18}.5: Otherwise, perform pullWithBYOBReader, given
-    // byobRequest.[[view]] and false.
+    // byobRequest.[[view]] and {false, true}.
     JS::RootedObject view(aCx, byobRequest->View());
-    PullWithBYOBReader(aCx, aTeeState, view, false, aRv);
+    PullWithBYOBReader(aCx, aTeeState, view, aForBranch, aRv);
   }
 
   // Step {17,18}.6: Return a promise resolved with undefined.
-  return;
 }
 
-class NativeByteStreamTeePullAlgorithm final
-    : public UnderlyingSourcePullCallbackHelper {
-  // Virtually const, but is cycle collected
-  RefPtr<TeeState> mTeeState;
-  size_t mBranchIndex;
-
+// https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
+class ByteStreamTeeSourceAlgorithms final
+    : public UnderlyingSourceAlgorithmsBase {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(NativeByteStreamTeePullAlgorithm,
-                                           UnderlyingSourcePullCallbackHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ByteStreamTeeSourceAlgorithms,
+                                           UnderlyingSourceAlgorithmsBase)
 
-  explicit NativeByteStreamTeePullAlgorithm(TeeState* aTeeState,
-                                            size_t aBranchIndex)
-      : mTeeState(aTeeState), mBranchIndex(aBranchIndex) {
-    MOZ_ASSERT(aBranchIndex == 1 || aBranchIndex == 2);
+  ByteStreamTeeSourceAlgorithms(TeeState* aTeeState, TeeBranch aBranch)
+      : mTeeState(aTeeState), mBranch(aBranch) {}
+
+  MOZ_CAN_RUN_SCRIPT void StartCallback(JSContext* aCx,
+                                        ReadableStreamController& aController,
+                                        JS::MutableHandle<JS::Value> aRetVal,
+                                        ErrorResult& aRv) override {
+    // Step 21: Let startAlgorithm be an algorithm that returns undefined.
+    aRetVal.setUndefined();
   }
 
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> PullCallback(
+  // Step 17, 18
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PullCallback(
       JSContext* aCx, ReadableStreamController& aController,
       ErrorResult& aRv) override {
-    RefPtr<Promise> returnPromise = Promise::CreateResolvedWithUndefined(
+    // Step 1 - 5
+    ByteStreamTeePullAlgorithm(aCx, mBranch, MOZ_KnownLive(mTeeState), aRv);
+
+    // Step 6: Return a promise resolved with undefined.
+    return Promise::CreateResolvedWithUndefined(
         mTeeState->GetStream()->GetParentObject(), aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
-
-    ByteStreamTeePullAlgorithm(aCx, mBranchIndex, MOZ_KnownLive(mTeeState),
-                               aRv);
-
-    return returnPromise.forget();
   }
 
+  // Step 19, 20
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CancelCallback(
+      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
+      ErrorResult& aRv) override {
+    // Step 1.
+    mTeeState->SetCanceled(mBranch, true);
+
+    // Step 2.
+    mTeeState->SetReason(mBranch, aReason.Value());
+
+    // Step 3.
+    if (mTeeState->Canceled(otherStream())) {
+      // Step 3.1
+      JS::RootedObject compositeReason(aCx, JS::NewArrayObject(aCx, 2));
+      if (!compositeReason) {
+        aRv.StealExceptionFromJSContext(aCx);
+        return nullptr;
+      }
+
+      JS::RootedValue reason1(aCx, mTeeState->Reason1());
+      if (!JS_SetElement(aCx, compositeReason, 0, reason1)) {
+        aRv.StealExceptionFromJSContext(aCx);
+        return nullptr;
+      }
+
+      JS::RootedValue reason2(aCx, mTeeState->Reason2());
+      if (!JS_SetElement(aCx, compositeReason, 1, reason2)) {
+        aRv.StealExceptionFromJSContext(aCx);
+        return nullptr;
+      }
+
+      // Step 3.2
+      JS::RootedValue compositeReasonValue(aCx,
+                                           JS::ObjectValue(*compositeReason));
+      RefPtr<ReadableStream> stream(mTeeState->GetStream());
+      RefPtr<Promise> cancelResult =
+          ReadableStreamCancel(aCx, stream, compositeReasonValue, aRv);
+      if (aRv.Failed()) {
+        return nullptr;
+      }
+
+      // Step 3.3
+      mTeeState->CancelPromise()->MaybeResolve(cancelResult);
+    }
+
+    // Step 4.
+    return do_AddRef(mTeeState->CancelPromise());
+  };
+
+  void ErrorCallback() override {}
+
  protected:
-  ~NativeByteStreamTeePullAlgorithm() = default;
+  ~ByteStreamTeeSourceAlgorithms() override = default;
+
+ private:
+  TeeBranch otherStream() { return OtherTeeBranch(mBranch); }
+
+  RefPtr<TeeState> mTeeState;
+  TeeBranch mBranch;
 };
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(NativeByteStreamTeePullAlgorithm)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
-    NativeByteStreamTeePullAlgorithm, UnderlyingSourcePullCallbackHelper)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTeeState)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
-    NativeByteStreamTeePullAlgorithm, UnderlyingSourcePullCallbackHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTeeState)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_ADDREF_INHERITED(NativeByteStreamTeePullAlgorithm,
-                         UnderlyingSourcePullCallbackHelper)
-NS_IMPL_RELEASE_INHERITED(NativeByteStreamTeePullAlgorithm,
-                          UnderlyingSourcePullCallbackHelper)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(NativeByteStreamTeePullAlgorithm)
-NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourcePullCallbackHelper)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(ByteStreamTeeSourceAlgorithms,
+                                   UnderlyingSourceAlgorithmsBase, mTeeState)
+NS_IMPL_ADDREF_INHERITED(ByteStreamTeeSourceAlgorithms,
+                         UnderlyingSourceAlgorithmsBase)
+NS_IMPL_RELEASE_INHERITED(ByteStreamTeeSourceAlgorithms,
+                          UnderlyingSourceAlgorithmsBase)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ByteStreamTeeSourceAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsBase)
 
 struct PullWithDefaultReaderReadRequest final : public ReadRequest {
   RefPtr<TeeState> mTeeState;
@@ -469,11 +478,13 @@ struct PullWithDefaultReaderReadRequest final : public ReadRequest {
 
         // Step 8. If readAgainForBranch1 is true, perform pull1Algorithm.
         if (mTeeState->ReadAgainForBranch1()) {
-          ByteStreamTeePullAlgorithm(cx, 1, MOZ_KnownLive(mTeeState), rv);
+          ByteStreamTeePullAlgorithm(cx, TeeBranch::Branch1,
+                                     MOZ_KnownLive(mTeeState), rv);
         } else if (mTeeState->ReadAgainForBranch2()) {
           // Step 9. Otherwise, if readAgainForBranch2 is true, perform
           // pull2Algorithm.
-          ByteStreamTeePullAlgorithm(cx, 2, MOZ_KnownLive(mTeeState), rv);
+          ByteStreamTeePullAlgorithm(cx, TeeBranch::Branch2,
+                                     MOZ_KnownLive(mTeeState), rv);
         }
       }
 
@@ -553,7 +564,7 @@ struct PullWithDefaultReaderReadRequest final : public ReadRequest {
   }
 
  protected:
-  virtual ~PullWithDefaultReaderReadRequest() = default;
+  ~PullWithDefaultReaderReadRequest() override = default;
 };
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(PullWithDefaultReaderReadRequest,
@@ -584,8 +595,7 @@ void PullWithDefaultReader(JSContext* aCx, TeeState* aTeeState,
     }
 
     // Step 15.1.3. Set reader to ! AcquireReadableStreamDefaultReader(stream).
-    reader =
-        AcquireReadableStreamDefaultReader(aCx, aTeeState->GetStream(), aRv);
+    reader = AcquireReadableStreamDefaultReader(aTeeState->GetStream(), aRv);
     if (aRv.Failed()) {
       return;
     }
@@ -605,8 +615,8 @@ void PullWithDefaultReader(JSContext* aCx, TeeState* aTeeState,
 
 class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
   RefPtr<TeeState> mTeeState;
-  bool mForBranch2;
-  virtual ~PullWithBYOBReader_ReadIntoRequest() = default;
+  const TeeBranch mForBranch;
+  ~PullWithBYOBReader_ReadIntoRequest() override = default;
 
  public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -614,8 +624,8 @@ class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
                                            ReadIntoRequest)
 
   explicit PullWithBYOBReader_ReadIntoRequest(TeeState* aTeeState,
-                                              bool aForBranch2)
-      : mTeeState(aTeeState), mForBranch2(aForBranch2) {}
+                                              TeeBranch aForBranch)
+      : mTeeState(aTeeState), mForBranch(aForBranch) {}
 
   void ChunkSteps(JSContext* aCx, JS::Handle<JS::Value> aChunk,
                   ErrorResult& aRv) override {
@@ -624,15 +634,13 @@ class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
     class PullWithBYOBReaderChunkMicrotask : public MicroTaskRunnable {
       RefPtr<TeeState> mTeeState;
       JS::PersistentRooted<JSObject*> mChunk;
-      bool mForBranch2 = false;
+      const TeeBranch mForBranch;
 
      public:
       PullWithBYOBReaderChunkMicrotask(JSContext* aCx, TeeState* aTeeState,
                                        JS::Handle<JSObject*> aChunk,
-                                       bool aForBranch2)
-          : mTeeState(aTeeState),
-            mChunk(aCx, aChunk),
-            mForBranch2(aForBranch2) {}
+                                       TeeBranch aForBranch)
+          : mTeeState(aTeeState), mChunk(aCx, aChunk), mForBranch(aForBranch) {}
 
       MOZ_CAN_RUN_SCRIPT
       void Run(AutoSlowOperation& aAso) override {
@@ -655,19 +663,15 @@ class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
         mTeeState->SetReadAgainForBranch2(false);
 
         // Step 3.
-        bool byobCanceled =
-            mForBranch2 ? mTeeState->Canceled2() : mTeeState->Canceled1();
-
+        bool byobCanceled = mTeeState->Canceled(mForBranch);
         // Step 4.
-        bool otherCanceled =
-            !mForBranch2 ? mTeeState->Canceled2() : mTeeState->Canceled1();
+        bool otherCanceled = mTeeState->Canceled(OtherTeeBranch(mForBranch));
 
         // Rather than store byobBranch / otherBranch, we re-derive the pointers
         // below, as borrowed from steps 16.2/16.3
-        ReadableStream* byobBranch =
-            mForBranch2 ? mTeeState->Branch2() : mTeeState->Branch1();
+        ReadableStream* byobBranch = mTeeState->Branch(mForBranch);
         ReadableStream* otherBranch =
-            !mForBranch2 ? mTeeState->Branch2() : mTeeState->Branch1();
+            mTeeState->Branch(OtherTeeBranch(mForBranch));
 
         // Step 5.
         if (!otherCanceled) {
@@ -753,12 +757,14 @@ class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
 
         // Step 8.
         if (mTeeState->ReadAgainForBranch1()) {
-          ByteStreamTeePullAlgorithm(cx, 1, MOZ_KnownLive(mTeeState), rv);
+          ByteStreamTeePullAlgorithm(cx, TeeBranch::Branch1,
+                                     MOZ_KnownLive(mTeeState), rv);
           if (rv.MaybeSetPendingException(cx)) {
             return;
           }
         } else if (mTeeState->ReadAgainForBranch2()) {
-          ByteStreamTeePullAlgorithm(cx, 2, MOZ_KnownLive(mTeeState), rv);
+          ByteStreamTeePullAlgorithm(cx, TeeBranch::Branch2,
+                                     MOZ_KnownLive(mTeeState), rv);
           if (rv.MaybeSetPendingException(cx)) {
             return;
           }
@@ -776,7 +782,7 @@ class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
     JS::RootedObject chunk(aCx, aChunk.toObjectOrNull());
     RefPtr<PullWithBYOBReaderChunkMicrotask> task =
         MakeRefPtr<PullWithBYOBReaderChunkMicrotask>(aCx, mTeeState, chunk,
-                                                     mForBranch2);
+                                                     mForBranch);
     CycleCollectedJSContext::Get()->DispatchToMicroTask(task.forget());
   }
 
@@ -787,19 +793,15 @@ class PullWithBYOBReader_ReadIntoRequest final : public ReadIntoRequest {
     mTeeState->SetReading(false);
 
     // Step 2.
-    bool byobCanceled =
-        mForBranch2 ? mTeeState->Canceled2() : mTeeState->Canceled1();
+    bool byobCanceled = mTeeState->Canceled(mForBranch);
 
     // Step 3.
-    bool otherCanceled =
-        !mForBranch2 ? mTeeState->Canceled2() : mTeeState->Canceled1();
+    bool otherCanceled = mTeeState->Canceled(OtherTeeBranch(mForBranch));
 
     // Rather than store byobBranch / otherBranch, we re-derive the pointers
     // below, as borrowed from steps 16.2/16.3
-    ReadableStream* byobBranch =
-        mForBranch2 ? mTeeState->Branch2() : mTeeState->Branch1();
-    ReadableStream* otherBranch =
-        !mForBranch2 ? mTeeState->Branch2() : mTeeState->Branch1();
+    ReadableStream* byobBranch = mTeeState->Branch(mForBranch);
+    ReadableStream* otherBranch = mTeeState->Branch(OtherTeeBranch(mForBranch));
 
     // Step 4.
     if (!byobCanceled) {
@@ -877,7 +879,7 @@ NS_INTERFACE_MAP_END_INHERITING(ReadIntoRequest)
 // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
 // Step 16.
 void PullWithBYOBReader(JSContext* aCx, TeeState* aTeeState,
-                        JS::HandleObject aView, bool aForBranch2,
+                        JS::HandleObject aView, TeeBranch aForBranch,
                         ErrorResult& aRv) {
   // Step 16.1
   if (aTeeState->GetReader()->IsDefault()) {
@@ -892,7 +894,7 @@ void PullWithBYOBReader(JSContext* aCx, TeeState* aTeeState,
 
     // Step 16.1.3. Set reader to !AcquireReadableStreamBYOBReader(stream).
     RefPtr<ReadableStreamBYOBReader> reader =
-        AcquireReadableStreamBYOBReader(aCx, aTeeState->GetStream(), aRv);
+        AcquireReadableStreamBYOBReader(aTeeState->GetStream(), aRv);
     if (aRv.Failed()) {
       return;
     }
@@ -907,7 +909,7 @@ void PullWithBYOBReader(JSContext* aCx, TeeState* aTeeState,
 
   // Step 16.4.
   RefPtr<ReadIntoRequest> readIntoRequest =
-      new PullWithBYOBReader_ReadIntoRequest(aTeeState, aForBranch2);
+      new PullWithBYOBReader_ReadIntoRequest(aTeeState, aForBranch);
 
   // Step 16.5.
   RefPtr<ReadableStreamBYOBReader> byobReader =
@@ -915,169 +917,47 @@ void PullWithBYOBReader(JSContext* aCx, TeeState* aTeeState,
   ReadableStreamBYOBReaderRead(aCx, byobReader, aView, readIntoRequest, aRv);
 }
 
-class ForwardReaderErrorPromiseHandler final : public PromiseNativeHandler {
-  ~ForwardReaderErrorPromiseHandler() = default;
-  RefPtr<TeeState> mTeeState;
-  RefPtr<ReadableStreamGenericReader> mReader;
-
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(ForwardReaderErrorPromiseHandler)
-
-  ForwardReaderErrorPromiseHandler(TeeState* aTeeState,
-                                   ReadableStreamGenericReader* aReader)
-      : mTeeState(aTeeState), mReader(aReader) {}
-
-  MOZ_CAN_RUN_SCRIPT
-  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {}
-
-  MOZ_CAN_RUN_SCRIPT
-  virtual void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                                ErrorResult& aRv) override {
-    // Step 14.1.1
-    if (mTeeState->GetReader() != mReader) {
-      return;
-    }
-
-    ErrorResult rv;
-    // Step 14.1.2: Perform
-    // !ReadableByteStreamControllerError(branch1.[[controller]], r).
-    MOZ_ASSERT(mTeeState->Branch1()->Controller()->IsByte());
-    ReadableByteStreamControllerError(
-        mTeeState->Branch1()->Controller()->AsByte(), aValue, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
-
-    // Step 14.1.3: Perform
-    // !ReadableByteStreamControllerError(branch2.[[controller]], r).
-    MOZ_ASSERT(mTeeState->Branch2()->Controller()->IsByte());
-    ReadableByteStreamControllerError(
-        mTeeState->Branch2()->Controller()->AsByte(), aValue, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
-
-    // Step 14.1.4: If canceled1 is false or canceled2 is false, resolve
-    // cancelPromise with undefined.
-    if (!mTeeState->Canceled1() || !mTeeState->Canceled2()) {
-      mTeeState->CancelPromise()->MaybeResolveWithUndefined();
-    }
-  }
-};
-
-NS_IMPL_CYCLE_COLLECTION(ForwardReaderErrorPromiseHandler, mTeeState, mReader)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(ForwardReaderErrorPromiseHandler)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(ForwardReaderErrorPromiseHandler)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ForwardReaderErrorPromiseHandler)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
-
 // See https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
 // Step 14.
 void ForwardReaderError(TeeState* aTeeState,
                         ReadableStreamGenericReader* aThisReader) {
-  aThisReader->ClosedPromise()->AppendNativeHandler(
-      new ForwardReaderErrorPromiseHandler(aTeeState, aThisReader));
+  aThisReader->ClosedPromise()->AddCallbacksWithCycleCollectedArgs(
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         TeeState* aTeeState, ReadableStreamGenericReader* aThisReader) {},
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         TeeState* aTeeState, ReadableStreamGenericReader* aReader) {
+        // Step 14.1.1
+        if (aTeeState->GetReader() != aReader) {
+          return;
+        }
+
+        ErrorResult rv;
+        // Step 14.1.2: Perform
+        // !ReadableByteStreamControllerError(branch1.[[controller]], r).
+        MOZ_ASSERT(aTeeState->Branch1()->Controller()->IsByte());
+        ReadableByteStreamControllerError(
+            aTeeState->Branch1()->Controller()->AsByte(), aValue, aRv);
+        if (aRv.Failed()) {
+          return;
+        }
+
+        // Step 14.1.3: Perform
+        // !ReadableByteStreamControllerError(branch2.[[controller]], r).
+        MOZ_ASSERT(aTeeState->Branch2()->Controller()->IsByte());
+        ReadableByteStreamControllerError(
+            aTeeState->Branch2()->Controller()->AsByte(), aValue, aRv);
+        if (aRv.Failed()) {
+          return;
+        }
+
+        // Step 14.1.4: If canceled1 is false or canceled2 is false, resolve
+        // cancelPromise with undefined.
+        if (!aTeeState->Canceled1() || !aTeeState->Canceled2()) {
+          aTeeState->CancelPromise()->MaybeResolveWithUndefined();
+        }
+      },
+      RefPtr(aTeeState), RefPtr(aThisReader));
 }
-
-class ReadableByteStreamTeeCancelAlgorithm final
-    : public UnderlyingSourceCancelCallbackHelper {
-  RefPtr<TeeState> mTeeState;
-  size_t mStreamIndex;
-
-  size_t otherStream() {
-    if (mStreamIndex == 1) {
-      return 2;
-    }
-    MOZ_ASSERT(mStreamIndex == 2);
-    return 1;
-  }
-
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ReadableByteStreamTeeCancelAlgorithm,
-                                           UnderlyingSourceCancelCallbackHelper)
-
-  explicit ReadableByteStreamTeeCancelAlgorithm(TeeState* aTeeState,
-                                                size_t aStreamIndex)
-      : mTeeState(aTeeState), mStreamIndex(aStreamIndex) {}
-
-  // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
-  // Steps 19 and 20 both use this class.
-  MOZ_CAN_RUN_SCRIPT
-  virtual already_AddRefed<Promise> CancelCallback(
-      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-      ErrorResult& aRv) override {
-    // Step 1.
-    mTeeState->SetCanceled(mStreamIndex, true);
-
-    // Step 2.
-    mTeeState->SetReason(mStreamIndex, aReason.Value());
-
-    // Step 3.
-    if (mTeeState->Canceled(otherStream())) {
-      // Step 3.1
-      JS::RootedObject compositeReason(aCx, JS::NewArrayObject(aCx, 2));
-      if (!compositeReason) {
-        aRv.StealExceptionFromJSContext(aCx);
-        return nullptr;
-      }
-
-      JS::RootedValue reason1(aCx, mTeeState->Reason1());
-      if (!JS_SetElement(aCx, compositeReason, 0, reason1)) {
-        aRv.StealExceptionFromJSContext(aCx);
-        return nullptr;
-      }
-
-      JS::RootedValue reason2(aCx, mTeeState->Reason2());
-      if (!JS_SetElement(aCx, compositeReason, 1, reason2)) {
-        aRv.StealExceptionFromJSContext(aCx);
-        return nullptr;
-      }
-
-      // Step 3.2
-      JS::RootedValue compositeReasonValue(aCx,
-                                           JS::ObjectValue(*compositeReason));
-      RefPtr<ReadableStream> stream(mTeeState->GetStream());
-      RefPtr<Promise> cancelResult =
-          ReadableStreamCancel(aCx, stream, compositeReasonValue, aRv);
-      if (aRv.Failed()) {
-        return nullptr;
-      }
-
-      // Step 3.3
-      mTeeState->CancelPromise()->MaybeResolve(cancelResult);
-    }
-
-    // Step 4.
-    return do_AddRef(mTeeState->CancelPromise());
-  }
-
- protected:
-  ~ReadableByteStreamTeeCancelAlgorithm() = default;
-};
-
-NS_IMPL_CYCLE_COLLECTION_CLASS(ReadableByteStreamTeeCancelAlgorithm)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
-    ReadableByteStreamTeeCancelAlgorithm, UnderlyingSourceCancelCallbackHelper)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTeeState)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
-    ReadableByteStreamTeeCancelAlgorithm, UnderlyingSourceCancelCallbackHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTeeState)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_ADDREF_INHERITED(ReadableByteStreamTeeCancelAlgorithm,
-                         UnderlyingSourceCancelCallbackHelper)
-NS_IMPL_RELEASE_INHERITED(ReadableByteStreamTeeCancelAlgorithm,
-                          UnderlyingSourceCancelCallbackHelper)
-
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ReadableByteStreamTeeCancelAlgorithm)
-NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceCancelCallbackHelper)
 
 // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
 void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
@@ -1088,7 +968,7 @@ void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
   MOZ_ASSERT(aStream->Controller()->IsByte());
 
   // Step 3-13 captured as part of TeeState allocation
-  RefPtr<TeeState> teeState = TeeState::Create(aCx, aStream, false, aRv);
+  RefPtr<TeeState> teeState = TeeState::Create(aStream, false, aRv);
   if (aRv.Failed()) {
     return;
   }
@@ -1101,23 +981,19 @@ void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
   // Step 21. Elided because consumers know how to handle nullptr correctly.
   // Step 22.
   nsCOMPtr<nsIGlobalObject> global = aStream->GetParentObject();
-  RefPtr<UnderlyingSourcePullCallbackHelper> pull1Algorithm =
-      new NativeByteStreamTeePullAlgorithm(teeState, 1);
-  RefPtr<UnderlyingSourceCancelCallbackHelper> cancel1Algorithm =
-      new ReadableByteStreamTeeCancelAlgorithm(teeState, 1);
-  teeState->SetBranch1(CreateReadableByteStream(
-      aCx, global, nullptr, pull1Algorithm, cancel1Algorithm, aRv));
+  auto branch1Algorithms =
+      MakeRefPtr<ByteStreamTeeSourceAlgorithms>(teeState, TeeBranch::Branch1);
+  teeState->SetBranch1(
+      CreateReadableByteStream(aCx, global, branch1Algorithms, aRv));
   if (aRv.Failed()) {
     return;
   }
 
   // Step 23.
-  RefPtr<UnderlyingSourcePullCallbackHelper> pull2Algorithm =
-      new NativeByteStreamTeePullAlgorithm(teeState, 2);
-  RefPtr<UnderlyingSourceCancelCallbackHelper> cancel2Algorithm =
-      new ReadableByteStreamTeeCancelAlgorithm(teeState, 2);
-  teeState->SetBranch2(CreateReadableByteStream(
-      aCx, global, nullptr, pull2Algorithm, cancel2Algorithm, aRv));
+  auto branch2Algorithms =
+      MakeRefPtr<ByteStreamTeeSourceAlgorithms>(teeState, TeeBranch::Branch2);
+  teeState->SetBranch2(
+      CreateReadableByteStream(aCx, global, branch2Algorithms, aRv));
   if (aRv.Failed()) {
     return;
   }

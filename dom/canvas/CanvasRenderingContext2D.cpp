@@ -39,7 +39,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsDisplayList.h"
 #include "nsFocusManager.h"
-#include "nsContentUtils.h"
 
 #include "nsTArray.h"
 
@@ -89,7 +88,6 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/FilterInstance.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
@@ -118,7 +116,6 @@
 #include "nsFontMetrics.h"
 #include "nsLayoutUtils.h"
 #include "Units.h"
-#include "CanvasUtils.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
@@ -305,12 +302,9 @@ class CanvasGeneralPattern {
           gradient->mCenter, gradient->mAngle, 0, 1,
           gradient->GetGradientStopsForTarget(aRT));
     } else if (state.patternStyles[aStyle]) {
-      if (aCtx->mCanvasElement) {
-        CanvasUtils::DoDrawImageSecurityCheck(
-            aCtx->mCanvasElement, state.patternStyles[aStyle]->mPrincipal,
-            state.patternStyles[aStyle]->mForceWriteOnly,
-            state.patternStyles[aStyle]->mCORSUsed);
-      }
+      aCtx->DoSecurityCheck(state.patternStyles[aStyle]->mPrincipal,
+                            state.patternStyles[aStyle]->mForceWriteOnly,
+                            state.patternStyles[aStyle]->mCORSUsed);
 
       ExtendMode mode;
       if (state.patternStyles[aStyle]->mRepeat ==
@@ -507,9 +501,8 @@ class AdjustedTargetForShadow {
     int32_t blurRadius = state.ShadowBlurRadius();
     bounds.Inflate(blurRadius);
     bounds.RoundOut();
-    bounds.ToIntRect(&mTempRect);
-
-    if (!mFinalTarget->CanCreateSimilarDrawTarget(mTempRect.Size(),
+    if (!bounds.ToIntRect(&mTempRect) ||
+        !mFinalTarget->CanCreateSimilarDrawTarget(mTempRect.Size(),
                                                   SurfaceFormat::B8G8R8A8)) {
       mTarget = mFinalTarget;
       mCtx = nullptr;
@@ -546,8 +539,9 @@ class AdjustedTargetForShadow {
 
     mFinalTarget->DrawSurfaceWithShadow(
         snapshot, mTempRect.TopLeft(),
-        ToDeviceColor(mCtx->CurrentState().shadowColor),
-        mCtx->CurrentState().shadowOffset, mSigma, mCompositionOp);
+        ShadowOptions(ToDeviceColor(mCtx->CurrentState().shadowColor),
+                      mCtx->CurrentState().shadowOffset, mSigma),
+        mCompositionOp);
   }
 
   DrawTarget* DT() { return mTarget; }
@@ -580,7 +574,11 @@ class AdjustedTarget {
   using ContextState = CanvasRenderingContext2D::ContextState;
 
   explicit AdjustedTarget(CanvasRenderingContext2D* aCtx,
-                          const gfx::Rect* aBounds = nullptr) {
+                          const gfx::Rect* aBounds = nullptr,
+                          bool aAllowOptimization = false)
+      : mCtx(aCtx),
+        mOptimizeShadow(false),
+        mUsedOperation(aCtx->CurrentState().op) {
     // All rects in this function are in the device space of ctx->mTarget.
 
     // In order to keep our temporary surfaces as small as possible, we first
@@ -601,30 +599,39 @@ class AdjustedTarget {
       bounds = bounds.Intersect(*aBounds);
     }
     gfx::Rect boundsAfterFilter = BoundsAfterFilter(bounds, aCtx);
-    if (!aCtx->IsTargetValid()) {
+    if (!aCtx->IsTargetValid() || !boundsAfterFilter.IsFinite()) {
       return;
     }
-
-    mozilla::gfx::CompositionOp op = aCtx->CurrentState().op;
 
     gfx::IntPoint offsetToFinalDT;
 
     // First set up the shadow draw target, because the shadow goes outside.
     // It applies to the post-filter results, if both a filter and a shadow
     // are used.
+    const bool applyFilter = aCtx->NeedToApplyFilter();
     if (aCtx->NeedToDrawShadow()) {
+      if (aAllowOptimization && !applyFilter) {
+        // If only drawing a shadow and no filter, then avoid buffering to an
+        // intermediate target while drawing the shadow directly to the final
+        // target. When doing so, we want to use the actual composition op
+        // instead of OP_OVER.
+        mTarget = aCtx->mTarget;
+        if (mTarget && mTarget->IsValid()) {
+          mOptimizeShadow = true;
+          return;
+        }
+      }
       mShadowTarget = MakeUnique<AdjustedTargetForShadow>(
-          aCtx, aCtx->mTarget, boundsAfterFilter, op);
+          aCtx, aCtx->mTarget, boundsAfterFilter, mUsedOperation);
       mTarget = mShadowTarget->DT();
       offsetToFinalDT = mShadowTarget->OffsetToFinalDT();
 
       // If we also have a filter, the filter needs to be drawn with OP_OVER
       // because shadow drawing already applies op on the result.
-      op = gfx::CompositionOp::OP_OVER;
+      mUsedOperation = CompositionOp::OP_OVER;
     }
 
     // Now set up the filter draw target.
-    const bool applyFilter = aCtx->NeedToApplyFilter();
     if (!aCtx->IsTargetValid()) {
       return;
     }
@@ -640,8 +647,9 @@ class AdjustedTarget {
       }
       mFilterTarget = MakeUnique<AdjustedTargetForFilter>(
           aCtx, mTarget, offsetToFinalDT, intBounds,
-          gfx::RoundedToInt(boundsAfterFilter), op);
+          gfx::RoundedToInt(boundsAfterFilter), mUsedOperation);
       mTarget = mFilterTarget->DT();
+      mUsedOperation = CompositionOp::OP_OVER;
     }
     if (!mTarget) {
       mTarget = aCtx->mTarget;
@@ -658,6 +666,87 @@ class AdjustedTarget {
   operator DrawTarget*() { return mTarget; }
 
   DrawTarget* operator->() MOZ_NO_ADDREF_RELEASE_ON_RETURN { return mTarget; }
+
+  CompositionOp UsedOperation() const { return mUsedOperation; }
+
+  ShadowOptions ShadowParams() const {
+    const ContextState& state = mCtx->CurrentState();
+    return ShadowOptions(ToDeviceColor(state.shadowColor), state.shadowOffset,
+                         state.ShadowBlurSigma());
+  }
+
+  void Fill(const Path* aPath, const Pattern& aPattern,
+            const DrawOptions& aOptions) {
+    if (mOptimizeShadow) {
+      mTarget->DrawShadow(aPath, aPattern, ShadowParams(), aOptions);
+    }
+    mTarget->Fill(aPath, aPattern, aOptions);
+  }
+
+  void FillRect(const Rect& aRect, const Pattern& aPattern,
+                const DrawOptions& aOptions) {
+    if (mOptimizeShadow) {
+      RefPtr<Path> path = MakePathForRect(*mTarget, aRect);
+      mTarget->DrawShadow(path, aPattern, ShadowParams(), aOptions);
+    }
+    mTarget->FillRect(aRect, aPattern, aOptions);
+  }
+
+  void Stroke(const Path* aPath, const Pattern& aPattern,
+              const StrokeOptions& aStrokeOptions,
+              const DrawOptions& aOptions) {
+    if (mOptimizeShadow) {
+      mTarget->DrawShadow(aPath, aPattern, ShadowParams(), aOptions,
+                          &aStrokeOptions);
+    }
+    mTarget->Stroke(aPath, aPattern, aStrokeOptions, aOptions);
+  }
+
+  void StrokeRect(const Rect& aRect, const Pattern& aPattern,
+                  const StrokeOptions& aStrokeOptions,
+                  const DrawOptions& aOptions) {
+    if (mOptimizeShadow) {
+      RefPtr<Path> path = MakePathForRect(*mTarget, aRect);
+      mTarget->DrawShadow(path, aPattern, ShadowParams(), aOptions,
+                          &aStrokeOptions);
+    }
+    mTarget->StrokeRect(aRect, aPattern, aStrokeOptions, aOptions);
+  }
+
+  void StrokeLine(const Point& aStart, const Point& aEnd,
+                  const Pattern& aPattern, const StrokeOptions& aStrokeOptions,
+                  const DrawOptions& aOptions) {
+    if (mOptimizeShadow) {
+      RefPtr<PathBuilder> builder = mTarget->CreatePathBuilder();
+      builder->MoveTo(aStart);
+      builder->LineTo(aEnd);
+      RefPtr<Path> path = builder->Finish();
+      mTarget->DrawShadow(path, aPattern, ShadowParams(), aOptions,
+                          &aStrokeOptions);
+    }
+    mTarget->StrokeLine(aStart, aEnd, aPattern, aStrokeOptions, aOptions);
+  }
+
+  void DrawSurface(SourceSurface* aSurface, const Rect& aDest,
+                   const Rect& aSource, const DrawSurfaceOptions& aSurfOptions,
+                   const DrawOptions& aOptions) {
+    if (mOptimizeShadow) {
+      RefPtr<Path> path = MakePathForRect(*mTarget, aSource);
+      ShadowOptions shadowParams(ShadowParams());
+      SurfacePattern pattern(aSurface, ExtendMode::CLAMP, Matrix(),
+                             shadowParams.BlurRadius() > 1
+                                 ? SamplingFilter::POINT
+                                 : aSurfOptions.mSamplingFilter);
+      Matrix matrix = Matrix::Scaling(aDest.width / aSource.width,
+                                      aDest.height / aSource.height);
+      matrix.PreTranslate(-aSource.x, -aSource.y);
+      matrix.PostTranslate(aDest.x, aDest.y);
+      AutoRestoreTransform autoRestoreTransform(mTarget);
+      mTarget->ConcatTransform(matrix);
+      mTarget->DrawShadow(path, pattern, shadowParams, aOptions);
+    }
+    mTarget->DrawSurface(aSurface, aDest, aSource, aSurfOptions, aOptions);
+  }
 
  private:
   gfx::Rect MaxSourceNeededBoundsForFilter(const gfx::Rect& aDestBounds,
@@ -720,6 +809,9 @@ class AdjustedTarget {
     return gfx::Rect(extents.GetBounds());
   }
 
+  CanvasRenderingContext2D* mCtx;
+  bool mOptimizeShadow;
+  CompositionOp mUsedOperation;
   RefPtr<DrawTarget> mTarget;
   UniquePtr<AdjustedTargetForShadow> mShadowTarget;
   UniquePtr<AdjustedTargetForFilter> mFilterTarget;
@@ -1511,6 +1603,14 @@ bool CanvasRenderingContext2D::TryBasicTarget(
   return true;
 }
 
+Maybe<SurfaceDescriptor> CanvasRenderingContext2D::GetFrontBuffer(
+    WebGLFramebufferJS*, const bool webvr) {
+  if (mBufferProvider) {
+    return mBufferProvider->GetFrontBuffer();
+  }
+  return Nothing();
+}
+
 PresShell* CanvasRenderingContext2D::GetPresShell() {
   if (mCanvasElement) {
     return mCanvasElement->OwnerDoc()->GetPresShell();
@@ -2149,7 +2249,9 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     return nullptr;
   }
 
-  Element* element;
+  Element* element = nullptr;
+  OffscreenCanvas* offscreenCanvas = nullptr;
+
   if (aSource.IsHTMLCanvasElement()) {
     HTMLCanvasElement* canvas = &aSource.GetAsHTMLCanvasElement();
     element = canvas;
@@ -2195,9 +2297,9 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
         mozilla::dom::HTMLVideoElement::CallerAPI::CREATE_PATTERN);
     element = &video;
   } else if (aSource.IsOffscreenCanvas()) {
-    OffscreenCanvas& canvas = aSource.GetAsOffscreenCanvas();
+    offscreenCanvas = &aSource.GetAsOffscreenCanvas();
 
-    nsIntSize size = canvas.GetWidthHeight();
+    nsIntSize size = offscreenCanvas->GetWidthHeight();
     if (size.width == 0) {
       aError.ThrowInvalidStateError("Passed-in canvas has width 0");
       return nullptr;
@@ -2208,23 +2310,22 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
       return nullptr;
     }
 
-    nsICanvasRenderingContextInternal* srcCanvas = canvas.GetContext();
-    if (!srcCanvas) {
-      aError.ThrowInvalidStateError("Passed-in canvas has no context");
-      return nullptr;
+    nsICanvasRenderingContextInternal* srcCanvas =
+        offscreenCanvas->GetContext();
+    if (srcCanvas) {
+      RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
+      if (!srcSurf) {
+        aError.ThrowInvalidStateError(
+            "Passed-in canvas failed to create snapshot");
+        return nullptr;
+      }
+
+      RefPtr<CanvasPattern> pat =
+          new CanvasPattern(this, srcSurf, repeatMode, nullptr,
+                            offscreenCanvas->IsWriteOnly(), false);
+
+      return pat.forget();
     }
-
-    RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
-    if (!srcSurf) {
-      aError.ThrowInvalidStateError(
-          "Passed-in canvas failed to create snapshot");
-      return nullptr;
-    }
-
-    RefPtr<CanvasPattern> pat = new CanvasPattern(
-        this, srcSurf, repeatMode, nullptr, canvas.IsWriteOnly(), false);
-
-    return pat.forget();
   } else {
     // Special case for ImageBitmap
     ImageBitmap& imgBitmap = aSource.GetAsImageBitmap();
@@ -2260,7 +2361,10 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
   auto flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
                nsLayoutUtils::SFE_EXACT_SIZE_SURFACE;
   SurfaceFromElementResult res =
-      nsLayoutUtils::SurfaceFromElement(element, flags, mTarget);
+      offscreenCanvas
+          ? nsLayoutUtils::SurfaceFromOffscreenCanvas(offscreenCanvas, flags,
+                                                      mTarget)
+          : nsLayoutUtils::SurfaceFromElement(element, flags, mTarget);
 
   // Per spec, we should throw here for the HTMLImageElement and SVGImageElement
   // cases if the image request state is "broken".  In terms of the infromation
@@ -2659,11 +2763,10 @@ void CanvasRenderingContext2D::FillRect(double aX, double aY, double aW,
   }
   state = nullptr;
 
-  CompositionOp op = UsedOperation();
   bool isColor;
-  bool discardContent =
-      PatternIsOpaque(Style::FILL, &isColor) &&
-      (op == CompositionOp::OP_OVER || op == CompositionOp::OP_SOURCE);
+  bool discardContent = PatternIsOpaque(Style::FILL, &isColor) &&
+                        (CurrentState().op == CompositionOp::OP_OVER ||
+                         CurrentState().op == CompositionOp::OP_SOURCE);
   const gfx::Rect fillRect(aX, aY, aW, aH);
   EnsureTarget(discardContent ? &fillRect : nullptr, discardContent && isColor);
   if (!IsTargetValid()) {
@@ -2683,13 +2786,14 @@ void CanvasRenderingContext2D::FillRect(double aX, double aY, double aW,
                                     ? AntialiasMode::DEFAULT
                                     : AntialiasMode::NONE;
 
-  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
+  CompositionOp op = target.UsedOperation();
   if (!target) {
     return;
   }
-  target->FillRect(gfx::Rect(aX, aY, aW, aH),
-                   CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
-                   DrawOptions(CurrentState().globalAlpha, op, antialiasMode));
+  target.FillRect(gfx::Rect(aX, aY, aW, aH),
+                  CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
+                  DrawOptions(CurrentState().globalAlpha, op, antialiasMode));
 
   RedrawUser(gfxRect(aX, aY, aW, aH));
 }
@@ -2722,7 +2826,6 @@ void CanvasRenderingContext2D::StrokeRect(double aX, double aY, double aW,
     bounds = mTarget->GetTransform().TransformBounds(bounds);
   }
 
-  auto op = UsedOperation();
   if (!IsTargetValid()) {
     return;
   }
@@ -2732,13 +2835,14 @@ void CanvasRenderingContext2D::StrokeRect(double aX, double aY, double aW,
     if (CurrentState().lineJoin == JoinStyle::ROUND) {
       cap = CapStyle::ROUND;
     }
-    AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+    AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
+    auto op = target.UsedOperation();
     if (!target) {
       return;
     }
 
     const ContextState& state = CurrentState();
-    target->StrokeLine(
+    target.StrokeLine(
         Point(aX, aY), Point(aX + aW, aY),
         CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
         StrokeOptions(state.lineWidth, state.lineJoin, cap, state.miterLimit,
@@ -2753,13 +2857,14 @@ void CanvasRenderingContext2D::StrokeRect(double aX, double aY, double aW,
     if (CurrentState().lineJoin == JoinStyle::ROUND) {
       cap = CapStyle::ROUND;
     }
-    AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+    AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
+    auto op = target.UsedOperation();
     if (!target) {
       return;
     }
 
     const ContextState& state = CurrentState();
-    target->StrokeLine(
+    target.StrokeLine(
         Point(aX, aY), Point(aX, aY + aH),
         CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
         StrokeOptions(state.lineWidth, state.lineJoin, cap, state.miterLimit,
@@ -2769,13 +2874,14 @@ void CanvasRenderingContext2D::StrokeRect(double aX, double aY, double aW,
     return;
   }
 
-  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
+  auto op = target.UsedOperation();
   if (!target) {
     return;
   }
 
   const ContextState& state = CurrentState();
-  target->StrokeRect(
+  target.StrokeRect(
       gfx::Rect(aX, aY, aW, aH),
       CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
       StrokeOptions(state.lineWidth, state.lineJoin, state.lineCap,
@@ -2813,18 +2919,18 @@ void CanvasRenderingContext2D::Fill(const CanvasWindingRule& aWinding) {
     bounds = mPath->GetBounds(mTarget->GetTransform());
   }
 
-  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
   if (!target) {
     return;
   }
 
-  auto op = UsedOperation();
+  auto op = target.UsedOperation();
   if (!IsTargetValid() || !target) {
     return;
   }
-  target->Fill(mPath,
-               CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
-               DrawOptions(CurrentState().globalAlpha, op));
+  target.Fill(mPath,
+              CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
+              DrawOptions(CurrentState().globalAlpha, op));
   Redraw();
 }
 
@@ -2849,18 +2955,18 @@ void CanvasRenderingContext2D::Fill(const CanvasPath& aPath,
     bounds = gfxpath->GetBounds(mTarget->GetTransform());
   }
 
-  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
   if (!target) {
     return;
   }
 
-  auto op = UsedOperation();
+  auto op = target.UsedOperation();
   if (!IsTargetValid() || !target) {
     return;
   }
-  target->Fill(gfxpath,
-               CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
-               DrawOptions(CurrentState().globalAlpha, op));
+  target.Fill(gfxpath,
+              CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
+              DrawOptions(CurrentState().globalAlpha, op));
   Redraw();
 }
 
@@ -2886,18 +2992,18 @@ void CanvasRenderingContext2D::Stroke() {
     bounds = mPath->GetStrokedBounds(strokeOptions, mTarget->GetTransform());
   }
 
-  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
   if (!target) {
     return;
   }
 
-  auto op = UsedOperation();
+  auto op = target.UsedOperation();
   if (!IsTargetValid() || !target) {
     return;
   }
-  target->Stroke(mPath,
-                 CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
-                 strokeOptions, DrawOptions(CurrentState().globalAlpha, op));
+  target.Stroke(mPath,
+                CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
+                strokeOptions, DrawOptions(CurrentState().globalAlpha, op));
   Redraw();
 }
 
@@ -2929,18 +3035,18 @@ void CanvasRenderingContext2D::Stroke(const CanvasPath& aPath) {
     bounds = gfxpath->GetStrokedBounds(strokeOptions, mTarget->GetTransform());
   }
 
-  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds);
+  AdjustedTarget target(this, bounds.IsEmpty() ? nullptr : &bounds, true);
   if (!target) {
     return;
   }
 
-  auto op = UsedOperation();
+  auto op = target.UsedOperation();
   if (!IsTargetValid() || !target) {
     return;
   }
-  target->Stroke(gfxpath,
-                 CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
-                 strokeOptions, DrawOptions(CurrentState().globalAlpha, op));
+  target.Stroke(gfxpath,
+                CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
+                strokeOptions, DrawOptions(CurrentState().globalAlpha, op));
   Redraw();
 }
 
@@ -3750,7 +3856,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor
     }
 
     drawOpts.mAlpha = state->globalAlpha;
-    drawOpts.mCompositionOp = mCtx->UsedOperation();
+    drawOpts.mCompositionOp = target.UsedOperation();
     if (!mCtx->IsTargetValid()) {
       return;
     }
@@ -4533,6 +4639,33 @@ SurfaceFromElementResult CanvasRenderingContext2D::CachedSurfaceFromElement(
   return res;
 }
 
+static void SwapScaleWidthHeightForRotation(gfx::Rect& aRect,
+                                            VideoInfo::Rotation aDegrees) {
+  if (aDegrees == VideoInfo::Rotation::kDegree_90 ||
+      aDegrees == VideoInfo::Rotation::kDegree_270) {
+    std::swap(aRect.width, aRect.height);
+  }
+}
+
+static Matrix ComputeRotationMatrix(gfxFloat aRotatedWidth,
+                                    gfxFloat aRotatedHeight,
+                                    VideoInfo::Rotation aDegrees) {
+  Matrix shiftVideoCenterToOrigin;
+  if (aDegrees == VideoInfo::Rotation::kDegree_90 ||
+      aDegrees == VideoInfo::Rotation::kDegree_270) {
+    shiftVideoCenterToOrigin =
+        Matrix::Translation(-aRotatedHeight / 2.0, -aRotatedWidth / 2.0);
+  } else {
+    shiftVideoCenterToOrigin =
+        Matrix::Translation(-aRotatedWidth / 2.0, -aRotatedHeight / 2.0);
+  }
+
+  Matrix rotation = Matrix::Rotation(gfx::Float(aDegrees / 180.0 * M_PI));
+  Matrix shiftLeftTopToOrigin =
+      Matrix::Translation(aRotatedWidth / 2.0, aRotatedHeight / 2.0);
+  return shiftVideoCenterToOrigin * rotation * shiftLeftTopToOrigin;
+}
+
 // drawImage(in HTMLImageElement image, in float dx, in float dy);
 //   -- render image from 0,0 at dx,dy top-left coords
 // drawImage(in HTMLImageElement image, in float dx, in float dy, in float dw,
@@ -4568,8 +4701,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
   RefPtr<SourceSurface> srcSurf;
   gfx::IntSize imgSize;
   gfx::IntSize intrinsicImgSize;
-
   Element* element = nullptr;
+  OffscreenCanvas* offscreenCanvas = nullptr;
 
   EnsureTarget();
   if (!IsTargetValid()) {
@@ -4588,17 +4721,20 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       SetWriteOnly();
     }
   } else if (aImage.IsOffscreenCanvas()) {
-    OffscreenCanvas& canvas = aImage.GetAsOffscreenCanvas();
-    srcSurf = canvas.GetSurfaceSnapshot();
-    if (!srcSurf) {
-      return;
+    offscreenCanvas = &aImage.GetAsOffscreenCanvas();
+    nsIntSize size = offscreenCanvas->GetWidthHeight();
+    if (size.IsEmpty()) {
+      return aError.ThrowInvalidStateError("Passed-in canvas is empty");
     }
 
-    if (canvas.IsWriteOnly()) {
+    srcSurf = offscreenCanvas->GetSurfaceSnapshot();
+    if (srcSurf) {
+      imgSize = intrinsicImgSize = srcSurf->GetSize();
+    }
+
+    if (offscreenCanvas->IsWriteOnly()) {
       SetWriteOnly();
     }
-
-    imgSize = intrinsicImgSize = srcSurf->GetSize();
   } else if (aImage.IsImageBitmap()) {
     ImageBitmap& imageBitmap = aImage.GetAsImageBitmap();
     srcSurf = imageBitmap.PrepareForDrawTarget(mTarget);
@@ -4643,11 +4779,15 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
                         nsLayoutUtils::SFE_NO_RASTERIZING_VECTORS |
                         nsLayoutUtils::SFE_EXACT_SIZE_SURFACE;
 
-    SurfaceFromElementResult res =
-        CanvasRenderingContext2D::CachedSurfaceFromElement(element);
-
-    if (!res.mSourceSurface) {
-      res = nsLayoutUtils::SurfaceFromElement(element, sfeFlags, mTarget);
+    SurfaceFromElementResult res;
+    if (offscreenCanvas) {
+      res = nsLayoutUtils::SurfaceFromOffscreenCanvas(offscreenCanvas, sfeFlags,
+                                                      mTarget);
+    } else {
+      res = CanvasRenderingContext2D::CachedSurfaceFromElement(element);
+      if (!res.mSourceSurface) {
+        res = nsLayoutUtils::SurfaceFromElement(element, sfeFlags, mTarget);
+      }
     }
 
     if (!res.mSourceSurface && !res.mDrawInfo.mImgContainer) {
@@ -4668,11 +4808,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
     imgSize = res.mSize;
     intrinsicImgSize = res.mIntrinsicSize;
-
-    if (mCanvasElement) {
-      CanvasUtils::DoDrawImageSecurityCheck(mCanvasElement, res.mPrincipal,
-                                            res.mIsWriteOnly, res.mCORSUsed);
-    }
+    DoSecurityCheck(res.mPrincipal, res.mIsWriteOnly, res.mCORSUsed);
 
     if (res.mSourceSurface) {
       if (res.mImageRequest) {
@@ -4756,23 +4892,49 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       srcSurf = ExtractSubrect(srcSurf, &sourceRect, mTarget);
     }
 
-    AdjustedTarget tempTarget(this, bounds.IsEmpty() ? nullptr : &bounds);
+    AdjustedTarget tempTarget(this, bounds.IsEmpty() ? nullptr : &bounds, true);
     if (!tempTarget) {
-      gfxDevCrash(LogReason::InvalidDrawTarget)
-          << "Invalid adjusted target in Canvas2D "
-          << gfx::hexa((DrawTarget*)mTarget) << ", " << NeedToDrawShadow()
-          << NeedToApplyFilter();
+      gfxWarning() << "Invalid adjusted target in Canvas2D "
+                   << gfx::hexa((DrawTarget*)mTarget) << ", "
+                   << NeedToDrawShadow() << NeedToApplyFilter();
       return;
     }
 
-    auto op = UsedOperation();
+    auto op = tempTarget.UsedOperation();
     if (!IsTargetValid() || !tempTarget) {
       return;
     }
-    tempTarget->DrawSurface(
-        srcSurf, gfx::Rect(aDx, aDy, aDw, aDh), sourceRect,
+
+    VideoInfo::Rotation rotationDeg = VideoInfo::Rotation::kDegree_0;
+    if (HTMLVideoElement* video = HTMLVideoElement::FromNodeOrNull(element)) {
+      rotationDeg = video->RotationDegrees();
+    }
+
+    gfx::Rect destRect(aDx, aDy, aDw, aDh);
+
+    Matrix transform;
+    if (rotationDeg != VideoInfo::Rotation::kDegree_0) {
+      Matrix preTransform = ComputeRotationMatrix(aDw, aDh, rotationDeg);
+      transform = preTransform * Matrix::Translation(aDx, aDy);
+
+      SwapScaleWidthHeightForRotation(destRect, rotationDeg);
+      // When rotation exists, aDx, aDy is handled by transform, Since aDest.x
+      // aDest.y handling of DrawSurface() does not care about the rotation.
+      destRect.x = 0;
+      destRect.y = 0;
+    }
+    Matrix currentTransform = tempTarget->GetTransform();
+    transform *= currentTransform;
+
+    tempTarget->SetTransform(transform);
+
+    tempTarget.DrawSurface(
+        srcSurf, destRect, sourceRect,
         DrawSurfaceOptions(samplingFilter, SamplingBounds::UNBOUNDED),
         DrawOptions(CurrentState().globalAlpha, op, antialiasMode));
+
+    tempTarget->SetTransform(currentTransform);
+
   } else {
     DrawDirectlyToCanvas(drawInfo, &bounds, gfx::Rect(aDx, aDy, aDw, aDh),
                          gfx::Rect(aSx, aSy, aSw, aSh), imgSize);
@@ -4821,7 +4983,7 @@ void CanvasRenderingContext2D::DrawDirectlyToCanvas(
           .PreScale(1.0 / contextScale.width, 1.0 / contextScale.height)
           .PreTranslate(aDest.x - aSrc.x, aDest.y - aSrc.y));
 
-  context->SetOp(UsedOperation());
+  context->SetOp(tempTarget.UsedOperation());
 
   // FLAG_CLAMP is added for increased performance, since we never tile here.
   uint32_t modifiedFlags = aImage.mDrawingFlags | imgIContainer::FLAG_CLAMP;
@@ -4951,7 +5113,7 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
     nsContentUtils::FlushLayoutForTree(aWindow.GetOuterWindow());
   }
 
-  CompositionOp op = UsedOperation();
+  CompositionOp op = CurrentState().op;
   bool discardContent =
       GlobalAlpha() == 1.0f &&
       (op == CompositionOp::OP_OVER || op == CompositionOp::OP_SOURCE);
@@ -5021,7 +5183,7 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
   op = CompositionOp::OP_ADD;
   if (gfxPlatform::GetPlatform()->SupportsAzureContentForDrawTarget(mTarget) &&
       GlobalAlpha() == 1.0f) {
-    op = UsedOperation();
+    op = CurrentState().op;
     if (!IsTargetValid()) {
       aError.Throw(NS_ERROR_FAILURE);
       return;
@@ -5073,7 +5235,7 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
       return;
     }
 
-    op = UsedOperation();
+    op = CurrentState().op;
     if (!IsTargetValid()) {
       aError.Throw(NS_ERROR_FAILURE);
       return;

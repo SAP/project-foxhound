@@ -1,6 +1,7 @@
 ---
 1proc:
     description: "{description} with e10s disabled"
+    component: "Testing::General"
     when:
         $eval: '!("android" in task["test-platform"])'
     suffix: "1proc"
@@ -11,6 +12,7 @@
 
 headless:
     description: "{description} without a window"
+    component: "Firefox::Headless"
     suffix: "headless"
     replace:
         tier: 2
@@ -21,7 +23,7 @@ headless:
 
 a11y-checks:
     description: "{description} with accessibility checks enabled"
-    contact: jteh
+    component: "Core::Disability Access APIs"
     suffix: "a11y-checks"
     replace:
         tier: 2
@@ -32,7 +34,7 @@ a11y-checks:
 
 aab:
     description: "{description} with aab test_runner"
-    contact: agi
+    component: "GeckoView::General"
     when: &gv_e10s_filter
         $eval: '"android" in task["test-platform"]'
     suffix: "aab"
@@ -52,6 +54,7 @@ aab:
 
 geckoview-e10s-single:
     description: "{description} with single-process e10s"
+    component: "Core::DOM: Content Processes"
     when:
         <<: *gv_e10s_filter
     suffix: "e10s-single"
@@ -62,6 +65,7 @@ geckoview-e10s-single:
 
 geckoview-fission:
     description: "{description} with fission enabled"
+    component: "Core::DOM: Content Processes"
     when:
         <<: *gv_e10s_filter
     suffix: "fis"
@@ -72,16 +76,25 @@ geckoview-fission:
 
 fission:
     description: "{description} with fission enabled"
-    contact: cpeterson
+    component: "Testing::General"
     suffix: "fis"
     merge:
         mozharness:
             extra-options:
                 - "--setpref=fission.autostart=true"
 
+no-fission:
+    description: "{description} without fission enabled"
+    component: "Testing::General"
+    suffix: "nofis"
+    merge:
+        mozharness:
+            extra-options:
+                - "--setpref=fission.autostart=false"
+
 fission-xorigin:
     description: "{description} with cross-origin and fission enabled"
-    contact: cpeterson
+    component: "Core::DOM: Content Processes"
     suffix: "fis-xorig"
     replace:
         e10s: true
@@ -93,7 +106,7 @@ fission-xorigin:
 
 socketprocess:
     description: "{description} with socket process enabled"
-    contact: kershaw
+    component: "Core::Networking"
     suffix: "spi"
     merge:
         mozharness:
@@ -103,7 +116,7 @@ socketprocess:
 
 socketprocess_networking:
     description: "{description} with networking on socket process enabled"
-    contact: kershaw
+    component: "Core::Networking"
     suffix: "spi-nw"
     merge:
         mozharness:
@@ -114,6 +127,7 @@ socketprocess_networking:
 
 wayland:
     description: "{description} with Wayland backend enabled"
+    component: "Core::Widget: Gtk"
     when:
         $eval: '"linux" in task["test-platform"]'
     suffix: "wayland"
@@ -126,7 +140,7 @@ wayland:
 
 webrender-sw:
     description: "{description} with software webrender enabled"
-    contact: aosmond
+    component: "Core::Graphics: WebRender"
     suffix: "swr"
     merge:
         webrender: true
@@ -134,29 +148,28 @@ webrender-sw:
             extra-options:
                 - "--setpref=gfx.webrender.software=true"
 
-# TODO: After 2022-01-01, verify this variant is still needed.
 webgl-ipc:
     description: "{description} with WebGL IPC process enabled"
-    contact: jgilbert
+    component: "Core::Canvas: WebGL"
     suffix: "gli"
     merge:
         mozharness:
             extra-options:
                 - "--setpref=webgl.out-of-process=true"
+                - "--setpref=security.sandbox.content.headless=true"
 
-devtools-no-eft-no-fission:
-    description: "{description} with DevTools EFT disabled and Fission disabled"
-    contact: nchevobbe
-    suffix: "dt-no-eft-no-fis"
+devtools-no-eft:
+    description: "{description} with DevTools EFT disabled"
+    component: "DevTools::Framework"
+    suffix: "dt-no-eft"
     merge:
         mozharness:
             extra-options:
                 - "--setpref=devtools.every-frame-target.enabled=false"
-                - "--setpref=fission.autostart=false"
 
 dynamic-first-party-isolation:
     description: "{description} with dFPI enabled"
-    contact: timhuang
+    component: "Core::Privacy: Anti-Tracking"
     suffix: "dfpi"
     replace:
         tier: 3

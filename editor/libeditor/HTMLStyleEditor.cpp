@@ -85,8 +85,8 @@ nsresult HTMLEditor::SetInlinePropertyAsAction(nsAtom& aProperty,
 
   // XXX Due to bug 1659276 and bug 1659924, we should not scroll selection
   //     into view after setting the new style.
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::No);
+  AutoPlaceholderBatch treatAsOneTransaction(*this, ScrollSelectionIntoView::No,
+                                             __FUNCTION__);
 
   nsAtom* property = &aProperty;
   nsAtom* attribute = aAttribute;
@@ -229,8 +229,8 @@ nsresult HTMLEditor::SetInlinePropertyInternal(
     return result.Rv();
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eInsertElement, nsIEditor::eNext, ignoredError);
@@ -877,7 +877,8 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
   }
 
   // Split any matching style nodes above the point.
-  SplitNodeResult result(aPointToSplit);
+  SplitNodeResult result = SplitNodeResult::NotHandled(
+      aPointToSplit, SplitNodeDirection::LeftNodeIsNewOne);
   MOZ_ASSERT(!result.Handled());
   for (OwningNonNull<nsIContent>& content : arrayOfParents) {
     bool isSetByCSS = false;
@@ -932,9 +933,7 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
       continue;
     }
     // Mark the final result as handled forcibly.
-    result = SplitNodeResult(splitNodeResult.GetPreviousContent(),
-                             splitNodeResult.GetNextContent(),
-                             SplitNodeDirection::LeftNodeIsNewOne);
+    result = splitNodeResult.ToHandledResult();
     MOZ_ASSERT(result.Handled());
   }
 
@@ -1724,8 +1723,8 @@ nsresult HTMLEditor::RemoveAllInlinePropertiesAsAction(
     return EditorBase::ToGenericNSResult(rv);
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eRemoveAllTextProperties, nsIEditor::eNext,
@@ -1898,8 +1897,8 @@ nsresult HTMLEditor::RemoveInlinePropertyInternal(
     return result.Rv();
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eRemoveTextProperty, nsIEditor::eNext,
@@ -2260,8 +2259,8 @@ nsresult HTMLEditor::RelativeFontChange(FontSize aDir) {
   }
 
   // Wrap with txn batching, rules sniffing, and selection preservation code
-  AutoPlaceholderBatch treatAsOneTransaction(*this,
-                                             ScrollSelectionIntoView::Yes);
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
   IgnoredErrorResult ignoredError;
   AutoEditSubActionNotifier startToHandleEditSubAction(
       *this, EditSubAction::eSetTextProperty, nsIEditor::eNext, ignoredError);

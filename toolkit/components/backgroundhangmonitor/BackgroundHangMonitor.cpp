@@ -95,7 +95,7 @@ class BackgroundHangManager : public nsIObserver {
   static bool sDisabled;
 
   // Lock for access to members of this class
-  Monitor mLock;
+  Monitor mLock MOZ_UNANNOTATED;
   // Current time as seen by hang monitors
   TimeStamp mNow;
   // List of BackgroundHangThread instances associated with each thread
@@ -350,7 +350,6 @@ void BackgroundHangManager::RunMonitorThread() {
   while (!mShutdown) {
     autoLock.Wait(waitTime);
 
-    PROFILER_MARKER_UNTYPED("Wakeup", OTHER);
     TimeStamp newTime = TimeStamp::Now();
     TimeDuration systemInterval = newTime - systemTime;
     systemTime = newTime;

@@ -14,7 +14,6 @@
 #include "LiveResizeListener.h"
 #include "SwipeTracker.h"
 #include "TouchEvents.h"
-#include "WritingModes.h"
 #include "X11UndefineNone.h"
 #include "base/thread.h"
 #include "mozilla/ArrayUtils.h"
@@ -22,6 +21,7 @@
 #include "mozilla/GlobalKeyListener.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Sprintf.h"
@@ -124,19 +124,6 @@ uint64_t AutoObserverNotifier::sObserverId = 0;
 // milliseconds.
 const uint32_t kAsyncDragDropTimeout = 1000;
 
-namespace mozilla::widget {
-
-void IMENotification::SelectionChangeDataBase::SetWritingMode(
-    const WritingMode& aWritingMode) {
-  mWritingMode = aWritingMode.mWritingMode.bits;
-}
-
-WritingMode IMENotification::SelectionChangeDataBase::GetWritingMode() const {
-  return WritingMode(mWritingMode);
-}
-
-}  // namespace mozilla::widget
-
 NS_IMPL_ISUPPORTS(nsBaseWidget, nsIWidget, nsISupportsWeakReference)
 
 //-------------------------------------------------------------------------
@@ -145,12 +132,14 @@ NS_IMPL_ISUPPORTS(nsBaseWidget, nsIWidget, nsISupportsWeakReference)
 //
 //-------------------------------------------------------------------------
 
-nsBaseWidget::nsBaseWidget()
+nsBaseWidget::nsBaseWidget() : nsBaseWidget(eBorderStyle_none) {}
+
+nsBaseWidget::nsBaseWidget(nsBorderStyle aBorderStyle)
     : mWidgetListener(nullptr),
       mAttachedWidgetListener(nullptr),
       mPreviouslyAttachedWidgetListener(nullptr),
       mCompositorVsyncDispatcher(nullptr),
-      mBorderStyle(eBorderStyle_none),
+      mBorderStyle(aBorderStyle),
       mBounds(0, 0, 0, 0),
       mOriginalBounds(nullptr),
       mSizeMode(nsSizeMode_Normal),
@@ -362,11 +351,8 @@ void nsBaseWidget::DestroyCompositor() {
     mAPZC = nullptr;
     SetCompositorWidgetDelegate(nullptr);
     mCompositorBridgeChild = nullptr;
-
-    // XXX CompositorBridgeChild and CompositorBridgeParent might be re-created
-    // in ClientLayerManager destructor. See bug 1133426.
-    RefPtr<CompositorSession> session = std::move(mCompositorSession);
-    session->Shutdown();
+    mCompositorSession->Shutdown();
+    mCompositorSession = nullptr;
   }
 }
 
@@ -1230,8 +1216,6 @@ already_AddRefed<WebRenderLayerManager> nsBaseWidget::CreateCompositorSession(
     }
 #endif
 
-    options.SetUseWebGPU(StaticPrefs::dom_webgpu_enabled());
-
 #ifdef MOZ_WIDGET_ANDROID
     // Unconditionally set the compositor as initially paused, as we have not
     // yet had a chance to send the compositor surface to the GPU process. We
@@ -1244,10 +1228,15 @@ already_AddRefed<WebRenderLayerManager> nsBaseWidget::CreateCompositorSession(
 
     RefPtr<WebRenderLayerManager> lm = new WebRenderLayerManager(this);
 
+    uint64_t innerWindowId = 0;
+    if (Document* doc = GetDocument()) {
+      innerWindowId = doc->InnerWindowID();
+    }
+
     bool retry = false;
     mCompositorSession = gpu->CreateTopLevelCompositor(
         this, lm, GetDefaultScale(), options, UseExternalCompositingSurface(),
-        gfx::IntSize(aWidth, aHeight), &retry);
+        gfx::IntSize(aWidth, aHeight), innerWindowId, &retry);
 
     if (mCompositorSession) {
       TextureFactoryIdentifier textureFactoryIdentifier;
@@ -1524,6 +1513,8 @@ LayoutDeviceIntPoint nsBaseWidget::GetClientOffset() {
 nsresult nsBaseWidget::SetNonClientMargins(LayoutDeviceIntMargin& margins) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
+
+void nsBaseWidget::SetResizeMargin(LayoutDeviceIntCoord aResizeMargin) {}
 
 uint32_t nsBaseWidget::GetMaxTouchPoints() const { return 0; }
 
@@ -2198,7 +2189,7 @@ const IMENotificationRequests& nsIWidget::IMENotificationRequestsRef() {
 
 void nsIWidget::PostHandleKeyEvent(mozilla::WidgetKeyboardEvent* aEvent) {}
 
-bool nsIWidget::GetEditCommands(nsIWidget::NativeKeyBindingsType aType,
+bool nsIWidget::GetEditCommands(NativeKeyBindingsType aType,
                                 const WidgetKeyboardEvent& aEvent,
                                 nsTArray<CommandInt>& aCommands) {
   MOZ_ASSERT(aEvent.IsTrusted());

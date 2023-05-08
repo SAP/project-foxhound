@@ -17,6 +17,12 @@ const { AppConstants } = ChromeUtils.import(
 
 ChromeUtils.defineModuleGetter(
   this,
+  "DownloadUtils",
+  "resource://gre/modules/DownloadUtils.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
   "PluralForm",
   "resource://gre/modules/PluralForm.jsm"
 );
@@ -37,6 +43,9 @@ window.addEventListener("load", function onload(event) {
     Troubleshoot.snapshot(async function(snapshot) {
       for (let prop in snapshotFormatters) {
         await snapshotFormatters[prop](snapshot[prop]);
+      }
+      if (location.hash) {
+        scrollToSection();
       }
     });
     populateActionBox();
@@ -230,6 +239,17 @@ var snapshotFormatters = {
     document.l10n.setAttributes($("key-mozilla-box"), keyMozillaFound);
 
     $("safemode-box").textContent = data.safeMode;
+
+    const formatHumanReadableBytes = (elem, bytes) => {
+      let size = DownloadUtils.convertByteUnits(bytes);
+      document.l10n.setAttributes(elem, "app-basics-data-size", {
+        value: size[0],
+        unit: size[1],
+      });
+    };
+
+    formatHumanReadableBytes($("memory-size-box"), data.memorySizeBytes);
+    formatHumanReadableBytes($("disk-available-box"), data.diskAvailableBytes);
   },
 
   crashes(data) {
@@ -1729,4 +1749,16 @@ function setupEventListeners() {
   $("profile-dir-button").addEventListener("click", function(event) {
     openProfileDirectory();
   });
+}
+
+/**
+ * Scroll to section specified by location.hash
+ */
+function scrollToSection() {
+  const id = location.hash.substr(1);
+  const elem = $(id);
+
+  if (elem) {
+    elem.scrollIntoView();
+  }
 }

@@ -180,7 +180,7 @@ class imgFrame {
  private:  // methods
   ~imgFrame();
 
-  bool AreAllPixelsWritten() const;
+  bool AreAllPixelsWritten() const REQUIRES(mMonitor);
   nsresult ImageUpdatedInternal(const nsIntRect& aUpdateRect);
   void GetImageDataInternal(uint8_t** aData, uint32_t* length) const;
   uint32_t GetImageBytesPerRow() const;
@@ -224,20 +224,20 @@ class imgFrame {
   /**
    * Used for rasterized images, this contains the raw pixel data.
    */
-  RefPtr<SourceSurfaceSharedData> mRawSurface;
-  RefPtr<SourceSurfaceSharedData> mBlankRawSurface;
+  RefPtr<SourceSurfaceSharedData> mRawSurface GUARDED_BY(mMonitor);
+  RefPtr<SourceSurfaceSharedData> mBlankRawSurface GUARDED_BY(mMonitor);
 
   /**
    * Used for vector images that were not rasterized directly. This might be a
    * blob recording or native surface.
    */
-  RefPtr<SourceSurface> mOptSurface;
+  RefPtr<SourceSurface> mOptSurface GUARDED_BY(mMonitor);
 
-  nsIntRect mDecoded;
+  nsIntRect mDecoded GUARDED_BY(mMonitor);
 
-  bool mAborted;
-  bool mFinished;
-  bool mShouldRecycle;
+  bool mAborted GUARDED_BY(mMonitor);
+  bool mFinished GUARDED_BY(mMonitor);
+  bool mShouldRecycle GUARDED_BY(mMonitor);
 
   //////////////////////////////////////////////////////////////////////////////
   // Effectively const data, only mutated in the Init methods.

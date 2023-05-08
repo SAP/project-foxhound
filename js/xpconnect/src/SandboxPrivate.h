@@ -14,6 +14,7 @@
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
+#include "nsGlobalWindowInner.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 
@@ -49,6 +50,8 @@ class SandboxPrivate : public nsIGlobalObject,
     return static_cast<SandboxPrivate*>(sop);
   }
 
+  mozilla::OriginTrials Trials() const final { return {}; }
+
   nsIPrincipal* GetPrincipal() override { return mPrincipal; }
 
   nsIPrincipal* GetEffectiveStoragePrincipal() override { return mPrincipal; }
@@ -77,6 +80,16 @@ class SandboxPrivate : public nsIGlobalObject,
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> aGivenProto) override {
     MOZ_CRASH("SandboxPrivate doesn't use DOM bindings!");
+  }
+
+  JS::loader::ModuleLoaderBase* GetModuleLoader(JSContext* aCx) override {
+    JSObject* object = GetGlobalJSObject();
+    nsGlobalWindowInner* sandboxWindow = xpc::SandboxWindowOrNull(object, aCx);
+    if (!sandboxWindow) {
+      return nullptr;
+    }
+
+    return sandboxWindow->GetModuleLoader(aCx);
   }
 
   size_t ObjectMoved(JSObject* obj, JSObject* old) {

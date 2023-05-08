@@ -368,9 +368,10 @@ bool NativeObject::addDenseElementPure(JSContext* cx, NativeObject* obj) {
 
 static inline void FreeSlots(JSContext* cx, NativeObject* obj,
                              ObjectSlots* slots, size_t nbytes) {
-  if (cx->isHelperThreadContext()) {
-    js_free(slots);
-  } else if (obj->isTenured()) {
+  // Note: this is called when shrinking slots, not from the finalizer.
+  MOZ_ASSERT(cx->isMainThreadContext());
+
+  if (obj->isTenured()) {
     MOZ_ASSERT(!cx->nursery().isInside(slots));
     js_free(slots);
   } else {
@@ -1071,7 +1072,7 @@ static MOZ_ALWAYS_INLINE bool CallAddPropertyHookDense(JSContext* cx,
   if (MOZ_UNLIKELY(addProperty)) {
     MOZ_ASSERT(!cx->isHelperThreadContext());
 
-    RootedId id(cx, INT_TO_JSID(index));
+    RootedId id(cx, PropertyKey::Int(index));
     if (!CallJSAddPropertyOp(cx, addProperty, obj, id, value)) {
       obj->setDenseElementHole(index);
       return false;
@@ -1176,7 +1177,7 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
       (AddOrChange == IsAddOrChange::Add || existing->isDenseElement())) {
     MOZ_ASSERT(!desc.isAccessorDescriptor());
     MOZ_ASSERT(!obj->is<TypedArrayObject>());
-    uint32_t index = JSID_TO_INT(id);
+    uint32_t index = id.toInt();
     DenseElementResult edResult = obj->ensureDenseElements(cx, index, 1);
     if (edResult == DenseElementResult::Failure) {
       return false;
@@ -1232,8 +1233,8 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
 
   // Clear any existing dense index after adding a sparse indexed property,
   // and investigate converting the object to dense indexes.
-  if (JSID_IS_INT(id)) {
-    uint32_t index = JSID_TO_INT(id);
+  if (id.isInt()) {
+    uint32_t index = id.toInt();
     if constexpr (AddOrChange == IsAddOrChange::Add) {
       MOZ_ASSERT(!obj->containsDenseElement(index));
     } else {
@@ -1764,7 +1765,7 @@ static bool DefineNonexistentProperty(JSContext* cx, HandleNativeObject obj,
                   obj->as<ArgumentsObject>().hasOverriddenIterator());
 
     // We still need to mark any element properties as overridden.
-    if (JSID_IS_INT(id)) {
+    if (id.isInt()) {
       obj->as<ArgumentsObject>().markElementOverridden();
     }
   }
@@ -1807,8 +1808,8 @@ static bool DefineNonexistentProperty(JSContext* cx, HandleNativeObject obj,
 bool js::AddOrUpdateSparseElementHelper(JSContext* cx, HandleArrayObject obj,
                                         int32_t int_id, HandleValue v,
                                         bool strict) {
-  MOZ_ASSERT(INT_FITS_IN_JSID(int_id));
-  RootedId id(cx, INT_TO_JSID(int_id));
+  MOZ_ASSERT(PropertyKey::fitsInInt(int_id));
+  RootedId id(cx, PropertyKey::Int(int_id));
 
   // This helper doesn't handle the case where the index may be in the dense
   // elements
@@ -2088,15 +2089,11 @@ static inline bool GeneralizedGetProperty(JSContext* cx, JSObject* obj, jsid id,
 
 bool js::GetSparseElementHelper(JSContext* cx, HandleArrayObject obj,
                                 int32_t int_id, MutableHandleValue result) {
-  // Callers should have ensured that this object has a static prototype.
-  MOZ_ASSERT(obj->hasStaticPrototype());
-
   // Indexed properties can not exist on the prototype chain.
-  MOZ_ASSERT_IF(obj->staticPrototype() != nullptr,
-                !ObjectMayHaveExtraIndexedProperties(obj->staticPrototype()));
+  MOZ_ASSERT(!PrototypeMayHaveIndexedProperties(obj));
 
-  MOZ_ASSERT(INT_FITS_IN_JSID(int_id));
-  RootedId id(cx, INT_TO_JSID(int_id));
+  MOZ_ASSERT(PropertyKey::fitsInInt(int_id));
+  RootedId id(cx, PropertyKey::Int(int_id));
 
   uint32_t index;
   PropMap* map = obj->shape()->lookup(cx, id, &index);
@@ -2684,7 +2681,7 @@ bool js::CopyDataPropertiesNative(JSContext* cx, HandlePlainObject target,
   RootedShape fromShape(cx, from->shape());
   for (ShapePropertyIter<NoGC> iter(fromShape); !iter.done(); iter++) {
     jsid id = iter->key();
-    MOZ_ASSERT(!JSID_IS_INT(id));
+    MOZ_ASSERT(!id.isInt());
 
     if (!iter->enumerable()) {
       continue;
@@ -2721,7 +2718,7 @@ bool js::CopyDataPropertiesNative(JSContext* cx, HandlePlainObject target,
     MOZ_ASSERT(prop.enumerable());
 
     key = prop.key();
-    MOZ_ASSERT(!JSID_IS_INT(key));
+    MOZ_ASSERT(!key.isInt());
 
     MOZ_ASSERT(from->is<NativeObject>());
     MOZ_ASSERT(from->shape() == fromShape);

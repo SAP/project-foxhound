@@ -380,6 +380,12 @@ const SNAPSHOT_SCHEMA = {
         safeMode: {
           type: "boolean",
         },
+        memorySizeBytes: {
+          type: "number",
+        },
+        diskAvailableBytes: {
+          type: "number",
+        },
       },
     },
     crashes: {
@@ -1172,7 +1178,7 @@ const SNAPSHOT_SCHEMA = {
           },
           required: true,
         },
-        remoteConfigs: {
+        nimbusRollouts: {
           type: "array",
           items: {
             type: "object",

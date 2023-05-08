@@ -14,7 +14,6 @@
 #include "jit/MoveResolver.h"
 #include "vm/BigIntType.h"  // JS::BigInt
 #include "wasm/WasmBuiltins.h"
-#include "wasm/WasmTlsData.h"
 
 #ifdef _M_ARM64
 #  ifdef move32
@@ -2222,10 +2221,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 #ifdef JS_SIMULATOR_ARM64
     svc(vixl::kCheckStackPointer);
 #endif
-  }
-
-  void loadWasmPinnedRegsFromTls() {
-    loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
   }
 
   // Overwrites the payload bits of a dest register containing a Value.

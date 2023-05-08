@@ -9,6 +9,8 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 
+#include "gc/GCContext.h"
+#include "gc/GCInternals.h"
 #include "gc/ParallelWork.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Runtime.h"
@@ -156,16 +158,21 @@ void js::GCParallelTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
 
   setRunning(lock);
 
-  AutoSetHelperThreadContext usesContext(lock);
-  AutoSetContextRuntime ascr(gc->rt);
-  gc::AutoSetThreadIsPerformingGC performingGC;
+  JS::GCContext gcx(gc->rt, false);
+  MOZ_RELEASE_ASSERT(TlsGCContext.init());
+  TlsGCContext.set(&gcx);
+
   runTask(lock);
+
+  TlsGCContext.set(nullptr);
 
   setFinished(lock);
 }
 
 void GCParallelTask::runTask(AutoLockHelperThreadState& lock) {
   // Run the task from either the main thread or a helper thread.
+
+  gc::AutoSetThreadIsPerformingGC performingGC;
 
   // The hazard analysis can't tell what the call to func_ will do but it's not
   // allowed to GC.

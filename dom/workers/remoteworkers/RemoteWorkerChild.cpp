@@ -359,6 +359,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
 
   info.mReferrerInfo = aData.referrerInfo();
   info.mDomain = aData.domain();
+  info.mTrials = aData.originTrials();
   info.mPrincipal = principal;
   info.mPartitionedPrincipal = partitionedPrincipalOrErr.unwrap();
   info.mLoadingPrincipal = loadingPrincipalOrErr.unwrap();
@@ -369,6 +370,8 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   info.mIsThirdPartyContextToTopWindow = aData.isThirdPartyContextToTopWindow();
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
+  info.mShouldResistFingerprinting = nsContentUtils::ShouldResistFingerprinting(
+      info.mPrincipal, info.mOriginAttributes);
   net::CookieJarSettings::Deserialize(aData.cookieJarSettings(),
                                       getter_AddRefs(info.mCookieJarSettings));
 
@@ -635,7 +638,13 @@ void RemoteWorkerChild::CloseWorkerOnMainThread(State& aState) {
   // WorkerPrivate::Cancel.
 
   if (aState.is<Pending>()) {
-    aState.as<Pending>().mWorkerPrivate->Cancel();
+    // SharedWorkerOp::MaybeStart would not block terminate operation while
+    // RemoteWorkerChild::mState is still Pending, and the
+    // Pending.mWorkerPrivate is still nullptr. For the case, just switching the
+    // State to PendingTerminated.
+    if (aState.as<Pending>().mWorkerPrivate) {
+      aState.as<Pending>().mWorkerPrivate->Cancel();
+    }
     TransitionStateToPendingTerminated(aState);
     return;
   }
@@ -936,10 +945,14 @@ class RemoteWorkerChild::SharedWorkerOp : public RemoteWorkerChild::Op {
 
     auto lock = aOwner->mState.Lock();
 
-    MOZ_ASSERT(lock->is<Running>() || IsTerminationOp());
-
     if (IsTerminationOp()) {
       aOwner->CloseWorkerOnMainThread(lock.ref());
+      return;
+    }
+
+    MOZ_ASSERT(lock->is<Running>());
+    if (!lock->is<Running>()) {
+      aOwner->ErrorPropagationDispatch(NS_ERROR_DOM_INVALID_STATE_ERR);
       return;
     }
 

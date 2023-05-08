@@ -69,6 +69,7 @@
 #include "frontend/SharedContext-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/JSObject-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -2155,9 +2156,13 @@ class MOZ_STACK_CLASS ModuleValidator : public ModuleValidatorShared {
 
     // The default options are fine for asm.js
     FeatureOptions options;
+    CompileArgsError error;
     SharedCompileArgs args =
-        CompileArgs::build(cx_, std::move(scriptedCaller), options);
+        CompileArgs::build(cx_, std::move(scriptedCaller), options, &error);
     if (!args) {
+      // EstablishPreconditions will ensure that a compiler is available by
+      // this point
+      MOZ_RELEASE_ASSERT(error == CompileArgsError::OutOfMemory);
       return nullptr;
     }
 
@@ -2655,6 +2660,7 @@ class MOZ_STACK_CLASS FunctionValidator : public FunctionValidatorShared {
   }
 
   [[nodiscard]] bool writeCall(ParseNode* pn, Op op) {
+    MOZ_ASSERT(op == Op::Call);
     if (!encoder().writeOp(op)) {
       return false;
     }
@@ -2662,6 +2668,7 @@ class MOZ_STACK_CLASS FunctionValidator : public FunctionValidatorShared {
     return appendCallSiteLineNumber(pn);
   }
   [[nodiscard]] bool writeCall(ParseNode* pn, MozOp op) {
+    MOZ_ASSERT(op == MozOp::OldCallDirect || op == MozOp::OldCallIndirect);
     if (!encoder().writeOp(op)) {
       return false;
     }
@@ -7082,16 +7089,6 @@ static bool IsAsmJSCompilerAvailable(JSContext* cx) {
 
 static bool EstablishPreconditions(JSContext* cx,
                                    frontend::ParserBase& parser) {
-  if (!IsAsmJSCompilerAvailable(cx)) {
-    if (cx->realm() && cx->realm()->debuggerObservesAsmJS()) {
-      return TypeFailureWarning(
-          parser, "Asm.js optimizer disabled because debugger is active");
-    }
-    return TypeFailureWarning(parser,
-                              "Asm.js optimizer disabled because the compiler "
-                              "is disabled or unavailable");
-  }
-
   switch (parser.options().asmJSOption) {
     case AsmJSOption::DisabledByAsmJSPref:
       return TypeFailureWarning(

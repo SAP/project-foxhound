@@ -11,10 +11,14 @@ const { RemoteAgent } = ChromeUtils.import(
 const { RemoteAgentError } = ChromeUtils.import(
   "chrome://remote/content/cdp/Error.jsm"
 );
+const { TabManager } = ChromeUtils.import(
+  "chrome://remote/content/shared/TabManager.jsm"
+);
 
 const { allowNullOrigin } = ChromeUtils.import(
   "chrome://remote/content/server/WebSocketHandshake.jsm"
 );
+
 // The handshake request created by the browser mochitests contains an origin
 // header, which is currently not supported. This origin is a string "null".
 // Explicitly allow such an origin for the duration of the test.
@@ -73,12 +77,10 @@ this.add_task = function(taskFn, opts = {}) {
 
       if (createTab) {
         tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-        const browsingContextId = tab.linkedBrowser.browsingContext.id;
+        const tabId = TabManager.getIdForBrowser(tab.linkedBrowser);
 
         const targets = await CDP.List();
-        target = targets.find(
-          target => target.browsingContextId === browsingContextId
-        );
+        target = targets.find(target => target.id === tabId);
       }
 
       client = await CDP({ target });

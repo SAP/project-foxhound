@@ -176,7 +176,7 @@ public class SessionAccessibility {
       AccessibilityNodeInfo node = null;
       if (mAttached) {
         node =
-            mSession.getSettings().getFullAccessibilityTree()
+            mSession.getSettings().getFullAccessibilityTree() || isCacheEnabled()
                 ? getNodeFromGecko(virtualDescendantId)
                 : getNodeFromCache(virtualDescendantId);
       }
@@ -824,7 +824,7 @@ public class SessionAccessibility {
     }
 
     final GeckoBundle cachedBundle = getMostRecentBundle(sourceId);
-    if (cachedBundle == null && sourceId != View.NO_ID) {
+    if (cachedBundle == null && sourceId != View.NO_ID && !isCacheEnabled()) {
       // Suppress events from non cached nodes.
       return;
     }
@@ -833,11 +833,19 @@ public class SessionAccessibility {
     event.setPackageName(GeckoAppShell.getApplicationContext().getPackageName());
     event.setSource(mView, sourceId);
     event.setEnabled(true);
-    if (className == CLASSNAME_UNKNOWN && cachedBundle != null) {
-      event.setClassName(getClassName(cachedBundle.getInt("className")));
-    } else {
-      event.setClassName(getClassName(className));
+
+    int eventClassName = className;
+    if (eventClassName == CLASSNAME_UNKNOWN) {
+      if (cachedBundle != null) {
+        eventClassName = cachedBundle.getInt("className");
+      } else if (isCacheEnabled()) {
+        final GeckoBundle bundle = nativeProvider.getNodeInfo(sourceId);
+        if (bundle != null) {
+          eventClassName = bundle.getInt("className");
+        }
+      }
     }
+    event.setClassName(getClassName(eventClassName));
 
     if (eventData != null) {
       if (eventData.containsKey("text")) {
@@ -955,16 +963,21 @@ public class SessionAccessibility {
 
   private boolean pivot(
       final int id, final String granularity, final boolean forward, final boolean inclusive) {
+    if (!forward && id == View.NO_ID) {
+      // If attempting to pivot backwards from the root view, return false.
+      return false;
+    }
+
+    if (isCacheEnabled()) {
+      return cachedPivot(id, granularity, forward, inclusive);
+    }
+
     final int gran = java.util.Arrays.asList(sHtmlGranularities).indexOf(granularity);
     if (forward && id == mLastAccessibilityFocusable) {
       return false;
     }
 
     if (!forward) {
-      if (id == View.NO_ID) {
-        return false;
-      }
-
       if (id == mFirstAccessibilityFocusable) {
         sendEvent(
             AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED,
@@ -977,6 +990,24 @@ public class SessionAccessibility {
 
     nativeProvider.pivotNative(id, gran, forward, inclusive);
     return true;
+  }
+
+  private boolean cachedPivot(
+      final int id, final String granularity, final boolean forward, final boolean inclusive) {
+    final int gran = java.util.Arrays.asList(sHtmlGranularities).indexOf(granularity);
+    final boolean success = nativeProvider.cachedPivotNative(id, gran, forward, inclusive);
+    if (!success && !forward) {
+      // If we failed to pivot backwards set the root view as the a11y focus.
+      sendEvent(
+          AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED, View.NO_ID, CLASSNAME_WEBVIEW, null);
+      return true;
+    }
+
+    return success;
+  }
+
+  private boolean isCacheEnabled() {
+    return mAttached && nativeProvider.isCacheEnabled();
   }
 
   /* package */ final class NativeProvider extends JNIObject {
@@ -992,6 +1023,9 @@ public class SessionAccessibility {
     }
 
     @WrapForJNI(dispatchTo = "current")
+    public native boolean isCacheEnabled();
+
+    @WrapForJNI(dispatchTo = "current")
     public native GeckoBundle getNodeInfo(int id);
 
     @WrapForJNI(dispatchTo = "gecko")
@@ -1002,6 +1036,10 @@ public class SessionAccessibility {
 
     @WrapForJNI(dispatchTo = "gecko", stubName = "Pivot")
     public native void pivotNative(int id, int granularity, boolean forward, boolean inclusive);
+
+    @WrapForJNI(dispatchTo = "current", stubName = "CachedPivot")
+    public native boolean cachedPivotNative(
+        int id, int granularity, boolean forward, boolean inclusive);
 
     @WrapForJNI(dispatchTo = "gecko")
     public native void exploreByTouch(int id, float x, float y);

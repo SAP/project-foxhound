@@ -6,13 +6,13 @@
 #include "Instance.h"
 
 #include "Adapter.h"
-#include "gfxConfig.h"
 #include "nsIGlobalObject.h"
 #include "ipc/WebGPUChild.h"
 #include "ipc/WebGPUTypes.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/gfx/CanvasManagerChild.h"
+#include "mozilla/gfx/gfxVars.h"
 
 namespace mozilla {
 namespace webgpu {
@@ -23,7 +23,7 @@ GPU_IMPL_CYCLE_COLLECTION(Instance, mBridge, mOwner)
 already_AddRefed<Instance> Instance::Create(nsIGlobalObject* aOwner) {
   RefPtr<WebGPUChild> bridge;
 
-  if (gfx::gfxConfig::IsEnabled(gfx::Feature::WEBGPU)) {
+  if (gfx::gfxVars::AllowWebGPU()) {
     bridge = gfx::CanvasManagerChild::Get()->GetWebGPUChild();
     if (NS_WARN_IF(!bridge)) {
       MOZ_CRASH("Failed to create an IPDL bridge for WebGPU!");
@@ -60,7 +60,7 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
   RefPtr<Instance> instance = this;
 
   mBridge->InstanceRequestAdapter(aOptions)->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      GetCurrentSerialEventTarget(), __func__,
       [promise, instance](ipc::ByteBuf aInfoBuf) {
         ffi::WGPUAdapterInformation info = {};
         ffi::wgpu_client_adapter_extract_info(ToFFI(&aInfoBuf), &info);

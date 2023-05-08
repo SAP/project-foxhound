@@ -42,7 +42,7 @@
 #include "src/decode.h"
 #include "src/dequant_tables.h"
 #include "src/env.h"
-#include "src/film_grain.h"
+#include "src/filmgrain.h"
 #include "src/log.h"
 #include "src/qm.h"
 #include "src/recon.h"
@@ -1242,6 +1242,7 @@ static int decode_b(Dav1dTaskContext *const t,
             if (DEBUG_BLOCK_INFO)
                 printf("Post-uvmode[%d]: r=%d\n", b->uv_mode, ts->msac.rng);
 
+            b->uv_angle = 0;
             if (b->uv_mode == CFL_PRED) {
 #define SIGN(a) (!!(a) + ((a) > 0))
                 const int sign = dav1d_msac_decode_symbol_adapt8(&ts->msac,
@@ -1274,8 +1275,6 @@ static int decode_b(Dav1dTaskContext *const t,
                 uint16_t *const acdf = ts->cdf.m.angle_delta[b->uv_mode - VERT_PRED];
                 const int angle = dav1d_msac_decode_symbol_adapt8(&ts->msac, acdf, 6);
                 b->uv_angle = angle - 3;
-            } else {
-                b->uv_angle = 0;
             }
         }
 
@@ -3231,8 +3230,6 @@ int dav1d_decode_frame_init(Dav1dFrameContext *const f) {
         if (ret < 0) goto error;
     }
 
-    retval = DAV1D_ERR(EINVAL);
-
     // setup dequant tables
     init_quant_tables(f->seq_hdr, f->frame_hdr, f->frame_hdr->quant.yac, f->dq);
     if (f->frame_hdr->quant.qm)
@@ -3295,6 +3292,15 @@ int dav1d_decode_frame_init(Dav1dFrameContext *const f) {
     f->lf.sr_p[1] = f->sr_cur.p.data[has_chroma ? 1 : 0];
     f->lf.sr_p[2] = f->sr_cur.p.data[has_chroma ? 2 : 0];
 
+    retval = 0;
+error:
+    return retval;
+}
+
+int dav1d_decode_frame_init_cdf(Dav1dFrameContext *const f) {
+    const Dav1dContext *const c = f->c;
+    int retval = DAV1D_ERR(EINVAL);
+
     if (f->frame_hdr->refresh_context)
         dav1d_cdf_thread_copy(f->out_cdf.data.cdf, &f->in_cdf);
 
@@ -3347,7 +3353,7 @@ error:
 
 int dav1d_decode_frame_main(Dav1dFrameContext *const f) {
     const Dav1dContext *const c = f->c;
-    int retval = DAV1D_ERR(ENOMEM);
+    int retval = DAV1D_ERR(EINVAL);
 
     assert(f->c->n_tc == 1);
 
@@ -3430,6 +3436,7 @@ int dav1d_decode_frame(Dav1dFrameContext *const f) {
     // if n_tc > 1 (but n_fc == 1), we could run init/exit in the task
     // threads also. Not sure it makes a measurable difference.
     int res = dav1d_decode_frame_init(f);
+    if (!res) res = dav1d_decode_frame_init_cdf(f);
     // wait until all threads have completed
     if (!res) {
         if (f->c->n_tc > 1) {
@@ -3487,16 +3494,22 @@ int dav1d_submit_frame(Dav1dContext *const c) {
                 atomic_fetch_add(&c->task_thread.first, 1U);
             else
                 atomic_store(&c->task_thread.first, 0);
-            if (c->task_thread.cur < c->n_fc)
+            if (c->task_thread.cur && c->task_thread.cur < c->n_fc)
                 c->task_thread.cur--;
         }
-        if (out_delayed->p.data[0]) {
+        const int error = f->task_thread.retval;
+        if (error) {
+            f->task_thread.retval = 0;
+            c->cached_error = error;
+            dav1d_data_props_copy(&c->cached_error_props, &out_delayed->p.m);
+            dav1d_thread_picture_unref(out_delayed);
+        } else if (out_delayed->p.data[0]) {
             const unsigned progress = atomic_load_explicit(&out_delayed->progress[1],
                                                            memory_order_relaxed);
             if ((out_delayed->visible || c->output_invisible_frames) &&
                 progress != FRAME_ERROR)
             {
-                dav1d_picture_ref(&c->out, &out_delayed->p);
+                dav1d_thread_picture_ref(&c->out, out_delayed);
                 c->event_flags |= dav1d_picture_get_event_flags(out_delayed);
             }
             dav1d_thread_picture_unref(out_delayed);
@@ -3670,7 +3683,7 @@ int dav1d_submit_frame(Dav1dContext *const c) {
     // move f->cur into output queue
     if (c->n_fc == 1) {
         if (f->frame_hdr->show_frame || c->output_invisible_frames) {
-            dav1d_picture_ref(&c->out, &f->sr_cur.p);
+            dav1d_thread_picture_ref(&c->out, &f->sr_cur);
             c->event_flags |= dav1d_picture_get_event_flags(&f->sr_cur);
         }
     } else {
@@ -3822,7 +3835,7 @@ int dav1d_submit_frame(Dav1dContext *const c) {
 
     if (c->n_fc == 1) {
         if ((res = dav1d_decode_frame(f)) < 0) {
-            dav1d_picture_unref_internal(&c->out);
+            dav1d_thread_picture_unref(&c->out);
             for (int i = 0; i < 8; i++) {
                 if (refresh_frame_flags & (1 << i)) {
                     if (c->refs[i].p.p.data[0])
@@ -3832,7 +3845,7 @@ int dav1d_submit_frame(Dav1dContext *const c) {
                     dav1d_ref_dec(&c->refs[i].refmvs);
                 }
             }
-            return res;
+            goto error;
         }
     } else {
         dav1d_task_frame_init(f);
@@ -3851,7 +3864,7 @@ error:
         dav1d_ref_dec(&f->ref_mvs_ref[i]);
     }
     if (c->n_fc == 1)
-        dav1d_picture_unref_internal(&c->out);
+        dav1d_thread_picture_unref(&c->out);
     else
         dav1d_thread_picture_unref(out_delayed);
     dav1d_picture_unref_internal(&f->cur);
@@ -3859,6 +3872,7 @@ error:
     dav1d_ref_dec(&f->mvs_ref);
     dav1d_ref_dec(&f->seq_hdr_ref);
     dav1d_ref_dec(&f->frame_hdr_ref);
+    dav1d_data_props_copy(&c->cached_error_props, &c->in.m);
 
     for (int i = 0; i < f->n_tile_data; i++)
         dav1d_data_unref_internal(&f->tile[i].data);

@@ -14,6 +14,7 @@ const extensionSource = {
   ...makeMockSource(),
   id: "extensionId",
   url: "http://example.com/script.js",
+  thread: "foo",
 };
 
 const firefoxExtensionSource = {
@@ -21,6 +22,7 @@ const firefoxExtensionSource = {
   id: "firefoxExtension",
   url: "moz-extension://id/js/content.js",
   isExtension: true,
+  thread: "foo",
 };
 
 const chromeExtensionSource = {
@@ -28,6 +30,7 @@ const chromeExtensionSource = {
   id: "chromeExtension",
   isExtension: true,
   url: "chrome-extension://id/js/content.js",
+  thread: "foo",
 };
 
 const mockedSources = [
@@ -61,9 +64,9 @@ describe("sources reducer", () => {
   it("should work", () => {
     let state = initialSourcesState();
     state = update(state, {
-      type: "ADD_SOURCE",
+      type: "ADD_SOURCES",
       cx: mockcx,
-      source: makeMockSource(),
+      sources: [makeMockSource()],
     });
     expect(getResourceIds(state.sources)).toHaveLength(1);
   });

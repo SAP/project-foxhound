@@ -105,7 +105,7 @@ impl fmt::Display for FatalError {
         let s = match *self {
             Parsing(ref err) => err.to_string(),
             Usage(ref s) => format!("error: {}", s),
-            Server(ref err) => format!("error: {}", err.to_string()),
+            Server(ref err) => format!("error: {}", err),
         };
         write!(f, "{}", s)
     }
@@ -123,6 +123,7 @@ macro_rules! usage {
 
 type ProgramResult<T> = result::Result<T, FatalError>;
 
+#[allow(clippy::large_enum_variant)]
 enum Operation {
     Help,
     Version,

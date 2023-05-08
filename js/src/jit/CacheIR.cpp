@@ -55,6 +55,7 @@
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/StringObject-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -347,12 +348,12 @@ static bool ValueToNameOrSymbolId(JSContext* cx, HandleValue idVal,
   }
 
   if (!id.isAtom() && !id.isSymbol()) {
-    id.set(JSID_VOID);
+    id.set(JS::PropertyKey::Void());
     return true;
   }
 
   if (id.isAtom() && id.toAtom()->isIndex()) {
-    id.set(JSID_VOID);
+    id.set(JS::PropertyKey::Void());
     return true;
   }
 
@@ -2518,9 +2519,8 @@ AttachDecision GetPropIRGenerator::tryAttachSparseElement(
   // The `GeneratePrototypeHoleGuards` call below will guard on the shapes,
   // as well as ensure that no prototypes contain dense elements, allowing
   // us to perform a pure shape-search for out-of-bounds integer-indexed
-  // properties on the recevier object.
-  if ((nobj->staticPrototype() != nullptr) &&
-      ObjectMayHaveExtraIndexedProperties(nobj->staticPrototype())) {
+  // properties on the receiver object.
+  if (PrototypeMayHaveIndexedProperties(nobj)) {
     return AttachDecision::NoAction;
   }
 
@@ -3502,7 +3502,7 @@ AttachDecision CheckPrivateFieldIRGenerator::tryAttachStub() {
   }
   JSObject* obj = &val_.toObject();
   ObjOperandId objId = writer.guardToObject(valId);
-  PropertyKey key = SYMBOL_TO_JSID(idVal_.toSymbol());
+  PropertyKey key = PropertyKey::Symbol(idVal_.toSymbol());
 
   ThrowCondition condition;
   ThrowMsgKind msgKind;
@@ -4018,15 +4018,16 @@ AttachDecision SetPropIRGenerator::tryAttachSetDenseElement(
   return AttachDecision::Attach;
 }
 
-static bool CanAttachAddElement(NativeObject* obj, bool isInit) {
-  // Make sure the objects on the prototype don't have any indexed properties
-  // or that such properties can't appear without a shape change.
-  do {
-    // The first two checks are also relevant to the receiver object.
-    if (obj->isIndexed()) {
-      return false;
-    }
+static bool CanAttachAddElement(NativeObject* obj, bool isInit,
+                                AllowIndexedReceiver allowIndexedReceiver) {
+  // Make sure the receiver doesn't have any indexed properties and that such
+  // properties can't appear without a shape change.
+  if (allowIndexedReceiver == AllowIndexedReceiver::No && obj->isIndexed()) {
+    return false;
+  }
 
+  do {
+    // This check is also relevant for the receiver object.
     const JSClass* clasp = obj->getClass();
     if (clasp != &ArrayObject::class_ &&
         (clasp->getAddProperty() || clasp->getResolve() ||
@@ -4049,9 +4050,13 @@ static bool CanAttachAddElement(NativeObject* obj, bool isInit) {
       return false;
     }
 
+    NativeObject* nproto = &proto->as<NativeObject>();
+    if (nproto->isIndexed()) {
+      return false;
+    }
+
     // We have to make sure the proto has no non-writable (frozen) elements
     // because we're not allowed to shadow them.
-    NativeObject* nproto = &proto->as<NativeObject>();
     if (nproto->denseElementsAreFrozen() &&
         nproto->getDenseInitializedLength() > 0) {
       return false;
@@ -4116,7 +4121,8 @@ AttachDecision SetPropIRGenerator::tryAttachSetDenseElementHole(
   }
 
   // Check for other indexed properties or class hooks.
-  if (!CanAttachAddElement(nobj, IsPropertyInitOp(op))) {
+  if (!CanAttachAddElement(nobj, IsPropertyInitOp(op),
+                           AllowIndexedReceiver::No)) {
     return AttachDecision::NoAction;
   }
 
@@ -4177,9 +4183,10 @@ AttachDecision SetPropIRGenerator::tryAttachAddOrUpdateSparseElement(
     return AttachDecision::NoAction;
   }
 
-  // Indexed properties on the prototype chain aren't handled by the helper.
-  if ((aobj->staticPrototype() != nullptr) &&
-      ObjectMayHaveExtraIndexedProperties(aobj->staticPrototype())) {
+  // Check for class hooks or indexed properties on the prototype chain that
+  // we're not allowed to shadow.
+  if (!CanAttachAddElement(aobj, /* isInit = */ false,
+                           AllowIndexedReceiver::Yes)) {
     return AttachDecision::NoAction;
   }
 
@@ -4740,7 +4747,7 @@ AttachDecision InstanceOfIRGenerator::tryAttachStub() {
   // property value.
   PropertyResult hasInstanceProp;
   NativeObject* hasInstanceHolder = nullptr;
-  jsid hasInstanceID = SYMBOL_TO_JSID(cx_->wellKnownSymbols().hasInstance);
+  jsid hasInstanceID = PropertyKey::Symbol(cx_->wellKnownSymbols().hasInstance);
   if (!LookupPropertyPure(cx_, fun, hasInstanceID, &hasInstanceHolder,
                           &hasInstanceProp) ||
       !hasInstanceProp.isNativeProperty()) {
@@ -5017,7 +5024,8 @@ static bool IsArrayPrototypeOptimizable(JSContext* cx, ArrayObject* arr,
   *arrProto = proto;
 
   // The object must not have an own @@iterator property.
-  PropertyKey iteratorKey = SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator);
+  PropertyKey iteratorKey =
+      PropertyKey::Symbol(cx->wellKnownSymbols().iterator);
   if (arr->lookupPure(iteratorKey)) {
     return false;
   }
@@ -5275,7 +5283,8 @@ AttachDecision CallIRGenerator::tryAttachArrayPush(HandleFunction callee) {
   auto* thisarray = &thisobj->as<ArrayObject>();
 
   // Check for other indexed properties or class hooks.
-  if (!CanAttachAddElement(thisarray, /* isInit = */ false)) {
+  if (!CanAttachAddElement(thisarray, /* isInit = */ false,
+                           AllowIndexedReceiver::No)) {
     return AttachDecision::NoAction;
   }
 
@@ -8267,7 +8276,9 @@ AttachDecision CallIRGenerator::tryAttachMapGet(HandleFunction callee) {
 }
 
 AttachDecision CallIRGenerator::tryAttachFunCall(HandleFunction callee) {
-  if (!callee->isNativeWithoutJitEntry() || callee->native() != fun_call) {
+  MOZ_ASSERT(callee->isNativeWithoutJitEntry());
+
+  if (callee->native() != fun_call) {
     return AttachDecision::NoAction;
   }
 
@@ -8884,8 +8895,9 @@ AttachDecision CallIRGenerator::tryAttachTypedArrayConstructor(
 }
 
 AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
-  if (!calleeFunc->isNativeWithoutJitEntry() ||
-      calleeFunc->native() != fun_apply) {
+  MOZ_ASSERT(calleeFunc->isNativeWithoutJitEntry());
+
+  if (calleeFunc->native() != fun_apply) {
     return AttachDecision::NoAction;
   }
 
@@ -9778,10 +9790,6 @@ AttachDecision CallIRGenerator::tryAttachCallNative(HandleFunction calleeFunc) {
 }
 
 AttachDecision CallIRGenerator::tryAttachCallHook(HandleObject calleeObj) {
-  if (op_ == JSOp::FunCall || op_ == JSOp::FunApply) {
-    return AttachDecision::NoAction;
-  }
-
   if (mode_ != ICState::Mode::Specialized) {
     // We do not have megamorphic call hook stubs.
     // TODO: Should we attach specialized call hook stubs in
@@ -9835,8 +9843,6 @@ AttachDecision CallIRGenerator::tryAttachStub() {
     case JSOp::SpreadNew:
     case JSOp::SuperCall:
     case JSOp::SpreadSuperCall:
-    case JSOp::FunCall:
-    case JSOp::FunApply:
       break;
     default:
       return AttachDecision::NoAction;
@@ -9856,13 +9862,6 @@ AttachDecision CallIRGenerator::tryAttachStub() {
 
   HandleFunction calleeFunc = calleeObj.as<JSFunction>();
 
-  if (op_ == JSOp::FunCall) {
-    return tryAttachFunCall(calleeFunc);
-  }
-  if (op_ == JSOp::FunApply) {
-    return tryAttachFunApply(calleeFunc);
-  }
-
   // Check for scripted optimizations.
   if (calleeFunc->hasJitEntry()) {
     return tryAttachCallScripted(calleeFunc);
@@ -9870,6 +9869,14 @@ AttachDecision CallIRGenerator::tryAttachStub() {
 
   // Check for native-function optimizations.
   MOZ_ASSERT(calleeFunc->isNativeWithoutJitEntry());
+
+  // Try inlining Function.prototype.{call,apply}. We don't use the
+  // InlinableNative mechanism for this because we want to optimize these more
+  // aggressively than other natives.
+  if (op_ == JSOp::Call || op_ == JSOp::CallIgnoresRv) {
+    TRY_ATTACH(tryAttachFunCall(calleeFunc));
+    TRY_ATTACH(tryAttachFunApply(calleeFunc));
+  }
 
   return tryAttachCallNative(calleeFunc);
 }

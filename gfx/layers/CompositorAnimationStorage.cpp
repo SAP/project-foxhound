@@ -12,6 +12,7 @@
 #include "mozilla/layers/CompositorBridgeParent.h"  // for CompositorBridgeParent
 #include "mozilla/layers/CompositorThread.h"  // for CompositorThreadHolder
 #include "mozilla/layers/OMTAController.h"    // for OMTAController
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/webrender/WebRenderTypes.h"  // for ToWrTransformProperty, etc
@@ -20,24 +21,50 @@
 #include "nsLayoutUtils.h"
 #include "TreeTraversal.h"  // for ForEachNode, BreadthFirstSearch
 
+namespace geckoprofiler::markers {
+
+using namespace mozilla;
+
+struct CompositorAnimationMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("CompositorAnimation");
+  }
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   uint64_t aId, nsCSSPropertyID aProperty) {
+    aWriter.IntProperty("pid", int64_t(aId >> 32));
+    aWriter.IntProperty("id", int64_t(aId & 0xffffffff));
+    aWriter.StringProperty("property", nsCSSProps::GetStringValue(aProperty));
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.AddKeyLabelFormat("pid", "Process Id", MS::Format::Integer);
+    schema.AddKeyLabelFormat("id", "Animation Id", MS::Format::Integer);
+    schema.AddKeyLabelFormat("property", "Animated Property",
+                             MS::Format::String);
+    schema.SetTableLabel("{marker.name} - {marker.data.property}");
+    return schema;
+  }
+};
+
+}  // namespace geckoprofiler::markers
+
 namespace mozilla {
 namespace layers {
 
 using gfx::Matrix4x4;
 
-void CompositorAnimationStorage::Clear() {
-  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-  // This function should only be called via the non Webrender version of
-  // SampleAnimations.
-  mLock.AssertCurrentThreadOwns();
-
-  mAnimatedValues.Clear();
-  mAnimations.clear();
-}
-
 void CompositorAnimationStorage::ClearById(const uint64_t& aId) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   MutexAutoLock lock(mLock);
+
+  const auto& animationStorageData = mAnimations[aId];
+  if (animationStorageData) {
+    PROFILER_MARKER("ClearAnimation", GRAPHICS,
+                    MarkerInnerWindowId(mCompositorBridge->GetInnerWindowId()),
+                    CompositorAnimationMarker, aId,
+                    animationStorageData->mAnimation.LastElement().mProperty);
+  }
 
   mAnimatedValues.Remove(aId);
   mAnimations.erase(aId);
@@ -91,7 +118,7 @@ OMTAValue CompositorAnimationStorage::GetOMTAValue(const uint64_t& aId) const {
   return omtaValue;
 }
 
-void CompositorAnimationStorage::SetAnimatedValueForWebRender(
+void CompositorAnimationStorage::SetAnimatedValue(
     uint64_t aId, AnimatedValue* aPreviousValue,
     const gfx::Matrix4x4& aFrameTransform, const TransformData& aData) {
   mLock.AssertCurrentThreadOwns();
@@ -106,26 +133,7 @@ void CompositorAnimationStorage::SetAnimatedValueForWebRender(
   MOZ_ASSERT(aPreviousValue->Is<AnimationTransform>());
   MOZ_ASSERT(aPreviousValue == GetAnimatedValue(aId));
 
-  aPreviousValue->SetTransformForWebRender(aFrameTransform, aData);
-}
-
-void CompositorAnimationStorage::SetAnimatedValue(
-    uint64_t aId, AnimatedValue* aPreviousValue,
-    const gfx::Matrix4x4& aTransformInDevSpace,
-    const gfx::Matrix4x4& aFrameTransform, const TransformData& aData) {
-  mLock.AssertCurrentThreadOwns();
-
-  if (!aPreviousValue) {
-    MOZ_ASSERT(!mAnimatedValues.Contains(aId));
-    mAnimatedValues.InsertOrUpdate(
-        aId, MakeUnique<AnimatedValue>(aTransformInDevSpace, aFrameTransform,
-                                       aData));
-    return;
-  }
-  MOZ_ASSERT(aPreviousValue->Is<AnimationTransform>());
-  MOZ_ASSERT(aPreviousValue == GetAnimatedValue(aId));
-
-  aPreviousValue->SetTransform(aTransformInDevSpace, aFrameTransform, aData);
+  aPreviousValue->SetTransform(aFrameTransform, aData);
 }
 
 void CompositorAnimationStorage::SetAnimatedValue(uint64_t aId,
@@ -168,6 +176,11 @@ void CompositorAnimationStorage::SetAnimations(uint64_t aId,
 
   mAnimations[aId] = std::make_unique<AnimationStorageData>(
       AnimationHelper::ExtractAnimations(aLayersId, aValue));
+
+  PROFILER_MARKER("SetAnimation", GRAPHICS,
+                  MarkerInnerWindowId(mCompositorBridge->GetInnerWindowId()),
+                  CompositorAnimationMarker, aId,
+                  mAnimations[aId]->mAnimation.LastElement().mProperty);
 
   // If there is the last animated value, then we need to store the id to remove
   // the value if the new animation doesn't produce any animated data (i.e. in
@@ -230,6 +243,14 @@ bool CompositorAnimationStorage::SampleAnimations(
 
     const PropertyAnimationGroup& lastPropertyAnimationGroup =
         animationStorageData->mAnimation.LastElement();
+
+    PROFILER_MARKER(
+        "SampleAnimation", GRAPHICS,
+        MarkerOptions(
+            MarkerThreadId(CompositorThreadHolder::GetThreadId()),
+            MarkerInnerWindowId(mCompositorBridge->GetInnerWindowId())),
+        CompositorAnimationMarker, iter.first,
+        lastPropertyAnimationGroup.mProperty);
 
     // Store the AnimatedValue
     switch (lastPropertyAnimationGroup.mProperty) {
@@ -297,8 +318,8 @@ bool CompositorAnimationStorage::SampleAnimations(
           }
         }
 
-        SetAnimatedValueForWebRender(iter.first, previousValue, frameTransform,
-                                     transformData);
+        SetAnimatedValue(iter.first, previousValue, frameTransform,
+                         transformData);
         break;
       }
       default:

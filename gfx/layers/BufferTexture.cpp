@@ -95,9 +95,6 @@ class ShmemTextureData : public BufferTextureData {
 
   virtual size_t GetBufferSize() override { return mShmem.Size<uint8_t>(); }
 
-  bool CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                       const gfx::IntSize& aCbCrSize) override;
-
  protected:
   mozilla::ipc::Shmem mShmem;
 };
@@ -146,7 +143,8 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
     const gfx::IntSize& aYSize, uint32_t aYStride,
     const gfx::IntSize& aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, gfx::ChromaSubsampling aSubsampling,
+    TextureFlags aTextureFlags) {
   uint32_t bufSize = ImageDataSerializer::ComputeYCbCrBufferSize(
       aYSize, aYStride, aCbCrSize, aCbCrStride);
   if (bufSize == 0) {
@@ -160,9 +158,10 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
                                            aCbCrSize.height, yOffset, cbOffset,
                                            crOffset);
 
-  YCbCrDescriptor descriptor = YCbCrDescriptor(
-      aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride, yOffset, cbOffset,
-      crOffset, aStereoMode, aColorDepth, aYUVColorSpace, aColorRange);
+  YCbCrDescriptor descriptor =
+      YCbCrDescriptor(aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride,
+                      yOffset, cbOffset, crOffset, aStereoMode, aColorDepth,
+                      aYUVColorSpace, aColorRange, aSubsampling);
 
   return CreateInternal(
       aAllocator ? aAllocator->GetTextureForwarder() : nullptr, descriptor,
@@ -193,6 +192,10 @@ gfx::IntRect BufferTextureData::GetPictureRect() const {
   return ImageDataSerializer::RectFromBufferDescriptor(mDescriptor);
 }
 
+Maybe<gfx::IntSize> BufferTextureData::GetYSize() const {
+  return ImageDataSerializer::YSizeFromBufferDescriptor(mDescriptor);
+}
+
 Maybe<gfx::IntSize> BufferTextureData::GetCbCrSize() const {
   return ImageDataSerializer::CbCrSizeFromBufferDescriptor(mDescriptor);
 }
@@ -215,6 +218,11 @@ Maybe<gfx::ColorDepth> BufferTextureData::GetColorDepth() const {
 
 Maybe<StereoMode> BufferTextureData::GetStereoMode() const {
   return ImageDataSerializer::StereoModeFromBufferDescriptor(mDescriptor);
+}
+
+Maybe<gfx::ChromaSubsampling> BufferTextureData::GetChromaSubsampling() const {
+  return ImageDataSerializer::ChromaSubsamplingFromBufferDescriptor(
+      mDescriptor);
 }
 
 gfx::SurfaceFormat BufferTextureData::GetFormat() const {
@@ -507,27 +515,6 @@ TextureData* ShmemTextureData::CreateSimilar(
 
 void ShmemTextureData::Deallocate(LayersIPCChannel* aAllocator) {
   aAllocator->DeallocShmem(mShmem);
-}
-
-bool ShmemTextureData::CropYCbCrPlanes(const gfx::IntSize& aYSize,
-                                       const gfx::IntSize& aCbCrSize) {
-  if (mDescriptor.type() != BufferDescriptor::TYCbCrDescriptor) {
-    return false;
-  }
-
-  const auto& current = mDescriptor.get_YCbCrDescriptor();
-  if (current.ySize() < aYSize || current.cbCrSize() < aCbCrSize) {
-    NS_WARNING("Cropped size should not exceed the original size!");
-    return false;
-  }
-
-  auto newDescritor = YCbCrDescriptor(
-      current.display(), aYSize, current.yStride(), aCbCrSize,
-      current.cbCrStride(), current.yOffset(), current.cbOffset(),
-      current.crOffset(), current.stereoMode(), current.colorDepth(),
-      current.yUVColorSpace(), current.colorRange());
-  mDescriptor = BufferDescriptor(newDescritor);
-  return true;
 }
 
 }  // namespace layers

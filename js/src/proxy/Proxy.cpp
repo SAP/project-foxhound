@@ -131,7 +131,7 @@ void js::AutoEnterPolicy::reportErrorIfExceptionIsNotPending(JSContext* cx,
     return;
   }
 
-  if (JSID_IS_VOID(id)) {
+  if (id.isVoid()) {
     ReportAccessDenied(cx);
   } else {
     Throw(cx, id, JSMSG_PROPERTY_ACCESS_DENIED);
@@ -226,7 +226,7 @@ bool Proxy::ownPropertyKeys(JSContext* cx, HandleObject proxy,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::ENUMERATE, true);
   if (!policy.allowed()) {
     return policy.returnValue();
@@ -583,7 +583,7 @@ bool Proxy::getOwnEnumerablePropertyKeys(JSContext* cx, HandleObject proxy,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::ENUMERATE, true);
   if (!policy.allowed()) {
     return policy.returnValue();
@@ -621,7 +621,7 @@ bool Proxy::enumerate(JSContext* cx, HandleObject proxy,
     return AppendUnique(cx, props, protoProps);
   }
 
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::ENUMERATE, true);
 
   // If the policy denies access but wants us to return true, we need
@@ -644,7 +644,7 @@ bool Proxy::call(JSContext* cx, HandleObject proxy, const CallArgs& args) {
   // Because vp[0] is JS_CALLEE on the way in and JS_RVAL on the way out, we
   // can only set our default value once we're sure that we're not calling the
   // trap.
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::CALL, true);
   if (!policy.allowed()) {
     args.rval().setUndefined();
@@ -664,7 +664,7 @@ bool Proxy::construct(JSContext* cx, HandleObject proxy, const CallArgs& args) {
   // Because vp[0] is JS_CALLEE on the way in and JS_RVAL on the way out, we
   // can only set our default value once we're sure that we're not calling the
   // trap.
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::CALL, true);
   if (!policy.allowed()) {
     args.rval().setUndefined();
@@ -695,7 +695,7 @@ bool Proxy::hasInstance(JSContext* cx, HandleObject proxy, MutableHandleValue v,
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
   *bp = false;  // default result if we refuse to perform this action
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET, true);
   if (!policy.allowed()) {
     return policy.returnValue();
@@ -729,7 +729,7 @@ const char* Proxy::className(JSContext* cx, HandleObject proxy) {
   }
 
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET, /* mayThrow = */ false);
   // Do the safe thing if the policy rejects.
   if (!policy.allowed()) {
@@ -745,7 +745,7 @@ JSString* Proxy::fun_toString(JSContext* cx, HandleObject proxy,
     return nullptr;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET, /* mayThrow = */ false);
   // Do the safe thing if the policy rejects.
   if (!policy.allowed()) {
@@ -781,7 +781,7 @@ bool Proxy::getElements(JSContext* cx, HandleObject proxy, uint32_t begin,
     return false;
   }
   const BaseProxyHandler* handler = proxy->as<ProxyObject>().handler();
-  AutoEnterPolicy policy(cx, handler, proxy, JSID_VOIDHANDLE,
+  AutoEnterPolicy policy(cx, handler, proxy, JS::VoidHandlePropertyKey,
                          BaseProxyHandler::GET,
                          /* mayThrow = */ true);
   if (!policy.allowed()) {
@@ -858,8 +858,8 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   TraceNullableEdge(trc, proxy->slotOfExpando(), "expando");
 
 #ifdef DEBUG
-  if (TlsContext.get()->isStrictProxyCheckingEnabled() &&
-      proxy->is<WrapperObject>()) {
+  JSContext* cx = TlsContext.get();
+  if (cx && cx->isStrictProxyCheckingEnabled() && proxy->is<WrapperObject>()) {
     CheckProxyIsInCCWMap(proxy);
   }
 #endif
@@ -885,17 +885,17 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   Proxy::trace(trc, obj);
 }
 
-static void proxy_Finalize(JSFreeOp* fop, JSObject* obj) {
+static void proxy_Finalize(JS::GCContext* gcx, JSObject* obj) {
   // Suppress a bogus warning about finalize().
   JS::AutoSuppressGCAnalysis nogc;
 
   MOZ_ASSERT(obj->is<ProxyObject>());
-  obj->as<ProxyObject>().handler()->finalize(fop, obj);
+  obj->as<ProxyObject>().handler()->finalize(gcx, obj);
 
   if (!obj->as<ProxyObject>().usingInlineValueArray()) {
     // Bug 1560019: This allocation is not tracked, but is only present when
     // objects are swapped which is assumed to be relatively rare.
-    fop->freeUntracked(js::detail::GetProxyDataLayout(obj)->values());
+    gcx->freeUntracked(js::detail::GetProxyDataLayout(obj)->values());
   }
 }
 
@@ -921,7 +921,6 @@ const JSClassOps js::ProxyClassOps = {
     nullptr,             // mayResolve
     proxy_Finalize,      // finalize
     nullptr,             // call
-    Proxy::hasInstance,  // hasInstance
     nullptr,             // construct
     ProxyObject::trace,  // trace
 };

@@ -467,18 +467,16 @@ void RestyleManager::ContentRemoved(nsIContent* aOldChild,
 static bool StateChangeMayAffectFrame(const Element& aElement,
                                       const nsIFrame& aFrame,
                                       EventStates aStates) {
+  const bool brokenChanged = aStates.HasState(NS_EVENT_STATE_BROKEN);
   if (aFrame.IsGeneratedContentFrame()) {
     if (aElement.IsHTMLElement(nsGkAtoms::mozgeneratedcontentimage)) {
-      return aStates.HasState(NS_EVENT_STATE_BROKEN);
+      return brokenChanged;
     }
-
     // If it's other generated content, ignore LOADING/etc state changes on it.
     return false;
   }
 
-  const bool brokenChanged = aStates.HasState(NS_EVENT_STATE_BROKEN);
   const bool loadingChanged = aStates.HasState(NS_EVENT_STATE_LOADING);
-
   if (!brokenChanged && !loadingChanged) {
     return false;
   }
@@ -487,6 +485,11 @@ static bool StateChangeMayAffectFrame(const Element& aElement,
     // Loading state doesn't affect <img>, see
     // `nsImageFrame::ShouldCreateImageFrameFor`.
     return brokenChanged;
+  }
+
+  if (aElement.IsSVGElement(nsGkAtoms::image)) {
+    // <image> gets an SVGImageFrame all the time.
+    return false;
   }
 
   return brokenChanged || loadingChanged;
@@ -741,7 +744,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
   aFrame->SchedulePaint();
 
   // For relative positioning, we can simply update the frame rect
-  if (display->IsRelativelyPositionedStyle()) {
+  if (display->IsRelativelyOrStickyPositionedStyle()) {
     if (aFrame->IsGridItem()) {
       // A grid item's CB is its grid area, not the parent frame content area
       // as is assumed below.
@@ -766,7 +769,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
         ssc->PositionContinuations(firstContinuation);
       }
     } else {
-      MOZ_ASSERT(StylePositionProperty::Relative == display->mPosition,
+      MOZ_ASSERT(display->IsRelativelyPositionedStyle(),
                  "Unexpected type of positioning");
       for (nsIFrame* cont = aFrame; cont;
            cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
@@ -805,8 +808,8 @@ static bool RecomputePosition(nsIFrame* aFrame) {
   RefPtr<gfxContext> rc =
       aFrame->PresShell()->CreateReferenceRenderingContext();
 
-  // Construct a bogus parent reflow input so that there's a usable
-  // containing block reflow input.
+  // Construct a bogus parent reflow input so that there's a usable reflow input
+  // for the containing block.
   nsIFrame* parentFrame = aFrame->GetParent();
   WritingMode parentWM = parentFrame->GetWritingMode();
   WritingMode frameWM = aFrame->GetWritingMode();
@@ -3171,6 +3174,7 @@ static void VerifyFlatTree(const nsIContent& aContent) {
 #endif
 
 void RestyleManager::ProcessPendingRestyles() {
+  AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Styles", LAYOUT);
 #ifdef DEBUG
   if (auto* root = mPresContext->Document()->GetRootElement()) {
     VerifyFlatTree(*root);
@@ -3365,8 +3369,6 @@ void RestyleManager::TakeSnapshotForAttributeChange(Element& aElement,
 // For some attribute changes we must restyle the whole subtree:
 //
 // * <td> is affected by the cellpadding on its ancestor table
-// * lwtheme and lwthemetextcolor on root element of XUL document
-//   affects all descendants due to :-moz-lwtheme* pseudo-classes
 // * lang="" and xml:lang="" can affect all descendants due to :lang()
 // * exportparts can affect all descendant parts. We could certainly integrate
 //   it better in the invalidation machinery if it was necessary.
@@ -3374,10 +3376,6 @@ static inline bool AttributeChangeRequiresSubtreeRestyle(
     const Element& aElement, nsAtom* aAttr) {
   if (aAttr == nsGkAtoms::cellpadding) {
     return aElement.IsHTMLElement(nsGkAtoms::table);
-  }
-  if (aAttr == nsGkAtoms::lwtheme || aAttr == nsGkAtoms::lwthemetextcolor) {
-    Document* doc = aElement.OwnerDoc();
-    return doc->IsInChromeDocShell() && &aElement == doc->GetRootElement();
   }
   // TODO(emilio, bug 1598094): Maybe finer-grained invalidation for exportparts
   // attribute changes?

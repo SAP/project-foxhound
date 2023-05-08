@@ -368,9 +368,12 @@ static bool ShouldSuppressColumnSpanDescendants(nsIFrame* aFrame) {
   }
 
   if (!aFrame->IsBlockFrameOrSubclass() ||
-      aFrame->HasAnyStateBits(NS_BLOCK_FLOAT_MGR | NS_FRAME_OUT_OF_FLOW)) {
-    // Need to suppress column-span under a different block formatting
-    // context or an out-of-flow frame.
+      aFrame->HasAnyStateBits(NS_BLOCK_FLOAT_MGR | NS_FRAME_OUT_OF_FLOW) ||
+      aFrame->IsFixedPosContainingBlock()) {
+    // Need to suppress column-span if we:
+    // - Are a different block formatting context,
+    // - Are an out-of-flow frame, OR
+    // - Establish a containing block for fixed-position descendants
     //
     // For example, the children of a column-span never need to be further
     // processed even if there is a nested column-span child. Because a
@@ -1681,6 +1684,14 @@ void nsCSSFrameConstructor::CreateGeneratedContentFromListStyleType(
   aAddChild(child);
 }
 
+// Frames for these may not be leaves in the proper sense, but we still don't
+// want to expose generated content on them. For the purposes of the page they
+// should be leaves.
+static bool HasUAWidget(const Element& aOriginatingElement) {
+  const ShadowRoot* sr = aOriginatingElement.GetShadowRoot();
+  return sr && sr->IsUAWidget();
+}
+
 /*
  * aParentFrame - the frame that should be the parent of the generated
  *   content.  This is the frame for the corresponding content node,
@@ -1705,10 +1716,7 @@ void nsCSSFrameConstructor::CreateGeneratedContentItem(
                  aPseudoElement == PseudoStyleType::marker,
              "unexpected aPseudoElement");
 
-  if (aParentFrame && (aParentFrame->IsHTMLVideoFrame() ||
-                       aParentFrame->IsDateTimeControlFrame())) {
-    // Video frames and date time control frames may not be leafs when backed by
-    // an UA widget, but we still don't want to expose generated content.
+  if (HasUAWidget(aOriginatingElement)) {
     return;
   }
 
@@ -5355,13 +5363,13 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
   // to things that are not roots of native anonymous subtrees (except for
   // ::before and ::after); we always want to create "internal" anonymous
   // content.
-  auto* details = HTMLDetailsElement::FromNodeOrNull(parent);
+  auto* const details = HTMLDetailsElement::FromNodeOrNull(parent);
   if (ShouldSuppressFrameInNonOpenDetails(details, aComputedStyle, *aContent)) {
     return;
   }
 
   if (aContent->IsHTMLElement(nsGkAtoms::legend) && aParentFrame) {
-    const nsFieldSetFrame* fs = GetFieldSetFrameFor(aParentFrame);
+    const nsFieldSetFrame* const fs = GetFieldSetFrameFor(aParentFrame);
     if (fs && !fs->GetLegend() && !aState.mHasRenderedLegend &&
         !aComputedStyle->StyleDisplay()->IsFloatingStyle() &&
         !aComputedStyle->StyleDisplay()->IsAbsolutelyPositionedStyle()) {
@@ -5370,24 +5378,22 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
     }
   }
 
-  const FrameConstructionData* data =
+  const FrameConstructionData* const data =
       FindDataForContent(*aContent, *aComputedStyle, aParentFrame, aFlags);
   if (!data || data->mBits & FCDATA_SUPPRESS_FRAME) {
     return;
   }
 
-  bool isPopup = false;
+  const bool isPopup =
+      (data->mBits & FCDATA_IS_POPUP) && (!aParentFrame ||  // Parent is inline
+                                          !aParentFrame->IsMenuFrame());
 
-  if ((data->mBits & FCDATA_IS_POPUP) && (!aParentFrame ||  // Parent is inline
-                                          !aParentFrame->IsMenuFrame())) {
-    if (!aState.mPopupList.containingBlock && !aState.mHavePendingPopupgroup) {
-      return;
-    }
-
-    isPopup = true;
+  if (isPopup && !aState.mPopupList.containingBlock &&
+      !aState.mHavePendingPopupgroup) {
+    return;
   }
 
-  uint32_t bits = data->mBits;
+  const uint32_t bits = data->mBits;
 
   // Inside colgroups, suppress everything except columns.
   if (aParentFrame && aParentFrame->IsTableColGroupFrame() &&
@@ -5396,7 +5402,7 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
     return;
   }
 
-  bool canHavePageBreak =
+  const bool canHavePageBreak =
       aFlags.contains(ItemFlag::AllowPageBreak) &&
       aState.mPresContext->IsPaginated() &&
       !display.IsAbsolutelyPositionedStyle() &&
@@ -5408,7 +5414,7 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
   }
 
   if (details && details->Open()) {
-    auto* summary = HTMLSummaryElement::FromNode(aContent);
+    const auto* const summary = HTMLSummaryElement::FromNode(aContent);
     if (summary && summary->IsMainSummary()) {
       // If details is open, the main summary needs to be rendered as if it is
       // the first child, so add the item to the front of the item list.
@@ -5452,7 +5458,7 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
   } else {
     // Compute a boolean isInline which is guaranteed to be false for blocks
     // (but may also be false for some inlines).
-    bool isInline =
+    const bool isInline =
         // Table-internal things are inline-outside if and only if they're kids
         // of inlines, since they'll trigger construction of inline-table
         // pseudos.

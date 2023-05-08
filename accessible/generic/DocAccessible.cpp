@@ -7,6 +7,7 @@
 #include "LocalAccessible-inl.h"
 #include "AccIterator.h"
 #include "AccAttributes.h"
+#include "CachedTableAccessible.h"
 #include "DocAccessible-inl.h"
 #include "DocAccessibleChild.h"
 #include "HTMLImageMapAccessible.h"
@@ -449,6 +450,10 @@ void DocAccessible::Shutdown() {
   }
 
   mChildDocuments.Clear();
+  // mQueuedCacheUpdates can contain a reference to this document (ex. if the
+  // doc is scrollable and we're sending a scroll position update). Clear the
+  // map here to avoid creating ref cycles.
+  mQueuedCacheUpdates.Clear();
 
   // XXX thinking about ordering?
   if (mIPCDoc) {
@@ -616,6 +621,13 @@ void DocAccessible::ScrollTimerCallback(nsITimer* aTimer, void* aClosure) {
 }
 
 void DocAccessible::HandleScroll(nsINode* aTarget) {
+  // Regardless of our scroll timer, we need to send a cache update
+  // to ensure the next Bounds() query accurately reflects our position
+  // after scrolling.
+  if (LocalAccessible* scrollTarget = GetAccessible(aTarget)) {
+    QueueCacheUpdate(scrollTarget, CacheDomain::ScrollPosition);
+  }
+
   const uint32_t kScrollEventInterval = 100;
   // If we haven't dispatched a scrolling event for a target in at least
   // kScrollEventInterval milliseconds, dispatch one now.
@@ -646,6 +658,30 @@ void DocAccessible::HandleScroll(nsINode* aTarget) {
       NS_ADDREF_THIS();  // Kung fu death grip
     }
   }
+}
+
+std::pair<nsPoint, nsRect> DocAccessible::ComputeScrollData(
+    LocalAccessible* aAcc) {
+  nsPoint scrollPoint;
+  nsRect scrollRange;
+
+  if (nsIFrame* frame = aAcc->GetFrame()) {
+    nsIScrollableFrame* sf = aAcc == this
+                                 ? mPresShell->GetRootScrollFrameAsScrollable()
+                                 : frame->GetScrollTargetFrame();
+
+    // If there is no scrollable frame, it's likely a scroll in a popup, like
+    // <select>. Return a scroll offset and range of 0. The scroll info
+    // is currently only used on Android, and popups are rendered natively
+    // there.
+    if (sf) {
+      scrollPoint = sf->GetScrollPosition() * mPresShell->GetResolution();
+      scrollRange = sf->GetScrollRange();
+      scrollRange.ScaleRoundOut(mPresShell->GetResolution());
+    }
+  }
+
+  return {scrollPoint, scrollRange};
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1239,6 +1275,9 @@ bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
 #endif
 
     nsIFrame* frame = acc->GetFrame();
+    if (frame) {
+      acc->MaybeQueueCacheUpdateForStyleChanges();
+    }
 
     // LocalAccessible has no frame and it's not display:contents. Remove it.
     // As well as removing the a11y subtree, we must also remove Accessibles
@@ -1285,6 +1324,19 @@ bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
     // cache, which listens for the following event.
     if (acc->IsTable() || acc->IsTableRow() || acc->IsTableCell()) {
       FireDelayedEvent(nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED, acc);
+      LocalAccessible* table;
+      if (acc->IsTable()) {
+        table = acc;
+      } else {
+        for (table = acc->LocalParent(); table; table = table->LocalParent()) {
+          if (table->IsTable()) {
+            break;
+          }
+        }
+      }
+      if (table && table->IsTable()) {
+        QueueCacheUpdate(acc, CacheDomain::Table);
+      }
     }
 
     // The accessible can be reparented or reordered in its parent.
@@ -2045,8 +2097,8 @@ void DocAccessible::ContentRemoved(LocalAccessible* aChild) {
     }
   }
   MOZ_DIAGNOSTIC_ASSERT(aChild->LocalParent(), "Unparented #2");
-  parent->RemoveChild(aChild);
   UncacheChildrenInSubtree(aChild);
+  parent->RemoveChild(aChild);
 
   mt.Done();
 }
@@ -2443,6 +2495,14 @@ void DocAccessible::UncacheChildrenInSubtree(LocalAccessible* aRoot) {
   aRoot->mStateFlags |= eIsNotInDocument;
   RemoveDependentIDsFor(aRoot);
 
+  // The parent of the removed subtree is about to be cleared, so we must do
+  // this here rather than in LocalAccessible::UnbindFromParent because we need
+  // the ancestry for this to work.
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
+      (aRoot->IsTable() || aRoot->IsTableCell())) {
+    CachedTableAccessible::Invalidate(aRoot);
+  }
+
   nsTArray<RefPtr<LocalAccessible>>* owned = mARIAOwnsHash.Get(aRoot);
   uint32_t count = aRoot->ContentChildCount();
   for (uint32_t idx = 0; idx < count; idx++) {
@@ -2538,31 +2598,19 @@ void DocAccessible::DispatchScrollingEvent(nsINode* aTarget,
     return;
   }
 
-  LayoutDevicePoint scrollPoint;
-  LayoutDeviceRect scrollRange;
-  nsIScrollableFrame* sf = acc == this
-                               ? mPresShell->GetRootScrollFrameAsScrollable()
-                               : frame->GetScrollTargetFrame();
+  auto [scrollPoint, scrollRange] = ComputeScrollData(acc);
 
-  // If there is no scrollable frame, it's likely a scroll in a popup, like
-  // <select>. Just send an event with no scroll info. The scroll info
-  // is currently only used on Android, and popups are rendered natively
-  // there.
-  if (sf) {
-    int32_t appUnitsPerDevPixel =
-        mPresShell->GetPresContext()->AppUnitsPerDevPixel();
-    scrollPoint = LayoutDevicePoint::FromAppUnits(sf->GetScrollPosition(),
-                                                  appUnitsPerDevPixel) *
-                  mPresShell->GetResolution();
+  int32_t appUnitsPerDevPixel =
+      mPresShell->GetPresContext()->AppUnitsPerDevPixel();
 
-    scrollRange = LayoutDeviceRect::FromAppUnits(sf->GetScrollRange(),
-                                                 appUnitsPerDevPixel);
-    scrollRange.ScaleRoundOut(mPresShell->GetResolution());
-  }
+  LayoutDeviceIntPoint scrollPointDP = LayoutDevicePoint::FromAppUnitsToNearest(
+      scrollPoint, appUnitsPerDevPixel);
+  LayoutDeviceIntRect scrollRangeDP =
+      LayoutDeviceRect::FromAppUnitsToNearest(scrollRange, appUnitsPerDevPixel);
 
   RefPtr<AccEvent> event =
-      new AccScrollingEvent(aEventType, acc, scrollPoint.x, scrollPoint.y,
-                            scrollRange.width, scrollRange.height);
+      new AccScrollingEvent(aEventType, acc, scrollPointDP.x, scrollPointDP.y,
+                            scrollRangeDP.width, scrollRangeDP.height);
   nsEventShell::FireEvent(event);
 }
 

@@ -163,6 +163,8 @@ extern JS_PUBLIC_API void SetRealmPrincipals(JS::Realm* realm,
 
 extern JS_PUBLIC_API bool GetIsSecureContext(JS::Realm* realm);
 
+extern JS_PUBLIC_API bool GetDebuggerObservesWasm(JS::Realm* realm);
+
 }  // namespace JS
 
 /**

@@ -7,6 +7,7 @@ export {
   insertResources,
   removeResources,
   updateResources,
+  getResourceValues,
 } from "./core";
 
 export {
@@ -21,12 +22,10 @@ export { makeResourceQuery, makeMapWithArgs } from "./base-query";
 export {
   filterAllIds,
   makeWeakQuery,
-  makeShallowQuery,
   makeStrictQuery,
   makeIdQuery,
   makeLoadQuery,
   makeFilterQuery,
-  makeReduceQuery,
   makeReduceAllQuery,
 } from "./query";
 
@@ -35,5 +34,7 @@ export {
   queryCacheShallow,
   queryCacheStrict,
 } from "./query-cache";
+
+export { shallowEqual } from "./compare";
 
 export { memoizeResourceShallow } from "./memoize";

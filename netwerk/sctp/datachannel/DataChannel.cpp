@@ -32,8 +32,6 @@
 
 #include "nsServiceManagerUtils.h"
 #include "nsIInputStream.h"
-#include "nsIObserverService.h"
-#include "nsIObserver.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
 #include "mozilla/Services.h"
@@ -49,6 +47,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/RTCDataChannelBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
+#include "mozilla/media/MediaUtils.h"
 #ifdef MOZ_PEERCONNECTION
 #  include "transport/runnable_utils.h"
 #  include "jsapi/MediaTransportHandler.h"
@@ -95,9 +94,9 @@ static void debug_printf(const char* format, ...) {
   }
 }
 
-class DataChannelRegistry : public nsIObserver {
+class DataChannelRegistry {
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DataChannelRegistry)
 
   static uintptr_t Register(DataChannelConnection* aConnection) {
     StaticMutexAutoLock lock(sInstanceMutex);
@@ -124,10 +123,6 @@ class DataChannelRegistry : public nsIObserver {
         maybeTrash = Instance().forget();
       }
     }
-
-    if (maybeTrash) {
-      maybeTrash->Shutdown();
-    }
   }
 
   static RefPtr<DataChannelConnection> Lookup(uintptr_t aId) {
@@ -142,28 +137,10 @@ class DataChannelRegistry : public nsIObserver {
   // This is a singleton class, so don't let just anyone create one of these
   DataChannelRegistry() {
     ASSERT_WEBRTC(NS_IsMainThread());
-    nsCOMPtr<nsIObserverService> observerService =
-        mozilla::services::GetObserverService();
-    if (!observerService) return;
-
-    nsresult rv =
-        observerService->AddObserver(this, "xpcom-will-shutdown", false);
-    MOZ_ASSERT(rv == NS_OK);
-    (void)rv;
+    mShutdownBlocker = media::ShutdownBlockingTicket::Create(
+        u"DataChannelRegistry::mShutdownBlocker"_ns,
+        NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__);
     InitUsrSctp();
-  }
-
-  nsresult Shutdown() {
-    DeinitUsrSctp();
-    nsCOMPtr<nsIObserverService> observerService =
-        mozilla::services::GetObserverService();
-    if (NS_WARN_IF(!observerService)) {
-      return NS_ERROR_FAILURE;
-    }
-
-    nsresult rv = observerService->RemoveObserver(this, "xpcom-will-shutdown");
-    MOZ_ASSERT(rv == NS_OK);
-    return rv;
   }
 
   static RefPtr<DataChannelRegistry>& Instance() {
@@ -177,30 +154,6 @@ class DataChannelRegistry : public nsIObserver {
       Instance() = new DataChannelRegistry();
     }
     return Instance();
-  }
-
-  NS_IMETHOD Observe(nsISupports* aSubject, const char* aTopic,
-                     const char16_t* aData) override {
-    ASSERT_WEBRTC(NS_IsMainThread());
-    if (strcmp(aTopic, "xpcom-will-shutdown") == 0) {
-      RefPtr<DataChannelRegistry> self = this;
-      {
-        StaticMutexAutoLock lock(sInstanceMutex);
-        Instance() = nullptr;
-      }
-
-      // |self| and the reference being held onto by the observer service are
-      // the only ones left now.
-
-      if (NS_WARN_IF(!mConnections.empty())) {
-        MOZ_ASSERT(false);
-        mConnections.clear();
-      }
-
-      return Shutdown();
-    }
-
-    return NS_OK;
   }
 
   uintptr_t RegisterImpl(DataChannelConnection* aConnection) {
@@ -225,7 +178,16 @@ class DataChannelRegistry : public nsIObserver {
     return it->second;
   }
 
-  virtual ~DataChannelRegistry() = default;
+  virtual ~DataChannelRegistry() {
+    ASSERT_WEBRTC(NS_IsMainThread());
+
+    if (NS_WARN_IF(!mConnections.empty())) {
+      MOZ_ASSERT(false);
+      mConnections.clear();
+    }
+
+    DeinitUsrSctp();
+  }
 
 #ifdef SCTP_DTLS_SUPPORTED
   static int SctpDtlsOutput(void* addr, void* buffer, size_t length,
@@ -279,12 +241,11 @@ class DataChannelRegistry : public nsIObserver {
 
   uintptr_t mNextId = 1;
   std::map<uintptr_t, RefPtr<DataChannelConnection>> mConnections;
-  static StaticMutex sInstanceMutex;
+  UniquePtr<media::ShutdownBlockingTicket> mShutdownBlocker;
+  static StaticMutex sInstanceMutex MOZ_UNANNOTATED;
 };
 
 StaticMutex DataChannelRegistry::sInstanceMutex;
-
-NS_IMPL_ISUPPORTS(DataChannelRegistry, nsIObserver);
 
 OutgoingMsg::OutgoingMsg(struct sctp_sendv_spa& info, const uint8_t* data,
                          size_t length)
@@ -481,9 +442,9 @@ DataChannelConnection::DataChannelConnection(
 #endif
 }
 
-bool DataChannelConnection::Init(const uint16_t aLocalPort,
-                                 const uint16_t aNumStreams,
-                                 const Maybe<uint64_t>& aMaxMessageSize) {
+bool DataChannelConnection::Init(
+    const uint16_t aLocalPort, const uint16_t aNumStreams,
+    const Maybe<uint64_t>& aMaxMessageSize) {
   ASSERT_WEBRTC(NS_IsMainThread());
 
   struct sctp_initmsg initmsg;
@@ -648,9 +609,11 @@ error_cleanup:
   return false;
 }
 
+// Only called on MainThread, mMaxMessageSize is read on other threads
 void DataChannelConnection::SetMaxMessageSize(bool aMaxMessageSizeSet,
                                               uint64_t aMaxMessageSize) {
-  MutexAutoLock lock(mLock);  // TODO: Needed?
+  ASSERT_WEBRTC(NS_IsMainThread());
+  MutexAutoLock lock(mLock);
 
   if (mMaxMessageSizeSet && !aMaxMessageSizeSet) {
     // Don't overwrite already set MMS with default values
@@ -697,7 +660,10 @@ void DataChannelConnection::SetMaxMessageSize(bool aMaxMessageSizeSet,
             aMaxMessageSize != mMaxMessageSize ? "yes" : "no"));
 }
 
-uint64_t DataChannelConnection::GetMaxMessageSize() { return mMaxMessageSize; }
+uint64_t DataChannelConnection::GetMaxMessageSize() {
+  MutexAutoLock lock(mLock);
+  return mMaxMessageSize;
+}
 
 void DataChannelConnection::AppendStatsToReport(
     const UniquePtr<dom::RTCStatsCollection>& aReport,
@@ -1592,6 +1558,7 @@ void DataChannelConnection::DeliverQueuedData(uint16_t stream) {
   mLock.AssertCurrentThreadOwns();
 
   mQueuedData.RemoveElementsBy([stream, this](const auto& dataItem) {
+    mLock.AssertCurrentThreadOwns();
     const bool match = dataItem->mStream == stream;
     if (match) {
       DC_DEBUG(("Delivering queued data for stream %u, length %u", stream,
@@ -2401,9 +2368,9 @@ void DataChannelConnection::HandleNotification(
   }
 }
 
-int DataChannelConnection::ReceiveCallback(struct socket* sock, void* data,
-                                           size_t datalen,
-                                           struct sctp_rcvinfo rcv, int flags) {
+int DataChannelConnection::ReceiveCallback(
+    struct socket* sock, void* data, size_t datalen, struct sctp_rcvinfo rcv,
+    int flags) NO_THREAD_SAFETY_ANALYSIS {
   ASSERT_WEBRTC(!NS_IsMainThread());
   DC_DEBUG(("In ReceiveCallback"));
 

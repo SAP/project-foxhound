@@ -21,8 +21,9 @@
 #include "Http2Push.h"
 
 #include "mozilla/EndianUtils.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/Telemetry.h"
 #include "nsHttp.h"
 #include "nsHttpHandler.h"
 #include "nsHttpConnection.h"
@@ -41,6 +42,7 @@
 #include "CachePushChecker.h"
 #include "LoadContextInfo.h"
 #include "nsQueryObject.h"
+#include "Http2ConnectTransaction.h"
 
 namespace mozilla {
 namespace net {
@@ -189,9 +191,9 @@ Http2Session::Http2Session(nsISocketTransport* aSocketTransport,
   mCurrentTopBrowsingContextId =
       gHttpHandler->ConnMgr()->CurrentTopBrowsingContextId();
 
-  mEnableWebsockets = gHttpHandler->IsH2WebsocketsEnabled();
+  mEnableWebsockets = StaticPrefs::network_http_http2_websockets();
 
-  bool dumpHpackTables = gHttpHandler->DumpHpackTables();
+  bool dumpHpackTables = StaticPrefs::network_http_http2_enable_hpack_dump();
   mCompressor.SetDumpTables(dumpHpackTables);
   mDecompressor.SetDumpTables(dumpHpackTables);
 }
@@ -794,7 +796,7 @@ void Http2Session::IncrementConcurrent(Http2Stream* stream) {
 
   nsAHttpTransaction* trans = stream->Transaction();
   if (!trans || !trans->IsNullTransaction() ||
-      trans->QuerySpdyConnectTransaction()) {
+      trans->QueryHttp2ConnectTransaction()) {
     MOZ_ASSERT(!stream->CountAsActive());
     stream->SetCountAsActive(true);
     ++mConcurrent;
@@ -1015,7 +1017,7 @@ void Http2Session::SendHello() {
       maxHpackBufferSize);
   numberOfEntries++;
 
-  if (!gHttpHandler->AllowPush()) {
+  if (!StaticPrefs::network_http_http2_allow_push()) {
     // If we don't support push then set MAX_CONCURRENT to 0 and also
     // set ENABLE_PUSH to 0
     NetworkEndian::writeUint16(
@@ -1073,7 +1075,7 @@ void Http2Session::SendHello() {
     LogIO(this, nullptr, "Session Window Bump ", packet, kFrameHeaderBytes + 4);
   }
 
-  if (gHttpHandler->UseH2Deps() &&
+  if (StaticPrefs::network_http_http2_enabled_deps() &&
       gHttpHandler->CriticalRequestPrioritization()) {
     mUseH2Deps = true;
     MOZ_ASSERT(mNextStreamID == kLeaderGroupID);
@@ -1837,7 +1839,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
          "mode refused.\n",
          self));
     self->GenerateRstStream(REFUSED_STREAM_ERROR, promisedID);
-  } else if (!gHttpHandler->AllowPush()) {
+  } else if (!StaticPrefs::network_http_http2_allow_push()) {
     // ENABLE_PUSH and MAX_CONCURRENT_STREAMS of 0 in settings disabled push
     LOG3(("Http2Session::RecvPushPromise Push Recevied when Disabled\n"));
     if (self->mGoAwayOnPush) {
@@ -4068,7 +4070,7 @@ void Http2Session::CreateTunnel(nsHttpTransaction* trans,
   // to the correct security callbacks
 
   RefPtr<nsHttpConnectionInfo> clone(ci->Clone());
-  RefPtr<SpdyConnectTransaction> connectTrans = new SpdyConnectTransaction(
+  RefPtr<Http2ConnectTransaction> connectTrans = new Http2ConnectTransaction(
       clone, aCallbacks, trans->Caps(), trans, this, false);
   DebugOnly<bool> rv =
       AddStream(connectTrans, nsISupportsPriority::PRIORITY_NORMAL, false,
@@ -4201,7 +4203,7 @@ nsresult Http2Session::ConfirmTLSProfile() {
     return NS_OK;
   }
 
-  if (!gHttpHandler->EnforceHttp2TlsProfile()) {
+  if (!StaticPrefs::network_http_http2_enforce_tls_profile()) {
     LOG3(
         ("Http2Session::ConfirmTLSProfile %p passed due to configuration "
          "bypass\n",
@@ -4430,8 +4432,7 @@ nsresult Http2Session::OnHeadersAvailable(nsAHttpTransaction* transaction,
                                           nsHttpRequestHead* requestHead,
                                           nsHttpResponseHead* responseHead,
                                           bool* reset) {
-  return mConnection->OnHeadersAvailable(transaction, requestHead, responseHead,
-                                         reset);
+  return NS_OK;
 }
 
 bool Http2Session::IsReused() {
@@ -4546,15 +4547,14 @@ bool Http2Session::RealJoinConnection(const nsACString& hostname, int32_t port,
 
   // try all the coalescable versions we support.
   const SpdyInformation* info = gHttpHandler->SpdyInfo();
-  static_assert(SpdyInformation::kCount == 1, "assume 1 alpn version");
   bool joinedReturn = false;
-  if (info->ProtocolEnabled(0)) {
+  if (StaticPrefs::network_http_http2_enabled()) {
     if (justKidding) {
-      rv = sslSocketControl->TestJoinConnection(info->VersionString[0],
-                                                hostname, port, &isJoined);
+      rv = sslSocketControl->TestJoinConnection(info->VersionString, hostname,
+                                                port, &isJoined);
     } else {
-      rv = sslSocketControl->JoinConnection(info->VersionString[0], hostname,
-                                            port, &isJoined);
+      rv = sslSocketControl->JoinConnection(info->VersionString, hostname, port,
+                                            &isJoined);
     }
     if (NS_SUCCEEDED(rv) && isJoined) {
       joinedReturn = true;
@@ -4604,7 +4604,7 @@ void Http2Session::CreateWebsocketStream(
   MOZ_ASSERT(ci);
 
   RefPtr<nsHttpConnectionInfo> clone(ci->Clone());
-  RefPtr<SpdyConnectTransaction> connectTrans = new SpdyConnectTransaction(
+  RefPtr<Http2ConnectTransaction> connectTrans = new Http2ConnectTransaction(
       clone, aCallbacks, trans->Caps(), trans, this, true);
   DebugOnly<bool> rv =
       AddStream(connectTrans, nsISupportsPriority::PRIORITY_NORMAL, false,
@@ -4669,6 +4669,10 @@ bool Http2Session::CanAcceptWebsocket() {
         mProcessedWaitingWebsockets));
   return mEnableWebsockets &&
          (mPeerAllowsWebsockets || !mProcessedWaitingWebsockets);
+}
+
+PRIntervalTime Http2Session::LastWriteTime() {
+  return mConnection->LastWriteTime();
 }
 
 }  // namespace net

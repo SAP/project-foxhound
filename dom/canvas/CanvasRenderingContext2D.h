@@ -99,6 +99,9 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     return mBufferProvider;
   }
 
+  Maybe<layers::SurfaceDescriptor> GetFrontBuffer(
+      WebGLFramebufferJS*, const bool webvr = false) override;
+
   void Save() override;
   void Restore() override;
   void Scale(double aX, double aY, mozilla::ErrorResult& aError) override;
@@ -862,15 +865,6 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   bool NeedToCalculateBounds() {
     return NeedToDrawShadow() || NeedToApplyFilter();
-  }
-
-  mozilla::gfx::CompositionOp UsedOperation() {
-    if (NeedToDrawShadow() || NeedToApplyFilter()) {
-      // In this case the shadow or filter rendering will use the operator.
-      return mozilla::gfx::CompositionOp::OP_OVER;
-    }
-
-    return CurrentState().op;
   }
 
   // text

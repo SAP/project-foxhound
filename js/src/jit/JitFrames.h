@@ -17,9 +17,13 @@
 #include "js/Id.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
+
+namespace wasm {
+class Instance;
+}
+
 namespace jit {
 
 enum class FrameType;
@@ -162,7 +166,7 @@ struct ResumeFromException {
   uint8_t* stackPointer;
   uint8_t* target;
   uint32_t kind;
-  wasm::TlsData* tlsData;
+  wasm::Instance* tlsData;
 
   // Value to push when resuming into a |finally| block.
   // Also used by Wasm to send the exception object to the throw stub.
@@ -207,11 +211,11 @@ static inline uint32_t MakeFrameDescriptor(uint32_t frameSize, FrameType type,
 // Returns the JSScript associated with the topmost JIT frame.
 JSScript* GetTopJitJSScript(JSContext* cx);
 
-#ifdef JS_CODEGEN_MIPS32
+#if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_ARM64)
 uint8_t* alignDoubleSpill(uint8_t* pointer);
 #else
 inline uint8_t* alignDoubleSpill(uint8_t* pointer) {
-  // This is NO-OP on non-MIPS platforms.
+  // This is a no-op on most platforms.
   return pointer;
 }
 #endif

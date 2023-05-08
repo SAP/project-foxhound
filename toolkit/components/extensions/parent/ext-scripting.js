@@ -6,7 +6,12 @@
 
 "use strict";
 
-var { ExtensionError } = ExtensionUtils;
+var { ExtensionError, getUniqueId, parseMatchPatterns } = ExtensionUtils;
+
+// Map<Extension, Map<string, number>> - For each extension, we keep a map
+// where the key is a user-provided script ID, the value is an internal
+// generated integer.
+const gScriptIdsMap = new Map();
 
 /**
  * Inserts a script or style in the given tab, and returns a promise which
@@ -105,8 +110,79 @@ const execute = (context, details, kind, method) => {
   return tab.queryContent("Execute", options);
 };
 
+const makeInternalContentScript = details => {
+  return {
+    scriptId: getUniqueId(),
+    options: {
+      allFrames: details.allFrames || false,
+      cssPaths: details.css || [],
+      excludeMatches: details.excludeMatches,
+      jsPaths: details.js || [],
+      matchAboutBlank: true,
+      matches: details.matches,
+      originAttributesPatterns: null,
+      runAt: details.runAt || "document_idle",
+      persistAcrossSessions: details.persistAcrossSessions,
+    },
+  };
+};
+
+const ensureValidScriptId = id => {
+  if (!id.length || id.startsWith("_")) {
+    throw new ExtensionError("Invalid content script id.");
+  }
+};
+
+const ensureValidScriptParams = script => {
+  if (!script.js?.length && !script.css?.length) {
+    throw new ExtensionError("At least one js or css must be specified.");
+  }
+
+  if (!script.matches?.length) {
+    throw new ExtensionError("matches must be specified.");
+  }
+
+  // This will throw if a match pattern is invalid.
+  parseMatchPatterns(script.matches);
+
+  if (script.excludeMatches) {
+    // This will throw if a match pattern is invalid.
+    parseMatchPatterns(script.excludeMatches);
+  }
+};
+
 this.scripting = class extends ExtensionAPI {
+  constructor(extension) {
+    super(extension);
+
+    gScriptIdsMap.set(extension, new Map());
+  }
+
+  onShutdown() {
+    // When the extension is unloaded, the following happens:
+    //
+    // 1. The shared memory is cleared in the parent, see [1]
+    // 2. The policy is marked as invalid, see [2]
+    //
+    // The following are not explicitly cleaned up:
+    //
+    // - `extension.registeredContentScripts
+    // - `ExtensionProcessScript.registeredContentScripts` +
+    //   `policy.contentScripts` (via `policy.unregisterContentScripts`)
+    //
+    // This means the script won't run again, but there is still potential for
+    // memory leaks if there is a reference to `extension` or `policy`
+    // somewhere.
+    //
+    // [1]: https://searchfox.org/mozilla-central/rev/211649f071259c4c733b4cafa94c44481c5caacc/toolkit/components/extensions/Extension.jsm#2974-2976
+    // [2]: https://searchfox.org/mozilla-central/rev/211649f071259c4c733b4cafa94c44481c5caacc/toolkit/components/extensions/ExtensionProcessScript.jsm#239
+
+    gScriptIdsMap.delete(this.extension);
+  }
+
   getAPI(context) {
+    const { extension } = context;
+
     return {
       scripting: {
         executeScriptInternal: async details => {
@@ -119,6 +195,179 @@ this.scripting = class extends ExtensionAPI {
 
         removeCSS: async details => {
           return execute(context, details, "css", "removeCSS").then(() => {});
+        },
+
+        registerContentScripts: async scripts => {
+          // Map<string, number>
+          const scriptIdsMap = gScriptIdsMap.get(extension);
+          // Map<string, { scriptId: number, options: Object }>
+          const scriptsToRegister = new Map();
+
+          for (const script of scripts) {
+            ensureValidScriptId(script.id);
+
+            if (scriptIdsMap.has(script.id)) {
+              throw new ExtensionError(
+                `Content script with id "${script.id}" is already registered.`
+              );
+            }
+
+            if (scriptsToRegister.has(script.id)) {
+              throw new ExtensionError(
+                `Script ID "${script.id}" found more than once in 'scripts' array.`
+              );
+            }
+
+            ensureValidScriptParams(script);
+
+            scriptsToRegister.set(script.id, makeInternalContentScript(script));
+          }
+
+          for (const [id, { scriptId, options }] of scriptsToRegister) {
+            scriptIdsMap.set(id, scriptId);
+            extension.registeredContentScripts.set(scriptId, options);
+          }
+          extension.updateContentScripts();
+
+          await extension.broadcast("Extension:RegisterContentScripts", {
+            id: extension.id,
+            scripts: Array.from(scriptsToRegister.values()),
+          });
+        },
+
+        getRegisteredContentScripts: async details => {
+          // Map<string, number>
+          const scriptIdsMap = gScriptIdsMap.get(extension);
+
+          return Array.from(scriptIdsMap.entries())
+            .filter(
+              ([id, scriptId]) => !details?.ids || details.ids.includes(id)
+            )
+            .map(([id, scriptId]) => {
+              const options = extension.registeredContentScripts.get(scriptId);
+
+              let script = {
+                id,
+                allFrames: options.allFrames,
+                matches: options.matches,
+                runAt: options.runAt,
+                persistAcrossSessions: options.persistAcrossSessions,
+              };
+
+              if (options.cssPaths.length) {
+                script.css = options.cssPaths.map(cssPath =>
+                  cssPath.replace(extension.baseURL, "")
+                );
+              }
+
+              if (options.excludeMatches?.length) {
+                script.excludeMatches = options.excludeMatches;
+              }
+
+              if (options.jsPaths.length) {
+                script.js = options.jsPaths.map(jsPath =>
+                  jsPath.replace(extension.baseURL, "")
+                );
+              }
+
+              return script;
+            });
+        },
+
+        unregisterContentScripts: async details => {
+          // Map<string, number>
+          const scriptIdsMap = gScriptIdsMap.get(extension);
+
+          let ids = [];
+
+          if (details?.ids) {
+            for (const id of details.ids) {
+              ensureValidScriptId(id);
+
+              if (!scriptIdsMap.has(id)) {
+                throw new ExtensionError(
+                  `Content script with id "${id}" does not exist.`
+                );
+              }
+            }
+
+            ids = details.ids;
+          } else {
+            ids = Array.from(scriptIdsMap.keys());
+          }
+
+          if (ids.length === 0) {
+            return;
+          }
+
+          const scriptIds = [];
+          for (const id of ids) {
+            const scriptId = scriptIdsMap.get(id);
+
+            extension.registeredContentScripts.delete(scriptId);
+            scriptIdsMap.delete(id);
+            scriptIds.push(scriptId);
+          }
+          extension.updateContentScripts();
+
+          await extension.broadcast("Extension:UnregisterContentScripts", {
+            id: extension.id,
+            scriptIds,
+          });
+        },
+
+        updateContentScripts: async scripts => {
+          // Map<string, number>
+          const scriptIdsMap = gScriptIdsMap.get(extension);
+          // Map<string, { scriptId: number, options: Object }>
+          const scriptsToUpdate = new Map();
+
+          for (const script of scripts) {
+            ensureValidScriptId(script.id);
+
+            if (!scriptIdsMap.has(script.id)) {
+              throw new ExtensionError(
+                `Content script with id "${script.id}" does not exist.`
+              );
+            }
+
+            if (scriptsToUpdate.has(script.id)) {
+              throw new ExtensionError(
+                `Script ID "${script.id}" found more than once in 'scripts' array.`
+              );
+            }
+
+            // Retrieve the existing script options.
+            const scriptId = scriptIdsMap.get(script.id);
+            const options = extension.registeredContentScripts.get(scriptId);
+
+            // Use existing values if not specified in the update.
+            script.allFrames ??= options.allFrames;
+            script.css ??= options.cssPaths;
+            script.excludeMatches ??= options.excludeMatches;
+            script.js ??= options.jsPaths;
+            script.matches ??= options.matches;
+            script.runAt ??= options.runAt;
+            script.persistAcrossSessions ??= options.persistAcrossSessions;
+
+            ensureValidScriptParams(script);
+
+            scriptsToUpdate.set(script.id, {
+              ...makeInternalContentScript(script),
+              // Re-use internal script ID.
+              scriptId,
+            });
+          }
+
+          for (const { scriptId, options } of scriptsToUpdate.values()) {
+            extension.registeredContentScripts.set(scriptId, options);
+          }
+          extension.updateContentScripts();
+
+          await extension.broadcast("Extension:UpdateContentScripts", {
+            id: extension.id,
+            scripts: Array.from(scriptsToUpdate.values()),
+          });
         },
       },
     };

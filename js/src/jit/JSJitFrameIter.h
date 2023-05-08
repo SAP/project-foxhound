@@ -476,14 +476,12 @@ class SnapshotIterator {
  public:
   // Exhibits frame properties contained in the snapshot.
   uint32_t pcOffset() const;
-  [[nodiscard]] inline bool resumeAfter() const {
-    // Inline frames are inlined on calls, which are considered as being
-    // resumed on the Call as baseline will push the pc once we return from
-    // the call.
-    if (moreFrames()) {
-      return false;
-    }
-    return recover_.resumeAfter();
+  ResumeMode resumeMode() const;
+
+  bool resumeAfter() const {
+    // Calls in outer frames are never considered resume-after.
+    MOZ_ASSERT_IF(moreFrames(), resumeMode() != ResumeMode::ResumeAfter);
+    return resumeMode() == ResumeMode::ResumeAfter;
   }
   inline BailoutKind bailoutKind() const { return snapshot_.bailoutKind(); }
 
@@ -669,11 +667,10 @@ class InlineFrameIterator {
   JSFunction* callee(MaybeReadFallback& fallback) const;
 
   unsigned numActualArgs() const {
-    // The number of actual arguments of inline frames is recovered by the
-    // iteration process. It is recovered from the bytecode because this
-    // property still hold since the for inlined frames. This property does not
-    // hold for the parent frame because it can have optimize a call to
-    // js_fun_call or js_fun_apply.
+    // The number of actual arguments for inline frames is determined by this
+    // iterator based on the caller's bytecode instruction (Call, FunCall,
+    // GetProp/SetProp, etc). For the outer function it's stored in the stack
+    // frame.
     if (more()) {
       return numActualArgs_;
     }

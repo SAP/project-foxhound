@@ -16,7 +16,7 @@ namespace mozilla {
 namespace a11y {
 
 class AccessibleWrap;
-class RemoteAccessible;
+class Accessible;
 class RootAccessibleWrap;
 class BatchData;
 
@@ -42,18 +42,18 @@ class SessionAccessibility final
   }
 
   static void Init();
-  static RefPtr<SessionAccessibility> GetInstanceFor(
-      RemoteAccessible* aAccessible);
-  static RefPtr<SessionAccessibility> GetInstanceFor(
-      LocalAccessible* aAccessible);
+  static RefPtr<SessionAccessibility> GetInstanceFor(Accessible* aAccessible);
 
   // Native implementations
   using Base::AttachNative;
   using Base::DisposeNative;
+  bool IsCacheEnabled();
   jni::Object::LocalRef GetNodeInfo(int32_t aID);
   void SetText(int32_t aID, jni::String::Param aText);
   void Click(int32_t aID);
   void Pivot(int32_t aID, int32_t aGranularity, bool aForward, bool aInclusive);
+  bool CachedPivot(int32_t aID, int32_t aGranularity, bool aForward,
+                   bool aInclusive);
   void ExploreByTouch(int32_t aID, float aX, float aY);
   void NavigateText(int32_t aID, int32_t aGranularity, int32_t aStartOffset,
                     int32_t aEndOffset, bool aForward, bool aSelect);

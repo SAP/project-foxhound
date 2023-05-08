@@ -208,14 +208,14 @@ void LIRGeneratorMIPSShared::lowerWasmBuiltinTruncateToInt32(
 
   if (opd->type() == MIRType::Double) {
     define(new (alloc()) LWasmBuiltinTruncateDToInt32(
-               useRegister(opd), useFixed(ins->tls(), WasmTlsReg),
+               useRegister(opd), useFixed(ins->tls(), InstanceReg),
                LDefinition::BogusTemp()),
            ins);
     return;
   }
 
   define(new (alloc()) LWasmBuiltinTruncateFToInt32(
-             useRegister(opd), useFixed(ins->tls(), WasmTlsReg),
+             useRegister(opd), useFixed(ins->tls(), InstanceReg),
              LDefinition::BogusTemp()),
          ins);
 }
@@ -975,6 +975,7 @@ bool MWasmTernarySimd128::specializeBitselectConstantMaskAsShuffle(
     int8_t shuffle[16]) {
   return false;
 }
+bool MWasmTernarySimd128::canRelaxBitselect() { return false; }
 #endif
 
 bool MWasmBinarySimd128::specializeForConstantRhs() {

@@ -7,6 +7,9 @@
 var EXPORTED_SYMBOLS = ["AboutPrivateBrowsingParent"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { BrowserUtils } = ChromeUtils.import(
+  "resource://gre/modules/BrowserUtils.jsm"
+);
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -27,8 +30,9 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Region: "resource://gre/modules/Region.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.jsm",
 });
 
 // We only show the private search banner once per browser session.
@@ -160,14 +164,13 @@ class AboutPrivateBrowsingParent extends JSWindowActorParent {
         Services.prefs.setIntPref(SHOWN_PREF, MAX_SEARCH_BANNER_SHOW_COUNT);
         break;
       }
-      case "ShouldShowVPNPromo": {
-        const homeRegion = Region.home || "";
-        const currentRegion = Region.current || "";
-        return (
-          homeRegion.toLowerCase() !== "cn" &&
-          currentRegion.toLowerCase() !== "cn" &&
-          Services.policies.status !== Services.policies.ACTIVE
+      case "ShouldShowPromo": {
+        return BrowserUtils.shouldShowPromo(
+          BrowserUtils.PromoType[aMessage.data.type]
         );
+      }
+      case "SpecialMessageActionDispatch": {
+        SpecialMessageActions.handleAction(aMessage.data, browser);
       }
     }
 

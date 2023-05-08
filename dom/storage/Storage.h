@@ -118,13 +118,19 @@ class Storage : public nsISupports, public nsWrapperCache {
   virtual void BeginExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                                      ErrorResult& aRv) {}
 
+  virtual void CheckpointExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
+                                          ErrorResult& aRv) {}
+
   virtual void EndExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                                    ErrorResult& aRv) {}
 
-  virtual bool GetHasActiveSnapshot(nsIPrincipal& aSubjectPrincipal,
-                                    ErrorResult& aRv) {
+  virtual bool GetHasSnapshot(nsIPrincipal& aSubjectPrincipal,
+                              ErrorResult& aRv) {
     return false;
   }
+
+  virtual int64_t GetSnapshotUsage(nsIPrincipal& aSubjectPrincipal,
+                                   ErrorResult& aRv);
 
   //////////////////////////////////////////////////////////////////////////////
 

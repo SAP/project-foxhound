@@ -2728,6 +2728,9 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
     RefPtr<ContentParent> contentParent;
     if (mChildID != 0) {
       ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
+      if (!cpm) {
+        return false;
+      }
       contentParent = cpm->GetContentProcessById(ContentParentId(mChildID));
     }
     mRemoteBrowser =
@@ -3215,8 +3218,13 @@ void nsFrameLoader::RequestUpdatePosition(ErrorResult& aRv) {
 already_AddRefed<Promise> nsFrameLoader::RequestTabStateFlush(
     ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
-  RefPtr<Promise> promise =
-      Promise::Create(GetOwnerDoc()->GetOwnerGlobal(), aRv);
+  Document* ownerDoc = GetOwnerDoc();
+  if (!ownerDoc) {
+    aRv.ThrowNotSupportedError("No owner document");
+    return nullptr;
+  }
+
+  RefPtr<Promise> promise = Promise::Create(ownerDoc->GetOwnerGlobal(), aRv);
 
   if (aRv.Failed()) {
     return nullptr;

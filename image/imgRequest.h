@@ -95,10 +95,8 @@ class imgRequest final : public nsIStreamListener,
   // Request that we start decoding the image as soon as data becomes available.
   void StartDecoding();
 
-  inline uint64_t InnerWindowID() const { return mInnerWindowId; }
-  void SetInnerWindowID(uint64_t aInnerWindowId) {
-    mInnerWindowId = aInnerWindowId;
-  }
+  uint64_t InnerWindowID() const;
+  void SetInnerWindowID(uint64_t aInnerWindowId);
 
   // Set the cache validation information (expiry time, whether we must
   // validate, etc) on the cache entry based on the request information.
@@ -263,9 +261,6 @@ class imgRequest final : public nsIStreamListener,
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
 
-  // The ID of the inner window origin, used for error reporting.
-  uint64_t mInnerWindowId;
-
   // The CORS mode (defined in imgIRequest) this image was loaded with. By
   // default, CORS_NONE.
   mozilla::CORSMode mCORSMode;
@@ -288,13 +283,15 @@ class imgRequest final : public nsIStreamListener,
   // Member variables protected by mMutex. Note that *all* flags in our bitfield
   // are protected by mMutex; if you're adding a new flag that isn'protected, it
   // must not be a part of this bitfield.
-  RefPtr<ProgressTracker> mProgressTracker;
-  RefPtr<Image> mImage;
-  bool mIsMultiPartChannel : 1;
-  bool mIsInCache : 1;
-  bool mDecodeRequested : 1;
-  bool mNewPartPending : 1;
-  bool mHadInsecureRedirect : 1;
+  RefPtr<ProgressTracker> mProgressTracker GUARDED_BY(mMutex);
+  RefPtr<Image> mImage GUARDED_BY(mMutex);
+  bool mIsMultiPartChannel : 1 GUARDED_BY(mMutex);
+  bool mIsInCache : 1 GUARDED_BY(mMutex);
+  bool mDecodeRequested : 1 GUARDED_BY(mMutex);
+  bool mNewPartPending : 1 GUARDED_BY(mMutex);
+  bool mHadInsecureRedirect : 1 GUARDED_BY(mMutex);
+  // The ID of the inner window origin, used for error reporting.
+  uint64_t mInnerWindowId GUARDED_BY(mMutex);
 };
 
 #endif  // mozilla_image_imgRequest_h

@@ -201,10 +201,6 @@ class LookAndFeel {
      */
     MenuBarDrag,
     /**
-     * Return an appropriate os version identifier.
-     */
-    OperatingSystemVersionIdentifier,
-    /**
      * 0: scrollbar button repeats to scroll only when cursor is on the button.
      * 1: scrollbar button repeats to scroll even if cursor is outside of it.
      */
@@ -328,6 +324,15 @@ class LookAndFeel {
     /** GTK menu radius */
     GtkMenuRadius,
 
+    /**
+     * Corresponding to dynamic-range.
+     * https://drafts.csswg.org/mediaqueries-5/#dynamic-range
+     * 0: Standard
+     * 1: High
+     */
+    DynamicRange,
+    VideoDynamicRange,
+
     /*
      * Not an ID; used to define the range of valid IDs.  Must be last.
      */
@@ -338,16 +343,6 @@ class LookAndFeel {
   static bool UseOverlayScrollbars() {
     return GetInt(IntID::UseOverlayScrollbars);
   }
-
-  /**
-   * Operating system versions.
-   */
-  enum class OperatingSystemVersion {
-    Windows7 = 2,
-    Windows8,
-    Windows10,
-    Unknown
-  };
 
   enum {
     eScrollArrow_None = 0,
@@ -402,8 +397,11 @@ class LookAndFeel {
                                               : ColorScheme::Light;
   }
 
+  static bool IsDarkColor(nscolor);
+
   enum class ChromeColorSchemeSetting { Light, Dark, System };
   static ChromeColorSchemeSetting ColorSchemeSettingForChrome();
+  static ColorScheme ThemeDerivedColorSchemeForContent();
 
   static ColorScheme ColorSchemeForChrome() {
     MOZ_ASSERT(sColorSchemeInitialized);

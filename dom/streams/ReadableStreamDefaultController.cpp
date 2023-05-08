@@ -11,6 +11,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamController.h"
@@ -18,11 +19,11 @@
 #include "mozilla/dom/ReadableStreamDefaultControllerBinding.h"
 #include "mozilla/dom/ReadableStreamDefaultReaderBinding.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
+#include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION(ReadableStreamController, mGlobal)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ReadableStreamController)
@@ -38,16 +39,15 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_CLASS(ReadableStreamDefaultController)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ReadableStreamDefaultController)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCancelAlgorithm, mStrategySizeAlgorithm,
-                                  mPullAlgorithm, mStream)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAlgorithms, mStrategySizeAlgorithm, mStream)
   tmp->mQueue.clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
     ReadableStreamDefaultController, ReadableStreamController)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCancelAlgorithm, mStrategySizeAlgorithm,
-                                    mPullAlgorithm, mStream)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAlgorithms, mStrategySizeAlgorithm,
+                                    mStream)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ReadableStreamDefaultController,
@@ -101,22 +101,16 @@ static bool ReadableStreamDefaultControllerCanCloseOrEnqueue(
 
   // Step 2. If controller.[[closeRequested]] is false and state is "readable",
   // return true.
-  if (!aController->CloseRequested() &&
-      state == ReadableStream::ReaderState::Readable) {
-    return true;
-  }
-
   // Step 3. Return false.
-  return false;
+  return !aController->CloseRequested() &&
+         state == ReadableStream::ReaderState::Readable;
 }
-
-enum class CloseOrEnqueue { Close, Enqueue };
 
 // https://streams.spec.whatwg.org/#readable-stream-default-controller-can-close-or-enqueue
 // This is a variant of ReadableStreamDefaultControllerCanCloseOrEnqueue
 // that also throws when the function would return false to improve error
 // messages.
-static bool ReadableStreamDefaultControllerCanCloseOrEnqueueAndThrow(
+bool ReadableStreamDefaultControllerCanCloseOrEnqueueAndThrow(
     ReadableStreamDefaultController* aController,
     CloseOrEnqueue aCloseOrEnqueue, ErrorResult& aRv) {
   // Step 1. Let state be controller.[[stream]].[[state]].
@@ -124,9 +118,9 @@ static bool ReadableStreamDefaultControllerCanCloseOrEnqueueAndThrow(
 
   nsCString prefix;
   if (aCloseOrEnqueue == CloseOrEnqueue::Close) {
-    prefix = "Cannot close a readable stream that "_ns;
+    prefix = "Cannot close a stream that "_ns;
   } else {
-    prefix = "Cannot enqueue into a readable stream that "_ns;
+    prefix = "Cannot enqueue into a stream that "_ns;
   }
 
   switch (state) {
@@ -151,10 +145,14 @@ static bool ReadableStreamDefaultControllerCanCloseOrEnqueueAndThrow(
     case ReadableStream::ReaderState::Errored:
       aRv.ThrowTypeError(prefix + "has errored."_ns);
       return false;
+
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unknown ReaderState");
+      return false;
   }
 }
 
-static Nullable<double> ReadableStreamDefaultControllerGetDesiredSize(
+Nullable<double> ReadableStreamDefaultControllerGetDesiredSize(
     ReadableStreamDefaultController* aController) {
   ReadableStream::ReaderState state = aController->GetStream()->State();
   if (state == ReadableStream::ReaderState::Errored) {
@@ -188,10 +186,8 @@ Nullable<double> ReadableStreamDefaultController::GetDesiredSize() {
 void ReadableStreamDefaultControllerClearAlgorithms(
     ReadableStreamDefaultController* aController) {
   // Step 1.
-  aController->SetPullAlgorithm(nullptr);
-
   // Step 2.
-  aController->SetCancelAlgorithm(nullptr);
+  aController->SetAlgorithms(nullptr);
 
   // Step 3.
   aController->setStrategySizeAlgorithm(nullptr);
@@ -350,7 +346,7 @@ void ReadableStreamDefaultController::Error(JSContext* aCx,
 }
 
 // https://streams.spec.whatwg.org/#readable-stream-default-controller-should-call-pull
-static bool ReadableStreamDefaultControllerShouldCallPull(
+bool ReadableStreamDefaultControllerShouldCallPull(
     ReadableStreamDefaultController* aController) {
   // Step 1.
   ReadableStream* stream = aController->GetStream();
@@ -404,56 +400,6 @@ void ReadableStreamDefaultControllerError(
   ReadableStreamError(aCx, stream, aValue, aRv);
 }
 
-// MG:XXX: Probably can find base class between this and
-// StartPromiseNativeHandler
-class PullIfNeededNativePromiseHandler final : public PromiseNativeHandler {
-  ~PullIfNeededNativePromiseHandler() = default;
-
-  // Virtually const, but cycle collected
-  RefPtr<ReadableStreamDefaultController> mController;
-
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(PullIfNeededNativePromiseHandler)
-
-  explicit PullIfNeededNativePromiseHandler(
-      ReadableStreamDefaultController* aController)
-      : PromiseNativeHandler(), mController(aController) {}
-
-  MOZ_CAN_RUN_SCRIPT void ResolvedCallback(JSContext* aCx,
-                                           JS::Handle<JS::Value> aValue,
-                                           ErrorResult& aRv) override {
-    // https://streams.spec.whatwg.org/#readable-stream-default-controller-call-pull-if-needed
-    // Step 7.1
-    mController->SetPulling(false);
-    // Step 7.2
-    if (mController->PullAgain()) {
-      // Step 7.2.1
-      mController->SetPullAgain(false);
-
-      // Step 7.2.2
-      ErrorResult rv;
-      ReadableStreamDefaultControllerCallPullIfNeeded(
-          aCx, MOZ_KnownLive(mController), aRv);
-    }
-  }
-
-  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
-    // https://streams.spec.whatwg.org/#readable-stream-default-controller-call-pull-if-needed
-    // Step 8.1
-    ReadableStreamDefaultControllerError(aCx, mController, aValue, aRv);
-  }
-};
-
-// Cycle collection methods for promise handler.
-NS_IMPL_CYCLE_COLLECTION(PullIfNeededNativePromiseHandler, mController)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(PullIfNeededNativePromiseHandler)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(PullIfNeededNativePromiseHandler)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PullIfNeededNativePromiseHandler)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
-
 // https://streams.spec.whatwg.org/#readable-stream-default-controller-call-pull-if-needed
 static void ReadableStreamDefaultControllerCallPullIfNeeded(
     JSContext* aCx, ReadableStreamDefaultController* aController,
@@ -481,82 +427,46 @@ static void ReadableStreamDefaultControllerCallPullIfNeeded(
   aController->SetPulling(true);
 
   // Step 6.
-  RefPtr<UnderlyingSourcePullCallbackHelper> pullAlgorithm(
-      aController->GetPullAlgorithm());
-
+  RefPtr<UnderlyingSourceAlgorithmsBase> algorithms =
+      aController->GetAlgorithms();
   RefPtr<Promise> pullPromise =
-      pullAlgorithm ? pullAlgorithm->PullCallback(aCx, *aController, aRv)
-                    : Promise::CreateResolvedWithUndefined(
-                          aController->GetParentObject(), aRv);
+      algorithms->PullCallback(aCx, *aController, aRv);
   if (aRv.Failed()) {
     return;
   }
 
   // Step 7 + 8:
-  pullPromise->AppendNativeHandler(
-      new PullIfNeededNativePromiseHandler(aController));
+  pullPromise->AddCallbacksWithCycleCollectedArgs(
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         ReadableStreamDefaultController* mController)
+          MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+            // Step 7.1
+            mController->SetPulling(false);
+            // Step 7.2
+            if (mController->PullAgain()) {
+              // Step 7.2.1
+              mController->SetPullAgain(false);
+
+              // Step 7.2.2
+              ErrorResult rv;
+              ReadableStreamDefaultControllerCallPullIfNeeded(
+                  aCx, MOZ_KnownLive(mController), aRv);
+            }
+          },
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         ReadableStreamDefaultController* mController) {
+        // Step 8.1
+        ReadableStreamDefaultControllerError(aCx, mController, aValue, aRv);
+      },
+      RefPtr(aController));
 }
-
-class StartPromiseNativeHandler final : public PromiseNativeHandler {
-  ~StartPromiseNativeHandler() = default;
-
-  RefPtr<ReadableStreamDefaultController> mController;
-
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(StartPromiseNativeHandler)
-
-  explicit StartPromiseNativeHandler(
-      ReadableStreamDefaultController* aController)
-      : PromiseNativeHandler(), mController(aController) {}
-
-  MOZ_CAN_RUN_SCRIPT
-  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
-    MOZ_ASSERT(mController);
-
-    // https://streams.spec.whatwg.org/#set-up-readable-stream-default-controller
-    //
-    // Step 11.1
-    mController->SetStarted(true);
-
-    // Step 11.2
-    mController->SetPulling(false);
-
-    // Step 11.3
-    mController->SetPullAgain(false);
-
-    // Step 11.4:
-
-    RefPtr<ReadableStreamDefaultController> stackController = mController;
-    ReadableStreamDefaultControllerCallPullIfNeeded(aCx, stackController, aRv);
-  }
-
-  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override {
-    // https://streams.spec.whatwg.org/#set-up-readable-stream-default-controller
-    // Step 12.1
-    ReadableStreamDefaultControllerError(aCx, mController, aValue, aRv);
-  }
-};
-
-// Cycle collection methods for promise handler
-NS_IMPL_CYCLE_COLLECTION(StartPromiseNativeHandler, mController)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(StartPromiseNativeHandler)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(StartPromiseNativeHandler)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(StartPromiseNativeHandler)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
 
 // https://streams.spec.whatwg.org/#set-up-readable-stream-default-controller
 void SetUpReadableStreamDefaultController(
     JSContext* aCx, ReadableStream* aStream,
     ReadableStreamDefaultController* aController,
-    UnderlyingSourceStartCallbackHelper* aStartAlgorithm,
-    UnderlyingSourcePullCallbackHelper* aPullAlgorithm,
-    UnderlyingSourceCancelCallbackHelper* aCancelAlgorithm,
-    double aHighWaterMark, QueuingStrategySize* aSizeAlgorithm,
-    ErrorResult& aRv) {
+    UnderlyingSourceAlgorithmsBase* aAlgorithms, double aHighWaterMark,
+    QueuingStrategySize* aSizeAlgorithm, ErrorResult& aRv) {
   // Step 1.
   MOZ_ASSERT(!aStream->Controller());
 
@@ -577,10 +487,8 @@ void SetUpReadableStreamDefaultController(
   aController->SetStrategyHWM(aHighWaterMark);
 
   // Step 6.
-  aController->SetPullAlgorithm(aPullAlgorithm);
-
   // Step 7.
-  aController->SetCancelAlgorithm(aCancelAlgorithm);
+  aController->SetAlgorithms(aAlgorithms);
 
   // Step 8.
   aStream->SetController(aController);
@@ -588,15 +496,10 @@ void SetUpReadableStreamDefaultController(
   // Step 9. Default algorithm returns undefined. See Step 2 of
   // https://streams.spec.whatwg.org/#set-up-readable-stream-default-controller
   JS::RootedValue startResult(aCx, JS::UndefinedValue());
-  if (aStartAlgorithm) {
-    // Strong Refs:
-    RefPtr<UnderlyingSourceStartCallbackHelper> startAlgorithm(aStartAlgorithm);
-    RefPtr<ReadableStreamDefaultController> controller(aController);
-
-    startAlgorithm->StartCallback(aCx, *controller, &startResult, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+  RefPtr<ReadableStreamDefaultController> controller = aController;
+  aAlgorithms->StartCallback(aCx, *controller, &startResult, aRv);
+  if (aRv.Failed()) {
+    return;
   }
 
   // Step 10.
@@ -607,10 +510,32 @@ void SetUpReadableStreamDefaultController(
   startPromise->MaybeResolve(startResult);
 
   // Step 11 & 12:
-  RefPtr<StartPromiseNativeHandler> startPromiseHandler =
-      new StartPromiseNativeHandler(aController);
+  startPromise->AddCallbacksWithCycleCollectedArgs(
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         ReadableStreamDefaultController* aController)
+          MOZ_CAN_RUN_SCRIPT_BOUNDARY {
+            MOZ_ASSERT(aController);
 
-  startPromise->AppendNativeHandler(startPromiseHandler);
+            // Step 11.1
+            aController->SetStarted(true);
+
+            // Step 11.2
+            aController->SetPulling(false);
+
+            // Step 11.3
+            aController->SetPullAgain(false);
+
+            // Step 11.4:
+            ReadableStreamDefaultControllerCallPullIfNeeded(
+                aCx, MOZ_KnownLive(aController), aRv);
+          },
+
+      [](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+         ReadableStreamDefaultController* aController) {
+        // Step 12.1
+        ReadableStreamDefaultControllerError(aCx, aController, aValue, aRv);
+      },
+      RefPtr(aController));
 }
 
 // https://streams.spec.whatwg.org/#set-up-readable-stream-default-controller-from-underlying-source
@@ -622,31 +547,13 @@ void SetupReadableStreamDefaultControllerFromUnderlyingSource(
   RefPtr<ReadableStreamDefaultController> controller =
       new ReadableStreamDefaultController(aStream->GetParentObject());
 
-  // Step 2+5: Similar to ReadableStream's sizeAlgorithm, until i can figure
-  // out a better way, going to devolve undefined return to caller.
-  RefPtr<UnderlyingSourceStartCallbackHelper> startAlgorithm =
-      aUnderlyingSourceDict.mStart.WasPassed()
-          ? new UnderlyingSourceStartCallbackHelper(
-                aUnderlyingSourceDict.mStart.Value(), aUnderlyingSource)
-          : nullptr;
-
-  // Step 3+6: Same as above, except Promise<Undefined>
-  RefPtr<UnderlyingSourcePullCallbackHelper> pullAlgorithm =
-      aUnderlyingSourceDict.mPull.WasPassed()
-          ? new IDLUnderlyingSourcePullCallbackHelper(
-                aUnderlyingSourceDict.mPull.Value(), aUnderlyingSource)
-          : nullptr;
-
-  // Step 4+7: Same as above:
-  RefPtr<UnderlyingSourceCancelCallbackHelper> cancelAlgorithm =
-      aUnderlyingSourceDict.mCancel.WasPassed()
-          ? new IDLUnderlyingSourceCancelCallbackHelper(
-                aUnderlyingSourceDict.mCancel.Value(), aUnderlyingSource)
-          : nullptr;
+  // Step 2 - 7
+  RefPtr<UnderlyingSourceAlgorithms> algorithms =
+      new UnderlyingSourceAlgorithms(aStream->GetParentObject(),
+                                     aUnderlyingSource, aUnderlyingSourceDict);
 
   // Step 8:
-  SetUpReadableStreamDefaultController(aCx, aStream, controller, startAlgorithm,
-                                       pullAlgorithm, cancelAlgorithm,
+  SetUpReadableStreamDefaultController(aCx, aStream, controller, algorithms,
                                        aHighWaterMark, aSizeAlgorithm, aRv);
 }
 
@@ -658,11 +565,8 @@ already_AddRefed<Promise> ReadableStreamDefaultController::CancelSteps(
 
   // Step 2.
   Optional<JS::Handle<JS::Value>> errorOption(aCx, aReason);
-  RefPtr<UnderlyingSourceCancelCallbackHelper> callback =
-      this->GetCancelAlgorithm();
-  RefPtr<Promise> result =
-      callback ? callback->CancelCallback(aCx, errorOption, aRv)
-               : Promise::CreateResolvedWithUndefined(GetParentObject(), aRv);
+  RefPtr<UnderlyingSourceAlgorithmsBase> algorithms = mAlgorithms;
+  RefPtr<Promise> result = algorithms->CancelCallback(aCx, errorOption, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -720,5 +624,4 @@ void ReadableStreamDefaultController::ReleaseSteps() {
   // Step 1. Return.
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

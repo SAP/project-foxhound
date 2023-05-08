@@ -22,7 +22,7 @@ win32/debug:
         platform: windows2012-32/debug
         symbol: B
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -48,7 +48,7 @@ win32/debug:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -77,7 +77,7 @@ win32/opt:
         platform: windows2012-32/opt
         symbol: B
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -132,7 +132,7 @@ win64/debug:
         platform: windows2012-64/debug
         symbol: B
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -158,7 +158,7 @@ win64/debug:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -184,7 +184,7 @@ win64-hybrid/plain:
         platform: windows2012-64/debug
         symbol: Bp-hybrid
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -238,7 +238,7 @@ win64-fuzzing/debug:
         platform: windows2012-64/debug
         symbol: Bf
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -265,7 +265,7 @@ win64-fuzzing/debug:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -339,7 +339,7 @@ win64/opt:
         platform: windows2012-64/opt
         symbol: B
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -565,7 +565,7 @@ win32-add-on-devel/opt:
         platform: windows2012-32-add-on-devel/opt
         symbol: B
         tier: 2
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 10800
@@ -617,7 +617,7 @@ win64-add-on-devel/opt:
         platform: windows2012-64-add-on-devel/opt
         symbol: B
         tier: 2
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 10800
@@ -669,7 +669,7 @@ win64-noopt/debug:
         platform: windows2012-64-noopt/debug
         symbol: B
         tier: 2
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -721,7 +721,7 @@ win32-noopt/debug:
         platform: windows2012-32-noopt/debug
         symbol: B
         tier: 2
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -1001,7 +1001,7 @@ win64-asan/debug:
         platform: windows2012-64/asan
         symbol: Bd
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -1027,7 +1027,7 @@ win64-asan/debug:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -1056,7 +1056,7 @@ win64-asan/opt:
         platform: windows2012-64/asan
         symbol: Bo
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -1083,7 +1083,7 @@ win64-asan/opt:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -1149,7 +1149,7 @@ win64-asan-reporter-shippable/opt:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -1174,7 +1174,7 @@ win64-asan-fuzzing/opt:
     treeherder:
         platform: windows2012-64/asan
         symbol: Bof
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -1200,7 +1200,7 @@ win64-asan-fuzzing/opt:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -1359,7 +1359,7 @@ win64-aarch64/debug:
         platform: windows2012-aarch64/debug
         symbol: B
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -1385,7 +1385,7 @@ win64-aarch64/debug:
     fetches:
         toolchain:
             - linux64-binutils
-            - linux64-clang-win-cross
+            - linux64-clang
             - linux64-rust-cross
             - linux64-rust-size
             - linux64-nasm
@@ -1420,7 +1420,7 @@ win64-aarch64/opt:
         platform: windows2012-aarch64/opt
         symbol: B
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200
@@ -1475,7 +1475,7 @@ win64-aarch64-eme/opt:
         platform: windows2012-aarch64/opt
         symbol: Be
         tier: 1
-    worker-type: b-linux
+    worker-type: b-linux-gcp
     worker:
         docker-image: {in-tree: debian11-amd64-build}
         max-run-time: 7200

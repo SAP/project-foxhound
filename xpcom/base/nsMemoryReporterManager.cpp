@@ -443,6 +443,10 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
       base = SHARED_REGION_BASE_ARM;
       size = SHARED_REGION_SIZE_ARM;
       break;
+    case CPU_TYPE_ARM64:
+      base = SHARED_REGION_BASE_ARM64;
+      size = SHARED_REGION_SIZE_ARM64;
+      break;
     case CPU_TYPE_I386:
       base = SHARED_REGION_BASE_I386;
       size = SHARED_REGION_SIZE_I386;
@@ -1812,9 +1816,12 @@ nsresult nsMemoryReporterManager::StartGettingReports() {
 
   if (RefPtr<UtilityProcessManager> utility =
           UtilityProcessManager::GetIfExists()) {
-    if (RefPtr<MemoryReportingProcess> proc =
-            utility->GetProcessMemoryReporter()) {
-      s->mChildrenPending.AppendElement(proc.forget());
+    for (RefPtr<UtilityProcessParent>& parent :
+         utility->GetAllProcessesProcessParent()) {
+      if (RefPtr<MemoryReportingProcess> proc =
+              utility->GetProcessMemoryReporter(parent)) {
+        s->mChildrenPending.AppendElement(proc.forget());
+      }
     }
   }
 

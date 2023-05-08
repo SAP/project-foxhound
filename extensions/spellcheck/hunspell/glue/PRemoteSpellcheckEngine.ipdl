@@ -4,8 +4,12 @@
 
 include protocol PContent;
 
+include "mozilla/RemoteSpellCheckEngineParent.h";
+include "mozilla/RemoteSpellCheckEngineChild.h";
+
 namespace mozilla {
 
+[ManualDealloc, ChildImpl="RemoteSpellcheckEngineChild", ParentImpl="RemoteSpellcheckEngineParent"]
 sync protocol PRemoteSpellcheckEngine {
   manager PContent;
 
@@ -15,6 +19,15 @@ parent:
   async CheckAsync(nsString[] aWord) returns (bool[] aIsMisspelled);
 
   sync SetDictionary(nsCString aDictionary) returns (bool success);
+
+  /*
+   * Set multiple current dictionaries from a list of dictionary names.
+   *
+   * @aDictionaries An array of dictionary names to use. If the array is empty,
+   *                no dictionary will be used.
+   * @aSuccess      true if setting the dictionaries succeeded, false otherwise.
+   */
+  async SetDictionaries(nsCString[] aDictionaries) returns (bool success);
 
   async Suggest(nsString aWord, uint32_t aCount) returns (nsString[] aSuggestions);
 

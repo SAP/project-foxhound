@@ -1058,6 +1058,11 @@ pub enum PrimitiveInstanceKind {
     },
 }
 
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct PrimitiveInstanceIndex(pub u32);
+
 #[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct PrimitiveInstance {
@@ -1083,6 +1088,7 @@ pub struct PrimitiveInstance {
     // TODO(gw): Currently built each frame, but can be retained.
     // TODO(gw): Remove clipped_world_rect (use tile bounds to determine vis flags)
     pub vis: PrimitiveVisibility,
+    pub anti_aliased: bool,
 }
 
 impl PrimitiveInstance {
@@ -1102,6 +1108,7 @@ impl PrimitiveInstance {
                 local_clip_rect,
                 clip_chain_id,
             },
+            anti_aliased: false,
         }
     }
 

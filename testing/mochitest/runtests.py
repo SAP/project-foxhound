@@ -944,6 +944,7 @@ class MochitestDesktop(object):
         self.tests_by_manifest = defaultdict(list)
         self.prefs_by_manifest = defaultdict(set)
         self.env_vars_by_manifest = defaultdict(set)
+        self.tests_dirs_by_manifest = defaultdict(set)
         self._active_tests = None
         self.currentTests = None
         self._locations = None
@@ -955,6 +956,7 @@ class MochitestDesktop(object):
         self.start_script_kwargs = {}
         self.extraPrefs = {}
         self.extraEnv = {}
+        self.extraTestsDirs = []
 
         if logger_options.get("log"):
             self.log = logger_options["log"]
@@ -1176,6 +1178,47 @@ class MochitestDesktop(object):
         elif options.flavor == "browser":
             testURL = "about:blank"
         return testURL
+
+    def parseAndCreateTestsDirs(self, m):
+        testsDirs = list(self.tests_dirs_by_manifest[m])[0]
+        self.extraTestsDirs = []
+        if testsDirs:
+            self.extraTestsDirs = testsDirs.strip().split()
+            self.log.info(
+                "The following extra test directories will be created:\n  {}".format(
+                    "\n  ".join(self.extraTestsDirs)
+                )
+            )
+            self.createExtraTestsDirs(self.extraTestsDirs, m)
+
+    def createExtraTestsDirs(self, extraTestsDirs=None, manifest=None):
+        """Take a list of directories that might be needed to exist by the test
+        prior to even the main process be executed, and:
+         - verify it does not already exists
+         - create it if it does
+        Removal of those directories is handled in cleanup()
+        """
+        if type(extraTestsDirs) != list:
+            return
+
+        for d in extraTestsDirs:
+            if os.path.exists(d):
+                raise FileExistsError(
+                    "Directory '{}' already exists. This is a member of "
+                    "test-directories in manifest {}.".format(d, manifest)
+                )
+
+        created = []
+        for d in extraTestsDirs:
+            os.makedirs(d)
+            created += [d]
+
+        if created != extraTestsDirs:
+            raise EnvironmentError(
+                "Not all directories were created: extraTestsDirs={} -- created={}".format(
+                    extraTestsDirs, created
+                )
+            )
 
     def getTestsByScheme(
         self, options, testsToFilter=None, disabled=True, manifestToFilter=None
@@ -1628,8 +1671,9 @@ toolbar#nav-bar {
             self.tests_by_manifest[manifest_key.replace("\\", "/")].append(tp)
             self.prefs_by_manifest[manifest_key].add(test.get("prefs"))
             self.env_vars_by_manifest[manifest_key].add(test.get("environment"))
+            self.tests_dirs_by_manifest[manifest_key].add(test.get("test-directories"))
 
-            for key in ["prefs", "environment"]:
+            for key in ["prefs", "environment", "test-directories"]:
                 if key in test and not options.runByManifest and "disabled" not in test:
                     self.log.error(
                         "parsing {}: runByManifest mode must be enabled to "
@@ -2212,6 +2256,10 @@ toolbar#nav-bar {
                 os.remove(self.manifest)
         if hasattr(self, "profile"):
             del self.profile
+        if hasattr(self, "extraTestsDirs"):
+            for d in self.extraTestsDirs:
+                if os.path.exists(d):
+                    shutil.rmtree(d)
         if options.pidFile != "" and os.path.exists(options.pidFile):
             try:
                 os.remove(options.pidFile)
@@ -2606,27 +2654,34 @@ toolbar#nav-bar {
                 quiet=quiet,
             )
 
+            expected = None
             if crashAsPass:
                 # self.message_logger.is_test_running indicates we need a test_end message
                 if crash_count > 0 and self.message_logger.is_test_running:
                     # this works for browser-chrome, mochitest-plain has status=0
-                    message = {
-                        "action": "test_end",
-                        "status": "CRASH",
-                        "expected": "CRASH",
-                        "thread": None,
-                        "pid": None,
-                        "source": "mochitest",
-                        "time": int(time.time()) * 1000,
-                        "test": self.lastTestSeen,
-                        "message": "application terminated with exit code 0",
-                    }
-                    # need to send a test_end in order to have mozharness process messages properly
-                    # this requires a custom message vs log.error/log.warning/etc.
-                    self.message_logger.process_message(message)
+                    expected = "CRASH"
                 status = 0
             elif crash_count or zombieProcesses:
+                if self.message_logger.is_test_running:
+                    expected = "PASS"
                 status = 1
+
+            if expected:
+                # send this out so we always wrap up the test-end message
+                message = {
+                    "action": "test_end",
+                    "status": "CRASH",
+                    "expected": expected,
+                    "thread": None,
+                    "pid": None,
+                    "source": "mochitest",
+                    "time": int(time.time()) * 1000,
+                    "test": self.lastTestSeen,
+                    "message": "application terminated with exit code 0",
+                }
+                # need to send a test_end in order to have mozharness process messages properly
+                # this requires a custom message vs log.error/log.warning/etc.
+                self.message_logger.process_message(message)
         finally:
             # cleanup
             if os.path.exists(processLog):
@@ -2963,6 +3018,8 @@ toolbar#nav-bar {
                         "\n  ".join(self.extraEnv)
                     )
                 )
+
+            self.parseAndCreateTestsDirs(m)
 
             # If we are using --run-by-manifest, we should not use the profile path (if) provided
             # by the user, since we need to create a new directory for each run. We would face

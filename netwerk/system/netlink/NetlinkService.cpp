@@ -23,6 +23,7 @@
 #include "mozilla/Base64.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/FunctionTypeTraits.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/Services.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
@@ -1199,7 +1200,10 @@ NetlinkService::Run() {
       }
     }
 
-    int rc = EINTR_RETRY(poll(fds, 2, GetPollWait()));
+    int rc = eintr_retry([&]() {
+      AUTO_PROFILER_THREAD_SLEEP;
+      return poll(fds, 2, GetPollWait());
+    });
 
     if (rc > 0) {
       if (fds[0].revents & POLLIN) {

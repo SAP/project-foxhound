@@ -7,6 +7,7 @@ const TEST_PROTON_CONTENT = [
     id: "AW_STEP1",
     order: 0,
     content: {
+      position: "corner",
       title: "Step 1",
       primary_button: {
         label: "Next",
@@ -24,6 +25,7 @@ const TEST_PROTON_CONTENT = [
           data: { entrypoint: "test" },
         },
       },
+      has_noodles: true,
       help_text: {
         text: "Here's some sample help text",
       },
@@ -43,6 +45,7 @@ const TEST_PROTON_CONTENT = [
       secondary_button: {
         label: "link",
       },
+      has_noodles: true,
     },
   },
   {
@@ -80,12 +83,13 @@ const TEST_PROTON_CONTENT = [
           data: { source: "chrome" },
         },
       },
+      has_noodles: true,
     },
   },
   {
     id: "AW_STEP4",
     order: 3,
-    autoClose: true,
+    auto_advance: "primary_button",
     content: {
       title: "Step 4",
       primary_button: {
@@ -97,6 +101,7 @@ const TEST_PROTON_CONTENT = [
       secondary_button: {
         label: "link",
       },
+      has_noodles: true,
     },
   },
 ];
@@ -138,7 +143,7 @@ add_task(async function test_multistage_aboutwelcome_proton() {
     [
       "main.AW_STEP1",
       "div.onboardingContainer",
-      "div.proton[style*='.avif']",
+      "div.proton[style*='chrome://activity-stream/content/data/content/assets']",
       "div.section-left",
       "span.attrib-text",
       "div.secondary-cta.top",
@@ -179,7 +184,7 @@ add_task(async function test_multistage_aboutwelcome_proton() {
     [
       "main.AW_STEP2.dialog-initial",
       "div.onboardingContainer",
-      "div.proton[style*='.avif']",
+      "div.proton[style*='chrome://activity-stream/content/data/content/assets']",
       "div.section-main",
       "nav.steps",
       "div.indicator.current",
@@ -200,7 +205,7 @@ add_task(async function test_multistage_aboutwelcome_proton() {
     [
       "main.AW_STEP3",
       "div.onboardingContainer",
-      "div.proton[style*='.avif']",
+      "div.proton[style*='chrome://activity-stream/content/data/content/assets']",
       "div.section-main",
       "div.tiles-theme-container",
       "nav.steps",
@@ -639,7 +644,7 @@ add_task(async function test_updatesPrefOnAWOpen() {
   Services.prefs.clearUserPref(DID_SEE_ABOUT_WELCOME_PREF);
 });
 
-add_task(async function setup() {
+add_setup(async function() {
   const sandbox = sinon.createSandbox();
   // This needs to happen before any about:welcome page opens
   sandbox.stub(FxAccounts.config, "promiseMetricsFlowURI").resolves("");

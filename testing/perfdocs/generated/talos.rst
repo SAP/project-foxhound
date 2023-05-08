@@ -376,7 +376,7 @@ Talos test lists
 .. dropdown:: ARES6
    :container: + anchor-id-ARES6
 
-   * contact: :jandem
+   * contact: :jandem and SpiderMonkey Team
    * source: `ARES-6 <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/ARES-6>`__
    * type: `Page load`_
    * data: 6 cycles of the entire benchmark
@@ -386,11 +386,45 @@ Talos test lists
    * lower_is_better: True
    * tpmanifest: ${talos}/tests/ares6/ares6.manifest
    * tppagecycles: 1
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: JetStream
    :container: + anchor-id-JetStream
 
-   * contact: :jandem
+   * contact: :jandem and SpiderMonkey Team
    * source: `jetstream.manifest <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/jetstream/jetstream.manifest>`__ and jetstream.zip from tooltool
    * type: `Page load`_
    * measuring: JavaScript performance
@@ -406,11 +440,45 @@ Talos test lists
     our pageloader extension and talos harness.
    * tpmanifest: ${talos}/tests/jetstream/jetstream.manifest
    * tppagecycles: 1
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: a11yr
    :container: + anchor-id-a11yr
 
-   * contact: :surkov
+   * contact: :jamie and accessibility team
    * source: `a11y.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/a11y>`__
    * type: `Page load`_
    * measuring: ???
@@ -437,11 +505,170 @@ Talos test lists
    * tpmozafterpaint: True
    * tppagecycles: 25
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: about_preferences_basic
    :container: + anchor-id-about_preferences_basic
 
-   * contact: :jaws
+   * contact: :jaws and :gijs
    * source: `about_preferences_basic.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/about-preferences/about_preferences_basic.manifest>`__
    * type: `Page load`_
    * measuring: first-non-blank-paint
@@ -486,11 +713,170 @@ Talos test lists
    * tpmanifest: ${talos}/tests/about-preferences/about_preferences_basic.manifest
    * tppagecycles: 1
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-chrome-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-chrome-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-chrome-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: basic_compositor_video
    :container: + anchor-id-basic_compositor_video
 
-   * contact: :davidb
+   * contact: :b0bh00d, :jeffm, and gfx
    * source: `video <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/video>`__
    * type: `Page load`_
    * data: 12 cycles of the entire benchmark, each subtest will have 12 data points (see below)
@@ -535,11 +921,170 @@ Talos test lists
    * tpmanifest: ${talos}/tests/video/video.manifest
    * tppagecycles: 12
    * unit: ms/frame
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-bcv-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-bcv-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-bcv-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-bcv-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-bcv-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-bcv-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-bcv-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-bcv-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-bcv-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-bcv-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: cpstartup
    :container: + anchor-id-cpstartup
 
-   * contact: :mconley
+   * contact: :mconley, Firefox Desktop Front-end team, Gijs, fqueze, and dthayer
    * measuring: Time from opening a new tab (which creates a new content process) to having that new content process be ready to load URLs.
    * source: `cpstartup <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/cpstartup>`__
    * type: `Page load`_
@@ -558,11 +1103,170 @@ Talos test lists
    * tpmanifest: ${talos}/tests/cpstartup/cpstartup.manifest
    * tppagecycles: 20
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: cross_origin_pageload
    :container: + anchor-id-cross_origin_pageload
 
-   * contact: :sefeng, :jesup
+   * contact: :sefeng, :jesup, and perf eng team
    * measuring: The time it takes to load a page which has 20 cross origin iframes
    * source: `cross_origin_pageload <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/cross_origin_pageload>`__
    * type: `Page load`_
@@ -580,20 +1284,179 @@ Talos test lists
    * tpmanifest: ${talos}/tests/cross_origin_pageload/cross_origin_pageload.manifest
    * tppagecycles: 10
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: damp
    :container: + anchor-id-damp
 
-   * contact: :ochameau
+   * contact: :ochameau and devtools team
    * source: `damp <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/devtools>`__
    * type: `Page load`_
-   * measuring: Developer Tools toolbox startup, shutdown, and reload performance
+   * measuring: Developer Tools toolbox performance. Split in test suites covering different DevTools areas (inspector, webconsole, other).
    * reporting: intervals in ms (lower is better)
    * see below for details
    * data: there are 36 reported subtests from DAMP which we load 25 times, resulting in 36 sets of 25 data points.
    * summarization:
       * subtest: `ignore first`_ data point, then take the `median`_ of the remaining 24 data points; `source: test.py <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/test.py#l356>`__
-      * suite: `geometric mean`_ of the 36 subtest results.
+      * suite: No value for the suite, only individual subtests are relevant.
    * description:
     To run this locally, you'll need to pull down the `tp5 page
     set <#page-sets>`__ and run it in a local web server. See the `tp5
@@ -654,11 +1517,300 @@ Talos test lists
    * unit: ms
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-webconsole-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-webconsole-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-damp-inspector-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-inspector-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-webconsole-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-damp-webconsole-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: displaylist_mutate
    :container: + anchor-id-displaylist_mutate
 
-   * contact: :mattwoodrow
+   * contact: :miko and gfx
    * source: `displaylist_mutate.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/layout/benchmarks/displaylist_mutate.html>`__
    * type: `Page load`_
    * data: we load the displaylist_mutate.html page five times, measuring pageload each time, generating 5 data points.
@@ -688,6 +1840,165 @@ Talos test lists
    * unit: ms
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: dromaeo
    :container: + anchor-id-dromaeo
@@ -709,7 +2020,7 @@ Talos test lists
 .. dropdown:: dromaeo_css
    :container: + anchor-id-dromaeo_css
 
-   * contact: :bz
+   * contact: :emilio, and css/layout team
    * source: `css.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/dromaeo>`__
    * type: `Page load`_
    * reporting: speed in test runs per second (higher is better)
@@ -744,11 +2055,135 @@ Talos test lists
    * gecko_profile_interval: 2
    * tpmanifest: ${talos}/tests/dromaeo/css.manifest
    * unit: score
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-dromaeojs-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-dromaeojs-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: dromaeo_dom
    :container: + anchor-id-dromaeo_dom
 
-   * contact: :bz
+   * contact: :peterv and dom team
    * source: `dom.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/dromaeo>`__
    * type: `Page load`_
    * data: see Dromaeo DOM
@@ -776,11 +2211,76 @@ Talos test lists
    * gecko_profile_interval: 2
    * tpmanifest: ${talos}/tests/dromaeo/dom.manifest
    * unit: score
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g3-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g3-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g3-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g3-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g3-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g3-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: glterrain
    :container: + anchor-id-glterrain
 
-   * contact: :jgilbert
+   * contact: :jgilbert and gfx
    * source: `glterrain <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/webgl/benchmarks/terrain>`__
    * type: `Page load`_
    * data: we load the perftest.html page (which generates 4 metrics to track) 25 times, resulting in 4 sets of 25 data points
@@ -816,11 +2316,241 @@ Talos test lists
    * unit: frame interval
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: glvideo
    :container: + anchor-id-glvideo
 
-   * contact: :jgilbert
+   * contact: :jgilbert and gfx
    * source: `glvideo <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/webgl/benchmarks/video>`__
    * type: `Page load`_
    * data: 5 cycles of the entire benchmark, each subtest will have 5 data points (see below)
@@ -853,11 +2583,241 @@ Talos test lists
    * unit: ms
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: kraken
    :container: + anchor-id-kraken
 
-   * contact: :sdetar
+   * contact: :sdetar, jandem, and SpiderMonkey Team
    * source: `kraken.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/kraken>`__
    * type: `Page load`_
    * measuring: JavaScript performance
@@ -898,11 +2858,135 @@ Talos test lists
    * tpmozafterpaint: False
    * tppagecycles: 1
    * unit: score
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-dromaeojs-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-dromaeojs-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-dromaeojs-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: motionmark_animometer
    :container: + anchor-id-motionmark_animometer
 
-   * contact: :davidb
+   * contact: :b0bh00d, :jeffm, and gfx
    * source: `source <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifests <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/motionmark>`__
    * type: `Page load`_
    * measuring: benchmark measuring the time to animate complex scenes
@@ -912,16 +2996,85 @@ Talos test lists
       * suite: we take a geometric mean of all the subtests (9 for
         animometer, 11 for html suite)
    * tpmanifest: ${talos}/tests/motionmark/animometer.manifest
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: motionmark_htmlsuite
    :container: + anchor-id-motionmark_htmlsuite
 
+   * contact: :jrmuizel and graphics(gfx) team
    * tpmanifest: ${talos}/tests/motionmark/htmlsuite.manifest
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-motionmark-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: motionmark_webgl
    :container: + anchor-id-motionmark_webgl
 
-   * contact: :jgilbert
+   * contact: :jgilbert and gfx
    * source: `source <https://searchfox.org/mozilla-central/source/third_party/webkit/PerformanceTests/MotionMark>`__ `manifest <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/motionmark/webgl.manifest>`__
    * type: `Page load`_
    * measuring: Draw call performance in WebGL
@@ -932,11 +3085,241 @@ Talos test lists
    * timeout: 600
    * tpmanifest: ${talos}/tests/motionmark/webgl.manifest
    * unit: fps
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-profiling-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-webgl-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-webgl-gli-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-webgl-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: pdfpaint
    :container: + anchor-id-pdfpaint
 
-   * contact: :bdahl
+   * contact: :bdahl and Compiler and Development Tools team
    * source:
    * type: `Page load`_
    * reporting: time from *performance.timing.navigationStart* to *pagerendered* event in ms (lower is better)
@@ -948,11 +3331,170 @@ Talos test lists
    * tpmanifest: ${talos}/tests/pdfpaint/pdfpaint.manifest
    * tppagecycles: 20
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: perf_reftest
    :container: + anchor-id-perf_reftest
 
-   * contact: :bholley
+   * contact: :emilio and css/layout team
    * source: `perf-reftest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/perf-reftest>`__
    * type: `Page load`_
    * reporting: intervals in ms (lower is better)
@@ -1011,11 +3553,170 @@ Talos test lists
    * tppagecycles: 10
    * tptimeout: 30000
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-perf-reftest-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-perf-reftest-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-perf-reftest-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: perf_reftest_singletons
    :container: + anchor-id-perf_reftest_singletons
 
-   * contact: :heycam
+   * contact: :emelio and Layout team
    * source: `perf-reftest-singletons <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/perf-reftest-singletons>`__
    * type: `Page load`_
    * reporting: intervals in ms (lower is better)
@@ -1050,11 +3751,135 @@ Talos test lists
    * tppagecycles: 15
    * tptimeout: 30000
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-perf-reftest-singletons-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-perf-reftest-singletons-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-perf-reftest-singletons-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: rasterflood_gradient
    :container: + anchor-id-rasterflood_gradient
 
-   * contact: :rhunt
+   * contact: :jrmuizel, :jimm, and gfx
    * source: `rasterflood_gradient.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_gradient.html>`__
    * type: `Page load`_
    * data: we load the rasterflood_gradient.html page ten times, computing a score each time, generating 10 data points.
@@ -1090,11 +3915,170 @@ Talos test lists
    * unit: score
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: rasterflood_svg
    :container: + anchor-id-rasterflood_svg
 
-   * contact: :rhunt
+   * contact: :jrmuizel, :jimm, and gfx
    * source: `rasterflood_svg.html <https://searchfox.org/mozilla-central/source/testing/talos/talos/tests/gfx/benchmarks/rasterflood_svg.html>`__
    * type: `Page load`_
    * data: we load the rasterflood_svg.html page ten times, measuring pageload each time, generating 10 data points.
@@ -1128,13 +4112,172 @@ Talos test lists
    * unit: ms
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g4-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g4-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g4-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: sessionrestore
    :container: + anchor-id-sessionrestore
 
-   * contact: :mikedeboer, :mconley, :felipe
+   * contact: :dale, :dao, :farre, session restore module owners/peers, and DOM team
    * source: `talos/sessionrestore <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/startup_test/sessionrestore>`__
-   * bug: `bug 936630 <https://bugzilla.mozilla.org/show_bug.cgi?id=936630>`__, 
+   * bug: `bug 936630 <https://bugzilla.mozilla.org/show_bug.cgi?id=936630>`__,
     `bug 1331937 <https://bugzilla.mozilla.org/show_bug.cgi?id=1331937>`__,
     `bug 1531520 <https://bugzilla.mozilla.org/show_bug.cgi?id=1531520>`__
    * type: Startup_
@@ -1173,12 +4316,330 @@ Talos test lists
    * timeout: 900
    * unit: ms
    * url: about:home
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: sessionrestore_many_windows
    :container: + anchor-id-sessionrestore_many_windows
 
    * See `sessionrestore <#sessionrestore>`_.
    * profile_path: ${talos}/startup_test/sessionrestore/profile-manywindows
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-sessionrestore-many-windows-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-sessionrestore-many-windows-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: sessionrestore_no_auto_restore
    :container: + anchor-id-sessionrestore_no_auto_restore
@@ -1186,11 +4647,170 @@ Talos test lists
    * See `sessionrestore <#sessionrestore>`_.
    * preferences: {'browser.startup.page': 1, 'talos.sessionrestore.norestore': True}
    * timeout: 300
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: startup_about_home_paint
    :container: + anchor-id-startup_about_home_paint
 
-   * contact: :mconley
+   * contact: :mconley, Firefox Desktop Front-end team, :gijs, :fqueze, and :dthayer
    * source: `addon <https://hg.mozilla.org/mozilla-central/file/tip/testing/talos/talos/startup_test/startup_about_home_paint/addon/>`__
    * type: Startup_
    * measuring: The time from process start to the point where the about:home page reports that it has painted the Top Sites.
@@ -1206,20 +4826,341 @@ Talos test lists
    * timeout: 600
    * tpmanifest: ${talos}/startup_test/startup_about_home_paint/startup_about_home_paint.manifest
    * url: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: startup_about_home_paint_cached
    :container: + anchor-id-startup_about_home_paint_cached
 
+   * contact: :mconley, Firefox Desktop Front-end team, :gijs, :fqueze, and :dthayer
+   * See `startup_about_home_paint <#startup_about_home_paint>`_.
+   * description: Tests loading about:home on startup with the about:home startup cache enabled.
    * cycles: 20
    * extensions: ['${talos}/startup_test/startup_about_home_paint/addon']
    * preferences: {'browser.startup.homepage.abouthome_cache.enabled': True}
    * tpmanifest: ${talos}/startup_test/startup_about_home_paint/startup_about_home_paint.manifest
    * url: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: startup_about_home_paint_realworld_webextensions
    :container: + anchor-id-startup_about_home_paint_realworld_webextensions
 
-   * contact: :mconley
+   * contact: :mconley, Firefox Desktop Front-end team, :gijs, :fqueze, and :dthayer
    * source: `addon <https://hg.mozilla.org/mozilla-central/file/tip/testing/talos/talos/startup_test/startup_about_home_paint/addon/>`__
    * type: Startup_, `Real-world WebExtensions`_
    * measuring: The time from process start to the point where the about:home page reports that it has painted the Top Sites when 5 popular, real-world WebExtensions are installed and enabled.
@@ -1235,11 +5176,135 @@ Talos test lists
    * tpmanifest: ${talos}/startup_test/startup_about_home_paint/startup_about_home_paint.manifest
    * url: None
    * webextensions_folder: ${talos}/webextensions
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-realworld-webextensions-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-realworld-webextensions-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-realworld-webextensions-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: stylebench
    :container: + anchor-id-stylebench
 
-   * contact: :emilio
+   * contact: :emilio and Layout team
    * source: `stylebench.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/stylebench/stylebench.manifest>`__
    * type: `Page load`_
    * measuring: speed of dynamic style recalculation
@@ -1249,7 +5314,7 @@ Talos test lists
 .. dropdown:: tabpaint
    :container: + anchor-id-tabpaint
 
-   * contact: :mconley
+   * contact: :mconley, Firefox Desktop Front-end team, :gijs, :fqueze, and :dthayer
    * source: `tabpaint <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/tabpaint>`__
    * bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1253382
    * type: `Page load`_
@@ -1281,11 +5346,170 @@ Talos test lists
    * tpmanifest: ${talos}/tests/tabpaint/tabpaint.manifest
    * tppagecycles: 20
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tabswitch
    :container: + anchor-id-tabswitch
 
-   * contact: :mconley
+   * contact: :mconley, Firefox Desktop Front-end team, :gijs, :fqueze, and :dthayer
    * source: `tabswitch <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/tabswitch>`__
    * bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1166132
    * type: `Page load`_
@@ -1359,11 +5583,160 @@ Talos test lists
    * tpmanifest: ${talos}/tests/tabswitch/tabswitch.manifest
    * tppagecycles: 5
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-tabswitch-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tabswitch-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tabswitch-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-tabswitch-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tart
    :container: + anchor-id-tart
 
-   * contact: :mconley
+   * contact: :mconley, Firefox Desktop Front-end team, :gijs, :fqueze, and :dthayer
    * source: `tart <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/tart>`__
    * type: `Page load`_
    * measuring: Desktop Firefox UI animation speed and smoothness
@@ -1437,11 +5810,206 @@ Talos test lists
    * unit: ms
    * w7_counters: None
    * win_counters: None
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tart_flex
    :container: + anchor-id-tart_flex
 
+   * description: This test was created as a part of a goal to switch away from xul flexbox to css flexbox
+   * Contact: No longer being maintained by any team/individual
    * preferences: {'layout.css.emulate-moz-box-with-flex': True}
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-flex-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-flex-fis-e10s**
+        - ✅
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: tp5
    :container: + anchor-id-tp5
@@ -1455,6 +6023,9 @@ Talos test lists
 .. dropdown:: tp5n
    :container: + anchor-id-tp5n
 
+   * contact: fx-perf@mozilla.com
+   * description:
+    The tp5 is an updated web page test set to 100 pages from April 8th, 2011. Effort was made for the pages to no longer be splash screens/login pages/home pages but to be pages that better reflect the actual content of the site in question.
    * cleanup: ${talos}/xtalos/parse_xperf.py -c ${talos}/bcontroller.json
    * cycles: 1
    * linux_counters: []
@@ -1477,11 +6048,55 @@ Talos test lists
    * xperf_providers: ['PROC_THREAD', 'LOADER', 'HARD_FAULTS', 'FILENAME', 'FILE_IO', 'FILE_IO_INIT']
    * xperf_stackwalk: ['FileCreate', 'FileRead', 'FileWrite', 'FileFlush', 'FileClose']
    * xperf_user_providers: ['Mozilla Generic Provider', 'Microsoft-Windows-TCPIP']
+   * **Test Task**:
+
+   .. list-table:: **test-windows10-64-2004-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-xperf-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-xperf-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-2004-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-xperf-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-xperf-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tp5o
    :container: + anchor-id-tp5o
 
-   * contact: :davehunt
+   * contact: :davehunt, and perftest team
    * source: `tp5n.zip <#page-sets>`__
    * type: `Page load`_
    * data: we load each of the 51 tp5o pages 25 times, resulting in 51 sets of 25 data points.
@@ -1587,11 +6202,170 @@ Talos test lists
    * unit: ms
    * w7_counters: ['% Processor Time']
    * win_counters: ['% Processor Time']
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-tp5o-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-tp5o-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-tp5o-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-tp5o-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-tp5o-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tp5o_scroll
    :container: + anchor-id-tp5o_scroll
 
-   * contact: :kats
+   * contact: :botond, :tnikkel, :hiro, and layout team
    * source: `tp5n.zip <#page-sets>`__
    * type: `Page load`_
    * data: we load each of the 51 tp5o pages 12 times, resulting in 51 sets of 12 data points.
@@ -1680,17 +6454,336 @@ Talos test lists
    * tppagecycles: 12
    * tpscrolltest: True
    * unit: 1/FPS
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g1-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g1-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g1-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g1-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g1-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tp5o_webext
    :container: + anchor-id-tp5o_webext
 
+   * contact: :mixedpuppy and webextension team
    * preferences: {'xpinstall.signatures.required': False}
    * webextensions: ${talos}/webextensions/dummy/dummy.xpi
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g5-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g5-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g5-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tresize
    :container: + anchor-id-tresize
 
-   * contact: :jimm
+   * contact: :gcp and platform integration
    * source: `tresize-test.html <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/startup_test/tresize/addon/content/tresize-test.html>`__
    * type: Startup_
    * measuring: Time to do XUL resize, in ms (lower is better).
@@ -1727,11 +6820,170 @@ Talos test lists
    * tpmozafterpaint: True
    * tppagecycles: 20
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-chrome-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-chrome-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-chrome-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-chrome-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-chrome-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: ts_paint
    :container: + anchor-id-ts_paint
 
-   * contact: :davidb
+   * contact: :mconley, Firefox Desktop Front-end team,
    * source: `tspaint_test.html <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/startup_test/tspaint_test.html>`__
    * Perfomatic: "Ts, Paint"
    * type: Startup_
@@ -1764,29 +7016,384 @@ Talos test lists
    * url: startup_test/tspaint_test.html
    * win7_counters: []
    * xperf_counters: []
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: ts_paint_flex
    :container: + anchor-id-ts_paint_flex
 
+   * description: This test was created as a part of a goal to switch away from xul flexbox to css flexbox
+   * Contact: No longer being maintained by any team/individual
    * preferences: {'layout.css.emulate-moz-box-with-flex': True}
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-flex-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-flex-fis-e10s**
+        - ✅
+        - ❌
+        - ❌
+        - ❌
+
+
 
 .. dropdown:: ts_paint_heavy
    :container: + anchor-id-ts_paint_heavy
 
    * `ts_paint <#ts_paint>`_ test run against a heavy user profile.
-   * add test details
+   * contact: :mconley, Firefox Desktop Front-end team,
    * profile: simple
 
 .. dropdown:: ts_paint_webext
    :container: + anchor-id-ts_paint_webext
 
+   * contact: :mconley, Firefox Desktop Front-end team,
    * preferences: {'xpinstall.signatures.required': False}
    * webextensions: ${talos}/webextensions/dummy/dummy.xpi
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g5-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g5-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-g5-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-g5-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-g5-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tscrollx
    :container: + anchor-id-tscrollx
 
-   * contact: :jrmuizel
+   * contact: :jrmuizel and gfx
    * source: `scroll.manifest <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/scroll>`__
    * type: `Page load`_
    * measuring: Scroll performance
@@ -1825,11 +7432,170 @@ Talos test lists
    * tpmozafterpaint: False
    * tppagecycles: 25
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tsvg_static
    :container: + anchor-id-tsvg_static
 
-   * contact: :jwatt, :dholbert, :neerja
+   * contact: :jwatt, :dholbert
    * source: `svg_static <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/svg_static/>`__
    * type: `Page load`_
    * data: we load the 5 svg pages 25 times, resulting in 5 sets of 25 data points
@@ -1855,11 +7621,171 @@ Talos test lists
    * tpmozafterpaint: True
    * tppagecycles: 25
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tsvgm
    :container: + anchor-id-tsvgm
 
    * An svg-only number that measures SVG rendering performance for dynamic content only.
+   * contact: :jwatt, :dholbert
    * add test details
    * gecko_profile_entries: 1000000
    * gecko_profile_interval: 10
@@ -1909,6 +7835,165 @@ Talos test lists
    * tpmozafterpaint: True
    * tppagecycles: 25
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: tsvgx
    :container: + anchor-id-tsvgx
@@ -1958,11 +8043,170 @@ Talos test lists
    * tpmozafterpaint: False
    * tppagecycles: 25
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-svgr-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-svgr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-svgr-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: twinopen
    :container: + anchor-id-twinopen
 
-   * contact: :bdahl, :jimm
+   * contact: :gcp and platform integration
    * source: `twinopen <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/tests/twinopen>`__
    * type: Startup_
    * data: we open a new browser window 20 times, resulting in 1 set of 20 data points.
@@ -1989,10 +8233,174 @@ Talos test lists
    * tpmozafterpaint: True
    * tppagecycles: 20
    * unit: ms
+   * **Test Task**:
+
+   .. list-table:: **test-linux1804-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-linux1804-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-macosx1015-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-profiling-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
+   .. list-table:: **test-windows10-32-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-32-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-other-swr-fis-e10s**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+
+
+   .. list-table:: **test-windows10-64-shippable-qr/opt**
+      :widths: 30 15 15 15 15
+      :header-rows: 1
+
+      * - **Test Name**
+        - mozilla-central
+        - autoland
+        - mozilla-release
+        - mozilla-beta
+      * - **talos-other-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+      * - **talos-other-swr-fis-e10s**
+        - ✅
+        - ✅
+        - ❌
+        - ✅
+
+
 
 .. dropdown:: v8_7
    :container: + anchor-id-v8_7
 
+   * description:
+    This is the V8 (version 7) javascript benchmark taken verbatim and slightly modified
+    to fit into our pageloader extension and talos harness. The previous version of this
+    test is V8 version 5 which was run on selective branches and operating systems.
+   * contact: No longer being maintained by any team/individual
    * gecko_profile_entries: 1000000
    * gecko_profile_interval: 1
    * lower_is_better: False

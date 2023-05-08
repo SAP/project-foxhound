@@ -41,12 +41,13 @@ UNIFIED_SOURCES += [
     'hb-aat-layout.cc',
     'hb-aat-map.cc',
     'hb-blob.cc',
+    'hb-buffer-serialize.cc',
+    'hb-buffer-verify.cc',
     'hb-buffer.cc',
     'hb-common.cc',
     'hb-draw.cc',
     'hb-face.cc',
     'hb-font.cc',
-    'hb-ms-feature-ranges.cc',
     'hb-number.cc',
     'hb-ot-cff1-table.cc',
     'hb-ot-cff2-table.cc',
@@ -85,6 +86,7 @@ UNIFIED_SOURCES += [
     'hb-subset-cff-common.cc',
     'hb-subset-cff1.cc',
     'hb-subset-cff2.cc',
+    'hb-subset-repacker.cc',
     'hb-unicode.cc',
 ]
 

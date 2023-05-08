@@ -158,18 +158,9 @@ var pktUI = (function() {
   function showSignUp() {
     getFirefoxAccountSignedInUser(function(userdata) {
       let sizes = initialPanelSize.signup.control;
-      const experiment = ExperimentAPI.getExperiment({
-        featureId: "pocketNewtab",
-      });
-      let utmCampaign = experiment?.slug || `firefox_door_hanger_menu`;
-      let utmSource = experiment?.branch?.slug || `control`;
-
       showPanel(
-        "about:pocket-signup?utmCampaign=" +
-          utmCampaign +
-          "&utmSource=" +
-          utmSource +
-          "&emailButton=" +
+        "about:pocket-signup?" +
+          "emailButton=" +
           NimbusFeatures.saveToPocket.getVariable("emailButton"),
         sizes
       );
@@ -222,7 +213,10 @@ var pktUI = (function() {
       homeVersion = "control";
     }
     const sizes = initialPanelSize.home[homeVersion];
-    showPanel("about:pocket-home", sizes);
+    const hideRecentSaves = NimbusFeatures.saveToPocket.getVariable(
+      "hideRecentSaves"
+    );
+    showPanel(`about:pocket-home?hiderecentsaves=${hideRecentSaves}`, sizes);
   }
 
   /**
@@ -233,16 +227,32 @@ var pktUI = (function() {
       width: options.width,
       height: options.height,
     });
+    const saveToPocketExperiment = ExperimentAPI.getExperiment({
+      featureId: "saveToPocket",
+    });
+    const pocketNewtabExperiment = ExperimentAPI.getExperiment({
+      featureId: "pocketNewtab",
+    });
+
+    let utmSource = "firefox_pocket_save_button";
+    // We want to know if the user is in a Pocket related experiment,
+    // but we have 2 Pocket related features, so we prioritize the saveToPocket feature.
+    let utmCampaign =
+      saveToPocketExperiment?.slug || pocketNewtabExperiment?.slug;
+    let utmContent =
+      saveToPocketExperiment?.branch?.slug ||
+      pocketNewtabExperiment?.branch?.slug;
 
     const url = new URL(urlString);
     // A set of params shared across all panels.
+    url.searchParams.append("utmSource", utmSource);
+    if (utmCampaign && utmContent) {
+      url.searchParams.append("utmCampaign", utmCampaign);
+      url.searchParams.append("utmContent", utmContent);
+    }
     url.searchParams.append(
       "layoutRefresh",
       NimbusFeatures.saveToPocket.getVariable("layoutRefresh")
-    );
-    url.searchParams.append(
-      "pockethost",
-      Services.prefs.getCharPref("extensions.pocket.site")
     );
     url.searchParams.append("locale", getUILocale());
 
@@ -271,7 +281,7 @@ var pktUI = (function() {
     );
   }
 
-  function onShowHome() {
+  async function onShowHome() {
     // A successful home button click.
     pktTelemetry.sendStructuredIngestionEvent(
       pktTelemetry.createPingPayload({
@@ -283,6 +293,35 @@ var pktUI = (function() {
         ],
       })
     );
+
+    if (
+      NimbusFeatures.saveToPocket.getVariable("layoutRefresh") &&
+      !NimbusFeatures.saveToPocket.getVariable("hideRecentSaves")
+    ) {
+      let recentSaves = await pktApi.getRecentSavesCache();
+      if (recentSaves) {
+        // We have cache, so we can use those.
+        pktUIMessaging.sendMessageToPanel("PKT_renderRecentSaves", recentSaves);
+      } else {
+        // Let the client know we're loading fresh recs.
+        pktUIMessaging.sendMessageToPanel(
+          "PKT_loadingRecentSaves",
+          recentSaves
+        );
+        // We don't have cache, so fetch fresh stories.
+        pktApi.getRecentSaves({
+          success(data) {
+            pktUIMessaging.sendMessageToPanel("PKT_renderRecentSaves", data);
+          },
+          error(error) {
+            pktUIMessaging.sendErrorMessageToPanel(
+              "PKT_renderRecentSaves",
+              error
+            );
+          },
+        });
+      }
+    }
   }
 
   function onShowSaved() {
@@ -334,6 +373,19 @@ var pktUI = (function() {
         };
         pktUIMessaging.sendMessageToPanel(saveLinkMessageId, successResponse);
         SaveToPocket.itemSaved();
+
+        if (
+          item?.resolved_id &&
+          item?.resolved_id !== "0" &&
+          NimbusFeatures.saveToPocket.getVariable("layoutRefresh") &&
+          !NimbusFeatures.saveToPocket.getVariable("hideRecentSaves")
+        ) {
+          pktApi.getArticleInfo(item.resolved_url, {
+            success(data) {
+              pktUIMessaging.sendMessageToPanel("PKT_renderSavedStory", data);
+            },
+          });
+        }
 
         getAndShowRecsForItem(item, {
           success(data) {
@@ -457,8 +509,9 @@ var pktUI = (function() {
 
     // We don't track every click, only clicks with a known source.
     if (data.source) {
-      const { position, source } = data;
+      const { position, source, model } = data;
       const payload = pktTelemetry.createPingPayload({
+        ...(model ? { model } : {}),
         events: [
           {
             action: "click",

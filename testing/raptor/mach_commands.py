@@ -28,7 +28,7 @@ from mozbuild.base import MachCommandConditions as Conditions
 HERE = os.path.dirname(os.path.realpath(__file__))
 
 BENCHMARK_REPOSITORY = "https://github.com/mozilla/perf-automation"
-BENCHMARK_REVISION = "7eef4a5eb4bd2d7558967e947b57cda33e287133"
+BENCHMARK_REVISION = "c51ca3fc73cd9a866c99357005cf1e21342a6a50"
 
 ANDROID_BROWSERS = ["geckoview", "refbrow", "fenix", "chrome-m"]
 
@@ -66,6 +66,7 @@ class RaptorRunner(MozbuildObject):
         self.device_name = kwargs["device_name"]
         self.enable_marionette_trace = kwargs["enable_marionette_trace"]
         self.browsertime_visualmetrics = kwargs["browsertime_visualmetrics"]
+        self.clean = kwargs["clean"]
 
         if Conditions.is_android(self) or kwargs["app"] in ANDROID_BROWSERS:
             self.binary_path = None
@@ -177,6 +178,8 @@ class RaptorRunner(MozbuildObject):
             "device_name": self.device_name,
             "enable_marionette_trace": self.enable_marionette_trace,
             "browsertime_visualmetrics": self.browsertime_visualmetrics,
+            "mozbuild_path": get_state_dir(),
+            "clean": self.clean,
         }
 
         sys.path.insert(0, os.path.join(self.topsrcdir, "tools", "browsertime"))

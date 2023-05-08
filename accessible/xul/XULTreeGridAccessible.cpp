@@ -62,7 +62,7 @@ uint32_t XULTreeGridAccessible::SelectedRowCount() {
   return SelectedItemCount();
 }
 
-void XULTreeGridAccessible::SelectedCells(nsTArray<LocalAccessible*>* aCells) {
+void XULTreeGridAccessible::SelectedCells(nsTArray<Accessible*>* aCells) {
   uint32_t colCount = ColCount(), rowCount = RowCount();
 
   for (uint32_t rowIdx = 0; rowIdx < rowCount; rowIdx++) {
@@ -440,15 +440,10 @@ nsRect XULTreeGridCellAccessible::BoundsInAppUnits() const {
                 presContext->CSSPixelsToAppUnits(bounds.Height()));
 }
 
-uint8_t XULTreeGridCellAccessible::ActionCount() const {
-  if (mColumn->Cycler()) return 1;
-
-  if (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
-      IsEditable()) {
-    return 1;
-  }
-
-  return 0;
+bool XULTreeGridCellAccessible::HasPrimaryAction() const {
+  return mColumn->Cycler() ||
+         (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
+          IsEditable());
 }
 
 void XULTreeGridCellAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
@@ -473,23 +468,6 @@ void XULTreeGridCellAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   }
 }
 
-bool XULTreeGridCellAccessible::DoAction(uint8_t aIndex) const {
-  if (aIndex != eAction_Click) return false;
-
-  if (mColumn->Cycler()) {
-    DoCommand();
-    return true;
-  }
-
-  if (mColumn->Type() == dom::TreeColumn_Binding::TYPE_CHECKBOX &&
-      IsEditable()) {
-    DoCommand();
-    return true;
-  }
-
-  return false;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridCellAccessible: TableCell
 
@@ -511,7 +489,7 @@ uint32_t XULTreeGridCellAccessible::ColIdx() const {
 uint32_t XULTreeGridCellAccessible::RowIdx() const { return mRow; }
 
 void XULTreeGridCellAccessible::ColHeaderCells(
-    nsTArray<LocalAccessible*>* aHeaderCells) {
+    nsTArray<Accessible*>* aHeaderCells) {
   dom::Element* columnElm = mColumn->Element();
 
   LocalAccessible* headerCell = mDoc->GetAccessible(columnElm);

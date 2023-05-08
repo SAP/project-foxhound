@@ -475,12 +475,15 @@ class IDLExposureMixins:
         assert scope.parentScope is None
         self._globalScope = scope
 
-        # Verify that our [Exposed] value, if any, makes sense.
-        for globalName in self._exposureGlobalNames:
-            if globalName not in scope.globalNames:
-                raise WebIDLError(
-                    "Unknown [Exposed] value %s" % globalName, [self._location]
-                )
+        if "*" in self._exposureGlobalNames:
+            self._exposureGlobalNames = scope.globalNames
+        else:
+            # Verify that our [Exposed] value, if any, makes sense.
+            for globalName in self._exposureGlobalNames:
+                if globalName not in scope.globalNames:
+                    raise WebIDLError(
+                        "Unknown [Exposed] value %s" % globalName, [self._location]
+                    )
 
         # Verify that we are exposed _somwhere_ if we have some place to be
         # exposed.  We don't want to assert that we're definitely exposed
@@ -1031,6 +1034,14 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
                         % (member.maplikeOrSetlikeOrIterableType),
                         [member.location],
                     )
+                if member.valueType.isObservableArray() or (
+                    member.hasKeyType() and member.keyType.isObservableArray()
+                ):
+                    raise WebIDLError(
+                        "%s declaration uses ObservableArray as value or key type"
+                        % (member.maplikeOrSetlikeOrIterableType),
+                        [member.location],
+                    )
                 # Check that we only have one interface declaration (currently
                 # there can only be one maplike/setlike declaration per
                 # interface)
@@ -1296,12 +1307,13 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
                 and (
                     member.getExtendedAttribute("StoreInSlot")
                     or member.getExtendedAttribute("Cached")
+                    or member.type.isObservableArray()
                 )
             ) or member.isMaplikeOrSetlike():
                 if self.isJSImplemented() and not member.isMaplikeOrSetlike():
                     raise WebIDLError(
                         "Interface %s is JS-implemented and we "
-                        "don't support [Cached] or [StoreInSlot] "
+                        "don't support [Cached] or [StoreInSlot] or ObservableArray "
                         "on JS-implemented interfaces" % self.identifier.name,
                         [self.location, member.location],
                     )
@@ -1569,6 +1581,7 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
                         or member.getExtendedAttribute("ChromeOnly")
                         or member.getExtendedAttribute("Pref")
                         or member.getExtendedAttribute("Func")
+                        or member.getExtendedAttribute("Trial")
                         or member.getExtendedAttribute("SecureContext")
                     ):
                         raise WebIDLError(
@@ -1780,7 +1793,13 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
     def hasMembersInSlots(self):
         return self._ownMembersInSlots != 0
 
-    conditionExtendedAttributes = ["Pref", "ChromeOnly", "Func", "SecureContext"]
+    conditionExtendedAttributes = [
+        "Pref",
+        "ChromeOnly",
+        "Func",
+        "Trial",
+        "SecureContext",
+    ]
 
     def isExposedConditionally(self, exclusions=[]):
         return any(
@@ -1957,6 +1976,7 @@ class IDLInterface(IDLInterfaceOrNamespace):
                 or identifier == "JSImplementation"
                 or identifier == "HeaderFile"
                 or identifier == "Func"
+                or identifier == "Trial"
                 or identifier == "Deprecated"
             ):
                 # Known extended attributes that take a string value
@@ -2043,6 +2063,7 @@ class IDLNamespace(IDLInterfaceOrNamespace):
                 identifier == "Pref"
                 or identifier == "HeaderFile"
                 or identifier == "Func"
+                or identifier == "Trial"
             ):
                 # Known extended attributes that take a string value
                 if not attr.hasValue():
@@ -2339,6 +2360,7 @@ class IDLType(IDLObject):
         "sequence",
         "record",
         "promise",
+        "observablearray",
     )
 
     def __init__(self, location, name):
@@ -2484,6 +2506,9 @@ class IDLType(IDLObject):
         assert self.isFloat()
 
     def isJSONType(self):
+        return False
+
+    def isObservableArray(self):
         return False
 
     def hasClamp(self):
@@ -2711,6 +2736,9 @@ class IDLNullableType(IDLParametrizedType):
     def isJSONType(self):
         return self.inner.isJSONType()
 
+    def isObservableArray(self):
+        return self.inner.isObservableArray()
+
     def hasClamp(self):
         return self.inner.hasClamp()
 
@@ -2733,7 +2761,7 @@ class IDLNullableType(IDLParametrizedType):
 
         if self.inner.nullable():
             raise WebIDLError(
-                "The inner type of a nullable type must not be " "a nullable type",
+                "The inner type of a nullable type must not be a nullable type",
                 [self.location, self.inner.location],
             )
         if self.inner.isUnion():
@@ -2750,6 +2778,11 @@ class IDLNullableType(IDLParametrizedType):
                     "[LegacyNullToEmptyString] not allowed on a nullable DOMString",
                     [self.location, self.inner.location],
                 )
+        if self.inner.isObservableArray():
+            raise WebIDLError(
+                "The inner type of a nullable type must not be an ObservableArray type",
+                [self.location, self.inner.location],
+            )
 
         self.name = self.inner.name + "OrNull"
         return self
@@ -2809,6 +2842,12 @@ class IDLSequenceType(IDLParametrizedType):
         return IDLType.Tags.sequence
 
     def complete(self, scope):
+        if self.inner.isObservableArray():
+            raise WebIDLError(
+                "The inner type of a sequence type must not be an ObservableArray type",
+                [self.location, self.inner.location],
+            )
+
         self.inner = self.inner.complete(scope)
         self.name = self.inner.name + "Sequence"
         return self
@@ -2866,6 +2905,12 @@ class IDLRecordType(IDLParametrizedType):
         return IDLType.Tags.record
 
     def complete(self, scope):
+        if self.inner.isObservableArray():
+            raise WebIDLError(
+                "The value type of a record type must not be an ObservableArray type",
+                [self.location, self.inner.location],
+            )
+
         self.inner = self.inner.complete(scope)
         self.name = self.keyType.name + self.inner.name + "Record"
         return self
@@ -2892,6 +2937,75 @@ class IDLRecordType(IDLParametrizedType):
 
     def isExposedInAllOf(self, exposureSet):
         return self.inner.unroll().isExposedInAllOf(exposureSet)
+
+
+class IDLObservableArrayType(IDLParametrizedType):
+    def __init__(self, location, innerType):
+        assert not innerType.isVoid()
+        IDLParametrizedType.__init__(self, location, None, innerType)
+
+    def __hash__(self):
+        return hash(self.inner)
+
+    def __eq__(self, other):
+        return isinstance(other, IDLObservableArrayType) and self.inner == other.inner
+
+    def __str__(self):
+        return self.inner.__str__() + "ObservableArray"
+
+    def prettyName(self):
+        return "ObservableArray<%s>" % self.inner.prettyName()
+
+    def isVoid(self):
+        return False
+
+    def isJSONType(self):
+        return self.inner.isJSONType()
+
+    def isObservableArray(self):
+        return True
+
+    def isComplete(self):
+        return self.name is not None
+
+    def tag(self):
+        return IDLType.Tags.observablearray
+
+    def complete(self, scope):
+        if not self.inner.isComplete():
+            self.inner = self.inner.complete(scope)
+        assert self.inner.isComplete()
+
+        if self.inner.isDictionary():
+            raise WebIDLError(
+                "The inner type of an ObservableArray type must not "
+                "be a dictionary type",
+                [self.location, self.inner.location],
+            )
+        if self.inner.isSequence():
+            raise WebIDLError(
+                "The inner type of an ObservableArray type must not "
+                "be a sequence type",
+                [self.location, self.inner.location],
+            )
+        if self.inner.isRecord():
+            raise WebIDLError(
+                "The inner type of an ObservableArray type must not be a record type",
+                [self.location, self.inner.location],
+            )
+        if self.inner.isObservableArray():
+            raise WebIDLError(
+                "The inner type of an ObservableArray type must not "
+                "be an ObservableArray type",
+                [self.location, self.inner.location],
+            )
+
+        self.name = self.inner.name + "ObservableArray"
+        return self
+
+    def isDistinguishableFrom(self, other):
+        # ObservableArrays are not distinguishable from anything.
+        return False
 
 
 class IDLUnionType(IDLType):
@@ -3376,6 +3490,12 @@ class IDLPromiseType(IDLParametrizedType):
         return IDLType.Tags.promise
 
     def complete(self, scope):
+        if self.inner.isObservableArray():
+            raise WebIDLError(
+                "The inner type of a promise type must not be an ObservableArray type",
+                [self.location, self.inner.location],
+            )
+
         self.inner = self.promiseInnerType().complete(scope)
         return self
 
@@ -4895,6 +5015,7 @@ class IDLConst(IDLInterfaceMember):
             identifier == "Pref"
             or identifier == "ChromeOnly"
             or identifier == "Func"
+            or identifier == "Trial"
             or identifier == "SecureContext"
             or identifier == "NonEnumerable"
         ):
@@ -5050,6 +5171,21 @@ class IDLAttribute(IDLInterfaceMember):
             raise WebIDLError(
                 "Promise-returning attributes must be readonly", [self.location]
             )
+
+        if self.type.isObservableArray():
+            if self.isStatic():
+                raise WebIDLError(
+                    "A static attribute cannot have an ObservableArray type",
+                    [self.location],
+                )
+            if self.getExtendedAttribute("Cached") or self.getExtendedAttribute(
+                "StoreInSlot"
+            ):
+                raise WebIDLError(
+                    "[Cached] and [StoreInSlot] must not be used "
+                    "on an attribute whose type is ObservableArray",
+                    [self.location],
+                )
 
     def validate(self):
         def typeContainsChromeOnlyDictionaryMember(type):
@@ -5400,6 +5536,7 @@ class IDLAttribute(IDLInterfaceMember):
             or identifier == "GetterCanOOM"
             or identifier == "ChromeOnly"
             or identifier == "Func"
+            or identifier == "Trial"
             or identifier == "SecureContext"
             or identifier == "Frozen"
             or identifier == "NewObject"
@@ -5538,6 +5675,7 @@ class IDLArgument(IDLObjectWithIdentifier):
             elif self.dictionaryMember and (
                 identifier == "ChromeOnly"
                 or identifier == "Func"
+                or identifier == "Trial"
                 or identifier == "Pref"
             ):
                 if not self.optional:
@@ -5591,6 +5729,12 @@ class IDLArgument(IDLObjectWithIdentifier):
         if self.dictionaryMember and self.type.legacyNullToEmptyString:
             raise WebIDLError(
                 "Dictionary members cannot be [LegacyNullToEmptyString]",
+                [self.location],
+            )
+        if self.type.isObservableArray():
+            raise WebIDLError(
+                "%s cannot have an ObservableArray type"
+                % ("Dictionary members" if self.dictionaryMember else "Arguments"),
                 [self.location],
             )
         # Now do the coercing thing; this needs to happen after the
@@ -6387,6 +6531,7 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             or identifier == "Pref"
             or identifier == "Deprecated"
             or identifier == "Func"
+            or identifier == "Trial"
             or identifier == "SecureContext"
             or identifier == "BinaryName"
             or identifier == "NeedsSubjectPrincipal"
@@ -6442,6 +6587,7 @@ class IDLConstructor(IDLMethod):
             or identifier == "SecureContext"
             or identifier == "Throws"
             or identifier == "Func"
+            or identifier == "Trial"
             or identifier == "Pref"
             or identifier == "UseCounter"
         ):
@@ -6675,6 +6821,7 @@ class Tokenizer(object):
         "float": "FLOAT",
         "long": "LONG",
         "object": "OBJECT",
+        "ObservableArray": "OBSERVABLEARRAY",
         "octet": "OCTET",
         "Promise": "PROMISE",
         "required": "REQUIRED",
@@ -6692,6 +6839,7 @@ class Tokenizer(object):
         "[": "LBRACKET",
         "]": "RBRACKET",
         "?": "QUESTIONMARK",
+        "*": "ASTERISK",
         ",": "COMMA",
         "=": "EQUALS",
         "<": "LT",
@@ -8024,6 +8172,7 @@ class Parser(Tokenizer):
         ExtendedAttribute : ExtendedAttributeNoArgs
                           | ExtendedAttributeArgList
                           | ExtendedAttributeIdent
+                          | ExtendedAttributeWildcard
                           | ExtendedAttributeNamedArgList
                           | ExtendedAttributeIdentList
         """
@@ -8063,6 +8212,7 @@ class Parser(Tokenizer):
               | EQUALS
               | GT
               | QUESTIONMARK
+              | ASTERISK
               | DOMSTRING
               | BYTESTRING
               | USVSTRING
@@ -8210,6 +8360,14 @@ class Parser(Tokenizer):
         valueType = p[5]
         type = IDLRecordType(self.getLocation(p, 1), keyType, valueType)
         p[0] = self.handleNullable(type, p[7])
+
+    def p_DistinguishableTypeObservableArrayType(self, p):
+        """
+        DistinguishableType : OBSERVABLEARRAY LT TypeWithExtendedAttributes GT Null
+        """
+        innerType = p[3]
+        type = IDLObservableArrayType(self.getLocation(p, 1), innerType)
+        p[0] = self.handleNullable(type, p[5])
 
     def p_DistinguishableTypeScopedName(self, p):
         """
@@ -8456,6 +8614,12 @@ class Parser(Tokenizer):
         """
         ExtendedAttributeIdent : IDENTIFIER EQUALS STRING
                                | IDENTIFIER EQUALS IDENTIFIER
+        """
+        p[0] = (p[1], p[3])
+
+    def p_ExtendedAttributeWildcard(self, p):
+        """
+        ExtendedAttributeWildcard : IDENTIFIER EQUALS ASTERISK
         """
         p[0] = (p[1], p[3])
 

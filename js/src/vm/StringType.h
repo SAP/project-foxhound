@@ -634,7 +634,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
 
   /* Only called by the GC for strings with the AllocKind::STRING kind. */
 
-  inline void finalize(JSFreeOp* fop);
+  inline void finalize(JS::GCContext* gcx);
 
   /* Gets the number of bytes that the chars take on the heap. */
 
@@ -1000,7 +1000,7 @@ class JSLinearString : public JSString {
    */
   inline js::PropertyName* toPropertyName(JSContext* cx);
 
-  inline void finalize(JSFreeOp* fop);
+  inline void finalize(JS::GCContext* gcx);
   inline size_t allocSize() const;
 
 #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW)
@@ -1200,7 +1200,7 @@ class JSFatInlineString : public JSInlineString
 
   // Only called by the GC for strings with the AllocKind::FAT_INLINE_STRING
   // kind.
-  MOZ_ALWAYS_INLINE void finalize(JSFreeOp* fop);
+  MOZ_ALWAYS_INLINE void finalize(JS::GCContext* gcx);
 };
 
 static_assert(sizeof(JSFatInlineString) % js::gc::CellAlignBytes == 0,
@@ -1231,7 +1231,7 @@ class JSExternalString : public JSLinearString {
 
   // Only called by the GC for strings with the AllocKind::EXTERNAL_STRING
   // kind.
-  inline void finalize(JSFreeOp* fop);
+  inline void finalize(JS::GCContext* gcx);
 
 #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW)
   void dumpRepresentation(js::GenericPrinter& out, int indent) const;
@@ -1321,7 +1321,7 @@ class FatInlineAtom : public JSAtom {
   HashNumber hash() const { return hash_; }
   void initHash(HashNumber hash) { hash_ = hash; }
 
-  inline void finalize(JSFreeOp* fop);
+  inline void finalize(JS::GCContext* gcx);
 
   static constexpr size_t offsetOfHash() {
     return offsetof(FatInlineAtom, hash_);
@@ -1394,7 +1394,7 @@ static_assert(sizeof(PropertyName) == sizeof(JSString),
               "string subclasses must be binary-compatible with JSString");
 
 static MOZ_ALWAYS_INLINE jsid NameToId(PropertyName* name) {
-  return JS::PropertyKey::fromNonIntAtom(name);
+  return JS::PropertyKey::NonIntAtom(name);
 }
 
 using PropertyNameVector = JS::GCVector<PropertyName*>;

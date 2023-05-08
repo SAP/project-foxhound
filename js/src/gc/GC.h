@@ -41,13 +41,13 @@ extern void TraceRuntime(JSTracer* trc);
 // Trace roots but don't evict the nursery first; used from DumpHeap.
 extern void TraceRuntimeWithoutEviction(JSTracer* trc);
 
-extern void ReleaseAllJITCode(JSFreeOp* op);
+extern void ReleaseAllJITCode(JS::GCContext* gcx);
 
 extern void PrepareForDebugGC(JSRuntime* rt);
 
 /* Functions for managing cross compartment gray pointers. */
 
-extern void NotifyGCNukeWrapper(JSObject* o);
+extern void NotifyGCNukeWrapper(JSContext* cx, JSObject* wrapper);
 
 extern unsigned NotifyGCPreSwap(JSObject* a, JSObject* b);
 

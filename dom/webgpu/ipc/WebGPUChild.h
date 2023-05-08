@@ -15,6 +15,7 @@ namespace dom {
 struct GPURequestAdapterOptions;
 }  // namespace dom
 namespace layers {
+class CompositableHandle;
 class CompositorBridgeChild;
 }  // namespace layers
 namespace webgpu {
@@ -100,8 +101,9 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
 
   void DeviceCreateSwapChain(RawId aSelfId, const RGBDescriptor& aRgbDesc,
                              size_t maxBufferCount,
-                             wr::ExternalImageId aExternalImageId);
-  void SwapChainPresent(wr::ExternalImageId aExternalImageId, RawId aTextureId);
+                             const layers::CompositableHandle& aHandle);
+  void SwapChainPresent(const layers::CompositableHandle& aHandle,
+                        RawId aTextureId);
 
   void RegisterDevice(Device* const aDevice);
   void UnregisterDevice(RawId aId);
@@ -124,7 +126,7 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
       const dom::GPURenderPipelineDescriptor& aDesc,
       ipc::ByteBuf* const aByteBuf);
 
-  ffi::WGPUClient* const mClient;
+  UniquePtr<ffi::WGPUClient> const mClient;
   std::unordered_map<RawId, WeakPtr<Device>> mDeviceMap;
 
  public:

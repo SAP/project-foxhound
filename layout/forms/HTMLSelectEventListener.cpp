@@ -54,9 +54,11 @@ namespace mozilla {
 
 static StaticAutoPtr<nsString> sIncrementalString;
 static DOMTimeStamp gLastKeyTime = 0;
+static uintptr_t sLastKeyListener = 0;
 static constexpr int32_t kNothingSelected = -1;
 
 static nsString& GetIncrementalString() {
+  MOZ_ASSERT(sLastKeyListener != 0);
   if (!sIncrementalString) {
     sIncrementalString = new nsString();
     ClearOnShutdown(&sIncrementalString);
@@ -64,24 +66,33 @@ static nsString& GetIncrementalString() {
   return *sIncrementalString;
 }
 
-class MOZ_RAII AutoIncrementalSearchResetter {
+class MOZ_RAII AutoIncrementalSearchHandler {
  public:
-  AutoIncrementalSearchResetter() = default;
-  ~AutoIncrementalSearchResetter() {
-    if (!mCancelled) {
+  explicit AutoIncrementalSearchHandler(HTMLSelectEventListener& aListener) {
+    if (sLastKeyListener != uintptr_t(&aListener)) {
+      sLastKeyListener = uintptr_t(&aListener);
       GetIncrementalString().Truncate();
     }
   }
-  void Cancel() { mCancelled = true; }
+  ~AutoIncrementalSearchHandler() {
+    if (!mResettingCancelled) {
+      GetIncrementalString().Truncate();
+    }
+  }
+  void CancelResetting() { mResettingCancelled = true; }
 
  private:
-  bool mCancelled = false;
+  bool mResettingCancelled = false;
 };
 
 NS_IMPL_ISUPPORTS(HTMLSelectEventListener, nsIMutationObserver,
                   nsIDOMEventListener)
 
-HTMLSelectEventListener::~HTMLSelectEventListener() = default;
+HTMLSelectEventListener::~HTMLSelectEventListener() {
+  if (sLastKeyListener == uintptr_t(this)) {
+    sLastKeyListener = 0;
+  }
+}
 
 nsListControlFrame* HTMLSelectEventListener::GetListControlFrame() const {
   if (mIsCombobox) {
@@ -251,9 +262,22 @@ void HTMLSelectEventListener::Detach() {
 
   if (mIsCombobox) {
     mElement->RemoveMutationObserver(this);
-    nsContentUtils::AddScriptRunner(
-        new AsyncEventDispatcher(mElement, u"mozhidedropdown"_ns,
-                                 CanBubble::eYes, ChromeOnlyDispatch::eYes));
+    if (mElement->OpenInParentProcess()) {
+      nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+          "HTMLSelectEventListener::Detach", [element = mElement] {
+            // Don't hide the dropdown if the element has another frame already,
+            // this prevents closing dropdowns on reframe, see bug 1440506.
+            //
+            // FIXME(emilio): The flush is needed to deal with reframes started
+            // from DOM node removal. But perhaps we can be a bit smarter here.
+            if (!element->IsCombobox() ||
+                !element->GetPrimaryFrame(FlushType::Frames)) {
+              nsContentUtils::DispatchChromeEvent(
+                  element->OwnerDoc(), ToSupports(element.get()),
+                  u"mozhidedropdown"_ns, CanBubble::eYes, Cancelable::eNo);
+            }
+          }));
+    }
   }
 }
 
@@ -471,7 +495,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
     return NS_OK;
   }
 
-  AutoIncrementalSearchResetter incrementalSearchResetter;
+  AutoIncrementalSearchHandler incrementalHandler(*this);
 
   const WidgetKeyboardEvent* keyEvent =
       aKeyEvent->WidgetEventPtr()->AsKeyboardEvent();
@@ -508,7 +532,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
     // Backspace key will delete the last char in the string.  Otherwise,
     // non-printable keypress should reset incremental search.
     if (keyEvent->mKeyCode == NS_VK_BACK) {
-      incrementalSearchResetter.Cancel();
+      incrementalHandler.CancelResetting();
       if (!GetIncrementalString().IsEmpty()) {
         GetIncrementalString().Truncate(GetIncrementalString().Length() - 1);
       }
@@ -522,7 +546,7 @@ nsresult HTMLSelectEventListener::KeyPress(dom::Event* aKeyEvent) {
     return NS_OK;
   }
 
-  incrementalSearchResetter.Cancel();
+  incrementalHandler.CancelResetting();
 
   // We ate the key if we got this far.
   aKeyEvent->PreventDefault();
@@ -634,7 +658,7 @@ nsresult HTMLSelectEventListener::KeyDown(dom::Event* aKeyEvent) {
     return NS_OK;
   }
 
-  AutoIncrementalSearchResetter incrementalSearchResetter;
+  AutoIncrementalSearchHandler incrementalHandler(*this);
 
   if (aKeyEvent->DefaultPrevented()) {
     return NS_OK;
@@ -747,7 +771,7 @@ nsresult HTMLSelectEventListener::KeyDown(dom::Event* aKeyEvent) {
       }
       break;
     default:  // printable key will be handled by keypress event.
-      incrementalSearchResetter.Cancel();
+      incrementalHandler.CancelResetting();
       return NS_OK;
   }
 

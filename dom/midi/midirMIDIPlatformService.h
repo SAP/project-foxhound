@@ -31,7 +31,7 @@ class midirMIDIPlatformService : public MIDIPlatformService {
   virtual void ScheduleSend(const nsAString& aPort) override;
   virtual void ScheduleClose(MIDIPortParent* aPort) override;
 
-  void SendMessages(const nsAString& aPort);
+  void SendMessage(const nsAString& aPort, const MIDIMessage& aMessage);
 
  private:
   virtual ~midirMIDIPlatformService();
@@ -47,7 +47,7 @@ class midirMIDIPlatformService : public MIDIPlatformService {
   // midir has its own internal threads and we can't execute jobs directly on
   // them, instead we forward them to the background thread the service was
   // created in.
-  static StaticMutex gBackgroundThreadMutex;
+  static StaticMutex gBackgroundThreadMutex MOZ_UNANNOTATED;
   static nsCOMPtr<nsIThread> gBackgroundThread;
 };
 

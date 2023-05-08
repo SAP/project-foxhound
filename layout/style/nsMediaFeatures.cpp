@@ -28,6 +28,9 @@
 #include "mozilla/GeckoBindings.h"
 #include "PreferenceSheet.h"
 #include "nsGlobalWindowOuter.h"
+#ifdef XP_WIN
+#  include "mozilla/WindowsVersion.h"
+#endif
 
 using namespace mozilla;
 using mozilla::dom::DisplayMode;
@@ -154,7 +157,7 @@ uint32_t Gecko_MediaFeatures_GetColorDepth(const Document* aDocument) {
 
   if (!nsContentUtils::ShouldResistFingerprinting(aDocument)) {
     if (nsDeviceContext* dx = GetDeviceContextFor(aDocument)) {
-      dx->GetDepth(depth);
+      depth = dx->GetDepth();
     }
   }
 
@@ -223,30 +226,36 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
   return static_cast<StyleDisplayMode>(browsingContext->DisplayMode());
 }
 
-nsAtom* Gecko_MediaFeatures_GetOperatingSystemVersion(
-    const Document* aDocument) {
-  using OperatingSystemVersion = LookAndFeel::OperatingSystemVersion;
-
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
-    return nullptr;
-  }
-
-  int32_t metricResult;
-  if (NS_FAILED(LookAndFeel::GetInt(
-          LookAndFeel::IntID::OperatingSystemVersionIdentifier,
-          &metricResult))) {
-    return nullptr;
-  }
-
-  switch (OperatingSystemVersion(metricResult)) {
-    case OperatingSystemVersion::Windows7:
-      return nsGkAtoms::windows_win7;
-    case OperatingSystemVersion::Windows8:
-      return nsGkAtoms::windows_win8;
-    case OperatingSystemVersion::Windows10:
-      return nsGkAtoms::windows_win10;
+bool Gecko_MediaFeatures_MatchesPlatform(StylePlatform aPlatform) {
+  switch (aPlatform) {
+#if defined(XP_WIN)
+    case StylePlatform::Windows:
+      return true;
+    case StylePlatform::WindowsWin10:
+    case StylePlatform::WindowsWin7:
+    case StylePlatform::WindowsWin8: {
+      if (IsWin10OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin10;
+      }
+      if (IsWin8OrLater()) {
+        return aPlatform == StylePlatform::WindowsWin8;
+      }
+      return aPlatform == StylePlatform::WindowsWin7;
+    }
+#elif defined(ANDROID)
+    case StylePlatform::Android:
+      return true;
+#elif defined(MOZ_WIDGET_GTK)
+    case StylePlatform::Linux:
+      return true;
+#elif defined(XP_MACOSX)
+    case StylePlatform::Macos:
+      return true;
+#else
+#  error "Unknown platform?"
+#endif
     default:
-      return nullptr;
+      return false;
   }
 }
 
@@ -280,6 +289,34 @@ StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
     return StylePrefersContrast::More;
   }
   return StylePrefersContrast::NoPreference;
+}
+
+StyleDynamicRange Gecko_MediaFeatures_DynamicRange(const Document* aDocument) {
+  // Bug 1759772: Once HDR color is available, update each platform
+  // LookAndFeel implementation to return StyleDynamicRange::High when
+  // appropriate.
+  return StyleDynamicRange::Standard;
+}
+
+StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
+    const Document* aDocument) {
+  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
+    return StyleDynamicRange::Standard;
+  }
+  // video-dynamic-range: high has 3 requirements:
+  // 1) high peak brightness
+  // 2) high contrast ratio
+  // 3) color depth > 24
+  // We check the color depth requirement before asking the LookAndFeel
+  // if it is HDR capable.
+  if (nsDeviceContext* dx = GetDeviceContextFor(aDocument)) {
+    if (dx->GetDepth() > 24 &&
+        LookAndFeel::GetInt(LookAndFeel::IntID::VideoDynamicRange)) {
+      return StyleDynamicRange::High;
+    }
+  }
+
+  return StyleDynamicRange::Standard;
 }
 
 static PointerCapabilities GetPointerCapabilities(const Document* aDocument,

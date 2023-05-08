@@ -417,7 +417,9 @@ cbindgen-types = [
     { gecko = "StyleCursorKind", servo = "crate::values::computed::ui::CursorKind" },
     { gecko = "StyleDisplay", servo = "crate::values::specified::Display" },
     { gecko = "StyleDisplayMode", servo = "crate::gecko::media_features::DisplayMode" },
+    { gecko = "StylePlatform", servo = "crate::gecko::media_features::Platform" },
     { gecko = "StylePrefersColorScheme", servo = "crate::gecko::media_features::PrefersColorScheme" },
+    { gecko = "StyleDynamicRange", servo = "crate::gecko::media_features::DynamicRange" },
     { gecko = "StyleFillRule", servo = "crate::values::generics::basic_shape::FillRule" },
     { gecko = "StyleFontDisplay", servo = "crate::font_face::FontDisplay" },
     { gecko = "StyleFontFaceSourceListComponent", servo = "crate::font_face::FontFaceSourceListComponent" },
@@ -492,6 +494,8 @@ cbindgen-types = [
     { gecko = "StyleGenericLineHeight", servo = "crate::values::generics::text::LineHeight" },
     { gecko = "StyleCaretColor", servo = "crate::values::computed::color::CaretColor" },
     { gecko = "StyleContain", servo = "crate::values::computed::Contain" },
+    { gecko = "StyleContainerType", servo = "crate::values::computed::ContainerType" },
+    { gecko = "StyleContainerName", servo = "crate::values::computed::ContainerName" },
     { gecko = "StyleRestyleHint", servo = "crate::invalidation::element::restyle_hints::RestyleHint" },
     { gecko = "StyleTouchAction", servo = "crate::values::computed::TouchAction" },
     { gecko = "StyleWillChange", servo = "crate::values::specified::box_::WillChange" },
@@ -591,6 +595,7 @@ cbindgen-types = [
     { gecko = "StylePrintColorAdjust", servo = "crate::values::computed::PrintColorAdjust" },
     { gecko = "StyleScrollbarGutter", servo = "crate::values::computed::ScrollbarGutter" },
     { gecko = "StyleHyphenateCharacter", servo = "crate::values::computed::HyphenateCharacter" },
+    { gecko = "StyleContentVisibility", servo = "crate::values::computed::ContentVisibility" },
 ]
 
 mapped-generic-types = [

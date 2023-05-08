@@ -277,17 +277,17 @@ class HttpChannelChild final : public PHttpChannelChild,
   Mutex mBgChildMutex{"HttpChannelChild::BgChildMutex"};
 
   // Associated HTTP background channel
-  RefPtr<HttpBackgroundChannelChild> mBgChild;
+  RefPtr<HttpBackgroundChannelChild> mBgChild GUARDED_BY(mBgChildMutex);
 
   // Error handling procedure if failed to establish PBackground IPC
-  nsCOMPtr<nsIRunnable> mBgInitFailCallback;
+  nsCOMPtr<nsIRunnable> mBgInitFailCallback GUARDED_BY(mBgChildMutex);
 
   // Remove the association with background channel after OnStopRequest
   // or AsyncAbort.
   void CleanupBackgroundChannel();
 
   // Target thread for delivering ODA.
-  nsCOMPtr<nsIEventTarget> mODATarget;
+  nsCOMPtr<nsIEventTarget> mODATarget GUARDED_BY(mEventTargetMutex);
   // Used to ensure atomicity of mNeckoTarget / mODATarget;
   Mutex mEventTargetMutex{"HttpChannelChild::EventTargetMutex"};
 
@@ -358,6 +358,10 @@ class HttpChannelChild final : public PHttpChannelChild,
   // Set if SendSuspend is called. Determines if SendResume is needed when
   // diverting callbacks to parent.
   uint8_t mSuspendSent : 1;
+
+  // True if this channel is a multi-part channel, and the first part
+  // is currently being processed.
+  uint8_t mIsFirstPartOfMultiPart : 1;
 
   // True if this channel is a multi-part channel, and the last part
   // is currently being processed.

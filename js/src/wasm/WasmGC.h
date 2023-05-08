@@ -72,21 +72,6 @@ struct StackMap final {
   // is also noted.  This is used in Instance::traceFrame to check that the
   // TrapExitDummyValue is in the expected place in the frame.
 
-  // StackMap and indirect stubs.
-  // StackMaps track every word in wasm frame except indirect stubs words
-  // because these stubs can be dynamically added or not at runtime.
-  // For example, when we do `call_indirect foo` for some cross-instance call
-  // clang-format off
-  // |   some stack arg     | <- covered by StackMap.
-  // |   caller TLS slot    | <- covered by StackMap.
-  // |   callee TLS slot    | <- covered by StackMap.
-  // |   return pc: caller  | <- At runtime we read the tag below and skip this Frame in Instance::traceFrame.
-  // |   callerFP (tag)     |
-  // |   some stubs data    |
-  // |   return pc: to stub | <- callee's wasm::Frame, covered by StackMap.
-  // |   caller FP          |
-  // clang-format on
-
   // The total number of stack words covered by the map ..
   static constexpr size_t MappedWordsBits = 30;
   uint32_t numMappedWords : MappedWordsBits;
@@ -117,10 +102,10 @@ struct StackMap final {
       std::max(sizeof(jit::FloatRegisters::RegisterContent),
                sizeof(jit::Registers::RegisterContent));
 
-  // Add 16 words to account for the size of FrameWithTls including any shadow
-  // stack (at worst 8 words total), and then a little headroom in case the
-  // argument area had to be aligned.
-  static_assert(FrameWithTls::sizeOf() / sizeof(void*) <= 8);
+  // Add 16 words to account for the size of FrameWithInstances including any
+  // shadow stack (at worst 8 words total), and then a little headroom in case
+  // the argument area had to be aligned.
+  static_assert(FrameWithInstances::sizeOf() / sizeof(void*) <= 8);
   static_assert(maxFrameOffsetFromTop >=
                     (MaxParams * MaxParamSize / sizeof(void*)) + 16,
                 "limited size of the offset field");

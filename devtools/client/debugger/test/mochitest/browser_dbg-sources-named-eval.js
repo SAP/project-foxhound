@@ -2,41 +2,51 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// Make sure named eval sources appear in the list.
+// Make sure named eval sources appear in the Debugger
+// and we show proper source text content
+
+"use strict";
 
 add_task(async function() {
   const dbg = await initDebugger(
     "doc-sources.html",
-    "simple1",
-    "simple2",
-    "nested-source",
+    "simple1.js",
+    "simple2.js",
+    "nested-source.js",
     "long.js"
   );
-  const {
-    selectors: { getSelectedSource },
-    getState,
-  } = dbg;
 
-  info(`>>> contentTask: evaluate evaled.js\n`);
-  SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
-    content.eval("window.evaledFunc = function() {} //# sourceURL=evaled.js");
+  info("Assert that all page sources appear in the source tree");
+  await waitForSourcesInSourceTree(dbg, [
+    "doc-sources.html",
+    "simple1.js",
+    "simple2.js",
+    "nested-source.js",
+    "long.js",
+  ]);
+
+  info(`>>> contentTask: evaluate evaled.js`);
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
+    content.eval(
+      `window.evaledFunc = function() {};
+//# sourceURL=evaled.js
+`
+    );
   });
 
-  await waitForSourceCount(dbg, 3);
-  // is(getLabel(dbg, 3), "evaled.js", "evaled exists");
-  ok(true);
+  info("Assert that the evaled source appear in the source tree");
+  await waitForSourcesInSourceTree(dbg, [
+    "doc-sources.html",
+    "simple1.js",
+    "simple2.js",
+    "nested-source.js",
+    "long.js",
+    "evaled.js",
+  ]);
+
+  info("Wait for the evaled source");
+  await waitForSource(dbg, "evaled.js");
+  await selectSource(dbg, "evaled.js");
+
+  assertTextContentOnLine(dbg, 1, "window.evaledFunc = function() {};");
 });
-
-async function waitForSourceCount(dbg, i) {
-  // We are forced to wait until the DOM nodes appear because the
-  // source tree batches its rendering.
-  await waitUntil(() => {
-    return findAllElements(dbg, "sourceNodes").length === i;
-  }, `waiting for source count ${i}`);
-}
-
-function getLabel(dbg, index) {
-  return findElement(dbg, "sourceNode", index)
-    .textContent.trim()
-    .replace(/^[\s\u200b]*/g, "");
-}

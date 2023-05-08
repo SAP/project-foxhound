@@ -2102,7 +2102,7 @@ void LIRGenerator::visitWasmBuiltinModD(MWasmBuiltinModD* ins) {
   MOZ_ASSERT(gen->compilingWasm());
   LWasmBuiltinModD* lir = new (alloc()) LWasmBuiltinModD(
       useRegisterAtStart(ins->lhs()), useRegisterAtStart(ins->rhs()),
-      useFixedAtStart(ins->tls(), WasmTlsReg));
+      useFixedAtStart(ins->tls(), InstanceReg));
   defineReturn(lir, ins);
 }
 
@@ -3133,8 +3133,7 @@ void LIRGenerator::visitWasmInterruptCheck(MWasmInterruptCheck* ins) {
   auto* lir =
       new (alloc()) LWasmInterruptCheck(useRegisterAtStart(ins->tlsPtr()));
   add(lir, ins);
-
-  assignWasmSafepoint(lir, ins);
+  assignWasmSafepoint(lir);
 }
 
 void LIRGenerator::visitWasmTrap(MWasmTrap* ins) {
@@ -5016,6 +5015,28 @@ void LIRGenerator::visitWasmLoadTls(MWasmLoadTls* ins) {
   }
 }
 
+void LIRGenerator::visitWasmStoreTls(MWasmStoreTls* ins) {
+  MDefinition* value = ins->value();
+  if (value->type() == MIRType::Int64) {
+#ifdef JS_PUNBOX64
+    LAllocation tlsPtr = useRegisterAtStart(ins->tlsPtr());
+    LInt64Allocation valueAlloc = useInt64RegisterAtStart(value);
+#else
+    LAllocation tlsPtr = useRegister(ins->tlsPtr());
+    LInt64Allocation valueAlloc = useInt64Register(value);
+#endif
+    add(new (alloc()) LWasmStoreSlotI64(valueAlloc, tlsPtr, ins->offset()),
+        ins);
+  } else {
+    MOZ_ASSERT(value->type() != MIRType::RefOrNull);
+    LAllocation tlsPtr = useRegisterAtStart(ins->tlsPtr());
+    LAllocation valueAlloc = useRegisterAtStart(value);
+    add(new (alloc())
+            LWasmStoreSlot(valueAlloc, tlsPtr, ins->offset(), value->type()),
+        ins);
+  }
+}
+
 void LIRGenerator::visitWasmBoundsCheck(MWasmBoundsCheck* ins) {
   MOZ_ASSERT(!ins->isRedundant());
 
@@ -5063,7 +5084,7 @@ void LIRGenerator::visitWasmAlignmentCheck(MWasmAlignmentCheck* ins) {
 }
 
 void LIRGenerator::visitWasmLoadGlobalVar(MWasmLoadGlobalVar* ins) {
-  size_t offs = offsetof(wasm::TlsData, globalArea) + ins->globalDataOffset();
+  size_t offs = wasm::Instance::offsetOfGlobalArea() + ins->globalDataOffset();
   if (ins->type() == MIRType::Int64) {
 #ifdef JS_PUNBOX64
     LAllocation tlsPtr = useRegisterAtStart(ins->tlsPtr());
@@ -5095,9 +5116,15 @@ void LIRGenerator::visitWasmLoadGlobalCell(MWasmLoadGlobalCell* ins) {
   }
 }
 
+void LIRGenerator::visitWasmLoadTableElement(MWasmLoadTableElement* ins) {
+  LAllocation elements = useRegisterAtStart(ins->elements());
+  LAllocation index = useRegisterAtStart(ins->index());
+  define(new (alloc()) LWasmLoadTableElement(elements, index), ins);
+}
+
 void LIRGenerator::visitWasmStoreGlobalVar(MWasmStoreGlobalVar* ins) {
   MDefinition* value = ins->value();
-  size_t offs = offsetof(wasm::TlsData, globalArea) + ins->globalDataOffset();
+  size_t offs = wasm::Instance::offsetOfGlobalArea() + ins->globalDataOffset();
   if (value->type() == MIRType::Int64) {
 #ifdef JS_PUNBOX64
     LAllocation tlsPtr = useRegisterAtStart(ins->tlsPtr());
@@ -5155,6 +5182,12 @@ void LIRGenerator::visitWasmStoreStackResult(MWasmStoreStackResult* ins) {
 void LIRGenerator::visitWasmDerivedPointer(MWasmDerivedPointer* ins) {
   LAllocation base = useRegisterAtStart(ins->base());
   define(new (alloc()) LWasmDerivedPointer(base), ins);
+}
+
+void LIRGenerator::visitWasmDerivedIndexPointer(MWasmDerivedIndexPointer* ins) {
+  LAllocation base = useRegisterAtStart(ins->base());
+  LAllocation index = useRegisterAtStart(ins->index());
+  define(new (alloc()) LWasmDerivedIndexPointer(base, index), ins);
 }
 
 void LIRGenerator::visitWasmStoreRef(MWasmStoreRef* ins) {
@@ -5219,7 +5252,7 @@ void LIRGenerator::visitWasmReturn(MWasmReturn* ins) {
 
   if (rval->type() == MIRType::Int64) {
     add(new (alloc()) LWasmReturnI64(useInt64Fixed(rval, ReturnReg64),
-                                     useFixed(tlsParam, WasmTlsReg)));
+                                     useFixed(tlsParam, InstanceReg)));
     return;
   }
 
@@ -5240,14 +5273,14 @@ void LIRGenerator::visitWasmReturn(MWasmReturn* ins) {
   }
 
   LWasmReturn* lir =
-      new (alloc()) LWasmReturn(useFixed(tlsParam, WasmTlsReg), returnReg);
+      new (alloc()) LWasmReturn(useFixed(tlsParam, InstanceReg), returnReg);
   add(lir);
 }
 
 void LIRGenerator::visitWasmReturnVoid(MWasmReturnVoid* ins) {
   MDefinition* tlsParam = ins->getOperand(0);
   LWasmReturnVoid* lir =
-      new (alloc()) LWasmReturnVoid(useFixed(tlsParam, WasmTlsReg));
+      new (alloc()) LWasmReturnVoid(useFixed(tlsParam, InstanceReg));
   add(lir);
 }
 
@@ -5388,8 +5421,18 @@ void LIRGenerator::visitWasmCall(MWasmCall* ins) {
   }
 
   add(lir, ins);
+  assignWasmSafepoint(lir);
 
-  assignWasmSafepoint(lir, ins);
+  // WasmCall with WasmTable has two call instructions, and they both need a
+  // safepoint associated with them.  Create a second safepoint here; the node
+  // otherwise does nothing, and codegen for it only marks the safepoint at the
+  // node.
+  if (ins->callee().which() == wasm::CalleeDesc::WasmTable) {
+    auto* adjunctSafepoint = new (alloc()) LWasmCallIndirectAdjunctSafepoint();
+    add(adjunctSafepoint);
+    assignWasmSafepoint(adjunctSafepoint);
+    lir->setAdjunctSafepoint(adjunctSafepoint);
+  }
 }
 
 void LIRGenerator::visitSetDOMProperty(MSetDOMProperty* ins) {
@@ -6497,60 +6540,51 @@ void LIRGenerator::visitWasmFence(MWasmFence* ins) {
   add(new (alloc()) LWasmFence, ins);
 }
 
-// Wasm Exception Handling
-
-void LIRGenerator::visitWasmExceptionDataPointer(
-    MWasmExceptionDataPointer* ins) {
-  MOZ_ASSERT(ins->type() == MIRType::Pointer);
-  auto* lir = new (alloc()) LWasmExceptionDataPointer(useRegister(ins->exn()));
-  define(lir, ins);
-}
-
-void LIRGenerator::visitWasmLoadExceptionDataValue(
-    MWasmLoadExceptionDataValue* ins) {
+void LIRGenerator::visitWasmLoadObjectField(MWasmLoadObjectField* ins) {
   size_t offs = ins->offset();
-  MDefinition* exnDataPtr = ins->exnDataPtr();
-  LAllocation dataPtr = useRegister(exnDataPtr);
-
+  LAllocation obj = useRegister(ins->obj());
   if (ins->type() == MIRType::Int64) {
-    defineInt64(new (alloc()) LWasmLoadSlotI64(dataPtr, offs), ins);
+    defineInt64(new (alloc()) LWasmLoadSlotI64(obj, offs), ins);
   } else {
-    define(new (alloc()) LWasmLoadSlot(dataPtr, offs, ins->type()), ins);
+    define(new (alloc()) LWasmLoadSlot(obj, offs, ins->type()), ins);
   }
 }
 
-void LIRGenerator::visitWasmStoreExceptionDataValue(
-    MWasmStoreExceptionDataValue* ins) {
-  MDefinition* exnDataPtr = ins->exnDataPtr();
+void LIRGenerator::visitWasmLoadObjectDataField(MWasmLoadObjectDataField* ins) {
+  size_t offs = ins->offset();
+  LAllocation data = useRegister(ins->data());
+  if (ins->type() == MIRType::Int64) {
+    defineInt64(new (alloc()) LWasmLoadSlotI64(data, offs), ins);
+  } else {
+    define(new (alloc()) LWasmLoadSlot(data, offs, ins->type()), ins);
+  }
+  add(new (alloc()) LKeepAliveObject(useKeepalive(ins->obj())), ins);
+}
+
+void LIRGenerator::visitWasmStoreObjectDataField(
+    MWasmStoreObjectDataField* ins) {
   MDefinition* value = ins->value();
   size_t offs = ins->offset();
+  LAllocation data = useRegister(ins->data());
   LInstruction* lir;
-
   if (value->type() == MIRType::Int64) {
-    lir = new (alloc()) LWasmStoreSlotI64(useInt64Register(value),
-                                          useRegister(exnDataPtr), offs);
+    lir = new (alloc()) LWasmStoreSlotI64(useInt64Register(value), data, offs);
   } else {
-    lir = new (alloc()) LWasmStoreSlot(
-        useRegister(value), useRegister(exnDataPtr), offs, value->type());
+    lir = new (alloc())
+        LWasmStoreSlot(useRegister(value), data, offs, value->type());
   }
   add(lir, ins);
+  add(new (alloc()) LKeepAliveObject(useKeepalive(ins->obj())), ins);
 }
 
-void LIRGenerator::visitWasmExceptionRefsPointer(
-    MWasmExceptionRefsPointer* ins) {
-  MOZ_ASSERT(ins->type() == MIRType::Pointer);
-  LAllocation exn = useRegister(ins->exn());
-  auto* lir = new (alloc()) LWasmExceptionRefsPointer(exn, temp());
-  define(lir, ins);
+void LIRGenerator::visitWasmStoreObjectDataRefField(
+    MWasmStoreObjectDataRefField* ins) {
+  LAllocation tls = useRegister(ins->tls());
+  LAllocation valueAddr = useFixed(ins->valueAddr(), PreBarrierReg);
+  LAllocation value = useRegister(ins->value());
+  add(new (alloc()) LWasmStoreRef(tls, valueAddr, value, temp()), ins);
+  add(new (alloc()) LKeepAliveObject(useKeepalive(ins->obj())), ins);
 }
-
-void LIRGenerator::visitWasmLoadExceptionRefsValue(
-    MWasmLoadExceptionRefsValue* ins) {
-  LAllocation refsPtr = useRegister(ins->exnRefsPtr());
-  define(new (alloc()) LWasmLoadExceptionRefsValue(refsPtr), ins);
-}
-
-// End Wasm Exception Handling
 
 static_assert(!std::is_polymorphic_v<LIRGenerator>,
               "LIRGenerator should not have any virtual methods");

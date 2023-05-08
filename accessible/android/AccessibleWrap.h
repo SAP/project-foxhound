@@ -36,7 +36,8 @@ class AccessibleWrap : public LocalAccessible {
 
   virtual bool GetSelectionBounds(int32_t* aStartOffset, int32_t* aEndOffset);
 
-  virtual void PivotTo(int32_t aGranularity, bool aForward, bool aInclusive);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  virtual bool PivotTo(int32_t aGranularity, bool aForward, bool aInclusive);
 
   virtual void NavigateText(int32_t aGranularity, int32_t aStartOffset,
                             int32_t aEndOffset, bool aForward, bool aSelect);

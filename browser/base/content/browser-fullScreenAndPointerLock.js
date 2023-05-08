@@ -94,9 +94,10 @@ var PointerlockFsWarning = {
     } else {
       textElem.removeAttribute("hidden");
       // Document's principal's URI has a host. Display a warning including it.
-      let utils = {};
-      ChromeUtils.import("resource://gre/modules/DownloadUtils.jsm", utils);
-      let displayHost = utils.DownloadUtils.getURIHost(uri.spec)[0];
+      let { DownloadUtils } = ChromeUtils.import(
+        "resource://gre/modules/DownloadUtils.jsm"
+      );
+      let displayHost = DownloadUtils.getURIHost(uri.spec)[0];
       let l10nString = {
         "fullscreen-warning": "fullscreen-warning-domain",
         "pointerlock-warning": "pointerlock-warning-domain",
@@ -885,8 +886,7 @@ var FullScreen = {
 
 XPCOMUtils.defineLazyGetter(FullScreen, "_permissionNotificationIDs", () => {
   let { PermissionUI } = ChromeUtils.import(
-    "resource:///modules/PermissionUI.jsm",
-    {}
+    "resource:///modules/PermissionUI.jsm"
   );
   return (
     Object.values(PermissionUI)

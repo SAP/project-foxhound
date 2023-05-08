@@ -29,9 +29,8 @@ class PerformanceStorageWorker final : public PerformanceStorage {
 
   void AddEntry(nsIHttpChannel* aChannel,
                 nsITimedChannel* aTimedChannel) override;
-  virtual void AddEntry(const nsString& entryName,
-                        const nsString& initiatorType,
-                        UniquePtr<PerformanceTimingData>&& aData) override {}
+  void AddEntry(const nsString& aEntryName, const nsString& aInitiatorType,
+                UniquePtr<PerformanceTimingData>&& aData) override;
   void AddEntryOnWorker(UniquePtr<PerformanceProxyData>&& aData);
 
  private:
@@ -42,7 +41,7 @@ class PerformanceStorageWorker final : public PerformanceStorage {
 
   // Protected by mutex.
   // Created and released on worker-thread. Used also on main-thread.
-  RefPtr<WeakWorkerRef> mWorkerRef;
+  RefPtr<WeakWorkerRef> mWorkerRef GUARDED_BY(mMutex);
 };
 
 }  // namespace dom

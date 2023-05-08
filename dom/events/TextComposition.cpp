@@ -489,7 +489,7 @@ uint32_t TextComposition::GetSelectionStartOffset() {
   if (NS_WARN_IF(querySelectedTextEvent.DidNotFindSelection())) {
     return 0;  // XXX Is this okay?
   }
-  return querySelectedTextEvent.mReply->SelectionStartOffset();
+  return querySelectedTextEvent.mReply->AnchorOffset();
 }
 
 void TextComposition::OnCompositionEventDispatched(
@@ -676,7 +676,7 @@ bool TextComposition::HasEditor() const {
   return mEditorBaseWeak && mEditorBaseWeak->IsAlive();
 }
 
-RawRangeBoundary TextComposition::GetStartRef() const {
+RawRangeBoundary TextComposition::FirstIMESelectionStartRef() const {
   RefPtr<EditorBase> editorBase = GetEditorBase();
   if (!editorBase) {
     return RawRangeBoundary();
@@ -737,7 +737,7 @@ RawRangeBoundary TextComposition::GetStartRef() const {
   return firstRange ? firstRange->StartRef().AsRaw() : RawRangeBoundary();
 }
 
-RawRangeBoundary TextComposition::GetEndRef() const {
+RawRangeBoundary TextComposition::LastIMESelectionEndRef() const {
   RefPtr<EditorBase> editorBase = GetEditorBase();
   if (!editorBase) {
     return RawRangeBoundary();

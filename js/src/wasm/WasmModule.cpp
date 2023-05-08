@@ -31,6 +31,7 @@
 #include "vm/PlainObject.h"        // js::PlainObject
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
+#include "wasm/WasmDebug.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
@@ -40,6 +41,7 @@
 #include "debugger/DebugAPI-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/JSAtom-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -298,14 +300,10 @@ void Module::serialize(const LinkData& linkData, uint8_t* begin,
 }
 
 /* static */
-MutableModule Module::deserialize(const uint8_t* begin, size_t size,
-                                  Metadata* maybeMetadata) {
-  MutableMetadata metadata(maybeMetadata);
+MutableModule Module::deserialize(const uint8_t* begin, size_t size) {
+  MutableMetadata metadata = js_new<Metadata>();
   if (!metadata) {
-    metadata = js_new<Metadata>();
-    if (!metadata) {
-      return nullptr;
-    }
+    return nullptr;
   }
 
   const uint8_t* cursor = begin;
@@ -366,7 +364,7 @@ MutableModule Module::deserialize(const uint8_t* begin, size_t size,
   }
 
   MOZ_RELEASE_ASSERT(cursor == begin + size);
-  MOZ_RELEASE_ASSERT(!!maybeMetadata == code->metadata().isAsmJS());
+  MOZ_RELEASE_ASSERT(!code->metadata().isAsmJS());
 
   if (metadata->nameCustomSectionIndex) {
     metadata->namePayload =
@@ -378,7 +376,7 @@ MutableModule Module::deserialize(const uint8_t* begin, size_t size,
 
   return js_new<Module>(*code, std::move(imports), std::move(exports),
                         std::move(dataSegments), std::move(elemSegments),
-                        std::move(customSections), nullptr, nullptr, nullptr,
+                        std::move(customSections), nullptr,
                         /* loggingDeserialized = */ true);
 }
 
@@ -456,10 +454,6 @@ void Module::addSizeOfMisc(MallocSizeOf mallocSizeOf,
            SizeOfVectorExcludingThis(dataSegments_, mallocSizeOf) +
            SizeOfVectorExcludingThis(elemSegments_, mallocSizeOf) +
            SizeOfVectorExcludingThis(customSections_, mallocSizeOf);
-
-  if (debugUnlinkedCode_) {
-    *data += debugUnlinkedCode_->sizeOfExcludingThis(mallocSizeOf);
-  }
 }
 
 void Module::initGCMallocBytesExcludingCode() {
@@ -604,7 +598,7 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
         return false;
       }
 
-      if (!instance.initElems(cx, seg->tableIndex, *seg, offset, 0, count)) {
+      if (!instance.initElems(seg->tableIndex, *seg, offset, 0, count)) {
         return false;  // OOM
       }
     }
@@ -809,78 +803,28 @@ bool Module::instantiateMemory(JSContext* cx,
 }
 
 #ifdef ENABLE_WASM_EXCEPTIONS
-bool Module::instantiateImportedTag(JSContext* cx,
-                                    Handle<WasmTagObject*> tagObj,
-                                    WasmTagObjectVector& tagObjs,
-                                    SharedExceptionTagVector* tags) const {
-  MOZ_ASSERT(tagObj);
-  // The check whether the TagDesc signature matches the tagObj value types
-  // is done by js::wasm::GetImports().
-
-  // Collects the exception tag from the imported tag.
-  ExceptionTag& tag = tagObj->tag();
-
-  if (!tags->append(&tag)) {
+bool Module::instantiateTags(JSContext* cx,
+                             WasmTagObjectVector& tagObjs) const {
+  size_t tagLength = metadata().tags.length();
+  if (tagLength == 0) {
+    return true;
+  }
+  size_t importedTagsLength = tagObjs.length();
+  if (tagObjs.length() <= tagLength && !tagObjs.resize(tagLength)) {
     ReportOutOfMemory(cx);
     return false;
   }
 
-  return true;
-}
-
-bool Module::instantiateLocalTag(JSContext* cx, const TagDesc& ed,
-                                 WasmTagObjectVector& tagObjs,
-                                 SharedExceptionTagVector* tags,
-                                 uint32_t tagIndex) const {
-  SharedExceptionTag tag;
-  // Extend tagObjs in anticipation of an exported tag object.
-  if (tagObjs.length() <= tagIndex && !tagObjs.resize(tagIndex + 1)) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  if (ed.isExport) {
-    // If the tag description is exported, create an export tag
-    // object for it.
-    RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmTag));
-    RootedWasmTagObject tagObj(cx, WasmTagObject::create(cx, ed.type, proto));
-    if (!tagObj) {
-      return false;
-    }
-    // Take the exception tag that was created inside the WasmTagObject.
-    tag = &tagObj->tag();
-    // Save the new export tag object.
-    tagObjs[tagIndex] = tagObj;
-  } else {
-    // Create a new exception tag for every non exported tag.
-    tag = SharedExceptionTag(cx->new_<ExceptionTag>());
-    if (!tag) {
-      return false;
-    }
-    // The tagObj is null if the tag is neither exported nor imported.
-  }
-  // Collect an exception tag for every tag.
-  if (!tags->emplaceBack(tag)) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  return true;
-}
-
-bool Module::instantiateTags(JSContext* cx, WasmTagObjectVector& tagObjs,
-                             SharedExceptionTagVector* tags) const {
   uint32_t tagIndex = 0;
-  for (const TagDesc& ed : metadata().tags) {
-    if (tagIndex < tagObjs.length()) {
-      Rooted<WasmTagObject*> tagObj(cx, tagObjs[tagIndex]);
-      if (!instantiateImportedTag(cx, tagObj, tagObjs, tags)) {
+  RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmTag));
+  for (const TagDesc& desc : metadata().tags) {
+    if (tagIndex >= importedTagsLength) {
+      RootedWasmTagObject tagObj(cx,
+                                 WasmTagObject::create(cx, desc.type, proto));
+      if (!tagObj) {
         return false;
       }
-    } else {
-      if (!instantiateLocalTag(cx, ed, tagObjs, tags, tagIndex)) {
-        return false;
-      }
+      tagObjs[tagIndex] = tagObj;
     }
     tagIndex++;
   }
@@ -1064,52 +1008,6 @@ bool Module::instantiateGlobals(JSContext* cx,
   return true;
 }
 
-SharedCode Module::getDebugEnabledCode() const {
-  MOZ_ASSERT(metadata().debugEnabled);
-  MOZ_ASSERT(debugUnlinkedCode_);
-  MOZ_ASSERT(debugLinkData_);
-
-  // The first time through, use the pre-linked code in the module but
-  // mark it as having been claimed. Subsequently, instantiate the copy of the
-  // code bytes that we keep around for debugging instead, because the
-  // debugger may patch the pre-linked code at any time.
-  if (debugCodeClaimed_.compareExchange(false, true)) {
-    return code_;
-  }
-
-  Tier tier = Tier::Baseline;
-  auto segment =
-      ModuleSegment::create(tier, *debugUnlinkedCode_, *debugLinkData_);
-  if (!segment) {
-    return nullptr;
-  }
-
-  UniqueMetadataTier metadataTier = js::MakeUnique<MetadataTier>(tier);
-  if (!metadataTier || !metadataTier->clone(metadata(tier))) {
-    return nullptr;
-  }
-
-  auto codeTier =
-      js::MakeUnique<CodeTier>(std::move(metadataTier), std::move(segment));
-  if (!codeTier) {
-    return nullptr;
-  }
-
-  JumpTables jumpTables;
-  if (!jumpTables.init(CompileMode::Once, codeTier->segment(),
-                       metadata(tier).codeRanges)) {
-    return nullptr;
-  }
-
-  MutableCode debugCode =
-      js_new<Code>(std::move(codeTier), metadata(), std::move(jumpTables));
-  if (!debugCode || !debugCode->initialize(*debugLinkData_)) {
-    return nullptr;
-  }
-
-  return debugCode;
-}
-
 static bool GetFunctionExport(JSContext* cx,
                               HandleWasmInstanceObject instanceObj,
                               const JSFunctionVector& funcImports,
@@ -1274,9 +1172,8 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   // On the contrary, all the slots of exceptionTags will be filled with
   // unique tags.
 
-  SharedExceptionTagVector tags;
 #ifdef ENABLE_WASM_EXCEPTIONS
-  if (!instantiateTags(cx, imports.tagObjs, &tags)) {
+  if (!instantiateTags(cx, imports.tagObjs)) {
     return false;
   }
 #endif
@@ -1294,29 +1191,20 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
     return false;
   }
 
-  SharedCode code;
   UniqueDebugState maybeDebug;
   if (metadata().debugEnabled) {
-    code = getDebugEnabledCode();
-    if (!code) {
-      ReportOutOfMemory(cx);
-      return false;
-    }
-
-    maybeDebug = cx->make_unique<DebugState>(*code, *this);
+    maybeDebug = cx->make_unique<DebugState>(*code_, *this);
     if (!maybeDebug) {
       ReportOutOfMemory(cx);
       return false;
     }
-  } else {
-    code = code_;
   }
 
   instance.set(WasmInstanceObject::create(
-      cx, code, dataSegments_, elemSegments_, metadata().globalDataLength,
-      memory, std::move(tags), std::move(tables), imports.funcs,
-      metadata().globals, imports.globalValues, imports.globalObjs,
-      instanceProto, std::move(maybeDebug)));
+      cx, code_, dataSegments_, elemSegments_, metadata().globalDataLength,
+      memory, std::move(tables), imports.funcs, metadata().globals,
+      imports.globalValues, imports.globalObjs, imports.tagObjs, instanceProto,
+      std::move(maybeDebug)));
   if (!instance) {
     return false;
   }

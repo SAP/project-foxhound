@@ -16,16 +16,9 @@ Services.scriptloader.loadSubScript(
 );
 
 // Import helpers for the new debugger
-/* import-globals-from ../../../debugger/test/mochitest/helpers/context.js */
+/* import-globals-from ../../../debugger/test/mochitest/shared-head.js */
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers/context.js",
-  this
-);
-
-// Import helpers for the new debugger
-/* import-globals-from ../../../debugger/test/mochitest/helpers.js*/
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/helpers.js",
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
   this
 );
 
@@ -152,7 +145,9 @@ function logAllStoreChanges(hud) {
   // Adding logging each time the store is modified in order to check
   // the store state in case of failure.
   store.subscribe(() => {
-    const messages = [...store.getState().messages.messagesById.values()];
+    const messages = [
+      ...store.getState().messages.mutableMessagesById.values(),
+    ];
     const debugMessages = messages.map(
       ({ id, type, parameters, messageText }) => {
         return { id, type, parameters, messageText };
@@ -503,14 +498,12 @@ async function testOpenInDebugger(
 ) {
   info(`Finding message for open-in-debugger test; text is "${text}"`);
   const messageNode = await waitFor(() => findMessage(hud, text));
-  const frameLinkNode = messageNode.querySelector(
-    ".message-location .frame-link"
-  );
-  ok(frameLinkNode, "The message does have a location link");
+  const locationNode = messageNode.querySelector(".message-location");
+  ok(locationNode, "The message does have a location link");
   await checkClickOnNode(
     hud,
     toolbox,
-    frameLinkNode,
+    locationNode,
     expectUrl,
     expectLine,
     expectColumn,
@@ -1559,7 +1552,7 @@ function checkConsoleOutputForWarningGroup(hud, expectedMessages) {
         "There's a collapsed arrow"
       );
       is(
-        message.querySelector(".indent").getAttribute("data-indent"),
+        message.getAttribute("data-indent"),
         "0",
         "The warningGroup has the expected indent"
       );
@@ -1574,7 +1567,7 @@ function checkConsoleOutputForWarningGroup(hud, expectedMessages) {
         "There's an expanded arrow"
       );
       is(
-        message.querySelector(".indent").getAttribute("data-indent"),
+        message.getAttribute("data-indent"),
         "0",
         "The warningGroup has the expected indent"
       );
@@ -1605,9 +1598,7 @@ function checkConsoleOutputForWarningGroup(hud, expectedMessages) {
     if (expectedMessage.startsWith("|")) {
       if (isInWarningGroup(i)) {
         is(
-          message
-            .querySelector(".indent.warning-indent")
-            .getAttribute("data-indent"),
+          message.getAttribute("data-indent"),
           "1",
           "The message has the expected indent"
         );
@@ -1616,7 +1607,7 @@ function checkConsoleOutputForWarningGroup(hud, expectedMessages) {
       expectedMessage = expectedMessage.replace("| ", "");
     } else {
       is(
-        message.querySelector(".indent").getAttribute("data-indent"),
+        message.getAttribute("data-indent"),
         "0",
         "The message has the expected indent"
       );

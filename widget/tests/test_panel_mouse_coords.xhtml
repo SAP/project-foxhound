@@ -28,7 +28,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=835044
   <![CDATA[
 SimpleTest.waitForExplicitFinish();
 
-let utils = window.windowUtils;
 let panel = document.getElementById('thepanel');
 let rect;
 
@@ -41,7 +40,6 @@ function startTest() {
     type: "mousemove",
     screenX: window.mozInnerScreenX,
     screenY: window.mozInnerScreenY,
-    scale: "screenPixelsPerCSSPixelNoOverride",
     elementOnWidget: window.documentElement,
   });
 
@@ -59,8 +57,8 @@ function sendMouseEvent() {
 }
 
 function checkCoords(event) {
-  isfuzzy(event.clientX, rect.left + 1, window.windowUtils.screenPixelsPerCSSPixel, "Motion x coordinate");
-  isfuzzy(event.clientY, rect.top + 2, window.windowUtils.screenPixelsPerCSSPixel, "Motion y coordinate");
+  isfuzzy(event.clientX, rect.left + 1, window.devicePixelRatio, "Motion x coordinate");
+  isfuzzy(event.clientY, rect.top + 2, window.devicePixelRatio, "Motion y coordinate");
   done();
 }
 

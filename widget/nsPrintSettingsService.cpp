@@ -154,14 +154,15 @@ nsPrintSettingsService::SerializeToPrintData(nsIPrintSettings* aSettings,
 
   aSettings->GetPrinterName(data->printerName());
 
-  aSettings->GetPrintToFile(&data->printToFile());
+  data->outputDestination() = aSettings->GetOutputDestination();
 
   aSettings->GetToFileName(data->toFileName());
 
-  aSettings->GetOutputFormat(&data->outputFormat());
-  aSettings->GetPrintPageDelay(&data->printPageDelay());
-  aSettings->GetResolution(&data->resolution());
-  aSettings->GetDuplex(&data->duplex());
+  data->outputFormat() = aSettings->GetOutputFormat();
+  data->printPageDelay() = aSettings->GetPrintPageDelay();
+  data->resolution() = aSettings->GetResolution();
+  data->duplex() = aSettings->GetDuplex();
+
   aSettings->GetIsInitializedFromPrinter(&data->isInitializedFromPrinter());
   aSettings->GetIsInitializedFromPrefs(&data->isInitializedFromPrefs());
 
@@ -241,11 +242,11 @@ nsPrintSettingsService::DeserializeToPrintSettings(const PrintData& data,
   settings->SetNumCopies(data.numCopies());
   settings->SetNumPagesPerSheet(data.numPagesPerSheet());
 
+  settings->SetOutputDestination(
+      nsIPrintSettings::OutputDestinationType(data.outputDestination()));
   settings->SetPrinterName(data.printerName());
-
-  settings->SetPrintToFile(data.printToFile());
-
   settings->SetToFileName(data.toFileName());
+  // Output stream intentionally unset, child processes shouldn't care about it.
 
   settings->SetOutputFormat(data.outputFormat());
   settings->SetPrintPageDelay(data.printPageDelay());
@@ -524,7 +525,9 @@ nsresult nsPrintSettingsService::ReadPrefs(nsIPrintSettings* aPS,
 
   if (aFlags & nsIPrintSettings::kInitSavePrintToFile) {
     if (GETBOOLPREF(kPrintToFile, &b)) {
-      aPS->SetPrintToFile(b);
+      aPS->SetOutputDestination(
+          b ? nsIPrintSettings::kOutputDestinationFile
+            : nsIPrintSettings::kOutputDestinationPrinter);
       noValidPrefsFound = false;
     }
   }
@@ -740,9 +743,9 @@ nsresult nsPrintSettingsService::WritePrefs(nsIPrintSettings* aPS,
   }
 
   if (aFlags & nsIPrintSettings::kInitSavePrintToFile) {
-    if (NS_SUCCEEDED(aPS->GetPrintToFile(&b))) {
-      Preferences::SetBool(GetPrefName(kPrintToFile, aPrinterName), b);
-    }
+    Preferences::SetBool(GetPrefName(kPrintToFile, aPrinterName),
+                         aPS->GetOutputDestination() ==
+                             nsIPrintSettings::kOutputDestinationFile);
   }
 
   if (aFlags & nsIPrintSettings::kInitSaveToFileName) {
@@ -940,18 +943,10 @@ nsPrintSettingsService::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
 nsresult nsPrintSettingsService::SavePrintSettingsToPrefs(
     nsIPrintSettings* aPS, bool aUsePrinterNamePrefix, uint32_t aFlags) {
   NS_ENSURE_ARG_POINTER(aPS);
-
-  if (GeckoProcessType_Content == XRE_GetProcessType()) {
-    // If we're in the content process, we can't directly write to the
-    // Preferences service - we have to proxy the save up to the
-    // parent process.
-    RefPtr<nsPrintingProxy> proxy = nsPrintingProxy::GetInstance();
-    return proxy->SavePrintSettings(aPS, aUsePrinterNamePrefix, aFlags);
-  }
-
-  nsAutoString prtName;
+  MOZ_DIAGNOSTIC_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
 
   // Get the printer name from the PrinterSettings for an optional prefix.
+  nsAutoString prtName;
   nsresult rv = GetAdjustedPrinterName(aPS, aUsePrinterNamePrefix, prtName);
   NS_ENSURE_SUCCESS(rv, rv);
 

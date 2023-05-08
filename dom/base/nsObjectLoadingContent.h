@@ -373,6 +373,12 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
    */
   void QueueCheckPluginStopEvent();
 
+ public:
+  bool IsAboutBlankLoadOntoInitialAboutBlank(nsIURI* aURI,
+                                             bool aInheritPrincipal,
+                                             nsIPrincipal* aPrincipalToInherit);
+
+ private:
   /**
    * Opens the channel pointed to by mURI into mChannel.
    */
@@ -485,6 +491,12 @@ class nsObjectLoadingContent : public nsImageLoadingContent,
 
   // Utility for firing an error event, if we're an <object>.
   void MaybeFireErrorEvent();
+
+  /**
+   * Store feature policy in container browsing context so that it can be
+   * accessed cross process.
+   */
+  void MaybeStoreCrossOriginFeaturePolicy();
 
   // The final listener for mChannel (uriloader, pluginstreamlistener, etc.)
   nsCOMPtr<nsIStreamListener> mFinalListener;

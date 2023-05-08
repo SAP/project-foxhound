@@ -602,8 +602,12 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       ((mouseEvent && mouseEvent->IsReal()) ||
        aEvent->mClass == eWheelEventClass) &&
       !PointerLockManager::IsLocked()) {
+    // XXX Probably doesn't matter much, but storing these in CSS pixels instead
+    // of device pixels means behavior can be a bit odd if you zoom while
+    // pointer-locked.
     sLastScreenPoint =
-        Event::GetScreenCoords(aPresContext, aEvent, aEvent->mRefPoint);
+        Event::GetScreenCoords(aPresContext, aEvent, aEvent->mRefPoint)
+            .extract();
     sLastClientPoint = Event::GetClientCoords(
         aPresContext, aEvent, aEvent->mRefPoint, CSSIntPoint(0, 0));
   }
@@ -3870,7 +3874,8 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
           // it).
           if (sourceWC) {
             CSSIntPoint dropPointInScreen =
-                Event::GetScreenCoords(aPresContext, aEvent, aEvent->mRefPoint);
+                Event::GetScreenCoords(aPresContext, aEvent, aEvent->mRefPoint)
+                    .extract();
             dragSession->SetDragEndPointForTests(dropPointInScreen.x,
                                                  dropPointInScreen.y);
           }
@@ -4391,7 +4396,6 @@ static UniquePtr<WidgetMouseEvent> CreateMouseOrPointerWidgetEvent(
   newEvent->mButton = aMouseEvent->mButton;
   newEvent->mButtons = aMouseEvent->mButtons;
   newEvent->mPressure = aMouseEvent->mPressure;
-  newEvent->mPluginEvent = aMouseEvent->mPluginEvent;
   newEvent->mInputSource = aMouseEvent->mInputSource;
   newEvent->pointerId = aMouseEvent->pointerId;
 

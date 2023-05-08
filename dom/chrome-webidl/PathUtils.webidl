@@ -103,17 +103,32 @@ namespace PathUtils {
 
 [Exposed=Window]
 partial namespace PathUtils {
+  /**
+   * The profile directory.
+   */
   [Throws, BinaryName="ProfileDirSync"]
   readonly attribute DOMString profileDir;
 
+  /**
+   * The local-specific profile directory.
+   */
   [Throws, BinaryName="LocalProfileDirSync"]
   readonly attribute DOMString localProfileDir;
 
+  /**
+   * The temporary directory for the process.
+   */
   [Throws, BinaryName="TempDirSync"]
   readonly attribute DOMString tempDir;
+
+  /**
+   * The OS temporary directory.
+   */
+  [Throws, BinaryName="OSTempDirSync"]
+  readonly attribute DOMString osTempDir;
 };
 
-[Exposed=(Window, Worker)]
+[Exposed=Worker]
 partial namespace PathUtils {
   /**
    * The profile directory.
@@ -124,7 +139,7 @@ partial namespace PathUtils {
   /**
    * The local-specific profile directory.
    */
-  [Throws, BinaryName="GetProfileDirAsync"]
+  [Throws, BinaryName="GetLocalProfileDirAsync"]
   Promise<DOMString> getLocalProfileDir();
 
   /**
@@ -132,4 +147,10 @@ partial namespace PathUtils {
    */
   [Throws, BinaryName="GetTempDirAsync"]
   Promise<DOMString> getTempDir();
+
+  /**
+   * The OS temporary directory.
+   */
+  [Throws, BinaryName="GetOSTempDirAsync"]
+  Promise<DOMString> getOSTempDir();
 };

@@ -56,7 +56,7 @@ nsILoadContext* BrowserHost::GetLoadContext() const {
 bool BrowserHost::CanRecv() const { return mRoot && mRoot->CanRecv(); }
 
 a11y::DocAccessibleParent* BrowserHost::GetTopLevelDocAccessible() const {
-  return mRoot->GetTopLevelDocAccessible();
+  return mRoot ? mRoot->GetTopLevelDocAccessible() : nullptr;
 }
 
 void BrowserHost::LoadURL(nsDocShellLoadState* aLoadState) {
@@ -119,8 +119,8 @@ BrowserHost::SetRenderLayers(bool aRenderLayers) {
   if (!mRoot) {
     return NS_OK;
   }
-  ProcessPriorityManager::ActivityChanged(GetBrowsingContext()->Canonical(),
-                                          aRenderLayers);
+  ProcessPriorityManager::BrowserPriorityChanged(
+      GetBrowsingContext()->Canonical(), aRenderLayers);
   mRoot->SetRenderLayers(aRenderLayers);
   return NS_OK;
 }
@@ -154,8 +154,9 @@ BrowserHost::Deprioritize(void) {
   if (!mRoot) {
     return NS_OK;
   }
-  ProcessPriorityManager::ActivityChanged(GetBrowsingContext()->Canonical(),
-                                          /* aIsActive = */ false);
+  ProcessPriorityManager::BrowserPriorityChanged(
+      GetBrowsingContext()->Canonical(),
+      /* aPriority = */ false);
   return NS_OK;
 }
 

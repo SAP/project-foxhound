@@ -178,17 +178,26 @@ To test a change remotely
 
 Running all the tests for Firefox takes a very long time and requires multiple
 operating systems with various configurations. To build Firefox and run its
-tests on continuous integration servers (CI), two commands are available:
+tests on continuous integration servers (CI), multiple :ref:`options to select tasks <Selectors>`
+are available.
+
+To automatically select the tasks that are most likely to be affected by your changes, run:
 
 .. code-block:: shell
 
-    $ ./mach try chooser
+    $ ./mach try auto
 
-To select jobs running a fuzzy search:
+To select tasks manually using a fuzzy search interface, run:
 
 .. code-block:: shell
 
     $ ./mach try fuzzy
+
+To rerun the same tasks:
+
+.. code-block:: shell
+
+    $ ./mach try again
 
 From `Treeherder <https://treeherder.mozilla.org/>`__ (our continuous integration system), it is also possible to attach new jobs. As every review has
 a try CI run associated, it makes this work easier. See :ref:`attach-job-review` for

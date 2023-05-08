@@ -30,9 +30,10 @@
 #include "nsToolkit.h"
 #include "TextInputHandler.h"
 #include "mozilla/BackgroundHangMonitor.h"
-#include "GeckoProfiler.h"
 #include "ScreenHelperCocoa.h"
 #include "mozilla/Hal.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "HeadlessScreenHelper.h"
 #include "MOZMenuOpeningCoordinator.h"
@@ -313,11 +314,13 @@ void nsAppShell::OnRunLoopActivityChanged(CFRunLoopActivity aActivity) {
       uint8_t variableOnStack = 0;
       profilingStack.pushLabelFrame("Native event loop idle", nullptr, &variableOnStack,
                                     JS::ProfilingCategoryPair::IDLE, 0);
+      profiler_thread_sleep();
     });
   } else {
     if (mProfilingStackWhileWaiting) {
       mProfilingStackWhileWaiting->pop();
       mProfilingStackWhileWaiting = nullptr;
+      profiler_thread_wake();
     }
   }
 }

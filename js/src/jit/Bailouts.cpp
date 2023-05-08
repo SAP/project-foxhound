@@ -84,8 +84,7 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   // increment the reference counter for each activation that appear on the
   // stack. As the bailed frame is one of them, we have to decrement it now.
   if (frame.ionScript()->invalidated()) {
-    frame.ionScript()->decrementInvalidationCount(
-        cx->runtime()->defaultFreeOp());
+    frame.ionScript()->decrementInvalidationCount(cx->gcContext());
   }
 
   // NB: Commentary on how |lastProfilingFrame| is set from bailouts.
@@ -177,7 +176,7 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
 #endif
   }
 
-  frame.ionScript()->decrementInvalidationCount(cx->runtime()->defaultFreeOp());
+  frame.ionScript()->decrementInvalidationCount(cx->gcContext());
 
   // Make the frame being bailed out the top profiled frame.
   if (cx->runtime()->jitRuntime()->isProfilerInstrumentationEnabled(
@@ -204,11 +203,14 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
                                   const InlineFrameIterator& frame,
                                   ResumeFromException* rfe,
                                   const ExceptionBailoutInfo& excInfo) {
-  // We can be propagating debug mode exceptions without there being an
+  // If we are resuming in a finally block, the exception has already
+  // been captured.
+  // We can also be propagating debug mode exceptions without there being an
   // actual exception pending. For instance, when we return false from an
   // operation callback like a timeout handler.
-  MOZ_ASSERT_IF(!excInfo.propagatingIonExceptionForDebugMode(),
-                cx->isExceptionPending());
+  MOZ_ASSERT_IF(
+      !cx->isExceptionPending(),
+      excInfo.isFinally() || excInfo.propagatingIonExceptionForDebugMode());
 
   JS::AutoSaveExceptionState savedExc(cx);
 
@@ -236,6 +238,8 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
     if (excInfo.propagatingIonExceptionForDebugMode()) {
       bailoutInfo->bailoutKind =
           mozilla::Some(BailoutKind::IonExceptionDebugMode);
+    } else if (excInfo.isFinally()) {
+      bailoutInfo->bailoutKind = mozilla::Some(BailoutKind::Finally);
     }
 
     rfe->kind = ResumeFromException::RESUME_BAILOUT;

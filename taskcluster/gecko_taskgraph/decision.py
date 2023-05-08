@@ -13,6 +13,8 @@ from collections import defaultdict
 import yaml
 from redo import retry
 from taskgraph.parameters import Parameters
+from taskgraph.taskgraph import TaskGraph
+from taskgraph.util.taskcluster import get_artifact
 from taskgraph.util.yaml import load_yaml
 from voluptuous import Required, Optional, Any
 
@@ -21,7 +23,6 @@ from .actions import render_actions_json
 from .create import create_tasks
 from .generator import TaskGraphGenerator
 from .parameters import get_version, get_app_version
-from .taskgraph import TaskGraph
 from .try_option_syntax import parse_message
 from .util.backstop import is_backstop, BACKSTOP_INDEX
 from .util.bugbug import push_schedules
@@ -30,7 +31,7 @@ from .util.hg import get_hg_revision_branch, get_hg_commit_message
 from .util.partials import populate_release_history
 from .util.python_path import find_object
 from .util.schema import validate_schema, Schema
-from .util.taskcluster import get_artifact, insert_index
+from .util.taskcluster import insert_index
 from .util.taskgraph import find_decision_task, find_existing_tasks_from_previous_kinds
 
 

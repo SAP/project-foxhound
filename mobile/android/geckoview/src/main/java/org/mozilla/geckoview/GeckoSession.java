@@ -6,6 +6,7 @@
 
 package org.mozilla.geckoview;
 
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -486,6 +487,9 @@ public class GeckoSession {
           }
         }
 
+        // For .isOpen(), the linter is not smart enough to figure out we're asserting that we're on
+        // the UI thread.
+        @SuppressLint("WrongThread")
         @Override
         public void handleMessage(
             final NavigationDelegate delegate,
@@ -998,7 +1002,6 @@ public class GeckoSession {
         GeckoBundle initData,
         String id,
         String chromeUri,
-        int screenId,
         boolean privateMode);
 
     @Override // JNIObject
@@ -1272,8 +1275,9 @@ public class GeckoSession {
    * @see #open
    * @see #close
    */
-  @AnyThread
+  @UiThread
   public boolean isOpen() {
+    ThreadUtils.assertOnUiThread();
     return mWindow != null;
   }
 
@@ -1321,7 +1325,6 @@ public class GeckoSession {
     }
 
     final String chromeUri = mSettings.getChromeUri();
-    final int screenId = mSettings.getScreenId();
     final boolean isPrivate = mSettings.getUsePrivateMode();
 
     mId = id;
@@ -1340,7 +1343,6 @@ public class GeckoSession {
           createInitData(),
           mId,
           chromeUri,
-          screenId,
           isPrivate);
     } else {
       GeckoThread.queueNativeCallUntil(
@@ -1363,7 +1365,6 @@ public class GeckoSession {
           mId,
           String.class,
           chromeUri,
-          screenId,
           isPrivate);
     }
 
@@ -2459,6 +2460,30 @@ public class GeckoSession {
 
   // This is the GeckoDisplay acquired via acquireDisplay(), if any.
   private GeckoDisplay mDisplay;
+
+  /* package */ interface Owner {
+    void onRelease();
+  }
+
+  private static final WeakReference<Owner> NO_OWNER = new WeakReference<>(null);
+  private WeakReference<Owner> mOwner = NO_OWNER;
+
+  @UiThread
+  /* package */ void releaseOwner() {
+    ThreadUtils.assertOnUiThread();
+    mOwner = NO_OWNER;
+  }
+
+  @UiThread
+  /* package */ void setOwner(final Owner owner) {
+    ThreadUtils.assertOnUiThread();
+    final Owner oldOwner = mOwner.get();
+    if (oldOwner != null && owner != oldOwner) {
+      oldOwner.onRelease();
+    }
+    mOwner = new WeakReference<>(owner);
+  }
+
   /* package */ GeckoDisplay getDisplay() {
     return mDisplay;
   }
@@ -6052,7 +6077,9 @@ public class GeckoSession {
     }
 
     final ContentDelegate delegate = getContentDelegate();
-    delegate.onPointerIconChange(this, icon);
+    if (delegate != null) {
+      delegate.onPointerIconChange(this, icon);
+    }
   }
 
   /** GeckoSession applications implement this interface to handle media events. */

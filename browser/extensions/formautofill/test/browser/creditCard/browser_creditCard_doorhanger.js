@@ -1,4 +1,3 @@
-/* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 /*
   We use arbitrary timeouts here to ensure that the input event queue is cleared
@@ -12,31 +11,22 @@ add_task(async function test_submit_creditCard_cancel_saving() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 1");
-
-        let number = form.querySelector("#cc-number");
-        number.setUserInput("5038146897157463");
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+          "#cc-number": "5038146897157463",
+        },
       });
 
       ok(
         !SpecialPowers.Services.prefs.prefHasUserValue(SYNC_USERNAME_PREF),
         "Sync account should not exist by default"
       );
+      await promiseShown;
       let cb = getDoorhangerCheckbox();
       ok(cb.hidden, "Sync checkbox should be hidden");
-      await promiseShown;
       await clickDoorhangerButton(SECONDARY_BUTTON);
     }
   );
@@ -56,35 +46,29 @@ add_task(async function test_submit_creditCard_saved() {
   await SpecialPowers.pushPrefEnv({
     set: [[CREDITCARDS_USED_STATUS_PREF, 0]],
   });
+
+  let onChanged = waitForStorageChangedEvents("add");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      let onChanged = TestUtils.topicObserved("formautofill-storage-changed");
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 1");
+      let promiseShown = promiseNotificationShown();
 
-        form.querySelector("#cc-number").setUserInput("5038146897157463");
-        form.querySelector("#cc-exp-month").setUserInput("12");
-        form.querySelector("#cc-exp-year").setUserInput("2017");
-        form.querySelector("#cc-type").value = "mastercard";
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+          "#cc-number": "5038146897157463",
+          "#cc-exp-month": "12",
+          "#cc-exp-year": "2017",
+          "#cc-type": "mastercard",
+        },
       });
 
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
-      await onChanged;
     }
   );
+  await onChanged;
 
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
@@ -115,23 +99,21 @@ add_task(async function test_submit_untouched_creditCard_form() {
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
 
-  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
-  let onUsed = TestUtils.topicObserved(
-    "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
-  );
+  let onUsed = waitForStorageChangedEvents("notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
+      let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(
+        true
+      );
       await openPopupOn(browser, "form #cc-name");
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
       await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
       await osKeyStoreLoginShown;
+      await waitForAutofill(browser, "#cc-name", "John Doe");
+
       await SpecialPowers.spawn(browser, [], async function() {
         let form = content.document.getElementById("form");
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
         form.querySelector("input[type=submit]").click();
       });
 
@@ -169,24 +151,36 @@ add_task(async function test_submit_untouched_creditCard_form_iframe() {
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
 
-  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
+  // This test triggers two form submission events so cc 'timesUsed' count is 2.
+  // The first submission is triggered by standard form submission, and the
+  // second is triggered by page hiding.
+  const EXPECTED_ON_USED_COUNT = 2;
+  let notifyUsedCounter = EXPECTED_ON_USED_COUNT;
   let onUsed = TestUtils.topicObserved(
     "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
+    (subject, data) => {
+      if (data == "notifyUsed") {
+        notifyUsedCounter--;
+      }
+      return notifyUsedCounter == 0;
+    }
   );
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_IFRAME_URL },
     async function(browser) {
+      let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(
+        true
+      );
       let iframeBC = browser.browsingContext.children[0];
       await openPopupForSubframe(browser, iframeBC, "form #cc-name");
+
       EventUtils.synthesizeKey("VK_DOWN", {});
       EventUtils.synthesizeKey("VK_RETURN", {});
       await osKeyStoreLoginShown;
+      await waitForAutofill(iframeBC, "#cc-name", "John Doe");
+
       await SpecialPowers.spawn(iframeBC, [], async function() {
         let form = content.document.getElementById("form");
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
         form.querySelector("input[type=submit]").click();
       });
 
@@ -198,7 +192,11 @@ add_task(async function test_submit_untouched_creditCard_form_iframe() {
 
   creditCards = await getCreditCards();
   is(creditCards.length, 1, "Still 1 credit card");
-  is(creditCards[0].timesUsed, 2, "timesUsed field set to 2");
+  is(
+    creditCards[0].timesUsed,
+    EXPECTED_ON_USED_COUNT,
+    "timesUsed field set to 2"
+  );
   is(
     SpecialPowers.getIntPref(CREDITCARDS_USED_STATUS_PREF),
     3,
@@ -212,29 +210,26 @@ add_task(async function test_iframe_unload_save_card() {
   await SpecialPowers.pushPrefEnv({
     set: [[CREDITCARDS_USED_STATUS_PREF, 0]],
   });
+  let onChanged = waitForStorageChangedEvents("add");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_IFRAME_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
+      let promiseShown = promiseNotificationShown();
       let iframeBC = browser.browsingContext.children[0];
-      let onChanged = TestUtils.topicObserved("formautofill-storage-changed");
-      await SpecialPowers.spawn(iframeBC, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 1");
-
-        form.querySelector("#cc-number").setUserInput("4556194630960970");
-        form.querySelector("#cc-exp-month").setUserInput("10");
-        form.querySelector("#cc-exp-year").setUserInput("2024");
-        form.querySelector("#cc-type").value = "visa";
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-      });
+      await focusUpdateSubmitForm(
+        iframeBC,
+        {
+          focusSelector: "#cc-name",
+          newValues: {
+            "#cc-name": "User 1",
+            "#cc-number": "4556194630960970",
+            "#cc-exp-month": "10",
+            "#cc-exp-year": "2024",
+            "#cc-type": "visa",
+          },
+        },
+        false
+      );
 
       info("Removing iframe without submitting");
       await SpecialPowers.spawn(browser, [], async function() {
@@ -244,9 +239,9 @@ add_task(async function test_iframe_unload_save_card() {
 
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
-      await onChanged;
     }
   );
+  await onChanged;
 
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
@@ -269,40 +264,26 @@ add_task(async function test_submit_changed_subset_creditCard_form() {
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
 
-  let onUsed = TestUtils.topicObserved(
-    "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
-  );
+  let onChanged = waitForStorageChangedEvents("update", "notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-
-        name.focus();
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        name.setUserInput("Mark Smith");
-
-        form.querySelector("#cc-number").setUserInput("4111111111111111");
-        form.querySelector("#cc-exp-month").setUserInput("4");
-        form
-          .querySelector("#cc-exp-year")
-          .setUserInput(new Date().getFullYear());
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "Mark Smith",
+          "#cc-number": "4111111111111111",
+          "#cc-exp-month": "4",
+          "#cc-exp-year": new Date().getFullYear(),
+        },
       });
 
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
     }
   );
-  await onUsed;
+  await onChanged;
 
   creditCards = await getCreditCards();
   is(creditCards.length, 1, "Still 1 credit card in storage");
@@ -323,31 +304,27 @@ add_task(async function test_submit_duplicate_creditCard_form() {
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
+
+  let onUsed = waitForStorageChangedEvents("notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-
-        name.setUserInput("John Doe");
-        form.querySelector("#cc-number").setUserInput("4111111111111111");
-        form.querySelector("#cc-exp-month").setUserInput("4");
-        form
-          .querySelector("#cc-exp-year")
-          .setUserInput(new Date().getFullYear());
-        form.querySelector("#cc-type").value = "visa";
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "John Doe",
+          "#cc-number": "4111111111111111",
+          "#cc-exp-month": "4",
+          "#cc-exp-year": new Date().getFullYear(),
+          "#cc-type": "visa",
+        },
       });
 
       await sleep(1000);
       is(PopupNotifications.panel.state, "closed", "Doorhanger is hidden");
     }
   );
+  await onUsed;
 
   creditCards = await getCreditCards();
   is(creditCards.length, 1, "Still 1 credit card in storage");
@@ -370,29 +347,22 @@ add_task(async function test_submit_unnormailzed_creditCard_form() {
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
+
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-
-        name.setUserInput("John Doe");
-        form.querySelector("#cc-number").setUserInput("4111111111111111");
-        form.querySelector("#cc-exp-month").setUserInput("4");
-        // Set unnormalized year
-        form.querySelector("#cc-exp-year").setUserInput(
-          new Date()
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "John Doe",
+          "#cc-number": "4111111111111111",
+          "#cc-exp-month": "4",
+          "#cc-exp-year": new Date()
             .getFullYear()
             .toString()
-            .substr(2, 2)
-        );
-        form.querySelector("#cc-type").value = "visa";
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+            .substr(2, 2),
+          "#cc-type": "visa",
+        },
       });
 
       await sleep(1000);
@@ -417,23 +387,13 @@ add_task(async function test_submit_creditCard_never_save() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        name.setUserInput("User 0");
-
-        let number = form.querySelector("#cc-number");
-        number.setUserInput("6387060366272981");
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 0",
+          "#cc-number": "6387060366272981",
+        },
       });
 
       await promiseShown;
@@ -469,22 +429,13 @@ add_task(async function test_submit_creditCard_with_sync_account() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 2");
-
-        let number = form.querySelector("#cc-number");
-        number.setUserInput("6387060366272981");
-
-        // Wait 500ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 500));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 2",
+          "#cc-number": "6387060366272981",
+        },
       });
 
       await promiseShown;
@@ -565,22 +516,13 @@ add_task(async function test_submit_creditCard_with_synced_already() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 2");
-
-        let number = form.querySelector("#cc-number");
-        number.setUserInput("6387060366272981");
-
-        // Wait 500ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 500));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 2",
+          "#cc-number": "6387060366272981",
+        },
       });
 
       await promiseShown;
@@ -598,36 +540,27 @@ add_task(async function test_submit_manual_mergeable_creditCard_form() {
   await saveCreditCard(TEST_CREDIT_CARD_3);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
-  let onUsed = TestUtils.topicObserved(
-    "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
-  );
+
+  let onChanged = waitForStorageChangedEvents("update", "notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-
-        name.setUserInput("User 3");
-        form.querySelector("#cc-number").setUserInput("5103059495477870");
-        form.querySelector("#cc-exp-month").setUserInput("1");
-        form.querySelector("#cc-exp-year").setUserInput("2000");
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 3",
+          "#cc-number": "5103059495477870",
+          "#cc-exp-month": "1",
+          "#cc-exp-year": "2000",
+        },
       });
+
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
     }
   );
-  await onUsed;
+  await onChanged;
 
   creditCards = await getCreditCards();
   is(creditCards.length, 1, "Still 1 credit card in storage");
@@ -656,41 +589,34 @@ add_task(async function test_update_autofill_form_name() {
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
-  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
-  let onUsed = TestUtils.topicObserved(
-    "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
-  );
+
+  let onChanged = waitForStorageChangedEvents("update", "notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
+      let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(
+        true
       );
+      let promiseShown = promiseNotificationShown();
+
       await openPopupOn(browser, "form #cc-name");
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
       await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
       await osKeyStoreLoginShown;
-      await SpecialPowers.spawn(browser, [], async function() {
-        await ContentTaskUtils.waitForCondition(() => {
-          let form = content.document.getElementById("form");
-          let name = form.querySelector("#cc-name");
-          return name.value == "John Doe";
-        }, "Credit card detail never fills");
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.setUserInput("User 1");
+      await waitForAutofill(browser, "#cc-name", "John Doe");
 
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+        },
       });
+
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
     }
   );
-  await onUsed;
+  await onChanged;
 
   creditCards = await getCreditCards();
   is(creditCards.length, 1, "Still 1 credit card");
@@ -724,42 +650,32 @@ add_task(async function test_update_autofill_form_exp_date() {
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
-  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
-  let onUsed = TestUtils.topicObserved(
-    "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
-  );
+  let onChanged = waitForStorageChangedEvents("update", "notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
+      let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(
+        true
       );
+      let promiseShown = promiseNotificationShown();
       await openPopupOn(browser, "form #cc-name");
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
       await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
       await osKeyStoreLoginShown;
-      await SpecialPowers.spawn(browser, [], async function() {
-        await ContentTaskUtils.waitForCondition(() => {
-          let form = content.document.getElementById("form");
-          let name = form.querySelector("#cc-name");
-          return name.value == "John Doe";
-        }, "Credit card detail never fills");
-        let form = content.document.getElementById("form");
-        let year = form.querySelector("#cc-exp-year");
-        year.setUserInput("2019");
+      await waitForAutofill(browser, "#cc-name", "John Doe");
 
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-exp-year": "2019",
+        },
       });
+
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
-      await osKeyStoreLoginShown;
     }
   );
-  await onUsed;
+  await onChanged;
 
   creditCards = await getCreditCards();
   is(creditCards.length, 1, "Still 1 credit card");
@@ -793,39 +709,32 @@ add_task(async function test_create_new_autofill_form() {
   await saveCreditCard(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
-  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
+  let onChanged = waitForStorageChangedEvents("add");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
+      let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(
+        true
       );
-      let onChanged = TestUtils.topicObserved("formautofill-storage-changed");
+      let promiseShown = promiseNotificationShown();
       await openPopupOn(browser, "form #cc-name");
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
       await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
-      await SpecialPowers.spawn(browser, [], async function() {
-        await ContentTaskUtils.waitForCondition(() => {
-          let form = content.document.getElementById("form");
-          let name = form.querySelector("#cc-name");
-          return name.value == "John Doe";
-        }, "Credit card detail never fills");
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.setUserInput("User 1");
+      await waitForAutofill(browser, "#cc-name", "John Doe");
 
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+        },
       });
 
       await promiseShown;
       await clickDoorhangerButton(SECONDARY_BUTTON);
       await osKeyStoreLoginShown;
-      await onChanged;
     }
   );
+  await onChanged;
 
   creditCards = await getCreditCards();
   is(creditCards.length, 2, "2 credit cards in storage");
@@ -864,32 +773,24 @@ add_task(async function test_update_duplicate_autofill_form() {
   });
   let creditCards = await getCreditCards();
   is(creditCards.length, 2, "2 credit card in storage");
-  let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
-  let onUsed = TestUtils.topicObserved(
-    "formautofill-storage-changed",
-    (subject, data) => data == "notifyUsed"
-  );
+  let onUsed = waitForStorageChangedEvents("notifyUsed");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
+      let osKeyStoreLoginShown = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(
+        true
+      );
       await openPopupOn(browser, "form #cc-number");
       await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
       await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
-      await SpecialPowers.spawn(browser, [], async function() {
-        await ContentTaskUtils.waitForCondition(() => {
-          let form = content.document.getElementById("form");
-          let number = form.querySelector("#cc-number");
-          return number.value == "6387060366272981";
-        }, "Should be the first credit card number");
+      await waitForAutofill(browser, "#cc-number", "6387060366272981");
 
-        // Change number to the second credit card number
-        let form = content.document.getElementById("form");
-        let number = form.querySelector("#cc-number");
-        number.setUserInput("5038146897157463");
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          // Change number to the second credit card number
+          "#cc-number": "5038146897157463",
+        },
       });
 
       await sleep(1000);
@@ -911,35 +812,27 @@ add_task(async function test_update_duplicate_autofill_form() {
 });
 
 add_task(async function test_submit_creditCard_with_invalid_network() {
+  let onChanged = waitForStorageChangedEvents("add");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      let onChanged = TestUtils.topicObserved("formautofill-storage-changed");
-      await SpecialPowers.spawn(browser, [], async function() {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 1");
-
-        form.querySelector("#cc-number").setUserInput("5038146897157463");
-        form.querySelector("#cc-exp-month").setUserInput("12");
-        form.querySelector("#cc-exp-year").setUserInput("2017");
-        form.querySelector("#cc-type").value = "gringotts";
-
-        // Wait 1000ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 1000));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+          "#cc-number": "5038146897157463",
+          "#cc-exp-month": "12",
+          "#cc-exp-year": "2017",
+          "#cc-type": "gringotts",
+        },
       });
 
       await promiseShown;
       await clickDoorhangerButton(MAIN_BUTTON);
-      await onChanged;
     }
   );
+  await onChanged;
 
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
@@ -970,22 +863,13 @@ add_task(async function test_submit_third_party_creditCard_logo() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [amexCard], async function(card) {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 1");
-
-        let number = form.querySelector("#cc-number");
-        number.setUserInput(card["cc-number"]);
-
-        // Wait 100ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 100));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+          "#cc-number": amexCard["cc-number"],
+        },
       });
 
       await promiseShown;
@@ -1002,6 +886,7 @@ add_task(async function test_submit_third_party_creditCard_logo() {
       await clickDoorhangerButton(SECONDARY_BUTTON);
     }
   );
+  await removeAllRecords();
 });
 
 add_task(async function test_update_third_party_creditCard_logo() {
@@ -1015,27 +900,19 @@ add_task(async function test_update_third_party_creditCard_logo() {
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
 
+  let onChanged = waitForStorageChangedEvents("add");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [amexCard], async function(card) {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-
-        name.focus();
-        name.setUserInput("Mark Smith");
-        form.querySelector("#cc-number").setUserInput(card["cc-number"]);
-        form.querySelector("#cc-exp-month").setUserInput("4");
-        form
-          .querySelector("#cc-exp-year")
-          .setUserInput(new Date().getFullYear());
-        // Wait 100ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 100));
-        form.querySelector("input[type=submit").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "Mark Smith",
+          "#cc-number": amexCard["cc-number"],
+          "#cc-exp-month": "4",
+          "#cc-exp-year": new Date().getFullYear(),
+        },
       });
 
       await promiseShown;
@@ -1051,6 +928,7 @@ add_task(async function test_update_third_party_creditCard_logo() {
       await clickDoorhangerButton(SECONDARY_BUTTON);
     }
   );
+  await onChanged;
   await removeAllRecords();
 });
 
@@ -1062,22 +940,13 @@ add_task(async function test_submit_generic_creditCard_logo() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [genericCard], async function(card) {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-        name.focus();
-        name.setUserInput("User 1");
-
-        let number = form.querySelector("#cc-number");
-        number.setUserInput(card["cc-number"]);
-
-        // Wait 100ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 100));
-        form.querySelector("input[type=submit]").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "User 1",
+          "#cc-number": genericCard["cc-number"],
+        },
       });
 
       await promiseShown;
@@ -1107,27 +976,19 @@ add_task(async function test_update_generic_creditCard_logo() {
   let creditCards = await getCreditCards();
   is(creditCards.length, 1, "1 credit card in storage");
 
+  let onChanged = waitForStorageChangedEvents("add");
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: CREDITCARD_FORM_URL },
     async function(browser) {
-      let promiseShown = BrowserTestUtils.waitForEvent(
-        PopupNotifications.panel,
-        "popupshown"
-      );
-      await SpecialPowers.spawn(browser, [genericCard], async function(card) {
-        let form = content.document.getElementById("form");
-        let name = form.querySelector("#cc-name");
-
-        name.focus();
-        name.setUserInput("Mark Smith");
-        form.querySelector("#cc-number").setUserInput(card["cc-number"]);
-        form.querySelector("#cc-exp-month").setUserInput("4");
-        form
-          .querySelector("#cc-exp-year")
-          .setUserInput(new Date().getFullYear());
-        // Wait 100ms before submission to make sure the input value applied
-        await new Promise(resolve => content.setTimeout(resolve, 100));
-        form.querySelector("input[type=submit").click();
+      let promiseShown = promiseNotificationShown();
+      await focusUpdateSubmitForm(browser, {
+        focusSelector: "#cc-name",
+        newValues: {
+          "#cc-name": "Mark Smith",
+          "#cc-number": genericCard["cc-number"],
+          "#cc-exp-month": "4",
+          "#cc-exp-year": new Date().getFullYear(),
+        },
       });
 
       await promiseShown;
@@ -1143,5 +1004,6 @@ add_task(async function test_update_generic_creditCard_logo() {
       await clickDoorhangerButton(SECONDARY_BUTTON);
     }
   );
+  await onChanged;
   await removeAllRecords();
 });

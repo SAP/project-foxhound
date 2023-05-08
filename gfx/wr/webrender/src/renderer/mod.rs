@@ -34,7 +34,7 @@
 //! up the scissor, are accepting already transformed coordinates, which we can get by
 //! calling `DrawTarget::to_framebuffer_rect`
 
-use api::{BlobImageHandler, ColorF, ColorU, MixBlendMode};
+use api::{BlobImageHandler, ColorF, ColorU, MixBlendMode, IdNamespace};
 use api::{DocumentId, Epoch, ExternalImageHandler, RenderReasons};
 use api::CrashAnnotator;
 #[cfg(feature = "replay")]
@@ -42,7 +42,7 @@ use api::ExternalImageId;
 use api::{ExternalImageSource, ExternalImageType, FontRenderMode, ImageFormat};
 use api::{PipelineId, ImageRendering, Checkpoint, NotificationRequest};
 use api::{VoidPtrToSizeFn, PremultipliedColorF};
-use api::{RenderNotifier, ImageBufferKind, SharedFontInstanceMap};
+use api::{RenderNotifier, ImageBufferKind};
 #[cfg(feature = "replay")]
 use api::ExternalImage;
 use api::units::*;
@@ -68,7 +68,7 @@ use crate::device::FBOId;
 use crate::debug_item::DebugItem;
 use crate::frame_builder::{Frame, ChasePrimitive, FrameBuilderConfig};
 use crate::glyph_cache::GlyphCache;
-use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterizer};
+use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterizer, SharedFontResources};
 use crate::gpu_cache::{GpuCacheUpdate, GpuCacheUpdateList};
 use crate::gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
 use crate::gpu_types::{PrimitiveInstanceData, ScalingInstance, SvgFilterInstance, CopyInstance};
@@ -653,6 +653,7 @@ pub enum BlendMode {
     MultiplyDualSource,
     Screen,
     Exclusion,
+    PlusLighter,
 }
 
 impl BlendMode {
@@ -675,6 +676,8 @@ impl BlendMode {
             MixBlendMode::Screen => BlendMode::Screen,
             // Exclusion can be implemented as Cs + Cd - 2*Cs*Cd => Cs*(1-Cd) + Cd*(1-Cs)
             MixBlendMode::Exclusion => BlendMode::Exclusion,
+            // PlusLighter is basically a clamped add.
+            MixBlendMode::PlusLighter => BlendMode::PlusLighter,
             // Multiply can be implemented as Cs*Cd + Cs*(1-Ad) + Cd*(1-As) => Cs*(1-Ad) + Cd*(1 - SRC1=(As-Cs))
             MixBlendMode::Multiply if dual_source => BlendMode::MultiplyDualSource,
             // Otherwise, use advanced blend without coherency if available.
@@ -1177,6 +1180,7 @@ impl Renderer {
             background_color: Some(options.clear_color),
             compositor_kind,
             tile_size_override: None,
+            max_surface_override: None,
             max_depth_ids: device.max_depth_ids(),
             max_target_size: max_internal_texture_size,
             force_invalidation: false,
@@ -1209,7 +1213,14 @@ impl Renderer {
         let sampler = options.sampler;
         let namespace_alloc_by_client = options.namespace_alloc_by_client;
 
-        let font_instances = SharedFontInstanceMap::new();
+        // Ensure shared font keys exist within their own unique namespace so
+        // that they don't accidentally collide across Renderer instances.
+        let font_namespace = if namespace_alloc_by_client {
+            options.shared_font_namespace.expect("Shared font namespace must be allocated by client")
+        } else {
+            RenderBackend::next_namespace_id()
+        };
+        let fonts = SharedFontResources::new(font_namespace);
 
         let blob_image_handler = options.blob_image_handler.take();
         let scene_builder_hooks = options.scene_builder_hooks;
@@ -1221,7 +1232,7 @@ impl Renderer {
         let (scene_builder_channels, scene_tx) =
             SceneBuilderThreadChannels::new(api_tx.clone());
 
-        let sb_font_instances = font_instances.clone();
+        let sb_fonts = fonts.clone();
 
         thread::Builder::new().name(scene_thread_name.clone()).spawn(move || {
             register_thread_with_profiler(scene_thread_name.clone());
@@ -1229,7 +1240,7 @@ impl Renderer {
 
             let mut scene_builder = SceneBuilderThread::new(
                 config,
-                sb_font_instances,
+                sb_fonts,
                 make_size_of_ops(),
                 scene_builder_hooks,
                 scene_builder_channels,
@@ -1261,7 +1272,7 @@ impl Renderer {
             scene_tx.clone()
         };
 
-        let backend_blob_handler = blob_image_handler
+        let rb_blob_handler = blob_image_handler
             .as_ref()
             .map(|handler| handler.create_similar());
 
@@ -1278,7 +1289,7 @@ impl Renderer {
         };
 
         let rb_scene_tx = scene_tx.clone();
-        let rb_font_instances = font_instances.clone();
+        let rb_fonts = fonts.clone();
         let enable_multithreading = options.enable_multithreading;
         thread::Builder::new().name(rb_thread_name.clone()).spawn(move || {
             register_thread_with_profiler(rb_thread_name.clone());
@@ -1304,7 +1315,8 @@ impl Renderer {
                 picture_textures,
                 glyph_rasterizer,
                 glyph_cache,
-                rb_font_instances,
+                rb_fonts,
+                rb_blob_handler,
             );
 
             resource_cache.enable_multithreading(enable_multithreading);
@@ -1315,7 +1327,6 @@ impl Renderer {
                 rb_scene_tx,
                 resource_cache,
                 backend_notifier,
-                backend_blob_handler,
                 config,
                 sampler,
                 make_size_of_ops(),
@@ -1420,7 +1431,7 @@ impl Renderer {
             scene_tx,
             low_priority_scene_tx,
             blob_image_handler,
-            font_instances,
+            fonts,
         );
         Ok((renderer, sender))
     }
@@ -1654,7 +1665,8 @@ impl Renderer {
     fn handle_debug_command(&mut self, command: DebugCommand) {
         match command {
             DebugCommand::EnableDualSourceBlending(_) |
-            DebugCommand::SetPictureTileSize(_) => {
+            DebugCommand::SetPictureTileSize(_) |
+            DebugCommand::SetMaximumSurfaceSize(_) => {
                 panic!("Should be handled by render backend");
             }
             DebugCommand::SaveCapture(..) |
@@ -2958,6 +2970,9 @@ impl Renderer {
                         }
                         BlendMode::Exclusion => {
                             self.device.set_blend_mode_exclusion();
+                        }
+                        BlendMode::PlusLighter => {
+                            self.device.set_blend_mode_plus_lighter();
                         }
                     }
                     prev_blend_mode = batch.key.blend_mode;
@@ -5573,6 +5588,10 @@ pub struct RendererOptions {
     pub chase_primitive: ChasePrimitive,
     pub support_low_priority_transactions: bool,
     pub namespace_alloc_by_client: bool,
+    /// If namespaces are allocated by the client, then the namespace for fonts
+    /// must also be allocated by the client to avoid namespace collisions with
+    /// the backend.
+    pub shared_font_namespace: Option<IdNamespace>,
     pub testing: bool,
     /// Set to true if this GPU supports hardware fast clears as a performance
     /// optimization. Likely requires benchmarking on various GPUs to see if
@@ -5667,6 +5686,7 @@ impl Default for RendererOptions {
             chase_primitive: ChasePrimitive::Nothing,
             support_low_priority_transactions: false,
             namespace_alloc_by_client: false,
+            shared_font_namespace: None,
             testing: false,
             gpu_supports_fast_clears: false,
             allow_dual_source_blending: true,

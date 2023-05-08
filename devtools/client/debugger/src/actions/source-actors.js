@@ -5,7 +5,6 @@
 import {
   getSourceActor,
   getSourceActorBreakableLines,
-  getSourceActorBreakpointColumns,
 } from "../selectors/source-actors";
 import { memoizeableAction } from "../utils/memoizableAction";
 import { PROMISE } from "./utils/middleware/promise";
@@ -18,42 +17,6 @@ export function insertSourceActors(items) {
     });
   };
 }
-
-export function removeSourceActor(item) {
-  return removeSourceActors([item]);
-}
-export function removeSourceActors(items) {
-  return function({ dispatch }) {
-    dispatch({ type: "REMOVE_SOURCE_ACTORS", items });
-  };
-}
-
-export const loadSourceActorBreakpointColumns = memoizeableAction(
-  "loadSourceActorBreakpointColumns",
-  {
-    createKey: ({ id, line }) => `${id}:${line}`,
-    getValue: ({ id, line }, { getState }) =>
-      getSourceActorBreakpointColumns(getState(), id, line),
-    action: async ({ id, line }, { dispatch, getState, client }) => {
-      await dispatch({
-        type: "SET_SOURCE_ACTOR_BREAKPOINT_COLUMNS",
-        sourceId: id,
-        line,
-        [PROMISE]: (async () => {
-          const positions = await client.getSourceActorBreakpointPositions(
-            getSourceActor(getState(), id),
-            {
-              start: { line, column: 0 },
-              end: { line: line + 1, column: 0 },
-            }
-          );
-
-          return positions[line] || [];
-        })(),
-      });
-    },
-  }
-);
 
 export const loadSourceActorBreakableLines = memoizeableAction(
   "loadSourceActorBreakableLines",

@@ -260,7 +260,7 @@ MediaPipeline::MediaPipeline(const std::string& aPc,
       mPc(aPc),
       mFilter(),
       mRtpParser(webrtc::RtpHeaderParser::CreateForTest().release()),
-      mPacketDumper(new PacketDumper(mPc)) {}
+      mPacketDumper(PacketDumper::GetPacketDumper(mPc)) {}
 
 MediaPipeline::~MediaPipeline() {
   MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
@@ -301,9 +301,6 @@ void MediaPipeline::DetachTransport_s() {
   mRtpSendEventListener.DisconnectIfExists();
   mSenderRtcpSendEventListener.DisconnectIfExists();
   mReceiverRtcpSendEventListener.DisconnectIfExists();
-
-  // Make sure any cycles are broken
-  mPacketDumper = nullptr;
 }
 
 void MediaPipeline::UpdateTransport_m(
@@ -1521,20 +1518,17 @@ class MediaPipelineReceiveVideo::PipelineListener
 
       PlanarYCbCrData yuvData;
       yuvData.mYChannel = const_cast<uint8_t*>(i420->DataY());
-      yuvData.mYSize = IntSize(i420->width(), i420->height());
       yuvData.mYStride = i420->StrideY();
       MOZ_ASSERT(i420->StrideU() == i420->StrideV());
       yuvData.mCbCrStride = i420->StrideU();
       yuvData.mCbChannel = const_cast<uint8_t*>(i420->DataU());
       yuvData.mCrChannel = const_cast<uint8_t*>(i420->DataV());
-      yuvData.mCbCrSize =
-          IntSize((i420->width() + 1) >> 1, (i420->height() + 1) >> 1);
-      yuvData.mPicX = 0;
-      yuvData.mPicY = 0;
-      yuvData.mPicSize = IntSize(i420->width(), i420->height());
+      yuvData.mPictureRect = IntRect(0, 0, i420->width(), i420->height());
       yuvData.mStereoMode = StereoMode::MONO;
       // This isn't the best default.
       yuvData.mYUVColorSpace = gfx::YUVColorSpace::BT601;
+      yuvData.mChromaSubsampling =
+          gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
 
       if (!yuvImage->CopyData(yuvData)) {
         MOZ_ASSERT(false);
@@ -1552,7 +1546,7 @@ class MediaPipelineReceiveVideo::PipelineListener
 
  private:
   RefPtr<layers::ImageContainer> mImageContainer;
-  Mutex mMutex;  // Protects the below members.
+  Mutex mMutex MOZ_UNANNOTATED;  // Protects the below members.
   PrincipalHandle mPrincipalHandle;
   // Set to true on the sts thread if privacy is requested when ALPN was
   // negotiated. Set to false again when mPrincipalHandle is private.

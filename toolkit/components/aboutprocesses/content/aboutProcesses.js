@@ -385,7 +385,11 @@ var View = {
     return row;
   },
 
-  displayCpu(data, cpuCell) {
+  displayCpu(data, cpuCell, maxSlopeCpu) {
+    // Put a value < 0% when we really don't want to see a bar as
+    // otherwise it sometimes appears due to rounding errors when we
+    // don't have an integer number of pixels.
+    let barWidth = -0.5;
     if (data.slopeCpu == null) {
       this._fillCell(cpuCell, {
         fluentName: "about-processes-cpu-user-and-kernel-not-ready",
@@ -425,17 +429,26 @@ var View = {
           },
           classes: ["cpu"],
         });
+
+        let cpuPercent = data.slopeCpu * 100;
+        if (maxSlopeCpu > 1) {
+          cpuPercent /= maxSlopeCpu;
+        }
+        // Ensure we always have a visible bar for non-0 values.
+        barWidth = Math.max(0.5, cpuPercent);
       }
     }
+    cpuCell.style.setProperty("--bar-width", barWidth);
   },
 
   /**
    * Display a row showing a single process (without its threads).
    *
    * @param {ProcessDelta} data The data to display.
+   * @param {Number} maxSlopeCpu The largest slopeCpu value.
    * @return {DOMElement} The row displaying the process.
    */
-  displayProcessRow(data) {
+  displayProcessRow(data, maxSlopeCpu) {
     const cellCount = 4;
     let rowId = "p:" + data.pid;
     let row = this._getOrCreateRow(rowId, cellCount);
@@ -466,10 +479,6 @@ var View = {
           break;
         case "webServiceWorker":
           fluentName = "about-processes-web-serviceworker";
-          fluentArgs.origin = data.origin;
-          break;
-        case "webLargeAllocation":
-          fluentName = "about-processes-web-large-allocation-process";
           fluentArgs.origin = data.origin;
           break;
         case "file":
@@ -646,7 +655,7 @@ var View = {
 
     // Column: CPU
     let cpuCell = memoryCell.nextSibling;
-    this.displayCpu(data, cpuCell);
+    this.displayCpu(data, cpuCell, maxSlopeCpu);
 
     // Column: Kill button – but not for all processes.
     let killButton = cpuCell.nextSibling;
@@ -843,8 +852,9 @@ var View = {
    * Display a row showing a single thread.
    *
    * @param {ThreadDelta} data The data to display.
+   * @param {Number} maxSlopeCpu The largest slopeCpu value.
    */
-  displayThreadRow(data) {
+  displayThreadRow(data, maxSlopeCpu) {
     const cellCount = 3;
     let rowId = "t:" + data.tid;
     let row = this._getOrCreateRow(rowId, cellCount);
@@ -863,7 +873,7 @@ var View = {
     });
 
     // Column: CPU
-    this.displayCpu(data, nameCell.nextSibling);
+    this.displayCpu(data, nameCell.nextSibling, maxSlopeCpu);
 
     // Third column (Buttons) is empty, nothing to do.
   },
@@ -1102,11 +1112,15 @@ var Control = {
         if (!event.target.classList.contains("clickable")) {
           return;
         }
+        // Linux has conventions opposite to Windows and macOS on the direction of arrows
+        // when sorting.
+        const platformIsLinux = AppConstants.platform == "linux";
+        const ascArrow = platformIsLinux ? "arrow-up" : "arrow-down";
+        const descArrow = platformIsLinux ? "arrow-down" : "arrow-up";
 
         if (this._sortColumn) {
           const td = document.getElementById(this._sortColumn);
-          td.classList.remove("asc");
-          td.classList.remove("desc");
+          td.classList.remove(ascArrow, descArrow);
         }
 
         const columnId = event.target.id;
@@ -1118,13 +1132,8 @@ var Control = {
           this._sortAscendent = true;
         }
 
-        if (this._sortAscendent) {
-          event.target.classList.remove("desc");
-          event.target.classList.add("asc");
-        } else {
-          event.target.classList.remove("asc");
-          event.target.classList.add("desc");
-        }
+        event.target.classList.toggle(ascArrow, this._sortAscendent);
+        event.target.classList.toggle(descArrow, !this._sortAscendent);
 
         await this._updateDisplay(true);
       });
@@ -1183,13 +1192,17 @@ var Control = {
     this._hungItems = new Set();
 
     counters = this._sortProcesses(counters);
+
+    // Stored because it is used when opening the list of threads.
+    this._maxSlopeCpu = Math.max(...counters.map(process => process.slopeCpu));
+
     let previousProcess = null;
     for (let process of counters) {
       this._sortDOMWindows(process.windows);
 
       process.isHung = process.childID && hungItems.has(process.childID);
 
-      let processRow = View.displayProcessRow(process);
+      let processRow = View.displayProcessRow(process, this._maxSlopeCpu);
 
       if (process.type != "extension") {
         // We do not want to display extensions.
@@ -1202,7 +1215,7 @@ var Control = {
 
       if (SHOW_THREADS) {
         if (View.displayThreadSummaryRow(process)) {
-          this._showThreads(processRow);
+          this._showThreads(processRow, this._maxSlopeCpu);
         }
       }
       if (
@@ -1246,11 +1259,11 @@ var Control = {
       b.slopeCpu - a.slopeCpu || b.active - a.active || b.totalCpu - a.totalCpu
     );
   },
-  _showThreads(row) {
+  _showThreads(row, maxSlopeCpu) {
     let process = row.process;
     this._sortThreads(process.threads);
     for (let thread of process.threads) {
-      View.displayThreadRow(thread);
+      View.displayThreadRow(thread, maxSlopeCpu);
     }
   },
   _sortThreads(threads) {
@@ -1342,7 +1355,6 @@ var Control = {
       // Web content comes next.
       case "webIsolated":
       case "webServiceWorker":
-      case "webLargeAllocation":
       case "withCoopCoep": {
         if (windows.some(w => w.tab)) {
           return RANK_WEB_TABS;
@@ -1378,7 +1390,7 @@ var Control = {
   _handleTwisty(target) {
     let row = target.parentNode.parentNode;
     if (target.classList.toggle("open")) {
-      this._showThreads(row);
+      this._showThreads(row, this._maxSlopeCpu);
       View.insertAfterRow(row);
     } else {
       this._removeSubtree(row);

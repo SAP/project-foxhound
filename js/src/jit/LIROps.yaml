@@ -2723,7 +2723,16 @@
   arguments:
     offset: size_t
 
+- name: WasmLoadTableElement
+  result_type: WordSized
+  operands:
+    elements: WordSized
+    index: WordSized
+
 - name: WasmDerivedPointer
+  gen_boilerplate: false
+
+- name: WasmDerivedIndexPointer
   gen_boilerplate: false
 
 - name: WasmStoreRef
@@ -2766,6 +2775,9 @@
 
 - name: WasmNullConstant
   result_type: WordSized
+
+- name: WasmCallIndirectAdjunctSafepoint
+  gen_boilerplate: false
 
 - name: WasmCall
   gen_boilerplate: false
@@ -3385,15 +3397,6 @@
 - name: MulI
   gen_boilerplate: false
 
-- name: WasmExceptionDataPointer
-  gen_boilerplate: false
-
-- name: WasmExceptionRefsPointer
-  gen_boilerplate: false
-
-- name: WasmLoadExceptionRefsValue
-  gen_boilerplate: false
-
 #ifdef JS_CODEGEN_X86
 - name: BoxFloatingPoint
   gen_boilerplate: false
@@ -3626,4 +3629,33 @@
 
 - name: WasmAtomicExchangeI64
   gen_boilerplate: false
-#endif  
+#endif
+
+#ifdef JS_CODEGEN_LOONG64
+- name: DivOrModI64
+  gen_boilerplate: false
+
+- name: UDivOrMod
+  gen_boilerplate: false
+
+- name: UDivOrModI64
+  gen_boilerplate: false
+
+- name: ModMaskI
+  gen_boilerplate: false
+
+- name: WasmTruncateToInt64
+  gen_boilerplate: false
+
+- name: Int64ToFloatingPoint
+  gen_boilerplate: false
+
+- name: WasmCompareExchangeI64
+  gen_boilerplate: false
+
+- name: WasmAtomicBinopI64
+  gen_boilerplate: false
+
+- name: WasmAtomicExchangeI64
+  gen_boilerplate: false
+#endif

@@ -259,6 +259,7 @@ public final class GeckoRuntime implements Parcelable {
    * @param url validated Url being requested to be opened in a new window.
    * @return SessionID to use for the request.
    */
+  @SuppressLint("WrongThread") // for .isOpen() which is called on the UI thread
   @WrapForJNI(calledFrom = "gecko")
   private static @NonNull GeckoResult<String> serviceWorkerOpenWindow(final @NonNull String url) {
     if (sRuntime != null && sRuntime.mServiceWorkerDelegate != null) {
@@ -273,12 +274,10 @@ public final class GeckoRuntime implements Parcelable {
                     session -> {
                       if (session != null) {
                         if (!session.isOpen()) {
-                          result.completeExceptionally(
-                              new RuntimeException("Returned GeckoSession must be open."));
-                        } else {
-                          session.loadUri(url);
-                          result.complete(session.getId());
+                          session.open(sRuntime);
                         }
+                        session.loadUri(url);
+                        result.complete(session.getId());
                       } else {
                         result.complete(null);
                       }
@@ -919,16 +918,18 @@ public final class GeckoRuntime implements Parcelable {
           final OrientationController.OrientationDelegate delegate =
               getOrientationController().getDelegate();
           if (delegate == null) {
-            res.complete(false);
-          } else {
-            final GeckoResult<AllowOrDeny> response =
-                delegate.onOrientationLock(toAndroidOrientation(aOrientation));
-            if (response == null) {
-              res.complete(false);
-            } else {
-              res.completeFrom(response.map(v -> v == AllowOrDeny.ALLOW));
-            }
+            // Delegate is not set
+            res.completeExceptionally(new Exception("Not supported"));
+            return;
           }
+          final GeckoResult<AllowOrDeny> response =
+              delegate.onOrientationLock(toAndroidOrientation(aOrientation));
+          if (response == null) {
+            // Delegate is default. So lock orientation is not implemented
+            res.completeExceptionally(new Exception("Not supported"));
+            return;
+          }
+          res.completeFrom(response.map(v -> v == AllowOrDeny.ALLOW));
         });
     return res;
   }

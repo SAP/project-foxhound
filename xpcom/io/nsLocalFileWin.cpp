@@ -83,6 +83,9 @@ using mozilla::FilePreferences::kPathSeparator;
 #ifndef ERROR_DEVICE_HARDWARE_ERROR
 #  define ERROR_DEVICE_HARDWARE_ERROR 483L
 #endif
+#ifndef ERROR_CONTENT_BLOCKED
+#  define ERROR_CONTENT_BLOCKED 1296L
+#endif
 
 namespace {
 
@@ -261,6 +264,8 @@ static nsresult ConvertWinError(DWORD aWinErr) {
     case ERROR_NOT_SAME_DEVICE:
       [[fallthrough]];  // to NS_ERROR_FILE_ACCESS_DENIED
     case ERROR_CANNOT_MAKE:
+      [[fallthrough]];  // to NS_ERROR_FILE_ACCESS_DENIED
+    case ERROR_CONTENT_BLOCKED:
       rv = NS_ERROR_FILE_ACCESS_DENIED;
       break;
     case ERROR_SHARING_VIOLATION:  // CreateFile without sharing flags
@@ -296,6 +301,8 @@ static nsresult ConvertWinError(DWORD aWinErr) {
       rv = NS_ERROR_FILE_NOT_DIRECTORY;
       break;
     case ERROR_FILE_CORRUPT:
+      [[fallthrough]];  // to NS_ERROR_FILE_FS_CORRUPTED
+    case ERROR_DISK_CORRUPT:
       rv = NS_ERROR_FILE_FS_CORRUPTED;
       break;
     case ERROR_DEVICE_HARDWARE_ERROR:
@@ -2296,6 +2303,11 @@ nsLocalFile::Remove(bool aRecursive) {
 
   if (isDir) {
     if (aRecursive) {
+      // WARNING: neither the `SHFileOperation` nor `IFileOperation` APIs are
+      // appropriate here as neither handle long path names, i.e. paths prefixed
+      // with `\\?\` or longer than 260 characters on Windows 10+ system with
+      // long paths enabled.
+
       RefPtr<nsDirEnumerator> dirEnum = new nsDirEnumerator();
 
       rv = dirEnum->Init(this);
@@ -2303,14 +2315,9 @@ nsLocalFile::Remove(bool aRecursive) {
         return rv;
       }
 
-      bool more = false;
-      while (NS_SUCCEEDED(dirEnum->HasMoreElements(&more)) && more) {
-        nsCOMPtr<nsISupports> item;
-        dirEnum->GetNext(getter_AddRefs(item));
-        nsCOMPtr<nsIFile> file = do_QueryInterface(item);
-        if (file) {
-          file->Remove(aRecursive);
-        }
+      nsCOMPtr<nsIFile> file;
+      while (NS_SUCCEEDED(dirEnum->GetNextFile(getter_AddRefs(file))) && file) {
+        file->Remove(aRecursive);
       }
     }
     if (RemoveDirectoryW(mWorkingPath.get()) == 0) {
@@ -2997,43 +3004,59 @@ nsLocalFile::Equals(nsIFile* aInFile, bool* aResult) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  EnsureShortPath();
-
   nsCOMPtr<nsILocalFileWin> lf(do_QueryInterface(aInFile));
   if (!lf) {
     *aResult = false;
     return NS_OK;
   }
 
-  nsAutoString inFilePath;
-  lf->GetCanonicalPath(inFilePath);
-
   bool inUseDOSDevicePathSyntax;
   lf->GetUseDOSDevicePathSyntax(&inUseDOSDevicePathSyntax);
 
-  // Remove the prefix for both inFilePath and mShortWorkingPath if the
-  // useDOSDevicePathSyntax from them are not the same.
-  // This is added because of Omnijar. It compare files from different moduals
-  // with itself
-  nsAutoString shortWorkingPath;
-  if (inUseDOSDevicePathSyntax == mUseDOSDevicePathSyntax) {
-    shortWorkingPath = mShortWorkingPath;
-  } else if (inUseDOSDevicePathSyntax &&
-             StringBeginsWith(inFilePath, kDevicePathSpecifier)) {
-    MOZ_ASSERT(!StringBeginsWith(mShortWorkingPath, kDevicePathSpecifier));
-
-    shortWorkingPath = mShortWorkingPath;
-    inFilePath = Substring(inFilePath, kDevicePathSpecifier.Length());
-  } else if (mUseDOSDevicePathSyntax &&
-             StringBeginsWith(mShortWorkingPath, kDevicePathSpecifier)) {
-    MOZ_ASSERT(!StringBeginsWith(inFilePath, kDevicePathSpecifier));
-
-    shortWorkingPath =
-        Substring(mShortWorkingPath, kDevicePathSpecifier.Length());
+  // If useDOSDevicePathSyntax are different remove the prefix from the one that
+  // might have it. This is added because of Omnijar. It compares files from
+  // different modules with itself.
+  bool removePathPrefix, removeInPathPrefix;
+  if (inUseDOSDevicePathSyntax != mUseDOSDevicePathSyntax) {
+    removeInPathPrefix = inUseDOSDevicePathSyntax;
+    removePathPrefix = mUseDOSDevicePathSyntax;
+  } else {
+    removePathPrefix = removeInPathPrefix = false;
   }
 
-  // Ok : Win9x
-  *aResult = _wcsicmp(shortWorkingPath.get(), inFilePath.get()) == 0;
+  nsAutoString inFilePath, workingPath;
+  aInFile->GetPath(inFilePath);
+  workingPath = mWorkingPath;
+
+  constexpr static auto equalPath =
+      [](nsAutoString& workingPath, nsAutoString& inFilePath,
+         bool removePathPrefix, bool removeInPathPrefix) {
+        if (removeInPathPrefix &&
+            StringBeginsWith(inFilePath, kDevicePathSpecifier)) {
+          MOZ_ASSERT(!StringBeginsWith(workingPath, kDevicePathSpecifier));
+
+          inFilePath = Substring(inFilePath, kDevicePathSpecifier.Length());
+        } else if (removePathPrefix &&
+                   StringBeginsWith(workingPath, kDevicePathSpecifier)) {
+          MOZ_ASSERT(!StringBeginsWith(inFilePath, kDevicePathSpecifier));
+
+          workingPath = Substring(workingPath, kDevicePathSpecifier.Length());
+        }
+
+        return _wcsicmp(workingPath.get(), inFilePath.get()) == 0;
+      };
+
+  if (equalPath(workingPath, inFilePath, removePathPrefix,
+                removeInPathPrefix)) {
+    *aResult = true;
+    return NS_OK;
+  }
+
+  EnsureShortPath();
+  lf->GetCanonicalPath(inFilePath);
+  workingPath = mShortWorkingPath;
+  *aResult =
+      equalPath(workingPath, inFilePath, removePathPrefix, removeInPathPrefix);
 
   return NS_OK;
 }
@@ -3057,8 +3080,8 @@ nsLocalFile::Contains(nsIFile* aInFile, bool* aResult) {
     aInFile->GetPath(inFilePath);
   }
 
-  // make sure that the |aInFile|'s path has a trailing separator.
-  if (inFilePath.Length() >= myFilePathLen &&
+  // Make sure that the |aInFile|'s path has a trailing separator.
+  if (inFilePath.Length() > myFilePathLen &&
       inFilePath[myFilePathLen] == L'\\') {
     if (_wcsnicmp(myFilePath.get(), inFilePath.get(), myFilePathLen) == 0) {
       *aResult = true;
@@ -3422,14 +3445,6 @@ nsCString nsIFile::HumanReadablePath() {
   DebugOnly<nsresult> rv = GetPath(path);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   return NS_ConvertUTF16toUTF8(path);
-}
-
-NS_IMETHODIMP
-nsLocalFile::GetNativeCanonicalPath(nsACString& aResult) {
-  NS_WARNING("This method is lossy. Use GetCanonicalPath !");
-  EnsureShortPath();
-  NS_CopyUnicodeToNative(mShortWorkingPath, aResult);
-  return NS_OK;
 }
 
 NS_IMETHODIMP

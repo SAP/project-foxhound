@@ -534,6 +534,11 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     return nullptr;
   }
 
+  JS::Realm* realm = JS::GetCurrentRealmOrNull(cx);
+  if (realm && JS::GetDebuggerObservesWasm(realm)) {
+    r->SetSkipWasmCaching();
+  }
+
   RefPtr<FetchObserver> observer;
   if (aInit.mObserve.WasPassed()) {
     observer = new FetchObserver(aGlobal, signalImpl);
@@ -632,7 +637,7 @@ class ResolveFetchPromise : public Runnable {
         mPromise(aPromise),
         mResponse(aResponse) {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     mPromise->MaybeResolve(mResponse);
     return NS_OK;
   }
@@ -1578,7 +1583,7 @@ void FetchBody<Derived>::LockStream(JSContext* aCx, ReadableStream* aStream,
                                     ErrorResult& aRv) {
   // This is native stream, creating a reader will not execute any JS code.
   RefPtr<ReadableStreamDefaultReader> reader =
-      AcquireReadableStreamDefaultReader(aCx, aStream, aRv);
+      AcquireReadableStreamDefaultReader(aStream, aRv);
   if (aRv.Failed()) {
     return;
   }

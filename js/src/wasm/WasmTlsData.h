@@ -19,109 +19,16 @@
 #ifndef wasm_tls_data_h
 #define wasm_tls_data_h
 
-#include "mozilla/Atomics.h"
-
 #include <stdint.h>
 
 #include "NamespaceImports.h"
 
 #include "js/Utility.h"
+#include "wasm/WasmInstance.h"
 #include "wasm/WasmTypeDecls.h"
 
 namespace js {
 namespace wasm {
-
-using mozilla::Atomic;
-
-// TLS data for a single module instance.
-//
-// Every WebAssembly function expects to be passed a hidden TLS pointer argument
-// in WasmTlsReg. The TLS pointer argument points to a TlsData struct.
-// Compiled functions expect that the TLS pointer does not change for the
-// lifetime of the thread.
-//
-// There is a TlsData per module instance per thread, so inter-module calls need
-// to pass the TLS pointer appropriate for the callee module.
-//
-// After the TlsData struct follows the module's declared TLS variables.
-
-struct TlsData {
-  // Pointer to the base of the default memory (or null if there is none).
-  uint8_t* memoryBase;
-
-  // Bounds check limit in bytes (or zero if there is no memory).  This is
-  // 64-bits on 64-bit systems so as to allow for heap lengths up to and beyond
-  // 4GB, and 32-bits on 32-bit systems, where heaps are limited to 2GB.
-  //
-  // See "Linear memory addresses and bounds checking" in WasmMemory.cpp.
-  uintptr_t boundsCheckLimit;
-
-  // Pointer to the Instance that contains this TLS data.
-  Instance* instance;
-
-  // Equal to instance->realm_.
-  JS::Realm* realm;
-
-  // The containing JSContext.
-  JSContext* cx;
-
-  // The class_ of WasmValueBox, this is a per-process value.
-  const JSClass* valueBoxClass;
-
-#ifdef ENABLE_WASM_EXCEPTIONS
-  // The pending exception that was found during stack unwinding after a throw.
-  //
-  //   - Only non-null while unwinding the control stack from a wasm-exit stub.
-  //     until the nearest enclosing Wasm try-catch or try-delegate block.
-  //   - Set by wasm::HandleThrow, unset by Instance::consumePendingException.
-  //   - If the unwind target is a `try-delegate`, it is unset by the delegated
-  //     try-catch block or function body block.
-  GCPtrObject pendingException;
-#endif
-
-  // Usually equal to cx->stackLimitForJitCode(JS::StackForUntrustedScript),
-  // but can be racily set to trigger immediate trap as an opportunity to
-  // CheckForInterrupt without an additional branch.
-  Atomic<uintptr_t, mozilla::Relaxed> stackLimit;
-
-  // Set to 1 when wasm should call CheckForInterrupt.
-  Atomic<uint32_t, mozilla::Relaxed> interrupt;
-
-  const JS::shadow::Zone::BarrierState* addressOfNeedsIncrementalBarrier;
-
-  // Methods to set, test and clear the above two fields. Both interrupt
-  // fields are Relaxed and so no consistency/ordering can be assumed.
-  void setInterrupt();
-  bool isInterrupted() const;
-  void resetInterrupt(JSContext* cx);
-
-  // Pointer that should be freed (due to padding before the TlsData).
-  void* allocatedBase;
-
-  // When compiling with tiering, the jumpTable has one entry for each
-  // baseline-compiled function.
-  void** jumpTable;
-
-  // General scratch storage for the baseline compiler, which can't always use
-  // the stack for this.
-  uint32_t baselineScratch[2];
-
-  // The globalArea must be the last field.  Globals for the module start here
-  // and are inline in this structure.  16-byte alignment is required for SIMD
-  // data.
-  MOZ_ALIGNED_DECL(16, char globalArea);
-};
-
-static const size_t TlsDataAlign = 16;  // = Simd128DataSize
-static_assert(offsetof(TlsData, globalArea) % TlsDataAlign == 0, "aligned");
-
-struct TlsDataDeleter {
-  void operator()(TlsData* tlsData) { js_free(tlsData->allocatedBase); }
-};
-
-using UniqueTlsData = UniquePtr<TlsData, TlsDataDeleter>;
-
-extern UniqueTlsData CreateTlsData(uint32_t globalDataLength);
 
 // ExportArg holds the unboxed operands to the wasm entry trampoline which can
 // be called through an ExportFuncPtr.
@@ -131,21 +38,21 @@ struct ExportArg {
   uint64_t hi;
 };
 
-using ExportFuncPtr = int32_t (*)(ExportArg*, TlsData*);
+using ExportFuncPtr = int32_t (*)(ExportArg*, Instance*);
 
-// FuncImportTls describes the region of wasm global memory allocated in the
-// instance's thread-local storage for a function import. This is accessed
-// directly from JIT code and mutated by Instance as exits become optimized and
-// deoptimized.
+// FuncImportInstanceData describes the region of wasm global memory allocated
+// in the instance's thread-local storage for a function import. This is
+// accessed directly from JIT code and mutated by Instance as exits become
+// optimized and deoptimized.
 
-struct FuncImportTls {
+struct FuncImportInstanceData {
   // The code to call at an import site: a wasm callee, a thunk into C++, or a
   // thunk into JIT code.
   void* code;
 
-  // The callee's TlsData pointer, which must be loaded to WasmTlsReg (along
-  // with any pinned registers) before calling 'code'.
-  TlsData* tls;
+  // The callee's Instance pointer, which must be loaded to InstanceReg
+  // (along with any pinned registers) before calling 'code'.
+  Instance* instance;
 
   // The callee function's realm.
   JS::Realm* realm;
@@ -156,17 +63,35 @@ struct FuncImportTls {
   static_assert(sizeof(GCPtrFunction) == sizeof(void*), "for JIT access");
 };
 
-// TableTls describes the region of wasm global memory allocated in the
+// TableInstanceData describes the region of wasm global memory allocated in the
 // instance's thread-local storage which is accessed directly from JIT code
 // to bounds-check and index the table.
 
-struct TableTls {
+struct TableInstanceData {
   // Length of the table in number of elements (not bytes).
   uint32_t length;
 
   // Pointer to the array of elements (which can have various representations).
   // For tables of anyref this is null.
-  void* functionBase;
+  // For tables of functions, this is a pointer to the array of code pointers.
+  void* elements;
+};
+
+// Table element for TableRepr::Func which carries both the code pointer and
+// a tls pointer (and thus anything reachable through the tls, including the
+// instance).
+
+struct FunctionTableElem {
+  // The code to call when calling this element. The table ABI is the system
+  // ABI with the additional ABI requirements that:
+  //  - InstanceReg and any pinned registers have been loaded appropriately
+  //  - if this is a heterogeneous table that requires a signature check,
+  //    WasmTableCallSigReg holds the signature id.
+  void* code;
+
+  // The pointer to the callee's instance's Instance. This must be loaded into
+  // InstanceReg before calling 'code'.
+  Instance* instance;
 };
 
 }  // namespace wasm

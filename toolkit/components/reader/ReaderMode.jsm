@@ -135,7 +135,7 @@ var ReaderMode = {
     });
 
     let url = win.document.location.href;
-    let originalURL = ReaderMode.getOriginalUrl(url);
+    let originalURL = this.getOriginalUrl(url);
     let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
 
     if (!Services.appinfo.sessionHistoryInParent) {
@@ -219,7 +219,7 @@ var ReaderMode = {
   },
 
   getOriginalUrlObjectForDisplay(url) {
-    let originalUrl = ReaderMode.getOriginalUrl(url);
+    let originalUrl = this.getOriginalUrl(url);
     if (originalUrl) {
       let uriObj;
       try {
@@ -263,11 +263,12 @@ var ReaderMode = {
    * @return {Promise}
    * @resolves JS object representing the article, or null if no article is found.
    */
-  async downloadAndParseDocument(url) {
-    let doc = await this._downloadDocument(url);
-    if (!doc) {
+  async downloadAndParseDocument(url, docContentType = "document") {
+    let result = await this._downloadDocument(url, docContentType);
+    if (!result?.doc) {
       return null;
     }
+    let { doc, newURL } = result;
     if (
       !Readerable.shouldCheckUri(doc.documentURIObject) ||
       !Readerable.shouldCheckUri(doc.baseURIObject, true)
@@ -276,10 +277,17 @@ var ReaderMode = {
       return null;
     }
 
-    return this._readerParse(doc);
+    let article = await this._readerParse(doc);
+    // If we have to redirect, reject to the caller with the parsed article,
+    // so we can update the URL before displaying it.
+    if (newURL) {
+      return Promise.reject({ newURL, article });
+    }
+    // Otherwise, we can just continue with the article.
+    return article;
   },
 
-  _downloadDocument(url) {
+  _downloadDocument(url, docContentType = "document") {
     try {
       if (!Readerable.shouldCheckUri(Services.io.newURI(url))) {
         return null;
@@ -297,7 +305,7 @@ var ReaderMode = {
       let xhr = new XMLHttpRequest();
       xhr.open("GET", url, true);
       xhr.onerror = evt => reject(evt.error);
-      xhr.responseType = "document";
+      xhr.responseType = docContentType === "text/plain" ? "text" : "document";
       xhr.onload = evt => {
         if (xhr.status !== 200) {
           reject("Reader mode XHR failed with status: " + xhr.status);
@@ -305,55 +313,14 @@ var ReaderMode = {
           return;
         }
 
-        let doc = xhr.responseXML;
+        let doc =
+          xhr.responseType === "text" ? xhr.responseText : xhr.responseXML;
         if (!doc) {
           reject("Reader mode XHR didn't return a document");
           histogram.add(DOWNLOAD_ERROR_NO_DOC);
           return;
         }
 
-        // Manually follow a meta refresh tag if one exists.
-        let meta = doc.querySelector("meta[http-equiv=refresh]");
-        if (meta) {
-          let content = meta.getAttribute("content");
-          if (content) {
-            let urlIndex = content.toUpperCase().indexOf("URL=");
-            if (urlIndex > -1) {
-              let baseURI = Services.io.newURI(url);
-              let newURI = Services.io.newURI(
-                content.substring(urlIndex + 4),
-                null,
-                baseURI
-              );
-              let newURL = newURI.spec;
-              let ssm = Services.scriptSecurityManager;
-              let flags =
-                ssm.LOAD_IS_AUTOMATIC_DOCUMENT_REPLACEMENT |
-                ssm.DISALLOW_INHERIT_PRINCIPAL;
-              try {
-                ssm.checkLoadURIStrWithPrincipal(
-                  doc.nodePrincipal,
-                  newURL,
-                  flags
-                );
-              } catch (ex) {
-                let errorMsg =
-                  "Reader mode disallowed meta refresh (reason: " + ex + ").";
-
-                if (Services.prefs.getBoolPref("reader.errors.includeURLs")) {
-                  errorMsg += " Refresh target URI: '" + newURL + "'.";
-                }
-                reject(errorMsg);
-                return;
-              }
-              // Otherwise, pass an object indicating our new URL:
-              if (!baseURI.equalsExceptRef(newURI)) {
-                reject({ newURL });
-                return;
-              }
-            }
-          }
-        }
         let responseURL = xhr.responseURL;
         let givenURL = url;
         // Convert these to real URIs to make sure the escaping (or lack
@@ -369,14 +336,22 @@ var ReaderMode = {
           /* Ignore errors - we'll use what we had before */
         }
 
-        if (responseURL != givenURL) {
-          // We were redirected without a meta refresh tag.
-          // Force redirect to the correct place:
-          reject({ newURL: xhr.responseURL });
-          return;
+        if (xhr.responseType != "document") {
+          let initialText = doc;
+          let parser = new DOMParser();
+          doc = parser.parseFromString(`<pre></pre>`, "text/html");
+          doc.querySelector("pre").textContent = initialText;
         }
-        resolve(doc);
+
+        // We treat redirects as download successes here:
         histogram.add(DOWNLOAD_SUCCESS);
+
+        let result = { doc };
+        if (responseURL != givenURL) {
+          result.newURL = xhr.responseURL;
+        }
+
+        resolve(result);
       };
       xhr.send();
     });
@@ -479,13 +454,25 @@ var ReaderMode = {
     // document might be nuked but we will still want the URI.
     let { documentURI } = doc;
 
-    let uriParam = {
+    let uriParam;
+    uriParam = {
       spec: doc.baseURIObject.spec,
-      host: doc.baseURIObject.host,
       prePath: doc.baseURIObject.prePath,
       scheme: doc.baseURIObject.scheme,
-      pathBase: Services.io.newURI(".", null, doc.baseURIObject).spec,
+
+      // Fallback
+      host: documentURI,
+      pathBase: documentURI,
     };
+
+    // nsIURI.host throws an exception if a host doesn't exist.
+    try {
+      uriParam.host = doc.baseURIObject.host;
+      uriParam.pathBase = Services.io.newURI(".", null, doc.baseURIObject).spec;
+    } catch (ex) {
+      // Fall back to the initial values we assigned.
+      console.warn("Error accessing host name: ", ex);
+    }
 
     // convert text/plain document, if any, to XHTML format
     if (this._isDocumentPlainText(doc)) {

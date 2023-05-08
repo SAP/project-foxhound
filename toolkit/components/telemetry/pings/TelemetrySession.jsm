@@ -401,9 +401,10 @@ var Impl = {
     // Look for app-specific timestamps
     var appTimestamps = {};
     try {
-      let o = {};
-      ChromeUtils.import("resource://gre/modules/TelemetryTimestamps.jsm", o);
-      appTimestamps = o.TelemetryTimestamps.get();
+      let { TelemetryTimestamps } = ChromeUtils.import(
+        "resource://gre/modules/TelemetryTimestamps.jsm"
+      );
+      appTimestamps = TelemetryTimestamps.get();
     } catch (ex) {}
 
     // Only submit this if the extended set is enabled.
@@ -585,6 +586,8 @@ var Impl = {
     reason,
     clearSubsession
   ) {
+    Services.telemetry.scalarSet("gifft.validation.main_ping_assembling", true);
+    Glean.gifftValidation.mainPingAssembling.set(true);
     const isSubsession = IS_UNIFIED_TELEMETRY && !this._isClassicReason(reason);
     clearSubsession = IS_UNIFIED_TELEMETRY && clearSubsession;
     this._log.trace(

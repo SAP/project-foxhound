@@ -17,7 +17,6 @@
 
 #include "frontend/TokenStream.h"
 #include "irregexp/RegExpAPI.h"
-#include "jit/InlinableNatives.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_NEWREGEXP_FLAGGED
 #include "js/PropertySpec.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
@@ -30,7 +29,6 @@
 
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/PlainObject-inl.h"
 
@@ -481,7 +479,7 @@ bool js::IsRegExp(JSContext* cx, HandleValue value, bool* result) {
 
   /* Steps 2-3. */
   RootedValue isRegExp(cx);
-  RootedId matchId(cx, SYMBOL_TO_JSID(cx->wellKnownSymbols().match));
+  RootedId matchId(cx, PropertyKey::Symbol(cx->wellKnownSymbols().match));
   if (!GetProperty(cx, obj, obj, matchId, &isRegExp)) {
     return false;
   }
@@ -866,8 +864,10 @@ static bool regexp_source(JSContext* cx, unsigned argc, JS::Value* vp) {
       [cx, args](RegExpObject* unwrapped) {
         RootedAtom src(cx, unwrapped->getSource());
         MOZ_ASSERT(src);
-        // Mark potentially cross-compartment JSAtom.
-        cx->markAtom(src);
+        // Mark potentially cross-zone JSAtom.
+        if (cx->zone() != unwrapped->zone()) {
+          cx->markAtom(src);
+        }
 
         // Step 7.
         JSString* escaped = EscapeRegExpPattern(cx, src);
@@ -2000,7 +2000,7 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
   // those values should be tested in selfhosted JS.
   bool has = false;
   if (!HasOwnDataPropertyPure(
-          cx, proto, SYMBOL_TO_JSID(cx->wellKnownSymbols().match), &has)) {
+          cx, proto, PropertyKey::Symbol(cx->wellKnownSymbols().match), &has)) {
     return false;
   }
   if (!has) {
@@ -2008,7 +2008,8 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
   }
 
   if (!HasOwnDataPropertyPure(
-          cx, proto, SYMBOL_TO_JSID(cx->wellKnownSymbols().search), &has)) {
+          cx, proto, PropertyKey::Symbol(cx->wellKnownSymbols().search),
+          &has)) {
     return false;
   }
   if (!has) {

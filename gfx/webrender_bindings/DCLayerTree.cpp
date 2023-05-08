@@ -550,6 +550,14 @@ void DCLayerTree::AddSurface(wr::NativeSurfaceId aId,
 
   gfx::Matrix transform(aTransform.m11, aTransform.m12, aTransform.m21,
                         aTransform.m22, aTransform.m41, aTransform.m42);
+
+  auto* surfaceVideo = surface->AsDCSurfaceVideo();
+  if (surfaceVideo) {
+    if (surfaceVideo->CalculateSwapChainSize(transform)) {
+      surfaceVideo->PresentVideo();
+    }
+  }
+
   transform.PreTranslate(-virtualOffset.x, -virtualOffset.y);
 
   // The DirectComposition API applies clipping *before* any transforms/offset,
@@ -629,14 +637,16 @@ GLuint DCLayerTree::GetOrCreateFbo(int aWidth, int aHeight) {
   return fboId;
 }
 
-bool DCLayerTree::EnsureVideoProcessor(const gfx::IntSize& aVideoSize) {
+bool DCLayerTree::EnsureVideoProcessor(const gfx::IntSize& aInputSize,
+                                       const gfx::IntSize& aOutputSize) {
   HRESULT hr;
 
   if (!mVideoDevice || !mVideoContext) {
     return false;
   }
 
-  if (mVideoProcessor && aVideoSize == mVideoSize) {
+  if (mVideoProcessor && (aInputSize <= mVideoInputSize) &&
+      (aOutputSize <= mVideoOutputSize)) {
     return true;
   }
 
@@ -647,12 +657,12 @@ bool DCLayerTree::EnsureVideoProcessor(const gfx::IntSize& aVideoSize) {
   desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
   desc.InputFrameRate.Numerator = 60;
   desc.InputFrameRate.Denominator = 1;
-  desc.InputWidth = aVideoSize.width;
-  desc.InputHeight = aVideoSize.height;
+  desc.InputWidth = aInputSize.width;
+  desc.InputHeight = aInputSize.height;
   desc.OutputFrameRate.Numerator = 60;
   desc.OutputFrameRate.Denominator = 1;
-  desc.OutputWidth = aVideoSize.width;
-  desc.OutputHeight = aVideoSize.height;
+  desc.OutputWidth = aOutputSize.width;
+  desc.OutputHeight = aOutputSize.height;
   desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
 
   hr = mVideoDevice->CreateVideoProcessorEnumerator(
@@ -677,7 +687,9 @@ bool DCLayerTree::EnsureVideoProcessor(const gfx::IntSize& aVideoSize) {
   mVideoContext->VideoProcessorSetStreamAutoProcessingMode(mVideoProcessor, 0,
                                                            FALSE);
 
-  mVideoSize = aVideoSize;
+  mVideoInputSize = aInputSize;
+  mVideoOutputSize = aOutputSize;
+
   return true;
 }
 
@@ -784,6 +796,13 @@ DCSurfaceVideo::DCSurfaceVideo(bool aIsOpaque, DCLayerTree* aDCLayerTree)
     : DCSurface(wr::DeviceIntSize{}, wr::DeviceIntPoint{}, aIsOpaque,
                 aDCLayerTree) {}
 
+bool IsYUVSwapChainFormat(DXGI_FORMAT aFormat) {
+  if (aFormat == DXGI_FORMAT_NV12 || aFormat == DXGI_FORMAT_YUY2) {
+    return true;
+  }
+  return false;
+}
+
 void DCSurfaceVideo::AttachExternalImage(wr::ExternalImageId aExternalImage) {
   RenderTextureHost* texture =
       RenderThread::Get()->GetRenderTexture(aExternalImage);
@@ -803,10 +822,82 @@ void DCSurfaceVideo::AttachExternalImage(wr::ExternalImageId aExternalImage) {
     return;
   }
 
-  gfx::IntSize size = texture->AsRenderDXGITextureHost()->GetSize(0);
-  if (!mVideoSwapChain || mSwapChainSize != size) {
+  mRenderTextureHost = texture;
+}
+
+bool DCSurfaceVideo::CalculateSwapChainSize(gfx::Matrix& aTransform) {
+  if (!mRenderTextureHost) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return false;
+  }
+
+  mVideoSize = mRenderTextureHost->AsRenderDXGITextureHost()->GetSize(0);
+
+  // When RenderTextureHost, swapChainSize or VideoSwapChain are updated,
+  // DCSurfaceVideo::PresentVideo() needs to be called.
+  bool needsToPresent = mPrevTexture != mRenderTextureHost;
+  gfx::IntSize swapChainSize = mVideoSize;
+  gfx::Matrix transform = aTransform;
+
+  // When video is rendered to axis aligned integer rectangle, video scaling
+  // could be done by VideoProcessor
+  bool scaleVideoAtVideoProcessor = false;
+  if (StaticPrefs::gfx_webrender_dcomp_video_vp_scaling_win_AtStartup() &&
+      aTransform.PreservesAxisAlignedRectangles()) {
+    gfx::Size scaledSize = gfx::Size(mVideoSize) * aTransform.ScaleFactors();
+    gfx::IntSize size(int32_t(std::round(scaledSize.width)),
+                      int32_t(std::round(scaledSize.height)));
+    if (gfx::FuzzyEqual(scaledSize.width, size.width, 0.1f) &&
+        gfx::FuzzyEqual(scaledSize.height, size.height, 0.1f)) {
+      scaleVideoAtVideoProcessor = true;
+      swapChainSize = size;
+    }
+  }
+
+  if (scaleVideoAtVideoProcessor) {
+    // 4:2:2 subsampled formats like YUY2 must have an even width, and 4:2:0
+    // subsampled formats like NV12 must have an even width and height.
+    if (swapChainSize.width % 2 == 1) {
+      swapChainSize.width += 1;
+    }
+    if (swapChainSize.height % 2 == 1) {
+      swapChainSize.height += 1;
+    }
+    transform = gfx::Matrix::Translation(aTransform.GetTranslation());
+  }
+
+  if (!mVideoSwapChain || mSwapChainSize != swapChainSize) {
+    needsToPresent = true;
     ReleaseDecodeSwapChainResources();
-    CreateVideoSwapChain(texture);
+    // Update mSwapChainSize before creating SwapChain
+    mSwapChainSize = swapChainSize;
+
+    auto swapChainFormat = GetSwapChainFormat();
+    bool useYUVSwapChain = IsYUVSwapChainFormat(swapChainFormat);
+    if (useYUVSwapChain) {
+      // Tries to create YUV SwapChain
+      CreateVideoSwapChain();
+      if (!mVideoSwapChain) {
+        mFailedYuvSwapChain = true;
+        ReleaseDecodeSwapChainResources();
+
+        gfxCriticalNote << "Fallback to RGB SwapChain";
+      }
+    }
+    // Tries to create RGB SwapChain
+    if (!mVideoSwapChain) {
+      CreateVideoSwapChain();
+    }
+  }
+
+  aTransform = transform;
+
+  return needsToPresent;
+}
+
+void DCSurfaceVideo::PresentVideo() {
+  if (!mRenderTextureHost) {
+    return;
   }
 
   if (!mVideoSwapChain) {
@@ -818,32 +909,38 @@ void DCSurfaceVideo::AttachExternalImage(wr::ExternalImageId aExternalImage) {
 
   mVisual->SetContent(mVideoSwapChain);
 
-  if (!CallVideoProcessorBlt(texture)) {
+  if (!CallVideoProcessorBlt()) {
+    auto swapChainFormat = GetSwapChainFormat();
+    bool useYUVSwapChain = IsYUVSwapChainFormat(swapChainFormat);
+    if (useYUVSwapChain) {
+      mFailedYuvSwapChain = true;
+      ReleaseDecodeSwapChainResources();
+      return;
+    }
     RenderThread::Get()->NotifyWebRenderError(
         wr::WebRenderError::VIDEO_OVERLAY);
     return;
   }
 
-  mVideoSwapChain->Present(0, 0);
-  mPrevTexture = texture;
-}
-
-bool IsYUVSwapChainFormat(DXGI_FORMAT aFormat) {
-  if (aFormat == DXGI_FORMAT_NV12 || aFormat == DXGI_FORMAT_YUY2) {
-    return true;
+  HRESULT hr;
+  hr = mVideoSwapChain->Present(0, 0);
+  if (FAILED(hr) && hr != DXGI_STATUS_OCCLUDED) {
+    gfxCriticalNoteOnce << "video Present failed: " << gfx::hexa(hr);
   }
-  return false;
+
+  mPrevTexture = mRenderTextureHost;
 }
 
 DXGI_FORMAT DCSurfaceVideo::GetSwapChainFormat() {
-  if (mFailedToCreateYuvSwapChain ||
-      !mDCLayerTree->SupportsHardwareOverlays()) {
+  if (mFailedYuvSwapChain || !mDCLayerTree->SupportsHardwareOverlays()) {
     return DXGI_FORMAT_B8G8R8A8_UNORM;
   }
   return mDCLayerTree->GetOverlayFormatForSDR();
 }
 
-bool DCSurfaceVideo::CreateVideoSwapChain(RenderTextureHost* aTexture) {
+bool DCSurfaceVideo::CreateVideoSwapChain() {
+  MOZ_ASSERT(mRenderTextureHost);
+
   const auto device = mDCLayerTree->GetDevice();
 
   RefPtr<IDXGIDevice> dxgiDevice;
@@ -863,12 +960,11 @@ bool DCSurfaceVideo::CreateVideoSwapChain(RenderTextureHost* aTexture) {
     return false;
   }
 
-  gfx::IntSize size = aTexture->AsRenderDXGITextureHost()->GetSize(0);
   auto swapChainFormat = GetSwapChainFormat();
 
   DXGI_SWAP_CHAIN_DESC1 desc = {};
-  desc.Width = size.width;
-  desc.Height = size.height;
+  desc.Width = mSwapChainSize.width;
+  desc.Height = mSwapChainSize.height;
   desc.Format = swapChainFormat;
   desc.Stereo = FALSE;
   desc.SampleDesc.Count = 1;
@@ -888,12 +984,11 @@ bool DCSurfaceVideo::CreateVideoSwapChain(RenderTextureHost* aTexture) {
       getter_AddRefs(mVideoSwapChain));
 
   if (FAILED(hr)) {
-    mFailedToCreateYuvSwapChain = true;
-    gfxCriticalNote << "Failed to create video SwapChain: " << gfx::hexa(hr);
+    gfxCriticalNote << "Failed to create video SwapChain: " << gfx::hexa(hr)
+                    << " " << mSwapChainSize;
     return false;
   }
 
-  mSwapChainSize = size;
   mSwapChainFormat = swapChainFormat;
   return true;
 }
@@ -933,11 +1028,13 @@ static Maybe<DXGI_COLOR_SPACE_TYPE> GetSourceDXGIColorSpace(
   return GetSourceDXGIColorSpace(info.space, info.range);
 }
 
-bool DCSurfaceVideo::CallVideoProcessorBlt(RenderTextureHost* aTexture) {
+bool DCSurfaceVideo::CallVideoProcessorBlt() {
+  MOZ_ASSERT(mRenderTextureHost);
+
   HRESULT hr;
   const auto videoDevice = mDCLayerTree->GetVideoDevice();
   const auto videoContext = mDCLayerTree->GetVideoContext();
-  const auto texture = aTexture->AsRenderDXGITextureHost();
+  const auto texture = mRenderTextureHost->AsRenderDXGITextureHost();
 
   Maybe<DXGI_COLOR_SPACE_TYPE> sourceColorSpace =
       GetSourceDXGIColorSpace(texture->GetYUVColorSpace());
@@ -956,7 +1053,7 @@ bool DCSurfaceVideo::CallVideoProcessorBlt(RenderTextureHost* aTexture) {
     return false;
   }
 
-  if (!mDCLayerTree->EnsureVideoProcessor(mSwapChainSize)) {
+  if (!mDCLayerTree->EnsureVideoProcessor(mVideoSize, mSwapChainSize)) {
     gfxCriticalNote << "EnsureVideoProcessor Failed";
     return false;
   }
@@ -999,7 +1096,7 @@ bool DCSurfaceVideo::CallVideoProcessorBlt(RenderTextureHost* aTexture) {
 
   D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC inputDesc = {};
   inputDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-  inputDesc.Texture2D.ArraySlice = 0;
+  inputDesc.Texture2D.ArraySlice = texture->ArrayIndex();
 
   RefPtr<ID3D11VideoProcessorInputView> inputView;
   hr = videoDevice->CreateVideoProcessorInputView(
@@ -1032,8 +1129,8 @@ bool DCSurfaceVideo::CallVideoProcessorBlt(RenderTextureHost* aTexture) {
   RECT sourceRect;
   sourceRect.left = 0;
   sourceRect.top = 0;
-  sourceRect.right = mSwapChainSize.width;
-  sourceRect.bottom = mSwapChainSize.height;
+  sourceRect.right = mVideoSize.width;
+  sourceRect.bottom = mVideoSize.height;
   videoContext->VideoProcessorSetStreamSourceRect(videoProcessor, 0, TRUE,
                                                   &sourceRect);
 
@@ -1075,7 +1172,6 @@ void DCSurfaceVideo::ReleaseDecodeSwapChainResources() {
     ::CloseHandle(mSwapChainSurfaceHandle);
     mSwapChainSurfaceHandle = 0;
   }
-  mSwapChainSize = gfx::IntSize();
 }
 
 DCTile::DCTile(DCLayerTree* aDCLayerTree) : mDCLayerTree(aDCLayerTree) {}

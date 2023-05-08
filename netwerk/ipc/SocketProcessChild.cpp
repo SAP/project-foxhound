@@ -135,17 +135,6 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
     return false;
   }
 
-  if (StaticPrefs::network_proxy_parse_pac_on_socket_process()) {
-    // For parsing PAC.
-    const char* jsInitFailureReason = JS_InitWithFailureDiagnostic();
-    if (jsInitFailureReason) {
-      MOZ_CRASH_UNSAFE(jsInitFailureReason);
-    }
-    sInitializedJS = true;
-
-    xpc::SelfHostedShmem::GetSingleton();
-  }
-
   BackgroundChild::Startup();
   BackgroundChild::InitSocketStarter(this);
 
@@ -179,11 +168,6 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
   if (!EnsureNSSInitializedChromeOrContent()) {
     return false;
   }
-
-#if defined(XP_WIN)
-  RefPtr<DllServices> dllSvc(DllServices::Get());
-  dllSvc->StartUntrustedModulesProcessor();
-#endif  // defined(XP_WIN)
 
   return true;
 }
@@ -238,6 +222,12 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvInit(
   if (aAttributes.mInitSandbox()) {
     Unused << RecvInitLinuxSandbox(aAttributes.mSandboxBroker());
   }
+
+#if defined(XP_WIN)
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  dllSvc->StartUntrustedModulesProcessor(
+      aAttributes.mIsReadyForBackgroundProcessing());
+#endif  // defined(XP_WIN)
 
   return IPC_OK();
 }
@@ -482,8 +472,9 @@ SocketProcessChild::AllocPAltSvcTransactionChild(
 }
 
 already_AddRefed<PDNSRequestChild> SocketProcessChild::AllocPDNSRequestChild(
-    const nsCString& aHost, const nsCString& aTrrServer, const uint16_t& aType,
-    const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
+    const nsCString& aHost, const nsCString& aTrrServer, const int32_t& aPort,
+    const uint16_t& aType, const OriginAttributes& aOriginAttributes,
+    const uint32_t& aFlags) {
   RefPtr<DNSRequestHandler> handler = new DNSRequestHandler();
   RefPtr<DNSRequestChild> actor = new DNSRequestChild(handler);
   return actor.forget();
@@ -491,12 +482,13 @@ already_AddRefed<PDNSRequestChild> SocketProcessChild::AllocPDNSRequestChild(
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvPDNSRequestConstructor(
     PDNSRequestChild* aActor, const nsCString& aHost,
-    const nsCString& aTrrServer, const uint16_t& aType,
+    const nsCString& aTrrServer, const int32_t& aPort, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
   RefPtr<DNSRequestChild> actor = static_cast<DNSRequestChild*>(aActor);
   RefPtr<DNSRequestHandler> handler =
       actor->GetDNSRequest()->AsDNSRequestHandler();
-  handler->DoAsyncResolve(aHost, aTrrServer, aType, aOriginAttributes, aFlags);
+  handler->DoAsyncResolve(aHost, aTrrServer, aPort, aType, aOriginAttributes,
+                          aFlags);
   return IPC_OK();
 }
 
@@ -690,6 +682,19 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvGetHttpConnectionData(
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvInitProxyAutoConfigChild(
     Endpoint<PProxyAutoConfigChild>&& aEndpoint) {
+  // For parsing PAC.
+  if (!sInitializedJS) {
+    JS::DisableJitBackend();
+
+    const char* jsInitFailureReason = JS_InitWithFailureDiagnostic();
+    if (jsInitFailureReason) {
+      MOZ_CRASH_UNSAFE(jsInitFailureReason);
+    }
+    sInitializedJS = true;
+
+    xpc::SelfHostedShmem::GetSingleton();
+  }
+
   Unused << ProxyAutoConfigChild::Create(std::move(aEndpoint));
   return IPC_OK();
 }
@@ -736,6 +741,15 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvGetUntrustedModulesData(
         aResolver(std::move(aData));
       },
       [aResolver](nsresult aReason) { aResolver(Nothing()); });
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+SocketProcessChild::RecvUnblockUntrustedModulesThread() {
+  if (nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService()) {
+    obs->NotifyObservers(nullptr, "unblock-untrusted-modules-thread", nullptr);
+  }
   return IPC_OK();
 }
 #endif  // defined(XP_WIN)

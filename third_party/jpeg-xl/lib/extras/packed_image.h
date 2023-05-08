@@ -14,11 +14,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "jxl/codestream_header.h"
+#include "jxl/encode.h"
 #include "jxl/types.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
@@ -38,7 +40,7 @@ class PackedImage {
         stride(stride),
         format(format),
         pixels_size(ysize * stride),
-        pixels_(malloc(pixels_size), free) {}
+        pixels_(malloc(std::max<size_t>(1, pixels_size)), free) {}
   // Construct the image using the passed pixel buffer. The buffer is owned by
   // this object and released with free().
   PackedImage(size_t xsize, size_t ysize, const JxlPixelFormat& format,
@@ -69,7 +71,6 @@ class PackedImage {
   JxlPixelFormat format;
   size_t pixels_size;
 
- private:
   static size_t BitsPerChannel(JxlDataType data_type) {
     switch (data_type) {
       case JXL_TYPE_BOOLEAN:
@@ -89,6 +90,7 @@ class PackedImage {
     return 0;  // Indicate invalid data type.
   }
 
+ private:
   static size_t CalcStride(const JxlPixelFormat& format, size_t xsize) {
     size_t stride = xsize * (BitsPerChannel(format.data_type) *
                              format.num_channels / jxl::kBitsPerByte);
@@ -108,7 +110,7 @@ class PackedImage {
 class PackedFrame {
  public:
   template <typename... Args>
-  PackedFrame(Args... args) : color(args...) {}
+  explicit PackedFrame(Args&&... args) : color(std::forward<Args>(args)...) {}
 
   // The Frame metadata.
   JxlFrameHeader frame_info = {};
@@ -163,6 +165,7 @@ class PackedPixelFile {
   std::vector<PackedFrame> frames;
 
   PackedMetadata metadata;
+  PackedPixelFile() { JxlEncoderInitBasicInfo(&info); };
 };
 
 }  // namespace extras

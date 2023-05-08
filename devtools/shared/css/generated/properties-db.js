@@ -2993,6 +2993,9 @@ exports.CSS_PROPERTIES = {
       "transform-style",
       "transform-origin",
       "contain",
+      "content-visibility",
+      "container-type",
+      "container-name",
       "appearance",
       "-moz-orient",
       "will-change",
@@ -8712,6 +8715,7 @@ exports.CSS_PROPERTIES = {
       "multiply",
       "normal",
       "overlay",
+      "plus-lighter",
       "revert",
       "revert-layer",
       "saturation",
@@ -9008,7 +9012,6 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-hidden-unscrollable",
       "auto",
       "clip",
       "hidden",
@@ -9044,7 +9047,6 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-hidden-unscrollable",
       "auto",
       "clip",
       "hidden",
@@ -9064,7 +9066,6 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-hidden-unscrollable",
       "auto",
       "clip",
       "hidden",
@@ -9101,7 +9102,6 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-hidden-unscrollable",
       "auto",
       "clip",
       "hidden",
@@ -9121,7 +9121,6 @@ exports.CSS_PROPERTIES = {
     ],
     "supports": [],
     "values": [
-      "-moz-hidden-unscrollable",
       "auto",
       "clip",
       "hidden",
@@ -10589,6 +10588,7 @@ exports.CSS_PROPERTIES = {
     "supports": [],
     "values": [
       "-moz-center",
+      "-moz-center-or-inherit",
       "-moz-left",
       "-moz-right",
       "center",
@@ -11598,6 +11598,14 @@ exports.PREFERENCES = [
     "layout.css.aspect-ratio.enabled"
   ],
   [
+    "container-type",
+    "layout.css.container-queries.enabled"
+  ],
+  [
+    "content-visibility",
+    "layout.css.content-visibility.enabled"
+  ],
+  [
     "font-optical-sizing",
     "layout.css.font-variations.enabled"
   ],
@@ -11694,6 +11702,10 @@ exports.PREFERENCES = [
     "layout.css.color-scheme.enabled"
   ],
   [
+    "container-name",
+    "layout.css.container-queries.enabled"
+  ],
+  [
     "d",
     "layout.css.d-property.enabled"
   ],
@@ -11752,6 +11764,10 @@ exports.PREFERENCES = [
   [
     "overscroll-behavior",
     "layout.css.overscroll-behavior.enabled"
+  ],
+  [
+    "container",
+    "layout.css.container-queries.enabled"
   ],
   [
     "offset",

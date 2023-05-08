@@ -17,6 +17,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/RemoteLazyInputStreamParent.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/BackgroundSessionStorageServiceParent.h"
 #include "mozilla/dom/ClientManagerActors.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMTypes.h"
@@ -489,6 +490,14 @@ BackgroundParentImpl::AllocPBackgroundSessionStorageManagerParent(
   return dom::AllocPBackgroundSessionStorageManagerParent(aTopContextId);
 }
 
+already_AddRefed<mozilla::dom::PBackgroundSessionStorageServiceParent>
+BackgroundParentImpl::AllocPBackgroundSessionStorageServiceParent() {
+  AssertIsInMainOrSocketProcess();
+  AssertIsOnBackgroundThread();
+
+  return MakeAndAddRef<mozilla::dom::BackgroundSessionStorageServiceParent>();
+}
+
 already_AddRefed<PIdleSchedulerParent>
 BackgroundParentImpl::AllocPIdleSchedulerParent() {
   AssertIsOnBackgroundThread();
@@ -654,20 +663,12 @@ BackgroundParentImpl::AllocPRemoteLazyInputStreamParent(const nsID& aID,
   AssertIsInMainOrSocketProcess();
   AssertIsOnBackgroundThread();
 
+  // There is nothing to construct here, so we do not implement
+  // RecvPRemoteLazyInputStreamConstructor.
+
   RefPtr<RemoteLazyInputStreamParent> actor =
       RemoteLazyInputStreamParent::Create(aID, aSize, this);
   return actor.forget();
-}
-
-mozilla::ipc::IPCResult
-BackgroundParentImpl::RecvPRemoteLazyInputStreamConstructor(
-    PRemoteLazyInputStreamParent* aActor, const nsID& aID,
-    const uint64_t& aSize) {
-  if (!static_cast<RemoteLazyInputStreamParent*>(aActor)->HasValidStream()) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  return IPC_OK();
 }
 
 PFileDescriptorSetParent* BackgroundParentImpl::AllocPFileDescriptorSetParent(
@@ -733,6 +734,16 @@ camera::PCamerasParent* BackgroundParentImpl::AllocPCamerasParent() {
   return nullptr;
 #endif
 }
+
+#ifdef MOZ_WEBRTC
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvPCamerasConstructor(
+    camera::PCamerasParent* aActor) {
+  AssertIsInMainOrSocketProcess();
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aActor);
+  return static_cast<camera::CamerasParent*>(aActor)->RecvPCamerasConstructor();
+}
+#endif
 
 bool BackgroundParentImpl::DeallocPCamerasParent(
     camera::PCamerasParent* aActor) {
@@ -1059,8 +1070,9 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvMessagePortForceClose(
   AssertIsOnBackgroundThread();
 
   if (!MessagePortParent::ForceClose(aUUID, aDestinationUUID, aSequenceID)) {
-    return IPC_FAIL_NO_REASON(this);
+    return IPC_FAIL(this, "MessagePortParent::ForceClose failed.");
   }
+
   return IPC_OK();
 }
 

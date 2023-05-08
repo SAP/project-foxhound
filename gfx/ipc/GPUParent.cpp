@@ -229,7 +229,7 @@ void GPUParent::NotifyDeviceReset() {
 mozilla::ipc::IPCResult GPUParent::RecvInit(
     nsTArray<GfxVarUpdate>&& vars, const DevicePrefs& devicePrefs,
     nsTArray<LayerTreeIdMapping>&& aMappings,
-    nsTArray<GfxInfoFeatureStatus>&& aFeatures) {
+    nsTArray<GfxInfoFeatureStatus>&& aFeatures, uint32_t aWrNamespace) {
   for (const auto& var : vars) {
     gfxVars::ApplyUpdate(var);
   }
@@ -240,7 +240,6 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
                      devicePrefs.d3d11Compositing());
   gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, devicePrefs.oglCompositing());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
-  gfxConfig::Inherit(Feature::WEBGPU, devicePrefs.webGPU());
   gfxConfig::Inherit(Feature::D3D11_HW_ANGLE, devicePrefs.d3d11HwAngle());
 
   {  // Let the crash reporter know if we've got WR enabled or not. For other
@@ -346,7 +345,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
 
   // Make sure to do this *after* we update gfxVars above.
   if (gfxVars::UseWebRender()) {
-    wr::RenderThread::Start();
+    wr::RenderThread::Start(aWrNamespace);
     image::ImageMemoryReporter::InitForWebRender();
   }
 #ifdef XP_WIN
@@ -511,17 +510,12 @@ mozilla::ipc::IPCResult GPUParent::RecvGetDeviceStatus(GPUDeviceData* aOut) {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult GPUParent::RecvSimulateDeviceReset(
-    GPUDeviceData* aOut) {
+mozilla::ipc::IPCResult GPUParent::RecvSimulateDeviceReset() {
 #if defined(XP_WIN)
   DeviceManagerDx::Get()->ForceDeviceReset(
       ForcedDeviceResetReason::COMPOSITOR_UPDATED);
-  DeviceManagerDx::Get()->MaybeResetAndReacquireDevices();
 #endif
-  if (gfxVars::UseWebRender()) {
-    wr::RenderThread::Get()->SimulateDeviceReset();
-  }
-  RecvGetDeviceStatus(aOut);
+  wr::RenderThread::Get()->SimulateDeviceReset();
   return IPC_OK();
 }
 
@@ -657,9 +651,6 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
       [](ByteBuf&& aBuf) { glean::SendFOGData(std::move(aBuf)); });
 
 #ifndef NS_FREE_PERMANENT_DATA
-#  ifdef XP_WIN
-  wmf::MFShutdown();
-#  endif
   // No point in going through XPCOM shutdown because we don't keep persistent
   // state.
   ProcessChild::QuickExit();
@@ -668,10 +659,6 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
   // Wait until all RemoteDecoderManagerParent have closed.
   mShutdownBlockers.WaitUntilClear(10 * 1000 /* 10s timeout*/)
       ->Then(GetCurrentSerialEventTarget(), __func__, [this]() {
-#ifdef XP_WIN
-        wmf::MFShutdown();
-#endif
-
         if (mProfilerController) {
           mProfilerController->Shutdown();
           mProfilerController = nullptr;

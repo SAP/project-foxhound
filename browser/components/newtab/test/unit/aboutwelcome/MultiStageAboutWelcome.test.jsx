@@ -33,6 +33,7 @@ describe("MultiStageAboutWelcome module", () => {
       AWGetRegion: () => Promise.resolve(),
       AWWaitForMigrationClose: () => Promise.resolve(),
       AWSelectTheme: () => Promise.resolve(),
+      AWFinish: () => Promise.resolve(),
     });
     sandbox = sinon.createSandbox();
   });
@@ -107,6 +108,49 @@ describe("MultiStageAboutWelcome module", () => {
         welcomeScreenWrapper.props().messageId
       );
       assert.equal(stub.firstCall.args[1], "primary_button");
+      stub.restore();
+    });
+
+    it("should autoAdvance on last screen and send appropriate telemetry", () => {
+      let clock = sinon.useFakeTimers();
+      const screens = [
+        {
+          order: 1,
+          auto_advance: "primary_button",
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              label: "Test Button",
+              action: {
+                navigate: true,
+              },
+            },
+          },
+        },
+      ];
+      const AUTO_ADVANCE_PROPS = {
+        screens,
+        metricsFlowUri: "http://localhost/",
+        message_id: "DEFAULT_ABOUTWELCOME",
+        utm_term: "default",
+      };
+      const wrapper = mount(<MultiStageAboutWelcome {...AUTO_ADVANCE_PROPS} />);
+      wrapper.update();
+      const finishStub = sandbox.stub(global, "AWFinish");
+      const telemetryStub = sinon.stub(
+        AboutWelcomeUtils,
+        "sendActionTelemetry"
+      );
+
+      assert.notCalled(finishStub);
+      clock.tick(20001);
+      assert.calledOnce(finishStub);
+      assert.calledOnce(telemetryStub);
+      assert.equal(telemetryStub.lastCall.args[2], "AUTO_ADVANCE");
+      clock.restore();
+      finishStub.restore();
+      telemetryStub.restore();
     });
   });
 

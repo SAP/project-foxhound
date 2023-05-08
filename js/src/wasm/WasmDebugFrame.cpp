@@ -20,6 +20,7 @@
 
 #include "vm/EnvironmentObject.h"
 #include "wasm/WasmBaselineCompile.h"
+#include "wasm/WasmDebug.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmTlsData.h"
@@ -32,16 +33,10 @@ using namespace js::wasm;
 
 /* static */
 DebugFrame* DebugFrame::from(Frame* fp) {
-  MOZ_ASSERT(
-      GetNearestEffectiveTls(fp)->instance->code().metadata().debugEnabled);
-  size_t offsetAdjustment = 0;
-  if (fp->callerIsTrampolineFP()) {
-    offsetAdjustment =
-        FrameWithTls::sizeOfTlsFields() + IndirectStubAdditionalAlignment;
-  }
-  auto* df = reinterpret_cast<DebugFrame*>(
-      (uint8_t*)fp - (DebugFrame::offsetOfFrame() + offsetAdjustment));
-  MOZ_ASSERT(GetNearestEffectiveTls(fp)->instance == df->instance());
+  MOZ_ASSERT(GetNearestEffectiveInstance(fp)->code().metadata().debugEnabled);
+  auto* df =
+      reinterpret_cast<DebugFrame*>((uint8_t*)fp - DebugFrame::offsetOfFrame());
+  MOZ_ASSERT(GetNearestEffectiveInstance(fp) == df->instance());
   return df;
 }
 
@@ -64,19 +59,21 @@ void DebugFrame::alignmentStaticAsserts() {
 #endif
 }
 
-Instance* DebugFrame::instance() const {
-  return GetNearestEffectiveTls(&frame_)->instance;
+Instance* DebugFrame::instance() {
+  return GetNearestEffectiveInstance(&frame_);
 }
 
-GlobalObject* DebugFrame::global() const {
-  return &instance()->object()->global();
+const Instance* DebugFrame::instance() const {
+  return GetNearestEffectiveInstance(&frame_);
 }
+
+GlobalObject* DebugFrame::global() { return &instance()->object()->global(); }
 
 bool DebugFrame::hasGlobal(const GlobalObject* global) const {
   return global == &instance()->objectUnbarriered()->global();
 }
 
-JSObject* DebugFrame::environmentChain() const {
+JSObject* DebugFrame::environmentChain() {
   return &global()->lexicalEnvironment();
 }
 
@@ -163,7 +160,7 @@ void DebugFrame::clearReturnJSValue() {
 void DebugFrame::observe(JSContext* cx) {
   if (!flags_.observing) {
     instance()->debug().adjustEnterAndLeaveFrameTrapsState(
-        cx, /* enabled = */ true);
+        cx, instance(), /* enabled = */ true);
     flags_.observing = true;
   }
 }
@@ -171,7 +168,7 @@ void DebugFrame::observe(JSContext* cx) {
 void DebugFrame::leave(JSContext* cx) {
   if (flags_.observing) {
     instance()->debug().adjustEnterAndLeaveFrameTrapsState(
-        cx, /* enabled = */ false);
+        cx, instance(), /* enabled = */ false);
     flags_.observing = false;
   }
 }

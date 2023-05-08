@@ -306,22 +306,17 @@ ScreenIntSize nsSubDocumentFrame::GetSubdocumentSize() {
 static void WrapBackgroundColorInOwnLayer(nsDisplayListBuilder* aBuilder,
                                           nsIFrame* aFrame,
                                           nsDisplayList* aList) {
-  nsDisplayList tempItems;
-  nsDisplayItem* item;
-  while ((item = aList->RemoveBottom()) != nullptr) {
+  for (nsDisplayItem* item : aList->TakeItems()) {
     if (item->GetType() == DisplayItemType::TYPE_BACKGROUND_COLOR) {
-      nsDisplayList tmpList;
+      nsDisplayList tmpList(aBuilder);
       tmpList.AppendToTop(item);
       item = MakeDisplayItemWithIndex<nsDisplayOwnLayer>(
           aBuilder, aFrame, /* aIndex = */ nsDisplayOwnLayer::OwnLayerForSubdoc,
           &tmpList, aBuilder->CurrentActiveScrolledRoot(),
           nsDisplayOwnLayerFlags::None, ScrollbarData{}, true, false);
     }
-    if (item) {
-      tempItems.AppendToTop(item);
-    }
+    aList->AppendToTop(item);
   }
-  aList->AppendToTop(&tempItems);
 }
 
 void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
@@ -438,7 +433,7 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     needsOwnLayer = true;
   }
 
-  nsDisplayList childItems;
+  nsDisplayList childItems(aBuilder);
 
   {
     DisplayListClipState::AutoSaveRestore nestedClipState(aBuilder);
@@ -498,11 +493,9 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         // happens after we've built the list so that
         // AddCanvasBackgroundColorItem can monkey with the contents if
         // necessary.
-        AddCanvasBackgroundColorFlags flags =
-            AddCanvasBackgroundColorFlags::ForceDraw |
-            AddCanvasBackgroundColorFlags::AddForSubDocument;
         presShell->AddCanvasBackgroundColorItem(
-            aBuilder, &childItems, frame, bounds, NS_RGBA(0, 0, 0, 0), flags);
+            aBuilder, &childItems, frame, bounds, NS_RGBA(0, 0, 0, 0),
+            AddCanvasBackgroundColorFlags::ForceDraw);
       }
     }
   }
@@ -1290,19 +1283,25 @@ void nsDisplayRemote::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
     return;
   }
 
-  // Rendering the inner document will apply a scale to account for its
-  // app units per dev pixel ratio. We want to apply the inverse scaling
-  // using our app units per dev pixel ratio, so that no actual scaling
-  // will be applied if they match. For in-process rendering,
-  // nsSubDocumentFrame creates an nsDisplayZoom item if the app units
-  // per dev pixel ratio changes.
-  int32_t appUnitsPerDevPixel = pc->AppUnitsPerDevPixel();
-  gfxFloat scale = gfxFloat(AppUnitsPerCSSPixel()) / appUnitsPerDevPixel;
+  // Rendering the inner document will apply a scale to account for its app
+  // units per dev pixel ratio. We want to apply the inverse scaling using our
+  // app units per dev pixel ratio, so that no actual scaling will be applied if
+  // they match. For in-process rendering, nsSubDocumentFrame creates an
+  // nsDisplayZoom item if the app units per dev pixel ratio changes.
+  //
+  // Similarly, rendering the inner document will scale up by the cross process
+  // paint scale again, so we also need to account for that.
+  const int32_t appUnitsPerDevPixel = pc->AppUnitsPerDevPixel();
+
   gfxContextMatrixAutoSaveRestore saveMatrix(aCtx);
+  gfxFloat targetAuPerDev =
+      gfxFloat(AppUnitsPerCSSPixel()) / aCtx->GetCrossProcessPaintScale();
+
+  gfxFloat scale = targetAuPerDev / appUnitsPerDevPixel;
   aCtx->Multiply(gfxMatrix::Scaling(scale, scale));
 
   Rect destRect =
-      NSRectToSnappedRect(GetContentRect(), AppUnitsPerCSSPixel(), *target);
+      NSRectToSnappedRect(GetContentRect(), targetAuPerDev, *target);
   target->DrawDependentSurface(mPaintData.mTabId, destRect);
 }
 

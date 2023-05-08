@@ -54,7 +54,6 @@
 #include "mozilla/glean/bindings/GleanPings.h"
 #include "Units.h"
 #include "nsComponentManagerUtils.h"
-#include "nsSize.h"
 #include "nsCheapSets.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageBitmapSource.h"
@@ -100,6 +99,10 @@ namespace mozilla {
 class AbstractThread;
 class ErrorResult;
 
+namespace hal {
+enum class ScreenOrientation : uint32_t;
+}
+
 namespace dom {
 class BarProp;
 class BrowsingContext;
@@ -135,9 +138,6 @@ class VRDisplay;
 enum class VRDisplayEventReason : uint8_t;
 class VREventObserver;
 class WakeLock;
-#if defined(MOZ_WIDGET_ANDROID)
-class WindowOrientationObserver;
-#endif
 struct WindowPostMessageOptions;
 class Worklet;
 namespace cache {
@@ -251,6 +251,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // nsIGlobalObject
   bool ShouldResistFingerprinting() const final;
   uint32_t GetPrincipalHashValue() const final;
+  mozilla::OriginTrials Trials() const final;
 
   JSObject* GetGlobalJSObject() final { return GetWrapper(); }
   JSObject* GetGlobalJSObjectPreserveColor() const final {
@@ -647,9 +648,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   nsDOMOfflineResourceList* GetApplicationCache(mozilla::ErrorResult& aError);
   nsDOMOfflineResourceList* GetApplicationCache() override;
 
-#if defined(MOZ_WIDGET_ANDROID)
-  int16_t Orientation(mozilla::dom::CallerType aCallerType) const;
-#endif
+  int16_t Orientation(mozilla::dom::CallerType aCallerType);
 
   already_AddRefed<mozilla::dom::Console> GetConsole(JSContext* aCx,
                                                      mozilla::ErrorResult& aRv);
@@ -871,6 +870,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
                            mozilla::ErrorResult& aError);
   double GetDevicePixelRatio(mozilla::dom::CallerType aCallerType,
                              mozilla::ErrorResult& aError);
+  double GetDesktopToDeviceScale(mozilla::ErrorResult& aError);
   int32_t GetScrollMinX(mozilla::ErrorResult& aError);
   int32_t GetScrollMinY(mozilla::ErrorResult& aError);
   int32_t GetScrollMaxX(mozilla::ErrorResult& aError);
@@ -1317,7 +1317,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   }
 
   nsTArray<uint32_t>& GetScrollMarks() { return mScrollMarks; }
-  void SetScrollMarks(const nsTArray<uint32_t>& aScrollMarks);
+  bool GetScrollMarksOnHScrollbar() const { return mScrollMarksOnHScrollbar; }
+  void SetScrollMarks(const nsTArray<uint32_t>& aScrollMarks,
+                      bool aOnHScrollbar);
 
   // Don't use this value directly, call StorageAccess::StorageAllowedForWindow
   // instead.
@@ -1338,10 +1340,16 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
     mStorageAllowedReasonCache = 0;
   }
 
+  virtual JS::loader::ModuleLoaderBase* GetModuleLoader(
+      JSContext* aCx) override;
+
  private:
   RefPtr<mozilla::dom::ContentMediaController> mContentMediaController;
 
  protected:
+  // Whether we need to care about orientation changes.
+  bool mHasOrientationChangeListeners : 1;
+
   // Window offline status. Checked to see if we need to fire offline event
   bool mWasOffline : 1;
 
@@ -1409,6 +1417,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // activation once already. Only relevant for top windows.
   bool mHasOpenedExternalProtocolFrame : 1;
 
+  bool mScrollMarksOnHScrollbar : 1;
+
   nsCheapSet<nsUint32HashKey> mGamepadIndexSet;
   nsRefPtrHashtable<nsGenericHashKey<mozilla::dom::GamepadHandle>,
                     mozilla::dom::Gamepad>
@@ -1473,6 +1483,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // the method that was used to focus mFocusedElement
   uint32_t mFocusMethod;
 
+  // Only relevant if we're listening for orientation changes.
+  int16_t mOrientationAngle = 0;
+
   // The current idle request callback handle
   uint32_t mIdleRequestCallbackCounter;
   IdleRequests mIdleRequestCallbacks;
@@ -1496,11 +1509,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   nsTArray<uint32_t> mEnabledSensors;
 
-#if defined(MOZ_WIDGET_ANDROID)
-  mozilla::UniquePtr<mozilla::dom::WindowOrientationObserver>
-      mOrientationChangeObserver;
-#endif
-
 #ifdef MOZ_WEBSPEECH
   RefPtr<mozilla::dom::SpeechSynthesis> mSpeechSynthesis;
 #endif
@@ -1516,7 +1524,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   RefPtr<mozilla::dom::VREventObserver> mVREventObserver;
 
-  // The number of unload and beforeunload even listeners registered on this
+  // The number of unload and beforeunload event listeners registered on this
   // window.
   uint64_t mUnloadOrBeforeUnloadListenerCount = 0;
 

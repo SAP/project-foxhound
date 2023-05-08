@@ -26,7 +26,7 @@ namespace widget {
 // Use static lock to protect dri operation as
 // gbm_dri.c is not thread safe.
 // https://gitlab.freedesktop.org/mesa/mesa/-/issues/4422
-mozilla::StaticMutex nsGbmLib::sDRILock;
+mozilla::StaticMutex nsGbmLib::sDRILock MOZ_UNANNOTATED;
 
 void* nsGbmLib::sGbmLibHandle = nullptr;
 void* nsGbmLib::sXf86DrmLibHandle = nullptr;
@@ -279,8 +279,8 @@ bool nsDMABufDevice::IsDMABufVAAPIEnabled() {
        "XRE_IsRDDProcess %d\n",
        gfx::gfxVars::UseEGL(), StaticPrefs::media_ffmpeg_vaapi_enabled(),
        gfx::gfxVars::CanUseHardwareVideoDecoding(), XRE_IsRDDProcess()));
-  return gfx::gfxVars::UseEGL() && StaticPrefs::media_ffmpeg_vaapi_enabled() &&
-         XRE_IsRDDProcess() && gfx::gfxVars::CanUseHardwareVideoDecoding();
+  return gfx::gfxVars::UseVAAPI() && XRE_IsRDDProcess() &&
+         gfx::gfxVars::CanUseHardwareVideoDecoding();
 }
 bool nsDMABufDevice::IsDMABufWebGLEnabled() {
   LOGDMABUF(

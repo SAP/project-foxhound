@@ -68,6 +68,7 @@ async function renderInfo({
     infoLinkUrl ||
       RPMGetFormatURLPref("app.support.baseURL") + "private-browsing-myths"
   );
+  linkEl.setAttribute("target", "_blank");
 
   linkEl.addEventListener("click", () => {
     window.PrivateBrowsingRecordClick("info_link");
@@ -77,6 +78,7 @@ async function renderInfo({
 async function renderPromo({
   messageId = null,
   promoEnabled = false,
+  promoType = "VPN",
   promoTitle,
   promoTitleEnabled,
   promoLinkText,
@@ -86,9 +88,12 @@ async function renderPromo({
   promoHeader,
   promoImageLarge,
   promoImageSmall,
+  promoButton = null,
 } = {}) {
+  const shouldShow = await RPMSendQuery("ShouldShowPromo", { type: promoType });
   const container = document.querySelector(".promo");
-  if (promoEnabled === false) {
+
+  if (!promoEnabled || !shouldShow) {
     container.remove();
     return false;
   }
@@ -101,18 +106,21 @@ async function renderPromo({
   const promoImageSmallEl = document.querySelector(".promo-image-small img");
   const dismissBtn = document.querySelector("#dismiss-btn");
 
-  // Setup the private browsing VPN link.
-  const vpnPromoUrl =
-    promoLinkUrl || RPMGetFormatURLPref("browser.privatebrowsing.vpnpromourl");
-
   if (promoLinkType === "button") {
     linkEl.classList.add("button");
   }
 
-  if (vpnPromoUrl) {
-    linkEl.setAttribute("href", vpnPromoUrl);
+  if (promoLinkUrl) {
+    linkEl.setAttribute("href", promoLinkUrl);
+    linkEl.setAttribute("target", "_blank");
     linkEl.addEventListener("click", () => {
       window.PrivateBrowsingRecordClick("promo_link");
+    });
+  } else if (promoButton?.action?.type === "SHOW_SPOTLIGHT") {
+    linkEl.addEventListener("click", async event => {
+      event.preventDefault();
+      window.PrivateBrowsingRecordClick("promo_link");
+      await RPMSendQuery("SpecialMessageActionDispatch", promoButton.action);
     });
   } else {
     // If the link is undefined, remove the promo completely
@@ -228,13 +236,9 @@ async function setupFeatureConfig() {
   }
 
   await renderInfo(config);
-  // Check the current geo and don't render if we're in the wrong one.
-  const shouldShow = await RPMSendQuery("ShouldShowVPNPromo", {});
-  if (shouldShow) {
-    let hasRendered = await renderPromo(config);
-    if (hasRendered && message) {
-      recordOnceVisible(message);
-    }
+  let hasRendered = await renderPromo(config);
+  if (hasRendered && message) {
+    recordOnceVisible(message);
   }
   // For tests
   document.documentElement.setAttribute("PrivateBrowsingRenderComplete", true);

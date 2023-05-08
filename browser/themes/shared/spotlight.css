@@ -10,15 +10,16 @@
  * scrollbar. This should be okay as we wrap content for this fixed width
  * dialog unless the window is actually narrow and really does need
  * horizontal scrollbars. */
-@media (min-width: 604px) {
+@media (min-width: 544px) {
 body {
   overflow-x: hidden;
 }
 }
 
 body {
-  padding: 20px 52px;
-  width: 500px;
+  padding: 20px 40px;
+  /* Keep as multiple of 4px. Match min-width media query above + padding. */
+  width: 464px;
 }
 
 #dialog-content {
@@ -33,20 +34,20 @@ body {
   width: 100px;
   height: 100px;
   object-fit: contain;
-  margin-bottom: 13px;
+  margin-bottom: 8px;
 }
 
 #title {
   font-weight: 500;
   font-size: 26px;
-  margin-bottom: 5px;
+  margin-bottom: 0;
   white-space: pre-wrap;
 }
 
 #content {
   font-weight: 400;
   font-size: 13px;
-  margin-bottom: 24px;
+  margin-block: 10px 18px;
 }
 
 #learn-more-toggle::after {

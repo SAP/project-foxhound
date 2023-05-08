@@ -58,6 +58,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   Normandy: "resource://normandy/Normandy.jsm",
+  OnboardingMessageProvider:
+    "resource://activity-stream/lib/OnboardingMessageProvider.jsm",
   OsEnvironment: "resource://gre/modules/OsEnvironment.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
@@ -85,6 +87,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ShellService: "resource:///modules/ShellService.jsm",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   SnapshotMonitor: "resource:///modules/SnapshotMonitor.jsm",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TabUnloader: "resource:///modules/TabUnloader.jsm",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
@@ -215,6 +219,8 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:logins", "about:logins?*", "about:loginsimportreport"],
+    allFrames: true,
+    remoteTypes: ["privilegedabout"],
   },
 
   AboutNewTab: {
@@ -776,97 +782,6 @@ let JSWINDOWACTORS = {
   },
 };
 
-(function earlyBlankFirstPaint() {
-  let startTime = Cu.now();
-  if (
-    AppConstants.platform == "macosx" ||
-    Services.startup.wasSilentlyStarted ||
-    !Services.prefs.getBoolPref("browser.startup.blankWindow", false)
-  ) {
-    return;
-  }
-
-  // Until bug 1450626 and bug 1488384 are fixed, skip the blank window when
-  // using a non-default theme.
-  if (
-    !Services.startup.showedPreXULSkeletonUI &&
-    Services.prefs.getCharPref(
-      "extensions.activeThemeID",
-      "default-theme@mozilla.org"
-    ) != "default-theme@mozilla.org"
-  ) {
-    return;
-  }
-
-  let store = Services.xulStore;
-  let getValue = attr =>
-    store.getValue(AppConstants.BROWSER_CHROME_URL, "main-window", attr);
-  let width = getValue("width");
-  let height = getValue("height");
-
-  // The clean profile case isn't handled yet. Return early for now.
-  if (!width || !height) {
-    return;
-  }
-
-  let browserWindowFeatures =
-    "chrome,all,dialog=no,extrachrome,menubar,resizable,scrollbars,status," +
-    "location,toolbar,personalbar";
-  let win = Services.ww.openWindow(
-    null,
-    "about:blank",
-    null,
-    browserWindowFeatures,
-    null
-  );
-
-  // Hide the titlebar if the actual browser window will draw in it.
-  let hiddenTitlebar = Services.appinfo.drawInTitlebar;
-  if (hiddenTitlebar) {
-    win.windowUtils.setChromeMargin(0, 2, 2, 2);
-  }
-
-  let docElt = win.document.documentElement;
-  docElt.setAttribute("screenX", getValue("screenX"));
-  docElt.setAttribute("screenY", getValue("screenY"));
-
-  // The sizemode="maximized" attribute needs to be set before first paint.
-  let sizemode = getValue("sizemode");
-  if (sizemode == "maximized") {
-    docElt.setAttribute("sizemode", sizemode);
-
-    // Set the size to use when the user leaves the maximized mode.
-    // The persisted size is the outer size, but the height/width
-    // attributes set the inner size.
-    let appWin = win.docShell.treeOwner
-      .QueryInterface(Ci.nsIInterfaceRequestor)
-      .getInterface(Ci.nsIAppWindow);
-    height -= appWin.outerToInnerHeightDifferenceInCSSPixels;
-    width -= appWin.outerToInnerWidthDifferenceInCSSPixels;
-    docElt.setAttribute("height", height);
-    docElt.setAttribute("width", width);
-  } else {
-    // Setting the size of the window in the features string instead of here
-    // causes the window to grow by the size of the titlebar.
-    win.resizeTo(width, height);
-  }
-
-  // Set this before showing the window so that graphics code can use it to
-  // decide to skip some expensive code paths (eg. starting the GPU process).
-  docElt.setAttribute("windowtype", "navigator:blank");
-
-  // The window becomes visible after OnStopRequest, so make this happen now.
-  win.stop();
-
-  ChromeUtils.addProfilerMarker("earlyBlankFirstPaint", startTime);
-  win.openTime = Cu.now();
-
-  let { TelemetryTimestamps } = ChromeUtils.import(
-    "resource://gre/modules/TelemetryTimestamps.jsm"
-  );
-  TelemetryTimestamps.add("blankWindowShown");
-})();
-
 XPCOMUtils.defineLazyGetter(
   this,
   "WeaveService",
@@ -974,6 +889,7 @@ BrowserGlue.prototype = {
   _migrationImportsDefaultBookmarks: false,
   _placesBrowserInitComplete: false,
   _isNewProfile: undefined,
+  _defaultCookieBehaviorAtStartup: null,
 
   _setPrefToSaveSession: function BG__setPrefToSaveSession(aForce) {
     if (!this._saveSession && !aForce) {
@@ -991,35 +907,6 @@ BrowserGlue.prototype = {
     // ends up causing prefs not to be flushed to disk, so we need to do that
     // explicitly here. See bug 497652.
     Services.prefs.savePrefFile(null);
-  },
-
-  _setSyncAutoconnectDelay: function BG__setSyncAutoconnectDelay() {
-    // Assume that a non-zero value for services.sync.autoconnectDelay should override
-    if (Services.prefs.prefHasUserValue("services.sync.autoconnectDelay")) {
-      let prefDelay = Services.prefs.getIntPref(
-        "services.sync.autoconnectDelay"
-      );
-
-      if (prefDelay > 0) {
-        return;
-      }
-    }
-
-    // delays are in seconds
-    const MAX_DELAY = 300;
-    let delay = 3;
-    for (let win of Services.wm.getEnumerator("navigator:browser")) {
-      // browser windows without a gBrowser almost certainly means we are
-      // shutting down, so instead of just ignoring that window we abort.
-      if (win.closed || !win.gBrowser) {
-        return;
-      }
-      delay += win.gBrowser.tabs.length;
-    }
-    delay = delay <= MAX_DELAY ? delay : MAX_DELAY;
-
-    const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-    Weave.Service.scheduler.delayedAutoConnect(delay);
   },
 
   // nsIObserver implementation
@@ -1063,9 +950,6 @@ BrowserGlue.prototype = {
         if (OBSERVE_LASTWINDOW_CLOSE_TOPICS) {
           this._setPrefToSaveSession();
         }
-        break;
-      case "weave:service:ready":
-        this._setSyncAutoconnectDelay();
         break;
       case "fxaccounts:onverified":
         this._onThisDeviceConnected();
@@ -1218,6 +1102,9 @@ BrowserGlue.prototype = {
         DownloadsViewableInternally.register();
 
         break;
+      case "app-startup":
+        this._earlyBlankFirstPaint(subject);
+        break;
     }
   },
 
@@ -1232,7 +1119,6 @@ BrowserGlue.prototype = {
       "browser:purge-session-history",
       "quit-application-requested",
       "quit-application-granted",
-      "weave:service:ready",
       "fxaccounts:onverified",
       "fxaccounts:device_connected",
       "fxaccounts:verify_login",
@@ -1308,6 +1194,10 @@ BrowserGlue.prototype = {
     );
     Services.prefs.removeObserver(
       "network.http.referer.disallowCrossSiteRelaxingDefault",
+      this._matchCBCategory
+    );
+    Services.prefs.removeObserver(
+      "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation",
       this._matchCBCategory
     );
     Services.prefs.removeObserver(
@@ -1555,6 +1445,104 @@ BrowserGlue.prototype = {
     );
   },
 
+  _earlyBlankFirstPaint(cmdLine) {
+    let startTime = Cu.now();
+    if (
+      AppConstants.platform == "macosx" ||
+      Services.startup.wasSilentlyStarted ||
+      !Services.prefs.getBoolPref("browser.startup.blankWindow", false)
+    ) {
+      return;
+    }
+
+    // Until bug 1450626 and bug 1488384 are fixed, skip the blank window when
+    // using a non-default theme.
+    if (
+      !Services.startup.showedPreXULSkeletonUI &&
+      Services.prefs.getCharPref(
+        "extensions.activeThemeID",
+        "default-theme@mozilla.org"
+      ) != "default-theme@mozilla.org"
+    ) {
+      return;
+    }
+
+    let store = Services.xulStore;
+    let getValue = attr =>
+      store.getValue(AppConstants.BROWSER_CHROME_URL, "main-window", attr);
+    let width = getValue("width");
+    let height = getValue("height");
+
+    // The clean profile case isn't handled yet. Return early for now.
+    if (!width || !height) {
+      return;
+    }
+
+    let browserWindowFeatures =
+      "chrome,all,dialog=no,extrachrome,menubar,resizable,scrollbars,status," +
+      "location,toolbar,personalbar";
+    // This needs to be set when opening the window to ensure that the AppUserModelID
+    // is set correctly on Windows. Without it, initial launches with `-private-window`
+    // will show up under the regular Firefox taskbar icon first, and then switch
+    // to the Private Browsing icon shortly thereafter.
+    if (cmdLine.findFlag("private-window", false) != -1) {
+      browserWindowFeatures += ",private";
+    }
+    let win = Services.ww.openWindow(
+      null,
+      "about:blank",
+      null,
+      browserWindowFeatures,
+      null
+    );
+
+    // Hide the titlebar if the actual browser window will draw in it.
+    let hiddenTitlebar = Services.appinfo.drawInTitlebar;
+    if (hiddenTitlebar) {
+      win.windowUtils.setChromeMargin(0, 2, 2, 2);
+    }
+
+    let docElt = win.document.documentElement;
+    docElt.setAttribute("screenX", getValue("screenX"));
+    docElt.setAttribute("screenY", getValue("screenY"));
+
+    // The sizemode="maximized" attribute needs to be set before first paint.
+    let sizemode = getValue("sizemode");
+    if (sizemode == "maximized") {
+      docElt.setAttribute("sizemode", sizemode);
+
+      // Set the size to use when the user leaves the maximized mode.
+      // The persisted size is the outer size, but the height/width
+      // attributes set the inner size.
+      let appWin = win.docShell.treeOwner
+        .QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsIAppWindow);
+      height -= appWin.outerToInnerHeightDifferenceInCSSPixels;
+      width -= appWin.outerToInnerWidthDifferenceInCSSPixels;
+      docElt.setAttribute("height", height);
+      docElt.setAttribute("width", width);
+    } else {
+      // Setting the size of the window in the features string instead of here
+      // causes the window to grow by the size of the titlebar.
+      win.resizeTo(width, height);
+    }
+
+    // Set this before showing the window so that graphics code can use it to
+    // decide to skip some expensive code paths (eg. starting the GPU process).
+    docElt.setAttribute("windowtype", "navigator:blank");
+
+    // The window becomes visible after OnStopRequest, so make this happen now.
+    win.stop();
+
+    ChromeUtils.addProfilerMarker("earlyBlankFirstPaint", startTime);
+    win.openTime = Cu.now();
+
+    let { TelemetryTimestamps } = ChromeUtils.import(
+      "resource://gre/modules/TelemetryTimestamps.jsm"
+    );
+    TelemetryTimestamps.add("blankWindowShown");
+  },
+
   _firstWindowTelemetry(aWindow) {
     let scaling = aWindow.devicePixelRatio * 100;
     try {
@@ -1642,8 +1630,7 @@ BrowserGlue.prototype = {
       let updateChannel;
       try {
         updateChannel = ChromeUtils.import(
-          "resource://gre/modules/UpdateUtils.jsm",
-          {}
+          "resource://gre/modules/UpdateUtils.jsm"
         ).UpdateUtils.UpdateChannel;
       } catch (ex) {}
       if (updateChannel) {
@@ -1694,9 +1681,16 @@ BrowserGlue.prototype = {
     PlacesUtils.favicons.setDefaultIconURIPreferredSize(
       16 * aWindow.devicePixelRatio
     );
+
+    // Keep track of the initial default cookie behavior to revert to when
+    // users opt-out. This is used by _setDefaultCookieBehavior.
+    BrowserGlue._defaultCookieBehaviorAtStartup = Services.prefs
+      .getDefaultBranch("")
+      .getIntPref("network.cookie.cookieBehavior");
     // _setDefaultCookieBehavior needs to run before other functions that modify
     // privacy preferences such as _setPrefExpectationsAndUpdate and _matchCBCategory
     this._setDefaultCookieBehavior();
+
     this._setPrefExpectationsAndUpdate();
     this._matchCBCategory();
 
@@ -1715,6 +1709,10 @@ BrowserGlue.prototype = {
     );
     Services.prefs.addObserver(
       "network.http.referer.disallowCrossSiteRelaxingDefault",
+      this._matchCBCategory
+    );
+    Services.prefs.addObserver(
+      "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation",
       this._matchCBCategory
     );
     Services.prefs.addObserver(
@@ -1768,41 +1766,13 @@ BrowserGlue.prototype = {
       "network.cookie.cookieBehavior",
       dFPIEnabled
         ? Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
-        : Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
+        : BrowserGlue._defaultCookieBehaviorAtStartup
     );
 
     Services.telemetry.scalarSet(
       "privacy.dfpi_rollout_enabledByDefault",
       dFPIEnabled ? 1 : 0
     );
-
-    if (dFPIEnabled) {
-      Services.prefs.setStringPref(
-        "browser.search.param.google_channel_us",
-        "tus7"
-      );
-      Services.prefs.setStringPref(
-        "browser.search.param.google_channel_row",
-        "trow7"
-      );
-      Services.prefs.setStringPref(
-        "browser.search.param.bing_ptag",
-        "MOZZ0000000031"
-      );
-    } else {
-      Services.prefs.setStringPref(
-        "browser.search.param.google_channel_us",
-        "xus7"
-      );
-      Services.prefs.setStringPref(
-        "browser.search.param.google_channel_row",
-        "xrow7"
-      );
-      Services.prefs.setStringPref(
-        "browser.search.param.bing_ptag",
-        "MOZZ0000000032"
-      );
-    }
   },
 
   _setPrefExpectations() {
@@ -2055,45 +2025,6 @@ BrowserGlue.prototype = {
         await addon.disable({ allowSystemAddons: true });
       }
     });
-  },
-
-  // Set up a listener to enable/disable the translation extension
-  // based on its preference.
-  _monitorTranslationsPref() {
-    const PREF = "extensions.translations.disabled";
-    const ID = "firefox-translations@mozilla.org";
-    const oldID = "firefox-infobar-ui-bergamot-browser-extension@browser.mt";
-
-    // First, try to uninstall the old extension, if exists.
-    (async () => {
-      let addon = await AddonManager.getAddonByID(oldID);
-      if (addon) {
-        addon.uninstall().catch(Cu.reportError);
-      }
-    })();
-
-    const _checkTranslationsPref = async () => {
-      let addon = await AddonManager.getAddonByID(ID);
-      let disabled = Services.prefs.getBoolPref(PREF, false);
-      if (!addon && disabled) {
-        // not installed, bail out early.
-        return;
-      }
-      if (!disabled) {
-        // first time install of addon and install on firefox update
-        addon =
-          (await AddonManager.maybeInstallBuiltinAddon(
-            ID,
-            "0.4.3",
-            "resource://builtin-addons/translations/"
-          )) || addon;
-        await addon.enable();
-      } else if (addon) {
-        await addon.disable();
-      }
-    };
-    Services.prefs.addObserver(PREF, _checkTranslationsPref);
-    _checkTranslationsPref();
   },
 
   async _setupSearchDetection() {
@@ -2366,9 +2297,6 @@ BrowserGlue.prototype = {
     this._monitorIonStudies();
     this._setupSearchDetection();
 
-    if (AppConstants.NIGHTLY_BUILD) {
-      this._monitorTranslationsPref();
-    }
     this._monitorGPCPref();
     this._monitorPrivacySegmentationPref();
   },
@@ -2496,11 +2424,22 @@ BrowserGlue.prototype = {
           let shellService = Cc[
             "@mozilla.org/browser/shell-service;1"
           ].getService(Ci.nsIWindowsShellService);
+          let winTaskbar = Cc["@mozilla.org/windows-taskbar;1"].getService(
+            Ci.nsIWinTaskbar
+          );
 
           try {
             Services.telemetry.scalarSet(
               "os.environment.is_taskbar_pinned",
-              await shellService.isCurrentAppPinnedToTaskbarAsync()
+              await shellService.isCurrentAppPinnedToTaskbarAsync(
+                winTaskbar.defaultGroupId
+              )
+            );
+            Services.telemetry.scalarSet(
+              "os.environment.is_taskbar_pinned_private",
+              await shellService.isCurrentAppPinnedToTaskbarAsync(
+                winTaskbar.defaultPrivateGroupId
+              )
             );
           } catch (ex) {
             Cu.reportError(ex);
@@ -2560,12 +2499,10 @@ BrowserGlue.prototype = {
             WINTASKBAR_CONTRACTID in Cc &&
             Cc[WINTASKBAR_CONTRACTID].getService(Ci.nsIWinTaskbar).available
           ) {
-            let temp = {};
-            ChromeUtils.import(
-              "resource:///modules/WindowsJumpLists.jsm",
-              temp
+            const { WinTaskbarJumpList } = ChromeUtils.import(
+              "resource:///modules/WindowsJumpLists.jsm"
             );
-            temp.WinTaskbarJumpList.startup();
+            WinTaskbarJumpList.startup();
           }
         },
       },
@@ -2765,6 +2702,25 @@ BrowserGlue.prototype = {
           this._collectTelemetryPiPEnabled();
         },
       },
+      // Schedule a sync (if enabled) after we've loaded
+      {
+        task: async () => {
+          if (WeaveService.enabled) {
+            await WeaveService.whenLoaded();
+            WeaveService.Weave.Service.scheduler.autoConnect();
+          }
+        },
+      },
+
+      {
+        condition: AppConstants.platform == "win",
+        task: () => {
+          Services.obs.notifyObservers(
+            null,
+            "unblock-untrusted-modules-thread"
+          );
+        },
+      },
 
       // WebDriver components (Remote Agent and Marionette) need to be
       // initialized as very last step.
@@ -2828,7 +2784,7 @@ BrowserGlue.prototype = {
   _scheduleBestEffortUserIdleTasks() {
     const idleTasks = [
       () => {
-        // Telemetry for master-password - we do this after a delay as it
+        // Telemetry for primary-password - we do this after a delay as it
         // can cause IO if NSS/PSM has not already initialized.
         let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
           Ci.nsIPK11TokenDB
@@ -2843,9 +2799,10 @@ BrowserGlue.prototype = {
       },
 
       () => {
-        let obj = {};
-        ChromeUtils.import("resource://gre/modules/GMPInstallManager.jsm", obj);
-        this._gmpInstallManager = new obj.GMPInstallManager();
+        let { GMPInstallManager } = ChromeUtils.import(
+          "resource://gre/modules/GMPInstallManager.jsm"
+        );
+        this._gmpInstallManager = new GMPInstallManager();
         // We don't really care about the results, if someone is interested they
         // can check the log.
         this._gmpInstallManager.simpleCheckAndInstall().catch(() => {});
@@ -3404,7 +3361,7 @@ BrowserGlue.prototype = {
   _migrateUI: function BG__migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 122;
+    const UI_VERSION = 125;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     const PROFILE_DIR = Services.dirsvc.get("ProfD", Ci.nsIFile).path;
@@ -4126,20 +4083,82 @@ BrowserGlue.prototype = {
     // Bug 1745248: Due to multiple backouts, do not use UI Version 123
     // as this version is most likely set for the Nightly channel
 
+    if (currentUIVersion < 124) {
+      // Migrate "extensions.formautofill.available" and
+      // "extensions.formautofill.creditCards.available" from old to new prefs
+      const oldFormAutofillModule = "extensions.formautofill.available";
+      const oldCreditCardsAvailable =
+        "extensions.formautofill.creditCards.available";
+      const newCreditCardsAvailable =
+        "extensions.formautofill.creditCards.supported";
+      const newAddressesAvailable =
+        "extensions.formautofill.addresses.supported";
+      if (Services.prefs.prefHasUserValue(oldFormAutofillModule)) {
+        let moduleAvailability = Services.prefs.getCharPref(
+          oldFormAutofillModule
+        );
+        if (moduleAvailability == "on") {
+          Services.prefs.setCharPref(newAddressesAvailable, moduleAvailability);
+          Services.prefs.setCharPref(
+            newCreditCardsAvailable,
+            Services.prefs.getBoolPref(oldCreditCardsAvailable) ? "on" : "off"
+          );
+        }
+
+        if (moduleAvailability == "off") {
+          Services.prefs.setCharPref(
+            newCreditCardsAvailable,
+            moduleAvailability
+          );
+          Services.prefs.setCharPref(newAddressesAvailable, moduleAvailability);
+        }
+      }
+
+      // after migrating, clear old prefs so we can remove them later.
+      Services.prefs.clearUserPref(oldFormAutofillModule);
+      Services.prefs.clearUserPref(oldCreditCardsAvailable);
+    }
+
+    if (currentUIVersion < 125) {
+      // Bug 1756243 - Clear PiP cached coordinates since we changed their
+      // coordinate space.
+      const PIP_PLAYER_URI =
+        "chrome://global/content/pictureinpicture/player.xhtml";
+      try {
+        for (let value of ["left", "top", "width", "height"]) {
+          Services.xulStore.removeValue(
+            PIP_PLAYER_URI,
+            "picture-in-picture",
+            value
+          );
+        }
+      } catch (ex) {
+        Cu.reportError("Failed to clear XULStore PiP values: " + ex);
+      }
+    }
+
     // Update the migration version.
     Services.prefs.setIntPref("browser.migration.version", UI_VERSION);
   },
 
-  _showUpgradeDialog() {
-    BrowserWindowTracker.getTopWindow().gDialogBox.open(
-      "chrome://browser/content/upgradeDialog.html"
-    );
+  async _showUpgradeDialog() {
+    // TO DO Bug 1762666: Remove "chrome://browser/content/upgradeDialog.html"
+    const msg = await OnboardingMessageProvider.getUpgradeMessage();
+    const win = BrowserWindowTracker.getTopWindow();
+    const browser = win.gBrowser.selectedBrowser;
+    const config = {
+      type: "SHOW_SPOTLIGHT",
+      data: {
+        content: msg.content,
+      },
+    };
+    SpecialMessageActions.handleAction(config, browser);
   },
 
   async _maybeShowDefaultBrowserPrompt() {
     // Highest priority is the upgrade dialog, which can include a "primary
     // browser" request and is limited in various ways, e.g., major upgrades.
-    const dialogVersion = 94;
+    const dialogVersion = 100;
     const dialogVersionPref = "browser.startup.upgradeDialog.version";
     const dialogReason = await (async () => {
       if (!BrowserHandler.majorUpgrade) {
@@ -4185,10 +4204,6 @@ BrowserGlue.prototype = {
     // Show the upgrade dialog if allowed and remember the version.
     if (!dialogReason) {
       Services.prefs.setIntPref(dialogVersionPref, dialogVersion);
-
-      // Show Firefox Home behind the upgrade dialog to see theme changes.
-      const { gBrowser } = BrowserWindowTracker.getTopWindow();
-      gBrowser.selectedTab = gBrowser.addTrustedTab("about:home");
       this._showUpgradeDialog();
       return;
     }
@@ -4623,6 +4638,7 @@ BrowserGlue.prototype = {
       "pictureinpicture.settings",
       true
     );
+    Services.telemetry.setEventRecordingEnabled("pictureinpicture", true);
 
     const TOGGLE_ENABLED_PREF =
       "media.videocontrols.picture-in-picture.video-toggle.enabled";
@@ -4679,6 +4695,7 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.trackingprotection.cryptomining.enabled": null,
         "privacy.annotate_channels.strict_list.enabled": null,
         "network.http.referer.disallowCrossSiteRelaxingDefault": null,
+        "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation": null,
         "privacy.partition.network_state.ocsp_cache": null,
       },
       standard: {
@@ -4691,6 +4708,7 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.trackingprotection.cryptomining.enabled": null,
         "privacy.annotate_channels.strict_list.enabled": null,
         "network.http.referer.disallowCrossSiteRelaxingDefault": null,
+        "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation": null,
         "privacy.partition.network_state.ocsp_cache": null,
       },
     };
@@ -4768,6 +4786,16 @@ var ContentBlockingCategoriesPrefs = {
         case "-rp":
           this.CATEGORY_PREFS[type][
             "network.http.referer.disallowCrossSiteRelaxingDefault"
+          ] = false;
+          break;
+        case "rpTop":
+          this.CATEGORY_PREFS[type][
+            "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation"
+          ] = true;
+          break;
+        case "-rpTop":
+          this.CATEGORY_PREFS[type][
+            "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation"
           ] = false;
           break;
         case "ocsp":

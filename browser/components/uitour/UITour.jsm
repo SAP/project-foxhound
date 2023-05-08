@@ -16,7 +16,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
-  BuiltInThemeConfig: "resource:///modules/BuiltInThemeConfig.jsm",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   fxAccounts: "resource://gre/modules/FxAccounts.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
@@ -47,8 +47,9 @@ const MAX_BUTTONS = 4;
 
 // Array of which colorway/theme ids can be activated.
 XPCOMUtils.defineLazyGetter(this, "COLORWAY_IDS", () =>
-  [...BuiltInThemeConfig.keys()].filter(id =>
-    id.endsWith("-colorway@mozilla.org")
+  [...BuiltInThemes.builtInThemeMap.keys()].filter(
+    id =>
+      id.endsWith("-colorway@mozilla.org") && !BuiltInThemes.themeIsExpired(id)
   )
 );
 
@@ -57,8 +58,7 @@ const TARGET_SEARCHENGINE_PREFIX = "searchEngine-";
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {})
-    .ConsoleAPI;
+  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   let consoleOptions = {
     maxLogLevelPref: PREF_LOG_LEVEL,
     prefix: "UITour",

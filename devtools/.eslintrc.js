@@ -121,7 +121,6 @@ module.exports = {
         "shared/loader/browser-loader.js",
         "shared/loader/worker-loader.js",
         "startup/aboutdebugging-registration.js",
-        "startup/aboutdevtools/aboutdevtools-registration.js",
         "startup/aboutdevtoolstoolbox-registration.js",
         "startup/devtools-startup.js",
       ],
@@ -135,7 +134,7 @@ module.exports = {
       excludedFiles: [
         // Debugger modules have a custom bundling logic which relies on relative
         // paths.
-        "client/debugger/**",
+        "client/debugger/src/**",
         // `client/shared/build` contains node helpers to build the debugger and
         // not devtools modules.
         "client/shared/build/**",

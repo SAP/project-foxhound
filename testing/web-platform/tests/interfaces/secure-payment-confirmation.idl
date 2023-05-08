@@ -5,6 +5,7 @@
 
 dictionary SecurePaymentConfirmationRequest {
     required BufferSource challenge;
+    required USVString rpId;
     required FrozenArray<BufferSource> credentialIds;
     required PaymentCredentialInstrument instrument;
     unsigned long timeout;
@@ -42,6 +43,7 @@ dictionary CollectedClientAdditionalPaymentData {
 dictionary PaymentCredentialInstrument {
     required DOMString displayName;
     required USVString icon;
+    boolean iconMustBeShown = true;
 };
 
 enum TransactionAutomationMode {

@@ -29,11 +29,11 @@ const SQL = {
   selectAll: "SELECT * FROM events",
 };
 
-add_task(async function setup() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.contentblocking.database.enabled", true],
-      ["browser.contentblocking.report.vpn.enabled", false],
+      ["browser.vpn_promo.enabled", false],
     ],
   });
 });

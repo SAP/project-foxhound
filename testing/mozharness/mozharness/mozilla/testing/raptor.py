@@ -70,6 +70,15 @@ RaptorErrorList = (
     ]
 )
 
+# When running raptor locally, we can attempt to make use of
+# the users locally cached ffmpeg binary from from when the user
+# ran `./mach browsertime --setup`
+FFMPEG_LOCAL_CACHE = {
+    "mac": "ffmpeg-4.1.1-macos64-static",
+    "linux": "ffmpeg-4.1.4-i686-static",
+    "win": "ffmpeg-4.1.1-win64-static",
+}
+
 
 class Raptor(
     TestingMixin, MercurialScript, CodeCoverageMixin, AndroidMixin, Python3Virtualenv
@@ -521,6 +530,18 @@ class Raptor(
                     "help": "Enable marionette tracing",
                 },
             ],
+            [
+                ["--clean"],
+                {
+                    "action": "store_true",
+                    "dest": "clean",
+                    "default": False,
+                    "help": (
+                        "Clean the python virtualenv (remove, and rebuild) for "
+                        "Raptor before running tests."
+                    ),
+                },
+            ],
         ]
         + testing_config_options
         + copy.deepcopy(code_coverage_config_options)
@@ -639,6 +660,7 @@ class Raptor(
         self.browsertime_video = False
         self.enable_marionette_trace = self.config.get("enable_marionette_trace")
         self.browser_cycles = self.config.get("browser_cycles")
+        self.clean = self.config.get("clean")
 
         for (arg,), details in Raptor.browsertime_options:
             # Allow overriding defaults on the `./mach raptor-test ...` command-line.
@@ -978,8 +1000,16 @@ class Raptor(
         # We need it in-path to import jsonschema later when validating output for perfherder.
         _virtualenv_path = self.config.get("virtualenv_path")
 
+        if self.clean:
+            rmtree(_virtualenv_path)
+
         if self.run_local and os.path.exists(_virtualenv_path):
             self.info("Virtualenv already exists, skipping creation")
+            # ffmpeg exists outside of this virtual environment so
+            # we re-add it to the platform environment on repeated
+            # local runs of browsertime visual metric tests
+            if self.browsertime_visualmetrics:
+                self.setup_local_ffmpeg()
             _python_interp = self.config.get("exes")["python"]
 
             if "win" in self.platform_name():
@@ -1018,9 +1048,19 @@ class Raptor(
         modules = ["pip>=1.5"]
         if self.run_local and self.browsertime_visualmetrics:
             # Add modules required for visual metrics
-            modules.extend(
-                ["numpy==1.16.1", "Pillow==6.1.0", "scipy==1.2.3", "pyssim==0.4"]
-            )
+            py3_minor = sys.version_info.minor
+
+            if py3_minor <= 7:
+                modules.extend(
+                    ["numpy==1.16.1", "Pillow==6.1.0", "scipy==1.2.3", "pyssim==0.4"]
+                )
+            else:  # python version >= 3.8
+                modules.extend(
+                    ["numpy==1.22.0", "Pillow==9.0.0", "scipy==1.7.3", "pyssim==0.4"]
+                )
+            # these versions above seem to work for python 3.8 - 3.10
+
+            self.setup_local_ffmpeg()
 
         # Require pip >= 1.5 so pip will prefer .whl files to install
         super(Raptor, self).create_virtualenv(modules=modules)
@@ -1029,6 +1069,40 @@ class Raptor(
         self.install_module(
             requirements=[os.path.join(self.raptor_path, "requirements.txt")]
         )
+
+    def setup_local_ffmpeg(self):
+        """Make use of the users local ffmpeg when running browsertime visual
+        metrics tests.
+        """
+
+        # TODO expand this logic below for Windows and Linux (Bug 1746206 and 1746208)
+        # and refactor once all the paths are finalized across platforms
+
+        if "ffmpeg" in os.environ["PATH"]:
+            return
+
+        # linux wouldn't need bin in path
+        if "mac" in self.platform_name():
+            path_to_ffmpeg = os.path.join(
+                self.config["mozbuild_path"],
+                "browsertime",
+                FFMPEG_LOCAL_CACHE["mac"],
+                "bin",
+            )
+            if os.path.exists(path_to_ffmpeg):
+                os.environ["PATH"] += os.pathsep + path_to_ffmpeg
+                self.info(
+                    "Added local ffmpeg found at: %s to environment." % path_to_ffmpeg
+                )
+            else:
+                raise Exception(
+                    "No local ffmpeg binary found. Expected it to be here: %s"
+                    % path_to_ffmpeg
+                )
+        else:
+            self.info(
+                "Setting up local ffmpeg cache not yet supported on Windows and Linux"
+            )
 
     def install(self):
         if not self.config.get("noinstall", False):

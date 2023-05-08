@@ -124,7 +124,6 @@ avoid-blacklist-and-whitelist:
         - dom/media/autoplay/test/mochitest/test_autoplay_policy_key_blacklist.html
         - dom/media/autoplay/test/mochitest/test_autoplay_policy_permission.html
         - dom/media/webm/WebMDecoder.cpp
-        - dom/media/webrtc/jsapi/PeerConnectionMedia.cpp
         - dom/media/webrtc/libwebrtcglue/VideoConduit.cpp
         - dom/media/webrtc/transport/stun_socket_filter.cpp
         - dom/media/webrtc/transport/test/ice_unittest.cpp
@@ -422,7 +421,6 @@ avoid-blacklist-and-whitelist:
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile3.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4_postDownload.js
-        - toolkit/mozapps/extensions/test/xpinstall/browser_whitelist.js
         - toolkit/mozapps/extensions/test/xpinstall/head.js
         - toolkit/xre/nsAppRunner.cpp
         - toolkit/xre/nsEmbedFunctions.cpp

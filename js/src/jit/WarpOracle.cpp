@@ -19,6 +19,7 @@
 #include "jit/JitScript.h"
 #include "jit/JitSpewer.h"
 #include "jit/MIRGenerator.h"
+#include "jit/TrialInlining.h"
 #include "jit/TypeData.h"
 #include "jit/WarpBuilder.h"
 #include "vm/BuiltinObjectKind.h"
@@ -300,10 +301,6 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
     return abort(AbortReason::Error);
   }
 
-  if (script_->jitScript()->hasTryFinally()) {
-    return abort(AbortReason::Disable, "Try-finally not supported");
-  }
-
   if (script_->failedBoundsCheck()) {
     oracle_->bailoutInfo().setFailedBoundsCheck();
   }
@@ -422,12 +419,6 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
         if (IsAsmJSModule(fun)) {
           return abort(AbortReason::Disable, "asm.js module function lambda");
         }
-
-        if (!AddOpSnapshot<WarpLambda>(alloc_, opSnapshots, offset,
-                                       fun->baseScript(), fun->flags(),
-                                       fun->nargs())) {
-          return abort(AbortReason::Alloc);
-        }
         break;
       }
 
@@ -476,8 +467,6 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::Call:
       case JSOp::CallIgnoresRv:
       case JSOp::CallIter:
-      case JSOp::FunCall:
-      case JSOp::FunApply:
       case JSOp::New:
       case JSOp::SuperCall:
       case JSOp::SpreadCall:
@@ -603,6 +592,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::MoreIter:
       case JSOp::EndIter:
       case JSOp::IsNoIter:
+      case JSOp::IsNullOrUndefined:
       case JSOp::DelProp:
       case JSOp::StrictDelProp:
       case JSOp::DelElem:
@@ -660,6 +650,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::ResumeKind:
       case JSOp::ThrowMsg:
       case JSOp::Try:
+      case JSOp::Finally:
       case JSOp::NewPrivateName:
         // Supported by WarpBuilder. Nothing to do.
         break;

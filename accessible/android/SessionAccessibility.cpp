@@ -18,12 +18,14 @@
 
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/a11y/Accessible.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/jni/GeckoBundleUtils.h"
 #include "mozilla/widget/GeckoViewSupport.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 
 #ifdef DEBUG
 #  include <android/log.h>
@@ -89,6 +91,10 @@ void SessionAccessibility::Init() {
   Settings::Init();
 }
 
+bool SessionAccessibility::IsCacheEnabled() {
+  return StaticPrefs::accessibility_cache_enabled_AtStartup();
+}
+
 mozilla::jni::Object::LocalRef SessionAccessibility::GetNodeInfo(int32_t aID) {
   java::GeckoBundle::GlobalRef ret = nullptr;
   RefPtr<SessionAccessibility> self(this);
@@ -126,6 +132,22 @@ void SessionAccessibility::SetText(int32_t aID, jni::String::Param aText) {
 
 void SessionAccessibility::Click(int32_t aID) {
   FORWARD_ACTION_TO_ACCESSIBLE(DoAction, 0);
+}
+
+bool SessionAccessibility::CachedPivot(int32_t aID, int32_t aGranularity,
+                                       bool aForward, bool aInclusive) {
+  RefPtr<SessionAccessibility> self(this);
+  bool ret = false;
+  nsAppShell::SyncRunEvent(
+      [this, self, aID, aGranularity, aForward, aInclusive, &ret] {
+        if (RootAccessibleWrap* rootAcc = GetRoot()) {
+          if (AccessibleWrap* acc = rootAcc->FindAccessibleById(aID)) {
+            ret = acc->PivotTo(aGranularity, aForward, aInclusive);
+          }
+        }
+      });
+
+  return ret;
 }
 
 void SessionAccessibility::Pivot(int32_t aID, int32_t aGranularity,
@@ -173,9 +195,26 @@ void SessionAccessibility::Paste(int32_t aID) {
 }
 
 RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
-    RemoteAccessible* aAccessible) {
-  auto tab =
-      static_cast<dom::BrowserParent*>(aAccessible->Document()->Manager());
+    Accessible* aAccessible) {
+  if (aAccessible->IsLocal()) {
+    RootAccessible* rootAcc = aAccessible->AsLocal()->RootAccessible();
+    nsViewManager* vm = rootAcc->PresShellPtr()->GetViewManager();
+    if (!vm) {
+      return nullptr;
+    }
+
+    nsCOMPtr<nsIWidget> rootWidget = vm->GetRootWidget();
+    // `rootWidget` can be one of several types. Here we make sure it is an
+    // android nsWindow.
+    if (RefPtr<nsWindow> window = nsWindow::From(rootWidget)) {
+      return window->GetSessionAccessibility();
+    }
+
+    return nullptr;
+  }
+
+  auto tab = static_cast<dom::BrowserParent*>(
+      aAccessible->AsRemote()->Document()->Manager());
   dom::Element* frame = tab->GetOwnerElement();
   MOZ_ASSERT(frame);
   if (!frame) {
@@ -184,24 +223,6 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
 
   LocalAccessible* chromeDoc = GetExistingDocAccessible(frame->OwnerDoc());
   return chromeDoc ? GetInstanceFor(chromeDoc) : nullptr;
-}
-
-RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
-    LocalAccessible* aAccessible) {
-  RootAccessible* rootAcc = aAccessible->RootAccessible();
-  nsViewManager* vm = rootAcc->PresShellPtr()->GetViewManager();
-  if (!vm) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIWidget> rootWidget = vm->GetRootWidget();
-  // `rootWidget` can be one of several types. Here we make sure it is an
-  // android nsWindow.
-  if (RefPtr<nsWindow> window = nsWindow::From(rootWidget)) {
-    return window->GetSessionAccessibility();
-  }
-
-  return nullptr;
 }
 
 void SessionAccessibility::SendAccessibilityFocusedEvent(
@@ -254,6 +275,7 @@ void SessionAccessibility::SendScrollingEvent(AccessibleWrap* aAccessible,
   mSessionAccessibility->SendEvent(
       java::sdk::AccessibilityEvent::TYPE_VIEW_SCROLLED, virtualViewId,
       aAccessible->AndroidClass(), eventInfo);
+  SendWindowContentChangedEvent();
 }
 
 void SessionAccessibility::SendWindowContentChangedEvent() {
@@ -464,7 +486,6 @@ void SessionAccessibility::UpdateCachedBounds(
   }
 
   mSessionAccessibility->UpdateCachedBounds(infos);
-  SendWindowContentChangedEvent();
 }
 
 void SessionAccessibility::UpdateAccessibleFocusBoundaries(

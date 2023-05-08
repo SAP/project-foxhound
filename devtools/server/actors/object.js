@@ -204,7 +204,7 @@ const proto = {
     }
 
     try {
-      return this.obj.getOwnPropertyNames().length;
+      return this.obj.getOwnPropertyNamesLength();
     } catch (err) {
       // The above can throw when the debuggee does not subsume the object's
       // compartment, or for some WrappedNatives like Cu.Sandbox.
@@ -233,9 +233,12 @@ const proto = {
    * Populate the `preview` property on `grip` given its type.
    */
   _populateGripPreview: function(grip, raw) {
-    for (const previewer of previewers[this.obj.class] || previewers.Object) {
+    // Cache obj.class as it can be costly if this is in a hot path (e.g. logging objects
+    // within a for loop).
+    const className = this.obj.class;
+    for (const previewer of previewers[className] || previewers.Object) {
       try {
-        const previewerResult = previewer(this, grip, raw);
+        const previewerResult = previewer(this, grip, raw, className);
         if (previewerResult) {
           return;
         }
@@ -660,10 +663,10 @@ const proto = {
   },
 
   /**
-   * Converts a Debugger API completion value record into an eqivalent
+   * Converts a Debugger API completion value record into an equivalent
    * object grip for use by the API.
    *
-   * See https://developer.mozilla.org/en-US/docs/Tools/Debugger-API/Conventions#completion-values
+   * See https://firefox-source-docs.mozilla.org/devtools-user/debugger-api/
    * for more specifics on the expected behavior.
    */
   _buildCompletion(value) {

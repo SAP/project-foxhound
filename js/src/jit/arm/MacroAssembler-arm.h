@@ -14,7 +14,6 @@
 #include "vm/BytecodeUtil.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCodegenTypes.h"
-#include "wasm/WasmTlsData.h"
 
 namespace js {
 namespace jit {
@@ -1387,12 +1386,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
                    Condition cc = Always) {
     as_vmov(VFPRegister(dest).singleOverlay(), VFPRegister(src).singleOverlay(),
             cc);
-  }
-
-  void loadWasmPinnedRegsFromTls() {
-    ScratchRegisterScope scratch(asMasm());
-    ma_ldr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg,
-           scratch);
   }
 
   // Instrumentation for entering and leaving the profiler.

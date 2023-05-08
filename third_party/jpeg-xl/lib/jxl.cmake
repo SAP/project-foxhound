@@ -39,6 +39,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/profiler.h
   jxl/base/random.cc
   jxl/base/random.h
+  jxl/base/scope_guard.h
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
@@ -92,11 +93,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_params.h
   jxl/dec_patch_dictionary.cc
   jxl/dec_patch_dictionary.h
-  jxl/dec_reconstruct.cc
-  jxl/dec_reconstruct.h
   jxl/dec_transforms-inl.h
-  jxl/dec_upsample.cc
-  jxl/dec_upsample.h
   jxl/dec_xyb-inl.h
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
@@ -122,9 +119,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
-  jxl/filters.cc
-  jxl/filters.h
-  jxl/filters_internal.h
   jxl/frame_header.cc
   jxl/frame_header.h
   jxl/gauss_blur.cc
@@ -196,6 +190,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/render_pipeline_stage.h
   jxl/render_pipeline/simple_render_pipeline.cc
   jxl/render_pipeline/simple_render_pipeline.h
+  jxl/render_pipeline/stage_blending.cc
+  jxl/render_pipeline/stage_blending.h
   jxl/render_pipeline/stage_chroma_upsampling.cc
   jxl/render_pipeline/stage_chroma_upsampling.h
   jxl/render_pipeline/stage_epf.cc
@@ -208,10 +204,12 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/stage_patches.h
   jxl/render_pipeline/stage_splines.cc
   jxl/render_pipeline/stage_splines.h
+  jxl/render_pipeline/stage_spot.cc
+  jxl/render_pipeline/stage_spot.h
   jxl/render_pipeline/stage_upsampling.cc
   jxl/render_pipeline/stage_upsampling.h
-  jxl/render_pipeline/stage_write_to_ib.cc
-  jxl/render_pipeline/stage_write_to_ib.h
+  jxl/render_pipeline/stage_write.cc
+  jxl/render_pipeline/stage_write.h
   jxl/render_pipeline/stage_xyb.cc
   jxl/render_pipeline/stage_xyb.h
   jxl/render_pipeline/stage_ycbcr.cc
@@ -219,6 +217,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/test_render_pipeline_stages.h
   jxl/sanitizers.h
   jxl/simd_util-inl.h
+  jxl/size_constraints.h
   jxl/splines.cc
   jxl/splines.h
   jxl/toc.cc

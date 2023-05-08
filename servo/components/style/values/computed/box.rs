@@ -13,8 +13,9 @@ use crate::values::specified::box_ as specified;
 
 pub use crate::values::specified::box_::{
     AnimationName, AnimationTimeline, Appearance, BreakBetween, BreakWithin,
-    Clear as SpecifiedClear, Contain, Display, Float as SpecifiedFloat, Overflow, OverflowAnchor,
-    OverflowClipBox, OverscrollBehavior, ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness,
+    Clear as SpecifiedClear, Contain, ContainerName, ContainerType, ContentVisibility, Display,
+    Float as SpecifiedFloat, Overflow, OverflowAnchor, OverflowClipBox,
+    OverscrollBehavior, ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStrictness,
     ScrollSnapType, ScrollbarGutter, TouchAction, TransitionProperty, WillChange,
 };
 

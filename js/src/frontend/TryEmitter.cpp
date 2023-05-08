@@ -9,7 +9,9 @@
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
 #include "frontend/BytecodeEmitter.h"  // BytecodeEmitter
+#include "frontend/IfEmitter.h"        // BytecodeEmitter
 #include "frontend/SharedContext.h"    // StatementKind
+#include "vm/BytecodeUtil.h"           // SET_RESUMEINDEX
 #include "vm/Opcodes.h"                // JSOp
 
 using namespace js;
@@ -57,20 +59,50 @@ bool TryEmitter::emitTry() {
   return true;
 }
 
+bool TryEmitter::emitJumpToFinallyWithFallthrough() {
+  // The finally block expects two values on the stack: a boolean to
+  // indicate whether we're currently throwing an exception (false
+  // in this case), and either a resume index or the exception being
+  // thrown. Push the resume index for the code immediately
+  // following the finally.
+  BytecodeOffset off;
+  if (!bce_->emitN(JSOp::ResumeIndex, 3, &off)) {
+    return false;
+  }
+  if (!controlInfo_->defaultResumeIndexOffsets_.append(off)) {
+    return false;
+  }
+
+  // Push false for |throwing|.
+  if (!bce_->emit1(JSOp::False)) {
+    return false;
+  }
+
+  // Jump to the finally block.
+  if (!bce_->emitJumpNoFallthrough(JSOp::Goto, &controlInfo_->finallyJumps_)) {
+    return false;
+  }
+
+  // Reset the stack depth for the following catch or finally block.
+  uint32_t stackDepthForNextBlock = bce_->bytecodeSection().stackDepth() - 2;
+  bce_->bytecodeSection().setStackDepth(stackDepthForNextBlock);
+
+  return true;
+}
+
 bool TryEmitter::emitTryEnd() {
   MOZ_ASSERT(state_ == State::Try);
   MOZ_ASSERT(depth_ == bce_->bytecodeSection().stackDepth());
 
-  // Gosub to finally, if present.
   if (hasFinally() && controlInfo_) {
-    if (!bce_->emitGoSub(&controlInfo_->gosubs)) {
+    if (!emitJumpToFinallyWithFallthrough()) {
       return false;
     }
-  }
-
-  // Emit jump over catch and/or finally.
-  if (!bce_->emitJump(JSOp::Goto, &catchAndFinallyJump_)) {
-    return false;
+  } else {
+    // Emit jump over catch
+    if (!bce_->emitJump(JSOp::Goto, &catchAndFinallyJump_)) {
+      return false;
+    }
   }
 
   if (!bce_->emitJumpTarget(&tryEnd_)) {
@@ -88,7 +120,7 @@ bool TryEmitter::emitCatch() {
 
   MOZ_ASSERT(bce_->bytecodeSection().stackDepth() == depth_);
 
-  if (controlKind_ == ControlKind::Syntactic) {
+  if (shouldUpdateRval()) {
     // Clear the frame's return value that might have been set by the
     // try block:
     //
@@ -118,15 +150,9 @@ bool TryEmitter::emitCatchEnd() {
     return true;
   }
 
-  // gosub <finally>, if required.
+  // Jump to <finally>, if required.
   if (hasFinally()) {
-    if (!bce_->emitGoSub(&controlInfo_->gosubs)) {
-      return false;
-    }
-    MOZ_ASSERT(bce_->bytecodeSection().stackDepth() == depth_);
-
-    // Jump over the finally block.
-    if (!bce_->emitJump(JSOp::Goto, &catchAndFinallyJump_)) {
+    if (!emitJumpToFinallyWithFallthrough()) {
       return false;
     }
   }
@@ -164,14 +190,19 @@ bool TryEmitter::emitFinally(
 
   MOZ_ASSERT(bce_->bytecodeSection().stackDepth() == depth_);
 
+  // Upon entry to the finally, there are two additional values on the stack:
+  // a boolean value to indicate whether we're throwing an exception, and
+  // either that exception (if we're throwing) or a resume index to which we
+  // will return (if we're not throwing).
+  bce_->bytecodeSection().setStackDepth(depth_ + 2);
+
   if (!bce_->emitJumpTarget(&finallyStart_)) {
     return false;
   }
 
   if (controlInfo_) {
-    // Fix up the gosubs that might have been emitted before non-local
-    // jumps to the finally code.
-    bce_->patchJumpsToTarget(controlInfo_->gosubs, finallyStart_);
+    // Fix up the jumps to the finally code.
+    bce_->patchJumpsToTarget(controlInfo_->finallyJumps_, finallyStart_);
 
     // Indicate that we're emitting a subroutine body.
     controlInfo_->setEmittingSubroutine();
@@ -185,7 +216,7 @@ bool TryEmitter::emitFinally(
     return false;
   }
 
-  if (controlKind_ == ControlKind::Syntactic) {
+  if (shouldUpdateRval()) {
     if (!bce_->emit1(JSOp::GetRval)) {
       return false;
     }
@@ -211,13 +242,39 @@ bool TryEmitter::emitFinally(
 bool TryEmitter::emitFinallyEnd() {
   MOZ_ASSERT(state_ == State::Finally);
 
-  if (controlKind_ == ControlKind::Syntactic) {
+  if (shouldUpdateRval()) {
     if (!bce_->emit1(JSOp::SetRval)) {
       return false;
     }
   }
 
-  if (!bce_->emit1(JSOp::Retsub)) {
+  InternalIfEmitter ifThrowing(bce_);
+  if (!ifThrowing.emitThenElse()) {
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::Throw)) {
+    return false;
+  }
+
+  if (!ifThrowing.emitElse()) {
+    return false;
+  }
+
+  if (controlInfo_ && controlInfo_->hasNonLocalJumps()) {
+    if (!bce_->emit1(JSOp::Retsub)) {
+      return false;
+    }
+  } else {
+    // If there are no non-local jumps, then the only possible jump target
+    // is the code immediately following this finally block. Instead of
+    // emitting a retsub, we can simply pop the resume index and fall through.
+    if (!bce_->emit1(JSOp::Pop)) {
+      return false;
+    }
+  }
+
+  if (!ifThrowing.emitEnd()) {
     return false;
   }
 
@@ -240,9 +297,28 @@ bool TryEmitter::emitEnd() {
 
   MOZ_ASSERT(bce_->bytecodeSection().stackDepth() == depth_);
 
-  // Fix up the end-of-try/catch jumps to come here.
-  if (!bce_->emitJumpTargetAndPatch(catchAndFinallyJump_)) {
-    return false;
+  // Fix up ResumeIndex ops pointing to the code following the finally block.
+  if (hasFinally() && controlInfo_) {
+    MOZ_ASSERT(!catchAndFinallyJump_.offset.valid());
+
+    JumpTarget target;
+    if (!bce_->emitJumpTarget(&target)) {
+      return false;
+    }
+
+    uint32_t resumeIndex;
+    if (!bce_->allocateResumeIndex(target.offset, &resumeIndex)) {
+      return false;
+    }
+
+    for (BytecodeOffset offset : controlInfo_->defaultResumeIndexOffsets_) {
+      SET_RESUMEINDEX(bce_->bytecodeSection().code(offset), resumeIndex);
+    }
+  } else {
+    // Fix up the end-of-try/catch jumps to come here.
+    if (!bce_->emitJumpTargetAndPatch(catchAndFinallyJump_)) {
+      return false;
+    }
   }
 
   // Add the try note last, to let post-order give us the right ordering
@@ -268,4 +344,8 @@ bool TryEmitter::emitEnd() {
   state_ = State::End;
 #endif
   return true;
+}
+
+bool TryEmitter::shouldUpdateRval() const {
+  return controlKind_ == ControlKind::Syntactic && !bce_->sc->noScriptRval();
 }

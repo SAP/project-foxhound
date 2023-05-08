@@ -718,8 +718,14 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvResume() {
 }
 
 mozilla::ipc::IPCResult HttpChannelParent::RecvCancel(
-    const nsresult& status, const uint32_t& requestBlockingReason) {
+    const nsresult& status, const uint32_t& requestBlockingReason,
+    const mozilla::Maybe<nsCString>& logString) {
   LOG(("HttpChannelParent::RecvCancel [this=%p]\n", this));
+
+  // logging child cancel reason on the parent side
+  if (logString.isSome()) {
+    LOG(("HttpChannelParent::RecvCancel: %s", logString->get()));
+  }
 
   // May receive cancel before channel has been constructed!
   if (mChannel) {
@@ -1036,6 +1042,7 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
   MOZ_ASSERT(NS_IsMainThread());
 
   Maybe<uint32_t> multiPartID;
+  bool isFirstPartOfMultiPart = false;
   bool isLastPartOfMultiPart = false;
   DebugOnly<bool> isMultiPart = false;
 
@@ -1051,6 +1058,7 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
       uint32_t partID = 0;
       multiPartChannel->GetPartID(&partID);
       multiPartID = Some(partID);
+      multiPartChannel->GetIsFirstPart(&isFirstPartOfMultiPart);
       multiPartChannel->GetIsLastPart(&isLastPartOfMultiPart);
     } else if (nsCOMPtr<nsIViewSourceChannel> viewSourceChannel =
                    do_QueryInterface(aRequest)) {
@@ -1088,6 +1096,7 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
   }
 
   args.multiPartID() = multiPartID;
+  args.isFirstPartOfMultiPart() = isFirstPartOfMultiPart;
   args.isLastPartOfMultiPart() = isLastPartOfMultiPart;
 
   args.cacheExpirationTime() = nsICacheEntry::NO_EXPIRATION_TIME;

@@ -47,7 +47,7 @@ def setup():
     if not npm:
         exit(EX_CONFIG, "could not find npm executable")
     path = os.path.abspath(os.path.join(npm, os.pardir))
-    os.environ["PATH"] = "{}:{}".format(path, os.environ["PATH"])
+    os.environ["PATH"] = "{}{}{}".format(path, os.pathsep, os.environ["PATH"])
 
 
 def remotedir(command_context):
@@ -192,6 +192,7 @@ def npm(*args, **kwargs):
     from mozprocess import processhandler
 
     env = None
+    npm, _ = nodeutil.find_npm_executable()
     if kwargs.get("env"):
         env = os.environ.copy()
         env.update(kwargs["env"])
@@ -201,7 +202,7 @@ def npm(*args, **kwargs):
         proc_kwargs["processOutputLine"] = kwargs["processOutputLine"]
 
     p = processhandler.ProcessHandler(
-        cmd="npm",
+        cmd=npm,
         args=list(args),
         cwd=kwargs.get("cwd"),
         env=env,
@@ -211,7 +212,7 @@ def npm(*args, **kwargs):
     if not kwargs.get("wait", True):
         return p
 
-    wait_proc(p, cmd="npm", exit_on_fail=kwargs.get("exit_on_fail", True))
+    wait_proc(p, cmd=npm, exit_on_fail=kwargs.get("exit_on_fail", True))
 
     return p.returncode
 
@@ -585,6 +586,13 @@ def create_parser_puppeteer():
     description="Run Puppeteer unit tests.",
     parser=create_parser_puppeteer,
 )
+@CommandArgument(
+    "--no-install",
+    dest="install",
+    action="store_false",
+    default=True,
+    help="Do not install the Puppeteer package",
+)
 def puppeteer_test(
     command_context,
     binary=None,
@@ -594,6 +602,7 @@ def puppeteer_test(
     headless=False,
     extra_prefs=None,
     extra_options=None,
+    install=False,
     verbosity=0,
     tests=None,
     product="firefox",
@@ -648,7 +657,8 @@ def puppeteer_test(
     if verbosity > 2:
         prefs["remote.log.truncate"] = False
 
-    install_puppeteer(command_context, product, ci)
+    if install:
+        install_puppeteer(command_context, product, ci)
 
     params = {
         "binary": binary,

@@ -14,6 +14,7 @@
 #include "ScriptLoader.h"
 #include "ScriptTrace.h"
 #include "js/Transcoding.h"
+#include "js/loader/ScriptLoadRequest.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
@@ -27,7 +28,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SRICheck.h"
 #include "mozilla/dom/ScriptDecoding.h"
-#include "mozilla/dom/ScriptLoadRequest.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
@@ -53,7 +53,7 @@ namespace dom {
   MOZ_LOG_TEST(ScriptLoader::gScriptLoaderLog, mozilla::LogLevel::Debug)
 
 ScriptLoadHandler::ScriptLoadHandler(
-    ScriptLoader* aScriptLoader, ScriptLoadRequest* aRequest,
+    ScriptLoader* aScriptLoader, JS::loader::ScriptLoadRequest* aRequest,
     UniquePtr<SRICheckDataVerifier>&& aSRIDataVerifier)
     : mScriptLoader(aScriptLoader),
       mRequest(aRequest),
@@ -61,7 +61,7 @@ ScriptLoadHandler::ScriptLoadHandler(
       mSRIStatus(NS_OK),
       mDecoder() {
   MOZ_ASSERT(mRequest->IsUnknownDataType());
-  MOZ_ASSERT(mRequest->IsLoading());
+  MOZ_ASSERT(mRequest->IsFetching());
 }
 
 ScriptLoadHandler::~ScriptLoadHandler() = default;
@@ -79,7 +79,7 @@ nsresult ScriptLoadHandler::DecodeRawDataHelper(const uint8_t* aData,
   }
 
   // Reference to the script source buffer which we will update.
-  ScriptLoadRequest::ScriptTextBuffer<Unit>& scriptText =
+  JS::loader::ScriptLoadRequest::ScriptTextBuffer<Unit>& scriptText =
       mRequest->ScriptText<Unit>();
 
   uint32_t haveRead = scriptText.length();
@@ -126,7 +126,7 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 
   if (!mPreloadStartNotified) {
     mPreloadStartNotified = true;
-    mRequest->NotifyStart(channelRequest);
+    mRequest->mLoadContext->NotifyStart(channelRequest);
   }
 
   if (mRequest->IsCanceled()) {
@@ -226,8 +226,8 @@ bool ScriptLoadHandler::TrySetDecoder(nsIIncrementalStreamLoader* aLoader,
   // Check the hint charset from the script element or preload
   // request.
   nsAutoString hintCharset;
-  if (!mRequest->IsPreload()) {
-    mRequest->GetScriptElement()->GetScriptCharset(hintCharset);
+  if (!mRequest->mLoadContext->IsPreload()) {
+    mRequest->mLoadContext->GetScriptElement()->GetScriptCharset(hintCharset);
   } else {
     nsTArray<ScriptLoader::PreloadInfo>::index_type i =
         mScriptLoader->mPreloads.IndexOf(
@@ -291,16 +291,17 @@ nsresult ScriptLoadHandler::MaybeDecodeSRI(uint32_t* sriLength) {
 nsresult ScriptLoadHandler::EnsureKnownDataType(
     nsIIncrementalStreamLoader* aLoader) {
   MOZ_ASSERT(mRequest->IsUnknownDataType());
-  MOZ_ASSERT(mRequest->IsLoading());
+  MOZ_ASSERT(mRequest->IsFetching());
 
   nsCOMPtr<nsIRequest> req;
   nsresult rv = aLoader->GetRequest(getter_AddRefs(req));
   MOZ_ASSERT(req, "StreamLoader's request went away prematurely");
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (mRequest->IsLoadingSource()) {
+  if (mRequest->mFetchSourceOnly) {
     mRequest->SetTextSource();
-    TRACE_FOR_TEST(mRequest->GetScriptElement(), "scriptloader_load_source");
+    TRACE_FOR_TEST(mRequest->mLoadContext->GetScriptElement(),
+                   "scriptloader_load_source");
     return NS_OK;
   }
 
@@ -308,9 +309,9 @@ nsresult ScriptLoadHandler::EnsureKnownDataType(
   if (cic) {
     nsAutoCString altDataType;
     cic->GetAlternativeDataType(altDataType);
-    if (altDataType.Equals(nsContentUtils::JSBytecodeMimeType())) {
+    if (altDataType.Equals(ScriptLoader::BytecodeMimeTypeFor(mRequest))) {
       mRequest->SetBytecode();
-      TRACE_FOR_TEST(mRequest->GetScriptElement(),
+      TRACE_FOR_TEST(mRequest->mLoadContext->GetScriptElement(),
                      "scriptloader_load_bytecode");
       return NS_OK;
     }
@@ -318,10 +319,11 @@ nsresult ScriptLoadHandler::EnsureKnownDataType(
   }
 
   mRequest->SetTextSource();
-  TRACE_FOR_TEST(mRequest->GetScriptElement(), "scriptloader_load_source");
+  TRACE_FOR_TEST(mRequest->mLoadContext->GetScriptElement(),
+                 "scriptloader_load_source");
 
   MOZ_ASSERT(!mRequest->IsUnknownDataType());
-  MOZ_ASSERT(mRequest->IsLoading());
+  MOZ_ASSERT(mRequest->IsFetching());
   return NS_OK;
 }
 
@@ -344,11 +346,11 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
 
   if (!mPreloadStartNotified) {
     mPreloadStartNotified = true;
-    mRequest->NotifyStart(channelRequest);
+    mRequest->mLoadContext->NotifyStart(channelRequest);
   }
 
-  auto notifyStop =
-      MakeScopeExit([&] { mRequest->NotifyStop(channelRequest, rv); });
+  auto notifyStop = MakeScopeExit(
+      [&] { mRequest->mLoadContext->NotifyStop(channelRequest, rv); });
 
   if (!mRequest->IsCanceled()) {
     if (mRequest->IsUnknownDataType()) {

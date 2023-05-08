@@ -102,16 +102,19 @@ let RemotePageAccessManager = {
       RPMSendAsyncMessage: ["*"],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
+      RPMGetStringPref: ["extensions.pocket.site"],
     },
     "about:pocket-signup": {
       RPMSendAsyncMessage: ["*"],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
+      RPMGetStringPref: ["extensions.pocket.site"],
     },
     "about:pocket-home": {
       RPMSendAsyncMessage: ["*"],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
+      RPMGetStringPref: ["extensions.pocket.site"],
     },
     "about:pocket-style-guide": {
       RPMSendAsyncMessage: ["*"],
@@ -128,7 +131,8 @@ let RemotePageAccessManager = {
       RPMSendQuery: [
         "ShouldShowSearch",
         "ShouldShowSearchBanner",
-        "ShouldShowVPNPromo",
+        "ShouldShowPromo",
+        "SpecialMessageActionDispatch",
       ],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
@@ -173,7 +177,7 @@ let RemotePageAccessManager = {
         "privacy.trackingprotection.socialtracking.enabled",
         "browser.contentblocking.report.show_mobile_app",
         "browser.contentblocking.report.hide_vpn_banner",
-        "browser.contentblocking.report.vpn.enabled",
+        "browser.vpn_promo.enabled",
       ],
       RPMGetStringPref: [
         "browser.contentblocking.category",
@@ -189,7 +193,6 @@ let RemotePageAccessManager = {
         "browser.contentblocking.report.vpn-promo.url",
         "browser.contentblocking.report.vpn-android.url",
         "browser.contentblocking.report.vpn-ios.url",
-        "browser.contentblocking.report.vpn_platforms",
       ],
       RPMGetIntPref: ["network.cookie.cookieBehavior"],
       RPMGetFormatURLPref: [

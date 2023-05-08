@@ -8,6 +8,7 @@ const PRIVACY_PREF_URL = "about:preferences#privacy";
 add_task(async function setup_storage() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      [AUTOFILL_ADDRESSES_AVAILABLE_PREF, "on"],
       [ENABLED_AUTOFILL_ADDRESSES_PREF, true],
       [ENABLED_AUTOFILL_ADDRESSES_CAPTURE_PREF, true],
     ],
@@ -45,10 +46,7 @@ add_task(async function test_iframe_autocomplete() {
   await expectWarningText(browser, "Also autofills organization, email");
   EventUtils.synthesizeKey("VK_RETURN", {});
 
-  let promiseShown = BrowserTestUtils.waitForEvent(
-    PopupNotifications.panel,
-    "popupshown"
-  );
+  let promiseShown = promiseNotificationShown();
 
   await new Promise(resolve => setTimeout(resolve, 1000));
 

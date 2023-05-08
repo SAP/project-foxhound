@@ -1307,7 +1307,7 @@ void BackgroundFactoryRequestChild::SetDatabaseActor(
   mDatabaseActor = aActor;
 }
 
-bool BackgroundFactoryRequestChild::HandleResponse(nsresult aResponse) {
+void BackgroundFactoryRequestChild::HandleResponse(nsresult aResponse) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(NS_FAILED(aResponse));
   MOZ_ASSERT(NS_ERROR_GET_MODULE(aResponse) == NS_ERROR_MODULE_DOM_INDEXEDDB);
@@ -1320,11 +1320,9 @@ bool BackgroundFactoryRequestChild::HandleResponse(nsresult aResponse) {
     mDatabaseActor->ReleaseDOMObject();
     MOZ_ASSERT(!mDatabaseActor);
   }
-
-  return true;
 }
 
-bool BackgroundFactoryRequestChild::HandleResponse(
+void BackgroundFactoryRequestChild::HandleResponse(
     const OpenDatabaseRequestResponse& aResponse) {
   AssertIsOnOwningThread();
 
@@ -1370,11 +1368,9 @@ bool BackgroundFactoryRequestChild::HandleResponse(
     databaseActor->SendDeleteMeInternal();
   }
   MOZ_ASSERT(!mDatabaseActor);
-
-  return true;
 }
 
-bool BackgroundFactoryRequestChild::HandleResponse(
+void BackgroundFactoryRequestChild::HandleResponse(
     const DeleteDatabaseRequestResponse& aResponse) {
   AssertIsOnOwningThread();
 
@@ -1387,8 +1383,6 @@ bool BackgroundFactoryRequestChild::HandleResponse(
                                    std::move(successEvent));
 
   MOZ_ASSERT(!mDatabaseActor);
-
-  return true;
 }
 
 void BackgroundFactoryRequestChild::ActorDestroy(ActorDestroyReason aWhy) {
@@ -1407,32 +1401,25 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::Recv__delete__(
 
   MaybeCollectGarbageOnIPCMessage();
 
-  bool result;
-
   switch (aResponse.type()) {
     case FactoryRequestResponse::Tnsresult:
-      result = HandleResponse(aResponse.get_nsresult());
+      HandleResponse(aResponse.get_nsresult());
       break;
 
     case FactoryRequestResponse::TOpenDatabaseRequestResponse:
-      result = HandleResponse(aResponse.get_OpenDatabaseRequestResponse());
+      HandleResponse(aResponse.get_OpenDatabaseRequestResponse());
       break;
 
     case FactoryRequestResponse::TDeleteDatabaseRequestResponse:
-      result = HandleResponse(aResponse.get_DeleteDatabaseRequestResponse());
+      HandleResponse(aResponse.get_DeleteDatabaseRequestResponse());
       break;
 
     default:
-      MOZ_CRASH("Unknown response type!");
+      return IPC_FAIL(this, "Unknown response type!");
   }
 
   auto request = GetOpenDBRequest();
-
   request->NoteComplete();
-
-  if (NS_WARN_IF(!result)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
 
   return IPC_OK();
 }
@@ -1451,14 +1438,14 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::RecvPermissionChallenge(
     RefPtr<WorkerPermissionChallenge> challenge = new WorkerPermissionChallenge(
         workerPrivate, this, mFactory.clonePtr(), std::move(aPrincipalInfo));
     if (!challenge->Dispatch()) {
-      return IPC_FAIL_NO_REASON(this);
+      QM_WARNONLY_TRY(OkIf(SendPermissionRetry()));
     }
     return IPC_OK();
   }
 
   QM_TRY_UNWRAP(auto principal,
                 mozilla::ipc::PrincipalInfoToPrincipal(aPrincipalInfo),
-                IPC_FAIL_NO_REASON(this));
+                IPC_FAIL(this, "PrincipalInfoToPrincipal failed!"));
 
   if (XRE_IsParentProcess()) {
     nsCOMPtr<nsIGlobalObject> global = mFactory->GetParentObject();
@@ -1470,9 +1457,7 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::RecvPermissionChallenge(
     if (NS_WARN_IF(!ownerElement)) {
       // If this fails, the page was navigated. Fail the permission check by
       // forcing an immediate retry.
-      if (!SendPermissionRetry()) {
-        return IPC_FAIL_NO_REASON(this);
-      }
+      QM_WARNONLY_TRY(OkIf(SendPermissionRetry()));
       return IPC_OK();
     }
 
@@ -1481,7 +1466,8 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::RecvPermissionChallenge(
                                                ownerElement, principal);
 
     QM_TRY_INSPECT(const PermissionRequestBase::PermissionValue& permission,
-                   helper->PromptIfNeeded(), IPC_FAIL_NO_REASON(this));
+                   helper->PromptIfNeeded(),
+                   IPC_FAIL(this, "PromptIfNeeded failed!"));
 
     MOZ_ASSERT(permission == PermissionRequestBase::kPermissionAllowed ||
                permission == PermissionRequestBase::kPermissionDenied ||
@@ -1728,7 +1714,7 @@ BackgroundDatabaseChild::RecvPBackgroundIDBVersionChangeTransactionConstructor(
                    IDBTransaction::Mode::VersionChange);
     Unused << IDBRequest::NextSerialNumber();
 
-    // If we return IPC_FAIL_NO_REASON(this) here, we crash...
+    // No reason to IPC_FAIL here.
     return IPC_OK();
   }
 
@@ -1886,7 +1872,7 @@ BackgroundDatabaseRequestChild::~BackgroundDatabaseRequestChild() {
   MOZ_COUNT_DTOR(indexedDB::BackgroundDatabaseRequestChild);
 }
 
-bool BackgroundDatabaseRequestChild::HandleResponse(nsresult aResponse) {
+void BackgroundDatabaseRequestChild::HandleResponse(nsresult aResponse) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(NS_FAILED(aResponse));
   MOZ_ASSERT(NS_ERROR_GET_MODULE(aResponse) == NS_ERROR_MODULE_DOM_INDEXEDDB);
@@ -1894,11 +1880,9 @@ bool BackgroundDatabaseRequestChild::HandleResponse(nsresult aResponse) {
   mRequest->Reset();
 
   DispatchErrorEvent(mRequest, aResponse);
-
-  return true;
 }
 
-bool BackgroundDatabaseRequestChild::HandleResponse(
+void BackgroundDatabaseRequestChild::HandleResponse(
     const CreateFileRequestResponse& aResponse) {
   AssertIsOnOwningThread();
 
@@ -1915,8 +1899,6 @@ bool BackgroundDatabaseRequestChild::HandleResponse(
                                        mutableFileActor->GetDOMObject())));
 
   mutableFileActor->ReleaseDOMObject();
-
-  return true;
 }
 
 mozilla::ipc::IPCResult BackgroundDatabaseRequestChild::Recv__delete__(
@@ -1925,22 +1907,18 @@ mozilla::ipc::IPCResult BackgroundDatabaseRequestChild::Recv__delete__(
 
   switch (aResponse.type()) {
     case DatabaseRequestResponse::Tnsresult:
-      if (!HandleResponse(aResponse.get_nsresult())) {
-        return IPC_FAIL_NO_REASON(this);
-      }
-      return IPC_OK();
+      HandleResponse(aResponse.get_nsresult());
+      break;
 
     case DatabaseRequestResponse::TCreateFileRequestResponse:
-      if (!HandleResponse(aResponse.get_CreateFileRequestResponse())) {
-        return IPC_FAIL_NO_REASON(this);
-      }
-      return IPC_OK();
+      HandleResponse(aResponse.get_CreateFileRequestResponse());
+      break;
 
     default:
-      MOZ_CRASH("Unknown response type!");
+      return IPC_FAIL(this, "Unknown response type!");
   }
 
-  MOZ_CRASH("Should never get here!");
+  return IPC_OK();
 }
 
 /*******************************************************************************
@@ -2617,7 +2595,7 @@ mozilla::ipc::IPCResult BackgroundRequestChild::Recv__delete__(
         break;
 
       default:
-        MOZ_CRASH("Unknown response type!");
+        return IPC_FAIL(this, "Unknown response type!");
     }
   }
 
@@ -2657,14 +2635,11 @@ mozilla::ipc::IPCResult BackgroundRequestChild::RecvPreprocess(
     }
 
     default:
-      MOZ_CRASH("Unknown params type!");
+      return IPC_FAIL(this, "Unknown params type!");
   }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    if (!SendContinue(rv)) {
-      return IPC_FAIL_NO_REASON(this);
-    }
-    return IPC_OK();
+    QM_WARNONLY_TRY(OkIf(SendContinue(rv)));
   }
 
   return IPC_OK();
@@ -3737,7 +3712,7 @@ mozilla::ipc::IPCResult BackgroundFileRequestChild::Recv__delete__(
         break;
 
       default:
-        MOZ_CRASH("Unknown response type!");
+        return IPC_FAIL(this, "Unknown response type!");
     }
   }
 

@@ -1929,6 +1929,16 @@ EventSourceImpl::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+EventSourceImpl::RegisterShutdownTask(nsITargetShutdownTask*) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+EventSourceImpl::UnregisterShutdownTask(nsITargetShutdownTask*) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 //-----------------------------------------------------------------------------
 // EventSourceImpl::nsIThreadRetargetableStreamListener
 //-----------------------------------------------------------------------------
@@ -1987,7 +1997,11 @@ already_AddRefed<EventSource> EventSource::Constructor(
   } else {
     // Worker side.
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-    MOZ_ASSERT(workerPrivate);
+    if (!workerPrivate) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return nullptr;
+    }
+
     cookieJarSettings = workerPrivate->CookieJarSettings();
   }
 

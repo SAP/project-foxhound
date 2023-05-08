@@ -41,6 +41,14 @@ class DXVA2Manager {
                               const gfx::IntRect& aRegion,
                               layers::Image** aOutImage) = 0;
 
+  virtual HRESULT WrapTextureWithImage(IMFSample* aVideoSample,
+                                       const gfx::IntRect& aRegion,
+                                       layers::Image** aOutImage) {
+    // Not implemented!
+    MOZ_CRASH("WrapTextureWithImage not implemented on this manager.");
+    return E_FAIL;
+  }
+
   virtual HRESULT CopyToBGRATexture(ID3D11Texture2D* aInTexture,
                                     ID3D11Texture2D** aOutTexture) {
     // Not implemented!
@@ -59,13 +67,14 @@ class DXVA2Manager {
 
   virtual ~DXVA2Manager();
 
-  virtual bool SupportsConfig(IMFMediaType* aType, float aFramerate) = 0;
+  virtual bool SupportsConfig(IMFMediaType* aInputType,
+                              IMFMediaType* aOutputType, float aFramerate) = 0;
 
   static bool IsNV12Supported(uint32_t aVendorID, uint32_t aDeviceID,
                               const nsAString& aDriverVersionString);
 
  protected:
-  Mutex mLock;
+  Mutex mLock MOZ_UNANNOTATED;
   DXVA2Manager();
 
   bool IsUnsupportedResolution(const uint32_t& aWidth, const uint32_t& aHeight,

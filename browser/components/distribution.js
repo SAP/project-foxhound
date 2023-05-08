@@ -359,10 +359,9 @@ DistributionCustomizer.prototype = {
       return;
     }
 
-    let ProfileAge = ChromeUtils.import(
-      "resource://gre/modules/ProfileAge.jsm",
-      {}
-    ).ProfileAge;
+    let { ProfileAge } = ChromeUtils.import(
+      "resource://gre/modules/ProfileAge.jsm"
+    );
     let profileAge = await ProfileAge();
     let resetDate = await profileAge.reset;
 

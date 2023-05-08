@@ -12,6 +12,7 @@
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/DispatcherTrait.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
+#include "mozilla/OriginTrials.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
 #include "nsStringFwd.h"
@@ -46,6 +47,12 @@ class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
 }  // namespace dom
 }  // namespace mozilla
+
+namespace JS {
+namespace loader {
+class ModuleLoaderBase;
+}  // namespace loader
+}  // namespace JS
 
 /**
  * See <https://developer.mozilla.org/en-US/docs/Glossary/Global_object>.
@@ -196,6 +203,9 @@ class nsIGlobalObject : public nsISupports,
    */
   virtual mozilla::StorageAccess GetStorageAccess();
 
+  // Returns the set of active origin trials for this global.
+  virtual mozilla::OriginTrials Trials() const = 0;
+
   // Returns a pointer to this object as an inner window if this is one or
   // nullptr otherwise.
   nsPIDOMWindowInner* AsInnerWindow();
@@ -237,6 +247,14 @@ class nsIGlobalObject : public nsISupports,
    * principal.
    */
   virtual uint32_t GetPrincipalHashValue() const { return 0; }
+
+  /**
+   * Get the module loader to use for this global, if any. By default this
+   * returns null.
+   */
+  virtual JS::loader::ModuleLoaderBase* GetModuleLoader(JSContext* aCx) {
+    return nullptr;
+  }
 
  protected:
   virtual ~nsIGlobalObject();

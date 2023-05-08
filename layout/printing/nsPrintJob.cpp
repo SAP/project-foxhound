@@ -9,7 +9,6 @@
 #include "nsDebug.h"
 #include "nsDocShell.h"
 #include "nsReadableUtils.h"
-#include "nsCRT.h"
 #include "nsQueryObject.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
@@ -47,19 +46,11 @@
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsService.h"
 #include "nsIPrintSession.h"
-#include "nsGfxCIID.h"
 #include "nsGkAtoms.h"
 #include "nsXPCOM.h"
 
 static const char sPrintSettingsServiceContractID[] =
     "@mozilla.org/gfx/printsettings-service;1";
-
-#include "nsThreadUtils.h"
-
-// Printing Prompts
-#include "nsIPrintingPromptService.h"
-static const char kPrintingPromptService[] =
-    "@mozilla.org/embedcomp/printingprompt-service;1";
 
 // Printing Timer
 #include "nsPagePrintTimer.h"
@@ -68,24 +59,17 @@ static const char kPrintingPromptService[] =
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 
-// Focus
-
 // Misc
 #include "gfxContext.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
 #include "mozilla/layout/RemotePrintJobChild.h"
 #include "nsISupportsUtils.h"
 #include "nsIScriptContext.h"
-#include "nsIDocumentObserver.h"
-#include "nsContentCID.h"
-#include "nsLayoutCID.h"
-#include "nsContentUtils.h"
-#include "nsLayoutUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "Text.h"
 
-#include "nsWidgetsCID.h"
 #include "nsIDeviceContextSpec.h"
 #include "nsDeviceContextSpecProxy.h"
 #include "nsViewManager.h"
@@ -94,7 +78,6 @@ static const char kPrintingPromptService[] =
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebBrowserChrome.h"
-#include "nsFrameManager.h"
 #include "mozilla/ReflowInput.h"
 #include "nsIContentViewer.h"
 #include "nsIDocumentViewerPrint.h"
@@ -104,9 +87,6 @@ static const char kPrintingPromptService[] =
 #include "mozilla/Components.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLFrameElement.h"
-#include "nsContentList.h"
-#include "xpcpublic.h"
-#include "nsVariant.h"
 #include "mozilla/ServoStyleSet.h"
 
 using namespace mozilla;
@@ -625,12 +605,6 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
   printData->mPrintDC = new nsDeviceContext();
   MOZ_TRY(printData->mPrintDC->InitForPrinting(devspec));
 
-  if (XRE_IsParentProcess() && !printData->mPrintDC->IsSyncPagePrinting()) {
-    RefPtr<nsPrintJob> self(this);
-    printData->mPrintDC->RegisterPageDoneCallback(
-        [self](nsresult aResult) { self->PageDone(aResult); });
-  }
-
   MOZ_TRY(EnablePOsForPrinting());
 
   if (!mIsCreatingPrintPreview) {
@@ -652,36 +626,7 @@ nsresult nsPrintJob::Print(Document* aSourceDoc,
                              ? mPrtPreview->mPrintObject->mDocument.get()
                              : aSourceDoc;
 
-  nsresult rv = CommonPrint(false, aPrintSettings, aWebProgressListener, doc);
-
-  if (!aPrintSettings) {
-    // This is temporary until after bug 1602410 lands.
-    return rv;
-  }
-
-  // Save the print settings if the user picked them.
-  // We should probably do this immediately after the user confirms their
-  // selection (that is, move this to nsPrintingPromptService::ShowPrintDialog,
-  // just after the nsIPrintDialogService::Show call returns).
-  bool printSilently;
-  aPrintSettings->GetPrintSilent(&printSilently);
-  if (!printSilently) {  // user picked settings
-    bool saveOnCancel;
-    aPrintSettings->GetSaveOnCancel(&saveOnCancel);
-    if ((rv != NS_ERROR_ABORT || saveOnCancel) &&
-        Preferences::GetBool("print.save_print_settings", false)) {
-      nsCOMPtr<nsIPrintSettingsService> printSettingsService =
-          do_GetService("@mozilla.org/gfx/printsettings-service;1");
-      printSettingsService->SavePrintSettingsToPrefs(
-          aPrintSettings, true,
-          nsIPrintSettings::kInitSaveAll &
-              ~nsIPrintSettings::kInitSaveToFileName);
-      printSettingsService->SavePrintSettingsToPrefs(
-          aPrintSettings, false, nsIPrintSettings::kInitSavePrinterName);
-    }
-  }
-
-  return rv;
+  return CommonPrint(false, aPrintSettings, aWebProgressListener, doc);
 }
 
 nsresult nsPrintJob::PrintPreview(Document* aSourceDoc,
@@ -1135,10 +1080,9 @@ nsresult nsPrintJob::SetupToPrintContent() {
 
   nsAutoString fileNameStr;
   // check to see if we are printing to a file
-  bool isPrintToFile = false;
-  printData->mPrintSettings->GetPrintToFile(&isPrintToFile);
-  if (isPrintToFile) {
-    // On some platforms The BeginDocument needs to know the name of the file.
+  if (printData->mPrintSettings->GetOutputDestination() ==
+      nsIPrintSettings::kOutputDestinationFile) {
+    // On some platforms the BeginDocument needs to know the name of the file.
     printData->mPrintSettings->GetToFileName(fileNameStr);
   }
 
@@ -2090,10 +2034,6 @@ bool nsPrintJob::PrintSheet(nsPrintObject* aPO, bool& aInRange) {
     return true;
   }
 
-  if (XRE_IsParentProcess() && !printData->mPrintDC->IsSyncPagePrinting()) {
-    mPagePrintTimer->WaitForRemotePrint();
-  }
-
   // Print the sheet
   // if a print job was cancelled externally, an EndPage or BeginPage may
   // fail and the failure is passed back here.
@@ -2224,11 +2164,6 @@ bool nsPrintJob::DonePrintingSheets(nsPrintObject* aPO, nsresult aResult) {
            aPO, gFrameTypesStr[aPO->mFrameType], PRT_YESNO(didPrint)));
       return false;
     }
-  }
-
-  if (XRE_IsParentProcess() && printData->mPrintDC &&
-      !printData->mPrintDC->IsSyncPagePrinting()) {
-    printData->mPrintDC->UnregisterPageDoneCallback();
   }
 
   if (NS_SUCCEEDED(aResult)) {
@@ -2396,8 +2331,7 @@ nsresult nsPrintJob::StartPagePrintTimer(const UniquePtr<nsPrintObject>& aPO) {
   if (!mPagePrintTimer) {
     // Get the delay time in between the printing of each page
     // this gives the user more time to press cancel
-    int32_t printPageDelay = 50;
-    mPrt->mPrintSettings->GetPrintPageDelay(&printPageDelay);
+    int32_t printPageDelay = mPrt->mPrintSettings->GetPrintPageDelay();
 
     nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint);
     NS_ENSURE_TRUE(cv, NS_ERROR_FAILURE);
