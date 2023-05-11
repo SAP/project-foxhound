@@ -103,6 +103,36 @@ async function runAllIntegrationTests(testFolder, env) {
   }
 }
 
+const INTEGRATION_TEST_PAGE_SOURCES = [
+  "index.html",
+  "iframe.html",
+  "script.js",
+  "onload.js",
+  "test-functions.js",
+  "query.js?x=1",
+  "query.js?x=2",
+  "query2.js?y=3",
+  "bundle.js",
+  "original.js",
+  "bundle-with-another-original.js",
+  "original-with-no-update.js",
+  "replaced-bundle.js",
+  "removed-original.js",
+  "named-eval.js",
+  // Webpack generated some extra sources:
+  "bootstrap 3b1a221408fdde86aa49",
+  "bootstrap a1ecee2f86e1d0ea3fb5",
+  "bootstrap 6fda1f7ea9ecbc1a2d5b",
+  // There is 3 occurences, one per target (main thread, worker and iframe).
+  // But there is even more source actors (named evals and duplicated script tags).
+  "same-url.sjs",
+  "same-url.sjs",
+];
+// The iframe one is only available when fission is enabled, or EFT
+if (isFissionEnabled() || isEveryFrameTargetEnabled()) {
+  INTEGRATION_TEST_PAGE_SOURCES.push("same-url.sjs");
+}
+
 /**
  * Install a Web Extension which will run a content script against any test page
  * served from https://example.com
@@ -138,4 +168,36 @@ async function installAndStartContentScriptExtension() {
   await extension.startup();
 
   return extension;
+}
+
+/**
+ * Return the text content for a given line in the Source Tree.
+ *
+ * @param {Object} dbg
+ * @param {Number} index
+ *        Line number in the source tree
+ */
+function getSourceTreeLabel(dbg, index) {
+  return (
+    findElement(dbg, "sourceNode", index)
+      .textContent.trim()
+      // There is some special whitespace character which aren't removed by trim()
+      .replace(/^[\s\u200b]*/g, "")
+  );
+}
+
+/**
+ * Find and assert the source tree node with the specified text
+ * exists on the source tree.
+ *
+ * @param {Object} dbg
+ * @param {String} text The node text displayed
+ */
+async function assertSourceTreeNode(dbg, text) {
+  let node = null;
+  await waitUntil(() => {
+    node = findSourceNodeWithText(dbg, text);
+    return !!node;
+  });
+  ok(!!node, `Source tree node with text "${text}" exists`);
 }

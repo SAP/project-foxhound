@@ -36,15 +36,18 @@ const { SerializableSet, Svc, Utils } = ChromeUtils.import(
   "resource://services-sync/util.js"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   OS: "resource://gre/modules/osfile.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
 });
 
 function ensureDirectory(path) {
-  let basename = OS.Path.dirname(path);
-  return OS.File.makeDir(basename, { from: OS.Constants.Path.profileDir });
+  let basename = lazy.OS.Path.dirname(path);
+  return lazy.OS.File.makeDir(basename, {
+    from: lazy.OS.Constants.Path.profileDir,
+  });
 }
 
 /**
@@ -1341,7 +1344,7 @@ SyncEngine.prototype = {
     // `getBatched` includes the list of IDs as a query parameter, so we need to fetch
     // records in chunks to avoid exceeding URI length limits.
     if (this.guidFetchBatchSize) {
-      for (let ids of PlacesUtils.chunkArray(
+      for (let ids of lazy.PlacesUtils.chunkArray(
         idsToBackfill,
         this.guidFetchBatchSize
       )) {

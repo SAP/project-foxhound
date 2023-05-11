@@ -24,6 +24,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_bidi.h"
 #include "mozilla/StaticPrefs_canvas.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
@@ -408,13 +409,10 @@ void CrashStatsLogForwarder::CrashAction(LogReason aReason) {
 #  define GFX_PREF_CORETEXT_SHAPING "gfx.font_rendering.coretext.enabled"
 #endif
 
-#define BIDI_NUMERAL_PREF "bidi.numeral"
-
 #define FONT_VARIATIONS_PREF "layout.css.font-variations.enabled"
 
 static const char* kObservedPrefs[] = {"gfx.downloadable_fonts.",
-                                       "gfx.font_rendering.", BIDI_NUMERAL_PREF,
-                                       nullptr};
+                                       "gfx.font_rendering.", nullptr};
 
 static void FontPrefChanged(const char* aPref, void* aData) {
   MOZ_ASSERT(aPref);
@@ -447,13 +445,6 @@ gfxPlatform::gfxPlatform()
       mCompositorBackend(layers::LayersBackend::LAYERS_NONE),
       mScreenDepth(0) {
   mAllowDownloadableFonts = UNINITIALIZED_VALUE;
-  mFallbackUsesCmaps = UNINITIALIZED_VALUE;
-
-  mWordCacheCharLimit = UNINITIALIZED_VALUE;
-  mWordCacheMaxEntries = UNINITIALIZED_VALUE;
-  mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
-  mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
-  mBidiNumeralOption = UNINITIALIZED_VALUE;
 
   InitBackendPrefs(GetBackendPrefs());
   VRManager::ManagerInit();
@@ -1758,53 +1749,23 @@ bool gfxPlatform::DownloadableFontsEnabled() {
 }
 
 bool gfxPlatform::UseCmapsDuringSystemFallback() {
-  if (mFallbackUsesCmaps == UNINITIALIZED_VALUE) {
-    mFallbackUsesCmaps =
-        Preferences::GetBool(GFX_PREF_FALLBACK_USE_CMAPS, false);
-  }
-
-  return mFallbackUsesCmaps;
+  return StaticPrefs::gfx_font_rendering_fallback_always_use_cmaps();
 }
 
 bool gfxPlatform::OpenTypeSVGEnabled() {
-  if (mOpenTypeSVGEnabled == UNINITIALIZED_VALUE) {
-    mOpenTypeSVGEnabled = Preferences::GetBool(GFX_PREF_OPENTYPE_SVG, false);
-  }
-
-  return mOpenTypeSVGEnabled > 0;
+  return StaticPrefs::gfx_font_rendering_opentype_svg_enabled();
 }
 
 uint32_t gfxPlatform::WordCacheCharLimit() {
-  if (mWordCacheCharLimit == UNINITIALIZED_VALUE) {
-    mWordCacheCharLimit =
-        Preferences::GetInt(GFX_PREF_WORD_CACHE_CHARLIMIT, 32);
-    if (mWordCacheCharLimit < 0) {
-      mWordCacheCharLimit = 32;
-    }
-  }
-
-  return uint32_t(mWordCacheCharLimit);
+  return StaticPrefs::gfx_font_rendering_wordcache_charlimit();
 }
 
 uint32_t gfxPlatform::WordCacheMaxEntries() {
-  if (mWordCacheMaxEntries == UNINITIALIZED_VALUE) {
-    mWordCacheMaxEntries =
-        Preferences::GetInt(GFX_PREF_WORD_CACHE_MAXENTRIES, 10000);
-    if (mWordCacheMaxEntries < 0) {
-      mWordCacheMaxEntries = 10000;
-    }
-  }
-
-  return uint32_t(mWordCacheMaxEntries);
+  return StaticPrefs::gfx_font_rendering_wordcache_maxentries();
 }
 
 bool gfxPlatform::UseGraphiteShaping() {
-  if (mGraphiteShapingEnabled == UNINITIALIZED_VALUE) {
-    mGraphiteShapingEnabled =
-        Preferences::GetBool(GFX_PREF_GRAPHITE_SHAPING, false);
-  }
-
-  return mGraphiteShapingEnabled;
+  return StaticPrefs::gfx_font_rendering_graphite_enabled();
 }
 
 bool gfxPlatform::IsFontFormatSupported(uint32_t aFormatFlags) {
@@ -2207,11 +2168,8 @@ void gfxPlatform::ShutdownCMS() {
   gCMSInitialized = false;
 }
 
-int32_t gfxPlatform::GetBidiNumeralOption() {
-  if (mBidiNumeralOption == UNINITIALIZED_VALUE) {
-    mBidiNumeralOption = Preferences::GetInt(BIDI_NUMERAL_PREF, 0);
-  }
-  return mBidiNumeralOption;
+uint32_t gfxPlatform::GetBidiNumeralOption() {
+  return StaticPrefs::bidi_numeral();
 }
 
 /* static */
@@ -2249,16 +2207,9 @@ void gfxPlatform::FontsPrefsChanged(const char* aPref) {
   NS_ASSERTION(aPref != nullptr, "null preference");
   if (!strcmp(GFX_DOWNLOADABLE_FONTS_ENABLED, aPref)) {
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
-  } else if (!strcmp(GFX_PREF_FALLBACK_USE_CMAPS, aPref)) {
-    mFallbackUsesCmaps = UNINITIALIZED_VALUE;
-  } else if (!strcmp(GFX_PREF_WORD_CACHE_CHARLIMIT, aPref)) {
-    mWordCacheCharLimit = UNINITIALIZED_VALUE;
-    FlushFontAndWordCaches();
-  } else if (!strcmp(GFX_PREF_WORD_CACHE_MAXENTRIES, aPref)) {
-    mWordCacheMaxEntries = UNINITIALIZED_VALUE;
-    FlushFontAndWordCaches();
-  } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
-    mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
+  } else if (!strcmp(GFX_PREF_WORD_CACHE_CHARLIMIT, aPref) ||
+             !strcmp(GFX_PREF_WORD_CACHE_MAXENTRIES, aPref) ||
+             !strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
     FlushFontAndWordCaches();
   } else if (
 #if defined(XP_MACOSX)
@@ -2266,10 +2217,7 @@ void gfxPlatform::FontsPrefsChanged(const char* aPref) {
 #endif
       !strcmp("gfx.font_rendering.ahem_antialias_none", aPref)) {
     FlushFontAndWordCaches();
-  } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
-    mBidiNumeralOption = UNINITIALIZED_VALUE;
   } else if (!strcmp(GFX_PREF_OPENTYPE_SVG, aPref)) {
-    mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
     gfxFontCache::GetCache()->AgeAllGenerations();
     gfxFontCache::GetCache()->NotifyGlyphsChanged();
   }
@@ -2744,6 +2692,43 @@ void gfxPlatform::InitWebRenderConfig() {
     gfxVars::SetHwDecodedVideoZeroCopy(true);
   }
 
+  bool reuseDecoderDevice = false;
+  if (StaticPrefs::gfx_direct3d11_reuse_decoder_device_AtStartup()) {
+    reuseDecoderDevice = true;
+
+    if (reuseDecoderDevice &&
+        !StaticPrefs::
+            gfx_direct3d11_reuse_decoder_device_force_enabled_AtStartup()) {
+      nsCString failureId;
+      int32_t status;
+      const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+      if (NS_FAILED(gfxInfo->GetFeatureStatus(
+              nsIGfxInfo::FEATURE_REUSE_DECODER_DEVICE, failureId, &status))) {
+        FeatureState& feature =
+            gfxConfig::GetFeature(Feature::REUSE_DECODER_DEVICE);
+        feature.DisableByDefault(FeatureStatus::BlockedNoGfxInfo,
+                                 "gfxInfo is broken",
+                                 "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
+        reuseDecoderDevice = false;
+      } else {
+        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
+          FeatureState& feature =
+              gfxConfig::GetFeature(Feature::REUSE_DECODER_DEVICE);
+          feature.DisableByDefault(FeatureStatus::Blocked,
+                                   "Blocklisted by gfxInfo", failureId);
+          reuseDecoderDevice = false;
+        }
+      }
+    }
+  }
+
+  if (reuseDecoderDevice) {
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::REUSE_DECODER_DEVICE);
+    feature.EnableByDefault();
+    gfxVars::SetReuseDecoderDevice(true);
+  }
+
   if (Preferences::GetBool("gfx.webrender.flip-sequential", false)) {
     if (UseWebRender() && gfxVars::UseWebRenderANGLE()) {
       gfxVars::SetUseWebRenderFlipSequentialWin(true);
@@ -2859,6 +2844,23 @@ void gfxPlatform::InitWebGLConfig() {
     gfxInfo->GetAdapterDeviceID(renderer);
     if (renderer.Find("Adreno (TM) 630") != -1) {
       gfxVars::SetAllowEglRbab(false);
+    }
+  }
+
+  if (kIsWayland || kIsX11) {
+    nsCString discardFailureId;
+    int32_t status;
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::DMABUF_SURFACE_EXPORT);
+    if (NS_FAILED(
+            gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DMABUF_SURFACE_EXPORT,
+                                      discardFailureId, &status)) ||
+        status != nsIGfxInfo::FEATURE_STATUS_OK) {
+      feature.DisableByDefault(FeatureStatus::Blocked, "Blocklisted by gfxInfo",
+                               discardFailureId);
+      gfxVars::SetUseDMABufSurfaceExport(false);
+    } else {
+      feature.EnableByDefault();
     }
   }
 }

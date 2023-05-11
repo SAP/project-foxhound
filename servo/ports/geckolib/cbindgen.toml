@@ -103,7 +103,6 @@ include = [
   "FontFamily",
   "FontFamilyNameSyntax",
   "OverflowWrap",
-  "TimingFunction",
   "OffsetPath",
   "OffsetRotate",
   "UnicodeRange",
@@ -112,8 +111,10 @@ include = [
   "OverscrollBehavior",
   "ScrollSnapAlign",
   "ScrollSnapAxis",
+  "ScrollSnapStop",
   "ScrollSnapStrictness",
   "ScrollSnapType",
+  "ScrollTimelineName",
   "OverflowAnchor",
   "OverflowClipBox",
   "Resize",
@@ -244,6 +245,8 @@ include = [
   "ScrollbarGutter",
   "ScrollDirection",
   "HyphenateCharacter",
+  "ComputedLinearStop",
+  "PiecewiseLinearFunction"
 ]
 item_types = ["enums", "structs", "unions", "typedefs", "functions", "constants"]
 renaming_overrides_prefixing = true
@@ -511,7 +514,6 @@ renaming_overrides_prefixing = true
 """
 
 "GenericColor" = """
-  static inline StyleGenericColor CurrentColor();
   static inline StyleGenericColor FromColor(nscolor);
   static inline StyleGenericColor Black();
   static inline StyleGenericColor White();
@@ -807,6 +809,12 @@ renaming_overrides_prefixing = true
   StyleGenericPositionOrAuto(): tag(Tag::Auto) {}
 """
 
+"TimingFunction" = """
+ public:
+  // The implementation of IPC LayersMessages needs this to be public.
+  StyleTimingFunction() : tag(Tag::Keyword) { ::new (&keyword._0) (StyleTimingKeyword) (StyleTimingKeyword::Linear); }
+"""
+
 "GenericImage" = """
  public:
   // Returns the intrinsic resolution of the image.
@@ -895,4 +903,27 @@ renaming_overrides_prefixing = true
 "TimelineOrKeyframesName" = """
  public:
   inline nsAtom* AsAtom() const;
+"""
+
+"FontWeight" = """
+ SERVO_FIXED_POINT_HELPERS(StyleFontWeight, uint16_t, StyleFONT_WEIGHT_FRACTION_BITS);
+
+ inline bool IsBold() const;
+"""
+
+"FontStyle" = """
+ SERVO_FIXED_POINT_HELPERS(StyleFontStyle, int16_t, StyleFONT_STYLE_FRACTION_BITS);
+
+ inline bool IsItalic() const;
+ inline bool IsOblique() const;
+ inline float ObliqueAngle() const;
+"""
+
+"FontStretch" = """
+ SERVO_FIXED_POINT_HELPERS(StyleFontStretch, uint16_t, StyleFONT_STRETCH_FRACTION_BITS);
+"""
+
+"ScrollTimelineName" = """
+ public:
+  StyleScrollTimelineName(): _0(RefPtr<nsAtom>(nsGkAtoms::_empty).forget()) {}
 """

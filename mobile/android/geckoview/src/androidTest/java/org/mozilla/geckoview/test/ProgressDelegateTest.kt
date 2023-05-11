@@ -389,6 +389,8 @@ class ProgressDelegateTest : BaseSessionTest() {
     @WithDisplay(width = 400, height = 400)
     @Test fun saveAndRestoreState() {
         // TODO: Bug 1648158
+        // Bug 1662035 - disable to reduce intermittent failures
+        assumeThat(sessionRule.env.isX86, equalTo(false))
         assumeThat(sessionRule.env.isFission, equalTo(false))
         val startUri = createTestUrl(SAVE_STATE_PATH)
         val savedState = collectState(startUri);

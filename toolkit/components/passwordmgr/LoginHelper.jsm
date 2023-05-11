@@ -18,8 +18,9 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "OSKeyStore",
   "resource://gre/modules/OSKeyStore.jsm"
 );
@@ -94,7 +95,7 @@ class ImportRowProcessor {
       });
 
       if (existingLogins.length) {
-        log.debug("maybeImportLogins: Found existing login with GUID");
+        lazy.log.debug("maybeImportLogins: Found existing login with GUID");
         // There should only be one `guid` match.
         let existingLogin = existingLogins[0].QueryInterface(
           Ci.nsILoginMetaInfo
@@ -357,7 +358,7 @@ class ImportRowProcessor {
 /**
  * Contains functions shared by different Login Manager components.
  */
-this.LoginHelper = {
+const LoginHelper = {
   debug: null,
   enabled: null,
   storageEnabled: null,
@@ -463,7 +464,7 @@ this.LoginHelper = {
         "signon.testOnlyUserHasInteractedWithDocument",
         false
       );
-      log.debug(
+      lazy.log.debug(
         "updateSignonPrefs, using pref value for testOnlyUserHasInteractedWithDocument",
         this.testOnlyUserHasInteractedWithDocument
       );
@@ -661,7 +662,7 @@ this.LoginHelper = {
     } catch (e) {
       // bug 159484 - disallow url types that don't support a hostPort.
       // (although we handle "javascript:..." as a special case above.)
-      log.warn("Couldn't parse origin for", uriString, e);
+      lazy.log.warn("Couldn't parse origin for", uriString, e);
       realm = null;
     }
 
@@ -1064,7 +1065,7 @@ this.LoginHelper = {
     }
 
     if (!preferredOriginScheme && resolveBy.includes("scheme")) {
-      log.warn(
+      lazy.log.warn(
         "dedupeLogins: Deduping with a scheme preference but couldn't " +
           "get the preferred origin scheme."
       );
@@ -1130,7 +1131,7 @@ this.LoginHelper = {
               return loginURI.scheme == preferredOriginScheme;
             } catch (ex) {
               // Some URLs aren't valid nsIURI (e.g. chrome://FirefoxAccounts)
-              log.debug(
+              lazy.log.debug(
                 "dedupeLogins/shouldReplaceExisting: Error comparing schemes:",
                 existingLogin.origin,
                 login.origin,
@@ -1249,7 +1250,7 @@ this.LoginHelper = {
    *                    be treated as a password input
    */
   isPasswordFieldType(element, { ignoreConnect = false } = {}) {
-    if (ChromeUtils.getClassName(element) !== "HTMLInputElement") {
+    if (!HTMLInputElement.isInstance(element)) {
       return false;
     }
 
@@ -1287,7 +1288,7 @@ this.LoginHelper = {
    *                    of the username types.
    */
   isUsernameFieldType(element, { ignoreConnect = false } = {}) {
-    if (ChromeUtils.getClassName(element) !== "HTMLInputElement") {
+    if (!HTMLInputElement.isInstance(element)) {
       return false;
     }
 
@@ -1643,7 +1644,7 @@ this.LoginHelper = {
     }
     // Use the OS auth dialog if there is no primary password
     if (!token.hasPassword && OSReauthEnabled) {
-      let result = await OSKeyStore.ensureLoggedIn(
+      let result = await lazy.OSKeyStore.ensureLoggedIn(
         messageText,
         captionText,
         browser.ownerGlobal,
@@ -1780,7 +1781,7 @@ this.LoginHelper = {
       // has been used to visit other pages (ie, has a history),
       // assume it'll stick around and *don't* use the opener.
       if (chromeDoc.getAttribute("chromehidden") && !browser.canGoBack) {
-        log.debug("Using opener window for prompt.");
+        lazy.log.debug("Using opener window for prompt.");
         return openerBrowser;
       }
     }
@@ -1795,7 +1796,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "security.insecure_field_warning.contextual.enabled"
 );
 
-XPCOMUtils.defineLazyGetter(this, "log", () => {
+XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   let processName =
     Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT
       ? "Main"

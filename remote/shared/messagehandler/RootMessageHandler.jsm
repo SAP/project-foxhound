@@ -10,11 +10,15 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const { MessageHandler } = ChromeUtils.import(
+  "chrome://remote/content/shared/messagehandler/MessageHandler.jsm"
+);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   FrameTransport:
     "chrome://remote/content/shared/messagehandler/transports/FrameTransport.jsm",
-  MessageHandler:
-    "chrome://remote/content/shared/messagehandler/MessageHandler.jsm",
   SessionData:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.jsm",
   WindowGlobalMessageHandler:
@@ -62,8 +66,8 @@ class RootMessageHandler extends MessageHandler {
   constructor(sessionId) {
     super(sessionId, null);
 
-    this._frameTransport = new FrameTransport(this);
-    this._sessionData = new SessionData(this);
+    this._frameTransport = new lazy.FrameTransport(this);
+    this._sessionData = new lazy.SessionData(this);
   }
 
   get sessionData() {
@@ -98,7 +102,7 @@ class RootMessageHandler extends MessageHandler {
    */
   forwardCommand(command) {
     switch (command.destination.type) {
-      case WindowGlobalMessageHandler.type:
+      case lazy.WindowGlobalMessageHandler.type:
         return this._frameTransport.forwardCommand(command);
       default:
         throw new Error(
@@ -145,7 +149,7 @@ class RootMessageHandler extends MessageHandler {
     }
 
     const destination = {
-      type: WindowGlobalMessageHandler.type,
+      type: lazy.WindowGlobalMessageHandler.type,
       contextDescriptor,
     };
 

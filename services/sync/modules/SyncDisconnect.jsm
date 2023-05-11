@@ -8,24 +8,31 @@
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Log: "resource://gre/modules/Log.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
   Utils: "resource://services-sync/util.js",
 });
 
-XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
+
+XPCOMUtils.defineLazyGetter(lazy, "FxAccountsCommon", function() {
   return ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 });
 
-this.EXPORTED_SYMBOLS = ["SyncDisconnectInternal", "SyncDisconnect"];
+const EXPORTED_SYMBOLS = ["SyncDisconnectInternal", "SyncDisconnect"];
 
-this.SyncDisconnectInternal = {
+const SyncDisconnectInternal = {
   lockRetryInterval: 1000, // wait 1 seconds before trying for the lock again.
   lockRetryCount: 120, // Try 120 times (==2 mins) before giving up in disgust.
   promiseDisconnectFinished: null, // If we are sanitizing, a promise for completion.
@@ -43,7 +50,7 @@ this.SyncDisconnectInternal = {
   // but note that Sync probably remains locked in this case regardless.)
   async promiseNotSyncing(abortController) {
     let weave = this.getWeave();
-    let log = Log.repository.getLogger("Sync.Service");
+    let log = lazy.Log.repository.getLogger("Sync.Service");
     // We might be syncing - poll for up to 2 minutes waiting for the lock.
     // (2 minutes seems extreme, but should be very rare.)
     return new Promise(resolve => {
@@ -70,7 +77,7 @@ this.SyncDisconnectInternal = {
           return;
         }
         log.debug("Waiting a couple of seconds to get the sync lock");
-        setTimeout(checkLock, this.lockRetryInterval);
+        lazy.setTimeout(checkLock, this.lockRetryInterval);
       };
       checkLock();
     });
@@ -81,7 +88,7 @@ this.SyncDisconnectInternal = {
     let weave = this.getWeave();
     // Get the sync logger - if stuff goes wrong it can be useful to have that
     // recorded in the sync logs.
-    let log = Log.repository.getLogger("Sync.Service");
+    let log = lazy.Log.repository.getLogger("Sync.Service");
     log.info("Starting santitize of Sync data");
     try {
       // We clobber data for all Sync engines that are enabled.
@@ -102,7 +109,7 @@ this.SyncDisconnectInternal = {
       // Reset the pref which is used to show a warning when a different user
       // signs in - this is no longer a concern now that we've removed the
       // data from the profile.
-      Services.prefs.clearUserPref(FxAccountsCommon.PREF_LAST_FXA_USER);
+      Services.prefs.clearUserPref(lazy.FxAccountsCommon.PREF_LAST_FXA_USER);
 
       log.info("Finished wiping sync data");
     } catch (ex) {
@@ -123,10 +130,10 @@ this.SyncDisconnectInternal = {
       // sanitize everything other than "open windows" (and we don't do that
       // because it may confuse the user - they probably want to see
       // about:prefs with the disconnection reflected.
-      let itemsToClear = Object.keys(Sanitizer.items).filter(
+      let itemsToClear = Object.keys(lazy.Sanitizer.items).filter(
         k => k != "openWindows"
       );
-      await Sanitizer.sanitize(itemsToClear);
+      await lazy.Sanitizer.sanitize(itemsToClear);
     } catch (ex) {
       console.error("Failed to sanitize other data", ex);
     }
@@ -139,7 +146,7 @@ this.SyncDisconnectInternal = {
     let Weave = this.getWeave();
     await Weave.Service.promiseInitialized;
     await Weave.Service.startOver();
-    await fxAccounts.signOut();
+    await lazy.fxAccounts.signOut();
     // Sync may have been disabled if we santized, so re-enable it now or
     // else the user will be unable to resync should they sign in before a
     // restart.
@@ -162,12 +169,12 @@ this.SyncDisconnectInternal = {
     // So we do this by using an AbortController and passing that to the
     // function that waits for the sync lock - it will immediately resolve
     // if the abort controller is aborted.
-    let log = Log.repository.getLogger("Sync.Service");
+    let log = lazy.Log.repository.getLogger("Sync.Service");
 
     // If the master-password is locked then we will fail to fully sanitize,
     // so prompt for that now. If canceled, we just abort now.
     log.info("checking master-password state");
-    if (!Utils.ensureMPUnlocked()) {
+    if (!lazy.Utils.ensureMPUnlocked()) {
       log.warn(
         "The master-password needs to be unlocked to fully disconnect from sync"
       );
@@ -211,7 +218,7 @@ this.SyncDisconnectInternal = {
       abortController.abort();
       return promiseDisconnectFinished;
     };
-    AsyncShutdown.quitApplicationGranted.addBlocker(
+    lazy.AsyncShutdown.quitApplicationGranted.addBlocker(
       "SyncDisconnect: removing requested data",
       shutdownBlocker
     );
@@ -222,11 +229,11 @@ this.SyncDisconnectInternal = {
 
     // sanitize worked so remove our blocker - it's a noop if the blocker
     // did call us.
-    AsyncShutdown.quitApplicationGranted.removeBlocker(shutdownBlocker);
+    lazy.AsyncShutdown.quitApplicationGranted.removeBlocker(shutdownBlocker);
   },
 };
 
-this.SyncDisconnect = {
+const SyncDisconnect = {
   get promiseDisconnectFinished() {
     return SyncDisconnectInternal.promiseDisconnectFinished;
   },

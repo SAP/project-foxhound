@@ -17,8 +17,8 @@ To get started, add `rust_decimal` and optionally `rust_decimal_macros` to your 
 
 ```toml
 [dependencies]
-rust_decimal = "1.23"
-rust_decimal_macros = "1.23"
+rust_decimal = "1.25"
+rust_decimal_macros = "1.25"
 ```
 
 ## Usage
@@ -79,6 +79,7 @@ assert_eq!(total.to_string(), "27.26");
 * [c-repr](#c-repr)
 * [legacy-ops](#legacy-ops)
 * [maths](#maths)
+* [rkyv](#rkyv)
 * [rocket-traits](#rocket-traits)
 * [rust-fuzz](#rust-fuzz)
 * [std](#std)
@@ -139,6 +140,17 @@ Documentation detailing the additional functions can be found on the
 Please note that `ln` and `log10` will panic on invalid input with `checked_ln` and `checked_log10` the preferred functions
 to curb against this. When the `maths` feature was first developed the library would return `0` on invalid input. To re-enable this
 non-panicking behavior, please use the feature: `maths-nopanic`.
+
+### `rand`
+
+Implements `rand::distributions::Distribution<Decimal>` to allow the creation of random instances.
+
+Note: When using `rand::Rng` trait to generate a decimal between a range of two other decimals, the scale of the randomly-generated
+decimal will be the same as the scale of the input decimals (or, if the inputs have different scales, the higher of the two).
+
+### `rkyv`
+Enables [rkyv](https://github.com/rkyv/rkyv) serialization for `Decimal`.
+Supports rkyv's safe API when the `rkyv-safe` feature is enabled as well.
 
 ### `rocket-traits`
 
@@ -234,8 +246,8 @@ Please refer to the [Build document](BUILD.md) for more information on building 
 
 ## Minimum Rust Compiler Version
 
-The current _minimum_ compiler version is [`1.54.0`](https://github.com/rust-lang/rust/blob/master/RELEASES.md#version-1540-2021-07-29)
-which was released on `2021-07-29`.
+The current _minimum_ compiler version is [`1.56.0`](https://github.com/rust-lang/rust/blob/master/RELEASES.md#version-1560-2021-10-21)
+which was released on `2021-10-21`.
 
 This library maintains support for rust compiler versions that are 4 minor versions away from the current stable rust compiler version.
 For example, if the current stable compiler version is `1.50.0` then we will guarantee support up to and including `1.46.0`.

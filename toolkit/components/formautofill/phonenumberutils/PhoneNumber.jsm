@@ -9,16 +9,21 @@
 
 var EXPORTED_SYMBOLS = ["PhoneNumber"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PHONE_NUMBER_META_DATA",
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+const { PHONE_NUMBER_META_DATA } = ChromeUtils.import(
   "resource://autofill/phonenumberutils/PhoneNumberMetaData.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PhoneNumberNormalizer",
-  "resource://autofill/phonenumberutils/PhoneNumberNormalizer.jsm"
-);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  PhoneNumberNormalizer:
+    "resource://autofill/phonenumberutils/PhoneNumberNormalizer.jsm",
+});
+
 var PhoneNumber = (function(dataBase) {
   const MAX_PHONE_NUMBER_LENGTH = 50;
   const NON_ALPHA_CHARS = /[^a-zA-Z]/g;
@@ -394,7 +399,7 @@ var PhoneNumber = (function(dataBase) {
     let ret;
 
     // Remove formating characters and whitespace.
-    number = PhoneNumberNormalizer.Normalize(number);
+    number = lazy.PhoneNumberNormalizer.Normalize(number);
 
     // If there is no defaultRegion or the defaultRegion is the global region,
     // we can't parse international access codes.

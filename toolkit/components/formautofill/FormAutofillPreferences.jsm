@@ -25,13 +25,12 @@ const { FormAutofill } = ChromeUtils.import(
 const { FormAutofillUtils } = ChromeUtils.import(
   "resource://autofill/FormAutofillUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
+const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "OSKeyStore",
   "resource://gre/modules/OSKeyStore.jsm"
 );
@@ -49,9 +48,6 @@ const {
 } = FormAutofillUtils;
 // Add credit card enabled flag in telemetry environment for recording the number of
 // users who disable/enable the credit card autofill feature.
-
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -247,7 +243,7 @@ FormAutofillPreferences.prototype = {
       this.refs.creditCardAutofillCheckbox = creditCardAutofillCheckbox;
       this.refs.savedCreditCardsBtn = savedCreditCardsBtn;
 
-      if (OSKeyStore.canReauth()) {
+      if (lazy.OSKeyStore.canReauth()) {
         let reauthLearnMoreURL = `${creditCardLearnMoreURL}#w_require-authentication-for-autofill`;
         let reauth = document.createXULElement("hbox");
         let reauthCheckboxGroup = document.createXULElement("hbox");
@@ -259,6 +255,7 @@ FormAutofillPreferences.prototype = {
         reauthCheckboxGroup.classList.add("indent");
         reauthLearnMore.classList.add("learnMore");
         reauthCheckbox.classList.add("tail-with-learn-more");
+        reauthCheckbox.setAttribute("flex", "1");
         reauthCheckbox.disabled = !FormAutofill.isAutofillCreditCardsEnabled;
 
         reauth.id = "creditCardReauthenticate";
@@ -328,7 +325,7 @@ FormAutofillPreferences.prototype = {
             this.refs.reauthCheckbox.disabled = !target.checked;
           }
         } else if (target == this.refs.reauthCheckbox) {
-          if (!OSKeyStore.canReauth()) {
+          if (!lazy.OSKeyStore.canReauth()) {
             break;
           }
 
@@ -349,7 +346,7 @@ FormAutofillPreferences.prototype = {
             "chrome://branding/locale/brand.properties"
           );
           let win = target.ownerGlobal.docShell.chromeEventHandler.ownerGlobal;
-          let loggedIn = await OSKeyStore.ensureLoggedIn(
+          let loggedIn = await lazy.OSKeyStore.ensureLoggedIn(
             messageText,
             brandBundle.GetStringFromName("brandFullName"),
             win,

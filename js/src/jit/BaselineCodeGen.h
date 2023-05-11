@@ -11,6 +11,7 @@
 #include "jit/BytecodeAnalysis.h"
 #include "jit/FixedList.h"
 #include "jit/MacroAssembler.h"
+#include "jit/PerfSpewer.h"
 
 namespace js {
 
@@ -120,8 +121,7 @@ class BaselineCodeGen {
 
   void prepareVMCall();
 
-  void storeFrameSizeAndPushDescriptor(uint32_t argSize, Register scratch1,
-                                       Register scratch2);
+  void storeFrameSizeAndPushDescriptor(uint32_t argSize, Register scratch);
 
   enum class CallVMPhase { BeforePushingLocals, AfterPushingLocals };
   bool callVMInternal(VMFunctionId id, RetAddrEntry::Kind kind,
@@ -380,6 +380,10 @@ class BaselineCompiler final : private BaselineCompilerCodeGen {
   CodeOffset profilerPushToggleOffset_;
 
   CodeOffset traceLoggerScriptTextIdOffset_;
+
+#if defined(JS_ION_PERF)
+  BaselinePerfSpewer perfSpewer_;
+#endif
 
  public:
   BaselineCompiler(JSContext* cx, TempAllocator& alloc, JSScript* script);

@@ -29,6 +29,7 @@
 #include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy, js::ToWindowIfWindowProxy
 #include "js/friend/XrayJitInfo.h"  // js::jit::GetXrayJitInfo, JS::XrayJitInfo
 #include "js/GCAPI.h"               // JS::AutoSuppressGCAnalysis
+#include "js/Printf.h"              // JS_smprintf
 #include "js/RegExpFlags.h"         // JS::RegExpFlags
 #include "js/ScalarType.h"          // js::Scalar::Type
 #include "js/Wrapper.h"
@@ -107,6 +108,7 @@ size_t js::jit::NumInputsForCacheKind(CacheKind kind) {
     case CacheKind::BindName:
     case CacheKind::Call:
     case CacheKind::OptimizeSpreadCall:
+    case CacheKind::CloseIter:
       return 1;
     case CacheKind::Compare:
     case CacheKind::GetElem:
@@ -1014,6 +1016,10 @@ void GetPropIRGenerator::attachMegamorphicNativeSlot(ObjOperandId objId,
                                                      jsid id) {
   MOZ_ASSERT(mode_ == ICState::Mode::Megamorphic);
 
+  // We don't support GetBoundName because environment objects have
+  // lookupProperty hooks and GetBoundName is usually not megamorphic.
+  MOZ_ASSERT(JSOp(*pc_) != JSOp::GetBoundName);
+
   if (cacheKind_ == CacheKind::GetProp ||
       cacheKind_ == CacheKind::GetPropSuper) {
     writer.megamorphicLoadSlotResult(objId, id.toAtom()->asPropertyName());
@@ -1042,7 +1048,8 @@ AttachDecision GetPropIRGenerator::tryAttachNative(HandleObject obj,
     case CanAttachReadSlot: {
       auto* nobj = &obj->as<NativeObject>();
 
-      if (mode_ == ICState::Mode::Megamorphic) {
+      if (mode_ == ICState::Mode::Megamorphic &&
+          JSOp(*pc_) != JSOp::GetBoundName) {
         attachMegamorphicNativeSlot(objId, id);
         return AttachDecision::Attach;
       }
@@ -1271,7 +1278,7 @@ AttachDecision GetPropIRGenerator::tryAttachCrossCompartmentWrapper(
 }
 
 static JSObject* NewWrapperWithObjectShape(JSContext* cx,
-                                           HandleNativeObject obj);
+                                           Handle<NativeObject*> obj);
 
 static bool GetXrayExpandoShapeWrapper(JSContext* cx, HandleObject xray,
                                        MutableHandleObject wrapper) {
@@ -1280,7 +1287,7 @@ static bool GetXrayExpandoShapeWrapper(JSContext* cx, HandleObject xray,
     NativeObject* holder = &v.toObject().as<NativeObject>();
     v = holder->getFixedSlot(GetXrayJitInfo()->holderExpandoSlot);
     if (v.isObject()) {
-      RootedNativeObject expando(
+      Rooted<NativeObject*> expando(
           cx, &UncheckedUnwrap(&v.toObject())->as<NativeObject>());
       wrapper.set(NewWrapperWithObjectShape(cx, expando));
       return wrapper != nullptr;
@@ -2660,6 +2667,9 @@ AttachDecision GetPropIRGenerator::tryAttachProxyElement(HandleObject obj,
 }
 
 void GetPropIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", val_);
@@ -2716,7 +2726,7 @@ void SetPropIRGenerator::maybeEmitIdGuard(jsid id) {
 GetNameIRGenerator::GetNameIRGenerator(JSContext* cx, HandleScript script,
                                        jsbytecode* pc, ICState state,
                                        HandleObject env,
-                                       HandlePropertyName name)
+                                       Handle<PropertyName*> name)
     : IRGenerator(cx, script, pc, CacheKind::GetName, state),
       env_(env),
       name_(name) {}
@@ -2985,6 +2995,9 @@ AttachDecision GetNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
 }
 
 void GetNameIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", ObjectValue(*env_));
@@ -2996,7 +3009,7 @@ void GetNameIRGenerator::trackAttached(const char* name) {
 BindNameIRGenerator::BindNameIRGenerator(JSContext* cx, HandleScript script,
                                          jsbytecode* pc, ICState state,
                                          HandleObject env,
-                                         HandlePropertyName name)
+                                         Handle<PropertyName*> name)
     : IRGenerator(cx, script, pc, CacheKind::BindName, state),
       env_(env),
       name_(name) {}
@@ -3123,6 +3136,9 @@ AttachDecision BindNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
 }
 
 void BindNameIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", ObjectValue(*env_));
@@ -3475,6 +3491,9 @@ AttachDecision HasPropIRGenerator::tryAttachStub() {
 }
 
 void HasPropIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", val_);
@@ -3540,6 +3559,9 @@ AttachDecision CheckPrivateFieldIRGenerator::tryAttachNative(
 }
 
 void CheckPrivateFieldIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", val_);
@@ -3801,6 +3823,9 @@ static bool ValueIsNumeric(Scalar::Type type, const Value& val) {
 }
 
 void SetPropIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", JSOp(*pc_));
@@ -4695,7 +4720,8 @@ static PropertyFlags SetPropertyFlags(JSOp op, bool isFunctionPrototype) {
   return PropertyFlags::defaultDataPropFlags;
 }
 
-AttachDecision SetPropIRGenerator::tryAttachAddSlotStub(HandleShape oldShape) {
+AttachDecision SetPropIRGenerator::tryAttachAddSlotStub(
+    Handle<Shape*> oldShape) {
   ValOperandId objValId(writer.setInputOperandId(0));
   ValOperandId rhsValId;
   if (cacheKind_ == CacheKind::SetProp) {
@@ -4912,6 +4938,9 @@ AttachDecision InstanceOfIRGenerator::tryAttachStub() {
 }
 
 void InstanceOfIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("lhs", lhsVal_);
@@ -4929,6 +4958,9 @@ TypeOfIRGenerator::TypeOfIRGenerator(JSContext* cx, HandleScript script,
     : IRGenerator(cx, script, pc, CacheKind::TypeOf, state), val_(value) {}
 
 void TypeOfIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -5083,6 +5115,9 @@ AttachDecision GetIteratorIRGenerator::tryAttachNullOrUndefined(
 }
 
 void GetIteratorIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -5251,7 +5286,7 @@ AttachDecision OptimizeSpreadCallIRGenerator::tryAttachArguments() {
     return AttachDecision::NoAction;
   }
 
-  RootedShape shape(cx_, GlobalObject::getArrayShapeWithDefaultProto(cx_));
+  Rooted<Shape*> shape(cx_, GlobalObject::getArrayShapeWithDefaultProto(cx_));
   if (!shape) {
     cx_->recoverFromOutOfMemory();
     return AttachDecision::NoAction;
@@ -5306,6 +5341,9 @@ AttachDecision OptimizeSpreadCallIRGenerator::tryAttachNotOptimizable() {
 }
 
 void OptimizeSpreadCallIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -5355,8 +5393,7 @@ void InlinableNativeIRGenerator::emitNativeCalleeGuard() {
   }
 }
 
-void CallIRGenerator::emitCalleeGuard(ObjOperandId calleeId,
-                                      JSFunction* callee) {
+void IRGenerator::emitCalleeGuard(ObjOperandId calleeId, JSFunction* callee) {
   // Guarding on the callee JSFunction* is most efficient, but doesn't work well
   // for lambda clones (multiple functions with the same BaseScript). We guard
   // on the function's BaseScript if the callee is scripted and this isn't the
@@ -9732,7 +9769,7 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
 // Remember the shape of the this object for any script being called as a
 // constructor, for later use during Ion compilation.
 ScriptedThisResult CallIRGenerator::getThisShapeForScripted(
-    HandleFunction calleeFunc, MutableHandleShape result) {
+    HandleFunction calleeFunc, MutableHandle<Shape*> result) {
   // Some constructors allocate their own |this| object.
   if (calleeFunc->constructorNeedsUninitializedThis()) {
     return ScriptedThisResult::UninitializedThis;
@@ -9795,7 +9832,7 @@ AttachDecision CallIRGenerator::tryAttachCallScripted(
     return AttachDecision::NoAction;
   }
 
-  RootedShape thisShape(cx_);
+  Rooted<Shape*> thisShape(cx_);
   if (isConstructing && isSpecialized) {
     switch (getThisShapeForScripted(calleeFunc, &thisShape)) {
       case ScriptedThisResult::PlainObjectShape:
@@ -10052,6 +10089,9 @@ AttachDecision CallIRGenerator::tryAttachStub() {
 }
 
 void CallIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("callee", callee_);
@@ -10077,7 +10117,7 @@ static const JSClass shapeContainerClass = {"ShapeContainer",
 static const size_t SHAPE_CONTAINER_SLOT = 0;
 
 static JSObject* NewWrapperWithObjectShape(JSContext* cx,
-                                           HandleNativeObject obj) {
+                                           Handle<NativeObject*> obj) {
   MOZ_ASSERT(cx->compartment() != obj->compartment());
 
   RootedObject wrapper(cx);
@@ -10630,6 +10670,9 @@ AttachDecision CompareIRGenerator::tryAttachStub() {
 }
 
 void CompareIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("lhs", lhsVal_);
@@ -10645,6 +10688,9 @@ ToBoolIRGenerator::ToBoolIRGenerator(JSContext* cx, HandleScript script,
     : IRGenerator(cx, script, pc, CacheKind::ToBool, state), val_(val) {}
 
 void ToBoolIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -10780,6 +10826,9 @@ GetIntrinsicIRGenerator::GetIntrinsicIRGenerator(JSContext* cx,
     : IRGenerator(cx, script, pc, CacheKind::GetIntrinsic, state), val_(val) {}
 
 void GetIntrinsicIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -10805,6 +10854,9 @@ UnaryArithIRGenerator::UnaryArithIRGenerator(JSContext* cx, HandleScript script,
       res_(res) {}
 
 void UnaryArithIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -11139,6 +11191,9 @@ ToPropertyKeyIRGenerator::ToPropertyKeyIRGenerator(JSContext* cx,
     : IRGenerator(cx, script, pc, CacheKind::ToPropertyKey, state), val_(val) {}
 
 void ToPropertyKeyIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -11235,6 +11290,9 @@ BinaryArithIRGenerator::BinaryArithIRGenerator(JSContext* cx,
       res_(res) {}
 
 void BinaryArithIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", op_);
@@ -11721,6 +11779,9 @@ NewArrayIRGenerator::NewArrayIRGenerator(JSContext* cx, HandleScript script,
 }
 
 void NewArrayIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", op_);
@@ -11805,6 +11866,9 @@ NewObjectIRGenerator::NewObjectIRGenerator(JSContext* cx, HandleScript script,
 }
 
 void NewObjectIRGenerator::trackAttached(const char* name) {
+#ifdef JS_ION_PERF
+  stubName_ = JS_smprintf("%s", name);
+#endif
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", op_);
@@ -11857,6 +11921,121 @@ AttachDecision NewObjectIRGenerator::tryAttachStub() {
   AutoAssertNoPendingException aanpe(cx_);
 
   TRY_ATTACH(tryAttachPlainObject());
+
+  trackAttached(IRGenerator::NotAttached);
+  return AttachDecision::NoAction;
+}
+
+CloseIterIRGenerator::CloseIterIRGenerator(JSContext* cx, HandleScript script,
+                                           jsbytecode* pc, ICState state,
+                                           HandleObject iter,
+                                           CompletionKind kind)
+    : IRGenerator(cx, script, pc, CacheKind::CloseIter, state),
+      iter_(iter),
+      kind_(kind) {}
+
+void CloseIterIRGenerator::trackAttached(const char* name) {
+#ifdef JS_CACHEIR_SPEW
+  if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
+    sp.valueProperty("iter", ObjectValue(*iter_));
+  }
+#endif
+}
+
+AttachDecision CloseIterIRGenerator::tryAttachNoReturnMethod() {
+  Maybe<PropertyInfo> prop;
+  NativeObject* holder = nullptr;
+
+  // If we can guard that the iterator does not have a |return| method,
+  // then this CloseIter is a no-op.
+  NativeGetPropCacheability type = CanAttachNativeGetProp(
+      cx_, iter_, NameToId(cx_->names().return_), &holder, &prop, pc_);
+  if (type != CanAttachReadSlot) {
+    return AttachDecision::NoAction;
+  }
+  if (holder) {
+    return AttachDecision::NoAction;
+  }
+
+  ObjOperandId objId(writer.setInputOperandId(0));
+
+  Maybe<ObjOperandId> holderId;
+  EmitReadSlotGuard(writer, &iter_->as<NativeObject>(), /*holder=*/nullptr,
+                    objId, &holderId);
+
+  // There is no return method, so we don't have to do anything.
+  writer.returnFromIC();
+
+  trackAttached("CloseIter.NoReturn");
+  return AttachDecision::Attach;
+}
+
+AttachDecision CloseIterIRGenerator::tryAttachScriptedReturn() {
+  Maybe<PropertyInfo> prop;
+  NativeObject* holder = nullptr;
+
+  NativeGetPropCacheability type = CanAttachNativeGetProp(
+      cx_, iter_, NameToId(cx_->names().return_), &holder, &prop, pc_);
+  if (!holder) {
+    return AttachDecision::NoAction;
+  }
+  if (type != CanAttachReadSlot) {
+    return AttachDecision::NoAction;
+  }
+  if (!prop->isDataProperty()) {
+    return AttachDecision::NoAction;
+  }
+
+  size_t slot = prop->slot();
+  Value calleeVal = holder->getSlot(slot);
+  if (!calleeVal.isObject() || !calleeVal.toObject().is<JSFunction>()) {
+    return AttachDecision::NoAction;
+  }
+
+  JSFunction* callee = &calleeVal.toObject().as<JSFunction>();
+  if (!callee->hasJitEntry()) {
+    return AttachDecision::NoAction;
+  }
+  if (callee->isClassConstructor()) {
+    return AttachDecision::NoAction;
+  }
+
+  // We don't support cross-realm |return|.
+  if (cx_->realm() != callee->realm()) {
+    return AttachDecision::NoAction;
+  }
+
+  ObjOperandId objId(writer.setInputOperandId(0));
+
+  Maybe<ObjOperandId> holderId;
+  EmitReadSlotGuard(writer, &iter_->as<NativeObject>(), holder, objId,
+                    &holderId);
+  MOZ_ASSERT(holderId.isSome());
+
+  ValOperandId calleeValId;
+  if (holder->isFixedSlot(slot)) {
+    size_t offset = NativeObject::getFixedSlotOffset(slot);
+    calleeValId = writer.loadFixedSlot(*holderId, offset);
+  } else {
+    size_t index = holder->dynamicSlotIndex(slot);
+    calleeValId = writer.loadDynamicSlot(*holderId, index);
+  }
+  ObjOperandId calleeId = writer.guardToObject(calleeValId);
+  emitCalleeGuard(calleeId, callee);
+
+  writer.closeIterScriptedResult(objId, calleeId, kind_, callee->nargs());
+
+  writer.returnFromIC();
+  trackAttached("CloseIter.ScriptedReturn");
+
+  return AttachDecision::Attach;
+}
+
+AttachDecision CloseIterIRGenerator::tryAttachStub() {
+  AutoAssertNoPendingException aanpe(cx_);
+
+  TRY_ATTACH(tryAttachNoReturnMethod());
+  TRY_ATTACH(tryAttachScriptedReturn());
 
   trackAttached(IRGenerator::NotAttached);
   return AttachDecision::NoAction;

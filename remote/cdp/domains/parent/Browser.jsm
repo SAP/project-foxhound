@@ -6,15 +6,11 @@
 
 var EXPORTED_SYMBOLS = ["Browser"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const { Domain } = ChromeUtils.import(
+  "chrome://remote/content/cdp/domains/Domain.jsm"
 );
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-
-  Domain: "chrome://remote/content/cdp/domains/Domain.jsm",
-});
 
 class Browser extends Domain {
   getVersion() {
@@ -26,8 +22,10 @@ class Browser extends Domain {
     ].getService(Ci.nsIHttpProtocolHandler);
     return {
       protocolVersion: "1.3",
-      product: (isHeadless ? "Headless " : "") + Services.appinfo.name,
-      revision: "1",
+      product:
+        (isHeadless ? "Headless" : "") +
+        `${Services.appinfo.name}/${Services.appinfo.version}`,
+      revision: Services.appinfo.sourceURL.split("/").pop(),
       userAgent,
       jsVersion: "1.8.5",
     };

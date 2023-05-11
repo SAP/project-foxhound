@@ -70,6 +70,7 @@ const CURRENT_WEBCHANNEL_VERSION = 1;
 
 // Lazily load the require function, when it's needed.
 ChromeUtils.defineModuleGetter(
+  // eslint-disable-next-line mozilla/reject-global-this
   this,
   "require",
   "resource://devtools/shared/loader/Loader.jsm"
@@ -79,7 +80,6 @@ ChromeUtils.defineModuleGetter(
 // global state of the profiler, and only are used during specific funcationality like
 // symbolication or capturing a profile.
 const lazy = createLazyLoaders({
-  OS: () => ChromeUtils.import("resource://gre/modules/osfile.jsm"),
   Utils: () => require("devtools/client/performance-new/utils"),
   BrowserModule: () => require("devtools/client/performance-new/browser"),
   RecordingUtils: () =>
@@ -869,7 +869,8 @@ function registerProfileCaptureForBrowser(
 }
 
 // Provide a fake module.exports for the JSM to be properly read by TypeScript.
-/** @type {any} */ (this).module = { exports: {} };
+/** @type {any} */
+var module = { exports: {} };
 
 module.exports = {
   presets,

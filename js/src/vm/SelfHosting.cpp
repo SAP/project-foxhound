@@ -124,8 +124,6 @@
 using namespace js;
 using namespace js::selfhosted;
 
-using JS::AutoCheckCannotGC;
-using JS::AutoStableStringChars;
 using JS::CompileOptions;
 using mozilla::Maybe;
 
@@ -485,7 +483,7 @@ static bool intrinsic_CreateModuleSyntaxError(JSContext* cx, unsigned argc,
   MOZ_RELEASE_ASSERT(args[2].isInt32());
   MOZ_ASSERT(args[3].isString());
 
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   RootedString filename(cx,
                         JS_NewStringCopyZ(cx, module->script()->filename()));
   if (!filename) {
@@ -1150,6 +1148,21 @@ static bool intrinsic_GetTypedArrayKind(JSContext* cx, unsigned argc,
   return true;
 }
 
+#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
+static bool intrinsic_GetTypedArrayConstructorFromKind(JSContext* cx,
+                                                       unsigned argc,
+                                                       Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  MOZ_ASSERT(args.length() == 1);
+  MOZ_ASSERT(args[0].isInt32());
+
+  int32_t arrayKind = args[0].toInt32();
+  Scalar::Type type = static_cast<Scalar::Type>(arrayKind);
+  args.rval().setObject(*js::GetTypedArrayConstructorFromKind(cx, type));
+  return true;
+}
+#endif
+
 static bool intrinsic_IsTypedArrayConstructor(JSContext* cx, unsigned argc,
                                               Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -1404,7 +1417,7 @@ static bool intrinsic_TypedArrayInitFromPackedArray(JSContext* cx,
   MOZ_ASSERT(!target->hasDetachedBuffer());
   MOZ_ASSERT(!target->isSharedMemory());
 
-  RootedArrayObject source(cx, &args[1].toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> source(cx, &args[1].toObject().as<ArrayObject>());
   MOZ_ASSERT(IsPackedArray(source));
   MOZ_ASSERT(source->length() == target->length());
 
@@ -1445,9 +1458,9 @@ static bool intrinsic_RegExpGetSubstitution(JSContext* cx, unsigned argc,
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 6);
 
-  RootedArrayObject matchResult(cx, &args[0].toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> matchResult(cx, &args[0].toObject().as<ArrayObject>());
 
-  RootedLinearString string(cx, args[1].toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> string(cx, args[1].toString()->ensureLinear(cx));
   if (!string) {
     return false;
   }
@@ -1455,7 +1468,7 @@ static bool intrinsic_RegExpGetSubstitution(JSContext* cx, unsigned argc,
   int32_t position = int32_t(args[2].toNumber());
   MOZ_ASSERT(position >= 0);
 
-  RootedLinearString replacement(cx, args[3].toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> replacement(cx, args[3].toString()->ensureLinear(cx));
   if (!replacement) {
     return false;
   }
@@ -1553,7 +1566,7 @@ bool CallSelfHostedNonGenericMethod(JSContext* cx, const CallArgs& args) {
   // arguments to pass to this function.
 
   MOZ_ASSERT(args.length() > 0);
-  RootedPropertyName name(
+  Rooted<PropertyName*> name(
       cx, args[args.length() - 1].toString()->asAtom().asPropertyName());
 
   InvokeArgs args2(cx);
@@ -1576,12 +1589,12 @@ bool js::CallSelfHostedFunction(JSContext* cx, const char* name,
   if (!funAtom) {
     return false;
   }
-  RootedPropertyName funName(cx, funAtom->asPropertyName());
+  Rooted<PropertyName*> funName(cx, funAtom->asPropertyName());
   return CallSelfHostedFunction(cx, funName, thisv, args, rval);
 }
 #endif
 
-bool js::CallSelfHostedFunction(JSContext* cx, HandlePropertyName name,
+bool js::CallSelfHostedFunction(JSContext* cx, Handle<PropertyName*> name,
                                 HandleValue thisv, const AnyInvokeArgs& args,
                                 MutableHandleValue rval) {
   RootedValue fun(cx);
@@ -1741,7 +1754,7 @@ static bool intrinsic_ConstructFunction(JSContext* cx, unsigned argc,
   MOZ_ASSERT(IsConstructor(args[1]));
   MOZ_ASSERT(args[2].toObject().is<ArrayObject>());
 
-  RootedArrayObject argsList(cx, &args[2].toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> argsList(cx, &args[2].toObject().as<ArrayObject>());
   uint32_t len = argsList->length();
   ConstructArgs constructArgs(cx);
   if (!constructArgs.init(cx, len)) {
@@ -1806,7 +1819,7 @@ static bool intrinsic_HostResolveImportedModule(JSContext* cx, unsigned argc,
                                                 Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   RootedObject moduleRequest(cx, &args[1].toObject());
 
   RootedValue referencingPrivate(cx, JS::GetModulePrivate(module));
@@ -1829,11 +1842,11 @@ static bool intrinsic_CreateImportBinding(JSContext* cx, unsigned argc,
                                           Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 4);
-  RootedModuleEnvironmentObject environment(
+  Rooted<ModuleEnvironmentObject*> environment(
       cx, &args[0].toObject().as<ModuleEnvironmentObject>());
-  RootedAtom importedName(cx, &args[1].toString()->asAtom());
-  RootedModuleObject module(cx, &args[2].toObject().as<ModuleObject>());
-  RootedAtom localName(cx, &args[3].toString()->asAtom());
+  Rooted<JSAtom*> importedName(cx, &args[1].toString()->asAtom());
+  Rooted<ModuleObject*> module(cx, &args[2].toObject().as<ModuleObject>());
+  Rooted<JSAtom*> localName(cx, &args[3].toString()->asAtom());
   if (!environment->createImportBinding(cx, importedName, module, localName)) {
     return false;
   }
@@ -1846,7 +1859,7 @@ static bool intrinsic_CreateNamespaceBinding(JSContext* cx, unsigned argc,
                                              Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 3);
-  RootedModuleEnvironmentObject environment(
+  Rooted<ModuleEnvironmentObject*> environment(
       cx, &args[0].toObject().as<ModuleEnvironmentObject>());
   RootedId name(cx, AtomToId(&args[1].toString()->asAtom()));
   MOZ_ASSERT(args[2].toObject().is<ModuleNamespaceObject>());
@@ -1864,9 +1877,10 @@ static bool intrinsic_EnsureModuleEnvironmentNamespace(JSContext* cx,
                                                        Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   MOZ_ASSERT(args[1].toObject().is<ModuleNamespaceObject>());
-  RootedModuleEnvironmentObject environment(cx, &module->initialEnvironment());
+  Rooted<ModuleEnvironmentObject*> environment(cx,
+                                               &module->initialEnvironment());
   // The property already exists in the evironment but is not writable, so set
   // the slot directly.
   mozilla::Maybe<PropertyInfo> prop =
@@ -1882,7 +1896,7 @@ static bool intrinsic_InstantiateModuleFunctionDeclarations(JSContext* cx,
                                                             Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   args.rval().setUndefined();
   return ModuleObject::instantiateFunctionDeclarations(cx, module);
 }
@@ -1890,15 +1904,15 @@ static bool intrinsic_InstantiateModuleFunctionDeclarations(JSContext* cx,
 static bool intrinsic_ExecuteModule(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   return ModuleObject::execute(cx, module, args.rval());
 }
 
 static bool intrinsic_SetCycleRoot(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
-  RootedModuleObject cycleRoot(cx, &args[1].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> cycleRoot(cx, &args[1].toObject().as<ModuleObject>());
   module->setCycleRoot(cycleRoot);
   args.rval().setUndefined();
   return true;
@@ -1907,7 +1921,7 @@ static bool intrinsic_SetCycleRoot(JSContext* cx, unsigned argc, Value* vp) {
 static bool intrinsic_GetCycleRoot(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   JSObject* result = module->getCycleRoot();
   if (!result) {
     return false;
@@ -1920,8 +1934,8 @@ static bool intrinsic_AppendAsyncParentModule(JSContext* cx, unsigned argc,
                                               Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
-  RootedModuleObject self(cx, &args[0].toObject().as<ModuleObject>());
-  RootedModuleObject parent(cx, &args[1].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> self(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> parent(cx, &args[1].toObject().as<ModuleObject>());
   return ModuleObject::appendAsyncParentModule(cx, self, parent);
 }
 
@@ -1929,7 +1943,7 @@ static bool intrinsic_InitAsyncEvaluating(JSContext* cx, unsigned argc,
                                           Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   if (!module->initAsyncEvaluatingSlot()) {
     return false;
   }
@@ -1941,7 +1955,7 @@ static bool intrinsic_IsAsyncEvaluating(JSContext* cx, unsigned argc,
                                         Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   bool isAsyncEvaluating = module->isAsyncEvaluating();
   args.rval().setBoolean(isAsyncEvaluating);
   return true;
@@ -1951,7 +1965,7 @@ static bool intrinsic_CreateTopLevelCapability(JSContext* cx, unsigned argc,
                                                Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject self(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> self(cx, &args[0].toObject().as<ModuleObject>());
   PromiseObject* result = ModuleObject::createTopLevelCapability(cx, self);
   if (!result) {
     return false;
@@ -1965,8 +1979,10 @@ static bool intrinsic_ModuleTopLevelCapabilityResolve(JSContext* cx,
                                                       Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 1);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
-  ModuleObject::topLevelCapabilityResolve(cx, module);
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
+  if (!ModuleObject::topLevelCapabilityResolve(cx, module)) {
+    return false;
+  }
   args.rval().setUndefined();
   return true;
 }
@@ -1975,9 +1991,11 @@ static bool intrinsic_ModuleTopLevelCapabilityReject(JSContext* cx,
                                                      unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   HandleValue error = args[1];
-  ModuleObject::topLevelCapabilityReject(cx, module, error);
+  if (!ModuleObject::topLevelCapabilityReject(cx, module, error)) {
+    return false;
+  }
   args.rval().setUndefined();
   return true;
 }
@@ -1986,7 +2004,7 @@ static bool intrinsic_NewModuleNamespace(JSContext* cx, unsigned argc,
                                          Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
-  RootedModuleObject module(cx, &args[0].toObject().as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &args[0].toObject().as<ModuleObject>());
   RootedObject exports(cx, &args[1].toObject());
   JSObject* namespace_ = ModuleObject::createNamespace(cx, module, exports);
   if (!namespace_) {
@@ -2001,11 +2019,12 @@ static bool intrinsic_AddModuleNamespaceBinding(JSContext* cx, unsigned argc,
                                                 Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 4);
-  RootedModuleNamespaceObject namespace_(
+  Rooted<ModuleNamespaceObject*> namespace_(
       cx, &args[0].toObject().as<ModuleNamespaceObject>());
-  RootedAtom exportedName(cx, &args[1].toString()->asAtom());
-  RootedModuleObject targetModule(cx, &args[2].toObject().as<ModuleObject>());
-  RootedAtom targetName(cx, &args[3].toString()->asAtom());
+  Rooted<JSAtom*> exportedName(cx, &args[1].toString()->asAtom());
+  Rooted<ModuleObject*> targetModule(cx,
+                                     &args[2].toObject().as<ModuleObject>());
+  Rooted<JSAtom*> targetName(cx, &args[3].toString()->asAtom());
   if (!namespace_->addBinding(cx, exportedName, targetModule, targetName)) {
     return false;
   }
@@ -2368,6 +2387,11 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_FN("GetOwnPropertyDescriptorToArray", GetOwnPropertyDescriptorToArray, 2,
           0),
     JS_FN("GetStringDataProperty", intrinsic_GetStringDataProperty, 2, 0),
+#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
+    JS_FN("GetTypedArrayConstructorFromKind",
+          intrinsic_GetTypedArrayConstructorFromKind, 1, 0),
+#endif
+
     JS_FN("GetTypedArrayKind", intrinsic_GetTypedArrayKind, 1, 0),
     JS_INLINABLE_FN("GuardToArrayBuffer",
                     intrinsic_GuardToBuiltin<ArrayBufferObject>, 1, 0,
@@ -2548,6 +2572,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
           intrinsic_TypedArrayInitFromPackedArray, 2, 0),
     JS_INLINABLE_FN("TypedArrayLength", intrinsic_TypedArrayLength, 1, 0,
                     IntrinsicTypedArrayLength),
+    JS_FN("TypedArrayNativeSort", intrinsic_TypedArrayNativeSort, 1, 0),
     JS_INLINABLE_FN("UnsafeGetBooleanFromReservedSlot",
                     intrinsic_UnsafeGetBooleanFromReservedSlot, 2, 0,
                     IntrinsicUnsafeGetBooleanFromReservedSlot),
@@ -2699,7 +2724,6 @@ static const JSFunctionSpec intrinsic_functions[] = {
 #ifdef ENABLE_RECORD_TUPLE
     JS_FN("std_Tuple_unchecked", tuple_construct, 1, 0),
 #endif
-    JS_FN("std_TypedArray_buffer", js::TypedArray_bufferGetter, 1, 0),
 
     JS_FS_END};
 
@@ -2859,7 +2883,7 @@ class MOZ_STACK_CLASS AutoSelfHostingErrorReporter {
     // as well as the ScriptIndex of the next top-level function. Scripts
     // between these two indices are the inner functions of the first one. We
     // only record named scripts here since they are what might be looked up.
-    RootedAtom prevAtom(cx);
+    Rooted<JSAtom*> prevAtom(cx);
     frontend::ScriptIndex prevIndex;
     for (frontend::TaggedScriptThingIndex thing : topLevelThings) {
       if (!thing.isFunction()) {
@@ -2990,8 +3014,8 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
     return false;
   }
   RefPtr<frontend::CompilationStencil> stencil =
-      frontend::CompileGlobalScriptToStencil(cx, *input, srcBuf,
-                                             ScopeKind::Global);
+      frontend::CompileGlobalScriptToStencil(cx, cx->tempLifoAlloc(), *input,
+                                             srcBuf, ScopeKind::Global);
   if (!stencil) {
     return false;
   }
@@ -3100,7 +3124,7 @@ ScriptSourceObject* GlobalObject::getOrCreateSelfHostingScriptSourceObject(
     return nullptr;
   }
 
-  RootedScriptSourceObject sourceObject(
+  Rooted<ScriptSourceObject*> sourceObject(
       cx, ScriptSourceObject::create(cx, source.get()));
   if (!sourceObject) {
     return nullptr;
@@ -3117,7 +3141,7 @@ ScriptSourceObject* GlobalObject::getOrCreateSelfHostingScriptSourceObject(
 }
 
 bool JSRuntime::delazifySelfHostedFunction(JSContext* cx,
-                                           HandlePropertyName name,
+                                           Handle<PropertyName*> name,
                                            HandleFunction targetFun) {
   MOZ_ASSERT(targetFun->isExtended());
   MOZ_ASSERT(targetFun->hasSelfHostedLazyScript());
@@ -3155,14 +3179,14 @@ JSRuntime::getSelfHostedScriptIndexRange(js::PropertyName* name) {
   return mozilla::Nothing();
 }
 
-static bool GetComputedIntrinsic(JSContext* cx, HandlePropertyName name,
+static bool GetComputedIntrinsic(JSContext* cx, Handle<PropertyName*> name,
                                  MutableHandleValue vp) {
   // If the intrinsic was not in hardcoded set, run the top-level of the
   // selfhosted script. This will generate values and call `SetIntrinsic` to
   // save them on a special "computed intrinsics holder". We then can check for
   // our required values and cache on the normal intrinsics holder.
 
-  RootedNativeObject computedIntrinsicsHolder(
+  Rooted<NativeObject*> computedIntrinsicsHolder(
       cx, cx->global()->getComputedIntrinsicsHolder());
   if (!computedIntrinsicsHolder) {
     auto computedIntrinsicHolderGuard = mozilla::MakeScopeExit(
@@ -3207,7 +3231,7 @@ static bool GetComputedIntrinsic(JSContext* cx, HandlePropertyName name,
   return GlobalObject::addIntrinsicValue(cx, cx->global(), name, value);
 }
 
-bool JSRuntime::getSelfHostedValue(JSContext* cx, HandlePropertyName name,
+bool JSRuntime::getSelfHostedValue(JSContext* cx, Handle<PropertyName*> name,
                                    MutableHandleValue vp) {
   // If the self-hosted value we want is a function in the stencil, instantiate
   // a lazy self-hosted function for it. This is typical when a self-hosted
@@ -3228,7 +3252,7 @@ bool JSRuntime::getSelfHostedValue(JSContext* cx, HandlePropertyName name,
 }
 
 void JSRuntime::assertSelfHostedFunctionHasCanonicalName(
-    HandlePropertyName name) {
+    Handle<PropertyName*> name) {
 #ifdef DEBUG
   frontend::ScriptIndex index = getSelfHostedScriptIndexRange(name)->start;
   MOZ_ASSERT(selfHostStencil().scriptData[index].hasSelfHostedCanonicalName());

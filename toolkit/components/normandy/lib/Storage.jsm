@@ -8,22 +8,23 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "JSONFile",
   "resource://gre/modules/JSONFile.jsm"
 );
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
 var EXPORTED_SYMBOLS = ["Storage"];
 
 // Lazy-load JSON file that backs Storage instances.
-XPCOMUtils.defineLazyGetter(this, "lazyStore", async function() {
-  const path = OS.Path.join(
-    OS.Constants.Path.profileDir,
+XPCOMUtils.defineLazyGetter(lazy, "lazyStore", async function() {
+  const path = PathUtils.join(
+    PathUtils.profileDir,
     "shield-recipe-client.json"
   );
-  const store = new JSONFile({ path });
+  const store = new lazy.JSONFile({ path });
   await store.load();
   return store;
 });
@@ -37,7 +38,7 @@ var Storage = class {
    * Clear ALL storage data and save to the disk.
    */
   static async clearAllStorage() {
-    const store = await lazyStore;
+    const store = await lazy.lazyStore;
     store.data = {};
     store.saveSoon();
   }
@@ -49,7 +50,7 @@ var Storage = class {
    * @rejects Javascript exception.
    */
   async getItem(name) {
-    const store = await lazyStore;
+    const store = await lazy.lazyStore;
     const namespace = store.data[this.prefix] || {};
     return namespace[name] || null;
   }
@@ -61,7 +62,7 @@ var Storage = class {
    * @rejects Javascript exception.
    */
   async setItem(name, value) {
-    const store = await lazyStore;
+    const store = await lazy.lazyStore;
     if (!(this.prefix in store.data)) {
       store.data[this.prefix] = {};
     }
@@ -76,7 +77,7 @@ var Storage = class {
    * @rejects Javascript exception.
    */
   async removeItem(name) {
-    const store = await lazyStore;
+    const store = await lazy.lazyStore;
     if (this.prefix in store.data) {
       delete store.data[this.prefix][name];
       store.saveSoon();
@@ -90,7 +91,7 @@ var Storage = class {
    * @rejects Javascript exception.
    */
   async clear() {
-    const store = await lazyStore;
+    const store = await lazy.lazyStore;
     store.data[this.prefix] = {};
     store.saveSoon();
   }

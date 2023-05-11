@@ -2,12 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.UrlClassifierExceptionListService = function() {};
+function UrlClassifierExceptionListService() {}
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
 );
@@ -94,7 +96,7 @@ UrlClassifierExceptionListService.prototype = {
       return;
     }
 
-    let rs = RemoteSettings(COLLECTION_NAME);
+    let rs = lazy.RemoteSettings(COLLECTION_NAME);
     rs.on("sync", event => {
       let {
         data: { current },

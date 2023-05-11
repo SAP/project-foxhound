@@ -6,11 +6,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 #![allow(dead_code)]
-use crate::error::ERRNO_NOT_POSITIVE;
-use crate::util::LazyUsize;
 use crate::Error;
-use core::num::NonZeroU32;
-use core::ptr::NonNull;
+use core::{
+    num::NonZeroU32,
+    ptr::NonNull,
+    sync::atomic::{fence, AtomicPtr, Ordering},
+};
+use libc::c_void;
 
 cfg_if! {
     if #[cfg(any(target_os = "netbsd", target_os = "openbsd", target_os = "android"))] {
@@ -23,6 +25,12 @@ cfg_if! {
         use libc::__error as errno_location;
     } else if #[cfg(target_os = "haiku")] {
         use libc::_errnop as errno_location;
+    } else if #[cfg(all(target_os = "horizon", target_arch = "arm"))] {
+        extern "C" {
+            // Not provided by libc: https://github.com/rust-lang/libc/issues/1995
+            fn __errno() -> *mut libc::c_int;
+        }
+        use __errno as errno_location;
     }
 }
 
@@ -43,7 +51,7 @@ pub fn last_os_error() -> Error {
     if errno > 0 {
         Error::from(NonZeroU32::new(errno as u32).unwrap())
     } else {
-        ERRNO_NOT_POSITIVE
+        Error::ERRNO_NOT_POSITIVE
     }
 }
 
@@ -73,29 +81,57 @@ pub fn sys_fill_exact(
 
 // A "weak" binding to a C function that may or may not be present at runtime.
 // Used for supporting newer OS features while still building on older systems.
-// F must be a function pointer of type `unsafe extern "C" fn`. Based off of the
-// weak! macro in libstd.
+// Based off of the DlsymWeak struct in libstd:
+// https://github.com/rust-lang/rust/blob/1.61.0/library/std/src/sys/unix/weak.rs#L84
+// except that the caller must manually cast self.ptr() to a function pointer.
 pub struct Weak {
     name: &'static str,
-    addr: LazyUsize,
+    addr: AtomicPtr<c_void>,
 }
 
 impl Weak {
+    // A non-null pointer value which indicates we are uninitialized. This
+    // constant should ideally not be a valid address of a function pointer.
+    // However, if by chance libc::dlsym does return UNINIT, there will not
+    // be undefined behavior. libc::dlsym will just be called each time ptr()
+    // is called. This would be inefficient, but correct.
+    // TODO: Replace with core::ptr::invalid_mut(1) when that is stable.
+    const UNINIT: *mut c_void = 1 as *mut c_void;
+
     // Construct a binding to a C function with a given name. This function is
     // unsafe because `name` _must_ be null terminated.
     pub const unsafe fn new(name: &'static str) -> Self {
         Self {
             name,
-            addr: LazyUsize::new(),
+            addr: AtomicPtr::new(Self::UNINIT),
         }
     }
 
-    // Return a function pointer if present at runtime. Otherwise, return null.
-    pub fn ptr(&self) -> Option<NonNull<libc::c_void>> {
-        let addr = self.addr.unsync_init(|| unsafe {
-            libc::dlsym(libc::RTLD_DEFAULT, self.name.as_ptr() as *const _) as usize
-        });
-        NonNull::new(addr as *mut _)
+    // Return the address of a function if present at runtime. Otherwise,
+    // return None. Multiple callers can call ptr() concurrently. It will
+    // always return _some_ value returned by libc::dlsym. However, the
+    // dlsym function may be called multiple times.
+    pub fn ptr(&self) -> Option<NonNull<c_void>> {
+        // Despite having only a single atomic variable (self.addr), we still
+        // cannot always use Ordering::Relaxed, as we need to make sure a
+        // successful call to dlsym() is "ordered before" any data read through
+        // the returned pointer (which occurs when the function is called).
+        // Our implementation mirrors that of the one in libstd, meaning that
+        // the use of non-Relaxed operations is probably unnecessary.
+        match self.addr.load(Ordering::Relaxed) {
+            Self::UNINIT => {
+                let symbol = self.name.as_ptr() as *const _;
+                let addr = unsafe { libc::dlsym(libc::RTLD_DEFAULT, symbol) };
+                // Synchronizes with the Acquire fence below
+                self.addr.store(addr, Ordering::Release);
+                NonNull::new(addr)
+            }
+            addr => {
+                let func = NonNull::new(addr)?;
+                fence(Ordering::Acquire);
+                Some(func)
+            }
+        }
     }
 }
 
@@ -109,14 +145,16 @@ cfg_if! {
 
 // SAFETY: path must be null terminated, FD must be manually closed.
 pub unsafe fn open_readonly(path: &str) -> Result<libc::c_int, Error> {
-    debug_assert!(path.as_bytes().last() == Some(&0));
-    let fd = open(path.as_ptr() as *const _, libc::O_RDONLY | libc::O_CLOEXEC);
-    if fd < 0 {
-        return Err(last_os_error());
+    debug_assert_eq!(path.as_bytes().last(), Some(&0));
+    loop {
+        let fd = open(path.as_ptr() as *const _, libc::O_RDONLY | libc::O_CLOEXEC);
+        if fd >= 0 {
+            return Ok(fd);
+        }
+        let err = last_os_error();
+        // We should try again if open() was interrupted.
+        if err.raw_os_error() != Some(libc::EINTR) {
+            return Err(err);
+        }
     }
-    // O_CLOEXEC works on all Unix targets except for older Linux kernels (pre
-    // 2.6.23), so we also use an ioctl to make sure FD_CLOEXEC is set.
-    #[cfg(target_os = "linux")]
-    libc::ioctl(fd, libc::FIOCLEX);
-    Ok(fd)
 }

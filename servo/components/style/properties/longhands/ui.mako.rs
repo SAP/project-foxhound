@@ -98,6 +98,16 @@ ${helpers.predefined_type(
     enabled_in="chrome",
 )}
 
+${helpers.predefined_type(
+    "-moz-window-input-region-margin",
+    "Length",
+    "computed::Length::zero()",
+    engines="gecko",
+    animation_value_type="ComputedValue",
+    spec="None (Nonstandard internal property)",
+    enabled_in="chrome",
+)}
+
 // TODO(emilio): Probably also should be hidden from content.
 ${helpers.predefined_type(
     "-moz-force-broken-image-icon",
@@ -291,5 +301,27 @@ ${helpers.predefined_type(
     animation_value_type="none",
     gecko_pref="layout.css.scroll-linked-animations.enabled",
     spec="https://drafts.csswg.org/css-animations-2/#propdef-animation-timeline",
+    rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
+)}
+
+${helpers.predefined_type(
+    "scroll-timeline-name",
+    "ScrollTimelineName",
+    "computed::ScrollTimelineName::none()",
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.scroll-linked-animations.enabled",
+    spec="https://github.com/w3c/csswg-drafts/issues/6674",
+    rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
+)}
+
+${helpers.predefined_type(
+    "scroll-timeline-axis",
+    "ScrollAxis",
+    "computed::ScrollAxis::default()",
+    engines="gecko",
+    animation_value_type="none",
+    gecko_pref="layout.css.scroll-linked-animations.enabled",
+    spec="https://github.com/w3c/csswg-drafts/issues/6674",
     rule_types_allowed=DEFAULT_RULES_EXCEPT_KEYFRAME,
 )}

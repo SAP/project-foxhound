@@ -78,48 +78,40 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
+const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "CleanupManager",
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { CleanupManager } = ChromeUtils.import(
   "resource://normandy/lib/CleanupManager.jsm"
 );
+const { LogManager } = ChromeUtils.import(
+  "resource://normandy/lib/LogManager.jsm"
+);
+
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "JSONFile",
   "resource://gre/modules/JSONFile.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
-  "LogManager",
-  "resource://normandy/lib/LogManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "TelemetryEnvironment",
   "resource://gre/modules/TelemetryEnvironment.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "TelemetryEvents",
   "resource://normandy/lib/TelemetryEvents.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NormandyUtils",
   "resource://normandy/lib/NormandyUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PrefUtils",
   "resource://normandy/lib/PrefUtils.jsm"
 );
@@ -162,7 +154,7 @@ function ensureStorage() {
       Services.dirsvc.get("ProfD", Ci.nsIFile).path,
       EXPERIMENT_FILE
     );
-    const storage = new JSONFile({ path });
+    const storage = new lazy.JSONFile({ path });
     // `storage.load()` is defined as being infallible: It won't ever throw an
     // error. However, if there are are I/O errors, such as a corrupt, missing,
     // or unreadable file the data loaded will be an empty object. This can
@@ -234,7 +226,7 @@ var PreferenceExperiments = {
       )) {
         if (
           !spec.overridden &&
-          PrefUtils.getPref(preferenceName) !== spec.preferenceValue
+          lazy.PrefUtils.getPref(preferenceName) !== spec.preferenceValue
         ) {
           // if not, record the difference
           await this.recordPrefChange({
@@ -246,13 +238,14 @@ var PreferenceExperiments = {
       }
 
       // Notify Telemetry of experiments we're running, since they don't persist between restarts
-      TelemetryEnvironment.setExperimentActive(
+      lazy.TelemetryEnvironment.setExperimentActive(
         experiment.slug,
         experiment.branch,
         {
           type: EXPERIMENT_TYPE_PREFIX + experiment.experimentType,
           enrollmentId:
-            experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+            experiment.enrollmentId ||
+            lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
         }
       );
 
@@ -353,7 +346,7 @@ var PreferenceExperiments = {
   async onTelemetryDisabled() {
     const store = await ensureStorage();
     for (const experiment of Object.values(store.data.experiments)) {
-      experiment.enrollmentId = TelemetryEvents.NO_ENROLLMENT_ID_MARKER;
+      experiment.enrollmentId = lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER;
     }
     store.saveSoon();
   },
@@ -406,7 +399,7 @@ var PreferenceExperiments = {
 
     const store = await ensureStorage();
     if (slug in store.data.experiments) {
-      TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
+      lazy.TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
         reason: "name-conflict",
       });
       throw new Error(
@@ -426,7 +419,7 @@ var PreferenceExperiments = {
     );
 
     if (preferencesWithConflicts.length) {
-      TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
+      lazy.TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
         reason: "pref-conflict",
       });
       throw new Error(
@@ -435,7 +428,7 @@ var PreferenceExperiments = {
     }
 
     if (experimentType.length > MAX_EXPERIMENT_SUBTYPE_LENGTH) {
-      TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
+      lazy.TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
         reason: "experiment-type-too-long",
       });
       throw new Error(
@@ -457,10 +450,15 @@ var PreferenceExperiments = {
       if (
         !(preferenceBranchType === "user" || preferenceBranchType === "default")
       ) {
-        TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
-          reason: "invalid-branch",
-          prefBranch: preferenceBranchType.slice(0, 80),
-        });
+        lazy.TelemetryEvents.sendEvent(
+          "enrollFailed",
+          "preference_study",
+          slug,
+          {
+            reason: "invalid-branch",
+            prefBranch: preferenceBranchType.slice(0, 80),
+          }
+        );
         throw new Error(
           `Invalid value for preferenceBranchType: ${preferenceBranchType}`
         );
@@ -470,9 +468,14 @@ var PreferenceExperiments = {
       const givenPrefType = PREFERENCE_TYPE_MAP[preferenceType];
 
       if (!preferenceType || !givenPrefType) {
-        TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
-          reason: "invalid-type",
-        });
+        lazy.TelemetryEvents.sendEvent(
+          "enrollFailed",
+          "preference_study",
+          slug,
+          {
+            reason: "invalid-type",
+          }
+        );
         throw new Error(
           `Invalid preferenceType provided (given "${preferenceType}")`
         );
@@ -482,16 +485,21 @@ var PreferenceExperiments = {
         prevPrefType !== Services.prefs.PREF_INVALID &&
         prevPrefType !== givenPrefType
       ) {
-        TelemetryEvents.sendEvent("enrollFailed", "preference_study", slug, {
-          reason: "invalid-type",
-        });
+        lazy.TelemetryEvents.sendEvent(
+          "enrollFailed",
+          "preference_study",
+          slug,
+          {
+            reason: "invalid-type",
+          }
+        );
         throw new Error(
           `Previous preference value is of type "${prevPrefType}", but was given ` +
             `"${givenPrefType}" (${preferenceType})`
         );
       }
 
-      preferenceInfo.previousPreferenceValue = PrefUtils.getPref(
+      preferenceInfo.previousPreferenceValue = lazy.PrefUtils.getPref(
         preferenceName,
         { branch: preferenceBranchType }
       );
@@ -510,13 +518,13 @@ var PreferenceExperiments = {
         if (Services.prefs.prefHasUserValue(preferenceName)) {
           alreadyOverriddenPrefs.add(preferenceName);
         } else {
-          PrefUtils.setPref(preferenceName, preferenceValue, {
+          lazy.PrefUtils.setPref(preferenceName, preferenceValue, {
             branch: preferenceBranchType,
           });
         }
       } else if (preferenceBranchType === "user") {
         // The original value was already backed up above.
-        PrefUtils.setPref(preferenceName, preferenceValue, {
+        lazy.PrefUtils.setPref(preferenceName, preferenceValue, {
           branch: preferenceBranchType,
         });
       } else {
@@ -525,7 +533,7 @@ var PreferenceExperiments = {
     }
     PreferenceExperiments.startObserver(slug, preferences);
 
-    const enrollmentId = NormandyUtils.generateUuid();
+    const enrollmentId = lazy.NormandyUtils.generateUuid();
 
     /** @type {Experiment} */
     const experiment = {
@@ -545,14 +553,16 @@ var PreferenceExperiments = {
     store.saveSoon();
 
     // Record telemetry that the experiment started
-    TelemetryEnvironment.setExperimentActive(slug, branch, {
+    lazy.TelemetryEnvironment.setExperimentActive(slug, branch, {
       type: EXPERIMENT_TYPE_PREFIX + experimentType,
-      enrollmentId: enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+      enrollmentId:
+        enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
     });
-    TelemetryEvents.sendEvent("enroll", "preference_study", slug, {
+    lazy.TelemetryEvents.sendEvent("enroll", "preference_study", slug, {
       experimentType,
       branch,
-      enrollmentId: enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+      enrollmentId:
+        enrollmentId || lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
     });
 
     // Send events for any default branch preferences set that already had user
@@ -598,7 +608,7 @@ var PreferenceExperiments = {
           return;
         }
         const originalValue = prefInfo.preferenceValue;
-        const newValue = PrefUtils.getPref(preferenceName);
+        const newValue = lazy.PrefUtils.getPref(preferenceName);
         if (newValue !== originalValue) {
           PreferenceExperiments.recordPrefChange({
             experimentSlug,
@@ -717,7 +727,7 @@ var PreferenceExperiments = {
     preferenceSpecification.overridden = true;
     await this.update(experiment);
 
-    TelemetryEvents.sendEvent(
+    lazy.TelemetryEvents.sendEvent(
       "expPrefChanged",
       "preference_study",
       experiment.slug,
@@ -725,7 +735,8 @@ var PreferenceExperiments = {
         preferenceName,
         reason,
         enrollmentId:
-          experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+          experiment.enrollmentId ||
+          lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
       }
     );
   },
@@ -758,7 +769,7 @@ var PreferenceExperiments = {
 
     const store = await ensureStorage();
     if (!(experimentSlug in store.data.experiments)) {
-      TelemetryEvents.sendEvent(
+      lazy.TelemetryEvents.sendEvent(
         "unenrollFailed",
         "preference_study",
         experimentSlug,
@@ -779,7 +790,8 @@ var PreferenceExperiments = {
         reason: "already-unenrolled",
         originalReason: reason,
         enrollmentId:
-          experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+          experiment.enrollmentId ||
+          lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
       };
       if (changedPref) {
         extra.changedPref = changedPref;
@@ -787,7 +799,7 @@ var PreferenceExperiments = {
       if (caller && AppConstants.NIGHTLY_BUILD) {
         extra.caller = caller;
       }
-      TelemetryEvents.sendEvent(
+      lazy.TelemetryEvents.sendEvent(
         "unenrollFailed",
         "preference_study",
         experimentSlug,
@@ -817,7 +829,7 @@ var PreferenceExperiments = {
         const preferences = PreferenceBranchType[preferenceBranchType];
 
         if (previousPreferenceValue !== null) {
-          PrefUtils.setPref(preferenceName, previousPreferenceValue, {
+          lazy.PrefUtils.setPref(preferenceName, previousPreferenceValue, {
             branch: preferenceBranchType,
           });
         } else if (preferenceBranchType === "user") {
@@ -841,15 +853,21 @@ var PreferenceExperiments = {
     }
     await store.saveSoon();
 
-    TelemetryEnvironment.setExperimentInactive(experimentSlug);
-    TelemetryEvents.sendEvent("unenroll", "preference_study", experimentSlug, {
-      didResetValue: resetValue ? "true" : "false",
-      branch: experiment.branch,
-      reason,
-      enrollmentId:
-        experiment.enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
-      ...(changedPref ? { changedPref } : {}),
-    });
+    lazy.TelemetryEnvironment.setExperimentInactive(experimentSlug);
+    lazy.TelemetryEvents.sendEvent(
+      "unenroll",
+      "preference_study",
+      experimentSlug,
+      {
+        didResetValue: resetValue ? "true" : "false",
+        branch: experiment.branch,
+        reason,
+        enrollmentId:
+          experiment.enrollmentId ||
+          lazy.TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
+        ...(changedPref ? { changedPref } : {}),
+      }
+    );
     await this.saveStartupPrefs();
     Services.obs.notifyObservers(
       null,
@@ -1070,7 +1088,8 @@ var PreferenceExperiments = {
             continue;
           }
           specification.overridden =
-            PrefUtils.getPref(preferenceName) !== specification.preferenceValue;
+            lazy.PrefUtils.getPref(preferenceName) !==
+            specification.preferenceValue;
         }
       }
       storage.saveSoon();

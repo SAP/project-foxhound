@@ -71,7 +71,10 @@ enum class EGLLibExtension {
   ANGLE_device_creation_d3d11,
   ANGLE_platform_angle,
   ANGLE_platform_angle_d3d,
+  EXT_device_enumeration,
   EXT_device_query,
+  EXT_platform_device,
+  MESA_platform_surfaceless,
   Max
 };
 
@@ -107,7 +110,9 @@ enum class EGLExtension {
   EXT_buffer_age,
   KHR_partial_update,
   NV_robustness_video_memory_purge,
-  MESA_platform_surfaceless,
+  EXT_image_dma_buf_import,
+  EXT_image_dma_buf_import_modifiers,
+  MESA_image_dma_buf_export,
   Max
 };
 
@@ -433,6 +438,10 @@ class GLLibraryEGL final {
     WRAP(fQueryDeviceAttribEXT(device, attribute, value));
   }
 
+  const char* fQueryDeviceStringEXT(EGLDeviceEXT device, EGLint name) {
+    WRAP(fQueryDeviceStringEXT(device, name));
+  }
+
  private:
   // NV_stream_consumer_gltexture_yuv
   EGLBoolean fStreamConsumerGLTextureExternalAttribsNV(
@@ -463,6 +472,26 @@ class GLLibraryEGL final {
                               const EGLint* rects, EGLint n_rects) {
     WRAP(fSetDamageRegion(dpy, surface, rects, n_rects));
   }
+  // EGL_MESA_image_dma_buf_export
+  EGLBoolean fExportDMABUFImageQuery(EGLDisplay dpy, EGLImage image,
+                                     int* fourcc, int* num_planes,
+                                     uint64_t* modifiers) {
+    WRAP(
+        fExportDMABUFImageQueryMESA(dpy, image, fourcc, num_planes, modifiers));
+  }
+  EGLBoolean fExportDMABUFImage(EGLDisplay dpy, EGLImage image, int* fds,
+                                EGLint* strides, EGLint* offsets) {
+    WRAP(fExportDMABUFImageMESA(dpy, image, fds, strides, offsets));
+  }
+
+ public:
+  // EGL_EXT_device_enumeration
+  EGLBoolean fQueryDevicesEXT(EGLint max_devices, EGLDeviceEXT* devices,
+                              EGLint* num_devices) {
+    WRAP(fQueryDevicesEXT(max_devices, devices, num_devices));
+  }
+
+#undef WRAP
 
 #undef WRAP
 #undef PROFILE_CALL
@@ -570,6 +599,9 @@ class GLLibraryEGL final {
     EGLBoolean(GLAPIENTRY* fQueryDeviceAttribEXT)(EGLDeviceEXT device,
                                                   EGLint attribute,
                                                   EGLAttrib* value);
+    const char*(GLAPIENTRY* fQueryDeviceStringEXT)(EGLDeviceEXT device,
+                                                   EGLint name);
+
     // NV_stream_consumer_gltexture_yuv
     EGLBoolean(GLAPIENTRY* fStreamConsumerGLTextureExternalAttribsNV)(
         EGLDisplay dpy, EGLStreamKHR stream, const EGLAttrib* attrib_list);
@@ -595,6 +627,22 @@ class GLLibraryEGL final {
                                              EGLint n_rects);
     EGLClientBuffer(GLAPIENTRY* fGetNativeClientBufferANDROID)(
         const struct AHardwareBuffer* buffer);
+
+    // EGL_MESA_image_dma_buf_export
+    EGLBoolean(GLAPIENTRY* fExportDMABUFImageQueryMESA)(EGLDisplay dpy,
+                                                        EGLImage image,
+                                                        int* fourcc,
+                                                        int* num_planes,
+                                                        uint64_t* modifiers);
+    EGLBoolean(GLAPIENTRY* fExportDMABUFImageMESA)(EGLDisplay dpy,
+                                                   EGLImage image, int* fds,
+                                                   EGLint* strides,
+                                                   EGLint* offsets);
+
+    EGLBoolean(GLAPIENTRY* fQueryDevicesEXT)(EGLint max_devices,
+                                             EGLDeviceEXT* devices,
+                                             EGLint* num_devices);
+
   } mSymbols = {};
 };
 
@@ -853,6 +901,19 @@ class EglDisplay final {
                               EGLint n_rects) {
     MOZ_ASSERT(IsExtensionSupported(EGLExtension::KHR_partial_update));
     return mLib->fSetDamageRegion(mDisplay, surface, rects, n_rects);
+  }
+
+  EGLBoolean fExportDMABUFImageQuery(EGLImage image, int* fourcc,
+                                     int* num_planes,
+                                     uint64_t* modifiers) const {
+    MOZ_ASSERT(IsExtensionSupported(EGLExtension::MESA_image_dma_buf_export));
+    return mLib->fExportDMABUFImageQuery(mDisplay, image, fourcc, num_planes,
+                                         modifiers);
+  }
+  EGLBoolean fExportDMABUFImage(EGLImage image, int* fds, EGLint* strides,
+                                EGLint* offsets) const {
+    MOZ_ASSERT(IsExtensionSupported(EGLExtension::MESA_image_dma_buf_export));
+    return mLib->fExportDMABUFImage(mDisplay, image, fds, strides, offsets);
   }
 };
 

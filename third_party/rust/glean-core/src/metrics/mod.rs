@@ -17,15 +17,17 @@ mod datetime;
 mod denominator;
 mod event;
 mod experiment;
-mod jwe;
 pub(crate) mod labeled;
 mod memory_distribution;
 mod memory_unit;
+mod numerator;
 mod ping;
 mod quantity;
 mod rate;
+mod recorded_experiment;
 mod string;
 mod string_list;
+mod text;
 mod time_unit;
 mod timespan;
 mod timing_distribution;
@@ -46,26 +48,24 @@ pub use self::datetime::DatetimeMetric;
 pub use self::denominator::DenominatorMetric;
 pub use self::event::EventMetric;
 pub(crate) use self::experiment::ExperimentMetric;
-pub use crate::histogram::HistogramType;
-// Note: only expose RecordedExperimentData to tests in
-// the next line, so that glean-core\src\lib.rs won't fail to build.
-#[cfg(test)]
-pub(crate) use self::experiment::RecordedExperimentData;
-pub use self::jwe::JweMetric;
-pub use self::labeled::LabeledMetric;
+pub use self::labeled::{LabeledBoolean, LabeledCounter, LabeledMetric, LabeledString};
 pub use self::memory_distribution::MemoryDistributionMetric;
 pub use self::memory_unit::MemoryUnit;
+pub use self::numerator::NumeratorMetric;
 pub use self::ping::PingType;
 pub use self::quantity::QuantityMetric;
-pub use self::rate::RateMetric;
+pub use self::rate::{Rate, RateMetric};
 pub use self::string::StringMetric;
 pub use self::string_list::StringListMetric;
+pub use self::text::TextMetric;
 pub use self::time_unit::TimeUnit;
 pub use self::timespan::TimespanMetric;
 pub use self::timing_distribution::TimerId;
 pub use self::timing_distribution::TimingDistributionMetric;
 pub use self::url::UrlMetric;
 pub use self::uuid::UuidMetric;
+pub use crate::histogram::HistogramType;
+pub use recorded_experiment::RecordedExperiment;
 
 /// A snapshot of all buckets and the accumulated sum of a distribution.
 #[derive(Debug, Serialize)]
@@ -73,10 +73,10 @@ pub struct DistributionData {
     /// A map containig the bucket index mapped to the accumulated count.
     ///
     /// This can contain buckets with a count of `0`.
-    pub values: HashMap<u64, u64>,
+    pub values: HashMap<i64, i64>,
 
     /// The accumulated sum of all the samples in the distribution.
-    pub sum: u64,
+    pub sum: i64,
 }
 
 /// The available metrics.
@@ -104,7 +104,7 @@ pub enum Metric {
     /// A datetime metric. See [`DatetimeMetric`] for more information.
     Datetime(DateTime<FixedOffset>, TimeUnit),
     /// An experiment metric. See `ExperimentMetric` for more information.
-    Experiment(experiment::RecordedExperimentData),
+    Experiment(recorded_experiment::RecordedExperiment),
     /// A quantity metric. See [`QuantityMetric`] for more information.
     Quantity(i64),
     /// A string metric. See [`StringMetric`] for more information.
@@ -119,12 +119,16 @@ pub enum Metric {
     TimingDistribution(Histogram<Functional>),
     /// A memory distribution. See [`MemoryDistributionMetric`] for more information.
     MemoryDistribution(Histogram<Functional>),
-    /// A JWE metric. See [`JweMetric`] for more information.
+    /// **DEPRECATED**: A JWE metric..
+    /// Note: This variant MUST NOT be removed to avoid backwards-incompatible changes to the
+    /// serialization. This type has no underlying implementation anymore.
     Jwe(String),
     /// A rate metric. See [`RateMetric`] for more information.
     Rate(i32, i32),
     /// A URL metric. See [`UrlMetric`] for more information.
     Url(String),
+    /// A Text metric. See [`TextMetric`] for more information.
+    Text(String),
 }
 
 /// A [`MetricType`] describes common behavior across all metrics.
@@ -132,8 +136,21 @@ pub trait MetricType {
     /// Access the stored metadata
     fn meta(&self) -> &CommonMetricData;
 
-    /// Access the stored metadata mutable
-    fn meta_mut(&mut self) -> &mut CommonMetricData;
+    /// Create a new metric from this with a new name.
+    fn with_name(&self, _name: String) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
+
+    /// Create a new metric from this with a specific label.
+    fn with_dynamic_label(&self, _label: String) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
 
     /// Whether this metric should currently be recorded
     ///
@@ -168,6 +185,7 @@ impl Metric {
             Metric::Uuid(_) => "uuid",
             Metric::MemoryDistribution(_) => "memory_distribution",
             Metric::Jwe(_) => "jwe",
+            Metric::Text(_) => "text",
         }
     }
 
@@ -196,6 +214,7 @@ impl Metric {
             Metric::Uuid(s) => json!(s),
             Metric::MemoryDistribution(hist) => json!(memory_distribution::snapshot(hist)),
             Metric::Jwe(s) => json!(s),
+            Metric::Text(s) => json!(s),
         }
     }
 }

@@ -35,12 +35,10 @@ class EventChainPostVisitor;
 class EventChainPreVisitor;
 class EventChainVisitor;
 class EventListenerManager;
-class EventStates;
 class PresState;
 namespace dom {
 class ElementInternals;
 class HTMLFormElement;
-class HTMLMenuElement;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -58,7 +56,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
       : nsGenericHTMLElementBase(std::move(aNodeInfo)) {
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
-    AddStatesSilently(NS_EVENT_STATE_LTR);
+    AddStatesSilently(mozilla::dom::ElementState::LTR);
     SetFlags(NODE_HAS_DIRECTION_LTR);
   }
 
@@ -164,7 +162,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    */
   uint32_t EditableInclusiveDescendantCount();
 
-  mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::spellcheck, aSpellcheck ? u"true"_ns : u"false"_ns,
@@ -319,7 +316,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
   virtual void UpdateEditableState(bool aNotify) override;
 
-  virtual mozilla::EventStates IntrinsicState() const override;
+  virtual mozilla::dom::ElementState IntrinsicState() const override;
 
   // Helper for setting our editable flag and notifying
   void DoSetEditableFlag(bool aEditable, bool aNotify) {
@@ -1153,7 +1150,7 @@ class nsGenericHTMLFormControlElement : public nsGenericHTMLFormElement,
   virtual ~nsGenericHTMLFormControlElement();
 
   // Element
-  virtual mozilla::EventStates IntrinsicState() const override;
+  virtual mozilla::dom::ElementState IntrinsicState() const override;
   virtual bool IsLabelable() const override;
 
   // nsGenericHTMLFormElement
@@ -1371,7 +1368,6 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Link)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Marquee)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Map)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Menu)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(MenuItem)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meta)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meter)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Object)

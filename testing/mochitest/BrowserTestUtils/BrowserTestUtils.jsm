@@ -31,12 +31,14 @@ const { TestUtils } = ChromeUtils.import(
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ContentTask: "resource://testing-common/ContentTask.jsm",
 });
 
-XPCOMUtils.defineLazyServiceGetters(this, {
+XPCOMUtils.defineLazyServiceGetters(lazy, {
   ProtocolProxyService: [
     "@mozilla.org/network/protocol-proxy-service;1",
     "nsIProtocolProxyService",
@@ -939,7 +941,7 @@ var BrowserTestUtils = {
 
     // We cannot use the regular BrowserTestUtils helper for waiting here, since that
     // would try to insert the preloaded browser, which would only break things.
-    await ContentTask.spawn(gBrowser.preloadedBrowser, [], async () => {
+    await lazy.ContentTask.spawn(gBrowser.preloadedBrowser, [], async () => {
       await ContentTaskUtils.waitForCondition(() => {
         return (
           this.content.document &&
@@ -1058,7 +1060,7 @@ var BrowserTestUtils = {
   async openNewBrowserWindow(options = {}) {
     let startTime = Cu.now();
 
-    let currentWin = BrowserWindowTracker.getTopWindow({ private: false });
+    let currentWin = lazy.BrowserWindowTracker.getTopWindow({ private: false });
     if (!currentWin) {
       throw new Error(
         "Can't open a new browser window from this helper if no non-private window is open."
@@ -1368,6 +1370,36 @@ var BrowserTestUtils = {
   },
 
   /**
+   * Waits for the select popup to be shown. This is needed because the select
+   * dropdown is created lazily.
+   *
+   * @param {Window}
+   *        A window to expect the popup in.
+   *
+   * @return {Promise}
+   *        Resolves when the popup has been fully opened. The resolution value
+   *        is the select popup.
+   */
+  async waitForSelectPopupShown(win) {
+    let getMenulist = () =>
+      win.document.getElementById("ContentSelectDropdown");
+    let menulist = getMenulist();
+    if (!menulist) {
+      await this.waitForMutationCondition(
+        win.document,
+        { childList: true, subtree: true },
+        getMenulist
+      );
+      menulist = getMenulist();
+      if (menulist.menupopup.state == "open") {
+        return menulist.menupopup;
+      }
+    }
+    await this.waitForEvent(menulist.menupopup, "popupshown");
+    return menulist.menupopup;
+  },
+
+  /**
    * Adds a content event listener on the given browser
    * element. Similar to waitForContentEvent, but the listener will
    * fire until it is removed. A callable object is returned that,
@@ -1552,7 +1584,7 @@ var BrowserTestUtils = {
       let proxyFilter;
       if (!isHttp(expectedURL)) {
         proxyFilter = {
-          proxyInfo: ProtocolProxyService.newProxyInfo(
+          proxyInfo: lazy.ProtocolProxyService.newProxyInfo(
             "http",
             "mochi.test",
             8888,
@@ -1570,7 +1602,7 @@ var BrowserTestUtils = {
           },
         };
 
-        ProtocolProxyService.registerChannelFilter(proxyFilter, 0);
+        lazy.ProtocolProxyService.registerChannelFilter(proxyFilter, 0);
       }
 
       function observer(chan) {
@@ -1589,7 +1621,7 @@ var BrowserTestUtils = {
           chan.cancel(Cr.NS_BINDING_ABORTED);
         } finally {
           if (proxyFilter) {
-            ProtocolProxyService.unregisterChannelFilter(proxyFilter);
+            lazy.ProtocolProxyService.unregisterChannelFilter(proxyFilter);
           }
           Services.obs.removeObserver(observer, "http-on-before-connect");
           resolve();
@@ -1774,6 +1806,25 @@ var BrowserTestUtils = {
    */
   waitForTabClosing(tab) {
     return this.waitForEvent(tab, "TabClose");
+  },
+
+  /**
+   *
+   * @param {tab} tab
+   *        The tab that will be reloaded.
+   * @param {Boolean} [includeSubFrames = false]
+   *        A boolean indicating if loads from subframes should be included
+   *        when waiting for the frame to reload.
+   * @returns {Promise}
+   * @resolves When the tab finishes reloading.
+   */
+  reloadTab(tab, includeSubFrames = false) {
+    const finished = BrowserTestUtils.browserLoaded(
+      tab.linkedBrowser,
+      includeSubFrames
+    );
+    tab.ownerGlobal.gBrowser.reloadTab(tab);
+    return finished;
   },
 
   /**

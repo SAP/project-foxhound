@@ -4,7 +4,6 @@
 
 "use strict";
 
-const ChromeUtils = require("ChromeUtils");
 const Services = require("Services");
 const { debounce } = require("devtools/shared/debounce");
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -551,7 +550,8 @@ class JSTerm extends Component {
     }
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     this.imperativeUpdate(nextProps);
   }
 
@@ -761,8 +761,7 @@ class JSTerm extends Component {
 
     function readFile(file) {
       return new Promise(resolve => {
-        const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-        OS.File.read(file.path).then(data => {
+        IOUtils.read(file.path).then(data => {
           const decoder = new TextDecoder();
           resolve(decoder.decode(data));
         });

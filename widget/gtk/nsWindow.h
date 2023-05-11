@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:expandtab:shiftwidth=2:tabstop=2:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -171,7 +171,17 @@ class nsWindow final : public nsBaseWidget {
   LayoutDeviceIntRect GetScreenBounds() override;
   LayoutDeviceIntRect GetClientBounds() override;
   LayoutDeviceIntSize GetClientSize() override;
-  LayoutDeviceIntPoint GetClientOffset() override;
+  LayoutDeviceIntPoint GetClientOffset() override { return mClientOffset; }
+
+  // Recomputes the client offset according to our current window position.
+  // If aNotify is true, NotifyWindowMoved will be called on client offset
+  // changes.
+  //
+  // NOTE(emilio): It seems that as long any change here update either the size
+  // or the position of the window, we should be doing fine without notifying,
+  // but this is done to preserve existing behavior.
+  void RecomputeClientOffset(bool aNotify);
+
   void SetCursor(const Cursor&) override;
   void Invalidate(const LayoutDeviceIntRect& aRect) override;
   void* GetNativeData(uint32_t aDataType) override;
@@ -202,8 +212,6 @@ class nsWindow final : public nsBaseWidget {
   // utility method, -1 if no change should be made, otherwise returns a
   // value that can be passed to gdk_window_set_decorations
   gint ConvertBorderStyles(nsBorderStyle aStyle);
-
-  GdkRectangle DevicePixelsToGdkRectRoundOut(LayoutDeviceIntRect aRect);
 
   mozilla::widget::IMContextWrapper* GetIMContext() const { return mIMContext; }
 
@@ -238,6 +246,8 @@ class nsWindow final : public nsBaseWidget {
   gboolean OnTouchEvent(GdkEventTouch* aEvent);
   gboolean OnTouchpadPinchEvent(GdkEventTouchpadPinch* aEvent);
 
+  gint GetInputRegionMarginInGdkCoords();
+
   void UpdateTopLevelOpaqueRegion();
 
   already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawingInRegion(
@@ -266,12 +276,9 @@ class nsWindow final : public nsBaseWidget {
 
   MozContainer* GetMozContainer() { return mContainer; }
   LayoutDeviceIntSize GetMozContainerSize();
-  // GetMozContainerWidget returns the MozContainer even for undestroyed
-  // descendant windows
-  GtkWidget* GetMozContainerWidget();
-  GdkWindow* GetGdkWindow() { return mGdkWindow; };
-  GdkWindow* GetToplevelGdkWindow();
-  GtkWidget* GetGtkWidget() { return mShell; }
+  GdkWindow* GetGdkWindow() const { return mGdkWindow; };
+  GdkWindow* GetToplevelGdkWindow() const;
+  GtkWidget* GetGtkWidget() const { return mShell; }
   nsIFrame* GetFrame() const;
   bool IsDestroyed() const { return mIsDestroyed; }
   bool IsPopup() const;
@@ -308,7 +315,7 @@ class nsWindow final : public nsBaseWidget {
 
   void SetTransparencyMode(nsTransparencyMode aMode) override;
   nsTransparencyMode GetTransparencyMode() override;
-  void SetWindowMouseTransparent(bool aIsTransparent) override;
+  void SetInputRegion(const InputRegion&) override;
   nsresult UpdateTranslucentWindowAlphaInternal(const nsIntRect& aRect,
                                                 uint8_t* aAlphas,
                                                 int32_t aStride);
@@ -358,20 +365,21 @@ class nsWindow final : public nsBaseWidget {
 
   // HiDPI scale conversion
   gint GdkCeiledScaleFactor();
-  bool UseFractionalScale();
+  bool UseFractionalScale() const;
   double FractionalScaleFactor();
 
   // To GDK
-  gint DevicePixelsToGdkCoordRoundUp(int pixels);
-  gint DevicePixelsToGdkCoordRoundDown(int pixels);
-  GdkPoint DevicePixelsToGdkPointRoundDown(LayoutDeviceIntPoint point);
-  GdkRectangle DevicePixelsToGdkSizeRoundUp(LayoutDeviceIntSize pixelSize);
+  gint DevicePixelsToGdkCoordRoundUp(int);
+  gint DevicePixelsToGdkCoordRoundDown(int);
+  GdkPoint DevicePixelsToGdkPointRoundDown(const LayoutDeviceIntPoint&);
+  GdkRectangle DevicePixelsToGdkSizeRoundUp(const LayoutDeviceIntSize&);
+  GdkRectangle DevicePixelsToGdkRectRoundOut(const LayoutDeviceIntRect&);
 
   // From GDK
-  int GdkCoordToDevicePixels(gint coord);
-  LayoutDeviceIntPoint GdkPointToDevicePixels(GdkPoint point);
-  LayoutDeviceIntPoint GdkEventCoordsToDevicePixels(gdouble x, gdouble y);
-  LayoutDeviceIntRect GdkRectToDevicePixels(GdkRectangle rect);
+  int GdkCoordToDevicePixels(gint);
+  LayoutDeviceIntPoint GdkPointToDevicePixels(const GdkPoint&);
+  LayoutDeviceIntPoint GdkEventCoordsToDevicePixels(gdouble aX, gdouble aY);
+  LayoutDeviceIntRect GdkRectToDevicePixels(const GdkRectangle&);
 
   bool WidgetTypeSupportsAcceleration() override;
 
@@ -447,6 +455,7 @@ class nsWindow final : public nsBaseWidget {
   void DispatchActivateEvent(void);
   void DispatchDeactivateEvent(void);
   void MaybeDispatchResized();
+  void DispatchPanGesture(mozilla::PanGestureInput& aPanInput);
 
   void RegisterTouchWindow() override;
   bool CompositorInitiallyPaused() override {
@@ -469,11 +478,10 @@ class nsWindow final : public nsBaseWidget {
   void GrabPointer(guint32 aTime);
   void ReleaseGrabs(void);
 
-  void UpdateClientOffsetFromFrameExtents();
-  void UpdateClientOffsetFromCSDWindow();
-
   void DispatchContextMenuEventFromMouseEvent(uint16_t domButton,
                                               GdkEventButton* aEvent);
+
+  void TryToShowNativeWindowMenu(GdkEventButton* aEvent);
 
   void EnableRenderingToWindow();
   void DisableRenderingToWindow();
@@ -482,8 +490,8 @@ class nsWindow final : public nsBaseWidget {
   void WaylandStartVsync();
   void WaylandStopVsync();
   void DestroyChildWindows();
-  GtkWidget* GetToplevelWidget();
-  nsWindow* GetContainerWindow();
+  GtkWidget* GetToplevelWidget() const;
+  nsWindow* GetContainerWindow() const;
   Window GetX11Window();
   bool GetShapedState();
   void EnsureGdkWindow();
@@ -530,16 +538,16 @@ class nsWindow final : public nsBaseWidget {
   int mCompositorPauseTimeoutID = 0;
 
   nsSizeMode mSizeMode = nsSizeMode_Normal;
-  nsSizeMode mSizeState = nsSizeMode_Normal;
   float mAspectRatio = 0.0f;
   float mAspectRatioSaved = 0.0f;
+
   // The size requested, which might not be reflected in mBounds.  Used in
   // WaylandPopupSetDirectPosition() to remember intended size for popup
   // positioning, in LockAspect() to remember the intended aspect ratio, and
   // to remember a size requested while waiting for moved-to-rect when
   // OnSizeAllocate() might change mBounds.Size().
   LayoutDeviceIntSize mLastSizeRequest;
-  nsIntPoint mClientOffset;
+  LayoutDeviceIntPoint mClientOffset;
 
   // This field omits duplicate scroll events caused by GNOME bug 726878.
   guint32 mLastScrollEventTime = GDK_CURRENT_TIME;
@@ -620,7 +628,6 @@ class nsWindow final : public nsBaseWidget {
   bool mIsChildWindow : 1;
   bool mAlwaysOnTop : 1;
   bool mNoAutoHide : 1;
-  bool mMouseTransparent : 1;
   bool mIsTransparent : 1;
   // We can expect at least one size-allocate event after early resizes.
   bool mHasReceivedSizeAllocate : 1;
@@ -740,6 +747,8 @@ class nsWindow final : public nsBaseWidget {
 
   float mLastMotionPressure = 0.0f;
 
+  InputRegion mInputRegion;
+
   // Remember the last sizemode so that we can restore it when
   // leaving fullscreen
   nsSizeMode mLastSizeMode = nsSizeMode_Normal;
@@ -772,7 +781,7 @@ class nsWindow final : public nsBaseWidget {
 
   void SetPopupWindowDecoration(bool aShowOnTaskbar);
 
-  void ApplySizeConstraints(void);
+  void ApplySizeConstraints();
 
   // Wayland Popup section
   GdkPoint WaylandGetParentPosition();
@@ -813,7 +822,7 @@ class nsWindow final : public nsBaseWidget {
   const WaylandPopupMoveToRectParams WaylandPopupGetPositionFromLayout();
   void WaylandPopupPropagateChangesToLayout(bool aMove, bool aResize);
   nsWindow* WaylandPopupFindLast(nsWindow* aPopup);
-  GtkWindow* GetCurrentTopmostWindow();
+  GtkWindow* GetCurrentTopmostWindow() const;
   nsAutoCString GetFrameTag() const;
   nsCString GetPopupTypeName();
   bool IsPopupDirectionRTL();

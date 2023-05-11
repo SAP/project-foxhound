@@ -6,6 +6,10 @@
 
 var EXPORTED_SYMBOLS = ["XPCOMUtils"];
 
+const { Services } = ChromeUtils.import(
+  "resource://gre/modules/Services.jsm"
+);
+
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -17,10 +21,7 @@ let global = Cu.getGlobalForObject({});
 // and `MessagePort`. This table maps those extra symbols to the main
 // import name.
 const EXTRA_GLOBAL_NAME_TO_IMPORT_NAME = {
-  Headers: "fetch",
   MessagePort: "MessageChannel",
-  Request: "fetch",
-  Response: "fetch",
 };
 
 /**
@@ -579,6 +580,3 @@ class LazyProxyHandler {
 }
 
 var XPCU_lazyPreferenceObserverQI = ChromeUtils.generateQI(["nsIObserver", "nsISupportsWeakReference"]);
-
-ChromeUtils.defineModuleGetter(this, "Services",
-                               "resource://gre/modules/Services.jsm");

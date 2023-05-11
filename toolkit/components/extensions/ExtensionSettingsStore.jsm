@@ -42,22 +42,22 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionSettingsStore"];
 
+const { ExtensionParent } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionParent.jsm"
+);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "JSONFile",
   "resource://gre/modules/JSONFile.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionParent",
-  "resource://gre/modules/ExtensionParent.jsm"
 );
 
 // Defined for readability of precedence and selection code.  keyInfo.selected will be
@@ -96,7 +96,7 @@ function dataPostProcessor(json) {
 // Loads the data from the JSON file into memory.
 function initialize() {
   if (!_initializePromise) {
-    _store = new JSONFile({
+    _store = new lazy.JSONFile({
       path: STORE_PATH,
       dataPostProcessor,
     });
@@ -409,7 +409,7 @@ var ExtensionSettingsStore = {
     let newInstall = false;
     if (foundIndex === -1) {
       // No item for this extension, so add a new one.
-      let addon = await AddonManager.getAddonByID(id);
+      let addon = await lazy.AddonManager.getAddonByID(id);
       keyInfo.precedenceList.push({
         id,
         installDate: addon.installDate.valueOf(),
@@ -631,7 +631,7 @@ var ExtensionSettingsStore = {
       }
       // When user set, the setting is never "controllable" unless the installDate
       // is later than the user date.
-      let addon = await AddonManager.getAddonByID(id);
+      let addon = await lazy.AddonManager.getAddonByID(id);
       return !addon || keyInfo.selectedDate > addon.installDate.valueOf()
         ? "not_controllable"
         : "controllable_by_this_extension";
@@ -647,7 +647,7 @@ var ExtensionSettingsStore = {
       return "controlled_by_this_extension";
     }
 
-    let addon = await AddonManager.getAddonByID(id);
+    let addon = await lazy.AddonManager.getAddonByID(id);
     return !addon || topItem.installDate > addon.installDate.valueOf()
       ? "controlled_by_other_extensions"
       : "controllable_by_this_extension";

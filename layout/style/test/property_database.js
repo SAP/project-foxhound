@@ -7222,6 +7222,14 @@ var gCSSProperties = {
     other_values: ["smooth"],
     invalid_values: ["none", "1px"],
   },
+  "scroll-snap-stop": {
+    domProp: "scrollSnapStop",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["normal"],
+    other_values: ["always"],
+    invalid_values: ["auto", "none", "1px"],
+  },
   "scroll-snap-type": {
     domProp: "scrollSnapType",
     inherited: false,
@@ -13382,6 +13390,35 @@ if (IsCSSPropertyPrefEnabled("layout.css.step-position-jump.enabled")) {
   );
 }
 
+if (IsCSSPropertyPrefEnabled("layout.css.linear-easing-function.enabled")) {
+  let linear_function_other_values = [
+    "linear()",
+    "linear(0.5)",
+    "linear(0, 1)",
+    "linear(0 0% 50%, 1 50% 100%)",
+  ];
+
+  let linear_function_invalid_values = ["linear(0% 0 100%)", "linear(0,)"];
+  gCSSProperties["animation-timing-function"].other_values.push(
+    ...linear_function_other_values
+  );
+  gCSSProperties["animation-timing-function"].invalid_values.push(
+    ...linear_function_invalid_values
+  );
+
+  gCSSProperties["transition-timing-function"].other_values.push(
+    ...linear_function_other_values
+  );
+  gCSSProperties["transition-timing-function"].invalid_values.push(
+    ...linear_function_invalid_values
+  );
+
+  gCSSProperties["animation"].other_values.push(
+    "1s 2s linear() bounce",
+    "4s linear(0, 0.5 25% 75%, 1 100% 100%)"
+  );
+}
+
 if (
   IsCSSPropertyPrefEnabled("layout.css.backdrop-filter.enabled") &&
   IsWebRenderEnabled()
@@ -13559,6 +13596,61 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-linked-animations.enabled")) {
       "bounce, unset",
       "unset, bounce",
     ],
+  };
+
+  gCSSProperties["scroll-timeline-name"] = {
+    domProp: "scrollTimelineName",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "all",
+      "ball",
+      "mall",
+      "color",
+      "foobar",
+      "\\32bounce",
+      "-bounce",
+      "-\\32bounce",
+      "\\32 0bounce",
+      "-\\32 0bounce",
+      "\\2bounce",
+      "-\\2bounce",
+    ],
+    invalid_values: [
+      "auto",
+      "bounce, abc",
+      "abc bounce",
+      "10px",
+      "rgb(1, 2, 3)",
+    ],
+  };
+
+  gCSSProperties["scroll-timeline-axis"] = {
+    domProp: "scrollTimelineAxis",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["block"],
+    other_values: ["inline", "vertical", "horizontal"],
+    invalid_values: ["auto", "none", "abc"],
+  };
+
+  gCSSProperties["scroll-timeline"] = {
+    domProp: "scrollTimeline",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: ["scroll-timeline-name", "scroll-timeline-axis"],
+    initial_values: ["none block", "block none", "block", "none"],
+    other_values: [
+      "bounce inline",
+      "bounce vertical",
+      "horizontal bounce",
+      "inline \\32bounce",
+      "block -bounce",
+      "vertical \\32 0bounce",
+      "horizontal -\\32 0bounce",
+    ],
+    invalid_values: ["", "bounce bounce"],
   };
 }
 

@@ -10,9 +10,8 @@ import { connect } from "../../utils/connect";
 
 // Selectors
 import {
-  getShownSource,
   getSelectedSource,
-  getDebuggeeUrl,
+  getMainThreadHost,
   getExpandedState,
   getProjectDirectoryRoot,
   getDisplayedSources,
@@ -40,25 +39,23 @@ import {
   getAllSources,
   getSourcesInsideGroup,
 } from "../../utils/sources-tree";
-import { parse } from "../../utils/url";
 import { getRawSourceURL } from "../../utils/source";
 
-function shouldAutoExpand(depth, item, debuggeeUrl, projectRoot) {
+function shouldAutoExpand(depth, item, mainThreadHost, projectRoot) {
   if (projectRoot != "" || depth !== 1) {
     return false;
   }
 
-  const { host } = parse(debuggeeUrl);
-  return item.name === host;
+  return item.name === mainThreadHost;
 }
 
 class SourcesTree extends Component {
   constructor(props) {
     super(props);
-    const { debuggeeUrl, sources, threads } = this.props;
+    const { mainThreadHost, sources, threads } = this.props;
 
     this.state = createTree({
-      debuggeeUrl,
+      mainThreadHost,
       sources,
       threads,
     });
@@ -67,7 +64,7 @@ class SourcesTree extends Component {
   static get propTypes() {
     return {
       cx: PropTypes.object.isRequired,
-      debuggeeUrl: PropTypes.string.isRequired,
+      mainThreadHost: PropTypes.string.isRequired,
       expanded: PropTypes.object.isRequired,
       focusItem: PropTypes.func.isRequired,
       focused: PropTypes.object,
@@ -75,19 +72,18 @@ class SourcesTree extends Component {
       selectSource: PropTypes.func.isRequired,
       selectedSource: PropTypes.object,
       setExpandedState: PropTypes.func.isRequired,
-      shownSource: PropTypes.object,
       sourceCount: PropTypes.number,
       sources: PropTypes.object.isRequired,
       threads: PropTypes.array.isRequired,
     };
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const {
       projectRoot,
-      debuggeeUrl,
+      mainThreadHost,
       sources,
-      shownSource,
       selectedSource,
       threads,
     } = this.props;
@@ -95,7 +91,7 @@ class SourcesTree extends Component {
 
     if (
       projectRoot != nextProps.projectRoot ||
-      debuggeeUrl != nextProps.debuggeeUrl ||
+      mainThreadHost != nextProps.mainThreadHost ||
       threads != nextProps.threads ||
       nextProps.sourceCount === 0
     ) {
@@ -104,26 +100,10 @@ class SourcesTree extends Component {
       return this.setState(
         createTree({
           sources: nextProps.sources,
-          debuggeeUrl: nextProps.debuggeeUrl,
+          mainThreadHost: nextProps.mainThreadHost,
           threads: nextProps.threads,
         })
       );
-    }
-
-    if (nextProps.shownSource && nextProps.shownSource != shownSource) {
-      const listItems = getDirectories(nextProps.shownSource, sourceTree);
-      return this.setState({ listItems });
-    }
-
-    if (
-      nextProps.selectedSource &&
-      nextProps.selectedSource != selectedSource
-    ) {
-      const highlightItems = getDirectories(
-        nextProps.selectedSource,
-        sourceTree
-      );
-      this.setState({ highlightItems });
     }
 
     // NOTE: do not run this every time a source is clicked,
@@ -133,13 +113,47 @@ class SourcesTree extends Component {
         newSources: nextProps.sources,
         threads: nextProps.threads,
         prevSources: sources,
-        debuggeeUrl,
+        mainThreadHost,
         uncollapsedTree,
         sourceTree,
       });
       if (update) {
-        this.setState(update);
+        this.setState({
+          uncollapsedTree: update.uncollapsedTree,
+          sourceTree: update.sourceTree,
+          getParent: update.getParent,
+        });
       }
+    }
+
+    // Execute this *after* the call to updateTree in case the selected source
+    // just got added in the props.
+    if (
+      nextProps.selectedSource &&
+      nextProps.selectedSource != selectedSource
+    ) {
+      const highlightItems = getDirectories(
+        nextProps.selectedSource,
+        // Ensure querying latest state, in case updateTree updated the source tree
+        this.state.sourceTree
+      );
+      this.setState({ highlightItems });
+
+      // Also, it can happen that the source is selected before it is registered in the tree,
+      // In which case, this previous line would select the root item.
+      // So check if we have a selectedSource and we are on root and we got new sources,
+      // to try to update the selected item in the ManagedTree
+    } else if (
+      nextProps.selectedSource &&
+      this.state.highlightItems &&
+      this.state.highlightItems[0].name == "root"
+    ) {
+      const highlightItems = getDirectories(
+        nextProps.selectedSource,
+        // Ensure querying latest state, in case updateTree updated the source tree
+        this.state.sourceTree
+      );
+      this.setState({ highlightItems });
     }
   }
 
@@ -215,7 +229,7 @@ class SourcesTree extends Component {
   };
 
   renderItem = (item, depth, focused, _, expanded, { setExpanded }) => {
-    const { debuggeeUrl, projectRoot, threads } = this.props;
+    const { mainThreadHost, projectRoot, threads } = this.props;
 
     return (
       <SourcesTreeItem
@@ -223,12 +237,11 @@ class SourcesTree extends Component {
         threads={threads}
         depth={depth}
         focused={focused}
-        autoExpand={shouldAutoExpand(depth, item, debuggeeUrl, projectRoot)}
+        autoExpand={shouldAutoExpand(depth, item, mainThreadHost, projectRoot)}
         expanded={expanded}
         focusItem={this.onFocus}
         selectItem={this.selectItem}
         source={getSource(item, this.props)}
-        debuggeeUrl={debuggeeUrl}
         projectRoot={projectRoot}
         setExpanded={setExpanded}
         getSourcesGroups={this.getSourcesGroups}
@@ -307,15 +320,13 @@ function getSourceForTree(state, displayedSources, source) {
 
 const mapStateToProps = (state, props) => {
   const selectedSource = getSelectedSource(state);
-  const shownSource = getShownSource(state);
   const displayedSources = getDisplayedSources(state);
 
   return {
     threads: props.threads,
     cx: getContext(state),
-    shownSource: getSourceForTree(state, displayedSources, shownSource),
     selectedSource: getSourceForTree(state, displayedSources, selectedSource),
-    debuggeeUrl: getDebuggeeUrl(state),
+    mainThreadHost: getMainThreadHost(state),
     expanded: getExpandedState(state),
     focused: getFocusedSourceItem(state),
     projectRoot: getProjectDirectoryRoot(state),

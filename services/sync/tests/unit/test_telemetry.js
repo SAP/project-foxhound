@@ -8,9 +8,10 @@ const { RotaryEngine } = ChromeUtils.import(
   "resource://testing-common/services/sync/rotaryengine.js"
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { fxAccounts } = ChromeUtils.import(
+const { getFxAccountsSingleton } = ChromeUtils.import(
   "resource://gre/modules/FxAccounts.jsm"
 );
+const fxAccounts = getFxAccountsSingleton();
 
 function SteamStore(engine) {
   Store.call(this, "Steam", engine);
@@ -615,6 +616,27 @@ add_task(async function test_clean_urls() {
   } finally {
     await cleanAndGo(engine, server);
     await Service.engineManager.unregister(engine);
+  }
+});
+
+// Test sanitizing guid-related errors with the pattern of <guid: {guid}>
+add_task(async function test_sanitize_bookmarks_guid() {
+  let { ErrorSanitizer } = ChromeUtils.import(
+    "resource://services-sync/telemetry.js"
+  );
+
+  for (let [original, expected] of [
+    [
+      "Can't insert Bookmark <guid: sknD84IdnSY2> into Folder <guid: odfninDdi93_3>",
+      "Can't insert Bookmark <GUID> into Folder <GUID>",
+    ],
+    [
+      "Merge Error: Item <guid: H6fmPA16gZs9> can't contain itself",
+      "Merge Error: Item <GUID> can't contain itself",
+    ],
+  ]) {
+    const sanitized = ErrorSanitizer.cleanErrorMessage(original);
+    Assert.equal(sanitized, expected);
   }
 });
 

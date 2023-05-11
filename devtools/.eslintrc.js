@@ -144,6 +144,18 @@ module.exports = {
         "mozilla/reject-relative-requires": "error",
       },
     },
+    {
+      // These tests use old React. We should accept deprecated API usages
+      files: [
+        "client/inspector/markup/test/doc_markup_events_react_development_15.4.1.html",
+        "client/inspector/markup/test/doc_markup_events_react_development_15.4.1_jsx.html",
+        "client/inspector/markup/test/doc_markup_events_react_production_15.3.1.html",
+        "client/inspector/markup/test/doc_markup_events_react_production_15.3.1_jsx.html",
+      ],
+      rules: {
+        "react/no-deprecated": "off",
+      },
+    },
   ],
   rules: {
     // These are the rules that have been configured so far to match the
@@ -159,6 +171,7 @@ module.exports = {
     // Rules from the React plugin
     "react/display-name": "error",
     "react/no-danger": "error",
+    "react/no-deprecated": "error",
     "react/no-did-mount-set-state": "error",
     "react/no-did-update-set-state": "error",
     "react/no-direct-mutation-state": "error",
@@ -183,11 +196,11 @@ module.exports = {
             "getInitialState",
             "state",
             "getChildContext",
-            "componentWillMount",
+            "UNSAFE_componentWillMount",
             "componentDidMount",
-            "componentWillReceiveProps",
+            "UNSAFE_componentWillReceiveProps",
             "shouldComponentUpdate",
-            "componentWillUpdate",
+            "UNSAFE_componentWillUpdate",
             "componentDidUpdate",
             "componentWillUnmount",
           ],
@@ -393,6 +406,10 @@ module.exports = {
     // require assignment operator shorthand where possible or prohibit it
     // entirely
     "operator-assignment": "off",
+    // This rule will match any function starting with `use` which aren't
+    // necessarily in a React component. Also DevTools aren't using React hooks
+    // so this sounds unecessary.
+    "react-hooks/rules-of-hooks": "off",
   },
   settings: {
     react: {

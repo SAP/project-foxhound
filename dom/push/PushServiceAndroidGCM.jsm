@@ -8,34 +8,32 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { PushRecord } = ChromeUtils.import(
+  "resource://gre/modules/PushRecord.jsm"
+);
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PushDB",
   "resource://gre/modules/PushDB.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
-  "PushRecord",
-  "resource://gre/modules/PushRecord.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PushCrypto",
   "resource://gre/modules/PushCrypto.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "EventDispatcher",
   "resource://gre/modules/Messaging.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
 
-XPCOMUtils.defineLazyGetter(this, "Log", () => {
+XPCOMUtils.defineLazyGetter(lazy, "Log", () => {
   return ChromeUtils.import(
     "resource://gre/modules/AndroidLog.jsm"
   ).AndroidLog.bind("Push");
@@ -43,10 +41,10 @@ XPCOMUtils.defineLazyGetter(this, "Log", () => {
 
 const EXPORTED_SYMBOLS = ["PushServiceAndroidGCM"];
 
-XPCOMUtils.defineLazyGetter(this, "console", () => {
+XPCOMUtils.defineLazyGetter(lazy, "console", () => {
   let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   return new ConsoleAPI({
-    dump: Log.i,
+    dump: lazy.Log.i,
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushServiceAndroidGCM",
   });
@@ -69,7 +67,7 @@ var PushServiceAndroidGCM = {
   _serverURI: null,
 
   newPushDB() {
-    return new PushDB(
+    return new lazy.PushDB(
       kPUSHANDROIDGCMDB_DB_NAME,
       kPUSHANDROIDGCMDB_DB_VERSION,
       kPUSHANDROIDGCMDB_STORE_NAME,
@@ -84,7 +82,7 @@ var PushServiceAndroidGCM = {
         if (data == "dom.push.debug") {
           // Reconfigure.
           let debug = !!prefs.get("debug");
-          console.info(
+          lazy.console.info(
             "Debug parameter changed; updating configuration with new debug",
             debug
           );
@@ -103,19 +101,23 @@ var PushServiceAndroidGCM = {
     // TODO: Use Messaging.jsm for this.
     if (this._mainPushService == null) {
       // Shouldn't ever happen, but let's be careful.
-      console.error("No main PushService!  Dropping message.");
+      lazy.console.error("No main PushService!  Dropping message.");
       return;
     }
     if (!data) {
-      console.error("No data from Java!  Dropping message.");
+      lazy.console.error("No data from Java!  Dropping message.");
       return;
     }
     data = JSON.parse(data);
-    console.debug("ReceivedPushMessage with data", data);
+    lazy.console.debug("ReceivedPushMessage with data", data);
 
     let { headers, message } = this._messageAndHeaders(data);
 
-    console.debug("Delivering message to main PushService:", message, headers);
+    lazy.console.debug(
+      "Delivering message to main PushService:",
+      message,
+      headers
+    );
     this._mainPushService.receivedPushMessage(
       data.channelID,
       "",
@@ -157,7 +159,7 @@ var PushServiceAndroidGCM = {
   },
 
   _configure(serverURL, debug) {
-    return EventDispatcher.instance.sendRequestForResult({
+    return lazy.EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:Configure",
       endpoint: serverURL.spec,
       debug,
@@ -165,7 +167,7 @@ var PushServiceAndroidGCM = {
   },
 
   init(options, mainPushService, serverURL) {
-    console.debug("init()");
+    lazy.console.debug("init()");
     this._mainPushService = mainPushService;
     this._serverURI = serverURL;
 
@@ -173,15 +175,15 @@ var PushServiceAndroidGCM = {
     Services.obs.addObserver(this, "PushServiceAndroidGCM:ReceivedPushMessage");
 
     return this._configure(serverURL, !!prefs.get("debug")).then(() => {
-      EventDispatcher.instance.sendRequestForResult({
+      lazy.EventDispatcher.instance.sendRequestForResult({
         type: "PushServiceAndroidGCM:Initialized",
       });
     });
   },
 
   uninit() {
-    console.debug("uninit()");
-    EventDispatcher.instance.sendRequestForResult({
+    lazy.console.debug("uninit()");
+    lazy.EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:Uninitialized",
     });
 
@@ -198,30 +200,30 @@ var PushServiceAndroidGCM = {
   },
 
   connect(records, broadcastListeners) {
-    console.debug("connect:", records);
+    lazy.console.debug("connect:", records);
     // It's possible for the registration or subscriptions backing the
     // PushService to not be registered with the underlying AndroidPushService.
     // Expire those that are unrecognized.
-    return EventDispatcher.instance
+    return lazy.EventDispatcher.instance
       .sendRequestForResult({
         type: "PushServiceAndroidGCM:DumpSubscriptions",
       })
       .then(subscriptions => {
         subscriptions = JSON.parse(subscriptions);
-        console.debug("connect:", subscriptions);
+        lazy.console.debug("connect:", subscriptions);
         // subscriptions maps chid => subscription data.
         return Promise.all(
           records.map(record => {
             if (subscriptions.hasOwnProperty(record.keyID)) {
-              console.debug("connect:", "hasOwnProperty", record.keyID);
+              lazy.console.debug("connect:", "hasOwnProperty", record.keyID);
               return Promise.resolve();
             }
-            console.debug("connect:", "!hasOwnProperty", record.keyID);
+            lazy.console.debug("connect:", "!hasOwnProperty", record.keyID);
             // Subscription is known to PushService.jsm but not to AndroidPushService.  Drop it.
             return this._mainPushService
               .dropRegistrationAndNotifyApp(record.keyID)
               .catch(error => {
-                console.error(
+                lazy.console.error(
                   "connect: Error dropping registration",
                   record.keyID,
                   error
@@ -241,11 +243,11 @@ var PushServiceAndroidGCM = {
   },
 
   disconnect() {
-    console.debug("disconnect");
+    lazy.console.debug("disconnect");
   },
 
   register(record) {
-    console.debug("register:", record);
+    lazy.console.debug("register:", record);
     let ctime = Date.now();
     let appServerKey = record.appServerKey
       ? ChromeUtils.base64URLEncode(record.appServerKey, {
@@ -261,40 +263,42 @@ var PushServiceAndroidGCM = {
       message.service = "fxa";
     }
     // Caller handles errors.
-    return EventDispatcher.instance.sendRequestForResult(message).then(data => {
-      data = JSON.parse(data);
-      console.debug("Got data:", data);
-      return PushCrypto.generateKeys().then(
-        exportedKeys =>
-          new PushRecordAndroidGCM({
-            // Straight from autopush.
-            channelID: data.channelID,
-            pushEndpoint: data.endpoint,
-            // Common to all PushRecord implementations.
-            scope: record.scope,
-            originAttributes: record.originAttributes,
-            ctime,
-            systemRecord: record.systemRecord,
-            // Cryptography!
-            p256dhPublicKey: exportedKeys[0],
-            p256dhPrivateKey: exportedKeys[1],
-            authenticationSecret: PushCrypto.generateAuthenticationSecret(),
-            appServerKey: record.appServerKey,
-          })
-      );
-    });
+    return lazy.EventDispatcher.instance
+      .sendRequestForResult(message)
+      .then(data => {
+        data = JSON.parse(data);
+        lazy.console.debug("Got data:", data);
+        return lazy.PushCrypto.generateKeys().then(
+          exportedKeys =>
+            new PushRecordAndroidGCM({
+              // Straight from autopush.
+              channelID: data.channelID,
+              pushEndpoint: data.endpoint,
+              // Common to all PushRecord implementations.
+              scope: record.scope,
+              originAttributes: record.originAttributes,
+              ctime,
+              systemRecord: record.systemRecord,
+              // Cryptography!
+              p256dhPublicKey: exportedKeys[0],
+              p256dhPrivateKey: exportedKeys[1],
+              authenticationSecret: lazy.PushCrypto.generateAuthenticationSecret(),
+              appServerKey: record.appServerKey,
+            })
+        );
+      });
   },
 
   unregister(record) {
-    console.debug("unregister: ", record);
-    return EventDispatcher.instance.sendRequestForResult({
+    lazy.console.debug("unregister: ", record);
+    return lazy.EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:UnsubscribeChannel",
       channelID: record.keyID,
     });
   },
 
   reportDeliveryError(messageID, reason) {
-    console.warn(
+    lazy.console.warn(
       "reportDeliveryError: Ignoring message delivery error",
       messageID,
       reason

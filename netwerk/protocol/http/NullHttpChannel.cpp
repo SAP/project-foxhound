@@ -83,12 +83,6 @@ NullHttpChannel::SetTopBrowsingContextId(uint64_t) {
 }
 
 NS_IMETHODIMP
-NullHttpChannel::GetFlashPluginState(
-    nsIHttpChannel::FlashPluginState* aResult) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 NullHttpChannel::GetTransferSize(uint64_t* aTransferSize) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -737,31 +731,6 @@ NullHttpChannel::SetAllRedirectsPassTimingAllowCheck(
 
 NS_IMETHODIMP
 NullHttpChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
-  if (!mResourcePrincipal || !aOrigin) {
-    *_retval = false;
-    return NS_OK;
-  }
-
-  bool sameOrigin = false;
-  nsresult rv = mResourcePrincipal->Equals(aOrigin, &sameOrigin);
-  if (NS_SUCCEEDED(rv) && sameOrigin) {
-    *_retval = true;
-    return NS_OK;
-  }
-
-  if (mTimingAllowOriginHeader == "*") {
-    *_retval = true;
-    return NS_OK;
-  }
-
-  nsAutoCString origin;
-  aOrigin->GetAsciiOrigin(origin);
-
-  if (mTimingAllowOriginHeader == origin) {
-    *_retval = true;
-    return NS_OK;
-  }
-
   *_retval = false;
   return NS_OK;
 }

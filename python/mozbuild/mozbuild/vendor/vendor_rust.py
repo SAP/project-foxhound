@@ -7,15 +7,16 @@ from __future__ import absolute_import, print_function, unicode_literals
 import errno
 import hashlib
 import io
+import json
 import logging
 import os
 import re
 import subprocess
-import sys
 from collections import defaultdict, OrderedDict
 from distutils.version import LooseVersion
 from itertools import dropwhile
 from mozboot.util import MINIMUM_RUST_VERSION
+from pathlib import Path
 
 import pytoml
 import mozpack.path as mozpath
@@ -62,6 +63,22 @@ Cargo.lock to the HEAD version, run `git checkout -- Cargo.lock` or
 """
 
 
+WINDOWS_UNDESIRABLE_REASON = """\
+The windows and windows-sys crates and their dependencies are too big to \
+vendor, and is a risk of version duplication due to its current update \
+cadence. Until this is worked out with upstream, we prefer to avoid them.\
+"""
+
+PACKAGES_WE_DONT_WANT = {
+    "windows-sys": WINDOWS_UNDESIRABLE_REASON,
+    "windows": WINDOWS_UNDESIRABLE_REASON,
+    "windows_aarch64_msvc": WINDOWS_UNDESIRABLE_REASON,
+    "windows_i686_gnu": WINDOWS_UNDESIRABLE_REASON,
+    "windows_i686_msvc": WINDOWS_UNDESIRABLE_REASON,
+    "windows_x86_64_gnu": WINDOWS_UNDESIRABLE_REASON,
+    "windows_x86_64_msvc": WINDOWS_UNDESIRABLE_REASON,
+}
+
 PACKAGES_WE_ALWAYS_WANT_AN_OVERRIDE_OF = [
     "autocfg",
     "cmake",
@@ -73,30 +90,62 @@ PACKAGES_WE_ALWAYS_WANT_AN_OVERRIDE_OF = [
 # If you do need to make changes increasing the number of duplicates, please
 # add a comment as to why.
 TOLERATED_DUPES = {
-    "arrayvec": 2,
-    "base64": 3,
-    "bytes": 3,
-    "cfg-if": 2,
+    "bytes": 2,
     "crossbeam-deque": 2,
     "crossbeam-epoch": 2,
     "crossbeam-utils": 3,
     "futures": 2,
-    "itertools": 2,
     "libloading": 2,
-    "memmap2": 2,
     "memoffset": 2,
     "mio": 2,
-    "pin-project-lite": 2,
-    "target-lexicon": 2,
-    "tokio": 3,
+    # Transition from time 0.1 to 0.3 underway, but chrono is stuck on 0.1
+    # and hasn't been updated in 1.5 years (an hypothetical update is
+    # expected to remove the dependency on time altogether).
+    "time": 2,
+    "tokio": 2,
+    # nom 6 used by plenty of things
+    # nom 7 used by askama (dep of UniFFI, dep of Glean)
+    # See https://github.com/mozilla/uniffi-rs/issues/1260
+    "nom": 2,
 }
 
 
 class VendorRust(MozbuildObject):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._issues = []
+
+    def serialize_issues_json(self):
+        return json.dumps(
+            {
+                "Cargo.lock": [
+                    {
+                        "path": "Cargo.lock",
+                        "column": None,
+                        "line": None,
+                        "level": "error" if level == logging.ERROR else "warning",
+                        "message": msg,
+                    }
+                    for (level, msg) in self._issues
+                ]
+            }
+        )
+
+    def log(self, level, action, params, format_str):
+        if level >= logging.WARNING:
+            self._issues.append((level, format_str.format(**params)))
+        super().log(level, action, params, format_str)
+
     def get_cargo_path(self):
         try:
             return self.substs["CARGO"]
         except (BuildEnvironmentNotFoundException, KeyError):
+            if "MOZ_AUTOMATION" in os.environ:
+                cargo = os.path.join(
+                    os.environ["MOZ_FETCHES_DIR"], "rustc", "bin", "cargo"
+                )
+                assert os.path.exists(cargo)
+                return cargo
             # Default if this tree isn't configured.
             from mozfile import which
 
@@ -136,7 +185,7 @@ class VendorRust(MozbuildObject):
         self.log(logging.DEBUG, "cargo_version", {}, "cargo is new enough")
         return True
 
-    def check_modified_files(self):
+    def has_modified_files(self):
         """
         Ensure that there aren't any uncommitted changes to files
         in the working copy, since we're going to change some state
@@ -162,7 +211,7 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
                     files="\n".join(sorted(modified))
                 ),
             )
-            sys.exit(1)
+        return modified
 
     def check_openssl(self):
         """
@@ -378,6 +427,7 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
                         ),
                     )
                     return False
+            return True
 
         def check_package(package):
             self.log(
@@ -436,7 +486,8 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
 
                 if license_matches:
                     license = license_matches[0].group(1)
-                    verify_acceptable_license(package, license)
+                    if not verify_acceptable_license(package, license):
+                        return False
                 else:
                     license_file = license_file_matches[0].group(1)
                     self.log(
@@ -495,17 +546,59 @@ license file's hash.
         ]
         return all(results)
 
+    def _check_build_rust(self, cargo_lock):
+        ret = True
+        crates = {}
+        for path in Path(self.topsrcdir).glob("build/rust/**/Cargo.toml"):
+            with open(path) as fh:
+                cargo_toml = pytoml.load(fh)
+                path = path.relative_to(self.topsrcdir)
+                package = cargo_toml["package"]
+                key = (package["name"], package["version"])
+                if key in crates:
+                    self.log(
+                        logging.ERROR,
+                        "build_rust",
+                        {
+                            "path": crates[key],
+                            "path2": path,
+                            "crate": key[0],
+                            "version": key[1],
+                        },
+                        "{path} and {path2} both contain {crate} {version}",
+                    )
+                    ret = False
+                crates[key] = path
+
+        for package in cargo_lock["package"]:
+            key = (package["name"], package["version"])
+            if key in crates and "source" not in package:
+                crates.pop(key)
+
+        for ((name, version), path) in crates.items():
+            self.log(
+                logging.ERROR,
+                "build_rust",
+                {"path": path, "crate": name, "version": version},
+                "{crate} {version} has an override in {path} that is not used",
+            )
+            ret = False
+        return ret
+
     def vendor(
         self, ignore_modified=False, build_peers_said_large_imports_were_ok=False
     ):
+        from mozbuild.mach_commands import cargo_vet
+
         self.populate_logger()
         self.log_manager.enable_unstructured()
-        if not ignore_modified:
-            self.check_modified_files()
+        if not ignore_modified and self.has_modified_files():
+            return False
 
         cargo = self._ensure_cargo()
         if not cargo:
-            return
+            self.log(logging.ERROR, "cargo_not_found", {}, "Cargo was not found.")
+            return False
 
         relative_vendor_dir = "third_party/rust"
         vendor_dir = mozpath.join(self.topsrcdir, relative_vendor_dir)
@@ -513,14 +606,13 @@ license file's hash.
         # We use check_call instead of mozprocess to ensure errors are displayed.
         # We do an |update -p| here to regenerate the Cargo.lock file with minimal
         # changes. See bug 1324462
-        subprocess.check_call([cargo, "update", "-p", "gkrust"], cwd=self.topsrcdir)
+        res = subprocess.run([cargo, "update", "-p", "gkrust"], cwd=self.topsrcdir)
+        if res.returncode:
+            self.log(logging.ERROR, "cargo_update_failed", {}, "Cargo update failed.")
+            return False
 
-        with open(os.path.join(self.topsrcdir, "Cargo.lock")) as fh, open(
-            os.path.join(self.topsrcdir, "Cargo.toml")
-        ) as toml_fh:
+        with open(os.path.join(self.topsrcdir, "Cargo.lock")) as fh:
             cargo_lock = pytoml.load(fh)
-            cargo_toml = pytoml.load(toml_fh)
-            patches = cargo_toml.get("patch", {}).get("crates-io", {})
             failed = False
             for package in cargo_lock.get("patch", {}).get("unused", []):
                 self.log(
@@ -529,6 +621,9 @@ license file's hash.
                     {"crate": package["name"]},
                     """Unused patch in top-level Cargo.toml for {crate}.""",
                 )
+                failed = True
+
+            if not self._check_build_rust(cargo_lock):
                 failed = True
 
             grouped = defaultdict(list)
@@ -549,15 +644,29 @@ license file's hash.
                             "and comes from {source}.",
                         )
                         failed = True
+                elif package["name"] in PACKAGES_WE_DONT_WANT:
+                    self.log(
+                        logging.ERROR,
+                        "undesirable",
+                        {
+                            "crate": package["name"],
+                            "version": package["version"],
+                            "reason": PACKAGES_WE_DONT_WANT[package["name"]],
+                        },
+                        "Crate {crate} is not desirable: {reason}",
+                    )
+                    failed = True
                 grouped[package["name"]].append(package)
 
             for name, packages in grouped.items():
-                num = len(packages)
-                # Allow to have crates in build/rust that provide older versions
-                # of crates based on newer ones, implying there are at least two
-                # crates with the same name, one of them being under build/rust.
-                if patches.get(name, {}).get("path", "").startswith("build/rust"):
-                    num -= 1
+                # Allow to have crates of the same name when one depends on the other.
+                num = len(
+                    [
+                        p
+                        for p in packages
+                        if all(d.split()[0] != name for d in p.get("dependencies", []))
+                    ]
+                )
                 expected = TOLERATED_DUPES.get(name, 1)
                 if num > expected:
                     self.log(
@@ -567,11 +676,12 @@ license file's hash.
                             "crate": name,
                             "num": num,
                             "expected": expected,
-                            "file": __file__,
+                            "file": Path(__file__).relative_to(self.topsrcdir),
                         },
                         "There are {num} different versions of crate {crate} "
-                        "(expected {expected}). Please void the extra duplication "
-                        "or adjust TOLERATED_DUPES in {file} if not possible.",
+                        "(expected {expected}). Please avoid the extra duplication "
+                        "or adjust TOLERATED_DUPES in {file} if not possible "
+                        "(but we'd prefer the former).",
                     )
                     failed = True
                 elif num < expected and num > 1:
@@ -582,7 +692,7 @@ license file's hash.
                             "crate": name,
                             "num": num,
                             "expected": expected,
-                            "file": __file__,
+                            "file": Path(__file__).relative_to(self.topsrcdir),
                         },
                         "There are {num} different versions of crate {crate} "
                         "(expected {expected}). Please adjust TOLERATED_DUPES in "
@@ -595,7 +705,7 @@ license file's hash.
                         "less_duplicate_crate",
                         {
                             "crate": name,
-                            "file": __file__,
+                            "file": Path(__file__).relative_to(self.topsrcdir),
                         },
                         "Crate {crate} is not duplicated anymore. "
                         "Please adjust TOLERATED_DUPES in {file} to reflect this improvement.",
@@ -607,7 +717,7 @@ license file's hash.
                         "broken_allowed_dupes",
                         {
                             "crate": name,
-                            "file": __file__,
+                            "file": Path(__file__).relative_to(self.topsrcdir),
                         },
                         "Crate {crate} is not duplicated. Remove it from "
                         "TOLERATED_DUPES in {file}.",
@@ -621,19 +731,54 @@ license file's hash.
                         "outdated_allowed_dupes",
                         {
                             "crate": name,
-                            "file": __file__,
+                            "file": Path(__file__).relative_to(self.topsrcdir),
                         },
                         "Crate {crate} is not in Cargo.lock anymore. Remove it from "
                         "TOLERATED_DUPES in {file}.",
                     )
                     failed = True
 
-            if failed:
-                sys.exit(1)
+        # Only emit warnings for cargo-vet for now.
+        env = os.environ.copy()
+        env["PATH"] = os.pathsep.join(
+            (
+                str(Path(cargo).parent),
+                os.environ["PATH"],
+            )
+        )
+        flags = ["--output-format=json"]
+        if "MOZ_AUTOMATION" in os.environ:
+            flags.append("--locked")
+            flags.append("--frozen")
+        res = cargo_vet(
+            self,
+            flags,
+            stdout=subprocess.PIPE,
+            env=env,
+        )
+        if res.returncode:
+            vet = json.loads(res.stdout)
+            for failure in vet.get("failures", []):
+                failure["crate"] = failure.pop("name")
+                self.log(
+                    logging.ERROR,
+                    "cargo_vet_failed",
+                    failure,
+                    "Missing audit for {crate}:{version} (requires {missing_criteria})."
+                    " Run `./mach cargo vet` for more information.",
+                )
+                failed = True
 
-        output = subprocess.check_output(
-            [cargo, "vendor", vendor_dir], cwd=self.topsrcdir
-        ).decode("UTF-8")
+        if failed:
+            return False
+
+        res = subprocess.run(
+            [cargo, "vendor", vendor_dir], cwd=self.topsrcdir, stdout=subprocess.PIPE
+        )
+        if res.returncode:
+            self.log(logging.ERROR, "cargo_vendor_failed", {}, "Cargo vendor failed.")
+            return False
+        output = res.stdout.decode("UTF-8")
 
         # Get the snippet of configuration that cargo vendor outputs, and
         # update .cargo/config with it.
@@ -661,7 +806,7 @@ license file's hash.
                 """cargo vendor didn't output a unique replace-with. Found: %s."""
                 % replaces,
             )
-            sys.exit(1)
+            return False
 
         replace_name = replaces.pop()
         replace = config["source"].pop(replace_name)
@@ -715,7 +860,7 @@ license file's hash.
                 ),
             )
             self.repository.clean_directory(vendor_dir)
-            sys.exit(1)
+            return False
 
         self.repository.add_remove_files(vendor_dir)
 
@@ -755,7 +900,7 @@ The changes from `mach vendor rust` will NOT be added to version control.
             )
             self.repository.forget_add_remove_files(vendor_dir)
             self.repository.clean_directory(vendor_dir)
-            sys.exit(1)
+            return False
 
         # Only warn for large imports, since we may just have large code
         # drops from time to time (e.g. importing features into m-c).
@@ -774,3 +919,4 @@ a pull request upstream to ignore those files when publishing.""".format(
                     size=cumulative_added_size
                 ),
             )
+        return True

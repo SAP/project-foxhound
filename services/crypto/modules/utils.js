@@ -13,9 +13,9 @@ const { CommonUtils } = ChromeUtils.import(
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto"]);
+const lazy = {};
 
-XPCOMUtils.defineLazyGetter(this, "textEncoder", function() {
+XPCOMUtils.defineLazyGetter(lazy, "textEncoder", function() {
   return new TextEncoder();
 });
 
@@ -135,7 +135,7 @@ var CryptoUtils = {
   async hkdfLegacy(ikm, xts, info, len) {
     ikm = CommonUtils.byteStringToArrayBuffer(ikm);
     xts = CommonUtils.byteStringToArrayBuffer(xts);
-    info = textEncoder.encode(info);
+    info = lazy.textEncoder.encode(info);
     const okm = await CryptoUtils.hkdf(ikm, xts, info, len);
     return CommonUtils.arrayBufferToByteString(okm);
   },
@@ -469,7 +469,7 @@ var CryptoUtils = {
       options.hasOwnProperty("payload") &&
       options.payload
     ) {
-      const buffer = textEncoder.encode(
+      const buffer = lazy.textEncoder.encode(
         `hawk.1.payload\n${contentType}\n${options.payload}\n`
       );
       const hash = await crypto.subtle.digest("SHA-256", buffer);

@@ -1350,11 +1350,17 @@ impl DisplayListBuilder {
 
     pub fn push_hit_test(
         &mut self,
-        common: &di::CommonItemProperties,
+        rect: LayoutRect,
+        clip_chain_id: di::ClipChainId,
+        spatial_id: di::SpatialId,
+        flags: di::PrimitiveFlags,
         tag: di::ItemTag,
     ) {
         let item = di::DisplayItem::HitTest(di::HitTestDisplayItem {
-            common: *common,
+            rect,
+            clip_chain_id,
+            spatial_id,
+            flags,
             tag,
         });
         self.push_item(&item);
@@ -1734,7 +1740,7 @@ impl DisplayListBuilder {
         origin: LayoutPoint,
         spatial_id: di::SpatialId,
         prim_flags: di::PrimitiveFlags,
-        clip_id: Option<di::ClipId>,
+        clip_chain_id: Option<di::ClipChainId>,
         transform_style: di::TransformStyle,
         mix_blend_mode: di::MixBlendMode,
         filters: &[di::FilterOp],
@@ -1752,7 +1758,7 @@ impl DisplayListBuilder {
             stacking_context: di::StackingContext {
                 transform_style,
                 mix_blend_mode,
-                clip_id,
+                clip_chain_id,
                 raster_space,
                 flags,
             },

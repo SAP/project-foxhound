@@ -34,6 +34,13 @@ using mozilla::OriginAttributes;
 
 class nsIObserver;
 
+// Order matters for UpdateEchExtensioNStatus.
+enum class EchExtensionStatus {
+  kNotPresent,  // No ECH Extension was sent
+  kGREASE,      // A GREASE ECH Extension was sent
+  kReal         // A 'real' ECH Extension was sent
+};
+
 class nsNSSSocketInfo final : public CommonSocketControl {
  public:
   nsNSSSocketInfo(mozilla::psm::SharedSSLState& aState, uint32_t providerFlags,
@@ -68,8 +75,6 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   NS_IMETHOD GetMACAlgorithmUsed(int16_t* aMACAlgorithmUsed) override;
   bool GetDenyClientCert() override;
   void SetDenyClientCert(bool aDenyClientCert) override;
-  NS_IMETHOD GetClientCert(nsIX509Cert** aClientCert) override;
-  NS_IMETHOD SetClientCert(nsIX509Cert* aClientCert) override;
   NS_IMETHOD GetEsniTxt(nsACString& aEsniTxt) override;
   NS_IMETHOD SetEsniTxt(const nsACString& aEsniTxt) override;
   NS_IMETHOD GetEchConfig(nsACString& aEchConfig) override;
@@ -96,6 +101,13 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   // handshake, it gets reset back to false.
   void SetFullHandshake() { mIsFullHandshake = true; }
   bool IsFullHandshake() const { return mIsFullHandshake; }
+
+  void UpdateEchExtensionStatus(EchExtensionStatus aEchExtensionStatus) {
+    mEchExtensionStatus = std::max(aEchExtensionStatus, mEchExtensionStatus);
+  }
+  EchExtensionStatus GetEchExtensionStatus() const {
+    return mEchExtensionStatus;
+  }
 
   bool GetJoined() { return mJoined; }
   void SetSentClientCert() { mSentClientCert = true; }
@@ -198,6 +210,7 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   bool mFalseStarted;
   bool mIsFullHandshake;
   bool mNotedTimeUntilReady;
+  EchExtensionStatus mEchExtensionStatus;  // Currently only used for telemetry.
 
   // True when SSL layer has indicated an "SSL short write", i.e. need
   // to call on send one or more times to push all pending data to write.
@@ -227,7 +240,6 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   mozilla::TimeStamp mSocketCreationTimestamp;
   uint64_t mPlaintextBytesRead;
 
-  nsCOMPtr<nsIX509Cert> mClientCert;
   // Regarding the client certificate message in the TLS handshake, RFC 5246
   // (TLS 1.2) says:
   //   If the certificate_authorities list in the certificate request
@@ -257,14 +269,13 @@ class ClientAuthInfo final {
   explicit ClientAuthInfo(const nsACString& hostName,
                           const OriginAttributes& originAttributes,
                           int32_t port, uint32_t providerFlags,
-                          uint32_t providerTlsFlags, nsIX509Cert* clientCert);
+                          uint32_t providerTlsFlags);
   ~ClientAuthInfo() = default;
   ClientAuthInfo(ClientAuthInfo&& aOther) noexcept;
 
   const nsACString& HostName() const;
   const OriginAttributes& OriginAttributesRef() const;
   int32_t Port() const;
-  already_AddRefed<nsIX509Cert> GetClientCert() const;
   uint32_t ProviderFlags() const;
   uint32_t ProviderTlsFlags() const;
 
@@ -277,7 +288,6 @@ class ClientAuthInfo final {
   int32_t mPort;
   uint32_t mProviderFlags;
   uint32_t mProviderTlsFlags;
-  nsCOMPtr<nsIX509Cert> mClientCert;
 };
 
 class nsSSLIOLayerHelpers {

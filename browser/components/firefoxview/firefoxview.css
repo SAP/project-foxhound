@@ -4,13 +4,27 @@
 
 :host,
 :root {
+  --content-area-gutter: 24px;
+  --sidebar-width: 200px;
+  --header-spacing: 40px;
+  --footer-spacing: 80px;
+
   --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
+}
+
+:root {
+  /* align the base font-size on root element with that of <body>
+     so rem-based layout widths and break-points behave predictably */
+  font-size: 15px;
 }
 
 body {
   display: flex;
-  align-items: stretch;
-  padding-block: 40px 80px;
+  justify-content: center;
+  padding-block: var(--header-spacing) var(--footer-spacing);
+  padding-inline: var(--content-area-gutter);
+  max-width: 96rem;
+  margin-inline: auto;
 }
 
 h1 {
@@ -18,61 +32,144 @@ h1 {
   font-size: 1.5em;
 }
 
+.content-container {
+  padding-inline: var(--content-area-gutter);
+  padding-block: 16px;
+}
+
 body > nav {
-  border-inline-end-width: 1px;
-  width: var(--in-content-sidebar-width);
-  flex: 0 1 auto;
+  flex: 0 0 var(--sidebar-width);
 }
 
 body > main {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  column-gap: 16px;
+  grid-template-columns: 2fr 1fr;
 }
 
 body > main > section {
-  grid-column: 1 / 9;
+  grid-column: 1;
+}
+
+body > main > aside {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+@media (max-width: 76rem) {
+  :host,
+  :root {
+    --sidebar-width: 40px;
+    --content-area-gutter: 12px;
+  }
+  .brand-logo > .brand-feature-name {
+    display: none;
+  }
+}
+
+@media (max-width: 65rem) {
+  body > main > section,
+  body > main > aside {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 45rem) {
+  :host,
+  :root {
+    --header-spacing: 16px;
+    --footer-spacing: 16px;
+  }
+}
+
+@media (max-width: 28rem) {
+  body {
+    flex-wrap: wrap;
+  }
+}
+
+.brand-logo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.5em;
+}
+
+.brand-logo > .brand-icon {
+  display: inline-block;
+  background: url("chrome://branding/content/about-logo.png") no-repeat center;
+  background-size: 32px;
+  min-width: 40px;
+  height: 32px;
+}
+
+.brand-logo > .brand-feature-name {
+  margin-inline-start: 8px;
+  flex: 1 1 auto;
 }
 
 #colorways {
   position: relative;
-  grid-column: 9 / 12;
 }
 
 #colorways.no-collection {
+  display: block;
   background: linear-gradient(51.95deg, #7542E5 -8.36%, #C953F2 98.73%);
   border-radius: 8px;
 }
 
+#colorways,
 #colorways.no-collection > div {
-  height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
 }
 
 #colorways.no-collection > div {
+  height: 100%;
+  justify-content: flex-end;
   background: url("chrome://browser/content/colorway-background.svg");
   background-size: 100%;
   background-position: center top;
   background-repeat: no-repeat;
 }
 
-#colorways.no-collection > div > #colorways-button {
-  display: none;
-}
-
-#colorways.no-collection > div > #colorways-no-collection-message {
-  display: block;
-}
-
-#colorways-no-collection-message {
-  display: none;
+#try-colorways-description {
   color: #FFF;
   font-size: 2em;
   text-align: center;
   margin: 0 1em 1em;
+}
+
+#colorways-collection-description,
+#colorways-button {
+  margin: 0.4em 0;
+  align-self: flex-start;
+}
+
+#colorways-collection-title {
+  margin: 0;
+  padding: 0;
+  font-size: 1.8em;
+  font-weight: bold;
+}
+
+#colorways-collection-expiry-date {
+  display: inline-block;
+  background: linear-gradient(to right, purple, pink, orange);
+  background-origin: border-box;
+  border-radius: 1.5em;
+  padding: 1px;
+  margin: 0.8em 0;
+  align-self: flex-start;
+}
+
+#colorways-collection-expiry-date > span {
+  display: inline-block;
+  color: var(--in-content-page-color);
+  background: var(--in-content-page-background);
+  border-radius: 1.5em;
+  padding: .2em 1em;
 }
 
 [hidden] {
@@ -161,6 +258,7 @@ body > main > section {
 
 .setup-step > .step-body > button.primary {
   white-space: nowrap;
+  min-width: fit-content;
 }
 
 .setup-step > footer {
@@ -173,12 +271,23 @@ body > main > section {
   margin-block: 0 8px;
 }
 
-#recently-closed-tabs-container {
-  padding-top: 30px;
-}
-
 #recently-closed-tabs-container > p {
   margin-top: 0;
+}
+
+.synced-tabs-container.loading > .card,
+.synced-tabs-container:not(.loading) > .loading-content {
+  display: none;
+}
+
+.synced-tabs-container > .loading-content {
+  text-align: center;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  background: url(chrome://global/skin/icons/loading-dial.svg) no-repeat center top;
+  background-size: 32px;
+  margin-top: 32px;
+  padding: 48px 16px 16px;
 }
 
 .closed-tabs-list {
@@ -217,15 +326,152 @@ body > main > section {
   text-align: end;
 }
 
-.closed-tab-li-url, .closed-tab-li-time {
+.closed-tab-li-url,
+.closed-tab-li-time,
+.synced-tab-li-device,
+.synced-tab-li-url,
+.synced-tab-li-time,
+.synced-tab-li-url-device {
   color: var(--in-content-deemphasized-text);
   font-weight: 400;
 }
 
-.closed-tab-li-title, .closed-tab-li-url {
+.closed-tab-li-title,
+.closed-tab-li-url,
+.synced-tab-li:not(:first-child) > .synced-tab-li-title,
+.synced-tab-li-device,
+.synced-tab-li-url-device {
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.synced-tabs-list {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 4fr 4fr;
+  column-gap: 16px;
+  row-gap: 8px;
+
+  grid-template-areas:
+      "first second"
+      "first third";
+}
+
+.synced-tab-li {
+  box-sizing: border-box;
+  border: 1px solid #CFCFD8;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: min-content repeat(3, 1fr);
+  grid-template-rows: auto auto;
+  grid-template-areas:
+  "favicon title title title"
+  "favicon url-device url-device time"
+}
+
+.synced-tab-li:hover {
+  box-shadow: 0px 2px 6px rgba(58, 57, 68, 0.2);
+  cursor: pointer;
+}
+
+.synced-tab-li:not(:first-child) {
+  align-content: center;
+}
+
+@media only screen and (max-width: 60rem) {
+  .synced-tab-li {
+    grid-template-areas:
+    "favicon title title title"
+    "favicon url-device url-device url-device"
+  }
+  .synced-tab-li:not(:first-child) > .synced-tab-li-time {
+    display: none;
+  }
+}
+
+.synced-tab-li:first-child {
+  padding-top: 20px;
+  grid-area: first;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: auto;
+  grid-template-areas:
+  "favicon favicon badge badge"
+  "title title title title"
+  "domain domain domain time"
+  "device device device time";
+}
+
+.synced-tab-li:nth-child(2) {
+  grid-area: second;
+}
+
+.synced-tab-li:nth-child(3) {
+  grid-area: third;
+}
+
+.synced-tab-li-url,
+.synced-tab-li-device,
+.synced-tab-li-time,
+.synced-tab-li:not(:first-child) > .synced-tab-li-title {
+  font-size: .85em;
+}
+
+.synced-tab-li-url {
+  text-decoration-line: underline;
+}
+
+.synced-tab-li:first-child > .synced-tab-li-url {
+  align-self: end;
+  grid-area: domain;
+}
+
+.synced-tab-li-title {
+  grid-area: title;
+  font-weight: 500;
+}
+
+.synced-tab-li:first-child > .synced-tab-li-title {
+  color: inherit;
+  padding-top: 5px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  height: 2.5em;
+}
+
+.synced-tab-li-url-device {
+  grid-area: url-device;
+  padding-top: 4px
+}
+
+.synced-tab-li:first-child > .synced-tab-li-device {
+  grid-area: device;
+  margin-top: 5px;
+}
+
+.synced-tab-li-time {
+  grid-area: time;
+  justify-self: end;
+  color: var(--in-content-deemphasized-text);
+  align-self: end;
+}
+
+.synced-tab-li:first-child > .synced-tab-li-time {
+  align-self: center;
+}
+
+.synced-tab-li .favicon {
+  grid-area: favicon;
+  margin-inline-end: 10px;
+}
+
+.synced-tab-li .icon {
+  vertical-align: bottom;
+  margin-inline-end: 5px;
 }
 
 .icon {
@@ -234,7 +480,6 @@ body > main > section {
   display: inline-block;
   -moz-context-properties: fill;
   fill: currentColor;
-  margin-top: 10px;
 }
 
 .icon.arrow-down {
@@ -249,12 +494,50 @@ body > main > section {
   background-image: url('chrome://browser/skin/history.svg');
 }
 
-.favicon {
-  background-size: cover;
-  margin: 2px;
+.icon.phone {
+  background-image: url('chrome://browser/skin/device-phone.svg');
 }
 
-.favicon, .icon {
+.icon.desktop {
+  background-image: url('chrome://browser/skin/device-desktop.svg');
+}
+
+.icon.tablet {
+  background-image: url('chrome://browser/skin/device-tablet.svg');
+}
+
+.favicon {
+  background-size: cover;
+}
+
+.favicon, .icon, .synced-tab-li-favicon {
   width: 16px;
   height: 16px;
+}
+
+.last-active-badge {
+  height: 1.25em;
+  width: 6em;
+  background-color: #E3FFF3;
+  grid-area: badge;
+  border-radius: 2em;
+  justify-self: end;
+  text-align: center;
+  padding-bottom: 5px;
+}
+
+.dot {
+  height: 8px;
+  width: 8px;
+  background-color: #2AC3A2;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.badge-text {
+  font-weight: 400;
+  font-size: .75em;
+  letter-spacing: 0.02em;
+  margin-inline-start: 4px;
+  color: #000000;
 }

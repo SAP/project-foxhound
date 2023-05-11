@@ -113,10 +113,10 @@ fn fog_init_internal(
 
     log::debug!("Configuration: {:#?}", conf);
 
-    glean::initialize(conf, client_info);
-
     // Register all custom pings before we initialize.
     fog::pings::register_pings();
+
+    glean::initialize(conf, client_info);
 
     fog::metrics::fog::initialization.stop();
 
@@ -139,6 +139,7 @@ fn build_configuration(
     let client_info = ClientInfoMetrics {
         app_build,
         app_display_version,
+        channel: Some(channel),
     };
     log::debug!("Client Info: {:#?}", client_info);
 
@@ -165,7 +166,6 @@ fn build_configuration(
         application_id,
         max_events: None,
         delay_ping_lifetime_io: true,
-        channel: Some(channel),
         server_endpoint: Some(server),
         uploader: None,
         use_core_mps,

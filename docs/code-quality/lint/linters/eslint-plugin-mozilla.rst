@@ -33,6 +33,7 @@ The plugin implements the following rules:
    eslint-plugin-mozilla/import-globals
    eslint-plugin-mozilla/import-globals-from
    eslint-plugin-mozilla/import-headjs-globals
+   eslint-plugin-mozilla/lazy-getter-object-name
    eslint-plugin-mozilla/mark-exported-symbols-as-used
    eslint-plugin-mozilla/mark-test-function-used
    eslint-plugin-mozilla/no-aArgs
@@ -48,6 +49,9 @@ The plugin implements the following rules:
    eslint-plugin-mozilla/prefer-formatValues
    eslint-plugin-mozilla/reject-addtask-only
    eslint-plugin-mozilla/reject-chromeutils-import-params
+   eslint-plugin-mozilla/reject-eager-module-in-lazy-getter
+   eslint-plugin-mozilla/reject-global-this
+   eslint-plugin-mozilla/reject-globalThis-modification
    eslint-plugin-mozilla/reject-importGlobalProperties
    eslint-plugin-mozilla/reject-osfile
    eslint-plugin-mozilla/reject-relative-requires
@@ -55,6 +59,7 @@ The plugin implements the following rules:
    eslint-plugin-mozilla/reject-scriptableunicodeconverter
    eslint-plugin-mozilla/reject-some-requires
    eslint-plugin-mozilla/reject-top-level-await
+   eslint-plugin-mozilla/reject-import-system-module-from-non-system
    eslint-plugin-mozilla/use-cc-etc
    eslint-plugin-mozilla/use-chromeutils-generateqi
    eslint-plugin-mozilla/use-chromeutils-import
@@ -64,6 +69,7 @@ The plugin implements the following rules:
    eslint-plugin-mozilla/use-ownerGlobal
    eslint-plugin-mozilla/use-returnValue
    eslint-plugin-mozilla/use-services
+   eslint-plugin-mozilla/valid-lazy
    eslint-plugin-mozilla/var-only-at-top-level
 
 Tests

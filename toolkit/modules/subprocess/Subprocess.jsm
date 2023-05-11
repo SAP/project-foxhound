@@ -12,8 +12,7 @@
 
 "use strict";
 
-// SubprocessImpl is exported for tests.
-var EXPORTED_SYMBOLS = ["Subprocess", "SubprocessImpl"];
+var EXPORTED_SYMBOLS = ["Subprocess", "getSubprocessImplForTest"];
 
 /* exported Subprocess */
 
@@ -24,15 +23,20 @@ const { SubprocessConstants } = ChromeUtils.import(
   "resource://gre/modules/subprocess/subprocess_common.jsm"
 );
 
+const lazy = {};
+
 if (AppConstants.platform == "win") {
   ChromeUtils.defineModuleGetter(
-    this,
+    lazy,
     "SubprocessImpl",
     "resource://gre/modules/subprocess/subprocess_win.jsm"
   );
 } else {
+  // Ignore the "duplicate" definitions here as this are also defined
+  // in the "win" block above.
+  // eslint-disable-next-line mozilla/valid-lazy
   ChromeUtils.defineModuleGetter(
-    this,
+    lazy,
     "SubprocessImpl",
     "resource://gre/modules/subprocess/subprocess_unix.jsm"
   );
@@ -147,7 +151,7 @@ var Subprocess = {
     }
 
     return Promise.resolve(
-      SubprocessImpl.isExecutableFile(options.command)
+      lazy.SubprocessImpl.isExecutableFile(options.command)
     ).then(isExecutable => {
       if (!isExecutable) {
         let error = new Error(
@@ -159,7 +163,7 @@ var Subprocess = {
 
       options.arguments.unshift(options.command);
 
-      return SubprocessImpl.call(options);
+      return lazy.SubprocessImpl.call(options);
     });
   },
 
@@ -171,7 +175,7 @@ var Subprocess = {
    */
   getEnvironment() {
     let environment = Object.create(null);
-    for (let [k, v] of SubprocessImpl.getEnvironment()) {
+    for (let [k, v] of lazy.SubprocessImpl.getEnvironment()) {
       environment[k] = v;
     }
     return environment;
@@ -197,10 +201,14 @@ var Subprocess = {
   pathSearch(command, environment = this.getEnvironment()) {
     // Promise.resolve lets us get around returning one of the Promise.jsm
     // pseudo-promises returned by Task.jsm.
-    let path = SubprocessImpl.pathSearch(command, environment);
+    let path = lazy.SubprocessImpl.pathSearch(command, environment);
     return Promise.resolve(path);
   },
 };
 
 Object.assign(Subprocess, SubprocessConstants);
 Object.freeze(Subprocess);
+
+function getSubprocessImplForTest() {
+  return lazy.SubprocessImpl;
+}

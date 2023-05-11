@@ -3056,14 +3056,6 @@ static nsresult SelectProfile(nsToolkitProfileService* aProfileSvc,
   if (EnvHasValue("MOZ_RESET_PROFILE_RESTART")) {
     gDoProfileReset = true;
     gDoMigration = true;
-    SaveToEnv("MOZ_RESET_PROFILE_RESTART=");
-    // We only want to restore the previous session if the profile refresh was
-    // triggered by user. And if it was a user-triggered profile refresh
-    // through, say, the safeMode dialog or the troubleshooting page, the
-    // MOZ_RESET_PROFILE_RESTART env variable would be set. Hence we set
-    // MOZ_RESET_PROFILE_MIGRATE_SESSION here so that Firefox profile migrator
-    // would migrate old session data later.
-    SaveToEnv("MOZ_RESET_PROFILE_MIGRATE_SESSION=1");
   }
 
   // reset-profile and migration args need to be checked before any profiles are
@@ -5102,6 +5094,16 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   }
 
   if (gDoProfileReset) {
+    if (EnvHasValue("MOZ_RESET_PROFILE_RESTART")) {
+      SaveToEnv("MOZ_RESET_PROFILE_RESTART=");
+      // We only want to restore the previous session if the profile refresh was
+      // triggered by user. And if it was a user-triggered profile refresh
+      // through, say, the safeMode dialog or the troubleshooting page, the
+      // MOZ_RESET_PROFILE_RESTART env variable would be set. Hence we set
+      // MOZ_RESET_PROFILE_MIGRATE_SESSION here so that Firefox profile migrator
+      // would migrate old session data later.
+      SaveToEnv("MOZ_RESET_PROFILE_MIGRATE_SESSION=1");
+    }
     // Unlock the source profile.
     mProfileLock->Unlock();
 
@@ -5947,6 +5949,10 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 
   // run!
   rv = XRE_mainRun();
+
+#ifdef MOZ_X11
+  XRE_CleanupX11ErrorHandler();
+#endif
 
 #if defined(XP_WIN)
   bool wantAudio = true;

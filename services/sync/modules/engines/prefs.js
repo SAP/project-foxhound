@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec", "PREFS_GUID"];
+var EXPORTED_SYMBOLS = ["PrefsEngine", "PrefRec", "getPrefsGUIDForTest"];
 
 const PREF_SYNC_PREFS_PREFIX = "services.sync.prefs.sync.";
 
@@ -27,12 +27,14 @@ const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
 
-XPCOMUtils.defineLazyGetter(this, "PREFS_GUID", () =>
+const lazy = {};
+
+XPCOMUtils.defineLazyGetter(lazy, "PREFS_GUID", () =>
   CommonUtils.encodeBase64URL(Services.appinfo.ID)
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
@@ -48,7 +50,7 @@ const PREF_SYNC_PREFS_ARBITRARY =
   "services.sync.prefs.dangerously_allow_arbitrary";
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "ALLOW_ARBITRARY",
   PREF_SYNC_PREFS_ARBITRARY
 );
@@ -57,16 +59,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
 // continue to be synced. SUMO have told us that this URL will remain "stable".
 const PREFS_DOC_URL_TEMPLATE =
   "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/sync-custom-preferences";
-XPCOMUtils.defineLazyGetter(this, "PREFS_DOC_URL", () =>
+XPCOMUtils.defineLazyGetter(lazy, "PREFS_DOC_URL", () =>
   Services.urlFormatter.formatURL(PREFS_DOC_URL_TEMPLATE)
 );
 
 // Check for a local control pref or PREF_SYNC_PREFS_ARBITRARY
-this.isAllowedPrefName = function(prefName) {
+function isAllowedPrefName(prefName) {
   if (prefName == PREF_SYNC_PREFS_ARBITRARY) {
     return false; // never allow this.
   }
-  if (ALLOW_ARBITRARY) {
+  if (lazy.ALLOW_ARBITRARY) {
     // user has set the "dangerous" pref, so everything is allowed.
     return true;
   }
@@ -80,7 +82,7 @@ this.isAllowedPrefName = function(prefName) {
   } catch (_) {
     return false;
   }
-};
+}
 
 function PrefRec(collection, id) {
   CryptoWrapper.call(this, collection, id);
@@ -109,7 +111,7 @@ PrefsEngine.prototype = {
     // No need for a proper timestamp (no conflict resolution needed).
     let changedIDs = {};
     if (this._tracker.modified) {
-      changedIDs[PREFS_GUID] = 0;
+      changedIDs[lazy.PREFS_GUID] = 0;
     }
     return changedIDs;
   },
@@ -137,9 +139,9 @@ PrefsEngine.prototype = {
 
 // We don't use services.sync.engine.tabs.filteredSchemes since it includes
 // about: pages and the like, which we want to be syncable in preferences.
-// Blob and moz-extension uris are never safe to sync, so we limit our check
-// to those.
-const UNSYNCABLE_URL_REGEXP = /^(moz-extension|blob):/i;
+// Blob, moz-extension, data and file uris are never safe to sync,
+// so we limit our check to those.
+const UNSYNCABLE_URL_REGEXP = /^(moz-extension|blob|data|file):/i;
 function isUnsyncableURLPref(prefName) {
   if (Services.prefs.getPrefType(prefName) != Ci.nsIPrefBranch.PREF_STRING) {
     return false;
@@ -252,7 +254,7 @@ PrefStore.prototype = {
                 `Not syncing the preference '${pref}' because it has no local ` +
                 `control preference (${PREF_SYNC_PREFS_PREFIX}${pref}) and ` +
                 `the preference ${PREF_SYNC_PREFS_ARBITRARY} isn't true. ` +
-                `See ${PREFS_DOC_URL} for more information`;
+                `See ${lazy.PREFS_DOC_URL} for more information`;
               console.warn(msg);
               this._log.warn(msg);
             }
@@ -300,7 +302,7 @@ PrefStore.prototype = {
   async _maybeEnableBuiltinTheme(themeId) {
     let addon = null;
     try {
-      addon = await AddonManager.getAddonByID(themeId);
+      addon = await lazy.AddonManager.getAddonByID(themeId);
     } catch (ex) {
       this._log.trace(
         `There's no addon with ID '${themeId} - it can't be a builtin theme`
@@ -320,7 +322,7 @@ PrefStore.prototype = {
   async getAllIDs() {
     /* We store all prefs in just one WBO, with just one GUID */
     let allprefs = {};
-    allprefs[PREFS_GUID] = true;
+    allprefs[lazy.PREFS_GUID] = true;
     return allprefs;
   },
 
@@ -329,13 +331,13 @@ PrefStore.prototype = {
   },
 
   async itemExists(id) {
-    return id === PREFS_GUID;
+    return id === lazy.PREFS_GUID;
   },
 
   async createRecord(id, collection) {
     let record = new PrefRec(collection, id);
 
-    if (id == PREFS_GUID) {
+    if (id == lazy.PREFS_GUID) {
       record.value = this._getAllPrefs();
     } else {
       record.deleted = true;
@@ -354,7 +356,7 @@ PrefStore.prototype = {
 
   async update(record) {
     // Silently ignore pref updates that are for other apps.
-    if (record.id != PREFS_GUID) {
+    if (record.id != lazy.PREFS_GUID) {
       return;
     }
 
@@ -434,3 +436,7 @@ PrefTracker.prototype = {
     }
   },
 };
+
+function getPrefsGUIDForTest() {
+  return lazy.PREFS_GUID;
+}

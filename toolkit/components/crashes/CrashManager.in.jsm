@@ -4,8 +4,6 @@
 
 "use strict";
 
-const myScope = this;
-
 const { PromiseUtils } = ChromeUtils.import(
   "resource://gre/modules/PromiseUtils.jsm"
 );
@@ -15,7 +13,9 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Log: "resource://gre/modules/Log.jsm",
   TelemetryController: "resource://gre/modules/TelemetryController.jsm",
 });
@@ -361,7 +361,7 @@ CrashManager.prototype = Object.freeze({
               // so we don't see it again.
               Cu.reportError(
                 "Exception when processing crash event file: " +
-                  Log.exceptionStr(ex)
+                  lazy.Log.exceptionStr(ex)
               );
               deletePaths.push(entry.path);
             }
@@ -712,7 +712,7 @@ CrashManager.prototype = Object.freeze({
   _sendCrashPing(crashId, type, date, metadata = {}) {
     // If we have a saved environment, use it. Otherwise report
     // the current environment.
-    let reportMeta = Cu.cloneInto(metadata, myScope);
+    let reportMeta = Cu.cloneInto(metadata, {});
     let crashEnvironment = parseAndRemoveField(
       reportMeta,
       "TelemetryEnvironment"
@@ -727,7 +727,7 @@ CrashManager.prototype = Object.freeze({
     // Filter the remaining annotations to remove privacy-sensitive ones
     reportMeta = this._filterAnnotations(reportMeta);
 
-    this._pingPromise = TelemetryController.submitExternalPing(
+    this._pingPromise = lazy.TelemetryController.submitExternalPing(
       "crash",
       {
         version: 1,
@@ -1555,7 +1555,7 @@ CrashRecord.prototype = Object.freeze({
 });
 
 XPCOMUtils.defineLazyGetter(CrashManager, "_log", () =>
-  Log.repository.getLogger("Crashes.CrashManager")
+  lazy.Log.repository.getLogger("Crashes.CrashManager")
 );
 
 /**

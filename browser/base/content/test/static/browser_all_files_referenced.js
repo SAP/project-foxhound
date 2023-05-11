@@ -33,13 +33,7 @@ var gExceptionPaths = [
   "chrome://browser/content/assets/moz-vpn.svg",
   "chrome://browser/content/assets/vpn-logo.svg",
   "chrome://browser/content/assets/focus-promo.png",
-  "chrome://browser/content/preferences/more-from-mozilla-qr-code-advanced.svg",
   "chrome://browser/content/assets/klar-qr-code.svg",
-
-  // These app marketplace icons are referenced based on the user's locale
-  // in browser/components/newtab/content-src/aboutwelcome/components/MobileDownloads.jsx
-  "chrome://activity-stream/content/data/content/assets/app-marketplace-icons/en-US/ios.svg",
-  "chrome://activity-stream/content/data/content/assets/app-marketplace-icons/en-US/android.png",
 
   // toolkit/components/pdfjs/content/build/pdf.js
   "resource://pdf.js/web/images/",
@@ -224,10 +218,11 @@ var whitelist = [
     platforms: ["linux", "macosx"],
   },
   // Bug 1344267
-  { file: "chrome://remote/content/marionette/test.xhtml" },
   { file: "chrome://remote/content/marionette/test_dialog.properties" },
   { file: "chrome://remote/content/marionette/test_dialog.xhtml" },
   { file: "chrome://remote/content/marionette/test_menupopup.xhtml" },
+  { file: "chrome://remote/content/marionette/test_no_xul.xhtml" },
+  { file: "chrome://remote/content/marionette/test.xhtml" },
   // Bug 1348559
   { file: "chrome://pippki/content/resetpassword.xhtml" },
   // Bug 1337345
@@ -258,15 +253,6 @@ var whitelist = [
   },
   // Referenced by the webcompat system addon for localization
   { file: "resource://gre/localization/en-US/toolkit/about/aboutCompat.ftl" },
-
-  // Bug 1559554
-  { file: "chrome://browser/content/aboutlogins/aboutLoginsUtils.js" },
-
-  // Bug 1559554
-  {
-    file:
-      "chrome://browser/content/aboutlogins/components/import-details-row.js",
-  },
 
   // dom/media/mediacontrol/MediaControlService.cpp
   { file: "resource://gre/localization/en-US/dom/media.ftl" },
@@ -642,6 +628,18 @@ function parseCodeFile(fileUri) {
           addCodeReference(convertToCodeURI(url), fileUri);
         }
 
+        // This handles `import` lines which may be multi-line.
+        // We have an ESLint rule, `import/no-unassigned-import` which prevents
+        // using bare `import "foo.js"`, so we don't need to handle that case
+        // here.
+        match = line.match(/from\W*['"](.*?)['"]/);
+        if (match?.[1]) {
+          let url = match[1];
+          url = Services.io.newURI(url, null, baseUri || fileUri).spec;
+          url = convertToCodeURI(url);
+          addCodeReference(url, fileUri);
+        }
+
         if (isDevtools) {
           let rules = [
             ["devtools/client/locales", "chrome://devtools/locale"],
@@ -659,7 +657,7 @@ function parseCodeFile(fileUri) {
             for (let rule of rules) {
               if (path.startsWith(rule[0] + "/")) {
                 path = path.replace(rule[0], rule[1]);
-                if (!/\.(properties|js|jsm|json|css)$/.test(path)) {
+                if (!/\.(properties|js|jsm|mjs|json|css)$/.test(path)) {
                   path += ".js";
                 }
                 addCodeReference(path, fileUri);
@@ -673,7 +671,7 @@ function parseCodeFile(fileUri) {
             let url = match[1];
             url = Services.io.newURI(url, null, baseUri || fileUri).spec;
             url = convertToCodeURI(url);
-            if (!/\.(properties|js|jsm|json|css)$/.test(url)) {
+            if (!/\.(properties|js|jsm|mjs|json|css)$/.test(url)) {
               url += ".js";
             }
             if (url.startsWith("resource://")) {
@@ -712,7 +710,7 @@ function parseCodeFile(fileUri) {
         if (
           isDevtools &&
           line.includes("require(") &&
-          !/\.(properties|js|jsm|json|css)$/.test(url)
+          !/\.(properties|js|jsm|mjs|json|css)$/.test(url)
         ) {
           url += ".js";
         }
@@ -829,11 +827,12 @@ add_task(async function checkAllTheFiles() {
   findChromeUrlsFromArray(uint16, "resource://");
 
   const kCodeExtensions = [
-    ".xul",
     ".xml",
     ".xsl",
+    ".mjs",
     ".js",
     ".jsm",
+    ".mjs",
     ".json",
     ".html",
     ".xhtml",
@@ -881,6 +880,9 @@ add_task(async function checkAllTheFiles() {
 
   for (let jsm of Components.manager.getComponentJSMs()) {
     gReferencesFromCode.set(jsm, null);
+  }
+  for (let esModule of Components.manager.getComponentESModules()) {
+    gReferencesFromCode.set(esModule, null);
   }
 
   // manifest.json is a common name, it is used for WebExtension manifests

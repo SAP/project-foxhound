@@ -4,6 +4,10 @@
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 var {
   UrlbarMuxer,
@@ -13,13 +17,11 @@ var {
 } = ChromeUtils.import("resource:///modules/UrlbarUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
   HttpServer: "resource://testing-common/httpd.js",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
   UrlbarController: "resource:///modules/UrlbarController.jsm",
   UrlbarInput: "resource:///modules/UrlbarInput.jsm",
@@ -832,6 +834,7 @@ async function check_results({
   incompleteSearch,
   autofilled,
   completed,
+  hasAutofillTitle,
   matches = [],
 } = {}) {
   if (!context) {
@@ -884,6 +887,11 @@ async function check_results({
         "The completed autofill value is correct."
       );
     }
+    Assert.equal(
+      context.results[0].autofill.hasTitle,
+      hasAutofillTitle,
+      "The hasTitle flag is correct."
+    );
   }
   if (context.results.length != matches.length) {
     info("Actual results: " + JSON.stringify(context.results));

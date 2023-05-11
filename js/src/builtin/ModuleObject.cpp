@@ -145,8 +145,8 @@ bool GlobalObject::initImportEntryProto(JSContext* cx,
 
 /* static */
 ImportEntryObject* ImportEntryObject::create(
-    JSContext* cx, HandleObject moduleRequest, HandleAtom maybeImportName,
-    HandleAtom localName, uint32_t lineNumber, uint32_t columnNumber) {
+    JSContext* cx, HandleObject moduleRequest, Handle<JSAtom*> maybeImportName,
+    Handle<JSAtom*> localName, uint32_t lineNumber, uint32_t columnNumber) {
   RootedObject proto(
       cx, GlobalObject::getOrCreateImportEntryPrototype(cx, cx->global()));
   if (!proto) {
@@ -224,9 +224,9 @@ bool GlobalObject::initExportEntryProto(JSContext* cx,
 
 /* static */
 ExportEntryObject* ExportEntryObject::create(
-    JSContext* cx, HandleAtom maybeExportName, HandleObject moduleRequest,
-    HandleAtom maybeImportName, HandleAtom maybeLocalName, uint32_t lineNumber,
-    uint32_t columnNumber) {
+    JSContext* cx, Handle<JSAtom*> maybeExportName, HandleObject moduleRequest,
+    Handle<JSAtom*> maybeImportName, Handle<JSAtom*> maybeLocalName,
+    uint32_t lineNumber, uint32_t columnNumber) {
   // Line and column numbers are optional for export entries since direct
   // entries are checked at parse time.
 
@@ -360,7 +360,8 @@ bool GlobalObject::initModuleRequestProto(JSContext* cx,
 
 /* static */
 ModuleRequestObject* ModuleRequestObject::create(
-    JSContext* cx, HandleAtom specifier, HandleArrayObject maybeAssertions) {
+    JSContext* cx, Handle<JSAtom*> specifier,
+    Handle<ArrayObject*> maybeAssertions) {
   RootedObject proto(
       cx, GlobalObject::getOrCreateModuleRequestPrototype(cx, cx->global()));
   if (!proto) {
@@ -408,7 +409,7 @@ void IndirectBindingMap::trace(JSTracer* trc) {
 }
 
 bool IndirectBindingMap::put(JSContext* cx, HandleId name,
-                             HandleModuleEnvironmentObject environment,
+                             Handle<ModuleEnvironmentObject*> environment,
                              HandleId targetName) {
   if (!map_) {
     map_.emplace(cx->zone());
@@ -457,7 +458,7 @@ bool ModuleNamespaceObject::isInstance(HandleValue value) {
 
 /* static */
 ModuleNamespaceObject* ModuleNamespaceObject::create(
-    JSContext* cx, HandleModuleObject module, HandleArrayObject exports,
+    JSContext* cx, Handle<ModuleObject*> module, Handle<ArrayObject*> exports,
     UniquePtr<IndirectBindingMap> bindings) {
   RootedValue priv(cx, ObjectValue(*module));
   ProxyOptions options;
@@ -488,7 +489,7 @@ ArrayObject& ModuleNamespaceObject::exports() {
 
 IndirectBindingMap& ModuleNamespaceObject::bindings() {
   Value value = GetProxyReservedSlot(this, BindingsSlot);
-  auto bindings = static_cast<IndirectBindingMap*>(value.toPrivate());
+  auto* bindings = static_cast<IndirectBindingMap*>(value.toPrivate());
   MOZ_ASSERT(bindings);
   return *bindings;
 }
@@ -498,10 +499,11 @@ bool ModuleNamespaceObject::hasBindings() const {
   return !GetProxyReservedSlot(this, BindingsSlot).isUndefined();
 }
 
-bool ModuleNamespaceObject::addBinding(JSContext* cx, HandleAtom exportedName,
-                                       HandleModuleObject targetModule,
-                                       HandleAtom targetName) {
-  RootedModuleEnvironmentObject environment(
+bool ModuleNamespaceObject::addBinding(JSContext* cx,
+                                       Handle<JSAtom*> exportedName,
+                                       Handle<ModuleObject*> targetModule,
+                                       Handle<JSAtom*> targetName) {
+  Rooted<ModuleEnvironmentObject*> environment(
       cx, &targetModule->initialEnvironment());
   RootedId exportedNameId(cx, AtomToId(exportedName));
   RootedId targetNameId(cx, AtomToId(targetName));
@@ -829,7 +831,8 @@ ModuleObject* ModuleObject::create(JSContext* cx) {
     return nullptr;
   }
 
-  RootedModuleObject self(cx, NewObjectWithGivenProto<ModuleObject>(cx, proto));
+  Rooted<ModuleObject*> self(cx,
+                             NewObjectWithGivenProto<ModuleObject>(cx, proto));
   if (!self) {
     return nullptr;
   }
@@ -940,7 +943,7 @@ void ModuleObject::initScriptSlots(HandleScript script) {
 }
 
 void ModuleObject::setInitialEnvironment(
-    HandleModuleEnvironmentObject initialEnvironment) {
+    Handle<ModuleEnvironmentObject*> initialEnvironment) {
   initReservedSlot(EnvironmentSlot, ObjectValue(*initialEnvironment));
 }
 
@@ -948,11 +951,11 @@ void ModuleObject::initStatusSlot() {
   initReservedSlot(StatusSlot, Int32Value(MODULE_STATUS_UNLINKED));
 }
 
-void ModuleObject::initImportExportData(HandleArrayObject requestedModules,
-                                        HandleArrayObject importEntries,
-                                        HandleArrayObject localExportEntries,
-                                        HandleArrayObject indirectExportEntries,
-                                        HandleArrayObject starExportEntries) {
+void ModuleObject::initImportExportData(
+    Handle<ArrayObject*> requestedModules, Handle<ArrayObject*> importEntries,
+    Handle<ArrayObject*> localExportEntries,
+    Handle<ArrayObject*> indirectExportEntries,
+    Handle<ArrayObject*> starExportEntries) {
   initReservedSlot(RequestedModulesSlot, ObjectValue(*requestedModules));
   initReservedSlot(ImportEntriesSlot, ObjectValue(*importEntries));
   initReservedSlot(LocalExportEntriesSlot, ObjectValue(*localExportEntries));
@@ -961,14 +964,14 @@ void ModuleObject::initImportExportData(HandleArrayObject requestedModules,
   initReservedSlot(StarExportEntriesSlot, ObjectValue(*starExportEntries));
 }
 
-static bool FreezeObjectProperty(JSContext* cx, HandleNativeObject obj,
+static bool FreezeObjectProperty(JSContext* cx, Handle<NativeObject*> obj,
                                  uint32_t slot) {
   RootedObject property(cx, &obj->getSlot(slot).toObject());
   return FreezeObject(cx, property);
 }
 
 /* static */
-bool ModuleObject::Freeze(JSContext* cx, HandleModuleObject self) {
+bool ModuleObject::Freeze(JSContext* cx, Handle<ModuleObject*> self) {
   return FreezeObjectProperty(cx, self, RequestedModulesSlot) &&
          FreezeObjectProperty(cx, self, ImportEntriesSlot) &&
          FreezeObjectProperty(cx, self, LocalExportEntriesSlot) &&
@@ -985,14 +988,14 @@ static inline bool CheckObjectFrozen(JSContext* cx, HandleObject obj,
 }
 
 static inline bool CheckObjectPropertyFrozen(JSContext* cx,
-                                             HandleNativeObject obj,
+                                             Handle<NativeObject*> obj,
                                              uint32_t slot, bool* result) {
   RootedObject property(cx, &obj->getSlot(slot).toObject());
   return CheckObjectFrozen(cx, property, result);
 }
 
-/* static */ inline bool ModuleObject::AssertFrozen(JSContext* cx,
-                                                    HandleModuleObject self) {
+/* static */ inline bool ModuleObject::AssertFrozen(
+    JSContext* cx, Handle<ModuleObject*> self) {
   static const mozilla::EnumSet<ModuleSlot> slotsToCheck = {
       RequestedModulesSlot, ImportEntriesSlot, LocalExportEntriesSlot,
       IndirectExportEntriesSlot, StarExportEntriesSlot};
@@ -1081,7 +1084,7 @@ JSObject* ModuleObject::topLevelCapability() const {
 }
 
 PromiseObject* ModuleObject::createTopLevelCapability(
-    JSContext* cx, HandleModuleObject module) {
+    JSContext* cx, Handle<ModuleObject*> module) {
   MOZ_ASSERT(module->getReservedSlot(TopLevelCapabilitySlot).isUndefined());
   Rooted<PromiseObject*> resultPromise(cx, CreatePromiseObjectForAsync(cx));
   if (!resultPromise) {
@@ -1100,8 +1103,8 @@ inline ListObject* ModuleObject::asyncParentModules() const {
 }
 
 bool ModuleObject::appendAsyncParentModule(JSContext* cx,
-                                           HandleModuleObject self,
-                                           HandleModuleObject parent) {
+                                           Handle<ModuleObject*> self,
+                                           Handle<ModuleObject*> parent) {
   Rooted<Value> parentValue(cx, ObjectValue(*parent));
   return self->asyncParentModules()->append(cx, parentValue);
 }
@@ -1174,7 +1177,7 @@ void ModuleObject::trace(JSTracer* trc, JSObject* obj) {
 
 /* static */
 bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
-                                                   HandleModuleObject self) {
+                                                   Handle<ModuleObject*> self) {
 #ifdef DEBUG
   MOZ_ASSERT(self->status() == MODULE_STATUS_LINKING);
   if (!AssertFrozen(cx, self)) {
@@ -1190,11 +1193,11 @@ bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
     return false;
   }
 
-  RootedModuleEnvironmentObject env(cx, &self->initialEnvironment());
+  Rooted<ModuleEnvironmentObject*> env(cx, &self->initialEnvironment());
   RootedObject obj(cx);
   RootedValue value(cx);
   RootedFunction fun(cx);
-  RootedPropertyName name(cx);
+  Rooted<PropertyName*> name(cx);
 
   for (GCThingIndex funIndex : *funDecls) {
     fun.set(self->script()->getFunction(funIndex));
@@ -1218,7 +1221,7 @@ bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
 }
 
 /* static */
-bool ModuleObject::execute(JSContext* cx, HandleModuleObject self,
+bool ModuleObject::execute(JSContext* cx, Handle<ModuleObject*> self,
                            MutableHandleValue rval) {
 #ifdef DEBUG
   MOZ_ASSERT(self->status() == MODULE_STATUS_EVALUATING ||
@@ -1239,7 +1242,7 @@ bool ModuleObject::execute(JSContext* cx, HandleModuleObject self,
     ModuleObject::onTopLevelEvaluationFinished(self);
   });
 
-  RootedModuleEnvironmentObject env(cx, self->environment());
+  Rooted<ModuleEnvironmentObject*> env(cx, self->environment());
   if (!env) {
     JS_ReportErrorASCII(cx,
                         "Module declarations have not yet been instantiated");
@@ -1259,7 +1262,7 @@ void ModuleObject::onTopLevelEvaluationFinished(ModuleObject* module) {
 
 /* static */
 ModuleNamespaceObject* ModuleObject::createNamespace(JSContext* cx,
-                                                     HandleModuleObject self,
+                                                     Handle<ModuleObject*> self,
                                                      HandleObject exports) {
   MOZ_ASSERT(!self->namespace_());
   MOZ_ASSERT(exports->is<ArrayObject>());
@@ -1269,8 +1272,8 @@ ModuleNamespaceObject* ModuleObject::createNamespace(JSContext* cx,
     return nullptr;
   }
 
-  auto ns = ModuleNamespaceObject::create(cx, self, exports.as<ArrayObject>(),
-                                          std::move(bindings));
+  auto* ns = ModuleNamespaceObject::create(cx, self, exports.as<ArrayObject>(),
+                                           std::move(bindings));
   if (!ns) {
     return nullptr;
   }
@@ -1280,9 +1283,10 @@ ModuleNamespaceObject* ModuleObject::createNamespace(JSContext* cx,
 }
 
 /* static */
-bool ModuleObject::createEnvironment(JSContext* cx, HandleModuleObject self) {
-  RootedModuleEnvironmentObject env(cx,
-                                    ModuleEnvironmentObject::create(cx, self));
+bool ModuleObject::createEnvironment(JSContext* cx,
+                                     Handle<ModuleObject*> self) {
+  Rooted<ModuleEnvironmentObject*> env(
+      cx, ModuleEnvironmentObject::create(cx, self));
   if (!env) {
     return false;
   }
@@ -1291,8 +1295,8 @@ bool ModuleObject::createEnvironment(JSContext* cx, HandleModuleObject self) {
   return true;
 }
 
-static bool InvokeSelfHostedMethod(JSContext* cx, HandleModuleObject self,
-                                   HandlePropertyName name,
+static bool InvokeSelfHostedMethod(JSContext* cx, Handle<ModuleObject*> self,
+                                   Handle<PropertyName*> name,
                                    MutableHandleValue rval) {
   RootedValue thisv(cx, ObjectValue(*self));
   FixedInvokeArgs<0> args(cx);
@@ -1301,21 +1305,21 @@ static bool InvokeSelfHostedMethod(JSContext* cx, HandleModuleObject self,
 }
 
 /* static */
-bool ModuleObject::Instantiate(JSContext* cx, HandleModuleObject self) {
+bool ModuleObject::Instantiate(JSContext* cx, Handle<ModuleObject*> self) {
   RootedValue ignored(cx);
   return InvokeSelfHostedMethod(cx, self, cx->names().ModuleInstantiate,
                                 &ignored);
 }
 
 /* static */
-bool ModuleObject::Evaluate(JSContext* cx, HandleModuleObject self,
+bool ModuleObject::Evaluate(JSContext* cx, Handle<ModuleObject*> self,
                             MutableHandleValue rval) {
   return InvokeSelfHostedMethod(cx, self, cx->names().ModuleEvaluate, rval);
 }
 
 /* static */
 ModuleNamespaceObject* ModuleObject::GetOrCreateModuleNamespace(
-    JSContext* cx, HandleModuleObject self) {
+    JSContext* cx, Handle<ModuleObject*> self) {
   FixedInvokeArgs<1> args(cx);
   args[0].setObject(*self);
 
@@ -1500,7 +1504,7 @@ static ArrayObject* ModuleBuilderInitArray(
     JSContext* cx, frontend::CompilationAtomCache& atomCache,
     ModuleArrayType arrayType,
     const frontend::StencilModuleMetadata::EntryVector& vector) {
-  RootedArrayObject resultArray(
+  Rooted<ArrayObject*> resultArray(
       cx, NewDenseFullyAllocatedArray(cx, vector.length()));
   if (!resultArray) {
     return nullptr;
@@ -1508,14 +1512,14 @@ static ArrayObject* ModuleBuilderInitArray(
 
   resultArray->ensureDenseInitializedLength(0, vector.length());
 
-  RootedAtom specifier(cx);
-  RootedAtom localName(cx);
-  RootedAtom importName(cx);
-  RootedAtom exportName(cx);
+  Rooted<JSAtom*> specifier(cx);
+  Rooted<JSAtom*> localName(cx);
+  Rooted<JSAtom*> importName(cx);
+  Rooted<JSAtom*> exportName(cx);
   RootedObject req(cx);
   RootedObject moduleRequest(cx);
-  RootedArrayObject assertionArray(cx);
-  RootedPlainObject assertionObject(cx);
+  Rooted<ArrayObject*> assertionArray(cx);
+  Rooted<PlainObject*> assertionObject(cx);
   RootedId assertionKey(cx);
   RootedValue assertionValue(cx);
 
@@ -1620,7 +1624,7 @@ static ArrayObject* ModuleBuilderInitArray(
 bool frontend::StencilModuleMetadata::initModule(
     JSContext* cx, frontend::CompilationAtomCache& atomCache,
     JS::Handle<ModuleObject*> module) const {
-  RootedArrayObject requestedModulesObject(
+  Rooted<ArrayObject*> requestedModulesObject(
       cx, ModuleBuilderInitArray(cx, atomCache,
                                  ModuleArrayType::RequestedModuleObject,
                                  requestedModules));
@@ -1628,7 +1632,7 @@ bool frontend::StencilModuleMetadata::initModule(
     return false;
   }
 
-  RootedArrayObject importEntriesObject(
+  Rooted<ArrayObject*> importEntriesObject(
       cx,
       ModuleBuilderInitArray(cx, atomCache, ModuleArrayType::ImportEntryObject,
                              importEntries));
@@ -1636,7 +1640,7 @@ bool frontend::StencilModuleMetadata::initModule(
     return false;
   }
 
-  RootedArrayObject localExportEntriesObject(
+  Rooted<ArrayObject*> localExportEntriesObject(
       cx,
       ModuleBuilderInitArray(cx, atomCache, ModuleArrayType::ExportEntryObject,
                              localExportEntries));
@@ -1644,7 +1648,7 @@ bool frontend::StencilModuleMetadata::initModule(
     return false;
   }
 
-  RootedArrayObject indirectExportEntriesObject(
+  Rooted<ArrayObject*> indirectExportEntriesObject(
       cx,
       ModuleBuilderInitArray(cx, atomCache, ModuleArrayType::ExportEntryObject,
                              indirectExportEntries));
@@ -1652,7 +1656,7 @@ bool frontend::StencilModuleMetadata::initModule(
     return false;
   }
 
-  RootedArrayObject starExportEntriesObject(
+  Rooted<ArrayObject*> starExportEntriesObject(
       cx,
       ModuleBuilderInitArray(cx, atomCache, ModuleArrayType::ExportEntryObject,
                              starExportEntries));
@@ -2136,7 +2140,7 @@ template <typename T>
 ArrayObject* js::CreateArray(JSContext* cx,
                              const JS::Rooted<GCVector<T>>& vector) {
   uint32_t length = vector.length();
-  RootedArrayObject array(cx, NewDenseFullyAllocatedArray(cx, length));
+  Rooted<ArrayObject*> array(cx, NewDenseFullyAllocatedArray(cx, length));
   if (!array) {
     return nullptr;
   }
@@ -2151,7 +2155,7 @@ ArrayObject* js::CreateArray(JSContext* cx,
 
 JSObject* js::GetOrCreateModuleMetaObject(JSContext* cx,
                                           HandleObject moduleArg) {
-  HandleModuleObject module = moduleArg.as<ModuleObject>();
+  Handle<ModuleObject*> module = moduleArg.as<ModuleObject>();
   if (JSObject* obj = module->metaObject()) {
     return obj;
   }
@@ -2230,8 +2234,8 @@ bool js::AsyncModuleExecutionRejectedHandler(JSContext* cx, unsigned argc,
 // Top Level Await
 // https://tc39.es/proposal-top-level-await/#sec-gather-async-parent-completions
 bool ModuleObject::GatherAsyncParentCompletions(
-    JSContext* cx, HandleModuleObject module,
-    MutableHandleArrayObject execList) {
+    JSContext* cx, Handle<ModuleObject*> module,
+    MutableHandle<ArrayObject*> execList) {
   FixedInvokeArgs<1> args(cx);
   args[0].setObject(*module);
 
@@ -2250,7 +2254,7 @@ bool ModuleObject::GatherAsyncParentCompletions(
 // Top Level Await
 // https://tc39.es/proposal-top-level-await/#sec-asyncmodulexecutionfulfilled
 void js::AsyncModuleExecutionFulfilled(JSContext* cx,
-                                       HandleModuleObject module) {
+                                       Handle<ModuleObject*> module) {
   // Step 1.
   MOZ_ASSERT(module->status() == MODULE_STATUS_EVALUATED);
 
@@ -2261,10 +2265,13 @@ void js::AsyncModuleExecutionFulfilled(JSContext* cx,
 
   if (module->hasTopLevelCapability()) {
     MOZ_ASSERT(module->getCycleRoot() == module);
-    ModuleObject::topLevelCapabilityResolve(cx, module);
+    if (!ModuleObject::topLevelCapabilityResolve(cx, module)) {
+      // If Resolve fails, there's nothing more we can do here.
+      cx->clearPendingException();
+    }
   }
 
-  RootedArrayObject sortedList(cx);
+  Rooted<ArrayObject*> sortedList(cx);
   if (!ModuleObject::GatherAsyncParentCompletions(cx, module, &sortedList)) {
     // We have OOM'd -- all bets are off, reject the promise. Not much more we
     // can do.
@@ -2312,7 +2319,10 @@ void js::AsyncModuleExecutionFulfilled(JSContext* cx,
         m->setAsyncEvaluatingFalse();
         if (m->hasTopLevelCapability()) {
           MOZ_ASSERT(m->getCycleRoot() == m);
-          ModuleObject::topLevelCapabilityResolve(cx, m);
+          if (!ModuleObject::topLevelCapabilityResolve(cx, m)) {
+            // If Resolve fails, there's nothing more we can do here.
+            cx->clearPendingException();
+          }
         }
       }
     }
@@ -2323,7 +2333,8 @@ void js::AsyncModuleExecutionFulfilled(JSContext* cx,
 }
 
 // https://tc39.es/proposal-top-level-await/#sec-asyncmodulexecutionrejected
-void js::AsyncModuleExecutionRejected(JSContext* cx, HandleModuleObject module,
+void js::AsyncModuleExecutionRejected(JSContext* cx,
+                                      Handle<ModuleObject*> module,
                                       HandleValue error) {
   // Step 1.
   MOZ_ASSERT(module->status() == MODULE_STATUS_EVALUATED ||
@@ -2358,14 +2369,17 @@ void js::AsyncModuleExecutionRejected(JSContext* cx, HandleModuleObject module,
   // Step 7.
   if (module->hasTopLevelCapability()) {
     MOZ_ASSERT(module->getCycleRoot() == module);
-    ModuleObject::topLevelCapabilityReject(cx, module, error);
+    if (!ModuleObject::topLevelCapabilityReject(cx, module, error)) {
+      // If Reject fails, there's nothing more we can do here.
+      cx->clearPendingException();
+    }
   }
 
   // Return undefined.
 }
 
 bool ModuleObject::topLevelCapabilityResolve(JSContext* cx,
-                                             HandleModuleObject module) {
+                                             Handle<ModuleObject*> module) {
   RootedValue rval(cx);
   Rooted<PromiseObject*> promise(
       cx, &module->topLevelCapability()->as<PromiseObject>());
@@ -2373,7 +2387,7 @@ bool ModuleObject::topLevelCapabilityResolve(JSContext* cx,
 }
 
 bool ModuleObject::topLevelCapabilityReject(JSContext* cx,
-                                            HandleModuleObject module,
+                                            Handle<ModuleObject*> module,
                                             HandleValue error) {
   Rooted<PromiseObject*> promise(
       cx, &module->topLevelCapability()->as<PromiseObject>());
@@ -2384,7 +2398,7 @@ bool ModuleObject::topLevelCapabilityReject(JSContext* cx,
 // NOTE: The caller needs to handle the promise.
 static bool EvaluateDynamicImportOptions(
     JSContext* cx, HandleValue optionsArg,
-    MutableHandleArrayObject assertionArrayArg) {
+    MutableHandle<ArrayObject*> assertionArrayArg) {
   // Step 10. If options is not undefined, then.
   if (optionsArg.isUndefined()) {
     return true;
@@ -2434,7 +2448,7 @@ static bool EvaluateDynamicImportOptions(
   }
 
   // Step 9 (reordered). Let assertions be a new empty List.
-  RootedArrayObject assertionArray(
+  Rooted<ArrayObject*> assertionArray(
       cx, NewDenseFullyAllocatedArray(cx, numberOfAssertions));
   if (!assertionArray) {
     return false;
@@ -2481,7 +2495,7 @@ static bool EvaluateDynamicImportOptions(
       }
 
       if (supported) {
-        RootedPlainObject assertionObj(cx, NewPlainObject(cx));
+        Rooted<PlainObject*> assertionObj(cx, NewPlainObject(cx));
         if (!assertionObj) {
           return false;
         }
@@ -2549,7 +2563,7 @@ JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
   RootedValue referencingPrivate(cx, script->sourceObject()->getPrivate());
   cx->runtime()->addRefScriptPrivate(referencingPrivate);
 
-  RootedAtom specifierAtom(cx, AtomizeString(cx, specifier));
+  Rooted<JSAtom*> specifierAtom(cx, AtomizeString(cx, specifier));
   if (!specifierAtom) {
     if (!RejectPromiseWithPendingError(cx, promise)) {
       return nullptr;
@@ -2557,7 +2571,7 @@ JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
     return promise;
   }
 
-  RootedArrayObject assertionArray(cx);
+  Rooted<ArrayObject*> assertionArray(cx);
   if (!EvaluateDynamicImportOptions(cx, optionsArg, &assertionArray)) {
     if (!RejectPromiseWithPendingError(cx, promise)) {
       return nullptr;
@@ -2647,7 +2661,7 @@ static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(resolvedModuleParams->length() == 2);
   RootedValue referencingPrivate(cx, resolvedModuleParams->get(0));
 
-  RootedAtom specifier(
+  Rooted<JSAtom*> specifier(
       cx, AtomizeString(cx, resolvedModuleParams->get(1).toString()));
   if (!specifier) {
     return false;
@@ -2671,7 +2685,7 @@ static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
     return RejectPromiseWithPendingError(cx, promise);
   }
 
-  RootedModuleObject module(cx, &result->as<ModuleObject>());
+  Rooted<ModuleObject*> module(cx, &result->as<ModuleObject>());
   if (module->status() != MODULE_STATUS_EVALUATED) {
     JS_ReportErrorASCII(
         cx, "Unevaluated or errored module returned by module resolve hook");

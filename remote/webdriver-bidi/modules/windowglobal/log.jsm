@@ -10,13 +10,18 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const { Module } = ChromeUtils.import(
+  "chrome://remote/content/shared/messagehandler/Module.jsm"
+);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ConsoleAPIListener:
     "chrome://remote/content/shared/listeners/ConsoleAPIListener.jsm",
   ConsoleListener:
     "chrome://remote/content/shared/listeners/ConsoleListener.jsm",
   isChromeFrame: "chrome://remote/content/shared/Stack.jsm",
-  Module: "chrome://remote/content/shared/messagehandler/Module.jsm",
   serialize: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
 });
 
@@ -28,13 +33,13 @@ class LogModule extends Module {
     super(messageHandler);
 
     // Create the console-api listener and listen on "message" events.
-    this.#consoleAPIListener = new ConsoleAPIListener(
+    this.#consoleAPIListener = new lazy.ConsoleAPIListener(
       this.messageHandler.innerWindowId
     );
     this.#consoleAPIListener.on("message", this.#onConsoleAPIMessage);
 
     // Create the console listener and listen on error messages.
-    this.#consoleMessageListener = new ConsoleListener(
+    this.#consoleMessageListener = new lazy.ConsoleListener(
       this.messageHandler.innerWindowId
     );
     this.#consoleMessageListener.on("error", this.#onJavaScriptError);
@@ -65,7 +70,7 @@ class LogModule extends Module {
     }
 
     const callFrames = stackTrace
-      .filter(frame => !isChromeFrame(frame))
+      .filter(frame => !lazy.isChromeFrame(frame))
       .map(frame => {
         return {
           columnNumber: frame.columnNumber,
@@ -130,7 +135,7 @@ class LogModule extends Module {
     // Step 6 and 7: Serialize each arg as remote value.
     const serializedArgs = [];
     for (const arg of args) {
-      serializedArgs.push(serialize(arg /*, null, true, new Set() */));
+      serializedArgs.push(lazy.serialize(arg /*, null, true, new Set() */));
     }
 
     // 8. Bug 1742589: set realm to the current realm id.
@@ -179,35 +184,35 @@ class LogModule extends Module {
     this.emitProtocolEvent("log.entryAdded", entry);
   };
 
-  /**
-   * Internal commands
-   */
-
-  _applySessionData(params) {
-    // TODO: Bug 1741861. Move this logic to a shared module or the an abstract
-    // class.
-    const { category, added = [], removed = [] } = params;
-    if (category === "event") {
-      for (const event of added) {
-        this._subscribeEvent(event);
-      }
-      for (const event of removed) {
-        this._unsubscribeEvent(event);
-      }
-    }
-  }
-
-  _subscribeEvent(event) {
+  #subscribeEvent(event) {
     if (event === "log.entryAdded") {
       this.#consoleAPIListener.startListening();
       this.#consoleMessageListener.startListening();
     }
   }
 
-  _unsubscribeEvent(event) {
+  #unsubscribeEvent(event) {
     if (event === "log.entryAdded") {
       this.#consoleAPIListener.stopListening();
       this.#consoleMessageListener.stopListening();
+    }
+  }
+
+  /**
+   * Internal commands
+   */
+
+  _applySessionData(params) {
+    // TODO: Bug 1775231. Move this logic to a shared module or an abstract
+    // class.
+    const { category, added = [], removed = [] } = params;
+    if (category === "event") {
+      for (const event of added) {
+        this.#subscribeEvent(event);
+      }
+      for (const event of removed) {
+        this.#unsubscribeEvent(event);
+      }
     }
   }
 }

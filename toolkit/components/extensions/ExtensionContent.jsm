@@ -11,9 +11,13 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionProcessScript: "resource://gre/modules/ExtensionProcessScript.jsm",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
   LanguageDetector: "resource:///modules/translation/LanguageDetector.jsm",
@@ -22,7 +26,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "styleSheetService",
   "@mozilla.org/content/style-sheet-service;1",
   "nsIStyleSheetService"
@@ -44,8 +48,6 @@ const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto", "TextEncoder"]);
-
 const {
   DefaultMap,
   DefaultWeakMap,
@@ -65,9 +67,7 @@ const {
 
 const { BrowserExtensionContent, ChildAPIManager, Messenger } = ExtensionChild;
 
-XPCOMUtils.defineLazyGetter(this, "console", ExtensionCommon.getConsole);
-
-XPCOMUtils.defineLazyGetter(this, "isContentScriptProcess", () => {
+XPCOMUtils.defineLazyGetter(lazy, "isContentScriptProcess", () => {
   return (
     Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_CONTENT ||
     !WebExtensionPolicy.useRemoteWebExtensions ||
@@ -82,7 +82,7 @@ const CATEGORY_EXTENSION_SCRIPTS_CONTENT = "webextension-scripts-content";
 
 var apiManager = new (class extends SchemaAPIManager {
   constructor() {
-    super("content", Schemas);
+    super("content", lazy.Schemas);
     this.initialized = false;
   }
 
@@ -223,7 +223,7 @@ class CSSCache extends BaseCSSCache {
       CSS_EXPIRY_TIMEOUT_MS,
       url => {
         let uri = Services.io.newURI(url);
-        return styleSheetService
+        return lazy.styleSheetService
           .preloadSheetAsync(uri, sheetType)
           .then(sheet => {
             return { url, sheet };
@@ -273,7 +273,7 @@ class CSSCodeCache extends BaseCSSCache {
       "data:text/css;extension=style;charset=utf-8," +
         encodeURIComponent(cssCode)
     );
-    const value = styleSheetService
+    const value = lazy.styleSheetService
       .preloadSheetAsync(uri, this.sheetType)
       .then(sheet => {
         return { sheet, uri };
@@ -352,6 +352,9 @@ class Script {
       extension[this.cssOrigin === "user" ? "userCSSCode" : "authorCSSCode"];
     this.scriptCache =
       extension[matcher.wantReturnValue ? "dynamicScripts" : "staticScripts"];
+
+    /** @type {WeakSet<Document>} A set of documents injected into. */
+    this.injectedInto = new WeakSet();
 
     if (matcher.wantReturnValue) {
       this.compileScripts();
@@ -433,14 +436,18 @@ class Script {
     }
   }
 
-  matchesWindowGlobal(windowGlobal) {
-    return this.matcher.matchesWindowGlobal(windowGlobal);
+  matchesWindowGlobal(windowGlobal, ignorePermissions) {
+    return this.matcher.matchesWindowGlobal(windowGlobal, ignorePermissions);
   }
 
   async injectInto(window) {
-    if (!isContentScriptProcess) {
+    if (
+      !lazy.isContentScriptProcess ||
+      this.injectedInto.has(window.document)
+    ) {
       return;
     }
+    this.injectedInto.add(window.document);
 
     let context = this.extension.getContext(window);
     for (let script of this.matcher.jsPaths) {
@@ -565,7 +572,7 @@ class Script {
 
     // The evaluations below may throw, in which case the promise will be
     // automatically rejected.
-    ExtensionTelemetry.contentScriptInjection.stopwatchStart(
+    lazy.ExtensionTelemetry.contentScriptInjection.stopwatchStart(
       extension,
       context
     );
@@ -584,7 +591,7 @@ class Script {
         );
       }
     } finally {
-      ExtensionTelemetry.contentScriptInjection.stopwatchFinish(
+      lazy.ExtensionTelemetry.contentScriptInjection.stopwatchFinish(
         extension,
         context
       );
@@ -687,7 +694,10 @@ class UserScript extends Script {
 
     // The evaluations below may throw, in which case the promise will be
     // automatically rejected.
-    ExtensionTelemetry.userScriptInjection.stopwatchStart(extension, context);
+    lazy.ExtensionTelemetry.userScriptInjection.stopwatchStart(
+      extension,
+      context
+    );
     try {
       let userScriptSandbox = this.sandboxes.get(context);
 
@@ -714,7 +724,7 @@ class UserScript extends Script {
         script.executeInGlobal(userScriptSandbox);
       }
     } finally {
-      ExtensionTelemetry.userScriptInjection.stopwatchFinish(
+      lazy.ExtensionTelemetry.userScriptInjection.stopwatchFinish(
         extension,
         context
       );
@@ -751,7 +761,9 @@ class UserScript extends Script {
 }
 
 var contentScripts = new DefaultWeakMap(matcher => {
-  const extension = ExtensionProcessScript.extensions.get(matcher.extension);
+  const extension = lazy.ExtensionProcessScript.extensions.get(
+    matcher.extension
+  );
 
   if ("userScriptOptions" in matcher) {
     return new UserScript(extension, matcher);
@@ -772,7 +784,7 @@ class ContentScriptContextChild extends BaseContext {
 
     this.setContentWindow(contentWindow);
 
-    let frameId = WebNavigationFrames.getFrameId(contentWindow);
+    let frameId = lazy.WebNavigationFrames.getFrameId(contentWindow);
     this.frameId = frameId;
 
     this.browsingContextId = contentWindow.docShell.browsingContext.id;
@@ -893,8 +905,12 @@ class ContentScriptContextChild extends BaseContext {
       return chromeObj;
     });
 
-    Schemas.exportLazyGetter(this.sandbox, "browser", () => this.chromeObj);
-    Schemas.exportLazyGetter(this.sandbox, "chrome", () => this.chromeObj);
+    lazy.Schemas.exportLazyGetter(
+      this.sandbox,
+      "browser",
+      () => this.chromeObj
+    );
+    lazy.Schemas.exportLazyGetter(this.sandbox, "chrome", () => this.chromeObj);
 
     // Keep track if the userScript API script has been already executed in this context
     // (e.g. because there are more then one UserScripts that match the related webpage
@@ -913,12 +929,12 @@ class ContentScriptContextChild extends BaseContext {
     }
 
     // This is an iframe with content script API enabled (See Bug 1214658)
-    Schemas.exportLazyGetter(
+    lazy.Schemas.exportLazyGetter(
       this.contentWindow,
       "browser",
       () => this.chromeObj
     );
-    Schemas.exportLazyGetter(
+    lazy.Schemas.exportLazyGetter(
       this.contentWindow,
       "chrome",
       () => this.chromeObj
@@ -1139,7 +1155,7 @@ var ExtensionContent = {
     let encoder = Cu.createDocumentEncoder("text/plain");
     encoder.init(doc, "text/plain", Ci.nsIDocumentEncoder.SkipInvisibleContent);
 
-    let result = await LanguageDetector.detectLanguage({
+    let result = await lazy.LanguageDetector.detectLanguage({
       language:
         doc.documentElement.getAttribute("xml:lang") ||
         doc.documentElement.getAttribute("lang") ||
@@ -1150,6 +1166,45 @@ var ExtensionContent = {
       encoding: doc.characterSet,
     });
     return result.language === "un" ? "und" : result.language;
+  },
+
+  // Activate MV3 content scripts in all same-origin frames for this tab.
+  handleActivateScripts({ options, windows }) {
+    let policy = WebExtensionPolicy.getByID(options.id);
+
+    // Order content scripts by run_at timing.
+    let runAt = { document_start: [], document_end: [], document_idle: [] };
+    for (let matcher of policy.contentScripts) {
+      runAt[matcher.runAt].push(this.contentScripts.get(matcher));
+    }
+
+    // If we got here, checks in TabManagerBase.activateScripts assert:
+    // 1) this is a MV3 extension, with Origin Controls,
+    // 2) with a host permission (or content script) for the tab's top origin,
+    // 3) and that host permission hasn't been granted yet.
+
+    // We treat the action click as implicit user's choice to activate the
+    // extension on the current site, so we can safely run (matching) content
+    // scripts in all sameOriginWithTop frames while ignoring host permission.
+
+    let { browsingContext } = WindowGlobalChild.getByInnerWindowId(windows[0]);
+    for (let bc of browsingContext.getAllBrowsingContextsInSubtree()) {
+      let wgc = bc.currentWindowContext.windowGlobalChild;
+      if (wgc?.sameOriginWithTop) {
+        // This is TOCTOU safe: if a frame navigated after same-origin check,
+        // wgc.isClosed would be true and .matchesWindowGlobal() would fail.
+        const runScript = cs => {
+          if (cs.matchesWindowGlobal(wgc, /* ignorePermissions */ true)) {
+            return cs.injectInto(bc.window);
+          }
+        };
+
+        // Inject all matching content scripts in proper run_at order.
+        Promise.all(runAt.document_start.map(runScript))
+          .then(() => Promise.all(runAt.document_end.map(runScript)))
+          .then(() => Promise.all(runAt.document_idle.map(runScript)));
+      }
+    }
   },
 
   // Used to executeScript, insertCSS and removeCSS.
@@ -1229,7 +1284,7 @@ var ExtensionContent = {
  */
 class ExtensionContentChild extends JSProcessActorChild {
   receiveMessage({ name, data }) {
-    if (!isContentScriptProcess) {
+    if (!lazy.isContentScriptProcess) {
       return;
     }
     switch (name) {
@@ -1237,6 +1292,8 @@ class ExtensionContentChild extends JSProcessActorChild {
         return ExtensionContent.handleDetectLanguage(data);
       case "Execute":
         return ExtensionContent.handleActorExecute(data);
+      case "ActivateScripts":
+        return ExtensionContent.handleActivateScripts(data);
     }
   }
 }

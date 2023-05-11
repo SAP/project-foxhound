@@ -194,12 +194,6 @@ CoMarshalInterfaceFailure:
     via CoMarshalInterface during the creation of an IPC proxy stream.
   type: string
 
-ContainsMemoryReport:
-  description: >
-    Indicates that the crash dump contains a memory report.
-  type: boolean
-  ping: true
-
 ContentSandboxCapabilities:
   description: >
     List of capabilities of the content process sandbox.
@@ -363,6 +357,16 @@ GraphicsDrawShader:
     Name of the shader that is currently bound for a draw call, if applicable.
     See file names in gfx/wr/webrender/res/* for the possible values.
   type: string
+
+GraphicsNumActiveRenderers:
+  description: >
+    Number of webrender renderer instances that are not in a paused state.
+  type: integer
+
+GraphicsNumRenderers:
+  description: >
+    Total number of webrender renderer instances.
+  type: integer
 
 GraphicsStartupTest:
   description: >

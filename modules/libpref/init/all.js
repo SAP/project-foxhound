@@ -142,9 +142,6 @@ pref("dom.indexedDB.logging.details", true);
 // Enable profiler marks for indexedDB events.
 pref("dom.indexedDB.logging.profiler-marks", false);
 
-// Whether or not File Handle is enabled.
-pref("dom.fileHandle.enabled", true);
-
 // The number of workers per domain allowed to run concurrently.
 // We're going for effectively infinite, while preventing abuse.
 pref("dom.workers.maxPerDomain", 512);
@@ -204,6 +201,9 @@ pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode.addl", "")
 // "dom.keyboardevent.keypress.hack.dispatch_non_printable_keys". So, check its
 // explanation for the detail.
 pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
+
+// Enable experimental text recognition features for supported OSes.
+pref("dom.text-recognition.enabled", false);
 
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
@@ -313,6 +313,7 @@ pref("media.videocontrols.picture-in-picture.video-toggle.always-show", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.min-video-secs", 45);
 pref("media.videocontrols.picture-in-picture.video-toggle.position", "right");
 pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
+pref("media.videocontrols.picture-in-picture.display-text-tracks.toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.size", "medium");
 pref("media.videocontrols.keyboard-tab-to-all-controls", true);
 
@@ -496,17 +497,6 @@ pref("gfx.downloadable_fonts.fallback_delay_short", 100);
 // disable downloadable font cache so that behavior is consistently
 // the uncached load behavior across pages (useful for testing reflow problems)
 pref("gfx.downloadable_fonts.disable_cache", false);
-
-// whether to always search all font cmaps during system font fallback
-pref("gfx.font_rendering.fallback.always_use_cmaps", false);
-
-// cache shaped word results
-pref("gfx.font_rendering.wordcache.charlimit", 32);
-
-// cache shaped word results
-pref("gfx.font_rendering.wordcache.maxentries", 10000);
-
-pref("gfx.font_rendering.graphite.enabled", true);
 
 #ifdef XP_WIN
   pref("gfx.font_rendering.directwrite.use_gdi_table_loading", true);
@@ -2180,36 +2170,6 @@ pref("mousewheel.with_win.delta_multiplier_z", 100);
 // We can show it anytime from menus
 pref("profile.manage_only_at_launch", false);
 
-// ------------------
-//  Text Direction
-// ------------------
-// 1 = directionLTRBidi *
-// 2 = directionRTLBidi
-pref("bidi.direction", 1);
-// ------------------
-//  Text Type
-// ------------------
-// 1 = charsettexttypeBidi *
-// 2 = logicaltexttypeBidi
-// 3 = visualtexttypeBidi
-pref("bidi.texttype", 1);
-// ------------------
-//  Numeral Style
-// ------------------
-// 0 = nominalnumeralBidi *
-// 1 = regularcontextnumeralBidi
-// 2 = hindicontextnumeralBidi
-// 3 = arabicnumeralBidi
-// 4 = hindinumeralBidi
-// 5 = persiancontextnumeralBidi
-// 6 = persiannumeralBidi
-pref("bidi.numeral", 0);
-
-// Setting this pref to |true| forces Bidi UI menu items and keyboard shortcuts
-// to be exposed, and enables the directional caret hook. By default, only
-// expose it for bidi-associated system locales.
-pref("bidi.browser.ui", false);
-
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction
 // 1 = end-side in document/content direction
@@ -3846,7 +3806,7 @@ pref("urlclassifier.features.socialtracking.annotate.blacklistTables", "social-t
 pref("urlclassifier.features.socialtracking.annotate.whitelistTables", "mozstd-trackwhite-digest256,google-trackwhite-digest256");
 
 // These tables will never trigger a gethash call.
-pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,block-flash-digest256,except-flash-digest256,allow-flashallow-digest256,except-flashallow-digest256,block-flashsubdoc-digest256,except-flashsubdoc-digest256,goog-passwordwhite-proto,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256");
+pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,goog-passwordwhite-proto,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256");
 
 // Workaround for Google Recaptcha
 pref("urlclassifier.trackingAnnotationSkipURLs", "google.com/recaptcha/,*.google.com/recaptcha/");
@@ -3918,7 +3878,7 @@ pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozil
 
 // Mozilla Safe Browsing provider (for tracking protection and plugin blocking)
 pref("browser.safebrowsing.provider.mozilla.pver", "2.2");
-pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,block-flash-digest256,except-flash-digest256,allow-flashallow-digest256,except-flashallow-digest256,block-flashsubdoc-digest256,except-flashsubdoc-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256");
+pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256");
 pref("browser.safebrowsing.provider.mozilla.updateURL", "https://shavar.services.mozilla.com/downloads?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
 pref("browser.safebrowsing.provider.mozilla.gethashURL", "https://shavar.services.mozilla.com/gethash?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
 // Set to a date in the past to force immediate download in new profiles.
@@ -3930,14 +3890,6 @@ pref("browser.safebrowsing.provider.mozilla.lists.content", "moz-full");
 
 // The table and global pref for blocking plugin content
 pref("urlclassifier.blockedTable", "moztest-block-simple,mozplugin-block-digest256");
-
-// Flash blocking tables
-pref("urlclassifier.flashAllowTable", "allow-flashallow-digest256");
-pref("urlclassifier.flashAllowExceptTable", "except-flashallow-digest256");
-pref("urlclassifier.flashTable", "block-flash-digest256");
-pref("urlclassifier.flashExceptTable", "except-flash-digest256");
-pref("urlclassifier.flashSubDocTable", "block-flashsubdoc-digest256");
-pref("urlclassifier.flashSubDocExceptTable", "except-flashsubdoc-digest256");
 
 // Turn off Spatial navigation by default.
 pref("snav.enabled", false);
@@ -4052,9 +4004,6 @@ pref("reader.has_used_toolbar", false);
 
 // Whether to use a vertical or horizontal toolbar.
 pref("reader.toolbar.vertical", true);
-
-// Whether or not we display additional UI (such as the full screen, reset to default, and browser theme buttons).
-pref("reader.improvements_H12022.enabled", false);
 
 #if !defined(ANDROID)
   pref("narrate.enabled", true);
@@ -4220,7 +4169,7 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   pref("services.sync.engine.passwords", true);
   pref("services.sync.engine.prefs", true);
   pref("services.sync.engine.tabs", true);
-  pref("services.sync.engine.tabs.filteredSchemes", "about|resource|chrome|file|blob|moz-extension");
+  pref("services.sync.engine.tabs.filteredSchemes", "about|resource|chrome|file|blob|moz-extension|data");
 
   // The addresses and CC engines might not actually be available at all.
   pref("services.sync.engine.addresses.available", false);
@@ -4315,6 +4264,13 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // 3: WebDriver BiDi + CDP
   pref("remote.active-protocols", 3);
 
+  // Enable WebDriver BiDi experimental commands and events.
+  #if defined(NIGHTLY_BUILD)
+    pref("remote.experimental.enabled", true);
+  #else
+    pref("remote.experimental.enabled", false);
+  #endif
+
   // Defines the verbosity of the internal logger.
   //
   // Available levels are, in descending order of severity, "Trace", "Debug",
@@ -4394,17 +4350,12 @@ pref("devtools.dump.emit", false);
 pref("devtools.discovery.log", false);
 // Whether to scan for DevTools devices via WiFi.
 pref("devtools.remote.wifi.scan", true);
-// Client must complete TLS handshake within this window (ms).
-pref("devtools.remote.tls-handshake-timeout", 10000);
 
 // The extension ID for devtools-adb-extension.
 pref("devtools.remote.adb.extensionID", "adb@mozilla.org");
 // The URL for for devtools-adb-extension (overridden in tests to a local
 // path).
 pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/mozilla.org/labs/devtools/adb-extension/#OS#/adb-extension-latest-#OS#.xpi");
-
-// URL of the remote JSON catalog used for device simulation.
-pref("devtools.devices.url", "https://code.cdn.mozilla.net/devices/devices.json");
 
 // Enable Inactive CSS detection; used both by the client and the server.
 pref("devtools.inspector.inactive.css.enabled", true);

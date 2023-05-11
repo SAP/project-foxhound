@@ -137,7 +137,7 @@ extern bool enableIteratorHelpers;
 extern bool enableArrayGrouping;
 extern bool enablePrivateClassFields;
 extern bool enablePrivateClassMethods;
-extern bool enableErgonomicBrandChecks;
+extern bool enableArrayFindLast;
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 extern bool enableChangeArrayByCopy;
 #endif
@@ -182,10 +182,10 @@ bool CreateAlias(JSContext* cx, const char* dstName,
 enum class OffThreadJobKind { CompileScript, CompileModule, Decode };
 
 class NonshrinkingGCObjectVector
-    : public GCVector<HeapPtrObject, 0, SystemAllocPolicy> {
+    : public GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> {
  public:
   bool traceWeak(JSTracer* trc) {
-    for (HeapPtrObject& obj : *this) {
+    for (HeapPtr<JSObject*>& obj : *this) {
       TraceWeakEdge(trc, &obj, "NonshrinkingGCObjectVector element");
     }
     return true;

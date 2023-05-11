@@ -7,11 +7,10 @@ import re
 import pprint
 import collections
 import collections.abc
+
+import taskgraph
 import voluptuous
-
-import gecko_taskgraph
-
-from .keyed_by import evaluate_keyed_by
+from taskgraph.util.keyed_by import evaluate_keyed_by
 
 
 def validate_schema(schema, obj, msg_prefix):
@@ -19,7 +18,7 @@ def validate_schema(schema, obj, msg_prefix):
     Validate that object satisfies schema.  If not, generate a useful exception
     beginning with msg_prefix.
     """
-    if gecko_taskgraph.fast:
+    if taskgraph.fast:
         return
     try:
         schema(obj)
@@ -213,7 +212,7 @@ class Schema(voluptuous.Schema):
         super().__init__(*args, **kwargs)
 
         self.check = check
-        if not gecko_taskgraph.fast and self.check:
+        if not taskgraph.fast and self.check:
             check_schema(self)
 
     def extend(self, *args, **kwargs):
@@ -226,7 +225,7 @@ class Schema(voluptuous.Schema):
         return schema
 
     def _compile(self, schema):
-        if gecko_taskgraph.fast:
+        if taskgraph.fast:
             return
         return super()._compile(schema)
 

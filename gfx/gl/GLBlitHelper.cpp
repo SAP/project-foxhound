@@ -666,13 +666,13 @@ const DrawBlitProg* GLBlitHelper::CreateDrawBlitProg(
 
   GLenum status = 0;
   mGL->fGetProgramiv(prog, LOCAL_GL_LINK_STATUS, (GLint*)&status);
-  if (status == LOCAL_GL_TRUE || !mGL->CheckContextLost()) {
+  if (status == LOCAL_GL_TRUE || mGL->CheckContextLost()) {
     const SaveRestoreCurrentProgram oldProg(mGL);
     mGL->fUseProgram(prog);
     const char* samplerNames[] = {"uTex0", "uTex1", "uTex2"};
     for (int i = 0; i < 3; i++) {
       const auto loc = mGL->fGetUniformLocation(prog, samplerNames[i]);
-      if (loc == -1) break;
+      if (loc == -1) continue;
       mGL->fUniform1i(loc, i);
     }
 
@@ -1326,15 +1326,8 @@ bool GLBlitHelper::BlitImage(layers::GPUVideoImage* const srcImage,
 
 // -------------------------------------
 #ifdef MOZ_WAYLAND
-bool GLBlitHelper::BlitImage(layers::DMABUFSurfaceImage* srcImage,
-                             const gfx::IntSize& destSize,
-                             OriginPos destOrigin) const {
-  DMABufSurface* surface = srcImage->GetSurface();
-  if (!surface) {
-    gfxCriticalError() << "Null DMABUFSurface for GLBlitHelper::BlitImage";
-    return false;
-  }
-
+bool GLBlitHelper::Blit(DMABufSurface* surface, const gfx::IntSize& destSize,
+                        OriginPos destOrigin) const {
   const auto& srcOrigin = OriginPos::BottomLeft;
 
   DrawBlitProg::BaseArgs baseArgs;
@@ -1387,6 +1380,17 @@ bool GLBlitHelper::BlitImage(layers::DMABUFSurfaceImage* srcImage,
   prog->Draw(baseArgs, pYuvArgs);
 
   return true;
+}
+
+bool GLBlitHelper::BlitImage(layers::DMABUFSurfaceImage* srcImage,
+                             const gfx::IntSize& destSize,
+                             OriginPos destOrigin) const {
+  DMABufSurface* surface = srcImage->GetSurface();
+  if (!surface) {
+    gfxCriticalError() << "Null DMABUFSurface for GLBlitHelper::BlitImage";
+    return false;
+  }
+  return Blit(surface, destSize, destOrigin);
 }
 #endif
 

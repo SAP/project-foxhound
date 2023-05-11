@@ -39,6 +39,12 @@ class ContextMenuParent extends JSWindowActorParent {
     });
   }
 
+  getImageText(targetIdentifier) {
+    this.sendAsyncMessage("ContextMenu:GetImageText", {
+      targetIdentifier,
+    });
+  }
+
   toggleRevealPassword(targetIdentifier) {
     this.sendAsyncMessage("ContextMenu:ToggleRevealPassword", {
       targetIdentifier,
@@ -85,13 +91,6 @@ class ContextMenuParent extends JSWindowActorParent {
   getSearchFieldBookmarkData(targetIdentifier) {
     return this.sendQuery("ContextMenu:SearchFieldBookmarkData", {
       targetIdentifier,
-    });
-  }
-
-  doCustomCommand(generatedItemId, handlingUserInput) {
-    this.sendAsyncMessage("ContextMenu:DoCustomCommand", {
-      generatedItemId,
-      handlingUserInput,
     });
   }
 }

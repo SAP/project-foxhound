@@ -405,17 +405,9 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual void AppendTextTo(nsAString& aText, uint32_t aStartOffset = 0,
                             uint32_t aLength = UINT32_MAX) override;
 
-  /**
-   * Return boundaries in screen coordinates in app units.
-   */
-  virtual nsRect BoundsInAppUnits() const;
+  virtual nsRect BoundsInAppUnits() const override;
 
   virtual LayoutDeviceIntRect Bounds() const override;
-
-  /**
-   * Return boundaries in screen coordinates in CSS pixels.
-   */
-  virtual nsIntRect BoundsInCSSPixels() const;
 
   /**
    * Return boundaries rect relative the bounding frame.
@@ -458,6 +450,8 @@ class LocalAccessible : public nsISupports, public Accessible {
    * to the OS/accessibility toolkit we're running on.
    */
   virtual void GetNativeInterface(void** aNativeAccessible);
+
+  virtual Maybe<int32_t> GetIntARIAAttr(nsAtom* aAttrName) const override;
 
   //////////////////////////////////////////////////////////////////////////////
   // Downcasting and types
@@ -701,7 +695,7 @@ class LocalAccessible : public nsISupports, public Accessible {
    * Return true if the accessible state change is processed by handling proper
    * DOM UI event, if otherwise then false. For example, CheckboxAccessible
    * created for HTML:input@type="checkbox" will process
-   * nsIDocumentObserver::ContentStateChanged instead of 'CheckboxStateChange'
+   * nsIDocumentObserver::ElementStateChanged instead of 'CheckboxStateChange'
    * event.
    */
   bool NeedsDOMUIEvent() const { return !(mStateFlags & eIgnoreDOMUIEvent); }

@@ -127,6 +127,14 @@ function setPrefDefaults() {
 
   // We force enabling the performance panel in the browser toolbox.
   Services.prefs.setBoolPref("devtools.performance.enabled", true);
+
+  // Bug 1773226: Try to avoid session restore to reopen a transient browser window
+  // if we ever opened a URL from the browser toolbox. (but it doesn't seem to be enough)
+  Services.prefs.setBoolPref("browser.sessionstore.resume_from_crash", false);
+
+  // Disable Safe mode as the browser toolbox is often closed brutaly by subprocess
+  // and the safe mode kicks in when reopening it
+  Services.prefs.setIntPref("toolkit.startup.max_resumed_crashes", -1);
 }
 
 window.addEventListener(
@@ -248,6 +256,11 @@ function installTestingServer() {
   DevToolsServer.registerAllActors();
   DevToolsServer.allowChromeProcess = true;
 
+  // Force this server to be kept alive until the browser toolbox process is closed.
+  // For some reason intermittents appears on Windows when destroying the server
+  // once the last connection drops.
+  DevToolsServer.keepAlive = true;
+
   // Use a fixed port which initBrowserToolboxTask can look for.
   const socketOptions = { portOrPath: 6001 };
   const listener = new SocketListener(DevToolsServer, socketOptions);
@@ -257,6 +270,10 @@ function installTestingServer() {
 async function bindToolboxHandlers() {
   gToolbox.once("destroyed", quitApp);
   window.addEventListener("unload", onUnload);
+
+  // If the remote connection drops, firefox was closed
+  // In such case, force closing the browser toolbox
+  gClient.once("closed", quitApp);
 
   if (Services.appinfo.OS == "Darwin") {
     // Badge the dock icon to differentiate this process from the main application

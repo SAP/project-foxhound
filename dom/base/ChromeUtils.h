@@ -48,7 +48,8 @@ class ChromeUtils {
 
  public:
   // Implemented in devtools/shared/heapsnapshot/HeapSnapshot.cpp
-  static uint64_t GetObjectNodeId(GlobalObject& global, JS::HandleObject aVal);
+  static uint64_t GetObjectNodeId(GlobalObject& global,
+                                  JS::Handle<JSObject*> aVal);
 
   // Implemented in devtools/shared/heapsnapshot/HeapSnapshot.cpp
   static void SaveHeapSnapshot(GlobalObject& global,
@@ -147,25 +148,28 @@ class ChromeUtils {
                                        const Sequence<JS::Value>& interfaces,
                                        ErrorResult& aRv);
 
-  static void WaiveXrays(GlobalObject& aGlobal, JS::HandleValue aVal,
-                         JS::MutableHandleValue aRetval, ErrorResult& aRv);
+  static void WaiveXrays(GlobalObject& aGlobal, JS::Handle<JS::Value> aVal,
+                         JS::MutableHandle<JS::Value> aRetval,
+                         ErrorResult& aRv);
 
-  static void UnwaiveXrays(GlobalObject& aGlobal, JS::HandleValue aVal,
-                           JS::MutableHandleValue aRetval, ErrorResult& aRv);
+  static void UnwaiveXrays(GlobalObject& aGlobal, JS::Handle<JS::Value> aVal,
+                           JS::MutableHandle<JS::Value> aRetval,
+                           ErrorResult& aRv);
 
-  static void GetClassName(GlobalObject& aGlobal, JS::HandleObject aObj,
+  static void GetClassName(GlobalObject& aGlobal, JS::Handle<JSObject*> aObj,
                            bool aUnwrap, nsAString& aRetval);
 
-  static void ShallowClone(GlobalObject& aGlobal, JS::HandleObject aObj,
-                           JS::HandleObject aTarget,
-                           JS::MutableHandleObject aRetval, ErrorResult& aRv);
+  static void ShallowClone(GlobalObject& aGlobal, JS::Handle<JSObject*> aObj,
+                           JS::Handle<JSObject*> aTarget,
+                           JS::MutableHandle<JSObject*> aRetval,
+                           ErrorResult& aRv);
 
   static void IdleDispatch(const GlobalObject& global,
                            IdleRequestCallback& callback,
                            const IdleRequestOptions& options, ErrorResult& aRv);
 
   static void GetRecentJSDevError(GlobalObject& aGlobal,
-                                  JS::MutableHandleValue aRetval,
+                                  JS::MutableHandle<JS::Value> aRetval,
                                   ErrorResult& aRv);
 
   static void ClearRecentJSDevError(GlobalObject& aGlobal);
@@ -196,11 +200,21 @@ class ChromeUtils {
                      const Optional<JS::Handle<JSObject*>>& aTargetObj,
                      JS::MutableHandle<JSObject*> aRetval, ErrorResult& aRv);
 
+  static void ImportESModule(const GlobalObject& aGlobal,
+                             const nsAString& aResourceURI,
+                             JS::MutableHandle<JSObject*> aRetval,
+                             ErrorResult& aRv);
+
   static void DefineModuleGetter(const GlobalObject& global,
                                  JS::Handle<JSObject*> target,
                                  const nsAString& id,
                                  const nsAString& resourceURI,
                                  ErrorResult& aRv);
+
+  static void DefineESModuleGetters(const GlobalObject& global,
+                                    JS::Handle<JSObject*> target,
+                                    JS::Handle<JSObject*> modules,
+                                    ErrorResult& aRv);
 
   static void GetCallerLocation(const GlobalObject& global,
                                 nsIPrincipal* principal,

@@ -710,18 +710,18 @@ void MacroAssembler::fillSlotsWithConstantValue(Address base, Register temp,
   // strided writes of the tag and body.
   Address addr = base;
   move32(Imm32(v.toNunboxPayload()), temp);
-  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtrValue)) {
+  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtr<Value>)) {
     store32(temp, ToPayload(addr));
   }
 
   addr = base;
   move32(Imm32(v.toNunboxTag()), temp);
-  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtrValue)) {
+  for (unsigned i = start; i < end; ++i, addr.offset += sizeof(GCPtr<Value>)) {
     store32(temp, ToType(addr));
   }
 #else
   moveValue(v, ValueOperand(temp));
-  for (uint32_t i = start; i < end; ++i, base.offset += sizeof(GCPtrValue)) {
+  for (uint32_t i = start; i < end; ++i, base.offset += sizeof(GCPtr<Value>)) {
     storePtr(temp, base);
   }
 #endif
@@ -2019,10 +2019,8 @@ void MacroAssembler::guardStringToInt32(Register str, Register output,
 
 void MacroAssembler::generateBailoutTail(Register scratch,
                                          Register bailoutInfo) {
-  loadJSContext(scratch);
-  enterFakeExitFrame(scratch, scratch, ExitFrameType::Bare);
-
-  branchIfFalseBool(ReturnReg, exceptionLabel());
+  Label bailoutFailed;
+  branchIfFalseBool(ReturnReg, &bailoutFailed);
 
   // Finish bailing out to Baseline.
   {
@@ -2032,13 +2030,21 @@ void MacroAssembler::generateBailoutTail(Register scratch,
                   !regs.has(AsRegister(getStackPointer())));
     regs.take(bailoutInfo);
 
-    // Reset SP to the point where clobbering starts.
-    loadStackPtr(
-        Address(bailoutInfo, offsetof(BaselineBailoutInfo, incomingStack)));
+    Register temp = regs.takeAny();
+
+#ifdef DEBUG
+    // Assert the stack pointer points to the JitFrameLayout header. Copying
+    // starts here.
+    Label ok;
+    loadPtr(Address(bailoutInfo, offsetof(BaselineBailoutInfo, incomingStack)),
+            temp);
+    branchStackPtr(Assembler::Equal, temp, &ok);
+    assumeUnreachable("Unexpected stack pointer value");
+    bind(&ok);
+#endif
 
     Register copyCur = regs.takeAny();
     Register copyEnd = regs.takeAny();
-    Register temp = regs.takeAny();
 
     // Copy data onto stack.
     loadPtr(Address(bailoutInfo, offsetof(BaselineBailoutInfo, copyStackTop)),
@@ -2051,27 +2057,26 @@ void MacroAssembler::generateBailoutTail(Register scratch,
       Label endOfCopy;
       bind(&copyLoop);
       branchPtr(Assembler::BelowOrEqual, copyCur, copyEnd, &endOfCopy);
-      subPtr(Imm32(4), copyCur);
-      subFromStackPtr(Imm32(4));
-      load32(Address(copyCur, 0), temp);
-      store32(temp, Address(getStackPointer(), 0));
+      subPtr(Imm32(sizeof(uintptr_t)), copyCur);
+      subFromStackPtr(Imm32(sizeof(uintptr_t)));
+      loadPtr(Address(copyCur, 0), temp);
+      storePtr(temp, Address(getStackPointer(), 0));
       jump(&copyLoop);
       bind(&endOfCopy);
     }
 
+    loadPtr(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeFramePtr)),
+            FramePointer);
+
     // Enter exit frame for the FinishBailoutToBaseline call.
-    load32(Address(bailoutInfo,
-                   offsetof(BaselineBailoutInfo, frameSizeOfInnerMostFrame)),
-           temp);
-    makeFrameDescriptor(temp, FrameType::BaselineJS, ExitFrameLayout::Size());
-    push(temp);
+    pushFrameDescriptor(FrameType::BaselineJS);
     push(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeAddr)));
+    push(FramePointer);
     // No GC things to mark on the stack, push a bare token.
     loadJSContext(scratch);
     enterFakeExitFrame(scratch, scratch, ExitFrameType::Bare);
 
     // Save needed values onto stack temporarily.
-    push(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeFramePtr)));
     push(Address(bailoutInfo, offsetof(BaselineBailoutInfo, resumeAddr)));
 
     // Call a stub to free allocated memory and create arguments objects.
@@ -2088,31 +2093,23 @@ void MacroAssembler::generateBailoutTail(Register scratch,
     Register jitcodeReg = enterRegs.takeAny();
 
     pop(jitcodeReg);
-    pop(FramePointer);
 
     // Discard exit frame.
     addToStackPtr(Imm32(ExitFrameLayout::SizeWithFooter()));
 
     jump(jitcodeReg);
   }
-}
 
-void MacroAssembler::assertRectifierFrameParentType(Register frameType) {
-#ifdef DEBUG
+  bind(&bailoutFailed);
   {
-    // Check the possible previous frame types here.
-    Label checkOk;
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::IonJS), &checkOk);
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::BaselineStub),
-             &checkOk);
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::WasmToJSJit),
-             &checkOk);
-    branch32(Assembler::Equal, frameType, Imm32(FrameType::CppToJSJit),
-             &checkOk);
-    assumeUnreachable("Unrecognized frame type preceding RectifierFrame.");
-    bind(&checkOk);
+    // jit::Bailout or jit::InvalidationBailout failed and returned false. The
+    // Ion frame has already been discarded and the stack pointer points to the
+    // JitFrameLayout header. Turn it into an ExitFrameLayout, similar to
+    // EnsureUnwoundJitExitFrame, and call the exception handler.
+    loadJSContext(scratch);
+    enterFakeExitFrame(scratch, scratch, ExitFrameType::UnwoundJit);
+    jump(exceptionLabel());
   }
-#endif
 }
 
 void MacroAssembler::loadJitCodeRaw(Register func, Register dest) {
@@ -3752,12 +3749,6 @@ void MacroAssembler::wasmTrap(wasm::Trap trap,
   append(trap, wasm::TrapSite(trapOffset, bytecodeOffset));
 }
 
-[[nodiscard]] bool MacroAssembler::wasmStartTry(size_t* tryNoteIndex) {
-  wasm::WasmTryNote tryNote = wasm::WasmTryNote();
-  tryNote.setTryBodyBegin(currentOffset());
-  return append(tryNote, tryNoteIndex);
-}
-
 std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
     uint32_t amount, wasm::BytecodeOffset trapOffset) {
   if (amount > MAX_UNCHECKED_LEAF_FRAME_SIZE) {
@@ -4733,7 +4724,7 @@ void MacroAssembler::iteratorMore(Register obj, ValueOperand output,
   loadPtr(Address(temp, 0), temp);
 
   // Increase the cursor.
-  addPtr(Imm32(sizeof(GCPtrLinearString)), cursorAddr);
+  addPtr(Imm32(sizeof(GCPtr<JSLinearString*>)), cursorAddr);
 
   tagValue(JSVAL_TYPE_STRING, temp, output);
   jump(&done);

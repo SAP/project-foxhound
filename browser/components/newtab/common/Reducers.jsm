@@ -76,6 +76,14 @@ const INITIAL_STATE = {
       blocked: [],
       placements: [],
     },
+    experimentData: {
+      utmSource: "pocket-newtab",
+      utmCampaign: undefined,
+      utmContent: undefined,
+    },
+    recentSavesData: [],
+    isUserLoggedIn: false,
+    recentSavesEnabled: false,
   },
   Personalization: {
     lastUpdated: null,
@@ -621,6 +629,8 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
     // Fall through to a separate action is so it doesn't trigger a listener update on init
     case at.DISCOVERY_STREAM_CONFIG_SETUP:
       return { ...prevState, config: action.data || {} };
+    case at.DISCOVERY_STREAM_EXPERIMENT_DATA:
+      return { ...prevState, experimentData: action.data || {} };
     case at.DISCOVERY_STREAM_LAYOUT_UPDATE:
       return {
         ...prevState,
@@ -631,6 +641,21 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return {
         ...prevState,
         isCollectionDismissible: action.data.value,
+      };
+    case at.DISCOVERY_STREAM_PREFS_SETUP:
+      return {
+        ...prevState,
+        recentSavesEnabled: action.data.recentSavesEnabled,
+      };
+    case at.DISCOVERY_STREAM_RECENT_SAVES:
+      return {
+        ...prevState,
+        recentSavesData: action.data.recentSaves,
+      };
+    case at.DISCOVERY_STREAM_POCKET_STATE_SET:
+      return {
+        ...prevState,
+        isUserLoggedIn: action.data.isUserLoggedIn,
       };
     case at.HIDE_PRIVACY_INFO:
       return {
@@ -804,11 +829,7 @@ function Search(prevState = INITIAL_STATE.Search, action) {
   }
 }
 
-this.INITIAL_STATE = INITIAL_STATE;
-this.TOP_SITES_DEFAULT_ROWS = TOP_SITES_DEFAULT_ROWS;
-this.TOP_SITES_MAX_SITES_PER_ROW = TOP_SITES_MAX_SITES_PER_ROW;
-
-this.reducers = {
+const reducers = {
   TopSites,
   App,
   ASRouter,

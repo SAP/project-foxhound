@@ -52,7 +52,7 @@ use crate::clip::{ClipInternData, ClipNodeKind, ClipInstance, SceneClipInstance}
 use crate::clip::{PolygonDataHandle};
 use crate::segment::EdgeAaSegmentMask;
 use crate::spatial_tree::{SceneSpatialTree, SpatialNodeIndex, get_external_scroll_offset};
-use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
+use crate::frame_builder::{FrameBuilderConfig};
 use crate::glyph_rasterizer::{FontInstance, SharedFontResources};
 use crate::hit_test::HitTestingScene;
 use crate::intern::Interner;
@@ -60,7 +60,7 @@ use crate::internal_types::{FastHashMap, LayoutPrimitiveInfo, Filter, PlaneSplit
 use crate::picture::{Picture3DContext, PictureCompositeMode, PicturePrimitive};
 use crate::picture::{BlitReason, OrderedPictureChild, PrimitiveList, SurfaceInfo, PictureFlags};
 use crate::picture_graph::PictureGraph;
-use crate::prim_store::{PrimitiveInstance, register_prim_chase_id};
+use crate::prim_store::{PrimitiveInstance};
 use crate::prim_store::{PrimitiveInstanceKind, NinePatchDescriptor, PrimitiveStore};
 use crate::prim_store::{InternablePrimitive, SegmentInstanceIndex, PictureIndex};
 use crate::prim_store::{PolygonKey};
@@ -762,6 +762,13 @@ impl<'a> SceneBuilder<'a> {
             kind: ContextKind<'a>,
         }
 
+        let invalid_clip_chain_id = ClipId::ClipChain(api::ClipChainId::INVALID);
+        self.clip_store.register_clip_template(
+            invalid_clip_chain_id,
+            invalid_clip_chain_id,
+            &[],
+        );
+
         let root_clip_id = ClipId::root(root_pipeline.pipeline_id);
         self.clip_store.register_clip_template(root_clip_id, root_clip_id, &[]);
         self.clip_store.push_clip_root(Some(root_clip_id), false);
@@ -817,7 +824,7 @@ impl<'a> SceneBuilder<'a> {
                             info.stacking_context.transform_style,
                             info.prim_flags,
                             spatial_node_index,
-                            info.stacking_context.clip_id,
+                            info.stacking_context.clip_chain_id,
                             info.stacking_context.raster_space,
                             info.stacking_context.flags,
                             bc.pipeline_id,
@@ -1356,20 +1363,32 @@ impl<'a> SceneBuilder<'a> {
             DisplayItem::HitTest(ref info) => {
                 profile_scope!("hit_test");
 
-                // TODO(gw): We could skip building the clip-chain here completely, as it's not used by
-                //           hit-test items.
-                let (layout, _, spatial_node_index, _) = self.process_common_properties(
-                    &info.common,
-                    None,
+                let spatial_node_index = self.get_space(info.spatial_id);
+                let current_offset = self.current_offset(spatial_node_index);
+                let unsnapped_rect = info.rect.translate(current_offset);
+
+                let rect = self.snap_rect(
+                    &unsnapped_rect,
+                    spatial_node_index,
                 );
 
-                // Don't add transparent rectangles to the draw list,
-                // but do consider them for hit testing. This allows
-                // specifying invisible hit testing areas.
+                let layout = LayoutPrimitiveInfo {
+                    rect,
+                    clip_rect: rect,
+                    flags: info.flags,
+                };
+
+                // TODO(gw): Port internal API to be ClipChain based, rather than ClipId once all callers updated
+                let clip_id = if info.clip_chain_id == api::ClipChainId::INVALID {
+                    ClipId::root(pipeline_id)
+                } else {
+                    ClipId::ClipChain(info.clip_chain_id)
+                };
+
                 self.add_primitive_to_hit_testing_list(
                     &layout,
                     spatial_node_index,
-                    info.common.clip_id,
+                    clip_id,
                     info.tag,
                 );
             }
@@ -1860,9 +1879,6 @@ impl<'a> SceneBuilder<'a> {
         flags: PrimitiveFlags,
     ) {
         // Add primitive to the top-most stacking context on the stack.
-        if prim_instance.is_chased() {
-            info!("\tadded to stacking context at {}", self.sc_stack.len());
-        }
 
         // If we have a valid stacking context, the primitive gets added to that.
         // Otherwise, it gets added to a top-level picture cache slice.
@@ -1969,18 +1985,11 @@ impl<'a> SceneBuilder<'a> {
         P: InternablePrimitive,
         Interners: AsMut<Interner<P>>,
     {
-        let mut prim_instance = self.create_primitive(
+        let prim_instance = self.create_primitive(
             info,
             spatial_node_index,
             clip_chain_id,
             prim,
-        );
-        if info.flags.contains(PrimitiveFlags::ANTIALISED) {
-            prim_instance.anti_aliased = true;
-        }
-        self.register_chase_primitive_by_rect(
-            &info.rect,
-            &prim_instance,
         );
         self.add_primitive_to_draw_list(
             prim_instance,
@@ -2031,12 +2040,15 @@ impl<'a> SceneBuilder<'a> {
         transform_style: TransformStyle,
         prim_flags: PrimitiveFlags,
         spatial_node_index: SpatialNodeIndex,
-        clip_id: Option<ClipId>,
+        clip_chain_id: Option<api::ClipChainId>,
         requested_raster_space: RasterSpace,
         flags: StackingContextFlags,
         pipeline_id: PipelineId,
     ) -> StackingContextInfo {
         profile_scope!("push_stacking_context");
+
+        // TODO(gw): Port internal API to be ClipChain based, rather than ClipId once all callers updated
+        let clip_id = clip_chain_id.map(|id| ClipId::ClipChain(id));
 
         let new_space = match (self.raster_space_stack.last(), requested_raster_space) {
             // If no parent space, just use the requested space
@@ -2138,6 +2150,14 @@ impl<'a> SceneBuilder<'a> {
             blit_reason |= BlitReason::ISOLATE;
         }
 
+        // If backface visibility is explicitly set, we force a surface. This
+        // simplifies handling this grouping as an atomic primitive that can
+        // be culled if the transform changes. It also allows us to cache
+        // this as a regular child surface in future.
+        if !prim_flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE) {
+            blit_reason |= BlitReason::ISOLATE;
+        }
+
         // If this stacking context has any complex clips, we need to draw it
         // to an off-screen surface.
         if let Some(clip_id) = clip_id {
@@ -2152,7 +2172,6 @@ impl<'a> SceneBuilder<'a> {
             &composite_ops,
             blit_reason,
             self.sc_stack.last(),
-            prim_flags,
         );
 
         // If stacking context is a scrollbar, force a new slice for the primitives
@@ -2611,11 +2630,6 @@ impl<'a> SceneBuilder<'a> {
         viewport_size: &LayoutSize,
         instance: PipelineInstanceId,
     ) {
-        if let ChasePrimitive::Id(id) = self.config.chase_primitive {
-            debug!("Chasing {:?} by index", id);
-            register_prim_chase_id(id);
-        }
-
         let spatial_node_index = self.push_reference_frame(
             SpatialId::root_reference_frame(pipeline_id),
             self.spatial_tree.root_reference_frame_index(),
@@ -3074,26 +3088,6 @@ impl<'a> SceneBuilder<'a> {
                 pending_primitive.prim,
             );
         }
-    }
-
-    #[cfg(debug_assertions)]
-    fn register_chase_primitive_by_rect(
-        &mut self,
-        rect: &LayoutRect,
-        prim_instance: &PrimitiveInstance,
-    ) {
-        if ChasePrimitive::LocalRect(*rect) == self.config.chase_primitive {
-            debug!("Chasing {:?} by local rect", prim_instance.id);
-            register_prim_chase_id(prim_instance.id);
-        }
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn register_chase_primitive_by_rect(
-        &mut self,
-        _rect: &LayoutRect,
-        _prim_instance: &PrimitiveInstance,
-    ) {
     }
 
     pub fn add_clear_rectangle(
@@ -3975,7 +3969,6 @@ impl FlattenedStackingContext {
         composite_ops: &CompositeOps,
         blit_reason: BlitReason,
         parent: Option<&FlattenedStackingContext>,
-        prim_flags: PrimitiveFlags,
     ) -> bool {
         // If this is a blend container, it's needed
         if sc_flags.intersects(StackingContextFlags::IS_BLEND_CONTAINER) {
@@ -4000,11 +3993,6 @@ impl FlattenedStackingContext {
                     return false;
                 }
             }
-        }
-
-        // If backface visibility is explicitly set.
-        if !prim_flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE) {
-            return false;
         }
 
         // If need to isolate in surface due to clipping / mix-blend-mode

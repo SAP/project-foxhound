@@ -521,7 +521,7 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
   // return to the throw stub, the entire stack will be popped as a whole,
   // returning to the C++ caller. However, we must keep the throw stub alive
   // itself which is owned by the innermost instance.
-  RootedWasmInstanceObject keepAlive(cx, iter.instance()->object());
+  Rooted<WasmInstanceObject*> keepAlive(cx, iter.instance()->object());
 
   JitActivation* activation = CallingActivation(cx);
   RootedValue exn(cx);
@@ -537,8 +537,7 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
       const wasm::Code& code = iter.instance()->code();
       const uint8_t* pc = iter.resumePCinCurrentFrame();
       Tier tier;
-      const wasm::WasmTryNote* tryNote =
-          code.lookupWasmTryNote((void*)pc, &tier);
+      const wasm::TryNote* tryNote = code.lookupTryNote((void*)pc, &tier);
 
       if (tryNote) {
         cx->clearPendingException();

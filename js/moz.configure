@@ -413,9 +413,10 @@ set_define("JS_OOM_BREAKPOINT", depends_if("--enable-oom-breakpoint")(lambda _: 
 option("--enable-perf", env="JS_ION_PERF", help="Enable Linux perf integration")
 
 
-@depends("--enable-perf")
-def ion_perf(value):
-    if value:
+@depends("--enable-perf", target)
+def ion_perf(value, target):
+    ok_kernel = target.kernel == "Linux" and target.os == "GNU"
+    if value and ok_kernel:
         return True
 
 
@@ -1208,39 +1209,6 @@ set_define(
     "ENABLE_WASM_TYPE_REFLECTIONS",
     depends_if("--enable-wasm-type-reflections")(lambda x: True),
 )
-
-# Support for WebAssembly exceptions
-# ==================================
-
-
-@depends("--enable-cranelift")
-def default_wasm_exceptions(cranelift_enabled):
-    if cranelift_enabled:
-        return
-
-    return True
-
-
-option(
-    "--enable-wasm-exceptions",
-    default=default_wasm_exceptions,
-    help="{Enable|Disable} WebAssembly exceptions",
-)
-
-
-@depends("--enable-wasm-exceptions", "--enable-cranelift")
-def wasm_exceptions(value, cranelift_enabled):
-    if not value:
-        return
-
-    if cranelift_enabled:
-        die("--enable-wasm-exceptions is not supported for --enable-cranelift")
-
-    return True
-
-
-set_config("ENABLE_WASM_EXCEPTIONS", wasm_exceptions)
-set_define("ENABLE_WASM_EXCEPTIONS", wasm_exceptions)
 
 # Wasi configuration
 # ===================================================

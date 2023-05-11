@@ -6,6 +6,7 @@
 
 #include "nsDOMWindowUtils.h"
 
+#include "LayoutConstants.h"
 #include "MobileViewportManager.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "nsPresContext.h"
@@ -280,6 +281,33 @@ CompositorBridgeChild* nsDOMWindowUtils::GetCompositorBridge() {
     }
   }
   return nullptr;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetLastOverWindowMouseLocationInCSSPixels(float* aX,
+                                                            float* aY) {
+  const PresShell* presShell = GetPresShell();
+  const nsPresContext* presContext = GetPresContext();
+
+  if (!presShell || !presContext) {
+    return NS_ERROR_FAILURE;
+  }
+
+  const nsPoint& lastOverWindowMouseLocation =
+      presShell->GetLastOverWindowMouseLocation();
+
+  if (lastOverWindowMouseLocation.X() == NS_UNCONSTRAINEDSIZE &&
+      lastOverWindowMouseLocation.Y() == NS_UNCONSTRAINEDSIZE) {
+    *aX = 0;
+    *aY = 0;
+  } else {
+    const CSSPoint lastOverWindowMouseLocationInCSSPixels =
+        CSSPoint::FromAppUnits(lastOverWindowMouseLocation);
+    *aX = lastOverWindowMouseLocationInCSSPixels.X();
+    *aY = lastOverWindowMouseLocationInCSSPixels.Y();
+  }
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1865,15 +1893,25 @@ nsDOMWindowUtils::ToScreenRectInCSSUnits(float aX, float aY, float aWidth,
   nsPresContext* presContext = GetPresContext();
   MOZ_ASSERT(presContext);
 
-  nsRect appUnitsRect = LayoutDeviceRect::ToAppUnits(
-      ViewAs<LayoutDevicePixel>(
-          rect, PixelCastJustification::ScreenIsParentLayerForRoot),
-      presContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom());
-  CSSRect cssUnitsRect = CSSRect::FromAppUnits(appUnitsRect);
+  auto devRect = ViewAs<LayoutDevicePixel>(
+      rect, PixelCastJustification::ScreenIsParentLayerForRoot);
 
+  // We want to return the screen rect in CSS units of the browser chrome. The
+  // browser chrome doesn't have any built-in zoom, except for the text scale
+  // factor.
+  //
+  // TODO(emilio): It'd be cleaner to convert callers to use plain toScreenRect,
+  // and perform the screen -> CSS rect in the parent process instead, probably.
+  LayoutDeviceToCSSScale scale = [&] {
+    float auPerDev =
+        presContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom();
+    auPerDev /= LookAndFeel::SystemZoomSettings().mFullZoom;
+    return LayoutDeviceToCSSScale(auPerDev / AppUnitsPerCSSPixel());
+  }();
+
+  CSSRect cssRect = devRect * scale;
   RefPtr<DOMRect> outRect = new DOMRect(mWindow);
-  outRect->SetRect(cssUnitsRect.x, cssUnitsRect.y, cssUnitsRect.width,
-                   cssUnitsRect.height);
+  outRect->SetRect(cssRect.x, cssRect.y, cssRect.width, cssRect.height);
   outRect.forget(aResult);
   return NS_OK;
 }
@@ -2128,7 +2166,7 @@ nsDOMWindowUtils::GetNodeObservedByIMEContentObserver(nsINode** aNode) {
     *aNode = nullptr;
     return NS_OK;
   }
-  *aNode = do_AddRef(observer->GetObservingContent()).take();
+  *aNode = do_AddRef(observer->GetObservingElement()).take();
   return NS_OK;
 }
 
@@ -3386,7 +3424,7 @@ nsDOMWindowUtils::GetFileId(JS::Handle<JS::Value> aFile, JSContext* aCx,
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetFilePath(JS::HandleValue aFile, JSContext* aCx,
+nsDOMWindowUtils::GetFilePath(JS::Handle<JS::Value> aFile, JSContext* aCx,
                               nsAString& _retval) {
   if (aFile.isPrimitive()) {
     _retval.Truncate();
@@ -4075,7 +4113,7 @@ nsDOMWindowUtils::IsKeyboardEventUserActivity(Event* aEvent, bool* aResult) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetContentAPZTestData(
-    JSContext* aContext, JS::MutableHandleValue aOutContentTestData) {
+    JSContext* aContext, JS::MutableHandle<JS::Value> aOutContentTestData) {
   if (nsIWidget* widget = GetWidget()) {
     WindowRenderer* renderer = widget->GetWindowRenderer();
     if (!renderer) {
@@ -4093,7 +4131,7 @@ nsDOMWindowUtils::GetContentAPZTestData(
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetCompositorAPZTestData(
-    JSContext* aContext, JS::MutableHandleValue aOutCompositorTestData) {
+    JSContext* aContext, JS::MutableHandle<JS::Value> aOutCompositorTestData) {
   if (nsIWidget* widget = GetWidget()) {
     WindowRenderer* renderer = widget->GetWindowRenderer();
     if (!renderer) {
@@ -4169,7 +4207,7 @@ nsDOMWindowUtils::SetResizeMargin(int32_t aResizeMargin) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetFrameUniformityTestData(
-    JSContext* aContext, JS::MutableHandleValue aOutFrameUniformity) {
+    JSContext* aContext, JS::MutableHandle<JS::Value> aOutFrameUniformity) {
   nsIWidget* widget = GetWidget();
   if (!widget) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -4322,15 +4360,15 @@ nsDOMWindowUtils::GetGpuProcessPid(int32_t* aPid) {
 
 struct StateTableEntry {
   const char* mStateString;
-  EventStates mState;
+  ElementState mState;
 };
 
 static constexpr StateTableEntry kManuallyManagedStates[] = {
-    {"autofill", NS_EVENT_STATE_AUTOFILL},
+    {"autofill", ElementState::AUTOFILL},
     // :-moz-autofill-preview implies :autofill.
     {"-moz-autofill-preview",
-     NS_EVENT_STATE_AUTOFILL_PREVIEW | NS_EVENT_STATE_AUTOFILL},
-    {nullptr, EventStates()},
+     ElementState::AUTOFILL_PREVIEW | ElementState::AUTOFILL},
+    {nullptr, ElementState()},
 };
 
 static_assert(!kManuallyManagedStates[ArrayLength(kManuallyManagedStates) - 1]
@@ -4338,14 +4376,14 @@ static_assert(!kManuallyManagedStates[ArrayLength(kManuallyManagedStates) - 1]
               "last kManuallyManagedStates entry must be a sentinel with "
               "mStateString == nullptr");
 
-static EventStates GetEventStateForString(const nsAString& aStateString) {
+static ElementState GetEventStateForString(const nsAString& aStateString) {
   for (const StateTableEntry* entry = kManuallyManagedStates;
        entry->mStateString; ++entry) {
     if (aStateString.EqualsASCII(entry->mStateString)) {
       return entry->mState;
     }
   }
-  return EventStates();
+  return ElementState();
 }
 
 NS_IMETHODIMP
@@ -4355,7 +4393,7 @@ nsDOMWindowUtils::AddManuallyManagedState(Element* aElement,
     return NS_ERROR_INVALID_ARG;
   }
 
-  EventStates state = GetEventStateForString(aStateString);
+  ElementState state = GetEventStateForString(aStateString);
   if (state.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -4371,7 +4409,7 @@ nsDOMWindowUtils::RemoveManuallyManagedState(Element* aElement,
     return NS_ERROR_INVALID_ARG;
   }
 
-  EventStates state = GetEventStateForString(aStateString);
+  ElementState state = GetEventStateForString(aStateString);
   if (state.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }

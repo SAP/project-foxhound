@@ -16,20 +16,13 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginHelper",
-  "resource://gre/modules/LoginHelper.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginStore",
-  "resource://gre/modules/LoginStore.jsm"
-);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   FXA_PWDMGR_HOST: "resource://gre/modules/FxAccountsCommon.js",
   FXA_PWDMGR_REALM: "resource://gre/modules/FxAccountsCommon.js",
+  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
+  LoginStore: "resource://gre/modules/LoginStore.jsm",
 });
 
 class LoginManagerStorage_json {
@@ -95,7 +88,7 @@ class LoginManagerStorage_json {
       if (loginsBackupEnabled) {
         backupPath = PathUtils.join(profileDir, "logins-backup.json");
       }
-      this._store = new LoginStore(jsonPath, backupPath);
+      this._store = new lazy.LoginStore(jsonPath, backupPath);
 
       return (async () => {
         // Load the data asynchronously.
@@ -192,7 +185,7 @@ class LoginManagerStorage_json {
     this._store.ensureDataReady();
 
     // Throws if there are bogus values.
-    LoginHelper.checkLoginValues(login);
+    lazy.LoginHelper.checkLoginValues(login);
 
     let [encUsername, encPassword, encType] = preEncrypted
       ? [login.username, login.password, this._crypto.defaultEncType]
@@ -261,7 +254,7 @@ class LoginManagerStorage_json {
     this._store.saveSoon();
 
     // Send a notification that a login was added.
-    LoginHelper.notifyStorageChanged("addLogin", loginClone);
+    lazy.LoginHelper.notifyStorageChanged("addLogin", loginClone);
     return loginClone;
   }
 
@@ -279,7 +272,7 @@ class LoginManagerStorage_json {
       this._store.saveSoon();
     }
 
-    LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
+    lazy.LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
   }
 
   modifyLogin(oldLogin, newLoginData) {
@@ -290,7 +283,10 @@ class LoginManagerStorage_json {
       throw new Error("No matching logins");
     }
 
-    let newLogin = LoginHelper.buildModifiedLogin(oldStoredLogin, newLoginData);
+    let newLogin = lazy.LoginHelper.buildModifiedLogin(
+      oldStoredLogin,
+      newLoginData
+    );
 
     // Check if the new GUID is duplicate.
     if (
@@ -310,7 +306,9 @@ class LoginManagerStorage_json {
 
       let matchingLogin = logins.find(login => newLogin.matches(login, true));
       if (matchingLogin) {
-        throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
+        throw lazy.LoginHelper.createLoginAlreadyExistsError(
+          matchingLogin.guid
+        );
       }
     }
 
@@ -337,7 +335,10 @@ class LoginManagerStorage_json {
       }
     }
 
-    LoginHelper.notifyStorageChanged("modifyLogin", [oldStoredLogin, newLogin]);
+    lazy.LoginHelper.notifyStorageChanged("modifyLogin", [
+      oldStoredLogin,
+      newLogin,
+    ]);
   }
 
   recordPasswordUse(login) {
@@ -373,7 +374,7 @@ class LoginManagerStorage_json {
   getAllLogins() {
     this._store.ensureDataReady();
 
-    let [logins, ids] = this._searchLogins({});
+    let [logins] = this._searchLogins({});
 
     // decrypt entries for caller.
     logins = this._decryptLogins(logins);
@@ -392,7 +393,7 @@ class LoginManagerStorage_json {
   async getAllLoginsAsync() {
     this._store.ensureDataReady();
 
-    let [logins, ids] = this._searchLogins({});
+    let [logins] = this._searchLogins({});
     if (!logins.length) {
       return [];
     }
@@ -438,7 +439,7 @@ class LoginManagerStorage_json {
 
   async searchLoginsAsync(matchData) {
     this.log("searchLoginsAsync:", matchData);
-    let result = this.searchLogins(LoginHelper.newPropertyBag(matchData));
+    let result = this.searchLogins(lazy.LoginHelper.newPropertyBag(matchData));
     // Emulate being async:
     return Promise.resolve(result);
   }
@@ -482,7 +483,7 @@ class LoginManagerStorage_json {
       }
     }
 
-    let [logins, ids] = this._searchLogins(realMatchData, options);
+    let [logins] = this._searchLogins(realMatchData, options);
 
     // Decrypt entries found for the caller.
     logins = this._decryptLogins(logins);
@@ -545,7 +546,7 @@ class LoginManagerStorage_json {
                 break;
               }
               if (
-                !LoginHelper.isOriginMatching(
+                !lazy.LoginHelper.isOriginMatching(
                   aLoginItem[storageFieldName],
                   wantedValue,
                   aOptions
@@ -560,7 +561,7 @@ class LoginManagerStorage_json {
             if (wantedValue != null) {
               // needed for formActionOrigin fall through
               if (
-                !LoginHelper.isOriginMatching(
+                !lazy.LoginHelper.isOriginMatching(
                   aLoginItem[storageFieldName],
                   wantedValue,
                   aOptions
@@ -652,7 +653,7 @@ class LoginManagerStorage_json {
     this._store.data.dismissedBreachAlertsByLoginGUID = {};
     this._store.saveSoon();
 
-    LoginHelper.notifyStorageChanged("removeAllLogins", []);
+    lazy.LoginHelper.notifyStorageChanged("removeAllLogins", []);
   }
 
   /**
@@ -664,11 +665,12 @@ class LoginManagerStorage_json {
     this._store.ensureDataReady();
     this.log("Removing all logins");
 
-    let [allLogins, ids] = this._searchLogins({});
+    let [allLogins] = this._searchLogins({});
 
     let fxaKey = this._store.data.logins.find(
       login =>
-        login.hostname == FXA_PWDMGR_HOST && login.httpRealm == FXA_PWDMGR_REALM
+        login.hostname == lazy.FXA_PWDMGR_HOST &&
+        login.httpRealm == lazy.FXA_PWDMGR_REALM
     );
     if (fxaKey) {
       this._store.data.logins = [fxaKey];
@@ -682,7 +684,7 @@ class LoginManagerStorage_json {
     this._store.data.dismissedBreachAlertsByLoginGUID = {};
     this._store.saveSoon();
 
-    LoginHelper.notifyStorageChanged("removeAllLogins", allLogins);
+    lazy.LoginHelper.notifyStorageChanged("removeAllLogins", allLogins);
   }
 
   findLogins(origin, formActionOrigin, httpRealm) {
@@ -699,7 +701,7 @@ class LoginManagerStorage_json {
         matchData[field] = loginData[field];
       }
     }
-    let [logins, ids] = this._searchLogins(matchData);
+    let [logins] = this._searchLogins(matchData);
 
     // Decrypt entries found for the caller.
     logins = this._decryptLogins(logins);
@@ -722,7 +724,7 @@ class LoginManagerStorage_json {
         matchData[field] = loginData[field];
       }
     }
-    let [logins, ids] = this._searchLogins(matchData);
+    let [logins] = this._searchLogins(matchData);
 
     this.log("_countLogins: counted logins:", logins.length);
     return logins.length;
@@ -861,7 +863,7 @@ class LoginManagerStorage_json {
 }
 
 XPCOMUtils.defineLazyGetter(LoginManagerStorage_json.prototype, "log", () => {
-  let logger = LoginHelper.createLogger("Login storage");
+  let logger = lazy.LoginHelper.createLogger("Login storage");
   return logger.log.bind(logger);
 });
 

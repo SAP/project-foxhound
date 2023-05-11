@@ -52,7 +52,6 @@
 #include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CSSEnabledState.h"
-#include "mozilla/ContentBlocking.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/ContentBlockingUserInteraction.h"
@@ -99,6 +98,7 @@
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/RefCountType.h"
+#include "mozilla/RejectForeignAllowList.h"
 #include "mozilla/RelativeTo.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ReverseIterator.h"
@@ -1445,7 +1445,6 @@ Document::Document(const char* aContentType)
       mViewportFit(ViewportFitType::Auto),
       mSubDocuments(nullptr),
       mHeaderData(nullptr),
-      mFlashClassification(FlashClassification::Unknown),
       mServoRestyleRootDirtyBits(0),
       mThrowOnDynamicMarkupInsertionCounter(0),
       mIgnoreOpensDuringUnloadCounter(0),
@@ -2002,6 +2001,10 @@ void Document::LoadEventFired() {
   }
 }
 
+static uint32_t ConvertToUnsignedFromDouble(double aNumber) {
+  return aNumber < 0 ? 0 : static_cast<uint32_t>(aNumber);
+}
+
 void Document::RecordPageLoadEventTelemetry(
     PageLoadEventTelemetryData aEventTelemetryData) {
   static bool sTelemetryEventEnabled = false;
@@ -2067,14 +2070,14 @@ void Document::RecordPageLoadEventTelemetry(
   }
 
   mozilla::glean::perf::PageLoadExtra extra = {
-      mozilla::Some(static_cast<uint32_t>(
+      mozilla::Some(ConvertToUnsignedFromDouble(
           aEventTelemetryData.mFirstContentfulPaintTime.ToMilliseconds())),
-      mozilla::Some(static_cast<uint32_t>(
+      mozilla::Some(ConvertToUnsignedFromDouble(
           aEventTelemetryData.mTotalJSExecutionTime.ToMilliseconds())),
-      mozilla::Some(static_cast<uint32_t>(
+      mozilla::Some(ConvertToUnsignedFromDouble(
           aEventTelemetryData.mPageLoadTime.ToMilliseconds())),
       mozilla::Some(loadTypeStr),
-      mozilla::Some(static_cast<uint32_t>(
+      mozilla::Some(ConvertToUnsignedFromDouble(
           aEventTelemetryData.mResponseStartTime.ToMilliseconds()))};
   mozilla::glean::perf::page_load.Record(mozilla::Some(extra));
 }
@@ -2219,38 +2222,38 @@ void Document::AccumulateJSTelemetry(
   if (!timers.executionTime.IsZero()) {
     Telemetry::Accumulate(
         Telemetry::JS_PAGELOAD_EXECUTION_MS,
-        static_cast<uint32_t>(timers.executionTime.ToMilliseconds()));
+        ConvertToUnsignedFromDouble(timers.executionTime.ToMilliseconds()));
     aEventTelemetryDataOut.mTotalJSExecutionTime = timers.executionTime;
   }
 
   if (!timers.delazificationTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_DELAZIFICATION_MS,
-        static_cast<uint32_t>(timers.delazificationTime.ToMilliseconds()));
+    Telemetry::Accumulate(Telemetry::JS_PAGELOAD_DELAZIFICATION_MS,
+                          ConvertToUnsignedFromDouble(
+                              timers.delazificationTime.ToMilliseconds()));
   }
 
   if (!timers.xdrEncodingTime.IsZero()) {
     Telemetry::Accumulate(
         Telemetry::JS_PAGELOAD_XDR_ENCODING_MS,
-        static_cast<uint32_t>(timers.xdrEncodingTime.ToMilliseconds()));
+        ConvertToUnsignedFromDouble(timers.xdrEncodingTime.ToMilliseconds()));
   }
 
   if (!timers.baselineCompileTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_BASELINE_COMPILE_MS,
-        static_cast<uint32_t>(timers.baselineCompileTime.ToMilliseconds()));
+    Telemetry::Accumulate(Telemetry::JS_PAGELOAD_BASELINE_COMPILE_MS,
+                          ConvertToUnsignedFromDouble(
+                              timers.baselineCompileTime.ToMilliseconds()));
   }
 
   if (!timers.gcTime.IsZero()) {
     Telemetry::Accumulate(
         Telemetry::JS_PAGELOAD_GC_MS,
-        static_cast<uint32_t>(timers.gcTime.ToMilliseconds()));
+        ConvertToUnsignedFromDouble(timers.gcTime.ToMilliseconds()));
   }
 
   if (!timers.protectTime.IsZero()) {
     Telemetry::Accumulate(
         Telemetry::JS_PAGELOAD_PROTECT_MS,
-        static_cast<uint32_t>(timers.protectTime.ToMilliseconds()));
+        ConvertToUnsignedFromDouble(timers.protectTime.ToMilliseconds()));
   }
 }
 
@@ -4299,11 +4302,6 @@ bool Document::GetAllowPlugins() {
     if (mSandboxFlags & SANDBOXED_PLUGINS) {
       return false;
     }
-  }
-
-  FlashClassification classification = DocumentFlashClassification();
-  if (classification == FlashClassification::Denied) {
-    return false;
   }
 
   return true;
@@ -7689,7 +7687,7 @@ void Document::SetContainer(nsDocShell* aContainer) {
 
   // IsTopLevelWindowInactive depends on the docshell, so
   // update the cached value now that it's available.
-  UpdateDocumentStates(NS_DOCUMENT_STATE_WINDOW_INACTIVE, false);
+  UpdateDocumentStates(DocumentState::WINDOW_INACTIVE, false);
   if (!aContainer) {
     return;
   }
@@ -8247,12 +8245,11 @@ void Document::UnblockDOMContentLoaded() {
   }
 }
 
-void Document::ContentStateChanged(nsIContent* aContent,
-                                   EventStates aStateMask) {
+void Document::ElementStateChanged(Element* aElement, ElementState aStateMask) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript(),
              "Someone forgot a scriptblocker");
-  NS_DOCUMENT_NOTIFY_OBSERVERS(ContentStateChanged,
-                               (this, aContent, aStateMask));
+  NS_DOCUMENT_NOTIFY_OBSERVERS(ElementStateChanged,
+                               (this, aElement, aStateMask));
 }
 
 void Document::RuleChanged(StyleSheet& aSheet, css::Rule*,
@@ -11900,7 +11897,7 @@ void Document::OnPageHide(bool aPersisted, EventTarget* aDispatchStartTarget,
   NotifyActivityChanged();
 
   ClearPendingFullscreenRequests(this);
-  if (GetUnretargetedFullScreenElement()) {
+  if (Fullscreen()) {
     // If this document was fullscreen, we should exit fullscreen in this
     // doctree branch. This ensures that if the user navigates while in
     // fullscreen mode we don't leave its still visible ancestor documents
@@ -12513,36 +12510,36 @@ void Document::ForgetImagePreload(nsIURI* aURI) {
   }
 }
 
-void Document::UpdateDocumentStates(EventStates aMaybeChangedStates,
+void Document::UpdateDocumentStates(DocumentState aMaybeChangedStates,
                                     bool aNotify) {
-  const EventStates oldStates = mDocumentState;
+  const DocumentState oldStates = mDocumentState;
   if (aMaybeChangedStates.HasAtLeastOneOfStates(
-          NS_DOCUMENT_STATE_ALL_LOCALEDIR_BITS)) {
-    mDocumentState &= ~NS_DOCUMENT_STATE_ALL_LOCALEDIR_BITS;
+          DocumentState::ALL_LOCALEDIR_BITS)) {
+    mDocumentState &= ~DocumentState::ALL_LOCALEDIR_BITS;
     if (IsDocumentRightToLeft()) {
-      mDocumentState |= NS_DOCUMENT_STATE_RTL_LOCALE;
+      mDocumentState |= DocumentState::RTL_LOCALE;
     } else {
-      mDocumentState |= NS_DOCUMENT_STATE_LTR_LOCALE;
+      mDocumentState |= DocumentState::LTR_LOCALE;
     }
   }
 
-  if (aMaybeChangedStates.HasAtLeastOneOfStates(NS_DOCUMENT_STATE_LWTHEME)) {
+  if (aMaybeChangedStates.HasAtLeastOneOfStates(DocumentState::LWTHEME)) {
     if (ComputeDocumentLWTheme()) {
-      mDocumentState |= NS_DOCUMENT_STATE_LWTHEME;
+      mDocumentState |= DocumentState::LWTHEME;
     } else {
-      mDocumentState &= ~NS_DOCUMENT_STATE_LWTHEME;
+      mDocumentState &= ~DocumentState::LWTHEME;
     }
   }
 
-  if (aMaybeChangedStates.HasState(NS_DOCUMENT_STATE_WINDOW_INACTIVE)) {
+  if (aMaybeChangedStates.HasState(DocumentState::WINDOW_INACTIVE)) {
     if (IsTopLevelWindowInactive()) {
-      mDocumentState |= NS_DOCUMENT_STATE_WINDOW_INACTIVE;
+      mDocumentState |= DocumentState::WINDOW_INACTIVE;
     } else {
-      mDocumentState &= ~NS_DOCUMENT_STATE_WINDOW_INACTIVE;
+      mDocumentState &= ~DocumentState::WINDOW_INACTIVE;
     }
   }
 
-  EventStates changedStates = oldStates ^ mDocumentState;
+  const DocumentState changedStates = oldStates ^ mDocumentState;
   if (aNotify && !changedStates.IsEmpty()) {
     if (PresShell* ps = GetObservingPresShell()) {
       ps->DocumentStatesChanged(changedStates);
@@ -12604,7 +12601,7 @@ void Document::ResetDocumentDirection() {
   if (!nsContentUtils::IsChromeDoc(this)) {
     return;
   }
-  UpdateDocumentStates(NS_DOCUMENT_STATE_ALL_LOCALEDIR_BITS, true);
+  UpdateDocumentStates(DocumentState::ALL_LOCALEDIR_BITS, true);
 }
 
 bool Document::IsDocumentRightToLeft() {
@@ -14223,7 +14220,7 @@ size_t Document::CountFullscreenElements() const {
   size_t count = 0;
   for (const nsWeakPtr& ptr : mTopLayer) {
     if (nsCOMPtr<Element> elem = do_QueryReferent(ptr)) {
-      if (elem->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
+      if (elem->State().HasState(ElementState::FULLSCREEN)) {
         count++;
       }
     }
@@ -14298,7 +14295,7 @@ static uint32_t CountFullscreenSubDocuments(Document& aDoc) {
   uint32_t count = 0;
   // FIXME(emilio): Should this be recursive and dig into our nested subdocs?
   auto subDoc = [&count](Document& aSubDoc) {
-    if (aSubDoc.GetUnretargetedFullScreenElement()) {
+    if (aSubDoc.Fullscreen()) {
       count++;
     }
     return CallState::Continue;
@@ -14310,17 +14307,17 @@ static uint32_t CountFullscreenSubDocuments(Document& aDoc) {
 bool Document::IsFullscreenLeaf() {
   // A fullscreen leaf document is fullscreen, and has no fullscreen
   // subdocuments.
-  if (!GetUnretargetedFullScreenElement()) {
-    return false;
-  }
-  return CountFullscreenSubDocuments(*this) == 0;
+  //
+  // FIXME(emilio): This doesn't seem to account for fission iframes, is that
+  // ok?
+  return Fullscreen() && CountFullscreenSubDocuments(*this) == 0;
 }
 
 static Document* GetFullscreenLeaf(Document& aDoc) {
   if (aDoc.IsFullscreenLeaf()) {
     return &aDoc;
   }
-  if (!aDoc.GetUnretargetedFullScreenElement()) {
+  if (!aDoc.Fullscreen()) {
     return nullptr;
   }
   Document* leaf = nullptr;
@@ -14343,12 +14340,11 @@ static Document* GetFullscreenLeaf(Document* aDoc) {
 }
 
 static CallState ResetFullscreen(Document& aDocument) {
-  if (Element* fsElement = aDocument.GetUnretargetedFullScreenElement()) {
+  if (Element* fsElement = aDocument.GetUnretargetedFullscreenElement()) {
     NS_ASSERTION(CountFullscreenSubDocuments(aDocument) <= 1,
                  "Should have at most 1 fullscreen subdocument.");
     aDocument.CleanupFullscreenState();
-    NS_ASSERTION(!aDocument.GetUnretargetedFullScreenElement(),
-                 "Should reset fullscreen");
+    NS_ASSERTION(!aDocument.Fullscreen(), "Should reset fullscreen");
     DispatchFullscreenChange(aDocument, fsElement);
     aDocument.EnumerateSubDocuments(ResetFullscreen);
   }
@@ -14401,7 +14397,7 @@ void Document::ExitFullscreenInDocTree(Document* aMaybeNotARootDoc) {
   }
 
   nsCOMPtr<Document> root = aMaybeNotARootDoc->GetFullscreenRoot();
-  if (!root || !root->GetUnretargetedFullScreenElement()) {
+  if (!root || !root->Fullscreen()) {
     // If a document was detached before exiting from fullscreen, it is
     // possible that the root had left fullscreen state. In this case,
     // we would not get anything from the ResetFullscreen() call. Root's
@@ -14422,7 +14418,7 @@ void Document::ExitFullscreenInDocTree(Document* aMaybeNotARootDoc) {
   // Walk the tree of fullscreen documents, and reset their fullscreen state.
   ResetFullscreen(*root);
 
-  NS_ASSERTION(!root->GetUnretargetedFullScreenElement(),
+  NS_ASSERTION(!root->Fullscreen(),
                "Fullscreen root should no longer be a fullscreen doc...");
 
   // Move the top-level window out of fullscreen mode.
@@ -14440,15 +14436,14 @@ static void DispatchFullscreenNewOriginEvent(Document* aDoc) {
 }
 
 void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
-  NS_ASSERTION(
-      !GetUnretargetedFullScreenElement() || !FullscreenRoots::IsEmpty(),
-      "Should have at least 1 fullscreen root when fullscreen!");
+  NS_ASSERTION(!Fullscreen() || !FullscreenRoots::IsEmpty(),
+               "Should have at least 1 fullscreen root when fullscreen!");
 
   if (!GetWindow()) {
     aExit->MayRejectPromise("No active window");
     return;
   }
-  if (!GetUnretargetedFullScreenElement() || FullscreenRoots::IsEmpty()) {
+  if (!Fullscreen() || FullscreenRoots::IsEmpty()) {
     aExit->MayRejectPromise("Not in fullscreen mode");
     return;
   }
@@ -14459,7 +14454,7 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   Document* doc = fullScreenDoc;
   // Collect all subdocuments.
   for (; doc != this; doc = doc->GetInProcessParentDocument()) {
-    Element* fsElement = doc->GetUnretargetedFullScreenElement();
+    Element* fsElement = doc->GetUnretargetedFullscreenElement();
     MOZ_ASSERT(fsElement,
                "Parent document of "
                "a fullscreen document without fullscreen element?");
@@ -14468,7 +14463,7 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   MOZ_ASSERT(doc == this, "Must have reached this doc");
   // Collect all ancestor documents which we are going to change.
   for (; doc; doc = doc->GetInProcessParentDocument()) {
-    Element* fsElement = doc->GetUnretargetedFullScreenElement();
+    Element* fsElement = doc->GetUnretargetedFullscreenElement();
     MOZ_ASSERT(fsElement,
                "Ancestor of fullscreen document must also be in fullscreen");
     if (doc != this) {
@@ -14507,7 +14502,8 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   // completely exit from the fullscreen state as well.
   Document* newFullscreenDoc;
   if (fullscreenCount > 1) {
-    lastDoc->UnsetFullscreenElement();
+    DebugOnly<bool> removedFullscreenElement = lastDoc->PopFullscreenElement();
+    MOZ_ASSERT(removedFullscreenElement);
     newFullscreenDoc = lastDoc;
   } else {
     lastDoc->CleanupFullscreenState();
@@ -14572,39 +14568,12 @@ static void NotifyFullScreenChangedForMediaElement(Element& aElement) {
   }
 }
 
-/* static */
-void Document::ClearFullscreenStateOnElement(Element& aElement) {
-  // Remove styles from existing top element.
-  aElement.RemoveStates(NS_EVENT_STATE_FULLSCREEN);
-  NotifyFullScreenChangedForMediaElement(aElement);
-  // Reset iframe fullscreen flag.
-  if (auto* iframe = HTMLIFrameElement::FromNode(aElement)) {
-    iframe->SetFullscreenFlag(false);
-  }
-}
-
 void Document::CleanupFullscreenState() {
-  // Iterate the top layer and clear the fullscreen states.
-  // Since we also need to clear the fullscreen-ancestor state, and
-  // currently fullscreen elements can only be placed in hierarchy
-  // order in the stack, reversely iterating the stack could be more
-  // efficient. NOTE that fullscreen-ancestor state would be removed
-  // in bug 1199529, and the elements may not in hierarchy order
-  // after bug 1195213.
-  mTopLayer.RemoveElementsBy([&](const nsWeakPtr& weakPtr) {
-    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
-    if (!element || !element->IsInComposedDoc() ||
-        element->OwnerDoc() != this) {
-      return true;
-    }
+  while (PopFullscreenElement(UpdateViewport::No)) {
+    // Remove the next one if appropriate
+  }
 
-    if (element->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
-      ClearFullscreenStateOnElement(*element);
-      return true;
-    }
-    return false;
-  });
-
+  UpdateViewportScrollbarOverrideForFullscreen(this);
   mFullscreenRoot = nullptr;
 
   // Restore the zoom level that was in place prior to entering fullscreen.
@@ -14614,28 +14583,49 @@ void Document::CleanupFullscreenState() {
           mSavedResolution, ResolutionChangeOrigin::MainThreadRestore);
     }
   }
-
-  UpdateViewportScrollbarOverrideForFullscreen(this);
 }
 
-void Document::UnsetFullscreenElement() {
+bool Document::PopFullscreenElement(UpdateViewport aUpdateViewport) {
   Element* removedElement = TopLayerPop([](Element* element) -> bool {
-    return element->State().HasState(NS_EVENT_STATE_FULLSCREEN);
+    return element->State().HasState(ElementState::FULLSCREEN);
   });
 
-  MOZ_ASSERT(removedElement->State().HasState(NS_EVENT_STATE_FULLSCREEN));
-  ClearFullscreenStateOnElement(*removedElement);
-  UpdateViewportScrollbarOverrideForFullscreen(this);
+  if (!removedElement) {
+    return false;
+  }
+
+  MOZ_ASSERT(removedElement->State().HasState(ElementState::FULLSCREEN));
+  removedElement->RemoveStates(ElementState::FULLSCREEN);
+  NotifyFullScreenChangedForMediaElement(*removedElement);
+  // Reset iframe fullscreen flag.
+  if (auto* iframe = HTMLIFrameElement::FromNode(removedElement)) {
+    iframe->SetFullscreenFlag(false);
+  }
+  if (aUpdateViewport == UpdateViewport::Yes) {
+    UpdateViewportScrollbarOverrideForFullscreen(this);
+  }
+  return true;
 }
 
 void Document::SetFullscreenElement(Element& aElement) {
+  aElement.AddStates(ElementState::FULLSCREEN);
   TopLayerPush(aElement);
-  aElement.AddStates(NS_EVENT_STATE_FULLSCREEN);
   NotifyFullScreenChangedForMediaElement(aElement);
   UpdateViewportScrollbarOverrideForFullscreen(this);
 }
 
+static ElementState TopLayerModalStates() {
+  ElementState modalStates = ElementState::MODAL_DIALOG;
+  if (StaticPrefs::dom_fullscreen_modal()) {
+    modalStates |= ElementState::FULLSCREEN;
+  }
+  return modalStates;
+}
+
 void Document::TopLayerPush(Element& aElement) {
+  const bool modal =
+      aElement.State().HasAtLeastOneOfStates(TopLayerModalStates());
+
   auto predictFunc = [&aElement](Element* element) {
     return element == &aElement;
   };
@@ -14643,70 +14633,45 @@ void Document::TopLayerPush(Element& aElement) {
 
   mTopLayer.AppendElement(do_GetWeakReference(&aElement));
   NS_ASSERTION(GetTopLayerTop() == &aElement, "Should match");
-}
 
-void Document::AddModalDialog(HTMLDialogElement& aDialogElement) {
-  TopLayerPush(aDialogElement);
+  if (modal) {
+    aElement.AddStates(ElementState::TOPMOST_MODAL);
 
-  Element* root = GetRootElement();
-  MOZ_RELEASE_ASSERT(root, "dialog in document without root?");
-
-  // Add inert to the root element so that the inertness is
-  // applied to the entire document. Since the modal dialog
-  // also inherits the inertness, adding
-  // NS_EVENT_STATE_TOPMOST_MODAL_DIALOG to remove the inertness
-  // explicitly.
-  root->AddStates(NS_EVENT_STATE_MOZINERT);
-  aDialogElement.AddStates(NS_EVENT_STATE_MODAL_DIALOG |
-                           NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
-
-  // It's possible that there's another modal dialog has opened
-  // previously which doesn't have the inertness (because we've
-  // removed the inertness explicitly). Since a
-  // new modal dialog is opened, we need to grant the inertness
-  // to the previous one.
-  for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
-    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
-    if (auto* dialog = HTMLDialogElement::FromNodeOrNull(element)) {
-      if (dialog != &aDialogElement) {
-        dialog->RemoveStates(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
-        // It's ok to exit the loop as only one modal dialog should
-        // have the state
+    bool foundExistingModalElement = false;
+    for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
+      nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+      if (element && element != &aElement &&
+          element->State().HasState(ElementState::TOPMOST_MODAL)) {
+        element->RemoveStates(ElementState::TOPMOST_MODAL);
+        foundExistingModalElement = true;
         break;
       }
     }
-  }
-}
 
-void Document::RemoveModalDialog(HTMLDialogElement& aDialogElement) {
-  aDialogElement.RemoveStates(NS_EVENT_STATE_MODAL_DIALOG |
-                              NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
-
-  auto predicate = [&aDialogElement](Element* element) -> bool {
-    return element == &aDialogElement;
-  };
-
-  DebugOnly<Element*> removedElement = TopLayerPop(predicate);
-  MOZ_ASSERT(removedElement == &aDialogElement);
-
-  // The document could still be blocked by another modal dialog.
-  // We need to remove the inertness from this modal dialog.
-  for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
-    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
-    if (auto* dialog = HTMLDialogElement::FromNodeOrNull(element)) {
-      if (dialog != &aDialogElement) {
-        dialog->AddStates(NS_EVENT_STATE_TOPMOST_MODAL_DIALOG);
-        // Return early here because we want to keep the inertness for the root
-        // element as the document is still blocked by a modal dialog.
-        return;
+    if (!foundExistingModalElement) {
+      Element* root = GetRootElement();
+      MOZ_RELEASE_ASSERT(root, "top layer element outside of document?");
+      if (&aElement != root) {
+        // Add inert to the root element so that the inertness is applied to the
+        // entire document.
+        root->AddStates(ElementState::INERT);
       }
     }
   }
+}
 
-  Element* root = GetRootElement();
-  if (root && !root->GetBoolAttr(nsGkAtoms::inert)) {
-    root->RemoveStates(NS_EVENT_STATE_MOZINERT);
-  }
+void Document::AddModalDialog(HTMLDialogElement& aDialogElement) {
+  aDialogElement.AddStates(ElementState::MODAL_DIALOG);
+  TopLayerPush(aDialogElement);
+}
+
+void Document::RemoveModalDialog(HTMLDialogElement& aDialogElement) {
+  auto predicate = [&aDialogElement](Element* element) -> bool {
+    return element == &aDialogElement;
+  };
+  DebugOnly<Element*> removedElement = TopLayerPop(predicate);
+  MOZ_ASSERT(removedElement == &aDialogElement);
+  aDialogElement.RemoveStates(ElementState::MODAL_DIALOG);
 }
 
 Element* Document::TopLayerPop(FunctionRef<bool(Element*)> aPredicate) {
@@ -14740,6 +14705,33 @@ Element* Document::TopLayerPop(FunctionRef<bool(Element*)> aPredicate) {
     } else {
       // The top element of the stack is now an in-doc element. Return here.
       break;
+    }
+  }
+
+  if (!removedElement) {
+    return nullptr;
+  }
+
+  const ElementState modalStates = TopLayerModalStates();
+  const bool modal = removedElement->State().HasAtLeastOneOfStates(modalStates);
+
+  if (modal) {
+    removedElement->RemoveStates(ElementState::TOPMOST_MODAL);
+    bool foundExistingModalElement = false;
+    for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
+      nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+      if (element && element->State().HasAtLeastOneOfStates(modalStates)) {
+        element->AddStates(ElementState::TOPMOST_MODAL);
+        foundExistingModalElement = true;
+        break;
+      }
+    }
+    // No more modal elements, make the document not inert anymore.
+    if (!foundExistingModalElement) {
+      Element* root = GetRootElement();
+      if (root && !root->GetBoolAttr(nsGkAtoms::inert)) {
+        root->RemoveStates(ElementState::INERT);
+      }
     }
   }
 
@@ -14807,8 +14799,7 @@ void Document::GetWireframeWithoutFlushing(bool aIncludeNodes,
       }
       bool drawImage = false;
       bool drawColor = false;
-      ComputedStyle* bgStyle = nullptr;
-      if (nsCSSRendering::FindBackground(frame, &bgStyle)) {
+      if (const auto* bgStyle = nsCSSRendering::FindBackground(frame)) {
         const nscolor color = nsCSSRendering::DetermineBackgroundColor(
             pc, bgStyle, frame, drawImage, drawColor);
         if (drawImage &&
@@ -14866,12 +14857,12 @@ Element* Document::GetTopLayerTop() {
   return element;
 }
 
-Element* Document::GetUnretargetedFullScreenElement() const {
+Element* Document::GetUnretargetedFullscreenElement() const {
   for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
     nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
     // Per spec, the fullscreen element is the topmost element in the document’s
     // top layer whose fullscreen flag is set, if any, and null otherwise.
-    if (element && element->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
+    if (element && element->State().HasState(ElementState::FULLSCREEN)) {
       return element;
     }
   }
@@ -14992,7 +14983,7 @@ bool Document::FullscreenElementReadyCheck(FullscreenRequest& aRequest) {
   // is already the fullscreen element requests fullscreen, nothing
   // should change and no event should be dispatched, but we still need
   // to resolve the returned promise.
-  Element* fullscreenElement = GetUnretargetedFullScreenElement();
+  Element* fullscreenElement = GetUnretargetedFullscreenElement();
   if (elem == fullscreenElement) {
     aRequest.MayResolvePromise();
     return false;
@@ -15094,26 +15085,25 @@ static bool CheckFullscreenAllowedElementType(const Element* elem) {
 }
 
 void Document::RequestFullscreen(UniquePtr<FullscreenRequest> aRequest,
-                                 bool applyFullScreenDirectly) {
+                                 bool aApplyFullscreenDirectly) {
   if (XRE_IsContentProcess()) {
     RequestFullscreenInContentProcess(std::move(aRequest),
-                                      applyFullScreenDirectly);
+                                      aApplyFullscreenDirectly);
   } else {
     RequestFullscreenInParentProcess(std::move(aRequest),
-                                     applyFullScreenDirectly);
+                                     aApplyFullscreenDirectly);
   }
 }
 
 void Document::RequestFullscreenInContentProcess(
-    UniquePtr<FullscreenRequest> aRequest, bool applyFullScreenDirectly) {
+    UniquePtr<FullscreenRequest> aRequest, bool aApplyFullscreenDirectly) {
   MOZ_ASSERT(XRE_IsContentProcess());
 
   // If we are in the content process, we can apply the fullscreen
   // state directly only if we have been in DOM fullscreen, because
   // otherwise we always need to notify the chrome.
-  if (applyFullScreenDirectly ||
-      !!nsContentUtils::GetInProcessSubtreeRootDocument(this)
-            ->GetUnretargetedFullScreenElement()) {
+  if (aApplyFullscreenDirectly ||
+      nsContentUtils::GetInProcessSubtreeRootDocument(this)->Fullscreen()) {
     ApplyFullscreen(std::move(aRequest));
     return;
   }
@@ -15138,7 +15128,7 @@ void Document::RequestFullscreenInContentProcess(
 }
 
 void Document::RequestFullscreenInParentProcess(
-    UniquePtr<FullscreenRequest> aRequest, bool applyFullScreenDirectly) {
+    UniquePtr<FullscreenRequest> aRequest, bool aApplyFullscreenDirectly) {
   MOZ_ASSERT(XRE_IsParentProcess());
   nsCOMPtr<nsPIDOMWindowOuter> rootWin = GetRootWindow(this);
   if (!rootWin) {
@@ -15146,7 +15136,8 @@ void Document::RequestFullscreenInParentProcess(
     return;
   }
 
-  if (applyFullScreenDirectly || ShouldApplyFullscreenDirectly(this, rootWin)) {
+  if (aApplyFullscreenDirectly ||
+      ShouldApplyFullscreenDirectly(this, rootWin)) {
     ApplyFullscreen(std::move(aRequest));
     return;
   }
@@ -15302,7 +15293,7 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
   // reversed so that events are dispatched in the tree order as
   // indicated in the spec.
   for (Document* d : Reversed(changed)) {
-    DispatchFullscreenChange(*d, d->GetUnretargetedFullScreenElement());
+    DispatchFullscreenChange(*d, d->GetUnretargetedFullscreenElement());
   }
   aRequest->MayResolvePromise();
   return true;
@@ -16325,8 +16316,16 @@ bool Document::HasBeenUserGestureActivated() {
 
 DOMHighResTimeStamp Document::LastUserGestureTimeStamp() {
   if (RefPtr<WindowContext> wc = GetWindowContext()) {
-    return wc->LastUserGestureTimeStamp();
+    if (nsGlobalWindowInner* innerWindow = wc->GetInnerWindow()) {
+      if (Performance* perf = innerWindow->GetPerformance()) {
+        return perf->GetDOMTiming()->TimeStampToDOMHighRes(
+            wc->GetUserGestureStart());
+      }
+    }
   }
+
+  NS_WARNING(
+      "Unable to calculate DOMHighResTimeStamp for LastUserGestureTimeStamp");
   return 0;
 }
 
@@ -16452,7 +16451,7 @@ void Document::MaybeAllowStorageForOpenerAfterUserInteraction() {
   }
 
   // We don't care when the asynchronous work finishes here.
-  Unused << ContentBlocking::AllowAccessFor(
+  Unused << StorageAccessAPIHelper::AllowAccessFor(
       NodePrincipal(), openerBC,
       ContentBlockingNotifier::eOpenerAfterUserInteraction);
 }
@@ -16633,52 +16632,6 @@ bool Document::IsExtensionPage() const {
          BasePrincipal::Cast(NodePrincipal())->AddonPolicy();
 }
 
-/**
- * Retrieves the classification of the Flash plugins in the document based on
- * the classification lists. For more information, see
- * toolkit/components/url-classifier/flash-block-lists.rst
- */
-FlashClassification Document::DocumentFlashClassification() {
-  // Disable flash blocking when fission is enabled(See Bug 1584931).
-  const auto fnIsFlashBlockingEnabled = [] {
-    return StaticPrefs::plugins_flashBlock_enabled() && !FissionAutostart();
-  };
-
-  // If neither pref is on, skip the null-principal and principal URI checks.
-  if (!StaticPrefs::plugins_http_https_only() && !fnIsFlashBlockingEnabled()) {
-    return FlashClassification::Unknown;
-  }
-
-  if (!NodePrincipal()->GetIsContentPrincipal()) {
-    return FlashClassification::Denied;
-  }
-
-  if (StaticPrefs::plugins_http_https_only()) {
-    // Only allow plugins for documents from an HTTP/HTTPS origin. This should
-    // allow dependent data: URIs to load plugins, but not:
-    // * chrome documents
-    // * "bare" data: loads
-    // * FTP/gopher/file
-
-    if (!(NodePrincipal()->SchemeIs("http") ||
-          NodePrincipal()->SchemeIs("https"))) {
-      return FlashClassification::Denied;
-    }
-  }
-
-  // If flash blocking is disabled, it is equivalent to all sites being
-  // on neither list.
-  if (!fnIsFlashBlockingEnabled()) {
-    return FlashClassification::Unknown;
-  }
-
-  if (mFlashClassification == FlashClassification::Unknown) {
-    mFlashClassification = DocumentFlashClassificationInternal();
-  }
-
-  return mFlashClassification;
-}
-
 void Document::AddResizeObserver(ResizeObserver& aObserver) {
   if (!mResizeObserverController) {
     mResizeObserverController = MakeUnique<ResizeObserverController>(this);
@@ -16715,123 +16668,6 @@ void Document::ScheduleResizeObserversNotification() const {
   mResizeObserverController->ScheduleNotification();
 }
 
-/**
- * Initializes |mIsThirdPartyForFlashClassifier| if necessary and returns its
- * value. The value returned represents whether this document should be
- * considered Third-Party.
- *
- * A top-level document cannot be a considered Third-Party; only subdocuments
- * may. For a subdocument to be considered Third-Party, it must meet ANY ONE
- * of the following requirements:
- *  - The document's parent is Third-Party
- *  - The document has a different scheme (http/https) than its parent document
- *  - The document's domain and subdomain do not match those of its parent
- *    document.
- *
- * If there is an error in determining whether the document is Third-Party,
- * it will be assumed to be Third-Party for security reasons.
- */
-bool Document::IsThirdPartyForFlashClassifier() {
-  if (mIsThirdPartyForFlashClassifier.isSome()) {
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  BrowsingContext* browsingContext = this->GetBrowsingContext();
-  if (!browsingContext) {
-    mIsThirdPartyForFlashClassifier.emplace(true);
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  if (browsingContext->IsTop()) {
-    mIsThirdPartyForFlashClassifier.emplace(false);
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  nsCOMPtr<Document> parentDocument = GetInProcessParentDocument();
-  if (!parentDocument) {
-    // Failure
-    mIsThirdPartyForFlashClassifier.emplace(true);
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  if (parentDocument->IsThirdPartyForFlashClassifier()) {
-    mIsThirdPartyForFlashClassifier.emplace(true);
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  nsCOMPtr<nsIPrincipal> principal = NodePrincipal();
-  nsCOMPtr<nsIPrincipal> parentPrincipal = parentDocument->GetPrincipal();
-
-  bool principalsMatch = false;
-  nsresult rv = principal->Equals(parentPrincipal, &principalsMatch);
-
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // Failure
-    mIsThirdPartyForFlashClassifier.emplace(true);
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  if (!principalsMatch) {
-    mIsThirdPartyForFlashClassifier.emplace(true);
-    return mIsThirdPartyForFlashClassifier.value();
-  }
-
-  // Fall-through. Document is not a Third-Party Document.
-  mIsThirdPartyForFlashClassifier.emplace(false);
-  return mIsThirdPartyForFlashClassifier.value();
-}
-
-FlashClassification Document::DocumentFlashClassificationInternal() {
-  FlashClassification classification = FlashClassification::Unknown;
-
-  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(GetChannel());
-  if (httpChannel) {
-    nsIHttpChannel::FlashPluginState state = nsIHttpChannel::FlashPluginUnknown;
-    httpChannel->GetFlashPluginState(&state);
-
-    // Allow unknown children to inherit allowed status from parent, but do not
-    // allow denied children to do so.
-
-    if (state == nsIHttpChannel::FlashPluginDeniedInSubdocuments &&
-        IsThirdPartyForFlashClassifier()) {
-      return FlashClassification::Denied;
-    }
-
-    if (state == nsIHttpChannel::FlashPluginDenied) {
-      return FlashClassification::Denied;
-    }
-
-    if (state == nsIHttpChannel::FlashPluginAllowed) {
-      classification = FlashClassification::Allowed;
-    }
-  }
-
-  if (IsTopLevelContentDocument()) {
-    return classification;
-  }
-
-  Document* parentDocument = GetInProcessParentDocument();
-  if (!parentDocument) {
-    return FlashClassification::Denied;
-  }
-
-  FlashClassification parentClassification =
-      parentDocument->DocumentFlashClassification();
-
-  if (parentClassification == FlashClassification::Denied) {
-    return FlashClassification::Denied;
-  }
-
-  // Allow unknown children to inherit allowed status from parent, but
-  // do not allow denied children to do so.
-  if (classification == FlashClassification::Unknown &&
-      parentClassification == FlashClassification::Allowed) {
-    return FlashClassification::Allowed;
-  }
-
-  return classification;
-}
-
 void Document::ClearStaleServoData() {
   DocumentStyleRootIterator iter(this);
   while (Element* root = iter.GetNextStyleRoot()) {
@@ -16853,13 +16689,15 @@ Selection* Document::GetSelection(ErrorResult& aRv) {
 }
 
 nsresult Document::HasStorageAccessSync(bool& aHasStorageAccess) {
+  // Step 1: check if cookie permissions are available or denied to this
+  // document's principal
   nsCOMPtr<nsPIDOMWindowInner> inner = this->GetInnerWindow();
   if (!inner) {
     aHasStorageAccess = false;
     return NS_OK;
   }
   Maybe<bool> resultBecauseCookiesApproved =
-      ContentBlocking::CheckCookiesPermittedDecidesStorageAccessAPI(
+      StorageAccessAPIHelper::CheckCookiesPermittedDecidesStorageAccessAPI(
           CookieJarSettings(), NodePrincipal());
   if (resultBecauseCookiesApproved.isSome()) {
     if (resultBecauseCookiesApproved.value()) {
@@ -16871,10 +16709,22 @@ nsresult Document::HasStorageAccessSync(bool& aHasStorageAccess) {
     }
   }
 
+  // Step 2: Check if the browser settings determine whether or not this
+  // document has access to its unpartitioned cookies.
   bool isThirdPartyDocument = AntiTrackingUtils::IsThirdPartyDocument(this);
+  bool isOnRejectForeignAllowList = RejectForeignAllowList::Check(this);
+  bool isOnThirdPartySkipList = false;
+  if (mChannel) {
+    nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
+    isOnThirdPartySkipList = loadInfo->GetStoragePermission() ==
+                             nsILoadInfo::StoragePermissionAllowListed;
+  }
+  bool isThirdPartyTracker =
+      nsContentUtils::IsThirdPartyTrackingResourceWindow(inner);
   Maybe<bool> resultBecauseBrowserSettings =
-      ContentBlocking::CheckBrowserSettingsDecidesStorageAccessAPI(
-          CookieJarSettings(), isThirdPartyDocument);
+      StorageAccessAPIHelper::CheckBrowserSettingsDecidesStorageAccessAPI(
+          CookieJarSettings(), isThirdPartyDocument, isOnRejectForeignAllowList,
+          isOnThirdPartySkipList, isThirdPartyTracker);
   if (resultBecauseBrowserSettings.isSome()) {
     if (resultBecauseBrowserSettings.value()) {
       aHasStorageAccess = true;
@@ -16885,8 +16735,11 @@ nsresult Document::HasStorageAccessSync(bool& aHasStorageAccess) {
     }
   }
 
+  // Step 3: Check if the location of this call (embedded, top level, same-site)
+  // determines if cookies are permitted or not.
   Maybe<bool> resultBecauseCallContext =
-      ContentBlocking::CheckCallingContextDecidesStorageAccessAPI(this, false);
+      StorageAccessAPIHelper::CheckCallingContextDecidesStorageAccessAPI(this,
+                                                                         false);
   if (resultBecauseCallContext.isSome()) {
     if (resultBecauseCallContext.value()) {
       aHasStorageAccess = true;
@@ -16897,8 +16750,11 @@ nsresult Document::HasStorageAccessSync(bool& aHasStorageAccess) {
     }
   }
 
+  // Step 4: Check if the permissions for this document determine if if has
+  // access or is denied cookies.
   Maybe<bool> resultBecausePreviousPermission =
-      ContentBlocking::CheckExistingPermissionDecidesStorageAccessAPI(this);
+      StorageAccessAPIHelper::CheckExistingPermissionDecidesStorageAccessAPI(
+          this);
   if (resultBecausePreviousPermission.isSome()) {
     if (resultBecausePreviousPermission.value()) {
       aHasStorageAccess = true;
@@ -16908,7 +16764,7 @@ nsresult Document::HasStorageAccessSync(bool& aHasStorageAccess) {
       return NS_OK;
     }
   }
-
+  // If you get here, we default to not giving you permission.
   aHasStorageAccess = false;
   return NS_OK;
 }
@@ -16964,120 +16820,29 @@ Document::GetContentBlockingEvents() {
       });
 }
 
-already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccess(
-    mozilla::ErrorResult& aRv) {
-  nsIGlobalObject* global = GetScopeObject();
-  if (!global) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-    return nullptr;
-  }
-
-  RefPtr<Promise> promise = Promise::Create(global, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-
-  // Step 1: Check if the principal calling this has a permission that lets
-  // them use cookies or forbids them from using cookies.
-  // This is outside of the spec of the StorageAccess API, but makes the return
-  // values to have proper semantics.
-  Maybe<bool> resultBecauseCookiesApproved =
-      ContentBlocking::CheckCookiesPermittedDecidesStorageAccessAPI(
-          CookieJarSettings(), NodePrincipal());
-  if (resultBecauseCookiesApproved.isSome()) {
-    if (resultBecauseCookiesApproved.value()) {
-      promise->MaybeResolveWithUndefined();
-      return promise.forget();
-    } else {
-      this->ConsumeTransientUserGestureActivation();
-      promise->MaybeRejectWithUndefined();
-      return promise.forget();
-    }
-  }
-
-  // Step 2: Check if the browser settings always allow or deny cookies.
-  // We should always return a resolved promise if the cookieBehavior is ACCEPT.
-  // This is outside of the spec of the StorageAccess API, but makes the return
-  // values to have proper semantics.
-  bool isThirdPartyDocument = AntiTrackingUtils::IsThirdPartyDocument(this);
-  Maybe<bool> resultBecauseBrowserSettings =
-      ContentBlocking::CheckBrowserSettingsDecidesStorageAccessAPI(
-          CookieJarSettings(), isThirdPartyDocument);
-  if (resultBecauseBrowserSettings.isSome()) {
-    if (resultBecauseBrowserSettings.value()) {
-      promise->MaybeResolveWithUndefined();
-      return promise.forget();
-    } else {
-      this->ConsumeTransientUserGestureActivation();
-      promise->MaybeRejectWithUndefined();
-      return promise.forget();
-    }
-  }
-
-  // Step 3: Check if the Document calling requestStorageAccess has anything to
-  // gain from storage access. It should be embedded, non-null, etc.
-  Maybe<bool> resultBecauseCallContext =
-      ContentBlocking::CheckCallingContextDecidesStorageAccessAPI(this, true);
-  if (resultBecauseCallContext.isSome()) {
-    if (resultBecauseCallContext.value()) {
-      promise->MaybeResolveWithUndefined();
-      return promise.forget();
-    } else {
-      this->ConsumeTransientUserGestureActivation();
-      promise->MaybeRejectWithUndefined();
-      return promise.forget();
-    }
-  }
-
-  // Step 4: Check if we already allowed or denied storage access for this
-  // document's storage key.
-  Maybe<bool> resultBecausePreviousPermission =
-      ContentBlocking::CheckExistingPermissionDecidesStorageAccessAPI(this);
-  if (resultBecausePreviousPermission.isSome()) {
-    if (resultBecausePreviousPermission.value()) {
-      promise->MaybeResolveWithUndefined();
-      return promise.forget();
-    } else {
-      this->ConsumeTransientUserGestureActivation();
-      promise->MaybeRejectWithUndefined();
-      return promise.forget();
-    }
-  }
-
-  // Get pointers to some objects that will be used in the async portion
-  RefPtr<BrowsingContext> bc = this->GetBrowsingContext();
-  nsCOMPtr<nsPIDOMWindowInner> inner = this->GetInnerWindow();
-  if (!inner) {
-    this->ConsumeTransientUserGestureActivation();
-    promise->MaybeRejectWithUndefined();
-    return promise.forget();
-  }
-  RefPtr<nsGlobalWindowOuter> outer =
-      nsGlobalWindowOuter::Cast(inner->GetOuterWindow());
-  if (!outer) {
-    this->ConsumeTransientUserGestureActivation();
-    promise->MaybeRejectWithUndefined();
-    return promise.forget();
-  }
+RefPtr<MozPromise<int, bool, true>> Document::RequestStorageAccessAsyncHelper(
+    nsPIDOMWindowInner* aInnerWindow, BrowsingContext* aBrowsingContext,
+    nsIPrincipal* aPrincipal, bool aHasUserInteraction,
+    ContentBlockingNotifier::StorageAccessPermissionGrantedReason aNotifier) {
   RefPtr<Document> self(this);
+  RefPtr<nsPIDOMWindowInner> inner(aInnerWindow);
+  RefPtr<nsIPrincipal> principal(aPrincipal);
 
-  // Consume user activation before entering the async part of this method.
-  // This prevents usage of other transient activation-gated APIs.
-  this->ConsumeTransientUserGestureActivation();
-
-  auto performFinalChecks =
-      [inner,
-       self]() -> RefPtr<ContentBlocking::StorageAccessFinalCheckPromise> {
-    RefPtr<ContentBlocking::StorageAccessFinalCheckPromise::Private> p =
-        new ContentBlocking::StorageAccessFinalCheckPromise::Private(__func__);
+  // This is a lambda function that has some variables bound to it. It will be
+  // called later in CompleteAllowAccessFor inside of AllowAccessFor.
+  auto performFinalChecks = [inner, self, principal, aHasUserInteraction]() {
+    // Create the user prompt
+    RefPtr<StorageAccessAPIHelper::StorageAccessFinalCheckPromise::Private> p =
+        new StorageAccessAPIHelper::StorageAccessFinalCheckPromise::Private(
+            __func__);
     RefPtr<StorageAccessPermissionRequest> sapr =
         StorageAccessPermissionRequest::Create(
-            inner,
+            inner, principal,
             // Allow
             [p] {
               Telemetry::AccumulateCategorical(
                   Telemetry::LABELS_STORAGE_ACCESS_API_UI::Allow);
-              p->Resolve(ContentBlocking::eAllow, __func__);
+              p->Resolve(StorageAccessAPIHelper::eAllow, __func__);
             },
             // Block
             [p] {
@@ -17095,83 +16860,73 @@ already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccess(
           Telemetry::LABELS_STORAGE_ACCESS_API_UI::Request);
     }
 
-    self->AutomaticStorageAccessPermissionCanBeGranted(true)->Then(
-        GetCurrentSerialEventTarget(), __func__,
-        [p, pr, sapr,
-         inner](const AutomaticStorageAccessPermissionGrantPromise::
+    // Try to auto-grant the storage access so the user doesn't see the prompt.
+    self->AutomaticStorageAccessPermissionCanBeGranted(aHasUserInteraction)
+        ->Then(
+            GetCurrentSerialEventTarget(), __func__,
+            // If the autogrant check didn't fail, call this function
+            [p, pr, sapr, inner](
+                const Document::AutomaticStorageAccessPermissionGrantPromise::
                     ResolveOrRejectValue& aValue) -> void {
-          // Make a copy because we can't modified copy-captured lambda
-          // variables.
-          PromptResult pr2 = pr;
+              // Make a copy because we can't modified copy-captured lambda
+              // variables.
+              PromptResult pr2 = pr;
 
-          bool storageAccessCanBeGrantedAutomatically =
-              aValue.IsResolve() && aValue.ResolveValue();
+              // If the user didn't already click "allow" and we can autogrant,
+              // do that!
+              bool storageAccessCanBeGrantedAutomatically =
+                  aValue.IsResolve() && aValue.ResolveValue();
+              bool autoGrant = false;
+              if (pr2 == PromptResult::Pending &&
+                  storageAccessCanBeGrantedAutomatically) {
+                pr2 = PromptResult::Granted;
+                autoGrant = true;
 
-          bool autoGrant = false;
-          if (pr2 == PromptResult::Pending &&
-              storageAccessCanBeGrantedAutomatically) {
-            pr2 = PromptResult::Granted;
-            autoGrant = true;
-
-            Telemetry::AccumulateCategorical(
-                Telemetry::LABELS_STORAGE_ACCESS_API_UI::AllowAutomatically);
-          }
-
-          if (pr2 != PromptResult::Pending) {
-            MOZ_ASSERT_IF(pr2 != PromptResult::Granted,
-                          pr2 == PromptResult::Denied);
-            if (pr2 == PromptResult::Granted) {
-              ContentBlocking::StorageAccessPromptChoices choice =
-                  ContentBlocking::eAllow;
-              if (autoGrant) {
-                choice = ContentBlocking::eAllowAutoGrant;
+                Telemetry::AccumulateCategorical(
+                    Telemetry::LABELS_STORAGE_ACCESS_API_UI::
+                        AllowAutomatically);
               }
-              if (!autoGrant) {
-                p->Resolve(choice, __func__);
-              } else {
-                sapr->MaybeDelayAutomaticGrants()->Then(
-                    GetCurrentSerialEventTarget(), __func__,
-                    [p, choice] { p->Resolve(choice, __func__); },
-                    [p] { p->Reject(false, __func__); });
-              }
-              return;
-            }
-            p->Reject(false, __func__);
-            return;
-          }
 
-          sapr->RequestDelayedTask(
-              inner->EventTargetFor(TaskCategory::Other),
-              ContentPermissionRequestBase::DelayedTaskType::Request);
-        });
+              // If we can complete the permission request, do so.
+              if (pr2 != PromptResult::Pending) {
+                MOZ_ASSERT_IF(pr2 != PromptResult::Granted,
+                              pr2 == PromptResult::Denied);
+                if (pr2 == PromptResult::Granted) {
+                  StorageAccessAPIHelper::StorageAccessPromptChoices choice =
+                      StorageAccessAPIHelper::eAllow;
+                  if (autoGrant) {
+                    choice = StorageAccessAPIHelper::eAllowAutoGrant;
+                  }
+                  if (!autoGrant) {
+                    p->Resolve(choice, __func__);
+                  } else {
+                    sapr->MaybeDelayAutomaticGrants()->Then(
+                        GetCurrentSerialEventTarget(), __func__,
+                        [p, choice] { p->Resolve(choice, __func__); },
+                        [p] { p->Reject(false, __func__); });
+                  }
+                  return;
+                }
+                p->Reject(false, __func__);
+                return;
+              }
+
+              // If we get here, the auto-decision failed and we need to
+              // wait for the user prompt to complete.
+              sapr->RequestDelayedTask(
+                  inner->EventTargetFor(TaskCategory::Other),
+                  ContentPermissionRequestBase::DelayedTaskType::Request);
+            });
 
     return p;
   };
 
-  ContentBlocking::AllowAccessFor(NodePrincipal(), bc,
-                                  ContentBlockingNotifier::eStorageAccessAPI,
-                                  performFinalChecks)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [self, outer, promise] {
-            // Step 10. Grant the document access to cookies and store
-            // that fact for
-            //          the purposes of future calls to
-            //          hasStorageAccess() and requestStorageAccess().
-            outer->SetStorageAccessPermissionGranted(true);
-            self->NotifyUserGestureActivation();
-            promise->MaybeResolveWithUndefined();
-          },
-          [outer, promise] {
-            outer->SetStorageAccessPermissionGranted(false);
-            promise->MaybeRejectWithUndefined();
-          });
-
-  return promise.forget();
+  // Try to allow access for the given principal.
+  return StorageAccessAPIHelper::AllowAccessFor(principal, aBrowsingContext,
+                                                aNotifier, performFinalChecks);
 }
 
-already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccessForOrigin(
-    const nsAString& aThirdPartyOrigin, const bool aRequireUserActivation,
+already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccess(
     mozilla::ErrorResult& aRv) {
   nsIGlobalObject* global = GetScopeObject();
   if (!global) {
@@ -17184,227 +16939,304 @@ already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccessForOrigin(
     return nullptr;
   }
 
-  // Window doesn't have user activation, reject.
-  bool hasUserActivation = this->HasValidTransientUserGestureActivation();
-  if (aRequireUserActivation && !hasUserActivation) {
+  // Step 0: Check that we have user activation before proceeding to prevent
+  // rapid calls to the API to leak information.
+  if (!HasValidTransientUserGestureActivation()) {
+    // Report an error to the console for this case
     nsContentUtils::ReportToConsole(nsIScriptError::errorFlag,
                                     nsLiteralCString("requestStorageAccess"),
                                     this, nsContentUtils::eDOM_PROPERTIES,
                                     "RequestStorageAccessUserGesture");
+    this->ConsumeTransientUserGestureActivation();
     promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> inner = GetInnerWindow();
+  // Get a pointer to the inner window- We need this for convenience sake
+  RefPtr<nsPIDOMWindowInner> inner = this->GetInnerWindow();
   if (!inner) {
     this->ConsumeTransientUserGestureActivation();
     promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
 
-  // We only allow request storage access for third-party origin from the
-  // first-party context.
-  if (AntiTrackingUtils::IsThirdPartyWindow(inner, nullptr)) {
+  // Step 1: Check if the principal calling this has a permission that lets
+  // them use cookies or forbids them from using cookies.
+  // This is outside of the spec of the StorageAccess API, but makes the return
+  // values to have proper semantics.
+  Maybe<bool> resultBecauseCookiesApproved =
+      StorageAccessAPIHelper::CheckCookiesPermittedDecidesStorageAccessAPI(
+          CookieJarSettings(), NodePrincipal());
+  if (resultBecauseCookiesApproved.isSome()) {
+    if (resultBecauseCookiesApproved.value()) {
+      promise->MaybeResolveWithUndefined();
+      return promise.forget();
+    } else {
+      this->ConsumeTransientUserGestureActivation();
+      promise->MaybeRejectWithUndefined();
+      return promise.forget();
+    }
+  }
+
+  // Step 2: Check if the browser settings always allow or deny cookies.
+  // We should always return a resolved promise if the cookieBehavior is ACCEPT.
+  // This is outside of the spec of the StorageAccess API, but makes the return
+  // values to have proper semantics.
+  bool isThirdPartyDocument = AntiTrackingUtils::IsThirdPartyDocument(this);
+  bool isOnRejectForeignAllowList = RejectForeignAllowList::Check(this);
+  bool isOnThirdPartySkipList = false;
+  if (mChannel) {
+    nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
+    isOnThirdPartySkipList = loadInfo->GetStoragePermission() ==
+                             nsILoadInfo::StoragePermissionAllowListed;
+  }
+  bool isThirdPartyTracker =
+      nsContentUtils::IsThirdPartyTrackingResourceWindow(inner);
+  Maybe<bool> resultBecauseBrowserSettings =
+      StorageAccessAPIHelper::CheckBrowserSettingsDecidesStorageAccessAPI(
+          CookieJarSettings(), isThirdPartyDocument, isOnRejectForeignAllowList,
+          isOnThirdPartySkipList, isThirdPartyTracker);
+  if (resultBecauseBrowserSettings.isSome()) {
+    if (resultBecauseBrowserSettings.value()) {
+      promise->MaybeResolveWithUndefined();
+      return promise.forget();
+    } else {
+      this->ConsumeTransientUserGestureActivation();
+      promise->MaybeRejectWithUndefined();
+      return promise.forget();
+    }
+  }
+
+  // Step 3: Check if the Document calling requestStorageAccess has anything to
+  // gain from storage access. It should be embedded, non-null, etc.
+  Maybe<bool> resultBecauseCallContext =
+      StorageAccessAPIHelper::CheckCallingContextDecidesStorageAccessAPI(this,
+                                                                         true);
+  if (resultBecauseCallContext.isSome()) {
+    if (resultBecauseCallContext.value()) {
+      promise->MaybeResolveWithUndefined();
+      return promise.forget();
+    } else {
+      this->ConsumeTransientUserGestureActivation();
+      promise->MaybeRejectWithUndefined();
+      return promise.forget();
+    }
+  }
+
+  // Step 4: Check if we already allowed or denied storage access for this
+  // document's storage key.
+  Maybe<bool> resultBecausePreviousPermission =
+      StorageAccessAPIHelper::CheckExistingPermissionDecidesStorageAccessAPI(
+          this);
+  if (resultBecausePreviousPermission.isSome()) {
+    if (resultBecausePreviousPermission.value()) {
+      promise->MaybeResolveWithUndefined();
+      return promise.forget();
+    } else {
+      this->ConsumeTransientUserGestureActivation();
+      promise->MaybeRejectWithUndefined();
+      return promise.forget();
+    }
+  }
+
+  // Get pointers to some objects that will be used in the async portion
+  RefPtr<BrowsingContext> bc = this->GetBrowsingContext();
+  RefPtr<nsGlobalWindowOuter> outer =
+      nsGlobalWindowOuter::Cast(inner->GetOuterWindow());
+  if (!outer) {
     this->ConsumeTransientUserGestureActivation();
     promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
+  RefPtr<Document> self(this);
 
-  // If the document has a null origin, reject.
-  if (NodePrincipal()->GetIsNullPrincipal()) {
+  // Consume user activation before entering the async part of this method.
+  // This prevents usage of other transient activation-gated APIs.
+  this->ConsumeTransientUserGestureActivation();
+
+  // Step 5. Start an async call to request storage access. This will either
+  // perform an automatic decision or notify the user, then perform some follow
+  // on work changing state to reflect the result of the API. If it resolves,
+  // the request was granted. If it rejects it was denied.
+  RequestStorageAccessAsyncHelper(inner, bc, NodePrincipal(), true,
+                                  ContentBlockingNotifier::eStorageAccessAPI)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self, inner, promise] {
+            inner->SaveStorageAccessPermissionGranted();
+            self->NotifyUserGestureActivation();
+            promise->MaybeResolveWithUndefined();
+          },
+          [promise] { promise->MaybeRejectWithUndefined(); });
+
+  return promise.forget();
+}
+
+already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccessForOrigin(
+    const nsAString& aThirdPartyOrigin, const bool aRequireUserActivation,
+    mozilla::ErrorResult& aRv) {
+  nsIGlobalObject* global = GetScopeObject();
+  if (!global) {
+    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+    return nullptr;
+  }
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  // Step 0: Check that we have user activation before proceeding to prevent
+  // rapid calls to the API to leak information.
+  if (aRequireUserActivation && !HasValidTransientUserGestureActivation()) {
+    // Report an error to the console for this case
     nsContentUtils::ReportToConsole(nsIScriptError::errorFlag,
                                     nsLiteralCString("requestStorageAccess"),
                                     this, nsContentUtils::eDOM_PROPERTIES,
-                                    "RequestStorageAccessNullPrincipal");
+                                    "RequestStorageAccessUserGesture");
     this->ConsumeTransientUserGestureActivation();
     promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
 
+  // Step 1: Check if the provided URI is different-site to this Document
   nsCOMPtr<nsIURI> thirdPartyURI;
   nsresult rv = NS_NewURI(getter_AddRefs(thirdPartyURI), aThirdPartyOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;
   }
-
-  // If the browser forbids any storage access, reject.
-  if (CookieJarSettings()->GetBlockingAllContexts()) {
-    this->ConsumeTransientUserGestureActivation();
-    promise->MaybeRejectWithUndefined();
-    return promise.forget();
+  bool isThirdPartyDocument;
+  rv = NodePrincipal()->IsThirdPartyURI(thirdPartyURI, &isThirdPartyDocument);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
+    return nullptr;
   }
-
-  // Only enforce third-party checks when there is a reason to enforce them.
-  if (!CookieJarSettings()->GetRejectThirdPartyContexts()) {
-    // If the the thrid party origin is equal to the window's, resolve.
-    if (NodePrincipal()->IsSameOrigin(thirdPartyURI)) {
+  bool isOnRejectForeignAllowList =
+      RejectForeignAllowList::Check(thirdPartyURI);
+  Maybe<bool> resultBecauseBrowserSettings =
+      StorageAccessAPIHelper::CheckBrowserSettingsDecidesStorageAccessAPI(
+          CookieJarSettings(), isThirdPartyDocument, isOnRejectForeignAllowList,
+          false, true);
+  if (resultBecauseBrowserSettings.isSome()) {
+    if (resultBecauseBrowserSettings.value()) {
       promise->MaybeResolveWithUndefined();
       return promise.forget();
     }
-  }
-
-  // Check any additional rules that the browser has.
-
-  if (CookieJarSettings()->GetBlockingAllThirdPartyContexts()) {
     this->ConsumeTransientUserGestureActivation();
     promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
 
-  if (CookieJarSettings()->GetRejectThirdPartyContexts()) {
-    RefPtr<BrowsingContext> bc = GetBrowsingContext();
-    if (!bc) {
-      this->ConsumeTransientUserGestureActivation();
-      promise->MaybeRejectWithUndefined();
+  // Step 2: Check that this Document is same-site to the top, and check that
+  // we have user activation if we require it.
+  Maybe<bool> resultBecauseCallContext = StorageAccessAPIHelper::
+      CheckSameSiteCallingContextDecidesStorageAccessAPI(
+          this, aRequireUserActivation);
+  if (resultBecauseCallContext.isSome()) {
+    if (resultBecauseCallContext.value()) {
+      promise->MaybeResolveWithUndefined();
       return promise.forget();
     }
-
-    nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateContentPrincipal(
-        thirdPartyURI, NodePrincipal()->OriginAttributesRef());
-
-    if (!principal) {
-      this->ConsumeTransientUserGestureActivation();
-      promise->MaybeRejectWithUndefined();
-      return promise.forget();
-    }
-
-    RefPtr<Document> self(this);
-
-    // Consume user activation before entering the async part of this method.
-    // This prevents usage of other transient activation-gated APIs.
     this->ConsumeTransientUserGestureActivation();
-
-    auto performFinalChecks = [inner, self, principal, hasUserActivation]() {
-      RefPtr<ContentBlocking::StorageAccessFinalCheckPromise::Private> p =
-          new ContentBlocking::StorageAccessFinalCheckPromise::Private(
-              __func__);
-      RefPtr<StorageAccessPermissionRequest> sapr =
-          StorageAccessPermissionRequest::Create(
-              inner, principal,
-              // Allow
-              [p] {
-                Telemetry::AccumulateCategorical(
-                    Telemetry::LABELS_STORAGE_ACCESS_API_UI::Allow);
-                p->Resolve(ContentBlocking::eAllow, __func__);
-              },
-              // Block
-              [p] {
-                Telemetry::AccumulateCategorical(
-                    Telemetry::LABELS_STORAGE_ACCESS_API_UI::Deny);
-                p->Reject(false, __func__);
-              });
-
-      using PromptResult = ContentPermissionRequestBase::PromptResult;
-      PromptResult pr = sapr->CheckPromptPrefs();
-
-      if (pr == PromptResult::Pending) {
-        // We're about to show a prompt, record the request attempt
-        Telemetry::AccumulateCategorical(
-            Telemetry::LABELS_STORAGE_ACCESS_API_UI::Request);
-      }
-
-      self->AutomaticStorageAccessPermissionCanBeGranted(hasUserActivation)
-          ->Then(GetCurrentSerialEventTarget(), __func__,
-                 [p, pr, sapr,
-                  inner](const AutomaticStorageAccessPermissionGrantPromise::
-                             ResolveOrRejectValue& aValue) -> void {
-                   // Make a copy because we can't modified copy-captured lambda
-                   // variables.
-                   PromptResult pr2 = pr;
-
-                   bool storageAccessCanBeGrantedAutomatically =
-                       aValue.IsResolve() && aValue.ResolveValue();
-
-                   bool autoGrant = false;
-                   if (pr2 == PromptResult::Pending &&
-                       storageAccessCanBeGrantedAutomatically) {
-                     pr2 = PromptResult::Granted;
-                     autoGrant = true;
-
-                     Telemetry::AccumulateCategorical(
-                         Telemetry::LABELS_STORAGE_ACCESS_API_UI::
-                             AllowAutomatically);
-                   }
-
-                   if (pr2 != PromptResult::Pending) {
-                     MOZ_ASSERT_IF(pr2 != PromptResult::Granted,
-                                   pr2 == PromptResult::Denied);
-                     if (pr2 == PromptResult::Granted) {
-                       ContentBlocking::StorageAccessPromptChoices choice =
-                           ContentBlocking::eAllow;
-                       if (autoGrant) {
-                         choice = ContentBlocking::eAllowAutoGrant;
-                       }
-                       if (!autoGrant) {
-                         p->Resolve(choice, __func__);
-                       } else {
-                         sapr->MaybeDelayAutomaticGrants()->Then(
-                             GetCurrentSerialEventTarget(), __func__,
-                             [p, choice] { p->Resolve(choice, __func__); },
-                             [p] { p->Reject(false, __func__); });
-                       }
-                       return;
-                     }
-                     p->Reject(false, __func__);
-                     return;
-                   }
-
-                   sapr->RequestDelayedTask(
-                       inner->EventTargetFor(TaskCategory::Other),
-                       ContentPermissionRequestBase::DelayedTaskType::Request);
-                 });
-
-      return p;
-    };
-
-    // Only do something special for the third party that storage has been
-    // disabled by anti-tracking feature.
-    AsyncStorageDisabledByAntiTracking(bc, principal)
-        ->Then(
-            GetCurrentSerialEventTarget(), __func__,
-            [performFinalChecks, promise, bc, principal,
-             self](AsyncStorageDisabledByAntiTrackingPromise::
-                       ResolveOrRejectValue&& aValue) {
-              if (aValue.IsReject()) {
-                // Storage was enabled by anti-tracking feature.
-                return ContentBlocking::StorageAccessPermissionGrantPromise::
-                    CreateAndResolve(0, __func__);
-              }
-
-              MOZ_ASSERT(aValue.IsResolve());
-              // Storage was disabled by anti-tracking feature.
-
-              // If the storage was disabled by the cookie permission, we don't
-              // bother to show the prompt.
-              uint32_t rejectReason = aValue.ResolveValue();
-              if (rejectReason ==
-                  nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION) {
-                return ContentBlocking::StorageAccessPermissionGrantPromise::
-                    CreateAndReject(true, __func__);
-                ;
-              }
-
-              MOZ_ASSERT(!self->CookieJarSettings()
-                              ->GetIsOnContentBlockingAllowList());
-
-              return ContentBlocking::AllowAccessFor(
-                  principal, bc,
-                  ContentBlockingNotifier::ePrivilegeStorageAccessForOriginAPI,
-                  performFinalChecks);
-            })
-        ->Then(
-            GetCurrentSerialEventTarget(), __func__,
-            [self, promise] {
-              self->NotifyUserGestureActivation();
-              promise->MaybeResolveWithUndefined();
-            },
-            [promise] { promise->MaybeRejectWithUndefined(); });
-
+    promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
 
-  promise->MaybeResolveWithUndefined();
+  // Step 3: Get some useful variables that can be captured by the lambda for
+  // the asynchronous portion
+  RefPtr<BrowsingContext> bc = this->GetBrowsingContext();
+  nsCOMPtr<nsPIDOMWindowInner> inner = this->GetInnerWindow();
+  if (!inner) {
+    this->ConsumeTransientUserGestureActivation();
+    promise->MaybeRejectWithUndefined();
+    return promise.forget();
+  }
+  RefPtr<nsGlobalWindowOuter> outer =
+      nsGlobalWindowOuter::Cast(inner->GetOuterWindow());
+  if (!outer) {
+    this->ConsumeTransientUserGestureActivation();
+    promise->MaybeRejectWithUndefined();
+    return promise.forget();
+  }
+  nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateContentPrincipal(
+      thirdPartyURI, NodePrincipal()->OriginAttributesRef());
+  if (!principal) {
+    this->ConsumeTransientUserGestureActivation();
+    promise->MaybeRejectWithUndefined();
+    return promise.forget();
+  }
+
+  RefPtr<Document> self(this);
+  bool hasUserActivation = HasValidTransientUserGestureActivation();
+
+  // Consume user activation before entering the async part of this method.
+  // This prevents usage of other transient activation-gated APIs.
+  this->ConsumeTransientUserGestureActivation();
+
+  // Step 4a: Start the async part of this function. Check the cookie
+  // permission, but this can't be done in this process. We needs the cookie
+  // permission of the URL as if it were embedded on this page, so we need to
+  // make this check in the ContentParent.
+  StorageAccessAPIHelper::AsyncCheckCookiesPermittedDecidesStorageAccessAPI(
+      GetBrowsingContext(), principal)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [inner, thirdPartyURI, bc, principal, hasUserActivation, self,
+           promise](Maybe<bool> cookieResult) {
+            // Handle the result of the cookie permission check that took place
+            // in the ContentParent.
+            if (cookieResult.isSome()) {
+              if (cookieResult.value()) {
+                return MozPromise<int, bool, true>::CreateAndResolve(true,
+                                                                     __func__);
+              }
+              return MozPromise<int, bool, true>::CreateAndReject(false,
+                                                                  __func__);
+            }
+
+            // Step 4b: Check for the existing storage access permission
+            nsAutoCString type;
+            bool ok =
+                AntiTrackingUtils::CreateStoragePermissionKey(principal, type);
+            if (!ok) {
+              return MozPromise<int, bool, true>::CreateAndReject(false,
+                                                                  __func__);
+            }
+            if (AntiTrackingUtils::CheckStoragePermission(
+                    self->NodePrincipal(), type,
+                    nsContentUtils::IsInPrivateBrowsing(self), nullptr, 0)) {
+              return MozPromise<int, bool, true>::CreateAndResolve(true,
+                                                                   __func__);
+            }
+
+            // Step 4c: Try to request storage access, either automatically or
+            // with a user-prompt. This is the part that is async in the
+            // typical requestStorageAccess function.
+            return self->RequestStorageAccessAsyncHelper(
+                inner, bc, principal, hasUserActivation,
+                ContentBlockingNotifier::ePrivilegeStorageAccessForOriginAPI);
+          },
+          // If the IPC rejects, we should reject our promise here which will
+          // cause a rejection of the promise we already returned
+          [promise]() {
+            return MozPromise<int, bool, true>::CreateAndReject(false,
+                                                                __func__);
+          })
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          // If the previous handlers resolved, we should reinstate user
+          // activation and resolve the promise we returned in Step 5.
+          [self, inner, promise] {
+            inner->SaveStorageAccessPermissionGranted();
+            self->NotifyUserGestureActivation();
+            promise->MaybeResolveWithUndefined();
+          },
+          // If the previous handler rejected, we should reject the promise
+          // returned by this function.
+          [promise] { promise->MaybeRejectWithUndefined(); });
+
+  // Step 5: While the async stuff is happening, we should return the promise so
+  // our caller can continue executing.
   return promise.forget();
 }
 
@@ -17736,8 +17568,7 @@ nsIPrincipal* Document::EffectiveStoragePrincipal() const {
   // We use the lower-level ContentBlocking API here to ensure this
   // check doesn't send notifications.
   uint32_t rejectedReason = 0;
-  if (ContentBlocking::ShouldAllowAccessFor(inner, GetDocumentURI(),
-                                            &rejectedReason)) {
+  if (ShouldAllowAccessFor(inner, GetDocumentURI(), &rejectedReason)) {
     return mActiveStoragePrincipal = NodePrincipal();
   }
 

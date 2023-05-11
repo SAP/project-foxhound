@@ -1388,6 +1388,9 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
 /* static */ Maybe<gfx::TransferFunction> gfxUtils::CicpToTransferFunction(
     const CICP::TransferCharacteristics aTransferCharacteristics) {
   switch (aTransferCharacteristics) {
+    case CICP::TransferCharacteristics::TC_BT709:
+      return Some(gfx::TransferFunction::BT709);
+
     case CICP::TransferCharacteristics::TC_SRGB:
       return Some(gfx::TransferFunction::SRGB);
 
@@ -1697,6 +1700,22 @@ DeviceColor ToDeviceColor(nscolor aColor) {
 
 DeviceColor ToDeviceColor(const StyleRGBA& aColor) {
   return ToDeviceColor(aColor.ToColor());
+}
+
+sRGBColor ToSRGBColor(const StyleAnimatedRGBA& aColor) {
+  const auto ToComponent = [](float aF) -> float {
+    float component = std::min(std::max(0.0f, aF), 1.0f);
+    if (MOZ_UNLIKELY(!std::isfinite(component))) {
+      return 0.0f;
+    }
+    return component;
+  };
+  return {ToComponent(aColor.red), ToComponent(aColor.green),
+          ToComponent(aColor.blue), ToComponent(aColor.alpha)};
+}
+
+DeviceColor ToDeviceColor(const StyleAnimatedRGBA& aColor) {
+  return ToDeviceColor(ToSRGBColor(aColor));
 }
 
 }  // namespace gfx

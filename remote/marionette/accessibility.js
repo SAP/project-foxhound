@@ -11,30 +11,32 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
   Log: "chrome://remote/content/shared/Log.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.MARIONETTE)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
 
-XPCOMUtils.defineLazyGetter(this, "service", () => {
+XPCOMUtils.defineLazyGetter(lazy, "service", () => {
   try {
     return Cc["@mozilla.org/accessibilityService;1"].getService(
       Ci.nsIAccessibilityService
     );
   } catch (e) {
-    logger.warn("Accessibility module is not present");
+    lazy.logger.warn("Accessibility module is not present");
     return undefined;
   }
 });
 
 /** @namespace */
-this.accessibility = {
+const accessibility = {
   get service() {
-    return service;
+    return lazy.service;
   },
 };
 
@@ -457,6 +459,6 @@ accessibility.Checks = class {
       message += `: id: ${id}, tagName: ${tagName}, className: ${className}`;
     }
 
-    throw new error.ElementNotAccessibleError(message);
+    throw new lazy.error.ElementNotAccessibleError(message);
   }
 };

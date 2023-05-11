@@ -41,23 +41,40 @@ module.exports = {
 
   overrides: [
     {
-      // We don't have the general browser environment for jsm files, but we do
-      // have our own special environments for them.
+      // System mjs files and jsm files are not loaded in the browser scope,
+      // so we turn that off for those. Though we do have our own special
+      // environment for them.
       env: {
         browser: false,
         "mozilla/jsm": true,
       },
-      files: ["**/*.mjs", "**/*.jsm", "**/*.jsm.js"],
+      files: ["**/*.sys.mjs", "**/*.jsm", "**/*.jsm.js"],
       rules: {
+        "mozilla/lazy-getter-object-name": "error",
+        "mozilla/reject-eager-module-in-lazy-getter": "error",
+        "mozilla/reject-global-this": "error",
+        "mozilla/reject-globalThis-modification": "error",
         "mozilla/reject-top-level-await": "error",
         // Bug 1703953: We don't have a good way to check a file runs in a
-        // privilieged context. Apply this for jsm files as we know those are
+        // privilieged context. Apply this for these files as we know those are
         // privilieged, and then include more directories elsewhere.
         "mozilla/use-isInstance": "error",
         // TODO: Bug 1575506 turn `builtinGlobals` on here.
         // We can enable builtinGlobals for jsms due to their scopes.
         "no-redeclare": ["error", { builtinGlobals: false }],
-        // JSM modules are far easier to check for no-unused-vars on a global scope,
+      },
+    },
+    {
+      // Temporarily disable until the proxy-based loader gets landed.
+      files: ["browser/components/urlbar/**"],
+      rules: {
+        "mozilla/reject-global-this": "off",
+      },
+    },
+    {
+      files: ["**/*.mjs", "**/*.jsm"],
+      rules: {
+        // Modules are far easier to check for no-unused-vars on a global scope,
         // than our content files. Hence we turn that on here.
         "no-unused-vars": [
           "error",
@@ -66,6 +83,13 @@ module.exports = {
             vars: "all",
           },
         ],
+      },
+    },
+    {
+      excludedFiles: ["**/*.sys.mjs"],
+      files: ["**/*.mjs"],
+      rules: {
+        "mozilla/reject-import-system-module-from-non-system": "error",
       },
     },
     {
@@ -157,6 +181,8 @@ module.exports = {
     "mozilla/use-ownerGlobal": "error",
     "mozilla/use-returnValue": "error",
     "mozilla/use-services": "error",
+    "mozilla/valid-lazy": "error",
+    "mozilla/valid-services": "error",
 
     // Use [] instead of Array()
     "no-array-constructor": "error",

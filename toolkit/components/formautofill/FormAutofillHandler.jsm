@@ -22,32 +22,24 @@ const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
+const { FormAutofillUtils } = ChromeUtils.import(
   "resource://autofill/FormAutofillUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCardTelemetry",
-  "resource://autofill/FormAutofillTelemetryUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillHeuristics",
-  "resource://autofill/FormAutofillHeuristics.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormLikeFactory",
-  "resource://gre/modules/FormLikeFactory.jsm"
-);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.jsm",
+  CreditCardTelemetry: "resource://autofill/FormAutofillTelemetryUtils.jsm",
+  FormAutofillHeuristics: "resource://autofill/FormAutofillHeuristics.jsm",
+  FormLikeFactory: "resource://gre/modules/FormLikeFactory.jsm",
+});
 
 const formFillController = Cc[
   "@mozilla.org/satchel/form-fill-controller;1"
 ].getService(Ci.nsIFormFillController);
 
-XPCOMUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
+XPCOMUtils.defineLazyGetter(lazy, "reauthPasswordPromptMessage", () => {
   const brandShortName = FormAutofillUtils.brandBundle.GetStringFromName(
     "brandShortName"
   );
@@ -59,12 +51,9 @@ XPCOMUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
   );
 });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  CreditCard: "resource://gre/modules/CreditCard.jsm",
-});
-
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
+XPCOMUtils.defineLazyGetter(lazy, "log", () =>
+  FormAutofill.defineLogGetter(lazy, EXPORTED_SYMBOLS[0])
+);
 
 const { FIELD_STATES } = FormAutofillUtils;
 
@@ -88,7 +77,7 @@ class FormAutofillSection {
 
     if (!this.isValidSection()) {
       this.fieldDetails = [];
-      log.debug(
+      lazy.log.debug(
         `Ignoring ${this.constructor.name} related fields since it is an invalid section`
       );
     }
@@ -223,7 +212,7 @@ class FormAutofillSection {
       }
 
       let element = fieldDetail.elementWeakRef.get();
-      if (ChromeUtils.getClassName(element) !== "HTMLSelectElement") {
+      if (!HTMLSelectElement.isInstance(element)) {
         continue;
       }
 
@@ -343,7 +332,7 @@ class FormAutofillSection {
     }
 
     if (!(await this.prepareFillingProfile(profile))) {
-      log.debug("profile cannot be filled");
+      lazy.log.debug("profile cannot be filled");
       return false;
     }
 
@@ -376,7 +365,7 @@ class FormAutofillSection {
       if (fieldDetail.transform) {
         value = fieldDetail.transform(value);
       }
-      if (ChromeUtils.getClassName(element) === "HTMLInputElement" && value) {
+      if (HTMLInputElement.isInstance(element) && value) {
         // For the focused input element, it will be filled with a valid value
         // anyway.
         // For the others, the fields should be only filled when their values are empty
@@ -392,7 +381,7 @@ class FormAutofillSection {
           element.setUserInput(value);
           this._changeFieldState(fieldDetail, FIELD_STATES.AUTO_FILLED);
         }
-      } else if (ChromeUtils.getClassName(element) === "HTMLSelectElement") {
+      } else if (HTMLSelectElement.isInstance(element)) {
         let cache = this._cacheValue.matchingSelectOption.get(element) || {};
         let option = cache[value] && cache[value].get();
         if (!option) {
@@ -441,7 +430,7 @@ class FormAutofillSection {
         continue;
       }
 
-      if (ChromeUtils.getClassName(element) === "HTMLSelectElement") {
+      if (HTMLSelectElement.isInstance(element)) {
         // Unlike text input, select element is always previewed even if
         // the option is already selected.
         if (value) {
@@ -469,12 +458,12 @@ class FormAutofillSection {
    * Clear preview text and background highlight of all fields.
    */
   clearPreviewedFormFields() {
-    log.debug("clear previewed fields");
+    lazy.log.debug("clear previewed fields");
 
     for (let fieldDetail of this.fieldDetails) {
       let element = fieldDetail.elementWeakRef.get();
       if (!element) {
-        log.warn(fieldDetail.fieldName, "is unreachable");
+        lazy.log.warn(fieldDetail.fieldName, "is unreachable");
         continue;
       }
 
@@ -497,14 +486,14 @@ class FormAutofillSection {
     for (let fieldDetail of this.fieldDetails) {
       let element = fieldDetail.elementWeakRef.get();
       if (!element) {
-        log.warn(fieldDetail.fieldName, "is unreachable");
+        lazy.log.warn(fieldDetail.fieldName, "is unreachable");
         continue;
       }
 
       if (fieldDetail.state == FIELD_STATES.AUTO_FILLED) {
-        if (ChromeUtils.getClassName(element) === "HTMLInputElement") {
+        if (HTMLInputElement.isInstance(element)) {
           element.setUserInput("");
-        } else if (ChromeUtils.getClassName(element) === "HTMLSelectElement") {
+        } else if (HTMLSelectElement.isInstance(element)) {
           // If we can't find a selected option, then we should just reset to the first option's value
           this._resetSelectElementValue(element);
         }
@@ -524,11 +513,14 @@ class FormAutofillSection {
     let element = fieldDetail.elementWeakRef.get();
 
     if (!element) {
-      log.warn(fieldDetail.fieldName, "is unreachable while changing state");
+      lazy.log.warn(
+        fieldDetail.fieldName,
+        "is unreachable while changing state"
+      );
       return;
     }
     if (!(nextState in this._FIELD_STATE_ENUM)) {
-      log.warn(
+      lazy.log.warn(
         fieldDetail.fieldName,
         "is trying to change to an invalid state"
       );
@@ -677,7 +669,7 @@ class FormAutofillSection {
         // If the user manually blanks a credit card field, then
         // we want the popup to be activated.
         if (
-          ChromeUtils.getClassName(target) !== "HTMLSelectElement" &&
+          !HTMLSelectElement.isInstance(target) &&
           isCreditCardField &&
           target.value === ""
         ) {
@@ -691,7 +683,7 @@ class FormAutofillSection {
         this._changeFieldState(targetFieldDetail, FIELD_STATES.NORMAL);
 
         if (isCreditCardField) {
-          CreditCardTelemetry.recordFilledModified(
+          lazy.CreditCardTelemetry.recordFilledModified(
             this.flowId,
             targetFieldDetail.fieldName
           );
@@ -702,7 +694,7 @@ class FormAutofillSection {
         for (const fieldDetail of this.fieldDetails) {
           const element = fieldDetail.elementWeakRef.get();
 
-          if (ChromeUtils.getClassName(element) === "HTMLSelectElement") {
+          if (HTMLSelectElement.isInstance(element)) {
             // Dim fields are those we don't attempt to revert their value
             // when clear the target set, such as <select>.
             dimFieldDetails.push(fieldDetail);
@@ -772,7 +764,10 @@ class FormAutofillAddressSection extends FormAutofillSection {
     ) {
       // We don't want to save data in the wrong fields due to not having proper
       // heuristic regexes in countries we don't yet support.
-      log.warn("isRecordCreatable: Country not supported:", record.country);
+      lazy.log.warn(
+        "isRecordCreatable: Country not supported:",
+        record.country
+      );
       return false;
     }
 
@@ -813,8 +808,7 @@ class FormAutofillAddressSection extends FormAutofillSection {
       let streetAddressDetail = this.getFieldDetailByName("street-address");
       if (
         streetAddressDetail &&
-        ChromeUtils.getClassName(streetAddressDetail.elementWeakRef.get()) ===
-          "HTMLInputElement"
+        HTMLInputElement.isInstance(streetAddressDetail.elementWeakRef.get())
       ) {
         profile["street-address"] = profile["-moz-street-address-one-line"];
       }
@@ -907,7 +901,7 @@ class FormAutofillAddressSection extends FormAutofillSection {
     // Try to abbreviate the value of select element.
     if (
       fieldDetail.fieldName == "address-level1" &&
-      ChromeUtils.getClassName(element) === "HTMLSelectElement"
+      HTMLSelectElement.isInstance(element)
     ) {
       // Don't save the record when the option value is empty *OR* there
       // are multiple options being selected. The empty option is usually
@@ -990,18 +984,21 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
 
     // Identifier used to correlate events relating to the same form
     this.flowId = Services.uuid.generateUUID().toString();
-    log.debug("Creating new credit card section with flowId =", this.flowId);
+    lazy.log.debug(
+      "Creating new credit card section with flowId =",
+      this.flowId
+    );
 
     if (!this.isValidSection()) {
       return;
     }
 
-    CreditCardTelemetry.recordFormDetected(this.flowId, fieldDetails);
+    lazy.CreditCardTelemetry.recordFormDetected(this.flowId, fieldDetails);
 
     // Check whether the section is in an <iframe>; and, if so,
     // watch for the <iframe> to pagehide.
     if (handler.window.location != handler.window.parent?.location) {
-      log.debug(
+      lazy.log.debug(
         "Credit card form is in an iframe -- watching for pagehide",
         fieldDetails
       );
@@ -1017,7 +1014,7 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
       "pagehide",
       this._handlePageHide.bind(this)
     );
-    log.debug("Credit card subframe is pagehideing", this.handler.form);
+    lazy.log.debug("Credit card subframe is pagehideing", this.handler.form);
     this.handler.onFormSubmitted();
   }
 
@@ -1256,12 +1253,12 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
   computeFillingValue(value, fieldDetail, element) {
     if (
       fieldDetail.fieldName != "cc-type" ||
-      ChromeUtils.getClassName(element) !== "HTMLSelectElement"
+      !HTMLSelectElement.isInstance(element)
     ) {
       return value;
     }
 
-    if (CreditCard.isValidNetwork(value)) {
+    if (lazy.CreditCard.isValidNetwork(value)) {
       return value;
     }
 
@@ -1271,8 +1268,8 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
     if (value && element.selectedOptions.length == 1) {
       let selectedOption = element.selectedOptions[0];
       let networkType =
-        CreditCard.getNetworkFromName(selectedOption.text) ??
-        CreditCard.getNetworkFromName(selectedOption.value);
+        lazy.CreditCard.getNetworkFromName(selectedOption.text) ??
+        lazy.CreditCard.getNetworkFromName(selectedOption.value);
       if (networkType) {
         return networkType;
       }
@@ -1315,7 +1312,7 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
     if (profile["cc-number-encrypted"]) {
       let decrypted = await this._decrypt(
         profile["cc-number-encrypted"],
-        reauthPasswordPromptMessage
+        lazy.reauthPasswordPromptMessage
       );
 
       if (!decrypted) {
@@ -1333,7 +1330,7 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
       return false;
     }
 
-    CreditCardTelemetry.recordFormFilled(
+    lazy.CreditCardTelemetry.recordFormFilled(
       this.flowId,
       this.fieldDetails,
       profile
@@ -1346,12 +1343,12 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
       return;
     }
     // Normalize cc-number
-    creditCard.record["cc-number"] = CreditCard.normalizeCardNumber(
+    creditCard.record["cc-number"] = lazy.CreditCard.normalizeCardNumber(
       creditCard.record["cc-number"]
     );
 
     // Normalize cc-exp-month and cc-exp-year
-    let { month, year } = CreditCard.normalizeExpiration({
+    let { month, year } = lazy.CreditCard.normalizeExpiration({
       expirationString: creditCard.record["cc-exp"],
       expirationMonth: creditCard.record["cc-exp-month"],
       expirationYear: creditCard.record["cc-exp-year"],
@@ -1442,7 +1439,7 @@ class FormAutofillHandler {
     let _formLike;
     let getFormLike = () => {
       if (!_formLike) {
-        _formLike = FormLikeFactory.createFromField(element);
+        _formLike = lazy.FormLikeFactory.createFromField(element);
       }
       return _formLike;
     };
@@ -1453,13 +1450,13 @@ class FormAutofillHandler {
     }
 
     if (currentForm.elements.length != this.form.elements.length) {
-      log.debug("The count of form elements is changed.");
+      lazy.log.debug("The count of form elements is changed.");
       this._updateForm(getFormLike());
       return true;
     }
 
     if (!this.form.elements.includes(element)) {
-      log.debug("The element can not be found in the current form.");
+      lazy.log.debug("The element can not be found in the current form.");
       this._updateForm(getFormLike());
       return true;
     }
@@ -1506,7 +1503,7 @@ class FormAutofillHandler {
    * @returns {Array} The valid address and credit card details.
    */
   collectFormFields(allowDuplicates = false) {
-    let sections = FormAutofillHeuristics.getFormInfo(
+    let sections = lazy.FormAutofillHeuristics.getFormInfo(
       this.form,
       allowDuplicates
     );
@@ -1577,7 +1574,7 @@ class FormAutofillHandler {
 
     if (noFilledSectionsPreviously) {
       // Handle the highlight style resetting caused by user's correction afterward.
-      log.debug("register change handler for filled form:", this.form);
+      lazy.log.debug("register change handler for filled form:", this.form);
       this.form.rootElement.addEventListener("input", onChangeHandler, {
         mozSystemGroup: true,
       });

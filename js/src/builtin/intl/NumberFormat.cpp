@@ -247,7 +247,7 @@ bool js::intl_availableMeasurementUnits(JSContext* cx, unsigned argc,
     return false;
   }
 
-  RootedAtom unitAtom(cx);
+  Rooted<JSAtom*> unitAtom(cx);
   for (auto unit : units.unwrap()) {
     if (unit.isErr()) {
       intl::ReportInternalError(cx);
@@ -289,7 +289,7 @@ static UniqueChars NumberFormatLocale(JSContext* cx, HandleObject internals) {
 
   mozilla::intl::Locale tag;
   {
-    RootedLinearString locale(cx, value.toString()->ensureLinear(cx));
+    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
     if (!locale) {
       return nullptr;
     }
@@ -883,8 +883,8 @@ static bool FormattedNumberToParts(JSContext* cx, HandleString str,
   RootedObject singlePart(cx);
   RootedValue propVal(cx);
 
-  RootedArrayObject partsArray(cx,
-                               NewDenseFullyAllocatedArray(cx, parts.length()));
+  Rooted<ArrayObject*> partsArray(
+      cx, NewDenseFullyAllocatedArray(cx, parts.length()));
   if (!partsArray) {
     return false;
   }
@@ -1021,11 +1021,8 @@ static bool ToIntlMathematicalValue(JSContext* cx, MutableHandleValue value,
     return false;
   }
 
-  // Call StringToNumber to validate the input can be parsed as a number.
-  double number;
-  if (!StringToNumber(cx, str, &number)) {
-    return false;
-  }
+  // Parse the string as a number.
+  double number = LinearStringToNumber(str);
   if (numberApproximation) {
     *numberApproximation = number;
   }
@@ -1368,12 +1365,12 @@ static bool ValidateNumberRange(JSContext* cx, MutableHandleValue start,
         // If both approximations are equal to each other, we have to perform
         // more work.
         if (endApprox == startApprox) {
-          RootedLinearString strStart(cx, ToLinearString(cx, start));
+          Rooted<JSLinearString*> strStart(cx, ToLinearString(cx, start));
           if (!strStart) {
             return false;
           }
 
-          RootedLinearString strEnd(cx, ToLinearString(cx, end));
+          Rooted<JSLinearString*> strEnd(cx, ToLinearString(cx, end));
           if (!strEnd) {
             return false;
           }
@@ -1525,12 +1522,12 @@ bool js::intl_FormatNumberRange(JSContext* cx, unsigned argc, Value* vp) {
       result = nf->format(numStart, numEnd);
     }
   } else {
-    RootedLinearString strStart(cx, ToLinearString(cx, start));
+    Rooted<JSLinearString*> strStart(cx, ToLinearString(cx, start));
     if (!strStart) {
       return false;
     }
 
-    RootedLinearString strEnd(cx, ToLinearString(cx, end));
+    Rooted<JSLinearString*> strEnd(cx, ToLinearString(cx, end));
     if (!strEnd) {
       return false;
     }

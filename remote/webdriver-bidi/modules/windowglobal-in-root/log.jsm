@@ -6,13 +6,9 @@
 
 const EXPORTED_SYMBOLS = ["log"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Module } = ChromeUtils.import(
+  "chrome://remote/content/shared/messagehandler/Module.jsm"
 );
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Module: "chrome://remote/content/shared/messagehandler/Module.jsm",
-});
 
 class LogModule extends Module {
   destroy() {}

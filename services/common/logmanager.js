@@ -3,23 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict;";
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FileUtils",
   "resource://gre/modules/FileUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(this, "Log", "resource://gre/modules/Log.jsm");
-ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "CommonUtils",
-  "resource://services-common/utils.js"
-);
+ChromeUtils.defineModuleGetter(lazy, "OS", "resource://gre/modules/osfile.jsm");
 
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
@@ -199,16 +193,16 @@ class FlushableStorageAppender extends StorageStreamAppender {
     );
     binaryStream.setInputStream(inputStream);
 
-    let outputDirectory = OS.Path.join(
-      OS.Constants.Path.profileDir,
+    let outputDirectory = lazy.OS.Path.join(
+      lazy.OS.Constants.Path.profileDir,
       ...subdirArray
     );
-    await OS.File.makeDir(outputDirectory, {
+    await lazy.OS.File.makeDir(outputDirectory, {
       ignoreExisting: true,
-      from: OS.Constants.Path.profileDir,
+      from: lazy.OS.Constants.Path.profileDir,
     });
-    let fullOutputFileName = OS.Path.join(outputDirectory, outputFileName);
-    let output = await OS.File.open(fullOutputFileName, { write: true });
+    let fullOutputFileName = lazy.OS.Path.join(outputDirectory, outputFileName);
+    let output = await lazy.OS.File.open(fullOutputFileName, { write: true });
     try {
       while (true) {
         let available = binaryStream.available();
@@ -443,8 +437,11 @@ LogManager.prototype = {
   // determine if that file should be removed.
   async _deleteLogFiles(cbShouldDelete) {
     this._cleaningUpFileLogs = true;
-    let logDir = FileUtils.getDir("ProfD", this._logFileSubDirectoryEntries);
-    let iterator = new OS.File.DirectoryIterator(logDir.path);
+    let logDir = lazy.FileUtils.getDir(
+      "ProfD",
+      this._logFileSubDirectoryEntries
+    );
+    let iterator = new lazy.OS.File.DirectoryIterator(logDir.path);
 
     await iterator.forEach(async entry => {
       // Note that we don't check this.logFilePrefix is in the name - we cleanup
@@ -458,7 +455,7 @@ LogManager.prototype = {
       }
       try {
         // need to call .stat() as the enumerator doesn't give that to us on *nix.
-        let info = await OS.File.stat(entry.path);
+        let info = await lazy.OS.File.stat(entry.path);
         if (!cbShouldDelete(info)) {
           return;
         }
@@ -469,7 +466,7 @@ LogManager.prototype = {
             info.lastModificationDate.getTime() +
             ")"
         );
-        await OS.File.remove(entry.path);
+        await lazy.OS.File.remove(entry.path);
         this._log.trace("Deleted " + entry.name);
       } catch (ex) {
         this._log.debug(

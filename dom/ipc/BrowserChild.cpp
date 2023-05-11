@@ -939,8 +939,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadURL(
   }
   docShell->LoadURI(aLoadState, true);
 
-  nsDocShell::Cast(docShell)->MaybeClearStorageAccessFlag();
-
   CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, spec);
   return IPC_OK();
 }
@@ -2245,8 +2243,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvPasteTransferable(
 
 #ifdef ACCESSIBILITY
 a11y::PDocAccessibleChild* BrowserChild::AllocPDocAccessibleChild(
-    PDocAccessibleChild*, const uint64_t&, const uint32_t&,
-    const IAccessibleHolder&) {
+    PDocAccessibleChild*, const uint64_t&, const MaybeDiscardedBrowsingContext&,
+    const uint32_t&, const IAccessibleHolder&) {
   MOZ_ASSERT(false, "should never call this!");
   return nullptr;
 }
@@ -2350,7 +2348,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvAsyncMessage(
   JS::Rooted<JSObject*> kungFuDeathGrip(
       dom::RootingCx(), mBrowserChildMessageManager->GetWrapper());
   StructuredCloneData data;
-  UnpackClonedMessageDataForChild(aData, data);
+  UnpackClonedMessageData(aData, data);
   mm->ReceiveMessage(static_cast<EventTarget*>(mBrowserChildMessageManager),
                      nullptr, aMessage, false, &data, nullptr, IgnoreErrors());
   return IPC_OK();
@@ -3019,7 +3017,7 @@ bool BrowserChild::DoSendBlockingMessage(
     const nsAString& aMessage, StructuredCloneData& aData,
     nsTArray<StructuredCloneData>* aRetVal) {
   ClonedMessageData data;
-  if (!BuildClonedMessageDataForChild(Manager(), aData, data)) {
+  if (!BuildClonedMessageData(aData, data)) {
     return false;
   }
   return SendSyncMessage(PromiseFlatString(aMessage), data, aRetVal);
@@ -3028,7 +3026,7 @@ bool BrowserChild::DoSendBlockingMessage(
 nsresult BrowserChild::DoSendAsyncMessage(const nsAString& aMessage,
                                           StructuredCloneData& aData) {
   ClonedMessageData data;
-  if (!BuildClonedMessageDataForChild(Manager(), aData, data)) {
+  if (!BuildClonedMessageData(aData, data)) {
     return NS_ERROR_DOM_DATA_CLONE_ERR;
   }
   if (!SendAsyncMessage(PromiseFlatString(aMessage), data)) {

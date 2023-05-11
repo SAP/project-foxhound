@@ -6,13 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["Fetch"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Domain } = ChromeUtils.import(
+  "chrome://remote/content/cdp/domains/Domain.jsm"
 );
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Domain: "chrome://remote/content/cdp/domains/Domain.jsm",
-});
 
 // Note: For now this domain has only been added so that clients using CDP
 // (like Selenium) don't break when trying to disable Fetch events.

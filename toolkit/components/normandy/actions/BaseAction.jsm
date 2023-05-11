@@ -2,18 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const { Uptake } = ChromeUtils.import("resource://normandy/lib/Uptake.jsm");
+
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LogManager",
   "resource://normandy/lib/LogManager.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
-  "Uptake",
-  "resource://normandy/lib/Uptake.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "JsonSchemaValidator",
   "resource://gre/modules/components-utils/JsonSchemaValidator.jsm"
 );
@@ -33,7 +32,7 @@ var EXPORTED_SYMBOLS = ["BaseAction"];
 class BaseAction {
   constructor() {
     this.state = BaseAction.STATE_PREPARING;
-    this.log = LogManager.getLogger(`action.${this.name}`);
+    this.log = lazy.LogManager.getLogger(`action.${this.name}`);
     this.lastError = null;
   }
 
@@ -115,7 +114,7 @@ class BaseAction {
   }
 
   validateArguments(args, schema = this.schema) {
-    let { valid, parsedValue: validated } = JsonSchemaValidator.validate(
+    let { valid, parsedValue: validated } = lazy.JsonSchemaValidator.validate(
       args,
       schema,
       {

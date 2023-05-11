@@ -10,7 +10,9 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
   Command: "chrome://remote/content/marionette/message.js",
   DebuggerTransport: "chrome://remote/content/marionette/transport.js",
@@ -20,13 +22,13 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   MarionettePrefs: "chrome://remote/content/marionette/prefs.js",
   Message: "chrome://remote/content/marionette/message.js",
   Response: "chrome://remote/content/marionette/message.js",
-  WebElement: "chrome://remote/content/marionette/element.js",
+  WebReference: "chrome://remote/content/marionette/element.js",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.MARIONETTE)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
-XPCOMUtils.defineLazyGetter(this, "ServerSocket", () => {
+XPCOMUtils.defineLazyGetter(lazy, "ServerSocket", () => {
   return Components.Constructor(
     "@mozilla.org/network/server-socket;1",
     "nsIServerSocket",
@@ -35,9 +37,6 @@ XPCOMUtils.defineLazyGetter(this, "ServerSocket", () => {
 });
 
 const { KeepWhenOffline, LoopbackOnly } = Ci.nsIServerSocket;
-
-/** @namespace */
-this.server = {};
 
 const PROTOCOL_VERSION = 3;
 
@@ -70,7 +69,7 @@ class TCPListener {
    *     A driver instance.
    */
   driverFactory() {
-    return new GeckoDriver(this);
+    return new lazy.GeckoDriver(this);
   }
 
   set acceptConnections(value) {
@@ -79,7 +78,7 @@ class TCPListener {
         try {
           const flags = KeepWhenOffline | LoopbackOnly;
           const backlog = 1;
-          this.socket = new ServerSocket(this.port, flags, backlog);
+          this.socket = new lazy.ServerSocket(this.port, flags, backlog);
         } catch (e) {
           throw new Error(`Could not bind to port ${this.port} (${e.name})`);
         }
@@ -87,14 +86,14 @@ class TCPListener {
         this.port = this.socket.port;
 
         this.socket.asyncListen(this);
-        logger.info(`Listening on port ${this.port}`);
+        lazy.logger.info(`Listening on port ${this.port}`);
       }
     } else if (this.socket) {
       // Note that closing the server socket will not close currently active
       // connections.
       this.socket.close();
       this.socket = null;
-      logger.info(`Stopped listening on port ${this.port}`);
+      lazy.logger.info(`Stopped listening on port ${this.port}`);
     }
   }
 
@@ -112,7 +111,7 @@ class TCPListener {
 
     // Start socket server and listening for connection attempts
     this.acceptConnections = true;
-    MarionettePrefs.port = this.port;
+    lazy.MarionettePrefs.port = this.port;
     this.alive = true;
   }
 
@@ -129,14 +128,14 @@ class TCPListener {
   onSocketAccepted(serverSocket, clientSocket) {
     let input = clientSocket.openInputStream(0, 0, 0);
     let output = clientSocket.openOutputStream(0, 0, 0);
-    let transport = new DebuggerTransport(input, output);
+    let transport = new lazy.DebuggerTransport(input, output);
 
     // Only allow a single active WebDriver session at a time
     const hasActiveSession = [...this.conns].find(
       conn => !!conn.driver.currentSession
     );
     if (hasActiveSession) {
-      logger.warn(
+      lazy.logger.warn(
         "Connection attempt denied because an active session has been found"
       );
 
@@ -155,7 +154,7 @@ class TCPListener {
     conn.onclose = this.onConnectionClosed.bind(this);
     this.conns.add(conn);
 
-    logger.debug(
+    lazy.logger.debug(
       `Accepted connection ${conn.id} ` +
         `from ${clientSocket.host}:${clientSocket.port}`
     );
@@ -164,11 +163,10 @@ class TCPListener {
   }
 
   onConnectionClosed(conn) {
-    logger.debug(`Closed connection ${conn.id}`);
+    lazy.logger.debug(`Closed connection ${conn.id}`);
     this.conns.delete(conn);
   }
 }
-this.TCPListener = TCPListener;
 
 /**
  * Marionette client connection.
@@ -230,15 +228,15 @@ class TCPConnection {
       let e = new TypeError(
         "Unable to unmarshal packet data: " + JSON.stringify(data)
       );
-      error.report(e);
+      lazy.error.report(e);
       return;
     }
 
     // return immediately with any error trying to unmarshal message
     let msg;
     try {
-      msg = Message.fromPacket(data);
-      msg.origin = Message.Origin.Client;
+      msg = lazy.Message.fromPacket(data);
+      msg.origin = lazy.Message.Origin.Client;
       this.log_(msg);
     } catch (e) {
       let resp = this.createResponse(data[1]);
@@ -247,12 +245,12 @@ class TCPConnection {
     }
 
     // execute new command
-    if (msg instanceof Command) {
+    if (msg instanceof lazy.Command) {
       (async () => {
         await this.execute(msg);
       })();
     } else {
-      logger.fatal("Cannot process messages other than Command");
+      lazy.logger.fatal("Cannot process messages other than Command");
     }
   }
 
@@ -278,7 +276,7 @@ class TCPConnection {
 
     await this.despatch(cmd, resp)
       .then(sendResponse, sendError)
-      .catch(error.report);
+      .catch(lazy.error.report);
   }
 
   /**
@@ -296,17 +294,17 @@ class TCPConnection {
   async despatch(cmd, resp) {
     let fn = this.driver.commands[cmd.name];
     if (typeof fn == "undefined") {
-      throw new error.UnknownCommandError(cmd.name);
+      throw new lazy.error.UnknownCommandError(cmd.name);
     }
 
     if (cmd.name != "WebDriver:NewSession") {
-      assert.session(this.driver.currentSession);
+      lazy.assert.session(this.driver.currentSession);
     }
 
     let rv = await fn.bind(this.driver)(cmd);
 
     if (rv != null) {
-      if (rv instanceof WebElement || typeof rv != "object") {
+      if (rv instanceof lazy.WebReference || typeof rv != "object") {
         resp.body = { value: rv };
       } else {
         resp.body = rv;
@@ -327,11 +325,11 @@ class TCPConnection {
     if (typeof msgID != "number") {
       msgID = -1;
     }
-    return new Response(msgID, this.send.bind(this));
+    return new lazy.Response(msgID, this.send.bind(this));
   }
 
   sendError(err, cmdID) {
-    let resp = new Response(cmdID, this.send.bind(this));
+    let resp = new lazy.Response(cmdID, this.send.bind(this));
     resp.sendError(err);
   }
 
@@ -364,11 +362,11 @@ class TCPConnection {
    *     The command or response to send.
    */
   send(msg) {
-    msg.origin = Message.Origin.Server;
-    if (msg instanceof Response) {
+    msg.origin = lazy.Message.Origin.Server;
+    if (msg instanceof lazy.Response) {
       this.sendToClient(msg);
     } else {
-      logger.fatal("Cannot send messages other than Response");
+      lazy.logger.fatal("Cannot send messages other than Response");
     }
   }
 
@@ -408,12 +406,11 @@ class TCPConnection {
   }
 
   log_(msg) {
-    let dir = msg.origin == Message.Origin.Client ? "->" : "<-";
-    logger.debug(`${this.id} ${dir} ${msg}`);
+    let dir = msg.origin == lazy.Message.Origin.Client ? "->" : "<-";
+    lazy.logger.debug(`${this.id} ${dir} ${msg}`);
   }
 
   toString() {
     return `[object TCPConnection ${this.id}]`;
   }
 }
-this.TCPConnection = TCPConnection;

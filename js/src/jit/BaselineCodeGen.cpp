@@ -333,7 +333,7 @@ MethodStatus BaselineCompiler::compile() {
   script->jitScript()->setBaselineScript(script, baselineScript.release());
 
 #ifdef JS_ION_PERF
-  writePerfSpewerBaselineProfile(script, code);
+  perfSpewer_.writeProfile(script, code);
 #endif
 
 #ifdef MOZ_VTUNE
@@ -674,10 +674,9 @@ void BaselineCompilerCodeGen::computeFrameSize(Register dest) {
 
 template <>
 void BaselineInterpreterCodeGen::computeFrameSize(Register dest) {
-  // dest = FramePointer + BaselineFrame::FramePointerOffset - StackPointer.
+  // dest := FramePointer - StackPointer.
   MOZ_ASSERT(!inCall_, "must not be called in the middle of a VM call");
-  masm.computeEffectiveAddress(
-      Address(FramePointer, BaselineFrame::FramePointerOffset), dest);
+  masm.mov(FramePointer, dest);
   masm.subStackPtrFrom(dest);
 }
 
@@ -694,36 +693,27 @@ void BaselineCodeGen<Handler>::prepareVMCall() {
 
 template <>
 void BaselineCompilerCodeGen::storeFrameSizeAndPushDescriptor(
-    uint32_t argSize, Register scratch1, Register scratch2) {
-  uint32_t frameFullSize = frame.frameSize();
-
+    uint32_t argSize, Register scratch) {
 #ifdef DEBUG
-  masm.store32(Imm32(frameFullSize), frame.addressOfDebugFrameSize());
+  masm.store32(Imm32(frame.frameSize()), frame.addressOfDebugFrameSize());
 #endif
 
-  uint32_t descriptor = MakeFrameDescriptor(
-      frameFullSize + argSize, FrameType::BaselineJS, ExitFrameLayout::Size());
-  masm.push(Imm32(descriptor));
+  masm.pushFrameDescriptor(FrameType::BaselineJS);
 }
 
 template <>
 void BaselineInterpreterCodeGen::storeFrameSizeAndPushDescriptor(
-    uint32_t argSize, Register scratch1, Register scratch2) {
-  // scratch1 = FramePointer + BaselineFrame::FramePointerOffset - StackPointer.
-  masm.computeEffectiveAddress(
-      Address(FramePointer, BaselineFrame::FramePointerOffset), scratch1);
-  masm.subStackPtrFrom(scratch1);
-
+    uint32_t argSize, Register scratch) {
 #ifdef DEBUG
   // Store the frame size without VMFunction arguments in debug builds.
-  masm.computeEffectiveAddress(Address(scratch1, -int32_t(argSize)), scratch2);
-  masm.store32(scratch2, frame.addressOfDebugFrameSize());
+  // scratch := FramePointer - StackPointer - argSize.
+  masm.mov(FramePointer, scratch);
+  masm.subStackPtrFrom(scratch);
+  masm.sub32(Imm32(argSize), scratch);
+  masm.store32(scratch, frame.addressOfDebugFrameSize());
 #endif
 
-  // Push frame descriptor based on the full frame size.
-  masm.makeFrameDescriptor(scratch1, FrameType::BaselineJS,
-                           ExitFrameLayout::Size());
-  masm.push(scratch1);
+  masm.pushFrameDescriptor(FrameType::BaselineJS);
 }
 
 static uint32_t GetVMFunctionArgSize(const VMFunctionData& fun) {
@@ -751,17 +741,14 @@ bool BaselineCodeGen<Handler>::callVMInternal(VMFunctionId id,
   saveInterpreterPCReg();
 
   if (phase == CallVMPhase::AfterPushingLocals) {
-    storeFrameSizeAndPushDescriptor(argSize, R0.scratchReg(), R1.scratchReg());
+    storeFrameSizeAndPushDescriptor(argSize, R0.scratchReg());
   } else {
     MOZ_ASSERT(phase == CallVMPhase::BeforePushingLocals);
-    uint32_t frameBaseSize = BaselineFrame::frameSizeForNumValueSlots(0);
 #ifdef DEBUG
+    uint32_t frameBaseSize = BaselineFrame::frameSizeForNumValueSlots(0);
     masm.store32(Imm32(frameBaseSize), frame.addressOfDebugFrameSize());
 #endif
-    uint32_t descriptor =
-        MakeFrameDescriptor(frameBaseSize + argSize, FrameType::BaselineJS,
-                            ExitFrameLayout::Size());
-    masm.push(Imm32(descriptor));
+    masm.pushFrameDescriptor(FrameType::BaselineJS);
   }
   MOZ_ASSERT(fun.expectTailCall == NonTailCall);
   // Perform the call.
@@ -1444,10 +1431,6 @@ bool BaselineCompilerCodeGen::emitWarmUpCounterIncrement() {
     //  +---[Saved-FramePtr]
     //      [...Baseline-Frame...]
 
-    // Restore the stack pointer so that the return address is on top of
-    // the stack.
-    masm.addToStackPtr(Imm32(frame.frameSize()));
-
 #ifdef DEBUG
     // Get a scratch register that's not osrDataReg or OsrFrameReg.
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
@@ -1476,11 +1459,15 @@ bool BaselineCompilerCodeGen::emitWarmUpCounterIncrement() {
       // lastProfilingFrame to be null.
       masm.branchPtr(Assembler::Equal, scratchReg, ImmWord(0), &checkOk);
 
-      masm.branchStackPtr(Assembler::Equal, scratchReg, &checkOk);
+      masm.branchPtr(Assembler::Equal, FramePointer, scratchReg, &checkOk);
       masm.assumeUnreachable("Baseline OSR lastProfilingFrame mismatch.");
       masm.bind(&checkOk);
     }
 #endif
+
+    // Restore the stack pointer so that the saved frame pointer is on top of
+    // the stack.
+    masm.moveToStackPtr(FramePointer);
 
     // Jump into Ion.
     masm.loadPtr(Address(osrDataReg, IonOsrTempData::offsetOfBaselineFrame()),
@@ -1682,7 +1669,7 @@ void BaselineCodeGen<Handler>::emitProfilerEnterFrame() {
   // jump. Starts off initially disabled.
   Label noInstrument;
   CodeOffset toggleOffset = masm.toggledJump(&noInstrument);
-  masm.profilerEnterFrame(masm.getStackPointer(), R0.scratchReg());
+  masm.profilerEnterFrame(FramePointer, R0.scratchReg());
   masm.bind(&noInstrument);
 
   // Store the start offset in the appropriate location.
@@ -3030,7 +3017,7 @@ bool BaselineCodeGen<Handler>::emit_MutateProto() {
   pushArg(R1);
   pushArg(R0.scratchReg());
 
-  using Fn = bool (*)(JSContext*, HandlePlainObject, HandleValue);
+  using Fn = bool (*)(JSContext*, Handle<PlainObject*>, HandleValue);
   if (!callVM<Fn, MutatePrototype>()) {
     return false;
   }
@@ -3251,7 +3238,7 @@ bool BaselineCodeGen<Handler>::emit_NewPrivateName() {
 
   pushScriptNameArg(R0.scratchReg(), R1.scratchReg());
 
-  using Fn = JS::Symbol* (*)(JSContext*, HandleAtom);
+  using Fn = JS::Symbol* (*)(JSContext*, Handle<JSAtom*>);
   if (!callVM<Fn, NewPrivateName>()) {
     return false;
   }
@@ -3313,8 +3300,8 @@ bool BaselineCompilerCodeGen::tryOptimizeBindGlobalName() {
   JSScript* script = handler.script();
   MOZ_ASSERT(!script->hasNonSyntacticScope());
 
-  RootedGlobalObject global(cx, &script->global());
-  RootedPropertyName name(cx, script->getName(handler.pc()));
+  Rooted<GlobalObject*> global(cx, &script->global());
+  Rooted<PropertyName*> name(cx, script->getName(handler.pc()));
   if (JSObject* binding = MaybeOptimizeBindGlobalName(cx, global, name)) {
     frame.push(ObjectValue(*binding));
     return true;
@@ -3426,8 +3413,8 @@ bool BaselineCodeGen<Handler>::emitSetPropSuper(bool strict) {
   masm.loadValue(frame.addressOfStackValue(-1), R0);
   pushArg(R0);  // obj
 
-  using Fn = bool (*)(JSContext*, HandleValue, HandleValue, HandlePropertyName,
-                      HandleValue, bool);
+  using Fn = bool (*)(JSContext*, HandleValue, HandleValue,
+                      Handle<PropertyName*>, HandleValue, bool);
   if (!callVM<Fn, js::SetPropertySuper>()) {
     return false;
   }
@@ -3492,7 +3479,7 @@ bool BaselineCodeGen<Handler>::emitDelProp(bool strict) {
   pushScriptNameArg(R1.scratchReg(), R2.scratchReg());
   pushArg(R0);
 
-  using Fn = bool (*)(JSContext*, HandleValue, HandlePropertyName, bool*);
+  using Fn = bool (*)(JSContext*, HandleValue, Handle<PropertyName*>, bool*);
   if (strict) {
     if (!callVM<Fn, DelPropOperation<true>>()) {
       return false;
@@ -3795,7 +3782,7 @@ bool BaselineCodeGen<Handler>::emit_DelName() {
   pushArg(R0.scratchReg());
   pushScriptNameArg(R1.scratchReg(), R2.scratchReg());
 
-  using Fn = bool (*)(JSContext*, HandlePropertyName, HandleObject,
+  using Fn = bool (*)(JSContext*, Handle<PropertyName*>, HandleObject,
                       MutableHandleValue);
   if (!callVM<Fn, js::DeleteNameOperation>()) {
     return false;
@@ -3923,8 +3910,8 @@ bool BaselineCodeGen<Handler>::emitInitPropGetterSetter() {
   pushArg(R1.scratchReg());
   pushBytecodePCArg();
 
-  using Fn = bool (*)(JSContext*, jsbytecode*, HandleObject, HandlePropertyName,
-                      HandleObject);
+  using Fn = bool (*)(JSContext*, jsbytecode*, HandleObject,
+                      Handle<PropertyName*>, HandleObject);
   if (!callVM<Fn, InitPropGetterSetterOperation>()) {
     return false;
   }
@@ -4182,7 +4169,8 @@ bool BaselineInterpreterCodeGen::emitFormalArgAccess(JSOp op) {
   }
   masm.bind(&isUnaliased);
   {
-    BaseValueIndex addr(FramePointer, argReg, BaselineFrame::offsetOfArg(0));
+    BaseValueIndex addr(FramePointer, argReg,
+                        JitFrameLayout::offsetOfActualArgs());
     if (op == JSOp::GetArg) {
       masm.loadValue(addr, R0);
       frame.push(R0);
@@ -4250,15 +4238,14 @@ bool BaselineCodeGen<Handler>::emit_NewTarget() {
   {
     Register argvLen = R0.scratchReg();
     Register nformals = R1.scratchReg();
-    Address actualArgs(FramePointer, BaselineFrame::offsetOfNumActualArgs());
-    masm.loadPtr(actualArgs, argvLen);
+    masm.loadNumActualArgs(FramePointer, argvLen);
 
     // If argvLen < nformals, set argvlen := nformals.
     loadNumFormalArguments(nformals);
     masm.cmp32Move32(Assembler::Below, argvLen, nformals, nformals, argvLen);
 
     BaseValueIndex newTarget(FramePointer, argvLen,
-                             BaselineFrame::offsetOfArg(0));
+                             JitFrameLayout::offsetOfActualArgs());
     masm.loadValue(newTarget, R0);
     masm.jump(&done);
   }
@@ -4479,7 +4466,7 @@ bool BaselineCodeGen<Handler>::emit_ImplicitThis() {
   pushScriptNameArg(R1.scratchReg(), R2.scratchReg());
   pushArg(R0.scratchReg());
 
-  using Fn = bool (*)(JSContext*, HandleObject, HandlePropertyName,
+  using Fn = bool (*)(JSContext*, HandleObject, Handle<PropertyName*>,
                       MutableHandleValue);
   if (!callVM<Fn, ImplicitThisOperation>()) {
     return false;
@@ -4789,7 +4776,7 @@ bool BaselineCodeGen<Handler>::emit_PushVarEnv() {
                        R2.scratchReg());
   pushArg(R0.scratchReg());
 
-  using Fn = bool (*)(JSContext*, BaselineFrame*, HandleScope);
+  using Fn = bool (*)(JSContext*, BaselineFrame*, Handle<Scope*>);
   return callVM<Fn, jit::PushVarEnv>();
 }
 
@@ -5290,6 +5277,16 @@ bool BaselineCodeGen<Handler>::emit_EndIter() {
   Register temp3 = regs.takeAny();
   masm.iteratorClose(obj, temp1, temp2, temp3);
   return true;
+}
+
+template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_CloseIter() {
+  frame.popRegsAndSync(1);
+
+  Register iter = R0.scratchReg();
+  masm.unboxObject(R0, iter);
+
+  return emitNextIC();
 }
 
 template <typename Handler>
@@ -5857,19 +5854,15 @@ bool BaselineCodeGen<Handler>::emit_Resume() {
   // Push |undefined| for |this|.
   masm.pushValue(UndefinedValue());
 
-  // Update BaselineFrame frameSize field and create the frame descriptor.
-  masm.computeEffectiveAddress(
-      Address(FramePointer, BaselineFrame::FramePointerOffset), scratch2);
-  masm.subStackPtrFrom(scratch2);
 #ifdef DEBUG
+  // Update BaselineFrame debugFrameSize field.
+  masm.mov(FramePointer, scratch2);
+  masm.subStackPtrFrom(scratch2);
   masm.store32(scratch2, frame.addressOfDebugFrameSize());
 #endif
-  masm.makeFrameDescriptor(scratch2, FrameType::BaselineJS,
-                           JitFrameLayout::Size());
 
-  masm.push(Imm32(0));  // actual argc
   masm.PushCalleeToken(callee, /* constructing = */ false);
-  masm.push(scratch2);  // frame descriptor
+  masm.pushFrameDescriptorForJitCall(FrameType::BaselineJS, /* argc = */ 0);
 
   // PushCalleeToken bumped framePushed. Reset it.
   MOZ_ASSERT(masm.framePushed() == sizeof(uintptr_t));
@@ -5898,6 +5891,10 @@ bool BaselineCodeGen<Handler>::emit_Resume() {
   masm.pushReturnAddress();
 #endif
 
+  // Construct BaselineFrame.
+  masm.push(FramePointer);
+  masm.moveStackPtrTo(FramePointer);
+
   // If profiler instrumentation is on, update lastProfilingFrame on
   // current JitActivation
   {
@@ -5909,14 +5906,12 @@ bool BaselineCodeGen<Handler>::emit_Resume() {
     masm.loadJSContext(scratchReg);
     masm.loadPtr(Address(scratchReg, JSContext::offsetOfProfilingActivation()),
                  scratchReg);
-    masm.storeStackPtr(
+    masm.storePtr(
+        FramePointer,
         Address(scratchReg, JitActivation::offsetOfLastProfilingFrame()));
     masm.bind(&skip);
   }
 
-  // Construct BaselineFrame.
-  masm.push(FramePointer);
-  masm.moveStackPtrTo(FramePointer);
   masm.subFromStackPtr(Imm32(BaselineFrame::Size()));
   masm.assertStackAlignment(sizeof(Value), 0);
 
@@ -6005,25 +6000,7 @@ bool BaselineCodeGen<Handler>::emit_Resume() {
     return false;
   }
 
-  Label afterFrameRestore;
-  masm.jump(&afterFrameRestore);
   masm.bind(&returnTarget);
-
-  // When we call into a function which may end up in Warp/Ion,
-  // we need to account for the possibility that FramePointer
-  // is clobbered. So we recompute it based on the frame descriptor.
-
-  // Load the frame descriptor into FramePointer.
-  masm.loadPtr(Address(masm.getStackPointer(), 0), FramePointer);
-  // Compute Frame Size.
-  masm.rshiftPtr(Imm32(FRAMESIZE_SHIFT), FramePointer);
-  // Add stack pointer.
-  masm.addStackPtrTo(FramePointer);
-
-  // This magic constant corresponds to the callee token and
-  // actualArgc pushed before the frame descriptor was pushed.
-  masm.addPtr(Imm32(2 * sizeof(void*)), FramePointer);
-  masm.bind(&afterFrameRestore);
 
   // Restore Stack pointer
   masm.computeEffectiveAddress(frame.addressOfStackValue(-1),
@@ -6272,7 +6249,7 @@ bool BaselineCompilerCodeGen::emit_ImportMeta() {
   // Note: this is like the interpreter implementation, but optimized a bit by
   // calling GetModuleObjectForScript at compile-time.
 
-  RootedModuleObject module(cx, GetModuleObjectForScript(handler.script()));
+  Rooted<ModuleObject*> module(cx, GetModuleObjectForScript(handler.script()));
   MOZ_ASSERT(module);
 
   frame.syncStack(0);
@@ -6345,12 +6322,15 @@ bool BaselineCodeGen<Handler>::emitPrologue() {
 #ifdef JS_USE_LINK_REGISTER
   // Push link register from generateEnterJIT()'s BLR.
   masm.pushReturnAddress();
-  masm.checkStackAlignment();
 #endif
-  emitProfilerEnterFrame();
 
   masm.push(FramePointer);
   masm.moveStackPtrTo(FramePointer);
+
+  masm.checkStackAlignment();
+
+  emitProfilerEnterFrame();
+
   masm.subFromStackPtr(Imm32(BaselineFrame::Size()));
 
   // Initialize BaselineFrame. Also handles env chain pre-initialization (in
@@ -6427,10 +6407,10 @@ bool BaselineCodeGen<Handler>::emitEpilogue() {
   }
 #endif
 
+  emitProfilerExitFrame();
+
   masm.moveToStackPtr(FramePointer);
   masm.pop(FramePointer);
-
-  emitProfilerExitFrame();
 
   masm.ret();
   return true;
@@ -6497,6 +6477,10 @@ MethodStatus BaselineCompiler::emitBody() {
     if (MOZ_UNLIKELY(compileDebugInstrumentation()) && !emitDebugTrap()) {
       return Method_Error;
     }
+
+#ifdef JS_ION_PERF
+    perfSpewer_.recordInstruction(masm, op);
+#endif
 
 #define EMIT_OP(OP, ...)                                       \
   case JSOp::OP: {                                             \

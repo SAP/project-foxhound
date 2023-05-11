@@ -11,7 +11,6 @@
 <script src="/resources/testdriver-vendor.js"></script>
 
 <body>
-<iframe name="target"></iframe>
 <script>
 const buttonLogic = (t,s,h) => {
   // This mimics the expected logic for button invokers:
@@ -108,7 +107,7 @@ const invokers = [
     supported: false,
   },
 ];
-["popup","hint","async"].forEach(type => {
+["auto","hint","async"].forEach(type => {
   invokers.forEach(testcase => {
     let t_set = [1], s_set = [1], h_set = [1];
     if (testcase.supported) {
@@ -139,7 +138,7 @@ const invokers = [
             const otherId = expectedId !== 1 ? 1 : 2;
             function assert_popup(num,state,message) {
               assert_true(num>0,`Invalid expectedId ${num}`);
-              assert_equals((num===1 ? popup1 : popup2).matches(':popup-open'),state,message || "");
+              assert_equals((num===1 ? popup1 : popup2).matches(':top-layer'),state,message || "");
             }
             assert_popup(expectedId,false);
             assert_popup(otherId,false);
@@ -186,7 +185,7 @@ const invokers = [
 
 
 <button togglepopup=p1>Toggle Popup 1</button>
-<div popup=popup id=p1 style="border: 5px solid red;top: 100px;left: 100px;">This is popup #1</div>
+<div popup id=p1 style="border: 5px solid red;top: 100px;left: 100px;">This is popup #1</div>
 
 <script>
 function clickOn(element) {
@@ -205,7 +204,7 @@ popup.addEventListener('show',() => ++showCount);
 popup.addEventListener('hide',() => ++hideCount);
 
 async function assertState(expectOpen,expectShow,expectHide) {
-  assert_equals(popup.matches(':popup-open'),expectOpen,'Popup open state is incorrect');
+  assert_equals(popup.matches(':top-layer'),expectOpen,'Popup open state is incorrect');
   await new Promise(resolve => requestAnimationFrame(resolve));
   assert_equals(showCount,expectShow,'Show count is incorrect');
   assert_equals(hideCount,expectHide,'Hide count is incorrect');

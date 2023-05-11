@@ -811,7 +811,7 @@ void gfxShapedText::AdjustAdvancesForSyntheticBold(float aSynBoldOffset,
 float gfxFont::AngleForSyntheticOblique() const {
   // If the style doesn't call for italic/oblique, or if the face already
   // provides it, no synthetic style should be added.
-  if (mStyle.style == FontSlantStyle::Normal() || !mStyle.allowSyntheticStyle ||
+  if (mStyle.style == FontSlantStyle::NORMAL || !mStyle.allowSyntheticStyle ||
       !mFontEntry->IsUpright()) {
     return 0.0f;
   }
@@ -819,7 +819,9 @@ float gfxFont::AngleForSyntheticOblique() const {
   // If style calls for italic, and face doesn't support it, use default
   // oblique angle as a simulation.
   if (mStyle.style.IsItalic()) {
-    return mFontEntry->SupportsItalic() ? 0.0f : FontSlantStyle::kDefaultAngle;
+    return mFontEntry->SupportsItalic()
+               ? 0.0f
+               : FontSlantStyle::DEFAULT_OBLIQUE_DEGREES;
   }
 
   // Default or custom oblique angle
@@ -830,12 +832,12 @@ float gfxFont::SkewForSyntheticOblique() const {
   // Precomputed value of tan(kDefaultAngle), the default italic/oblique slant;
   // avoids calling tan() at runtime except for custom oblique values.
   static const float kTanDefaultAngle =
-      tan(FontSlantStyle::kDefaultAngle * (M_PI / 180.0));
+      tan(FontSlantStyle::DEFAULT_OBLIQUE_DEGREES * (M_PI / 180.0));
 
   float angle = AngleForSyntheticOblique();
   if (angle == 0.0f) {
     return 0.0f;
-  } else if (angle == FontSlantStyle::kDefaultAngle) {
+  } else if (angle == FontSlantStyle::DEFAULT_OBLIQUE_DEGREES) {
     return kTanDefaultAngle;
   } else {
     return tan(angle * (M_PI / 180.0));
@@ -982,9 +984,17 @@ gfxFloat gfxFont::GetGlyphAdvance(uint16_t aGID, bool aVertical) {
   NS_ASSERTION(mFUnitsConvFactor >= 0.0f,
                "missing font unit conversion factor");
   if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
-    return (aVertical ? shaper->GetGlyphVAdvance(aGID)
-                      : shaper->GetGlyphHAdvance(aGID)) /
-           65536.0;
+    if (aVertical) {
+      // Note that GetGlyphVAdvance may return -1 to indicate it was unable
+      // to retrieve vertical metrics; in that case we fall back to the
+      // aveCharWidth value as a default advance.
+      int32_t advance = shaper->GetGlyphVAdvance(aGID);
+      if (advance < 0) {
+        return GetMetrics(nsFontMetrics::eVertical).aveCharWidth;
+      }
+      return advance / 65536.0;
+    }
+    return shaper->GetGlyphHAdvance(aGID) / 65536.0;
   }
   return 0.0;
 }
@@ -3946,6 +3956,7 @@ void gfxFont::CreateVerticalMetrics() {
   if (mFUnitsConvFactor < 0.0) {
     uint16_t upem = GetFontEntry()->UnitsPerEm();
     if (upem != gfxFontEntry::kInvalidUPEM) {
+      AutoWriteLock lock(mLock);
       mFUnitsConvFactor = GetAdjustedSize() / upem;
     }
   }
@@ -4014,7 +4025,17 @@ void gfxFont::CreateVerticalMetrics() {
         metrics->maxDescent = halfExtent;
         SET_SIGNED(externalLeading, vhea->lineGap);
       }
-      metrics->ideographicWidth = GetCharAdvance(kWaterIdeograph, true);
+      // Call gfxHarfBuzzShaper::GetGlyphVAdvance directly, as GetCharAdvance
+      // would potentially recurse if no v-advance is available and it attempts
+      // to fall back to a value from mVerticalMetrics.
+      if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
+        uint32_t gid = ProvidesGetGlyph()
+                           ? GetGlyph(kWaterIdeograph, 0)
+                           : shaper->GetNominalGlyph(kWaterIdeograph);
+        int32_t advance = shaper->GetGlyphVAdvance(gid);
+        metrics->ideographicWidth =
+            advance < 0 ? metrics->aveCharWidth : mFUnitsConvFactor * advance;
+      }
     }
   }
 
@@ -4159,9 +4180,9 @@ gfxFontStyle::gfxFontStyle()
       baselineOffset(0.0f),
       languageOverride(NO_FONT_LANGUAGE_OVERRIDE),
       fontSmoothingBackgroundColor(NS_RGBA(0, 0, 0, 0)),
-      weight(FontWeight::Normal()),
-      stretch(FontStretch::Normal()),
-      style(FontSlantStyle::Normal()),
+      weight(FontWeight::NORMAL),
+      stretch(FontStretch::NORMAL),
+      style(FontSlantStyle::NORMAL),
       variantCaps(NS_FONT_VARIANT_CAPS_NORMAL),
       variantSubSuper(NS_FONT_VARIANT_POSITION_NORMAL),
       sizeAdjustBasis(uint8_t(FontSizeAdjust::Tag::None)),
@@ -4226,11 +4247,11 @@ gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
   MOZ_ASSERT(FontSizeAdjust::Tag(sizeAdjustBasis) == aSizeAdjust.tag,
              "gfxFontStyle.sizeAdjustBasis too small?");
 
-  if (weight > FontWeight(1000)) {
-    weight = FontWeight(1000);
+  if (weight > FontWeight::FromInt(1000)) {
+    weight = FontWeight::FromInt(1000);
   }
-  if (weight < FontWeight(1)) {
-    weight = FontWeight(1);
+  if (weight < FontWeight::FromInt(1)) {
+    weight = FontWeight::FromInt(1);
   }
 
   if (size >= FONT_MAX_SIZE) {
@@ -4249,9 +4270,8 @@ PLDHashNumber gfxFontStyle::Hash() const {
                       : mozilla::HashBytes(variationSettings.Elements(),
                                            variationSettings.Length() *
                                                sizeof(gfxFontVariation));
-  return mozilla::AddToHash(hash, systemFont, style.ForHash(),
-                            stretch.ForHash(), weight.ForHash(), size,
-                            int32_t(sizeAdjust * 1000.0f));
+  return mozilla::AddToHash(hash, systemFont, style.Raw(), stretch.Raw(),
+                            weight.Raw(), size, int32_t(sizeAdjust * 1000.0f));
 }
 
 void gfxFontStyle::AdjustForSubSuperscript(int32_t aAppUnitsPerDevPixel) {

@@ -1649,12 +1649,9 @@ BufferOffset MacroAssemblerARM::ma_vstr(VFPRegister src, Register base,
 }
 
 bool MacroAssemblerARMCompat::buildOOLFakeExitFrame(void* fakeReturnAddr) {
-  uint32_t descriptor = MakeFrameDescriptor(
-      asMasm().framePushed(), FrameType::IonJS, ExitFrameLayout::Size());
-
-  asMasm().Push(Imm32(descriptor));  // descriptor_
+  asMasm().PushFrameDescriptor(FrameType::IonJS);  // descriptor_
   asMasm().Push(ImmPtr(fakeReturnAddr));
-
+  asMasm().Push(FramePointer);
   return true;
 }
 
@@ -3316,7 +3313,7 @@ void MacroAssemblerARMCompat::checkStackAlignment() {
 }
 
 void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
-    Label* profilerExitTail) {
+    Label* profilerExitTail, Label* bailoutTail) {
   // Reserve space for exception information.
   int size = (sizeof(ResumeFromException) + 7) & ~7;
 
@@ -3365,12 +3362,14 @@ void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
 
   breakpoint();  // Invalid kind.
 
-  // No exception handler. Load the error value, load the new stack pointer
-  // and return from the entry frame.
+  // No exception handler. Load the error value, restore state and return from
+  // the entry frame.
   bind(&entryFrame);
   asMasm().moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
   {
     ScratchRegisterScope scratch(asMasm());
+    ma_ldr(Address(sp, ResumeFromException::offsetOfFramePointer()), r11,
+           scratch);
     ma_ldr(Address(sp, ResumeFromException::offsetOfStackPointer()), sp,
            scratch);
   }
@@ -3423,8 +3422,6 @@ void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
   }
   loadValue(Address(r11, BaselineFrame::reverseOffsetOfReturnValue()),
             JSReturnOperand);
-  ma_mov(r11, sp);
-  pop(r11);
   jump(&profilingInstrumentation);
 
   // Return the given value to the caller.
@@ -3433,7 +3430,9 @@ void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
             JSReturnOperand);
   {
     ScratchRegisterScope scratch(asMasm());
-    ma_ldr(Address(sp, ResumeFromException::offsetOfFramePointer()), sp,
+    ma_ldr(Address(sp, ResumeFromException::offsetOfFramePointer()), r11,
+           scratch);
+    ma_ldr(Address(sp, ResumeFromException::offsetOfStackPointer()), sp,
            scratch);
   }
 
@@ -3452,6 +3451,8 @@ void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
     bind(&skipProfilingInstrumentation);
   }
 
+  ma_mov(r11, sp);
+  pop(r11);
   ret();
 
   // If we are bailing out to baseline to handle an exception, jump to the
@@ -3461,10 +3462,11 @@ void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
     ScratchRegisterScope scratch(asMasm());
     ma_ldr(Address(sp, ResumeFromException::offsetOfBailoutInfo()), r2,
            scratch);
+    ma_ldr(Address(sp, ResumeFromException::offsetOfStackPointer()), sp,
+           scratch);
     ma_mov(Imm32(1), ReturnReg);
-    ma_ldr(Address(sp, ResumeFromException::offsetOfTarget()), r1, scratch);
   }
-  jump(r1);
+  jump(bailoutTail);
 
   // If we are throwing and the innermost frame was a wasm frame, reset SP and
   // FP; SP is pointing to the unwound return address to the wasm entry, so

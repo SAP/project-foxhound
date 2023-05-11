@@ -1011,9 +1011,6 @@ pref("plugins.show_infobar", false);
   pref("plugin.default.state", 1);
 #endif
 
-// Enables the download and use of the flash blocklists.
-pref("plugins.flashBlock.enabled", true);
-
 // Prefer HTML5 video over Flash content, and don't
 // load plugin instances with no src declared.
 // These prefs are documented in details on all.js.
@@ -1021,12 +1018,6 @@ pref("plugins.flashBlock.enabled", true);
 // apply to users that have plugin.state.flash = 1.
 pref("plugins.favorfallback.mode", "follow-ctp");
 pref("plugins.favorfallback.rules", "nosrc,video");
-
-#ifdef XP_WIN
-  pref("browser.preferences.instantApply", false);
-#else
-  pref("browser.preferences.instantApply", true);
-#endif
 
 // Toggling Search bar on and off in about:preferences
 pref("browser.preferences.search", true);
@@ -1222,8 +1213,6 @@ pref("browser.bookmarks.editDialog.maxRecentFolders", 7);
 // By default the Edit Bookmark dialog is instant-apply. This feature pref will allow to
 // just save on Accept, once the project is complete.
 pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
-
-pref("dom.ipc.shims.enabledWarnings", false);
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   // This controls the strength of the Windows content process sandbox for
@@ -1532,8 +1521,6 @@ pref("browser.newtabpage.activity-stream.asrouter.useRemoteL10n", true);
 // These prefs control if Discovery Stream is enabled.
 pref("browser.newtabpage.activity-stream.discoverystream.enabled", true);
 pref("browser.newtabpage.activity-stream.discoverystream.hardcoded-basic-layout", false);
-// A preset compact layout, similar to setting a collection of prefs to build a complete layout.
-pref("browser.newtabpage.activity-stream.discoverystream.compactLayout.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.hybridLayout.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.hideCardBackground.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.fourCardLayout.enabled", false);
@@ -1550,6 +1537,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.descLines", 3);
 pref("browser.newtabpage.activity-stream.discoverystream.readTime.enabled", true);
 pref("browser.newtabpage.activity-stream.discoverystream.newSponsoredLabel.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.essentialReadsHeader.enabled", false);
+pref("browser.newtabpage.activity-stream.discoverystream.recentSaves.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.editorsPicksHeader.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.spoc-positions", "1,5,7,11,18,20");
 pref("browser.newtabpage.activity-stream.discoverystream.widget-positions", "");
@@ -1609,6 +1597,8 @@ pref("browser.aboutwelcome.enabled", true);
 // Used to set multistage welcome UX
 pref("browser.aboutwelcome.screens", "");
 pref("browser.aboutwelcome.skipFocus", true);
+// Used to enable template for MR 2022 Onboarding
+pref("browser.aboutwelcome.templateMR", false);
 
 // The pref that controls if the What's New panel is enabled.
 pref("browser.messaging-system.whatsNewPanel.enabled", true);
@@ -1757,12 +1747,8 @@ pref("media.gmp-gmpopenh264.enabled", true);
 // Set Firefox to block autoplay, asking for permission by default.
 pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked, 5=All Blocked
 
-#ifdef NIGHTLY_BUILD
-  // Block WebAudio from playing automatically.
-  pref("media.autoplay.block-webaudio", true);
-#else
-  pref("media.autoplay.block-webaudio", false);
-#endif
+// Block WebAudio from playing automatically.
+pref("media.autoplay.block-webaudio", true);
 
 pref("media.videocontrols.picture-in-picture.enabled", true);
 pref("media.videocontrols.picture-in-picture.audio-toggle.enabled", true);
@@ -1800,20 +1786,18 @@ pref("browser.ping-centre.log", false);
 // Enable GMP support in the addon manager.
 pref("media.gmp-provider.enabled", true);
 
-#ifdef NIGHTLY_BUILD
-// Enable Dynamic First-Party Isolation in Nightly.
+// Enable Dynamic First-Party Isolation by default.
 pref("network.cookie.cookieBehavior", 5 /* BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN */);
-#else
-// Enable blocking access to storage from tracking resources by default.
-pref("network.cookie.cookieBehavior", 4 /* BEHAVIOR_REJECT_TRACKER */);
-#endif
 
 // Whether to show the section in preferences which allows users to opt-in to
 // Total Cookie Protection (dFPI) in standard mode.
 pref("privacy.restrict3rdpartystorage.rollout.preferences.TCPToggleInStandard", false);
 
-// Target URL for the learn more link of the TCP in standard mode section.
+// Target URL for the learn more link of the TCP in standard mode rollout section.
 pref("privacy.restrict3rdpartystorage.rollout.preferences.learnMoreURLSuffix", "total-cookie-protection");
+
+// Target URL for the learn more link of the TCP in standard mode section.
+pref("privacy.restrict3rdpartystorage.preferences.learnMoreURLSuffix", "total-cookie-protection");
 
 // Enable Dynamic First-Party Isolation in the private browsing mode.
 pref("network.cookie.cookieBehavior.pbmode", 5 /* BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN */);
@@ -1884,7 +1868,7 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //     "cookieBehaviorPBM4": cookie behaviour BEHAVIOR_REJECT_TRACKER
 //     "cookieBehaviorPBM5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
 // One value from each section must be included in the browser.contentblocking.features.strict pref.
-pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,cookieBehaviorPBM5,cm,fp,stp,lvl2,rp,rpTop,ocsp,qps");
+pref("browser.contentblocking.features.strict", "tp,tpPrivate,cm,fp,stp,lvl2,rp,rpTop,ocsp,qps");
 
 // Hide the "Change Block List" link for trackers/tracking content in the custom
 // Content Blocking/ETP panel. By default, it will not be visible. There is also
@@ -2216,16 +2200,6 @@ pref("app.normandy.onsync_skew_sec", 600);
   pref("intl.multilingual.aboutWelcome.languageMismatchEnabled", false);
 #endif
 
-// Simulate conditions that will happen when the browser
-// is running with Fission enabled. This is meant to assist
-// development and testing of Fission.
-// The current simulated conditions are:
-// - Don't propagate events from subframes to JS child actors
-pref("fission.frontend.simulate-events", false);
-// - Only deliver subframe messages that specifies
-//   their destination (using the BrowsingContext id).
-pref("fission.frontend.simulate-messages", false);
-
 // Coverage ping is disabled by default.
 pref("toolkit.coverage.enabled", false);
 pref("toolkit.coverage.endpoint.base", "https://coverage.mozilla.org");
@@ -2290,6 +2264,13 @@ pref("devtools.browsertoolbox.fission", true);
 #else
 pref("devtools.browsertoolbox.fission", false);
 #endif
+
+// When the Multiprocess Browser Toolbox is enabled, you can configure the scope of it:
+// - "everything" will enable debugging absolutely everything in the browser
+//   All processes, all documents, all workers, all add-ons.
+// - "parent-process" will restrict debugging to the parent process
+//   All privileged javascript, documents and workers running in the parent process.
+pref("devtools.browsertoolbox.scope", "everything");
 
 // This preference will enable watching top-level targets from the server side.
 pref("devtools.target-switching.server.enabled", true);
@@ -2457,13 +2438,8 @@ pref("devtools.netmonitor.har.forceExport", false);
 pref("devtools.netmonitor.har.pageLoadedTimeout", 1500);
 pref("devtools.netmonitor.har.enableAutoExportToFile", false);
 
-pref("devtools.netmonitor.features.webSockets", true);
-
 // netmonitor audit
 pref("devtools.netmonitor.audits.slow", 500);
-
-// Enable the EventSource Inspector
-pref("devtools.netmonitor.features.serverSentEvents", true);
 
 // Enable the new Edit and Resend panel
   pref("devtools.netmonitor.features.newEditAndResend", true);
@@ -2558,6 +2534,9 @@ pref("devtools.webconsole.groupWarningMessages", true);
 
 // Saved state of the Display content messages checkbox in the browser console.
 pref("devtools.browserconsole.contentMessages", false);
+
+// Enable network monitoring the browser toolbox console/browser console.
+pref("devtools.browserconsole.enableNetworkMonitoring", false);
 
 // Enable client-side mapping service for source maps
 pref("devtools.source-map.client-service.enabled", true);

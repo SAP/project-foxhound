@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +18,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/BenchmarkStorageChild.h"
-#include "mozilla/ContentBlocking.h"
 #include "mozilla/FOGIPC.h"
 #include "GMPServiceChild.h"
 #include "Geolocation.h"
@@ -49,6 +48,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StorageAccessAPIHelper.h"
 #include "mozilla/TelemetryIPC.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WebBrowserPersistDocumentChild.h"
@@ -189,6 +189,7 @@
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsJSEnvironment.h"
+#include "nsJSUtils.h"
 #include "nsMemoryInfoDumper.h"
 #include "nsPluginHost.h"
 #include "nsServiceManagerUtils.h"
@@ -225,7 +226,6 @@
 #  include <process.h>
 #  define getpid _getpid
 #  include "mozilla/WinDllServices.h"
-#  include "mozilla/widget/WinContentSystemParameters.h"
 #endif
 
 #if defined(XP_MACOSX)
@@ -526,14 +526,14 @@ ConsoleListener::Observe(nsIConsoleMessage* aMessage) {
       jsapi.Init();
       JSContext* cx = jsapi.cx();
 
-      JS::RootedValue stack(cx);
+      JS::Rooted<JS::Value> stack(cx);
       rv = scriptError->GetStack(&stack);
       NS_ENSURE_SUCCESS(rv, rv);
 
       if (stack.isObject()) {
         // Because |stack| might be a cross-compartment wrapper, we can't use it
         // with JSAutoRealm. Use the stackGlobal for that.
-        JS::RootedValue stackGlobal(cx);
+        JS::Rooted<JS::Value> stackGlobal(cx);
         rv = scriptError->GetStackGlobal(&stackGlobal);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -547,7 +547,7 @@ ConsoleListener::Observe(nsIConsoleMessage* aMessage) {
         }
 
         ClonedMessageData cloned;
-        if (!data.BuildClonedMessageDataForChild(mChild, cloned)) {
+        if (!data.BuildClonedMessageData(cloned)) {
           return NS_ERROR_FAILURE;
         }
 
@@ -676,12 +676,9 @@ mozilla::ipc::IPCResult ContentChild::RecvSetXPCOMProcessAttributes(
   mLookAndFeelData = std::move(aLookAndFeelData);
   mFontList = std::move(aFontList);
   mSharedFontListBlocks = std::move(aSharedFontListBlocks);
-#ifdef XP_WIN
-  widget::WinContentSystemParameters::GetSingleton()->SetContentValues(
-      aXPCOMInit.systemParameters());
-#endif
 
   gfx::gfxVars::SetValuesForInitialize(aXPCOMInit.gfxNonDefaultVarUpdates());
+  PerfStats::SetCollectionMask(aXPCOMInit.perfStatsMask());
   InitSharedUASheets(std::move(aSharedUASheetHandle), aSharedUASheetAddress);
   InitXPCOM(std::move(aXPCOMInit), aInitialData,
             aIsReadyForBackgroundProcessing);
@@ -1389,7 +1386,7 @@ void ContentChild::InitXPCOM(
       MOZ_CRASH();
     }
     ErrorResult rv;
-    JS::RootedValue data(jsapi.cx());
+    JS::Rooted<JS::Value> data(jsapi.cx());
     mozilla::dom::ipc::StructuredCloneData id;
     id.Copy(aInitialData);
     id.Read(jsapi.cx(), &data, rv);
@@ -1409,6 +1406,11 @@ void ContentChild::InitXPCOM(
   // Initialize the RemoteDecoderManager thread and its associated PBackground
   // channel.
   RemoteDecoderManagerChild::Init();
+
+  Preferences::RegisterCallbackAndCall(&OnFissionBlocklistPrefChange,
+                                       kFissionEnforceBlockList);
+  Preferences::RegisterCallbackAndCall(&OnFissionBlocklistPrefChange,
+                                       kFissionOmitBlockListValues);
 
   // Set the dynamic scalar definitions for this process.
   TelemetryIPC::AddDynamicScalarDefinitions(aXPCOMInit.dynamicScalarDefs());
@@ -2315,16 +2317,6 @@ mozilla::ipc::IPCResult ContentChild::RecvThemeChanged(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentChild::RecvUpdateSystemParameters(
-    nsTArray<SystemParameterKVPair>&& aUpdates) {
-#ifdef XP_WIN
-  widget::WinContentSystemParameters::GetSingleton()->SetContentValues(
-      aUpdates);
-#endif
-
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult ContentChild::RecvLoadProcessScript(
     const nsString& aURL) {
   auto* global = ContentProcessMessageManager::Get();
@@ -2342,7 +2334,7 @@ mozilla::ipc::IPCResult ContentChild::RecvAsyncMessage(
       nsFrameMessageManager::GetChildProcessManager();
   if (cpm) {
     StructuredCloneData data;
-    ipc::UnpackClonedMessageDataForChild(aData, data);
+    ipc::UnpackClonedMessageData(aData, data);
     cpm->ReceiveMessage(cpm, nullptr, aMsg, false, &data, nullptr,
                         IgnoreErrors());
   }
@@ -2467,6 +2459,11 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateAppLocales(
 mozilla::ipc::IPCResult ContentChild::RecvUpdateRequestedLocales(
     nsTArray<nsCString>&& aRequestedLocales) {
   LocaleService::GetInstance()->AssignRequestedLocales(aRequestedLocales);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentChild::RecvSystemTimezoneChanged() {
+  nsJSUtils::ResetTimeZone();
   return IPC_OK();
 }
 
@@ -3042,6 +3039,10 @@ void ContentChild::ShutdownInternal() {
              : (isProfiling
                     ? "Profiling - SendShutdownProfile (failed)"_ns
                     : "Not profiling - SendShutdownProfile (failed)"_ns));
+  }
+
+  if (PerfStats::GetCollectionMask() != 0) {
+    SendShutdownPerfStats(PerfStats::CollectLocalPerfStatsJSON());
   }
 
   // Start a timer that will insure we quickly exit after a reasonable
@@ -3621,8 +3622,8 @@ mozilla::ipc::IPCResult ContentChild::RecvOnAllowAccessFor(
         aReason) {
   MOZ_ASSERT(!aContext.IsNull(), "Browsing context cannot be null");
 
-  ContentBlocking::OnAllowAccessFor(aContext.GetMaybeDiscarded(),
-                                    aTrackingOrigin, aCookieBehavior, aReason);
+  StorageAccessAPIHelper::OnAllowAccessFor(
+      aContext.GetMaybeDiscarded(), aTrackingOrigin, aCookieBehavior, aReason);
 
   return IPC_OK();
 }
@@ -4571,7 +4572,8 @@ NS_IMETHODIMP ContentChild::GetExistingActor(const nsACString& aName,
 }
 
 already_AddRefed<JSActor> ContentChild::InitJSActor(
-    JS::HandleObject aMaybeActor, const nsACString& aName, ErrorResult& aRv) {
+    JS::Handle<JSObject*> aMaybeActor, const nsACString& aName,
+    ErrorResult& aRv) {
   RefPtr<JSProcessActorChild> actor;
   if (aMaybeActor.get()) {
     aRv = UNWRAP_OBJECT(JSProcessActorChild, aMaybeActor.get(), actor);
@@ -4594,12 +4596,12 @@ IPCResult ContentChild::RecvRawMessage(const JSActorMessageMeta& aMeta,
   Maybe<StructuredCloneData> data;
   if (aData) {
     data.emplace();
-    data->BorrowFromClonedMessageDataForChild(*aData);
+    data->BorrowFromClonedMessageData(*aData);
   }
   Maybe<StructuredCloneData> stack;
   if (aStack) {
     stack.emplace();
-    stack->BorrowFromClonedMessageDataForChild(*aStack);
+    stack->BorrowFromClonedMessageData(*aStack);
   }
   ReceiveRawMessage(aMeta, std::move(data), std::move(stack));
   return IPC_OK();

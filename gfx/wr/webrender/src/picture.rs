@@ -1825,6 +1825,12 @@ impl SubSlice {
     }
 }
 
+pub struct BackdropSurface {
+    pub id: NativeSurfaceId,
+    color: ColorF,
+    pub device_rect: DeviceRect,
+}
+
 /// Represents a cache of tiles that make up a picture primitives.
 pub struct TileCacheInstance {
     /// Index of the tile cache / slice for this frame builder. It's determined
@@ -1923,6 +1929,9 @@ pub struct TileCacheInstance {
     /// A list of extra dirty invalidation tests that can only be checked once we
     /// know the dirty rect of all tiles
     deferred_dirty_tests: Vec<DeferredDirtyTest>,
+    /// Is there a backdrop associated with this cache
+    found_prims_after_backdrop: bool,
+    pub backdrop_surface: Option<BackdropSurface>,
 }
 
 enum SurfacePromotionResult {
@@ -1982,6 +1991,8 @@ impl TileCacheInstance {
             current_raster_scale: 1.0,
             current_surface_traversal_depth: 0,
             deferred_dirty_tests: Vec::new(),
+            found_prims_after_backdrop: false,
+            backdrop_surface: None,
         }
     }
 
@@ -2061,6 +2072,10 @@ impl TileCacheInstance {
 
         for (_, external_surface) in self.external_native_surface_cache {
             resource_cache.destroy_compositor_surface(external_surface.native_surface_id)
+        }
+
+        if let Some(backdrop_surface) = &self.backdrop_surface {
+            resource_cache.destroy_compositor_surface(backdrop_surface.id);
         }
     }
 
@@ -2156,7 +2171,6 @@ impl TileCacheInstance {
                 &frame_context.global_screen_world_rect,
                 &mut frame_state.data_stores.clip,
                 true,
-                false,
             );
 
             // Ensure that if the entire picture cache is clipped out, the local
@@ -3357,13 +3371,22 @@ impl TileCacheInstance {
                 // These don't contribute dependencies
             }
         };
+        
+        // Bug 1773109: We'd like to use native color layers for backdrops whenever possible.
+        // A native color layer can only be used when there are no primitives on top of the
+        // backdrop in the same slice. This primitive is potentially on top of a backdrop,
+        // but there's no guarantee that the primitive is in the visible area. Even so,
+        // we have to mark it as obscuring the backdrop because we rely on off-screen tiles
+        // having correct contents when they are scrolled into view through APZ. An ideal
+        // solution would use native color layers for backdrops as long as nothing is
+        // covering them in the visible area *and* have correctly-painted tiles ready to
+        // be scrolled in.
+        self.found_prims_after_backdrop = true;
 
         // If this primitive considers itself a backdrop candidate, apply further
         // checks to see if it matches all conditions to be a backdrop.
         let mut vis_flags = PrimitiveVisibilityFlags::empty();
-
         let sub_slice = &mut self.sub_slices[sub_slice_index];
-
         if let Some(mut backdrop_candidate) = backdrop_candidate {
             // Update whether the surface that this primitive exists on
             // can be considered opaque. Any backdrop kind other than
@@ -3451,6 +3474,7 @@ impl TileCacheInstance {
                             vis_flags |= PrimitiveVisibilityFlags::IS_BACKDROP;
                         }
 
+                        self.found_prims_after_backdrop = false;
                         self.backdrop.kind = Some(kind);
                     }
                 }
@@ -4631,6 +4655,7 @@ impl PicturePrimitive {
                 let device_pixel_scale = frame_state
                     .surfaces[surface_index.0]
                     .device_pixel_scale;
+                let mut at_least_one_tile_visible = false;
 
                 // Get the overall world space rect of the picture cache. Used to clip
                 // the tile rects below for occlusion testing to the relevant area.
@@ -4707,6 +4732,8 @@ impl PicturePrimitive {
 
                             continue;
                         }
+
+                        at_least_one_tile_visible = true;
 
                         if frame_context.debug_flags.contains(DebugFlags::PICTURE_CACHING_DBG) {
                             tile.root.draw_debug_rects(
@@ -5118,6 +5145,74 @@ impl PicturePrimitive {
                     // ordering.
                     sub_slice.opaque_tile_descriptors.sort_by_key(|desc| desc.tile_id);
                     sub_slice.alpha_tile_descriptors.sort_by_key(|desc| desc.tile_id);
+                }
+
+                // Check to see if we should add backdrops as native surfaces.
+                let backdrop_rect = tile_cache.backdrop.opaque_rect
+                    .intersection(&tile_cache.local_rect)
+                    .and_then(|r| {
+                        r.intersection(&tile_cache.local_clip_rect)
+                });
+
+                let mut backdrop_in_use_and_visible = false;
+                if let Some(backdrop_rect) = backdrop_rect {
+                    let supports_surface_for_backdrop = match frame_state.composite_state.compositor_kind {
+                        CompositorKind::Draw { .. } => {
+                            false
+                        }
+                        CompositorKind::Native { capabilities, .. } => {
+                            capabilities.supports_surface_for_backdrop
+                        }
+                    };
+                    if supports_surface_for_backdrop && !tile_cache.found_prims_after_backdrop && at_least_one_tile_visible {
+                        if let Some(BackdropKind::Color { color }) = tile_cache.backdrop.kind {
+                            backdrop_in_use_and_visible = true;
+
+                            // We're going to let the compositor handle the backdrop as a native surface.
+                            // Hide all of our sub_slice tiles so they aren't also trying to draw it.
+                            for sub_slice in &mut tile_cache.sub_slices {
+                                for tile in sub_slice.tiles.values_mut() {
+                                    tile.is_visible = false;
+                                }
+                            }
+
+                            // Destroy our backdrop surface if it doesn't match the new color.
+                            // TODO: This is a performance hit for animated color backdrops.
+                            if let Some(backdrop_surface) = &tile_cache.backdrop_surface {
+                                if backdrop_surface.color != color {
+                                    frame_state.resource_cache.destroy_compositor_surface(backdrop_surface.id);
+                                    tile_cache.backdrop_surface = None;
+                                }
+                            }
+
+                            // Calculate the device_rect for the backdrop, which is just the backdrop_rect
+                            // converted into world space and scaled to device pixels.
+                            let world_backdrop_rect = map_pic_to_world.map(&backdrop_rect).expect("bug: unable to map backdrop rect");
+                            let device_rect = (world_backdrop_rect * frame_context.global_device_pixel_scale).round();
+
+                            // If we already have a backdrop surface, update the device rect. Otherwise, create
+                            // a backdrop surface.
+                            if let Some(backdrop_surface) = &mut tile_cache.backdrop_surface {
+                                backdrop_surface.device_rect = device_rect;
+                            } else {
+                                // Create native compositor surface with color for the backdrop and store the id.
+                                tile_cache.backdrop_surface = Some(BackdropSurface {
+                                    id: frame_state.resource_cache.create_compositor_backdrop_surface(color),
+                                    color,
+                                    device_rect,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if !backdrop_in_use_and_visible {
+                    if let Some(backdrop_surface) = &tile_cache.backdrop_surface {
+                        // We've already allocated a backdrop surface, but we're not using it.
+                        // Tell the compositor to get rid of it.
+                        frame_state.resource_cache.destroy_compositor_surface(backdrop_surface.id);
+                        tile_cache.backdrop_surface = None;
+                    }
                 }
 
                 // If invalidation debugging is enabled, dump the picture cache state to a tree printer.

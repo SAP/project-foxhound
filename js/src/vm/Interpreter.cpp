@@ -196,7 +196,8 @@ bool js::Debug_CheckSelfHosted(JSContext* cx, HandleValue fun) {
   return true;
 }
 
-static inline bool GetPropertyOperation(JSContext* cx, HandlePropertyName name,
+static inline bool GetPropertyOperation(JSContext* cx,
+                                        Handle<PropertyName*> name,
                                         HandleValue lval,
                                         MutableHandleValue vp) {
   if (name == cx->names().length && GetLengthProperty(lval, vp)) {
@@ -207,7 +208,7 @@ static inline bool GetPropertyOperation(JSContext* cx, HandlePropertyName name,
 }
 
 static inline bool GetNameOperation(JSContext* cx, HandleObject envChain,
-                                    HandlePropertyName name, JSOp nextOp,
+                                    Handle<PropertyName*> name, JSOp nextOp,
                                     MutableHandleValue vp) {
   /* Kludge to allow (typeof foo == "undefined") tests. */
   if (nextOp == JSOp::Typeof) {
@@ -220,7 +221,7 @@ bool js::GetImportOperation(JSContext* cx, HandleObject envChain,
                             HandleScript script, jsbytecode* pc,
                             MutableHandleValue vp) {
   RootedObject env(cx), pobj(cx);
-  RootedPropertyName name(cx, script->getName(pc));
+  Rooted<PropertyName*> name(cx, script->getName(pc));
   PropertyResult prop;
 
   MOZ_ALWAYS_TRUE(LookupName(cx, name, envChain, &env, &pobj, &prop));
@@ -1049,7 +1050,7 @@ void js::UnwindEnvironment(JSContext* cx, EnvironmentIter& ei, jsbytecode* pc) {
     return;
   }
 
-  RootedScope scope(cx, ei.initialFrame().script()->innermostScope(pc));
+  Rooted<Scope*> scope(cx, ei.initialFrame().script()->innermostScope(pc));
 
 #ifdef DEBUG
   // A frame's environment chain cannot be unwound to anything enclosing the
@@ -1833,7 +1834,7 @@ static MOZ_ALWAYS_INLINE bool SetObjectElementOperation(
 
 static MOZ_ALWAYS_INLINE void InitElemArrayOperation(JSContext* cx,
                                                      jsbytecode* pc,
-                                                     HandleArrayObject arr,
+                                                     Handle<ArrayObject*> arr,
                                                      HandleValue val) {
   MOZ_ASSERT(JSOp(*pc) == JSOp::InitElemArray);
 
@@ -2104,8 +2105,8 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
   RootedValue rootValue0(cx), rootValue1(cx);
   RootedObject rootObject0(cx), rootObject1(cx);
   RootedFunction rootFunction0(cx);
-  RootedAtom rootAtom0(cx);
-  RootedPropertyName rootName0(cx);
+  Rooted<JSAtom*> rootAtom0(cx);
+  Rooted<PropertyName*> rootName0(cx);
   RootedId rootId0(cx);
   RootedScript rootScript0(cx);
   Rooted<Scope*> rootScope0(cx);
@@ -2517,6 +2518,16 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       REGS.sp -= 2;
     }
     END_CASE(EndIter)
+
+    CASE(CloseIter) {
+      ReservedRooted<JSObject*> iter(&rootObject0, &REGS.sp[-1].toObject());
+      CompletionKind kind = CompletionKind(GET_UINT8(REGS.pc));
+      if (!CloseIterOperation(cx, iter, kind)) {
+        goto error;
+      }
+      REGS.sp--;
+    }
+    END_CASE(CloseIter)
 
     CASE(IsGenClosing) {
       bool b = REGS.sp[-1].isMagic(JS_GENERATOR_CLOSING);
@@ -4338,6 +4349,11 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         TraceLogStartEvent(logger, scriptEvent);
         TraceLogStartEvent(logger, TraceLogger_Interpreter);
 
+        if (!probes::EnterScript(cx, generatorScript,
+                                 generatorScript->function(), REGS.fp())) {
+          goto error;
+        }
+
         if (!DebugAPI::onResumeFrame(cx, REGS.fp())) {
           if (cx->isPropagatingForcedReturn()) {
             MOZ_ASSERT_IF(
@@ -4620,7 +4636,7 @@ bool js::ThrowOperation(JSContext* cx, HandleValue v) {
   return false;
 }
 
-bool js::GetProperty(JSContext* cx, HandleValue v, HandlePropertyName name,
+bool js::GetProperty(JSContext* cx, HandleValue v, Handle<PropertyName*> name,
                      MutableHandleValue vp) {
   if (name == cx->names().length) {
     // Fast path for strings, arrays and arguments.
@@ -4725,7 +4741,7 @@ bool js::ThrowMsgOperation(JSContext* cx, const unsigned throwMsgKind) {
 }
 
 bool js::GetAndClearExceptionAndStack(JSContext* cx, MutableHandleValue res,
-                                      MutableHandleSavedFrame stack) {
+                                      MutableHandle<SavedFrame*> stack) {
   if (!cx->getPendingException(res)) {
     return false;
   }
@@ -4737,13 +4753,13 @@ bool js::GetAndClearExceptionAndStack(JSContext* cx, MutableHandleValue res,
 }
 
 bool js::GetAndClearException(JSContext* cx, MutableHandleValue res) {
-  RootedSavedFrame stack(cx);
+  Rooted<SavedFrame*> stack(cx);
   return GetAndClearExceptionAndStack(cx, res, &stack);
 }
 
 template <bool strict>
 bool js::DelPropOperation(JSContext* cx, HandleValue val,
-                          HandlePropertyName name, bool* res) {
+                          Handle<PropertyName*> name, bool* res) {
   const int valIndex = -1;
   RootedObject obj(cx,
                    ToObjectFromStackForPropertyAccess(cx, val, valIndex, name));
@@ -4769,9 +4785,10 @@ bool js::DelPropOperation(JSContext* cx, HandleValue val,
 }
 
 template bool js::DelPropOperation<true>(JSContext* cx, HandleValue val,
-                                         HandlePropertyName name, bool* res);
+                                         Handle<PropertyName*> name, bool* res);
 template bool js::DelPropOperation<false>(JSContext* cx, HandleValue val,
-                                          HandlePropertyName name, bool* res);
+                                          Handle<PropertyName*> name,
+                                          bool* res);
 
 template <bool strict>
 bool js::DelElemOperation(JSContext* cx, HandleValue val, HandleValue index,
@@ -4921,7 +4938,7 @@ bool js::AtomicIsLockFree(JSContext* cx, HandleValue in, int* out) {
   return true;
 }
 
-bool js::DeleteNameOperation(JSContext* cx, HandlePropertyName name,
+bool js::DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
                              HandleObject scopeObj, MutableHandleValue res) {
   RootedObject scope(cx), pobj(cx);
   PropertyResult prop;
@@ -4955,7 +4972,7 @@ bool js::DeleteNameOperation(JSContext* cx, HandlePropertyName name,
 }
 
 bool js::ImplicitThisOperation(JSContext* cx, HandleObject scopeObj,
-                               HandlePropertyName name,
+                               Handle<PropertyName*> name,
                                MutableHandleValue res) {
   RootedObject obj(cx);
   if (!LookupNameWithGlobalDefault(cx, name, scopeObj, &obj)) {
@@ -5008,7 +5025,7 @@ static bool InitGetterSetterOperation(JSContext* cx, jsbytecode* pc,
 
 bool js::InitPropGetterSetterOperation(JSContext* cx, jsbytecode* pc,
                                        HandleObject obj,
-                                       HandlePropertyName name,
+                                       Handle<PropertyName*> name,
                                        HandleObject val) {
   RootedId id(cx, NameToId(name));
   return InitGetterSetterOperation(cx, pc, obj, id, val);
@@ -5029,7 +5046,7 @@ bool js::SpreadCallOperation(JSContext* cx, HandleScript script, jsbytecode* pc,
                              HandleValue thisv, HandleValue callee,
                              HandleValue arr, HandleValue newTarget,
                              MutableHandleValue res) {
-  RootedArrayObject aobj(cx, &arr.toObject().as<ArrayObject>());
+  Rooted<ArrayObject*> aobj(cx, &arr.toObject().as<ArrayObject>());
   uint32_t length = aobj->length();
   JSOp op = JSOp(*pc);
   bool constructing = op == JSOp::SpreadNew || op == JSOp::SpreadSuperCall;
@@ -5237,7 +5254,7 @@ ArrayObject* js::ArrayFromArgumentsObject(JSContext* cx,
 JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
                                  const jsbytecode* pc) {
   if (JSOp(*pc) == JSOp::NewObject) {
-    RootedShape shape(cx, script->getShape(pc));
+    Rooted<Shape*> shape(cx, script->getShape(pc));
     return PlainObject::createWithShape(cx, shape);
   }
 
@@ -5245,7 +5262,8 @@ JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
   return NewPlainObject(cx);
 }
 
-JSObject* js::NewPlainObjectBaselineFallback(JSContext* cx, HandleShape shape,
+JSObject* js::NewPlainObjectBaselineFallback(JSContext* cx,
+                                             Handle<Shape*> shape,
                                              gc::AllocKind allocKind,
                                              gc::AllocSite* site) {
   MOZ_ASSERT(shape->getObjectClass() == &PlainObject::class_);
@@ -5260,7 +5278,8 @@ JSObject* js::NewPlainObjectBaselineFallback(JSContext* cx, HandleShape shape,
   return NativeObject::create(cx, allocKind, initialHeap, shape, site);
 }
 
-JSObject* js::NewPlainObjectOptimizedFallback(JSContext* cx, HandleShape shape,
+JSObject* js::NewPlainObjectOptimizedFallback(JSContext* cx,
+                                              Handle<Shape*> shape,
                                               gc::AllocKind allocKind,
                                               gc::InitialHeap initialHeap) {
   MOZ_ASSERT(shape->getObjectClass() == &PlainObject::class_);
@@ -5320,7 +5339,7 @@ void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
 }
 
 void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
-                                   HandlePropertyName name) {
+                                   Handle<PropertyName*> name) {
   RootedId id(cx, NameToId(name));
   ReportRuntimeLexicalError(cx, errorNumber, id);
 }
@@ -5331,7 +5350,7 @@ void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
   MOZ_ASSERT(op == JSOp::CheckLexical || op == JSOp::CheckAliasedLexical ||
              op == JSOp::ThrowSetConst || op == JSOp::GetImport);
 
-  RootedPropertyName name(cx);
+  Rooted<PropertyName*> name(cx);
   if (IsLocalOp(op)) {
     name = FrameSlotName(script, pc)->asPropertyName();
   } else if (IsAliasedVarOp(op)) {
@@ -5344,7 +5363,7 @@ void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
   ReportRuntimeLexicalError(cx, errorNumber, name);
 }
 
-void js::ReportRuntimeRedeclaration(JSContext* cx, HandlePropertyName name,
+void js::ReportRuntimeRedeclaration(JSContext* cx, Handle<PropertyName*> name,
                                     const char* redeclKind) {
   if (UniqueChars printable = AtomToPrintableString(cx, name)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -5399,7 +5418,7 @@ bool js::ThrowObjectCoercible(JSContext* cx, HandleValue value) {
 }
 
 bool js::SetPropertySuper(JSContext* cx, HandleValue lval, HandleValue receiver,
-                          HandlePropertyName name, HandleValue rval,
+                          Handle<PropertyName*> name, HandleValue rval,
                           bool strict) {
   MOZ_ASSERT(lval.isObjectOrNull());
 
@@ -5445,5 +5464,56 @@ bool js::LoadAliasedDebugVar(JSContext* cx, JSObject* env, jsbytecode* pc,
           : env->as<DebugEnvironmentProxy>().environment();
 
   result.set(finalEnv.aliasedBinding(ec));
+  return true;
+}
+
+// https://tc39.es/ecma262/#sec-iteratorclose
+bool js::CloseIterOperation(JSContext* cx, HandleObject iter,
+                            CompletionKind kind) {
+  // Steps 1-2 are implicit.
+
+  // Step 3
+  RootedValue returnMethod(cx);
+  bool innerResult =
+      GetProperty(cx, iter, iter, cx->names().return_, &returnMethod);
+
+  // Step 4
+  RootedValue result(cx);
+  if (innerResult) {
+    // Step 4b
+    if (returnMethod.isNullOrUndefined()) {
+      return true;
+    }
+    // Step 4c
+    if (IsCallable(returnMethod)) {
+      RootedValue thisVal(cx, ObjectValue(*iter));
+      innerResult = Call(cx, returnMethod, thisVal, &result);
+    } else {
+      innerResult = ReportIsNotFunction(cx, returnMethod);
+    }
+  }
+
+  // Step 5
+  if (kind == CompletionKind::Throw) {
+    // If we close an iterator while unwinding for an exception,
+    // the initial exception takes priority over any exception thrown
+    // while closing the iterator.
+    if (cx->isExceptionPending()) {
+      cx->clearPendingException();
+    }
+    return true;
+  }
+
+  // Step 6
+  if (!innerResult) {
+    return false;
+  }
+
+  // Step 7
+  if (!result.isObject()) {
+    return ThrowCheckIsObject(cx, CheckIsObjectKind::IteratorReturn);
+  }
+
+  // Step 8
   return true;
 }

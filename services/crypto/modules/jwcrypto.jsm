@@ -4,12 +4,6 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto"]);
-
 const EXPORTED_SYMBOLS = ["jwcrypto"];
 
 const ECDH_PARAMS = {

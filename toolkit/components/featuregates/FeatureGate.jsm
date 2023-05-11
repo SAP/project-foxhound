@@ -7,22 +7,19 @@
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
+const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FeatureGateImplementation",
   "resource://featuregates/FeatureGateImplementation.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
-
 var EXPORTED_SYMBOLS = ["FeatureGate"];
 
-XPCOMUtils.defineLazyGetter(this, "gFeatureDefinitionsPromise", async () => {
+XPCOMUtils.defineLazyGetter(lazy, "gFeatureDefinitionsPromise", async () => {
   const url = "resource://featuregates/feature_definitions.json";
   return fetchFeatureDefinitions(url);
 });
@@ -39,7 +36,7 @@ function buildFeatureGateImplementation(definition) {
     definition[`${key}OriginalValue`] = definition[key];
     definition[key] = FeatureGate.evaluateTargetedValue(definition[key]);
   }
-  return new FeatureGateImplementation(definition);
+  return new lazy.FeatureGateImplementation(definition);
 }
 
 let featureGatePrefObserver = {
@@ -76,7 +73,7 @@ class FeatureGate {
     if (testDefinitionsUrl) {
       featureDefinitions = await fetchFeatureDefinitions(testDefinitionsUrl);
     } else {
-      featureDefinitions = await gFeatureDefinitionsPromise;
+      featureDefinitions = await lazy.gFeatureDefinitionsPromise;
     }
 
     if (!featureDefinitions.has(id)) {
@@ -98,7 +95,7 @@ class FeatureGate {
     if (testDefinitionsUrl) {
       featureDefinitions = await fetchFeatureDefinitions(testDefinitionsUrl);
     } else {
-      featureDefinitions = await gFeatureDefinitionsPromise;
+      featureDefinitions = await lazy.gFeatureDefinitionsPromise;
     }
 
     let definitions = [];

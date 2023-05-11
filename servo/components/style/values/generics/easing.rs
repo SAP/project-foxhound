@@ -6,8 +6,9 @@
 //! https://drafts.csswg.org/css-easing/#timing-functions
 
 use crate::parser::ParserContext;
+use crate::values::generics::Optional;
 
-/// A generic easing function.
+/// An entry for linear easing function.
 #[derive(
     Clone,
     Copy,
@@ -19,10 +20,39 @@ use crate::parser::ParserContext;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    Serialize,
+    Deserialize,
+)]
+#[repr(C)]
+pub struct LinearStop<Number, Percentage> {
+    /// Output of the function at the given point.
+    pub output: Number,
+    /// Playback progress at which this output starts.
+    #[css(skip_if = "Optional::is_none")]
+    pub input_start: Optional<Percentage>,
+    /// Playback progress at which this output ends.
+    #[css(skip_if = "Optional::is_none")]
+    pub input_end: Optional<Percentage>,
+}
+
+/// A generic easing function.
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    Serialize,
+    Deserialize,
 )]
 #[value_info(ty = "TIMING_FUNCTION")]
 #[repr(u8, C)]
-pub enum TimingFunction<Integer, Number> {
+/// cbindgen:private-default-tagged-enum-constructor=false
+pub enum TimingFunction<Integer, Number, Percentage> {
     /// `linear | ease | ease-in | ease-out | ease-in-out`
     Keyword(TimingKeyword),
     /// `cubic-bezier(<number>, <number>, <number>, <number>)`
@@ -39,6 +69,11 @@ pub enum TimingFunction<Integer, Number> {
     #[css(comma, function)]
     #[value_info(other_values = "step-start,step-end")]
     Steps(Integer, #[css(skip_if = "is_end")] StepPosition),
+    /// linear([<linear-stop>]#)
+    /// <linear-stop> = <output> && <linear-stop-length>?
+    /// <linear-stop-length> = <percentage>{1, 2}
+    #[css(comma, function = "linear")]
+    LinearFunction(#[css(iterable)] crate::OwnedSlice<LinearStop<Number, Percentage>>),
 }
 
 #[allow(missing_docs)]
@@ -56,6 +91,8 @@ pub enum TimingFunction<Integer, Number> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u8)]
 pub enum TimingKeyword {
@@ -90,6 +127,8 @@ fn step_position_jump_enabled(_context: &ParserContext) -> bool {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    Serialize,
+    Deserialize,
 )]
 #[repr(u8)]
 pub enum StepPosition {
@@ -110,7 +149,7 @@ fn is_end(position: &StepPosition) -> bool {
     *position == StepPosition::JumpEnd || *position == StepPosition::End
 }
 
-impl<Integer, Number> TimingFunction<Integer, Number> {
+impl<Integer, Number, Percentage> TimingFunction<Integer, Number, Percentage> {
     /// `ease`
     #[inline]
     pub fn ease() -> Self {

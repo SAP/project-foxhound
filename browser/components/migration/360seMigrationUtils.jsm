@@ -9,16 +9,19 @@ var EXPORTED_SYMBOLS = ["Qihoo360seMigrationUtils"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
-XPCOMUtils.defineLazyModuleGetters(this, {
-  MigrationUtils: "resource:///modules/MigrationUtils.jsm",
+const { MigrationUtils } = ChromeUtils.import(
+  "resource:///modules/MigrationUtils.jsm"
+);
+
+const lazy = {};
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   Sqlite: "resource://gre/modules/Sqlite.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "filenamesRegex",
   () => /^360(?:default_ori|sefav)_([0-9_]+)\.favdb$/i
 );
@@ -43,7 +46,7 @@ Bookmarks.prototype = {
       let folderMap = new Map();
       let toolbarBMs = [];
 
-      let connection = await Sqlite.openConnection({
+      let connection = await lazy.Sqlite.openConnection({
         path: this._file.path,
       });
 
@@ -74,7 +77,7 @@ Bookmarks.prototype = {
             bmToInsert = {
               children: [],
               title,
-              type: PlacesUtils.bookmarks.TYPE_FOLDER,
+              type: lazy.PlacesUtils.bookmarks.TYPE_FOLDER,
             };
             folderMap.set(id, bmToInsert);
           } else {
@@ -104,9 +107,9 @@ Bookmarks.prototype = {
       }
 
       if (toolbarBMs.length) {
-        let parentGuid = PlacesUtils.bookmarks.toolbarGuid;
+        let parentGuid = lazy.PlacesUtils.bookmarks.toolbarGuid;
         await MigrationUtils.insertManyBookmarksWrapper(toolbarBMs, parentGuid);
-        PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
+        lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
       }
     })().then(
       () => aCallback(true),
@@ -159,7 +162,7 @@ var Qihoo360seMigrationUtils = {
       ignoreAbsent: true,
     })) {
       let filename = PathUtils.filename(entry);
-      let matches = filenamesRegex.exec(filename);
+      let matches = lazy.filenamesRegex.exec(filename);
       if (!matches) {
         continue;
       }

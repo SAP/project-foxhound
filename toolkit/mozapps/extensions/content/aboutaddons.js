@@ -5,7 +5,7 @@
 /* import-globals-from aboutaddonsCommon.js */
 /* import-globals-from abuse-reports.js */
 /* import-globals-from view-controller.js */
-/* global MozXULElement, windowRoot */
+/* global windowRoot */
 
 "use strict";
 
@@ -40,6 +40,10 @@ XPCOMUtils.defineLazyGetter(this, "extensionStylesheets", () => {
   return ExtensionParent.extensionStylesheets;
 });
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  ColorwayClosetOpener: "resource:///modules/ColorwayClosetOpener.jsm",
+});
+
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "manifestV3enabled",
@@ -60,6 +64,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "XPINSTALL_ENABLED",
   "xpinstall.enabled",
   true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "COLORWAY_CLOSET_ENABLED",
+  "browser.theme.colorway-closet",
+  false
 );
 
 const UPDATES_RECENT_TIMESPAN = 2 * 24 * 3600000; // 2 days (in milliseconds)
@@ -103,6 +114,14 @@ const PRIVATE_BROWSING_PERMS = {
   permissions: [PRIVATE_BROWSING_PERM_NAME],
   origins: [],
 };
+
+const L10N_ID_MAPPING = {
+  "theme-disabled-heading": "theme-disabled-heading2",
+};
+
+function getL10nIdMapping(id) {
+  return L10N_ID_MAPPING[id] || id;
+}
 
 function shouldSkipAnimations() {
   return (
@@ -2222,25 +2241,6 @@ class FiveStarRating extends HTMLElement {
 }
 customElements.define("five-star-rating", FiveStarRating);
 
-class ContentSelectDropdown extends HTMLElement {
-  connectedCallback() {
-    if (this.children.length) {
-      return;
-    }
-    // This creates the menulist and menupopup elements needed for the inline
-    // browser to support <select> elements and context menus.
-    this.appendChild(
-      MozXULElement.parseXULToFragment(`
-      <menulist popuponly="true" id="ContentSelectDropdown" hidden="true">
-        <menupopup rolluponmousewheel="true" activateontab="true"
-                   position="after_start" level="parent"/>
-      </menulist>
-    `)
-    );
-  }
-}
-customElements.define("content-select-dropdown", ContentSelectDropdown);
-
 class ProxyContextMenu extends HTMLElement {
   openPopupAtScreen(...args) {
     // prettier-ignore
@@ -2338,7 +2338,6 @@ class InlineOptionsBrowser extends HTMLElement {
     browser.setAttribute("id", "addon-inline-options");
     browser.setAttribute("transparent", "true");
     browser.setAttribute("forcemessagemanager", "true");
-    browser.setAttribute("selectmenulist", "ContentSelectDropdown");
     browser.setAttribute("autocompletepopup", "PopupAutoComplete");
 
     // The outer about:addons document listens for key presses to focus
@@ -2691,11 +2690,13 @@ class AddonDetails extends HTMLElement {
       this.render();
     }
     this.deck.addEventListener("view-changed", this);
+    this.descriptionShowMoreButton.addEventListener("click", this);
   }
 
   disconnectedCallback() {
     this.inlineOptions.destroyBrowser();
     this.deck.removeEventListener("view-changed", this);
+    this.descriptionShowMoreButton.removeEventListener("click", this);
   }
 
   handleEvent(e) {
@@ -2725,6 +2726,11 @@ class AddonDetails extends HTMLElement {
       // unconditionally shown. So if any other tab is selected, do not save
       // the current scroll offset, but start at the top of the page instead.
       ScrollOffsets.canRestore = this.deck.selectedViewName === "details";
+    } else if (
+      e.type == "click" &&
+      e.target == this.descriptionShowMoreButton
+    ) {
+      this.toggleDescription();
     }
   }
 
@@ -2754,6 +2760,23 @@ class AddonDetails extends HTMLElement {
     if (this.deck.selectedViewName === "preferences") {
       this.inlineOptions.ensureBrowserCreated();
     }
+  }
+
+  toggleDescription() {
+    this.descriptionCollapsed = !this.descriptionCollapsed;
+
+    this.descriptionWrapper.classList.toggle(
+      "addon-detail-description-collapse",
+      this.descriptionCollapsed
+    );
+
+    this.descriptionShowMoreButton.hidden = false;
+    document.l10n.setAttributes(
+      this.descriptionShowMoreButton,
+      this.descriptionCollapsed
+        ? "addon-detail-description-expand"
+        : "addon-detail-description-collapse"
+    );
   }
 
   get releaseNotesUri() {
@@ -2808,6 +2831,36 @@ class AddonDetails extends HTMLElement {
     }
   }
 
+  renderDescription(addon) {
+    this.descriptionWrapper = this.querySelector(
+      ".addon-detail-description-wrapper"
+    );
+    this.descriptionContents = this.querySelector(".addon-detail-description");
+    this.descriptionShowMoreButton = this.querySelector(
+      ".addon-detail-description-toggle"
+    );
+
+    if (addon.getFullDescription) {
+      this.descriptionContents.appendChild(addon.getFullDescription(document));
+    } else if (addon.fullDescription) {
+      this.descriptionContents.appendChild(nl2br(addon.fullDescription));
+    }
+
+    this.descriptionCollapsed = false;
+
+    requestAnimationFrame(() => {
+      const remSize = parseFloat(
+        getComputedStyle(document.documentElement).fontSize
+      );
+      const { height } = this.descriptionContents.getBoundingClientRect();
+
+      // collapse description if there are too many lines,i.e. height > (20 rem)
+      if (height > 20 * remSize) {
+        this.toggleDescription();
+      }
+    });
+  }
+
   async render() {
     let { addon } = this;
     if (!addon) {
@@ -2837,13 +2890,7 @@ class AddonDetails extends HTMLElement {
     this.inlineOptions.setAddon(addon);
 
     // Full description.
-    let description = this.querySelector(".addon-detail-description");
-    if (addon.getFullDescription) {
-      description.appendChild(addon.getFullDescription(document));
-    } else if (addon.fullDescription) {
-      description.appendChild(nl2br(addon.fullDescription));
-    }
-
+    this.renderDescription(addon);
     this.querySelector(
       ".addon-detail-contribute"
     ).hidden = !addon.contributionURL;
@@ -3625,6 +3672,84 @@ class AddonCard extends HTMLElement {
 }
 customElements.define("addon-card", AddonCard);
 
+class ColorwayClosetCard extends HTMLElement {
+  connectedCallback() {
+    if (this.childElementCount === 0) {
+      this.render();
+    }
+  }
+
+  render() {
+    let card = importTemplate("card").firstElementChild;
+    let heading = card.querySelector(".addon-name-container");
+    // remove elipsis button
+    heading.textContent = "";
+    heading.append(importTemplate("colorways-card-container"));
+    this.setCardPreviewText(card);
+    this.setCardContent(card);
+    this.append(card);
+  }
+
+  setCardPreviewText(card) {
+    // Create new elements for card preview text
+    let colorwayPreviewHeading = document.createElement("h3");
+    let colorwayPreviewSubHeading = document.createElement("p");
+    let colorwayPreviewTextContainer = document.createElement("div");
+
+    const collection = BuiltInThemes.findActiveColorwayCollection?.();
+    if (collection) {
+      const { l10nId } = collection;
+      document.l10n.setAttributes(colorwayPreviewHeading, l10nId.title);
+      document.l10n.setAttributes(
+        colorwayPreviewSubHeading,
+        `${l10nId.title}-subheading`
+      );
+    }
+
+    colorwayPreviewTextContainer.appendChild(colorwayPreviewHeading);
+    colorwayPreviewTextContainer.appendChild(colorwayPreviewSubHeading);
+    colorwayPreviewTextContainer.id = "colorways-preview-text-container";
+
+    // Insert colorway card preview text
+    let cardHeadingImage = card.querySelector(".card-heading-image");
+    cardHeadingImage.parentNode.insertBefore(
+      colorwayPreviewTextContainer,
+      cardHeadingImage
+    );
+  }
+
+  setCardContent(card) {
+    card.querySelector(".addon-icon").hidden = true;
+
+    let preview = card.querySelector(".card-heading-image");
+    // TODO: Bug 1772855 - set preview.src for colorways card preview
+    preview.hidden = false;
+
+    let colorwayExpiryDateSpan = card.querySelector(
+      "#colorways-expiry-date > span"
+    );
+
+    const collection = BuiltInThemes.findActiveColorwayCollection?.();
+    if (collection) {
+      const { expiry } = collection;
+      document.l10n.setAttributes(
+        colorwayExpiryDateSpan,
+        "colorway-collection-expiry-date-span",
+        {
+          expiryDate: expiry.getTime(),
+        }
+      );
+    }
+
+    let colorwaysButton = card.querySelector("[action='open-colorways']");
+    colorwaysButton.hidden = false;
+    colorwaysButton.onclick = () => {
+      ColorwayClosetOpener.openModal();
+    };
+  }
+}
+customElements.define("colorways-card", ColorwayClosetCard);
+
 /**
  * A child element of `<recommended-addon-list>`. It should be initialized
  * by calling `setDiscoAddon()` first. Call `setAddon(addon)` if it has been
@@ -4005,7 +4130,11 @@ class AddonList extends HTMLElement {
   }
 
   createSectionHeading(headingIndex) {
-    let { headingId, subheadingId } = this.sections[headingIndex];
+    let {
+      headingId,
+      subheadingId,
+      sectionPreambleCustomElement,
+    } = this.sections[headingIndex];
     let frag = document.createDocumentFragment();
     let heading = document.createElement("h2");
     heading.classList.add("list-section-heading");
@@ -4015,9 +4144,17 @@ class AddonList extends HTMLElement {
     if (subheadingId) {
       let subheading = document.createElement("h3");
       subheading.classList.add("list-section-subheading");
-      heading.className = "header-name";
       document.l10n.setAttributes(subheading, subheadingId);
+      // Preserve the old colorway section header styling
+      // while the colorway closet section is not yet ready to be enabled
+      if (!COLORWAY_CLOSET_ENABLED) {
+        heading.className = "header-name";
+      }
       frag.append(subheading);
+    }
+
+    if (sectionPreambleCustomElement) {
+      frag.append(document.createElement(sectionPreambleCustomElement));
     }
 
     return frag;
@@ -4051,9 +4188,12 @@ class AddonList extends HTMLElement {
   }
 
   updateSectionIfEmpty(section) {
-    // The header is added before any add-on cards, so if there's only one
-    // child then it's the header. In that case we should empty out the section.
-    if (section.children.length == 1) {
+    // We should empty out the section if there are no more cards to display,
+    // (unless the section is configured to stay visible and rendered even when
+    // there is no addon listed, e.g. the "Colorways Closet" section).
+    const sectionIndex = parseInt(section.getAttribute("section"));
+    const { shouldRenderIfEmpty } = this.sections[sectionIndex];
+    if (!this.getCards(section).length && !shouldRenderIfEmpty) {
       section.textContent = "";
     }
   }
@@ -4062,8 +4202,12 @@ class AddonList extends HTMLElement {
     let section = this.getSection(sectionIndex);
     let sectionCards = this.getCards(section);
 
-    // If this is the first card in the section, create the heading.
-    if (!sectionCards.length) {
+    const { shouldRenderIfEmpty } = this.sections[sectionIndex];
+
+    // If this is the first card in the section, and the section
+    // isn't configure to render the headers even when empty,
+    // we have to create the section heading first.
+    if (!shouldRenderIfEmpty && !sectionCards.length) {
       section.appendChild(this.createSectionHeading(sectionIndex));
     }
 
@@ -4253,19 +4397,24 @@ class AddonList extends HTMLElement {
   }
 
   renderSection(addons, index) {
+    const { sectionClass, shouldRenderIfEmpty } = this.sections[index];
+
     let section = document.createElement("section");
     section.setAttribute("section", index);
+    if (sectionClass) {
+      section.setAttribute("class", sectionClass);
+    }
 
     // Render the heading and add-ons if there are any.
-    if (addons.length) {
+    if (shouldRenderIfEmpty || addons.length) {
       section.appendChild(this.createSectionHeading(index));
+    }
 
-      for (let addon of addons) {
-        let card = document.createElement("addon-card");
-        card.setAddon(addon);
-        card.render();
-        section.appendChild(card);
-      }
+    for (let addon of addons) {
+      let card = document.createElement("addon-card");
+      card.setAddon(addon);
+      card.render();
+      section.appendChild(card);
     }
 
     return section;
@@ -4663,9 +4812,12 @@ gViewController.defineView("list", async type => {
     return null;
   }
 
-  // If monochromatic themes are enabled and any are builtin to Firefox, we
-  // display those themes together in a separate subsection.
-
+  const areColorwayThemesInstalled = async () =>
+    (await AddonManager.getAllAddons()).some(
+      addon =>
+        BuiltInThemes.isMonochromaticTheme(addon.id) &&
+        !BuiltInThemes.themeIsExpired(addon.id)
+    );
   let frag = document.createDocumentFragment();
   let list = document.createElement("addon-list");
   list.type = type;
@@ -4673,31 +4825,72 @@ gViewController.defineView("list", async type => {
   let sections = [
     {
       headingId: type + "-enabled-heading",
+      sectionClass: `${type}-enabled-section`,
       filterFn: addon =>
         !addon.hidden && addon.isActive && !isPending(addon, "uninstall"),
     },
-    {
-      headingId: type + "-disabled-heading",
+  ];
+
+  if (type == "theme" && COLORWAY_CLOSET_ENABLED) {
+    MozXULElement.insertFTLIfNeeded("preview/colorwaycloset.ftl");
+
+    const hasActiveColorways = !!BuiltInThemes.findActiveColorwayCollection?.();
+    sections.push({
+      headingId: "theme-monochromatic-heading",
+      subheadingId: "theme-monochromatic-subheading",
+      sectionClass: "colorways-section",
+      // Insert colorway closet card as the first element in the colorways
+      // section so that it is above any retained colorway themes.
+      sectionPreambleCustomElement: hasActiveColorways
+        ? "colorways-card"
+        : null,
+      // This section should also be rendered when there is no addons that
+      // match the filterFn, because we still want to show the headers and
+      // colorways-card. But, we only expect the colorways-card to be visible
+      // when there is an active colorway collection.
+      shouldRenderIfEmpty: hasActiveColorways,
       filterFn: addon =>
         !addon.hidden &&
         !addon.isActive &&
         !isPending(addon, "uninstall") &&
         // For performance related details about this check see the
         // documentation for themeIsExpired in BuiltInThemeConfig.jsm.
-        (!BuiltInThemes.isMonochromaticTheme(addon.id) ||
-          BuiltInThemes.isRetainedExpiredTheme(addon.id)),
+        BuiltInThemes.isMonochromaticTheme(addon.id) &&
+        BuiltInThemes.isRetainedExpiredTheme(addon.id),
+    });
+  }
+
+  const disabledAddonsFilterFn = addon =>
+    !addon.hidden && !addon.isActive && !isPending(addon, "uninstall");
+
+  const disabledThemesFilterFn = addon =>
+    disabledAddonsFilterFn(addon) &&
+    ((BuiltInThemes.isRetainedExpiredTheme(addon.id) &&
+      !COLORWAY_CLOSET_ENABLED) ||
+      !BuiltInThemes.isMonochromaticTheme(addon.id));
+
+  sections.push({
+    headingId: getL10nIdMapping(`${type}-disabled-heading`),
+    sectionClass: `${type}-disabled-section`,
+    filterFn: addon => {
+      if (addon.type === "theme") {
+        return disabledThemesFilterFn(addon);
+      }
+      return disabledAddonsFilterFn(addon);
     },
-  ];
+  });
+
   list.setSections(sections);
   frag.appendChild(list);
 
-  const areColorwayThemesInstalled = async () =>
-    (await AddonManager.getAllAddons()).some(
-      addon =>
-        BuiltInThemes.isMonochromaticTheme(addon.id) &&
-        !BuiltInThemes.themeIsExpired(addon.id)
-    );
-  if (type == "theme" && (await areColorwayThemesInstalled())) {
+  // Add old colorways section if the new colorway closet is not enabled.
+  // If monochromatic themes are enabled and any are builtin to Firefox, we
+  // display those themes together in a separate subsection.
+  if (
+    type == "theme" &&
+    !COLORWAY_CLOSET_ENABLED &&
+    (await areColorwayThemesInstalled())
+  ) {
     let monochromaticList = document.createElement("addon-list");
     monochromaticList.classList.add("monochromatic-addon-list");
     monochromaticList.type = type;

@@ -365,7 +365,10 @@ pub struct ClearRectangleDisplayItem {
 /// distinct item also makes it easier to inspect/debug display items.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct HitTestDisplayItem {
-    pub common: CommonItemProperties,
+    pub rect: LayoutRect,
+    pub clip_chain_id: ClipChainId,
+    pub spatial_id: SpatialId,
+    pub flags: PrimitiveFlags,
     pub tag: ItemTag,
 }
 
@@ -879,7 +882,7 @@ pub struct PushStackingContextDisplayItem {
 pub struct StackingContext {
     pub transform_style: TransformStyle,
     pub mix_blend_mode: MixBlendMode,
-    pub clip_id: Option<ClipId>,
+    pub clip_chain_id: Option<ClipChainId>,
     pub raster_space: RasterSpace,
     pub flags: StackingContextFlags,
 }
@@ -1632,6 +1635,10 @@ impl From<FillRule> for u8 {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]
 pub struct ClipChainId(pub u64, pub PipelineId);
+
+impl ClipChainId {
+    pub const INVALID: Self = ClipChainId(!0, PipelineId::INVALID);
+}
 
 /// A reference to a clipping node defining how an item is clipped.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, PeekPoke)]

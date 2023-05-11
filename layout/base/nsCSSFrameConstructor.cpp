@@ -23,7 +23,6 @@
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/HTMLSharedListElement.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
@@ -241,10 +240,6 @@ nsIFrame* NS_NewMenuFrame(PresShell* aPresShell, ComputedStyle* aStyle,
 nsIFrame* NS_NewMenuBarFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsIFrame* NS_NewTreeBodyFrame(PresShell* aPresShell, ComputedStyle* aStyle);
-
-nsIFrame* NS_NewTitleBarFrame(PresShell* aPresShell, ComputedStyle* aStyle);
-
-nsIFrame* NS_NewResizerFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsHTMLScrollFrame* NS_NewHTMLScrollFrame(PresShell* aPresShell,
                                          ComputedStyle* aStyle, bool aIsRoot);
@@ -1571,16 +1566,21 @@ nsCSSFrameConstructor::nsCSSFrameConstructor(Document* aDocument,
 }
 
 void nsCSSFrameConstructor::NotifyDestroyingFrame(nsIFrame* aFrame) {
-  if (aFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT)) {
-    if (mQuoteList.DestroyNodesFor(aFrame)) QuotesDirty();
+  if (aFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT) &&
+      mContainStyleScopeManager.DestroyQuoteNodesFor(aFrame)) {
+    QuotesDirty();
   }
 
   if (aFrame->HasAnyStateBits(NS_FRAME_HAS_CSS_COUNTER_STYLE) &&
-      mCounterManager.DestroyNodesFor(aFrame)) {
+      mContainStyleScopeManager.DestroyCounterNodesFor(aFrame)) {
     // Technically we don't need to update anything if we destroyed only
     // USE nodes.  However, this is unlikely to happen in the real world
     // since USE nodes generally go along with INCREMENT nodes.
     CountersDirty();
+  }
+
+  if (aFrame->StyleDisplay()->IsContainStyle()) {
+    mContainStyleScopeManager.DestroyScopesFor(aFrame);
   }
 
   RestyleManager()->NotifyDestroyingFrame(aFrame);
@@ -1613,7 +1613,7 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGenConTextNode(
 }
 
 already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
-    nsFrameConstructorState& aState, const Element& aOriginatingElement,
+    nsFrameConstructorState& aState, Element& aOriginatingElement,
     ComputedStyle& aPseudoStyle, uint32_t aContentIndex) {
   using Type = StyleContentItem::Tag;
   // Get the content value
@@ -1665,7 +1665,8 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
         ptr = CounterStylePtr::FromStyle(counters._2);
       }
 
-      nsCounterList* counterList = mCounterManager.CounterListFor(name);
+      auto* counterList = mContainStyleScopeManager.GetOrCreateCounterList(
+          aOriginatingElement, name);
       auto node = MakeUnique<nsCounterUseNode>(
           std::move(ptr), std::move(separator), aContentIndex,
           /* aAllCounters = */ type == Type::Counters);
@@ -1679,8 +1680,10 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
     case Type::NoOpenQuote:
     case Type::NoCloseQuote: {
       auto node = MakeUnique<nsQuoteNode>(type, aContentIndex);
+      auto* quoteList =
+          mContainStyleScopeManager.QuoteListFor(aOriginatingElement);
       auto initializer = MakeUnique<nsGenConInitializer>(
-          std::move(node), &mQuoteList, &nsCSSFrameConstructor::QuotesDirty);
+          std::move(node), quoteList, &nsCSSFrameConstructor::QuotesDirty);
       return CreateGenConTextNode(aState, u""_ns, std::move(initializer));
     }
 
@@ -1720,7 +1723,8 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
 }
 
 void nsCSSFrameConstructor::CreateGeneratedContentFromListStyle(
-    nsFrameConstructorState& aState, const ComputedStyle& aPseudoStyle,
+    nsFrameConstructorState& aState, Element& aOriginatingElement,
+    const ComputedStyle& aPseudoStyle,
     const FunctionRef<void(nsIContent*)> aAddChild) {
   const nsStyleList* styleList = aPseudoStyle.StyleList();
   if (!styleList->mListStyleImage.IsNone()) {
@@ -1731,11 +1735,13 @@ void nsCSSFrameConstructor::CreateGeneratedContentFromListStyle(
     aAddChild(child);
     return;
   }
-  CreateGeneratedContentFromListStyleType(aState, aPseudoStyle, aAddChild);
+  CreateGeneratedContentFromListStyleType(aState, aOriginatingElement,
+                                          aPseudoStyle, aAddChild);
 }
 
 void nsCSSFrameConstructor::CreateGeneratedContentFromListStyleType(
-    nsFrameConstructorState& aState, const ComputedStyle& aPseudoStyle,
+    nsFrameConstructorState& aState, Element& aOriginatingElement,
+    const ComputedStyle& aPseudoStyle,
     const FunctionRef<void(nsIContent*)> aAddChild) {
   const nsStyleList* styleList = aPseudoStyle.StyleList();
   CounterStyle* counterStyle =
@@ -1770,8 +1776,8 @@ void nsCSSFrameConstructor::CreateGeneratedContentFromListStyleType(
     return;
   }
 
-  nsCounterList* counterList =
-      mCounterManager.CounterListFor(nsGkAtoms::list_item);
+  auto* counterList = mContainStyleScopeManager.GetOrCreateCounterList(
+      aOriginatingElement, nsGkAtoms::list_item);
   auto initializer = MakeUnique<nsGenConInitializer>(
       std::move(node), counterList, &nsCSSFrameConstructor::CountersDirty);
   RefPtr<nsIContent> child =
@@ -1911,7 +1917,8 @@ void nsCSSFrameConstructor::CreateGeneratedContentItem(
   }
   // If a ::marker has no 'content' then generate it from its 'list-style-*'.
   if (contentCount == 0 && aPseudoElement == PseudoStyleType::marker) {
-    CreateGeneratedContentFromListStyle(aState, *pseudoStyle, AppendChild);
+    CreateGeneratedContentFromListStyle(aState, aOriginatingElement,
+                                        *pseudoStyle, AppendChild);
   }
   auto flags = ItemFlags{ItemFlag::IsGeneratedContent} + aExtraFlags;
   AddFrameConstructionItemsInternal(aState, container, aParentFrame, true,
@@ -2406,25 +2413,31 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
                "We need to copy <body>'s principal writing-mode before "
                "constructing mRootElementFrame.");
 
-    const WritingMode docElementWM(computedStyle);
-    Element* body = mDocument->GetBodyElement();
-    if (body) {
+    const WritingMode propagatedWM = [&] {
+      const WritingMode rootWM(computedStyle);
+      if (computedStyle->StyleDisplay()->IsContainAny()) {
+        return rootWM;
+      }
+      Element* body = mDocument->GetBodyElement();
+      if (!body) {
+        return rootWM;
+      }
       RefPtr<ComputedStyle> bodyStyle = ResolveComputedStyle(body);
+      if (bodyStyle->StyleDisplay()->IsContainAny()) {
+        return rootWM;
+      }
       const WritingMode bodyWM(bodyStyle);
-
-      if (bodyWM != docElementWM) {
+      if (bodyWM != rootWM) {
         nsContentUtils::ReportToConsole(
             nsIScriptError::warningFlag, "Layout"_ns, mDocument,
             nsContentUtils::eLAYOUT_PROPERTIES,
             "PrincipalWritingModePropagationWarning");
       }
+      return bodyWM;
+    }();
 
-      mDocElementContainingBlock->PropagateWritingModeToSelfAndAncestors(
-          bodyWM);
-    } else {
-      mDocElementContainingBlock->PropagateWritingModeToSelfAndAncestors(
-          docElementWM);
-    }
+    mDocElementContainingBlock->PropagateWritingModeToSelfAndAncestors(
+        propagatedWM);
   }
 
   nsFrameConstructorSaveState docElementContainingBlockAbsoluteSaveState;
@@ -3619,7 +3632,7 @@ nsCSSFrameConstructor::FindObjectData(const Element& aElement,
   // cases when the object is broken/suppressed/etc (e.g. a broken image), but
   // we want to treat those cases as TYPE_NULL
   uint32_t type;
-  if (aElement.State().HasState(NS_EVENT_STATE_BROKEN)) {
+  if (aElement.State().HasState(ElementState::BROKEN)) {
     type = nsIObjectLoadingContent::TYPE_NULL;
   } else {
     nsCOMPtr<nsIObjectLoadingContent> objContent =
@@ -4126,8 +4139,6 @@ nsCSSFrameConstructor::FindXULTagData(const Element& aElement,
       SCROLLABLE_XUL_CREATE(thumb, NS_NewButtonBoxFrame),
       SCROLLABLE_XUL_CREATE(checkbox, NS_NewButtonBoxFrame),
       SCROLLABLE_XUL_CREATE(radio, NS_NewButtonBoxFrame),
-      SCROLLABLE_XUL_CREATE(titlebar, NS_NewTitleBarFrame),
-      SCROLLABLE_XUL_CREATE(resizer, NS_NewResizerFrame),
       SCROLLABLE_XUL_CREATE(toolbarpaletteitem, NS_NewBoxFrame),
       SCROLLABLE_XUL_CREATE(treecolpicker, NS_NewButtonBoxFrame),
       SIMPLE_XUL_CREATE(image, NS_NewImageBoxFrame),
@@ -4681,7 +4692,8 @@ void nsCSSFrameConstructor::InitAndRestoreFrame(
     RestoreFrameStateFor(aNewFrame, aState.mFrameState);
   }
 
-  if (aAllowCounters && mCounterManager.AddCounterChanges(aNewFrame)) {
+  if (aAllowCounters &&
+      mContainStyleScopeManager.AddCounterChanges(aNewFrame)) {
     CountersDirty();
   }
 }
@@ -7272,7 +7284,8 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
       }
     };
     CreateGeneratedContentFromListStyleType(
-        state, *insertion.mParentFrame->Style(), InsertChild);
+        state, *insertion.mContainer->AsElement(),
+        *insertion.mParentFrame->Style(), InsertChild);
     if (!firstNewChild) {
       // No fallback content - we're done.
       return;
@@ -7933,12 +7946,12 @@ void nsCSSFrameConstructor::RecalcQuotesAndCounters() {
 
   if (mQuotesDirty) {
     mQuotesDirty = false;
-    mQuoteList.RecalcAll();
+    mContainStyleScopeManager.RecalcAllQuotes();
   }
 
   if (mCountersDirty) {
     mCountersDirty = false;
-    mCounterManager.RecalcAll();
+    mContainStyleScopeManager.RecalcAllCounters();
   }
 
   NS_ASSERTION(!mQuotesDirty, "Quotes updates will be lost");
@@ -7946,20 +7959,19 @@ void nsCSSFrameConstructor::RecalcQuotesAndCounters() {
 }
 
 void nsCSSFrameConstructor::NotifyCounterStylesAreDirty() {
-  mCounterManager.SetAllDirty();
+  mContainStyleScopeManager.SetAllCountersDirty();
   CountersDirty();
 }
 
 void nsCSSFrameConstructor::WillDestroyFrameTree() {
 #if defined(DEBUG_dbaron_off)
-  mCounterManager.Dump();
+  mContainStyleScopeManager.DumpCounters();
 #endif
 
   mIsDestroyingFrameTree = true;
 
   // Prevent frame tree destruction from being O(N^2)
-  mQuoteList.Clear();
-  mCounterManager.Clear();
+  mContainStyleScopeManager.Clear();
   nsFrameManager::Destroy();
 }
 
@@ -12070,6 +12082,5 @@ void nsCSSFrameConstructor::AddSizeOfIncludingThis(
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:
   // - mFCItemPool
-  // - mQuoteList
-  // - mCounterManager
+  // - mContainStyleScopeManager
 }

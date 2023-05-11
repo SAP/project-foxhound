@@ -55,6 +55,9 @@ detail-version =
 detail-last-updated =
     .label = Last Updated
 
+addon-detail-description-expand = Show more
+addon-detail-description-collapse = Show less
+
 detail-contributions-description = The developer of this add-on asks that you help support its continued development by making a small contribution.
 
 detail-contributions-button = Contribute
@@ -355,9 +358,15 @@ extension-enabled-heading = Enabled
 extension-disabled-heading = Disabled
 
 theme-enabled-heading = Enabled
-theme-disabled-heading = Disabled
+theme-disabled-heading2 = Saved Themes
 theme-monochromatic-heading = Colorways
 theme-monochromatic-subheading = Vibrant new colorways from { -brand-product-name }. Available for a limited time.
+
+theme-colorways-button = Try Colorways
+colorway-collection-independent-voices-subheading = Make { -brand-short-name } feel a little more you.
+# Variables:
+#   $expiryDate (string) - date on which the colorway collection expires.
+colorway-collection-expiry-date-span = Expires { DATETIME($expiryDate, month: "long", day: "numeric") }
 
 plugin-enabled-heading = Enabled
 plugin-disabled-heading = Disabled
@@ -490,6 +499,7 @@ addon-page-options-button =
 # Variables:
 #   $version (String): application version.
 details-notification-incompatible = { $name } is incompatible with { -brand-short-name } { $version }.
+details-notification-incompatible-link = More Information
 
 details-notification-unsigned-and-disabled = { $name } could not be verified for use in { -brand-short-name } and has been disabled.
 details-notification-unsigned-and-disabled-link = More Information

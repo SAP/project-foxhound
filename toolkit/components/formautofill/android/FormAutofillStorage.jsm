@@ -10,7 +10,7 @@
 
 // We expose a singleton from this module. Some tests may import the
 // constructor via a backstage pass.
-this.EXPORTED_SYMBOLS = ["formAutofillStorage", "FormAutofillStorage"];
+const EXPORTED_SYMBOLS = ["formAutofillStorage", "FormAutofillStorage"];
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -21,12 +21,14 @@ const {
   CreditCardsBase,
   AddressesBase,
 } = ChromeUtils.import("resource://autofill/FormAutofillStorageBase.jsm");
+const { JSONFile } = ChromeUtils.import("resource://gre/modules/JSONFile.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  CreditCard: "resource://gre/modules/GeckoViewAutocomplete.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Address: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  JSONFile: "resource://gre/modules/JSONFile.jsm",
+  CreditCard: "resource://gre/modules/GeckoViewAutocomplete.jsm",
+  GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
 });
 
 class GeckoViewStorage extends JSONFile {
@@ -35,16 +37,16 @@ class GeckoViewStorage extends JSONFile {
   }
 
   async updateCreditCards() {
-    const creditCards = await GeckoViewAutocomplete.fetchCreditCards().then(
-      results => results?.map(r => CreditCard.parse(r).toGecko()) ?? [],
+    const creditCards = await lazy.GeckoViewAutocomplete.fetchCreditCards().then(
+      results => results?.map(r => lazy.CreditCard.parse(r).toGecko()) ?? [],
       _ => []
     );
     super.data.creditCards = creditCards;
   }
 
   async updateAddresses() {
-    const addresses = await GeckoViewAutocomplete.fetchAddresses().then(
-      results => results?.map(r => Address.parse(r).toGecko()) ?? [],
+    const addresses = await lazy.GeckoViewAutocomplete.fetchAddresses().then(
+      results => results?.map(r => lazy.Address.parse(r).toGecko()) ?? [],
       _ => []
     );
     super.data.addresses = addresses;
@@ -76,7 +78,7 @@ class Addresses extends AddressesBase {
   }
 
   async _saveRecord(record, { sourceSync = false } = {}) {
-    GeckoViewAutocomplete.onAddressSave(Address.fromGecko(record));
+    lazy.GeckoViewAutocomplete.onAddressSave(lazy.Address.fromGecko(record));
   }
 
   /**
@@ -146,7 +148,9 @@ class CreditCards extends CreditCardsBase {
   }
 
   async _saveRecord(record, { sourceSync = false } = {}) {
-    GeckoViewAutocomplete.onCreditCardSave(CreditCard.fromGecko(record));
+    lazy.GeckoViewAutocomplete.onCreditCardSave(
+      lazy.CreditCard.fromGecko(record)
+    );
   }
 
   /**
@@ -262,4 +266,4 @@ class FormAutofillStorage extends FormAutofillStorageBase {
 }
 
 // The singleton exposed by this module.
-this.formAutofillStorage = new FormAutofillStorage();
+const formAutofillStorage = new FormAutofillStorage();

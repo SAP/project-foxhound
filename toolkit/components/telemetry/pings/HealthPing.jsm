@@ -10,35 +10,32 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryHealthPing", "Policy"];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { TelemetryUtils } = ChromeUtils.import(
+  "resource://gre/modules/TelemetryUtils.jsm"
+);
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "TelemetryController",
   "resource://gre/modules/TelemetryController.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "setTimeout",
   "resource://gre/modules/Timer.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "clearTimeout",
   "resource://gre/modules/Timer.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "TelemetryUtils",
-  "resource://gre/modules/TelemetryUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(this, "Log", "resource://gre/modules/Log.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+ChromeUtils.defineModuleGetter(lazy, "Log", "resource://gre/modules/Log.jsm");
 
 const Utils = TelemetryUtils;
 
@@ -53,8 +50,9 @@ const LOGGER_NAME = "Toolkit.Telemetry";
 const LOGGER_PREFIX = "TelemetryHealthPing::";
 
 var Policy = {
-  setSchedulerTickTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearSchedulerTickTimeout: id => clearTimeout(id),
+  setSchedulerTickTimeout: (callback, delayMs) =>
+    lazy.setTimeout(callback, delayMs),
+  clearSchedulerTickTimeout: id => lazy.clearTimeout(id),
 };
 
 var TelemetryHealthPing = {
@@ -183,7 +181,7 @@ var TelemetryHealthPing = {
       // To work around this, we send the ping on the next tick.
       Services.tm.dispatchToMainThread(() =>
         r(
-          TelemetryController.submitExternalPing(
+          lazy.TelemetryController.submitExternalPing(
             this.HEALTH_PING_TYPE,
             payload,
             options
@@ -273,7 +271,7 @@ var TelemetryHealthPing = {
 
   get _log() {
     if (!this._logger) {
-      this._logger = Log.repository.getLoggerWithMessagePrefix(
+      this._logger = lazy.Log.repository.getLoggerWithMessagePrefix(
         LOGGER_NAME,
         LOGGER_PREFIX + "::"
       );

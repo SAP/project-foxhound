@@ -10,11 +10,17 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  OS: "resource://gre/modules/osfile.jsm",
+const { Domain } = ChromeUtils.import(
+  "chrome://remote/content/cdp/domains/Domain.jsm"
+);
+const { StreamRegistry } = ChromeUtils.import(
+  "chrome://remote/content/cdp/StreamRegistry.jsm"
+);
 
-  Domain: "chrome://remote/content/cdp/domains/Domain.jsm",
-  StreamRegistry: "chrome://remote/content/cdp/StreamRegistry.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  OS: "resource://gre/modules/osfile.jsm",
 });
 
 const DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024;
@@ -76,7 +82,7 @@ class IO extends Domain {
 
       // To keep compatibility with Chrome clip invalid offsets
       const seekTo = Math.max(0, Math.min(offset, fileInfo.size));
-      await stream.setPosition(seekTo, OS.File.POS_START);
+      await stream.setPosition(seekTo, lazy.OS.File.POS_START);
     }
 
     const curPos = await stream.getPosition();

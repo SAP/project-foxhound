@@ -120,6 +120,10 @@ add_task(async function startup() {
       min: 0,
       max: 50,
     },
+    "media.gmp-provider.enabled": {
+      min: 0,
+      max: 46,
+    },
   };
 
   let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
@@ -139,10 +143,6 @@ add_task(async function open_10_tabs() {
   const max = 4 * DEFAULT_PROCESS_COUNT;
 
   let knownProblematicPrefs = {
-    "browser.zoom.full": {
-      min: 10,
-      max: 25,
-    },
     "browser.startup.record": {
       max: 20,
     },
@@ -192,10 +192,6 @@ add_task(async function navigate_around() {
   let max = 40;
 
   let knownProblematicPrefs = {
-    "browser.zoom.full": {
-      min: 100,
-      max: 110,
-    },
     "network.loadinfo.skip_type_assertion": {
       // This is accessed in debug only.
     },

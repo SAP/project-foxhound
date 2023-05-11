@@ -560,7 +560,7 @@ void js::ReportIsNotDefined(JSContext* cx, HandleId id) {
   }
 }
 
-void js::ReportIsNotDefined(JSContext* cx, HandlePropertyName name) {
+void js::ReportIsNotDefined(JSContext* cx, Handle<PropertyName*> name) {
   RootedId id(cx, NameToId(name));
   ReportIsNotDefined(cx, id);
 }
@@ -656,7 +656,7 @@ bool js::ReportValueError(JSContext* cx, const unsigned errorNumber,
 }
 
 JSObject* js::CreateErrorNotesArray(JSContext* cx, JSErrorReport* report) {
-  RootedArrayObject notesArray(cx, NewDenseEmptyArray(cx));
+  Rooted<ArrayObject*> notesArray(cx, NewDenseEmptyArray(cx));
   if (!notesArray) {
     return nullptr;
   }
@@ -666,7 +666,7 @@ JSObject* js::CreateErrorNotesArray(JSContext* cx, JSErrorReport* report) {
   }
 
   for (auto&& note : *report->notes) {
-    RootedPlainObject noteObj(cx, NewPlainObject(cx));
+    Rooted<PlainObject*> noteObj(cx, NewPlainObject(cx));
     if (!noteObj) {
       return nullptr;
     }
@@ -746,7 +746,7 @@ JS_PUBLIC_API bool js::UseInternalJobQueues(JSContext* cx) {
 
 #ifdef DEBUG
 JSObject* InternalJobQueue::copyJobs(JSContext* cx) {
-  RootedArrayObject jobs(cx, NewDenseEmptyArray(cx));
+  Rooted<ArrayObject*> jobs(cx, NewDenseEmptyArray(cx));
   if (!jobs) {
     return nullptr;
   }
@@ -1095,7 +1095,7 @@ static bool IsOutOfMemoryException(JSContext* cx, const Value& v) {
 }
 #endif
 
-void JSContext::setPendingException(HandleValue v, HandleSavedFrame stack) {
+void JSContext::setPendingException(HandleValue v, Handle<SavedFrame*> stack) {
 #if defined(NIGHTLY_BUILD)
   do {
     // Do not intercept exceptions if we are already
@@ -1139,7 +1139,7 @@ void JSContext::setPendingException(HandleValue v, HandleSavedFrame stack) {
 
 void JSContext::setPendingException(HandleValue value,
                                     ShouldCaptureStack captureStack) {
-  RootedSavedFrame nstack(this);
+  Rooted<SavedFrame*> nstack(this);
   if (captureStack == ShouldCaptureStack::Always ||
       realm()->shouldCaptureStackForThrow()) {
     RootedObject stack(this);
@@ -1159,7 +1159,7 @@ bool JSContext::getPendingException(MutableHandleValue rval) {
   if (zone()->isAtomsZone()) {
     return true;
   }
-  RootedSavedFrame stack(this, unwrappedExceptionStack());
+  Rooted<SavedFrame*> stack(this, unwrappedExceptionStack());
   JS::ExceptionStatus prevStatus = status;
   clearPendingException();
   if (!compartment()->wrap(this, rval)) {

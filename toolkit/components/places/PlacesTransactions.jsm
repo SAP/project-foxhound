@@ -166,17 +166,13 @@ var EXPORTED_SYMBOLS = ["PlacesTransactions"];
 
 const TRANSACTIONS_QUEUE_TIMEOUT_MS = 240000; // 4 Mins.
 
+const { PlacesUtils } = ChromeUtils.import(
+  "resource://gre/modules/PlacesUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 function setTimeout(callback, ms) {
   let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
@@ -303,8 +299,10 @@ class TransactionsHistoryArray extends Array {
   }
 }
 
+const lazy = {};
+
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "TransactionsHistory",
   () => new TransactionsHistoryArray()
 );
@@ -321,7 +319,7 @@ var PlacesTransactions = {
 
       if (
         transactionsToBatch.some(
-          o => !TransactionsHistory.isProxifiedTransactionObject(o)
+          o => !lazy.TransactionsHistory.isProxifiedTransactionObject(o)
         )
       ) {
         throw new Error("Must pass only transaction entries");
@@ -394,7 +392,7 @@ var PlacesTransactions = {
    * The numbers of entries in the transactions history.
    */
   get length() {
-    return TransactionsHistory.length;
+    return lazy.TransactionsHistory.length;
   },
 
   /**
@@ -414,7 +412,7 @@ var PlacesTransactions = {
       throw new Error("Invalid index");
     }
 
-    return TransactionsHistory[index];
+    return lazy.TransactionsHistory[index];
   },
 
   /**
@@ -424,21 +422,21 @@ var PlacesTransactions = {
    * Entries at and past this point are redo entries.
    */
   get undoPosition() {
-    return TransactionsHistory.undoPosition;
+    return lazy.TransactionsHistory.undoPosition;
   },
 
   /**
    * Shortcut for accessing the top undo entry in the transaction history.
    */
   get topUndoEntry() {
-    return TransactionsHistory.topUndoEntry;
+    return lazy.TransactionsHistory.topUndoEntry;
   },
 
   /**
    * Shortcut for accessing the top redo entry in the transaction history.
    */
   get topRedoEntry() {
-    return TransactionsHistory.topRedoEntry;
+    return lazy.TransactionsHistory.topRedoEntry;
   },
 };
 
@@ -550,7 +548,7 @@ var TransactionsManager = {
   _executedTransactions: new WeakSet(),
 
   transact(txnProxy) {
-    let rawTxn = TransactionsHistory.getRawTransaction(txnProxy);
+    let rawTxn = lazy.TransactionsHistory.getRawTransaction(txnProxy);
     if (!rawTxn) {
       throw new Error("|transact| was called with an unexpected object");
     }
@@ -569,7 +567,7 @@ var TransactionsManager = {
       let retval = await rawTxn.execute();
 
       let forceNewEntry = !this._batching || !this._createdBatchEntry;
-      TransactionsHistory.add(txnProxy, forceNewEntry);
+      lazy.TransactionsHistory.add(txnProxy, forceNewEntry);
       if (this._batching) {
         this._createdBatchEntry = true;
       }
@@ -605,23 +603,23 @@ var TransactionsManager = {
    */
   undo() {
     let promise = this._mainEnqueuer.enqueue(async () => {
-      let entry = TransactionsHistory.topUndoEntry;
+      let entry = lazy.TransactionsHistory.topUndoEntry;
       if (!entry) {
         return;
       }
 
       for (let txnProxy of entry) {
         try {
-          await TransactionsHistory.getRawTransaction(txnProxy).undo();
+          await lazy.TransactionsHistory.getRawTransaction(txnProxy).undo();
         } catch (ex) {
           // If one transaction is broken, it's not safe to work with any other
           // undo entry.  Report the error and clear the undo history.
           console.error(ex, "Can't undo a transaction, clearing undo entries.");
-          TransactionsHistory.clearUndoEntries();
+          lazy.TransactionsHistory.clearUndoEntries();
           return;
         }
       }
-      TransactionsHistory._undoPosition++;
+      lazy.TransactionsHistory._undoPosition++;
       this._updateCommandsOnActiveWindow();
     });
     this._transactEnqueuer.alsoWaitFor(promise);
@@ -633,13 +631,13 @@ var TransactionsManager = {
    */
   redo() {
     let promise = this._mainEnqueuer.enqueue(async () => {
-      let entry = TransactionsHistory.topRedoEntry;
+      let entry = lazy.TransactionsHistory.topRedoEntry;
       if (!entry) {
         return;
       }
 
       for (let i = entry.length - 1; i >= 0; i--) {
-        let transaction = TransactionsHistory.getRawTransaction(entry[i]);
+        let transaction = lazy.TransactionsHistory.getRawTransaction(entry[i]);
         try {
           if (transaction.redo) {
             await transaction.redo();
@@ -650,11 +648,11 @@ var TransactionsManager = {
           // If one transaction is broken, it's not safe to work with any other
           // redo entry. Report the error and clear the undo history.
           console.error(ex, "Can't redo a transaction, clearing redo entries.");
-          TransactionsHistory.clearRedoEntries();
+          lazy.TransactionsHistory.clearRedoEntries();
           return;
         }
       }
-      TransactionsHistory._undoPosition--;
+      lazy.TransactionsHistory._undoPosition--;
       this._updateCommandsOnActiveWindow();
     });
 
@@ -665,11 +663,11 @@ var TransactionsManager = {
   clearTransactionsHistory(undoEntries, redoEntries) {
     let promise = this._mainEnqueuer.enqueue(function() {
       if (undoEntries && redoEntries) {
-        TransactionsHistory.clearAllEntries();
+        lazy.TransactionsHistory.clearAllEntries();
       } else if (undoEntries) {
-        TransactionsHistory.clearUndoEntries();
+        lazy.TransactionsHistory.clearUndoEntries();
       } else if (redoEntries) {
-        TransactionsHistory.clearRedoEntries();
+        lazy.TransactionsHistory.clearRedoEntries();
       } else {
         throw new Error("either aUndoEntries or aRedoEntries should be true");
       }
@@ -734,7 +732,7 @@ function DefineTransaction(requiredProps = [], optionalProps = []) {
       );
       this.execute = this.execute.bind(this, input);
     }
-    return TransactionsHistory.proxifyTransaction(this);
+    return lazy.TransactionsHistory.proxifyTransaction(this);
   };
   return ctor;
 }
@@ -1503,7 +1501,7 @@ PT.Tag.prototype = {
     for (let url of urls) {
       if (!(await PlacesUtils.bookmarks.fetch({ url }))) {
         // Tagging is only allowed for bookmarked URIs (but see 424160).
-        let createTxn = TransactionsHistory.getRawTransaction(
+        let createTxn = lazy.TransactionsHistory.getRawTransaction(
           PT.NewBookmark({
             url,
             tags,
@@ -1606,13 +1604,13 @@ PT.RenameTag.prototype = {
     await PlacesUtils.bookmarks.fetch({ tags: [oldTag] }, b => urls.add(b.url));
     if (urls.size > 0) {
       urls = Array.from(urls);
-      let tagTxn = TransactionsHistory.getRawTransaction(
+      let tagTxn = lazy.TransactionsHistory.getRawTransaction(
         PT.Tag({ urls, tags: [tag] })
       );
       await tagTxn.execute();
       onUndo.unshift(tagTxn.undo.bind(tagTxn));
       onRedo.push(tagTxn.redo.bind(tagTxn));
-      let untagTxn = TransactionsHistory.getRawTransaction(
+      let untagTxn = lazy.TransactionsHistory.getRawTransaction(
         PT.Untag({ urls, tags: [oldTag] })
       );
       await untagTxn.execute();
@@ -1664,14 +1662,14 @@ PT.RenameTag.prototype = {
         let guid = row.getResultByName("guid");
         let title = row.getResultByName("title");
 
-        let editUrlTxn = TransactionsHistory.getRawTransaction(
+        let editUrlTxn = lazy.TransactionsHistory.getRawTransaction(
           PT.EditUrl({ guid, url })
         );
         await editUrlTxn.execute();
         onUndo.unshift(editUrlTxn.undo.bind(editUrlTxn));
         onRedo.push(editUrlTxn.redo.bind(editUrlTxn));
         if (title == oldTag) {
-          let editTitleTxn = TransactionsHistory.getRawTransaction(
+          let editTitleTxn = lazy.TransactionsHistory.getRawTransaction(
             PT.EditTitle({ guid, title: tag })
           );
           await editTitleTxn.execute();

@@ -10,17 +10,22 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const { WebSocketConnection } = ChromeUtils.import(
+  "chrome://remote/content/shared/WebSocketConnection.jsm"
+);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
   Log: "chrome://remote/content/shared/Log.jsm",
   RemoteAgent: "chrome://remote/content/components/RemoteAgent.jsm",
   truncate: "chrome://remote/content/shared/Format.jsm",
-  WebSocketConnection: "chrome://remote/content/shared/WebSocketConnection.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.WEBDRIVER_BIDI)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.WEBDRIVER_BIDI)
 );
 
 class WebDriverBiDiConnection extends WebSocketConnection {
@@ -45,11 +50,15 @@ class WebDriverBiDiConnection extends WebSocketConnection {
    */
   registerSession(session) {
     if (this.session) {
-      throw new error.UnknownError("A WebDriver session has already been set");
+      throw new lazy.error.UnknownError(
+        "A WebDriver session has already been set"
+      );
     }
 
     this.session = session;
-    logger.debug(`Connection ${this.id} attached to session ${session.id}`);
+    lazy.logger.debug(
+      `Connection ${this.id} attached to session ${session.id}`
+    );
   }
 
   /**
@@ -74,8 +83,10 @@ class WebDriverBiDiConnection extends WebSocketConnection {
    *     The object to be sent.
    */
   send(data) {
-    const payload = JSON.stringify(data, null, Log.verbose ? "\t" : null);
-    logger.debug(truncate`${this.session?.id || "no session"} <- ${payload}`);
+    const payload = JSON.stringify(data, null, lazy.Log.verbose ? "\t" : null);
+    lazy.logger.debug(
+      lazy.truncate`${this.session?.id || "no session"} <- ${payload}`
+    );
 
     super.send(data);
   }
@@ -89,7 +100,7 @@ class WebDriverBiDiConnection extends WebSocketConnection {
    *     Error object with `status`, `message` and `stack` attributes.
    */
   sendError(id, err) {
-    const webDriverError = error.wrap(err);
+    const webDriverError = lazy.error.wrap(err);
 
     this.send({
       id,
@@ -147,16 +158,22 @@ class WebDriverBiDiConnection extends WebSocketConnection {
    *        JSON-serializable object sent by the client
    */
   async onPacket(packet) {
-    const payload = JSON.stringify(packet, null, Log.verbose ? "\t" : null);
-    logger.debug(truncate`${this.session?.id || "no session"} -> ${payload}`);
+    const payload = JSON.stringify(
+      packet,
+      null,
+      lazy.Log.verbose ? "\t" : null
+    );
+    lazy.logger.debug(
+      lazy.truncate`${this.session?.id || "no session"} -> ${payload}`
+    );
 
     const { id, method, params } = packet;
 
     try {
       // First check for mandatory field in the command packet
-      assert.positiveInteger(id, "id: unsigned integer value expected");
-      assert.string(method, "method: string value expected");
-      assert.object(params, "params: object value expected");
+      lazy.assert.positiveInteger(id, "id: unsigned integer value expected");
+      lazy.assert.string(method, "method: string value expected");
+      lazy.assert.object(params, "params: object value expected");
 
       // Extract the module and the command name out of `method` attribute
       const { module, command } = splitMethod(method);
@@ -165,15 +182,18 @@ class WebDriverBiDiConnection extends WebSocketConnection {
       // Handle static commands first
       if (module === "session" && command === "new") {
         // TODO: Needs capability matching code
-        result = await RemoteAgent.webDriverBiDi.createSession(params, this);
+        result = await lazy.RemoteAgent.webDriverBiDi.createSession(
+          params,
+          this
+        );
       } else if (module === "session" && command === "status") {
-        result = RemoteAgent.webDriverBiDi.getSessionReadinessStatus();
+        result = lazy.RemoteAgent.webDriverBiDi.getSessionReadinessStatus();
       } else {
-        assert.session(this.session);
+        lazy.assert.session(this.session);
 
         // Bug 1741854 - Workaround to deny internal methods to be called
         if (command.startsWith("_")) {
-          throw new error.UnknownCommandError(method);
+          throw new lazy.error.UnknownCommandError(method);
         }
 
         // Finally, instruct the session to execute the command

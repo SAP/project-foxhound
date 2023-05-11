@@ -26,13 +26,11 @@
 
 ToolbarKeyboardNavigator = {
   // Toolbars we want to be keyboard navigable.
-  kToolbars: Services.prefs.getBoolPref("browser.tabs.firefox-view")
-    ? [
-        CustomizableUI.AREA_TABSTRIP,
-        CustomizableUI.AREA_NAVBAR,
-        CustomizableUI.AREA_BOOKMARKS,
-      ]
-    : [CustomizableUI.AREA_NAVBAR, CustomizableUI.AREA_BOOKMARKS],
+  kToolbars: [
+    CustomizableUI.AREA_TABSTRIP,
+    CustomizableUI.AREA_NAVBAR,
+    CustomizableUI.AREA_BOOKMARKS,
+  ],
   // Delay (in ms) after which to clear any search text typed by the user if
   // the user hasn't typed anything further.
   kSearchClearTimeout: 1000,
@@ -193,16 +191,13 @@ ToolbarKeyboardNavigator = {
     let button = walker.nextNode();
     if (!button || !this._isButton(button)) {
       // If we think we're moving backward, and focus came from outside the
-      // toolbox, we might actually have wrapped around. This currently only
-      // happens in popup windows (because in normal windows, focus first
-      // goes to the tabstrip, where we don't have tabstops). In this case,
-      // the event target was the first tabstop. If we can't find a button,
-      // e.g. because we're in a popup where most buttons are hidden, we
+      // toolbox, we might actually have wrapped around. In this case, the
+      // event target was the first tabstop. If we can't find a button, e.g.
+      // because we're in a popup where most buttons are hidden, we
       // should ensure focus keeps moving forward:
       if (
-        oldFocus &&
         this._isFocusMovingBackward &&
-        !gNavToolbox.contains(oldFocus)
+        (!oldFocus || !gNavToolbox.contains(oldFocus))
       ) {
         let allStops = Array.from(
           gNavToolbox.querySelectorAll("toolbartabstop")

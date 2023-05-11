@@ -168,6 +168,22 @@ struct BaseScaleFactors2D {
       const BaseScaleFactors2D<UnknownUnits, UnknownUnits, T>& scale) {
     return BaseScaleFactors2D<Src, Dst, T>(scale.xScale, scale.yScale);
   }
+
+  BaseScaleFactors2D<UnknownUnits, UnknownUnits, T> ToUnknownScale() const {
+    return BaseScaleFactors2D<UnknownUnits, UnknownUnits, T>(xScale, yScale);
+  }
+
+  friend BaseScaleFactors2D Min(const BaseScaleFactors2D& aA,
+                                const BaseScaleFactors2D& aB) {
+    return BaseScaleFactors2D(std::min(aA.xScale, aB.xScale),
+                              std::min(aA.yScale, aB.yScale));
+  }
+
+  friend BaseScaleFactors2D Max(const BaseScaleFactors2D& aA,
+                                const BaseScaleFactors2D& aB) {
+    return BaseScaleFactors2D(std::max(aA.xScale, aB.xScale),
+                              std::max(aA.yScale, aB.yScale));
+  }
 };
 
 template <class Src, class Dst>

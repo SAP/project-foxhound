@@ -7,13 +7,16 @@
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Region: "resource://gre/modules/Region.jsm",
   SearchUtils: "resource://gre/modules/SearchUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
@@ -23,10 +26,10 @@ const BinaryInputStream = Components.Constructor(
   "setInputStream"
 );
 
-XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
+XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
     prefix: "SearchEngine",
-    maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
+    maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
   });
 });
 
@@ -105,7 +108,7 @@ function rescaleIcon(byteArray, contentType, size = 32) {
   let container = imgTools.decodeImageFromArrayBuffer(arrayBuffer, contentType);
   let stream = imgTools.encodeScaledImage(container, "image/png", size, size);
   let streamSize = stream.available();
-  if (streamSize > SearchUtils.MAX_ICON_SIZE) {
+  if (streamSize > lazy.SearchUtils.MAX_ICON_SIZE) {
     throw new Error("Icon is too big");
   }
   let bis = new BinaryInputStream(stream);
@@ -124,7 +127,7 @@ const ParamPreferenceCache = {
 
   initCache() {
     this.branch = Services.prefs.getDefaultBranch(
-      SearchUtils.BROWSER_SEARCH_PREF + "param."
+      lazy.SearchUtils.BROWSER_SEARCH_PREF + "param."
     );
     this.cache = new Map();
     this.nimbusCache = new Map();
@@ -135,8 +138,8 @@ const ParamPreferenceCache = {
 
     this.onNimbusUpdate = this.onNimbusUpdate.bind(this);
     this.onNimbusUpdate();
-    NimbusFeatures.search.onUpdate(this.onNimbusUpdate);
-    NimbusFeatures.search.ready().then(this.onNimbusUpdate);
+    lazy.NimbusFeatures.search.onUpdate(this.onNimbusUpdate);
+    lazy.NimbusFeatures.search.ready().then(this.onNimbusUpdate);
   },
 
   observe(subject, topic, data) {
@@ -144,7 +147,8 @@ const ParamPreferenceCache = {
   },
 
   onNimbusUpdate() {
-    let extraParams = NimbusFeatures.search.getVariable("extraParams") || [];
+    let extraParams =
+      lazy.NimbusFeatures.search.getVariable("extraParams") || [];
     for (const { key, value } of extraParams) {
       this.nimbusCache.set(key, value);
     }
@@ -281,12 +285,12 @@ function ParamSubstitution(paramValue, searchTerms, engine) {
     // moz: parameters are only available for default search engines.
     if (name.startsWith("moz:") && engine.isAppProvided) {
       // {moz:locale} is common.
-      if (name == SearchUtils.MOZ_PARAM.LOCALE) {
+      if (name == lazy.SearchUtils.MOZ_PARAM.LOCALE) {
         return Services.locale.requestedLocale;
       }
 
       // {moz:date}
-      if (name == SearchUtils.MOZ_PARAM.DATE) {
+      if (name == lazy.SearchUtils.MOZ_PARAM.DATE) {
         let date = new Date();
         let pad = number => number.toString().padStart(2, "0");
         return (
@@ -367,9 +371,9 @@ class EngineURL {
 
     this.type = type;
     this.method = method;
-    this._queryCharset = SearchUtils.DEFAULT_QUERY_CHARSET;
+    this._queryCharset = lazy.SearchUtils.DEFAULT_QUERY_CHARSET;
 
-    var templateURI = SearchUtils.makeURI(template);
+    var templateURI = lazy.SearchUtils.makeURI(template);
     if (!templateURI) {
       throw Components.Exception(
         "new EngineURL: template is not a valid URI!",
@@ -455,8 +459,8 @@ class EngineURL {
       let paramValue = param.value;
       // Override the parameter value if the engine has a region
       // override defined for our current region.
-      if (engine._regionParams?.[Region.current]) {
-        let override = engine._regionParams[Region.current].find(
+      if (engine._regionParams?.[lazy.Region.current]) {
+        let override = engine._regionParams[lazy.Region.current].find(
           p => p.name == param.name
         );
         if (override) {
@@ -541,7 +545,7 @@ class EngineURL {
       template: this.template,
     };
 
-    if (this.type != SearchUtils.URL_TYPE.SEARCH) {
+    if (this.type != lazy.SearchUtils.URL_TYPE.SEARCH) {
       json.type = this.type;
     }
     if (this.method != "GET") {
@@ -641,7 +645,7 @@ class SearchEngine {
     if (/^https?:/i.test(value)) {
       this.__searchForm = value;
     } else {
-      logConsole.debug(
+      lazy.logConsole.debug(
         "_searchForm: Invalid URL dropped for",
         this._name || "the current engine"
       );
@@ -731,14 +735,14 @@ class SearchEngine {
    *   Height of the icon.
    */
   _setIcon(iconURL, isPreferred, width, height) {
-    var uri = SearchUtils.makeURI(iconURL);
+    var uri = lazy.SearchUtils.makeURI(iconURL);
 
     // Ignore bad URIs
     if (!uri) {
       return;
     }
 
-    logConsole.debug(
+    lazy.logConsole.debug(
       "_setIcon: Setting icon url for",
       this.name,
       "to",
@@ -770,16 +774,19 @@ class SearchEngine {
           }
 
           if (!byteArray) {
-            logConsole.warn("iconLoadCallback: load failed");
+            lazy.logConsole.warn("iconLoadCallback: load failed");
             return;
           }
 
-          if (byteArray.length > SearchUtils.MAX_ICON_SIZE) {
+          if (byteArray.length > lazy.SearchUtils.MAX_ICON_SIZE) {
             try {
-              logConsole.debug("iconLoadCallback: rescaling icon");
+              lazy.logConsole.debug("iconLoadCallback: rescaling icon");
               [byteArray, contentType] = rescaleIcon(byteArray, contentType);
             } catch (ex) {
-              logConsole.error("Unable to set icon for the search engine:", ex);
+              lazy.logConsole.error(
+                "Unable to set icon for the search engine:",
+                ex
+              );
               return;
             }
           }
@@ -790,20 +797,23 @@ class SearchEngine {
             ";base64," +
             btoa(String.fromCharCode.apply(null, byteArray));
 
-          this._iconURI = SearchUtils.makeURI(dataURL);
+          this._iconURI = lazy.SearchUtils.makeURI(dataURL);
 
           if (width && height) {
             this._addIconToMap(width, height, dataURL);
           }
 
           if (this._engineAddedToStore) {
-            SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+            lazy.SearchUtils.notifyAction(
+              this,
+              lazy.SearchUtils.MODIFIED_TYPE.CHANGED
+            );
           }
           this._hasPreferredIcon = isPreferred;
         };
 
-        let chan = SearchUtils.makeChannel(uri);
-        let listener = new SearchUtils.LoadListener(
+        let chan = lazy.SearchUtils.makeChannel(uri);
+        let listener = new lazy.SearchUtils.LoadListener(
           chan,
           /^image\//,
           // If we're currently acting as an "update engine", then the callback
@@ -880,92 +890,56 @@ class SearchEngine {
   }
 
   /**
-   * Initialize this Engine object from a WebExtension style manifest.
+   * Initialize this engine object.
    *
-   * @param {string} extensionID
-   *   The WebExtension ID. For Policy engines, this is currently "set-via-policy".
-   * @param {string} extensionBaseURI
-   *   The Base URI of the WebExtension.
-   * @param {object} manifest
-   *   An object representing the WebExtensions' manifest.
-   * @param {string} locale
-   *   The locale that is being used for the WebExtension.
+   * @param {object} details
+   * @param {string} details.name
+   *   The name of the engine.
+   * @param {string} details.keyword
+   *   The keyword for the engine.
+   * @param {string} details.iconURL
+   *   The url to use for the icon of the engine.
+   * @param {string} details.search_url
+   *   The search url template for the engine.
+   * @param {string} [details.search_url_get_params]
+   *   The search url parameters for use with the GET method.
+   * @param {string} [details.search_url_post_params]
+   *   The search url parameters for use with the POST method.
+   * @param {object} [details.params]
+   *   Any special Mozilla parameters.
+   * @param {string} [details.suggest_url]
+   *   The suggestion url template for the engine.
+   * @param {string} [details.suggest_url_get_params]
+   *   The suggestion url parameters for use with the GET method.
+   * @param {string} [details.suggest_url_post_params]
+   *   The suggestion url parameters for use with the POST method.
+   * @param {string} [details.encoding]
+   *   The encoding to use for the engine.
+   * @param {string} [details.search_form]
+   *   THe search form url for the engine.
    * @param {object} [configuration]
    *   The search engine configuration for application provided engines, that
    *   may be overriding some of the WebExtension's settings.
    */
-  _initFromManifest(
-    extensionID,
-    extensionBaseURI,
-    manifest,
-    locale,
-    configuration = {}
-  ) {
-    let { IconDetails } = ExtensionParent;
-
-    let searchProvider = manifest.chrome_settings_overrides.search_provider;
-
-    let iconURL = manifest.iconURL || searchProvider.favicon_url;
-
-    // General set of icons for an engine.
-    let icons = manifest.icons;
-    let iconList = [];
-    if (icons) {
-      iconList = Object.entries(icons).map(icon => {
-        return {
-          width: icon[0],
-          height: icon[0],
-          url: extensionBaseURI.resolve(icon[1]),
-        };
-      });
-    }
-
-    if (!iconURL) {
-      iconURL =
-        icons &&
-        extensionBaseURI.resolve(IconDetails.getPreferredIcon(icons).icon);
-    }
-
-    // We only set _telemetryId for app-provided engines. See also telemetryId
-    // getter.
-    if (this._isAppProvided) {
-      if (configuration.telemetryId) {
-        this._telemetryId = configuration.telemetryId;
-      } else {
-        let telemetryId = extensionID.split("@")[0];
-        if (locale != SearchUtils.DEFAULT_TAG) {
-          telemetryId += "-" + locale;
-        }
-        this._telemetryId = telemetryId;
-      }
-    }
-
-    this._extensionID = extensionID;
-    this._locale = locale;
+  _initWithDetails(details, configuration = {}) {
     this._orderHint = configuration.orderHint;
-    this._name = searchProvider.name.trim();
+    this._name = details.name.trim();
     this._regionParams = configuration.regionParams;
     this._sendAttributionRequest =
       configuration.sendAttributionRequest ?? false;
 
     this._definedAliases = [];
-    if (Array.isArray(searchProvider.keyword)) {
-      this._definedAliases = searchProvider.keyword.map(k => k.trim());
-    } else if (searchProvider.keyword?.trim()) {
-      this._definedAliases = [searchProvider.keyword?.trim()];
+    if (Array.isArray(details.keyword)) {
+      this._definedAliases = details.keyword.map(k => k.trim());
+    } else if (details.keyword?.trim()) {
+      this._definedAliases = [details.keyword?.trim()];
     }
 
-    this._description = manifest.description;
-    if (iconURL) {
-      this._setIcon(iconURL, true);
+    this._description = details.description;
+    if (details.iconURL) {
+      this._setIcon(details.iconURL, true);
     }
-    // Other sizes
-    if (iconList) {
-      for (let icon of iconList) {
-        this._addIconToMap(icon.size, icon.size, icon.url);
-      }
-    }
-    this._setUrls(searchProvider, configuration);
+    this._setUrls(details, configuration);
   }
 
   /**
@@ -973,77 +947,91 @@ class SearchEngine {
    * If you add anything here, please consider if it needs to be handled in the
    * overrideWithExtension / removeExtensionOverride functions as well.
    *
-   * @param {object} searchProvider
-   *   The WebExtension search provider object extracted from the manifest.
+   * @param {object} details
+   * @param {string} details.search_url
+   *   The search url template for the engine.
+   * @param {string} [details.search_url_get_params]
+   *   The search url parameters for use with the GET method.
+   * @param {string} [details.search_url_post_params]
+   *   The search url parameters for use with the POST method.
+   * @param {object} [details.params]
+   *   Any special Mozilla parameters.
+   * @param {string} [details.suggest_url]
+   *   The suggestion url template for the engine.
+   * @param {string} [details.suggest_url_get_params]
+   *   The suggestion url parameters for use with the GET method.
+   * @param {string} [details.suggest_url_post_params]
+   *   The suggestion url parameters for use with the POST method.
+   * @param {string} [details.encoding]
+   *   The encoding to use for the engine.
+   * @param {string} [details.search_form]
+   *   THe search form url for the engine.
    * @param {object} [configuration]
    *   The search engine configuration for application provided engines, that
    *   may be overriding some of the WebExtension's settings.
    */
-  _setUrls(searchProvider, configuration = {}) {
-    // Filter out any untranslated parameters, the extension has to list all
-    // possible mozParams for each engine where a 'locale' may only provide
-    // actual values for some (or none).
-    if (searchProvider.params) {
-      searchProvider.params = searchProvider.params.filter(param => {
-        return !(param.value && param.value.startsWith("__MSG_"));
-      });
-    }
-
+  _setUrls(details, configuration = {}) {
     let postParams =
       configuration.params?.searchUrlPostParams ||
-      searchProvider.search_url_post_params ||
+      details.search_url_post_params ||
       "";
-    let url = this._getEngineURLFromMetaData(SearchUtils.URL_TYPE.SEARCH, {
+    let url = this._getEngineURLFromMetaData(lazy.SearchUtils.URL_TYPE.SEARCH, {
       method: (postParams && "POST") || "GET",
       // AddonManager will sometimes encode the URL via `new URL()`. We want
       // to ensure we're always dealing with decoded urls.
-      template: decodeURI(searchProvider.search_url),
+      template: decodeURI(details.search_url),
       getParams:
         configuration.params?.searchUrlGetParams ||
-        searchProvider.search_url_get_params ||
+        details.search_url_get_params ||
         "",
       postParams,
-      mozParams: configuration.extraParams || searchProvider.params || [],
+      mozParams: configuration.extraParams || details.params || [],
     });
 
     this._urls.push(url);
 
-    if (searchProvider.suggest_url) {
+    if (details.suggest_url) {
       let suggestPostParams =
         configuration.params?.suggestUrlPostParams ||
-        searchProvider.suggest_url_post_params ||
+        details.suggest_url_post_params ||
         "";
-      url = this._getEngineURLFromMetaData(SearchUtils.URL_TYPE.SUGGEST_JSON, {
-        method: (suggestPostParams && "POST") || "GET",
-        // suggest_url doesn't currently get encoded.
-        template: searchProvider.suggest_url,
-        getParams:
-          configuration.params?.suggestUrlGetParams ||
-          searchProvider.suggest_url_get_params ||
-          "",
-        postParams: suggestPostParams,
-      });
+      url = this._getEngineURLFromMetaData(
+        lazy.SearchUtils.URL_TYPE.SUGGEST_JSON,
+        {
+          method: (suggestPostParams && "POST") || "GET",
+          // suggest_url doesn't currently get encoded.
+          template: details.suggest_url,
+          getParams:
+            configuration.params?.suggestUrlGetParams ||
+            details.suggest_url_get_params ||
+            "",
+          postParams: suggestPostParams,
+        }
+      );
 
       this._urls.push(url);
     }
 
-    if (searchProvider.encoding) {
-      this._queryCharset = searchProvider.encoding;
+    if (details.encoding) {
+      this._queryCharset = details.encoding;
     }
-    this.__searchForm = searchProvider.search_form;
+    this.__searchForm = details.search_form;
   }
 
-  checkSearchUrlMatchesManifest(searchProvider) {
-    let existingUrl = this._getURLOfType(SearchUtils.URL_TYPE.SEARCH);
+  checkSearchUrlMatchesManifest(details) {
+    let existingUrl = this._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH);
 
-    let newUrl = this._getEngineURLFromMetaData(SearchUtils.URL_TYPE.SEARCH, {
-      method: (searchProvider.search_url_post_params && "POST") || "GET",
-      // AddonManager will sometimes encode the URL via `new URL()`. We want
-      // to ensure we're always dealing with decoded urls.
-      template: decodeURI(searchProvider.search_url),
-      getParams: searchProvider.search_url_get_params || "",
-      postParams: searchProvider.search_url_post_params || "",
-    });
+    let newUrl = this._getEngineURLFromMetaData(
+      lazy.SearchUtils.URL_TYPE.SEARCH,
+      {
+        method: (details.search_url_post_params && "POST") || "GET",
+        // AddonManager will sometimes encode the URL via `new URL()`. We want
+        // to ensure we're always dealing with decoded urls.
+        template: decodeURI(details.search_url),
+        getParams: details.search_url_get_params || "",
+        postParams: details.search_url_post_params || "",
+      }
+    );
 
     let existingSubmission = existingUrl.getSubmission("", this);
     let newSubmission = newUrl.getSubmission("", this);
@@ -1052,41 +1040,6 @@ class SearchEngine {
       existingSubmission.uri.equals(newSubmission.uri) &&
       existingSubmission.postData == newSubmission.postData
     );
-  }
-
-  /**
-   * Update this engine based on new manifest, used during
-   * webextension upgrades.
-   *
-   * @param {string} extensionID
-   *   The WebExtension ID. For Policy engines, this is currently "set-via-policy".
-   * @param {string} extensionBaseURI
-   *   The Base URI of the WebExtension.
-   * @param {object} manifest
-   *   An object representing the WebExtensions' manifest.
-   * @param {string} locale
-   *   The locale that is being used for the WebExtension.
-   * @param {object} [configuration]
-   *   The search engine configuration for application provided engines, that
-   *   may be overriding some of the WebExtension's settings.
-   */
-  _updateFromManifest(
-    extensionID,
-    extensionBaseURI,
-    manifest,
-    locale,
-    configuration = {}
-  ) {
-    this._urls = [];
-    this._iconMapObj = null;
-    this._initFromManifest(
-      extensionID,
-      extensionBaseURI,
-      manifest,
-      locale,
-      configuration
-    );
-    SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
   }
 
   /**
@@ -1110,7 +1063,7 @@ class SearchEngine {
     this._urls = [];
     this.setAttr("overriddenBy", extensionID);
     this._setUrls(manifest.chrome_settings_overrides.search_provider);
-    SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+    lazy.SearchUtils.notifyAction(this, lazy.SearchUtils.MODIFIED_TYPE.CHANGED);
   }
 
   /**
@@ -1126,12 +1079,15 @@ class SearchEngine {
         this.__searchForm = this._overriddenData.searchForm;
         delete this._overriddenData;
       } else {
-        logConsole.error(
+        lazy.logConsole.error(
           `${this._name} had overriddenBy set, but no _overriddenData`
         );
       }
       this.clearAttr("overriddenBy");
-      SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+      lazy.SearchUtils.notifyAction(
+        this,
+        lazy.SearchUtils.MODIFIED_TYPE.CHANGED
+      );
     }
   }
 
@@ -1145,12 +1101,13 @@ class SearchEngine {
     this._name = json._name;
     this._description = json.description;
     this._hasPreferredIcon = json._hasPreferredIcon == undefined;
-    this._queryCharset = json.queryCharset || SearchUtils.DEFAULT_QUERY_CHARSET;
+    this._queryCharset =
+      json.queryCharset || lazy.SearchUtils.DEFAULT_QUERY_CHARSET;
     this.__searchForm = json.__searchForm;
     this._updateInterval = json._updateInterval || null;
     this._updateURL = json._updateURL || null;
     this._iconUpdateURL = json._iconUpdateURL || null;
-    this._iconURI = SearchUtils.makeURI(json._iconURL);
+    this._iconURI = lazy.SearchUtils.makeURI(json._iconURL);
     this._iconMapObj = json._iconMapObj;
     this._metaData = json._metaData || {};
     this._orderHint = json._orderHint || null;
@@ -1167,7 +1124,7 @@ class SearchEngine {
     for (let i = 0; i < json._urls.length; ++i) {
       let url = json._urls[i];
       let engineURL = new EngineURL(
-        url.type || SearchUtils.URL_TYPE.SEARCH,
+        url.type || lazy.SearchUtils.URL_TYPE.SEARCH,
         url.method || "GET",
         url.template
       );
@@ -1223,7 +1180,7 @@ class SearchEngine {
     if (!this._hasPreferredIcon) {
       json._hasPreferredIcon = this._hasPreferredIcon;
     }
-    if (this.queryCharset != SearchUtils.DEFAULT_QUERY_CHARSET) {
+    if (this.queryCharset != lazy.SearchUtils.DEFAULT_QUERY_CHARSET) {
       json.queryCharset = this.queryCharset;
     }
 
@@ -1262,7 +1219,10 @@ class SearchEngine {
     var value = val ? val.trim() : "";
     if (value != this.alias) {
       this.setAttr("alias", value);
-      SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+      lazy.SearchUtils.notifyAction(
+        this,
+        lazy.SearchUtils.MODIFIED_TYPE.CHANGED
+      );
     }
   }
 
@@ -1320,7 +1280,10 @@ class SearchEngine {
     var value = !!val;
     if (value != this.hidden) {
       this.setAttr("hidden", value);
-      SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.CHANGED);
+      lazy.SearchUtils.notifyAction(
+        this,
+        lazy.SearchUtils.MODIFIED_TYPE.CHANGED
+      );
     }
   }
 
@@ -1356,7 +1319,7 @@ class SearchEngine {
   get isGeneralPurposeEngine() {
     return !!(
       this._extensionID &&
-      SearchUtils.GENERAL_SEARCH_ENGINE_IDS.has(this._extensionID)
+      lazy.SearchUtils.GENERAL_SEARCH_ENGINE_IDS.has(this._extensionID)
     );
   }
 
@@ -1379,7 +1342,7 @@ class SearchEngine {
   _getSearchFormWithPurpose(purpose) {
     // First look for a <Url rel="searchform">
     var searchFormURL = this._getURLOfType(
-      SearchUtils.URL_TYPE.SEARCH,
+      lazy.SearchUtils.URL_TYPE.SEARCH,
       "searchform"
     );
     if (searchFormURL) {
@@ -1395,25 +1358,25 @@ class SearchEngine {
     if (!this._searchForm) {
       // No SearchForm specified in the engine definition file, use the prePath
       // (e.g. https://foo.com for https://foo.com/search.php?q=bar).
-      var htmlUrl = this._getURLOfType(SearchUtils.URL_TYPE.SEARCH);
+      var htmlUrl = this._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH);
       if (!htmlUrl) {
         throw Components.Exception(
           "Engine has no HTML URL!",
           Cr.NS_ERROR_UNEXPECTED
         );
       }
-      this._searchForm = SearchUtils.makeURI(htmlUrl.template).prePath;
+      this._searchForm = lazy.SearchUtils.makeURI(htmlUrl.template).prePath;
     }
 
     return ParamSubstitution(this._searchForm, "", this);
   }
 
   get queryCharset() {
-    return this._queryCharset || SearchUtils.DEFAULT_QUERY_CHARSET;
+    return this._queryCharset || lazy.SearchUtils.DEFAULT_QUERY_CHARSET;
   }
 
   get _defaultMobileResponseType() {
-    let type = SearchUtils.URL_TYPE.SEARCH;
+    let type = lazy.SearchUtils.URL_TYPE.SEARCH;
 
     let isTablet = Services.sysinfo.get("tablet");
     if (
@@ -1444,7 +1407,7 @@ class SearchEngine {
       responseType =
         AppConstants.platform == "android"
           ? this._defaultMobileResponseType
-          : SearchUtils.URL_TYPE.SEARCH;
+          : lazy.SearchUtils.URL_TYPE.SEARCH;
     }
 
     var url = this._getURLOfType(responseType);
@@ -1456,7 +1419,7 @@ class SearchEngine {
     if (!data) {
       // Return a dummy submission object with our searchForm attribute
       return new Submission(
-        SearchUtils.makeURI(this._getSearchFormWithPurpose(purpose))
+        lazy.SearchUtils.makeURI(this._getSearchFormWithPurpose(purpose))
       );
     }
 
@@ -1467,9 +1430,11 @@ class SearchEngine {
         data
       );
     } catch (ex) {
-      logConsole.warn("getSubmission: Falling back to default queryCharset!");
+      lazy.logConsole.warn(
+        "getSubmission: Falling back to default queryCharset!"
+      );
       submissionData = Services.textToSubURI.ConvertAndEscape(
-        SearchUtils.DEFAULT_QUERY_CHARSET,
+        lazy.SearchUtils.DEFAULT_QUERY_CHARSET,
         data
       );
     }
@@ -1483,7 +1448,7 @@ class SearchEngine {
 
     let submission = this.getSubmission(
       "{searchTerms}",
-      SearchUtils.URL_TYPE.SEARCH
+      lazy.SearchUtils.URL_TYPE.SEARCH
     );
 
     if (submission.postData) {
@@ -1508,7 +1473,7 @@ class SearchEngine {
     }
     let submission = this.getSubmission(
       "{searchTerms}",
-      SearchUtils.URL_TYPE.SEARCH
+      lazy.SearchUtils.URL_TYPE.SEARCH
     );
     let searchURLPublicSuffix = Services.eTLD.getKnownPublicSuffix(
       submission.uri
@@ -1527,7 +1492,7 @@ class SearchEngine {
       responseType =
         AppConstants.platform == "android"
           ? this._defaultMobileResponseType
-          : SearchUtils.URL_TYPE.SEARCH;
+          : lazy.SearchUtils.URL_TYPE.SEARCH;
     }
 
     let url = this._getURLOfType(responseType);
@@ -1545,7 +1510,7 @@ class SearchEngine {
     let responseType =
       AppConstants.platform == "android"
         ? this._defaultMobileResponseType
-        : SearchUtils.URL_TYPE.SEARCH;
+        : lazy.SearchUtils.URL_TYPE.SEARCH;
 
     let url = this._getURLOfType(responseType);
     if (!url || url.method != "GET") {
@@ -1674,10 +1639,10 @@ class SearchEngine {
       Cu.reportError(e);
     }
 
-    if (this.supportsResponseType(SearchUtils.URL_TYPE.SUGGEST_JSON)) {
+    if (this.supportsResponseType(lazy.SearchUtils.URL_TYPE.SUGGEST_JSON)) {
       let suggestURI = this.getSubmission(
         "dummy",
-        SearchUtils.URL_TYPE.SUGGEST_JSON
+        lazy.SearchUtils.URL_TYPE.SUGGEST_JSON
       ).uri;
       if (suggestURI.prePath != searchURI.prePath) {
         try {

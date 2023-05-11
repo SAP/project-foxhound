@@ -611,6 +611,21 @@ Section "-Application" APP_IDX
     ${EndIf}
   ${EndIf}
 
+  ; This is always added if it doesn't already exist to ensure that Windows'
+  ; native "Pin to Taskbar" functionality can find an appropriate shortcut.
+  ; See https://bugzilla.mozilla.org/show_bug.cgi?id=1762994 for additional
+  ; background.
+  ; Pref'ed off until Private Browsing window separation is enabled by default
+  ; to avoid a situation where a user pins the Private Browsing shortcut to
+  ; the Taskbar, which will end up launching into a different Taskbar icon.
+  ClearErrors
+  ReadRegDWORD $2 HKCU \
+      "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
+      "CreatePrivateBrowsingShortcut"
+  ${IfNot} ${Errors}
+    ${AddPrivateBrowsingShortcut}
+  ${EndIf}
+
   ; Update lastwritetime of the Start Menu shortcut to clear the tile cache.
   ; Do this for both shell contexts in case the user has shortcuts in multiple
   ; locations, then restore the previous context at the end.
@@ -798,6 +813,11 @@ Section "-InstallEndCleanup"
       ${EndIf}
 
       ${LogHeader} "Setting as the default browser"
+      ; AddTaskbarSC is needed by MigrateTaskBarShortcut, which is called by
+      ; SetAsDefaultAppUserHKCU. If this is called via ExecCodeSegment,
+      ; MigrateTaskBarShortcut will not see the value of AddTaskbarSC, so we
+      ; send it via a register instead.
+      StrCpy $R0 $AddTaskbarSC
       ClearErrors
       ${GetParameters} $0
       ${GetOptions} "$0" "/UAC:" $0
@@ -819,7 +839,7 @@ Section "-InstallEndCleanup"
   ${EndUnless}
 
   ; Adds a pinned Task Bar shortcut (see MigrateTaskBarShortcut for details).
-  ${MigrateTaskBarShortcut}
+  ${MigrateTaskBarShortcut} "$AddTaskbarSC"
 
   ; Add the Firewall entries during install
   Call AddFirewallEntries
@@ -1446,11 +1466,7 @@ Function leaveShortcuts
   ${EndIf}
   ${MUI_INSTALLOPTIONS_READ} $AddDesktopSC "shortcuts.ini" "Field 2" "State"
   ${MUI_INSTALLOPTIONS_READ} $AddStartMenuSC "shortcuts.ini" "Field 3" "State"
-
-  ; Don't install the quick launch shortcut on Windows 7
-  ${Unless} ${AtLeastWin7}
-    ${MUI_INSTALLOPTIONS_READ} $AddQuickLaunchSC "shortcuts.ini" "Field 4" "State"
-  ${EndUnless}
+  ${MUI_INSTALLOPTIONS_READ} $AddTaskbarSC "shortcuts.ini" "Field 4" "State"
 
   ${If} $InstallType == ${INSTALLTYPE_CUSTOM}
     Call CheckExistingInstall
@@ -1898,13 +1914,7 @@ Function .onInit
   WriteINIStr "$PLUGINSDIR\options.ini" "Field 5" Top    "67"
   WriteINIStr "$PLUGINSDIR\options.ini" "Field 5" Bottom "87"
 
-  ; Setup the shortcuts.ini file for the Custom Shortcuts Page
-  ; Don't offer to install the quick launch shortcut on Windows 7
-  ${If} ${AtLeastWin7}
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Settings" NumFields "3"
-  ${Else}
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Settings" NumFields "4"
-  ${EndIf}
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Settings" NumFields "4"
 
   WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 1" Type   "label"
   WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 1" Text   "$(CREATE_ICONS_DESC)"
@@ -1930,16 +1940,13 @@ Function .onInit
   WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" Bottom "50"
   WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 3" State  "1"
 
-  ; Don't offer to install the quick launch shortcut on Windows 7
-  ${Unless} ${AtLeastWin7}
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Type   "checkbox"
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Text   "$(ICONS_QUICKLAUNCH)"
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Left   "0"
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Right  "-1"
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Top    "60"
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Bottom "70"
-    WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" State  "1"
-  ${EndUnless}
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Type   "checkbox"
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Text   "$(ICONS_TASKBAR)"
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Left   "0"
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Right  "-1"
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Top    "60"
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" Bottom "70"
+  WriteINIStr "$PLUGINSDIR\shortcuts.ini" "Field 4" State  "1"
 
   ; Setup the components.ini file for the Components Page
   WriteINIStr "$PLUGINSDIR\components.ini" "Settings" NumFields "2"

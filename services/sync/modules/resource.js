@@ -18,7 +18,6 @@ const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 const { setTimeout, clearTimeout } = ChromeUtils.import(
   "resource://gre/modules/Timer.jsm"
 );
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "Headers", "Request"]);
 /* global AbortController */
 
 /*

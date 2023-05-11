@@ -309,10 +309,13 @@ class DocAccessibleChild : public DocAccessibleChildBase {
   struct SerializedChildDocConstructor final : public DeferredEvent {
     SerializedChildDocConstructor(DocAccessibleChild* aIPCDoc,
                                   DocAccessibleChild* aParentIPCDoc,
-                                  uint64_t aUniqueID, uint32_t aMsaaID)
+                                  uint64_t aUniqueID,
+                                  dom::BrowsingContext* aBrowsingContext,
+                                  uint32_t aMsaaID)
         : DeferredEvent(aParentIPCDoc),
           mIPCDoc(aIPCDoc),
           mUniqueID(aUniqueID),
+          mBrowsingContext(aBrowsingContext),
           mMsaaID(aMsaaID) {}
 
     void Dispatch(DocAccessibleChild* aParentIPCDoc) override {
@@ -320,12 +323,18 @@ class DocAccessibleChild : public DocAccessibleChildBase {
           static_cast<dom::BrowserChild*>(aParentIPCDoc->Manager());
       MOZ_ASSERT(browserChild);
       Unused << browserChild->SendPDocAccessibleConstructor(
-          mIPCDoc, aParentIPCDoc, mUniqueID, mMsaaID, IAccessibleHolder());
+          mIPCDoc, aParentIPCDoc, mUniqueID, mBrowsingContext, mMsaaID,
+          IAccessibleHolder());
       mIPCDoc->SetConstructedInParentProcess();
     }
 
     DocAccessibleChild* mIPCDoc;
     uint64_t mUniqueID;
+    // By the time we replay this, the document and its BrowsingContext might
+    // be dead, so we use MaybeDiscardedBrowsingContext here. Ideally, we just
+    // wouldn't replay this, but this is tricky because IPDL should manage the
+    // lifetime of DocAccessibleChild, which means we must send the constructor.
+    dom::MaybeDiscardedBrowsingContext mBrowsingContext;
     uint32_t mMsaaID;
   };
 

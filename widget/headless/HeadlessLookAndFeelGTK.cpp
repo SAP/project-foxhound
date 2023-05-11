@@ -63,9 +63,6 @@ nsresult HeadlessLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::ScrollArrowStyle:
       aResult = eScrollArrow_None;
       break;
-    case IntID::ScrollSliderStyle:
-      aResult = eScrollThumbStyle_Proportional;
-      break;
     case IntID::ScrollButtonLeftMouseButtonAction:
       aResult = 0;
       return NS_OK;
@@ -212,9 +209,9 @@ nsresult HeadlessLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
 bool HeadlessLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
                                         gfxFontStyle& aFontStyle) {
   // Default to san-serif for everything.
-  aFontStyle.style = FontSlantStyle::Normal();
-  aFontStyle.weight = FontWeight::Normal();
-  aFontStyle.stretch = FontStretch::Normal();
+  aFontStyle.style = FontSlantStyle::NORMAL;
+  aFontStyle.weight = FontWeight::NORMAL;
+  aFontStyle.stretch = FontStretch::NORMAL;
   aFontStyle.size = 14;
   aFontStyle.systemFont = true;
 

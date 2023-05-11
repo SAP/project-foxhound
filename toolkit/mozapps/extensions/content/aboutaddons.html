@@ -61,8 +61,6 @@
       </div>
     </div>
 
-    <!-- Include helpers for the inline options browser select and context menus. -->
-    <content-select-dropdown></content-select-dropdown>
     <proxy-context-menu id="contentAreaContextMenu"></proxy-context-menu>
 
     <template name="addon-page-header">
@@ -203,6 +201,13 @@
       </div>
     </template>
 
+    <template name="colorways-card-container">
+      <div id="colorways-expiry-date-container">
+        <span id="colorways-expiry-date"><span></span></span>
+      </div>
+        <button id="colorways-button" class="primary" action="open-colorways" data-l10n-id="theme-colorways-button"></button>
+    </template>
+
     <template name="addon-name-container-in-disco-card">
       <div class="disco-card-head">
         <h3 class="disco-addon-name"></h3>
@@ -231,7 +236,14 @@
       </button-group>
       <named-deck id="details-deck">
         <section name="details">
-          <div class="addon-detail-description"></div>
+          <div class="addon-detail-description-wrapper">
+            <div class="addon-detail-description"></div>
+            <button
+              class="button-link addon-detail-description-toggle"
+              data-l10n-id="addon-detail-description-expand"
+              hidden>
+            </button>
+          </div>
           <div class="addon-detail-contribute">
             <label data-l10n-id="detail-contributions-description"></label>
             <button

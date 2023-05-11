@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-Cu.importGlobalProperties(["fetch"]);
 
 var EXPORTED_SYMBOLS = ["AboutHttpsOnlyErrorChild"];
 
@@ -15,8 +14,10 @@ const { RemotePageChild } = ChromeUtils.import(
   "resource://gre/actors/RemotePageChild.jsm"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "@mozilla.org/network/serialization-helper;1",
   "nsISerializationHelper"
 );

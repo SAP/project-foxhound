@@ -9,12 +9,14 @@ var EXPORTED_SYMBOLS = ["SearchSERPTelemetry"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   SearchUtils: "resource://gre/modules/SearchUtils.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 // The various histograms and scalars that we report to.
@@ -29,10 +31,10 @@ const SEARCH_TELEMETRY_PRIVATE_BROWSING_KEY_SUFFIX = "pb";
 
 const TELEMETRY_SETTINGS_KEY = "search-telemetry-v2";
 
-XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
+XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
     prefix: "SearchTelemetry",
-    maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
+    maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
   });
 });
 
@@ -77,6 +79,10 @@ class TelemetryHandler {
   // browser - one of the KNOWN_SEARCH_SOURCES in BrowserSearchTelemetry.
   _browserSourceMap = new WeakMap();
 
+  // _browserNewtabSessionMap is a map of the newtab session id for particular
+  // browsers.
+  _browserNewtabSessionMap = new WeakMap();
+
   constructor() {
     this._contentHandler = new ContentHandler({
       browserInfoByURL: this._browserInfoByURL,
@@ -96,12 +102,12 @@ class TelemetryHandler {
       return;
     }
 
-    this._telemetrySettings = RemoteSettings(TELEMETRY_SETTINGS_KEY);
+    this._telemetrySettings = lazy.RemoteSettings(TELEMETRY_SETTINGS_KEY);
     let rawProviderInfo = [];
     try {
       rawProviderInfo = await this._telemetrySettings.get();
     } catch (ex) {
-      logConsole.error("Could not get settings:", ex);
+      lazy.logConsole.error("Could not get settings:", ex);
     }
 
     // Send the provider info to the child handler.
@@ -151,6 +157,19 @@ class TelemetryHandler {
   }
 
   /**
+   * Records the newtab source for particular browsers, in case it needs
+   * to be associated with a SERP.
+   *
+   * @param {browser} browser
+   *   The browser where the search originated.
+   * @param {string} newtabSessionId
+   *    The sessionId of the newtab session the search originated from.
+   */
+  recordBrowserNewtabSession(browser, newtabSessionId) {
+    this._browserNewtabSessionMap.set(browser, newtabSessionId);
+  }
+
+  /**
    * Handles the TabClose event received from the listeners.
    *
    * @param {object} event
@@ -161,6 +180,7 @@ class TelemetryHandler {
       return;
     }
 
+    this._browserNewtabSessionMap.delete(event.target.linkedBrowser);
     this.stopTrackingBrowser(event.target.linkedBrowser);
   }
 
@@ -217,12 +237,15 @@ class TelemetryHandler {
    */
   updateTrackingStatus(browser, url, loadType) {
     if (
-      !BrowserSearchTelemetry.shouldRecordSearchCount(browser.getTabBrowser())
+      !lazy.BrowserSearchTelemetry.shouldRecordSearchCount(
+        browser.getTabBrowser()
+      )
     ) {
       return;
     }
     let info = this._checkURLForSerpMatch(url);
     if (!info) {
+      this._browserNewtabSessionMap.delete(browser);
       this.stopTrackingBrowser(browser);
       return;
     }
@@ -237,6 +260,13 @@ class TelemetryHandler {
       this._browserSourceMap.delete(browser);
     }
 
+    let newtabSessionId;
+    if (this._browserNewtabSessionMap.has(browser)) {
+      newtabSessionId = this._browserNewtabSessionMap.get(browser);
+      // We leave the newtabSessionId in the map for this browser
+      // until we stop loading SERP pages or the tab is closed.
+    }
+
     this._reportSerpPage(info, source, url);
 
     let item = this._browserInfoByURL.get(url);
@@ -245,12 +275,14 @@ class TelemetryHandler {
       item.browsers.set(browser, "no ads reported");
       item.count++;
       item.source = source;
+      item.newtabSessionId = newtabSessionId;
     } else {
       item = this._browserInfoByURL.set(url, {
         browsers: new WeakMap().set(browser, "no ads reported"),
         info,
         count: 1,
         source,
+        newtabSessionId,
       });
     }
   }
@@ -565,7 +597,7 @@ class TelemetryHandler {
       SEARCH_COUNTS_HISTOGRAM_KEY
     );
     histogram.add(payload);
-    logConsole.debug("Counting", payload, "for", url);
+    lazy.logConsole.debug("Counting", payload, "for", url);
   }
 }
 
@@ -720,7 +752,7 @@ class ContentHandler {
 
     let wrappedChannel = ChannelWrapper.get(channel);
     if (wrappedChannel._adClickRecorded) {
-      logConsole.debug("Ad click already recorded");
+      lazy.logConsole.debug("Ad click already recorded");
       return;
     }
 
@@ -729,7 +761,7 @@ class ContentHandler {
       // update beacons. They used to lead to double-counting ad-clicks, so let's
       // ignore them.
       if (wrappedChannel.statusCode == 204) {
-        logConsole.debug("Ignoring activity from ambiguous responses");
+        lazy.logConsole.debug("Ignoring activity from ambiguous responses");
         return;
       }
 
@@ -748,7 +780,7 @@ class ContentHandler {
       }
 
       try {
-        logConsole.debug(
+        lazy.logConsole.debug(
           "Counting ad click in page for",
           info.telemetryId,
           item.source,
@@ -766,6 +798,15 @@ class ContentHandler {
           1
         );
         wrappedChannel._adClickRecorded = true;
+        if (item.newtabSessionId) {
+          Glean.newtabSearchAd.click.record({
+            newtab_visit_id: item.newtabSessionId,
+            search_access_point: item.source,
+            is_follow_on: item.info.type.endsWith("follow-on"),
+            is_tagged: item.info.type.startsWith("tagged"),
+            telemetry_id: item.info.provider,
+          });
+        }
       } catch (e) {
         Cu.reportError(e);
       }
@@ -787,7 +828,7 @@ class ContentHandler {
   _reportPageWithAds(info, browser) {
     let item = this._findBrowserItemForURL(info.url);
     if (!item) {
-      logConsole.warn(
+      lazy.logConsole.warn(
         "Expected to report URI for",
         info.url,
         "with ads but couldn't find the information"
@@ -797,14 +838,14 @@ class ContentHandler {
 
     let adReportState = item.browsers.get(browser);
     if (adReportState == "ad reported") {
-      logConsole.debug(
+      lazy.logConsole.debug(
         "Ad was previously reported for browser with URI",
         info.url
       );
       return;
     }
 
-    logConsole.debug(
+    lazy.logConsole.debug(
       "Counting ads in page for",
       item.info.provider,
       item.info.type,
@@ -823,6 +864,16 @@ class ContentHandler {
     );
 
     item.browsers.set(browser, "ad reported");
+
+    if (item.newtabSessionId) {
+      Glean.newtabSearchAd.impression.record({
+        newtab_visit_id: item.newtabSessionId,
+        search_access_point: item.source,
+        is_follow_on: item.info.type.endsWith("follow-on"),
+        is_tagged: item.info.type.startsWith("tagged"),
+        telemetry_id: item.info.provider,
+      });
+    }
   }
 }
 

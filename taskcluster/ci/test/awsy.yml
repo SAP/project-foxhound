@@ -5,6 +5,10 @@
 job-defaults:
     suite: awsy
     max-run-time: 7200
+    worker-type:
+        by-test-platform:
+            linux.*: t-linux-xlarge-gcp
+            default: default
     instance-size: xlarge
     virtualization:
         by-test-platform:
@@ -32,8 +36,6 @@ awsy:
 
 awsy-tp6:
     description: Are we slim yet - tp6 pageset
-    variants: [fission]
-    run-without-variant: false
     treeherder-symbol: SY(sy-tp6)
     run-on-projects:
         by-test-platform:
@@ -55,8 +57,6 @@ awsy-dmd:
 
 awsy-base:
     description: Are we slim yet - about:blank base case
-    variants: [fission]
-    run-without-variant: false
     treeherder-symbol: SY(ab)
     run-on-projects:
         by-test-platform:

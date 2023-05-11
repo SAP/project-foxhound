@@ -7,11 +7,13 @@
 
 use crate::computed_value_flags::ComputedValueFlags;
 use crate::dom::TElement;
+use crate::properties::longhands::contain::SpecifiedValue;
 use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::longhands::float::computed_value::T as Float;
 use crate::properties::longhands::overflow_x::computed_value::T as Overflow;
 use crate::properties::longhands::position::computed_value::T as Position;
 use crate::properties::{self, ComputedValues, StyleBuilder};
+
 
 /// A struct that implements all the adjustment methods.
 ///
@@ -246,6 +248,15 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
                 .add_flags(ComputedValueFlags::IS_ROOT_ELEMENT_STYLE);
         }
 
+        if self.style
+            .get_box()
+            .clone_contain()
+            .contains(SpecifiedValue::STYLE)
+        {
+            self.style
+                .add_flags(ComputedValueFlags::SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE);
+        }
+
         #[cfg(feature = "servo-layout-2013")]
         {
             if self.style.get_parent_column().is_multicol() {
@@ -357,12 +368,11 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     #[cfg(feature = "gecko")]
     fn adjust_for_mathvariant(&mut self) {
         use crate::properties::longhands::_moz_math_variant::computed_value::T as MozMathVariant;
-        use crate::properties::longhands::font_weight::computed_value::T as FontWeight;
-        use crate::values::generics::font::FontStyle;
+        use crate::values::computed::font::{FontWeight, FontStyle};
         if self.style.get_font().clone__moz_math_variant() != MozMathVariant::None {
             let font_style = self.style.mutate_font();
-            font_style.set_font_weight(FontWeight::normal());
-            font_style.set_font_style(FontStyle::Normal);
+            font_style.set_font_weight(FontWeight::NORMAL);
+            font_style.set_font_style(FontStyle::NORMAL);
         }
     }
 

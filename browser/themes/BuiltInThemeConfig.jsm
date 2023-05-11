@@ -51,193 +51,337 @@ const BuiltInThemeConfig = new Map([
   [
     "2022red-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/2022red/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022red/",
       collection: "true-colors",
     },
   ],
   [
     "2022orange-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/2022orange/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022orange/",
       collection: "true-colors",
     },
   ],
   [
     "2022green-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/2022green/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022green/",
       collection: "true-colors",
     },
   ],
   [
     "2022yellow-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/2022yellow/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022yellow/",
       collection: "true-colors",
     },
   ],
   [
     "2022purple-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/2022purple/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022purple/",
       collection: "true-colors",
     },
   ],
   [
     "2022blue-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/2022blue/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022blue/",
       collection: "true-colors",
     },
   ],
   [
     "lush-soft-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/lush/soft/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021lush/soft/",
       collection: "life-in-color",
     },
   ],
   [
     "lush-balanced-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/lush/balanced/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021lush/balanced/",
       collection: "life-in-color",
     },
   ],
   [
     "lush-bold-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/lush/bold/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021lush/bold/",
       collection: "life-in-color",
     },
   ],
   [
     "abstract-soft-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/abstract/soft/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021abstract/soft/",
       collection: "life-in-color",
     },
   ],
   [
     "abstract-balanced-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/abstract/balanced/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021abstract/balanced/",
       collection: "life-in-color",
     },
   ],
   [
     "abstract-bold-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/abstract/bold/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021abstract/bold/",
       collection: "life-in-color",
     },
   ],
   [
     "elemental-soft-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/elemental/soft/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021elemental/soft/",
       collection: "life-in-color",
     },
   ],
   [
     "elemental-balanced-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/elemental/balanced/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021elemental/balanced/",
       collection: "life-in-color",
     },
   ],
   [
     "elemental-bold-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/elemental/bold/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021elemental/bold/",
       collection: "life-in-color",
     },
   ],
   [
     "cheers-soft-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/cheers/soft/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021cheers/soft/",
       collection: "life-in-color",
     },
   ],
   [
     "cheers-balanced-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/cheers/balanced/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021cheers/balanced/",
       collection: "life-in-color",
     },
   ],
   [
     "cheers-bold-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/cheers/bold/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021cheers/bold/",
       collection: "life-in-color",
     },
   ],
   [
     "graffiti-soft-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/graffiti/soft/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021graffiti/soft/",
       collection: "life-in-color",
     },
   ],
   [
     "graffiti-balanced-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/graffiti/balanced/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021graffiti/balanced/",
       collection: "life-in-color",
     },
   ],
   [
     "graffiti-bold-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/graffiti/bold/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021graffiti/bold/",
       collection: "life-in-color",
     },
   ],
   [
     "foto-soft-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/foto/soft/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021foto/soft/",
       collection: "life-in-color",
     },
   ],
   [
     "foto-balanced-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/foto/balanced/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021foto/balanced/",
       collection: "life-in-color",
     },
   ],
   [
     "foto-bold-colorway@mozilla.org",
     {
-      version: "1.0",
-      path: "resource://builtin-themes/monochromatic/foto/bold/",
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2021foto/bold/",
       collection: "life-in-color",
+    },
+  ],
+  [
+    "playmaker-soft-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022playmaker/soft/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "playmaker-balanced-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022playmaker/balanced/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "playmaker-bold-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022playmaker/bold/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "expressionist-soft-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022expressionist/soft/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "expressionist-balanced-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022expressionist/balanced/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "expressionist-bold-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022expressionist/bold/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "visionary-soft-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022visionary/soft/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "visionary-balanced-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022visionary/balanced/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "visionary-bold-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022visionary/bold/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "activist-soft-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022activist/soft/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "activist-balanced-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022activist/balanced/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "activist-bold-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022activist/bold/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "dreamer-soft-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022dreamer/soft/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "dreamer-balanced-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022dreamer/balanced/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "dreamer-bold-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022dreamer/bold/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "innovator-soft-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022innovator/soft/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "innovator-balanced-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022innovator/balanced/",
+      collection: "independent-voices",
+    },
+  ],
+  [
+    "innovator-bold-colorway@mozilla.org",
+    {
+      version: "1.1",
+      path: "resource://builtin-themes/colorways/2022innovator/bold/",
+      collection: "independent-voices",
     },
   ],
 ]);
@@ -249,19 +393,28 @@ const colorwayClosetEnabled = Services.prefs.getBoolPref(
 const ColorwayCollections = [
   {
     id: "life-in-color",
-    expiry:
-      colorwayClosetEnabled && AppConstants.NIGHTLY_BUILD
-        ? "2022-08-03"
-        : "2022-02-08",
-    l10nId: "colorway-collection-life-in-color",
+    expiry: "2022-02-08",
+    l10nId: {
+      title: "colorway-collection-life-in-color",
+    },
   },
   {
     id: "true-colors",
+    expiry: "2022-05-03",
+    l10nId: {
+      title: "colorway-collection-true-colors",
+    },
+  },
+  {
+    id: "independent-voices",
     expiry:
       colorwayClosetEnabled && AppConstants.NIGHTLY_BUILD
-        ? "2022-04-20"
-        : "2022-05-03",
-    l10nId: "colorway-collection-true-colors",
+        ? "2022-12-31"
+        : "1970-01-01",
+    l10nId: {
+      title: "colorway-collection-independent-voices",
+      description: "colorway-collection-independent-voices-description",
+    },
   },
 ];
 

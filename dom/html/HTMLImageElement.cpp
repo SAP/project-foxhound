@@ -45,7 +45,6 @@
 #include "mozilla/CycleCollectedJSContext.h"
 
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/MappedDeclarations.h"
 #include "mozilla/Maybe.h"
 
@@ -128,7 +127,7 @@ HTMLImageElement::HTMLImageElement(
       mInDocResponsiveContent(false),
       mCurrentDensity(1.0) {
   // We start out broken
-  AddStatesSilently(NS_EVENT_STATE_BROKEN);
+  AddStatesSilently(ElementState::BROKEN);
 }
 
 HTMLImageElement::~HTMLImageElement() { nsImageLoadingContent::Destroy(); }
@@ -359,7 +358,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   bool forceReload = false;
 
   if (aName == nsGkAtoms::loading &&
-      !ImageState().HasState(NS_EVENT_STATE_LOADING)) {
+      !ImageState().HasState(ElementState::LOADING)) {
     if (aValue && Loading(aValue->GetEnumValue()) == Loading::Lazy) {
       SetLazyLoading();
     } else if (aOldValue &&
@@ -653,7 +652,7 @@ void HTMLImageElement::MaybeLoadImage(bool aAlwaysForceLoad) {
   }
 }
 
-EventStates HTMLImageElement::IntrinsicState() const {
+ElementState HTMLImageElement::IntrinsicState() const {
   return nsGenericHTMLElement::IntrinsicState() |
          nsImageLoadingContent::ImageState();
 }

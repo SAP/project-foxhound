@@ -53,7 +53,6 @@
 #include "nsLookAndFeel.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowsHelpers.h"
-#include "WinContentSystemParameters.h"
 #include "WinWindowOcclusionTracker.h"
 
 #include <textstor.h>
@@ -563,9 +562,6 @@ void WinUtils::Log(const char* fmt, ...) {
 
 // static
 float WinUtils::SystemDPI() {
-  if (XRE_IsContentProcess()) {
-    return WinContentSystemParameters::GetSingleton()->SystemDPI();
-  }
   // The result of GetDeviceCaps won't change dynamically, as it predates
   // per-monitor DPI and support for on-the-fly resolution changes.
   // Therefore, we only need to look it up once.
@@ -628,9 +624,6 @@ static bool SlowIsPerMonitorDPIAware() {
 
 /* static */
 bool WinUtils::IsPerMonitorDPIAware() {
-  if (XRE_IsContentProcess()) {
-    return WinContentSystemParameters::GetSingleton()->IsPerMonitorDPIAware();
-  }
   static bool perMonitorDPIAware = SlowIsPerMonitorDPIAware();
   return perMonitorDPIAware;
 }
@@ -938,33 +931,24 @@ HWND WinUtils::GetTopLevelHWND(HWND aWnd, bool aStopIfNotChild,
   return topWnd;
 }
 
-static const wchar_t* GetNSWindowPropName() {
-  static wchar_t sPropName[40] = L"";
-  if (!*sPropName) {
-    _snwprintf(sPropName, 39, L"MozillansIWidgetPtr%u",
-               ::GetCurrentProcessId());
-    sPropName[39] = '\0';
-  }
-  return sPropName;
-}
+// Map from native window handles to nsWindow structures. Does not AddRef.
+// Inherently unsafe to access outside the main thread.
+static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
 
 /* static */
-bool WinUtils::SetNSWindowBasePtr(HWND aWnd, nsWindow* aWidget) {
-  if (!aWidget) {
-    ::RemovePropW(aWnd, GetNSWindowPropName());
-    return true;
+void WinUtils::SetNSWindowPtr(HWND aWnd, nsWindow* aWindow) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!aWindow) {
+    sExtantNSWindows.Remove(aWnd);
+  } else {
+    sExtantNSWindows.InsertOrUpdate(aWnd, aWindow);
   }
-  return ::SetPropW(aWnd, GetNSWindowPropName(), (HANDLE)aWidget);
-}
-
-/* static */
-nsWindow* WinUtils::GetNSWindowBasePtr(HWND aWnd) {
-  return static_cast<nsWindow*>(::GetPropW(aWnd, GetNSWindowPropName()));
 }
 
 /* static */
 nsWindow* WinUtils::GetNSWindowPtr(HWND aWnd) {
-  return static_cast<nsWindow*>(::GetPropW(aWnd, GetNSWindowPropName()));
+  MOZ_ASSERT(NS_IsMainThread());
+  return sExtantNSWindows.Get(aWnd);  // or nullptr
 }
 
 static BOOL CALLBACK AddMonitor(HMONITOR, HDC, LPRECT, LPARAM aParam) {
@@ -1844,6 +1828,26 @@ uint32_t WinUtils::GetMaxTouchPoints() {
   return 0;
 }
 
+// Starting with version 10.0.22621.0 of the Windows SDK the AR_STATE enum and
+// types are only defined when building for Windows 8 instead of Windows 7.
+#if (WDK_NTDDI_VERSION >= 0x0A00000C) && (WINVER < 0x0602)
+
+enum AR_STATE {
+  AR_ENABLED = 0x0,
+  AR_DISABLED = 0x1,
+  AR_SUPPRESSED = 0x2,
+  AR_REMOTESESSION = 0x4,
+  AR_MULTIMON = 0x8,
+  AR_NOSENSOR = 0x10,
+  AR_NOT_SUPPORTED = 0x20,
+  AR_DOCKED = 0x40,
+  AR_LAPTOP = 0x80
+};
+
+using PAR_STATE = enum AR_STATE*;
+
+#endif  // (WDK_NTDDI_VERSION >= 0x0A00000C) && (WINVER < 0x0602)
+
 /* static */
 POWER_PLATFORM_ROLE
 WinUtils::GetPowerPlatformRole() {
@@ -2316,6 +2320,19 @@ void WinUtils::EnableWindowOcclusion(const bool aEnable) {
   }
   ::EnumWindows(EnumUpdateWindowOcclusionProc,
                 reinterpret_cast<LPARAM>(&aEnable));
+}
+
+bool WinUtils::GetTimezoneName(wchar_t* aBuffer) {
+  DYNAMIC_TIME_ZONE_INFORMATION tzInfo;
+  DWORD tzid = GetDynamicTimeZoneInformation(&tzInfo);
+
+  if (tzid == TIME_ZONE_ID_INVALID) {
+    return false;
+  }
+
+  wcscpy_s(aBuffer, 128, tzInfo.TimeZoneKeyName);
+
+  return true;
 }
 
 }  // namespace widget

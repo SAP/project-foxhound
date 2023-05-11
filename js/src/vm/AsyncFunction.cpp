@@ -34,7 +34,7 @@ static JSObject* CreateAsyncFunction(JSContext* cx, JSProtoKey key) {
     return nullptr;
   }
 
-  HandlePropertyName name = cx->names().AsyncFunction;
+  Handle<PropertyName*> name = cx->names().AsyncFunction;
   return NewFunctionWithProto(cx, AsyncFunctionConstructor, 1,
                               FunctionFlags::NATIVE_CTOR, nullptr, name, proto,
                               gc::AllocKind::FUNCTION, TenuredObject);
@@ -143,9 +143,9 @@ static bool AsyncFunctionResume(JSContext* cx,
   //           suspended it.
   //
   // Execution context switching is handled in generator.
-  HandlePropertyName funName = kind == ResumeKind::Normal
-                                   ? cx->names().AsyncFunctionNext
-                                   : cx->names().AsyncFunctionThrow;
+  Handle<PropertyName*> funName = kind == ResumeKind::Normal
+                                      ? cx->names().AsyncFunctionNext
+                                      : cx->names().AsyncFunctionThrow;
   FixedInvokeArgs<1> args(cx);
   args[0].set(valueOrReason);
   RootedValue generatorOrValue(cx, ObjectValue(*generator));
@@ -280,7 +280,7 @@ JSFunction* NewHandler(JSContext* cx, Native handler,
 }
 
 AsyncFunctionGeneratorObject* AsyncFunctionGeneratorObject::create(
-    JSContext* cx, HandleModuleObject module) {
+    JSContext* cx, Handle<ModuleObject*> module) {
   // TODO: Module is currently hitching a ride with
   // AsyncFunctionGeneratorObject. The reason for this is we have some work in
   // the JITs that make use of this object when we hit AsyncAwait bytecode. At

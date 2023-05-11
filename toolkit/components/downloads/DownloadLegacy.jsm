@@ -16,13 +16,15 @@
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Downloads",
   "resource://gre/modules/Downloads.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "DownloadError",
   "resource://gre/modules/DownloadCore.jsm"
 );
@@ -265,6 +267,7 @@ DownloadLegacyTransfer.prototype = {
   // nsITransfer
   init: function DLT_init(
     aSource,
+    aSourceOriginalURI,
     aTarget,
     aDisplayName,
     aMIMEInfo,
@@ -277,6 +280,7 @@ DownloadLegacyTransfer.prototype = {
   ) {
     return this._nsITransferInitInternal(
       aSource,
+      aSourceOriginalURI,
       aTarget,
       aDisplayName,
       aMIMEInfo,
@@ -315,6 +319,7 @@ DownloadLegacyTransfer.prototype = {
     }
     return this._nsITransferInitInternal(
       aSource,
+      null,
       aTarget,
       aDisplayName,
       aMIMEInfo,
@@ -333,6 +338,7 @@ DownloadLegacyTransfer.prototype = {
 
   _nsITransferInitInternal(
     aSource,
+    aSourceOriginalURI,
     aTarget,
     aDisplayName,
     aMIMEInfo,
@@ -377,6 +383,7 @@ DownloadLegacyTransfer.prototype = {
     let serialisedDownload = {
       source: {
         url: aSource.spec,
+        originalUrl: aSourceOriginalURI && aSourceOriginalURI.spec,
         isPrivate,
         userContextId,
         browsingContextId,
@@ -400,11 +407,11 @@ DownloadLegacyTransfer.prototype = {
     if (aDownloadClassification == Ci.nsITransfer.DOWNLOAD_POTENTIALLY_UNSAFE) {
       Services.telemetry
         .getKeyedHistogramById("DOWNLOADS_USER_ACTION_ON_BLOCKED_DOWNLOAD")
-        .add(DownloadError.BLOCK_VERDICT_INSECURE, 0);
+        .add(lazy.DownloadError.BLOCK_VERDICT_INSECURE, 0);
 
       serialisedDownload.errorObj = {
         becauseBlockedByReputationCheck: true,
-        reputationCheckVerdict: DownloadError.BLOCK_VERDICT_INSECURE,
+        reputationCheckVerdict: lazy.DownloadError.BLOCK_VERDICT_INSECURE,
       };
       // hasBlockedData needs to be true
       // because the unblock UI is hidden if there is
@@ -420,7 +427,7 @@ DownloadLegacyTransfer.prototype = {
       this._cancelable = null;
     }
 
-    Downloads.createDownload(serialisedDownload)
+    lazy.Downloads.createDownload(serialisedDownload)
       .then(async aDownload => {
         // Legacy components keep partial data when they use a ".part" file.
         if (aTempFile) {
@@ -435,7 +442,7 @@ DownloadLegacyTransfer.prototype = {
         this._resolveDownload(aDownload);
 
         // Add the download to the list, allowing it to be seen and canceled.
-        await (await Downloads.getList(Downloads.ALL)).add(aDownload);
+        await (await lazy.Downloads.getList(lazy.Downloads.ALL)).add(aDownload);
         if (serialisedDownload.errorObj) {
           // In case we added an already canceled dummy download
           // we need to manually trigger a change event

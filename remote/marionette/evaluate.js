@@ -13,15 +13,17 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   element: "chrome://remote/content/marionette/element.js",
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
   Log: "chrome://remote/content/shared/Log.jsm",
-  WebElement: "chrome://remote/content/marionette/element.js",
+  WebReference: "chrome://remote/content/marionette/element.js",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.MARIONETTE)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
 
 const ARGUMENTS = "__webDriverArguments";
@@ -31,7 +33,7 @@ const DEFAULT_TIMEOUT = 10000; // ms
 const FINISH = "finish";
 
 /** @namespace */
-this.evaluate = {};
+const evaluate = {};
 
 /**
  * Asserts that an arbitrary object is not cyclic.
@@ -47,7 +49,11 @@ this.evaluate = {};
  * @throws {JavaScriptError}
  *     If the object is cyclic.
  */
-evaluate.assertAcyclic = function(obj, msg = "", err = error.JavaScriptError) {
+evaluate.assertAcyclic = function(
+  obj,
+  msg = "",
+  err = lazy.error.JavaScriptError
+) {
   if (evaluate.isCyclic(obj)) {
     throw new err(msg || "Cyclic object value");
   }
@@ -125,7 +131,9 @@ evaluate.sandbox = function(
   if (timeout !== null) {
     timeoutPromise = new Promise((resolve, reject) => {
       scriptTimeoutID = setTimeout(() => {
-        reject(new error.ScriptTimeoutError(`Timed out after ${timeout} ms`));
+        reject(
+          new lazy.error.ScriptTimeoutError(`Timed out after ${timeout} ms`)
+        );
       }, timeout);
     });
   }
@@ -148,7 +156,7 @@ evaluate.sandbox = function(
     }).apply(null, ${ARGUMENTS})`;
 
     unloadHandler = sandbox.cloneInto(
-      () => reject(new error.JavaScriptError("Document was unloaded")),
+      () => reject(new lazy.error.JavaScriptError("Document was unloaded")),
       marionetteSandbox
     );
     marionetteSandbox.window.addEventListener("unload", unloadHandler);
@@ -186,10 +194,10 @@ evaluate.sandbox = function(
   return Promise.race([promise, timeoutPromise])
     .catch(err => {
       // Only raise valid errors for both the sync and async scripts.
-      if (err instanceof error.ScriptTimeoutError) {
+      if (err instanceof lazy.error.ScriptTimeoutError) {
         throw err;
       }
-      throw new error.JavaScriptError(err);
+      throw new lazy.error.JavaScriptError(err);
     })
     .finally(() => {
       clearTimeout(scriptTimeoutID);
@@ -208,9 +216,9 @@ evaluate.sandbox = function(
  *     Arbitrary object containing web elements or ElementIdentifiers.
  * @param {element.ReferenceStore=} seenEls
  *     Known element store to look up web elements from. If `seenEls` is an
- *     instance of `element.ReferenceStore`, return WebElement. If `seenEls` is
+ *     instance of `element.ReferenceStore`, return WebReference. If `seenEls` is
  *     `undefined` the Element from the ContentDOMReference cache is returned
- *     when executed in the child process, in the parent process the WebElement
+ *     when executed in the child process, in the parent process the WebReference
  *     is passed-through.
  * @param {WindowProxy=} win
  *     Current browsing context, if `seenEls` is provided.
@@ -245,13 +253,13 @@ evaluate.fromJSON = function(options = {}) {
         return obj.map(e => evaluate.fromJSON({ obj: e, seenEls, win }));
 
         // ElementIdentifier and ReferenceStore (used by JSWindowActor)
-      } else if (WebElement.isReference(obj.webElRef)) {
-        if (seenEls instanceof element.ReferenceStore) {
+      } else if (lazy.WebReference.isReference(obj.webElRef)) {
+        if (seenEls instanceof lazy.element.ReferenceStore) {
           // Parent: Store web element reference in the cache
           return seenEls.add(obj);
         } else if (!seenEls) {
           // Child: Resolve ElementIdentifier by using ContentDOMReference
-          return element.resolveElement(obj, win);
+          return lazy.element.resolveElement(obj, win);
         }
         throw new TypeError("seenEls is not an instance of ReferenceStore");
       }
@@ -280,7 +288,7 @@ evaluate.fromJSON = function(options = {}) {
  *   ContentDOMReference registry. Once known, the elements'
  *   associated web element representation is returned.
  *
- * - WebElements are transformed to the corresponding ElementIdentifier
+ * - WebReferences are transformed to the corresponding ElementIdentifier
  *   for use in the content process, if an `element.ReferenceStore` is provided.
  *
  * - Objects with custom JSON representations, i.e. if they have
@@ -302,6 +310,10 @@ evaluate.fromJSON = function(options = {}) {
  *
  * @throws {JavaScriptError}
  *     If an object contains cyclic references.
+ * @throws {StaleElementReferenceError}
+ *     If the element has gone stale, indicating it is no longer
+ *     attached to the DOM, or its node document is no longer the
+ *     active document.
  */
 evaluate.toJSON = function(obj, seenEls) {
   const t = Object.prototype.toString.call(obj);
@@ -319,24 +331,24 @@ evaluate.toJSON = function(obj, seenEls) {
     return obj;
 
     // Array, NodeList, HTMLCollection, et al.
-  } else if (element.isCollection(obj)) {
+  } else if (lazy.element.isCollection(obj)) {
     evaluate.assertAcyclic(obj);
     return [...obj].map(el => evaluate.toJSON(el, seenEls));
 
-    // WebElement
-  } else if (WebElement.isReference(obj)) {
+    // WebReference
+  } else if (lazy.WebReference.isReference(obj)) {
     // Parent: Convert to ElementIdentifier for use in child actor
-    return seenEls.get(WebElement.fromJSON(obj));
+    return seenEls.get(lazy.WebReference.fromJSON(obj));
 
     // ElementIdentifier
-  } else if (WebElement.isReference(obj.webElRef)) {
+  } else if (lazy.WebReference.isReference(obj.webElRef)) {
     // Parent: Pass-through ElementIdentifiers to the child
     return obj;
 
     // Element (HTMLElement, SVGElement, XULElement, et al.)
-  } else if (element.isElement(obj) || element.isShadowRoot(obj)) {
+  } else if (lazy.element.isElement(obj) || lazy.element.isShadowRoot(obj)) {
     // Parent
-    if (seenEls instanceof element.ReferenceStore) {
+    if (seenEls instanceof lazy.element.ReferenceStore) {
       throw new TypeError(`ReferenceStore can't be used with Element`);
     }
 
@@ -345,7 +357,7 @@ evaluate.toJSON = function(obj, seenEls) {
     // created to waive xrays by default. As such DOM nodes have to be unwaived
     // before accessing the ownerGlobal is possible, which is needed by
     // ContentDOMReference.
-    return element.getElementId(Cu.unwaiveXrays(obj));
+    return lazy.element.getElementId(Cu.unwaiveXrays(obj));
 
     // custom JSON representation
   } else if (typeof obj.toJSON == "function") {
@@ -362,7 +374,7 @@ evaluate.toJSON = function(obj, seenEls) {
       rv[prop] = evaluate.toJSON(obj[prop], seenEls);
     } catch (e) {
       if (e.result == Cr.NS_ERROR_NOT_IMPLEMENTED) {
-        logger.debug(`Skipping ${prop}: ${e.message}`);
+        lazy.logger.debug(`Skipping ${prop}: ${e.message}`);
       } else {
         throw e;
       }
@@ -400,11 +412,11 @@ evaluate.isCyclic = function(value, stack = []) {
     return false;
 
     // HTMLElement, SVGElement, XULElement, et al.
-  } else if (element.isElement(value)) {
+  } else if (lazy.element.isElement(value)) {
     return false;
 
     // Array, NodeList, HTMLCollection, et al.
-  } else if (element.isCollection(value)) {
+  } else if (lazy.element.isCollection(value)) {
     if (stack.includes(value)) {
       return true;
     }
@@ -461,7 +473,7 @@ evaluate.isDead = function(obj, prop) {
   return false;
 };
 
-this.sandbox = {};
+const sandbox = {};
 
 /**
  * Provides a safe way to take an object defined in a privileged scope and
@@ -570,7 +582,7 @@ sandbox.createSimpleTest = function(win, harness) {
  *
  * @memberof evaluate
  */
-this.Sandboxes = class {
+class Sandboxes {
   /**
    * @param {function(): Window} windowFn
    *     A function that returns the references to the current Window
@@ -622,4 +634,4 @@ this.Sandboxes = class {
   clear() {
     this.boxes_.clear();
   }
-};
+}

@@ -491,7 +491,7 @@ using PaintFramesParams = SVGIntegrationUtils::PaintFramesParams;
  */
 static bool PaintMaskSurface(const PaintFramesParams& aParams,
                              DrawTarget* aMaskDT, float aOpacity,
-                             ComputedStyle* aSC,
+                             const ComputedStyle* aSC,
                              const nsTArray<SVGMaskFrame*>& aMaskFrames,
                              const nsPoint& aOffsetToUserSpace) {
   MOZ_ASSERT(aMaskFrames.Length() > 0);
@@ -568,7 +568,7 @@ struct MaskPaintResult {
 };
 
 static MaskPaintResult CreateAndPaintMaskSurface(
-    const PaintFramesParams& aParams, float aOpacity, ComputedStyle* aSC,
+    const PaintFramesParams& aParams, float aOpacity, const ComputedStyle* aSC,
     const nsTArray<SVGMaskFrame*>& aMaskFrames,
     const nsPoint& aOffsetToUserSpace) {
   const nsStyleSVGReset* svgReset = aSC->StyleSVGReset();
@@ -991,10 +991,11 @@ void SVGIntegrationUtils::PaintMaskAndClipPath(
 }
 
 void SVGIntegrationUtils::PaintFilter(const PaintFramesParams& aParams,
+                                      Span<const StyleFilter> aFilters,
                                       const SVGFilterPaintCallback& aCallback) {
   MOZ_ASSERT(!aParams.builder->IsForGenerateGlyphMask(),
              "Filter effect is discarded while generating glyph mask.");
-  MOZ_ASSERT(aParams.frame->StyleEffects()->HasFilters(),
+  MOZ_ASSERT(!aFilters.IsEmpty(),
              "Should not use this method when no filter effect on this frame");
 
   nsIFrame* frame = aParams.frame;
@@ -1032,8 +1033,8 @@ void SVGIntegrationUtils::PaintFilter(const PaintFramesParams& aParams,
   /* Paint the child and apply filters */
   nsRegion dirtyRegion = aParams.dirtyRect - offsets.offsetToBoundingBox;
 
-  FilterInstance::PaintFilteredFrame(frame, &context, aCallback, &dirtyRegion,
-                                     aParams.imgParams, opacity);
+  FilterInstance::PaintFilteredFrame(frame, aFilters, &context, aCallback,
+                                     &dirtyRegion, aParams.imgParams, opacity);
 }
 
 bool SVGIntegrationUtils::CreateWebRenderCSSFilters(

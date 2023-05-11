@@ -6,11 +6,7 @@
 
 const EXPORTED_SYMBOLS = ["OSCrypto"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ctypes",
-  "resource://gre/modules/ctypes.jsm"
-);
+const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
 const FLAGS_NOT_SET = 0;
 

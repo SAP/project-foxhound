@@ -20,9 +20,7 @@
 #include "debugger/Debugger.h"     // for DebuggerScriptReferent, Debugger
 #include "debugger/DebugScript.h"  // for DebugScript
 #include "debugger/Source.h"       // for DebuggerSource
-#include "gc/Barrier.h"            // for ImmutablePropertyNamePtr
 #include "gc/GC.h"                 // for MemoryUse, MemoryUse::Breakpoint
-#include "gc/Rooting.h"            // for RootedDebuggerScript
 #include "gc/Tracer.h"         // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "gc/Zone.h"           // for Zone
 #include "gc/ZoneAllocator.h"  // for AddCellMemory
@@ -105,7 +103,7 @@ NativeObject* DebuggerScript::initClass(JSContext* cx,
 /* static */
 DebuggerScript* DebuggerScript::create(JSContext* cx, HandleObject proto,
                                        Handle<DebuggerScriptReferent> referent,
-                                       HandleNativeObject debugger) {
+                                       Handle<NativeObject*> debugger) {
   DebuggerScript* scriptobj =
       NewTenuredObjectWithGivenProto<DebuggerScript>(cx, proto);
   if (!scriptobj) {
@@ -183,11 +181,11 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
   JSContext* cx;
   const CallArgs& args;
 
-  HandleDebuggerScript obj;
+  Handle<DebuggerScript*> obj;
   Rooted<DebuggerScriptReferent> referent;
   RootedScript script;
 
-  CallData(JSContext* cx, const CallArgs& args, HandleDebuggerScript obj)
+  CallData(JSContext* cx, const CallArgs& args, Handle<DebuggerScript*> obj)
       : cx(cx),
         args(args),
         obj(obj),
@@ -258,7 +256,7 @@ bool DebuggerScript::CallData::ToNative(JSContext* cx, unsigned argc,
                                         Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedDebuggerScript obj(cx, DebuggerScript::check(cx, args.thisv()));
+  Rooted<DebuggerScript*> obj(cx, DebuggerScript::check(cx, args.thisv()));
   if (!obj) {
     return false;
   }
@@ -427,7 +425,7 @@ class DebuggerScript::GetSourceMatcher {
   using ReturnType = DebuggerSource*;
 
   ReturnType match(Handle<BaseScript*> script) {
-    RootedScriptSourceObject source(cx_, script->sourceObject());
+    Rooted<ScriptSourceObject*> source(cx_, script->sourceObject());
     return dbg_->wrapSource(cx_, source);
   }
   ReturnType match(Handle<WasmInstanceObject*> wasmInstance) {
@@ -439,7 +437,7 @@ bool DebuggerScript::CallData::getSource() {
   Debugger* dbg = obj->owner();
 
   GetSourceMatcher matcher(cx, dbg);
-  RootedDebuggerSource sourceObject(cx, referent.match(matcher));
+  Rooted<DebuggerSource*> sourceObject(cx, referent.match(matcher));
   if (!sourceObject) {
     return false;
   }
@@ -639,7 +637,7 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
       return true;
     }
 
-    RootedPlainObject entry(cx_, NewPlainObject(cx_));
+    Rooted<PlainObject*> entry(cx_, NewPlainObject(cx_));
     if (!entry) {
       return false;
     }
@@ -934,11 +932,11 @@ bool DebuggerScript::CallData::getPossibleBreakpointOffsets() {
 class DebuggerScript::GetOffsetMetadataMatcher {
   JSContext* cx_;
   size_t offset_;
-  MutableHandlePlainObject result_;
+  MutableHandle<PlainObject*> result_;
 
  public:
   explicit GetOffsetMetadataMatcher(JSContext* cx, size_t offset,
-                                    MutableHandlePlainObject result)
+                                    MutableHandle<PlainObject*> result)
       : cx_(cx), offset_(offset), result_(result) {}
   using ReturnType = bool;
   ReturnType match(Handle<BaseScript*> base) {
@@ -1037,7 +1035,7 @@ bool DebuggerScript::CallData::getOffsetMetadata() {
     return false;
   }
 
-  RootedPlainObject result(cx);
+  Rooted<PlainObject*> result(cx);
   GetOffsetMetadataMatcher matcher(cx, offset, &result);
   if (!referent.match(matcher)) {
     return false;
@@ -1217,11 +1215,11 @@ class FlowGraphSummary {
 class DebuggerScript::GetOffsetLocationMatcher {
   JSContext* cx_;
   size_t offset_;
-  MutableHandlePlainObject result_;
+  MutableHandle<PlainObject*> result_;
 
  public:
   explicit GetOffsetLocationMatcher(JSContext* cx, size_t offset,
-                                    MutableHandlePlainObject result)
+                                    MutableHandle<PlainObject*> result)
       : cx_(cx), offset_(offset), result_(result) {}
   using ReturnType = bool;
   ReturnType match(Handle<BaseScript*> base) {
@@ -1345,7 +1343,7 @@ bool DebuggerScript::CallData::getOffsetLocation() {
     return false;
   }
 
-  RootedPlainObject result(cx);
+  Rooted<PlainObject*> result(cx);
   GetOffsetLocationMatcher matcher(cx, offset, &result);
   if (!referent.match(matcher)) {
     return false;
@@ -1539,6 +1537,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::MoreIter:
     case JSOp::IsNoIter:
     case JSOp::EndIter:
+    case JSOp::CloseIter:
     case JSOp::IsNullOrUndefined:
     case JSOp::In:
     case JSOp::HasOwn:
@@ -1704,7 +1703,7 @@ class DebuggerScript::GetAllColumnOffsetsMatcher {
   MutableHandleObject result_;
 
   bool appendColumnOffsetEntry(size_t lineno, size_t column, size_t offset) {
-    RootedPlainObject entry(cx_, NewPlainObject(cx_));
+    Rooted<PlainObject*> entry(cx_, NewPlainObject(cx_));
     if (!entry) {
       return false;
     }

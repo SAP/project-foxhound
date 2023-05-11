@@ -10,38 +10,42 @@ const BROWSER_TOOLBOX_WINDOW_URL =
   "chrome://devtools/content/framework/browser-toolbox/window.html";
 const CHROME_DEBUGGER_PROFILE_NAME = "chrome_debugger_profile";
 
-const { require, DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
+const {
+  require,
+  useDistinctSystemPrincipalLoader,
+  releaseDistinctSystemPrincipalLoader,
+} = ChromeUtils.import("resource://devtools/shared/loader/Loader.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Subprocess",
+const { Subprocess } = ChromeUtils.import(
   "resource://gre/modules/Subprocess.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
+const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "BackgroundTasksUtils",
   "resource://gre/modules/BackgroundTasksUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FileUtils",
   "resource://gre/modules/FileUtils.jsm"
 );
 
-XPCOMUtils.defineLazyGetter(this, "Telemetry", function() {
-  return require("devtools/client/shared/telemetry");
+XPCOMUtils.defineLazyServiceGetters(lazy, {
+  XreDirProvider: [
+    "@mozilla.org/xre/directory-provider;1",
+    "nsIXREDirProvider",
+  ],
 });
-XPCOMUtils.defineLazyGetter(this, "EventEmitter", function() {
-  return require("devtools/shared/event-emitter");
-});
+
+const Telemetry = require("devtools/client/shared/telemetry");
+const EventEmitter = require("devtools/shared/event-emitter");
 
 const Services = require("Services");
 const env = Cc["@mozilla.org/process/environment;1"].getService(
@@ -139,9 +143,7 @@ BrowserToolboxLauncher.prototype = {
     // This allows us to safely use the tools against even the actors and
     // DebuggingServer itself, especially since we can mark this loader as
     // invisible to the debugger (unlike the usual loader settings).
-    this.loader = new DevToolsLoader({
-      invisibleToDebugger: true,
-    });
+    this.loader = useDistinctSystemPrincipalLoader(this);
     const { DevToolsServer } = this.loader.require(
       "devtools/server/devtools-server"
     );
@@ -200,8 +202,36 @@ BrowserToolboxLauncher.prototype = {
   _initProfile(overwritePreferences) {
     dumpn("Initializing the chrome toolbox user profile.");
 
-    const debuggingProfileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
-    debuggingProfileDir.append(CHROME_DEBUGGER_PROFILE_NAME);
+    const bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
+      Ci.nsIBackgroundTasks
+    );
+
+    let debuggingProfileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
+    if (bts?.isBackgroundTaskMode) {
+      // Background tasks run with a temporary ephemeral profile.  We move the
+      // browser toolbox profile out of that ephemeral profile so that it has
+      // alonger life then the background task profile.  This preserves
+      // breakpoints, etc, across repeated debugging invocations.  This
+      // directory is close to the background task temporary profile name(s),
+      // but doesn't match the prefix that will get purged by the stale
+      // ephemeral profile cleanup mechanism.
+      //
+      // For example, the invocation
+      // `firefox --backgroundtask success --jsdebugger --wait-for-jsdebugger`
+      // might run with ephemeral profile
+      // `/tmp/MozillaBackgroundTask-<HASH>-success`
+      // and sibling directory browser toolbox profile
+      // `/tmp/MozillaBackgroundTask-<HASH>-chrome_debugger_profile-success`
+      //
+      // See `BackgroundTasks::Shutdown` for ephemeral profile cleanup details.
+      debuggingProfileDir = debuggingProfileDir.parent;
+      debuggingProfileDir.append(
+        `${Services.appinfo.vendor}BackgroundTask-` +
+          `${lazy.XreDirProvider.getInstallHash()}-${CHROME_DEBUGGER_PROFILE_NAME}-${bts.backgroundTaskName()}`
+      );
+    } else {
+      debuggingProfileDir.append(CHROME_DEBUGGER_PROFILE_NAME);
+    }
     try {
       debuggingProfileDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
     } catch (ex) {
@@ -224,16 +254,13 @@ BrowserToolboxLauncher.prototype = {
     const prefsFile = debuggingProfileDir.clone();
     prefsFile.append("prefs.js");
 
-    const bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
-      Ci.nsIBackgroundTasks
-    );
     if (bts?.isBackgroundTaskMode) {
       // Background tasks run under a temporary profile.  In order to set
       // preferences for the launched browser toolbox, take the preferences from
       // the default profile.  This is the standard pattern for controlling
       // background task settings.  Without this, there'd be no way to increase
       // logging in the browser toolbox process, etc.
-      const defaultProfile = BackgroundTasksUtils.getDefaultProfile();
+      const defaultProfile = lazy.BackgroundTasksUtils.getDefaultProfile();
       if (!defaultProfile) {
         throw new Error(
           "Cannot start Browser Toolbox from background task with no default profile"
@@ -282,8 +309,11 @@ BrowserToolboxLauncher.prototype = {
     const customBinaryPath = env.get("MOZ_BROWSER_TOOLBOX_BINARY");
     if (customBinaryPath) {
       command = customBinaryPath;
-      profilePath = FileUtils.getDir("TmpD", ["browserToolboxProfile"], true)
-        .path;
+      profilePath = lazy.FileUtils.getDir(
+        "TmpD",
+        ["browserToolboxProfile"],
+        true
+      ).path;
     }
 
     dumpn("Running chrome debugging process.");
@@ -418,10 +448,10 @@ BrowserToolboxLauncher.prototype = {
       this.listener.close();
     }
 
-    if (this.devToolsServer) {
-      this.devToolsServer.destroy();
-      this.devToolsServer = null;
-    }
+    // Note that the DevToolsServer can be shared with the DevToolsServer
+    // spawned by DevToolsFrameChild. We shouldn't destroy it from here.
+    // Instead we should let it auto-destroy itself once the last connection is closed.
+    this.devToolsServer = null;
 
     this._dbgProcess.stdout.close();
     await this._dbgProcess.kill();
@@ -436,7 +466,7 @@ BrowserToolboxLauncher.prototype = {
 
     this._dbgProcess = null;
     if (this.loader) {
-      this.loader.destroy();
+      releaseDistinctSystemPrincipalLoader(this);
     }
     this.loader = null;
     this._telemetry = null;

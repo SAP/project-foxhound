@@ -11,38 +11,40 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   JSONFile: "resource://gre/modules/JSONFile.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "StartupCache",
-  () => ExtensionParent.StartupCache
+  () => lazy.ExtensionParent.StartupCache
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "KeyValueService",
   "resource://gre/modules/kvstore.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FileUtils",
   "resource://gre/modules/FileUtils.jsm"
 );
 
 XPCOMUtils.defineLazyGetter(
-  this,
+  lazy,
   "Management",
-  () => ExtensionParent.apiManager
+  () => lazy.ExtensionParent.apiManager
 );
 
-var EXPORTED_SYMBOLS = ["ExtensionPermissions"];
+var EXPORTED_SYMBOLS = ["ExtensionPermissions", "OriginControls"];
 
 // This is the old preference file pre-migration to rkv
 const FILE_NAME = "extension-preferences.json";
@@ -76,7 +78,7 @@ class LegacyPermissionStore {
       FILE_NAME
     );
 
-    prefs = new JSONFile({ path });
+    prefs = new lazy.JSONFile({ path });
     prefs.data = {};
 
     try {
@@ -136,10 +138,13 @@ class LegacyPermissionStore {
 
 class PermissionStore {
   async _init() {
-    const storePath = FileUtils.getDir("ProfD", ["extension-store"]).path;
+    const storePath = lazy.FileUtils.getDir("ProfD", ["extension-store"]).path;
     // Make sure the folder exists
     await IOUtils.makeDirectory(storePath, { ignoreExisting: true });
-    this._store = await KeyValueService.getOrCreate(storePath, "permissions");
+    this._store = await lazy.KeyValueService.getOrCreate(
+      storePath,
+      "permissions"
+    );
     if (!(await this._store.has(VERSION_KEY))) {
       await this.maybeMigrateData();
     }
@@ -265,7 +270,7 @@ let store = createStore();
 var ExtensionPermissions = {
   async _update(extensionId, perms) {
     await store.put(extensionId, perms);
-    return StartupCache.permissions.set(extensionId, perms);
+    return lazy.StartupCache.permissions.set(extensionId, perms);
   },
 
   async _get(extensionId) {
@@ -273,7 +278,7 @@ var ExtensionPermissions = {
   },
 
   async _getCached(extensionId) {
-    return StartupCache.permissions.get(extensionId, () =>
+    return lazy.StartupCache.permissions.get(extensionId, () =>
       this._get(extensionId)
     );
   },
@@ -334,7 +339,7 @@ var ExtensionPermissions = {
 
     if (added.permissions.length || added.origins.length) {
       await this._update(extensionId, { permissions, origins });
-      Management.emit("change-permissions", { extensionId, added });
+      lazy.Management.emit("change-permissions", { extensionId, added });
       if (emitter) {
         emitter.emit("add-permissions", added);
       }
@@ -376,7 +381,7 @@ var ExtensionPermissions = {
 
     if (removed.permissions.length || removed.origins.length) {
       await this._update(extensionId, { permissions, origins });
-      Management.emit("change-permissions", { extensionId, removed });
+      lazy.Management.emit("change-permissions", { extensionId, removed });
       if (emitter) {
         emitter.emit("remove-permissions", removed);
       }
@@ -384,11 +389,11 @@ var ExtensionPermissions = {
   },
 
   async removeAll(extensionId) {
-    StartupCache.permissions.delete(extensionId);
+    lazy.StartupCache.permissions.delete(extensionId);
 
     let removed = store.get(extensionId);
     await store.delete(extensionId);
-    Management.emit("change-permissions", {
+    lazy.Management.emit("change-permissions", {
       extensionId,
       removed: await removed,
     });
@@ -415,10 +420,67 @@ var ExtensionPermissions = {
 
   // Convenience listener members for all permission changes.
   addListener(listener) {
-    Management.on("change-permissions", listener);
+    lazy.Management.on("change-permissions", listener);
   },
 
   removeListener(listener) {
-    Management.off("change-permissions", listener);
+    lazy.Management.off("change-permissions", listener);
+  },
+};
+
+var OriginControls = {
+  /**
+   * Get origin controls state for a given extension on a given host.
+   * @param {WebExtensionPolicy} policy
+   * @param {nsIURI} uri
+   * @returns {object} Extension origin controls for this host include:
+   *  @param {boolean} noAccess     no options, can never access host.
+   *  @param {boolean} whenClicked  option to access host when clicked.
+   *  @param {boolean} alwaysOn     option to always access this host.
+   *  @param {boolean} allDomains   option to access to all domains.
+   *  @param {boolean} hasAccess    extension currently has access to host.
+   */
+  getState(policy, uri) {
+    let allDomains = new MatchPattern("*://*/*");
+    let activeTab = policy.permissions.includes("activeTab");
+    let couldRequest = policy.extension.optionalOrigins.matches(uri);
+    let hasAccess = policy.canAccessURI(uri);
+
+    if (
+      !allDomains.matches(uri) ||
+      WebExtensionPolicy.isRestrictedURI(uri) ||
+      (!couldRequest && !hasAccess && !activeTab)
+    ) {
+      return { noAccess: true };
+    }
+    if (!couldRequest && !hasAccess && activeTab) {
+      return { whenClicked: true };
+    }
+    if (policy.allowedOrigins.subsumes(allDomains)) {
+      return { allDomains: true, hasAccess };
+    }
+    return {
+      whenClicked: true,
+      alwaysOn: true,
+      hasAccess,
+    };
+  },
+
+  // Grant extension host permission to always run on this host.
+  setAlwaysOn(policy, uri) {
+    if (!policy.active) {
+      return;
+    }
+    let perms = { permissions: [], origins: ["*://" + uri.host] };
+    ExtensionPermissions.add(policy.id, perms, policy.extension);
+  },
+
+  // Revoke permission, extension should run only when clicked on this host.
+  setWhenClicked(policy, uri) {
+    if (!policy.active) {
+      return;
+    }
+    let perms = { permissions: [], origins: ["*://" + uri.host] };
+    ExtensionPermissions.remove(policy.id, perms, policy.extension);
   },
 };

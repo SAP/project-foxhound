@@ -14,7 +14,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Logging.h"
@@ -1321,13 +1320,13 @@ nsINode* nsFrameSelection::TableSelection::IsContentInActivelyEditableTableCell(
     return nullptr;
   }
 
-  const Element* editorHostNode = htmlEditor->GetActiveEditingHost();
-  if (!editorHostNode) {
+  const Element* editingHost = htmlEditor->ComputeEditingHost();
+  if (!editingHost) {
     return nullptr;
   }
 
   const bool editableCell =
-      inclusiveTableCellAncestor->IsInclusiveDescendantOf(editorHostNode);
+      inclusiveTableCellAncestor->IsInclusiveDescendantOf(editingHost);
   return editableCell ? inclusiveTableCellAncestor : nullptr;
 }
 

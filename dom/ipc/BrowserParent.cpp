@@ -448,14 +448,10 @@ a11y::DocAccessibleParent* BrowserParent::GetTopLevelDocAccessible() const {
     // embedded out-of-process iframe. Therefore, we use
     // IsTopLevelInContentProcess. In contrast, using IsToplevel would only
     // include documents that aren't embedded; e.g. tab documents.
-    if (doc->IsTopLevelInContentProcess()) {
+    if (doc->IsTopLevelInContentProcess() && !doc->IsShutdown()) {
       return doc;
     }
   }
-
-  MOZ_ASSERT(docs.Count() == 0,
-             "If there isn't a top level accessible doc "
-             "there shouldn't be an accessible doc at all!");
 #endif
   return nullptr;
 }
@@ -1008,12 +1004,14 @@ mozilla::ipc::IPCResult BrowserParent::RecvSetDimensions(
   // We only care about the parameters that actually changed, see more details
   // in `BrowserChild::SetDimensions()`.
   // Note that `BrowserChild::SetDimensions()` may be called before receiving
-  // our `SendUIResolutionChanged()` call.  Therefore, if given each cordinate
+  // our `SendUIResolutionChanged()` call.  Therefore, if given each coordinate
   // shouldn't be ignored, we need to recompute it if DPI has been changed.
   // And also note that don't use `mDefaultScale.scale` here since it may be
-  // different from the result of `GetUnscaledDevicePixelsPerCSSPixel()`.
-  double currentScale;
-  treeOwnerAsWin->GetUnscaledDevicePixelsPerCSSPixel(&currentScale);
+  // different from the result of `GetWidgetCSSToDeviceScale()`.
+  // NOTE(emilio): We use GetWidgetCSSToDeviceScale() because the old scale is a
+  // widget scale, and we only use the current scale to scale up/down the
+  // relevant values.
+  double currentScale = treeOwnerAsWin->GetWidgetCSSToDeviceScale();
 
   int32_t x = aX;
   int32_t y = aY;
@@ -1207,7 +1205,8 @@ void BrowserParent::Deactivate(bool aWindowLowering, uint64_t aActionId) {
 
 #ifdef ACCESSIBILITY
 a11y::PDocAccessibleParent* BrowserParent::AllocPDocAccessibleParent(
-    PDocAccessibleParent* aParent, const uint64_t&, const uint32_t&,
+    PDocAccessibleParent* aParent, const uint64_t&,
+    const MaybeDiscardedBrowsingContext&, const uint32_t&,
     const IAccessibleHolder&) {
   // Reference freed in DeallocPDocAccessibleParent.
   return do_AddRef(new a11y::DocAccessibleParent()).take();
@@ -1221,8 +1220,9 @@ bool BrowserParent::DeallocPDocAccessibleParent(PDocAccessibleParent* aParent) {
 
 mozilla::ipc::IPCResult BrowserParent::RecvPDocAccessibleConstructor(
     PDocAccessibleParent* aDoc, PDocAccessibleParent* aParentDoc,
-    const uint64_t& aParentID, const uint32_t& aMsaaID,
-    const IAccessibleHolder& aDocCOMProxy) {
+    const uint64_t& aParentID,
+    const MaybeDiscardedBrowsingContext& aBrowsingContext,
+    const uint32_t& aMsaaID, const IAccessibleHolder& aDocCOMProxy) {
 #  if defined(ANDROID)
   MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
 #  endif
@@ -1233,6 +1233,10 @@ mozilla::ipc::IPCResult BrowserParent::RecvPDocAccessibleConstructor(
   if (mIsDestroyed) {
     doc->MarkAsShutdown();
     return IPC_OK();
+  }
+
+  if (aBrowsingContext) {
+    doc->SetBrowsingContext(aBrowsingContext.get_canonical());
   }
 
   if (aParentDoc) {
@@ -2312,7 +2316,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvSyncMessage(
   MMPrinter::Print("BrowserParent::RecvSyncMessage", aMessage, aData);
 
   StructuredCloneData data;
-  ipc::UnpackClonedMessageDataForParent(aData, data);
+  ipc::UnpackClonedMessageData(aData, data);
 
   if (!ReceiveMessage(aMessage, true, &data, aRetVal)) {
     return IPC_FAIL_NO_REASON(this);
@@ -2327,7 +2331,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvAsyncMessage(
   MMPrinter::Print("BrowserParent::RecvAsyncMessage", aMessage, aData);
 
   StructuredCloneData data;
-  ipc::UnpackClonedMessageDataForParent(aData, data);
+  ipc::UnpackClonedMessageData(aData, data);
 
   if (!ReceiveMessage(aMessage, false, &data, nullptr)) {
     return IPC_FAIL_NO_REASON(this);

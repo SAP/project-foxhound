@@ -37,9 +37,7 @@ ChromeUtils.defineModuleGetter(
   "TelemetryEnvironment",
   "resource://gre/modules/TelemetryEnvironment.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
+const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 ChromeUtils.defineModuleGetter(
@@ -1111,9 +1109,17 @@ add_task(async function check_userMonthlyActivity() {
   );
 });
 
-add_task(async function check_doesAppNeedPing() {
+add_task(async function check_doesAppNeedPin() {
   is(
     typeof (await ASRouterTargeting.Environment.doesAppNeedPin),
+    "boolean",
+    "Should return a boolean"
+  );
+});
+
+add_task(async function check_doesAppNeedPrivatePin() {
+  is(
+    typeof (await ASRouterTargeting.Environment.doesAppNeedPrivatePin),
     "boolean",
     "Should return a boolean"
   );

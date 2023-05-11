@@ -3,8 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    # TODO: House this somewhere more specific?
-    BUG_COMPONENT = ("Toolkit", "Startup and Profile System")
+    BUG_COMPONENT = ("Toolkit", "Background Tasks")
 
 SPHINX_TREES["/toolkit/components/backgroundtasks"] = "docs"
 
@@ -66,6 +65,7 @@ TESTING_JS_MODULES.backgroundtasks += [
     "tests/BackgroundTask_crash.jsm",
     "tests/BackgroundTask_file_exists.jsm",
     "tests/BackgroundTask_jsdebugger.jsm",
+    "tests/BackgroundTask_localization.jsm",
     "tests/BackgroundTask_policies.jsm",
     "tests/BackgroundTask_profile_is_slim.jsm",
     "tests/BackgroundTask_shouldnotprocessupdates.jsm",

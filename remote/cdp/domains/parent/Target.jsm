@@ -6,16 +6,21 @@
 
 var EXPORTED_SYMBOLS = ["Target"];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const { Domain } = ChromeUtils.import(
+  "chrome://remote/content/cdp/domains/Domain.jsm"
+);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 
-  Domain: "chrome://remote/content/cdp/domains/Domain.jsm",
   MainProcessTarget:
     "chrome://remote/content/cdp/targets/MainProcessTarget.jsm",
   TabManager: "chrome://remote/content/shared/TabManager.jsm",
@@ -40,7 +45,7 @@ class Target extends Domain {
   }
 
   createBrowserContext() {
-    const identity = ContextualIdentityService.create(
+    const identity = lazy.ContextualIdentityService.create(
       "remote-agent-" + browserContextIds++
     );
     return { browserContextId: identity.userContextId };
@@ -49,8 +54,8 @@ class Target extends Domain {
   disposeBrowserContext(options = {}) {
     const { browserContextId } = options;
 
-    ContextualIdentityService.remove(browserContextId);
-    ContextualIdentityService.closeContainerTabs(browserContextId);
+    lazy.ContextualIdentityService.remove(browserContextId);
+    lazy.ContextualIdentityService.closeContainerTabs(browserContextId);
   }
 
   getTargets() {
@@ -58,7 +63,7 @@ class Target extends Domain {
 
     const targetInfos = [];
     for (const target of targetList) {
-      if (target instanceof MainProcessTarget) {
+      if (target instanceof lazy.MainProcessTarget) {
         continue;
       }
 
@@ -87,7 +92,7 @@ class Target extends Domain {
     const { browserContextId } = options;
     const { targetList, window } = this.session.target;
     const onTarget = targetList.once("target-created");
-    const tab = await TabManager.addTab({
+    const tab = await lazy.TabManager.addTab({
       focus: true,
       userContextId: browserContextId,
       window,
@@ -110,7 +115,7 @@ class Target extends Domain {
       throw new Error(`Unable to find target with id '${targetId}'`);
     }
 
-    TabManager.removeTab(target.tab);
+    lazy.TabManager.removeTab(target.tab);
   }
 
   async activateTarget(options = {}) {
@@ -123,8 +128,8 @@ class Target extends Domain {
     }
 
     // Focus the window, and select the corresponding tab
-    await windowManager.focusWindow(window);
-    await TabManager.selectTab(target.tab);
+    await lazy.windowManager.focusWindow(window);
+    await lazy.TabManager.selectTab(target.tab);
   }
 
   attachToTarget(options = {}) {
@@ -136,7 +141,7 @@ class Target extends Domain {
       throw new Error(`Unable to find target with id '${targetId}'`);
     }
 
-    const tabSession = new TabSession(
+    const tabSession = new lazy.TabSession(
       this.session.connection,
       target,
       Services.uuid

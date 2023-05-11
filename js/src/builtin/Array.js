@@ -1225,63 +1225,134 @@ SetIsInlinableLargeFunction(ArrayAt);
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 
 // https://github.com/tc39/proposal-change-array-by-copy
-// Array.prototype.withReversed()
-function ArrayWithReversed() {
+// Array.prototype.toReversed()
+function ArrayToReversed() {
 
-    /* Step 1. */
+    /* Step 1. Let O be ? ToObject(this value). */
     var O = ToObject(this);
 
-    /* Step 2. */
+    /* Step 2. Let len be ? LengthOfArrayLike(O). */
     var len = ToLength(O.length);
 
-    /* Step 3. */
+    /* Step 3. Let A be ArrayCreate(𝔽(len)). */
     var A = std_Array(len);
 
-    /* Steps 4-5. */
+    /* Step 4. Let k be 0. */
+    /* Step 5. Repeat, while k < len, */
     for (var k = 0; k < len; k++) {
-        /* Step 5a. */
+        /* Step 5a. Let from be ! ToString(𝔽(len - k - 1)). */
         var from = len - k - 1;
-        /* Step 5b - not necessary. */
-        /* Step 5c. */
+        /* Skip Step 5b. Let Pk be ToString(𝔽(k)).
+         * k is coerced into a string through the property access. */
+        /* Step 5c. Let fromValue be ? Get(O, from).  */
         var fromValue = O[from];
-        /* Step 5d. */
+        /* Step 5d. Perform ! CreateDataPropertyOrThrow(A, 𝔽(k), fromValue. */
         DefineDataProperty(A, k, fromValue);
     }
 
-    /* Step 6. */
+    /* Step 6. Return A. */
     return A;
 }
 
 // https://github.com/tc39/proposal-change-array-by-copy
-// Array.prototype.withSorted()
-function ArrayWithSorted(comparefn) {
+// Array.prototype.toSorted()
+function ArrayToSorted(comparefn) {
 
-    /* Step 1. */
-
+    /* Step 1.  If comparefn is not undefined and IsCallable(comparefn) is
+     * false, throw a TypeError exception.
+     */
     if (comparefn !== undefined && !IsCallable(comparefn)) {
-        ThrowTypeError(JSMSG_BAD_WITHSORTED_ARG);
+        ThrowTypeError(JSMSG_BAD_TOSORTED_ARG);
     }
 
-    /* Step 2. */
+    /* Step 2. Let O be ? ToObject(this value). */
     var O = ToObject(this);
 
-    /* Step 3. */
+    /* Step 3. Let len be ? LengthOfArrayLike(O) */
     var len = ToLength(O.length);
 
-    /* Step 4. */
+    /* Step 4. Let A be ? ArrayCreate(𝔽(len)). */
     var items = std_Array(len);
 
-    /* Steps 5-6. */
+    /* We depart from steps 5-8 of the spec for performance reasons, as
+     * following the spec would require copying the input array twice.
+     * Instead, we create a new array that replaces holes with undefined,
+     * and sort this array.
+     */
     for (var k = 0; k < len; k++) {
         DefineDataProperty(items, k, O[k]);
     }
 
-    /* Step 7. */
     SortArray(items, comparefn);
 
-    /* Steps 8-10 unnecessary */
-    /* Step 11. */
+    /* Step 9. Return A */
     return items;
 }
 
 #endif
+
+// https://github.com/tc39/proposal-array-find-from-last
+// Array.prototype.findLast ( predicate, thisArg )
+function ArrayFindLast(predicate/*, thisArg*/) {
+    /* Steps 1. */
+    var O = ToObject(this);
+
+    /* Steps 2. */
+    var len = ToLength(O.length);
+
+    /* Step 3. */
+    if (arguments.length === 0) {
+        ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, "Array.prototype.findLast");
+    }
+    if (!IsCallable(predicate)) {
+        ThrowTypeError(JSMSG_NOT_FUNCTION, DecompileArg(0, predicate));
+    }
+
+    var T = arguments.length > 1 ? arguments[1] : undefined;
+
+    /* Step 4-5. */
+    for (var k = len - 1; k >= 0; k--) {
+        /* Steps 5.a-b. */
+        var kValue = O[k];
+        /* Steps 5.c-d. */
+        if (callContentFunction(predicate, T, kValue, k, O)) {
+            return kValue;
+        }
+    }
+
+    /* Step 6. */
+    return undefined;
+}
+
+// https://github.com/tc39/proposal-array-find-from-last
+// Array.prototype.findLastIndex ( predicate, thisArg )
+function ArrayFindLastIndex(predicate/*, thisArg*/) {
+    /* Steps 1. */
+    var O = ToObject(this);
+
+    /* Steps 2. */
+    var len = ToLength(O.length);
+
+    /* Step 3. */
+    if (arguments.length === 0) {
+        ThrowTypeError(JSMSG_MISSING_FUN_ARG, 0, "Array.prototype.findLastIndex");
+    }
+    if (!IsCallable(predicate)) {
+        ThrowTypeError(JSMSG_NOT_FUNCTION, DecompileArg(0, predicate));
+    }
+
+    var T = arguments.length > 1 ? arguments[1] : undefined;
+
+    /* Step 4-5. */
+    for (var k = len - 1; k >= 0; k--) {
+        /* Steps 5.a-b. */
+        var kValue = O[k];
+        /* Steps 5.c-d. */
+        if (callContentFunction(predicate, T, kValue, k, O)) {
+            return k;
+        }
+    }
+
+    /* Step 6. */
+    return -1;
+}

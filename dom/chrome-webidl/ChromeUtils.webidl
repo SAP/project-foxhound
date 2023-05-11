@@ -429,6 +429,20 @@ partial namespace ChromeUtils {
   object import(UTF8String aResourceURI, optional object aTargetObj);
 
   /**
+   * Synchronously loads and evaluates the JS module source located at
+   * 'aResourceURI'.
+   *
+   * @param aResourceURI A resource:// URI string to load the module from.
+   * @returns the module's namespace object.
+   *
+   * The implementation maintains a hash of aResourceURI->global obj.
+   * Subsequent invocations of import with 'aResourceURI' pointing to
+   * the same file will not cause the module to be re-evaluated.
+   */
+  [Throws]
+  object importESModule(DOMString aResourceURI);
+
+  /**
    * Defines a property on the given target which lazily imports a JavaScript
    * module when accessed.
    *
@@ -460,6 +474,18 @@ partial namespace ChromeUtils {
    */
   [Throws]
   void defineModuleGetter(object target, DOMString id, DOMString resourceURI);
+
+  /**
+   * Defines propertys on the given target which lazily imports a ES module
+   * when accessed.
+   *
+   * @param target The target object on which to define the property.
+   * @param modules An object with a property for each module property to be
+   *                imported, where the property name is the name of the
+   *                imported symbol and the value is the module URI.
+   */
+  [Throws]
+  void defineESModuleGetters(object target, object modules);
 
   /**
    * Returns the scripted location of the first ancestor stack frame with a

@@ -75,8 +75,6 @@ class LookAndFeel {
 
     // position of scroll arrows in a scrollbar
     ScrollArrowStyle,
-    // is scroll thumb proportional or fixed?
-    ScrollSliderStyle,
 
     // each button can take one of four values:
     ScrollButtonLeftMouseButtonAction,
@@ -368,8 +366,6 @@ class LookAndFeel {
         eScrollArrow_StartBackward | eScrollArrow_StartForward
   };
 
-  enum { eScrollThumbStyle_Normal, eScrollThumbStyle_Proportional };
-
   // When modifying this list, also modify nsXPLookAndFeel::sFloatPrefs
   // in widget/nsXPLookAndFeel.cpp.
   enum class FloatID {
@@ -448,6 +444,21 @@ class LookAndFeel {
                        nscolor aDefault = NS_RGB(0, 0, 0)) {
     return GetColor(aId, aFrame).valueOr(aDefault);
   }
+
+  static float GetTextScaleFactor() {
+    float f = GetFloat(FloatID::TextScaleFactor, 1.0f);
+    if (MOZ_UNLIKELY(f <= 0.0f)) {
+      return 1.0f;
+    }
+    return f;
+  }
+
+  struct ZoomSettings {
+    float mFullZoom = 1.0f;
+    float mTextZoom = 1.0f;
+  };
+
+  static ZoomSettings SystemZoomSettings();
 
   /**
    * GetInt() and GetFloat() return a int or float value for aID.  The result

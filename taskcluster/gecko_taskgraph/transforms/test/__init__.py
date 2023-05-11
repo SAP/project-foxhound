@@ -427,9 +427,6 @@ def make_job_description(config, tasks):
             label += suffix
             try_name += suffix
 
-        if "1proc" not in attributes.get("unittest_variant", ""):
-            label += "-e10s"
-
         if task["chunks"] > 1:
             label += "-{}".format(task["this-chunk"])
 

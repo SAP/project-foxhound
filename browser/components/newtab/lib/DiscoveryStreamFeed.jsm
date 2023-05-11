@@ -3,40 +3,43 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NewTabUtils",
   "resource://gre/modules/NewTabUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
+);
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "pktApi",
+  "chrome://pocket/content/pktApi.jsm"
 );
 const { setTimeout, clearTimeout } = ChromeUtils.import(
   "resource://gre/modules/Timer.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { actionTypes: at, actionCreators: ac } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Region",
   "resource://gre/modules/Region.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PersistentCache",
   "resource://activity-stream/lib/PersistentCache.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "ExperimentAPI",
+  "resource://nimbus/ExperimentAPI.jsm"
 );
 
 const CACHE_KEY = "discovery_stream";
@@ -73,13 +76,13 @@ const PREF_PERSONALIZATION_OVERRIDE =
 
 let getHardcodedLayout;
 
-this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
+class DiscoveryStreamFeed {
   constructor() {
     // Internal state for checking if we've intialized all our data
     this.loaded = false;
 
     // Persistent cache for remote endpoint data.
-    this.cache = new PersistentCache(CACHE_KEY, true);
+    this.cache = new lazy.PersistentCache(CACHE_KEY, true);
     this.locale = Services.locale.appLocaleAsBCP47;
     this._impressionId = this.getOrCreateImpressionId();
     // Internal in-memory cache for parsing json prefs.
@@ -147,7 +150,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   get region() {
-    return Region.home;
+    return lazy.Region.home;
   }
 
   get showSpocs() {
@@ -205,11 +208,44 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   setupPrefs(isStartup = false) {
+    const pocketNewtabExperiment = lazy.ExperimentAPI.getExperiment({
+      featureId: "pocketNewtab",
+    });
+
+    let utmSource = "pocket-newtab";
+    let utmCampaign = pocketNewtabExperiment?.slug;
+    let utmContent = pocketNewtabExperiment?.branch?.slug;
+
     // Send the initial state of the pref on our reducer
     this.store.dispatch(
       ac.BroadcastToContent({
         type: at.DISCOVERY_STREAM_CONFIG_SETUP,
         data: this.config,
+        meta: {
+          isStartup,
+        },
+      })
+    );
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.DISCOVERY_STREAM_EXPERIMENT_DATA,
+        data: {
+          utmSource,
+          utmCampaign,
+          utmContent,
+        },
+        meta: {
+          isStartup,
+        },
+      })
+    );
+    const nimbusConfig = this.store.getState().Prefs.values?.pocketConfig || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.DISCOVERY_STREAM_PREFS_SETUP,
+        data: {
+          recentSavesEnabled: nimbusConfig.recentSavesEnabled,
+        },
         meta: {
           isStartup,
         },
@@ -228,6 +264,45 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         },
       })
     );
+  }
+
+  async setupPocketState(target) {
+    let dispatch = action =>
+      this.store.dispatch(ac.OnlyToOneContent(action, target));
+    const isUserLoggedIn = lazy.pktApi.isUserLoggedIn();
+    dispatch({
+      type: at.DISCOVERY_STREAM_POCKET_STATE_SET,
+      data: {
+        isUserLoggedIn,
+      },
+    });
+
+    // If we're not logged in, don't bother fetching recent saves, we're done.
+    if (isUserLoggedIn) {
+      let recentSaves = await lazy.pktApi.getRecentSavesCache();
+      if (recentSaves) {
+        // We have cache, so we can use those.
+        dispatch({
+          type: at.DISCOVERY_STREAM_RECENT_SAVES,
+          data: {
+            recentSaves,
+          },
+        });
+      } else {
+        // We don't have cache, so fetch fresh stories.
+        lazy.pktApi.getRecentSaves({
+          success(data) {
+            dispatch({
+              type: at.DISCOVERY_STREAM_RECENT_SAVES,
+              data: {
+                recentSaves: data,
+              },
+            });
+          },
+          error(error) {},
+        });
+      }
+    }
   }
 
   uninitPrefs() {
@@ -467,11 +542,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         this.store.getState().Prefs.values?.pocketConfig || {};
 
       let items = isBasicLayout ? 3 : 21;
-      if (
-        pocketConfig.compactLayout ||
-        pocketConfig.fourCardLayout ||
-        pocketConfig.hybridLayout
-      ) {
+      if (pocketConfig.fourCardLayout || pocketConfig.hybridLayout) {
         items = isBasicLayout ? 4 : 24;
       }
 
@@ -489,7 +560,6 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         widgetData: [
           ...(this.locale.startsWith("en-") ? [{ type: "TopicsWidget" }] : []),
         ],
-        compactLayout: pocketConfig.compactLayout,
         hybridLayout: pocketConfig.hybridLayout,
         hideCardBackground: pocketConfig.hideCardBackground,
         fourCardLayout: pocketConfig.fourCardLayout,
@@ -1092,7 +1162,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       let flights = this.readDataPref(PREF_FLIGHT_BLOCKS);
       const filteredItems = data.filter(item => {
         const blocked =
-          NewTabUtils.blockedLinks.isBlocked({ url: item.url }) ||
+          lazy.NewTabUtils.blockedLinks.isBlocked({ url: item.url }) ||
           flights[item.flight_id];
         return !blocked;
       });
@@ -1696,7 +1766,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         Services.obs.notifyObservers(null, "idle-daily");
         break;
       case at.DISCOVERY_STREAM_DEV_SYNC_RS:
-        RemoteSettings.pollChanges();
+        lazy.RemoteSettings.pollChanges();
         break;
       case at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE:
         // Personalization scores update at a slower interval than content, so in order to debug,
@@ -1716,7 +1786,9 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
           )
         );
         break;
-
+      case at.DISCOVERY_STREAM_POCKET_STATE_INIT:
+        this.setupPocketState(action.meta.fromTarget);
+        break;
       case at.DISCOVERY_STREAM_CONFIG_RESET:
         // This is a generic config reset likely related to an external feed pref.
         this.configReset();
@@ -1880,7 +1952,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         break;
     }
   }
-};
+}
 
 /* This function generates a hardcoded layout each call.
    This is because modifying the original object would
@@ -1890,7 +1962,6 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
      `items` How many items to include in the primary card grid.
      `spocPositions` Changes the position of spoc cards.
      `sponsoredCollectionsEnabled` Tuns on and off the sponsored collection section.
-     `compactLayout` Changes cards to smaller more compact cards.
      `hybridLayout` Changes cards to smaller more compact cards only for specific breakpoints.
      `hideCardBackground` Removes Pocket card background and borders.
      `fourCardLayout` Enable four Pocket cards per row.
@@ -1915,7 +1986,6 @@ getHardcodedLayout = ({
   widgetPositions = [],
   widgetData = [],
   sponsoredCollectionsEnabled = false,
-  compactLayout = false,
   hybridLayout = false,
   hideCardBackground = false,
   fourCardLayout = false,
@@ -2011,18 +2081,18 @@ getHardcodedLayout = ({
           properties: {
             items,
             hybridLayout,
-            hideCardBackground: hideCardBackground || compactLayout,
-            fourCardLayout: fourCardLayout || compactLayout,
-            hideDescriptions: hideDescriptions || compactLayout,
+            hideCardBackground,
+            fourCardLayout,
+            hideDescriptions,
             compactImages,
             imageGradient,
-            newSponsoredLabel: newSponsoredLabel || compactLayout,
-            titleLines: (compactLayout && 3) || titleLines,
+            newSponsoredLabel,
+            titleLines,
             descLines,
             compactGrid,
             essentialReadsHeader,
             editorsPicksHeader,
-            readTime: readTime || compactLayout,
+            readTime,
           },
           widgets: {
             positions: widgetPositions.map(position => {

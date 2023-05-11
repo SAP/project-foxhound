@@ -6,6 +6,8 @@
 
 #include "nsProfiler.h"
 
+#include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -24,12 +26,10 @@
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/Preferences.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIFileStreams.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadContext.h"
 #include "nsIWebNavigation.h"
-#include "nsLocalFile.h"
 #include "nsMemory.h"
 #include "nsProfilerStartParams.h"
 #include "nsProxyRelease.h"
@@ -596,18 +596,21 @@ nsProfiler::DumpProfileToFileAsync(const nsACString& aFilename,
       ->Then(
           GetMainThreadSerialEventTarget(), __func__,
           [filename, promise](const nsCString& aResult) {
-            nsCOMPtr<nsIFile> file =
-                do_CreateInstance(NS_LOCAL_FILE_CONTRACTID);
-            nsresult rv = file->InitWithNativePath(filename);
-            if (NS_FAILED(rv)) {
-              MOZ_CRASH();
+            if (aResult.Length() >=
+                size_t(std::numeric_limits<std::streamsize>::max())) {
+              promise->MaybeReject(NS_ERROR_FILE_TOO_BIG);
+              return;
             }
-            nsCOMPtr<nsIFileOutputStream> of =
-                do_CreateInstance("@mozilla.org/network/file-output-stream;1");
-            of->Init(file, -1, -1, 0);
-            uint32_t sz;
-            of->Write(aResult.get(), aResult.Length(), &sz);
-            of->Close();
+
+            std::ofstream stream;
+            stream.open(filename.get());
+            if (!stream.is_open()) {
+              promise->MaybeReject(NS_ERROR_FILE_UNRECOGNIZED_PATH);
+              return;
+            }
+
+            stream.write(aResult.get(), std::streamsize(aResult.Length()));
+            stream.close();
 
             promise->MaybeResolveWithUndefined();
           },
@@ -1118,9 +1121,15 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
                 unsigned(childPid), unsigned(aResult.Size<char>()),
                 unsigned(self->mPendingProfiles.length()),
                 pendingProfile ? "including" : "excluding", unsigned(childPid));
-            const nsDependentCSubstring profileString(aResult.get<char>(),
-                                                      aResult.Size<char>() - 1);
-            self->GatheredOOPProfile(childPid, profileString);
+            if (aResult.IsReadable()) {
+              const nsDependentCSubstring profileString(
+                  aResult.get<char>(), aResult.Size<char>() - 1);
+              self->GatheredOOPProfile(childPid, profileString);
+            } else {
+              // This can happen if the child failed to allocate
+              // the Shmem (or maliciously sent an invalid Shmem).
+              self->GatheredOOPProfile(childPid, ""_ns);
+            }
           },
           [self = RefPtr<nsProfiler>(this),
            childPid = profile.childPid](ipc::ResponseRejectReason&& aReason) {

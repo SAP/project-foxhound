@@ -484,7 +484,7 @@ fn rawtest(mut wrench: Wrench, window: &mut WindowWrapper, rx: Receiver<Notifier
 fn reftest<'a>(
     mut wrench: Wrench,
     window: &mut WindowWrapper,
-    subargs: &clap::ArgMatches<'a>,
+    subargs: &clap::ArgMatches,
     rx: Receiver<NotifierEvent>
 ) -> usize {
     let dim = window.get_inner_size();
@@ -571,9 +571,11 @@ pub fn main() {
         );
     }
 
+    #[allow(deprecated)] // FIXME(bug 1771450): Use clap-serde or another way
     let args_yaml = load_yaml!("args.yaml");
-    let clap = clap::App::from_yaml(args_yaml)
-        .setting(clap::AppSettings::ArgRequiredElseHelp);
+    #[allow(deprecated)] // FIXME(bug 1771450): Use clap-serde or another way
+    let clap = clap::Command::from_yaml(args_yaml)
+        .arg_required_else_help(true);
 
     // On android devices, attempt to read command line arguments from a text
     // file located at <external_data_dir>/wrench/args.
@@ -631,25 +633,6 @@ pub fn main() {
             DeviceIntSize::new(w, h)
         })
         .unwrap_or(DeviceIntSize::new(1920, 1080));
-    let chase_primitive = match args.value_of("chase") {
-        Some(s) => {
-            if s.contains(',') {
-                let items = s
-                    .split(',')
-                    .map(|s| s.parse::<f32>().unwrap())
-                    .collect::<Vec<_>>();
-                let rect = LayoutRect::from_origin_and_size(
-                    LayoutPoint::new(items[0], items[1]),
-                    LayoutSize::new(items[2], items[3]),
-                );
-                webrender::ChasePrimitive::LocalRect(rect)
-            } else {
-                let id = s.parse::<usize>().unwrap();
-                webrender::ChasePrimitive::Id(webrender::PrimitiveDebugId(id))
-            }
-        }
-        None => webrender::ChasePrimitive::Nothing,
-    };
 
     let dump_shader_source = args.value_of("dump_shader_source").map(String::from);
 
@@ -727,7 +710,6 @@ pub fn main() {
         args.is_present("no_batch"),
         args.is_present("precache"),
         args.is_present("slow_subpixel"),
-        chase_primitive,
         dump_shader_source,
         notifier,
     );
@@ -835,7 +817,7 @@ fn render<'a>(
     wrench: &mut Wrench,
     window: &mut WindowWrapper,
     events_loop: &mut winit::event_loop::EventLoop<()>,
-    subargs: &clap::ArgMatches<'a>,
+    subargs: &clap::ArgMatches,
     no_block: bool,
     no_batch: bool,
 ) {

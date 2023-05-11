@@ -343,8 +343,6 @@ pref("app.channelURL", "https://www.mozilla.org/%LOCALE%/firefox/channel/");
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
 pref("security.alternate_certificate_error_page", "certerror");
 
-pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616712.
-
 // Enable pinning
 pref("security.cert_pinning.enforcement_level", 1);
 
@@ -513,9 +511,6 @@ pref("media.plugins.enabled", true);
 //  8 = Force software decoding
 // 16 = Force hardware decoding
 pref("media.stagefright.omxcodec.flags", 0);
-
-// Enable the dynamic toolbar
-pref("browser.chrome.dynamictoolbar", true);
 
 // Location Bar AutoComplete.
 pref("browser.urlbar.autocomplete.enabled", true);

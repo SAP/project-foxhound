@@ -6,8 +6,10 @@
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
 );
@@ -72,7 +74,7 @@ class Feature {
   }
 }
 
-this.PartitioningExceptionListService = function() {};
+function PartitioningExceptionListService() {}
 
 PartitioningExceptionListService.prototype = {
   classID: Components.ID("{ab94809d-33f0-4f28-af38-01efbd3baf22}"),
@@ -89,7 +91,7 @@ PartitioningExceptionListService.prototype = {
 
     this.feature = new Feature();
 
-    let rs = RemoteSettings(COLLECTION_NAME);
+    let rs = lazy.RemoteSettings(COLLECTION_NAME);
     rs.on("sync", event => {
       let {
         data: { current },

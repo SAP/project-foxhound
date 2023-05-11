@@ -9,8 +9,6 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto"]);
-
 const CRYPT_ALGO = "AES-CBC";
 const CRYPT_ALGO_LENGTH = 256;
 const CRYPT_ALGO_USAGES = ["encrypt", "decrypt"];

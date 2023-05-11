@@ -29,7 +29,7 @@
 		exports["pdfjs-dist/build/pdf.scripting"] = factory();
 	else
 		root.pdfjsScripting = factory();
-})(this, () => {
+})(globalThis, () => {
 return /******/ (() => { // webpackBootstrap
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ([
@@ -1331,7 +1331,8 @@ class ColorConverters {
   }
 
   static CMYK_HTML(components) {
-    return this.RGB_HTML(this.CMYK_RGB(components));
+    const rgb = this.CMYK_RGB(components).slice(1);
+    return this.RGB_HTML(rgb);
   }
 
   static RGB_CMYK([r, g, b]) {
@@ -2638,6 +2639,10 @@ class EventDispatcher {
       }
 
       if (id === "doc") {
+        if (event.name === "Open") {
+          this.formatAll();
+        }
+
         this._document.obj._dispatchDocEvent(event.name);
       } else if (id === "page") {
         this._document.obj._dispatchPageEvent(event.name, baseEvent.actions, baseEvent.pageNumber);
@@ -2737,6 +2742,21 @@ class EventDispatcher {
         formattedValue: null,
         selRange: [0, 0]
       });
+    }
+  }
+
+  formatAll() {
+    const event = globalThis.event = new Event({});
+
+    for (const source of Object.values(this._objects)) {
+      event.value = source.obj.value;
+
+      if (this.runActions(source, source, event, "Format")) {
+        source.obj._send({
+          id: source.obj._id,
+          formattedValue: event.value?.toString?.()
+        });
+      }
     }
   }
 
@@ -5020,8 +5040,8 @@ Object.defineProperty(exports, "initSandbox", ({
 
 var _initialization = __w_pdfjs_require__(1);
 
-const pdfjsVersion = '2.14.290';
-const pdfjsBuild = '38c82357b';
+const pdfjsVersion = '2.15.129';
+const pdfjsBuild = 'be2dfe45f';
 })();
 
 /******/ 	return __webpack_exports__;

@@ -6,14 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["DOM"];
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { ContentProcessDomain } = ChromeUtils.import(
+  "chrome://remote/content/cdp/domains/ContentProcessDomain.jsm"
 );
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ContentProcessDomain:
-    "chrome://remote/content/cdp/domains/ContentProcessDomain.jsm",
-});
 
 class DOM extends ContentProcessDomain {
   constructor(session) {

@@ -993,6 +993,44 @@ void nsContentSecurityManager::MeasureUnexpectedPrivilegedLoads(
 }
 
 /* static */
+nsSecurityFlags nsContentSecurityManager::ComputeSecurityFlags(
+    mozilla::CORSMode aCORSMode, CORSSecurityMapping aCORSSecurityMapping) {
+  if (aCORSSecurityMapping == CORSSecurityMapping::DISABLE_CORS_CHECKS) {
+    return nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL;
+  }
+
+  switch (aCORSMode) {
+    case CORS_NONE:
+      if (aCORSSecurityMapping == CORSSecurityMapping::REQUIRE_CORS_CHECKS) {
+        // CORS_NONE gets treated like CORS_ANONYMOUS in this mode
+        return nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT |
+               nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
+      } else if (aCORSSecurityMapping ==
+                 CORSSecurityMapping::CORS_NONE_MAPS_TO_INHERITED_CONTEXT) {
+        // CORS_NONE inherits
+        return nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT;
+      } else {
+        // CORS_NONE_MAPS_TO_DISABLED_CORS_CHECKS, the only remaining enum
+        // variant. CORSSecurityMapping::DISABLE_CORS_CHECKS returned early.
+        MOZ_ASSERT(aCORSSecurityMapping ==
+                   CORSSecurityMapping::CORS_NONE_MAPS_TO_DISABLED_CORS_CHECKS);
+        return nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL;
+      }
+    case CORS_ANONYMOUS:
+      return nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT |
+             nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
+    case CORS_USE_CREDENTIALS:
+      return nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT |
+             nsILoadInfo::SEC_COOKIES_INCLUDE;
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid aCORSMode enum value");
+      return nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT |
+             nsILoadInfo::SEC_COOKIES_SAME_ORIGIN;
+  }
+}
+
+/* static */
 nsresult nsContentSecurityManager::CheckAllowLoadInSystemPrivilegedContext(
     nsIChannel* aChannel) {
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
@@ -1291,6 +1329,24 @@ static nsresult CheckAllowFileProtocolScriptLoad(nsIChannel* aChannel) {
   if (NS_FAILED(rv) || !nsContentUtils::IsJavascriptMIMEType(
                            NS_ConvertUTF8toUTF16(contentType))) {
     Telemetry::Accumulate(Telemetry::SCRIPT_FILE_PROTOCOL_CORRECT_MIME, false);
+
+    nsCOMPtr<Document> doc;
+    if (nsINode* node = loadInfo->LoadingNode()) {
+      doc = node->OwnerDoc();
+    }
+
+    nsAutoCString spec;
+    uri->GetSpec(spec);
+
+    AutoTArray<nsString, 1> params;
+    CopyUTF8toUTF16(NS_UnescapeURL(spec), *params.AppendElement());
+    CopyUTF8toUTF16(NS_UnescapeURL(contentType), *params.AppendElement());
+
+    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                    "FILE_SCRIPT_BLOCKED"_ns, doc,
+                                    nsContentUtils::eSECURITY_PROPERTIES,
+                                    "BlockFileScriptWithWrongMimeType", params);
+
     return NS_ERROR_CONTENT_BLOCKED;
   }
 
@@ -1504,6 +1560,46 @@ nsresult nsContentSecurityManager::CheckChannel(nsIChannel* aChannel) {
   }
 
   return NS_OK;
+}
+
+// https://fetch.spec.whatwg.org/#serializing-a-request-origin
+void nsContentSecurityManager::GetSerializedOrigin(
+    nsIPrincipal* aOrigin, nsIPrincipal* aResourceOrigin,
+    nsACString& aSerializedOrigin, nsILoadInfo* aLoadInfo) {
+  // The following for loop performs the
+  // https://fetch.spec.whatwg.org/#ref-for-concept-request-tainted-origin
+  nsCOMPtr<nsIPrincipal> lastOrigin;
+  for (nsIRedirectHistoryEntry* entry : aLoadInfo->RedirectChain()) {
+    if (!lastOrigin) {
+      entry->GetPrincipal(getter_AddRefs(lastOrigin));
+      continue;
+    }
+
+    nsCOMPtr<nsIPrincipal> currentOrigin;
+    entry->GetPrincipal(getter_AddRefs(currentOrigin));
+
+    if (!currentOrigin->Equals(lastOrigin) && !lastOrigin->Equals(aOrigin)) {
+      return;
+    }
+    lastOrigin = currentOrigin;
+  }
+
+  // When the redirectChain is empty, it means this is the first redirect.
+  // So according to the #serializing-a-request-origin spec, we don't
+  // have a redirect-tainted origin, so we return the origin of the request
+  // here.
+  if (!lastOrigin) {
+    aOrigin->GetAsciiOrigin(aSerializedOrigin);
+    return;
+  }
+
+  // Same as above, redirectChain doesn't contain the current redirect,
+  // so we have to do the check one last time here.
+  if (lastOrigin->Equals(aResourceOrigin) && !lastOrigin->Equals(aOrigin)) {
+    return;
+  }
+
+  aOrigin->GetAsciiOrigin(aSerializedOrigin);
 }
 
 // ==== nsIContentSecurityManager implementation =====

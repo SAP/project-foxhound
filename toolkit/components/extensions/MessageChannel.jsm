@@ -97,9 +97,8 @@
  *
  */
 
-var EXPORTED_SYMBOLS = ["MessageChannel"];
-
-/* globals MessageChannel */
+const EXPORTED_SYMBOLS = ["MessageChannel"];
+let MessageChannel;
 
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -109,8 +108,10 @@ const { ExtensionUtils } = ChromeUtils.import(
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "MessageManagerProxy",
   "resource://gre/modules/MessageManagerProxy.jsm"
 );
@@ -119,7 +120,7 @@ function getMessageManager(target) {
   if (typeof target.sendAsyncMessage === "function") {
     return target;
   }
-  return new MessageManagerProxy(target);
+  return new lazy.MessageManagerProxy(target);
 }
 
 function matches(target, messageManager) {
@@ -168,9 +169,9 @@ var _makeDeferred = (resolve, reject) => {
  */
 let Deferred = () => {
   let res = {};
-  this._deferredResult = res;
+  _deferredResult = res;
   res.promise = new Promise(_makeDeferred);
-  this._deferredResult = null;
+  _deferredResult = null;
   return res;
 };
 
@@ -570,7 +571,9 @@ class PendingMessage {
   }
 }
 
-this.MessageChannel = {
+// Web workers has MessageChannel API, which is unrelated to this.
+// eslint-disable-next-line no-global-assign
+MessageChannel = {
   init() {
     Services.obs.addObserver(this, "message-manager-close");
     Services.obs.addObserver(this, "message-manager-disconnect");

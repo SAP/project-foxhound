@@ -21,6 +21,7 @@ import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.Autocomplete
+import org.junit.Assume.assumeThat
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
@@ -432,8 +433,38 @@ class PromptDelegateTest : BaseSessionTest() {
     }
 
     @Test
+    @WithDisplay(width = 100, height = 100)
+    fun selectTestDismiss() {
+        mainSession.loadTestPath(SELECT_HTML_PATH)
+        sessionRule.waitForPageStop()
+
+        val result = GeckoResult<PromptDelegate.PromptResponse>()
+        val promptInstanceDelegate = object : PromptDelegate.PromptInstanceDelegate {
+            override fun onPromptDismiss(prompt: PromptDelegate.BasePrompt) {
+                result.complete(prompt.dismiss())
+            }
+        }
+
+        sessionRule.delegateUntilTestEnd(object: PromptDelegate {
+            @AssertCalled(count = 1)
+            override fun onChoicePrompt(session: GeckoSession, prompt: PromptDelegate.ChoicePrompt): GeckoResult<PromptDelegate.PromptResponse>? {
+                assertThat("There should be two choices", prompt.choices.size, equalTo(2))
+                prompt.setDelegate(promptInstanceDelegate)
+                mainSession.evaluateJS("document.querySelector('select').blur()")
+                return result
+            }
+        })
+
+        mainSession.synthesizeTap(10, 10)
+        sessionRule.waitForResult(result)
+    }
+
+    @Test
     fun onBeforeUnloadTest() {
-        sessionRule.setPrefsUntilTestEnd(mapOf(
+    	// Bug 1763954 - disable the test on opt and isolated process builds to reduce failure rate
+    	assumeThat(sessionRule.env.isDebugBuild, equalTo(true))
+    	assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
+    	sessionRule.setPrefsUntilTestEnd(mapOf(
                 "dom.require_user_interaction_for_beforeunload" to false
         ))
         mainSession.loadTestPath(BEFORE_UNLOAD)
@@ -635,6 +666,69 @@ class PromptDelegateTest : BaseSessionTest() {
                 return GeckoResult.fromValue(prompt.dismiss())
             }
         })
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test fun dateTestDismiss() {
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to false))
+
+        mainSession.loadTestPath(PROMPT_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        val result = GeckoResult<PromptDelegate.PromptResponse>()
+        val promptInstanceDelegate = object : PromptDelegate.PromptInstanceDelegate {
+            override fun onPromptDismiss(prompt: PromptDelegate.BasePrompt) {
+                result.complete(prompt.dismiss())
+            }
+        }
+
+        sessionRule.delegateUntilTestEnd(object: PromptDelegate {
+            @AssertCalled(count = 1)
+            override fun onDateTimePrompt(session: GeckoSession, prompt: PromptDelegate.DateTimePrompt)
+                    : GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("<input type=date> is tapped", prompt.type, equalTo(PromptDelegate.DateTimePrompt.Type.DATE))
+                prompt.setDelegate(promptInstanceDelegate)
+                mainSession.evaluateJS("document.getElementById('dateexample').blur()")
+                return result
+            }
+        })
+
+        mainSession.evaluateJS("document.getElementById('selectexample').remove()")
+        mainSession.synthesizeTap(10, 10)
+        sessionRule.waitForResult(result)
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test fun monthTestDismiss() {
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to false))
+
+        mainSession.loadTestPath(PROMPT_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        val result = GeckoResult<PromptDelegate.PromptResponse>()
+        val promptInstanceDelegate = object : PromptDelegate.PromptInstanceDelegate {
+            override fun onPromptDismiss(prompt: PromptDelegate.BasePrompt) {
+                result.complete(prompt.dismiss())
+            }
+        }
+
+        sessionRule.delegateUntilTestEnd(object: PromptDelegate {
+            @AssertCalled(count = 1)
+            override fun onDateTimePrompt(session: GeckoSession, prompt: PromptDelegate.DateTimePrompt)
+                    : GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("<input type=month> is tapped", prompt.type, equalTo(PromptDelegate.DateTimePrompt.Type.MONTH))
+                prompt.setDelegate(promptInstanceDelegate)
+                mainSession.evaluateJS("document.getElementById('monthexample').blur()")
+                return result
+            }
+        })
+
+        mainSession.evaluateJS("""
+            document.getElementById('selectexample').remove();
+            document.getElementById('dateexample').remove();
+        """.trimIndent())
+        mainSession.synthesizeTap(10, 10)
+        sessionRule.waitForResult(result)
     }
 
     @Test fun fileTest() {

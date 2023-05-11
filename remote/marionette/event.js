@@ -7,19 +7,21 @@
 
 const EXPORTED_SYMBOLS = ["event"];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   keyData: "chrome://remote/content/shared/webdriver/KeyData.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 /** Provides functionality for creating and sending DOM events. */
-this.event = {};
+const event = {};
 
-XPCOMUtils.defineLazyGetter(this, "dblclickTimer", () => {
+XPCOMUtils.defineLazyGetter(lazy, "dblclickTimer", () => {
   return Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
 });
 
@@ -89,41 +91,15 @@ event.DoubleClickTracker = {
     event.DoubleClickTracker.cancelTimer();
   },
   startTimer() {
-    dblclickTimer.initWithCallback(
+    lazy.dblclickTimer.initWithCallback(
       event.DoubleClickTracker.resetClick,
       DBLCLICK_INTERVAL,
       Ci.nsITimer.TYPE_ONE_SHOT
     );
   },
   cancelTimer() {
-    dblclickTimer.cancel();
+    lazy.dblclickTimer.cancel();
   },
-};
-
-/**
- * Get shifted key character for a given key character.
- *
- * For characters unaffected by the shift key, this returns the input.
- *
- * @param {string} rawKey Key for which to get shifted key.
- * @returns {string} Key string to use when the shift modifier is set.
- */
-event.getShiftedKey = function(rawKey) {
-  return keyData.getShiftedKey(rawKey);
-};
-
-/**
- * Get key event data for a given key character.
- *
- * @param {string} key
- *     Key for which to get data. This can either be the key codepoint
- *     itself or one of the codepoints in the range U+E000-U+E05D that
- *     WebDriver uses to represent keys not corresponding directly to
- *     a codepoint.
- * @returns {Object} Key event data object.
- */
-event.getKeyData = function(rawKey) {
-  return keyData.getData(rawKey);
 };
 
 // Only used by legacyactions.js
@@ -132,20 +108,16 @@ event.parseModifiers_ = function(modifiers, win) {
 };
 
 /**
- * Synthesise a mouse event on a target.
+ * Synthesise a mouse event at a point.
  *
- * The actual client point is determined by taking the aTarget's client
- * box and offseting it by offsetX and offsetY.  This allows mouse clicks
- * to be simulated by calling this method.
- *
- * If the type is specified, an mouse event of that type is
- * fired. Otherwise, a mousedown followed by a mouse up is performed.
+ * If the type is specified in opts, an mouse event of that type is
+ * fired. Otherwise, a mousedown followed by a mouseup is performed.
  *
  * @param {number} left
- *     Horizontal offset to click from the target's bounding box.
+ *     Offset from viewport left, in CSS pixels
  * @param {number} top
- *     Vertical offset to click from the target's bounding box.
- * @param {Object.<string, ?>} opts
+ *     Offset from viewport top, in CSS pixels
+ * @param {Object} opts
  *     Object which may contain the properties "shiftKey", "ctrlKey",
  *     "altKey", "metaKey", "accessKey", "clickCount", "button", and
  *     "type".
@@ -228,9 +200,9 @@ event.sendKeys = function(keyString, win) {
   for (let i = 0; i < keyString.length; i++) {
     let keyValue = keyString.charAt(i);
     if (modifiers.shiftKey) {
-      keyValue = keyData.getShiftedKey(keyValue);
+      keyValue = lazy.keyData.getShiftedKey(keyValue);
     }
-    const data = keyData.getData(keyValue);
+    const data = lazy.keyData.getData(keyValue);
     const key = { ...data, ...modifiers };
     if (data.modifier) {
       modifiers[data.modifier] = true;

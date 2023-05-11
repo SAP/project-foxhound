@@ -13,9 +13,9 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   SpellCheckHelper: "resource://gre/modules/InlineSpellChecker.jsm",
   LoginManagerChild: "resource://gre/modules/LoginManagerChild.jsm",
@@ -25,11 +25,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   InlineSpellCheckerContent:
     "resource://gre/modules/InlineSpellCheckerContent.jsm",
   ContentDOMReference: "resource://gre/modules/ContentDOMReference.jsm",
-});
-
-XPCOMUtils.defineLazyGetter(this, "PageMenuChild", () => {
-  let pageMenu = ChromeUtils.import("resource://gre/modules/PageMenu.jsm");
-  return new pageMenu.PageMenuChild();
 });
 
 let contextMenus = new WeakMap();
@@ -64,27 +59,22 @@ class ContextMenuChild extends JSWindowActorChild {
   receiveMessage(message) {
     switch (message.name) {
       case "ContextMenu:GetFrameTitle": {
-        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let target = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
         return Promise.resolve(target.ownerDocument.title);
       }
 
       case "ContextMenu:Canvas:ToBlobURL": {
-        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let target = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
         return new Promise(resolve => {
           target.toBlob(blob => {
             let blobURL = URL.createObjectURL(blob);
             resolve(blobURL);
           });
         });
-      }
-
-      case "ContextMenu:DoCustomCommand": {
-        E10SUtils.wrapHandlingUserInput(
-          this.contentWindow,
-          message.data.handlingUserInput,
-          () => PageMenuChild.executeMenu(message.data.generatedItemId)
-        );
-        break;
       }
 
       case "ContextMenu:Hiding": {
@@ -94,11 +84,11 @@ class ContextMenuChild extends JSWindowActorChild {
       }
 
       case "ContextMenu:MediaCommand": {
-        E10SUtils.wrapHandlingUserInput(
+        lazy.E10SUtils.wrapHandlingUserInput(
           this.contentWindow,
           message.data.handlingUserInput,
           () => {
-            let media = ContentDOMReference.resolve(
+            let media = lazy.ContentDOMReference.resolve(
               message.data.targetIdentifier
             );
 
@@ -167,19 +157,33 @@ class ContextMenuChild extends JSWindowActorChild {
       }
 
       case "ContextMenu:ReloadFrame": {
-        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let target = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
         target.ownerDocument.location.reload(message.data.forceReload);
         break;
       }
 
+      case "ContextMenu:GetImageText": {
+        let img = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
+        img.recognizeCurrentImageText();
+        break;
+      }
+
       case "ContextMenu:ToggleRevealPassword": {
-        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let target = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
         target.revealPassword = !target.revealPassword;
         break;
       }
 
       case "ContextMenu:ReloadImage": {
-        let image = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let image = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
 
         if (image instanceof Ci.nsIImageLoadingContent) {
           image.forceReload();
@@ -188,7 +192,9 @@ class ContextMenuChild extends JSWindowActorChild {
       }
 
       case "ContextMenu:SearchFieldBookmarkData": {
-        let node = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let node = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
         let charset = node.ownerDocument.characterSet;
         let formBaseURI = Services.io.newURI(node.form.baseURI, charset);
         let formURI = Services.io.newURI(
@@ -230,7 +236,9 @@ class ContextMenuChild extends JSWindowActorChild {
       }
 
       case "ContextMenu:SaveVideoFrameAsImage": {
-        let video = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let video = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
         let canvas = this.document.createElementNS(
           "http://www.w3.org/1999/xhtml",
           "canvas"
@@ -247,7 +255,9 @@ class ContextMenuChild extends JSWindowActorChild {
       }
 
       case "ContextMenu:SetAsDesktopBackground": {
-        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let target = lazy.ContentDOMReference.resolve(
+          message.data.targetIdentifier
+        );
 
         // Paranoia: check disableSetDesktopBackground again, in case the
         // image changed since the context menu was initiated.
@@ -558,11 +568,11 @@ class ContextMenuChild extends JSWindowActorChild {
       cookieJarSettings,
     } = doc;
     docLocation = docLocation && docLocation.spec;
-    let frameID = WebNavigationFrames.getFrameId(doc.defaultView);
+    let frameID = lazy.WebNavigationFrames.getFrameId(doc.defaultView);
     let frameBrowsingContextID = doc.defaultView.docShell.browsingContext.id;
-    let loginFillInfo = LoginManagerChild.forWindow(
-      doc.defaultView
-    ).getFieldContext(aEvent.composedTarget);
+    const loginManagerChild = lazy.LoginManagerChild.forWindow(doc.defaultView);
+    const docState = loginManagerChild.stateForDocument(doc);
+    const loginFillInfo = docState.getFieldContext(aEvent.composedTarget);
 
     let disableSetDesktopBackground = null;
 
@@ -602,7 +612,9 @@ class ContextMenuChild extends JSWindowActorChild {
       } catch (e) {}
     }
 
-    let selectionInfo = SelectionUtils.getSelectionDetails(this.contentWindow);
+    let selectionInfo = lazy.SelectionUtils.getSelectionDetails(
+      this.contentWindow
+    );
     let loadContext = this.docShell.QueryInterface(Ci.nsILoadContext);
     let userContextId = loadContext.originAttributes.userContextId;
 
@@ -613,13 +625,12 @@ class ContextMenuChild extends JSWindowActorChild {
     let spellInfo = null;
     let editFlags = null;
     let principal = null;
-    let customMenuItems = null;
 
     let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
       Ci.nsIReferrerInfo
     );
     referrerInfo.initWithElement(aEvent.composedTarget);
-    referrerInfo = E10SUtils.serializeReferrerInfo(referrerInfo);
+    referrerInfo = lazy.E10SUtils.serializeReferrerInfo(referrerInfo);
 
     // In the case "onLink" we may have to send link referrerInfo to use in
     // _openLinkInParameters
@@ -636,13 +647,13 @@ class ContextMenuChild extends JSWindowActorChild {
       this._cleanContext();
     }
 
-    editFlags = SpellCheckHelper.isEditable(
+    editFlags = lazy.SpellCheckHelper.isEditable(
       aEvent.composedTarget,
       this.contentWindow
     );
 
-    if (editFlags & SpellCheckHelper.SPELLCHECKABLE) {
-      spellInfo = InlineSpellCheckerContent.initContextMenu(
+    if (editFlags & lazy.SpellCheckHelper.SPELLCHECKABLE) {
+      spellInfo = lazy.InlineSpellCheckerContent.initContextMenu(
         aEvent,
         editFlags,
         this
@@ -669,7 +680,6 @@ class ContextMenuChild extends JSWindowActorChild {
       loginFillInfo,
       selectionInfo,
       userContextId,
-      customMenuItems,
       contentDisposition,
       frameID,
       frameBrowsingContextID,
@@ -677,17 +687,15 @@ class ContextMenuChild extends JSWindowActorChild {
     };
 
     if (context.inFrame && !context.inSrcdocFrame) {
-      data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
+      data.frameReferrerInfo = lazy.E10SUtils.serializeReferrerInfo(
         doc.referrerInfo
       );
     }
 
     if (linkReferrerInfo) {
-      data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
-    }
-
-    if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
-      data.customMenuItems = PageMenuChild.build(aEvent.composedTarget);
+      data.linkReferrerInfo = lazy.E10SUtils.serializeReferrerInfo(
+        linkReferrerInfo
+      );
     }
 
     Services.obs.notifyObservers(
@@ -700,7 +708,7 @@ class ContextMenuChild extends JSWindowActorChild {
     data.storagePrincipal = doc.effectiveStoragePrincipal;
     data.context.storagePrincipal = context.storagePrincipal;
 
-    data.cookieJarSettings = E10SUtils.serializeCookieJarSettings(
+    data.cookieJarSettings = lazy.E10SUtils.serializeCookieJarSettings(
       cookieJarSettings
     );
 
@@ -742,7 +750,7 @@ class ContextMenuChild extends JSWindowActorChild {
       contentType: context.target.ownerDocument.contentType,
 
       // used for nsContextMenu.saveLink
-      isPrivate: PrivateBrowsingUtils.isContentWindowPrivate(
+      isPrivate: lazy.PrivateBrowsingUtils.isContentWindowPrivate(
         context.target.ownerGlobal
       ),
     };
@@ -825,11 +833,14 @@ class ContextMenuChild extends JSWindowActorChild {
     const isAboutDevtoolsToolbox = this.document.documentURI.startsWith(
       "about:devtools-toolbox"
     );
-    const editFlags = SpellCheckHelper.isEditable(node, this.contentWindow);
+    const editFlags = lazy.SpellCheckHelper.isEditable(
+      node,
+      this.contentWindow
+    );
 
     if (
       isAboutDevtoolsToolbox &&
-      (editFlags & SpellCheckHelper.TEXTINPUT) === 0
+      (editFlags & lazy.SpellCheckHelper.TEXTINPUT) === 0
     ) {
       // Don't display for about:devtools-toolbox page unless the source was text input.
       context.shouldDisplay = false;
@@ -886,14 +897,14 @@ class ContextMenuChild extends JSWindowActorChild {
     // Remember the node and its owner document that was clicked
     // This may be modifed before sending to nsContextMenu
     context.target = node;
-    context.targetIdentifier = ContentDOMReference.get(node);
+    context.targetIdentifier = lazy.ContentDOMReference.get(node);
 
     context.principal = context.target.ownerDocument.nodePrincipal;
     context.storagePrincipal =
       context.target.ownerDocument.effectiveStoragePrincipal;
-    context.csp = E10SUtils.serializeCSP(context.target.ownerDocument.csp);
+    context.csp = lazy.E10SUtils.serializeCSP(context.target.ownerDocument.csp);
 
-    context.frameID = WebNavigationFrames.getFrameId(
+    context.frameID = lazy.WebNavigationFrames.getFrameId(
       context.target.ownerGlobal
     );
 
@@ -1076,16 +1087,16 @@ class ContextMenuChild extends JSWindowActorChild {
       }
     } else if (
       editFlags &
-      (SpellCheckHelper.INPUT | SpellCheckHelper.TEXTAREA)
+      (lazy.SpellCheckHelper.INPUT | lazy.SpellCheckHelper.TEXTAREA)
     ) {
-      context.onTextInput = (editFlags & SpellCheckHelper.TEXTINPUT) !== 0;
-      context.onNumeric = (editFlags & SpellCheckHelper.NUMERIC) !== 0;
-      context.onEditable = (editFlags & SpellCheckHelper.EDITABLE) !== 0;
-      context.onPassword = (editFlags & SpellCheckHelper.PASSWORD) !== 0;
+      context.onTextInput = (editFlags & lazy.SpellCheckHelper.TEXTINPUT) !== 0;
+      context.onNumeric = (editFlags & lazy.SpellCheckHelper.NUMERIC) !== 0;
+      context.onEditable = (editFlags & lazy.SpellCheckHelper.EDITABLE) !== 0;
+      context.onPassword = (editFlags & lazy.SpellCheckHelper.PASSWORD) !== 0;
       context.passwordRevealed =
         context.onPassword && context.target.revealPassword;
       context.onSpellcheckable =
-        (editFlags & SpellCheckHelper.SPELLCHECKABLE) !== 0;
+        (editFlags & lazy.SpellCheckHelper.SPELLCHECKABLE) !== 0;
 
       // This is guaranteed to be an input or textarea because of the condition above,
       // so the no-children flag is always correct. We deal with contenteditable elsewhere.
@@ -1093,7 +1104,7 @@ class ContextMenuChild extends JSWindowActorChild {
         context.shouldInitInlineSpellCheckerUINoChildren = true;
       }
 
-      context.onKeywordField = editFlags & SpellCheckHelper.KEYWORD;
+      context.onKeywordField = editFlags & lazy.SpellCheckHelper.KEYWORD;
     } else if (this.contentWindow.HTMLHtmlElement.isInstance(context.target)) {
       const bodyElt = context.target.ownerDocument.body;
 
@@ -1211,7 +1222,7 @@ class ContextMenuChild extends JSWindowActorChild {
 
     // if the document is editable, show context menu like in text inputs
     if (!context.onEditable) {
-      if (editFlags & SpellCheckHelper.CONTENTEDITABLE) {
+      if (editFlags & lazy.SpellCheckHelper.CONTENTEDITABLE) {
         // If this.onEditable is false but editFlags is CONTENTEDITABLE, then
         // the document itself must be editable.
         context.onTextInput = true;

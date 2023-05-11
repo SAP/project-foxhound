@@ -849,6 +849,44 @@
 #endif
   mirror: always
 
+# Bidi numeral style:
+# 0 = nominalnumeralBidi *
+# 1 = regularcontextnumeralBidi
+# 2 = hindicontextnumeralBidi
+# 3 = arabicnumeralBidi
+# 4 = hindinumeralBidi
+# 5 = persiancontextnumeralBidi
+# 6 = persiannumeralBidi
+- name: bidi.numeral
+  type: RelaxedAtomicUint32
+  value: 0
+  mirror: always
+
+# Bidi text type
+# 1 = charsettexttypeBidi *
+# 2 = logicaltexttypeBidi
+# 3 = visualtexttypeBidi
+- name: bidi.texttype
+  type: RelaxedAtomicUint32
+  value: 1
+  mirror: always
+
+# Bidi direction
+# 1 = directionLTRBidi *
+# 2 = directionRTLBidi
+- name: bidi.direction
+  type: RelaxedAtomicUint32
+  value: 1
+  mirror: always
+
+# Setting this pref to |true| forces Bidi UI menu items and keyboard shortcuts
+# to be exposed, and enables the directional caret hook. By default, only
+# expose it for bidi-associated system locales.
+- name: bidi.browser.ui
+  type: bool
+  value: false
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "browser."
 #---------------------------------------------------------------------------
@@ -1125,6 +1163,20 @@
   value: "#FBFBFE"
   mirror: never
 
+# Determines the behavior of OS zoom settings.
+#
+#   0: doesn't affect rendering at all
+#   1: affects full zoom (dpi, effectively).
+#   2: affects text zoom.
+#
+# Default is (1): Historical behavior on Linux, matches other browsers on
+# Windows, and generally creates more consistent rendering.
+- name: browser.display.os-zoom-behavior
+  type: RelaxedAtomicInt32
+  value: 1
+  mirror: always
+  rust: true
+
 # Whether focus rings are always shown by default.
 #
 # This is the initial value of nsWindowRoot::mShowFocusRings, but it can be
@@ -1191,6 +1243,12 @@
 
 # See bug 1731668
 - name: browser.download.enable_spam_prevention
+  type: bool
+  value: false
+  mirror: always
+
+# See bug 1772569
+- name: browser.download.open_pdf_attachments_inline
   type: bool
   value: false
   mirror: always
@@ -1971,17 +2029,9 @@
 # This used to be necessary long ago to prevent terrible UX when using stuff
 # like TypeAheadFind (bug 258917), but it also causes compat issues on mobile
 # (bug 1570566).
-#
-# So for now disable it on Android and Desktop Nightly, to see if we have any
-# desktop regression before removing it completely. Note that this means that
-# non-nightly RDM behaves different than Android in this case.
 - name: dom.block_reload_from_resize_event_handler
   type: bool
-#if defined(MOZ_WIDGET_ANDROID) || defined(NIGHTLY_BUILD)
   value: false
-#else
-  value: true
-#endif
   mirror: always
 
 # SW Cache API
@@ -1990,6 +2040,8 @@
   value: true
   mirror: always
 
+# Exposes window.caches and skips SecureContext check.
+# dom.serviceWorkers.testing.enabled also includes the same effect.
 - name: dom.caches.testing.enabled
   type: RelaxedAtomicBool
   value: false
@@ -2242,9 +2294,17 @@
   value: false
   mirror: always
 
+# Skips checking permission and user activation when accessing the clipboard.
 # Should only be enabled in tests.
 # Access with Clipboard::IsTestingPrefEnabled().
 - name: dom.events.testing.asyncClipboard
+  type: bool
+  value: false
+  mirror: always
+  do_not_use_directly: true
+
+# Control whether `navigator.clipboard.readText()` is exposed to content.
+- name: dom.events.asyncClipboard.readText
   type: bool
   value: false
   mirror: always
@@ -2303,6 +2363,12 @@
   value: false
   mirror: always
 
+# Whether or not File Handle is enabled.
+- name: dom.fileHandle.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Support @autocomplete values for form autofill feature.
 - name: dom.forms.autocomplete.formautofill
   type: bool
@@ -2319,6 +2385,13 @@
 # characters when the internal value is set or updated. It does not stop the
 # user from typing in a number and using grouping separators.
 - name: dom.forms.number.grouping
+  type: bool
+  value: false
+  mirror: always
+
+# Whether fullscreen should make the rest of the document inert.
+# This matches other browsers but historically not Gecko.
+- name: dom.fullscreen.modal
   type: bool
   value: false
   mirror: always
@@ -2774,11 +2847,6 @@
   value: 2.0f
   mirror: always
 
-- name: dom.menuitem.enabled
-  type: bool
-  value: false
-  mirror: always
-
 # Enable meta-viewport support in remote APZ-enabled frames.
 - name: dom.meta-viewport.enabled
   type: RelaxedAtomicBool
@@ -3210,6 +3278,11 @@
 #
 #   2: Depth-first. Delazify all functions off-thread in the order of appearance
 #      in the source.
+#
+#   3: Large-first. Delazify all functions off-thread starting with the largest
+#      functions first, and the smallest as the last one to be delazified, where
+#      the size of function is measured in bytes between the start to the end of
+#      the function.
 #
 # 255: Parse everything eagerly, from the first parse. All functions are parsed
 #      at the same time as the top-level of a file.
@@ -3677,7 +3750,7 @@
 
 - name: dom.streams.transferable.enabled
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # For area and anchor elements with target=_blank and no rel set to
@@ -4531,7 +4604,7 @@
 # none of its methods available).
 - name: extensions.InstallTriggerImpl.enabled
   type: bool
-  value: true
+  value: false
   mirror: always
 
 # Whether the InstallTrigger implementation should be enabled (or completely
@@ -4539,7 +4612,7 @@
 # used also for UA detection.
 - name: extensions.InstallTrigger.enabled
   type: bool
-  value: true
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
   mirror: always
 
 
@@ -4706,6 +4779,17 @@
 
 # If true, crash when a blocklisted preference is accessed in a subprocess
 - name: fission.enforceBlocklistedPrefsInSubprocesses
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Temporary prefs to be used for a few weeks, then removed
+- name: fission.omitBlocklistedPrefsInSubprocesses.tmp
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+- name: fission.enforceBlocklistedPrefsInSubprocesses.tmp
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -5364,13 +5448,14 @@
   mirror: always
 
 - name: gfx.direct3d11.reuse-decoder-device
-  type: RelaxedAtomicInt32
-#ifdef NIGHTLY_BUILD
-  value: 1
-#else
-  value: -1
-#endif
-  mirror: always
+  type: bool
+  value: true
+  mirror: once
+# Enable reuse decoder device even when it is blocked.
+- name: gfx.direct3d11.reuse-decoder-device-force-enabled
+  type: bool
+  value: false
+  mirror: once
 
 - name: gfx.direct3d11.allow-keyed-mutex
   type: RelaxedAtomicBool
@@ -5522,6 +5607,12 @@
   value: true
   mirror: always
 
+# whether to always search all font cmaps during system font fallback
+- name: gfx.font_rendering.fallback.always_use_cmaps
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 #if defined(XP_WIN)
 # Whether the DirectWrite bold simulation should be used when a bold font-weight
 # is requested but no bold face available in the family. This renders poorly with
@@ -5536,6 +5627,23 @@
   value: 1
   mirror: always
 #endif
+
+- name: gfx.font_rendering.graphite.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Cache shaped word results
+- name: gfx.font_rendering.wordcache.charlimit
+  type: RelaxedAtomicUint32
+  value: 32
+  mirror: always
+
+# Cache shaped word results
+- name: gfx.font_rendering.wordcache.maxentries
+  type: RelaxedAtomicUint32
+  value: 10000
+  mirror: always
 
 # The level of logging:
 # - 0: no logging;
@@ -6245,6 +6353,12 @@
   value: false
   mirror: always
 
+# Decode all images synchronously
+- name: image.decode-sync.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Whether we attempt to downscale images during decoding.
 - name: image.downscale-during-decode.enabled
   type: RelaxedAtomicBool
@@ -6667,6 +6781,12 @@
     mirror: always
 #endif  // NIGHTLY_BUILD
 
+  # Experimental support for Array.findLast/Array.findLastIndex in JavaScript.
+-   name: javascript.options.experimental.array_find_last
+    type: bool
+    value: false
+    mirror: always
+
 # Experimental support for class static blocks in JavaScript.
 -   name: javascript.options.experimental.class_static_blocks
     type: bool
@@ -6835,12 +6955,10 @@
     mirror: always
 #endif  // defined(ENABLE_WASM_EXTENDED_CONST)
 
-#if defined(ENABLE_WASM_EXCEPTIONS)
 -   name: javascript.options.wasm_exceptions
     type: bool
     value: true
     mirror: always
-#endif // defined(ENABLE_WASM_EXCEPTIONS)
 
 #if defined(ENABLE_WASM_FUNCTION_REFERENCES)
 -   name: javascript.options.wasm_function_references
@@ -7509,8 +7627,12 @@
 
 # Set the number of device pixels per CSS pixel. A value <= 0 means choose
 # automatically based on user settings for the platform (e.g., "UI scale factor"
-# on Mac). A positive value is used as-is. This effectively controls the size
-# of a CSS "px". This is only used for windows on the screen, not for printing.
+# on Mac). If browser.display.os-zoom-behavior == 1, then a positive value
+# will be multiplied by the text scale factor; otherwise a positive value is
+# used as-is. This controls the size of a CSS "px" at 100% full-zoom.
+# The size of system fonts is also changed in proportion with the change in
+# "px" sizes. Use "ui.textScaleFactor" instead to only change the size of "px".
+# This is only used for windows on the screen, not for printing.
 - name: layout.css.devPixelsPerPx
   type: AtomicFloat
   value: -1.0f
@@ -7519,7 +7641,7 @@
 # Is support for CSS backdrop-filter enabled?
 - name: layout.css.backdrop-filter.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # Should stray control characters be rendered visibly?
@@ -7543,6 +7665,12 @@
   mirror: always
 
 - name: layout.css.cross-fade.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
+
+- name: layout.css.linear-easing-function.enabled
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -7675,6 +7803,13 @@
 - name: layout.css.grid-template-masonry-value.enabled
   type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
+# Is support for :has() enabled?
+- name: layout.css.has-selector.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
   rust: true
 
@@ -8375,7 +8510,13 @@
 # Whether to draw images in CSS backgrounds if we only have a partial frame.
 - name: layout.display_partial_background_images
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
+  mirror: always
+
+# Controls whether nsRefreshDriver::IsInHighRateMode() may ever return true.
+- name: layout.expose_high_rate_mode_from_refreshdriver
+  type: bool
+  value: true
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -8439,13 +8580,13 @@
 # is unspecified.
 - name: mathml.scriptminsize_attribute.disabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Whether to disable the scriptsizemultiplier attribute.
 - name: mathml.scriptsizemultiplier_attribute.disabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Whether to disable support for stretching operators with STIXGeneral fonts.
@@ -8796,6 +8937,8 @@
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
   value: true
+#elif defined(XP_FREEBSD)
+  value: true
 #elif defined(XP_OPENBSD)
   value: true
 #else
@@ -8836,6 +8979,8 @@
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
   value: true
+#elif defined(XP_FREEBSD)
+  value: true
 #elif defined(XP_OPENBSD)
   value: true
 #else
@@ -8866,6 +9011,8 @@
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
   value: true
+#elif defined(XP_FREEBSD)
+  value: true
 #elif defined(XP_OPENBSD)
   value: true
 #else
@@ -8880,6 +9027,8 @@
 #elif defined(XP_MACOSX)
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
+  value: true
+#elif defined(XP_FREEBSD)
   value: true
 #elif defined(XP_OPENBSD)
   value: true
@@ -8896,6 +9045,8 @@
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
   value: true
+#elif defined(XP_FREEBSD)
+  value: true
 #elif defined(XP_OPENBSD)
   value: true
 #else
@@ -8911,6 +9062,8 @@
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
   value: true
+#elif defined(XP_FREEBSD)
+  value: true
 #elif defined(XP_OPENBSD)
   value: true
 #else
@@ -8925,6 +9078,8 @@
 #elif defined(XP_MACOSX)
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
+  value: true
+#elif defined(XP_FREEBSD)
   value: true
 #elif defined(XP_OPENBSD)
   value: true
@@ -9384,6 +9539,16 @@
 #else
   value: false
 #endif
+  mirror: always
+
+- name: media.av1.new-thread-count-strategy
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+- name: media.av1.force-thread-count
+  type: RelaxedAtomicInt32
+  value: 0
   mirror: always
 
 - name: media.flac.enabled
@@ -10099,6 +10264,13 @@
   value: 2
   mirror: always
 
+# Whether to respect the redirected-tainted origin flag
+# https://fetch.spec.whatwg.org/#concept-request-tainted-origin
+- name: network.http.origin.redirectTainted
+  type: bool
+  value: true
+  mirror: always
+
 # Prefs allowing granular control of referers.
 # 0=don't send any, 1=send only on clicks, 2=send on image requests as well
 - name: network.http.sendRefererHeader
@@ -10557,6 +10729,12 @@
   type: String
   value: "https://mozilla.cloudflare-dns.com/dns-query"
   mirror: never
+
+# If true, retry TRR for recoverable errors once.
+- name: network.trr.retry_on_recoverable_errors
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
 
 # If true, don't fallback to native DNS upon network errors.
 - name: network.trr.strict_native_fallback
@@ -11169,6 +11347,11 @@
   value: 1
   mirror: always
 
+- name: network.allow_raw_sockets_in_content_processes
+  type: bool
+  value: false
+  mirror: once
+
 #---------------------------------------------------------------------------
 # Prefs starting with "nglayout."
 #---------------------------------------------------------------------------
@@ -11273,11 +11456,6 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "plugins."
 #---------------------------------------------------------------------------
-
-- name: plugins.flashBlock.enabled
-  type: bool
-  value: false
-  mirror: always
 
 - name: plugins.http_https_only
   type: bool
@@ -12079,6 +12257,12 @@
   value: @IS_NOT_ANDROID@
   mirror: always
 
+# WebAuthn CTAP2 support
+- name: security.webauthn.ctap2
+  type: bool
+  value: false
+  mirror: always
+
 # Block Worker/SharedWorker scripts with wrong MIME type.
 - name: security.block_Worker_with_wrong_mime
   type: bool
@@ -12152,6 +12336,7 @@
   value: 1
 #endif
   mirror: always
+
 
 # Whether or not OCSP is required.
 # true => hard-fail (if an OCSP request times out, stop the connection)
@@ -12240,14 +12425,6 @@
   value: 10
   mirror: always
 
-# NB: Changes to this pref affect CERT_CHAIN_SHA1_POLICY_STATUS telemetry.
-# See the comment in CertVerifier.cpp.
-# 1 = forbid sha1 in certificate signatures, even for imported roots
-- name: security.pki.sha1_enforcement_level
-  type: RelaxedAtomicUint32
-  value: 1
-  mirror: always
-
 # security.pki.netscape_step_up_policy controls how the platform handles the
 # id-Netscape-stepUp OID in extended key usage extensions of CA certificates.
 # 0: id-Netscape-stepUp is always considered equivalent to id-kp-serverAuth
@@ -12306,6 +12483,29 @@
 - name: security.tls.enable_post_handshake_auth
   type: RelaxedAtomicBool
   value: false
+  mirror: always
+
+# Probability of GREASEing a TLS connection with ECH (0-100)
+# 0 means never GREASE, 100 means always GREASE
+- name: security.tls.ech.grease_probability
+  type: RelaxedAtomicUint32
+#ifdef IS_NIGHTLY_BUILD
+  value: 50
+#else
+  value: 0
+#endif
+  mirror: always
+
+# Whether to retry connections without ECH Grease
+- name: security.tls.ech.disable_grease_on_fallback
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# ECH GREASE Padding target (1-255)
+- name: security.tls.ech.grease_size
+  type: RelaxedAtomicUint32
+  value: 100
   mirror: always
 
 - name: security.tls.hello_downgrade_check
@@ -13395,16 +13595,20 @@
   value: false
   mirror: always
 
-# Whether we should use the default accent color or the theme-provided one.
+# Whether we should use the default accent color or the theme-provided one for
+# content (e.g. for form controls and CSS system colors).
 #
-# TODO(emilio): This should probably do the right thing in most other
-# platforms, but stick to the standard colors on those.
+# Turned off on Windows, for now (we always use the default blue-ish
+# accent-color there). We might want to turn this on there, though it's worth
+# thinking on what the behavior should be for grey-ish accent colors (which are
+# a thing on Windows and can cause confusion with things like disabled form
+# controls). Maybe it's just fine.
 - name: widget.non-native-theme.use-theme-accent
   type: RelaxedAtomicBool
-#if defined(MOZ_WIDGET_GTK) || defined(XP_MACOSX) || defined(ANDROID)
-  value: true
-#else
+#ifdef XP_WIN
   value: false
+#else
+  value: true
 #endif
   mirror: always
 
@@ -13627,6 +13831,15 @@
   type: int32_t
   value: 2
   mirror: always
+# Whether to use XDG portal for opening to a file.
+# https://flatpak.github.io/xdg-desktop-portal/#gdbus-org.freedesktop.portal.OpenURI
+#  - 0: never
+#  - 1: always
+#  - 2: auto (true for flatpak or GTK_USE_PORTAL=1, false otherwise)
+- name: widget.use-xdg-desktop-portal.open-uri
+  type: int32_t
+  value: 2
+  mirror: always
 #endif
 
 #ifdef XP_WIN
@@ -13654,6 +13867,21 @@
   value: true
   mirror: always
 
+# Whether we allow accessing the UWP system color pallete.
+- name: widget.windows.uwp-system-colors.enabled
+  type: bool
+  value: true
+  mirror: always
+
+# Whether we use the accent color for highlight as some other UWP apps do.
+#
+# false for now since it can cause some contrast-with-background issues
+# specially with grey accents, see bug 1776588.
+- name: widget.windows.uwp-system-colors.highlight-accent
+  type: bool
+  value: false
+  mirror: always
+
 - name: widget.windows.window_occlusion_tracking_display_state.enabled
   type: bool
   value: false
@@ -13668,12 +13896,32 @@
   type: bool
   value: true
   mirror: always
+
+# Whether to apply logic intended to improve taskbar behavior involving
+# non-foreground fullscreen windows. (See bug 1732517.)
+- name: widget.windows.alternate_fullscreen_heuristics
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# Whether to apply a workaround intended to prevent Windows from treating
+# non-foreground-marked fullscreen windows as fullscreen on Windows 7 and
+# earlier. (See bug 1732517.)
+#
+# Valid values:
+#  * -1: the workaround is never used.
+#  *  1: the workaround is always used.
+#  *  0: the workaround is used if we think it should be. (Default.)
+- name: widget.windows.fullscreen_marking_workaround
+  type: RelaxedAtomicInt32
+  value: 0
+  mirror: always
 #endif
 
 # Whether to disable SwipeTracker (e.g. swipe-to-nav).
 - name: widget.disable-swipe-tracker
   type: bool
-#ifdef XP_WIN
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
   value: @IS_NOT_EARLY_BETA_OR_EARLIER@
 #else
   value: false
@@ -13691,12 +13939,16 @@
   value: 0.05f
   mirror: always
 
+# The values for this pref are derived from trial and error in an effort to
+# match the existing behavior on the respective platforms.
 - name: widget.swipe.whole-page-pixel-size
   type: float
 #if defined(XP_WIN)
   value: 1100.0f
-#else
+#elif defined(XP_MACOSX)
   value: 550.0f
+#else
+  value: 40.0f
 #endif
   mirror: always
 

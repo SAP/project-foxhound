@@ -1323,8 +1323,7 @@ bool nsHttpTransaction::ShouldRestartOn0RttError(nsresult reason) {
        "mEarlyDataWasAvailable=%d error=%" PRIx32 "]\n",
        this, mEarlyDataWasAvailable, static_cast<uint32_t>(reason)));
   return StaticPrefs::network_http_early_data_disable_on_error() &&
-         mEarlyDataWasAvailable &&
-         SecurityErrorToBeHandledByTransaction(reason);
+         mEarlyDataWasAvailable && SecurityErrorThatMayNeedRestart(reason);
 }
 
 void nsHttpTransaction::Close(nsresult reason) {
@@ -1808,6 +1807,12 @@ nsresult nsHttpTransaction::Restart() {
   mDoNotRemoveAltSvc = false;
   mEarlyDataWasAvailable = false;
   mRestarted = true;
+
+  // If we weren't trying to do 'proper' ECH, disable ECH GREASE when retrying.
+  if (mConnInfo->GetEchConfig().IsEmpty() &&
+      StaticPrefs::security_tls_ech_disable_grease_on_fallback()) {
+    mCaps |= NS_HTTP_DISALLOW_ECH;
+  }
 
   // Use TRANSACTION_RESTART_OTHERS as a catch-all.
   SetRestartReason(TRANSACTION_RESTART_OTHERS);

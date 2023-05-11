@@ -15,7 +15,7 @@ namespace mozilla::widget {
 
 static constexpr gfx::sRGBColor sDefaultAccent(
     gfx::sRGBColor::UnusualFromARGB(0xff0060df));  // Luminance: 13.69346%
-static constexpr gfx::sRGBColor sDefaultAccentForeground(
+static constexpr gfx::sRGBColor sDefaultAccentText(
     gfx::sRGBColor::OpaqueWhite());
 
 struct ColorPalette;
@@ -103,7 +103,7 @@ class ThemeColors {
   static nscolor ComputeCustomAccentForeground(nscolor aColor);
 
   static nscolor AdjustUnthemedScrollbarThumbColor(nscolor aFaceColor,
-                                                   EventStates aStates);
+                                                   dom::ElementState aStates);
 };
 
 }  // namespace mozilla::widget

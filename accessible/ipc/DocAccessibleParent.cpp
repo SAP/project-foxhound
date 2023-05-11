@@ -9,6 +9,7 @@
 #include "mozilla/a11y/Platform.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "xpcAccessibleDocument.h"
 #include "xpcAccEvents.h"
@@ -52,6 +53,36 @@ struct VTableSizer<IAccessible> {
 
 namespace a11y {
 uint64_t DocAccessibleParent::sMaxDocID = 0;
+
+DocAccessibleParent::DocAccessibleParent()
+    : RemoteAccessible(this),
+      mParentDoc(kNoParentDoc),
+#if defined(XP_WIN)
+      mEmulatedWindowHandle(nullptr),
+#endif  // defined(XP_WIN)
+      mTopLevel(false),
+      mTopLevelInContentProcess(false),
+      mShutdown(false),
+      mFocus(0),
+      mCaretId(0),
+      mCaretOffset(-1),
+      mIsCaretAtEndOfLine(false) {
+  sMaxDocID++;
+  mActorID = sMaxDocID;
+  MOZ_ASSERT(!LiveDocs().Get(mActorID));
+  LiveDocs().InsertOrUpdate(mActorID, this);
+}
+
+DocAccessibleParent::~DocAccessibleParent() {
+  LiveDocs().Remove(mActorID);
+  MOZ_ASSERT(mChildDocs.Length() == 0);
+  MOZ_ASSERT(!ParentDoc());
+}
+
+void DocAccessibleParent::SetBrowsingContext(
+    dom::CanonicalBrowsingContext* aBrowsingContext) {
+  mBrowsingContext = aBrowsingContext;
+}
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvShowEvent(
     const ShowEventData& aData, const bool& aFromUser) {
@@ -588,6 +619,41 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCache(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult DocAccessibleParent::RecvSelectedAccessiblesChanged(
+    nsTArray<uint64_t>&& aSelectedIDs, nsTArray<uint64_t>&& aUnselectedIDs) {
+  ACQUIRE_ANDROID_LOCK
+  if (mShutdown) {
+    return IPC_OK();
+  }
+
+  for (auto& id : aSelectedIDs) {
+    RemoteAccessible* remote = GetAccessible(id);
+    if (!remote) {
+      MOZ_ASSERT_UNREACHABLE("No remote found!");
+      continue;
+    }
+
+    remote->UpdateStateCache(states::SELECTED, true);
+  }
+
+  for (auto& id : aUnselectedIDs) {
+    RemoteAccessible* remote = GetAccessible(id);
+    if (!remote) {
+      MOZ_ASSERT_UNREACHABLE("No remote found!");
+      continue;
+    }
+
+    remote->UpdateStateCache(states::SELECTED, false);
+  }
+
+  if (nsCOMPtr<nsIObserverService> obsService =
+          services::GetObserverService()) {
+    obsService->NotifyObservers(nullptr, NS_ACCESSIBLE_CACHE_TOPIC, nullptr);
+  }
+
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult DocAccessibleParent::RecvAccessiblesWillMove(
     nsTArray<uint64_t>&& aIDs) {
   for (uint64_t id : aIDs) {
@@ -896,8 +962,12 @@ void DocAccessibleParent::Destroy() {
   }
 
   for (auto iter = mAccessibles.Iter(); !iter.Done(); iter.Next()) {
-    MOZ_ASSERT(iter.Get()->mProxy != this);
-    ProxyDestroyed(iter.Get()->mProxy);
+    RemoteAccessible* acc = iter.Get()->mProxy;
+    MOZ_ASSERT(acc != this);
+    if (acc->IsTable()) {
+      CachedTableAccessible::Invalidate(acc);
+    }
+    ProxyDestroyed(acc);
     iter.Remove();
   }
 
@@ -1155,13 +1225,41 @@ DocAccessiblePlatformExtParent* DocAccessibleParent::GetPlatformExtension() {
 
 void DocAccessibleParent::SelectionRanges(nsTArray<TextRange>* aRanges) const {
   for (const auto& data : mTextSelections) {
-    aRanges->AppendElement(
-        TextRange(const_cast<DocAccessibleParent*>(this),
-                  const_cast<RemoteAccessible*>(GetAccessible(data.StartID())),
-                  data.StartOffset(),
-                  const_cast<RemoteAccessible*>(GetAccessible(data.EndID())),
-                  data.EndOffset()));
+    // Selection ranges should usually be in sync with the tree. However, tree
+    // and selection updates happen using separate IPDL calls, so it's possible
+    // for a client selection query to arrive between them. Thus, we validate
+    // the Accessibles and offsets here.
+    auto* startAcc =
+        const_cast<RemoteAccessible*>(GetAccessible(data.StartID()));
+    auto* endAcc = const_cast<RemoteAccessible*>(GetAccessible(data.EndID()));
+    if (!startAcc || !endAcc) {
+      continue;
+    }
+    uint32_t startCount = startAcc->CharacterCount();
+    if (data.StartOffset() > static_cast<int32_t>(startCount)) {
+      continue;
+    }
+    uint32_t endCount = endAcc->CharacterCount();
+    if (data.EndOffset() > static_cast<int32_t>(endCount)) {
+      continue;
+    }
+    aRanges->AppendElement(TextRange(const_cast<DocAccessibleParent*>(this),
+                                     startAcc, data.StartOffset(), endAcc,
+                                     data.EndOffset()));
   }
+}
+
+void DocAccessibleParent::URL(nsAString& aURL) const {
+  if (!mBrowsingContext) {
+    return;
+  }
+  nsAutoCString url;
+  nsCOMPtr<nsIURI> uri = mBrowsingContext->GetCurrentURI();
+  if (!uri) {
+    return;
+  }
+  uri->GetSpec(url);
+  CopyUTF8toUTF16(url, aURL);
 }
 
 }  // namespace a11y

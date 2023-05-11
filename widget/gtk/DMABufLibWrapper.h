@@ -56,9 +56,7 @@ typedef void (*DestroySurfaceFunc)(struct gbm_surface*);
 
 class nsGbmLib {
  public:
-  static bool IsAvailable() {
-    return sLoaded || Load();
-  }
+  static bool IsAvailable() { return sLoaded || Load(); }
   static bool IsModifierAvailable();
 
   static struct gbm_device* CreateDevice(int fd) {
@@ -210,8 +208,6 @@ class nsDMABufDevice {
   bool mUseWebGLDmabufBackend;
 
  private:
-  bool IsDMABufEnabled();
-
   GbmFormat mXRGBFormat;
   GbmFormat mARGBFormat;
 

@@ -7,11 +7,8 @@
 #ifndef mozilla_ipc_backgroundchildimpl_h__
 #define mozilla_ipc_backgroundchildimpl_h__
 
-#include "mozilla/Attributes.h"
-#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/UniquePtr.h"
-#include "nsRefPtrHashtable.h"
 
 namespace mozilla {
 namespace dom {
@@ -177,9 +174,7 @@ class BackgroundChildImpl : public PBackgroundChild {
   virtual bool DeallocPCacheStorageChild(
       dom::cache::PCacheStorageChild* aActor) override;
 
-  virtual dom::cache::PCacheChild* AllocPCacheChild() override;
-
-  virtual bool DeallocPCacheChild(dom::cache::PCacheChild* aActor) override;
+  virtual already_AddRefed<dom::cache::PCacheChild> AllocPCacheChild() override;
 
   virtual already_AddRefed<dom::cache::PCacheStreamControlChild>
   AllocPCacheStreamControlChild() override;

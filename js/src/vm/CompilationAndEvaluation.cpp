@@ -252,7 +252,7 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
 class FunctionCompiler {
  private:
   JSContext* const cx_;
-  RootedAtom nameAtom_;
+  Rooted<JSAtom*> nameAtom_;
   StringBuffer funStr_;
 
   uint32_t parameterListEnd_ = 0;
@@ -368,7 +368,7 @@ class FunctionCompiler {
     FunctionSyntaxKind syntaxKind = FunctionSyntaxKind::Statement;
     RootedFunction fun(cx_);
     if (kind == ScopeKind::NonSyntactic) {
-      RootedScope enclosingScope(
+      Rooted<Scope*> enclosingScope(
           cx_, GlobalScope::createEmpty(cx_, ScopeKind::NonSyntactic));
       if (!enclosingScope) {
         return nullptr;
@@ -450,7 +450,7 @@ JS_PUBLIC_API bool JS::UpdateDebugMetadata(
     JSContext* cx, Handle<JSScript*> script, const InstantiateOptions& options,
     HandleValue privateValue, HandleString elementAttributeName,
     HandleScript introScript, HandleScript scriptOrModule) {
-  RootedScriptSourceObject sso(cx, script->sourceObject());
+  Rooted<ScriptSourceObject*> sso(cx, script->sourceObject());
 
   if (!ScriptSourceObject::initElementProperties(cx, sso,
                                                  elementAttributeName)) {

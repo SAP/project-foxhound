@@ -79,6 +79,7 @@
 #include "nsFontFaceUtils.h"
 #include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/StaticPrefs_bidi.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_zoom.h"
@@ -450,18 +451,10 @@ void nsPresContext::GetUserPreferences() {
 
   uint32_t bidiOptions = GetBidi();
 
-  int32_t prefInt = Preferences::GetInt(IBMBIDI_TEXTDIRECTION_STR,
-                                        GET_BIDI_OPTION_DIRECTION(bidiOptions));
-  SET_BIDI_OPTION_DIRECTION(bidiOptions, prefInt);
-  mPrefBidiDirection = prefInt;
-
-  prefInt = Preferences::GetInt(IBMBIDI_TEXTTYPE_STR,
-                                GET_BIDI_OPTION_TEXTTYPE(bidiOptions));
-  SET_BIDI_OPTION_TEXTTYPE(bidiOptions, prefInt);
-
-  prefInt = Preferences::GetInt(IBMBIDI_NUMERAL_STR,
-                                GET_BIDI_OPTION_NUMERAL(bidiOptions));
-  SET_BIDI_OPTION_NUMERAL(bidiOptions, prefInt);
+  mPrefBidiDirection = StaticPrefs::bidi_direction();
+  SET_BIDI_OPTION_DIRECTION(bidiOptions, mPrefBidiDirection);
+  SET_BIDI_OPTION_TEXTTYPE(bidiOptions, StaticPrefs::bidi_texttype());
+  SET_BIDI_OPTION_NUMERAL(bidiOptions, StaticPrefs::bidi_numeral());
 
   // We don't need to force reflow: either we are initializing a new
   // prescontext or we are being called from PreferenceChanged()
@@ -929,8 +922,9 @@ void nsPresContext::RecomputeBrowsingContextDependentData() {
     // matter... Medium also doesn't affect those.
     return;
   }
-  SetFullZoom(browsingContext->FullZoom());
-  SetTextZoom(browsingContext->TextZoom());
+  auto systemZoom = LookAndFeel::SystemZoomSettings();
+  SetFullZoom(browsingContext->FullZoom() * systemZoom.mFullZoom);
+  SetTextZoom(browsingContext->TextZoom() * systemZoom.mTextZoom);
   SetOverrideDPPX(browsingContext->OverrideDPPX());
 
   auto* top = browsingContext->Top();
@@ -1320,6 +1314,10 @@ static Element* GetPropagatedScrollStylesForViewport(
     return docElement;
   }
 
+  if (rootStyle && rootStyle->StyleDisplay()->IsContainAny()) {
+    return nullptr;
+  }
+
   // Don't look in the BODY for non-HTML documents or HTML documents
   // with non-HTML roots.
   // XXX this should be earlier; we shouldn't even look at the document root
@@ -1338,6 +1336,10 @@ static Element* GetPropagatedScrollStylesForViewport(
              "GetBodyElement returned something bogus");
 
   const auto* bodyStyle = Servo_Element_GetMaybeOutOfDateStyle(bodyElement);
+  if (bodyStyle && bodyStyle->StyleDisplay()->IsContainAny()) {
+    return nullptr;
+  }
+
   if (CheckOverflow(bodyStyle, aStyles)) {
     // tell caller we stole the overflow style from the body element
     return bodyElement;
@@ -1360,14 +1362,14 @@ Element* nsPresContext::UpdateViewportScrollStylesOverride() {
   }
 
   dom::Document* document = Document();
-  if (Element* fullscreenElement = document->GetFullscreenElement()) {
+  if (Element* fsElement = document->GetUnretargetedFullscreenElement()) {
     // If the document is in fullscreen, but the fullscreen element is
     // not the root element, we should explicitly suppress the scrollbar
     // here. Note that, we still need to return the original element
     // the styles are from, so that the state of those elements is not
     // affected across fullscreen change.
-    if (fullscreenElement != document->GetRootElement() &&
-        fullscreenElement != mViewportScrollOverrideElement) {
+    if (fsElement != document->GetRootElement() &&
+        fsElement != mViewportScrollOverrideElement) {
       mViewportScrollStyles =
           ScrollStyles(StyleOverflow::Hidden, StyleOverflow::Hidden);
     }
@@ -1581,6 +1583,9 @@ void nsPresContext::ThemeChangedInternal() {
 
   LookAndFeel::HandleGlobalThemeChange();
 
+  // Full zoom might have changed as a result of the text scale factor.
+  RecomputeBrowsingContextDependentData();
+
   // Changes to system metrics and other look and feel values can change media
   // queries on them.
   //
@@ -1623,7 +1628,7 @@ void nsPresContext::UIResolutionChanged() {
 void nsPresContext::UIResolutionChangedSync() {
   if (!mPendingUIResolutionChanged) {
     mPendingUIResolutionChanged = true;
-    UIResolutionChangedInternalScale(0.0);
+    UIResolutionChangedInternal();
   }
 }
 
@@ -1641,13 +1646,9 @@ static void NotifyChildrenUIResolutionChanged(nsPIDOMWindowOuter* aWindow) {
 }
 
 void nsPresContext::UIResolutionChangedInternal() {
-  UIResolutionChangedInternalScale(0.0);
-}
-
-void nsPresContext::UIResolutionChangedInternalScale(double aScale) {
   mPendingUIResolutionChanged = false;
 
-  mDeviceContext->CheckDPIChange(&aScale);
+  mDeviceContext->CheckDPIChange();
   if (mCurAppUnitsPerDevPixel != mDeviceContext->AppUnitsPerDevPixel()) {
     AppUnitsPerDevPixelChanged();
   }
@@ -1661,13 +1662,9 @@ void nsPresContext::UIResolutionChangedInternalScale(double aScale) {
     NotifyChildrenUIResolutionChanged(window);
   }
 
-  auto recurse = [aScale](dom::Document& aSubDoc) {
+  auto recurse = [](dom::Document& aSubDoc) {
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
-      // For subdocuments, we want to apply the parent's scale, because there
-      // are cases where the subdoc's device context is connected to a widget
-      // that has an out-of-date resolution (it's on a different screen, but
-      // currently hidden, and will not be updated until shown): bug 1249279.
-      pc->UIResolutionChangedInternalScale(aScale);
+      pc->UIResolutionChangedInternal();
     }
     return CallState::Continue;
   };

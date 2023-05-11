@@ -4,7 +4,12 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["FormAutofillUtils", "AddressDataLoader", "LabelUtils"];
+const EXPORTED_SYMBOLS = [
+  "FormAutofillUtils",
+  "AddressDataLoader",
+  "LabelUtils",
+];
+let FormAutofillUtils;
 
 const ADDRESS_METADATA_PATH = "resource://autofill/addressmetadata/";
 const ADDRESS_REFERENCES = "addressReferences.js";
@@ -65,7 +70,8 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   CreditCard: "resource://gre/modules/CreditCard.jsm",
   OSKeyStore: "resource://gre/modules/OSKeyStore.jsm",
 });
@@ -209,7 +215,7 @@ let AddressDataLoader = {
   },
 };
 
-this.FormAutofillUtils = {
+FormAutofillUtils = {
   get AUTOFILL_FIELDS_THRESHOLD() {
     return 3;
   },
@@ -273,11 +279,11 @@ this.FormAutofillUtils = {
   },
 
   isCCNumber(ccNumber) {
-    return CreditCard.isValidNumber(ccNumber);
+    return lazy.CreditCard.isValidNumber(ccNumber);
   },
 
   ensureLoggedIn(promptMessage) {
-    return OSKeyStore.ensureLoggedIn(
+    return lazy.OSKeyStore.ensureLoggedIn(
       this._reauthEnabledByUser && promptMessage ? promptMessage : false
     );
   },
@@ -288,7 +294,7 @@ this.FormAutofillUtils = {
    * @returns {Array}
    */
   getCreditCardNetworks() {
-    return CreditCard.getSupportedNetworks();
+    return lazy.CreditCard.getSupportedNetworks();
   },
 
   getCategoryFromFieldName(fieldName) {
@@ -999,7 +1005,7 @@ this.FormAutofillUtils = {
         for (let option of options) {
           if (
             [option.text, option.label, option.value].some(
-              s => CreditCard.getNetworkFromName(s) == network
+              s => lazy.CreditCard.getNetworkFromName(s) == network
             )
           ) {
             return option;
@@ -1284,9 +1290,6 @@ const LabelUtils = {
     return this._mappedLabels.get(id) || [];
   },
 };
-
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
 
 XPCOMUtils.defineLazyGetter(FormAutofillUtils, "stringBundle", function() {
   return Services.strings.createBundle(

@@ -13,6 +13,7 @@
 #include "mozilla/Casting.h"
 #include "nsDependentString.h"
 #include "nsIInputStream.h"
+#include "nsNSSComponent.h"
 #include "nsString.h"
 #include "pk11pub.h"
 #include "sechash.h"
@@ -174,4 +175,39 @@ nsCryptoHash::Finish(bool ascii, nsACString& _retval) {
 
   _retval.Assign(BitwiseCast<char*>(buffer), hashLen);
   return NS_OK;
+}
+
+nsresult NS_NewCryptoHash(uint32_t aHashType, nsICryptoHash** aOutHasher) {
+  MOZ_ASSERT(aOutHasher);
+
+  if (NS_WARN_IF(!EnsureNSSInitializedChromeOrContent())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsICryptoHash> hasher = new nsCryptoHash();
+  nsresult rv = hasher->Init(aHashType);
+
+  if (NS_SUCCEEDED(rv)) {
+    hasher.forget(aOutHasher);
+  }
+
+  return rv;
+}
+
+nsresult NS_NewCryptoHash(const nsACString& aHashType,
+                          nsICryptoHash** aOutHasher) {
+  MOZ_ASSERT(aOutHasher);
+
+  if (NS_WARN_IF(!EnsureNSSInitializedChromeOrContent())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsICryptoHash> hasher = new nsCryptoHash();
+  nsresult rv = hasher->InitWithString(aHashType);
+
+  if (NS_SUCCEEDED(rv)) {
+    hasher.forget(aOutHasher);
+  }
+
+  return rv;
 }

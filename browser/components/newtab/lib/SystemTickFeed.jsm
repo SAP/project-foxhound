@@ -7,13 +7,15 @@ const { actionTypes: at } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "setInterval",
   "resource://gre/modules/Timer.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "clearInterval",
   "resource://gre/modules/Timer.jsm"
 );
@@ -21,9 +23,9 @@ ChromeUtils.defineModuleGetter(
 // Frequency at which SYSTEM_TICK events are fired
 const SYSTEM_TICK_INTERVAL = 5 * 60 * 1000;
 
-this.SystemTickFeed = class SystemTickFeed {
+class SystemTickFeed {
   init() {
-    this.intervalId = setInterval(
+    this.intervalId = lazy.setInterval(
       () => this.store.dispatch({ type: at.SYSTEM_TICK }),
       SYSTEM_TICK_INTERVAL
     );
@@ -35,11 +37,10 @@ this.SystemTickFeed = class SystemTickFeed {
         this.init();
         break;
       case at.UNINIT:
-        clearInterval(this.intervalId);
+        lazy.clearInterval(this.intervalId);
         break;
     }
   }
-};
+}
 
-this.SYSTEM_TICK_INTERVAL = SYSTEM_TICK_INTERVAL;
 const EXPORTED_SYMBOLS = ["SystemTickFeed", "SYSTEM_TICK_INTERVAL"];

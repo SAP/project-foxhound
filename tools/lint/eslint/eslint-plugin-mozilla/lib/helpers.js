@@ -73,15 +73,17 @@ module.exports = {
    * @param  {Object} astOptions
    *         Extra configuration to pass to the espree parser, these will override
    *         the configuration from getPermissiveConfig().
+   * @param  {Object} configOptions
+   *         Extra options for getPermissiveConfig().
    *
    * @return {Object}
    *         Returns an object containing `ast`, `scopeManager` and
    *         `visitorKeys`
    */
-  parseCode(sourceText, astOptions = {}) {
+  parseCode(sourceText, astOptions = {}, configOptions = {}) {
     // Use a permissive config file to allow parsing of anything that Espree
     // can parse.
-    let config = { ...this.getPermissiveConfig(), ...astOptions };
+    let config = { ...this.getPermissiveConfig(configOptions), ...astOptions };
 
     let parseResult =
       "parseForESLint" in parser
@@ -440,10 +442,14 @@ module.exports = {
    * To allow espree to parse almost any JavaScript we need as many features as
    * possible turned on. This method returns that config.
    *
+   * @param {Object} options
+   *        {
+   *          useBabel: {boolean} whether to set babelOptions.
+   *        }
    * @return {Object}
    *         Espree compatible permissive config.
    */
-  getPermissiveConfig() {
+  getPermissiveConfig({ useBabel = true } = {}) {
     const config = {
       range: true,
       requireConfigFile: false,
@@ -464,7 +470,7 @@ module.exports = {
       sourceType: "script",
     };
 
-    if (this.isMozillaCentralBased()) {
+    if (useBabel && this.isMozillaCentralBased()) {
       config.babelOptions.configFile = path.join(
         gRootDir,
         ".babel-eslint.rc.js"
@@ -483,26 +489,7 @@ module.exports = {
   },
 
   /**
-   * Check whether a node is a function.
-   *
-   * @param {Object} node
-   *        The AST node to check
-   *
-   * @return {Boolean}
-   *         True or false
-   */
-  getIsFunctionNode(node) {
-    switch (node.type) {
-      case "ArrowFunctionExpression":
-      case "FunctionDeclaration":
-      case "FunctionExpression":
-        return true;
-    }
-    return false;
-  },
-
-  /**
-   * Check whether the context is the global scope.
+   * Check whether it's inside top-level script.
    *
    * @param {Array} ancestors
    *        The parents of the current node.
@@ -510,10 +497,92 @@ module.exports = {
    * @return {Boolean}
    *         True or false
    */
-  getIsGlobalScope(ancestors) {
+  getIsTopLevelScript(ancestors) {
     for (let parent of ancestors) {
-      if (this.getIsFunctionNode(parent)) {
-        return false;
+      switch (parent.type) {
+        case "ArrowFunctionExpression":
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "PropertyDefinition":
+        case "StaticBlock":
+          return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * Check whether `this` expression points the global this.
+   *
+   * @param {Array} ancestors
+   *        The parents of the current node.
+   *
+   * @return {Boolean}
+   *         True or false
+   */
+  getIsGlobalThis(ancestors) {
+    for (let parent of ancestors) {
+      switch (parent.type) {
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "PropertyDefinition":
+        case "StaticBlock":
+          return false;
+      }
+    }
+    return true;
+  },
+
+  /**
+   * Check whether the node is evaluated at top-level script unconditionally.
+   *
+   * @param {Array} ancestors
+   *        The parents of the current node.
+   *
+   * @return {Boolean}
+   *         True or false
+   */
+  getIsTopLevelAndUnconditionallyExecuted(ancestors) {
+    for (let parent of ancestors) {
+      switch (parent.type) {
+        // Control flow
+        case "IfStatement":
+        case "SwitchStatement":
+        case "TryStatement":
+        case "WhileStatement":
+        case "DoWhileStatement":
+        case "ForStatement":
+        case "ForInStatement":
+        case "ForOfStatement":
+          return false;
+
+        // Function
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "ArrowFunctionExpression":
+        case "ClassBody":
+          return false;
+
+        // Branch
+        case "LogicalExpression":
+        case "ConditionalExpression":
+        case "ChainExpression":
+          return false;
+
+        case "AssignmentExpression":
+          switch (parent.operator) {
+            // Branch
+            case "||=":
+            case "&&=":
+            case "??=":
+              return false;
+          }
+          break;
+
+        // Implicit branch (default value)
+        case "ObjectPattern":
+        case "ArrayPattern":
+          return false;
       }
     }
     return true;

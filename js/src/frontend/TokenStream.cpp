@@ -2517,9 +2517,8 @@ template <typename Unit, class AnyCharsAccess>
 
     ungetCodeUnit(unit);
 
-    if (!GetDecimalNonInteger(anyCharsAccess().cx, numStart,
-                              this->sourceUnits.addressOfNextCodeUnit(),
-                              &dval)) {
+    if (!GetDecimal(anyCharsAccess().cx, numStart,
+                    this->sourceUnits.addressOfNextCodeUnit(), &dval)) {
       return false;
     }
   }

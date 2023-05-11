@@ -26,26 +26,30 @@ const EXPORTED_SYMBOLS = ["creditCardRulesets"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "fathom",
+const { fathom } = ChromeUtils.import(
   "resource://gre/modules/third_party/fathom/fathom.jsm"
 );
 const { element: clickedElement, out, rule, ruleset, score, type } = fathom;
+const { CreditCard } = ChromeUtils.import(
+  "resource://gre/modules/CreditCard.jsm"
+);
+const { NETWORK_NAMES } = ChromeUtils.import(
+  "resource://gre/modules/CreditCard.jsm"
+);
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FormLikeFactory",
   "resource://gre/modules/FormLikeFactory.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FormAutofillUtils",
   "resource://autofill/FormAutofillUtils.jsm"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
-  CreditCard: "resource://gre/modules/CreditCard.jsm",
-  NETWORK_NAMES: "resource://gre/modules/CreditCard.jsm",
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   LabelUtils: "resource://autofill/FormAutofillUtils.jsm",
 });
 
@@ -354,9 +358,9 @@ function autocompleteStringMatches(element, ccString) {
 }
 
 function getFillableFormElements(element) {
-  const formLike = FormLikeFactory.createFromField(element);
+  const formLike = lazy.FormLikeFactory.createFromField(element);
   return Array.from(formLike.elements).filter(el =>
-    FormAutofillUtils.isCreditCardOrAddressFieldType(el)
+    lazy.FormAutofillUtils.isCreditCardOrAddressFieldType(el)
   );
 }
 
@@ -408,9 +412,9 @@ function idOrNameMatchRegExp(element, regExp) {
 function getElementLabels(element) {
   return {
     *[Symbol.iterator]() {
-      const labels = LabelUtils.findLabelElements(element);
+      const labels = lazy.LabelUtils.findLabelElements(element);
       for (let label of labels) {
-        yield* LabelUtils.extractLabelStrings(label);
+        yield* lazy.LabelUtils.extractLabelStrings(label);
       }
     },
   };

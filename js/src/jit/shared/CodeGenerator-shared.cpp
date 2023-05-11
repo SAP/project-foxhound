@@ -55,12 +55,11 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
       current(nullptr),
       snapshots_(),
       recovers_(),
-      deoptTable_(),
 #ifdef DEBUG
       pushedArgs_(0),
 #endif
       lastOsiPointOffset_(0),
-      safepoints_(graph->totalSlotCount(),
+      safepoints_(graph->localSlotsSize(),
                   (gen->outerInfo().nargs() + 1) * sizeof(Value)),
       returnLabel_(),
       nativeToBytecodeMap_(nullptr),
@@ -72,18 +71,18 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
 #ifdef CHECK_OSIPOINT_REGISTERS
       checkOsiPointRegisters(JitOptions.checkOsiPointRegisters),
 #endif
-      frameDepth_(graph->paddedLocalSlotsSize() + graph->argumentsSize()),
-      frameClass_(FrameSizeClass::None()) {
+      frameDepth_(0) {
   if (gen->isProfilerInstrumentationEnabled()) {
     masm.enableProfilingInstrumentation();
   }
 
   if (gen->compilingWasm()) {
-    // Since wasm uses the system ABI which does not necessarily use a
-    // regular array where all slots are sizeof(Value), it maintains the max
-    // argument stack depth separately.
-    MOZ_ASSERT(graph->argumentSlotCount() == 0);
-    frameDepth_ += gen->wasmMaxStackArgBytes();
+#ifdef JS_CODEGEN_ARM64
+    // Ensure SP is aligned to 16 bytes.
+    frameDepth_ = AlignBytes(graph->localSlotsSize(), WasmStackAlignment);
+#else
+    frameDepth_ = AlignBytes(graph->localSlotsSize(), sizeof(uintptr_t));
+#endif
 
 #ifdef ENABLE_WASM_SIMD
 #  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) || \
@@ -96,6 +95,12 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
 #endif
 
     if (gen->needsStaticStackAlignment()) {
+      // Since wasm uses the system ABI which does not necessarily use a
+      // regular array where all slots are sizeof(Value), it maintains the max
+      // argument stack depth separately.
+      MOZ_ASSERT(graph->argumentSlotCount() == 0);
+      frameDepth_ += gen->wasmMaxStackArgBytes();
+
       // An MWasmCall does not align the stack pointer at calls sites but
       // instead relies on the a priori stack adjustment. This must be the
       // last adjustment of frameDepth_.
@@ -103,11 +108,23 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
                                           WasmStackAlignment);
     }
 
-    // FrameSizeClass is only used for bailing, which cannot happen in
-    // wasm code.
-    MOZ_ASSERT(frameClass_ == FrameSizeClass::None());
+#ifdef JS_CODEGEN_ARM64
+    MOZ_ASSERT((frameDepth_ % WasmStackAlignment) == 0,
+               "Trap exit stub needs 16-byte aligned stack pointer");
+#endif
   } else {
-    frameClass_ = FrameSizeClass::FromDepth(frameDepth_);
+    // Allocate space for local slots (register allocator spills). Round to
+    // JitStackAlignment, and implicitly to sizeof(Value) as JitStackAlignment
+    // is a multiple of sizeof(Value). This was originally implemented for
+    // SIMD.js, but now lets us use faster ABI calls via setupAlignedABICall.
+    frameDepth_ = AlignBytes(graph->localSlotsSize(), JitStackAlignment);
+
+    // Allocate space for argument Values passed to callee functions.
+    offsetOfPassedArgSlots_ = frameDepth_;
+    MOZ_ASSERT((offsetOfPassedArgSlots_ % sizeof(JS::Value)) == 0);
+    frameDepth_ += graph->argumentSlotCount() * sizeof(JS::Value);
+
+    MOZ_ASSERT((frameDepth_ % JitStackAlignment) == 0);
   }
 }
 
@@ -119,16 +136,21 @@ bool CodeGeneratorShared::generatePrologue() {
   masm.pushReturnAddress();
 #endif
 
-  // If profiling, save the current frame pointer to a per-thread global field.
-  if (isProfilerInstrumentationEnabled()) {
-    masm.profilerEnterFrame(masm.getStackPointer(), CallTempReg0);
-  }
+  // Frame prologue.
+  masm.push(FramePointer);
+  masm.moveStackPtrTo(FramePointer);
 
   // Ensure that the Ion frame is properly aligned.
   masm.assertStackAlignment(JitStackAlignment, 0);
 
+  // If profiling, save the current frame pointer to a per-thread global field.
+  if (isProfilerInstrumentationEnabled()) {
+    masm.profilerEnterFrame(FramePointer, CallTempReg0);
+  }
+
   // Note that this automatically sets MacroAssembler::framePushed().
   masm.reserveStack(frameSize());
+  MOZ_ASSERT(masm.framePushed() == frameSize());
   masm.checkStackAlignment();
 
   if (JS::TraceLoggerSupported()) {
@@ -146,14 +168,16 @@ bool CodeGeneratorShared::generateEpilogue() {
     emitTracelogIonStop();
   }
 
-  masm.freeStack(frameSize());
-  MOZ_ASSERT(masm.framePushed() == 0);
-
-  // If profiling, reset the per-thread global lastJitFrame to point to
-  // the previous frame.
+  // If profiling, jump to a trampoline to reset the JitActivation's
+  // lastProfilingFrame to point to the previous frame and return to the caller.
   if (isProfilerInstrumentationEnabled()) {
     masm.profilerExitFrame();
   }
+
+  MOZ_ASSERT(masm.framePushed() == frameSize());
+  masm.moveToStackPtr(FramePointer);
+  masm.pop(FramePointer);
+  masm.setFramePushed(0);
 
   masm.ret();
 
@@ -581,32 +605,6 @@ void CodeGeneratorShared::encode(LSnapshot* snapshot) {
   snapshots_.endSnapshot();
   snapshot->setSnapshotOffset(offset);
   masm.propagateOOM(!snapshots_.oom());
-}
-
-bool CodeGeneratorShared::assignBailoutId(LSnapshot* snapshot) {
-  MOZ_ASSERT(snapshot->snapshotOffset() != INVALID_SNAPSHOT_OFFSET);
-
-  // Can we not use bailout tables at all?
-  if (!deoptTable_) {
-    return false;
-  }
-
-  MOZ_ASSERT(frameClass_ != FrameSizeClass::None());
-
-  if (snapshot->bailoutId() != INVALID_BAILOUT_ID) {
-    return true;
-  }
-
-  // Is the bailout table full?
-  if (bailouts_.length() >= BAILOUT_TABLE_SIZE) {
-    return false;
-  }
-
-  unsigned bailoutId = bailouts_.length();
-  snapshot->setBailoutId(bailoutId);
-  JitSpew(JitSpew_IonSnapshots, "Assigned snapshot bailout id %u", bailoutId);
-  masm.propagateOOM(bailouts_.append(snapshot->snapshotOffset()));
-  return true;
 }
 
 bool CodeGeneratorShared::encodeSafepoints() {

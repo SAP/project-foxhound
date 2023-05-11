@@ -48,7 +48,6 @@
 #include "gc/HashUtil.h"                  // for DependentAddPtr
 #include "gc/Marking.h"                   // for IsAboutToBeFinalized
 #include "gc/PublicIterators.h"           // for RealmsIter, CompartmentsIter
-#include "gc/Rooting.h"                   // for RootedNativeObject
 #include "gc/Statistics.h"                // for Statistics::SliceData
 #include "gc/Tracer.h"                    // for TraceEdge
 #include "gc/Zone.h"                      // for Zone
@@ -270,7 +269,7 @@ static void PropagateForcedReturn(JSContext* cx, AbstractFramePtr frame,
                                                AbstractFramePtr frame,
                                                ResumeMode resumeMode,
                                                HandleValue rv,
-                                               HandleSavedFrame exnStack) {
+                                               Handle<SavedFrame*> exnStack) {
   RootedValue rval(cx, rv);
 
   // The value passed in here is unwrapped and has no guarantees about what
@@ -314,7 +313,7 @@ static void PropagateForcedReturn(JSContext* cx, AbstractFramePtr frame,
 }
 static bool ApplyFrameResumeMode(JSContext* cx, AbstractFramePtr frame,
                                  ResumeMode resumeMode, HandleValue rval) {
-  RootedSavedFrame nullStack(cx);
+  Rooted<SavedFrame*> nullStack(cx);
   return ApplyFrameResumeMode(cx, frame, resumeMode, rval, nullStack);
 }
 
@@ -327,7 +326,7 @@ bool js::ValueToStableChars(JSContext* cx, const char* fnname,
                               InformalValueTypeName(value));
     return false;
   }
-  RootedLinearString linear(cx, value.toString()->ensureLinear(cx));
+  Rooted<JSLinearString*> linear(cx, value.toString()->ensureLinear(cx));
   if (!linear) {
     return false;
   }
@@ -614,7 +613,7 @@ DebuggerMemory& Debugger::memory() const {
 
 bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
                         MutableHandleValue vp) {
-  RootedDebuggerFrame result(cx);
+  Rooted<DebuggerFrame*> result(cx);
   if (!Debugger::getFrame(cx, iter, &result)) {
     return false;
   }
@@ -622,14 +621,14 @@ bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
   return true;
 }
 
-bool Debugger::getFrame(JSContext* cx, MutableHandleDebuggerFrame result) {
+bool Debugger::getFrame(JSContext* cx, MutableHandle<DebuggerFrame*> result) {
   RootedObject proto(
       cx, &object->getReservedSlot(JSSLOT_DEBUG_FRAME_PROTO).toObject());
-  RootedNativeObject debugger(cx, object);
+  Rooted<NativeObject*> debugger(cx, object);
 
   // Since there is no frame/generator data to associate with this frame, this
   // will create a new, "terminated" Debugger.Frame object.
-  RootedDebuggerFrame frame(
+  Rooted<DebuggerFrame*> frame(
       cx, DebuggerFrame::create(cx, proto, debugger, nullptr, nullptr));
   if (!frame) {
     return false;
@@ -640,7 +639,7 @@ bool Debugger::getFrame(JSContext* cx, MutableHandleDebuggerFrame result) {
 }
 
 bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
-                        MutableHandleDebuggerFrame result) {
+                        MutableHandle<DebuggerFrame*> result) {
   AbstractFramePtr referent = iter.abstractFramePtr();
   MOZ_ASSERT_IF(referent.hasScript(), !referent.script()->selfHosted());
 
@@ -679,9 +678,9 @@ bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
     // Create and populate the Debugger.Frame object.
     RootedObject proto(
         cx, &object->getReservedSlot(JSSLOT_DEBUG_FRAME_PROTO).toObject());
-    RootedNativeObject debugger(cx, object);
+    Rooted<NativeObject*> debugger(cx, object);
 
-    RootedDebuggerFrame frame(
+    Rooted<DebuggerFrame*> frame(
         cx, DebuggerFrame::create(cx, proto, debugger, &iter, genObj));
     if (!frame) {
       return false;
@@ -715,7 +714,7 @@ bool Debugger::getFrame(JSContext* cx, const FrameIter& iter,
 }
 
 bool Debugger::getFrame(JSContext* cx, Handle<AbstractGeneratorObject*> genObj,
-                        MutableHandleDebuggerFrame result) {
+                        MutableHandle<DebuggerFrame*> result) {
   // To create a Debugger.Frame for a running generator, we'd also need a
   // FrameIter for its stack frame. We could make this work by searching the
   // stack for the generator's frame, but for the moment, we only need this
@@ -734,7 +733,7 @@ bool Debugger::getFrame(JSContext* cx, Handle<AbstractGeneratorObject*> genObj,
   // Create a new Debugger.Frame.
   RootedObject proto(
       cx, &object->getReservedSlot(JSSLOT_DEBUG_FRAME_PROTO).toObject());
-  RootedNativeObject debugger(cx, object);
+  Rooted<NativeObject*> debugger(cx, object);
 
   result.set(DebuggerFrame::create(cx, proto, debugger, nullptr, genObj));
   if (!result) {
@@ -1166,7 +1165,7 @@ bool DebugAPI::slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame,
 
       // For each Debugger.Frame, fire its onPop handler, if any.
       for (size_t i = 0; i < frames.length(); i++) {
-        HandleDebuggerFrame frameobj = frames[i];
+        Handle<DebuggerFrame*> frameobj = frames[i];
         Debugger* dbg = frameobj->owner();
         EnterDebuggeeNoExecute nx(cx, *dbg, adjqi);
 
@@ -1220,7 +1219,7 @@ bool DebugAPI::slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame,
   // Now that we've run all the handlers, extract the final resumption mode. */
   ResumeMode completionResumeMode;
   RootedValue completionValue(cx);
-  RootedSavedFrame completionStack(cx);
+  Rooted<SavedFrame*> completionStack(cx);
   completion.get().toResumeMode(completionResumeMode, &completionValue,
                                 &completionStack);
 
@@ -1270,7 +1269,7 @@ bool DebugAPI::slowPathOnNewGenerator(JSContext* cx, AbstractFramePtr frame,
           return;
         }
 
-        RootedDebuggerFrame frameObj(cx, frameObjPtr);
+        Rooted<DebuggerFrame*> frameObj(cx, frameObjPtr);
 
         AutoRealm ar(cx, frameObj);
 
@@ -1339,7 +1338,7 @@ bool DebugAPI::slowPathOnExceptionUnwind(JSContext* cx,
   // for each 'onExceptionUnwind' hook that has been registered, and we also
   // only do it if the debuggerList contains items in order to avoid extra work.
   RootedValue exc(cx);
-  RootedSavedFrame stack(cx, cx->getPendingExceptionStack());
+  Rooted<SavedFrame*> stack(cx, cx->getPendingExceptionStack());
   if (!cx->getPendingException(&exc)) {
     return false;
   }
@@ -1368,7 +1367,7 @@ bool Debugger::wrapEnvironment(JSContext* cx, Handle<Env*> env,
     return true;
   }
 
-  RootedDebuggerEnvironment envobj(cx);
+  Rooted<DebuggerEnvironment*> envobj(cx);
 
   if (!wrapEnvironment(cx, env, &envobj)) {
     return false;
@@ -1379,7 +1378,7 @@ bool Debugger::wrapEnvironment(JSContext* cx, Handle<Env*> env,
 }
 
 bool Debugger::wrapEnvironment(JSContext* cx, Handle<Env*> env,
-                               MutableHandleDebuggerEnvironment result) {
+                               MutableHandle<DebuggerEnvironment*> result) {
   MOZ_ASSERT(env);
 
   // DebuggerEnv should only wrap a debug scope chain obtained (transitively)
@@ -1393,9 +1392,9 @@ bool Debugger::wrapEnvironment(JSContext* cx, Handle<Env*> env,
     // Create a new Debugger.Environment for env.
     RootedObject proto(
         cx, &object->getReservedSlot(JSSLOT_DEBUG_ENV_PROTO).toObject());
-    RootedNativeObject debugger(cx, object);
+    Rooted<NativeObject*> debugger(cx, object);
 
-    RootedDebuggerEnvironment envobj(
+    Rooted<DebuggerEnvironment*> envobj(
         cx, DebuggerEnvironment::create(cx, proto, env, debugger));
     if (!envobj) {
       return false;
@@ -1419,7 +1418,7 @@ bool Debugger::wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp) {
 
   if (vp.isObject()) {
     RootedObject obj(cx, &vp.toObject());
-    RootedDebuggerObject dobj(cx);
+    Rooted<DebuggerObject*> dobj(cx);
 
     if (!wrapDebuggeeObject(cx, obj, &dobj)) {
       return false;
@@ -1427,7 +1426,7 @@ bool Debugger::wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp) {
 
     vp.setObject(*dobj);
   } else if (vp.isMagic()) {
-    RootedPlainObject optObj(cx, NewPlainObject(cx));
+    Rooted<PlainObject*> optObj(cx, NewPlainObject(cx));
     if (!optObj) {
       return false;
     }
@@ -1466,8 +1465,8 @@ bool Debugger::wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp) {
   return true;
 }
 
-bool Debugger::wrapNullableDebuggeeObject(JSContext* cx, HandleObject obj,
-                                          MutableHandleDebuggerObject result) {
+bool Debugger::wrapNullableDebuggeeObject(
+    JSContext* cx, HandleObject obj, MutableHandle<DebuggerObject*> result) {
   if (!obj) {
     result.set(nullptr);
     return true;
@@ -1477,7 +1476,7 @@ bool Debugger::wrapNullableDebuggeeObject(JSContext* cx, HandleObject obj,
 }
 
 bool Debugger::wrapDebuggeeObject(JSContext* cx, HandleObject obj,
-                                  MutableHandleDebuggerObject result) {
+                                  MutableHandle<DebuggerObject*> result) {
   MOZ_ASSERT(obj);
 
   DependentAddPtr<ObjectWeakMap> p(cx, objects, obj);
@@ -1485,11 +1484,11 @@ bool Debugger::wrapDebuggeeObject(JSContext* cx, HandleObject obj,
     result.set(&p->value()->as<DebuggerObject>());
   } else {
     // Create a new Debugger.Object for obj.
-    RootedNativeObject debugger(cx, object);
+    Rooted<NativeObject*> debugger(cx, object);
     RootedObject proto(
         cx, &object->getReservedSlot(JSSLOT_DEBUG_OBJECT_PROTO).toObject());
-    RootedDebuggerObject dobj(cx,
-                              DebuggerObject::create(cx, proto, obj, debugger));
+    Rooted<DebuggerObject*> dobj(
+        cx, DebuggerObject::create(cx, proto, obj, debugger));
     if (!dobj) {
       return false;
     }
@@ -1617,9 +1616,9 @@ bool Debugger::unwrapPropertyDescriptor(
 /*** Debuggee resumption values and debugger error handling *****************/
 
 static bool GetResumptionProperty(JSContext* cx, HandleObject obj,
-                                  HandlePropertyName name, ResumeMode namedMode,
-                                  ResumeMode& resumeMode, MutableHandleValue vp,
-                                  int* hits) {
+                                  Handle<PropertyName*> name,
+                                  ResumeMode namedMode, ResumeMode& resumeMode,
+                                  MutableHandleValue vp, int* hits) {
   bool found;
   if (!HasProperty(cx, obj, name, &found)) {
     return false;
@@ -1966,7 +1965,7 @@ Completion Completion::fromJSResult(JSContext* cx, bool ok, const Value& rv) {
   }
 
   RootedValue exception(cx);
-  RootedSavedFrame stack(cx, cx->getPendingExceptionStack());
+  Rooted<SavedFrame*> stack(cx, cx->getPendingExceptionStack());
   bool getSucceeded = cx->getPendingException(&exception);
   cx->clearPendingException();
   if (!getSucceeded) {
@@ -2036,7 +2035,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
   }
 
   bool operator()(const Completion::Return& ret) {
-    RootedNativeObject obj(cx, newObject());
+    Rooted<NativeObject*> obj(cx, newObject());
     RootedValue retval(cx, ret.value);
     if (!obj || !wrap(&retval) || !add(obj, cx->names().return_, retval)) {
       return false;
@@ -2046,7 +2045,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
   }
 
   bool operator()(const Completion::Throw& thr) {
-    RootedNativeObject obj(cx, newObject());
+    Rooted<NativeObject*> obj(cx, newObject());
     RootedValue exc(cx, thr.exception);
     if (!obj || !wrap(&exc) || !add(obj, cx->names().throw_, exc)) {
       return false;
@@ -2067,7 +2066,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
   }
 
   bool operator()(const Completion::InitialYield& initialYield) {
-    RootedNativeObject obj(cx, newObject());
+    Rooted<NativeObject*> obj(cx, newObject());
     RootedValue gen(cx, ObjectValue(*initialYield.generatorObject));
     if (!obj || !wrap(&gen) || !add(obj, cx->names().return_, gen) ||
         !add(obj, cx->names().yield, TrueHandleValue) ||
@@ -2079,7 +2078,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
   }
 
   bool operator()(const Completion::Yield& yield) {
-    RootedNativeObject obj(cx, newObject());
+    Rooted<NativeObject*> obj(cx, newObject());
     RootedValue iteratorResult(cx, yield.iteratorResult);
     if (!obj || !wrap(&iteratorResult) ||
         !add(obj, cx->names().return_, iteratorResult) ||
@@ -2091,7 +2090,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
   }
 
   bool operator()(const Completion::Await& await) {
-    RootedNativeObject obj(cx, newObject());
+    Rooted<NativeObject*> obj(cx, newObject());
     RootedValue awaitee(cx, await.awaitee);
     if (!obj || !wrap(&awaitee) || !add(obj, cx->names().return_, awaitee) ||
         !add(obj, cx->names().await, TrueHandleValue)) {
@@ -2104,7 +2103,7 @@ struct MOZ_STACK_CLASS Completion::BuildValueMatcher {
  private:
   NativeObject* newObject() const { return NewPlainObject(cx); }
 
-  bool add(HandleNativeObject obj, PropertyName* name,
+  bool add(Handle<NativeObject*> obj, PropertyName* name,
            HandleValue value) const {
     return NativeDefineDataProperty(cx, obj, name, value, JSPROP_ENUMERATE);
   }
@@ -2153,9 +2152,9 @@ void Completion::updateFromHookResult(ResumeMode resumeMode,
 
 struct MOZ_STACK_CLASS Completion::ToResumeModeMatcher {
   MutableHandleValue value;
-  MutableHandleSavedFrame exnStack;
+  MutableHandle<SavedFrame*> exnStack;
   ToResumeModeMatcher(MutableHandleValue value,
-                      MutableHandleSavedFrame exnStack)
+                      MutableHandle<SavedFrame*> exnStack)
       : value(value), exnStack(exnStack) {}
 
   ResumeMode operator()(const Return& ret) {
@@ -2191,7 +2190,7 @@ struct MOZ_STACK_CLASS Completion::ToResumeModeMatcher {
 };
 
 void Completion::toResumeMode(ResumeMode& resumeMode, MutableHandleValue value,
-                              MutableHandleSavedFrame exnStack) const {
+                              MutableHandle<SavedFrame*> exnStack) const {
   resumeMode = variant.match(ToResumeModeMatcher(value, exnStack));
 }
 
@@ -2697,7 +2696,7 @@ bool DebugAPI::onSingleStep(JSContext* cx) {
 
     // Call onStep for frames that have the handler set.
     for (size_t i = 0; i < frames.length(); i++) {
-      HandleDebuggerFrame frame = frames[i];
+      Handle<DebuggerFrame*> frame = frames[i];
       OnStepHandler* handler = frame->onStepHandler();
       if (!handler) {
         continue;
@@ -2859,7 +2858,7 @@ Maybe<double> DebugAPI::allocationSamplingProbability(GlobalObject* global) {
 
 /* static */
 bool DebugAPI::slowPathOnLogAllocationSite(JSContext* cx, HandleObject obj,
-                                           HandleSavedFrame frame,
+                                           Handle<SavedFrame*> frame,
                                            mozilla::TimeStamp when,
                                            Realm::DebuggerVector& dbgs) {
   MOZ_ASSERT(!dbgs.empty());
@@ -2900,7 +2899,7 @@ bool Debugger::isDebuggeeUnbarriered(const Realm* realm) const {
 }
 
 bool Debugger::appendAllocationSite(JSContext* cx, HandleObject obj,
-                                    HandleSavedFrame frame,
+                                    Handle<SavedFrame*> frame,
                                     mozilla::TimeStamp when) {
   MOZ_ASSERT(trackingAllocationSites);
 
@@ -4590,7 +4589,7 @@ bool Debugger::CallData::getDebuggees() {
     }
   }
 
-  RootedArrayObject arrobj(cx, NewDenseFullyAllocatedArray(cx, count));
+  Rooted<ArrayObject*> arrobj(cx, NewDenseFullyAllocatedArray(cx, count));
   if (!arrobj) {
     return false;
   }
@@ -4665,7 +4664,7 @@ bool Debugger::construct(JSContext* cx, unsigned argc, Value* vp) {
   if (!GetProperty(cx, callee, callee, cx->names().prototype, &v)) {
     return false;
   }
-  RootedNativeObject proto(cx, &v.toObject().as<NativeObject>());
+  Rooted<NativeObject*> proto(cx, &v.toObject().as<NativeObject>());
   MOZ_ASSERT(proto->is<DebuggerInstanceObject>());
 
   // Make the new Debugger object. Each one has a reference to
@@ -4682,7 +4681,7 @@ bool Debugger::construct(JSContext* cx, unsigned argc, Value* vp) {
   }
   obj->setReservedSlot(JSSLOT_DEBUG_MEMORY_INSTANCE, NullValue());
 
-  RootedNativeObject livenessLink(
+  Rooted<NativeObject*> livenessLink(
       cx, NewObjectWithGivenProto<DebuggerDebuggeeLink>(cx, nullptr));
   if (!livenessLink) {
     return false;
@@ -5362,7 +5361,7 @@ class MOZ_STACK_CLASS Debugger::ScriptQuery : public Debugger::QueryBase {
 
   /* If this is a string, matching scripts' sources have displayURLs equal to
    * it. */
-  RootedLinearString displayURLString;
+  Rooted<JSLinearString*> displayURLString;
 
   /*
    * If this is a source referent, matching scripts will have sources equal
@@ -5613,7 +5612,8 @@ bool Debugger::CallData::findScripts() {
   Handle<WasmInstanceObjectVector> wasmInstances(query.foundWasmInstances());
 
   size_t resultLength = scripts.length() + wasmInstances.length();
-  RootedArrayObject result(cx, NewDenseFullyAllocatedArray(cx, resultLength));
+  Rooted<ArrayObject*> result(cx,
+                              NewDenseFullyAllocatedArray(cx, resultLength));
   if (!result) {
     return false;
   }
@@ -5741,7 +5741,8 @@ bool Debugger::CallData::findSources() {
   Handle<SourceQuery::SourceSet> sources(query.foundSources());
 
   size_t resultLength = sources.count();
-  RootedArrayObject result(cx, NewDenseFullyAllocatedArray(cx, resultLength));
+  Rooted<ArrayObject*> result(cx,
+                              NewDenseFullyAllocatedArray(cx, resultLength));
   if (!result) {
     return false;
   }
@@ -5962,7 +5963,7 @@ bool Debugger::CallData::findObjects() {
   }
 
   size_t length = query.objects.length();
-  RootedArrayObject result(cx, NewDenseFullyAllocatedArray(cx, length));
+  Rooted<ArrayObject*> result(cx, NewDenseFullyAllocatedArray(cx, length));
   if (!result) {
     return false;
   }
@@ -6185,7 +6186,7 @@ class DebuggerAdoptSourceMatcher {
 
   using ReturnType = DebuggerSource*;
 
-  ReturnType match(HandleScriptSourceObject source) {
+  ReturnType match(Handle<ScriptSourceObject*> source) {
     if (source->compartment() == cx_->compartment()) {
       JS_ReportErrorASCII(cx_,
                           "Source is in the same compartment as this debugger");
@@ -6220,12 +6221,12 @@ bool Debugger::CallData::adoptFrame() {
   }
 
   RootedValue objVal(cx, ObjectValue(*obj));
-  RootedDebuggerFrame frameObj(cx, DebuggerFrame::check(cx, objVal));
+  Rooted<DebuggerFrame*> frameObj(cx, DebuggerFrame::check(cx, objVal));
   if (!frameObj) {
     return false;
   }
 
-  RootedDebuggerFrame adoptedFrame(cx);
+  Rooted<DebuggerFrame*> adoptedFrame(cx);
   if (frameObj->isOnStack()) {
     FrameIter iter = frameObj->getFrameIter(cx);
     if (!dbg->observesFrame(iter)) {
@@ -6271,7 +6272,7 @@ bool Debugger::CallData::adoptSource() {
     return false;
   }
 
-  RootedDebuggerSource sourceObj(cx, &obj->as<DebuggerSource>());
+  Rooted<DebuggerSource*> sourceObj(cx, &obj->as<DebuggerSource>());
   if (!sourceObj->getReferentRawObject()) {
     JS_ReportErrorASCII(cx, "Argument is Debugger.Source.prototype");
     return false;
@@ -6343,7 +6344,7 @@ DebuggerScript* Debugger::newDebuggerScript(
   RootedObject proto(
       cx, &object->getReservedSlot(JSSLOT_DEBUG_SCRIPT_PROTO).toObject());
   MOZ_ASSERT(proto);
-  RootedNativeObject debugger(cx, object);
+  Rooted<NativeObject*> debugger(cx, object);
 
   return DebuggerScript::create(cx, proto, referent, debugger);
 }
@@ -6406,7 +6407,7 @@ DebuggerSource* Debugger::newDebuggerSource(
   RootedObject proto(
       cx, &object->getReservedSlot(JSSLOT_DEBUG_SOURCE_PROTO).toObject());
   MOZ_ASSERT(proto);
-  RootedNativeObject debugger(cx, object);
+  Rooted<NativeObject*> debugger(cx, object);
   return DebuggerSource::create(cx, proto, referent, debugger);
 }
 
@@ -6424,7 +6425,7 @@ DebuggerSource* Debugger::wrapVariantReferent(
 }
 
 DebuggerSource* Debugger::wrapSource(JSContext* cx,
-                                     HandleScriptSourceObject source) {
+                                     Handle<ScriptSourceObject*> source) {
   Rooted<DebuggerSourceReferent> referent(cx, source.get());
   return wrapVariantReferent(cx, referent);
 }
@@ -6505,7 +6506,7 @@ bool Debugger::replaceFrameGuts(JSContext* cx, AbstractFramePtr from,
   }
 
   for (size_t i = 0; i < frames.length(); i++) {
-    HandleDebuggerFrame frameobj = frames[i];
+    Handle<DebuggerFrame*> frameobj = frames[i];
     Debugger* dbg = frameobj->owner();
 
     // Update frame object's ScriptFrameIter::data pointer.
@@ -6719,7 +6720,7 @@ bool Builder::Object::defineProperty(JSContext* cx, const char* name,
 Builder::Object Builder::newObject(JSContext* cx) {
   AutoRealm ar(cx, debuggerObject);
 
-  RootedPlainObject obj(cx, NewPlainObject(cx));
+  Rooted<PlainObject*> obj(cx, NewPlainObject(cx));
 
   // If the allocation failed, this will return a false Object, as the spec
   // promises.
@@ -6739,7 +6740,7 @@ AutoEntryMonitor::~AutoEntryMonitor() { cx_->entryMonitor = savedMonitor_; }
 
 extern JS_PUBLIC_API bool JS_DefineDebuggerObject(JSContext* cx,
                                                   HandleObject obj) {
-  RootedNativeObject debugCtor(cx), debugProto(cx), frameProto(cx),
+  Rooted<NativeObject*> debugCtor(cx), debugProto(cx), frameProto(cx),
       scriptProto(cx), sourceProto(cx), objectProto(cx), envProto(cx),
       memoryProto(cx);
   RootedObject debuggeeWouldRunProto(cx);
@@ -6937,7 +6938,7 @@ JSObject* GarbageCollectionEvent::toJSObject(JSContext* cx) const {
     return nullptr;
   }
 
-  RootedArrayObject slicesArray(cx, NewDenseEmptyArray(cx));
+  Rooted<ArrayObject*> slicesArray(cx, NewDenseEmptyArray(cx));
   if (!slicesArray) {
     return nullptr;
   }
@@ -6946,7 +6947,7 @@ JSObject* GarbageCollectionEvent::toJSObject(JSContext* cx) const {
 
   size_t idx = 0;
   for (auto range = collections.all(); !range.empty(); range.popFront()) {
-    RootedPlainObject collectionObj(cx, NewPlainObject(cx));
+    Rooted<PlainObject*> collectionObj(cx, NewPlainObject(cx));
     if (!collectionObj) {
       return nullptr;
     }

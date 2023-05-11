@@ -171,54 +171,46 @@ void AnimationInfo::EnumerateGenerationOnFrame(
     const nsIFrame* aFrame, const nsIContent* aContent,
     const CompositorAnimatableDisplayItemTypes& aDisplayItemTypes,
     AnimationGenerationCallback aCallback) {
-  if (XRE_IsContentProcess()) {
-    if (nsIWidget* widget = nsContentUtils::WidgetForContent(aContent)) {
-      // In case of child processes, we might not have yet created the layer
-      // manager.  That means there is no animation generation we have, thus
-      // we call the callback function with |Nothing()| for the generation.
-      //
-      // Note that we need to use nsContentUtils::WidgetForContent() instead of
-      // BrowserChild::GetFrom(aFrame->PresShell())->WebWidget() because in the
-      // case of child popup content PuppetWidget::mBrowserChild is the same as
-      // the parent's one, which means mBrowserChild->IsLayersConnected() check
-      // in PuppetWidget::GetLayerManager queries the parent state, it results
-      // the assertion in the function failure.
-      if (widget->GetOwningBrowserChild() &&
-          !static_cast<widget::PuppetWidget*>(widget)->HasWindowRenderer()) {
-        for (auto displayItem : LayerAnimationInfo::sDisplayItemTypes) {
-          aCallback(Nothing(), displayItem);
-        }
-        return;
-      }
-    }
+  nsIWidget* widget = nsContentUtils::WidgetForContent(aContent);
+  if (!widget) {
+    return;
   }
-
-  WindowRenderer* renderer = nsContentUtils::WindowRendererForContent(aContent);
-
-  if (renderer && renderer->AsWebRender()) {
-    // In case of continuation, nsDisplayItem uses its last continuation, so we
-    // have to use the last continuation frame here.
-    if (nsLayoutUtils::IsFirstContinuationOrIBSplitSibling(aFrame)) {
-      aFrame = nsLayoutUtils::LastContinuationOrIBSplitSibling(aFrame);
-    }
-
+  // If we haven't created a window renderer there's no animation generation
+  // that we can have, thus we call the callback function with |Nothing()| for
+  // the generation.
+  if (!widget->HasWindowRenderer()) {
     for (auto displayItem : LayerAnimationInfo::sDisplayItemTypes) {
-      // For transform animations, the animation is on the primary frame but
-      // |aFrame| is the style frame.
-      const nsIFrame* frameToQuery =
-          displayItem == DisplayItemType::TYPE_TRANSFORM
-              ? nsLayoutUtils::GetPrimaryFrameFromStyleFrame(aFrame)
-              : aFrame;
-      RefPtr<WebRenderAnimationData> animationData =
-          GetWebRenderUserData<WebRenderAnimationData>(frameToQuery,
-                                                       (uint32_t)displayItem);
-      Maybe<uint64_t> generation;
-      if (animationData) {
-        generation = animationData->GetAnimationInfo().GetAnimationGeneration();
-      }
-      aCallback(generation, displayItem);
+      aCallback(Nothing(), displayItem);
     }
     return;
+  }
+  WindowRenderer* renderer = widget->GetWindowRenderer();
+  MOZ_ASSERT(renderer);
+  if (!renderer->AsWebRender()) {
+    return;
+  }
+
+  // In case of continuation, nsDisplayItem uses its last continuation, so we
+  // have to use the last continuation frame here.
+  if (nsLayoutUtils::IsFirstContinuationOrIBSplitSibling(aFrame)) {
+    aFrame = nsLayoutUtils::LastContinuationOrIBSplitSibling(aFrame);
+  }
+
+  for (auto displayItem : LayerAnimationInfo::sDisplayItemTypes) {
+    // For transform animations, the animation is on the primary frame but
+    // |aFrame| is the style frame.
+    const nsIFrame* frameToQuery =
+        displayItem == DisplayItemType::TYPE_TRANSFORM
+            ? nsLayoutUtils::GetPrimaryFrameFromStyleFrame(aFrame)
+            : aFrame;
+    RefPtr<WebRenderAnimationData> animationData =
+        GetWebRenderUserData<WebRenderAnimationData>(frameToQuery,
+                                                     (uint32_t)displayItem);
+    Maybe<uint64_t> generation;
+    if (animationData) {
+      generation = animationData->GetAnimationInfo().GetAnimationGeneration();
+    }
+    aCallback(generation, displayItem);
   }
 }
 
@@ -435,7 +427,7 @@ void AnimationInfo::AddAnimationForProperty(
                                      ? AddAnimationForNextTransaction()
                                      : AddAnimation();
 
-  const TimingParams& timing = aAnimation->GetEffect()->SpecifiedTiming();
+  const TimingParams& timing = aAnimation->GetEffect()->NormalizedTiming();
 
   // If we are starting a new transition that replaces an existing transition
   // running on the compositor, it is possible that the animation on the
@@ -488,8 +480,12 @@ void AnimationInfo::AddAnimationForProperty(
           ? static_cast<float>(aAnimation->PlaybackRate())
           : std::numeric_limits<float>::quiet_NaN();
   animation->transformData() = aTransformData;
-  animation->easingFunction() =
-      ComputedTimingFunction::ToLayersTimingFunction(timing.TimingFunction());
+  animation->easingFunction() = Nothing();
+  if (timing.TimingFunction().isSome()) {
+    animation->easingFunction().emplace(
+        ComputedTimingFunction::ToStyleComputedTimingFunction(
+            *timing.TimingFunction()));
+  }
   animation->iterationComposite() = static_cast<uint8_t>(
       aAnimation->GetEffect()->AsKeyframeEffect()->IterationComposite());
   animation->isNotPlaying() = !aAnimation->IsPlaying();
@@ -526,8 +522,12 @@ void AnimationInfo::AddAnimationForProperty(
     animSegment->startComposite() =
         static_cast<uint8_t>(segment.mFromComposite);
     animSegment->endComposite() = static_cast<uint8_t>(segment.mToComposite);
-    animSegment->sampleFn() =
-        ComputedTimingFunction::ToLayersTimingFunction(segment.mTimingFunction);
+    animSegment->sampleFn() = Nothing();
+    if (segment.mTimingFunction.isSome()) {
+      animSegment->sampleFn().emplace(
+          ComputedTimingFunction::ToStyleComputedTimingFunction(
+              *segment.mTimingFunction));
+    }
   }
 }
 
@@ -842,7 +842,7 @@ void AnimationInfo::AddNonAnimatingTransformLikePropertiesStyles(
                                        : AddAnimation();
     animation->property() = aProperty;
     animation->baseStyle() = std::move(aBaseStyle);
-    animation->easingFunction() = null_t();
+    animation->easingFunction() = Nothing();
     animation->isNotAnimating() = true;
   };
 

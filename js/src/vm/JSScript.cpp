@@ -742,7 +742,7 @@ ScriptSourceObject* ScriptSourceObject::create(JSContext* cx,
 }
 
 [[nodiscard]] static bool MaybeValidateFilename(
-    JSContext* cx, HandleScriptSourceObject sso,
+    JSContext* cx, Handle<ScriptSourceObject*> sso,
     const JS::InstantiateOptions& options) {
   // When parsing off-thread we want to do filename validation on the main
   // thread. This makes off-thread parsing more pure and is simpler because we
@@ -775,7 +775,7 @@ ScriptSourceObject* ScriptSourceObject::create(JSContext* cx,
 
 /* static */
 bool ScriptSourceObject::initFromOptions(
-    JSContext* cx, HandleScriptSourceObject source,
+    JSContext* cx, Handle<ScriptSourceObject*> source,
     const JS::InstantiateOptions& options) {
   cx->releaseCheck(source);
   MOZ_ASSERT(
@@ -806,9 +806,9 @@ bool ScriptSourceObject::initFromOptions(
 }
 
 /* static */
-bool ScriptSourceObject::initElementProperties(JSContext* cx,
-                                               HandleScriptSourceObject source,
-                                               HandleString elementAttrName) {
+bool ScriptSourceObject::initElementProperties(
+    JSContext* cx, Handle<ScriptSourceObject*> source,
+    HandleString elementAttrName) {
   RootedValue nameValue(cx);
   if (elementAttrName) {
     nameValue = StringValue(elementAttrName);
@@ -2323,7 +2323,7 @@ void PrivateScriptData::trace(JSTracer* trc) {
 
 /*static*/
 JSScript* JSScript::Create(JSContext* cx, JS::Handle<JSFunction*> function,
-                           js::HandleScriptSourceObject sourceObject,
+                           js::Handle<ScriptSourceObject*> sourceObject,
                            const SourceExtent& extent,
                            js::ImmutableScriptFlags flags) {
   return static_cast<JSScript*>(
@@ -2380,7 +2380,7 @@ bool JSScript::fullyInitFromStencil(
     frontend::CompilationGCOutput& gcOutput, HandleScript script,
     const js::frontend::ScriptIndex scriptIndex) {
   MutableScriptFlags lazyMutableFlags;
-  RootedScope lazyEnclosingScope(cx);
+  Rooted<Scope*> lazyEnclosingScope(cx);
 
   // A holder for the lazy PrivateScriptData that we must keep around in case
   // this process fails and we must return the script to its original state.
@@ -3149,7 +3149,7 @@ BaseScript::BaseScript(uint8_t* stubEntry, JSFunction* function,
 
 /* static */
 BaseScript* BaseScript::New(JSContext* cx, JS::Handle<JSFunction*> function,
-                            HandleScriptSourceObject sourceObject,
+                            Handle<ScriptSourceObject*> sourceObject,
                             const SourceExtent& extent,
                             uint32_t immutableFlags) {
   void* script = Allocate<BaseScript>(cx);
@@ -3173,7 +3173,7 @@ BaseScript* BaseScript::New(JSContext* cx, JS::Handle<JSFunction*> function,
 /* static */
 BaseScript* BaseScript::CreateRawLazy(JSContext* cx, uint32_t ngcthings,
                                       HandleFunction fun,
-                                      HandleScriptSourceObject sourceObject,
+                                      Handle<ScriptSourceObject*> sourceObject,
                                       const SourceExtent& extent,
                                       uint32_t immutableFlags) {
   cx->check(fun);

@@ -10,7 +10,6 @@ user_pref("browser.addon-watch.interval", -1); // Deactivate add-on watching
 // Disable Bookmark backups by default.
 user_pref("browser.bookmarks.max_backups", 0);
 user_pref("browser.cache.disk.smart_size.enabled", false);
-user_pref("browser.chrome.dynamictoolbar", false);
 user_pref("browser.contentHandlers.types.0.uri", "http://127.0.0.1/rss?url=%s");
 user_pref("browser.contentHandlers.types.1.uri", "http://127.0.0.1/rss?url=%s");
 user_pref("browser.contentHandlers.types.2.uri", "http://127.0.0.1/rss?url=%s");
@@ -78,7 +77,6 @@ user_pref("network.http.speculative-parallel-limit", 0);
 // tests. This, like many things, will stop working correctly in 2038.
 user_pref("places.database.lastMaintenance", 2147483647);
 user_pref("plugin.state.flash", 0);
-user_pref("plugins.flashBlock.enabled", false);
 user_pref("privacy.reduceTimerPrecision", false); // Bug 1445243 - reduces precision of tests
 user_pref("privacy.trackingprotection.annotate_channels", false);
 user_pref("privacy.trackingprotection.enabled", false);

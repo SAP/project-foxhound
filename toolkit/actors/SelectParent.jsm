@@ -13,15 +13,17 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "DOM_FORMS_SELECTSEARCH",
   "dom.forms.selectSearch",
   false
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "CUSTOM_STYLING_ENABLED",
   "dom.forms.select.customstyling",
   false
@@ -110,7 +112,7 @@ var SelectParentHelper = {
 
     let sheet = stylesheet.sheet;
 
-    if (!CUSTOM_STYLING_ENABLED) {
+    if (!lazy.CUSTOM_STYLING_ENABLED) {
       selectStyle = uaStyle;
     }
 
@@ -128,7 +130,7 @@ var SelectParentHelper = {
       selectStyle["background-color"] != uaStyle["background-color"] ||
       selectStyle.color != uaStyle.color;
 
-    if (CUSTOM_STYLING_ENABLED) {
+    if (lazy.CUSTOM_STYLING_ENABLED) {
       if (selectStyle["text-shadow"] != "none") {
         sheet.insertRule(
           `#ContentSelectDropdown > menupopup > :is(menuitem, menucaption)[_moz-menuactive="true"] {
@@ -212,7 +214,7 @@ var SelectParentHelper = {
       rule.direction = style.direction;
       rule.fontSize = zoom * parseFloat(style["font-size"], 10) + "px";
 
-      if (CUSTOM_STYLING_ENABLED) {
+      if (lazy.CUSTOM_STYLING_ENABLED) {
         let optionBackgroundIsTransparent =
           style["background-color"] == "rgba(0, 0, 0, 0)";
         let optionBackgroundSet =
@@ -265,7 +267,7 @@ var SelectParentHelper = {
     // We only set the `customoptionstyling` if the background has been
     // manually set. This prevents the overlap between moz-appearance and
     // background-color. `color` and `text-shadow` do not interfere with it.
-    if (CUSTOM_STYLING_ENABLED && selectBackgroundSet) {
+    if (lazy.CUSTOM_STYLING_ENABLED && selectBackgroundSet) {
       menulist.menupopup.setAttribute("customoptionstyling", "true");
     } else {
       menulist.menupopup.removeAttribute("customoptionstyling");
@@ -581,7 +583,7 @@ var SelectParentHelper = {
     // Check if search pref is enabled, if this is the first time iterating through
     // the dropdown, and if the list is long enough for a search element to be added.
     if (
-      DOM_FORMS_SELECTSEARCH &&
+      lazy.DOM_FORMS_SELECTSEARCH &&
       addSearch &&
       element.childElementCount > SEARCH_MINIMUM_ELEMENTS
     ) {
@@ -730,30 +732,51 @@ class SelectParent extends JSWindowActorParent {
     return bc.isContent ? bc.topFrameElement : bc.embedderElement;
   }
 
+  get _document() {
+    return this.relevantBrowser.ownerDocument;
+  }
+
+  get _menulist() {
+    return this._document.getElementById("ContentSelectDropdown");
+  }
+
+  _createMenulist() {
+    let document = this._document;
+    let menulist = document.createXULElement("menulist");
+    menulist.setAttribute("id", "ContentSelectDropdown");
+    menulist.setAttribute("popuponly", "true");
+    menulist.setAttribute("hidden", "true");
+
+    let popup = menulist.appendChild(document.createXULElement("menupopup"));
+    popup.setAttribute("id", "ContentSelectDropdownPopup");
+    popup.setAttribute("activateontab", "true");
+    popup.setAttribute("position", "after_start");
+    popup.setAttribute("level", "parent");
+    if (AppConstants.platform == "win") {
+      popup.setAttribute("consumeoutsideclicks", "false");
+      popup.setAttribute("ignorekeys", "shortcuts");
+    }
+
+    let container =
+      document.getElementById("mainPopupSet") ||
+      document.querySelector("popupset") ||
+      document.documentElement.appendChild(
+        document.createXULElement("popupset")
+      );
+
+    container.appendChild(menulist);
+    return menulist;
+  }
+
   receiveMessage(message) {
     switch (message.name) {
       case "Forms:ShowDropDown": {
         let browser = this.relevantBrowser;
-
-        if (!browser.hasAttribute("selectmenulist")) {
-          return;
-        }
-
-        let document = browser.ownerDocument;
-        let menulist = document.getElementById(
-          browser.getAttribute("selectmenulist")
-        );
-
-        if (!this._menulist) {
-          // Cache the menulist to have access to it
-          // when the document is gone (eg: Tab closed)
-          this._menulist = menulist;
-        }
+        let menulist = this._menulist || this._createMenulist();
 
         let data = message.data;
         menulist.menupopup.style.direction = data.style.direction;
 
-        let { ZoomManager } = browser.browsingContext.topChromeWindow;
         SelectParentHelper.populate(
           menulist,
           data.options.options,
@@ -761,7 +784,7 @@ class SelectParent extends JSWindowActorParent {
           data.selectedIndex,
           // We only want to apply the full zoom. The text zoom is already
           // applied in the font-size.
-          ZoomManager.getFullZoomForBrowser(browser),
+          this.manager.browsingContext.fullZoom,
           data.defaultStyle,
           data.style
         );

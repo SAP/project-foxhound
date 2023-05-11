@@ -142,7 +142,6 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
       OCSPCache& ocspCache, void* pinArg, mozilla::TimeDuration ocspTimeoutSoft,
       mozilla::TimeDuration ocspTimeoutHard, uint32_t certShortLifetimeInDays,
       unsigned int minRSABits, ValidityCheckingMode validityCheckingMode,
-      CertVerifier::SHA1Mode sha1Mode,
       NetscapeStepUpPolicy netscapeStepUpPolicy, CRLiteMode crliteMode,
       const OriginAttributes& originAttributes,
       const Vector<mozilla::pkix::Input>& thirdPartyRootInputs,
@@ -261,14 +260,27 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
       EncodedResponseSource responseSource, /*out*/ bool& expired);
   TimeDuration GetOCSPTimeout() const;
 
+  Result CheckRevocationByCRLite(const mozilla::pkix::CertID& certID,
+                                 const mozilla::pkix::Input& sctExtension,
+                                 /*out*/ bool& crliteCoversCertificate);
+
+  Result CheckRevocationByOCSP(
+      const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
+      mozilla::pkix::Duration validityDuration, const nsCString& aiaLocation,
+      const bool crliteCoversCertificate, const Result crliteResult,
+      /*optional*/ const mozilla::pkix::Input* stapledOCSPResponse,
+      /*out*/ bool& softFailure);
+
   Result SynchronousCheckRevocationWithServer(
       const mozilla::pkix::CertID& certID, const nsCString& aiaLocation,
       mozilla::pkix::Time time, uint16_t maxOCSPLifetimeInDays,
       const Result cachedResponseResult, const Result stapledOCSPResponseResult,
-      const bool crliteFilterCoversCertificate, const Result crliteResult);
+      const bool crliteFilterCoversCertificate, const Result crliteResult,
+      /*out*/ bool& softFailure);
   Result HandleOCSPFailure(const Result cachedResponseResult,
                            const Result stapledOCSPResponseResult,
-                           const Result error);
+                           const Result error,
+                           /*out*/ bool& softFailure);
 
   const SECTrustType mCertDBTrustType;
   const OCSPFetching mOCSPFetching;
@@ -279,7 +291,6 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   const uint32_t mCertShortLifetimeInDays;
   const unsigned int mMinRSABits;
   ValidityCheckingMode mValidityCheckingMode;
-  CertVerifier::SHA1Mode mSHA1Mode;
   NetscapeStepUpPolicy mNetscapeStepUpPolicy;
   CRLiteMode mCRLiteMode;
   bool mSawDistrustedCAByPolicyError;

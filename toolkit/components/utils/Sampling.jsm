@@ -4,11 +4,6 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto", "TextEncoder"]);
-
 var EXPORTED_SYMBOLS = ["Sampling"];
 
 const hashBits = 48;

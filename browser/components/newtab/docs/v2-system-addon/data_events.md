@@ -161,11 +161,15 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
 ```js
 {
   "event": "CLICK",
-  "source": "CARDGRID",
+  "source": ["CARDGRID" | "CARDGRID_WIDGET"],
   "action_position": 2,
   "value": {
     // "spoc" for sponsored stories, "organic" for regular stories.
-    "card_type": ["organic" | "spoc"],
+    "card_type": ["organic" | "spoc" | "topics_widget"],
+    // topic and position only exists if its card_type = "topics_widget"
+    "topic": "entertainment"
+    // The index position of the topic link within the card
+    "position_in_card": 0
   }
 
   // Basic metadata
@@ -1250,3 +1254,12 @@ These record the impression and click pings for the Sponsored TopSites.
   }
 }
 ```
+
+## Glean "newtab" ping
+
+Unlike the other data collections, this is a
+[Glean Ping](https://mozilla.github.io/glean/book/user/pings/index.html)
+that batches events and metadata about newtab sessions.
+
+You can find full documentation about this ping and its contents in
+[its Glean Dictionary entry](https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/pings/newtab).

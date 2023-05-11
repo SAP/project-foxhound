@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * vim: set ts=8 sts=2 et sw=2 tw=80:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,11 +26,15 @@ class TupleType final : public js::NativeObject {
 
   static TupleType* createUninitialized(JSContext* cx, uint32_t initialLength);
 
-  static TupleType* createUnchecked(JSContext* cx, js::HandleArrayObject aObj);
+  static TupleType* createUnchecked(JSContext* cx,
+                                    Handle<js::ArrayObject*> aObj);
 
   bool initializeNextElement(JSContext* cx, HandleValue elt);
   void finishInitialization(JSContext* cx);
   static js::Shape* getInitialShape(JSContext* cx);
+
+  static bool copy(JSContext* cx, Handle<TupleType*> in,
+                   MutableHandle<TupleType*> out);
 
   bool getOwnProperty(HandleId id, MutableHandleValue vp) const;
   inline uint32_t length() const { return getElementsHeader()->length; }

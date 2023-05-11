@@ -5,6 +5,8 @@ use crate::constants::{
 use crate::ops;
 use crate::Error;
 
+#[cfg(feature = "rkyv-safe")]
+use bytecheck::CheckBytes;
 use core::{
     cmp::{Ordering::Equal, *},
     fmt,
@@ -19,6 +21,8 @@ use diesel::sql_types::Numeric;
 #[cfg(not(feature = "std"))]
 use num_traits::float::FloatCore;
 use num_traits::{FromPrimitive, Num, One, Signed, ToPrimitive, Zero};
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize, Serialize};
 
 /// The smallest value that can be represented by this decimal type.
 const MIN: Decimal = Decimal {
@@ -101,6 +105,13 @@ pub struct UnpackedDecimal {
     feature = "borsh",
     derive(borsh::BorshDeserialize, borsh::BorshSerialize, borsh::BorshSchema)
 )]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(Archive, Deserialize, Serialize),
+    archive(compare(PartialEq)),
+    archive_attr(derive(Debug))
+)]
+#[cfg_attr(feature = "rkyv-safe", archive_attr(derive(CheckBytes)))]
 pub struct Decimal {
     // Bits 0-15: unused
     // Bits 16-23: Contains "e", a value between 0-28 that indicates the scale
@@ -1720,7 +1731,7 @@ macro_rules! impl_try_from_decimal {
             stringify!($TInto),
             "`.",
         )]
-        impl core::convert::TryFrom<Decimal> for $TInto {
+        impl TryFrom<Decimal> for $TInto {
             type Error = crate::Error;
 
             #[inline]
@@ -1756,7 +1767,7 @@ macro_rules! impl_try_from_primitive {
             stringify!($TFrom),
             "` into a `Decimal`.\n\nCan fail if the value is out of range for `Decimal`."
         )]
-        impl core::convert::TryFrom<$TFrom> for Decimal {
+        impl TryFrom<$TFrom> for Decimal {
             type Error = crate::Error;
 
             #[inline]

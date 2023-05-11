@@ -57,8 +57,13 @@ nsresult HTMLEditor::SetSelectionToAbsoluteOrStaticAsAction(
     return rv;
   }
 
+  const RefPtr<Element> editingHost = ComputeEditingHost();
+  if (!editingHost) {
+    return NS_SUCCESS_DOM_NO_OPERATION;
+  }
+
   if (aEnabled) {
-    EditActionResult result = SetSelectionToAbsoluteAsSubAction();
+    EditActionResult result = SetSelectionToAbsoluteAsSubAction(*editingHost);
     NS_WARNING_ASSERTION(
         result.Succeeded(),
         "HTMLEditor::SetSelectionToAbsoluteAsSubAction() failed");
@@ -374,7 +379,9 @@ void HTMLEditor::HideGrabberInternal() {
 nsresult HTMLEditor::ShowGrabberInternal(Element& aElement) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
-  if (NS_WARN_IF(!IsDescendantOfEditorRoot(&aElement))) {
+  const RefPtr<Element> editingHost = ComputeEditingHost();
+  if (NS_WARN_IF(!editingHost) ||
+      NS_WARN_IF(!aElement.IsInclusiveDescendantOf(editingHost))) {
     return NS_ERROR_UNEXPECTED;
   }
 

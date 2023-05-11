@@ -128,7 +128,24 @@ impl error::Error for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.inner.kind, f)
+        if let Some(position) = &self.inner.file_position {
+            write!(f, "{:?} ({})", &self.inner.kind, position)
+        } else {
+            fmt::Debug::fmt(&self.inner.kind, f)
+        }
+    }
+}
+
+impl fmt::Display for FilePosition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            FilePosition::LineColumn(line, column) => {
+                write!(f, "line {}, column {}", line, column)
+            }
+            FilePosition::Offset(offset) => {
+                write!(f, "offset {}", offset)
+            }
+        }
     }
 }
 
@@ -169,7 +186,6 @@ impl EventKind {
             Event::Real(_) => EventKind::Real,
             Event::String(_) => EventKind::String,
             Event::Uid(_) => EventKind::Uid,
-            Event::__Nonexhaustive => unreachable!(),
         }
     }
 }

@@ -41,6 +41,7 @@
 #include "mozilla/java/XPCOMEventTargetNatives.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "prenv.h"
+#include "prtime.h"
 
 #include "AndroidBridge.h"
 #include "AndroidBridgeUtilities.h"
@@ -74,6 +75,7 @@
 #include "Telemetry.h"
 #include "WebExecutorSupport.h"
 #include "Base64UtilsSupport.h"
+#include "SurfaceViewWrapperSupport.h"
 
 #ifdef DEBUG_ANDROID_EVENTS
 #  define EVLOG(args...) ALOG(args)
@@ -299,14 +301,20 @@ class GeckoAppShellSupport final
   static void OnLocationChanged(double aLatitude, double aLongitude,
                                 double aAltitude, float aAccuracy,
                                 float aAltitudeAccuracy, float aHeading,
-                                float aSpeed, int64_t aTime) {
+                                float aSpeed) {
     if (!gLocationCallback) {
       return;
     }
 
-    RefPtr<nsIDOMGeoPosition> geoPosition(
-        new nsGeoPosition(aLatitude, aLongitude, aAltitude, aAccuracy,
-                          aAltitudeAccuracy, aHeading, aSpeed, aTime));
+    static constexpr float kEpsilon = 0.0001f;
+    double heading = (aHeading >= kEpsilon && aHeading < (360.0f - kEpsilon) &&
+                      aSpeed > kEpsilon)
+                         ? aHeading
+                         : UnspecifiedNaN<double>();
+
+    RefPtr<nsIDOMGeoPosition> geoPosition(new nsGeoPosition(
+        aLatitude, aLongitude, aAltitude, aAccuracy, aAltitudeAccuracy, heading,
+        aSpeed, PR_Now() / PR_USEC_PER_MSEC));
     gLocationCallback->Update(geoPosition);
   }
 
@@ -432,6 +440,7 @@ nsAppShell::nsAppShell()
     mozilla::widget::ImageDecoderSupport::Init();
     mozilla::widget::WebExecutorSupport::Init();
     mozilla::widget::Base64UtilsSupport::Init();
+    mozilla::widget::SurfaceViewWrapperSupport::Init();
     nsWindow::InitNatives();
     mozilla::gl::AndroidSurfaceTexture::Init();
     mozilla::widget::GeckoTelemetryDelegate::Init();

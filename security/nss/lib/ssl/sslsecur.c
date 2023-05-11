@@ -551,6 +551,17 @@ DoRecv(sslSocket *ss, unsigned char *out, int len, int flags)
     PORT_Assert(ss->gs.readOffset <= ss->gs.writeOffset);
     rv = amount;
 
+#ifdef DEBUG
+    /* In Debug builds free and zero gather plaintext buffer after its content
+     * has been used/copied for advanced ASAN coverage/utilization.
+     * This frees the buffer after reception of application data,
+     * non-application data is freed at the end of
+     * ssl3con.c/ssl3_HandleRecord(). */
+    if (ss->gs.writeOffset == ss->gs.readOffset) {
+        sslBuffer_Clear(&ss->gs.buf);
+    }
+#endif
+
     SSL_TRC(30, ("%d: SSL[%d]: amount=%d available=%d",
                  SSL_GETPID(), ss->fd, amount, available));
     PRINT_BUF(4, (ss, "DoRecv receiving plaintext:", out, amount));
@@ -1279,6 +1290,43 @@ SSL_AuthCertificateComplete(PRFileDesc *fd, PRErrorCode error)
     rv = ssl3_AuthCertificateComplete(ss, error);
     ssl_Release1stHandshakeLock(ss);
 
+    return rv;
+}
+
+SECStatus
+SSL_ClientCertCallbackComplete(PRFileDesc *fd, SECStatus outcome, SECKEYPrivateKey *clientPrivateKey,
+                               CERTCertificate *clientCertificate)
+{
+    SECStatus rv;
+    sslSocket *ss = ssl_FindSocket(fd);
+
+    if (!ss) {
+        SSL_DBG(("%d: SSL[%d]: bad socket in SSL_ClientCertCallbackComplete",
+                 SSL_GETPID(), fd));
+        return SECFailure;
+    }
+
+    /* There exists a codepath which exercises each lock.
+     * Socket is blocked whilst waiting on this callback anyway. */
+    ssl_Get1stHandshakeLock(ss);
+    ssl_GetRecvBufLock(ss);
+    ssl_GetSSL3HandshakeLock(ss);
+
+    if (!ss->ssl3.hs.clientCertificatePending) {
+        /* Application invoked callback at wrong time */
+        SSL_DBG(("%d: SSL[%d]: socket not waiting for SSL_ClientCertCallbackComplete",
+                 SSL_GETPID(), fd));
+        PORT_SetError(PR_INVALID_STATE_ERROR);
+        rv = SECFailure;
+        goto cleanup;
+    }
+
+    rv = ssl3_ClientCertCallbackComplete(ss, outcome, clientPrivateKey, clientCertificate);
+
+cleanup:
+    ssl_ReleaseRecvBufLock(ss);
+    ssl_ReleaseSSL3HandshakeLock(ss);
+    ssl_Release1stHandshakeLock(ss);
     return rv;
 }
 

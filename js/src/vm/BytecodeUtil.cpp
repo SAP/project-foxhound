@@ -1200,7 +1200,7 @@ static UniqueChars ToDisassemblySource(JSContext* cx, HandleValue v) {
   return QuoteString(cx, str);
 }
 
-static bool ToDisassemblySource(JSContext* cx, HandleScope scope,
+static bool ToDisassemblySource(JSContext* cx, Handle<Scope*> scope,
                                 UniqueChars* bytes) {
   UniqueChars source = JS_smprintf("%s {", ScopeKindString(scope->kind()));
   if (!source) {
@@ -1476,7 +1476,7 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
     }
 
     case JOF_SCOPE: {
-      RootedScope scope(cx, script->getScope(pc));
+      Rooted<Scope*> scope(cx, script->getScope(pc));
       UniqueChars bytes;
       if (!ToDisassemblySource(cx, scope, &bytes)) {
         return 0;
@@ -1886,7 +1886,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::GetProp:
     case JSOp::GetBoundName: {
       bool hasDelete = op == JSOp::DelProp || op == JSOp::StrictDelProp;
-      RootedAtom prop(cx, loadAtom(pc));
+      Rooted<JSAtom*> prop(cx, loadAtom(pc));
       MOZ_ASSERT(prop);
       return (hasDelete ? write("(delete ") : true) &&
              decompilePCForStackOperand(pc, -1) &&
@@ -1896,7 +1896,7 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
              (hasDelete ? write(")") : true);
     }
     case JSOp::GetPropSuper: {
-      RootedAtom prop(cx, loadAtom(pc));
+      Rooted<JSAtom*> prop(cx, loadAtom(pc));
       return write("super.") && quote(prop, '\0');
     }
     case JSOp::SetElem:

@@ -11,6 +11,7 @@ const {
   getUrlQuery,
   getUrlBaseName,
   parseQueryString,
+  getRequestHeadersRawText,
 } = require("devtools/client/netmonitor/src/utils/request-utils");
 const {
   hasMatchingBlockingRequestPattern,
@@ -183,7 +184,7 @@ class RequestListContextMenu {
         clickedRequest &&
         (requestHeadersAvailable || requestHeaders)
       ),
-      click: () => this.copyRequestHeaders(id, requestHeaders),
+      click: () => this.copyRequestHeaders(id, clickedRequest),
     });
 
     copySubMenu.push({
@@ -275,8 +276,8 @@ class RequestListContextMenu {
     const menu = [];
 
     menu.push({
-      label: L10N.getStr("netmonitor.context.copy"),
-      accesskey: L10N.getStr("netmonitor.context.copy.accesskey"),
+      label: L10N.getStr("netmonitor.context.copyValue"),
+      accesskey: L10N.getStr("netmonitor.context.copyValue.accesskey"),
       visible: !!clickedRequest,
       submenu: copySubMenu,
     });
@@ -649,12 +650,20 @@ class RequestListContextMenu {
   /**
    * Copy the raw request headers from the currently selected item.
    */
-  async copyRequestHeaders(id, requestHeaders) {
+  async copyRequestHeaders(
+    id,
+    { method, httpVersion, requestHeaders, urlDetails }
+  ) {
     requestHeaders =
       requestHeaders ||
       (await this.props.connector.requestData(id, "requestHeaders"));
 
-    let rawHeaders = requestHeaders.rawHeaders.trim();
+    let rawHeaders = getRequestHeadersRawText(
+      method,
+      httpVersion,
+      requestHeaders,
+      urlDetails
+    );
 
     if (Services.appinfo.OS !== "WINNT") {
       rawHeaders = rawHeaders.replace(/\r/g, "");

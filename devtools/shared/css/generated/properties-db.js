@@ -210,8 +210,6 @@ exports.CSS_PROPERTIES = {
       "-moz-mac-help-button",
       "-moz-mac-source-list",
       "-moz-mac-source-list-selection",
-      "-moz-mac-vibrant-titlebar-dark",
-      "-moz-mac-vibrant-titlebar-light",
       "-moz-menulist-arrow-button",
       "-moz-win-borderless-glass",
       "-moz-win-browsertabbar-toolbox",
@@ -1483,8 +1481,6 @@ exports.CSS_PROPERTIES = {
       "-moz-mac-help-button",
       "-moz-mac-source-list",
       "-moz-mac-source-list-selection",
-      "-moz-mac-vibrant-titlebar-dark",
-      "-moz-mac-vibrant-titlebar-light",
       "-moz-menulist-arrow-button",
       "-moz-win-borderless-glass",
       "-moz-win-browsertabbar-toolbox",
@@ -2968,6 +2964,7 @@ exports.CSS_PROPERTIES = {
       "scroll-behavior",
       "scroll-snap-align",
       "scroll-snap-type",
+      "scroll-snap-stop",
       "overscroll-behavior-x",
       "overscroll-behavior-y",
       "isolation",
@@ -3225,6 +3222,8 @@ exports.CSS_PROPERTIES = {
       "animation-fill-mode",
       "animation-delay",
       "animation-timeline",
+      "scroll-timeline-name",
+      "scroll-timeline-axis",
       "-moz-box-align",
       "-moz-box-direction",
       "-moz-box-flex",
@@ -3435,8 +3434,6 @@ exports.CSS_PROPERTIES = {
       "-moz-mac-help-button",
       "-moz-mac-source-list",
       "-moz-mac-source-list-selection",
-      "-moz-mac-vibrant-titlebar-dark",
-      "-moz-mac-vibrant-titlebar-light",
       "-moz-menulist-arrow-button",
       "-moz-win-borderless-glass",
       "-moz-win-browsertabbar-toolbox",
@@ -3560,6 +3557,32 @@ exports.CSS_PROPERTIES = {
       "revert",
       "revert-layer",
       "unset"
+    ]
+  },
+  "backdrop-filter": {
+    "isInherited": false,
+    "subproperties": [
+      "backdrop-filter"
+    ],
+    "supports": [],
+    "values": [
+      "blur",
+      "brightness",
+      "contrast",
+      "drop-shadow",
+      "grayscale",
+      "hue-rotate",
+      "inherit",
+      "initial",
+      "invert",
+      "none",
+      "opacity",
+      "revert",
+      "revert-layer",
+      "saturate",
+      "sepia",
+      "unset",
+      "url"
     ]
   },
   "backface-visibility": {
@@ -5949,6 +5972,7 @@ exports.CSS_PROPERTIES = {
       "revert-layer",
       "size",
       "strict",
+      "style",
       "unset"
     ]
   },
@@ -10196,6 +10220,22 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "scroll-snap-stop": {
+    "isInherited": false,
+    "subproperties": [
+      "scroll-snap-stop"
+    ],
+    "supports": [],
+    "values": [
+      "always",
+      "inherit",
+      "initial",
+      "normal",
+      "revert",
+      "revert-layer",
+      "unset"
+    ]
+  },
   "scroll-snap-type": {
     "isInherited": false,
     "subproperties": [
@@ -11765,6 +11805,14 @@ exports.PREFERENCES = [
     "layout.css.individual-transform.enabled"
   ],
   [
+    "scroll-timeline-axis",
+    "layout.css.scroll-linked-animations.enabled"
+  ],
+  [
+    "scroll-timeline-name",
+    "layout.css.scroll-linked-animations.enabled"
+  ],
+  [
     "size",
     "layout.css.page-size.enabled"
   ],
@@ -11795,6 +11843,10 @@ exports.PREFERENCES = [
   [
     "zoom",
     "layout.css.zoom-transform-hack.enabled"
+  ],
+  [
+    "scroll-timeline",
+    "layout.css.scroll-linked-animations.enabled"
   ],
   [
     "-moz-transform",

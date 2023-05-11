@@ -564,6 +564,11 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
     prompt.setDelegate(
         new PromptInstanceDelegate() {
           @Override
+          public void onPromptDismiss(final BasePrompt prompt) {
+            dialog.dismiss();
+          }
+
+          @Override
           public void onPromptUpdate(final BasePrompt prompt) {
             dialog.setOnDismissListener(null);
             dialog.dismiss();
@@ -838,8 +843,17 @@ final class BasicGeckoViewPrompt implements GeckoSession.PromptDelegate {
         .setNegativeButton(android.R.string.cancel, /* listener */ null)
         .setNeutralButton(R.string.clear_field, listener)
         .setPositiveButton(android.R.string.ok, listener);
-    createStandardDialog(builder, prompt, res).show();
 
+    final AlertDialog dialog = createStandardDialog(builder, prompt, res);
+    dialog.show();
+
+    prompt.setDelegate(
+        new PromptInstanceDelegate() {
+          @Override
+          public void onPromptDismiss(final BasePrompt prompt) {
+            dialog.dismiss();
+          }
+        });
     return res;
   }
 

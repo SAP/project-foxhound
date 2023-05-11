@@ -411,7 +411,7 @@ class MOZ_STACK_CLASS
 HTMLBRElement*
 HTMLEditor::HTMLWithContextInserter::GetInvisibleBRElementAtPoint(
     const EditorDOMPoint& aPointToInsert) const {
-  WSRunScanner wsRunScannerAtInsertionPoint(mHTMLEditor.GetActiveEditingHost(),
+  WSRunScanner wsRunScannerAtInsertionPoint(mHTMLEditor.ComputeEditingHost(),
                                             aPointToInsert);
   if (wsRunScannerAtInsertionPoint.EndsByInvisibleBRElement()) {
     return wsRunScannerAtInsertionPoint.EndReasonBRElementPtr();
@@ -471,7 +471,7 @@ HTMLEditor::HTMLWithContextInserter::GetNewCaretPointAfterInsertingHTML(
 
   // Make sure we don't end up with selection collapsed after an invisible
   // `<br>` element.
-  Element* editingHost = mHTMLEditor.GetActiveEditingHost();
+  Element* editingHost = mHTMLEditor.ComputeEditingHost();
   WSRunScanner wsRunScannerAtCaret(editingHost, pointToPutCaret);
   if (wsRunScannerAtCaret
           .ScanPreviousVisibleNodeOrBlockBoundaryFrom(pointToPutCaret)
@@ -706,7 +706,7 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
   }
 
   Element* editingHost =
-      mHTMLEditor.GetActiveEditingHost(HTMLEditor::LimitInBodyElement::No);
+      mHTMLEditor.ComputeEditingHost(HTMLEditor::LimitInBodyElement::No);
   if (NS_WARN_IF(!editingHost)) {
     return NS_ERROR_FAILURE;
   }
@@ -731,7 +731,7 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
     nsresult rv = mHTMLEditor.DeleteNodeWithTransaction(
         MOZ_KnownLive(*invisibleBRElement));
     if (NS_FAILED(rv)) {
-      NS_WARNING("HTMLEditor::DeleteNodeWithTransaction() failed.");
+      NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed.");
       return rv;
     }
   }
@@ -940,17 +940,14 @@ HTMLEditor::HTMLWithContextInserter::InsertContents(
               pointToInsert.Set(pointToInsert.GetContainer());
               MOZ_ASSERT(pointToInsert.IsSet());
               AutoEditorDOMPointChildInvalidator lockOffset(pointToInsert);
-              DebugOnly<nsresult> rvIgnored =
-                  mHTMLEditor.DeleteNodeWithTransaction(
-                      MOZ_KnownLive(*pointToInsert.GetChild()));
-              if (MOZ_UNLIKELY(mHTMLEditor.Destroyed())) {
-                NS_WARNING(
-                    "HTMLEditor::DeleteNodeWithTransaction() caused destroying "
-                    "the editor");
+              nsresult rv = mHTMLEditor.DeleteNodeWithTransaction(
+                  MOZ_KnownLive(*pointToInsert.GetChild()));
+              if (MOZ_UNLIKELY(rv == NS_ERROR_EDITOR_DESTROYED)) {
+                NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
                 return Err(NS_ERROR_EDITOR_DESTROYED);
               }
-              NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
-                                   "HTMLEditor::DeleteNodeWithTransaction() "
+              NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                                   "EditorBase::DeleteNodeWithTransaction() "
                                    "failed, but ignored");
             }
           }

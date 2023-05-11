@@ -21,10 +21,11 @@ add_task(async function multipleSlashes() {
     context,
     autofilled: "example.com/foo/",
     completed: "http://example.com/foo/",
+    hasAutofillTitle: true,
     matches: [
       makeVisitResult(context, {
         uri: "http://example.com/foo/",
-        title: "example.com/foo/",
+        title: "test visit for http://example.com/foo/",
         heuristic: true,
       }),
     ],
@@ -44,10 +45,11 @@ add_task(async function port() {
     context,
     autofilled: "example.com:8888/foo",
     completed: "http://example.com:8888/foo",
+    hasAutofillTitle: true,
     matches: [
       makeVisitResult(context, {
         uri: "http://example.com:8888/foo",
-        title: "example.com:8888/foo",
+        title: "test visit for http://example.com:8888/foo",
         heuristic: true,
       }),
     ],
@@ -91,6 +93,7 @@ add_task(async function port() {
     context,
     autofilled: "example.com:8888/foo/bar/",
     completed: "http://example.com:8888/foo/bar/",
+    hasAutofillTitle: false,
     matches: [
       makeVisitResult(context, {
         uri: "http://example.com:8888/foo/bar/",
@@ -122,10 +125,11 @@ add_task(async function port() {
     context,
     autofilled: "example.com:8888/foo/bar/baz",
     completed: "http://example.com:8888/foo/bar/baz",
+    hasAutofillTitle: true,
     matches: [
       makeVisitResult(context, {
         uri: "http://example.com:8888/foo/bar/baz",
-        title: "example.com:8888/foo/bar/baz",
+        title: "test visit for http://example.com:8888/foo/bar/baz",
         heuristic: true,
       }),
     ],
@@ -178,7 +182,7 @@ add_task(async function caseInsensitiveFromBookmark() {
     uri: "http://example.com/foo",
   });
 
-  await testCaseInsensitive();
+  await testCaseInsensitive(true);
 
   Services.prefs.clearUserPref("browser.urlbar.suggest.bookmark");
   Services.prefs.clearUserPref("browser.urlbar.suggest.history");
@@ -226,11 +230,12 @@ add_task(async function uriFragmentCaseSensitive() {
     context,
     autofilled: "http://example.com/#TEST",
     completed: "http://example.com/#TEST",
+    hasAutofillTitle: true,
     matches: [
       makeVisitResult(context, {
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://example.com/#TEST",
-        title: "example.com/#TEST",
+        title: "test visit for http://example.com/#TEST",
         heuristic: true,
       }),
     ],
@@ -239,7 +244,328 @@ add_task(async function uriFragmentCaseSensitive() {
   await cleanupPlaces();
 });
 
-async function testCaseInsensitive() {
+add_task(async function uriCase() {
+  await PlacesTestUtils.addVisits([
+    {
+      uri: "http://example.com/ABC/DEF",
+    },
+  ]);
+
+  const testData = [
+    {
+      input: "example.COM",
+      expected: {
+        autofilled: "example.COM/",
+        completed: "http://example.com/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/",
+              title: "example.com",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.COM/",
+      expected: {
+        autofilled: "example.COM/",
+        completed: "http://example.com/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/",
+              title: "example.com/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.COM/a",
+      expected: {
+        autofilled: "example.COM/aBC/",
+        completed: "http://example.com/ABC/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/",
+              title: "example.com/ABC/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.com/ab",
+      expected: {
+        autofilled: "example.com/abC/",
+        completed: "http://example.com/ABC/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/",
+              title: "example.com/ABC/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.com/abc",
+      expected: {
+        autofilled: "example.com/abc/",
+        completed: "http://example.com/ABC/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/",
+              title: "example.com/ABC/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.com/abc/",
+      expected: {
+        autofilled: "example.com/abc/",
+        completed: "http://example.com/abc/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/abc/",
+              title: "example.com/abc/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.com/abc/d",
+      expected: {
+        autofilled: "example.com/abc/dEF",
+        completed: "http://example.com/ABC/DEF",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.com/abc/de",
+      expected: {
+        autofilled: "example.com/abc/deF",
+        completed: "http://example.com/ABC/DEF",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "example.com/abc/def",
+      expected: {
+        autofilled: "example.com/abc/def",
+        completed: "http://example.com/abc/def",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/abc/def",
+              title: "example.com/abc/def",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "http://example.com/a",
+      expected: {
+        autofilled: "http://example.com/aBC/",
+        completed: "http://example.com/ABC/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/",
+              title: "example.com/ABC/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "http://example.com/abc/",
+      expected: {
+        autofilled: "http://example.com/abc/",
+        completed: "http://example.com/abc/",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/abc/",
+              title: "example.com/abc/",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "http://example.com/abc/d",
+      expected: {
+        autofilled: "http://example.com/abc/dEF",
+        completed: "http://example.com/ABC/DEF",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "http://example.com/abc/def",
+      expected: {
+        autofilled: "http://example.com/abc/def",
+        completed: "http://example.com/abc/def",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/abc/def",
+              title: "example.com/abc/def",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+    {
+      input: "http://eXAMple.com/ABC/DEF",
+      expected: {
+        autofilled: "http://eXAMple.com/ABC/DEF",
+        completed: "http://example.com/ABC/DEF",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "http://eXAMple.com/abc/def",
+      expected: {
+        autofilled: "http://eXAMple.com/abc/def",
+        completed: "http://example.com/abc/def",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/abc/def",
+              title: "example.com/abc/def",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "http://example.com/ABC/DEF",
+              title: "test visit for http://example.com/ABC/DEF",
+            }),
+        ],
+      },
+    },
+  ];
+
+  for (const { input, expected } of testData) {
+    const context = createContext(input, {
+      isPrivate: false,
+    });
+    await check_results({
+      context,
+      autofilled: expected.autofilled,
+      completed: expected.completed,
+      hasAutofillTitle: expected.hasAutofillTitle,
+      matches: expected.results.map(f => f(context)),
+    });
+  }
+
+  await cleanupPlaces();
+});
+
+async function testCaseInsensitive(isBookmark = false) {
   const testData = [
     {
       input: "example.com/F",
@@ -260,10 +586,13 @@ async function testCaseInsensitive() {
       context,
       autofilled: expectedAutofill,
       completed: "http://example.com/foo",
+      hasAutofillTitle: true,
       matches: [
         makeVisitResult(context, {
           uri: "http://example.com/foo",
-          title: "example.com/foo",
+          title: isBookmark
+            ? "A bookmark"
+            : "test visit for http://example.com/foo",
           heuristic: true,
         }),
       ],
@@ -286,10 +615,11 @@ add_task(async function originLooksLikePrefix1() {
     context,
     autofilled: "localhost:8888/foo",
     completed: "http://localhost:8888/foo",
+    hasAutofillTitle: true,
     matches: [
       makeVisitResult(context, {
         uri: "http://localhost:8888/foo",
-        title: "localhost:8888/foo",
+        title: "test visit for http://localhost:8888/foo",
         heuristic: true,
       }),
     ],
@@ -311,6 +641,7 @@ add_task(async function originLooksLikePrefix2() {
     context,
     autofilled: "localhost:8888/foo/",
     completed: "http://localhost:8888/foo/",
+    hasAutofillTitle: false,
     matches: [
       makeVisitResult(context, {
         uri: "http://localhost:8888/foo/",
@@ -331,10 +662,11 @@ add_task(async function originLooksLikePrefix2() {
     context,
     autofilled: "localhost:8888/foo/bar",
     completed: "http://localhost:8888/foo/bar",
+    hasAutofillTitle: true,
     matches: [
       makeVisitResult(context, {
         uri: "http://localhost:8888/foo/bar",
-        title: "localhost:8888/foo/bar",
+        title: "test visit for http://localhost:8888/foo/bar",
         heuristic: true,
       }),
     ],
@@ -355,21 +687,29 @@ add_task(async function viewSourceAsPrefix() {
   let testData = [
     {
       input: "view-source:h",
-      expectedAutofill: "view-source:https:/",
+      completed: "view-source:https:/",
+      autofilled: "view-source:https:/",
     },
     {
       input: "view-source:http",
-      expectedAutofill: "view-source:https:/",
+      completed: "view-source:https:/",
+      autofilled: "view-source:https:/",
+    },
+    {
+      input: "VIEW-SOURCE:http",
+      completed: "view-source:https:/",
+      autofilled: "VIEW-SOURCE:https:/",
     },
   ];
 
   // Only autofills from view-source:h to view-source:https:/
-  for (let { input, expectedAutofill } of testData) {
+  for (let { input, completed, autofilled } of testData) {
     let context = createContext(input, { isPrivate: false });
     await check_results({
       context,
-      completed: expectedAutofill,
-      autofilled: expectedAutofill,
+      completed,
+      autofilled,
+      hasAutofillTitle: false,
       matches: [
         {
           heuristic: true,
@@ -401,21 +741,28 @@ add_task(async function dataAsPrefix() {
   let testData = [
     {
       input: "data:t",
-      expectedAutofill: "data:text/",
+      completed: "data:text/",
+      autofilled: "data:text/",
     },
     {
       input: "data:text",
-      expectedAutofill: "data:text/",
+      completed: "data:text/",
+      autofilled: "data:text/",
+    },
+    {
+      input: "DATA:text",
+      completed: "data:text/",
+      autofilled: "DATA:text/",
     },
   ];
 
-  // Only autofills from text:t to view-source:https:/
-  for (let { input, expectedAutofill } of testData) {
+  for (let { input, completed, autofilled } of testData) {
     let context = createContext(input, { isPrivate: false });
     await check_results({
       context,
-      completed: expectedAutofill,
-      autofilled: expectedAutofill,
+      completed,
+      autofilled,
+      hasAutofillTitle: false,
       matches: [
         {
           heuristic: true,
@@ -432,4 +779,130 @@ add_task(async function dataAsPrefix() {
   }
 
   await cleanupPlaces();
+});
+
+// Checks about prefixes
+add_task(async function aboutAsPrefix() {
+  let testData = [
+    {
+      input: "about:abou",
+      completed: "about:about",
+      autofilled: "about:about",
+    },
+    {
+      input: "ABOUT:abou",
+      completed: "about:about",
+      autofilled: "ABOUT:about",
+    },
+  ];
+
+  for (let { input, completed, autofilled } of testData) {
+    let context = createContext(input, { isPrivate: false });
+    await check_results({
+      context,
+      completed,
+      autofilled,
+      matches: [
+        {
+          heuristic: true,
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        },
+      ],
+    });
+  }
+
+  await cleanupPlaces();
+});
+
+// Checks a URL that has www name in history.
+add_task(async function wwwHistory() {
+  const testData = [
+    {
+      input: "example.com/",
+      visitHistory: [{ uri: "http://www.example.com/", title: "Example" }],
+      expected: {
+        autofilled: "example.com/",
+        completed: "http://www.example.com/",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "http://www.example.com/",
+              title: "Example",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "https://example.com/",
+      visitHistory: [{ uri: "https://www.example.com/", title: "Example" }],
+      expected: {
+        autofilled: "https://example.com/",
+        completed: "https://www.example.com/",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "https://www.example.com/",
+              title: "Example",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "https://example.com/abc",
+      visitHistory: [{ uri: "https://www.example.com/abc", title: "Example" }],
+      expected: {
+        autofilled: "https://example.com/abc",
+        completed: "https://www.example.com/abc",
+        hasAutofillTitle: true,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "https://www.example.com/abc",
+              title: "Example",
+              heuristic: true,
+            }),
+        ],
+      },
+    },
+    {
+      input: "https://example.com/ABC",
+      visitHistory: [{ uri: "https://www.example.com/abc", title: "Example" }],
+      expected: {
+        autofilled: "https://example.com/ABC",
+        completed: "https://www.example.com/ABC",
+        hasAutofillTitle: false,
+        results: [
+          context =>
+            makeVisitResult(context, {
+              uri: "https://www.example.com/ABC",
+              title: "https://www.example.com/ABC",
+              heuristic: true,
+            }),
+          context =>
+            makeVisitResult(context, {
+              uri: "https://www.example.com/abc",
+              title: "Example",
+            }),
+        ],
+      },
+    },
+  ];
+
+  for (const { input, visitHistory, expected } of testData) {
+    await PlacesTestUtils.addVisits(visitHistory);
+    const context = createContext(input, { isPrivate: false });
+    await check_results({
+      context,
+      completed: expected.completed,
+      autofilled: expected.autofilled,
+      hasAutofillTitle: expected.hasAutofillTitle,
+      matches: expected.results.map(f => f(context)),
+    });
+    await cleanupPlaces();
+  }
 });

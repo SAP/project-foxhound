@@ -175,7 +175,7 @@ void ServoStyleSet::RecordShadowStyleChange(ShadowRoot& aShadowRoot) {
 }
 
 void ServoStyleSet::InvalidateStyleForDocumentStateChanges(
-    EventStates aStatesChanged) {
+    DocumentState aStatesChanged) {
   MOZ_ASSERT(mDocument);
   MOZ_ASSERT(!aStatesChanged.IsEmpty());
 
@@ -200,8 +200,9 @@ void ServoStyleSet::InvalidateStyleForDocumentStateChanges(
     }
   });
 
-  Servo_InvalidateStyleForDocStateChanges(
-      root, mRawSet.get(), &nonDocumentStyles, aStatesChanged.ServoValue());
+  Servo_InvalidateStyleForDocStateChanges(root, mRawSet.get(),
+                                          &nonDocumentStyles,
+                                          aStatesChanged.GetInternalValue());
 }
 
 static const MediaFeatureChangeReason kMediaFeaturesAffectingDefaultStyle =
@@ -1152,8 +1153,6 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveStyleLazily(
     const Element& aElement, PseudoStyleType aPseudoType,
     StyleRuleInclusion aRuleInclusion) {
   PreTraverseSync();
-  MOZ_ASSERT(GetPresContext(),
-             "For now, no style resolution without a pres context");
   MOZ_ASSERT(!StylistNeedsUpdate());
 
   AutoSetInServoTraversal guard(this);
@@ -1188,9 +1187,17 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveStyleLazily(
     }
   }
 
-  return Servo_ResolveStyleLazily(elementForStyleResolution,
-                                  pseudoTypeForStyleResolution, aRuleInclusion,
-                                  &Snapshots(), mRawSet.get())
+  nsPresContext* pc = GetPresContext();
+  MOZ_ASSERT(pc, "For now, no style resolution without a pres context");
+  auto* restyleManager = pc->RestyleManager();
+  const bool canUseCache = aRuleInclusion == StyleRuleInclusion::All &&
+                           aElement.OwnerDoc() == mDocument &&
+                           pc->PresShell()->DidInitialize();
+  return Servo_ResolveStyleLazily(
+             elementForStyleResolution, pseudoTypeForStyleResolution,
+             aRuleInclusion, &restyleManager->Snapshots(),
+             restyleManager->GetUndisplayedRestyleGeneration(), canUseCache,
+             mRawSet.get())
       .Consume();
 }
 
@@ -1320,14 +1327,15 @@ bool ServoStyleSet::MightHaveAttributeDependency(const Element& aElement,
 }
 
 bool ServoStyleSet::HasStateDependency(const Element& aElement,
-                                       EventStates aState) const {
+                                       dom::ElementState aState) const {
   return Servo_StyleSet_HasStateDependency(mRawSet.get(), &aElement,
-                                           aState.ServoValue());
+                                           aState.GetInternalValue());
 }
 
-bool ServoStyleSet::HasDocumentStateDependency(EventStates aState) const {
+bool ServoStyleSet::HasDocumentStateDependency(
+    dom::DocumentState aState) const {
   return Servo_StyleSet_HasDocumentStateDependency(mRawSet.get(),
-                                                   aState.ServoValue());
+                                                   aState.GetInternalValue());
 }
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ReparentComputedStyle(

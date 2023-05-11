@@ -1104,7 +1104,10 @@ void DocumentLoadListener::Disconnect(bool aContinueNavigating) {
     httpChannelImpl->SetEarlyHintObserver(nullptr);
   }
 
-  if (GetLoadingBrowsingContext()) {
+  // Don't cancel ongoing early hints when continuing to load the web page.
+  // Early hints are loaded earlier in the code and shouldn't get cancelled
+  // here. See also: Bug 1765652
+  if (GetLoadingBrowsingContext() && !aContinueNavigating) {
     GetLoadingBrowsingContext()->mEarlyHintsService.Cancel();
   }
 
@@ -1263,9 +1266,6 @@ void DocumentLoadListener::ApplyPendingFunctions(
   nsCOMPtr<nsIParentChannel> parentChannel = aChannel;
   for (const auto& variant : mIParentChannelFunctions) {
     variant.match(
-        [parentChannel](const nsIHttpChannel::FlashPluginState& aState) {
-          parentChannel->NotifyFlashPluginStateChanged(aState);
-        },
         [parentChannel](const ClassifierMatchedInfoParams& aParams) {
           parentChannel->SetClassifierMatchedInfo(
               aParams.mList, aParams.mProvider, aParams.mFullHash);
@@ -2591,17 +2591,6 @@ DocumentLoadListener::SetParentListener(
   return NS_OK;
 }
 
-// Rather than forwarding all these nsIParentChannel functions to the child,
-// we cache a list of them, and then ask the 'real' channel to forward them
-// for us after it's created.
-NS_IMETHODIMP
-DocumentLoadListener::NotifyFlashPluginStateChanged(
-    nsIHttpChannel::FlashPluginState aState) {
-  mIParentChannelFunctions.AppendElement(
-      IParentChannelFunction{VariantIndex<0>{}, aState});
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 DocumentLoadListener::SetClassifierMatchedInfo(const nsACString& aList,
                                                const nsACString& aProvider,
@@ -2612,7 +2601,7 @@ DocumentLoadListener::SetClassifierMatchedInfo(const nsACString& aList,
   params.mFullHash = aFullHash;
 
   mIParentChannelFunctions.AppendElement(
-      IParentChannelFunction{VariantIndex<1>{}, std::move(params)});
+      IParentChannelFunction{VariantIndex<0>{}, std::move(params)});
   return NS_OK;
 }
 
@@ -2624,7 +2613,7 @@ DocumentLoadListener::SetClassifierMatchedTrackingInfo(
   params.mFullHashes = aFullHash;
 
   mIParentChannelFunctions.AppendElement(
-      IParentChannelFunction{VariantIndex<2>{}, std::move(params)});
+      IParentChannelFunction{VariantIndex<1>{}, std::move(params)});
   return NS_OK;
 }
 
@@ -2632,7 +2621,7 @@ NS_IMETHODIMP
 DocumentLoadListener::NotifyClassificationFlags(uint32_t aClassificationFlags,
                                                 bool aIsThirdParty) {
   mIParentChannelFunctions.AppendElement(IParentChannelFunction{
-      VariantIndex<3>{},
+      VariantIndex<2>{},
       ClassificationFlagsParams{aClassificationFlags, aIsThirdParty}});
   return NS_OK;
 }

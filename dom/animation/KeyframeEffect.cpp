@@ -743,12 +743,6 @@ void KeyframeEffect::ResetPartialPrerendered() {
   }
 }
 
-static bool IsSupportedPseudoForWebAnimation(PseudoStyleType aType) {
-  // FIXME: Bug 1615469: Support first-line and first-letter for Web Animation.
-  return aType == PseudoStyleType::before || aType == PseudoStyleType::after ||
-         aType == PseudoStyleType::marker;
-}
-
 static const KeyframeEffectOptions& KeyframeEffectOptionsFromUnion(
     const UnrestrictedDoubleOrKeyframeEffectOptions& aOptions) {
   MOZ_ASSERT(aOptions.IsKeyframeEffectOptions());
@@ -794,7 +788,7 @@ static KeyframeEffectParams KeyframeEffectParamsFromUnion(
   }
 
   result.mPseudoType = *pseudoType;
-  if (!IsSupportedPseudoForWebAnimation(result.mPseudoType)) {
+  if (!AnimationUtils::IsSupportedPseudoForAnimations(result.mPseudoType)) {
     // Per the spec, we throw SyntaxError for unsupported pseudos.
     aRv.ThrowSyntaxError(
         nsPrintfCString("'%s' is an unsupported pseudo-element.",
@@ -1103,7 +1097,7 @@ void KeyframeEffect::SetPseudoElement(const nsAString& aPseudoElement,
     return;
   }
 
-  if (!IsSupportedPseudoForWebAnimation(*pseudoType)) {
+  if (!AnimationUtils::IsSupportedPseudoForAnimations(*pseudoType)) {
     // Per the spec, we throw SyntaxError for unsupported pseudos.
     aRv.ThrowSyntaxError(
         nsPrintfCString("'%s' is an unsupported pseudo-element.",
@@ -1868,6 +1862,8 @@ void KeyframeEffect::SetAnimation(Animation* aAnimation) {
 
   mAnimation = aAnimation;
 
+  UpdateNormalizedTiming();
+
   // The order of these function calls is important:
   // NotifyAnimationTimingUpdated() need the updated mIsRelevant flag to check
   // if it should create the effectSet or not, and MarkCascadeNeedsUpdate()
@@ -1953,8 +1949,8 @@ bool KeyframeEffect::ContainsAnimatedScale(const nsIFrame* aFrame) const {
 
     AnimationValue baseStyle = BaseStyle(prop.mProperty);
     if (!baseStyle.IsNull()) {
-      gfx::Size size = baseStyle.GetScaleValue(aFrame);
-      if (size != gfx::Size(1.0f, 1.0f)) {
+      gfx::MatrixScales size = baseStyle.GetScaleValue(aFrame);
+      if (size != gfx::MatrixScales()) {
         return true;
       }
     }
@@ -1964,14 +1960,14 @@ bool KeyframeEffect::ContainsAnimatedScale(const nsIFrame* aFrame) const {
     // really matter.
     for (const AnimationPropertySegment& segment : prop.mSegments) {
       if (!segment.mFromValue.IsNull()) {
-        gfx::Size from = segment.mFromValue.GetScaleValue(aFrame);
-        if (from != gfx::Size(1.0f, 1.0f)) {
+        gfx::MatrixScales from = segment.mFromValue.GetScaleValue(aFrame);
+        if (from != gfx::MatrixScales()) {
           return true;
         }
       }
       if (!segment.mToValue.IsNull()) {
-        gfx::Size to = segment.mToValue.GetScaleValue(aFrame);
-        if (to != gfx::Size(1.0f, 1.0f)) {
+        gfx::MatrixScales to = segment.mToValue.GetScaleValue(aFrame);
+        if (to != gfx::MatrixScales()) {
           return true;
         }
       }

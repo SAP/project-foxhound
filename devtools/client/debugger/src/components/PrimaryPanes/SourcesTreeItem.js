@@ -13,7 +13,6 @@ import AccessibleImage from "../shared/AccessibleImage";
 
 import {
   getGeneratedSourceByURL,
-  getHasSiblingOfSameName,
   hasPrettyTab as checkHasPrettyTab,
   getContext,
   getExtensionNameBySourceUrl,
@@ -44,7 +43,6 @@ class SourceTreeItem extends Component {
       blackBoxSources: PropTypes.func.isRequired,
       clearProjectDirectoryRoot: PropTypes.func.isRequired,
       cx: PropTypes.object.isRequired,
-      debuggeeUrl: PropTypes.string.isRequired,
       depth: PropTypes.number.isRequired,
       expanded: PropTypes.bool.isRequired,
       extensionName: PropTypes.string,
@@ -279,13 +277,7 @@ class SourceTreeItem extends Component {
   }
 
   renderIcon(item, depth) {
-    const {
-      debuggeeUrl,
-      projectRoot,
-      source,
-      hasPrettyTab,
-      threads,
-    } = this.props;
+    const { projectRoot, source, hasPrettyTab, threads } = this.props;
 
     if (item.name === "webpack://") {
       return <AccessibleImage className="webpack" />;
@@ -301,13 +293,7 @@ class SourceTreeItem extends Component {
 
       if (thread) {
         const icon = thread.targetType.includes("worker") ? "worker" : "window";
-        return (
-          <AccessibleImage
-            className={classnames(icon, {
-              debuggee: debuggeeUrl && debuggeeUrl.includes(item.name),
-            })}
-          />
-        );
+        return <AccessibleImage className={classnames(icon)} />;
       }
     }
 
@@ -435,7 +421,6 @@ const mapStateToProps = (state, props) => {
   return {
     cx: getContext(state),
     hasMatchingGeneratedSource: getHasMatchingGeneratedSource(state, source),
-    hasSiblingOfSameName: getHasSiblingOfSameName(state, source),
     hasPrettyTab: source ? checkHasPrettyTab(state, source.url) : false,
     sourceContent: source ? getSourceContentValue(state, source) : null,
     extensionName:

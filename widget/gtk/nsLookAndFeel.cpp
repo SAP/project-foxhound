@@ -538,11 +538,11 @@ nsresult nsLookAndFeel::PerThemeData::GetColor(ColorID aID,
     case ColorID::Selecteditemtext:
       aColor = mSelectedItemText;
       break;
-    case ColorID::MozAccentColor:
+    case ColorID::Accentcolor:
       aColor = mAccentColor;
       break;
-    case ColorID::MozAccentColorForeground:
-      aColor = mAccentColorForeground;
+    case ColorID::Accentcolortext:
+      aColor = mAccentColorText;
       break;
     case ColorID::MozCellhighlight:
       aColor = mMozCellHighlightBackground;
@@ -862,9 +862,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = ConvertGTKStepperStyleToMozillaScrollArrowStyle(scrollbar);
       break;
     }
-    case IntID::ScrollSliderStyle:
-      aResult = eScrollThumbStyle_Proportional;
-      break;
     case IntID::TreeOpenDelay:
       aResult = 1000;
       break;
@@ -902,7 +899,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = 1;
       break;
     case IntID::SwipeAnimationEnabled:
-      aResult = 0;
+      aResult = 1;
       break;
     case IntID::ContextMenuOffsetVertical:
     case IntID::ContextMenuOffsetHorizontal:
@@ -1020,7 +1017,7 @@ nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
 
 static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
                               gfxFontStyle* aFontStyle) {
-  aFontStyle->style = FontSlantStyle::Normal();
+  aFontStyle->style = FontSlantStyle::NORMAL;
 
   // As in
   // https://git.gnome.org/browse/gtk+/tree/gtk/gtkwidget.c?h=3.22.19#n10333
@@ -1034,10 +1031,11 @@ static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
   NS_ConvertUTF8toUTF16 family(pango_font_description_get_family(desc));
   *aFontName = quote + family + quote;
 
-  aFontStyle->weight = FontWeight(pango_font_description_get_weight(desc));
+  aFontStyle->weight =
+      FontWeight::FromInt(pango_font_description_get_weight(desc));
 
   // FIXME: Set aFontStyle->stretch correctly!
-  aFontStyle->stretch = FontStretch::Normal();
+  aFontStyle->stretch = FontStretch::NORMAL;
 
   float size = float(pango_font_description_get_size(desc)) / PANGO_SCALE;
 
@@ -1096,16 +1094,11 @@ bool nsLookAndFeel::PerThemeData::GetFont(FontID aID, nsString& aFontName,
       break;
   }
 
-  // Scale the font for the current monitor
-  double scaleFactor = StaticPrefs::layout_css_devPixelsPerPx();
-  if (scaleFactor > 0) {
-    aFontStyle.size *=
-        widget::ScreenHelperGTK::GetGTKMonitorScaleFactor() / scaleFactor;
-  } else {
-    // Convert gdk pixels to CSS pixels.
-    aFontStyle.size /= gfxPlatformGtk::GetFontScaleFactor();
-  }
-
+  // Convert GDK pixels to CSS pixels.
+  // When "layout.css.devPixelsPerPx" > 0, this is not a direct conversion.
+  // The difference produces a scaling of system fonts in proportion with
+  // other scaling from the change in CSS pixel sizes.
+  aFontStyle.size /= LookAndFeel::GetTextScaleFactor();
   return true;
 }
 
@@ -1307,7 +1300,7 @@ void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
 
     if (StaticPrefs::widget_gtk_alt_theme_accent()) {
       mAltTheme.mAccentColor = mSystemTheme.mAccentColor;
-      mAltTheme.mAccentColorForeground = mSystemTheme.mAccentColorForeground;
+      mAltTheme.mAccentColorText = mSystemTheme.mAccentColorText;
     }
   }
 
@@ -1325,7 +1318,7 @@ void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
     auto& light = mSystemTheme.mIsDark ? mAltTheme : mSystemTheme;
 
     dark.mAccentColor = light.mAccentColor;
-    dark.mAccentColorForeground = light.mAccentColorForeground;
+    dark.mAccentColorText = light.mAccentColorText;
   }
 
   // Right now we're using the opposite color-scheme theme, make sure to record
@@ -1734,10 +1727,10 @@ void nsLookAndFeel::PerThemeData::Init() {
     }
 
     mThemedScrollbarThumbHover = ThemeColors::AdjustUnthemedScrollbarThumbColor(
-        mThemedScrollbarThumb, NS_EVENT_STATE_HOVER);
+        mThemedScrollbarThumb, dom::ElementState::HOVER);
     mThemedScrollbarThumbActive =
-        ThemeColors::AdjustUnthemedScrollbarThumbColor(mThemedScrollbarThumb,
-                                                       NS_EVENT_STATE_ACTIVE);
+        ThemeColors::AdjustUnthemedScrollbarThumbColor(
+            mThemedScrollbarThumb, dom::ElementState::ACTIVE);
   }
 
   // The label is not added to a parent widget, but shared for constructing
@@ -1924,13 +1917,13 @@ void nsLookAndFeel::PerThemeData::Init() {
     //
     //   https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/named-colors.html#accent-colors
     if (!GetNamedColorPair(style, "accent_bg_color", "accent_fg_color",
-                           &mAccentColor, &mAccentColorForeground)) {
+                           &mAccentColor, &mAccentColorText)) {
       mAccentColor = mSelectedItem;
-      mAccentColorForeground = mSelectedItemText;
+      mAccentColorText = mSelectedItemText;
     }
 
-    EnsureColorPairIsOpaque(mAccentColor, mAccentColorForeground);
-    PreferDarkerBackground(mAccentColor, mAccentColorForeground);
+    EnsureColorPairIsOpaque(mAccentColor, mAccentColorText);
+    PreferDarkerBackground(mAccentColor, mAccentColorText);
   }
 
   // Button text color

@@ -5,8 +5,6 @@
 
 var EXPORTED_SYMBOLS = ["AboutPrivateBrowsingChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -15,10 +13,13 @@ const { RemotePageChild } = ChromeUtils.import(
   "resource://gre/actors/RemotePageChild.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
-  Services: "resource://gre/modules/Services.jsm",
 });
 
 class AboutPrivateBrowsingChild extends RemotePageChild {
@@ -26,9 +27,6 @@ class AboutPrivateBrowsingChild extends RemotePageChild {
     super.actorCreated();
     let window = this.contentWindow;
 
-    Cu.exportFunction(this.PrivateBrowsingFeatureConfig.bind(this), window, {
-      defineAs: "PrivateBrowsingFeatureConfig",
-    });
     Cu.exportFunction(this.PrivateBrowsingRecordClick.bind(this), window, {
       defineAs: "PrivateBrowsingRecordClick",
     });
@@ -47,10 +45,9 @@ class AboutPrivateBrowsingChild extends RemotePageChild {
   }
 
   PrivateBrowsingRecordClick(source) {
-    const experiment =
-      ExperimentAPI.getExperimentMetaData({
-        featureId: "privatebrowsing",
-      }) || ExperimentAPI.getExperimentMetaData({ featureId: "pbNewtab" });
+    const experiment = lazy.ExperimentAPI.getExperimentMetaData({
+      featureId: "pbNewtab",
+    });
     if (experiment) {
       Services.telemetry.recordEvent("aboutprivatebrowsing", "click", source);
     }
@@ -58,26 +55,11 @@ class AboutPrivateBrowsingChild extends RemotePageChild {
   }
 
   PrivateBrowsingShouldHideDefault() {
-    const config = NimbusFeatures.pbNewtab.getAllVariables() || {};
+    const config = lazy.NimbusFeatures.pbNewtab.getAllVariables() || {};
     return config?.content?.hideDefault;
   }
 
   PrivateBrowsingExposureTelemetry() {
-    NimbusFeatures.pbNewtab.recordExposureEvent({ once: false });
-  }
-
-  PrivateBrowsingFeatureConfig() {
-    const config = NimbusFeatures.privatebrowsing.getAllVariables() || {};
-
-    NimbusFeatures.privatebrowsing.recordExposureEvent();
-
-    // Format urls if any are defined
-    ["infoLinkUrl", "promoLinkUrl"].forEach(key => {
-      if (config[key]) {
-        config[key] = Services.urlFormatter.formatURL(config[key]);
-      }
-    });
-
-    return Cu.cloneInto(config, this.contentWindow);
+    lazy.NimbusFeatures.pbNewtab.recordExposureEvent({ once: false });
   }
 }

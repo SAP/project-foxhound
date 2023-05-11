@@ -56,7 +56,7 @@ template <typename PaintBackendData>
 bool ScrollbarDrawingGTK::DoPaintScrollbarThumb(
     PaintBackendData& aPaintData, const LayoutDeviceRect& aRect,
     ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
   sRGBColor thumbColor = ComputeScrollbarThumbColor(
       aFrame, aStyle, aElementState, aDocumentState, aColors);
@@ -99,7 +99,7 @@ bool ScrollbarDrawingGTK::DoPaintScrollbarThumb(
 bool ScrollbarDrawingGTK::PaintScrollbarThumb(
     DrawTarget& aDrawTarget, const LayoutDeviceRect& aRect,
     ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
   return DoPaintScrollbarThumb(aDrawTarget, aRect, aScrollbarKind, aFrame,
                                aStyle, aElementState, aDocumentState, aColors,
@@ -109,7 +109,7 @@ bool ScrollbarDrawingGTK::PaintScrollbarThumb(
 bool ScrollbarDrawingGTK::PaintScrollbarThumb(
     WebRenderBackendData& aWrData, const LayoutDeviceRect& aRect,
     ScrollbarKind aScrollbarKind, nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const EventStates& aElementState, const EventStates& aDocumentState,
+    const ElementState& aElementState, const DocumentState& aDocumentState,
     const Colors& aColors, const DPIRatio& aDpiRatio) {
   return DoPaintScrollbarThumb(aWrData, aRect, aScrollbarKind, aFrame, aStyle,
                                aElementState, aDocumentState, aColors,
@@ -131,16 +131,4 @@ void ScrollbarDrawingGTK::RecomputeScrollbarParams() {
     defaultSize = overrideSize;
   }
   mHorizontalScrollbarHeight = mVerticalScrollbarWidth = defaultSize;
-
-  // On GTK, widgets don't account for text scale factor, but that's included
-  // in the usual DPI computations, so we undo that here, just like
-  // GetMonitorScaleFactor does it in nsNativeThemeGTK.
-  float scale =
-      LookAndFeel::GetFloat(LookAndFeel::FloatID::TextScaleFactor, 1.0f);
-  if (scale != 1.0f) {
-    mVerticalScrollbarWidth =
-        uint32_t(round(float(mVerticalScrollbarWidth) / scale));
-    mHorizontalScrollbarHeight =
-        uint32_t(round(float(mHorizontalScrollbarHeight) / scale));
-  }
 }

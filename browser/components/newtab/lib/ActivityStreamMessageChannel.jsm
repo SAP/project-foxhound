@@ -4,16 +4,18 @@
 
 "use strict";
 
+const lazy = {};
+
 // TODO delete this?
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AboutNewTab",
   "resource:///modules/AboutNewTab.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AboutHomeStartupCache",
   "resource:///modules/BrowserGlue.jsm"
 );
@@ -42,7 +44,7 @@ const DEFAULT_OPTIONS = {
   incomingMessageName: "ActivityStream:ContentToMain",
 };
 
-this.ActivityStreamMessageChannel = class ActivityStreamMessageChannel {
+class ActivityStreamMessageChannel {
   /**
    * ActivityStreamMessageChannel - This module connects a Redux store to a RemotePageManager in Firefox.
    *                  Call .createChannel to start the connection, and .destroyChannel to destroy it.
@@ -116,7 +118,7 @@ this.ActivityStreamMessageChannel = class ActivityStreamMessageChannel {
   broadcast(action) {
     // We're trying to update all tabs, so signal the AboutHomeStartupCache
     // that its likely time to refresh the cache.
-    AboutHomeStartupCache.onPreloadedNewTabMessage();
+    lazy.AboutHomeStartupCache.onPreloadedNewTabMessage();
 
     this.channel.sendAsyncMessage(this.outgoingMessageName, action);
   }
@@ -173,7 +175,7 @@ this.ActivityStreamMessageChannel = class ActivityStreamMessageChannel {
     // We're trying to update the preloaded about:newtab, so signal
     // the AboutHomeStartupCache that its likely time to refresh
     // the cache.
-    AboutHomeStartupCache.onPreloadedNewTabMessage();
+    lazy.AboutHomeStartupCache.onPreloadedNewTabMessage();
 
     const preloadedBrowsers = this.getPreloadedBrowser();
     if (preloadedBrowsers && action.data) {
@@ -223,7 +225,7 @@ this.ActivityStreamMessageChannel = class ActivityStreamMessageChannel {
     //  Receive AboutNewTab's Remote Pages instance, if it exists, on override
     const channel =
       this.pageURL === ABOUT_NEW_TAB_URL &&
-      AboutNewTab.overridePageListener(true);
+      lazy.AboutNewTab.overridePageListener(true);
     this.channel =
       channel || new RemotePages([ABOUT_HOME_URL, ABOUT_NEW_TAB_URL]);
     this.channel.addMessageListener("RemotePage:Init", this.onNewTabInit);
@@ -260,7 +262,7 @@ this.ActivityStreamMessageChannel = class ActivityStreamMessageChannel {
       this.onMessage
     );
     if (this.pageURL === ABOUT_NEW_TAB_URL) {
-      AboutNewTab.reset(this.channel);
+      lazy.AboutNewTab.reset(this.channel);
     } else {
       this.channel.destroy();
     }
@@ -338,7 +340,6 @@ this.ActivityStreamMessageChannel = class ActivityStreamMessageChannel {
     action._target = msg.target;
     this.onActionFromContent(action, portID);
   }
-};
+}
 
-this.DEFAULT_OPTIONS = DEFAULT_OPTIONS;
 const EXPORTED_SYMBOLS = ["ActivityStreamMessageChannel", "DEFAULT_OPTIONS"];

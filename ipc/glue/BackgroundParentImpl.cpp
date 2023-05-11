@@ -11,19 +11,15 @@
 #  include "CamerasParent.h"
 #endif
 #include "mozilla/Assertions.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/RDDProcessManager.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/RemoteLazyInputStreamParent.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BackgroundSessionStorageServiceParent.h"
 #include "mozilla/dom/ClientManagerActors.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/EndpointForReportParent.h"
 #include "mozilla/dom/FileCreatorParent.h"
-#include "mozilla/dom/FileSystemBase.h"
 #include "mozilla/dom/FileSystemRequestParent.h"
 #include "mozilla/dom/GamepadEventChannelParent.h"
 #include "mozilla/dom/GamepadTestChannelParent.h"
@@ -64,20 +60,16 @@
 #include "mozilla/ipc/IdleSchedulerParent.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/PBackgroundTestParent.h"
-#include "mozilla/media/MediaParent.h"
 #include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "mozilla/net/HttpBackgroundChannelParent.h"
 #include "mozilla/net/HttpConnectionMgrParent.h"
 #include "mozilla/net/WebSocketConnectionParent.h"
-#include "mozilla/psm/IPCClientCertsChild.h"
 #include "mozilla/psm/IPCClientCertsParent.h"
 #include "mozilla/psm/VerifySSLServerCertParent.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIPrincipal.h"
-#include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
-#include "nsTraceRefcnt.h"
 #include "nsXULAppAPI.h"
 
 using mozilla::AssertIsOnMainThread;
@@ -942,23 +934,6 @@ bool BackgroundParentImpl::DeallocPCacheStorageParent(
     PCacheStorageParent* aActor) {
   dom::cache::DeallocPCacheStorageParent(aActor);
   return true;
-}
-
-PCacheParent* BackgroundParentImpl::AllocPCacheParent() {
-  MOZ_CRASH("CacheParent actor must be provided to PBackground manager");
-  return nullptr;
-}
-
-bool BackgroundParentImpl::DeallocPCacheParent(PCacheParent* aActor) {
-  dom::cache::DeallocPCacheParent(aActor);
-  return true;
-}
-
-already_AddRefed<PCacheStreamControlParent>
-BackgroundParentImpl::AllocPCacheStreamControlParent() {
-  MOZ_CRASH(
-      "CacheStreamControlParent actor must be provided to PBackground manager");
-  return nullptr;
 }
 
 PMessagePortParent* BackgroundParentImpl::AllocPMessagePortParent(

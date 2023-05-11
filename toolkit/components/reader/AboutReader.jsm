@@ -14,23 +14,25 @@ const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AsyncPrefs",
   "resource://gre/modules/AsyncPrefs.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NarrateControls",
   "resource://gre/modules/narrate/NarrateControls.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PluralForm",
   "resource://gre/modules/PluralForm.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "NimbusFeatures",
   "resource://nimbus/ExperimentAPI.jsm"
 );
@@ -138,6 +140,9 @@ var AboutReader = function(
   this.colorSchemeMediaList = win.matchMedia("(prefers-color-scheme: dark)");
   this.colorSchemeMediaList.addEventListener("change", this);
 
+  this.prefersContrastMediaList = win.matchMedia("(prefers-contrast)");
+  this.prefersContrastMediaList.addEventListener("change", this);
+
   this._topScrollChange = this._topScrollChange.bind(this);
   this._intersectionObs = new win.IntersectionObserver(this._topScrollChange, {
     root: null,
@@ -175,23 +180,6 @@ var AboutReader = function(
     };
   });
   let colorScheme = Services.prefs.getCharPref("reader.color_scheme");
-
-  // If the UI improvements are not enabled, we will filter "Auto" from
-  // the list of color schemes available and ensure the current preference isn't set to
-  // "Auto"
-  this.readerImprovementsEnabled = Services.prefs.getBoolPref(
-    "reader.improvements_H12022.enabled",
-    false
-  );
-  if (!this.readerImprovementsEnabled) {
-    colorSchemeOptions = colorSchemeOptions.filter(function(value) {
-      return value.name !== "Auto";
-    });
-
-    if (Services.prefs.getCharPref("reader.color_scheme") === "auto") {
-      colorScheme = "light";
-    }
-  }
 
   this._setupSegmentedButton(
     "color-scheme-buttons",
@@ -242,7 +230,7 @@ var AboutReader = function(
     Services.prefs.getBoolPref("narrate.enabled") &&
     !Services.prefs.getBoolPref("privacy.resistFingerprinting", false)
   ) {
-    new NarrateControls(win, this._languagePromise);
+    new lazy.NarrateControls(win, this._languagePromise);
   }
 
   this._loadArticle(docContentType);
@@ -357,7 +345,7 @@ AboutReader.prototype = {
           let btn = this._doc.createElement("button");
           btn.dataset.buttonid = message.data.id;
           btn.dataset.telemetryId = `reader-${message.data.telemetryId}`;
-          btn.className = "button " + message.data.id;
+          btn.className = "toolbar-button " + message.data.id;
           let tip = this._doc.createElement("span");
           tip.className = "hover-label";
           tip.textContent = message.data.label;
@@ -506,15 +494,18 @@ AboutReader.prototype = {
         break;
 
       case "change":
-        // We should only be changing the color scheme in relation to a preference change
-        // if the user has the color scheme preference set to "Auto"
-        if (Services.prefs.getCharPref("reader.color_scheme") === "auto") {
-          let colorScheme = this.colorSchemeMediaList.matches
-            ? "dark"
-            : "light";
-
-          this._setColorScheme(colorScheme);
+        let colorScheme;
+        if (this.prefersContrastMediaList.matches) {
+          colorScheme = "hcm";
+        } else {
+          colorScheme = Services.prefs.getCharPref("reader.color_scheme");
+          // We should be changing the color scheme in relation to a preference change
+          // if the user has the color scheme preference set to "Auto".
+          if (colorScheme == "auto") {
+            colorScheme = this.colorSchemeMediaList.matches ? "dark" : "light";
+          }
         }
+        this._setColorScheme(colorScheme);
 
         break;
     }
@@ -531,7 +522,7 @@ AboutReader.prototype = {
   },
 
   async _resetFontSize() {
-    await AsyncPrefs.reset("reader.font_size");
+    await lazy.AsyncPrefs.reset("reader.font_size");
     let currentSize = Services.prefs.getIntPref("reader.font_size");
     this._setFontSize(currentSize);
   },
@@ -553,7 +544,7 @@ AboutReader.prototype = {
 
     let readerBody = this._doc.body;
     readerBody.style.setProperty("--font-size", size + "px");
-    return AsyncPrefs.set("reader.font_size", this._fontSize);
+    return lazy.AsyncPrefs.set("reader.font_size", this._fontSize);
   },
 
   _setupFontSizeButtons() {
@@ -623,7 +614,7 @@ AboutReader.prototype = {
     let width = 20 + 5 * (this._contentWidth - 1) + "em";
     this._doc.body.style.setProperty("--content-width", width);
     this._scheduleToolbarOverlapHandler();
-    return AsyncPrefs.set("reader.content_width", this._contentWidth);
+    return lazy.AsyncPrefs.set("reader.content_width", this._contentWidth);
   },
 
   _displayContentWidth(currentContentWidth) {
@@ -705,7 +696,7 @@ AboutReader.prototype = {
     this._displayLineHeight(newLineHeight);
     let height = 1 + 0.2 * (newLineHeight - 1) + "em";
     this._containerElement.style.setProperty("--line-height", height);
-    return AsyncPrefs.set("reader.line_height", newLineHeight);
+    return lazy.AsyncPrefs.set("reader.line_height", newLineHeight);
   },
 
   _displayLineHeight(currentLineHeight) {
@@ -795,10 +786,16 @@ AboutReader.prototype = {
       bodyClasses.remove(this._colorScheme);
     }
 
-    if (newColorScheme === "auto") {
-      this._colorScheme = this.colorSchemeMediaList.matches ? "dark" : "light";
+    if (!this._win.matchMedia("(prefers-contrast)").matches) {
+      if (newColorScheme === "auto") {
+        this._colorScheme = this.colorSchemeMediaList.matches
+          ? "dark"
+          : "light";
+      } else {
+        this._colorScheme = newColorScheme;
+      }
     } else {
-      this._colorScheme = newColorScheme;
+      this._colorScheme = "hcm";
     }
 
     bodyClasses.add(this._colorScheme);
@@ -808,7 +805,7 @@ AboutReader.prototype = {
   _setColorSchemePref(colorSchemePref) {
     this._setColorScheme(colorSchemePref);
 
-    AsyncPrefs.set("reader.color_scheme", colorSchemePref);
+    lazy.AsyncPrefs.set("reader.color_scheme", colorSchemePref);
   },
 
   _setFontType(newFontType) {
@@ -825,7 +822,7 @@ AboutReader.prototype = {
     this._fontType = newFontType;
     bodyClasses.add(this._fontType);
 
-    AsyncPrefs.set("reader.font_type", this._fontType);
+    lazy.AsyncPrefs.set("reader.font_type", this._fontType);
   },
 
   async _loadArticle(docContentType = "document") {
@@ -1007,7 +1004,7 @@ AboutReader.prototype = {
       displayStringKey = "aboutReader.estimatedReadTimeValue1";
     }
 
-    return PluralForm.get(
+    return lazy.PluralForm.get(
       slowEstimate,
       gStrings.GetStringFromName(displayStringKey)
     )
@@ -1567,7 +1564,7 @@ AboutReader.prototype = {
   },
 
   async _setupPocketCTA() {
-    let ctaVersion = NimbusFeatures.readerMode.getAllVariables()
+    let ctaVersion = lazy.NimbusFeatures.readerMode.getAllVariables()
       ?.pocketCTAVersion;
     this._isLoggedInPocketUser = await this._requestPocketLoginStatus();
     let elPocketCTAWrapper = this._doc.querySelector("#pocket-cta-container");

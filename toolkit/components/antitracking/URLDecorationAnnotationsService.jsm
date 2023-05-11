@@ -2,10 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-this.URLDecorationAnnotationsService = function() {};
+function URLDecorationAnnotationsService() {}
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
 );
@@ -54,7 +56,7 @@ URLDecorationAnnotationsService.prototype = {
     }
     this._initialized = true;
 
-    const client = RemoteSettings(COLLECTION_NAME);
+    const client = lazy.RemoteSettings(COLLECTION_NAME);
     client.on("sync", event => {
       let {
         data: { current },

@@ -17,8 +17,11 @@
 //! To make sure we can compile on both Solaris and its derivatives, as well as
 //! function, we check for the existence of getrandom(2) in libc by calling
 //! libc::dlsym.
-use crate::util_libc::{sys_fill_exact, Weak};
-use crate::{use_file, Error};
+use crate::{
+    use_file,
+    util_libc::{sys_fill_exact, Weak},
+    Error,
+};
 use core::mem;
 
 #[cfg(target_os = "illumos")]
@@ -27,6 +30,7 @@ type GetRandomFn = unsafe extern "C" fn(*mut u8, libc::size_t, libc::c_uint) -> 
 type GetRandomFn = unsafe extern "C" fn(*mut u8, libc::size_t, libc::c_uint) -> libc::c_int;
 
 pub fn getrandom_inner(dest: &mut [u8]) -> Result<(), Error> {
+    // getrandom(2) was introduced in Solaris 11.3 for Illumos in 2015.
     static GETRANDOM: Weak = unsafe { Weak::new("getrandom\0") };
     if let Some(fptr) = GETRANDOM.ptr() {
         let func: GetRandomFn = unsafe { mem::transmute(fptr) };

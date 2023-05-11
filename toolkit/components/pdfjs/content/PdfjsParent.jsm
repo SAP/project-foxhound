@@ -23,14 +23,16 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "SetClipboardSearchString",
   "resource://gre/modules/Finder.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
@@ -44,7 +46,7 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "matchesCountLimit",
   "accessibility.typeaheadfind.matchesCountLimit"
 );
@@ -99,6 +101,7 @@ class PdfjsParent extends JSWindowActorParent {
     const data = aMsg.data;
     this.browser.ownerGlobal.saveURL(
       data.blobUrl /* aURL */,
+      data.originalUrl /* aOriginalURL */,
       data.filename /* aFileName */,
       null /* aFilePickerTitleKey */,
       true /* aShouldBypassCache */,
@@ -106,7 +109,7 @@ class PdfjsParent extends JSWindowActorParent {
       null /* aReferrerInfo */,
       null /* aCookieJarSettings*/,
       null /* aSourceDocument */,
-      PrivateBrowsingUtils.isBrowserPrivate(
+      lazy.PrivateBrowsingUtils.isBrowserPrivate(
         this.browser
       ) /* aIsContentWindowPrivate */,
       Services.scriptSecurityManager.getSystemPrincipal() /* aPrincipal */
@@ -132,10 +135,10 @@ class PdfjsParent extends JSWindowActorParent {
           !this._findFailedString)
       ) {
         this._findFailedString = null;
-        SetClipboardSearchString(data.rawQuery);
+        lazy.SetClipboardSearchString(data.rawQuery);
       } else if (!this._findFailedString) {
         this._findFailedString = data.rawQuery;
-        SetClipboardSearchString(data.rawQuery);
+        lazy.SetClipboardSearchString(data.rawQuery);
       }
 
       const matchesCount = this._requestMatchesCount(data.matchesCount);
@@ -165,7 +168,8 @@ class PdfjsParent extends JSWindowActorParent {
     let result = {
       current: data.current,
       total: data.total,
-      limit: typeof matchesCountLimit === "number" ? matchesCountLimit : 0,
+      limit:
+        typeof lazy.matchesCountLimit === "number" ? lazy.matchesCountLimit : 0,
     };
     if (result.total > result.limit) {
       result.total = -1;

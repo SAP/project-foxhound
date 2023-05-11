@@ -427,6 +427,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   //   FloatRegister::getRegisterDumpOffsetInBytes
   //   (no class) PushRegisterDump
   //   (union) RegisterContent
+  //   JitRuntime::generateInvalidator
+  //   JitRuntime::generateBailoutHandler
+  //   JSJitFrameIter::machineState
   //
   // To be more exact, the invariants are:
   //
@@ -475,18 +478,16 @@ class MacroAssembler : public MacroAssemblerSpecific {
   //   FloatRegister::getRegisterDumpOffsetInBytes must be a correct index
   //   into the abovementioned array.  Given the constraints, the only correct
   //   value is `reg.encoding() * sizeof(RegisterContent)`.
-
-  // Regarding JitRuntime::generateInvalidator and the first two fields of of
-  // class InvalidationBailoutStack (`fpregs_` and `regs_`).  These form their
-  // own layout-equivalence class.  That is, they must be format-consistent.
-  // But they are not part of the equivalence class that PushRegsInMask et al
-  // belong to. JitRuntime::generateInvalidator may use PushRegsInMask to
-  // generate part of the layout, but that's only a happy coincidence; some
-  // targets roll their own save-code instead.
   //
-  // Nevertheless, because some targets *do* call PushRegsInMask from
-  // JitRuntime::generateInvalidator, you should check carefully all of the
-  // ::generateInvalidator methods if you change the PushRegsInMask format.
+  // Note that some of the routines listed above are JS-only, and do not support
+  // SIMD registers. They are otherwise part of the same equivalence class.
+  // Register spilling for e.g. OOL VM calls is implemented using
+  // PushRegsInMask, and recovered on bailout using machineState. This requires
+  // the same layout to be used in machineState, and therefore in all other code
+  // that can spill registers that are recovered on bailout. Implementations of
+  // JitRuntime::generate{Invalidator,BailoutHandler} should either call
+  // PushRegsInMask, or check carefully to be sure that they generate the same
+  // layout.
 
   // The size of the area used by PushRegsInMask.
   size_t PushRegsInMaskSizeInBytes(LiveRegisterSet set)
@@ -841,12 +842,21 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline uint32_t callJit(ImmPtr callee);
 
   // The frame descriptor is the second field of all Jit frames, pushed before
-  // calling the Jit function.  It is a composite value defined in JitFrames.h
-  inline void makeFrameDescriptor(Register frameSizeReg, FrameType type,
-                                  uint32_t headerSize);
+  // calling the Jit function. See CommonFrameLayout::descriptor_.
+  inline void pushFrameDescriptor(FrameType type);
+  inline void PushFrameDescriptor(FrameType type);
 
-  // Push the frame descriptor, based on the statically known framePushed.
-  inline void pushStaticFrameDescriptor(FrameType type, uint32_t headerSize);
+  // For JitFrameLayout, the descriptor also stores the number of arguments
+  // passed by the caller. See MakeFrameDescriptorForJitCall.
+  inline void pushFrameDescriptorForJitCall(FrameType type, uint32_t argc);
+  inline void pushFrameDescriptorForJitCall(FrameType type, Register argc,
+                                            Register scratch);
+  inline void PushFrameDescriptorForJitCall(FrameType type, uint32_t argc);
+  inline void PushFrameDescriptorForJitCall(FrameType type, Register argc,
+                                            Register scratch);
+
+  // Load the number of actual arguments from the frame's JitFrameLayout.
+  inline void loadNumActualArgs(Register framePtr, Register dest);
 
   // Push the callee token of a JSFunction which pointer is stored in the
   // |callee| register. The callee token is packed with a |constructing| flag
@@ -3520,7 +3530,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
   CodeOffset wasmTrapInstruction() PER_SHARED_ARCH;
 
   void wasmTrap(wasm::Trap trap, wasm::BytecodeOffset bytecodeOffset);
-  [[nodiscard]] bool wasmStartTry(size_t* tryNoteIndex);
 
   // Load all pinned regs via InstanceReg.  If the trapOffset is something,
   // give the first load a trap descriptor with type IndirectCallToNull, so that
@@ -4985,8 +4994,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
  public:
   // Generates code used to complete a bailout.
   void generateBailoutTail(Register scratch, Register bailoutInfo);
-
-  void assertRectifierFrameParentType(Register frameType);
 
  public:
 #ifndef JS_CODEGEN_ARM64

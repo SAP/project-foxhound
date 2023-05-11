@@ -12,9 +12,9 @@ var { XPCOMUtils } = ChromeUtils.import(
 
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ManifestObtainer: "resource://gre/modules/ManifestObtainer.jsm",
 });
 
@@ -139,7 +139,7 @@ class ContentDelegateChild extends GeckoViewActorChild {
           return;
         }
         this.contentWindow.requestIdleCallback(async () => {
-          const manifest = await ManifestObtainer.contentObtainManifest(
+          const manifest = await lazy.ManifestObtainer.contentObtainManifest(
             this.contentWindow
           );
           if (manifest) {

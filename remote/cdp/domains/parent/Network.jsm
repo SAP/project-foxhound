@@ -6,16 +6,11 @@
 
 var EXPORTED_SYMBOLS = ["Network"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const { Domain } = ChromeUtils.import(
+  "chrome://remote/content/cdp/domains/Domain.jsm"
 );
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
-  Domain: "chrome://remote/content/cdp/domains/Domain.jsm",
-});
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 const MAX_COOKIE_EXPIRY = Number.MAX_SAFE_INTEGER;
 

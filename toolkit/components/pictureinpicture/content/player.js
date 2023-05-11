@@ -17,6 +17,10 @@ const AUDIO_TOGGLE_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.audio-toggle.enabled";
 const KEYBOARD_CONTROLS_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.keyboard-controls.enabled";
+const CAPTIONS_TOGGLE_ENABLED_PREF =
+  "media.videocontrols.picture-in-picture.display-text-tracks.toggle.enabled";
+const TEXT_TRACK_FONT_SIZE_PREF =
+  "media.videocontrols.picture-in-picture.display-text-tracks.size";
 
 // Time to fade the Picture-in-Picture video controls after first opening.
 const CONTROLS_FADE_TIMEOUT_MS = 3000;
@@ -70,6 +74,14 @@ function setIsMutedState(isMuted) {
   Player.isMuted = isMuted;
 }
 
+function showSubtitlesButton() {
+  Player.showSubtitlesButton();
+}
+
+function hideSubtitlesButton() {
+  Player.hideSubtitlesButton();
+}
+
 /**
  * The Player object handles initializing the player, holds state, and handles
  * events for updating state.
@@ -86,6 +98,7 @@ let Player = {
     "MozDOMFullscreen:Exited",
     "resize",
     "unload",
+    "draggableregionleftmousedown",
   ],
   actor: null,
   /**
@@ -175,6 +188,20 @@ let Player = {
       this.onMouseEnter();
     });
 
+    for (let radio of document.querySelectorAll(
+      'input[type=radio][name="cc-size"]'
+    )) {
+      radio.addEventListener("change", event => {
+        this.onSubtitleChange(event.target.id);
+      });
+    }
+
+    document
+      .querySelector("#subtitles-toggle")
+      .addEventListener("change", () => {
+        this.onToggleChange();
+      });
+
     // If the content process hosting the video crashes, let's
     // just close the window for now.
     browser.addEventListener("oop-browser-crashed", this);
@@ -205,6 +232,18 @@ let Player = {
     window.requestAnimationFrame(() => {
       window.focus();
     });
+
+    let fontSize = Services.prefs.getCharPref(
+      TEXT_TRACK_FONT_SIZE_PREF,
+      "medium"
+    );
+
+    // fallback to medium if the pref value is not a valid option
+    if (fontSize === "small" || fontSize === "large") {
+      document.querySelector(`#${fontSize}`).checked = "true";
+    } else {
+      document.querySelector("#medium").checked = "true";
+    }
   },
 
   uninit() {
@@ -293,6 +332,7 @@ let Player = {
           }
         });
         if (this.isFullscreen) {
+          window.focus();
           this.actor.sendAsyncMessage("PictureInPicture:EnterFullscreen", {
             isFullscreen: true,
             isVideoControlsShowing: null,
@@ -307,6 +347,11 @@ let Player = {
             playerBottomControlsDOMRect: this.controlsBottom.getBoundingClientRect(),
           });
         }
+        // The subtitles settings panel gets selected when entering/exiting fullscreen even though
+        // user-select is set to none. I don't know why this happens or how to prevent so we just
+        // remove the selection when fullscreen is entered/exited.
+        let selection = window.getSelection();
+        selection.removeAllRanges();
         break;
       }
 
@@ -324,10 +369,28 @@ let Player = {
         this.uninit();
         break;
       }
+
+      case "draggableregionleftmousedown": {
+        document.querySelector("#settings").classList.add("hide");
+        break;
+      }
     }
   },
 
   closePipWindow(closeData) {
+    // Set the subtitles font size prefs
+    Services.prefs.setBoolPref(
+      CAPTIONS_TOGGLE_ENABLED_PREF,
+      document.querySelector("#subtitles-toggle").checked
+    );
+    for (let radio of document.querySelectorAll(
+      'input[type=radio][name="cc-size"]'
+    )) {
+      if (radio.checked) {
+        Services.prefs.setCharPref(TEXT_TRACK_FONT_SIZE_PREF, radio.id);
+        break;
+      }
+    }
     const { reason } = closeData;
     PictureInPicture.closeSinglePipWindow({ reason, actorRef: this.actor });
   },
@@ -375,6 +438,26 @@ let Player = {
         PictureInPicture.focusTabAndClosePip(window, this.actor);
         break;
       }
+
+      case "closed-caption": {
+        let settingsPanel = document.querySelector("#settings");
+        let settingsPanelVisible = !settingsPanel.classList.contains("hide");
+        if (settingsPanelVisible) {
+          settingsPanel.classList.add("hide");
+          this.controls.removeAttribute("donthide");
+        } else {
+          settingsPanel.classList.remove("hide");
+          this.controls.setAttribute("donthide", true);
+        }
+        // Early return to prevent hiding the panel below
+        return;
+      }
+    }
+    // If the click came from a element that is not inside the subtitles settings panel
+    // then we want to hide the panel
+    let settingsPanel = document.querySelector("#settings");
+    if (!settingsPanel.contains(event.target)) {
+      document.querySelector("#settings").classList.add("hide");
     }
   },
 
@@ -386,6 +469,15 @@ let Player = {
   },
 
   onKeyDown(event) {
+    // We don't want to send a keydown event if the event target was one of the
+    // font sizes in the settings panel
+    if (
+      event.target.parentElement?.parentElement?.classList?.contains(
+        "font-size-selection"
+      )
+    ) {
+      return;
+    }
     this.actor.sendAsyncMessage("PictureInPicture:KeyDown", {
       altKey: event.altKey,
       shiftKey: event.shiftKey,
@@ -393,6 +485,28 @@ let Player = {
       ctrlKey: event.ctrlKey,
       keyCode: event.keyCode,
     });
+  },
+
+  onSubtitleChange(size) {
+    Services.prefs.setCharPref(TEXT_TRACK_FONT_SIZE_PREF, size);
+
+    this.actor.sendAsyncMessage("PictureInPicture:ChangeFontSizeTextTracks");
+  },
+
+  onToggleChange() {
+    // The subtitles toggle has been click in the settings panel so we toggle
+    // the overlay above the font sizes and send a message to toggle the
+    // visibility of the subtitles and set the toggle pref
+    document
+      .querySelector(".font-size-selection")
+      .classList.toggle("font-size-overlay");
+    this.actor.sendAsyncMessage("PictureInPicture:ToggleTextTracks");
+
+    this.captionsToggleEnabled = !this.captionsToggleEnabled;
+    Services.prefs.setBoolPref(
+      CAPTIONS_TOGGLE_ENABLED_PREF,
+      this.captionsToggleEnabled
+    );
   },
 
   /**
@@ -593,7 +707,7 @@ let Player = {
   },
 
   onMouseLeave() {
-    if (!this.isFullscreen) {
+    if (!this.isFullscreen && !this.controls.getAttribute("donthide")) {
       this.isCurrentHover = false;
       if (
         !this.controls.getAttribute("showing") &&
@@ -605,6 +719,27 @@ let Player = {
           playerBottomControlsDOMRect: null,
         });
       }
+    }
+  },
+
+  showSubtitlesButton() {
+    let subtitlesContent = document.querySelectorAll(".subtitles");
+    for (let ele of subtitlesContent) {
+      ele.hidden = false;
+    }
+    this.captionsToggleEnabled = true;
+    // If the CAPTIONS_TOGGLE_ENABLED_PREF pref is false then we will click
+    // the UI toggle to change the toggle to unchecked. This will call
+    // onToggleChange where this.captionsToggleEnabled will be updated
+    if (!Services.prefs.getBoolPref(CAPTIONS_TOGGLE_ENABLED_PREF, true)) {
+      document.querySelector("#subtitles-toggle").click();
+    }
+  },
+
+  hideSubtitlesButton() {
+    let subtitlesContent = document.querySelectorAll(".subtitles");
+    for (let ele of subtitlesContent) {
+      ele.hidden = true;
     }
   },
 
@@ -733,7 +868,7 @@ let Player = {
       });
     }
 
-    if (!revealIndefinitely) {
+    if (!revealIndefinitely && !this.controls.getAttribute("donthide")) {
       this.showingTimeout = setTimeout(() => {
         this.controls.removeAttribute("showing");
 

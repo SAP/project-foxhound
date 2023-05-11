@@ -199,7 +199,6 @@ HttpBaseChannel::HttpBaseChannel()
       mCanceled(false),
       mFirstPartyClassificationFlags(0),
       mThirdPartyClassificationFlags(0),
-      mFlashPluginState(nsIHttpChannel::FlashPluginUnknown),
       mLoadFlags(LOAD_NORMAL),
       mCaps(0),
       mClassOfService(0, false),
@@ -317,12 +316,6 @@ void HttpBaseChannel::AddClassificationFlags(uint32_t aClassificationFlags,
   } else {
     mFirstPartyClassificationFlags |= aClassificationFlags;
   }
-}
-
-void HttpBaseChannel::SetFlashPluginState(
-    nsIHttpChannel::FlashPluginState aState) {
-  LOG(("HttpBaseChannel::SetFlashPluginState %p", this));
-  mFlashPluginState = aState;
 }
 
 static bool isSecureOrTrustworthyURL(nsIURI* aURI) {
@@ -1735,13 +1728,6 @@ HttpBaseChannel::GetFirstPartyClassificationFlags(uint32_t* aFlags) {
 NS_IMETHODIMP
 HttpBaseChannel::GetThirdPartyClassificationFlags(uint32_t* aFlags) {
   *aFlags = mThirdPartyClassificationFlags;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetFlashPluginState(nsIHttpChannel::FlashPluginState* aState) {
-  uint32_t flashPluginState = mFlashPluginState;
-  *aState = (nsIHttpChannel::FlashPluginState)flashPluginState;
   return NS_OK;
 }
 
@@ -4722,6 +4708,9 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     CallQueryInterface(newChannel, realChannel.StartAssignment());
     if (realChannel) {
       realChannel->SetTopWindowURI(mTopWindowURI);
+
+      realChannel->StoreTaintedOriginFlag(
+          ShouldTaintReplacementChannelOrigin(newURI));
     }
 
     // update the DocumentURI indicator since we are being redirected.
@@ -4795,9 +4784,39 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  // This channel has been redirected. Don't report timing info.
-  StoreTimingEnabled(false);
   return NS_OK;
+}
+
+bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(nsIURI* aNewURI) {
+  if (LoadTaintedOriginFlag()) {
+    return true;
+  }
+
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+  if (!ssm) {
+    return true;
+  }
+  nsresult rv = ssm->CheckSameOriginURI(aNewURI, mURI, false, false);
+  if (NS_SUCCEEDED(rv)) {
+    return false;
+  }
+  // If aNewURI <-> mURI are not same-origin we need to taint unless
+  // mURI <-> mOriginalURI/LoadingPrincipal are same origin.
+
+  if (mLoadInfo->GetLoadingPrincipal()) {
+    bool sameOrigin = false;
+    rv = mLoadInfo->GetLoadingPrincipal()->IsSameOrigin(mURI, &sameOrigin);
+    if (NS_FAILED(rv)) {
+      return true;
+    }
+    return !sameOrigin;
+  }
+  if (!mOriginalURI) {
+    return true;
+  }
+
+  rv = ssm->CheckSameOriginURI(mOriginalURI, mURI, false, false);
+  return NS_FAILED(rv);
 }
 
 // Redirect Tracking
@@ -4987,7 +5006,7 @@ HttpBaseChannel::SetAllRedirectsPassTimingAllowCheck(bool aPassesCheck) {
   return NS_OK;
 }
 
-// http://www.w3.org/TR/resource-timing/#timing-allow-check
+// https://fetch.spec.whatwg.org/#tao-check
 NS_IMETHODIMP
 HttpBaseChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
@@ -5001,7 +5020,13 @@ HttpBaseChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
 
   bool sameOrigin = false;
   rv = resourcePrincipal->Equals(aOrigin, &sameOrigin);
-  if (NS_SUCCEEDED(rv) && sameOrigin) {
+
+  nsAutoCString serializedOrigin;
+  nsContentSecurityManager::GetSerializedOrigin(aOrigin, resourcePrincipal,
+                                                serializedOrigin, mLoadInfo);
+
+  // All redirects are same origin
+  if (sameOrigin && !serializedOrigin.IsEmpty()) {
     *_retval = true;
     return NS_OK;
   }
@@ -5012,9 +5037,6 @@ HttpBaseChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
     *_retval = false;
     return NS_OK;
   }
-
-  nsAutoCString origin;
-  aOrigin->GetAsciiOrigin(origin);
 
   Tokenizer p(headerValue);
   Tokenizer::Token t;
@@ -5028,7 +5050,7 @@ HttpBaseChannel::TimingAllowCheck(nsIPrincipal* aOrigin, bool* _retval) {
       nsHttp::TrimHTTPWhitespace(headerItem, headerItem);
       // If the list item contains a case-sensitive match for the value of the
       // origin, or a wildcard, return pass
-      if (headerItem == origin || headerItem == "*") {
+      if (headerItem == serializedOrigin || headerItem == "*") {
         *_retval = true;
         return NS_OK;
       }

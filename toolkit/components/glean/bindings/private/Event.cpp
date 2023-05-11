@@ -69,6 +69,10 @@ GleanEvent::Record(JS::HandleValue aExtra, JSContext* aCx) {
                             u"Can't extract extra property"_ns);
         return NS_OK;
       }
+    } else if (value.isNullOrUndefined()) {
+      // The extra key is present, but has an empty value.
+      // Treat as though it weren't here at all.
+      continue;
     } else {
       LogToBrowserConsole(
           nsIScriptError::warningFlag,
@@ -91,7 +95,7 @@ GleanEvent::Record(JS::HandleValue aExtra, JSContext* aCx) {
 
   // Calling the implementation directly, because we have a `string->string`
   // map, not a `T->string` map the C++ API expects.
-  impl::fog_event_record_str(mEvent.mId, &extraKeys, &extraValues);
+  impl::fog_event_record(mEvent.mId, &extraKeys, &extraValues);
   return NS_OK;
 }
 

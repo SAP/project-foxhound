@@ -2773,10 +2773,10 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
       aReflowInput.reflowInput.ComputedSizeAsContainerIfConstrained();
 
   nsPresContext* presContext = PresContext();
-  // XXXldb Should we be checking constrained height instead?
-  // tables are not able to pull back children from its next inflow, so even
-  // under paginated contexts tables are should not paginate if they are inside
-  // column set
+  // nsTableFrame is not able to pull back children from its next-in-flow, per
+  // bug 1772383.  So even under paginated contexts, tables should not fragment
+  // if they are inside of (i.e. potentially being fragmented by) a column-set
+  // frame.  (This is indicated by the "mTableIsSplittable" flag.)
   bool isPaginated = presContext->IsPaginated() &&
                      NS_UNCONSTRAINEDSIZE != aReflowInput.availSize.BSize(wm) &&
                      aReflowInput.reflowInput.mFlags.mTableIsSplittable;
@@ -3063,6 +3063,36 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
   // the children.
   mBits.mResizedColumns = false;
   ClearGeometryDirty();
+
+  // nsTableFrame does not pull children from its next-in-flow (bug 1772383).
+  // This is generally fine, since tables only fragment for printing
+  // (bug 888257) where incremental-reflow is impossible, and so children don't
+  // usually dynamically move back and forth between continuations. However,
+  // there are edge cases even with printing where nsTableFrame:
+  // (1) Generates a continuation and passes children to it,
+  // (2) Receives another call to Reflow, during which it
+  // (3) Successfully lays out its remaining children.
+  // If the completed status flows up as-is, the continuation will be destroyed.
+  // To avoid that, we return an incomplete status if the continuation contains
+  // any child that is not a repeated frame.
+  auto hasNextInFlowThatMustBePreserved = [this, isPaginated]() -> bool {
+    if (!isPaginated) {
+      return false;
+    }
+    auto* nextInFlow = static_cast<nsTableFrame*>(GetNextInFlow());
+    if (!nextInFlow) {
+      return false;
+    }
+    for (nsIFrame* kidFrame : nextInFlow->mFrames) {
+      if (!IsRepeatedFrame(kidFrame)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (aStatus.IsComplete() && hasNextInFlowThatMustBePreserved()) {
+    aStatus.SetIncomplete();
+  }
 }
 
 void nsTableFrame::ReflowColGroups(gfxContext* aRenderingContext) {
@@ -6348,7 +6378,7 @@ bool BCPaintBorderIterator::SetNewRowGroup() {
       mCellMap = mTableCellMap->GetMapFor(fifRg, nullptr);
       if (!mCellMap) ABORT1(false);
     }
-    if (mRg && mTable->GetPrevInFlow() && !mRg->GetPrevInFlow()) {
+    if (mTable->GetPrevInFlow() && !mRg->GetPrevInFlow()) {
       // if mRowGroup doesn't have a prev in flow, then it may be a repeated
       // header or footer
       const nsStyleDisplay* display = mRg->StyleDisplay();
@@ -7468,14 +7498,6 @@ nsRect nsDisplayTableItem::GetBounds(nsDisplayListBuilder* aBuilder,
   return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
 }
 
-void nsDisplayTableItem::UpdateForFrameBackground(nsIFrame* aFrame) {
-  ComputedStyle* bgSC;
-  if (!nsCSSRendering::FindBackground(aFrame, &bgSC)) return;
-  if (!bgSC->StyleBackground()->HasFixedBackground(aFrame)) return;
-
-  mPartHasFixedBackground = true;
-}
-
 nsDisplayItemGeometry* nsDisplayTableItem::AllocateGeometry(
     nsDisplayListBuilder* aBuilder) {
   return new nsDisplayTableItemGeometry(
@@ -7487,17 +7509,8 @@ void nsDisplayTableItem::ComputeInvalidationRegion(
     nsRegion* aInvalidRegion) const {
   auto geometry = static_cast<const nsDisplayTableItemGeometry*>(aGeometry);
 
-  bool invalidateForAttachmentFixed = false;
-  if (mDrawsBackground && mPartHasFixedBackground) {
-    nsPoint frameOffsetToViewport =
-        mFrame->GetOffsetTo(mFrame->PresShell()->GetRootFrame());
-    invalidateForAttachmentFixed =
-        frameOffsetToViewport != geometry->mFrameOffsetToViewport;
-  }
-
-  if (invalidateForAttachmentFixed ||
-      (aBuilder->ShouldSyncDecodeImages() &&
-       geometry->ShouldInvalidateToSyncDecodeImages())) {
+  if (aBuilder->ShouldSyncDecodeImages() &&
+      geometry->ShouldInvalidateToSyncDecodeImages()) {
     bool snap;
     aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
   }

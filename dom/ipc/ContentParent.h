@@ -1149,6 +1149,8 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvShutdownProfile(const nsCString& aProfile);
 
+  mozilla::ipc::IPCResult RecvShutdownPerfStats(const nsCString& aPerfStats);
+
   mozilla::ipc::IPCResult RecvGetGraphicsDeviceInitData(
       ContentDeviceData* aOut);
 
@@ -1260,10 +1262,10 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvStoreUserInteractionAsPermission(
       const Principal& aPrincipal);
 
-  mozilla::ipc::IPCResult RecvAsyncShouldAllowAccessFor(
-      const MaybeDiscarded<BrowsingContext>& aTopContext,
+  mozilla::ipc::IPCResult RecvTestCookiePermissionDecided(
+      const MaybeDiscarded<BrowsingContext>& aContext,
       const Principal& aPrincipal,
-      const AsyncShouldAllowAccessForResolver&& aResolver);
+      const TestCookiePermissionDecidedResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvNotifyMediaPlaybackChanged(
       const MaybeDiscarded<BrowsingContext>& aContext,
@@ -1435,6 +1437,10 @@ class ContentParent final : public PContentParent,
   static already_AddRefed<nsIPrincipal> CreateRemoteTypeIsolationPrincipal(
       const nsACString& aRemoteType);
 
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  bool IsBlockingShutdown() { return mBlockShutdownCalled; }
+#endif
+
  private:
   // Return an existing ContentParent if possible. Otherwise, `nullptr`.
   static already_AddRefed<ContentParent> GetUsedBrowserProcess(
@@ -1555,7 +1561,7 @@ class ContentParent final : public PContentParent,
 
   uint8_t mIsInPool : 1;
 
-#ifdef DEBUG
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   bool mBlockShutdownCalled;
 #endif
 

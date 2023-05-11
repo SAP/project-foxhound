@@ -8,9 +8,11 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+const lazy = {};
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   SnippetsTestMessageProvider:
     "resource://activity-stream/lib/SnippetsTestMessageProvider.jsm",
   PanelTestProvider: "resource://activity-stream/lib/PanelTestProvider.jsm",
@@ -25,7 +27,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
     "resource://activity-stream/lib/ASRouterPreferences.jsm",
   ASRouterTriggerListeners:
     "resource://activity-stream/lib/ASRouterTriggerListeners.jsm",
-  CFRMessageProvider: "resource://activity-stream/lib/CFRMessageProvider.jsm",
   KintoHttpClient: "resource://services-common/kinto-http-client.js",
   Downloader: "resource://services-settings/Attachments.jsm",
   RemoteL10n: "resource://activity-stream/lib/RemoteL10n.jsm",
@@ -36,7 +37,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
   MacAttribution: "resource:///modules/MacAttribution.jsm",
 });
-XPCOMUtils.defineLazyServiceGetters(this, {
+XPCOMUtils.defineLazyServiceGetters(lazy, {
   BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
 });
 const { actionCreators: ac } = ChromeUtils.import(
@@ -190,7 +191,10 @@ const MessageLoaderUtils = {
 
       let response;
       try {
-        response = await fetch(provider.url, { headers, credentials: "omit" });
+        response = await fetch(provider.url, {
+          headers,
+          credentials: "omit",
+        });
       } catch (e) {
         MessageLoaderUtils.reportError(e);
       }
@@ -277,10 +281,10 @@ const MessageLoaderUtils = {
           );
         } else if (
           RS_PROVIDERS_WITH_L10N.includes(provider.id) &&
-          RemoteL10n.isLocaleSupported(MessageLoaderUtils.locale)
+          lazy.RemoteL10n.isLocaleSupported(MessageLoaderUtils.locale)
         ) {
           const recordId = `${RS_FLUENT_RECORD_PREFIX}-${MessageLoaderUtils.locale}`;
-          const kinto = new KintoHttpClient(
+          const kinto = new lazy.KintoHttpClient(
             Services.prefs.getStringPref(RS_SERVER_PREF)
           );
           const record = await kinto
@@ -288,7 +292,7 @@ const MessageLoaderUtils = {
             .collection(RS_COLLECTION_L10N)
             .getRecord(recordId);
           if (record && record.data) {
-            const downloader = new Downloader(
+            const downloader = new lazy.Downloader(
               RS_MAIN_BUCKET,
               RS_COLLECTION_L10N,
               "browser",
@@ -298,7 +302,7 @@ const MessageLoaderUtils = {
             await downloader.downloadToDisk(record.data, {
               retries: RS_DOWNLOAD_MAX_RETRIES,
             });
-            RemoteL10n.reloadL10n();
+            lazy.RemoteL10n.reloadL10n();
           } else {
             MessageLoaderUtils._handleRemoteSettingsUndesiredEvent(
               "ASR_RS_NO_MESSAGES",
@@ -326,8 +330,8 @@ const MessageLoaderUtils = {
   async _experimentsAPILoader(provider) {
     let experiments = [];
     for (const featureId of provider.messageGroups) {
-      let FeatureAPI = NimbusFeatures[featureId];
-      let experimentData = ExperimentAPI.getExperimentMetaData({
+      let FeatureAPI = lazy.NimbusFeatures[featureId];
+      let experimentData = lazy.ExperimentAPI.getExperimentMetaData({
         featureId,
       });
       // Not enrolled in any experiment for this feature, we can skip
@@ -349,7 +353,7 @@ const MessageLoaderUtils = {
       // those branches so that they would only used to record the Reach
       // event.
       const branches =
-        (await ExperimentAPI.getAllBranches(experimentData.slug)) || [];
+        (await lazy.ExperimentAPI.getAllBranches(experimentData.slug)) || [];
       for (const branch of branches) {
         let branchValue = branch[featureId].value;
         if (
@@ -511,8 +515,6 @@ const MessageLoaderUtils = {
   },
 };
 
-this.MessageLoaderUtils = MessageLoaderUtils;
-
 /**
  * @class _ASRouter - Keeps track of all messages, UI surfaces, and
  * handles blocking, rotation, etc. Inspecting ASRouter.state will
@@ -559,11 +561,11 @@ class _ASRouter {
   }
 
   async onPrefChange(prefName) {
-    if (TARGETING_PREFERENCES.includes(prefName)) {
+    if (lazy.TARGETING_PREFERENCES.includes(prefName)) {
       let invalidMessages = [];
       // Notify all tabs of messages that have become invalid after pref change
       const context = this._getMessagesContext();
-      const targetingContext = new TargetingContext(context);
+      const targetingContext = new lazy.TargetingContext(context);
 
       for (const msg of this.state.messages.filter(this.isUnblockedMessage)) {
         if (!msg.targeting) {
@@ -592,15 +594,18 @@ class _ASRouter {
 
   // Fetch and decode the message provider pref JSON, and update the message providers
   async _updateMessageProviders() {
+    lazy.ASRouterPreferences.console.debug("entering updateMessageProviders");
+
     const previousProviders = this.state.providers;
     const providers = await Promise.all(
       [
         // If we have added a `preview` provider, hold onto it
         ...previousProviders.filter(p => p.id === "preview"),
         // The provider should be enabled and not have a user preference set to false
-        ...ASRouterPreferences.providers.filter(
+        ...lazy.ASRouterPreferences.providers.filter(
           p =>
-            p.enabled && ASRouterPreferences.getUserPreference(p.id) !== false
+            p.enabled &&
+            lazy.ASRouterPreferences.getUserPreference(p.id) !== false
         ),
       ].map(async _provider => {
         // make a copy so we don't modify the source of the pref
@@ -725,7 +730,7 @@ class _ASRouter {
         // defined then at least one has to be enabled.
         (Array.isArray(group.userPreferences)
           ? group.userPreferences.some(pref =>
-              ASRouterPreferences.getUserPreference(pref)
+              lazy.ASRouterPreferences.getUserPreference(pref)
             )
           : true),
     };
@@ -773,6 +778,10 @@ class _ASRouter {
       : this.state.providers.filter(provider =>
           MessageLoaderUtils.shouldProviderUpdate(provider)
         );
+    lazy.ASRouterPreferences.console.debug(
+      "entering loadMessagesFromAllProviders"
+    );
+
     await this.loadAllMessageGroups();
     // Don't do extra work if we don't need any updates
     if (needsUpdate.length) {
@@ -800,10 +809,10 @@ class _ASRouter {
       }
 
       // Some messages have triggers that require us to initalise trigger listeners
-      const unseenListeners = new Set(ASRouterTriggerListeners.keys());
+      const unseenListeners = new Set(lazy.ASRouterTriggerListeners.keys());
       for (const { trigger } of newState.messages) {
-        if (trigger && ASRouterTriggerListeners.has(trigger.id)) {
-          ASRouterTriggerListeners.get(trigger.id).init(
+        if (trigger && lazy.ASRouterTriggerListeners.has(trigger.id)) {
+          lazy.ASRouterTriggerListeners.get(trigger.id).init(
             this._triggerHandler,
             trigger.params,
             trigger.patterns
@@ -814,7 +823,7 @@ class _ASRouter {
       // We don't need these listeners, but they may have previously been
       // initialised, so uninitialise them
       for (const triggerID of unseenListeners) {
-        ASRouterTriggerListeners.get(triggerID).uninit();
+        lazy.ASRouterTriggerListeners.get(triggerID).uninit();
       }
 
       // We don't want to cache preview endpoints, remove them after messages are fetched
@@ -891,20 +900,20 @@ class _ASRouter {
     this.sendTelemetry = sendTelemetry;
     this.dispatchCFRAction = this.toWaitForInitFunc(dispatchCFRAction);
 
-    ASRouterPreferences.init();
-    ASRouterPreferences.addListener(this.onPrefChange);
-    ToolbarBadgeHub.init(this.waitForInitialized, {
+    lazy.ASRouterPreferences.init();
+    lazy.ASRouterPreferences.addListener(this.onPrefChange);
+    lazy.ToolbarBadgeHub.init(this.waitForInitialized, {
       handleMessageRequest: this.handleMessageRequest,
       addImpression: this.addImpression,
       blockMessageById: this.blockMessageById,
       unblockMessageById: this.unblockMessageById,
       sendTelemetry: this.sendTelemetry,
     });
-    ToolbarPanelHub.init(this.waitForInitialized, {
+    lazy.ToolbarPanelHub.init(this.waitForInitialized, {
       getMessages: this.handleMessageRequest,
       sendTelemetry: this.sendTelemetry,
     });
-    MomentsPageHub.init(this.waitForInitialized, {
+    lazy.MomentsPageHub.init(this.waitForInitialized, {
       handleMessageRequest: this.handleMessageRequest,
       addImpression: this.addImpression,
       blockMessageById: this.blockMessageById,
@@ -927,14 +936,14 @@ class _ASRouter {
       groupImpressions,
       messageImpressions,
       previousSessionEnd,
-      ...(ASRouterPreferences.specialConditions || {}),
+      ...(lazy.ASRouterPreferences.specialConditions || {}),
       initialized: false,
     });
     await this._updateMessageProviders();
     await this.loadMessagesFromAllProviders();
     await MessageLoaderUtils.cleanupCache(this.state.providers, storage);
 
-    SpecialMessageActions.blockMessageById = this.blockMessageById;
+    lazy.SpecialMessageActions.blockMessageById = this.blockMessageById;
     Services.obs.addObserver(this._onLocaleChanged, TOPIC_INTL_LOCALE_CHANGED);
     Services.obs.addObserver(
       this._onExperimentForceEnrolled,
@@ -955,14 +964,14 @@ class _ASRouter {
     this.sendTelemetry = null;
     this.dispatchCFRAction = null;
 
-    ASRouterPreferences.removeListener(this.onPrefChange);
-    ASRouterPreferences.uninit();
-    ToolbarPanelHub.uninit();
-    ToolbarBadgeHub.uninit();
-    MomentsPageHub.uninit();
+    lazy.ASRouterPreferences.removeListener(this.onPrefChange);
+    lazy.ASRouterPreferences.uninit();
+    lazy.ToolbarPanelHub.uninit();
+    lazy.ToolbarBadgeHub.uninit();
+    lazy.MomentsPageHub.uninit();
 
     // Uninitialise all trigger listeners
-    for (const listener of ASRouterTriggerListeners.values()) {
+    for (const listener of lazy.ASRouterTriggerListeners.values()) {
       listener.uninit();
     }
     Services.obs.removeObserver(
@@ -980,6 +989,11 @@ class _ASRouter {
   }
 
   setState(callbackOrObj) {
+    lazy.ASRouterPreferences.console.debug(
+      "in setState, callbackOrObj = ",
+      callbackOrObj
+    );
+    lazy.ASRouterPreferences.console.trace();
     const newState =
       typeof callbackOrObj === "function"
         ? callbackOrObj(this.state)
@@ -988,7 +1002,7 @@ class _ASRouter {
       ...this.state,
       ...newState,
     };
-    if (ASRouterPreferences.devtoolsEnabled) {
+    if (lazy.ASRouterPreferences.devtoolsEnabled) {
       return this.updateTargetingParameters().then(state => {
         this.updateAdminState(state);
         return state;
@@ -999,12 +1013,12 @@ class _ASRouter {
 
   updateTargetingParameters() {
     return this.getTargetingParameters(
-      ASRouterTargeting.Environment,
+      lazy.ASRouterTargeting.Environment,
       this._getMessagesContext()
     ).then(targetingParameters => ({
       ...this.state,
-      providerPrefs: ASRouterPreferences.providers,
-      userPrefs: ASRouterPreferences.getAllUserPreferences(),
+      providerPrefs: lazy.ASRouterPreferences.providers,
+      userPrefs: lazy.ASRouterPreferences.getAllUserPreferences(),
       targetingParameters,
       errors: this.errors,
     }));
@@ -1016,11 +1030,11 @@ class _ASRouter {
 
   _loadLocalProviders() {
     // If we're in ASR debug mode add the local test providers
-    if (ASRouterPreferences.devtoolsEnabled) {
+    if (lazy.ASRouterPreferences.devtoolsEnabled) {
       this._localProviders = {
         ...this._localProviders,
-        SnippetsTestMessageProvider,
-        PanelTestProvider,
+        SnippetsTestMessageProvider: lazy.SnippetsTestMessageProvider,
+        PanelTestProvider: lazy.PanelTestProvider,
       };
     }
   }
@@ -1068,7 +1082,7 @@ class _ASRouter {
   }
 
   async evaluateExpression({ expression, context }) {
-    const targetingContext = new TargetingContext(context);
+    const targetingContext = new lazy.TargetingContext(context);
     let evaluationStatus;
     try {
       evaluationStatus = {
@@ -1086,7 +1100,7 @@ class _ASRouter {
   }
 
   isUnblockedMessage(message) {
-    let { state } = this;
+    const { state } = this;
     return (
       !state.messageBlockList.includes(message.id) &&
       (!message.campaign ||
@@ -1164,7 +1178,7 @@ class _ASRouter {
     switch (message.template) {
       case "whatsnew_panel_message":
         if (force) {
-          ToolbarPanelHub.forceShowMessage(browser, message);
+          lazy.ToolbarPanelHub.forceShowMessage(browser, message);
         }
         break;
       case "cfr_doorhanger":
@@ -1201,16 +1215,26 @@ class _ASRouter {
         }
         break;
       case "toolbar_badge":
-        ToolbarBadgeHub.registerBadgeNotificationListener(message, { force });
+        lazy.ToolbarBadgeHub.registerBadgeNotificationListener(message, {
+          force,
+        });
         break;
       case "update_action":
-        MomentsPageHub.executeAction(message);
+        lazy.MomentsPageHub.executeAction(message);
         break;
       case "infobar":
-        InfoBar.showInfoBarMessage(browser, message, this.dispatchCFRAction);
+        lazy.InfoBar.showInfoBarMessage(
+          browser,
+          message,
+          this.dispatchCFRAction
+        );
         break;
       case "spotlight":
-        Spotlight.showSpotlightDialog(browser, message, this.dispatchCFRAction);
+        lazy.Spotlight.showSpotlightDialog(
+          browser,
+          message,
+          this.dispatchCFRAction
+        );
         break;
     }
 
@@ -1352,25 +1376,45 @@ class _ASRouter {
     returnAll = false,
   }) {
     let shouldCache;
+    lazy.ASRouterPreferences.console.debug(
+      "in handleMessageRequest, arguments = ",
+      Array.from(arguments) // eslint-disable-line prefer-rest-params
+    );
+    lazy.ASRouterPreferences.console.trace();
     const messages =
       candidates ||
       this.state.messages.filter(m => {
         if (provider && m.provider !== provider) {
+          lazy.ASRouterPreferences.console.debug(m.id, " filtered by provider");
           return false;
         }
         if (template && m.template !== template) {
+          lazy.ASRouterPreferences.console.debug(m.id, " filtered by template");
           return false;
         }
         if (triggerId && !m.trigger) {
+          lazy.ASRouterPreferences.console.debug(m.id, " filtered by trigger");
           return false;
         }
         if (triggerId && m.trigger.id !== triggerId) {
+          lazy.ASRouterPreferences.console.debug(
+            m.id,
+            " filtered by triggerId"
+          );
           return false;
         }
         if (!this.isUnblockedMessage(m)) {
+          lazy.ASRouterPreferences.console.debug(
+            m.id,
+            " filtered because blocked"
+          );
           return false;
         }
         if (!this.isBelowFrequencyCaps(m)) {
+          lazy.ASRouterPreferences.console.debug(
+            m.id,
+            " filtered because capped"
+          );
           return false;
         }
 
@@ -1389,7 +1433,7 @@ class _ASRouter {
 
     // Find a message that matches the targeting context as well as the trigger context (if one is provided)
     // If no trigger is provided, we should find a message WITHOUT a trigger property defined.
-    return ASRouterTargeting.findMatchingMessage({
+    return lazy.ASRouterTargeting.findMatchingMessage({
       messages,
       trigger: triggerId && {
         id: triggerId,
@@ -1409,6 +1453,12 @@ class _ASRouter {
   }
 
   blockMessageById(idOrIds) {
+    lazy.ASRouterPreferences.console.debug(
+      "blockMessageById called, idOrIds = ",
+      idOrIds
+    );
+    lazy.ASRouterPreferences.console.trace();
+
     const idsToBlock = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 
     return this.setState(state => {
@@ -1543,7 +1593,7 @@ class _ASRouter {
   // To be passed to ASRouterTriggerListeners
   _triggerHandler(browser, trigger) {
     // Disable ASRouterTriggerListeners in kiosk mode.
-    if (BrowserHandler.kiosk) {
+    if (lazy.BrowserHandler.kiosk) {
       return Promise.resolve();
     }
     return this.sendTriggerMessage({ ...trigger, browser });
@@ -1593,7 +1643,7 @@ class _ASRouter {
         encodeURIComponent(attributionData)
       );
     } else if (AppConstants.platform === "macosx") {
-      let appPath = MacAttribution.applicationPath;
+      let appPath = lazy.MacAttribution.applicationPath;
       let attributionSvc = Cc["@mozilla.org/mac-attribution;1"].getService(
         Ci.nsIMacAttributionService
       );
@@ -1739,7 +1789,7 @@ class _ASRouter {
       };
       let feature = featureMap[nonReachMessages[0].template];
       if (feature) {
-        NimbusFeatures[feature].recordExposureEvent({ once: true });
+        lazy.NimbusFeatures[feature].recordExposureEvent({ once: true });
       }
     }
 
@@ -1753,7 +1803,7 @@ class _ASRouter {
 
   async forceWNPanel(browser) {
     let win = browser.ownerGlobal;
-    await ToolbarPanelHub.enableToolbarButton();
+    await lazy.ToolbarPanelHub.enableToolbarButton();
 
     win.PanelUI.showSubView(
       "PanelUI-whatsNew",
@@ -1771,7 +1821,7 @@ class _ASRouter {
     // Set the attribute to allow the panel to close
     panel.setAttribute("noautohide", false);
     // Removing the button is enough to close the panel.
-    await ToolbarPanelHub._hideToolbarButton(win);
+    await lazy.ToolbarPanelHub._hideToolbarButton(win);
   }
 
   async _onExperimentForceEnrolled(subject, topic, data) {
@@ -1785,12 +1835,11 @@ class _ASRouter {
     await this.loadMessagesFromAllProviders([experimentProvider]);
   }
 }
-this._ASRouter = _ASRouter;
 
 /**
  * ASRouter - singleton instance of _ASRouter that controls all messages
  * in the new tab page.
  */
-this.ASRouter = new _ASRouter();
+const ASRouter = new _ASRouter();
 
 const EXPORTED_SYMBOLS = ["_ASRouter", "ASRouter", "MessageLoaderUtils"];

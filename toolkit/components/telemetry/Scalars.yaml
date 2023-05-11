@@ -83,23 +83,6 @@ a11y:
     release_channel_collection: opt-out
     keyed: false
 
-  indicator_acted_on:
-    bug_numbers:
-      - 1412358
-    description: >
-      Recorded on click or SPACE/ENTER keypress event. Boolean stating if the
-      accessibility indicactor button was acted on.
-    expires: "62"
-    kind: boolean
-    notification_emails:
-      - accessibility@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - 'main'
-
   theme:
     bug_numbers:
       - 1022528
@@ -496,7 +479,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: true
     notification_emails:
-      - bcolloran@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -514,7 +498,7 @@ browser.engagement.navigation:
     kind: uint
     keyed: True
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -532,7 +516,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: True
     notification_emails:
-      - htwyford@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -549,7 +534,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: true
     notification_emails:
-      - bcolloran@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -567,7 +553,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: true
     notification_emails:
-      - bcolloran@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -585,7 +572,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: true
     notification_emails:
-      - bcolloran@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -603,7 +591,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: true
     notification_emails:
-      - bcolloran@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -620,7 +609,8 @@ browser.engagement.navigation:
     kind: uint
     keyed: true
     notification_emails:
-      - mkaply@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -2134,22 +2124,6 @@ pictureinpicture:
       - main
 
 preferences:
-  created_new_user_prefs_file:
-    bug_numbers:
-      - 1367813
-    description: >-
-      A boolean indicating that profile/prefs.js was not found and it is being
-      created for the first time in this session.
-    expires: "62"
-    kind: boolean
-    notification_emails:
-      - bsmedberg@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
   prefs_file_was_invalid:
     bug_numbers:
       - 1367813
@@ -2178,42 +2152,6 @@ preferences:
     notification_emails:
       - chsiang@mozilla.com
     release_channel_collection: opt-in
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
-  browser_home_page_change:
-    bug_numbers:
-      - 1392951
-    description: >-
-      The number of times the home page has been changed.
-      Recorded when a user changes his/her home page successfully.
-    expires: "62"
-    kind: uint
-    keyed: true
-    notification_emails:
-      - chsiang@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
-  browser_home_page_count:
-    bug_numbers:
-      - 1392951
-    description: >-
-      Each key is the number of home page urls when users change their home page,
-      multiple home pages can be set (delineated with a "|"),
-      and each value is the number of times that key is recorded.
-      The telemetry data will be recorded if a user changes his/her home page successfully.
-    expires: "62"
-    kind: uint
-    keyed: true
-    notification_emails:
-      - chsiang@mozilla.com
-    release_channel_collection: opt-out
     products:
       - 'firefox'
       - 'fennec'
@@ -4244,22 +4182,6 @@ screenshots:
 
 # The following section is for tracking the number of failure for indexedDB.
 idb.failure:
-  fileinfo_error:
-    bug_numbers:
-      - 1432133
-    description: >
-      Tracking the number of failure due to missing fileInfo while doing
-      structured clone.
-    expires: "70"
-    kind: uint
-    notification_emails:
-      - ttung@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - 'main'
   unknown_objectstore_empty_database:
     bug_numbers:
       - 1669730
@@ -5099,8 +5021,8 @@ browser.search:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5119,8 +5041,8 @@ browser.search:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5168,7 +5090,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5186,7 +5108,7 @@ browser.search.content:
     kind: uint
     keyed: True
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5207,7 +5129,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5228,7 +5150,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5249,7 +5171,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5270,7 +5192,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5291,7 +5213,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5312,7 +5234,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5333,7 +5255,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5350,7 +5272,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5367,7 +5289,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5388,7 +5310,7 @@ browser.search.content:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5406,7 +5328,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5424,7 +5346,7 @@ browser.search.withads:
     kind: uint
     keyed: True
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5441,7 +5363,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5458,7 +5380,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5475,7 +5397,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5492,7 +5414,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5509,7 +5431,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5526,7 +5448,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5543,7 +5465,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5560,7 +5482,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5577,7 +5499,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5594,7 +5516,7 @@ browser.search.withads:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5612,7 +5534,7 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5630,7 +5552,7 @@ browser.search.adclicks:
     kind: uint
     keyed: True
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5647,8 +5569,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5659,13 +5581,13 @@ browser.search.adclicks:
     bug_numbers:
       - 1664847
     description: >
-      RRecords clicks of adverts on SERP pages where the search was started from the search bar. The key format is ‘<provider>:<tagged|organic>’
+      Records clicks of adverts on SERP pages where the search was started from the search bar. The key format is ‘<provider>:<tagged|organic>’
     expires: never
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5681,8 +5603,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5698,8 +5620,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5715,8 +5637,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5732,8 +5654,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5749,8 +5671,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5766,7 +5688,7 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5783,7 +5705,7 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -5800,8 +5722,8 @@ browser.search.adclicks:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
-      - teon@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -5825,7 +5747,7 @@ browser.searchinit:
     keyed: true
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - mbanner@mozilla.com
     products:
       - 'firefox'
@@ -6560,7 +6482,7 @@ urlbar:
     expires: never
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - adw@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -6578,7 +6500,7 @@ urlbar:
     expires: never
     kind: uint
     notification_emails:
-      - fx-search@mozilla.com
+      - fx-search-telemetry@mozilla.com
       - adw@mozilla.com
     release_channel_collection: opt-out
     products:
@@ -6595,9 +6517,95 @@ urlbar:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
+      - adw@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+
+urlbar.impression:
+  autofill_about:
+    bug_numbers:
+      - 1774305
+    description: >
+      Counts how many times about-page type was autofilled per engagement.
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  autofill_adaptive:
+    bug_numbers:
+      - 1774305
+    description: >
+      Counts how many times adaptive history type was autofilled per engagement.
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  autofill_origin:
+    bug_numbers:
+      - 1774305
+    description: >
+      Counts how many times origin type was autofilled per engagement.
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  autofill_other:
+    bug_numbers:
+      - 1774305
+    description: >
+      Counts how many times other type was autofilled per engagement.
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  autofill_preloaded:
+    bug_numbers:
+      - 1774305
+    description: >
+      Counts how many times preloaded site type was autofilled per engagement.
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  autofill_url:
+    bug_numbers:
+      - 1774305
+    description: >
+      Counts how many times url type was autofilled per engagement.
+    expires: never
+    kind: uint
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-in
     products:
       - 'firefox'
     record_in_processes:
@@ -6614,8 +6622,7 @@ urlbar.tabtosearch:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-in
     products:
       - 'firefox'
@@ -6631,8 +6638,7 @@ urlbar.tabtosearch:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-in
     products:
       - 'firefox'
@@ -6650,7 +6656,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6666,7 +6672,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6683,7 +6689,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6704,7 +6710,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6721,7 +6727,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6738,7 +6744,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6754,8 +6760,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6771,8 +6776,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6788,8 +6792,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6805,8 +6808,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6822,8 +6824,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6839,8 +6840,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6856,8 +6856,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - adw@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6873,8 +6872,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6890,8 +6888,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6907,8 +6904,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6924,8 +6920,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6941,8 +6936,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6958,8 +6952,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6975,8 +6968,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -6992,8 +6984,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -7009,8 +7000,7 @@ urlbar.picked:
       kind: uint
       keyed: true
       notification_emails:
-        - fx-search@mozilla.com
-        - tbrooks@mozilla.com
+        - fx-search-telemetry@mozilla.com
       release_channel_collection: opt-out
       products:
         - 'firefox'
@@ -7028,8 +7018,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7046,8 +7035,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7063,8 +7051,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7080,8 +7067,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7097,8 +7083,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7114,8 +7099,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7131,8 +7115,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7148,8 +7131,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7165,8 +7147,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7182,8 +7163,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7199,8 +7179,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7216,8 +7195,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7234,8 +7212,7 @@ urlbar.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7254,8 +7231,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7272,8 +7248,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7290,8 +7265,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7308,8 +7282,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7326,8 +7299,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7344,8 +7316,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7362,8 +7333,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7380,8 +7350,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7398,8 +7367,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7416,8 +7384,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7434,8 +7401,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7451,8 +7417,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -7470,8 +7435,7 @@ urlbar.picked.searchmode:
     kind: uint
     keyed: true
     notification_emails:
-      - fx-search@mozilla.com
-      - tbrooks@mozilla.com
+      - fx-search-telemetry@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'

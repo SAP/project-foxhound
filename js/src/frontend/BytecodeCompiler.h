@@ -13,7 +13,6 @@
 #include "NamespaceImports.h"
 
 #include "frontend/FunctionSyntaxKind.h"
-#include "gc/Rooting.h"
 #include "js/SourceText.h"
 #include "js/UniquePtr.h"  // js::UniquePtr
 #include "vm/TraceLogging.h"
@@ -180,7 +179,7 @@ UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     JS::SourceText<char16_t>& srcBuf,
     const mozilla::Maybe<uint32_t>& parameterListEnd,
-    frontend::FunctionSyntaxKind syntaxKind, HandleScope enclosingScope);
+    frontend::FunctionSyntaxKind syntaxKind, Handle<Scope*> enclosingScope);
 
 /*
  * True if str consists of an IdentifierStart character, followed by one or

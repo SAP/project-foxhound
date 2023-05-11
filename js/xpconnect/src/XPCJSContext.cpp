@@ -38,6 +38,7 @@
 #include "nsCCUncollectableMarker.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollector.h"
+#include "nsJSEnvironment.h"
 #include "jsapi.h"
 #include "js/ArrayBuffer.h"
 #include "js/ContextOptions.h"
@@ -775,6 +776,7 @@ static mozilla::Atomic<bool> sPropertyErrorMessageFixEnabled(false);
 static mozilla::Atomic<bool> sWeakRefsEnabled(false);
 static mozilla::Atomic<bool> sWeakRefsExposeCleanupSome(false);
 static mozilla::Atomic<bool> sIteratorHelpersEnabled(false);
+static mozilla::Atomic<bool> sArrayFindLastEnabled(false);
 #ifdef NIGHTLY_BUILD
 static mozilla::Atomic<bool> sArrayGroupingEnabled(true);
 #endif
@@ -803,6 +805,7 @@ void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
 #ifdef NIGHTLY_BUILD
       .setArrayGroupingEnabled(sArrayGroupingEnabled)
 #endif
+      .setArrayFindLastEnabled(sArrayFindLastEnabled)
 #ifdef ENABLE_NEW_SET_METHODS
       .setNewSetMethodsEnabled(enableNewSetMethods)
 #endif
@@ -1000,6 +1003,8 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   sWeakRefsEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "weakrefs");
   sWeakRefsExposeCleanupSome = Preferences::GetBool(
       JS_OPTIONS_DOT_STR "experimental.weakrefs.expose_cleanupSome");
+  sArrayFindLastEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.array_find_last");
 
 #ifdef NIGHTLY_BUILD
   sIteratorHelpersEnabled =
@@ -1485,6 +1490,8 @@ void XPCJSContext::AfterProcessTask(uint32_t aNewRecursionDepth) {
   // this value again. Clear it to prevent leaks.
   SetPendingException(nullptr);
 }
+
+void XPCJSContext::MaybePokeGC() { nsJSContext::MaybePokeGC(); }
 
 bool XPCJSContext::IsSystemCaller() const {
   return nsContentUtils::IsSystemCaller(Context());

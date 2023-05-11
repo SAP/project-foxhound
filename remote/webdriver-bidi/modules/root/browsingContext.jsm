@@ -6,13 +6,18 @@
 
 const EXPORTED_SYMBOLS = ["browsingContext"];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
+const { Module } = ChromeUtils.import(
+  "chrome://remote/content/shared/messagehandler/Module.jsm"
+);
 
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AppInfo: "chrome://remote/content/marionette/appinfo.js",
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
   BrowsingContextListener:
@@ -21,7 +26,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.jsm",
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
   Log: "chrome://remote/content/shared/Log.jsm",
-  Module: "chrome://remote/content/shared/messagehandler/Module.jsm",
   ProgressListener: "chrome://remote/content/shared/Navigate.jsm",
   TabManager: "chrome://remote/content/shared/TabManager.jsm",
   waitForInitialNavigationCompleted:
@@ -31,8 +35,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   windowManager: "chrome://remote/content/shared/WindowManager.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.WEBDRIVER_BIDI)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.WEBDRIVER_BIDI)
 );
 
 /**
@@ -78,7 +82,7 @@ class BrowsingContextModule extends Module {
     super(messageHandler);
 
     // Create the console-api listener and listen on "message" events.
-    this.#contextListener = new BrowsingContextListener();
+    this.#contextListener = new lazy.BrowsingContextListener();
     this.#contextListener.on("attached", this.#onContextAttached);
   }
 
@@ -102,36 +106,36 @@ class BrowsingContextModule extends Module {
   close(options = {}) {
     const { context: contextId } = options;
 
-    assert.string(
+    lazy.assert.string(
       contextId,
       `Expected "context" to be a string, got ${contextId}`
     );
 
-    const context = TabManager.getBrowsingContextById(contextId);
+    const context = lazy.TabManager.getBrowsingContextById(contextId);
     if (!context) {
-      throw new error.NoSuchFrameError(
+      throw new lazy.error.NoSuchFrameError(
         `Browsing Context with id ${contextId} not found`
       );
     }
 
     if (context.parent) {
-      throw new error.InvalidArgumentError(
+      throw new lazy.error.InvalidArgumentError(
         `Browsing Context with id ${contextId} is not top-level`
       );
     }
 
-    if (TabManager.getTabCount() === 1) {
+    if (lazy.TabManager.getTabCount() === 1) {
       // The behavior when closing the last tab is currently unspecified.
       // Warn the consumer about potential issues
-      logger.warn(
+      lazy.logger.warn(
         `Closing the last open tab (Browsing Context id ${contextId}), expect inconsistent behavior across platforms`
       );
     }
 
     const browser = context.embedderElement;
-    const tabBrowser = TabManager.getTabBrowser(browser.ownerGlobal);
+    const tabBrowser = lazy.TabManager.getTabBrowser(browser.ownerGlobal);
     const tab = tabBrowser.getTabForBrowser(browser);
-    TabManager.removeTab(tab);
+    lazy.TabManager.removeTab(tab);
   }
 
   /**
@@ -149,7 +153,7 @@ class BrowsingContextModule extends Module {
   async create(options = {}) {
     const { type } = options;
     if (type !== CreateType.tab && type !== CreateType.window) {
-      throw new error.InvalidArgumentError(
+      throw new lazy.error.InvalidArgumentError(
         `Expected "type" to be one of ${Object.values(CreateType)}, got ${type}`
       );
     }
@@ -157,26 +161,26 @@ class BrowsingContextModule extends Module {
     let browser;
     switch (type) {
       case "window":
-        let newWindow = await windowManager.openBrowserWindow();
-        browser = TabManager.getTabBrowser(newWindow).selectedBrowser;
+        let newWindow = await lazy.windowManager.openBrowserWindow();
+        browser = lazy.TabManager.getTabBrowser(newWindow).selectedBrowser;
         break;
 
       case "tab":
-        if (!TabManager.supportsTabs()) {
-          throw new error.UnsupportedOperationError(
-            `browsingContext.create with type "tab" not supported in ${AppInfo.name}`
+        if (!lazy.TabManager.supportsTabs()) {
+          throw new lazy.error.UnsupportedOperationError(
+            `browsingContext.create with type "tab" not supported in ${lazy.AppInfo.name}`
           );
         }
-        let tab = await TabManager.addTab({ focus: false });
-        browser = TabManager.getBrowserForTab(tab);
+        let tab = await lazy.TabManager.addTab({ focus: false });
+        browser = lazy.TabManager.getBrowserForTab(tab);
     }
 
-    await waitForInitialNavigationCompleted(
+    await lazy.waitForInitialNavigationCompleted(
       browser.browsingContext.webProgress
     );
 
     return {
-      context: TabManager.getIdForBrowser(browser),
+      context: lazy.TabManager.getIdForBrowser(browser),
     };
   }
 
@@ -226,7 +230,7 @@ class BrowsingContextModule extends Module {
     const { maxDepth = null, root: rootId = null } = options;
 
     if (maxDepth !== null) {
-      assert.positiveInteger(
+      lazy.assert.positiveInteger(
         maxDepth,
         `Expected "maxDepth" to be a positive integer, got ${maxDepth}`
       );
@@ -236,11 +240,16 @@ class BrowsingContextModule extends Module {
     if (rootId !== null) {
       // With a root id specified return the context info for itself
       // and the full tree.
-      assert.string(rootId, `Expected "root" to be a string, got ${rootId}`);
+      lazy.assert.string(
+        rootId,
+        `Expected "root" to be a string, got ${rootId}`
+      );
       contexts = [this.#getBrowsingContext(rootId)];
     } else {
       // Return all top-level browsing contexts.
-      contexts = TabManager.browsers.map(browser => browser.browsingContext);
+      contexts = lazy.TabManager.browsers.map(
+        browser => browser.browsingContext
+      );
     }
 
     const contextsInfo = contexts.map(context => {
@@ -282,16 +291,16 @@ class BrowsingContextModule extends Module {
   async navigate(options = {}) {
     const { context: contextId, url, wait = WaitCondition.None } = options;
 
-    assert.string(
+    lazy.assert.string(
       contextId,
       `Expected "context" to be a string, got ${contextId}`
     );
 
-    assert.string(url, `Expected "url" to be string, got ${url}`);
+    lazy.assert.string(url, `Expected "url" to be string, got ${url}`);
 
     const waitConditions = Object.values(WaitCondition);
     if (!waitConditions.includes(wait)) {
-      throw new error.InvalidArgumentError(
+      throw new lazy.error.InvalidArgumentError(
         `Expected "wait" to be one of ${waitConditions}, got ${wait}`
       );
     }
@@ -306,9 +315,10 @@ class BrowsingContextModule extends Module {
       moduleName: "browsingContext",
       commandName: "_getBaseURL",
       destination: {
-        type: WindowGlobalMessageHandler.type,
+        type: lazy.WindowGlobalMessageHandler.type,
         id: context.id,
       },
+      retryOnAbort: true,
     });
 
     let targetURI;
@@ -316,7 +326,7 @@ class BrowsingContextModule extends Module {
       const baseURI = Services.io.newURI(base);
       targetURI = Services.io.newURI(url, null, baseURI);
     } catch (e) {
-      throw new error.InvalidArgumentError(
+      throw new lazy.error.InvalidArgumentError(
         `Expected "url" to be a valid URL (${e.message})`
       );
     }
@@ -346,7 +356,7 @@ class BrowsingContextModule extends Module {
     const browserId = context.browserId;
 
     const resolveWhenStarted = wait === WaitCondition.None;
-    const listener = new ProgressListener(webProgress, {
+    const listener = new lazy.ProgressListener(webProgress, {
       expectNavigation: true,
       resolveWhenStarted,
       // In case the webprogress is already navigating, always wait for an
@@ -366,7 +376,7 @@ class BrowsingContextModule extends Module {
     };
 
     const contextDescriptor = {
-      type: ContextDescriptorType.TopBrowsingContext,
+      type: lazy.ContextDescriptorType.TopBrowsingContext,
       id: browserId,
     };
 
@@ -436,9 +446,9 @@ class BrowsingContextModule extends Module {
       return null;
     }
 
-    const context = TabManager.getBrowsingContextById(contextId);
+    const context = lazy.TabManager.getBrowsingContextById(contextId);
     if (context === null) {
-      throw new error.NoSuchFrameError(
+      throw new lazy.error.NoSuchFrameError(
         `Browsing Context with id ${contextId} not found`
       );
     }
@@ -475,14 +485,14 @@ class BrowsingContextModule extends Module {
     }
 
     const contextInfo = {
-      context: TabManager.getIdForBrowsingContext(context),
+      context: lazy.TabManager.getIdForBrowsingContext(context),
       url: context.currentURI.spec,
       children,
     };
 
     if (isRoot) {
       // Only emit the parent id for the top-most browsing context.
-      const parentId = TabManager.getIdForBrowsingContext(context.parent);
+      const parentId = lazy.TabManager.getIdForBrowsingContext(context.parent);
       contextInfo.parent = parentId;
     }
 
@@ -505,7 +515,7 @@ class BrowsingContextModule extends Module {
     }
 
     // Wait until navigation starts, so that an active document is attached.
-    await waitForInitialNavigationCompleted(browsingContext.webProgress, {
+    await lazy.waitForInitialNavigationCompleted(browsingContext.webProgress, {
       resolveWhenStarted: true,
     });
 
@@ -520,45 +530,19 @@ class BrowsingContextModule extends Module {
    */
 
   _subscribeEvent(params) {
-    // TODO: Bug 1741861. Move this logic to a shared module or the an abstract
-    // class.
     switch (params.event) {
       case "browsingContext.contextCreated":
         this.#contextListener.startListening();
-
-        return this.messageHandler.addSessionData({
-          moduleName: "browsingContext",
-          category: "event",
-          contextDescriptor: {
-            type: ContextDescriptorType.All,
-          },
-          values: [params.event],
-        });
-      default:
-        throw new Error(
-          `Unsupported event for browsingContext module ${params.event}`
-        );
     }
+    return this.addEventSessionData("browsingContext", params.event);
   }
 
   _unsubscribeEvent(params) {
     switch (params.event) {
       case "browsingContext.contextCreated":
         this.#contextListener.stopListening();
-
-        return this.messageHandler.removeSessionData({
-          moduleName: "browsingContext",
-          category: "event",
-          contextDescriptor: {
-            type: ContextDescriptorType.All,
-          },
-          values: [params.event],
-        });
-      default:
-        throw new Error(
-          `Unsupported event for browsingContext module ${params.event}`
-        );
     }
+    return this.removeEventSessionData("browsingContext", params.event);
   }
 
   static get supportedEvents() {

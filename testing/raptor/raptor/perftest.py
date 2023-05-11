@@ -8,6 +8,7 @@ from __future__ import absolute_import
 
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -103,6 +104,7 @@ class Perftest(object):
         project="mozilla-central",
         verbose=False,
         python=None,
+        fission=True,
         **kwargs
     ):
         self._remote_test_root = None
@@ -138,7 +140,7 @@ class Perftest(object):
             "enable_control_server_wait": memory_test or cpu_test,
             "e10s": e10s,
             "device_name": device_name,
-            "fission": extra_prefs.get("fission.autostart", True),
+            "fission": fission,
             "disable_perf_tuning": disable_perf_tuning,
             "conditioned_profile": conditioned_profile,
             "chimera": chimera,
@@ -206,6 +208,9 @@ class Perftest(object):
 
         LOG.info("Post startup delay set to %d ms" % self.post_startup_delay)
         LOG.info("main raptor init, config is: %s" % str(self.config))
+
+        # TODO: Move this outside of the perftest initialization, it contains
+        # platform-specific code
         self.build_browser_profile()
 
         # Crashes counter
@@ -393,14 +398,7 @@ class Perftest(object):
             LOG.info("Merging profile: {}".format(path))
             self.profile.merge(path)
 
-        if self.config["extra_prefs"].get("fission.autostart", True):
-            self.config["extra_prefs"].update(
-                {
-                    "fission.autostart": True,
-                }
-            )
-            LOG.info("Enabling fission via browser preferences")
-            LOG.info("Browser preferences: {}".format(self.config["extra_prefs"]))
+        LOG.info("Browser preferences: {}".format(self.config["extra_prefs"]))
         self.profile.set_preferences(self.config["extra_prefs"])
 
         # share the profile dir with the config and the control server
@@ -510,12 +508,29 @@ class Perftest(object):
         pass
 
     def clean_up(self):
+        # Cleanup all of our temporary directories
         for dir_to_rm in self._dirs_to_remove:
             if not os.path.exists(dir_to_rm):
                 continue
             LOG.info("Removing temporary directory: {}".format(dir_to_rm))
             shutil.rmtree(dir_to_rm, ignore_errors=True)
         self._dirs_to_remove = []
+
+        # Go through the artifact directory and ensure we
+        # don't have too many JPG/PNG files from a task failure
+        if (
+            not self.run_local
+            and self.results_handler
+            and self.results_handler.result_dir()
+        ):
+            artifact_dir = pathlib.Path(self.artifact_dir)
+            for filetype in ("*.png", "*.jpg"):
+                # Limit the number of images uploaded to the last (newest) 5
+                for file in sorted(artifact_dir.rglob(filetype))[:-5]:
+                    try:
+                        file.unlink()
+                    except FileNotFoundError:
+                        pass
 
     def get_page_timeout_list(self):
         return self.results_handler.page_timeout_list

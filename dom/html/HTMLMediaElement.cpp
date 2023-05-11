@@ -7682,7 +7682,7 @@ void HTMLMediaElement::NotifyMediaControlPlaybackStateChanged() {
 }
 
 bool HTMLMediaElement::IsInFullScreen() const {
-  return State().HasState(NS_EVENT_STATE_FULLSCREEN);
+  return State().HasState(ElementState::FULLSCREEN);
 }
 
 bool HTMLMediaElement::IsPlayable() const {

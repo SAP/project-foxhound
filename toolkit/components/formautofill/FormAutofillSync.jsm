@@ -23,13 +23,16 @@ const { Utils } = ChromeUtils.import("resource://services-sync/util.js");
 const { SCORE_INCREMENT_XLARGE } = ChromeUtils.import(
   "resource://services-sync/constants.js"
 );
-
-ChromeUtils.defineModuleGetter(this, "Log", "resource://gre/modules/Log.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "formAutofillStorage",
-  "resource://autofill/FormAutofillStorage.jsm"
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  formAutofillStorage: "resource://autofill/FormAutofillStorage.jsm",
+  Log: "resource://gre/modules/Log.jsm",
+});
 
 // A helper to sanitize address and creditcard records suitable for logging.
 function sanitizeStorageObject(ob) {
@@ -98,7 +101,7 @@ FormAutofillStore.prototype = {
 
   get storage() {
     if (!this._storage) {
-      this._storage = formAutofillStorage[this._subStorageName];
+      this._storage = lazy.formAutofillStorage[this._subStorageName];
     }
     return this._storage;
   },
@@ -181,7 +184,7 @@ FormAutofillStore.prototype = {
 
     let entry = record.toEntry();
     let { forkedGUID } = await this.storage.reconcile(entry);
-    if (this._log.level <= Log.Level.Debug) {
+    if (this._log.level <= lazy.Log.Level.Debug) {
       let forkedRecord = forkedGUID ? await this.storage.get(forkedGUID) : null;
       let reconciledRecord = await this.storage.get(record.id);
       this._log.debug("Updated local record", {
@@ -281,7 +284,7 @@ FormAutofillEngine.prototype = {
   // the engine is disabled, and we don't want to be the loader of
   // FormAutofillStorage in this case.
   async _syncStartup() {
-    await formAutofillStorage.initialize();
+    await lazy.formAutofillStorage.initialize();
     await SyncEngine.prototype._syncStartup.call(this);
   },
 
@@ -319,12 +322,12 @@ FormAutofillEngine.prototype = {
   },
 
   async _resetClient() {
-    await formAutofillStorage.initialize();
+    await lazy.formAutofillStorage.initialize();
     this._store.storage.resetSync();
   },
 
   async _wipeClient() {
-    await formAutofillStorage.initialize();
+    await lazy.formAutofillStorage.initialize();
     this._store.storage.removeAll({ sourceSync: true });
   },
 };

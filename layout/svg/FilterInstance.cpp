@@ -62,10 +62,9 @@ static UniquePtr<UserSpaceMetrics> UserSpaceMetricsForFrame(nsIFrame* aFrame) {
 }
 
 void FilterInstance::PaintFilteredFrame(
-    nsIFrame* aFilteredFrame, gfxContext* aCtx,
-    const SVGFilterPaintCallback& aPaintCallback, const nsRegion* aDirtyArea,
-    imgDrawingParams& aImgParams, float aOpacity) {
-  auto filterChain = aFilteredFrame->StyleEffects()->mFilters.AsSpan();
+    nsIFrame* aFilteredFrame, Span<const StyleFilter> aFilterChain,
+    gfxContext* aCtx, const SVGFilterPaintCallback& aPaintCallback,
+    const nsRegion* aDirtyArea, imgDrawingParams& aImgParams, float aOpacity) {
   UniquePtr<UserSpaceMetrics> metrics =
       UserSpaceMetricsForFrame(aFilteredFrame);
 
@@ -91,7 +90,7 @@ void FilterInstance::PaintFilteredFrame(
   // Hardcode InputIsTainted to true because we don't want JS to be able to
   // read the rendered contents of aFilteredFrame.
   FilterInstance instance(aFilteredFrame, aFilteredFrame->GetContent(),
-                          *metrics, filterChain, /* InputIsTainted */ true,
+                          *metrics, aFilterChain, /* InputIsTainted */ true,
                           aPaintCallback, scaleMatrixInDevUnits, aDirtyArea,
                           nullptr, nullptr, nullptr);
   if (instance.IsInitialized()) {
@@ -484,8 +483,8 @@ FilterInstance::FilterInstance(
   }
 
   // Get various transforms:
-  gfxMatrix filterToUserSpace(mFilterSpaceToUserSpaceScale.width, 0.0f, 0.0f,
-                              mFilterSpaceToUserSpaceScale.height, 0.0f, 0.0f);
+  gfxMatrix filterToUserSpace(mFilterSpaceToUserSpaceScale.xScale, 0.0f, 0.0f,
+                              mFilterSpaceToUserSpaceScale.yScale, 0.0f, 0.0f);
 
   mFilterSpaceToFrameSpaceInCSSPxTransform =
       filterToUserSpace * GetUserSpaceToFrameSpaceInCSSPxTransform();
@@ -526,19 +525,19 @@ bool FilterInstance::ComputeTargetBBoxInFilterSpace() {
 
 bool FilterInstance::ComputeUserSpaceToFilterSpaceScale() {
   if (mTargetFrame) {
-    mUserSpaceToFilterSpaceScale = mPaintTransform.ScaleFactors().ToSize();
-    if (mUserSpaceToFilterSpaceScale.width <= 0.0f ||
-        mUserSpaceToFilterSpaceScale.height <= 0.0f) {
+    mUserSpaceToFilterSpaceScale = mPaintTransform.ScaleFactors();
+    if (mUserSpaceToFilterSpaceScale.xScale <= 0.0f ||
+        mUserSpaceToFilterSpaceScale.yScale <= 0.0f) {
       // Nothing should be rendered.
       return false;
     }
   } else {
-    mUserSpaceToFilterSpaceScale = gfxSize(1.0, 1.0);
+    mUserSpaceToFilterSpaceScale = MatrixScalesDouble();
   }
 
   mFilterSpaceToUserSpaceScale =
-      gfxSize(1.0f / mUserSpaceToFilterSpaceScale.width,
-              1.0f / mUserSpaceToFilterSpaceScale.height);
+      MatrixScalesDouble(1.0f / mUserSpaceToFilterSpaceScale.xScale,
+                         1.0f / mUserSpaceToFilterSpaceScale.yScale);
 
   return true;
 }
@@ -546,16 +545,14 @@ bool FilterInstance::ComputeUserSpaceToFilterSpaceScale() {
 gfxRect FilterInstance::UserSpaceToFilterSpace(
     const gfxRect& aUserSpaceRect) const {
   gfxRect filterSpaceRect = aUserSpaceRect;
-  filterSpaceRect.Scale(mUserSpaceToFilterSpaceScale.width,
-                        mUserSpaceToFilterSpaceScale.height);
+  filterSpaceRect.Scale(mUserSpaceToFilterSpaceScale);
   return filterSpaceRect;
 }
 
 gfxRect FilterInstance::FilterSpaceToUserSpace(
     const gfxRect& aFilterSpaceRect) const {
   gfxRect userSpaceRect = aFilterSpaceRect;
-  userSpaceRect.Scale(mFilterSpaceToUserSpaceScale.width,
-                      mFilterSpaceToUserSpaceScale.height);
+  userSpaceRect.Scale(mFilterSpaceToUserSpaceScale);
   return userSpaceRect;
 }
 
@@ -583,8 +580,8 @@ nsresult FilterInstance::BuildPrimitives(Span<const StyleFilter> aFilterChain,
 nsresult FilterInstance::BuildPrimitivesForFilter(
     const StyleFilter& aFilter, nsIFrame* aTargetFrame, bool aInputIsTainted,
     nsTArray<FilterPrimitiveDescription>& aPrimitiveDescriptions) {
-  NS_ASSERTION(mUserSpaceToFilterSpaceScale.width > 0.0f &&
-                   mFilterSpaceToUserSpaceScale.height > 0.0f,
+  NS_ASSERTION(mUserSpaceToFilterSpaceScale.xScale > 0.0f &&
+                   mFilterSpaceToUserSpaceScale.yScale > 0.0f,
                "scale factors between spaces should be positive values");
 
   if (aFilter.IsUrl()) {

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,7 +55,6 @@
 #include "gfxPlatformFontList.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/AutoRestore.h"
-#include "mozilla/ContentBlocking.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/BenchmarkStorageParent.h"
 #include "mozilla/ContentBlockingUserInteraction.h"
@@ -83,6 +82,7 @@
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StorageAccessAPIHelper.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Telemetry.h"
@@ -187,6 +187,7 @@
 #include "nsHashPropertyBag.h"
 #include "nsHyphenationManager.h"
 #include "nsIAlertsService.h"
+#include "nsIAppShell.h"
 #include "nsIAppStartup.h"
 #include "nsIAppWindow.h"
 #include "nsIAsyncInputStream.h"
@@ -308,7 +309,6 @@
 
 #ifdef XP_WIN
 #  include "mozilla/widget/AudioSession.h"
-#  include "mozilla/widget/WinContentSystemParameters.h"
 #  include "mozilla/WinDllServices.h"
 #endif
 
@@ -641,24 +641,8 @@ static const char* sObserverTopics[] = {
     "private-cookie-changed",
     NS_NETWORK_LINK_TYPE_TOPIC,
     "network:socket-process-crashed",
+    DEFAULT_TIMEZONE_CHANGED_OBSERVER_TOPIC,
 };
-
-static const char kFissionEnforceBlockList[] =
-    "fission.enforceBlocklistedPrefsInSubprocesses";
-static const char kFissionOmitBlockListValues[] =
-    "fission.omitBlocklistedPrefsInSubprocesses";
-
-static void OnFissionBlocklistPrefChange(const char* aPref, void* aData) {
-  if (strcmp(aPref, kFissionEnforceBlockList) == 0) {
-    sCrashOnBlocklistedPref =
-        StaticPrefs::fission_enforceBlocklistedPrefsInSubprocesses();
-  } else if (strcmp(aPref, kFissionOmitBlockListValues) == 0) {
-    sOmitBlocklistedPrefValues =
-        StaticPrefs::fission_omitBlocklistedPrefsInSubprocesses();
-  } else {
-    MOZ_CRASH("Unknown pref passed to callback");
-  }
-}
 
 // PreallocateProcess is called by the PreallocatedProcessManager.
 // ContentParent then takes this process back within GetNewOrUsedBrowserProcess.
@@ -1764,6 +1748,23 @@ void ContentParent::MaybeAsyncSendShutDownMessage() {
       &ContentParent::ShutDownProcess, SEND_SHUTDOWN_MESSAGE));
 }
 
+void MaybeLogBlockShutdownDiagnostics(ContentParent* aSelf, const char* aMsg,
+                                      const char* aFile, int32_t aLine) {
+#if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
+  if (aSelf->IsBlockingShutdown()) {
+    nsAutoCString logmsg;
+    logmsg.AppendPrintf("ContentParent: id=%p - ", aSelf);
+    logmsg.Append(aMsg);
+    NS_DebugBreak(NS_DEBUG_WARNING, logmsg.get(), nullptr, aFile, aLine);
+  }
+#else
+  Unused << aSelf;
+  Unused << aMsg;
+  Unused << aFile;
+  Unused << aLine;
+#endif
+}
+
 void ContentParent::ShutDownProcess(ShutDownMethod aMethod) {
   MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
           ("ShutDownProcess: %p", this));
@@ -1775,18 +1776,34 @@ void ContentParent::ShutDownProcess(ShutDownMethod aMethod) {
   // other methods. We first call Shutdown() in the child. After the child is
   // ready, it calls FinishShutdown() on us. Then we close the channel.
   if (aMethod == SEND_SHUTDOWN_MESSAGE) {
-    if (CanSend() && !mShutdownPending) {
-      // Stop sending input events with input priority when shutting down.
-      SetInputPriorityEventEnabled(false);
-      // Send a high priority announcement first. If this fails, SendShutdown
-      // will also fail.
-      Unused << SendShutdownConfirmedHP();
-      // Send the definite message with normal priority.
-      if (SendShutdown()) {
-        mShutdownPending = true;
-        // Start the force-kill timer if we haven't already.
-        StartForceKillTimer();
+    if (!mShutdownPending) {
+      if (CanSend()) {
+        // Stop sending input events with input priority when shutting down.
+        SetInputPriorityEventEnabled(false);
+        // Send a high priority announcement first. If this fails, SendShutdown
+        // will also fail.
+        Unused << SendShutdownConfirmedHP();
+        // Send the definite message with normal priority.
+        if (SendShutdown()) {
+          MaybeLogBlockShutdownDiagnostics(
+              this, "ShutDownProcess: Sent shutdown message.", __FILE__,
+              __LINE__);
+          mShutdownPending = true;
+          // Start the force-kill timer if we haven't already.
+          StartForceKillTimer();
+        } else {
+          MaybeLogBlockShutdownDiagnostics(
+              this, "ShutDownProcess: !!! Send shutdown message failed! !!!",
+              __FILE__, __LINE__);
+        }
+      } else {
+        MaybeLogBlockShutdownDiagnostics(
+            this, "ShutDownProcess: !!! !CanSend !!!", __FILE__, __LINE__);
       }
+    } else {
+      MaybeLogBlockShutdownDiagnostics(
+          this, "ShutDownProcess: Shutdown already pending.", __FILE__,
+          __LINE__);
     }
     // If call was not successful, the channel must have been broken
     // somehow, and we will clean up the error in ActorDestroy.
@@ -1802,11 +1819,15 @@ void ContentParent::ShutDownProcess(ShutDownMethod aMethod) {
   // If Close() fails with an error, we'll end up back in this function, but
   // with aMethod = CLOSE_CHANNEL_WITH_ERROR.
 
-  if (aMethod == CLOSE_CHANNEL && !mCalledClose) {
-    // Close() can only be called once: It kicks off the destruction
-    // sequence.
-    mCalledClose = true;
-    Close();
+  if (aMethod == CLOSE_CHANNEL) {
+    if (!mCalledClose) {
+      MaybeLogBlockShutdownDiagnostics(
+          this, "ShutDownProcess: Closing channel.", __FILE__, __LINE__);
+      // Close() can only be called once: It kicks off the destruction
+      // sequence.
+      mCalledClose = true;
+      Close();
+    }
   }
 
   // A ContentParent object might not get freed until after XPCOM shutdown has
@@ -1821,6 +1842,12 @@ mozilla::ipc::IPCResult ContentParent::RecvFinishShutdown() {
   // SEND_SHUTDOWN_MESSAGE. To actually close the channel, we call
   // ShutDownProcess again with CLOSE_CHANNEL.
   MOZ_ASSERT(mShutdownPending);
+  if (mCalledClose) {
+    MaybeLogBlockShutdownDiagnostics(
+        this, "RecvFinishShutdown: Channel already closed.", __FILE__,
+        __LINE__);
+  }
+
   ShutDownProcess(CLOSE_CHANNEL);
   return IPC_OK();
 }
@@ -2789,7 +2816,7 @@ ContentParent::ContentParent(const nsACString& aRemoteType, int32_t aJSPluginID)
       mIsRemoteInputEventQueueEnabled(false),
       mIsInputPriorityEventEnabled(false),
       mIsInPool(false),
-#ifdef DEBUG
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
       mBlockShutdownCalled(false),
 #endif
       mHangMonitorActor(nullptr) {
@@ -2937,7 +2964,7 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
       if (NS_WARN_IF(!jsapi.Init(xpc::PrivilegedJunkScope()))) {
         MOZ_CRASH();
       }
-      JS::RootedValue init(jsapi.cx());
+      JS::Rooted<JS::Value> init(jsapi.cx());
       // We'll crash on failure, so use a IgnoredErrorResult (which also
       // auto-suppresses exceptions).
       IgnoredErrorResult rv;
@@ -2988,11 +3015,6 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
     xpcomInit.gfxFeatureStatus() = gfxInfoRaw->GetAllFeatures();
   }
 
-#ifdef XP_WIN
-  xpcomInit.systemParameters() =
-      widget::WinContentSystemParameters::GetSingleton()->GetParentValues();
-#endif
-
   // Send the dynamic scalar definitions to the new process.
   TelemetryIPC::GetDynamicScalarDefinitions(xpcomInit.dynamicScalarDefs());
 
@@ -3027,6 +3049,8 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   RefPtr<DllServices> dllSvc(DllServices::Get());
   isReadyForBackgroundProcessing = dllSvc->IsReadyForBackgroundProcessing();
 #endif
+
+  xpcomInit.perfStatsMask() = PerfStats::GetCollectionMask();
 
   Unused << SendSetXPCOMProcessAttributes(
       xpcomInit, initialData, lnf, fontList, std::move(sharedUASheetHandle),
@@ -3194,7 +3218,7 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
           }
 
           IPCBlob ipcBlob;
-          nsresult rv = IPCBlobUtils::Serialize(aBlobImpl, this, ipcBlob);
+          nsresult rv = IPCBlobUtils::Serialize(aBlobImpl, ipcBlob);
           if (NS_WARN_IF(NS_FAILED(rv))) {
             return false;
           }
@@ -3548,7 +3572,7 @@ NS_INTERFACE_MAP_END
 // Async shutdown blocker
 NS_IMETHODIMP
 ContentParent::BlockShutdown(nsIAsyncShutdownClient* aClient) {
-#ifdef DEBUG
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   // We register two shutdown blockers and both would call us, but
   // if things go well we will unregister both as (delayed) reaction
   // to the first call we get and thus never receive a second call.
@@ -3558,6 +3582,9 @@ ContentParent::BlockShutdown(nsIAsyncShutdownClient* aClient) {
 #endif
 
   if (CanSend()) {
+    MaybeLogBlockShutdownDiagnostics(this, "BlockShutdown: CanSend.", __FILE__,
+                                     __LINE__);
+
     // Make sure that our process will get scheduled.
     ProcessPriorityManager::SetProcessPriority(this,
                                                PROCESS_PRIORITY_FOREGROUND);
@@ -3567,6 +3594,9 @@ ContentParent::BlockShutdown(nsIAsyncShutdownClient* aClient) {
     // XXX: Check for successful dispatch, see bug 1765732
     ShutDownProcess(SEND_SHUTDOWN_MESSAGE);
   } else if (IsLaunching()) {
+    MaybeLogBlockShutdownDiagnostics(
+        this, "BlockShutdown: !CanSend && IsLaunching.", __FILE__, __LINE__);
+
     // If we get here while we are launching, we must wait for the child to
     // be able to react on our commands. Mark this process as dead. This
     // will make bail out LaunchSubprocessResolve and kick off the normal
@@ -3574,6 +3604,15 @@ ContentParent::BlockShutdown(nsIAsyncShutdownClient* aClient) {
     MarkAsDead();
   } else {
     MOZ_ASSERT(IsDead());
+    if (!IsDead()) {
+      MaybeLogBlockShutdownDiagnostics(
+          this, "BlockShutdown: !!! !CanSend && !IsLaunching && !IsDead !!!",
+          __FILE__, __LINE__);
+    } else {
+      MaybeLogBlockShutdownDiagnostics(
+          this, "BlockShutdown: !CanSend && !IsLaunching && IsDead.", __FILE__,
+          __LINE__);
+    }
     // Nothing left we can do. We must assume that we race with an ongoing
     // process shutdown, such that we can expect our shutdown blockers to be
     // removed normally.
@@ -3644,6 +3683,12 @@ void ContentParent::AddShutdownBlockers() {
 void ContentParent::RemoveShutdownBlockers() {
   MOZ_ASSERT(sXPCOMShutdownClient);
   MOZ_ASSERT(sProfileBeforeChangeClient);
+
+  MaybeLogBlockShutdownDiagnostics(this, "RemoveShutdownBlockers", __FILE__,
+                                   __LINE__);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  mBlockShutdownCalled = false;
+#endif
 
   if (sXPCOMShutdownClient) {
     Unused << sXPCOMShutdownClient->RemoveBlocker(this);
@@ -3810,6 +3855,8 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
     UpdateNetworkLinkType();
   } else if (!strcmp(aTopic, "network:socket-process-crashed")) {
     Unused << SendSocketProcessCrashed();
+  } else if (!strcmp(aTopic, DEFAULT_TIMEZONE_CHANGED_OBSERVER_TOPIC)) {
+    Unused << SendSystemTimezoneChanged();
   }
 
   return NS_OK;
@@ -4606,7 +4653,7 @@ mozilla::ipc::IPCResult ContentParent::RecvSyncMessage(
   RefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     ipc::StructuredCloneData data;
-    ipc::UnpackClonedMessageDataForParent(aData, data);
+    ipc::UnpackClonedMessageData(aData, data);
 
     ppm->ReceiveMessage(ppm, nullptr, aMsg, true, &data, aRetvals,
                         IgnoreErrors());
@@ -4623,7 +4670,7 @@ mozilla::ipc::IPCResult ContentParent::RecvAsyncMessage(
   RefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     ipc::StructuredCloneData data;
-    ipc::UnpackClonedMessageDataForParent(aData, data);
+    ipc::UnpackClonedMessageData(aData, data);
 
     ppm->ReceiveMessage(ppm, nullptr, aMsg, false, &data, nullptr,
                         IgnoreErrors());
@@ -4760,7 +4807,7 @@ mozilla::ipc::IPCResult ContentParent::RecvScriptErrorInternal(
 
   if (aStack) {
     StructuredCloneData data;
-    UnpackClonedMessageDataForParent(*aStack, data);
+    UnpackClonedMessageData(*aStack, data);
 
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(xpc::PrivilegedJunkScope()))) {
@@ -4768,7 +4815,7 @@ mozilla::ipc::IPCResult ContentParent::RecvScriptErrorInternal(
     }
     JSContext* cx = jsapi.cx();
 
-    JS::RootedValue stack(cx);
+    JS::Rooted<JS::Value> stack(cx);
     ErrorResult rv;
     data.Read(cx, &stack, rv);
     if (rv.Failed() || !stack.isObject()) {
@@ -4776,10 +4823,10 @@ mozilla::ipc::IPCResult ContentParent::RecvScriptErrorInternal(
       return IPC_OK();
     }
 
-    JS::RootedObject stackObj(cx, &stack.toObject());
+    JS::Rooted<JSObject*> stackObj(cx, &stack.toObject());
     MOZ_ASSERT(JS::IsUnwrappedSavedFrame(stackObj));
 
-    JS::RootedObject stackGlobal(cx, JS::GetNonCCWObjectGlobal(stackObj));
+    JS::Rooted<JSObject*> stackGlobal(cx, JS::GetNonCCWObjectGlobal(stackObj));
     msg = new nsScriptErrorWithStack(JS::NothingHandleValue, stackObj,
                                      stackGlobal);
   } else {
@@ -4806,7 +4853,7 @@ bool ContentParent::DoLoadMessageManagerScript(const nsAString& aURL,
 nsresult ContentParent::DoSendAsyncMessage(const nsAString& aMessage,
                                            StructuredCloneData& aHelper) {
   ClonedMessageData data;
-  if (!BuildClonedMessageDataForParent(this, aHelper, data)) {
+  if (!BuildClonedMessageData(aHelper, data)) {
     return NS_ERROR_DOM_DATA_CLONE_ERR;
   }
   if (!SendAsyncMessage(nsString(aMessage), data)) {
@@ -5562,6 +5609,12 @@ mozilla::ipc::IPCResult ContentParent::RecvShutdownProfile(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult ContentParent::RecvShutdownPerfStats(
+    const nsCString& aPerfStats) {
+  PerfStats::StorePerfStats(this, aPerfStats);
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult ContentParent::RecvGetGraphicsDeviceInitData(
     ContentDeviceData* aOut) {
   gfxPlatform::GetPlatform()->BuildContentDeviceData(aOut);
@@ -5776,7 +5829,7 @@ void ContentParent::BroadcastBlobURLRegistration(
       }
 
       IPCBlob ipcBlob;
-      rv = IPCBlobUtils::Serialize(aBlobImpl, cp, ipcBlob);
+      rv = IPCBlobUtils::Serialize(aBlobImpl, ipcBlob);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         break;
       }
@@ -6091,7 +6144,7 @@ void ContentParent::TransmitBlobURLsForPrincipal(nsIPrincipal* aPrincipal) {
           }
 
           IPCBlob ipcBlob;
-          nsresult rv = IPCBlobUtils::Serialize(aBlobImpl, this, ipcBlob);
+          nsresult rv = IPCBlobUtils::Serialize(aBlobImpl, ipcBlob);
           if (NS_WARN_IF(NS_FAILED(rv))) {
             return false;
           }
@@ -6406,18 +6459,17 @@ ContentParent::RecvStorageAccessPermissionGrantedForOrigin(
         aReason.value());
   }
 
-  ContentBlocking::SaveAccessForOriginOnParentProcess(
+  StorageAccessAPIHelper::SaveAccessForOriginOnParentProcess(
       aTopLevelWindowId, aParentContext.get_canonical(), aTrackingPrincipal,
       aAllowMode)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [aResolver = std::move(aResolver)](
-              ContentBlocking::ParentAccessGrantPromise::ResolveOrRejectValue&&
-                  aValue) {
-            bool success =
-                aValue.IsResolve() && NS_SUCCEEDED(aValue.ResolveValue());
-            aResolver(success);
-          });
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [aResolver = std::move(aResolver)](
+                 StorageAccessAPIHelper::ParentAccessGrantPromise::
+                     ResolveOrRejectValue&& aValue) {
+               bool success =
+                   aValue.IsResolve() && NS_SUCCEEDED(aValue.ResolveValue());
+               aResolver(success);
+             });
   return IPC_OK();
 }
 
@@ -6432,12 +6484,12 @@ mozilla::ipc::IPCResult ContentParent::RecvCompleteAllowAccessFor(
     return IPC_OK();
   }
 
-  ContentBlocking::CompleteAllowAccessFor(
+  StorageAccessAPIHelper::CompleteAllowAccessFor(
       aParentContext.get_canonical(), aTopLevelWindowId, aTrackingPrincipal,
       aTrackingOrigin, aCookieBehavior, aReason, nullptr)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [aResolver = std::move(aResolver)](
-                 ContentBlocking::StorageAccessPermissionGrantPromise::
+                 StorageAccessAPIHelper::StorageAccessPermissionGrantPromise::
                      ResolveOrRejectValue&& aValue) {
                Maybe<StorageAccessPromptChoices> choice;
                if (aValue.IsResolve()) {
@@ -6458,25 +6510,22 @@ mozilla::ipc::IPCResult ContentParent::RecvStoreUserInteractionAsPermission(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvAsyncShouldAllowAccessFor(
-    const MaybeDiscarded<BrowsingContext>& aTopContext,
+mozilla::ipc::IPCResult ContentParent::RecvTestCookiePermissionDecided(
+    const MaybeDiscarded<BrowsingContext>& aContext,
     const Principal& aPrincipal,
-    const AsyncShouldAllowAccessForResolver&& aResolver) {
-  if (aTopContext.IsNullOrDiscarded()) {
+    const TestCookiePermissionDecidedResolver&& aResolver) {
+  if (aContext.IsNullOrDiscarded()) {
     return IPC_OK();
   }
 
-  ContentBlocking::AsyncShouldAllowAccessFor(aTopContext.get_canonical(),
-                                             aPrincipal)
-      ->Then(GetCurrentSerialEventTarget(), __func__,
-             [aResolver](ContentBlocking::AsyncShouldAllowAccessForPromise::
-                             ResolveOrRejectValue&& aValue) {
-               bool allowed = aValue.IsResolve();
+  RefPtr<WindowGlobalParent> wgp =
+      aContext.get_canonical()->GetCurrentWindowGlobal();
+  nsCOMPtr<nsICookieJarSettings> cjs = wgp->CookieJarSettings();
 
-               aResolver(Tuple<const bool&, const uint32_t&>(
-                   allowed, allowed ? 0 : aValue.RejectValue()));
-             });
-
+  Maybe<bool> result =
+      StorageAccessAPIHelper::CheckCookiesPermittedDecidesStorageAccessAPI(
+          cjs, aPrincipal);
+  aResolver(result);
   return IPC_OK();
 }
 
@@ -7179,11 +7228,10 @@ mozilla::ipc::IPCResult ContentParent::RecvWindowPostMessage(
   ClonedOrErrorMessageData message;
   StructuredCloneData messageFromChild;
   if (aMessage.type() == ClonedOrErrorMessageData::TClonedMessageData) {
-    UnpackClonedMessageDataForParent(aMessage, messageFromChild);
+    UnpackClonedMessageData(aMessage, messageFromChild);
 
     ClonedMessageData clonedMessageData;
-    if (BuildClonedMessageDataForParent(cp, messageFromChild,
-                                        clonedMessageData)) {
+    if (BuildClonedMessageData(messageFromChild, clonedMessageData)) {
       message = std::move(clonedMessageData);
     } else {
       // FIXME Logging?
@@ -7253,7 +7301,7 @@ mozilla::ipc::IPCResult ContentParent::RecvBlobURLDataRequest(
   }
 
   IPCBlob ipcBlob;
-  nsresult rv = IPCBlobUtils::Serialize(blobImpl, this, ipcBlob);
+  nsresult rv = IPCBlobUtils::Serialize(blobImpl, ipcBlob);
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aResolver(rv);
@@ -7578,12 +7626,12 @@ IPCResult ContentParent::RecvRawMessage(
   Maybe<StructuredCloneData> data;
   if (aData) {
     data.emplace();
-    data->BorrowFromClonedMessageDataForParent(*aData);
+    data->BorrowFromClonedMessageData(*aData);
   }
   Maybe<StructuredCloneData> stack;
   if (aStack) {
     stack.emplace();
-    stack->BorrowFromClonedMessageDataForParent(*aStack);
+    stack->BorrowFromClonedMessageData(*aStack);
   }
   ReceiveRawMessage(aMeta, std::move(data), std::move(stack));
   return IPC_OK();
@@ -7611,7 +7659,8 @@ NS_IMETHODIMP ContentParent::GetExistingActor(const nsACString& aName,
 }
 
 already_AddRefed<JSActor> ContentParent::InitJSActor(
-    JS::HandleObject aMaybeActor, const nsACString& aName, ErrorResult& aRv) {
+    JS::Handle<JSObject*> aMaybeActor, const nsACString& aName,
+    ErrorResult& aRv) {
   RefPtr<JSProcessActorParent> actor;
   if (aMaybeActor.get()) {
     aRv = UNWRAP_OBJECT(JSProcessActorParent, aMaybeActor.get(), actor);

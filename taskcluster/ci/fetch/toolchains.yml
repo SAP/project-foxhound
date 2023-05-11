@@ -108,13 +108,6 @@ go-1.14.4:
         sha256: aed845e4185a0b2a3c3d5e1d0a35491702c55889192bb9c30e67a3de6849c067
         size: 123711003
 
-iris-2.0:
-    description: Iris_Firefox source code
-    fetch:
-        type: git
-        repo: https://github.com/mozilla/iris_firefox
-        revision: a91a1cb88a16b0ee4d30f0dfc165d2cacf48b10c
-
 isl-0.16.1:
     description: ISL 0.16.1 source code
     fetch:
@@ -245,12 +238,12 @@ wine:
         strip-components: 1
         add-prefix: wine-source/
 
-cbindgen-0.23.0:
+cbindgen-0.24.3:
     description: cbindgen source code
     fetch:
         type: git
         repo: https://github.com/eqrion/cbindgen
-        revision: 798cfab52bced65a749443faa16990ec3a8e0cfe
+        revision: f43ccfc047a1a160267f32355c5e5e7154a2665a
 
 cctools-port:
     description: cctools-port source code
@@ -354,11 +347,11 @@ clang-5.0:
         revision: 6a075b6de4cafebec9ca1ff9eec7229a617c93f6
 
 clang-14:
-    description: clang 14.0.4 source code
+    description: clang 14.0.5 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: 29f1039a7285a5c3a9c353d054140bf2556d4c4d
+        revision: 4bc1d0b51c8e488d78ab69c8b19cfbcd1f7db6a4
 
 clang-trunk:
     description: clang main branch source code
@@ -369,29 +362,29 @@ clang-trunk:
         repo: https://github.com/llvm/llvm-project
         branch: main
 
-# This revision currently corresponds to rust nightly-2022-02-20,
-# which is the first nightly with the version 1.61.0,
+# This revision currently corresponds to rust nightly-2022-04-05,
+# which is the first nightly with the version 1.62.0,
 # so it should be as close as possible to the behaviour of
-# stable-1.60.0.
+# stable-1.61.0.
 #
 # We use this to build from source, so the resulting non-official
-# artifacts will report their version as "1.61.0-dev", but will otherwise
+# artifacts will report their version as "1.62.0-dev", but will otherwise
 # behave like a nightly build. This means they will allow you to use
 # unstable features like -Zbuild-std and sanitizers.
-rust-1.61.0-dev:
-    description: Rust 1.61.0-dev source code
+rust-1.62.0-dev:
+    description: Rust 1.62.0-dev source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 3b348d932aa5c9884310d025cf7c516023fd0d9a
+        revision: 60e50fc1cfe0bb693a5f4f93eb83ef70854531e3
 
 wasi-sdk:
-    description: wasi-sdk-15 source code + LLVM-15 fix
+    description: wasi-sdk-16 source code
     fetch:
         type: git
         repo: https://github.com/WebAssembly/wasi-sdk
-        revision: 37ae6af88201884c8b98a65adcd6d8cd1284f95e
+        revision: 7b7b8a974a31f527d71467499b0d5be3b12f2fa9
 
 ninja:
     description: ninja 1.9.0
@@ -658,3 +651,10 @@ aflplusplus-4.0:
         type: git
         repo: https://github.com/AFLplusplus/AFLplusplus
         revision: ba3c7bfe40f9b17a691958e3525828385127ad25
+
+cargo-vet:
+    description: cargo-vet source
+    fetch:
+        type: git
+        repo: https://github.com/mozilla/cargo-vet
+        revision: 65830ae54590edff20dafc8485ea181681411250

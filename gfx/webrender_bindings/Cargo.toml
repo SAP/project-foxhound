@@ -5,7 +5,7 @@ authors = ["The Mozilla Project Developers"]
 license = "MPL-2.0"
 
 [dependencies]
-dirs = "2"
+dirs = "4"
 rayon = "1"
 num_cpus = "1.7.0"
 tracy-rs = "0.1"
@@ -24,7 +24,7 @@ gecko-profiler = { path = "../../tools/profiler/rust-api" }
 
 [dependencies.webrender]
 path = "../wr/webrender"
-version = "0.61.0"
+version = "0.62.0"
 default-features = false
 features = ["capture", "serialize_program", "gecko", "sw_compositor"]
 

@@ -1,10 +1,6 @@
 mod macros;
 
-use core::{
-    cmp::Ordering::*,
-    convert::{TryFrom, TryInto},
-    str::FromStr,
-};
+use core::{cmp::Ordering::*, str::FromStr};
 use num_traits::{Inv, Signed, ToPrimitive};
 use rust_decimal::{Decimal, Error, RoundingStrategy};
 
@@ -146,9 +142,40 @@ fn it_can_serialize_deserialize_borsh() {
         borsh::BorshSerialize::serialize(&a, &mut bytes).unwrap();
         let b: Decimal = borsh::BorshDeserialize::deserialize(&mut bytes.as_slice()).unwrap();
         assert_eq!(test.to_string(), b.to_string());
-        let bytes = borsh::schema_helper::serialize_with_schema(&a);
-        let b: Decimal = borsh::schema_helper::deserialize_with_schema(&bytes);
+        let bytes = borsh::try_to_vec_with_schema(&a);
+        assert!(bytes.is_ok(), "try_to_vec_with_schema.is_ok()");
+        let bytes = bytes.unwrap();
+        let result = borsh::try_from_slice_with_schema(&bytes);
+        assert!(result.is_ok(), "try_from_slice_with_schema.is_ok()");
+        let b: Decimal = result.unwrap();
         assert_eq!(test.to_string(), b.to_string());
+    }
+}
+
+#[test]
+#[cfg(feature = "rkyv")]
+fn it_can_serialize_deserialize_rkyv() {
+    use rkyv::Deserialize;
+    let tests = [
+        "12.3456789",
+        "5233.9008808150288439427720175",
+        "-5233.9008808150288439427720175",
+    ];
+    for test in &tests {
+        let a = Decimal::from_str(test).unwrap();
+        let bytes = rkyv::to_bytes::<_, 256>(&a).unwrap();
+
+        #[cfg(feature = "rkyv-safe")]
+        {
+            let archived = rkyv::check_archived_root::<Decimal>(&bytes[..]).unwrap();
+            assert_eq!(archived, &a);
+        }
+
+        let archived = unsafe { rkyv::archived_root::<Decimal>(&bytes[..]) };
+        assert_eq!(archived, &a);
+
+        let deserialized: Decimal = archived.deserialize(&mut rkyv::Infallible).unwrap();
+        assert_eq!(deserialized, a);
     }
 }
 
@@ -2556,14 +2583,14 @@ fn it_can_return_the_min_value() {
 #[test]
 fn it_can_go_from_and_into() {
     let d = Decimal::from_str("5").unwrap();
-    let di8 = 5u8.into();
-    let di32 = 5i32.into();
-    let disize = 5isize.into();
-    let di64 = 5i64.into();
-    let du8 = 5u8.into();
-    let du32 = 5u32.into();
-    let dusize = 5usize.into();
-    let du64 = 5u64.into();
+    let di8: Decimal = 5u8.into();
+    let di32: Decimal = 5i32.into();
+    let disize: Decimal = 5isize.into();
+    let di64: Decimal = 5i64.into();
+    let du8: Decimal = 5u8.into();
+    let du32: Decimal = 5u32.into();
+    let dusize: Decimal = 5usize.into();
+    let du64: Decimal = 5u64.into();
 
     assert_eq!(d, di8);
     assert_eq!(di8, di32);

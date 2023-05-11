@@ -4,16 +4,10 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "UptakeTelemetry",
+const { UptakeTelemetry } = ChromeUtils.import(
   "resource://services-common/uptake-telemetry.js"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var EXPORTED_SYMBOLS = ["Uptake"];
 

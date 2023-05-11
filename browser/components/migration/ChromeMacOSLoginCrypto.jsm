@@ -11,14 +11,14 @@
 
 var EXPORTED_SYMBOLS = ["ChromeMacOSLoginCrypto"];
 
-Cu.importGlobalProperties(["crypto"]);
-
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
+const lazy = {};
+
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "gKeychainUtils",
   "@mozilla.org/profile/migrator/keychainmigrationutils;1",
   "nsIKeychainMigrationUtils"
@@ -87,7 +87,7 @@ class ChromeMacOSLoginCrypto {
     // service name and account name usually won't be found.
     let encKey = testingPassphrase;
     try {
-      encKey = gKeychainUtils.getGenericPassword(serviceName, accountName);
+      encKey = lazy.gKeychainUtils.getGenericPassword(serviceName, accountName);
     } catch (ex) {
       if (!testingPassphrase) {
         throw ex;

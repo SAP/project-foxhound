@@ -21,7 +21,6 @@
 #include "mozilla/DisplayPortUtils.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/GeckoMVMContext.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerRange.h"
@@ -40,6 +39,7 @@
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_font.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
@@ -3166,7 +3166,7 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll,
   // code-path as "top"!
   if (aAnchorName.IsEmpty()) {
     NS_ASSERTION(!aScroll, "can't scroll to empty anchor name");
-    esm->SetContentState(nullptr, NS_EVENT_STATE_URLTARGET);
+    esm->SetContentState(nullptr, ElementState::URLTARGET);
     return NS_OK;
   }
 
@@ -3229,7 +3229,7 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll,
   //    target element to null.
   // 2.1. Set the Document's target element to null.
   // 3.2. Set the Document's target element to target.
-  esm->SetContentState(target, NS_EVENT_STATE_URLTARGET);
+  esm->SetContentState(target, ElementState::URLTARGET);
 
   // TODO: Spec probably needs a section to account for this.
   if (nsIScrollableFrame* rootScroll = GetRootScrollFrameAsScrollable()) {
@@ -3384,8 +3384,7 @@ static void AccumulateFrameBounds(nsIFrame* aContainerFrame, nsIFrame* aFrame,
                                   bool aUseWholeLineHeightForInlines,
                                   nsRect& aRect, bool& aHaveRect,
                                   nsIFrame*& aPrevBlock,
-                                  nsAutoLineIterator& aLines,
-                                  int32_t& aCurLine) {
+                                  nsILineIterator*& aLines, int32_t& aCurLine) {
   nsIFrame* frame = aFrame;
   nsRect frameBounds = nsRect(nsPoint(0, 0), aFrame->GetSize());
 
@@ -3574,9 +3573,7 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
   nsIFrame* frame = do_QueryFrame(aFrameAsScrollable);
   AutoWeakFrame weakFrame(frame);
   aFrameAsScrollable->ScrollTo(scrollPt, scrollMode, &allowedRange,
-                               aScrollFlags & ScrollFlags::ScrollSnap
-                                   ? ScrollSnapFlags::IntendedEndPosition
-                                   : ScrollSnapFlags::Disabled,
+                               ScrollSnapFlags::IntendedEndPosition,
                                aScrollFlags & ScrollFlags::TriggeredByScript
                                    ? ScrollTriggeredByScript::Yes
                                    : ScrollTriggeredByScript::No);
@@ -3715,10 +3712,11 @@ void PresShell::DoScrollContentIntoView() {
   bool useWholeLineHeightForInlines = data->mContentScrollVAxis.mWhenToScroll !=
                                       WhenToScroll::IfNotFullyVisible;
   {
+    AutoAssertNoDomMutations guard;  // Ensure use of nsILineIterators is safe.
     nsIFrame* prevBlock = nullptr;
     // Reuse the same line iterator across calls to AccumulateFrameBounds.
     // We set it every time we detect a new block (stored in prevBlock).
-    nsAutoLineIterator lines;
+    nsILineIterator* lines = nullptr;
     // The last line we found a continuation on in |lines|.  We assume that
     // later continuations cannot come on earlier lines.
     int32_t curLine = 0;
@@ -4431,19 +4429,19 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::CharacterDataChanged(
   mFrameConstructor->CharacterDataChanged(aContent, aInfo);
 }
 
-MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ContentStateChanged(
-    Document* aDocument, nsIContent* aContent, EventStates aStateMask) {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void PresShell::ElementStateChanged(
+    Document* aDocument, Element* aElement, ElementState aStateMask) {
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected ContentStateChanged");
   MOZ_ASSERT(aDocument == mDocument, "Unexpected aDocument");
 
   if (mDidInitialize) {
     nsAutoCauseReflowNotifier crNotifier(this);
-    mPresContext->RestyleManager()->ContentStateChanged(aContent, aStateMask);
+    mPresContext->RestyleManager()->ElementStateChanged(aElement, aStateMask);
   }
 }
 
-void PresShell::DocumentStatesChanged(EventStates aStateMask) {
+void PresShell::DocumentStatesChanged(DocumentState aStateMask) {
   MOZ_ASSERT(!mIsDocumentGone, "Unexpected DocumentStatesChanged");
   MOZ_ASSERT(mDocument);
   MOZ_ASSERT(!aStateMask.IsEmpty());
@@ -4452,7 +4450,7 @@ void PresShell::DocumentStatesChanged(EventStates aStateMask) {
     StyleSet()->InvalidateStyleForDocumentStateChanges(aStateMask);
   }
 
-  if (aStateMask.HasState(NS_DOCUMENT_STATE_WINDOW_INACTIVE)) {
+  if (aStateMask.HasState(DocumentState::WINDOW_INACTIVE)) {
     if (nsIFrame* root = mFrameConstructor->GetRootFrame()) {
       root->SchedulePaint();
     }
@@ -5383,6 +5381,9 @@ void PresShell::AddCanvasBackgroundColorItem(
 bool PresShell::IsTransparentContainerElement() const {
   nsPresContext* pc = GetPresContext();
   if (!pc->IsRootContentDocumentCrossProcess()) {
+    if (pc->IsChrome()) {
+      return true;
+    }
     // Frames are transparent except if their embedder color-scheme is
     // mismatched, in which case we use an opaque background to avoid
     // black-on-black or white-on-white text, see
@@ -5468,7 +5469,7 @@ PresShell::CanvasBackground PresShell::ComputeCanvasBackground() const {
     return {GetDefaultBackgroundColorToDraw(), false};
   }
 
-  ComputedStyle* bgStyle =
+  const ComputedStyle* bgStyle =
       nsCSSRendering::FindRootFrameBackground(rootStyleFrame);
   // XXX We should really be passing the canvasframe, not the root element
   // style frame but we don't have access to the canvasframe here. It isn't
@@ -6426,8 +6427,10 @@ void PresShell::PaintInternal(nsView* aViewToPaint, PaintInternalFlags aFlags) {
 
   // We force sync-decode for printing / print-preview (printing already does
   // this from nsPageSequenceFrame::PrintNextSheet).
+  // We also force sync-decoding via pref for reftests.
   if (aFlags & PaintInternalFlags::PaintSyncDecodeImages ||
-      mDocument->IsStaticDocument()) {
+      mDocument->IsStaticDocument() ||
+      StaticPrefs::image_decode_sync_enabled()) {
     flags |= PaintFrameFlags::SyncDecodeImages;
   }
   if (renderer->GetBackendType() == layers::LayersBackend::LAYERS_WR) {
@@ -6712,6 +6715,9 @@ void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
       nsView* rootView = mViewManager->GetRootView();
       mMouseLocation = nsLayoutUtils::TranslateWidgetToView(
           mPresContext, aEvent->mWidget, aEvent->mRefPoint, rootView);
+      // TODO: instead, encapsulate `mMouseLocation` and
+      // `mLastOverWindowMouseLocation` in a struct.
+      mLastOverWindowMouseLocation = mMouseLocation;
       mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
     } else {
       RelativeTo relativeTo{rootFrame};
@@ -6720,6 +6726,7 @@ void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
       }
       mMouseLocation =
           nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, relativeTo);
+      mLastOverWindowMouseLocation = mMouseLocation;
       mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
     }
     mMouseLocationWasSetBySynthesizedMouseEventForTests =

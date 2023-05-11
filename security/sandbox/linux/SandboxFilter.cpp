@@ -1143,7 +1143,7 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         Arg<unsigned long> request(1);
 #ifdef MOZ_ASAN
         Arg<int> fd(0);
-#endif // MOZ_ASAN
+#endif  // MOZ_ASAN
         // Make isatty() return false, because none of the terminal
         // ioctls will be allowed; libraries sometimes call this for
         // various reasons (e.g., to decide whether to emit ANSI/VT
@@ -1156,7 +1156,7 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
 #ifdef MOZ_ASAN
             // ASAN's error reporter wants to know if stderr is a tty.
             .ElseIf(fd == STDERR_FILENO, Error(ENOTTY))
-#endif // MOZ_ASAN
+#endif  // MOZ_ASAN
             .Else(SandboxPolicyBase::EvaluateSyscall(sysno));
       }
 
@@ -1177,7 +1177,7 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         // (See also bug 1081242 comment #7.)
       CASES_FOR_stat:
         return Error(ENOENT);
-#endif // MOZ_ASAN
+#endif  // MOZ_ASAN
 
       default:
         return SandboxPolicyBase::EvaluateSyscall(sysno);
@@ -1715,8 +1715,12 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
   const SandboxOpenedFiles* mFiles;
 
  public:
-  explicit GMPSandboxPolicy(const SandboxOpenedFiles* aFiles)
-      : mFiles(aFiles) {}
+  explicit GMPSandboxPolicy(const SandboxOpenedFiles* aFiles) : mFiles(aFiles) {
+    // Used by the profiler to send data back to the parent process;
+    // we are not enabling the file broker, so this will only work if
+    // memfd_create is available.
+    mMayCreateShmem = true;
+  }
 
   ~GMPSandboxPolicy() override = default;
 
@@ -1768,6 +1772,16 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
             .ElseIf(advice == MADV_MERGEABLE, Error(EPERM))  // bug 1705045
             .Else(Error(ENOSYS));
       }
+
+      // The profiler will try to readlink /proc/self/exe for native
+      // stackwalking, but that's broken for several other reasons;
+      // see discussion in bug 1770905.  (That can be emulated by
+      // pre-recording the result if/when we need it.)
+#ifdef __NR_readlink
+      case __NR_readlink:
+#endif
+      case __NR_readlinkat:
+        return Error(EINVAL);
 
       default:
         return SandboxPolicyCommon::EvaluateSyscall(sysno);
@@ -1849,10 +1863,17 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // Note: 'b' is also the Binder device on Android.
         static constexpr unsigned long kDmaBufType =
             static_cast<unsigned long>('b') << _IOC_TYPESHIFT;
+        // nvidia uses some ioctls from this range (but not actual
+        // fbdev ioctls; nvidia uses values >= 200 for the NR field
+        // (low 8 bits))
+        static constexpr unsigned long kFbDevType =
+            static_cast<unsigned long>('F') << _IOC_TYPESHIFT;
 
         // Allow DRI and DMA-Buf for VA-API
         return If(shifted_type == kDrmType, Allow())
             .ElseIf(shifted_type == kDmaBufType, Allow())
+            // Hack for nvidia, which isn't supported yet:
+            .ElseIf(shifted_type == kFbDevType, Error(ENOTTY))
             .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
       }
 
@@ -1883,6 +1904,14 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // Mesa sometimes wants to know the OS version.
       case __NR_uname:
         return Allow();
+
+        // nvidia tries to mknod(!) its devices; that won't work anyway,
+        // so quietly reject it.
+#ifdef __NR_mknod
+      case __NR_mknod:
+#endif
+      case __NR_mknodat:
+        return Error(EPERM);
 
         // Pass through the common policy.
       default:

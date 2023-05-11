@@ -6,18 +6,22 @@ const EXPORTED_SYMBOLS = ["SnapshotSelector"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { EventEmitter } = ChromeUtils.import(
+  "resource://gre/modules/EventEmitter.jsm"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  EventEmitter: "resource://gre/modules/EventEmitter.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   FilterAdult: "resource://activity-stream/lib/FilterAdult.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
   Snapshots: "resource:///modules/Snapshots.jsm",
   SnapshotScorer: "resource:///modules/SnapshotScorer.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logConsole", function() {
+XPCOMUtils.defineLazyGetter(lazy, "logConsole", function() {
   return console.createInstance({
     prefix: "SnapshotSelector",
     maxLogLevel: Services.prefs.getBoolPref(
@@ -129,7 +133,7 @@ class SnapshotSelector extends EventEmitter {
     getCurrentSessionUrls = () => new Set(),
   }) {
     super();
-    this.#task = new DeferredTask(
+    this.#task = new lazy.DeferredTask(
       () => this.#buildSnapshots().catch(console.error),
       500
     );
@@ -189,7 +193,7 @@ class SnapshotSelector extends EventEmitter {
       return;
     }
 
-    logConsole.debug(
+    lazy.logConsole.debug(
       "Generated snapshots",
       snapshots.map(s => s.url)
     );
@@ -213,12 +217,12 @@ class SnapshotSelector extends EventEmitter {
     // Take a copy of the context to avoid it changing while we are generating
     // the list.
     let context = { ...this.#context };
-    logConsole.debug("Building snapshots", context);
+    lazy.logConsole.debug("Building snapshots", context);
 
     // We query for more snapshots than we need so that we can account for
     // deduplicating and filtering out adult sites. This may not catch all
     // cases, but saves the complexity of repeated queries.
-    let snapshots = await Snapshots.query({
+    let snapshots = await lazy.Snapshots.query({
       limit: context.count * 4,
       type: context.type,
     });
@@ -227,10 +231,10 @@ class SnapshotSelector extends EventEmitter {
       if (snapshot.url == context.url) {
         return false;
       }
-      return !context.filterAdult || !FilterAdult.isAdultUrl(snapshot.url);
+      return !context.filterAdult || !lazy.FilterAdult.isAdultUrl(snapshot.url);
     });
 
-    snapshots = SnapshotScorer.dedupeSnapshots(
+    snapshots = lazy.SnapshotScorer.dedupeSnapshots(
       snapshots.map(s => ({
         snapshot: s,
       }))
@@ -239,7 +243,7 @@ class SnapshotSelector extends EventEmitter {
       .map(s => s.snapshot)
       .slice();
 
-    PlacesUIUtils.insertTitleStartDiffs(snapshots);
+    lazy.PlacesUIUtils.insertTitleStartDiffs(snapshots);
 
     this.#snapshotsGenerated(snapshots);
   }
@@ -258,10 +262,10 @@ class SnapshotSelector extends EventEmitter {
     // Take a copy of the context to avoid it changing while we are generating
     // the list.
     let context = { ...this.#context };
-    logConsole.debug("Building relevant snapshots", context);
+    lazy.logConsole.debug("Building relevant snapshots", context);
 
     let recommendationGroups = await Promise.all(
-      Object.entries(Snapshots.recommendationSources).map(
+      Object.entries(lazy.Snapshots.recommendationSources).map(
         async ([key, source]) => {
           let weight = context.sourceWeights.get(key) ?? 0;
           if (weight == 0) {
@@ -270,9 +274,14 @@ class SnapshotSelector extends EventEmitter {
 
           let recommendations = await source(context);
 
-          logConsole.debug(
+          lazy.logConsole.debug(
             `Found ${key} recommendations:`,
-            recommendations.map(r => r.snapshot.url)
+            recommendations.map(
+              r =>
+                `${r.snapshot.url} (score: ${r.score}${
+                  r.data ? ", data: " + JSON.stringify(r.data) : ""
+                })`
+            )
           );
 
           return { recommendations, weight };
@@ -280,7 +289,7 @@ class SnapshotSelector extends EventEmitter {
       )
     );
 
-    let recommendations = SnapshotScorer.combineAndScore(
+    let recommendations = lazy.SnapshotScorer.combineAndScore(
       context,
       ...recommendationGroups
     );
@@ -289,7 +298,7 @@ class SnapshotSelector extends EventEmitter {
       .slice(0, context.count)
       .map(r => r.snapshot);
 
-    PlacesUIUtils.insertTitleStartDiffs(snapshots);
+    lazy.PlacesUIUtils.insertTitleStartDiffs(snapshots);
 
     this.#snapshotsGenerated(snapshots);
   }
@@ -300,17 +309,25 @@ class SnapshotSelector extends EventEmitter {
    * @param {string} [url]
    *  The url of the current context.
    * @param {number} [time]
-   *  The time, in milliseconds from the Unix epoch.
+   *  The time, in milliseconds since the Unix epoch.
    * @param {PageDataSchema.DATA_TYPE} [type]
    *  The type of snapshots for this selector.
+   * @param {number} [sessionStartTime]
+   *  The start time of the session, in milliseconds since the Unix epoch.
    * @param {string} [rebuildImmediately] (default: false)
    *  Whether to rebuild immediately instead of waiting some delay. Useful on
    *  startup.
    */
-  updateDetailsAndRebuild({ url, time, type, rebuildImmediately = false }) {
+  updateDetailsAndRebuild({
+    url,
+    time,
+    type,
+    sessionStartTime,
+    rebuildImmediately = false,
+  }) {
     let rebuild = false;
     if (url !== undefined) {
-      url = Snapshots.stripFragments(url);
+      url = lazy.Snapshots.stripFragments(url);
       if (url != this.#context.url) {
         this.#context.url = url;
         rebuild = true;
@@ -324,6 +341,14 @@ class SnapshotSelector extends EventEmitter {
       this.#context.type = type;
       rebuild = true;
     }
+    if (
+      sessionStartTime != undefined &&
+      sessionStartTime != this.#context.sessionStartTime
+    ) {
+      this.#context.sessionStartTime = sessionStartTime;
+      rebuild = true;
+    }
+
     if (rebuild) {
       if (rebuildImmediately) {
         this.#buildSnapshots();

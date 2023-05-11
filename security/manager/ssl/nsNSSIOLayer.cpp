@@ -23,6 +23,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/RandomNum.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
@@ -41,6 +43,7 @@
 #include "nsContentUtils.h"
 #include "nsIClientAuthDialogs.h"
 #include "nsISocketProvider.h"
+#include "nsISocketTransport.h"
 #include "nsIWebProgressListener.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSComponent.h"
@@ -131,6 +134,7 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
       mFalseStarted(false),
       mIsFullHandshake(false),
       mNotedTimeUntilReady(false),
+      mEchExtensionStatus(EchExtensionStatus::kNotPresent),
       mIsShortWritePending(false),
       mShortWritePendingByte(0),
       mShortWriteOriginalAmount(-1),
@@ -139,8 +143,7 @@ nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
       mMACAlgorithmUsed(nsISSLSocketControl::SSL_MAC_UNKNOWN),
       mProviderTlsFlags(providerTlsFlags),
       mSocketCreationTimestamp(TimeStamp::Now()),
-      mPlaintextBytesRead(0),
-      mClientCert(nullptr) {
+      mPlaintextBytesRead(0) {
   mTLSVersionRange.min = 0;
   mTLSVersionRange.max = 0;
 }
@@ -180,29 +183,28 @@ nsNSSSocketInfo::GetMACAlgorithmUsed(int16_t* aMac) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsNSSSocketInfo::GetClientCert(nsIX509Cert** aClientCert) {
-  NS_ENSURE_ARG_POINTER(aClientCert);
-  *aClientCert = mClientCert;
-  NS_IF_ADDREF(*aClientCert);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::SetClientCert(nsIX509Cert* aClientCert) {
-  mClientCert = aClientCert;
-  return NS_OK;
-}
-
 void nsNSSSocketInfo::NoteTimeUntilReady() {
   MutexAutoLock lock(mMutex);
   if (mNotedTimeUntilReady) return;
 
   mNotedTimeUntilReady = true;
 
+  Telemetry::HistogramID time_histogram;
+  switch (GetEchExtensionStatus()) {
+    case EchExtensionStatus::kNotPresent:
+      time_histogram = Telemetry::SSL_TIME_UNTIL_READY;
+      break;
+    case EchExtensionStatus::kGREASE:
+      time_histogram = Telemetry::SSL_TIME_UNTIL_READY_ECH_GREASE;
+      break;
+    case EchExtensionStatus::kReal:
+      time_histogram = Telemetry::SSL_TIME_UNTIL_READY_ECH;
+      break;
+  }
   // This will include TCP and proxy tunnel wait time
-  Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY,
-                                 mSocketCreationTimestamp, TimeStamp::Now());
+  Telemetry::AccumulateTimeDelta(time_histogram, mSocketCreationTimestamp,
+                                 TimeStamp::Now());
+
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("[%p] nsNSSSocketInfo::NoteTimeUntilReady\n", mFd));
 }
@@ -779,6 +781,7 @@ nsNSSSocketInfo::SetEchConfig(const nsACString& aEchConfig) {
                PR_ErrorToName(PR_GetError())));
       return NS_OK;
     }
+    UpdateEchExtensionStatus(EchExtensionStatus::kReal);
   }
   return NS_OK;
 }
@@ -985,6 +988,12 @@ bool retryDueToTLSIntolerance(PRErrorCode err, nsNSSSocketInfo* socketInfo) {
   // be used to conclude server is TLS intolerant.
   // Note this only happens during the initial SSL handshake.
 
+  if (StaticPrefs::security_tls_ech_disable_grease_on_fallback() &&
+      socketInfo->GetEchExtensionStatus() == EchExtensionStatus::kGREASE) {
+    // Don't record any intolerances if we used ECH GREASE but force a retry.
+    return true;
+  }
+
   SSLVersionRange range = socketInfo->GetTLSVersionRange();
   nsSSLIOLayerHelpers& helpers = socketInfo->SharedState().IOLayerHelpers();
 
@@ -1080,7 +1089,8 @@ static_assert((mozilla::pkix::ERROR_BASE - mozilla::pkix::END_OF_LIST) < 31,
               "too many moz::pkix errors");
 
 static void reportHandshakeResult(int32_t bytesTransferred, bool wasReading,
-                                  PRErrorCode err) {
+                                  PRErrorCode err,
+                                  EchExtensionStatus aEchExtensionStatus) {
   uint32_t bucket;
 
   // A negative bytesTransferred or a 0 read are errors.
@@ -1105,7 +1115,19 @@ static void reportHandshakeResult(int32_t bytesTransferred, bool wasReading,
     bucket = 671;
   }
 
-  Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT, bucket);
+  Telemetry::HistogramID result_histogram;
+  switch (aEchExtensionStatus) {
+    case EchExtensionStatus::kNotPresent:
+      result_histogram = Telemetry::SSL_HANDSHAKE_RESULT;
+      break;
+    case EchExtensionStatus::kGREASE:
+      result_histogram = Telemetry::SSL_HANDSHAKE_RESULT_ECH_GREASE;
+      break;
+    case EchExtensionStatus::kReal:
+      result_histogram = Telemetry::SSL_HANDSHAKE_RESULT_ECH;
+      break;
+  }
+  Telemetry::Accumulate(result_histogram, bucket);
 }
 
 int32_t checkHandshake(int32_t bytesTransfered, bool wasReading,
@@ -1179,7 +1201,8 @@ int32_t checkHandshake(int32_t bytesTransfered, bool wasReading,
     // Report the result once for each handshake. Note that this does not
     // get handshakes which are cancelled before any reads or writes
     // happen.
-    reportHandshakeResult(bytesTransfered, wasReading, originalError);
+    reportHandshakeResult(bytesTransfered, wasReading, originalError,
+                          socketInfo->GetEchExtensionStatus());
     socketInfo->SetHandshakeNotPending();
   }
 
@@ -1789,22 +1812,19 @@ static bool hasExplicitKeyUsageNonRepudiation(CERTCertificate* cert) {
 ClientAuthInfo::ClientAuthInfo(const nsACString& hostName,
                                const OriginAttributes& originAttributes,
                                int32_t port, uint32_t providerFlags,
-                               uint32_t providerTlsFlags,
-                               nsIX509Cert* clientCert)
+                               uint32_t providerTlsFlags)
     : mHostName(hostName),
       mOriginAttributes(originAttributes),
       mPort(port),
       mProviderFlags(providerFlags),
-      mProviderTlsFlags(providerTlsFlags),
-      mClientCert(clientCert) {}
+      mProviderTlsFlags(providerTlsFlags) {}
 
 ClientAuthInfo::ClientAuthInfo(ClientAuthInfo&& aOther) noexcept
     : mHostName(std::move(aOther.mHostName)),
       mOriginAttributes(std::move(aOther.mOriginAttributes)),
       mPort(aOther.mPort),
       mProviderFlags(aOther.mProviderFlags),
-      mProviderTlsFlags(aOther.mProviderTlsFlags),
-      mClientCert(std::move(aOther.mClientCert)) {}
+      mProviderTlsFlags(aOther.mProviderTlsFlags) {}
 
 const nsACString& ClientAuthInfo::HostName() const { return mHostName; }
 
@@ -1817,11 +1837,6 @@ int32_t ClientAuthInfo::Port() const { return mPort; }
 uint32_t ClientAuthInfo::ProviderFlags() const { return mProviderFlags; }
 
 uint32_t ClientAuthInfo::ProviderTlsFlags() const { return mProviderTlsFlags; }
-
-already_AddRefed<nsIX509Cert> ClientAuthInfo::GetClientCert() const {
-  nsCOMPtr<nsIX509Cert> cert = mClientCert;
-  return cert.forget();
-}
 
 class ClientAuthDataRunnable : public SyncRunnableBase {
  public:
@@ -1937,11 +1952,9 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
     return SECSuccess;
   }
 
-  nsCOMPtr<nsIX509Cert> socketClientCert;
-  info->GetClientCert(getter_AddRefs(socketClientCert));
   ClientAuthInfo authInfo(info->GetHostName(), info->GetOriginAttributes(),
                           info->GetPort(), info->GetProviderFlags(),
-                          info->GetProviderTlsFlags(), socketClientCert);
+                          info->GetProviderTlsFlags());
   nsTArray<nsTArray<uint8_t>> collectedCANames(CollectCANames(caNames));
 
   UniqueCERTCertificate selectedCertificate;
@@ -2336,17 +2349,6 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     return;
   }
 
-  // If a client cert preference was set on the socket info, use that and skip
-  // the client cert UI and/or search of the user's past cert decisions.
-  nsCOMPtr<nsIX509Cert> socketClientCert = mInfo.GetClientCert();
-  if (socketClientCert) {
-    mSelectedCertificate.reset(socketClientCert->GetCert());
-    if (NS_WARN_IF(!mSelectedCertificate)) {
-      return;
-    }
-    return;
-  }
-
   UniqueCERTCertList certList(FindClientCertificatesWithPrivateKeys());
   if (!certList) {
     return;
@@ -2555,17 +2557,6 @@ void RemoteClientAuthDataRunnable::RunOnTargetThread() {
   const ByteArray serverCertSerialized = CopyableTArray<uint8_t>{
       mServerCert->derCert.data, mServerCert->derCert.len};
 
-  // Note that client cert is NULL in socket process until bug 1632809 is done.
-  Maybe<ByteArray> clientCertSerialized;
-  nsCOMPtr<nsIX509Cert> socketClientCert = mInfo.GetClientCert();
-  if (socketClientCert) {
-    nsTArray<uint8_t> certBytes;
-    if (NS_FAILED(socketClientCert->GetRawDER(certBytes))) {
-      return;
-    }
-    clientCertSerialized.emplace(std::move(certBytes));
-  }
-
   nsTArray<ByteArray> collectedCANames;
   for (auto& name : mCollectedCANames) {
     collectedCANames.AppendElement(std::move(name));
@@ -2576,7 +2567,7 @@ void RemoteClientAuthDataRunnable::RunOnTargetThread() {
   mozilla::net::SocketProcessChild::GetSingleton()->SendGetTLSClientCert(
       nsCString(mInfo.HostName()), mInfo.OriginAttributesRef(), mInfo.Port(),
       mInfo.ProviderFlags(), mInfo.ProviderTlsFlags(), serverCertSerialized,
-      clientCertSerialized, collectedCANames, &succeeded, &cert, &mBuiltChain);
+      collectedCANames, &succeeded, &cert, &mBuiltChain);
 
   if (!succeeded) {
     return;
@@ -2731,6 +2722,29 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     // tell NSS the max enabled version to make anti-downgrade effective
     if (SECSuccess != SSL_SetDowngradeCheckVersion(fd, maxEnabledVersion)) {
       return NS_ERROR_FAILURE;
+    }
+  }
+
+  // Enable ECH GREASE if suitable. Has no impact if 'real' ECH is being used.
+  if (range.max >= SSL_LIBRARY_VERSION_TLS_1_3 &&
+      !(infoObject->GetProviderFlags() & (nsISocketProvider::BE_CONSERVATIVE |
+                                          nsISocketTransport::DONT_TRY_ECH)) &&
+      StaticPrefs::security_tls_ech_grease_probability()) {
+    if ((RandomUint64().valueOr(0) % 100) >=
+        100 - StaticPrefs::security_tls_ech_grease_probability()) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("[%p] nsSSLIOLayerSetOptions: enabling TLS ECH Grease\n", fd));
+      if (SECSuccess != SSL_EnableTls13GreaseEch(fd, PR_TRUE)) {
+        return NS_ERROR_FAILURE;
+      }
+      // ECH Padding can be between 1 and 255
+      if (SECSuccess !=
+          SSL_SetTls13GreaseEchSize(
+              fd, std::clamp(StaticPrefs::security_tls_ech_grease_size(), 1U,
+                             255U))) {
+        return NS_ERROR_FAILURE;
+      }
+      infoObject->UpdateEchExtensionStatus(EchExtensionStatus::kGREASE);
     }
   }
 

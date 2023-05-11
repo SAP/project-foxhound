@@ -172,6 +172,8 @@
   MACRO_(finally, finally_, "finally")                                         \
   MACRO_(find, find, "find")                                                   \
   MACRO_(findIndex, findIndex, "findIndex")                                    \
+  MACRO_(findLast, findLast, "findLast")                                       \
+  MACRO_(findLastIndex, findLastIndex, "findLastIndex")                        \
   MACRO_(firstDayOfWeek, firstDayOfWeek, "firstDayOfWeek")                     \
   MACRO_(fix, fix, "fix")                                                      \
   MACRO_(flags, flags, "flags")                                                \
@@ -554,10 +556,9 @@
   MACRO_(weekend, weekend, "weekend")                                          \
   MACRO_(while, while_, "while")                                               \
   MACRO_(with, with, "with")                                                   \
-  MACRO_(withAt, withAt, "withAt")                                             \
-  MACRO_(withReversed, withReversed, "withReversed")                           \
-  MACRO_(withSorted, withSorted, "withSorted")                                 \
-  MACRO_(withSpliced, withSpliced, "withSpliced")                              \
+  MACRO_(toReversed, toReversed, "toReversed")                                 \
+  MACRO_(toSorted, toSorted, "toSorted")                                       \
+  MACRO_(toSpliced, toSpliced, "toSpliced")                                    \
   MACRO_(writable, writable, "writable")                                       \
   MACRO_(write, write, "write")                                                \
   MACRO_(year, year, "year")                                                   \

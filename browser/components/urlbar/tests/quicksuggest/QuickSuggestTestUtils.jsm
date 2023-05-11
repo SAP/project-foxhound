@@ -8,6 +8,7 @@ const EXPORTED_SYMBOLS = ["QuickSuggestTestUtils"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   CONTEXTUAL_SERVICES_PING_TYPES:
@@ -17,7 +18,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   sinon: "resource://testing-common/Sinon.jsm",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
@@ -49,28 +49,28 @@ const DEFAULT_PING_PAYLOADS = {
     block_id: 1,
     context_id: () => actual => !!actual,
     iab_category: "22 - Shopping",
+    improve_suggest_experience_checked: false,
     match_type: "firefox-suggest",
     request_id: null,
-    scenario: "offline",
   },
   [CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION]: {
     advertiser: "testadvertiser",
     block_id: 1,
     context_id: () => actual => !!actual,
+    improve_suggest_experience_checked: false,
     match_type: "firefox-suggest",
     reporting_url: "http://example.com/click",
     request_id: null,
-    scenario: "offline",
   },
   [CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION]: {
     advertiser: "testadvertiser",
     block_id: 1,
     context_id: () => actual => !!actual,
+    improve_suggest_experience_checked: false,
     is_clicked: false,
     match_type: "firefox-suggest",
     reporting_url: "http://example.com/impression",
     request_id: null,
-    scenario: "offline",
   },
 };
 
@@ -543,11 +543,7 @@ class QSTestUtils {
         defaultPayload,
         `Sanity check: Default payload exists for type: ${type}`
       );
-      for (let [key, value] of Object.entries(defaultPayload)) {
-        if (!(key in payload)) {
-          payload[key] = value;
-        }
-      }
+      payload = { ...defaultPayload, ...payload };
 
       // Check the endpoint URL.
       let call = calls[i];

@@ -15,6 +15,9 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 /**
  * Fission-compatible JSProcess implementations.
@@ -172,6 +175,21 @@ let JSWINDOWACTORS = {
       moduleURI: "resource://gre/actors/BrowserElementChild.jsm",
       events: {
         DOMWindowClose: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  ClipboardReadTextPaste: {
+    parent: {
+      moduleURI: "resource://gre/actors/ClipboardReadTextPasteParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/ClipboardReadTextPasteChild.jsm",
+      events: {
+        MozClipboardReadTextPaste: {},
       },
     },
 
@@ -396,24 +414,6 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
-  Select: {
-    parent: {
-      moduleURI: "resource://gre/actors/SelectParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/SelectChild.jsm",
-      events: {
-        mozshowdropdown: {},
-        "mozshowdropdown-sourcetouch": {},
-        mozhidedropdown: { mozSystemGroup: true },
-      },
-    },
-
-    includeChrome: true,
-    allFrames: true,
-  },
-
   // This actor is available for all pages that one can
   // view the source of, however it won't be created until a
   // request to view the source is made via the message
@@ -504,11 +504,35 @@ if (!Services.prefs.getBoolPref("browser.pagedata.enabled", false)) {
     child: {
       moduleURI: "resource://gre/actors/ContentMetaChild.jsm",
       events: {
-        DOMMetaAdded: {},
+        DOMContentLoaded: {},
+        DOMMetaAdded: { createActor: false },
       },
     },
 
     messageManagerGroups: ["browsers"],
+  };
+}
+
+/**
+ * Note that GeckoView has another implementation in mobile/android/actors.
+ */
+if (AppConstants.platform != "android") {
+  JSWINDOWACTORS.Select = {
+    parent: {
+      moduleURI: "resource://gre/actors/SelectParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/SelectChild.jsm",
+      events: {
+        mozshowdropdown: {},
+        "mozshowdropdown-sourcetouch": {},
+        mozhidedropdown: { mozSystemGroup: true },
+      },
+    },
+
+    includeChrome: true,
+    allFrames: true,
   };
 }
 

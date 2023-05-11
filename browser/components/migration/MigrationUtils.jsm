@@ -16,49 +16,46 @@ const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "BookmarkHTMLUtils",
   "resource://gre/modules/BookmarkHTMLUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PromiseUtils",
   "resource://gre/modules/PromiseUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ResponsivenessMonitor",
   "resource://gre/modules/ResponsivenessMonitor.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "Sqlite",
   "resource://gre/modules/Sqlite.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "WindowsRegistry",
   "resource://gre/modules/WindowsRegistry.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "setTimeout",
   "resource://gre/modules/Timer.jsm"
 );
@@ -72,7 +69,7 @@ let gForceExitSpinResolve = false;
 let gKeepUndoData = false;
 let gUndoData = null;
 
-XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
+const gAvailableMigratorKeys = (function() {
   if (AppConstants.platform == "win") {
     return [
       "firefox",
@@ -111,7 +108,7 @@ XPCOMUtils.defineLazyGetter(this, "gAvailableMigratorKeys", function() {
     ];
   }
   return [];
-});
+})();
 
 function getL10n() {
   if (!gL10n) {
@@ -318,7 +315,7 @@ var MigratorPrototype = {
         "FX_MIGRATION_*_JANK_MS"
       );
       if (responsivenessHistogramId) {
-        responsivenessMonitor = new ResponsivenessMonitor();
+        responsivenessMonitor = new lazy.ResponsivenessMonitor();
       }
       return { responsivenessMonitor, responsivenessHistogramId };
     };
@@ -389,7 +386,7 @@ var MigratorPrototype = {
 
         let itemSuccess = false;
         for (let res of itemResources) {
-          let completeDeferred = PromiseUtils.defer();
+          let completeDeferred = lazy.PromiseUtils.defer();
           let resourceDone = function(aSuccess) {
             itemResources.delete(res);
             itemSuccess |= aSuccess;
@@ -455,11 +452,11 @@ var MigratorPrototype = {
         browserGlue.observe(null, TOPIC_WILL_IMPORT_BOOKMARKS, "");
 
         // Import the default bookmarks. We ignore whether or not we succeed.
-        await BookmarkHTMLUtils.importFromURL(
+        await lazy.BookmarkHTMLUtils.importFromURL(
           "chrome://browser/content/default-bookmarks.html",
           {
             replace: true,
-            source: PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
+            source: lazy.PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
           }
         ).catch(Cu.reportError);
 
@@ -649,7 +646,7 @@ var MigrationUtils = Object.seal({
         let didOpen = false;
         let previousException = { message: null };
         try {
-          db = await Sqlite.openConnection(dbOptions);
+          db = await lazy.Sqlite.openConnection(dbOptions);
           didOpen = true;
           rows = await db.execute(selectQuery);
         } catch (ex) {
@@ -665,7 +662,7 @@ var MigrationUtils = Object.seal({
           } catch (ex) {}
         }
         if (previousException) {
-          await new Promise(resolve => setTimeout(resolve, RETRYINTERVAL));
+          await new Promise(resolve => lazy.setTimeout(resolve, RETRYINTERVAL));
         }
       }
       if (!rows) {
@@ -810,14 +807,14 @@ var MigrationUtils = Object.seal({
       } else {
         // We didn't have a saved value, so check the registry.
         const kRegPath = "Software\\Mozilla\\Firefox";
-        let oldDefault = WindowsRegistry.readRegKey(
+        let oldDefault = lazy.WindowsRegistry.readRegKey(
           Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
           kRegPath,
           "OldDefaultBrowserCommand"
         );
         if (oldDefault) {
           // Remove the key:
-          WindowsRegistry.removeRegKey(
+          lazy.WindowsRegistry.removeRegKey(
             Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
             kRegPath,
             "OldDefaultBrowserCommand"
@@ -1075,7 +1072,7 @@ var MigrationUtils = Object.seal({
 
   insertBookmarkWrapper(bookmark) {
     this._importQuantities.bookmarks++;
-    let insertionPromise = PlacesUtils.bookmarks.insert(bookmark);
+    let insertionPromise = lazy.PlacesUtils.bookmarks.insert(bookmark);
     if (!gKeepUndoData) {
       return insertionPromise;
     }
@@ -1095,7 +1092,7 @@ var MigrationUtils = Object.seal({
   },
 
   insertManyBookmarksWrapper(bookmarks, parent) {
-    let insertionPromise = PlacesUtils.bookmarks.insertTree({
+    let insertionPromise = lazy.PlacesUtils.bookmarks.insertTree({
       guid: parent,
       children: bookmarks,
     });
@@ -1130,12 +1127,12 @@ var MigrationUtils = Object.seal({
     if (gKeepUndoData) {
       this._updateHistoryUndo(pageInfos);
     }
-    return PlacesUtils.history.insertMany(pageInfos);
+    return lazy.PlacesUtils.history.insertMany(pageInfos);
   },
 
   async insertLoginsWrapper(logins) {
     this._importQuantities.logins += logins.length;
-    let inserted = await LoginHelper.maybeImportLogins(logins);
+    let inserted = await lazy.LoginHelper.maybeImportLogins(logins);
     // Note that this means that if we import a login that has a newer password
     // than we know about, we will update the login, and an undo of the import
     // will not revert this. This seems preferable over removing the login
@@ -1162,13 +1159,13 @@ var MigrationUtils = Object.seal({
     }
     let bookmarkFolders = state
       .get("bookmarks")
-      .filter(b => b.type == PlacesUtils.bookmarks.TYPE_FOLDER);
+      .filter(b => b.type == lazy.PlacesUtils.bookmarks.TYPE_FOLDER);
 
     let bookmarkFolderData = [];
     let bmPromises = bookmarkFolders.map(({ guid }) => {
       // Ignore bookmarks where the promise doesn't resolve (ie that are missing)
       // Also check that the bookmark fetch returns isn't null before adding it.
-      return PlacesUtils.bookmarks.fetch(guid).then(
+      return lazy.PlacesUtils.bookmarks.fetch(guid).then(
         bm => bm && bookmarkFolderData.push(bm),
         () => {}
       );

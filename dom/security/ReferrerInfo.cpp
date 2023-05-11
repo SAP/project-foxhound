@@ -20,13 +20,13 @@
 #include "ReferrerInfo.h"
 
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/ContentBlocking.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/Telemetry.h"
 #include "nsIWebProgressListener.h"
@@ -52,6 +52,42 @@ NS_IMPL_ISUPPORTS_CI(ReferrerInfo, nsIReferrerInfo, nsISerializable)
 #define MIN_REFERRER_SENDING_POLICY 0
 #define MIN_CROSS_ORIGIN_SENDING_POLICY 0
 #define MIN_TRIMMING_POLICY 0
+
+/*
+ * Default referrer policy to use
+ */
+enum DefaultReferrerPolicy : uint32_t {
+  eDefaultPolicyNoReferrer = 0,
+  eDefaultPolicySameOrgin = 1,
+  eDefaultPolicyStrictWhenXorigin = 2,
+  eDefaultPolicyNoReferrerWhenDownGrade = 3,
+};
+
+static uint32_t GetDefaultFirstPartyReferrerPolicyPref(bool aPrivateBrowsing) {
+  return aPrivateBrowsing
+             ? StaticPrefs::network_http_referer_defaultPolicy_pbmode()
+             : StaticPrefs::network_http_referer_defaultPolicy();
+}
+
+static uint32_t GetDefaultThirdPartyReferrerPolicyPref(bool aPrivateBrowsing) {
+  return aPrivateBrowsing
+             ? StaticPrefs::network_http_referer_defaultPolicy_trackers_pbmode()
+             : StaticPrefs::network_http_referer_defaultPolicy_trackers();
+}
+
+static ReferrerPolicy DefaultReferrerPolicyToReferrerPolicy(
+    uint32_t aDefaultToUse) {
+  switch (aDefaultToUse) {
+    case DefaultReferrerPolicy::eDefaultPolicyNoReferrer:
+      return ReferrerPolicy::No_referrer;
+    case DefaultReferrerPolicy::eDefaultPolicySameOrgin:
+      return ReferrerPolicy::Same_origin;
+    case DefaultReferrerPolicy::eDefaultPolicyStrictWhenXorigin:
+      return ReferrerPolicy::Strict_origin_when_cross_origin;
+  }
+
+  return ReferrerPolicy::No_referrer_when_downgrade;
+}
 
 struct LegacyReferrerPolicyTokenMap {
   const char* mToken;
@@ -190,14 +226,14 @@ uint32_t ReferrerInfo::GetUserXOriginTrimmingPolicy() {
 /* static */
 ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
                                                       nsIURI* aURI,
-                                                      bool privateBrowsing) {
+                                                      bool aPrivateBrowsing) {
   bool thirdPartyTrackerIsolated = false;
   if (aChannel && aURI) {
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
     nsCOMPtr<nsICookieJarSettings> cjs;
     Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
     if (!cjs) {
-      cjs = privateBrowsing
+      cjs = aPrivateBrowsing
                 ? net::CookieJarSettings::Create(CookieJarSettings::ePrivate)
                 : net::CookieJarSettings::Create(CookieJarSettings::eRegular);
     }
@@ -210,8 +246,7 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
     if (XRE_IsParentProcess() && cjs->GetRejectThirdPartyContexts()) {
       uint32_t rejectedReason = 0;
       thirdPartyTrackerIsolated =
-          !ContentBlocking::ShouldAllowAccessFor(aChannel, aURI,
-                                                 &rejectedReason) &&
+          !ShouldAllowAccessFor(aChannel, aURI, &rejectedReason) &&
           rejectedReason !=
               static_cast<uint32_t>(
                   nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN);
@@ -221,32 +256,13 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
     }
   }
 
-  uint32_t defaultToUse;
-  if (thirdPartyTrackerIsolated) {
-    if (privateBrowsing) {
-      defaultToUse =
-          StaticPrefs::network_http_referer_defaultPolicy_trackers_pbmode();
-    } else {
-      defaultToUse = StaticPrefs::network_http_referer_defaultPolicy_trackers();
-    }
-  } else {
-    if (privateBrowsing) {
-      defaultToUse = StaticPrefs::network_http_referer_defaultPolicy_pbmode();
-    } else {
-      defaultToUse = StaticPrefs::network_http_referer_defaultPolicy();
-    }
-  }
-
-  switch (defaultToUse) {
-    case DefaultReferrerPolicy::eDefaultPolicyNoReferrer:
-      return ReferrerPolicy::No_referrer;
-    case DefaultReferrerPolicy::eDefaultPolicySameOrgin:
-      return ReferrerPolicy::Same_origin;
-    case DefaultReferrerPolicy::eDefaultPolicyStrictWhenXorigin:
-      return ReferrerPolicy::Strict_origin_when_cross_origin;
-  }
-
-  return ReferrerPolicy::No_referrer_when_downgrade;
+  // Select the appropriate pref starting with
+  // "network.http.referer.defaultPolicy" to use based on private-browsing
+  // ("pbmode") AND third-party trackers ("trackers").
+  return DefaultReferrerPolicyToReferrerPolicy(
+      thirdPartyTrackerIsolated
+          ? GetDefaultThirdPartyReferrerPolicyPref(aPrivateBrowsing)
+          : GetDefaultFirstPartyReferrerPolicyPref(aPrivateBrowsing));
 }
 
 /* static */
@@ -404,25 +420,20 @@ nsresult ReferrerInfo::HandleUserXOriginSendingPolicy(nsIURI* aURI,
   return NS_OK;
 }
 
+// This roughly implements Step 3.1. of
+// https://fetch.spec.whatwg.org/#append-a-request-origin-header
 /* static */
 bool ReferrerInfo::ShouldSetNullOriginHeader(net::HttpBaseChannel* aChannel,
                                              nsIURI* aOriginURI) {
   MOZ_ASSERT(aChannel);
   MOZ_ASSERT(aOriginURI);
 
-  if (StaticPrefs::network_http_referer_hideOnionSource()) {
-    nsAutoCString host;
-    if (NS_SUCCEEDED(aOriginURI->GetAsciiHost(host)) &&
-        StringEndsWith(host, ".onion"_ns)) {
-      return ReferrerInfo::IsCrossOriginRequest(aChannel);
-    }
-  }
-
-  // When we're dealing with CORS (mode is "cors"), we shouldn't take the
-  // Referrer-Policy into account
-  uint32_t corsMode = CORS_NONE;
-  NS_ENSURE_SUCCESS(aChannel->GetCorsMode(&corsMode), false);
-  if (corsMode == CORS_USE_CREDENTIALS) {
+  // This code should not really be here, but we always need to send an Origin
+  // header for CORS requests that aren't GET or HEAD. Also see the comment
+  // in nsHttpChannel::SetOriginHeader.
+  uint32_t corsMode = nsIHttpChannelInternal::CORS_MODE_NO_CORS;
+  MOZ_ALWAYS_SUCCEEDS(aChannel->GetCorsMode(&corsMode));
+  if (corsMode == nsIHttpChannelInternal::CORS_MODE_CORS) {
     return false;
   }
 

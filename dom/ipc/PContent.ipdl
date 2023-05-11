@@ -1,5 +1,5 @@
-/* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
+/* -*- tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -140,7 +140,7 @@ using mozilla::dom::PositionState from "mozilla/dom/MediaSession.h";
 using mozilla::dom::ServiceWorkerShutdownState::Progress from "mozilla/dom/ServiceWorkerShutdownState.h";
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
 using mozilla::ContentBlockingNotifier::BlockingDecision from "mozilla/ContentBlockingNotifier.h";
-using mozilla::ContentBlocking::StorageAccessPromptChoices from "mozilla/ContentBlocking.h";
+using mozilla::StorageAccessAPIHelper::StorageAccessPromptChoices from "mozilla/StorageAccessAPIHelper.h";
 using JSActorMessageKind from "mozilla/dom/JSActor.h";
 using JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
 using mozilla::PermissionDelegateHandler::DelegatedPermissionList from "mozilla/PermissionDelegateHandler.h";
@@ -153,6 +153,7 @@ using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 [RefCounted] using mozilla::dom::FeaturePolicy from "mozilla/dom/FeaturePolicy.h";
 using Wireframe from "mozilla/dom/DocumentBinding.h";
+using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
 
 union ChromeRegistryItem
 {
@@ -218,11 +219,6 @@ struct SystemFontList {
 union SystemParameterValue {
   bool;
   float;
-};
-
-struct SystemParameterKVPair {
-  uint8_t id;
-  SystemParameterValue value;
 };
 
 struct ClipboardCapabilities {
@@ -294,6 +290,10 @@ struct JSWindowActorInfo
   nsCString name;
   bool allFrames;
 
+  // True if `url` is for ESM.
+  // False if `url` is for JSM or nothing.
+  bool isESModule;
+
   // The module of the url.
   nsCString? url;
 
@@ -310,6 +310,11 @@ struct JSProcessActorInfo
 {
     // The name of the actor.
     nsCString name;
+
+    // True if `url` is for ESM.
+    // False if `url` is for JSM or nothing.
+    bool isESModule;
+
     // The module of the url.
     nsCString? url;
 
@@ -357,7 +362,7 @@ struct XPCOMInitData
     nsCString[] requestedLocales;
     L10nFileSourceDescriptor[] l10nFileSources;
     DynamicScalarDefinition[] dynamicScalarDefs;
-    SystemParameterKVPair[] systemParameters;
+    MetricMask perfStatsMask;
 };
 
 struct VisitedQueryResult
@@ -649,8 +654,6 @@ child:
      */
     async ThemeChanged(FullLookAndFeel lookAndFeelData, ThemeChangeKind aKind);
 
-    async UpdateSystemParameters(SystemParameterKVPair[] aUpdates);
-
     async PreferenceUpdate(Pref pref);
     async VarUpdate(GfxVarUpdate var);
 
@@ -701,6 +704,12 @@ child:
 
     async UpdateAppLocales(nsCString[] appLocales);
     async UpdateRequestedLocales(nsCString[] requestedLocales);
+
+    /**
+     * The system timezone has changed; the child process should ensure that
+     * calls to get the default timezone return the new value.
+     */
+    async SystemTimezoneChanged();
 
     async UpdateL10nFileSources(L10nFileSourceDescriptor[] sources);
 
@@ -1309,6 +1318,11 @@ parent:
     async ShutdownProfile(nsCString aProfile);
 
     /**
+     * This sends any collected perf stats data on shutdown.
+     */
+    async ShutdownPerfStats(nsCString aPerfStats);
+
+    /**
      * Request graphics initialization information from the parent.
      */
     sync GetGraphicsDeviceInitData()
@@ -1638,9 +1652,9 @@ parent:
 
     async StoreUserInteractionAsPermission(Principal aPrincipal);
 
-    async AsyncShouldAllowAccessFor(MaybeDiscardedBrowsingContext aContext,
-                                    Principal aPrincipal)
-          returns (bool allowed, uint32_t rejectReason);
+    async TestCookiePermissionDecided(MaybeDiscardedBrowsingContext aContext,
+                         Principal aPrincipal)
+          returns (bool? allowed);
 
    /**
     * When media element's controlled state changed in the content process, we

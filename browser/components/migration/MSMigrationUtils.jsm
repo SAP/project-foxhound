@@ -9,36 +9,29 @@ var EXPORTED_SYMBOLS = ["MSMigrationUtils"];
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { MigrationUtils } = ChromeUtils.import(
   "resource:///modules/MigrationUtils.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["FileReader"]);
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "PlacesUIUtils",
   "resource:///modules/PlacesUIUtils.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "WindowsRegistry",
   "resource://gre/modules/WindowsRegistry.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "ctypes",
-  "resource://gre/modules/ctypes.jsm"
-);
+const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
 const EDGE_COOKIE_PATH_OPTIONS = ["", "#!001\\", "#!002\\"];
 const EDGE_COOKIES_SUFFIX = "MicrosoftEdge\\Cookies";
@@ -58,8 +51,6 @@ const WEB_CREDENTIALS_VAULT_ID = [
   0x4add80b3,
   0x28db4d70,
 ];
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["File"]);
 
 const wintypes = {
   BOOL: ctypes.int,
@@ -398,7 +389,7 @@ Bookmarks.prototype = {
         // Retrieve the name of IE's favorites subfolder that holds the bookmarks
         // in the toolbar. This was previously stored in the registry and changed
         // in IE7 to always be called "Links".
-        let folderName = WindowsRegistry.readRegKey(
+        let folderName = lazy.WindowsRegistry.readRegKey(
           Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
           "Software\\Microsoft\\Internet Explorer\\Toolbar",
           "LinksFolderName"
@@ -414,7 +405,7 @@ Bookmarks.prototype = {
   migrate: function B_migrate(aCallback) {
     return (async () => {
       // Import to the bookmarks menu.
-      let folderGuid = PlacesUtils.bookmarks.menuGuid;
+      let folderGuid = lazy.PlacesUtils.bookmarks.menuGuid;
       await this._migrateFolder(this._favoritesFolder, folderGuid);
     })().then(
       () => aCallback(true),
@@ -454,13 +445,13 @@ Bookmarks.prototype = {
             entry.parent.equals(this._favoritesFolder);
           if (isBookmarksFolder && entry.isReadable()) {
             // Import to the bookmarks toolbar.
-            let folderGuid = PlacesUtils.bookmarks.toolbarGuid;
+            let folderGuid = lazy.PlacesUtils.bookmarks.toolbarGuid;
             await this._migrateFolder(entry, folderGuid);
-            PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
+            lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibilityAfterMigration();
           } else if (entry.isReadable()) {
             let childBookmarks = await this._getBookmarksInFolder(entry);
             rv.push({
-              type: PlacesUtils.bookmarks.TYPE_FOLDER,
+              type: lazy.PlacesUtils.bookmarks.TYPE_FOLDER,
               title: entry.leafName,
               children: childBookmarks,
             });

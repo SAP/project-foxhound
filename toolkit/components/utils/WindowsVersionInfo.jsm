@@ -6,16 +6,10 @@
 
 var EXPORTED_SYMBOLS = ["WindowsVersionInfo"];
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AppConstants",
+const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "ctypes",
-  "resource://gre/modules/ctypes.jsm"
-);
+const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 
 const BYTE = ctypes.uint8_t;
 const WORD = ctypes.uint16_t;

@@ -373,6 +373,7 @@ inline void GCRuntime::prepareToFreeChunk(TenuredChunkInfo& info) {
 void GCRuntime::releaseArena(Arena* arena, const AutoLockGC& lock) {
   MOZ_ASSERT(arena->allocated());
   MOZ_ASSERT(!arena->onDelayedMarkingList());
+  MOZ_ASSERT(TlsGCContext.get()->isFinalizing());
 
   arena->zone->gcHeapSize.removeGCArena();
   arena->release(lock);
@@ -390,6 +391,7 @@ GCRuntime::GCRuntime(JSRuntime* rt)
       barrierTracer(rt),
       sweepingTracer(rt),
       heapSize(nullptr),
+      fullGCRequested(false),
       helperThreadRatio(TuningDefaults::HelperThreadRatio),
       maxHelperThreads(TuningDefaults::MaxHelperThreads),
       helperThreadCount(1),
@@ -884,9 +886,8 @@ void GCRuntime::finish() {
 
   // Delete all remaining zones.
   if (rt->gcInitialized) {
-    AutoSetThreadIsPerformingGC performingGC;
     for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
-      AutoSetThreadIsSweeping threadIsSweeping(zone);
+      AutoSetThreadIsSweeping threadIsSweeping(rt->gcContext(), zone);
       for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next()) {
         for (RealmsInCompartmentIter realm(comp); !realm.done(); realm.next()) {
           js_delete(realm.get());
@@ -1654,28 +1655,31 @@ void GCRuntime::maybeGC() {
   }
 #endif
 
-  if (gcIfRequested()) {
-    return;
+  (void)gcIfRequestedImpl(/* eagerOk = */ true);
+}
+
+JS::GCReason GCRuntime::wantMajorGC(bool eagerOk) {
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+
+  if (majorGCRequested()) {
+    return majorGCTriggerReason;
   }
 
-  if (isIncrementalGCInProgress()) {
-    return;
+  if (isIncrementalGCInProgress() || !eagerOk) {
+    return JS::GCReason::NO_REASON;
   }
 
-  bool scheduledZones = false;
+  JS::GCReason reason = JS::GCReason::NO_REASON;
   for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
     if (checkEagerAllocTrigger(zone->gcHeapSize, zone->gcHeapThreshold) ||
         checkEagerAllocTrigger(zone->mallocHeapSize,
                                zone->mallocHeapThreshold)) {
       zone->scheduleGC();
-      scheduledZones = true;
+      reason = JS::GCReason::EAGER_ALLOC_TRIGGER;
     }
   }
 
-  if (scheduledZones) {
-    SliceBudget budget = defaultBudget(JS::GCReason::EAGER_ALLOC_TRIGGER, 0);
-    startGC(JS::GCOptions::Normal, JS::GCReason::EAGER_ALLOC_TRIGGER, budget);
-  }
+  return reason;
 }
 
 bool GCRuntime::checkEagerAllocTrigger(const HeapSize& size,
@@ -2580,7 +2584,7 @@ void GCRuntime::endPreparePhase(JS::GCReason reason) {
     /* Clear mark state for WeakMaps in parallel with other work. */
     AutoRunParallelTask unmarkWeakMaps(this, &GCRuntime::unmarkWeakMaps,
                                        gcstats::PhaseKind::UNMARK_WEAKMAPS,
-                                       helperLock);
+                                       GCUse::Unspecified, helperLock);
 
     AutoUnlockHelperThreadState unlock(helperLock);
 
@@ -3115,7 +3119,7 @@ void GCRuntime::incrementalSlice(SliceBudget& budget, JS::GCReason reason,
                                  bool budgetWasIncreased) {
   MOZ_ASSERT_IF(isIncrementalGCInProgress(), isIncremental);
 
-  AutoSetThreadIsPerformingGC performingGC;
+  AutoSetThreadIsPerformingGC performingGC(rt->gcContext());
 
   AutoGCSession session(this, JS::HeapState::MajorCollecting);
 
@@ -3650,9 +3654,11 @@ void GCRuntime::maybeCallGCCallback(JSGCStatus status, JS::GCReason reason) {
     }
   }
 
-  // Save and clear GC options in case the callback reenters GC.
+  // Save and clear GC options and state in case the callback reenters GC.
   JS::GCOptions options = gcOptions();
   maybeGcOptions = Nothing();
+  bool savedFullGCRequested = fullGCRequested;
+  fullGCRequested = false;
 
   gcCallbackDepth++;
 
@@ -3663,6 +3669,10 @@ void GCRuntime::maybeCallGCCallback(JSGCStatus status, JS::GCReason reason) {
 
   // Restore the original GC options.
   maybeGcOptions = Some(options);
+
+  // At the end of a GC, clear out the fullGCRequested state. At the start,
+  // restore the previous setting.
+  fullGCRequested = (status == JSGC_END) ? false : savedFullGCRequested;
 
   if (gcCallbackDepth == 0) {
     // Ensure any zone that was originally scheduled stays scheduled.
@@ -3902,7 +3912,7 @@ void GCRuntime::collect(bool nonincrementalByAPI, const SliceBudget& budget,
     return;
   }
 
-  stats().log("GC starting in state %s", StateName(incrementalState));
+  stats().log("GC slice starting in state %s", StateName(incrementalState));
 
   AutoTraceLog logGC(TraceLoggerForCurrentThread(), TraceLogger_GC);
   AutoStopVerifyingBarriers av(rt, isShutdownGC());
@@ -3959,7 +3969,7 @@ void GCRuntime::collect(bool nonincrementalByAPI, const SliceBudget& budget,
     MOZ_RELEASE_ASSERT(CheckGrayMarkingState(rt));
   }
 #endif
-  stats().log("GC ending in state %s", StateName(incrementalState));
+  stats().log("GC slice ending in state %s", StateName(incrementalState));
 
   UnscheduleZones(this);
 }
@@ -4181,24 +4191,25 @@ void GCRuntime::startBackgroundFreeAfterMinorGC() {
   startBackgroundFree();
 }
 
-bool GCRuntime::gcIfRequested() {
+bool GCRuntime::gcIfRequestedImpl(bool eagerOk) {
   // This method returns whether a major GC was performed.
 
   if (nursery().minorGCRequested()) {
     minorGC(nursery().minorGCTriggerReason());
   }
 
-  if (majorGCRequested()) {
-    SliceBudget budget = defaultBudget(majorGCTriggerReason, 0);
-    if (!isIncrementalGCInProgress()) {
-      startGC(JS::GCOptions::Normal, majorGCTriggerReason, budget);
-    } else {
-      gcSlice(majorGCTriggerReason, budget);
-    }
-    return true;
+  JS::GCReason reason = wantMajorGC(eagerOk);
+  if (reason == JS::GCReason::NO_REASON) {
+    return false;
   }
 
-  return false;
+  SliceBudget budget = defaultBudget(reason, 0);
+  if (!isIncrementalGCInProgress()) {
+    startGC(JS::GCOptions::Normal, reason, budget);
+  } else {
+    gcSlice(reason, budget);
+  }
+  return true;
 }
 
 void js::gc::FinishGC(JSContext* cx, JS::GCReason reason) {

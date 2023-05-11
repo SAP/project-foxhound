@@ -7,8 +7,6 @@
 #ifndef mozilla_ipc_backgroundparentimpl_h__
 #define mozilla_ipc_backgroundparentimpl_h__
 
-#include "mozilla/Attributes.h"
-#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 
 namespace mozilla::ipc {
@@ -244,13 +242,6 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   bool DeallocPCacheStorageParent(
       dom::cache::PCacheStorageParent* aActor) override;
-
-  dom::cache::PCacheParent* AllocPCacheParent() override;
-
-  bool DeallocPCacheParent(dom::cache::PCacheParent* aActor) override;
-
-  already_AddRefed<dom::cache::PCacheStreamControlParent>
-  AllocPCacheStreamControlParent();
 
   PUDPSocketParent* AllocPUDPSocketParent(const Maybe<PrincipalInfo>& pInfo,
                                           const nsCString& aFilter) override;

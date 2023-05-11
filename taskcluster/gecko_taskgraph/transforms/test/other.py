@@ -6,24 +6,16 @@ import hashlib
 import json
 import re
 
-from mozbuild.schedules import INCLUSIVE_COMPONENTS
-from mozbuild.util import ReadOnlyDict
-from taskgraph.util.taskcluster import get_artifact_path, get_index_url
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-)
-
 from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
-from gecko_taskgraph.util.attributes import keymatch
-from gecko_taskgraph.util.keyed_by import evaluate_keyed_by
 from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.schema import (
-    resolve_keyed_by,
-    Schema,
-)
+from gecko_taskgraph.util.schema import Schema, resolve_keyed_by
+from mozbuild.schedules import INCLUSIVE_COMPONENTS
+from mozbuild.util import ReadOnlyDict
+from taskgraph.util.attributes import keymatch
+from taskgraph.util.keyed_by import evaluate_keyed_by
+from taskgraph.util.taskcluster import get_artifact_path, get_index_url
+from voluptuous import Any, Optional, Required
 
 transforms = TransformSequence()
 
@@ -109,7 +101,7 @@ def setup_browsertime_flag(config, tasks):
 
         if task["treeherder-symbol"].startswith("Rap"):
             # The Rap group is subdivided as Rap{-fenix,-refbrow(...),
-            # so `gecko_taskgraph.util.treeherder.replace_group` isn't appropriate.
+            # so `taskgraph.util.treeherder.replace_group` isn't appropriate.
             task["treeherder-symbol"] = task["treeherder-symbol"].replace(
                 "Rap", "Btime", 1
             )
@@ -730,18 +722,11 @@ def disable_try_only_platforms(config, tasks):
 def ensure_spi_disabled_on_all_but_spi(config, tasks):
     for task in tasks:
         variant = task["attributes"].get("unittest_variant", "")
-        has_setpref = (
-            "gtest" not in task["suite"]
-            and "cppunit" not in task["suite"]
-            and "jittest" not in task["suite"]
-            and "junit" not in task["suite"]
-            and "raptor" not in task["suite"]
-        )
+        has_no_setpref = ("gtest", "cppunit", "jittest", "junit", "raptor")
 
         if (
-            has_setpref
-            and variant != "socketprocess"
-            and variant != "socketprocess_networking"
+            all(s not in task["suite"] for s in has_no_setpref)
+            and "socketprocess" not in variant
         ):
             task["mozharness"]["extra-options"].append(
                 "--setpref=media.peerconnection.mtransport_process=false"

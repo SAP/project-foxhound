@@ -7,6 +7,7 @@ use super::stylesheet_loader::{AsyncStylesheetParser, StylesheetLoader};
 use bincode::{deserialize, serialize};
 use cssparser::ToCss as ParserToCss;
 use cssparser::{ParseErrorKind, Parser, ParserInput, SourceLocation, UnicodeRange};
+use dom::{DocumentState, ElementState};
 use malloc_size_of::MallocSizeOfOps;
 use nsstring::{nsCString, nsString};
 use selectors::{NthIndexCache, SelectorList};
@@ -26,9 +27,8 @@ use style::counter_style;
 use style::data::{self, ElementStyles};
 use style::dom::{ShowSubtreeData, TDocument, TElement, TNode};
 use style::driver;
-use style::element_state::{DocumentState, ElementState};
 use style::error_reporting::{ContextualParseError, ParseErrorReporter};
-use style::font_face::{self, ComputedFontStyleDescriptor, FontFaceSourceListComponent, Source};
+use style::font_face::{self, FontFaceSourceListComponent, Source};
 use style::font_metrics::{get_metrics_provider_for_product, FontMetricsProvider};
 use style::gecko::data::{GeckoStyleSheet, PerDocumentStyleData, PerDocumentStyleDataImpl};
 use style::gecko::restyle_damage::GeckoRestyleDamage;
@@ -104,12 +104,13 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::invalidation::stylesheets::RuleChangeKind;
 use style::media_queries::MediaList;
 use style::parser::{self, Parse, ParserContext};
+use style::piecewise_linear::PiecewiseLinearFunction;
 use style::properties::animated_properties::{AnimationValue, AnimationValueMap};
 use style::properties::{parse_one_declaration_into, parse_style_attribute};
 use style::properties::{ComputedValues, CountedUnknownProperty, Importance, NonCustomPropertyId};
 use style::properties::{LonghandId, LonghandIdSet, PropertyDeclarationBlock, PropertyId};
 use style::properties::{PropertyDeclarationId, ShorthandId};
-use style::properties::{SourcePropertyDeclaration, StyleBuilder, UnparsedValue};
+use style::properties::{SourcePropertyDeclaration, StyleBuilder};
 use style::rule_cache::RuleCacheConditions;
 use style::rule_tree::{CascadeLevel, StrongRuleNode};
 use style::selector_parser::PseudoElementCascadeType;
@@ -135,7 +136,10 @@ use style::traversal::DomTraversal;
 use style::traversal_flags::{self, TraversalFlags};
 use style::use_counters::UseCounters;
 use style::values::animated::{Animate, Procedure, ToAnimatedZero};
-use style::values::computed::font::{FontFamily, FontFamilyList, GenericFontFamily};
+use style::values::animated::color::AnimatedRGBA;
+use style::values::generics::color::ColorInterpolationMethod;
+use style::values::computed::easing::ComputedLinearStop;
+use style::values::computed::font::{FontFamily, FontFamilyList, GenericFontFamily, FontWeight, FontStyle, FontStretch};
 use style::values::computed::{self, Context, ToComputedValue};
 use style::values::distance::ComputeSquaredDistance;
 use style::values::specified::gecko::IntersectionObserverRootMargin;
@@ -220,13 +224,13 @@ fn is_in_servo_traversal() -> bool {
 fn create_shared_context<'a>(
     global_style_data: &GlobalStyleData,
     guard: &'a SharedRwLockReadGuard,
-    per_doc_data: &'a PerDocumentStyleDataImpl,
+    stylist: &'a Stylist,
     traversal_flags: TraversalFlags,
     snapshot_map: &'a ServoElementSnapshotTable,
 ) -> SharedStyleContext<'a> {
     SharedStyleContext {
-        stylist: &per_doc_data.stylist,
-        visited_styles_enabled: per_doc_data.visited_styles_enabled(),
+        stylist: &stylist,
+        visited_styles_enabled: stylist.device().visited_styles_enabled(),
         options: global_style_data.options.clone(),
         guards: StylesheetGuards::same(guard),
         current_time_for_animations: 0.0, // Unused for Gecko, at least for now.
@@ -246,7 +250,7 @@ fn traverse_subtree(
     let shared_style_context = create_shared_context(
         &global_style_data,
         &guard,
-        &per_doc_data,
+        &per_doc_data.stylist,
         traversal_flags,
         snapshots,
     );
@@ -755,10 +759,10 @@ pub extern "C" fn Servo_AnimationValue_GetColor(
 
     let value = AnimationValue::as_arc(&value);
     match **value {
-        AnimationValue::BackgroundColor(color) => {
-            let computed: ComputedColor = ToAnimatedValue::from_animated_value(color);
+        AnimationValue::BackgroundColor(ref color) => {
+            let computed: ComputedColor = ToAnimatedValue::from_animated_value(color.clone());
             let foreground_color = convert_nscolor_to_rgba(foreground_color);
-            convert_rgba_to_nscolor(&computed.to_rgba(foreground_color))
+            convert_rgba_to_nscolor(&computed.into_rgba(foreground_color))
         },
         _ => panic!("Other color properties are not supported yet"),
     }
@@ -768,7 +772,7 @@ pub extern "C" fn Servo_AnimationValue_GetColor(
 pub extern "C" fn Servo_AnimationValue_IsCurrentColor(value: &RawServoAnimationValue) -> bool {
     let value = AnimationValue::as_arc(&value);
     match **value {
-        AnimationValue::BackgroundColor(color) => color.is_currentcolor(),
+        AnimationValue::BackgroundColor(ref color) => color.is_currentcolor(),
         _ => {
             debug_assert!(false, "Other color properties are not supported yet");
             false
@@ -797,14 +801,14 @@ pub extern "C" fn Servo_AnimationValue_Color(
     color: structs::nscolor,
 ) -> Strong<RawServoAnimationValue> {
     use style::gecko::values::convert_nscolor_to_rgba;
-    use style::values::animated::color::RGBA as AnimatedRGBA;
+    use style::values::animated::color::Color;
 
     let property = LonghandId::from_nscsspropertyid(color_property)
         .expect("We don't have shorthand property animation value");
 
     let rgba = convert_nscolor_to_rgba(color);
 
-    let animatedRGBA = AnimatedRGBA::new(
+    let animated = AnimatedRGBA::new(
         rgba.red_f32(),
         rgba.green_f32(),
         rgba.blue_f32(),
@@ -812,7 +816,7 @@ pub extern "C" fn Servo_AnimationValue_Color(
     );
     match property {
         LonghandId::BackgroundColor => {
-            Arc::new(AnimationValue::BackgroundColor(animatedRGBA.into())).into_strong()
+            Arc::new(AnimationValue::BackgroundColor(Color::rgba(animated))).into_strong()
         },
         _ => panic!("Should be background-color property"),
     }
@@ -1083,6 +1087,12 @@ impl_basic_serde_funcs!(
     computed::position::PositionOrAuto
 );
 
+impl_basic_serde_funcs!(
+    Servo_StyleComputedTimingFunction_Serialize,
+    Servo_StyleComputedTimingFunction_Deserialize,
+    computed::easing::ComputedTimingFunction
+);
+
 #[no_mangle]
 pub extern "C" fn Servo_SVGPathData_Normalize(
     input: &specified::SVGPathData,
@@ -1174,7 +1184,7 @@ pub extern "C" fn Servo_StyleSet_GetBaseComputedValuesForElement(
     let shared = create_shared_context(
         &global_style_data,
         &guard,
-        &doc_data,
+        &doc_data.stylist,
         TraversalFlags::empty(),
         unsafe { &*snapshots },
     );
@@ -1225,7 +1235,7 @@ pub extern "C" fn Servo_StyleSet_GetComputedValuesByAddingAnimation(
     let shared = create_shared_context(
         &global_style_data,
         &guard,
-        &doc_data,
+        &doc_data.stylist,
         TraversalFlags::empty(),
         unsafe { &*snapshots },
     );
@@ -3911,7 +3921,7 @@ pub extern "C" fn Servo_ResolvePseudoStyle(
         RuleInclusion::All,
         &data.styles,
         inherited_style,
-        &*doc_data,
+        &doc_data.stylist,
         is_probe,
         /* matching_func = */ None,
     );
@@ -3984,7 +3994,7 @@ pub extern "C" fn Servo_ComputedValues_ResolveXULTreePseudoStyle(
         RuleInclusion::All,
         &data.styles,
         Some(inherited_style),
-        &*doc_data,
+        &doc_data.stylist,
         /* is_probe = */ false,
         Some(&matching_fn),
     )
@@ -4010,7 +4020,7 @@ fn get_pseudo_style(
     rule_inclusion: RuleInclusion,
     styles: &ElementStyles,
     inherited_styles: Option<&ComputedValues>,
-    doc_data: &PerDocumentStyleDataImpl,
+    stylist: &Stylist,
     is_probe: bool,
     matching_func: Option<&dyn Fn(&PseudoElement) -> bool>,
 ) -> Option<Arc<ComputedValues>> {
@@ -4028,7 +4038,7 @@ fn get_pseudo_style(
                         let guards = StylesheetGuards::same(guard);
                         let metrics = get_metrics_provider_for_product();
                         let inputs = CascadeInputs::new_from_style(pseudo_styles);
-                        doc_data.stylist.compute_pseudo_element_style_with_inputs(
+                        stylist.compute_pseudo_element_style_with_inputs(
                             inputs,
                             pseudo,
                             &guards,
@@ -4071,13 +4081,13 @@ fn get_pseudo_style(
                     ptr::eq(inherited_styles.unwrap(), &**styles.primary())
             );
             let base = if pseudo.inherits_from_default_values() {
-                doc_data.default_computed_values()
+                stylist.device().default_computed_values_arc()
             } else {
                 styles.primary()
             };
             let guards = StylesheetGuards::same(guard);
             let metrics = get_metrics_provider_for_product();
-            doc_data.stylist.lazily_compute_pseudo_element_style(
+            stylist.lazily_compute_pseudo_element_style(
                 &guards,
                 element,
                 &pseudo,
@@ -4096,7 +4106,7 @@ fn get_pseudo_style(
 
     Some(style.unwrap_or_else(|| {
         StyleBuilder::for_inheritance(
-            doc_data.stylist.device(),
+            stylist.device(),
             Some(styles.primary()),
             Some(pseudo),
         )
@@ -4192,6 +4202,11 @@ fn dump_properties_and_rules(cv: &ComputedValues, properties: &LonghandIdSet) {
         cv.get_resolved_value(p, &mut v).unwrap();
         println_stderr!("    {:?}: {}", p, v);
     }
+    dump_rules(cv);
+}
+
+#[cfg(feature = "gecko_debug")]
+fn dump_rules(cv: &ComputedValues) {
     println_stderr!("  Rules:");
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
@@ -4254,6 +4269,12 @@ pub extern "C" fn Servo_ComputedValues_EqualForCachedAnonymousContentStyle(
     differing_properties.is_empty()
 }
 
+#[cfg(feature = "gecko_debug")]
+#[no_mangle]
+pub extern "C" fn Servo_ComputedValues_DumpMatchedRules(s: &ComputedValues) {
+    dump_rules(s);
+}
+
 #[no_mangle]
 pub extern "C" fn Servo_ComputedValues_BlockifiedDisplay(
     style: &ComputedValues,
@@ -4279,6 +4300,7 @@ pub extern "C" fn Servo_StyleSet_Init(doc: &structs::Document) -> *mut RawServoS
 pub extern "C" fn Servo_StyleSet_RebuildCachedData(raw_data: &RawServoStyleSet) {
     let mut data = PerDocumentStyleData::from_ffi(raw_data).borrow_mut();
     data.stylist.device_mut().rebuild_cached_data();
+    data.undisplayed_style_cache.clear();
 }
 
 #[no_mangle]
@@ -5125,14 +5147,12 @@ pub extern "C" fn Servo_DeclarationBlock_SetKeywordValue(
             longhands::font_size::SpecifiedValue::from_html_size(value as u8)
         },
         FontStyle => {
-            let val = if value == structs::NS_FONT_STYLE_ITALIC {
+            style::values::specified::FontStyle::Specified(if value == structs::NS_FONT_STYLE_ITALIC {
                 FontStyle::Italic
             } else {
                 debug_assert_eq!(value, structs::NS_FONT_STYLE_NORMAL);
                 FontStyle::Normal
-            };
-
-            ToComputedValue::from_computed_value(&val)
+            })
         },
         FontWeight => longhands::font_weight::SpecifiedValue::from_gecko_keyword(value),
         ListStyleType => Box::new(longhands::list_style_type::SpecifiedValue::from_gecko_keyword(value)),
@@ -5715,16 +5735,27 @@ pub extern "C" fn Servo_ResolveStyleLazily(
     pseudo_type: PseudoStyleType,
     rule_inclusion: StyleRuleInclusion,
     snapshots: *const ServoElementSnapshotTable,
+    cache_generation: u64,
+    can_use_cache: bool,
     raw_data: &RawServoStyleSet,
 ) -> Strong<ComputedValues> {
+    use selectors::Element;
     debug_assert!(!snapshots.is_null());
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
     let element = GeckoElement(element);
     let doc_data = PerDocumentStyleData::from_ffi(raw_data);
-    let data = doc_data.borrow();
+    let mut data = doc_data.borrow_mut();
+    let mut data = &mut *data;
     let rule_inclusion = RuleInclusion::from(rule_inclusion);
     let pseudo = PseudoElement::from_pseudo_type(pseudo_type);
+
+    if cache_generation != data.undisplayed_style_cache_generation {
+        data.undisplayed_style_cache.clear();
+        data.undisplayed_style_cache_generation = cache_generation;
+    }
+
+    let stylist = &data.stylist;
     let finish = |styles: &ElementStyles, is_probe: bool| -> Option<Arc<ComputedValues>> {
         match pseudo {
             Some(ref pseudo) => {
@@ -5735,7 +5766,7 @@ pub extern "C" fn Servo_ResolveStyleLazily(
                     rule_inclusion,
                     styles,
                     /* inherited_styles = */ None,
-                    &*data,
+                    &stylist,
                     is_probe,
                     /* matching_func = */ None,
                 )
@@ -5753,7 +5784,7 @@ pub extern "C" fn Servo_ResolveStyleLazily(
     // not be in the `ElementData`, given they may exist but not be applicable
     // to generate an actual pseudo-element (like, having a `content: none`).
     if rule_inclusion == RuleInclusion::All {
-        let styles = element.mutate_data().and_then(|d| {
+        let styles = element.borrow_data().and_then(|d| {
             if d.has_styles() {
                 finish(&d.styles, is_before_or_after)
             } else {
@@ -5763,13 +5794,18 @@ pub extern "C" fn Servo_ResolveStyleLazily(
         if let Some(result) = styles {
             return result.into();
         }
+        if pseudo.is_none() && can_use_cache {
+            if let Some(style) = data.undisplayed_style_cache.get(&element.opaque()) {
+                return style.clone().into();
+            }
+        }
     }
 
     // We don't have the style ready. Go ahead and compute it as necessary.
     let shared = create_shared_context(
         &global_style_data,
         &guard,
-        &data,
+        &stylist,
         TraversalFlags::empty(),
         unsafe { &*snapshots },
     );
@@ -5779,7 +5815,17 @@ pub extern "C" fn Servo_ResolveStyleLazily(
         thread_local: &mut tlc,
     };
 
-    let styles = resolve_style(&mut context, element, rule_inclusion, pseudo.as_ref());
+    let styles = resolve_style(
+        &mut context,
+        element,
+        rule_inclusion,
+        pseudo.as_ref(),
+        if can_use_cache {
+            Some(&mut data.undisplayed_style_cache)
+        } else {
+            None
+        },
+    );
 
     finish(&styles, /* is_probe = */ false)
         .expect("We're not probing, so we should always get a style back")
@@ -6252,7 +6298,7 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
         let timing_function = nsTimingFunction {
             mTiming: match step.get_animation_timing_function(&guard) {
                 Some(val) => val.to_computed_value_without_context(),
-                None => (*inherited_timing_function).mTiming,
+                None => (*inherited_timing_function).mTiming.clone(),
             },
         };
 
@@ -6678,7 +6724,7 @@ pub extern "C" fn Servo_ProcessInvalidations(
     let shared_style_context = create_shared_context(
         &global_style_data,
         &guard,
-        &per_doc_data,
+        &per_doc_data.stylist,
         TraversalFlags::empty(),
         unsafe { &*snapshots },
     );
@@ -6876,14 +6922,23 @@ pub unsafe extern "C" fn Servo_ComputeColor(
         None => return false,
     };
 
-    let rgba = computed_color.to_rgba(current_color);
-    *result_color = gecko::values::convert_rgba_to_nscolor(&rgba);
-
     if !was_current_color.is_null() {
         *was_current_color = computed_color.is_currentcolor();
     }
 
+    let rgba = computed_color.into_rgba(current_color);
+    *result_color = gecko::values::convert_rgba_to_nscolor(&rgba);
+
     true
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ResolveColor(
+    color: &computed::Color,
+    foreground: &style::values::RGBA,
+) -> structs::nscolor {
+    use style::gecko::values::convert_rgba_to_nscolor;
+    convert_rgba_to_nscolor(&color.clone().into_rgba(*foreground))
 }
 
 #[no_mangle]
@@ -6968,17 +7023,14 @@ pub unsafe extern "C" fn Servo_ParseFontShorthandForMatching(
     value: &nsACString,
     data: *mut URLExtraData,
     family: &mut FontFamilyList,
-    style: &mut ComputedFontStyleDescriptor,
-    stretch: &mut f32,
-    weight: &mut f32,
+    style: &mut FontStyle,
+    stretch: &mut FontStretch,
+    weight: &mut FontWeight,
     size: Option<&mut f32>,
 ) -> bool {
     use style::properties::shorthands::font;
-    use style::values::computed::font::FontWeight as ComputedFontWeight;
+    use style::values::specified::font as specified;
     use style::values::generics::font::FontStyle as GenericFontStyle;
-    use style::values::specified::font::{
-        FontFamily, FontSize, FontStretch, FontStyle, FontWeight, SpecifiedFontStyle,
-    };
 
     let string = value.as_str_unchecked();
     let mut input = ParserInput::new(&string);
@@ -7001,44 +7053,41 @@ pub unsafe extern "C" fn Servo_ParseFontShorthandForMatching(
 
     // The system font is not acceptable, so we return false.
     match font.font_family {
-        FontFamily::Values(list) => *family = list,
-        FontFamily::System(_) => return false,
+        specified::FontFamily::Values(list) => *family = list,
+        specified::FontFamily::System(_) => return false,
     }
 
     let specified_font_style = match font.font_style {
-        FontStyle::Specified(ref s) => s,
-        FontStyle::System(_) => return false,
+        specified::FontStyle::Specified(ref s) => s,
+        specified::FontStyle::System(_) => return false,
     };
 
     *style = match *specified_font_style {
-        GenericFontStyle::Normal => ComputedFontStyleDescriptor::Normal,
-        GenericFontStyle::Italic => ComputedFontStyleDescriptor::Italic,
-        GenericFontStyle::Oblique(ref angle) => {
-            let angle = SpecifiedFontStyle::compute_angle_degrees(angle);
-            ComputedFontStyleDescriptor::Oblique(angle, angle)
-        },
+        GenericFontStyle::Normal => FontStyle::NORMAL,
+        GenericFontStyle::Italic => FontStyle::ITALIC,
+        GenericFontStyle::Oblique(ref angle) => FontStyle::oblique(angle.degrees()),
     };
 
     *stretch = match font.font_stretch {
-        FontStretch::Keyword(ref k) => k.compute().0,
-        FontStretch::Stretch(ref p) => p.0.get(),
-        FontStretch::System(_) => return false,
+        specified::FontStretch::Keyword(ref k) => k.compute(),
+        specified::FontStretch::Stretch(ref p) => FontStretch::from_percentage(p.0.get()),
+        specified::FontStretch::System(_) => return false,
     };
 
     *weight = match font.font_weight {
-        FontWeight::Absolute(w) => w.compute().0,
+        specified::FontWeight::Absolute(w) => w.compute(),
         // Resolve relative font weights against the initial of font-weight
         // (normal, which is equivalent to 400).
-        FontWeight::Bolder => ComputedFontWeight::normal().bolder().0,
-        FontWeight::Lighter => ComputedFontWeight::normal().lighter().0,
-        FontWeight::System(_) => return false,
+        specified::FontWeight::Bolder => FontWeight::normal().bolder(),
+        specified::FontWeight::Lighter => FontWeight::normal().lighter(),
+        specified::FontWeight::System(_) => return false,
     };
 
     // XXX This is unfinished; see values::specified::FontSize::ToComputedValue
     // for a more complete implementation (but we can't use it as-is).
     if let Some(size) = size {
         *size = match font.font_size {
-            FontSize::Length(lp) => {
+            specified::FontSize::Length(lp) => {
                 use style::values::generics::transform::ToAbsoluteLength;
                 match lp.to_pixel_length(None) {
                     Ok(len) => len,
@@ -7046,7 +7095,7 @@ pub unsafe extern "C" fn Servo_ParseFontShorthandForMatching(
                 }
             },
             // Map absolute-size keywords to sizes.
-            FontSize::Keyword(info) => {
+            specified::FontSize::Keyword(info) => {
                 let metrics = get_metrics_provider_for_product();
                 // TODO: Maybe get a meaningful language / quirks-mode from the
                 // caller?
@@ -7055,7 +7104,7 @@ pub unsafe extern "C" fn Servo_ParseFontShorthandForMatching(
                 info.kw.to_length_without_context(quirks_mode, &metrics, &language, family).0.px()
             }
             // smaller, larger not currently supported
-            FontSize::Smaller | FontSize::Larger | FontSize::System(_) => {
+            specified::FontSize::Smaller | specified::FontSize::Larger | specified::FontSize::System(_) => {
                 return false;
             }
         };
@@ -7224,13 +7273,7 @@ pub unsafe extern "C" fn Servo_SharedMemoryBuilder_Create(
     buffer: *mut u8,
     len: usize,
 ) -> *mut RawServoSharedMemoryBuilder {
-    let mut builder = Box::new(SharedMemoryBuilder::new(buffer, len));
-
-    // We have Arc<UnparsedValue>s in style sheets due to CSS variables being
-    // used in shorthand property declarations.  There aren't many, though,
-    // and they aren't big, so we just allow their duplication for now.
-    builder.add_allowed_duplication_type::<UnparsedValue>();
-
+    let builder = Box::new(SharedMemoryBuilder::new(buffer, len));
     Box::into_raw(builder) as *mut _
 }
 
@@ -7303,6 +7346,31 @@ pub extern "C" fn Servo_LengthPercentage_ToCss(
     result: &mut nsACString,
 ) {
     lp.to_css(&mut CssWriter::new(result)).unwrap();
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_FontStyle_ToCss(s: &FontStyle, result: &mut nsACString) {
+    s.to_css(&mut CssWriter::new(result)).unwrap()
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_FontWeight_ToCss(w: &FontWeight, result: &mut nsACString) {
+    w.to_css(&mut CssWriter::new(result)).unwrap()
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_FontStretch_ToCss(s: &FontStretch, result: &mut nsACString) {
+    s.to_css(&mut CssWriter::new(result)).unwrap()
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_FontStretch_SerializeKeyword(s: &FontStretch, result: &mut nsACString) -> bool {
+    let kw = match s.as_keyword() {
+        Some(kw) => kw,
+        None => return false,
+    };
+    kw.to_css(&mut CssWriter::new(result)).unwrap();
+    true
 }
 
 #[no_mangle]
@@ -7434,4 +7502,41 @@ pub unsafe extern "C" fn Servo_InvalidateForViewportUnits(
         // to tell the Gecko restyle root machinery about it.
         bindings::Gecko_NoteDirtySubtreeForInvalidation(root);
     }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_CreatePiecewiseLinearFunction(
+    entries: &style::OwnedSlice<ComputedLinearStop>,
+    result: &mut PiecewiseLinearFunction,
+) {
+    *result = PiecewiseLinearFunction::from_iter(
+        entries
+            .iter()
+            .map(ComputedLinearStop::to_piecewise_linear_build_parameters),
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_PiecewiseLinearFunctionAt(
+    function: &PiecewiseLinearFunction,
+    progress: f32,
+) -> f32 {
+    function.at(progress)
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_InterpolateColor(
+    interpolation: &ColorInterpolationMethod,
+    left: &AnimatedRGBA,
+    right: &AnimatedRGBA,
+    progress: f32,
+) -> AnimatedRGBA {
+    style::values::animated::color::Color::mix(
+        interpolation,
+        left,
+        progress,
+        right,
+        1.0 - progress,
+        /* normalize_weights = */ false,
+    )
 }

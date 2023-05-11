@@ -5,20 +5,14 @@
 "use strict";
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+
+const lazy = {};
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "CanonicalJSON",
   "resource://gre/modules/CanonicalJSON.jsm"
 );
-
-XPCOMUtils.defineLazyGlobalGetters(this, [
-  "fetch",
-  "URL",
-]); /* globals fetch, URL */
 
 var EXPORTED_SYMBOLS = ["NormandyApi"];
 
@@ -118,7 +112,7 @@ var NormandyApi = {
     const builtSignature = `p384ecdsa=${signature}`;
 
     const serialized =
-      typeof data == "string" ? data : CanonicalJSON.stringify(data);
+      typeof data == "string" ? data : lazy.CanonicalJSON.stringify(data);
 
     const verifier = Cc[
       "@mozilla.org/security/contentsignatureverifier;1"

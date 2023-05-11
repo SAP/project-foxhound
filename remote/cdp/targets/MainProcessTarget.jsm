@@ -10,11 +10,16 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const { Target } = ChromeUtils.import(
+  "chrome://remote/content/cdp/targets/Target.jsm"
+);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   MainProcessSession:
     "chrome://remote/content/cdp/sessions/MainProcessSession.jsm",
   RemoteAgent: "chrome://remote/content/components/RemoteAgent.jsm",
-  Target: "chrome://remote/content/cdp/targets/Target.jsm",
 });
 
 /**
@@ -28,7 +33,7 @@ class MainProcessTarget extends Target {
    * @param TargetList targetList
    */
   constructor(targetList) {
-    super(targetList, MainProcessSession);
+    super(targetList, lazy.MainProcessSession);
 
     this.type = "browser";
 
@@ -37,7 +42,7 @@ class MainProcessTarget extends Target {
   }
 
   get wsDebuggerURL() {
-    const { host, port } = RemoteAgent;
+    const { host, port } = lazy.RemoteAgent;
     return `ws://${host}:${port}${this.path}`;
   }
 

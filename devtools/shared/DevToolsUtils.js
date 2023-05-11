@@ -16,6 +16,8 @@ var {
   callFunctionWithAsyncStack,
 } = require("devtools/shared/platform/stack");
 
+loader.lazyRequireGetter(this, "OS", "resource://gre/modules/osfile.jsm", true);
+
 loader.lazyRequireGetter(
   this,
   "FileUtils",
@@ -493,10 +495,6 @@ DevToolsUtils.defineLazyGetter(this, "NetUtil", () => {
   return require("resource://gre/modules/NetUtil.jsm").NetUtil;
 });
 
-DevToolsUtils.defineLazyGetter(this, "OS", () => {
-  return require("resource://gre/modules/osfile.jsm").OS;
-});
-
 DevToolsUtils.defineLazyGetter(this, "NetworkHelper", () => {
   return require("devtools/shared/webconsole/network-helper");
 });
@@ -674,6 +672,8 @@ function mainThreadFetch(
           // This can be removed when bug 982654 is fixed.
 
           uri.QueryInterface(Ci.nsIFileURL);
+          // Bug 1779574: IOUtils is not available in non-parent processes.
+          // eslint-disable-next-line mozilla/reject-osfile
           const result = OS.File.read(uri.file.path).then(bytes => {
             // Convert the bytearray to a String.
             const decoder = new TextDecoder();
@@ -846,7 +846,7 @@ exports.saveAs = async function(
     return;
   }
 
-  await OS.File.writeAtomic(returnFile.path, dataArray, {
+  await IOUtils.write(returnFile.path, dataArray, {
     tmpPath: returnFile.path + ".tmp",
   });
 };

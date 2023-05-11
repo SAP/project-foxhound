@@ -25,7 +25,6 @@
 #include "jsfriendapi.h"
 #include "jstypes.h"
 
-#include "gc/Rooting.h"
 #include "js/CharacterEncoding.h"
 #include "js/Class.h"
 #include "js/Conversions.h"
@@ -354,7 +353,7 @@ void js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
 
   // Throw it.
   RootedValue errValue(cx, ObjectValue(*errObject));
-  RootedSavedFrame nstack(cx);
+  Rooted<SavedFrame*> nstack(cx);
   if (stack) {
     nstack = &stack->as<SavedFrame>();
   }
@@ -399,7 +398,7 @@ static bool IsDuckTypedErrorObject(JSContext* cx, HandleObject exnObject,
 
 static bool GetPropertyNoException(JSContext* cx, HandleObject obj,
                                    SniffingBehavior behavior,
-                                   HandlePropertyName name,
+                                   Handle<PropertyName*> name,
                                    MutableHandleValue vp) {
   // This function has no side-effects so always use it.
   if (GetPropertyPure(cx, obj, NameToId(name), vp.address())) {
@@ -654,7 +653,7 @@ bool JS::ErrorReportBuilder::populateUncaughtExceptionReportUTF8VA(
   ownedReport.errorNumber = JSMSG_UNCAUGHT_EXCEPTION;
 
   bool skippedAsync;
-  RootedSavedFrame frame(
+  Rooted<SavedFrame*> frame(
       cx, UnwrapSavedFrame(cx, cx->realm()->principals(), stack,
                            SavedFrameSelfHosted::Exclude, skippedAsync));
   if (frame) {

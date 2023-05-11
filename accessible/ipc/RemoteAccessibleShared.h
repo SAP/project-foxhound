@@ -70,7 +70,6 @@ void Announce(const nsString& aAnnouncement, uint16_t aPriority);
 
 int32_t CaretLineNumber();
 virtual int32_t CaretOffset() const override;
-void SetCaretOffset(int32_t aOffset);
 
 virtual void TextSubstring(int32_t aStartOffset, int32_t aEndOfset,
                            nsAString& aText) const override;
@@ -199,16 +198,15 @@ double Step() const override;
 bool SetCurValue(double aValue);
 
 RemoteAccessible* FocusedChild();
-virtual Accessible* ChildAtPoint(
+Accessible* ChildAtPoint(
     int32_t aX, int32_t aY,
     LocalAccessible::EWhichChildAtPoint aWhichChild) override;
 LayoutDeviceIntRect Bounds() const override;
-nsIntRect BoundsInCSSPixels();
+virtual nsIntRect BoundsInCSSPixels() const override;
 
 void Language(nsString& aLocale);
 void DocType(nsString& aType);
 void Title(nsString& aTitle);
-void URL(nsString& aURL);
 void MimeType(nsString aMime);
 void URLDocTypeMimeType(nsString& aURL, nsString& aDocType,
                         nsString& aMimeType);

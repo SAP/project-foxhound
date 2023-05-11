@@ -22,6 +22,7 @@ var EXPORTED_SYMBOLS = [
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   FormHistory: "resource://gre/modules/FormHistory.jsm",
@@ -32,7 +33,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   SearchSuggestionController:
     "resource://gre/modules/SearchSuggestionController.jsm",
-  Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
@@ -126,38 +126,6 @@ var UrlbarUtils = {
     TABS: 4,
     OTHER_LOCAL: 5,
     OTHER_NETWORK: 6,
-  },
-
-  /**
-   * Groups used for logging telemetry to the FX_URLBAR_SELECTED_RESULT_TYPE_2
-   * histogram.
-   */
-  SELECTED_RESULT_TYPES: {
-    autofill: 0, // This is currently unused.
-    bookmark: 1,
-    history: 2,
-    keyword: 3,
-    searchengine: 4,
-    searchsuggestion: 5,
-    switchtab: 6,
-    tag: 7,
-    visiturl: 8,
-    remotetab: 9,
-    extension: 10,
-    "preloaded-top-site": 11, // This is currently unused.
-    tip: 12,
-    topsite: 13,
-    formhistory: 14,
-    dynamic: 15,
-    tabtosearch: 16,
-    quicksuggest: 17,
-    autofill_adaptive: 18,
-    autofill_origin: 19,
-    autofill_url: 20,
-    autofill_about: 21,
-    autofill_other: 22,
-    autofill_preloaded: 23,
-    // n_values = 32, so you'll need to create a new histogram if you need more.
   },
 
   // This defines icon locations that are commonly used in the UI.
@@ -981,7 +949,7 @@ var UrlbarUtils = {
     }
     if (
       prefix.endsWith(":") &&
-      !UrlbarUtils.PROTOCOLS_WITHOUT_AUTHORITY.includes(prefix)
+      !UrlbarUtils.PROTOCOLS_WITHOUT_AUTHORITY.includes(prefix.toLowerCase())
     ) {
       // Something that looks like a URI scheme but we won't treat as one:
       // e.g. "localhost:8888"
@@ -1114,7 +1082,9 @@ var UrlbarUtils = {
   },
 
   /**
-   * Return whether the candidate can autofill to the url.
+   * Returns whether a URL can be autofilled from a candidate string. This
+   * function is specifically designed for origin and up-to-the-next-slash URL
+   * autofill. It should not be used for other types of autofill.
    *
    * @param {string} url
    * @param {string} candidate
@@ -1124,27 +1094,24 @@ var UrlbarUtils = {
    * @returns {boolean} true: can autofill
    */
   canAutofillURL(url, candidate, checkFragmentOnly = false) {
-    if (!checkFragmentOnly) {
-      if (
-        url.length <= candidate.length ||
-        !url.toLocaleLowerCase().startsWith(candidate.toLocaleLowerCase())
-      ) {
-        return false;
-      }
-
-      if (!candidate.includes("/")) {
-        return true;
-      }
+    // If the URL does not start with the candidate, it can't be autofilled.
+    // The length check is an optimization to short-circuit the `startsWith()`.
+    if (
+      !checkFragmentOnly &&
+      (url.length <= candidate.length ||
+        !url.toLocaleLowerCase().startsWith(candidate.toLocaleLowerCase()))
+    ) {
+      return false;
     }
 
+    // Create `URL` objects to make the logic below easier. The strings must
+    // include schemes for this to work.
     if (!UrlbarTokenizer.REGEXP_PREFIX.test(url)) {
       url = "http://" + url;
     }
-
     if (!UrlbarTokenizer.REGEXP_PREFIX.test(candidate)) {
       candidate = "http://" + candidate;
     }
-
     try {
       url = new URL(url);
       candidate = new URL(candidate);
@@ -1152,11 +1119,26 @@ var UrlbarUtils = {
       return false;
     }
 
-    if (
-      !checkFragmentOnly &&
-      candidate.href.endsWith("/") &&
-      (url.pathname.length > candidate.pathname.length || url.hash)
-    ) {
+    if (checkFragmentOnly) {
+      return url.hash.startsWith(candidate.hash);
+    }
+
+    // For both origin and URL autofill, autofill should stop when the user
+    // types a trailing slash. This is a fundamental part of autofill's
+    // up-to-the-next-slash behavior. We handle that here in the else-if branch.
+    // The length and hash checks in the else-if condition aren't strictly
+    // necessary -- the else-if branch could simply be an else-branch that
+    // returns false -- but they mean this function will return true when the
+    // URL and candidate have the same case-insenstive path and no hash. In
+    // other words, we allow a URL to autofill itself.
+    if (!candidate.href.endsWith("/")) {
+      // The candidate doesn't end in a slash. The URL can't be autofilled if
+      // its next slash is not at the end.
+      let nextSlashIndex = url.pathname.indexOf("/", candidate.pathname.length);
+      if (nextSlashIndex >= 0 && nextSlashIndex != url.pathname.length - 1) {
+        return false;
+      }
+    } else if (url.pathname.length > candidate.pathname.length || url.hash) {
       return false;
     }
 

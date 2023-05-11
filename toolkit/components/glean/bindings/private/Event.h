@@ -62,9 +62,7 @@ class EventMetric {
         auto keys = std::move(Get<0>(serializedExtras));
         auto values = std::move(Get<1>(serializedExtras));
         for (size_t i = 0; i < keys.Length(); i++) {
-          auto extraString = ExtraStringForKey(keys[i]);
-          extras.EmplaceBack(
-              Telemetry::EventExtraEntry{extraString, values[i]});
+          extras.EmplaceBack(Telemetry::EventExtraEntry{keys[i], values[i]});
         }
         telExtras = Some(extras);
       }
@@ -74,7 +72,7 @@ class EventMetric {
       auto extra = aExtras->ToFfiExtra();
       fog_event_record(mId, &mozilla::Get<0>(extra), &mozilla::Get<1>(extra));
     } else {
-      nsTArray<uint32_t> keys;
+      nsTArray<nsCString> keys;
       nsTArray<nsCString> vals;
       fog_event_record(mId, &keys, &vals);
     }
@@ -112,24 +110,20 @@ class EventMetric {
     fog_event_test_get_value(mId, &aPingName, &events);
 
     nsTArray<RecordedEvent> result;
-    for (auto event : events) {
+    for (const auto& event : events) {
       auto ev = result.AppendElement();
       ev->mTimestamp = event.timestamp;
       ev->mCategory.Append(event.category);
       ev->mName.Assign(event.name);
 
-      // SAFETY:
-      // `event.extra` is a valid pointer to an array of length `2 *
-      // event.extra_len`.
-      ev->mExtra.SetCapacity(event.extra_len);
-      for (unsigned int i = 0; i < event.extra_len; i++) {
+      MOZ_ASSERT(event.extras.Length() % 2 == 0);
+      ev->mExtra.SetCapacity(event.extras.Length() / 2);
+      for (unsigned int i = 0; i < event.extras.Length(); i += 2) {
         // keys & values are interleaved.
-        auto key = event.extra[2 * i];
-        auto value = event.extra[2 * i + 1];
-        ev->mExtra.AppendElement(MakeTuple(key, value));
+        nsCString key = std::move(event.extras[i]);
+        nsCString value = std::move(event.extras[i + 1]);
+        ev->mExtra.AppendElement(MakeTuple(std::move(key), std::move(value)));
       }
-      // Event extras are now copied, we can free the array.
-      fog_event_free_event_extra(event.extra, event.extra_len);
     }
     return Some(std::move(result));
   }
@@ -143,8 +137,8 @@ class EventMetric {
 }  // namespace impl
 
 struct NoExtraKeys {
-  Tuple<nsTArray<uint32_t>, nsTArray<nsCString>> ToFfiExtra() const {
-    nsTArray<uint32_t> extraKeys;
+  Tuple<nsTArray<nsCString>, nsTArray<nsCString>> ToFfiExtra() const {
+    nsTArray<nsCString> extraKeys;
     nsTArray<nsCString> extraValues;
     return MakeTuple(std::move(extraKeys), std::move(extraValues));
   }

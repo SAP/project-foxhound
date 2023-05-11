@@ -217,7 +217,7 @@ static void SendCodeRangesToProfiler(const ModuleSegment& ms,
                                      const CodeRangeVector& codeRanges) {
   bool enabled = false;
 #ifdef JS_ION_PERF
-  enabled |= PerfFuncEnabled();
+  enabled |= PerfEnabled();
 #endif
 #ifdef MOZ_VTUNE
   enabled |= vtune::IsProfilingActive();
@@ -244,7 +244,7 @@ static void SendCodeRangesToProfiler(const ModuleSegment& ms,
     (void)size;
 
 #ifdef JS_ION_PERF
-    if (PerfFuncEnabled()) {
+    if (PerfEnabled()) {
       const char* file = metadata.filename.get();
       if (codeRange.isFunction()) {
         if (!name.append('\0')) {
@@ -819,7 +819,7 @@ static bool AppendFunctionIndexName(uint32_t funcIndex, UTF8Bytes* bytes) {
   const char afterFuncIndex[] = "]";
 
   ToCStringBuf cbuf;
-  const char* funcIndexStr = NumberToCString(nullptr, &cbuf, funcIndex);
+  const char* funcIndexStr = NumberToCString(&cbuf, funcIndex);
   MOZ_ASSERT(funcIndexStr);
 
   return bytes->append(beforeFuncIndex, strlen(beforeFuncIndex)) &&
@@ -877,9 +877,9 @@ const CodeRange* CodeTier::lookupRange(const void* pc) const {
   return LookupInSorted(metadata_->codeRanges, target);
 }
 
-const wasm::WasmTryNote* CodeTier::lookupWasmTryNote(const void* pc) const {
+const wasm::TryNote* CodeTier::lookupTryNote(const void* pc) const {
   size_t target = (uint8_t*)pc - segment_->base();
-  const WasmTryNoteVector& tryNotes = metadata_->tryNotes;
+  const TryNoteVector& tryNotes = metadata_->tryNotes;
 
   // We find the first hit (there may be multiple) to obtain the innermost
   // handler, which is why we cannot binary search here.
@@ -1091,9 +1091,9 @@ const StackMap* Code::lookupStackMap(uint8_t* nextPC) const {
   return nullptr;
 }
 
-const wasm::WasmTryNote* Code::lookupWasmTryNote(void* pc, Tier* tier) const {
+const wasm::TryNote* Code::lookupTryNote(void* pc, Tier* tier) const {
   for (Tier t : tiers()) {
-    const WasmTryNote* result = codeTier(t).lookupWasmTryNote(pc);
+    const TryNote* result = codeTier(t).lookupTryNote(pc);
     if (result) {
       *tier = t;
       return result;
@@ -1159,7 +1159,7 @@ void Code::ensureProfilingLabels(bool profilingEnabled) const {
 
     ToCStringBuf cbuf;
     const char* bytecodeStr =
-        NumberToCString(nullptr, &cbuf, codeRange.funcLineOrBytecode());
+        NumberToCString(&cbuf, codeRange.funcLineOrBytecode());
     MOZ_ASSERT(bytecodeStr);
 
     UTF8Bytes name;

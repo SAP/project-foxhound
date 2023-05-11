@@ -96,6 +96,8 @@ using mozilla::Some;
 using mozilla::Utf8Unit;
 using mozilla::Compression::LZ4;
 
+using FunctionVector = JS::GCVector<JSFunction*>;
+
 /*****************************************************************************/
 
 // A wasm module can either use no memory, a unshared memory (ArrayBuffer) or
@@ -1708,20 +1710,19 @@ class MOZ_STACK_CLASS ModuleValidatorShared {
   }
   bool addExportField(const Func& func, TaggedParserAtomIndex maybeField) {
     // Record the field name of this export.
-    CacheableChars fieldChars;
+    CacheableName fieldName;
     if (maybeField) {
-      fieldChars = parserAtoms_.toNewUTF8CharsZ(cx_, maybeField);
-    } else {
-      fieldChars = DuplicateString("");
-    }
-    if (!fieldChars) {
-      return false;
+      UniqueChars fieldChars = parserAtoms_.toNewUTF8CharsZ(cx_, maybeField);
+      if (!fieldChars) {
+        return false;
+      }
+      fieldName = CacheableName::fromUTF8Chars(std::move(fieldChars));
     }
 
     // Declare which function is exported which gives us an index into the
     // module ExportVector.
     uint32_t funcIndex = funcImportMap_.count() + func.funcDefIndex();
-    if (!moduleEnv_.exports.emplaceBack(std::move(fieldChars), funcIndex,
+    if (!moduleEnv_.exports.emplaceBack(std::move(fieldName), funcIndex,
                                         DefinitionKind::Function)) {
       return false;
     }
@@ -6480,8 +6481,8 @@ static bool IsMaybeWrappedScriptedProxy(JSObject* obj) {
   return unwrapped && IsScriptedProxy(unwrapped);
 }
 
-static bool GetDataProperty(JSContext* cx, HandleValue objVal, HandleAtom field,
-                            MutableHandleValue v) {
+static bool GetDataProperty(JSContext* cx, HandleValue objVal,
+                            Handle<JSAtom*> field, MutableHandleValue v) {
   if (!objVal.isObject()) {
     return LinkFail(cx, "accessing property of non-object");
   }
@@ -6512,7 +6513,8 @@ static bool GetDataProperty(JSContext* cx, HandleValue objVal, HandleAtom field,
 
 static bool GetDataProperty(JSContext* cx, HandleValue objVal,
                             const char* fieldChars, MutableHandleValue v) {
-  RootedAtom field(cx, AtomizeUTF8Chars(cx, fieldChars, strlen(fieldChars)));
+  Rooted<JSAtom*> field(cx,
+                        AtomizeUTF8Chars(cx, fieldChars, strlen(fieldChars)));
   if (!field) {
     return false;
   }
@@ -6521,9 +6523,9 @@ static bool GetDataProperty(JSContext* cx, HandleValue objVal,
 }
 
 static bool GetDataProperty(JSContext* cx, HandleValue objVal,
-                            const ImmutablePropertyNamePtr& field,
+                            const ImmutableTenuredPtr<PropertyName*>& field,
                             MutableHandleValue v) {
-  HandlePropertyName fieldHandle = field;
+  Handle<PropertyName*> fieldHandle = field;
   return GetDataProperty(cx, objVal, fieldHandle, v);
 }
 
@@ -6907,7 +6909,7 @@ static bool GetImports(JSContext* cx, const AsmJSMetadata& metadata,
 
 static bool TryInstantiate(JSContext* cx, CallArgs args, const Module& module,
                            const AsmJSMetadata& metadata,
-                           MutableHandleWasmInstanceObject instanceObj,
+                           MutableHandle<WasmInstanceObject*> instanceObj,
                            MutableHandleObject exportObj) {
   HandleValue globalVal = args.get(0);
   HandleValue importVal = args.get(1);
@@ -6950,7 +6952,7 @@ static bool HandleInstantiationFailure(JSContext* cx, CallArgs args,
                                        const AsmJSMetadata& metadata) {
   using js::frontend::FunctionSyntaxKind;
 
-  RootedAtom name(cx, args.callee().as<JSFunction>().explicitName());
+  Rooted<JSAtom*> name(cx, args.callee().as<JSFunction>().explicitName());
 
   if (cx->isExceptionPending()) {
     return false;
@@ -7035,7 +7037,7 @@ bool js::InstantiateAsmJS(JSContext* cx, unsigned argc, JS::Value* vp) {
   const Module& module = AsmJSModuleFunctionToModule(callee);
   const AsmJSMetadata& metadata = module.metadata().asAsmJS();
 
-  RootedWasmInstanceObject instanceObj(cx);
+  Rooted<WasmInstanceObject*> instanceObj(cx);
   RootedObject exportObj(cx);
   if (!TryInstantiate(cx, args, module, metadata, &instanceObj, &exportObj)) {
     // Link-time validation checks failed, so reparse the entire asm.js

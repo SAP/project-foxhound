@@ -14,6 +14,7 @@
 #include "nsIObserverService.h"
 #include "nsIAppShellService.h"
 #include "nsAppShellCID.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_widget.h"
@@ -31,6 +32,10 @@
 
 /* mingw currently doesn't support windows.ui.viewmanagement.h, so we disable it
  * until it's fixed. */
+
+// See
+// https://github.com/tpn/winsdk-10/blob/master/Include/10.0.14393.0/winrt/windows.ui.viewmanagement.h
+// for the source of some of these definitions for older SDKs.
 #ifndef __MINGW32__
 
 #  include <inspectable.h>
@@ -330,57 +335,219 @@ WindowsUIUtils::GetInTabletMode(bool* aResult) {
   return NS_OK;
 }
 
-bool WindowsUIUtils::ComputeOverlayScrollbars() {
+static IInspectable* GetUISettings() {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
-
 #ifndef __MINGW32__
   // We need to keep this alive for ~ever so that change callbacks work as
   // expected, sigh.
-  static ComPtr<IUISettings5> sUiSettings;
+  static StaticRefPtr<IInspectable> sUiSettingsAsInspectable;
 
-  if (!IsWin11OrLater()) {
-    // While in theory Windows 10 supports overlay scrollbar settings, it's off
-    // by default and it's untested whether our Win10 scrollbar drawing code
-    // deals with it properly.
-    return false;
+  if (!IsWin10OrLater()) {
+    // Windows.UI.ViewManagement.UISettings is Win10+ only.
+    return nullptr;
   }
 
-  if (!StaticPrefs::widget_windows_overlay_scrollbars_enabled()) {
-    return false;
-  }
-
-  if (!sUiSettings) {
+  if (!sUiSettingsAsInspectable) {
     ComPtr<IInspectable> uiSettingsAsInspectable;
     ::RoActivateInstance(
         HStringReference(RuntimeClass_Windows_UI_ViewManagement_UISettings)
             .Get(),
         &uiSettingsAsInspectable);
     if (NS_WARN_IF(!uiSettingsAsInspectable)) {
-      return false;
+      return nullptr;
     }
 
-    if (NS_WARN_IF(FAILED(uiSettingsAsInspectable.As(&sUiSettings)))) {
-      return false;
+    ComPtr<IUISettings5> uiSettings5;
+    if (SUCCEEDED(uiSettingsAsInspectable.As(&uiSettings5))) {
+      EventRegistrationToken unusedToken;
+      auto callback = Callback<ITypedEventHandler<
+          UISettings*, UISettingsAutoHideScrollBarsChangedEventArgs*>>(
+          [](auto...) {
+            // Scrollbar sizes change layout.
+            LookAndFeel::NotifyChangedAllWindows(
+                widget::ThemeChangeKind::StyleAndLayout);
+            return S_OK;
+          });
+      (void)NS_WARN_IF(FAILED(uiSettings5->add_AutoHideScrollBarsChanged(
+          callback.Get(), &unusedToken)));
     }
 
-    EventRegistrationToken unusedToken;
-    auto callback = Callback<ITypedEventHandler<
-        UISettings*, UISettingsAutoHideScrollBarsChangedEventArgs*>>(
-        [](auto...) {
-          // Scrollbar sizes change layout.
-          LookAndFeel::NotifyChangedAllWindows(
-              widget::ThemeChangeKind::StyleAndLayout);
-          return S_OK;
-        });
-    (void)NS_WARN_IF(FAILED(sUiSettings->add_AutoHideScrollBarsChanged(
-        callback.Get(), &unusedToken)));
+    ComPtr<IUISettings2> uiSettings2;
+    if (SUCCEEDED(uiSettingsAsInspectable.As(&uiSettings2))) {
+      EventRegistrationToken unusedToken;
+      auto callback =
+          Callback<ITypedEventHandler<UISettings*, IInspectable*>>([](auto...) {
+            // Text scale factor changes style and layout.
+            LookAndFeel::NotifyChangedAllWindows(
+                widget::ThemeChangeKind::StyleAndLayout);
+            return S_OK;
+          });
+      (void)NS_WARN_IF(FAILED(uiSettings2->add_TextScaleFactorChanged(
+          callback.Get(), &unusedToken)));
+    }
+
+    ComPtr<IUISettings3> uiSettings3;
+    if (SUCCEEDED(uiSettingsAsInspectable.As(&uiSettings3))) {
+      EventRegistrationToken unusedToken;
+      auto callback =
+          Callback<ITypedEventHandler<UISettings*, IInspectable*>>([](auto...) {
+            // System color changes change style only.
+            LookAndFeel::NotifyChangedAllWindows(
+                widget::ThemeChangeKind::Style);
+            return S_OK;
+          });
+      (void)NS_WARN_IF(FAILED(
+          uiSettings3->add_ColorValuesChanged(callback.Get(), &unusedToken)));
+    }
+
+    sUiSettingsAsInspectable = dont_AddRef(uiSettingsAsInspectable.Detach());
+    ClearOnShutdown(&sUiSettingsAsInspectable);
   }
 
+  return sUiSettingsAsInspectable.get();
+#else
+  return nullptr;
+#endif
+}
+
+Maybe<nscolor> WindowsUIUtils::GetAccentColor(int aTone) {
+  MOZ_ASSERT(aTone >= -3);
+  MOZ_ASSERT(aTone <= 3);
+#ifndef __MINGW32__
+  ComPtr<IInspectable> settings = GetUISettings();
+  if (NS_WARN_IF(!settings)) {
+    return Nothing();
+  }
+  ComPtr<IUISettings3> uiSettings3;
+  if (NS_WARN_IF(FAILED(settings.As(&uiSettings3)))) {
+    return Nothing();
+  }
+  Color color;
+  auto colorType = UIColorType(int(UIColorType_Accent) + aTone);
+  if (NS_WARN_IF(FAILED(uiSettings3->GetColorValue(colorType, &color)))) {
+    return Nothing();
+  }
+  return Some(NS_RGBA(color.R, color.G, color.B, color.A));
+#else
+  return Nothing();
+#endif
+}
+
+Maybe<nscolor> WindowsUIUtils::GetSystemColor(ColorScheme aScheme,
+                                              int aSysColor) {
+#ifndef __MINGW32__
+  if (!StaticPrefs::widget_windows_uwp_system_colors_enabled()) {
+    return Nothing();
+  }
+
+  // https://docs.microsoft.com/en-us/windows/apps/design/style/color
+  // Is a useful resource to see which values have decent contrast.
+  if (StaticPrefs::widget_windows_uwp_system_colors_highlight_accent()) {
+    if (aSysColor == COLOR_HIGHLIGHT) {
+      int tone = aScheme == ColorScheme::Light ? 0 : -1;
+      if (auto c = GetAccentColor(tone)) {
+        return c;
+      }
+    }
+    if (aSysColor == COLOR_HIGHLIGHTTEXT && GetAccentColor()) {
+      return Some(NS_RGBA(255, 255, 255, 255));
+    }
+  }
+
+  if (aScheme == ColorScheme::Dark) {
+    // There are no explicitly dark colors in UWP, other than the highlight
+    // colors above.
+    return Nothing();
+  }
+
+  auto knownType = [&]() -> Maybe<UIElementType> {
+#  define MAP(_win32, _uwp) \
+    case COLOR_##_win32:    \
+      return Some(UIElementType_##_uwp)
+    switch (aSysColor) {
+      MAP(HIGHLIGHT, Highlight);
+      MAP(HIGHLIGHTTEXT, HighlightText);
+      MAP(ACTIVECAPTION, ActiveCaption);
+      MAP(BTNFACE, ButtonFace);
+      MAP(BTNTEXT, ButtonText);
+      MAP(CAPTIONTEXT, CaptionText);
+      MAP(GRAYTEXT, GrayText);
+      MAP(HOTLIGHT, Hotlight);
+      MAP(INACTIVECAPTION, InactiveCaption);
+      MAP(INACTIVECAPTIONTEXT, InactiveCaptionText);
+      MAP(WINDOW, Window);
+      MAP(WINDOWTEXT, WindowText);
+      default:
+        return Nothing();
+    }
+#  undef MAP
+  }();
+  if (!knownType) {
+    return Nothing();
+  }
+  ComPtr<IInspectable> settings = GetUISettings();
+  if (NS_WARN_IF(!settings)) {
+    return Nothing();
+  }
+  ComPtr<IUISettings> uiSettings;
+  if (NS_WARN_IF(FAILED(settings.As(&uiSettings)))) {
+    return Nothing();
+  }
+  Color color;
+  if (NS_WARN_IF(FAILED(uiSettings->UIElementColor(*knownType, &color)))) {
+    return Nothing();
+  }
+  return Some(NS_RGBA(color.R, color.G, color.B, color.A));
+#else
+  return Nothing();
+#endif
+}
+bool WindowsUIUtils::ComputeOverlayScrollbars() {
+#ifndef __MINGW32__
+  if (!IsWin11OrLater()) {
+    // While in theory Windows 10 supports overlay scrollbar settings, it's off
+    // by default and it's untested whether our Win10 scrollbar drawing code
+    // deals with it properly.
+    return false;
+  }
+  if (!StaticPrefs::widget_windows_overlay_scrollbars_enabled()) {
+    return false;
+  }
+  ComPtr<IInspectable> settings = GetUISettings();
+  if (NS_WARN_IF(!settings)) {
+    return false;
+  }
+  ComPtr<IUISettings5> uiSettings5;
+  if (NS_WARN_IF(FAILED(settings.As(&uiSettings5)))) {
+    return false;
+  }
   boolean autoHide = false;
-  sUiSettings->get_AutoHideScrollBars(&autoHide);
+  if (NS_WARN_IF(FAILED(uiSettings5->get_AutoHideScrollBars(&autoHide)))) {
+    return false;
+  }
   return autoHide;
 #else
   return false;
+#endif
+}
+
+double WindowsUIUtils::ComputeTextScaleFactor() {
+#ifndef __MINGW32__
+  ComPtr<IInspectable> settings = GetUISettings();
+  if (NS_WARN_IF(!settings)) {
+    return 1.0;
+  }
+  ComPtr<IUISettings2> uiSettings2;
+  if (NS_WARN_IF(FAILED(settings.As(&uiSettings2)))) {
+    return false;
+  }
+  double scaleFactor = 1.0;
+  if (NS_WARN_IF(FAILED(uiSettings2->get_TextScaleFactor(&scaleFactor)))) {
+    return 1.0;
+  }
+  return scaleFactor;
+#else
+  return 1.0;
 #endif
 }
 

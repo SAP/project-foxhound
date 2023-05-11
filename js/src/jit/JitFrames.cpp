@@ -215,8 +215,11 @@ static void OnLeaveIonFrame(JSContext* cx, const InlineFrameIterator& frame,
   Value& rval = rematFrame->returnValue();
   MOZ_RELEASE_ASSERT(!rval.isMagic());
 
+  // Set both framePointer and stackPointer to the address of the
+  // JitFrameLayout.
   rfe->kind = ExceptionResumeKind::ForcedReturnIon;
   rfe->framePointer = frame.frame().fp();
+  rfe->stackPointer = frame.frame().fp();
   rfe->exception = rval;
 
   act->removeIonFrameRecovery(frame.frame().jsFrame());
@@ -350,7 +353,7 @@ static void OnLeaveBaselineFrame(JSContext* cx, const JSJitFrameIter& frame,
   bool returnFromThisFrame = jit::DebugEpilogue(cx, baselineFrame, pc, frameOk);
   if (returnFromThisFrame) {
     rfe->kind = ExceptionResumeKind::ForcedReturnBaseline;
-    rfe->framePointer = frame.fp() - BaselineFrame::FramePointerOffset;
+    rfe->framePointer = frame.fp();
     rfe->stackPointer = reinterpret_cast<uint8_t*>(baselineFrame);
   }
 }
@@ -359,7 +362,7 @@ static inline void BaselineFrameAndStackPointersFromTryNote(
     const TryNote* tn, const JSJitFrameIter& frame, uint8_t** framePointer,
     uint8_t** stackPointer) {
   JSScript* script = frame.baselineFrame()->script();
-  *framePointer = frame.fp() - BaselineFrame::FramePointerOffset;
+  *framePointer = frame.fp();
   *stackPointer = *framePointer - BaselineFrame::Size() -
                   (script->nfixed() + tn->stackDepth) * sizeof(Value);
 }
@@ -616,27 +619,24 @@ again:
   OnLeaveBaselineFrame(cx, frame, pc, rfe, frameOk);
 }
 
-static void* GetLastProfilingFrame(ResumeFromException* rfe) {
+static JitFrameLayout* GetLastProfilingFrame(ResumeFromException* rfe) {
   switch (rfe->kind) {
     case ExceptionResumeKind::EntryFrame:
     case ExceptionResumeKind::Wasm:
     case ExceptionResumeKind::WasmCatch:
       return nullptr;
 
-    // The following all return into baseline frames.
+    // The following all return into Baseline or Ion frames.
     case ExceptionResumeKind::Catch:
     case ExceptionResumeKind::Finally:
     case ExceptionResumeKind::ForcedReturnBaseline:
-      return rfe->framePointer + BaselineFrame::FramePointerOffset;
-
-    // The frame pointer in Ion points directly to the frame header.
     case ExceptionResumeKind::ForcedReturnIon:
-      return rfe->framePointer;
+      return reinterpret_cast<JitFrameLayout*>(rfe->framePointer);
 
     // When resuming into a bailed-out ion frame, use the bailout info to
     // find the frame we are resuming into.
     case ExceptionResumeKind::Bailout:
-      return rfe->bailoutInfo->incomingStack;
+      return reinterpret_cast<JitFrameLayout*>(rfe->bailoutInfo->incomingStack);
   }
 
   MOZ_CRASH("Invalid ResumeFromException type!");
@@ -666,7 +666,7 @@ void HandleException(ResumeFromException* rfe) {
 
     MOZ_ASSERT(cx->jitActivation == cx->profilingActivation());
 
-    void* lastProfilingFrame = GetLastProfilingFrame(rfe);
+    auto* lastProfilingFrame = GetLastProfilingFrame(rfe);
     cx->jitActivation->setLastProfilingFrame(lastProfilingFrame);
   });
 
@@ -796,19 +796,21 @@ void HandleException(ResumeFromException* rfe) {
 
   // Wasm sets its own value of SP in HandleExceptionWasm.
   if (iter.isJSJit()) {
-    rfe->stackPointer = iter.asJSJit().fp();
+    MOZ_ASSERT(rfe->kind == ExceptionResumeKind::EntryFrame);
+    rfe->framePointer = iter.asJSJit().current()->callerFramePtr();
+    rfe->stackPointer =
+        iter.asJSJit().fp() + CommonFrameLayout::offsetOfReturnAddress();
   }
 }
 
-// Turns a JitFrameLayout into an ExitFrameLayout. Note that it has to be a
-// bare exit frame so it's ignored by TraceJitExitFrame.
-void EnsureBareExitFrame(JitActivation* act, JitFrameLayout* frame) {
+// Turns a JitFrameLayout into an UnwoundJit ExitFrameLayout.
+void EnsureUnwoundJitExitFrame(JitActivation* act, JitFrameLayout* frame) {
   ExitFrameLayout* exitFrame = reinterpret_cast<ExitFrameLayout*>(frame);
 
   if (act->jsExitFP() == (uint8_t*)frame) {
     // If we already called this function for the current frame, do
     // nothing.
-    MOZ_ASSERT(exitFrame->isBareExit());
+    MOZ_ASSERT(exitFrame->isUnwoundJitExit());
     return;
   }
 
@@ -825,8 +827,8 @@ void EnsureBareExitFrame(JitActivation* act, JitFrameLayout* frame) {
 #endif
 
   act->setJSExitFP((uint8_t*)frame);
-  exitFrame->footer()->setBareExitFrame();
-  MOZ_ASSERT(exitFrame->isBareExit());
+  exitFrame->footer()->setUnwoundJitExitFrame();
+  MOZ_ASSERT(exitFrame->isUnwoundJitExit());
 }
 
 JSScript* MaybeForwardedScriptFromCalleeToken(CalleeToken token) {
@@ -864,7 +866,7 @@ uintptr_t* JitFrameLayout::slotRef(SafepointSlotEntry where) {
   if (where.stack) {
     return (uintptr_t*)((uint8_t*)this - where.slot);
   }
-  return (uintptr_t*)((uint8_t*)argv() + where.slot);
+  return (uintptr_t*)((uint8_t*)thisAndActualArgs() + where.slot);
 }
 
 #ifdef JS_NUNBOX32
@@ -903,7 +905,7 @@ static void TraceThisAndArguments(JSTracer* trc, const JSJitFrameIter& frame,
 
   size_t newTargetOffset = std::max(nargs, fun->nargs());
 
-  Value* argv = layout->argv();
+  Value* argv = layout->thisAndActualArgs();
 
   // Trace |this|.
   TraceRoot(trc, argv, "ion-thisv");
@@ -1093,7 +1095,7 @@ static void TraceBaselineStubFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   // so that we don't destroy the stub code after unlinking the stub.
 
   MOZ_ASSERT(frame.type() == FrameType::BaselineStub);
-  JitStubFrameLayout* layout = (JitStubFrameLayout*)frame.fp();
+  BaselineStubFrameLayout* layout = (BaselineStubFrameLayout*)frame.fp();
 
   if (ICStub* stub = layout->maybeStubPtr()) {
     if (stub->isFallback()) {
@@ -1220,9 +1222,9 @@ static void TraceJitExitFrame(JSTracer* trc, const JSJitFrameIter& frame) {
     return;
   }
 
-  if (frame.isBareExit()) {
+  if (frame.isBareExit() || frame.isUnwoundJitExit()) {
     // Nothing to trace. Fake exit frame pushed for VM functions with
-    // nothing to trace on the stack.
+    // nothing to trace on the stack or unwound JitFrameLayout.
     return;
   }
 
@@ -1310,7 +1312,7 @@ static void TraceRectifierFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   // Baseline JIT code generated as part of the ICCall_Fallback stub may use
   // it if we're calling a constructor that returns a primitive value.
   RectifierFrameLayout* layout = (RectifierFrameLayout*)frame.fp();
-  TraceRoot(trc, &layout->argv()[0], "ion-thisv");
+  TraceRoot(trc, &layout->thisv(), "rectifier-thisv");
 }
 
 static void TraceJSJitToWasmFrame(JSTracer* trc, const JSJitFrameIter& frame) {
@@ -2468,13 +2470,9 @@ void AssertJitStackInvariants(JSContext* cx) {
                              "The rectifier frame should keep the alignment");
 
           size_t expectedFrameSize =
-              0
-#if defined(JS_CODEGEN_X86)
-              + sizeof(void*) /* frame pointer */
-#endif
-              + sizeof(Value) *
-                    (frames.callee()->nargs() + 1 /* |this| argument */ +
-                     frames.isConstructing() /* new.target */) +
+              sizeof(Value) *
+                  (frames.callee()->nargs() + 1 /* |this| argument */ +
+                   frames.isConstructing() /* new.target */) +
               sizeof(JitFrameLayout);
           MOZ_RELEASE_ASSERT(frameSize >= expectedFrameSize,
                              "The frame is large enough to hold all arguments");

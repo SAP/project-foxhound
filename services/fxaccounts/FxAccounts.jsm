@@ -28,7 +28,7 @@ const {
   ERROR_UNKNOWN,
   ERROR_UNVERIFIED_ACCOUNT,
   FXA_PWDMGR_PLAINTEXT_FIELDS,
-  FXA_PWDMGR_REAUTH_WHITELIST,
+  FXA_PWDMGR_REAUTH_ALLOWLIST,
   FXA_PWDMGR_SECURE_FIELDS,
   FX_OAUTH_CLIENT_ID,
   ON_ACCOUNT_STATE_CHANGE_NOTIFICATION,
@@ -46,54 +46,56 @@ const {
   logManager,
 } = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsClient",
   "resource://gre/modules/FxAccountsClient.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsConfig",
   "resource://gre/modules/FxAccountsConfig.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsCommands",
   "resource://gre/modules/FxAccountsCommands.js"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsDevice",
   "resource://gre/modules/FxAccountsDevice.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsKeys",
   "resource://gre/modules/FxAccountsKeys.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsProfile",
   "resource://gre/modules/FxAccountsProfile.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "FxAccountsTelemetry",
   "resource://gre/modules/FxAccountsTelemetry.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Preferences: "resource://gre/modules/Preferences.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "FXA_ENABLED",
   "identity.fxaccounts.enabled",
   true
@@ -118,7 +120,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 // }
 // If the state has changed between the function being called and the promise
 // being resolved, the .resolve() call will actually be rejected.
-var AccountState = (this.AccountState = function(storageManager) {
+function AccountState(storageManager) {
   this.storageManager = storageManager;
   this.inFlightTokenRequests = new Map();
   this.promiseInitialized = this.storageManager
@@ -130,7 +132,7 @@ var AccountState = (this.AccountState = function(storageManager) {
       log.error("Failed to initialize the storage manager", err);
       // Things are going to fall apart, but not much we can do about it here.
     });
-});
+}
 
 AccountState.prototype = {
   oauthTokens: null,
@@ -406,7 +408,7 @@ class FxAccounts {
   }
 
   static get config() {
-    return FxAccountsConfig;
+    return lazy.FxAccountsConfig;
   }
 
   get device() {
@@ -450,11 +452,15 @@ class FxAccounts {
     const ONE_DAY = 24 * 60 * 60 * 1000;
 
     return this._withSessionToken(async sessionToken => {
-      const attachedClients = await this._internal.fxAccountsClient.attachedClients(
+      const response = await this._internal.fxAccountsClient.attachedClients(
         sessionToken
       );
-      // We should use the server timestamp here - bug 1595635
-      let now = Date.now();
+      const attachedClients = response.body;
+      const timestamp = response.headers["x-timestamp"];
+      const now =
+        timestamp !== undefined
+          ? new Date(parseInt(timestamp, 10))
+          : Date.now();
       return attachedClients.map(client => {
         const daysAgo = client.lastAccessTime
           ? Math.max(Math.floor((now - client.lastAccessTime) / ONE_DAY), 0)
@@ -542,7 +548,7 @@ class FxAccounts {
       if (!data) {
         return null;
       }
-      if (!FXA_ENABLED) {
+      if (!lazy.FXA_ENABLED) {
         await this.signOut();
         return null;
       }
@@ -724,7 +730,7 @@ FxAccountsInternal.prototype = {
       ).wrappedJSObject;
     });
 
-    this.keys = new FxAccountsKeys(this);
+    this.keys = new lazy.FxAccountsKeys(this);
 
     if (!this.observerPreloads) {
       // A registry of promise-returning functions that `notifyObservers` should
@@ -805,7 +811,7 @@ FxAccountsInternal.prototype = {
 
   get fxAccountsClient() {
     if (!this._fxAccountsClient) {
-      this._fxAccountsClient = new FxAccountsClient();
+      this._fxAccountsClient = new lazy.FxAccountsClient();
     }
     return this._fxAccountsClient;
   },
@@ -817,7 +823,7 @@ FxAccountsInternal.prototype = {
       let profileServerUrl = Services.urlFormatter.formatURLPref(
         "identity.fxaccounts.remote.profile.uri"
       );
-      this._profile = new FxAccountsProfile({
+      this._profile = new lazy.FxAccountsProfile({
         fxa: this,
         profileServerUrl,
       });
@@ -828,7 +834,7 @@ FxAccountsInternal.prototype = {
   _commands: null,
   get commands() {
     if (!this._commands) {
-      this._commands = new FxAccountsCommands(this);
+      this._commands = new lazy.FxAccountsCommands(this);
     }
     return this._commands;
   },
@@ -836,7 +842,7 @@ FxAccountsInternal.prototype = {
   _device: null,
   get device() {
     if (!this._device) {
-      this._device = new FxAccountsDevice(this);
+      this._device = new lazy.FxAccountsDevice(this);
     }
     return this._device;
   },
@@ -844,7 +850,7 @@ FxAccountsInternal.prototype = {
   _telemetry: null,
   get telemetry() {
     if (!this._telemetry) {
-      this._telemetry = new FxAccountsTelemetry(this);
+      this._telemetry = new lazy.FxAccountsTelemetry(this);
     }
     return this._telemetry;
   },
@@ -939,10 +945,10 @@ FxAccountsInternal.prototype = {
    *         successfully and is rejected on error.
    */
   async setSignedInUser(credentials) {
-    if (!FXA_ENABLED) {
+    if (!lazy.FXA_ENABLED) {
       throw new Error("Cannot call setSignedInUser when FxA is disabled.");
     }
-    Preferences.resetBranch(PREF_ACCOUNT_ROOT);
+    lazy.Preferences.resetBranch(PREF_ACCOUNT_ROOT);
     log.debug("setSignedInUser - aborting any existing flows");
     const signedInUser = await this.currentAccountState.getUserAccountData();
     if (signedInUser) {
@@ -1069,19 +1075,19 @@ FxAccountsInternal.prototype = {
       // block the local sign out.
       Services.tm.dispatchToMainThread(async () => {
         await this._signOutServer(sessionToken, tokensToRevoke);
-        FxAccountsConfig.resetConfigURLs();
+        lazy.FxAccountsConfig.resetConfigURLs();
         this.notifyObservers("testhelper-fxa-signout-complete");
       });
     } else {
       // We want to do this either way -- but if we're signing out remotely we
       // need to wait until we destroy the oauth tokens if we want that to succeed.
-      FxAccountsConfig.resetConfigURLs();
+      lazy.FxAccountsConfig.resetConfigURLs();
     }
     return this.notifyObservers(ONLOGOUT_NOTIFICATION);
   },
 
   async _signOutLocal() {
-    Preferences.resetBranch(PREF_ACCOUNT_ROOT);
+    lazy.Preferences.resetBranch(PREF_ACCOUNT_ROOT);
     await this.currentAccountState.signOut();
     // this "aborts" this.currentAccountState but doesn't make a new one.
     await this.abortExistingFlow();
@@ -1552,7 +1558,7 @@ FxAccountsInternal.prototype = {
     // reauthenticate.
     let updateData = {};
     let clearField = field => {
-      if (!FXA_PWDMGR_REAUTH_WHITELIST.has(field)) {
+      if (!FXA_PWDMGR_REAUTH_ALLOWLIST.has(field)) {
         updateData[field] = null;
       }
     };
@@ -1612,16 +1618,20 @@ FxAccountsInternal.prototype = {
   },
 };
 
-// A getter for the instance to export
-XPCOMUtils.defineLazyGetter(this, "fxAccounts", function() {
-  let a = new FxAccounts();
+let fxAccountsSingleton = null;
+function getFxAccountsSingleton() {
+  if (fxAccountsSingleton) {
+    return fxAccountsSingleton;
+  }
+
+  fxAccountsSingleton = new FxAccounts();
 
   // XXX Bug 947061 - We need a strategy for resuming email verification after
   // browser restart
-  a._internal.loadAndPoll();
+  fxAccountsSingleton._internal.loadAndPoll();
 
-  return a;
-});
+  return fxAccountsSingleton;
+}
 
 // `AccountState` is exported for tests.
-var EXPORTED_SYMBOLS = ["fxAccounts", "FxAccounts", "AccountState"];
+var EXPORTED_SYMBOLS = ["getFxAccountsSingleton", "FxAccounts", "AccountState"];

@@ -13,10 +13,10 @@ const { GeckoViewUtils } = ChromeUtils.import(
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   FormLikeFactory: "resource://gre/modules/FormLikeFactory.jsm",
-  GeckoViewAutofill: "resource://gre/modules/GeckoViewAutofill.jsm",
-  WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
   LoginManagerChild: "resource://gre/modules/LoginManagerChild.jsm",
 });
 
@@ -35,13 +35,15 @@ class GeckoViewAutoFillChild extends GeckoViewActorChild {
     debug`handleEvent: ${aEvent.type}`;
     switch (aEvent.type) {
       case "DOMFormHasPassword": {
-        this.addElement(FormLikeFactory.createFromForm(aEvent.composedTarget));
+        this.addElement(
+          lazy.FormLikeFactory.createFromForm(aEvent.composedTarget)
+        );
         break;
       }
       case "DOMInputPasswordAdded": {
         const input = aEvent.composedTarget;
         if (!input.form) {
-          this.addElement(FormLikeFactory.createFromField(input));
+          this.addElement(lazy.FormLikeFactory.createFromField(input));
         }
         break;
       }
@@ -107,9 +109,13 @@ class GeckoViewAutoFillChild extends GeckoViewActorChild {
       }
     }
 
-    const [usernameField] = LoginManagerChild.forWindow(
-      window
-    ).getUserNameAndPasswordFields(passwordField || aFormLike.elements[0]);
+    const loginManagerChild = lazy.LoginManagerChild.forWindow(window);
+    const docState = loginManagerChild.stateForDocument(
+      passwordField.ownerDocument
+    );
+    const [usernameField] = docState.getUserNameAndPasswordFields(
+      passwordField || aFormLike.elements[0]
+    );
 
     const focusedElement = aFormLike.rootElement.ownerDocument.activeElement;
     let sendFocusEvent = aFormLike.rootElement === focusedElement;
@@ -364,11 +370,11 @@ class GeckoViewAutoFillChild extends GeckoViewActorChild {
     for (let i = 0; i < inputs.length; i++) {
       if (inputs[i].form) {
         // Let addElement coalesce multiple calls for the same form.
-        this.addElement(FormLikeFactory.createFromForm(inputs[i].form));
+        this.addElement(lazy.FormLikeFactory.createFromForm(inputs[i].form));
       } else if (!inputAdded) {
         // Treat inputs without forms as one unit, and process them only once.
         inputAdded = true;
-        this.addElement(FormLikeFactory.createFromField(inputs[i]));
+        this.addElement(lazy.FormLikeFactory.createFromField(inputs[i]));
       }
     }
   }

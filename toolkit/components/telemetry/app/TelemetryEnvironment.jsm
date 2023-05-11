@@ -17,6 +17,9 @@ const { ObjectUtils } = ChromeUtils.import(
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const { UpdateUtils } = ChromeUtils.import(
+  "resource://gre/modules/UpdateUtils.jsm"
+);
 
 const Utils = TelemetryUtils;
 
@@ -24,33 +27,33 @@ const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "AttributionCode",
   "resource:///modules/AttributionCode.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ProfileAge",
   "resource://gre/modules/ProfileAge.jsm"
 );
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "WindowsRegistry",
   "resource://gre/modules/WindowsRegistry.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "UpdateUtils",
-  "resource://gre/modules/UpdateUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
 ChromeUtils.defineModuleGetter(
-  this,
-  "fxAccounts",
-  "resource://gre/modules/FxAccounts.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "WindowsVersionInfo",
   "resource://gre/modules/components-utils/WindowsVersionInfo.jsm"
 );
@@ -1652,7 +1655,7 @@ EnvironmentCache.prototype = {
    * @returns Promise<> resolved when the I/O is complete.
    */
   async _updateProfile() {
-    let profileAccessor = await ProfileAge();
+    let profileAccessor = await lazy.ProfileAge();
 
     let creationDate = await profileAccessor.created;
     let resetDate = await profileAccessor.reset;
@@ -1679,7 +1682,7 @@ EnvironmentCache.prototype = {
    */
   async _loadAttributionAsync() {
     try {
-      await AttributionCode.getAttrDataAsync();
+      await lazy.AttributionCode.getAttrDataAsync();
     } catch (e) {
       // The AttributionCode.jsm module might not be always available
       // (e.g. tests). Gracefully handle this.
@@ -1694,7 +1697,7 @@ EnvironmentCache.prototype = {
   _updateAttribution() {
     let data = null;
     try {
-      data = AttributionCode.getCachedAttributionData();
+      data = lazy.AttributionCode.getCachedAttributionData();
     } catch (e) {
       // The AttributionCode.jsm module might not be always available
       // (e.g. tests). Gracefully handle this.
@@ -1758,7 +1761,7 @@ EnvironmentCache.prototype = {
   },
   // This exists as a separate function for testing.
   async _getFxaSignedInUser() {
-    return fxAccounts.getSignedInUser();
+    return lazy.fxAccounts.getSignedInUser();
   },
 
   async _updateServicesInfo() {
@@ -1932,7 +1935,7 @@ EnvironmentCache.prototype = {
       const WINDOWS_UBR_KEY_PATH =
         "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 
-      let versionInfo = WindowsVersionInfo.get({ throwOnError: false });
+      let versionInfo = lazy.WindowsVersionInfo.get({ throwOnError: false });
       this._osData.servicePackMajor = versionInfo.servicePackMajor;
       this._osData.servicePackMinor = versionInfo.servicePackMinor;
       this._osData.windowsBuildNumber = versionInfo.buildNumber;
@@ -1943,7 +1946,7 @@ EnvironmentCache.prototype = {
       ) {
         // Query the UBR key and only add it to the environment if it's available.
         // |readRegKey| doesn't throw, but rather returns 'undefined' on error.
-        let ubr = WindowsRegistry.readRegKey(
+        let ubr = lazy.WindowsRegistry.readRegKey(
           Ci.nsIWindowsRegKey.ROOT_KEY_LOCAL_MACHINE,
           WINDOWS_UBR_KEY_PATH,
           "UBR",

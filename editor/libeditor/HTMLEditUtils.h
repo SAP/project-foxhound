@@ -23,6 +23,7 @@
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "nsContentUtils.h"
@@ -35,6 +36,15 @@ class nsAtom;
 class nsPresContext;
 
 namespace mozilla {
+
+enum class CollectChildrenOption {
+  // Ignore non-editable nodes
+  IgnoreNonEditableChildren,
+  // Collect list children too.
+  CollectListChildren,
+  // Collect table children too.
+  CollectTableChildren,
+};
 
 class HTMLEditUtils final {
   using AbstractRange = dom::AbstractRange;
@@ -301,8 +311,8 @@ class HTMLEditUtils final {
    * https://w3c.github.io/editing/execCommand.html#non-list-single-line-container
    * https://w3c.github.io/editing/execCommand.html#single-line-container
    */
-  static bool IsNonListSingleLineContainer(nsINode& aNode);
-  static bool IsSingleLineContainer(nsINode& aNode);
+  static bool IsNonListSingleLineContainer(const nsINode& aNode);
+  static bool IsSingleLineContainer(const nsINode& aNode);
 
   /**
    * IsVisibleTextNode() returns true if aText has visible text.  If it has
@@ -323,17 +333,27 @@ class HTMLEditUtils final {
    * last line in a block element visible, or an invisible <br> element.
    */
   static bool IsVisibleBRElement(const nsIContent& aContent) {
-    if (!aContent.IsHTMLElement(nsGkAtoms::br)) {
-      return false;
+    if (const dom::HTMLBRElement* brElement =
+            dom::HTMLBRElement::FromNode(&aContent)) {
+      return IsVisibleBRElement(*brElement);
     }
+    return false;
+  }
+  static bool IsVisibleBRElement(const dom::HTMLBRElement& aBRElement) {
     // If followed by a block boundary without visible content, it's invisible
     // <br> element.
     return !HTMLEditUtils::GetElementOfImmediateBlockBoundary(
-        aContent, WalkTreeDirection::Forward);
+        aBRElement, WalkTreeDirection::Forward);
   }
   static bool IsInvisibleBRElement(const nsIContent& aContent) {
-    return aContent.IsHTMLElement(nsGkAtoms::br) &&
-           !HTMLEditUtils::IsVisibleBRElement(aContent);
+    if (const dom::HTMLBRElement* brElement =
+            dom::HTMLBRElement::FromNode(&aContent)) {
+      return IsInvisibleBRElement(*brElement);
+    }
+    return false;
+  }
+  static bool IsInvisibleBRElement(const dom::HTMLBRElement& aBRElement) {
+    return !HTMLEditUtils::IsVisibleBRElement(aBRElement);
   }
 
   /**
@@ -401,8 +421,8 @@ class HTMLEditUtils final {
    * ShouldInsertLinefeedCharacter() returns true if the caller should insert
    * a linefeed character instead of <br> element.
    */
-  static bool ShouldInsertLinefeedCharacter(EditorDOMPoint& aPointToInsert,
-                                            const Element& aEditingHost);
+  static bool ShouldInsertLinefeedCharacter(
+      const EditorDOMPoint& aPointToInsert, const Element& aEditingHost);
 
   /**
    * IsEmptyNode() returns false if aNode has some visible content nodes,
@@ -1955,6 +1975,22 @@ class HTMLEditUtils final {
     }
     return false;
   }
+
+  /**
+   * CollectChildren() collects child nodes of aNode (starting from
+   * first editable child, but may return non-editable children after it).
+   *
+   * @param aNode               Parent node of retrieving children.
+   * @param aOutArrayOfContents [out] This method will inserts found children
+   *                            into this array.
+   * @param aIndexToInsertChildren      Starting from this index, found
+   *                                    children will be inserted to the array.
+   * @param aOptions            Options to scan the children.
+   * @return                    Number of found children.
+   */
+  static size_t CollectChildren(
+      nsINode& aNode, nsTArray<OwningNonNull<nsIContent>>& aOutArrayOfContents,
+      size_t aIndexToInsertChildren, const CollectChildrenOptions& aOptions);
 
  private:
   static bool CanNodeContain(nsHTMLTag aParentTagId, nsHTMLTag aChildTagId);

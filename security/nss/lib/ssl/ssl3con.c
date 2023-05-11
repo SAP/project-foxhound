@@ -6954,6 +6954,12 @@ ssl3_HandleServerHello(sslSocket *ss, PRUint8 *b, PRUint32 length)
         SECKEY_DestroyPrivateKey(ss->ssl3.clientPrivateKey);
         ss->ssl3.clientPrivateKey = NULL;
     }
+    // TODO(djackson) - Bob removed this. Why?
+    if (ss->ssl3.hs.clientAuthSignatureSchemes != NULL) {
+        PR_Free(ss->ssl3.hs.clientAuthSignatureSchemes);
+        ss->ssl3.hs.clientAuthSignatureSchemes = NULL;
+        ss->ssl3.hs.clientAuthSignatureSchemesLen = 0;
+    }
 
     /* Note that if the server selects TLS 1.3, this will set the version to TLS
      * 1.2.  We will amend that once all other fields have been read. */
@@ -7821,9 +7827,9 @@ ssl3_HandleCertificateRequest(sslSocket *ss, PRUint8 *b, PRUint32 length)
 
     ss->ssl3.hs.ws = wait_hello_done;
 
-    rv = ssl3_CompleteHandleCertificateRequest(ss, signatureSchemes,
-                                               signatureSchemeCount, &ca_list);
-    if (rv == SECFailure) {
+    rv = ssl3_BeginHandleCertificateRequest(ss, signatureSchemes,
+                                            signatureSchemeCount, &ca_list);
+    if (rv != SECSuccess) {
         PORT_Assert(0);
         errCode = SEC_ERROR_LIBRARY_FAILURE;
         desc = internal_error;
@@ -7849,51 +7855,11 @@ done:
     return rv;
 }
 
-SECStatus
-ssl3_CompleteHandleCertificateRequest(sslSocket *ss,
-                                      const SSLSignatureScheme *signatureSchemes,
-                                      unsigned int signatureSchemeCount,
-                                      CERTDistNames *ca_list)
+static void
+ssl3_ClientAuthCallbackOutcome(sslSocket *ss, SECStatus outcome)
 {
     SECStatus rv;
-
-    /* Should not send a client cert when (non-GREASE) ECH is rejected. */
-    if (ss->ssl3.hs.echHpkeCtx && !ss->ssl3.hs.echAccepted) {
-        PORT_Assert(ssl3_ExtensionAdvertised(ss, ssl_tls13_encrypted_client_hello_xtn));
-        goto send_no_certificate;
-    }
-
-    if (ss->getClientAuthData != NULL) {
-        PORT_Assert((ss->ssl3.hs.preliminaryInfo & ssl_preinfo_all) ==
-                    ssl_preinfo_all);
-        PORT_Assert(ss->ssl3.clientPrivateKey == NULL);
-        PORT_Assert(ss->ssl3.clientCertificate == NULL);
-        PORT_Assert(ss->ssl3.clientCertChain == NULL);
-        /*
-         * Peer signatures are only available while in the context of
-         * of a getClientAuthData callback. It is required for proper
-         * functioning of SSL_CertIsUsable and SSL_FilterClientCertListBySocket
-         * Calling these functions outside the context of a getClientAuthData
-         * callback will result in no filtering.*/
-        ss->peerSignatureSchemes = signatureSchemes;
-        ss->peerSignatureSchemeCount = signatureSchemeCount;
-        /* XXX Should pass cert_types and algorithms in this call!! */
-        rv = (SECStatus)(*ss->getClientAuthData)(ss->getClientAuthDataArg,
-                                                 ss->fd, ca_list,
-                                                 &ss->ssl3.clientCertificate,
-                                                 &ss->ssl3.clientPrivateKey);
-        /* memory for the signature schemes will go away after the request,
-         * so don't leave dangling pointers around */
-        ss->peerSignatureSchemes = NULL;
-        ss->peerSignatureSchemeCount = 0;
-    } else {
-        rv = SECFailure; /* force it to send a no_certificate alert */
-    }
-    switch (rv) {
-        case SECWouldBlock: /* getClientAuthData has put up a dialog box. */
-            ssl3_SetAlwaysBlock(ss);
-            break; /* not an error */
-
+    switch (outcome) {
         case SECSuccess:
             /* check what the callback function returned */
             if ((!ss->ssl3.clientCertificate) || (!ss->ssl3.clientPrivateKey)) {
@@ -7914,17 +7880,18 @@ ssl3_CompleteHandleCertificateRequest(sslSocket *ss,
                 rv = ssl_PickClientSignatureScheme(ss,
                                                    ss->ssl3.clientCertificate,
                                                    ss->ssl3.clientPrivateKey,
-                                                   signatureSchemes,
-                                                   signatureSchemeCount,
+                                                   ss->ssl3.hs.clientAuthSignatureSchemes,
+                                                   ss->ssl3.hs.clientAuthSignatureSchemesLen,
                                                    &ss->ssl3.hs.signatureScheme);
                 if (rv != SECSuccess) {
                     /* This should only happen if our schemes changed or
                      * if an RSA-PSS cert was selected, but the token
-                     * does not support PSS schemes. */
+                     * does not support PSS schemes.
+                     */
                     goto send_no_certificate;
                 }
             }
-            break; /* not an error */
+            break;
 
         case SECFailure:
         default:
@@ -7943,11 +7910,98 @@ ssl3_CompleteHandleCertificateRequest(sslSocket *ss,
             } else {
                 (void)SSL3_SendAlert(ss, alert_warning, no_certificate);
             }
-            rv = SECSuccess;
             break;
     }
 
+    /* Release the cached parameters */
+    PORT_Free(ss->ssl3.hs.clientAuthSignatureSchemes);
+    ss->ssl3.hs.clientAuthSignatureSchemes = NULL;
+    ss->ssl3.hs.clientAuthSignatureSchemesLen = 0;
+}
+
+SECStatus
+ssl3_BeginHandleCertificateRequest(sslSocket *ss,
+                                   const SSLSignatureScheme *signatureSchemes,
+                                   unsigned int signatureSchemeCount,
+                                   CERTDistNames *ca_list)
+{
+    SECStatus rv;
+
+    PR_ASSERT(!ss->ssl3.hs.clientCertificatePending);
+
+    /* Should not send a client cert when (non-GREASE) ECH is rejected. */
+    if (ss->ssl3.hs.echHpkeCtx && !ss->ssl3.hs.echAccepted) {
+        PORT_Assert(ssl3_ExtensionAdvertised(ss, ssl_tls13_encrypted_client_hello_xtn));
+        rv = SECFailure;
+    } else if (ss->getClientAuthData != NULL) {
+        PORT_Assert((ss->ssl3.hs.preliminaryInfo & ssl_preinfo_all) ==
+                    ssl_preinfo_all);
+        PORT_Assert(ss->ssl3.clientPrivateKey == NULL);
+        PORT_Assert(ss->ssl3.clientCertificate == NULL);
+        PORT_Assert(ss->ssl3.clientCertChain == NULL);
+
+        /* Previously cached parameters should be empty */
+        PORT_Assert(ss->ssl3.hs.clientAuthSignatureSchemes == NULL);
+        PORT_Assert(ss->ssl3.hs.clientAuthSignatureSchemesLen == 0);
+        /*
+         * Peer signatures are only available while in the context of
+         * of a getClientAuthData callback. It is required for proper
+         * functioning of SSL_CertIsUsable and SSL_FilterClientCertListBySocket
+         * Calling these functions outside the context of a getClientAuthData
+         * callback will result in no filtering.*/
+
+        ss->ssl3.hs.clientAuthSignatureSchemes = PORT_ZNewArray(SSLSignatureScheme, signatureSchemeCount);
+        PORT_Memcpy(ss->ssl3.hs.clientAuthSignatureSchemes, signatureSchemes, signatureSchemeCount * sizeof(SSLSignatureScheme));
+        ss->ssl3.hs.clientAuthSignatureSchemesLen = signatureSchemeCount;
+
+        rv = (SECStatus)(*ss->getClientAuthData)(ss->getClientAuthDataArg,
+                                                 ss->fd, ca_list,
+                                                 &ss->ssl3.clientCertificate,
+                                                 &ss->ssl3.clientPrivateKey);
+    } else {
+        rv = SECFailure; /* force it to send a no_certificate alert */
+    }
+
+    if (rv == SECWouldBlock) {
+        /* getClientAuthData needs more time (e.g. for user interaction) */
+
+        /* The out parameters should not have changed. */
+        PORT_Assert(ss->ssl3.clientCertificate == NULL);
+        PORT_Assert(ss->ssl3.clientPrivateKey == NULL);
+
+        /* Mark the handshake as blocked */
+        ss->ssl3.hs.clientCertificatePending = PR_TRUE;
+
+        rv = SECSuccess;
+    } else {
+        /* getClientAuthData returned SECSuccess or SECFailure immediately, handle accordingly */
+        ssl3_ClientAuthCallbackOutcome(ss, rv);
+        rv = SECSuccess;
+    }
     return rv;
+}
+
+/* Invoked by the application when client certificate selection is complete */
+SECStatus
+ssl3_ClientCertCallbackComplete(sslSocket *ss, SECStatus outcome, SECKEYPrivateKey *clientPrivateKey, CERTCertificate *clientCertificate)
+{
+    PORT_Assert(ss->ssl3.hs.clientCertificatePending);
+    ss->ssl3.hs.clientCertificatePending = PR_FALSE;
+
+    ss->ssl3.clientCertificate = clientCertificate;
+    ss->ssl3.clientPrivateKey = clientPrivateKey;
+
+    ssl3_ClientAuthCallbackOutcome(ss, outcome);
+
+    /* Continue the handshake */
+    PORT_Assert(ss->ssl3.hs.restartTarget);
+    if (!ss->ssl3.hs.restartTarget) {
+        FATAL_ERROR(ss, PR_INVALID_STATE_ERROR, internal_error);
+        return SECFailure;
+    }
+    sslRestartTarget target = ss->ssl3.hs.restartTarget;
+    ss->ssl3.hs.restartTarget = NULL;
+    return target(ss);
 }
 
 static SECStatus
@@ -8105,8 +8159,11 @@ ssl3_SendClientSecondRound(sslSocket *ss)
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
         return SECFailure;
     }
-    if (ss->ssl3.hs.authCertificatePending &&
-        (sendClientCert || ss->ssl3.sendEmptyCert || ss->firstHsDone)) {
+    /* Check whether waiting for client certificate selection OR
+       waiting on server certificate verification AND
+       going to send client cert */
+    if ((ss->ssl3.hs.clientCertificatePending) ||
+        (ss->ssl3.hs.authCertificatePending && (sendClientCert || ss->ssl3.sendEmptyCert || ss->firstHsDone))) {
         SSL_TRC(3, ("%d: SSL3[%p]: deferring ssl3_SendClientSecondRound because"
                     " certificate authentication is still pending.",
                     SSL_GETPID(), ss->fd));
@@ -10992,6 +11049,7 @@ ssl3_SendCertificate(sslSocket *ss)
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
+    PR_ASSERT(!ss->ssl3.hs.clientCertificatePending);
 
     if (ss->sec.localCert)
         CERT_DestroyCertificate(ss->sec.localCert);
@@ -11902,6 +11960,7 @@ ssl3_SendFinished(sslSocket *ss, PRInt32 flags)
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
+    PR_ASSERT(!ss->ssl3.hs.clientCertificatePending);
 
     ssl_GetSpecReadLock(ss);
     cwSpec = ss->ssl3.cwSpec;
@@ -12490,8 +12549,11 @@ ssl3_HandleHandshakeMessage(sslSocket *ss, PRUint8 *b, PRUint32 length,
         PORT_SetError(SSL_ERROR_RX_UNEXPECTED_HANDSHAKE);
         return SECFailure;
     }
-
-    if (IS_DTLS(ss) && (rv != SECFailure)) {
+    /* We consider the record to have been handled if SECSuccess or else WOULD_BLOCK is set
+     * Whoever set WOULD_BLOCK must handle any remaining actions required to finsih processing the record.
+     * e.g. by setting restartTarget.
+     */
+    if (IS_DTLS(ss) && (rv == SECSuccess || (rv == SECFailure && PR_GetError() == PR_WOULD_BLOCK_ERROR))) {
         /* Increment the expected sequence number */
         ss->ssl3.hs.recvMessageSeq++;
     }
@@ -13372,17 +13434,17 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText)
         return SECFailure;
     }
 
-    if (plaintext->space < cTextSizeLimit) {
-        rv = sslBuffer_Grow(plaintext, cTextSizeLimit);
-        if (rv != SECSuccess) {
-            ssl_ReleaseSpecReadLock(ss); /*************************/
-            SSL_DBG(("%d: SSL3[%d]: HandleRecord, tried to get %d bytes",
-                     SSL_GETPID(), ss->fd, cTextSizeLimit));
-            /* sslBuffer_Grow has set a memory error code. */
-            /* Perhaps we should send an alert. (but we have no memory!) */
-            return SECFailure;
-        }
-    }
+#ifdef DEBUG
+    /* In debug builds the gather buffers are freed after the handling of each
+     * record for advanced ASAN coverage. Allocate the buffer again to the
+     * maximum possibly needed size as on gather initialization in
+     * ssl3gthr.c/ssl3_InitGather(). */
+    PR_ASSERT(sslBuffer_Grow(plaintext, TLS_1_2_MAX_CTEXT_LENGTH) == SECSuccess);
+#endif
+    /* This replaces a dynamic plaintext buffer size check, since the buffer is
+     * allocated to the maximum size in ssl3gthr.c/ssl3_InitGather(). The buffer
+     * was always grown to the maximum size at first record gathering before. */
+    PR_ASSERT(plaintext->space >= cTextSizeLimit);
 
     /* Most record types aside from protected TLS 1.3 records carry the content
      * type in the first octet. TLS 1.3 will override this value later. */
@@ -13390,7 +13452,6 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText)
     /* Encrypted application data records could arrive before the handshake
      * completes in DTLS 1.3. These can look like valid TLS 1.2 application_data
      * records in epoch 0, which is never valid. Pretend they didn't decrypt. */
-
     if (spec->epoch == 0 && ((IS_DTLS(ss) &&
                               dtls_IsDtls13Ciphertext(0, rType)) ||
                              rType == ssl_ct_application_data)) {
@@ -13526,8 +13587,18 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText)
         return SECFailure;
     }
 
-    return ssl3_HandleNonApplicationData(ss, rType, epoch, cText->seqNum,
-                                         plaintext);
+    rv = ssl3_HandleNonApplicationData(ss, rType, epoch, cText->seqNum,
+                                       plaintext);
+
+#ifdef DEBUG
+    /* In Debug builds free and zero gather plaintext buffer after its content
+     * has been used/copied for advanced ASAN coverage/utilization.
+     * This frees buffer for non application data records, for application data
+     * records it is freed in sslsecur.c/DoRecv(). */
+    sslBuffer_Clear(&ss->gs.buf);
+#endif
+
+    return rv;
 }
 
 /*
@@ -13594,6 +13665,9 @@ ssl3_InitState(sslSocket *ss)
     ss->ssl3.hs.greaseEchSize = 100;
     ss->ssl3.hs.echAccepted = PR_FALSE;
     ss->ssl3.hs.echDecided = PR_FALSE;
+
+    ss->ssl3.hs.clientAuthSignatureSchemes = NULL;
+    ss->ssl3.hs.clientAuthSignatureSchemesLen = 0;
 
     PORT_Assert(!ss->ssl3.hs.messages.buf && !ss->ssl3.hs.messages.space);
     ss->ssl3.hs.messages.buf = NULL;
@@ -13907,6 +13981,12 @@ ssl3_DestroySSL3Info(sslSocket *ss)
 
     if (ss->ssl3.clientPrivateKey != NULL)
         SECKEY_DestroyPrivateKey(ss->ssl3.clientPrivateKey);
+
+    if (ss->ssl3.hs.clientAuthSignatureSchemes != NULL) {
+        PORT_Free(ss->ssl3.hs.clientAuthSignatureSchemes);
+        ss->ssl3.hs.clientAuthSignatureSchemes = NULL;
+        ss->ssl3.hs.clientAuthSignatureSchemesLen = 0;
+    }
 
     if (ss->ssl3.peerCertArena != NULL)
         ssl3_CleanupPeerCerts(ss);

@@ -204,9 +204,6 @@ static mozilla::Atomic<bool> gEncounteredChildException(false);
 static xpstring pendingDirectory;
 static xpstring crashReporterPath;
 static xpstring memoryReportPath;
-#ifdef XP_MACOSX
-static xpstring libraryPath;  // Path where the NSS library is
-#endif
 
 // Where crash events should go.
 static xpstring eventsDirectory;
@@ -1222,9 +1219,6 @@ static bool LaunchProgram(const XP_CHAR* aProgramPath,
     CloseHandle(pi.hThread);
   }
 #  elif defined(XP_MACOSX)
-  // Needed to locate NSS and its dependencies
-  setenv("DYLD_LIBRARY_PATH", libraryPath.c_str(), /* overwrite */ 1);
-
   pid_t pid = 0;
   char* const my_argv[] = {const_cast<char*>(aProgramPath),
                            const_cast<char*>(aMinidumpPath), nullptr};
@@ -1403,10 +1397,6 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
 
   if (gTexturesSize) {
     writer.Write(Annotation::TextureUsage, gTexturesSize);
-  }
-
-  if (!memoryReportPath.empty()) {
-    writer.Write(Annotation::ContainsMemoryReport, "1");
   }
 
 #ifdef MOZ_PHC
@@ -2039,9 +2029,6 @@ nsresult SetExceptionHandler(nsIFile* aXREDirectory, bool force /*=false*/) {
 #  else
   crashReporterPath =
       xpstring(NS_ConvertUTF16toUTF8(crashReporterPath_temp).get());
-#    ifdef XP_MACOSX
-  libraryPath = xpstring(NS_ConvertUTF16toUTF8(libraryPath_temp).get());
-#    endif
 #  endif  // XP_WIN
 #else
   // On Android, we launch a service defined via MOZ_ANDROID_CRASH_HANDLER
@@ -2527,10 +2514,6 @@ static void AddCommonAnnotations(AnnotationTable& aAnnotations) {
   nsAutoCString uptimeStr;
   uptimeStr.AppendFloat(uptimeTS);
   aAnnotations[Annotation::UptimeTS] = uptimeStr;
-
-  if (!memoryReportPath.empty()) {
-    aAnnotations[Annotation::ContainsMemoryReport] = "1"_ns;
-  }
 }
 
 nsresult SetGarbageCollecting(bool collecting) {

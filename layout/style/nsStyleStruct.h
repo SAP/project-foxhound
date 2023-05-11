@@ -369,7 +369,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleBackground {
 
   // True if this background is completely transparent.
   bool IsTransparent(const nsIFrame* aFrame) const;
-  bool IsTransparent(mozilla::ComputedStyle* aStyle) const;
+  bool IsTransparent(const mozilla::ComputedStyle* aStyle) const;
 
   // We have to take slower codepaths for fixed background attachment,
   // but we don't want to do that when there's no image.
@@ -1263,6 +1263,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleOverscrollBehavior mOverscrollBehaviorY;
   mozilla::StyleOverflowAnchor mOverflowAnchor;
   mozilla::StyleScrollSnapAlign mScrollSnapAlign;
+  mozilla::StyleScrollSnapStop mScrollSnapStop;
   mozilla::StyleScrollSnapType mScrollSnapType;
 
   mozilla::StyleBackfaceVisibility mBackfaceVisibility;
@@ -1520,6 +1521,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
            !IsInternalTableStyleExceptCell();
   }
 
+  bool IsContainStyle() const {
+    return !!(EffectiveContainment() && StyleContain::STYLE);
+  }
+
+  bool IsContainAny() const { return !!EffectiveContainment(); }
+
   mozilla::ContainSizeAxes GetContainSizeAxes() const {
     const auto contain = EffectiveContainment();
     // Short circuit for no containment whatsoever
@@ -1668,18 +1675,17 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   StyleContain EffectiveContainment() const {
     // content-visibility and container-type values implicitly enable some
     // containment flags.
-    // FIXME(dshin, bug 1463600): Add in STYLE containment flag for `auto` &
-    // `hidden` when implemented
     // FIXME(dshin, bug 1764640): Add in the effect of `container-type`
     switch (mContentVisibility) {
       case StyleContentVisibility::Visible:
         // Most likely case.
         return mContain;
       case StyleContentVisibility::Auto:
-        return mContain | StyleContain::LAYOUT | StyleContain::PAINT;
+        return mContain | StyleContain::LAYOUT | StyleContain::PAINT |
+               StyleContain::STYLE;
       case StyleContentVisibility::Hidden:
         return mContain | StyleContain::LAYOUT | StyleContain::PAINT |
-               StyleContain::SIZE;
+               StyleContain::SIZE | StyleContain::STYLE;
     }
     MOZ_ASSERT_UNREACHABLE("Invalid content visibility.");
     return mContain;
@@ -1821,6 +1827,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   mozilla::StyleWindowDragging mWindowDragging;
   mozilla::StyleWindowShadow mWindowShadow;
   float mWindowOpacity;
+  // The margin of the window region that should be transparent to events.
+  mozilla::StyleLength mMozWindowInputRegionMargin;
   mozilla::StyleTransform mMozWindowTransform;
   mozilla::StyleTransformOrigin mWindowTransformOrigin;
 
@@ -1843,6 +1851,9 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   uint32_t mAnimationPlayStateCount;
   uint32_t mAnimationIterationCountCount;
   uint32_t mAnimationTimelineCount;
+
+  mozilla::StyleScrollTimelineName mScrollTimelineName;
+  mozilla::StyleScrollAxis mScrollTimelineAxis;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {

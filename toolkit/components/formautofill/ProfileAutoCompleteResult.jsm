@@ -9,28 +9,18 @@ var EXPORTED_SYMBOLS = ["AddressResult", "CreditCardResult"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-const { FormAutofill } = ChromeUtils.import(
-  "resource://autofill/FormAutofill.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCard",
-  "resource://gre/modules/CreditCard.jsm"
-);
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.jsm",
+  FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
+});
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this,
+  lazy,
   "insecureWarningEnabled",
   "security.insecure_field_warning.contextual.enabled"
 );
-
-this.log = null;
-FormAutofill.defineLazyLogGetter(this, EXPORTED_SYMBOLS[0]);
 
 class ProfileAutoCompleteResult {
   constructor(
@@ -319,10 +309,10 @@ class AddressResult extends ProfileAutoCompleteResult {
     labels.push({
       primary: "",
       secondary: "",
-      categories: FormAutofillUtils.getCategoriesFromFieldNames(
+      categories: lazy.FormAutofillUtils.getCategoriesFromFieldNames(
         this._allFieldNames
       ),
-      focusedCategory: FormAutofillUtils.getCategoryFromFieldName(
+      focusedCategory: lazy.FormAutofillUtils.getCategoryFromFieldName(
         this._focusedFieldName
       ),
     });
@@ -378,7 +368,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
 
       if (matching) {
         if (currentFieldName == "cc-number") {
-          let { affix, label } = CreditCard.formatMaskedNumber(
+          let { affix, label } = lazy.CreditCard.formatMaskedNumber(
             profile[currentFieldName]
           );
           return affix + label;
@@ -392,15 +382,15 @@ class CreditCardResult extends ProfileAutoCompleteResult {
 
   _generateLabels(focusedFieldName, allFieldNames, profiles) {
     if (!this._isSecure) {
-      if (!insecureWarningEnabled) {
+      if (!lazy.insecureWarningEnabled) {
         return [];
       }
-      let brandName = FormAutofillUtils.brandBundle.GetStringFromName(
+      let brandName = lazy.FormAutofillUtils.brandBundle.GetStringFromName(
         "brandShortName"
       );
 
       return [
-        FormAutofillUtils.stringBundle.formatStringFromName(
+        lazy.FormAutofillUtils.stringBundle.formatStringFromName(
           "insecureFieldWarningDescription",
           [brandName]
         ),
@@ -424,7 +414,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
         let primary = profile[focusedFieldName];
 
         if (focusedFieldName == "cc-number") {
-          let { affix, label } = CreditCard.formatMaskedNumber(primary);
+          let { affix, label } = lazy.CreditCard.formatMaskedNumber(primary);
           primaryAffix = affix;
           primary = label;
         }
@@ -438,7 +428,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
         // aria-label overrides the text content, so we must include that also.
         let ccTypeName;
         try {
-          ccTypeName = FormAutofillUtils.stringBundle.GetStringFromName(
+          ccTypeName = lazy.FormAutofillUtils.stringBundle.GetStringFromName(
             `cardNetwork.${profile["cc-type"]}`
           );
         } catch (e) {
@@ -485,7 +475,7 @@ class CreditCardResult extends ProfileAutoCompleteResult {
 
   getStyleAt(index) {
     this._checkIndexBounds(index);
-    if (!this._isSecure && insecureWarningEnabled) {
+    if (!this._isSecure && lazy.insecureWarningEnabled) {
       return "autofill-insecureWarning";
     }
 
@@ -495,6 +485,6 @@ class CreditCardResult extends ProfileAutoCompleteResult {
   getImageAt(index) {
     this._checkIndexBounds(index);
     let network = this._cardTypes[index];
-    return CreditCard.getCreditCardLogo(network);
+    return lazy.CreditCard.getCreditCardLogo(network);
   }
 }

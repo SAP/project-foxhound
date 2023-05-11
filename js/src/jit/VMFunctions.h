@@ -16,7 +16,7 @@
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
-#include "gc/Rooting.h"
+#include "gc/AllocKind.h"
 #include "js/ScalarType.h"
 #include "js/TypeDecls.h"
 
@@ -26,12 +26,14 @@ class JSLinearString;
 namespace js {
 
 class AbstractGeneratorObject;
+class ArrayObject;
 class GlobalObject;
 class InterpreterFrame;
 class LexicalScope;
 class ClassBodyScope;
 class MapObject;
 class NativeObject;
+class PlainObject;
 class PropertyName;
 class SetObject;
 class Shape;
@@ -359,7 +361,7 @@ void* GetContextSensitiveInterpreterStub();
 bool CheckOverRecursed(JSContext* cx);
 bool CheckOverRecursedBaseline(JSContext* cx, BaselineFrame* frame);
 
-[[nodiscard]] bool MutatePrototype(JSContext* cx, HandlePlainObject obj,
+[[nodiscard]] bool MutatePrototype(JSContext* cx, Handle<PlainObject*> obj,
                                    HandleValue value);
 
 enum class EqualityKind : bool { NotEqual, Equal };
@@ -373,7 +375,7 @@ template <ComparisonKind Kind>
 bool StringsCompare(JSContext* cx, HandleString lhs, HandleString rhs,
                     bool* res);
 
-[[nodiscard]] bool ArrayPushDense(JSContext* cx, HandleArrayObject arr,
+[[nodiscard]] bool ArrayPushDense(JSContext* cx, Handle<ArrayObject*> arr,
                                   HandleValue v, uint32_t* length);
 JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep);
 [[nodiscard]] bool SetArrayLength(JSContext* cx, HandleObject obj,
@@ -386,17 +388,17 @@ JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code);
 JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint);
 
 [[nodiscard]] bool SetProperty(JSContext* cx, HandleObject obj,
-                               HandlePropertyName name, HandleValue value,
+                               Handle<PropertyName*> name, HandleValue value,
                                bool strict, jsbytecode* pc);
 
 [[nodiscard]] bool InterruptCheck(JSContext* cx);
 
-JSObject* NewCallObject(JSContext* cx, HandleShape shape);
+JSObject* NewCallObject(JSContext* cx, Handle<Shape*> shape);
 JSObject* NewStringObject(JSContext* cx, HandleString str);
 
 bool OperatorIn(JSContext* cx, HandleValue key, HandleObject obj, bool* out);
 
-[[nodiscard]] bool GetIntrinsicValue(JSContext* cx, HandlePropertyName name,
+[[nodiscard]] bool GetIntrinsicValue(JSContext* cx, Handle<PropertyName*> name,
                                      MutableHandleValue rval);
 
 [[nodiscard]] bool CreateThisFromIC(JSContext* cx, HandleObject callee,
@@ -494,7 +496,7 @@ JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
                                         const jsbytecode* pc);
 
 [[nodiscard]] bool PushVarEnv(JSContext* cx, BaselineFrame* frame,
-                              HandleScope scope);
+                              Handle<Scope*> scope);
 
 [[nodiscard]] bool InitBaselineFrameForOsr(BaselineFrame* frame,
                                            InterpreterFrame* interpFrame,
@@ -503,7 +505,7 @@ JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
 JSString* StringReplace(JSContext* cx, HandleString string,
                         HandleString pattern, HandleString repl);
 
-[[nodiscard]] bool SetDenseElement(JSContext* cx, HandleNativeObject obj,
+[[nodiscard]] bool SetDenseElement(JSContext* cx, Handle<NativeObject*> obj,
                                    int32_t index, HandleValue value,
                                    bool strict);
 

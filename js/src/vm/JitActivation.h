@@ -84,7 +84,7 @@ class JitActivation : public Activation {
   // When profiling is enabled, these fields will be updated to reflect the
   // last pushed frame for this activation, and if that frame has been
   // left for a call, the native code site of the call.
-  mozilla::Atomic<void*, mozilla::Relaxed> lastProfilingFrame_;
+  mozilla::Atomic<JitFrameLayout*, mozilla::Relaxed> lastProfilingFrame_;
   mozilla::Atomic<void*, mozilla::Relaxed> lastProfilingCallSite_;
   static_assert(sizeof(mozilla::Atomic<void*, mozilla::Relaxed>) ==
                     sizeof(void*),
@@ -197,8 +197,8 @@ class JitActivation : public Activation {
   static size_t offsetOfLastProfilingFrame() {
     return offsetof(JitActivation, lastProfilingFrame_);
   }
-  void* lastProfilingFrame() { return lastProfilingFrame_; }
-  void setLastProfilingFrame(void* ptr) { lastProfilingFrame_ = ptr; }
+  JitFrameLayout* lastProfilingFrame() { return lastProfilingFrame_; }
+  void setLastProfilingFrame(JitFrameLayout* ptr) { lastProfilingFrame_ = ptr; }
 
   static size_t offsetOfLastProfilingCallSite() {
     return offsetof(JitActivation, lastProfilingCallSite_);

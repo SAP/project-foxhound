@@ -26,7 +26,6 @@ class ManagedTree extends Component {
       focused: PropTypes.any,
       getPath: PropTypes.func.isRequired,
       highlightItems: PropTypes.array,
-      listItems: PropTypes.array,
       onCollapse: PropTypes.func.isRequired,
       onExpand: PropTypes.func.isRequired,
       onFocus: PropTypes.func.isRequired,
@@ -34,12 +33,9 @@ class ManagedTree extends Component {
     };
   }
 
-  componentWillReceiveProps(nextProps) {
-    const { listItems, highlightItems } = this.props;
-    if (nextProps.listItems && nextProps.listItems != listItems) {
-      this.expandListItems(nextProps.listItems);
-    }
-
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
+    const { highlightItems } = this.props;
     if (
       nextProps.highlightItems &&
       nextProps.highlightItems != highlightItems &&
@@ -85,32 +81,14 @@ class ManagedTree extends Component {
     }
   };
 
-  expandListItems(listItems) {
-    const { expanded } = this.state;
-    listItems.forEach(item => expanded.add(this.props.getPath(item)));
-    this.props.onFocus(listItems[0]);
-    this.setState({ expanded });
-  }
-
   highlightItem(highlightItems) {
     const { expanded } = this.state;
-    // This file is visible, so we highlight it.
-    if (expanded.has(this.props.getPath(highlightItems[0]))) {
-      this.props.onFocus(highlightItems[0]);
-    } else {
-      // Look at folders starting from the top-level until finds a
-      // closed folder and highlights this folder
-      const index = highlightItems
-        .reverse()
-        .findIndex(
-          item =>
-            !expanded.has(this.props.getPath(item)) && item.name !== "root"
-        );
 
-      if (highlightItems[index]) {
-        this.props.onFocus(highlightItems[index]);
-      }
-    }
+    highlightItems.forEach(item => {
+      expanded.add(this.props.getPath(item));
+    });
+    this.props.onFocus(highlightItems[0]);
+    this.setState({ expanded });
   }
 
   render() {

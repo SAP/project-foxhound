@@ -85,7 +85,7 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
   }
 
   nsWidgetInitData widgetInit;
-  widgetInit.clipChildren = true;
+  widgetInit.mClipChildren = true;
   widgetInit.mWindowType = eWindowType_child;
   LayoutDeviceIntRect bounds(0, 0, 0, 0);
 
@@ -860,10 +860,8 @@ nsWebBrowser::Destroy() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWebBrowser::GetUnscaledDevicePixelsPerCSSPixel(double* aScale) {
-  *aScale = mParentWidget ? mParentWidget->GetDefaultScale().scale : 1.0;
-  return NS_OK;
+double nsWebBrowser::GetWidgetCSSToDeviceScale() {
+  return mParentWidget ? mParentWidget->GetDefaultScale().scale : 1.0;
 }
 
 NS_IMETHODIMP

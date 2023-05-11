@@ -50,27 +50,6 @@ except Exception:
     psutil = None
 
 
-def ancestors(path):
-    """Emit the parent directories of a path."""
-    while path:
-        yield path
-        newpath = os.path.dirname(path)
-        if newpath == path:
-            break
-        path = newpath
-
-
-def samepath(path1, path2):
-    # Under Python 3 (but NOT Python 2), MozillaBuild exposes the
-    # os.path.samefile function despite it not working, so only use it if we're
-    # not running under Windows.
-    if hasattr(os.path, "samefile") and os.name != "nt":
-        return os.path.samefile(path1, path2)
-    return os.path.normcase(os.path.realpath(path1)) == os.path.normcase(
-        os.path.realpath(path2)
-    )
-
-
 class BadEnvironmentException(Exception):
     """Base class for errors raised when the build environment is not sane."""
 
@@ -180,7 +159,7 @@ class MozbuildObject(ProcessExecutionMixin):
             mozconfig = info.get("mozconfig")
             return topsrcdir, topobjdir, mozconfig
 
-        for dir_path in ancestors(cwd):
+        for dir_path in [str(path) for path in [cwd] + list(Path(cwd).parents)]:
             # If we find a mozinfo.json, we are in the objdir.
             mozinfo_path = os.path.join(dir_path, "mozinfo.json")
             if os.path.isfile(mozinfo_path):
@@ -302,7 +281,7 @@ class MozbuildObject(ProcessExecutionMixin):
 
     @staticmethod
     @memoize
-    def get_mozconfig_and_target(topsrcdir, path, env_mozconfig):
+    def get_base_mozconfig_info(topsrcdir, path, env_mozconfig):
         # env_mozconfig is only useful for unittests, which change the value of
         # the environment variable, which has an impact on autodetection (when
         # path is MozconfigLoader.AUTODETECT), and memoization wouldn't account
@@ -342,7 +321,7 @@ class MozbuildObject(ProcessExecutionMixin):
         sandbox = ReducedConfigureSandbox(
             {},
             environ=env,
-            argv=["mach", "--help"],
+            argv=["mach"],
             logger=logger,
         )
         base_dir = os.path.join(topsrcdir, "build", "moz.configure")
@@ -350,17 +329,21 @@ class MozbuildObject(ProcessExecutionMixin):
             sandbox.include_file(os.path.join(base_dir, "init.configure"))
             # Force mozconfig options injection before getting the target.
             sandbox._value_for(sandbox["mozconfig_options"])
-            return (
-                sandbox._value_for(sandbox["mozconfig"]),
-                sandbox._value_for(sandbox["real_target"]),
-            )
+            return {
+                "mozconfig": sandbox._value_for(sandbox["mozconfig"]),
+                "target": sandbox._value_for(sandbox["real_target"]),
+                "project": sandbox._value_for(sandbox._options["project"]),
+                "artifact-builds": sandbox._value_for(
+                    sandbox._options["artifact-builds"]
+                ),
+            }
         except SystemExit:
             print(out.getvalue())
             raise
 
     @property
-    def mozconfig_and_target(self):
-        return self.get_mozconfig_and_target(
+    def base_mozconfig_info(self):
+        return self.get_base_mozconfig_info(
             self.topsrcdir, self._mozconfig, os.environ.get("MOZCONFIG")
         )
 
@@ -370,7 +353,7 @@ class MozbuildObject(ProcessExecutionMixin):
 
         This a dict as returned by MozconfigLoader.read_mozconfig()
         """
-        return self.mozconfig_and_target[0]
+        return self.base_mozconfig_info["mozconfig"]
 
     @property
     def config_environment(self):
@@ -590,7 +573,7 @@ class MozbuildObject(ProcessExecutionMixin):
         return path
 
     def resolve_config_guess(self):
-        return self.mozconfig_and_target[1].alias
+        return self.base_mozconfig_info["target"].alias
 
     def notify(self, msg):
         """Show a desktop notification with the supplied message
@@ -902,7 +885,9 @@ class MachCommandBase(MozbuildObject):
                 # of the wrong objdir when the current objdir is ambiguous.
                 config_topobjdir = dummy.resolve_mozconfig_topobjdir()
 
-                if config_topobjdir and not samepath(topobjdir, config_topobjdir):
+                if config_topobjdir and not Path(topobjdir).samefile(
+                    Path(config_topobjdir)
+                ):
                     raise ObjdirMismatchException(topobjdir, config_topobjdir)
         except BuildEnvironmentNotFoundException:
             pass

@@ -19,11 +19,13 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   ConsoleAPI: "resource://gre/modules/Console.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
@@ -31,7 +33,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyServiceGetter(
-  this,
+  lazy,
   "styleSheetService",
   "@mozilla.org/content/style-sheet-service;1",
   "nsIStyleSheetService"
@@ -51,13 +53,11 @@ var {
 } = ExtensionUtils;
 
 function getConsole() {
-  return new ConsoleAPI({
+  return new lazy.ConsoleAPI({
     maxLogLevelPref: "extensions.webextensions.log.level",
     prefix: "WebExtensions",
   });
 }
-
-XPCOMUtils.defineLazyGetter(this, "console", getConsole);
 
 const BACKGROUND_SCRIPTS_VIEW_TYPES = ["background", "background_worker"];
 
@@ -184,14 +184,6 @@ function makeWidgetId(id) {
   id = id.toLowerCase();
   // FIXME: This allows for collisions.
   return id.replace(/[^a-z0-9_-]/g, "_");
-}
-
-function isDeadOrRemote(obj) {
-  return Cu.isDeadWrapper(obj) || Cu.isRemoteProxy(obj);
-}
-
-function isInBFCache(window) {
-  return !!window?.windowGlobalChild?.windowContext?.isInBFCache;
 }
 
 /**
@@ -435,78 +427,6 @@ class ExtensionAPIPersistent extends ExtensionAPI {
 }
 
 /**
- * A wrapper around a window that returns the window iff the inner window
- * matches the inner window at the construction of this wrapper.
- *
- * This wrapper should not be used after the inner window is destroyed.
- **/
-class InnerWindowReference {
-  constructor(contentWindow, innerWindowID) {
-    this.contentWindow = contentWindow;
-    this.innerWindowID = innerWindowID;
-    this.needWindowIDCheck = false;
-
-    contentWindow.addEventListener(
-      "pagehide",
-      this,
-      { mozSystemGroup: true },
-      false
-    );
-    contentWindow.addEventListener(
-      "pageshow",
-      this,
-      { mozSystemGroup: true },
-      false
-    );
-  }
-
-  get() {
-    // If the pagehide event has fired, the inner window ID needs to be checked,
-    // in case the window ref is dereferenced in a pageshow listener (before our
-    // pageshow listener was dispatched) or during the unload event.
-    if (
-      !this.needWindowIDCheck ||
-      (!isDeadOrRemote(this.contentWindow) &&
-        !isInBFCache(this.contentWindow) &&
-        getInnerWindowID(this.contentWindow) === this.innerWindowID)
-    ) {
-      return this.contentWindow;
-    }
-    return null;
-  }
-
-  invalidate() {
-    // If invalidate() is called while the inner window is in the bfcache, then
-    // we are unable to remove the event listener, and handleEvent will be
-    // called once more if the page is revived from the bfcache.
-    if (this.contentWindow && !isDeadOrRemote(this.contentWindow)) {
-      this.contentWindow.removeEventListener("pagehide", this, {
-        mozSystemGroup: true,
-      });
-      this.contentWindow.removeEventListener("pageshow", this, {
-        mozSystemGroup: true,
-      });
-    }
-    this.contentWindow = null;
-    this.needWindowIDCheck = false;
-  }
-
-  handleEvent(event) {
-    if (this.contentWindow) {
-      this.needWindowIDCheck = event.type === "pagehide";
-    } else {
-      // Remove listener when restoring from the bfcache - see invalidate().
-      event.currentTarget.removeEventListener("pagehide", this, {
-        mozSystemGroup: true,
-      });
-      event.currentTarget.removeEventListener("pageshow", this, {
-        mozSystemGroup: true,
-      });
-    }
-  }
-}
-
-/**
  * This class contains the information we have about an individual
  * extension.  It is never instantiated directly, instead subclasses
  * for each type of process extend this class and add members that are
@@ -611,30 +531,29 @@ class BaseContext {
     this.messageManager = contentWindow.docShell.messageManager;
 
     if (this.incognito == null) {
-      this.incognito = PrivateBrowsingUtils.isContentWindowPrivate(
+      this.incognito = lazy.PrivateBrowsingUtils.isContentWindowPrivate(
         contentWindow
       );
     }
 
-    let windowRef = new InnerWindowReference(contentWindow, this.innerWindowID);
+    let wgc = contentWindow.windowGlobalChild;
     Object.defineProperty(this, "active", {
       configurable: true,
       enumerable: true,
-      get: () => windowRef.get() !== null,
+      get: () => wgc.isCurrentGlobal && !wgc.windowContext.isInBFCache,
     });
     Object.defineProperty(this, "contentWindow", {
       configurable: true,
       enumerable: true,
-      get: () => windowRef.get(),
+      get: () => (this.active ? wgc.browsingContext.window : null),
     });
     this.callOnClose({
       close: () => {
         // Allow other "close" handlers to use these properties, until the next tick.
         Promise.resolve().then(() => {
-          windowRef.invalidate();
-          windowRef = null;
           Object.defineProperty(this, "contentWindow", { value: null });
           Object.defineProperty(this, "active", { value: false });
+          wgc = null;
         });
       },
     });
@@ -1107,8 +1026,8 @@ class LocalAPIImplementation extends SchemaAPIInterface {
   }
 
   revoke() {
-    if (this.pathObj[this.name][Schemas.REVOKE]) {
-      this.pathObj[this.name][Schemas.REVOKE]();
+    if (this.pathObj[this.name][lazy.Schemas.REVOKE]) {
+      this.pathObj[this.name][lazy.Schemas.REVOKE]();
     }
 
     this.pathObj = null;
@@ -1277,7 +1196,7 @@ class CanOfAPIs {
     }
 
     let { extension } = this.context;
-    if (!Schemas.checkPermissions(name, extension)) {
+    if (!lazy.Schemas.checkPermissions(name, extension)) {
       return;
     }
 
@@ -1780,7 +1699,7 @@ class SchemaAPIManager extends EventEmitter {
       return false;
     }
 
-    if (!Schemas.checkPermissions(module.namespaceName, extension)) {
+    if (!lazy.Schemas.checkPermissions(module.namespaceName, extension)) {
       return false;
     }
 
@@ -1842,7 +1761,6 @@ class SchemaAPIManager extends EventEmitter {
 
     XPCOMUtils.defineLazyModuleGetters(global, {
       ExtensionUtils: "resource://gre/modules/ExtensionUtils.jsm",
-      XPCOMUtils: "resource://gre/modules/XPCOMUtils.jsm",
     });
 
     return global;
@@ -1886,7 +1804,7 @@ class LazyAPIManager extends SchemaAPIManager {
 }
 
 defineLazyGetter(LazyAPIManager.prototype, "schema", function() {
-  let root = new SchemaRoot(Schemas.rootSchema, this.schemaURLs);
+  let root = new lazy.SchemaRoot(lazy.Schemas.rootSchema, this.schemaURLs);
   root.parseSchemas();
   return root;
 });
@@ -1951,14 +1869,14 @@ defineLazyGetter(MultiAPIManager.prototype, "schema", function() {
 
   // All API manager schema roots should derive from the global schema root,
   // so it doesn't need its own entry.
-  if (bases[bases.length - 1] === Schemas) {
+  if (bases[bases.length - 1] === lazy.Schemas) {
     bases.pop();
   }
 
   if (bases.length === 1) {
     bases = bases[0];
   }
-  return new SchemaRoot(bases, new Map());
+  return new lazy.SchemaRoot(bases, new Map());
 });
 
 function LocaleData(data) {
@@ -2729,7 +2647,7 @@ class EventManager {
       removeListener: (...args) => this.removeListener(...args),
       hasListener: (...args) => this.hasListener(...args),
       setUserInput: this.inputHandling,
-      [Schemas.REVOKE]: () => this.revoke(),
+      [lazy.Schemas.REVOKE]: () => this.revoke(),
     };
   }
 }
@@ -2762,7 +2680,10 @@ function ignoreEvent(context, name) {
 
 const stylesheetMap = new DefaultMap(url => {
   let uri = Services.io.newURI(url);
-  return styleSheetService.preloadSheet(uri, styleSheetService.AGENT_SHEET);
+  return lazy.styleSheetService.preloadSheet(
+    uri,
+    lazy.styleSheetService.AGENT_SHEET
+  );
 });
 
 /**

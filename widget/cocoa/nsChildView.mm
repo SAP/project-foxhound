@@ -845,12 +845,6 @@ void nsChildView::UpdateFullscreen(bool aFullscreen) {
   }
 }
 
-void nsChildView::NoteMouseMoveAtTime(const mozilla::TimeStamp& aTime) {
-  if (mNativeLayerRoot) {
-    mNativeLayerRoot->NoteMouseMoveAtTime(aTime);
-  }
-}
-
 nsresult nsChildView::SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout,
                                                int32_t aNativeKeyCode, uint32_t aModifierFlags,
                                                const nsAString& aCharacters,
@@ -1121,6 +1115,9 @@ nsresult nsChildView::ActivateNativeMenuItemAt(const nsAString& indexString) {
     if (parent) {
       // NSLog(@"Performing action for native menu item titled: %@\n",
       //       [[currentSubmenu itemAtIndex:targetIndex] title]);
+      mozilla::AutoRestore<bool> autoRestore(
+          nsMenuUtilsX::gIsSynchronouslyActivatingNativeMenuItemDuringTest);
+      nsMenuUtilsX::gIsSynchronouslyActivatingNativeMenuItemDuringTest = true;
       [parent performActionForItemAtIndex:[parent indexOfItem:item]];
       return NS_OK;
     }
@@ -1636,10 +1633,8 @@ static int32_t FindTitlebarBottom(const nsTArray<nsIWidget::ThemeGeometry>& aThe
                                   int32_t aWindowWidth) {
   int32_t titlebarBottom = 0;
   for (auto& g : aThemeGeometries) {
-    if ((g.mType == eThemeGeometryTypeTitlebar ||
-         g.mType == eThemeGeometryTypeVibrantTitlebarLight ||
-         g.mType == eThemeGeometryTypeVibrantTitlebarDark) &&
-        g.mRect.X() <= 0 && g.mRect.XMost() >= aWindowWidth && g.mRect.Y() <= 0) {
+    if (g.mType == eThemeGeometryTypeTitlebar && g.mRect.X() <= 0 &&
+        g.mRect.XMost() >= aWindowWidth && g.mRect.Y() <= 0) {
       titlebarBottom = std::max(titlebarBottom, g.mRect.YMost());
     }
   }
@@ -1705,10 +1700,6 @@ void nsChildView::UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeo
 static Maybe<VibrancyType> ThemeGeometryTypeToVibrancyType(
     nsITheme::ThemeGeometryType aThemeGeometryType) {
   switch (aThemeGeometryType) {
-    case eThemeGeometryTypeVibrantTitlebarLight:
-      return Some(VibrancyType::TITLEBAR_LIGHT);
-    case eThemeGeometryTypeVibrantTitlebarDark:
-      return Some(VibrancyType::TITLEBAR_DARK);
     case eThemeGeometryTypeTooltip:
       return Some(VibrancyType::TOOLTIP);
     case eThemeGeometryTypeMenu:
@@ -1758,10 +1749,6 @@ static void MakeRegionsNonOverlapping(Region& aFirst, Regions&... aRest) {
 }
 
 void nsChildView::UpdateVibrancy(const nsTArray<ThemeGeometry>& aThemeGeometries) {
-  LayoutDeviceIntRegion vibrantTitlebarLightRegion =
-      GatherVibrantRegion(aThemeGeometries, VibrancyType::TITLEBAR_LIGHT);
-  LayoutDeviceIntRegion vibrantTitlebarDarkRegion =
-      GatherVibrantRegion(aThemeGeometries, VibrancyType::TITLEBAR_DARK);
   LayoutDeviceIntRegion menuRegion = GatherVibrantRegion(aThemeGeometries, VibrancyType::MENU);
   LayoutDeviceIntRegion tooltipRegion =
       GatherVibrantRegion(aThemeGeometries, VibrancyType::TOOLTIP);
@@ -1774,14 +1761,11 @@ void nsChildView::UpdateVibrancy(const nsTArray<ThemeGeometry>& aThemeGeometries
   LayoutDeviceIntRegion activeSourceListSelectionRegion =
       GatherVibrantRegion(aThemeGeometries, VibrancyType::ACTIVE_SOURCE_LIST_SELECTION);
 
-  MakeRegionsNonOverlapping(vibrantTitlebarLightRegion, vibrantTitlebarDarkRegion, menuRegion,
-                            tooltipRegion, highlightedMenuItemRegion, sourceListRegion,
+  MakeRegionsNonOverlapping(menuRegion, tooltipRegion, highlightedMenuItemRegion, sourceListRegion,
                             sourceListSelectionRegion, activeSourceListSelectionRegion);
 
   auto& vm = EnsureVibrancyManager();
   bool changed = false;
-  changed |= vm.UpdateVibrantRegion(VibrancyType::TITLEBAR_LIGHT, vibrantTitlebarLightRegion);
-  changed |= vm.UpdateVibrantRegion(VibrancyType::TITLEBAR_DARK, vibrantTitlebarDarkRegion);
   changed |= vm.UpdateVibrantRegion(VibrancyType::MENU, menuRegion);
   changed |= vm.UpdateVibrantRegion(VibrancyType::TOOLTIP, tooltipRegion);
   changed |= vm.UpdateVibrantRegion(VibrancyType::HIGHLIGHTED_MENUITEM, highlightedMenuItemRegion);
@@ -2916,7 +2900,6 @@ NSEvent* gLastDragMouseDownEvent = nil;  // [strong]
   WidgetMouseEvent geckoEvent(true, eMouseMove, mGeckoChild, WidgetMouseEvent::eReal);
   [self convertCocoaMouseEvent:theEvent toGeckoEvent:&geckoEvent];
 
-  mGeckoChild->NoteMouseMoveAtTime(geckoEvent.mTimeStamp);
   mGeckoChild->DispatchInputEvent(&geckoEvent);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;

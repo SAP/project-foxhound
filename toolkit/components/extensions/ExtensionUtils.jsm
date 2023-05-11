@@ -12,16 +12,16 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
+const lazy = {};
+
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "setTimeout",
   "resource://gre/modules/Timer.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch", "btoa"]);
-
 // xpcshell doesn't handle idle callbacks well.
-XPCOMUtils.defineLazyGetter(this, "idleTimeout", () =>
+XPCOMUtils.defineLazyGetter(lazy, "idleTimeout", () =>
   Services.appinfo.name === "XPCShell" ? 500 : undefined
 );
 
@@ -46,7 +46,7 @@ function getUniqueId() {
 }
 
 function promiseTimeout(delay) {
-  return new Promise(resolve => setTimeout(resolve, delay));
+  return new Promise(resolve => lazy.setTimeout(resolve, delay));
 }
 
 /**
@@ -205,7 +205,7 @@ function promiseDocumentReady(doc) {
 function promiseDocumentIdle(window) {
   return window.document.documentReadyForIdle.then(() => {
     return new Promise(resolve =>
-      window.requestIdleCallback(resolve, { timeout: idleTimeout })
+      window.requestIdleCallback(resolve, { timeout: lazy.idleTimeout })
     );
   });
 }

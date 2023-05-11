@@ -58,7 +58,6 @@
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/LookAndFeel.h"
@@ -1307,24 +1306,21 @@ void nsFocusManager::NotifyFocusStateChange(Element* aElement,
   }
 
   if (aGettingFocus) {
-    EventStates eventStateToAdd = NS_EVENT_STATE_FOCUS;
+    ElementState stateToAdd = ElementState::FOCUS;
     if (aShouldShowFocusRing) {
-      eventStateToAdd |= NS_EVENT_STATE_FOCUSRING;
+      stateToAdd |= ElementState::FOCUSRING;
     }
-    aElement->AddStates(eventStateToAdd);
+    aElement->AddStates(stateToAdd);
 
     for (nsIContent* host = aElement->GetContainingShadowHost(); host;
          host = host->GetContainingShadowHost()) {
-      host->AsElement()->AddStates(NS_EVENT_STATE_FOCUS);
+      host->AsElement()->AddStates(ElementState::FOCUS);
     }
   } else {
-    EventStates eventStateToRemove =
-        NS_EVENT_STATE_FOCUS | NS_EVENT_STATE_FOCUSRING;
-    aElement->RemoveStates(eventStateToRemove);
-
+    aElement->RemoveStates(ElementState::FOCUS | ElementState::FOCUSRING);
     for (nsIContent* host = aElement->GetContainingShadowHost(); host;
          host = host->GetContainingShadowHost()) {
-      host->AsElement()->RemoveStates(NS_EVENT_STATE_FOCUS);
+      host->AsElement()->RemoveStates(ElementState::FOCUS);
     }
   }
 
@@ -1336,12 +1332,12 @@ void nsFocusManager::NotifyFocusStateChange(Element* aElement,
     }
 
     if (aGettingFocus) {
-      if (element->State().HasState(NS_EVENT_STATE_FOCUS_WITHIN)) {
+      if (element->State().HasState(ElementState::FOCUS_WITHIN)) {
         break;
       }
-      element->AddStates(NS_EVENT_STATE_FOCUS_WITHIN);
+      element->AddStates(ElementState::FOCUS_WITHIN);
     } else {
-      element->RemoveStates(NS_EVENT_STATE_FOCUS_WITHIN);
+      element->RemoveStates(ElementState::FOCUS_WITHIN);
     }
   }
 }
@@ -5276,12 +5272,12 @@ void nsFocusManager::SetFocusedWindowInternal(nsPIDOMWindowOuter* aWindow,
   }
 }
 
-void nsFocusManager::NotifyOfReFocus(nsIContent& aContent) {
-  nsPIDOMWindowOuter* window = GetCurrentWindow(&aContent);
+void nsFocusManager::NotifyOfReFocus(Element& aElement) {
+  nsPIDOMWindowOuter* window = GetCurrentWindow(&aElement);
   if (!window || window != mFocusedWindow) {
     return;
   }
-  if (!aContent.IsInComposedDoc() || IsNonFocusableRoot(&aContent)) {
+  if (!aElement.IsInComposedDoc() || IsNonFocusableRoot(&aElement)) {
     return;
   }
   nsIDocShell* docShell = window->GetDocShell();
@@ -5296,7 +5292,7 @@ void nsFocusManager::NotifyOfReFocus(nsIContent& aContent) {
   if (!presContext) {
     return;
   }
-  IMEStateManager::OnReFocus(*presContext, aContent);
+  IMEStateManager::OnReFocus(*presContext, aElement);
 }
 
 void nsFocusManager::MarkUncollectableForCCGeneration(uint32_t aGeneration) {

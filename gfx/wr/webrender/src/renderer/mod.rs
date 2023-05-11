@@ -66,7 +66,7 @@ use crate::device::query::{GpuSampler, GpuTimer};
 #[cfg(feature = "capture")]
 use crate::device::FBOId;
 use crate::debug_item::DebugItem;
-use crate::frame_builder::{Frame, ChasePrimitive, FrameBuilderConfig};
+use crate::frame_builder::{Frame, FrameBuilderConfig};
 use crate::glyph_cache::GlyphCache;
 use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterizer, SharedFontResources};
 use crate::gpu_cache::{GpuCacheUpdate, GpuCacheUpdateList};
@@ -94,6 +94,7 @@ use crate::screen_capture::AsyncScreenshotGrabber;
 use crate::render_target::{AlphaRenderTarget, ColorRenderTarget, PictureCacheTarget, PictureCacheTargetKind};
 use crate::render_target::{RenderTarget, TextureCacheRenderTarget};
 use crate::render_target::{RenderTargetKind, BlitJob};
+use crate::telemetry::Telemetry;
 use crate::texture_cache::{TextureCache, TextureCacheConfig};
 use crate::picture_textures::PictureTextures;
 use crate::tile_cache::PictureCacheDebugInfo;
@@ -1170,7 +1171,6 @@ impl Renderer {
             default_font_render_mode,
             dual_source_blending_is_enabled: true,
             dual_source_blending_is_supported: use_dual_source_blending,
-            chase_primitive: options.chase_primitive,
             testing: options.testing,
             gpu_supports_fast_clears: options.gpu_supports_fast_clears,
             gpu_supports_advanced_blend: ext_blend_equation_advanced,
@@ -2058,8 +2058,9 @@ impl Renderer {
             })
         });
 
-        self.profile.end_time(profiler::RENDERER_TIME);
+        let t = self.profile.end_time(profiler::RENDERER_TIME);
         self.profile.end_time_if_started(profiler::TOTAL_FRAME_CPU_TIME);
+        Telemetry::record_renderer_time(Duration::from_micros((t * 1000.00) as u64));
 
         let current_time = precise_time_ns();
         if device_size.is_some() {
@@ -2187,7 +2188,7 @@ impl Renderer {
             self.unbind_debug_overlay();
         }
 
-        if device_size.is_some() { 
+        if device_size.is_some() {
             // Inform the client that we are finished this composition transaction if native
             // compositing is enabled. This must be called after any debug / profiling compositor
             // surfaces have been drawn and added to the visual tree.
@@ -2440,6 +2441,7 @@ impl Renderer {
 
         let t = self.profile.end_time(profiler::TEXTURE_CACHE_UPDATE_TIME);
         self.resource_upload_time += t;
+        Telemetry::record_texture_cache_update_time(Duration::from_micros((t * 1000.00) as u64));
 
         drain_filter(
             &mut self.notifications,
@@ -2720,6 +2722,28 @@ impl Renderer {
 
         for (source, instances) in scalings {
             let buffer_kind = source.image_buffer_kind();
+
+            // When the source texture is an external texture, the UV rect is not known
+            // when the external surface descriptor is created, because external textures
+            // are not resolved until the lock() callback is invoked at the start of the
+            // frame render. We must therefore override the source rects now.
+            let uv_override_instances;
+            let instances = match source {
+                TextureSource::External(..) => {
+                    uv_override_instances = instances.iter().map(|instance| {
+                        let texel_rect: TexelRect = self.texture_resolver.get_uv_rect(
+                            &source,
+                            instance.source_rect.cast().into()
+                        ).into();
+                        ScalingInstance {
+                            target_rect: instance.target_rect,
+                            source_rect: DeviceRect::new(texel_rect.uv0, texel_rect.uv1),
+                        }
+                    }).collect::<Vec<_>>();
+                    &uv_override_instances
+                }
+                _ => &instances
+            };
 
             self.shaders
                 .borrow_mut()
@@ -4679,6 +4703,14 @@ impl Renderer {
                                 is_opaque,
                             );
                         }
+                        NativeSurfaceOperationDetails::CreateBackdropSurface { id, color } => {
+                            let _inserted = self.allocated_native_surfaces.insert(id);
+                            debug_assert!(_inserted, "bug: creating existing surface");
+                            compositor.create_backdrop_surface(
+                                id,
+                                color,
+                            );
+                        }
                         NativeSurfaceOperationDetails::DestroySurface { id } => {
                             let _existed = self.allocated_native_surfaces.remove(&id);
                             debug_assert!(_existed, "bug: removing unknown surface");
@@ -5735,7 +5767,6 @@ pub struct RendererOptions {
     pub renderer_id: Option<u64>,
     pub scene_builder_hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
     pub sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
-    pub chase_primitive: ChasePrimitive,
     pub support_low_priority_transactions: bool,
     pub namespace_alloc_by_client: bool,
     /// If namespaces are allocated by the client, then the namespace for fonts
@@ -5833,7 +5864,6 @@ impl Default for RendererOptions {
             cached_programs: None,
             scene_builder_hooks: None,
             sampler: None,
-            chase_primitive: ChasePrimitive::Nothing,
             support_low_priority_transactions: false,
             namespace_alloc_by_client: false,
             shared_font_namespace: None,

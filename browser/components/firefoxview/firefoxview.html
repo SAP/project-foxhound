@@ -11,16 +11,22 @@
     <title data-l10n-id="firefoxview-page-title"></title>
     <link rel="localization" href="branding/brand.ftl">
     <link rel="localization" href="preview/firefoxView.ftl"/>
+    <link rel="localization" href="preview/colorwaycloset.ftl">
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
     <link rel="stylesheet" href="chrome://browser/content/firefoxview.css">
     <script type="module" src="chrome://browser/content/tabs-pickup.js"></script>
     <script type="module" src="chrome://browser/content/firefoxview.js"></script>
     <script type="module" src="chrome://browser/content/recently-closed-tabs.js"></script>
+    <script type="module" src="chrome://browser/content/tab-pickup-list.js"></script>
+    <script type="module" src="chrome://browser/content/helpers.js"></script>
   </head>
 
   <body>
-    <nav>
-      <div class="brand-logo"></div>
+    <nav class="content-container">
+      <div class="brand-logo">
+        <span class="brand-icon"></span>
+        <span class="brand-feature-name" data-l10n-id="firefoxview-page-title"></span>
+      </div>
     </nav>
     <main>
       <template id="sync-setup-template">
@@ -42,7 +48,12 @@
           <div name="sync-setup-view1" data-prefix="id:-view1" class="card setup-step" data-prefix="aria-labelledby:-view1-header">
             <h2 data-prefix="id:-view1-header" data-l10n-id="firefoxview-tabpickup-adddevice-header" class="card-header"></h2>
             <section class="step-body">
-              <p class="step-content" data-l10n-id="firefoxview-tabpickup-adddevice-description"></p>
+              <p class="step-content">
+                <span data-l10n-id="firefoxview-tabpickup-adddevice-description"></span>
+                <br/>
+                <!-- TODO: Bug 1772278: Replace placeholder URL -->
+                <a href="https://support.mozilla.org/kb/firefox-accounts-managing-account-data" data-l10n-id="firefoxview-tabpickup-adddevice-learn-how"></a>
+              </p>
               <button class="primary" data-action="view1-primary-action" data-l10n-id="firefoxview-tabpickup-adddevice-primarybutton"></button>
             </section>
             <footer>
@@ -56,7 +67,10 @@
           <div name="sync-setup-view2" data-prefix="id:-view2" class="card setup-step" data-prefix="aria-labelledby:-view2-header">
             <h2 data-prefix="id:-view2-header" data-l10n-id="firefoxview-tabpickup-synctabs-header" class="card-header"></h2>
             <section class="step-body">
-              <p class="step-content" data-l10n-id="firefoxview-tabpickup-synctabs-description"></p>
+              <p class="step-content"><span  data-l10n-id="firefoxview-tabpickup-synctabs-description">
+                <br/>
+                <!-- TODO: Bug 1772278: Replace placeholder URL -->
+                <a href="https://support.mozilla.org/kb/how-do-i-set-sync-my-computer" data-l10n-id="firefoxview-tabpickup-synctabs-learn-how"></a></p>
               <button class="primary" data-action="view2-primary-action" data-l10n-id="firefoxview-tabpickup-synctabs-primarybutton"></button>
             </section>
             <footer>
@@ -67,34 +81,42 @@
                 data-l10n-args='{"percentValue":"66"}'></label>
             </footer>
           </div>
-          <div name="sync-setup-view3" data-prefix="id:-view3" class="card setup-step" data-prefix="aria-labelledby:-view3-header">
-            <h2 data-prefix="id:-view2-header" data-l10n-id="firefoxview-tabpickup-setupsuccess-header" class="card-header"></h2>
-            <section class="step-body">
-              <p class="step-content" data-l10n-id="firefoxview-tabpickup-setupsuccess-description"></p>
-              <button class="primary" data-action="view3-primary-action" data-l10n-id="firefoxview-tabpickup-setupsuccess-primarybutton"></button>
-            </section>
-          </div>
         </named-deck>
       </template>
       <template id="synced-tabs-template">
         <div class="synced-tabs-container" data-prefix="id:" hidden>
-          <div class="card">
-            <h2 data-l10n-id="firefoxview-tabpickup-recenttabs-description"></h2>
-          </div>
+          <tab-pickup-list>
+            <ol hidden="true" class="synced-tabs-list"></ol>
+          </tab-pickup-list>
+          <p class="loading-content" data-l10n-id="firefoxview-tabpickup-syncing"></p>
         </div>
       </template>
 
-      <section is="tabs-pickup-container" id="tabs-pickup-container">
-        <h1 data-l10n-id="firefoxview-tabpickup-header"></h1>
-        <p data-l10n-id="firefoxview-tabpickup-description"></p>
+      <section class="content-container" is="tabs-pickup-container" id="tabs-pickup-container">
+        <header class="page-section-header">
+          <h1 data-l10n-id="firefoxview-tabpickup-header"></h1>
+          <button class="ghost-button twisty icon arrow-up"></button>
+          <p class="section-description" data-l10n-id="firefoxview-tabpickup-description"></p>
+        </header>
       </section>
-      <aside id="colorways">
-        <div>
-          <button data-l10n-id="firefoxview-colorways-button" id="colorways-button"></button>
-          <div id="colorways-no-collection-message" data-l10n-id="firefoxview-colorways-no-collection-label"></div>
+
+      <template id="colorways-no-collection-template">
+        <div class="content-container">
+          <div id="try-colorways-description" data-l10n-id="colorway-fx-home-try-colorways-label"></div>
         </div>
+      </template>
+      <template id="colorways-active-collection-template">
+        <h1 id="colorways-collection-title"></h1>
+        <span id="colorways-collection-expiry-date"><span></span></span>
+        <div id="colorways-collection-description"></div>
+        <button class="primary" id="colorways-button"></button>
+        <img id="colorways-collection-graphic">
+      </template>
+      <aside class="content-container">
+        <section id="colorways"></section>
       </aside>
-      <section is="recently-closed-tabs-container" id="recently-closed-tabs-container">
+
+      <section class="content-container" is="recently-closed-tabs-container" id="recently-closed-tabs-container">
         <header class="page-section-header">
           <h1 data-l10n-id="firefoxview-closed-tabs-title" ></h1>
           <button data-l10n-id="firefoxview-closed-tabs-collapse-button" id="collapsible-tabs-button" class="ghost-button twisty icon arrow-up"></button>

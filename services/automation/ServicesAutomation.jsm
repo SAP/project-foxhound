@@ -28,13 +28,14 @@ var EXPORTED_SYMBOLS = ["Sync", "Authentication", "initConfig", "triggerSync"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Services: "resource://gre/modules/Services.jsm",
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Log: "resource://gre/modules/Log.jsm",
   Weave: "resource://services-sync/main.js",
   Svc: "resource://services-sync/util.js",
-  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
   FxAccountsClient: "resource://gre/modules/FxAccountsClient.jsm",
   FxAccountsConfig: "resource://gre/modules/FxAccountsConfig.jsm",
   OS: "resource://gre/modules/osfile.jsm",
@@ -42,7 +43,11 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   clearTimeout: "resource://gre/modules/Timer.jsm",
 });
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.import(
+    "resource://gre/modules/FxAccounts.jsm"
+  ).getFxAccountsSingleton();
+});
 
 const AUTOCONFIG_PREF = "identity.fxaccounts.autoconfig.uri";
 
@@ -70,16 +75,16 @@ function promiseObserver(aEventName) {
   LOG("wait for " + aEventName);
   return new Promise(resolve => {
     let handler = () => {
-      Svc.Obs.remove(aEventName, handler);
+      lazy.Svc.Obs.remove(aEventName, handler);
       resolve();
     };
     let handlerTimeout = () => {
-      Svc.Obs.remove(aEventName, handler);
+      lazy.Svc.Obs.remove(aEventName, handler);
       LOG("handler timed out " + aEventName);
       resolve();
     };
-    Svc.Obs.add(aEventName, handler);
-    setTimeout(handlerTimeout, 3000);
+    lazy.Svc.Obs.add(aEventName, handler);
+    lazy.setTimeout(handlerTimeout, 3000);
   });
 }
 
@@ -108,7 +113,7 @@ var Authentication = {
 
   async getSignedInUser() {
     try {
-      return await fxAccounts.getSignedInUser();
+      return await lazy.fxAccounts.getSignedInUser();
     } catch (error) {
       LOG("getSignedInUser() failed", error);
       throw error;
@@ -121,14 +126,16 @@ var Authentication = {
     let timeoutID;
     LOG("set a timeout");
     let timeoutPromise = new Promise(resolve => {
-      timeoutID = setTimeout(() => {
+      timeoutID = lazy.setTimeout(() => {
         LOG(`Warning: no verification after ${ms}ms.`);
         resolve();
       }, ms);
     });
     LOG("set a fxAccounts.whenVerified");
     await Promise.race([
-      fxAccounts.whenVerified(userData).finally(() => clearTimeout(timeoutID)),
+      lazy.fxAccounts
+        .whenVerified(userData)
+        .finally(() => lazy.clearTimeout(timeoutID)),
       timeoutPromise,
     ]);
     LOG("done");
@@ -172,10 +179,10 @@ var Authentication = {
         LOG("timed out ");
         resolve();
       };
-      var timer = setTimeout(handlerTimeout, 10000);
+      var timer = lazy.setTimeout(handlerTimeout, 10000);
       win.addEventListener("loadend", function() {
         resolve();
-        clearTimeout(timer);
+        lazy.clearTimeout(timer);
       });
     });
     LOG("Page Loaded");
@@ -187,7 +194,7 @@ var Authentication = {
 
   /*
    * This whole verification process may be bypassed if the
-   * account is whitelisted.
+   * account is allow-listed.
    */
   async _completeVerification(username) {
     LOG("Fetching mail (from restmail) for user " + username);
@@ -222,14 +229,14 @@ var Authentication = {
         } catch (e) {
           LOG(
             "Warning: Failed to follow confirmation link: " +
-              Log.exceptionStr(e)
+              lazy.Log.exceptionStr(e)
           );
         }
       }
       if (i === 0) {
         // first time through after failing we'll do this.
         LOG("resendVerificationEmail");
-        await fxAccounts.resendVerificationEmail();
+        await lazy.fxAccounts.resendVerificationEmail();
       }
       if (await this.shortWaitForVerification(normalWait)) {
         return true;
@@ -244,14 +251,14 @@ var Authentication = {
     try {
       // Required here since we don't go through the real login page
       LOG("Calling FxAccountsConfig.ensureConfigured");
-      await FxAccountsConfig.ensureConfigured();
-      let client = new FxAccountsClient();
+      await lazy.FxAccountsConfig.ensureConfigured();
+      let client = new lazy.FxAccountsClient();
       LOG("Signing in");
       let credentials = await client.signIn(username, password, true);
       LOG("Signed in, setting up the signed user in fxAccounts");
-      await fxAccounts._internal.setSignedInUser(credentials);
+      await lazy.fxAccounts._internal.setSignedInUser(credentials);
 
-      // If the account is not whitelisted for tests, we need to verify it
+      // If the account is not allow-listed for tests, we need to verify it
       if (!credentials.verified) {
         LOG("We need to verify the account");
         await this._completeVerification(username);
@@ -268,7 +275,7 @@ var Authentication = {
   async signOut() {
     if (await Authentication.isLoggedIn()) {
       // Note: This will clean up the device ID.
-      await fxAccounts.signOut();
+      await lazy.fxAccounts.signOut();
     }
   },
 };
@@ -284,18 +291,21 @@ var Authentication = {
  */
 var Sync = {
   getSyncLogsDirectory() {
-    return OS.Path.join(OS.Constants.Path.profileDir, ...["weave", "logs"]);
+    return lazy.OS.Path.join(
+      lazy.OS.Constants.Path.profileDir,
+      ...["weave", "logs"]
+    );
   },
 
   async init() {
-    Svc.Obs.add("weave:service:sync:error", this);
-    Svc.Obs.add("weave:service:setup-complete", this);
-    Svc.Obs.add("weave:service:tracking-started", this);
+    lazy.Svc.Obs.add("weave:service:sync:error", this);
+    lazy.Svc.Obs.add("weave:service:setup-complete", this);
+    lazy.Svc.Obs.add("weave:service:tracking-started", this);
     // Delay the automatic sync operations, so we can trigger it manually
-    Weave.Svc.Prefs.set("scheduler.immediateInterval", 7200);
-    Weave.Svc.Prefs.set("scheduler.idleInterval", 7200);
-    Weave.Svc.Prefs.set("scheduler.activeInterval", 7200);
-    Weave.Svc.Prefs.set("syncThreshold", 10000000);
+    lazy.Weave.Svc.Prefs.set("scheduler.immediateInterval", 7200);
+    lazy.Weave.Svc.Prefs.set("scheduler.idleInterval", 7200);
+    lazy.Weave.Svc.Prefs.set("scheduler.activeInterval", 7200);
+    lazy.Weave.Svc.Prefs.set("syncThreshold", 10000000);
     // Wipe all the logs
     await this.wipeLogs();
   },
@@ -309,11 +319,11 @@ var Sync = {
     // the addon engine requires kinto creds...
     LOG("configuring sync");
     console.assert(await Authentication.isReady(), "You are not connected");
-    await Weave.Service.configure();
-    if (!Weave.Status.ready) {
+    await lazy.Weave.Service.configure();
+    if (!lazy.Weave.Status.ready) {
       await promiseObserver("weave:service:ready");
     }
-    if (Weave.Service.locked) {
+    if (lazy.Weave.Service.locked) {
       await promiseObserver("weave:service:resyncs-finished");
     }
   },
@@ -333,10 +343,10 @@ var Sync = {
     try {
       await this.configureSync();
       LOG("Triggering a sync");
-      await Weave.Service.sync();
+      await lazy.Weave.Service.sync();
 
       // wait a second for things to settle...
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => lazy.setTimeout(resolve, 1000));
 
       LOG("Sync done");
       result = 0;
@@ -349,15 +359,15 @@ var Sync = {
 
   async wipeLogs() {
     let outputDirectory = this.getSyncLogsDirectory();
-    if (!(await OS.File.exists(outputDirectory))) {
+    if (!(await lazy.OS.File.exists(outputDirectory))) {
       return;
     }
     LOG("Wiping existing Sync logs");
     try {
-      let iterator = new OS.File.DirectoryIterator(outputDirectory);
+      let iterator = new lazy.OS.File.DirectoryIterator(outputDirectory);
       await iterator.forEach(async entry => {
         try {
-          await OS.File.remove(entry.path);
+          await lazy.OS.File.remove(entry.path);
         } catch (error) {
           LOG("wipeLogs() could not remove " + entry.path, error);
         }
@@ -371,12 +381,12 @@ var Sync = {
     let outputDirectory = this.getSyncLogsDirectory();
     let entries = [];
 
-    if (await OS.File.exists(outputDirectory)) {
+    if (await lazy.OS.File.exists(outputDirectory)) {
       // Iterate through the directory
-      let iterator = new OS.File.DirectoryIterator(outputDirectory);
+      let iterator = new lazy.OS.File.DirectoryIterator(outputDirectory);
 
       await iterator.forEach(async entry => {
-        let info = await OS.File.stat(entry.path);
+        let info = await lazy.OS.File.stat(entry.path);
         entries.push({
           path: entry.path,
           name: entry.name,
@@ -389,7 +399,7 @@ var Sync = {
     }
 
     const promises = entries.map(async entry => {
-      let content = await OS.File.read(entry.path, {
+      let content = await lazy.OS.File.read(entry.path, {
         encoding: "utf-8",
       });
       return {

@@ -140,6 +140,9 @@ class AppWindow final : public nsIBaseWindow,
   void IgnoreXULSizeMode(bool aEnable) { mIgnoreXULSizeMode = aEnable; }
   void WasRegistered() { mRegistered = true; }
 
+  using nsIBaseWindow::GetPositionAndSize;
+  using nsIBaseWindow::GetSize;
+
   // AppWindow methods...
   nsresult Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
                       int32_t aInitialWidth, int32_t aInitialHeight,
@@ -339,7 +342,9 @@ class AppWindow final : public nsIBaseWindow,
   uint32_t mChromeFlags;
   nsCOMPtr<nsIOpenWindowInfo> mInitialOpenWindowInfo;
   nsString mTitle;
-  nsIntRect mOpenerScreenRect;  // the screen rect of the opener
+
+  // The screen rect of the opener.
+  mozilla::DesktopIntRect mOpenerScreenRect;
 
   nsCOMPtr<nsIRemoteTab> mPrimaryBrowserParent;
 

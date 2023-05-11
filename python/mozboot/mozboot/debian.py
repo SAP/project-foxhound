@@ -70,6 +70,14 @@ class DebianBootstrapper(LinuxBootstrapper, BaseBootstrapper):
 
         self.packages = list(self.COMMON_PACKAGES)
 
+        try:
+            version_number = int(version)
+        except ValueError:
+            version_number = None
+
+        if (version_number and (version_number >= 11)) or version == "unstable":
+            self.packages += ["watchman"]
+
     def suggest_install_distutils(self):
         print(
             "HINT: Try installing distutils with "

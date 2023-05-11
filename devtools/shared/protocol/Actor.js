@@ -6,6 +6,9 @@
 
 const { extend } = require("devtools/shared/extend");
 var { Pool } = require("devtools/shared/protocol/Pool");
+const { Cu } = require("chrome");
+const Services = require("Services");
+const ChromeUtils = require("ChromeUtils");
 
 /**
  * Keep track of which actorSpecs have been created. If a replica of a spec
@@ -70,6 +73,18 @@ class Actor extends Pool {
     }
     packet.from = packet.from || this.actorID;
     this.conn.send(packet);
+
+    // This can really be a hot path, even computing the marker label can
+    // have some performance impact.
+    // Guard against missing `Services.profiler` because Services is mocked to
+    // an empty object in the worker loader.
+    if (Services.profiler?.IsActive()) {
+      ChromeUtils.addProfilerMarker(
+        "DevTools:RDP Actor",
+        null,
+        `${this.typeName}.${name}`
+      );
+    }
   }
 
   destroy() {
@@ -158,6 +173,7 @@ var generateRequestHandlers = function(actorSpec, actorProto) {
   actorSpec.methods.forEach(spec => {
     const handler = function(packet, conn) {
       try {
+        const startTime = isWorker ? null : Cu.now();
         let args;
         try {
           args = spec.request.read(packet, this);
@@ -206,6 +222,12 @@ var generateRequestHandlers = function(actorSpec, actorProto) {
           }
 
           conn.send(response);
+
+          ChromeUtils.addProfilerMarker(
+            "DevTools:RDP Actor",
+            startTime,
+            `${actorSpec.typeName}:${spec.name}()`
+          );
         };
 
         this._queueResponse(p => {

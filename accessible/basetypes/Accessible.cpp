@@ -97,6 +97,10 @@ bool Accessible::HasGenericType(AccGenericType aType) const {
          (roleMapEntry && roleMapEntry->IsOfType(aType));
 }
 
+nsIntRect Accessible::BoundsInCSSPixels() const {
+  return BoundsInAppUnits().ToNearestPixels(AppUnitsPerCSSPixel());
+}
+
 LayoutDeviceIntSize Accessible::Size() const { return Bounds().Size(); }
 
 LayoutDeviceIntPoint Accessible::Position(uint32_t aCoordType) {
@@ -140,6 +144,45 @@ uint32_t Accessible::EndOffset() {
 
 GroupPos Accessible::GroupPosition() {
   GroupPos groupPos;
+
+  // Try aria-row/colcount/index.
+  if (IsTableRow()) {
+    Accessible* table = nsAccUtils::TableFor(this);
+    if (table) {
+      if (auto count = table->GetIntARIAAttr(nsGkAtoms::aria_rowcount)) {
+        if (*count >= 0) {
+          groupPos.setSize = *count;
+        }
+      }
+    }
+    if (auto index = GetIntARIAAttr(nsGkAtoms::aria_rowindex)) {
+      groupPos.posInSet = *index;
+    }
+    if (groupPos.setSize && groupPos.posInSet) {
+      return groupPos;
+    }
+  }
+  if (IsTableCell()) {
+    Accessible* table;
+    for (table = Parent(); table; table = table->Parent()) {
+      if (table->IsTable()) {
+        break;
+      }
+    }
+    if (table) {
+      if (auto count = table->GetIntARIAAttr(nsGkAtoms::aria_colcount)) {
+        if (*count >= 0) {
+          groupPos.setSize = *count;
+        }
+      }
+    }
+    if (auto index = GetIntARIAAttr(nsGkAtoms::aria_colindex)) {
+      groupPos.posInSet = *index;
+    }
+    if (groupPos.setSize && groupPos.posInSet) {
+      return groupPos;
+    }
+  }
 
   // Get group position from ARIA attributes.
   ARIAGroupPosition(&groupPos.level, &groupPos.setSize, &groupPos.posInSet);

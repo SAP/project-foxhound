@@ -92,7 +92,18 @@ extern mozilla::LazyLogModule gWidgetDragLog;
 // data used for synthetic periodic motion events sent to the source widget
 // grabbing real events for the drag.
 static guint sMotionEventTimerID;
+
 static GdkEvent* sMotionEvent;
+static GUniquePtr<GdkEvent> TakeMotionEvent() {
+  GUniquePtr<GdkEvent> event(sMotionEvent);
+  sMotionEvent = nullptr;
+  return event;
+}
+static void SetMotionEvent(GUniquePtr<GdkEvent> aEvent) {
+  TakeMotionEvent();
+  sMotionEvent = aEvent.release();
+}
+
 static GtkWidget* sGrabWidget;
 
 static const char gMimeListType[] = "application/x-moz-internal-item-list";
@@ -229,14 +240,12 @@ static gboolean DispatchMotionEventCopy(gpointer aData) {
   // dispatch.
   sMotionEventTimerID = 0;
 
-  GdkEvent* event = sMotionEvent;
-  sMotionEvent = nullptr;
+  GUniquePtr<GdkEvent> event = TakeMotionEvent();
   // If there is no longer a grab on the widget, then the drag is over and
   // there is no need to continue drag motion.
   if (gtk_widget_has_grab(sGrabWidget)) {
-    gtk_propagate_event(sGrabWidget, event);
+    gtk_propagate_event(sGrabWidget, event.get());
   }
-  gdk_event_free(event);
 
   // Cancel this timer;
   // We've already started another if the motion event was dispatched.
@@ -250,10 +259,7 @@ static void OnSourceGrabEventAfter(GtkWidget* widget, GdkEvent* event,
   if (!gtk_widget_has_grab(sGrabWidget)) return;
 
   if (event->type == GDK_MOTION_NOTIFY) {
-    if (sMotionEvent) {
-      gdk_event_free(sMotionEvent);
-    }
-    sMotionEvent = gdk_event_copy(event);
+    SetMotionEvent(GUniquePtr<GdkEvent>(gdk_event_copy(event)));
 
     // Update the cursor position.  The last of these recorded gets used for
     // the eDragEnd event.
@@ -354,15 +360,19 @@ nsresult nsDragService::InvokeDragSessionImpl(
   if (aActionType & DRAGDROP_ACTION_LINK)
     action = (GdkDragAction)(action | GDK_ACTION_LINK);
 
-  // Create a fake event for the drag so we can pass the time (so to speak).
-  // If we don't do this, then, when the timestamp for the pending button
-  // release event is used for the ungrab, the ungrab can fail due to the
-  // timestamp being _earlier_ than CurrentTime.
-  GdkEvent event;
-  memset(&event, 0, sizeof(GdkEvent));
-  event.type = GDK_BUTTON_PRESS;
-  event.button.window = gtk_widget_get_window(mHiddenWidget);
-  event.button.time = nsWindow::GetLastUserInputTime();
+  GdkEvent* existingEvent = widget::GetLastMousePressEvent();
+  GdkEvent fakeEvent;
+  if (!existingEvent) {
+    // Create a fake event for the drag so we can pass the time (so to speak).
+    // If we don't do this, then, when the timestamp for the pending button
+    // release event is used for the ungrab, the ungrab can fail due to the
+    // timestamp being _earlier_ than CurrentTime.
+    memset(&fakeEvent, 0, sizeof(GdkEvent));
+    fakeEvent.type = GDK_BUTTON_PRESS;
+    fakeEvent.button.window = gtk_widget_get_window(mHiddenWidget);
+    fakeEvent.button.time = nsWindow::GetLastUserInputTime();
+    fakeEvent.button.device = widget::GdkGetPointer();
+  }
 
   // Put the drag widget in the window group of the source node so that the
   // gtk_grab_add during gtk_drag_begin is effective.
@@ -371,12 +381,10 @@ nsresult nsDragService::InvokeDragSessionImpl(
       gtk_window_get_group(GetGtkWindow(mSourceDocument));
   gtk_window_group_add_window(window_group, GTK_WINDOW(mHiddenWidget));
 
-  // Get device for event source
-  event.button.device = widget::GdkGetPointer();
-
   // start our drag.
   GdkDragContext* context = gtk_drag_begin_with_coordinates(
-      mHiddenWidget, sourceList, action, 1, &event, -1, -1);
+      mHiddenWidget, sourceList, action, 1,
+      existingEvent ? existingEvent : &fakeEvent, -1, -1);
 
   LOGDRAGSERVICE(
       ("nsDragService::InvokeDragSessionImpl GdkDragContext %p", context));
@@ -504,8 +512,7 @@ nsDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
       sMotionEventTimerID = 0;
     }
     if (sMotionEvent) {
-      gdk_event_free(sMotionEvent);
-      sMotionEvent = nullptr;
+      TakeMotionEvent();
     }
   }
 
@@ -1348,8 +1355,8 @@ void nsDragService::SourceEndDragSession(GdkDragContext* aContext,
     GtkWindow* window = GetGtkWindow(mSourceDocument);
     GdkWindow* gdkWindow = window ? gtk_widget_get_window(GTK_WIDGET(window))
                                   : gdk_screen_get_root_window(screen);
-    gdk_window_get_device_position(gdkWindow, widget::GdkGetPointer(), &x, &y,
-                                   nullptr);
+    gdk_window_get_device_position(
+        gdkWindow, gdk_drag_context_get_device(aContext), &x, &y, nullptr);
     gint scale = gdk_window_get_scale_factor(gdkWindow);
     SetDragEndPoint(LayoutDeviceIntPoint(x * scale, y * scale));
     LOGDRAGSERVICE(("guess drag end point %d %d\n", x * scale, y * scale));

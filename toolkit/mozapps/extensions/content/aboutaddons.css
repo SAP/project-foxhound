@@ -7,7 +7,8 @@
   --main-margin-start: 28px;
   --section-width: 664px;
   --sidebar-width: var(--in-content-sidebar-width);
-  --z-index-sticky-container: 1;
+  --z-index-sticky-container: 5;
+  --z-index-card-banner-text: 1;
   --z-index-popup: 10;
 }
 
@@ -482,8 +483,38 @@ addon-details {
   color: var(--in-content-deemphasized-text);
 }
 
-.addon-detail-description {
+.addon-detail-description-wrapper {
   margin: 16px 0;
+}
+
+.addon-detail-description-collapse .addon-detail-description {
+  max-height: 20rem;
+  overflow: hidden;
+}
+
+/* Include button to beat out .button-link which is below this */
+button.addon-detail-description-toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  font-weight: normal;
+  gap: 4px;
+}
+
+.addon-detail-description-toggle::after {
+  content: "";
+  display: block;
+  background-image: url("chrome://global/skin/icons/arrow-up-12.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: 12px;
+  height: 12px;
+}
+
+.addon-detail-description-collapse .addon-detail-description-toggle::after {
+  transform: scaleY(-1);
 }
 
 .addon-detail-contribute {
@@ -809,4 +840,64 @@ section:not(:empty) ~ #empty-addons-message {
 
 .permission-header > .addon-sitepermissions-host {
   font-weight: bolder;
+}
+
+.colorways-section > .list-section-heading {
+  margin-bottom: 0;
+}
+
+#colorways-expiry-date-container {
+  display: flex;
+  flex-grow: 1;
+  flex-direction: row;
+}
+
+#colorways-expiry-date {
+  display: inline-block;
+  background: linear-gradient(to right, purple, pink, orange);
+  background-origin: border-box;
+  border-radius: 1.5em;
+  padding: 1px;
+  vertical-align: bottom;
+}
+
+#colorways-expiry-date > span {
+  display: inline-block;
+  color: black;
+  background: white;
+  border-radius: 1.5em;
+  padding: .2em 1em;
+}
+
+#colorways-button {
+  flex-shrink: 0;
+  flex-grow: 0;
+  align-self: baseline;
+  margin-inline-end: 0;
+}
+
+#colorways-preview-text-container {
+  z-index: var(--z-index-card-banner-text);
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  /* Make sure text fits within addon card dimensions */
+  width: var(--section-width);
+  height: calc(var(--section-width) * 92 / 680);
+  margin: -16px -16px;
+}
+
+#colorways-preview-text-container > h3,
+#colorways-preview-text-container > p {
+  margin: 0;
+}
+
+#colorways-preview-text-container > h3 {
+  font-size: 2.6em;
+}
+
+#colorways-preview-text-container > p {
+  font-size: 1.1em;
 }

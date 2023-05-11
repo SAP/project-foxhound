@@ -44,7 +44,6 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/EditorBase.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_accessibility.h"
@@ -91,6 +90,7 @@ DocAccessible::DocAccessible(dom::Document* aDocument,
       mDocumentNode(aDocument),
       mLoadState(eTreeConstructionPending),
       mDocFlags(0),
+      mViewportCacheDirty(false),
       mLoadEventType(0),
       mPrevStateBits(0),
       mVirtualCursor(nullptr),
@@ -264,24 +264,6 @@ void DocAccessible::ApplyARIAState(uint64_t* aState) const {
   if (mParent) mParent->ApplyARIAState(aState);
 }
 
-already_AddRefed<AccAttributes> DocAccessible::Attributes() {
-  RefPtr<AccAttributes> attributes = HyperTextAccessibleWrap::Attributes();
-
-  // No attributes if document is not attached to the tree or if it's a root
-  // document.
-  if (!mParent || IsRoot()) return attributes.forget();
-
-  // Override ARIA object attributes from outerdoc.
-  aria::AttrIterator attribIter(mParent->GetContent());
-  while (attribIter.Next()) {
-    nsString value;
-    attribIter.AttrValue(value);
-    attributes->SetAttribute(attribIter.AttrName(), std::move(value));
-  }
-
-  return attributes.forget();
-}
-
 LocalAccessible* DocAccessible::FocusedChild() {
   // Return an accessible for the current global focus, which does not have to
   // be contained within the current document.
@@ -359,9 +341,11 @@ void DocAccessible::DocType(nsAString& aType) const {
 
 void DocAccessible::QueueCacheUpdate(LocalAccessible* aAcc,
                                      uint64_t aNewDomain) {
+  if (!mIPCDoc || !StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return;
+  }
   uint64_t& domain = mQueuedCacheUpdates.LookupOrInsert(aAcc, 0);
   domain |= aNewDomain;
-
   Controller()->ScheduleProcessing();
 }
 
@@ -860,18 +844,20 @@ void DocAccessible::ARIAActiveDescendantChanged(LocalAccessible* aAccessible) {
   }
 }
 
-void DocAccessible::ContentAppended(nsIContent* aFirstNewContent) {}
+void DocAccessible::ContentAppended(nsIContent* aFirstNewContent) {
+  MaybeHandleChangeToHiddenNameOrDescription(aFirstNewContent);
+}
 
-void DocAccessible::ContentStateChanged(dom::Document* aDocument,
-                                        nsIContent* aContent,
-                                        EventStates aStateMask) {
-  if (aStateMask.HasState(NS_EVENT_STATE_READWRITE) &&
-      aContent == mDocumentNode->GetRootElement()) {
+void DocAccessible::ElementStateChanged(dom::Document* aDocument,
+                                        dom::Element* aElement,
+                                        dom::ElementState aStateMask) {
+  if (aStateMask.HasState(dom::ElementState::READWRITE) &&
+      aElement == mDocumentNode->GetRootElement()) {
     // This handles changes to designMode. contentEditable is handled by
     // LocalAccessible::AttributeChangesState and
     // LocalAccessible::DOMAttributeChanged.
     const bool isEditable =
-        aContent->AsElement()->State().HasState(NS_EVENT_STATE_READWRITE);
+        aElement->State().HasState(dom::ElementState::READWRITE);
     RefPtr<AccEvent> event =
         new AccStateChangeEvent(this, states::EDITABLE, isEditable);
     FireDelayedEvent(event);
@@ -879,14 +865,14 @@ void DocAccessible::ContentStateChanged(dom::Document* aDocument,
     FireDelayedEvent(event);
   }
 
-  LocalAccessible* accessible = GetAccessible(aContent);
+  LocalAccessible* accessible = GetAccessible(aElement);
   if (!accessible) return;
 
-  if (aStateMask.HasState(NS_EVENT_STATE_CHECKED)) {
+  if (aStateMask.HasState(dom::ElementState::CHECKED)) {
     LocalAccessible* widget = accessible->ContainerWidget();
     if (widget && widget->IsSelect()) {
       AccSelChangeEvent::SelChangeType selChangeType =
-          aContent->AsElement()->State().HasState(NS_EVENT_STATE_CHECKED)
+          aElement->State().HasState(dom::ElementState::CHECKED)
               ? AccSelChangeEvent::eSelectionAdd
               : AccSelChangeEvent::eSelectionRemove;
       RefPtr<AccEvent> event =
@@ -897,31 +883,32 @@ void DocAccessible::ContentStateChanged(dom::Document* aDocument,
 
     RefPtr<AccEvent> event = new AccStateChangeEvent(
         accessible, states::CHECKED,
-        aContent->AsElement()->State().HasState(NS_EVENT_STATE_CHECKED));
+        aElement->State().HasState(dom::ElementState::CHECKED));
     FireDelayedEvent(event);
   }
 
-  if (aStateMask.HasState(NS_EVENT_STATE_INVALID)) {
+  if (aStateMask.HasState(dom::ElementState::INVALID)) {
     RefPtr<AccEvent> event =
         new AccStateChangeEvent(accessible, states::INVALID, true);
     FireDelayedEvent(event);
   }
 
-  if (aStateMask.HasState(NS_EVENT_STATE_REQUIRED)) {
+  if (aStateMask.HasState(dom::ElementState::REQUIRED)) {
     RefPtr<AccEvent> event =
         new AccStateChangeEvent(accessible, states::REQUIRED);
     FireDelayedEvent(event);
   }
 
-  if (aStateMask.HasState(NS_EVENT_STATE_VISITED)) {
+  if (aStateMask.HasState(dom::ElementState::VISITED)) {
     RefPtr<AccEvent> event =
         new AccStateChangeEvent(accessible, states::TRAVERSED, true);
     FireDelayedEvent(event);
   }
 
-  // We only expose NS_EVENT_STATE_DEFAULT on buttons, but we can get
+  // We only expose dom::ElementState::DEFAULT on buttons, but we can get
   // notifications for other controls like checkboxes.
-  if (aStateMask.HasState(NS_EVENT_STATE_DEFAULT) && accessible->IsButton()) {
+  if (aStateMask.HasState(dom::ElementState::DEFAULT) &&
+      accessible->IsButton()) {
     RefPtr<AccEvent> event =
         new AccStateChangeEvent(accessible, states::DEFAULT);
     FireDelayedEvent(event);
@@ -934,7 +921,9 @@ void DocAccessible::CharacterDataWillChange(nsIContent* aContent,
 void DocAccessible::CharacterDataChanged(nsIContent* aContent,
                                          const CharacterDataChangeInfo&) {}
 
-void DocAccessible::ContentInserted(nsIContent* aChild) {}
+void DocAccessible::ContentInserted(nsIContent* aChild) {
+  MaybeHandleChangeToHiddenNameOrDescription(aChild);
+}
 
 void DocAccessible::ContentRemoved(nsIContent* aChildNode,
                                    nsIContent* aPreviousSiblingNode) {
@@ -1209,11 +1198,10 @@ bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
   nsIContent* shadowHost =
       aRoot->GetShadowRoot() ? aRoot : aRoot->GetContainingShadowHost();
   if (shadowHost) {
-    dom::ExplicitChildIterator iter(shadowHost);
-
     // Check all explicit children in the host, if they are not slotted
     // then remove their accessibles and subtrees.
-    while (nsIContent* childNode = iter.GetNextChild()) {
+    for (nsIContent* childNode = shadowHost->GetFirstChild(); childNode;
+         childNode = childNode->GetNextSibling()) {
       if (!childNode->GetPrimaryFrame() &&
           !nsCoreUtils::CanCreateAccessibleWithoutFrame(childNode)) {
         ContentRemoved(childNode);
@@ -1442,6 +1430,15 @@ void DocAccessible::ProcessQueuedCacheUpdates() {
 
   mQueuedCacheUpdates.Clear();
 
+  if (mViewportCacheDirty) {
+    RefPtr<AccAttributes> fields =
+        BundleFieldsForCache(CacheDomain::Viewport, CacheUpdateType::Update);
+    if (fields->Count()) {
+      data.AppendElement(CacheData(0, fields));
+    }
+    mViewportCacheDirty = false;
+  }
+
   if (data.Length()) {
     IPCDoc()->SendCache(CacheUpdateType::Update, data, true);
   }
@@ -1549,8 +1546,9 @@ void DocAccessible::DoInitialUpdate() {
 #else
           int32_t holder = 0, childID = 0;
 #endif
-          browserChild->SendPDocAccessibleConstructor(ipcDoc, nullptr, 0,
-                                                      childID, holder);
+          browserChild->SendPDocAccessibleConstructor(
+              ipcDoc, nullptr, 0, mDocumentNode->GetBrowsingContext(), childID,
+              holder);
 #if !defined(XP_WIN)
           ipcDoc->SendPDocAccessiblePlatformExtConstructor();
 #endif
@@ -2099,8 +2097,8 @@ void DocAccessible::ContentRemoved(nsIContent* aContentNode) {
   // ExplicitChildIterator in order to get its accessible children in the light
   // DOM, since they are not accessible anymore via AllChildrenIterator.
   if (aContentNode->GetShadowRoot()) {
-    dom::ExplicitChildIterator iter = dom::ExplicitChildIterator(aContentNode);
-    while (nsIContent* childNode = iter.GetNextChild()) {
+    for (nsIContent* childNode = aContentNode->GetFirstChild(); childNode;
+         childNode = childNode->GetNextSibling()) {
       ContentRemoved(childNode);
     }
   }
@@ -2641,5 +2639,42 @@ void DocAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   }
   if (HasPrimaryAction()) {
     aName.AssignLiteral("click");
+  }
+}
+
+void DocAccessible::MaybeHandleChangeToHiddenNameOrDescription(
+    nsIContent* aChild) {
+  if (!HasLoadState(eTreeConstructed)) {
+    return;
+  }
+  for (nsIContent* content = aChild; content; content = content->GetParent()) {
+    if (HasAccessible(content)) {
+      // This node isn't hidden. Events for name/description dependents will be
+      // fired elsewhere.
+      break;
+    }
+    nsAtom* id = content->GetID();
+    if (!id) {
+      continue;
+    }
+    auto* providers =
+        GetRelProviders(content->AsElement(), nsDependentAtomString(id));
+    if (!providers) {
+      continue;
+    }
+    for (auto& provider : *providers) {
+      if (provider->mRelAttr != nsGkAtoms::aria_labelledby &&
+          provider->mRelAttr != nsGkAtoms::aria_describedby) {
+        continue;
+      }
+      LocalAccessible* dependentAcc = GetAccessible(provider->mContent);
+      if (!dependentAcc) {
+        continue;
+      }
+      FireDelayedEvent(provider->mRelAttr == nsGkAtoms::aria_labelledby
+                           ? nsIAccessibleEvent::EVENT_NAME_CHANGE
+                           : nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE,
+                       dependentAcc);
+    }
   }
 }

@@ -1108,7 +1108,7 @@
 
       this._selectedBrowser = newBrowser;
       this._selectedTab = newTab;
-      if (newTab != gFirefoxViewTab) {
+      if (newTab != FirefoxViewHandler.tab) {
         this.showTab(newTab);
       }
 
@@ -2094,7 +2094,6 @@
         contextmenu: "contentAreaContextMenu",
         message: "true",
         messagemanagergroup: "browsers",
-        selectmenulist: "ContentSelectDropdown",
         tooltip: "aHTMLTooltip",
         type: "content",
       };

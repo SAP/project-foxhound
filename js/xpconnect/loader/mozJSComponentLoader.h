@@ -80,18 +80,20 @@ class mozJSComponentLoader final : public nsIMemoryReporter {
                   bool aIgnoreExports = false);
 
   // Load an ES6 module and all its dependencies.
-  nsresult ImportModule(JSContext* aCx, const nsACString& aResourceURI,
-                        JS::MutableHandleObject aModuleNamespace);
+  nsresult ImportESModule(JSContext* aCx, const nsACString& aResourceURI,
+                          JS::MutableHandleObject aModuleNamespace);
 
-  // Fallback from Import to ImportModule.
-  nsresult TryFallbackToImportModule(JSContext* aCx,
-                                     const nsACString& aResourceURI,
-                                     JS::MutableHandleObject aModuleGlobal,
-                                     JS::MutableHandleObject aModuleExports,
-                                     bool aIgnoreExports);
+  // Fallback from Import to ImportESModule.
+  nsresult TryFallbackToImportESModule(JSContext* aCx,
+                                       const nsACString& aResourceURI,
+                                       JS::MutableHandleObject aModuleGlobal,
+                                       JS::MutableHandleObject aModuleExports,
+                                       bool aIgnoreExports);
 
   nsresult Unload(const nsACString& aResourceURI);
   nsresult IsModuleLoaded(const nsACString& aResourceURI, bool* aRetval);
+  nsresult IsJSModuleLoaded(const nsACString& aResourceURI, bool* aRetval);
+  nsresult IsESModuleLoaded(const nsACString& aResourceURI, bool* aRetval);
   bool IsLoaderGlobal(JSObject* aObj) { return mLoaderGlobal == aObj; }
 
   // Public methods for use from ComponentModuleLoader.

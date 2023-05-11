@@ -813,6 +813,19 @@ impl NoCalcLength {
         }
     }
 
+    /// Whether text-only zoom should be applied to this length.
+    ///
+    /// Generally, font-dependent/relative units don't get text-only-zoomed,
+    /// because the font they're relative to should be zoomed already.
+    pub fn should_zoom_text(&self) -> bool {
+        match *self {
+            Self::Absolute(..) |
+            Self::ViewportPercentage(..) => true,
+            Self::ServoCharacterWidth(..) |
+            Self::FontRelative(..) => false,
+        }
+    }
+
     /// Parse a given absolute or relative dimension.
     pub fn parse_dimension(
         context: &ParserContext,
@@ -1351,10 +1364,9 @@ impl From<NoCalcLength> for LengthPercentage {
 impl From<Percentage> for LengthPercentage {
     #[inline]
     fn from(pc: Percentage) -> Self {
-        if pc.is_calc() {
-            // FIXME(emilio): Hard-coding the clamping mode is suspect.
+        if let Some(clamping_mode) = pc.calc_clamping_mode() {
             LengthPercentage::Calc(Box::new(CalcLengthPercentage {
-                clamping_mode: AllowedNumericType::All,
+                clamping_mode,
                 node: CalcNode::Leaf(calc::Leaf::Percentage(pc.get())),
             }))
         } else {
@@ -1385,6 +1397,12 @@ impl LengthPercentage {
     /// Returns a `0%` value.
     pub fn zero_percent() -> LengthPercentage {
         LengthPercentage::Percentage(computed::Percentage::zero())
+    }
+
+    #[inline]
+    /// Returns a `100%` value.
+    pub fn hundred_percent() -> LengthPercentage {
+        LengthPercentage::Percentage(computed::Percentage::hundred())
     }
 
     fn parse_internal<'i, 't>(

@@ -124,43 +124,29 @@
 
 "use strict";
 
-this.EXPORTED_SYMBOLS = [
+const EXPORTED_SYMBOLS = [
   "FormAutofillStorageBase",
   "CreditCardsBase",
   "AddressesBase",
 ];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "CreditCard",
-  "resource://gre/modules/CreditCard.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillNameUtils",
-  "resource://autofill/FormAutofillNameUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FormAutofillUtils",
-  "resource://autofill/FormAutofillUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "OSKeyStore",
-  "resource://gre/modules/OSKeyStore.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PhoneNumber",
-  "resource://autofill/phonenumberutils/PhoneNumber.jsm"
-);
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.jsm",
+  FormAutofillNameUtils: "resource://autofill/FormAutofillNameUtils.jsm",
+  FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
+  OSKeyStore: "resource://gre/modules/OSKeyStore.jsm",
+  PhoneNumber: "resource://autofill/phonenumberutils/PhoneNumber.jsm",
+});
 
 const CryptoHash = Components.Constructor(
   "@mozilla.org/security/hash;1",
@@ -273,7 +259,10 @@ class AutofillRecords {
     validComputedFields,
     schemaVersion
   ) {
-    FormAutofill.defineLazyLogGetter(this, "AutofillRecords:" + collectionName);
+    this.log = FormAutofill.defineLogGetter(
+      lazy,
+      "AutofillRecords:" + collectionName
+    );
 
     this.VALID_FIELDS = validFields;
     this.VALID_COMPUTED_FIELDS = validComputedFields;
@@ -1463,7 +1452,7 @@ class AddressesBase extends AutofillRecords {
 
     // Compute name
     if (!("name" in address)) {
-      let name = FormAutofillNameUtils.joinNameParts({
+      let name = lazy.FormAutofillNameUtils.joinNameParts({
         given: address["given-name"],
         middle: address["additional-name"],
         family: address["family-name"],
@@ -1484,7 +1473,7 @@ class AddressesBase extends AutofillRecords {
         address["address-line" + (i + 1)] = streetAddress[i] || "";
       }
       if (streetAddress.length > 3) {
-        address["address-line3"] = FormAutofillUtils.toOneLineAddress(
+        address["address-line3"] = lazy.FormAutofillUtils.toOneLineAddress(
           streetAddress.splice(2)
         );
       }
@@ -1510,7 +1499,7 @@ class AddressesBase extends AutofillRecords {
     // Compute tel
     if (!("tel-national" in address)) {
       if (address.tel) {
-        let tel = PhoneNumber.Parse(
+        let tel = lazy.PhoneNumber.Parse(
           address.tel,
           address.country || FormAutofill.DEFAULT_REGION
         );
@@ -1560,7 +1549,7 @@ class AddressesBase extends AutofillRecords {
 
   _normalizeName(address) {
     if (address.name) {
-      let nameParts = FormAutofillNameUtils.splitName(address.name);
+      let nameParts = lazy.FormAutofillNameUtils.splitName(address.name);
       if (!address["given-name"] && nameParts.given) {
         address["given-name"] = nameParts.given;
       }
@@ -1605,7 +1594,9 @@ class AddressesBase extends AutofillRecords {
     if (address.country) {
       country = address.country.toUpperCase();
     } else if (address["country-name"]) {
-      country = FormAutofillUtils.identifyCountryCode(address["country-name"]);
+      country = lazy.FormAutofillUtils.identifyCountryCode(
+        address["country-name"]
+      );
     }
 
     // Only values included in the region list will be saved.
@@ -1630,10 +1621,10 @@ class AddressesBase extends AutofillRecords {
 
   _normalizeTel(address) {
     if (address.tel || TEL_COMPONENTS.some(c => !!address[c])) {
-      FormAutofillUtils.compressTel(address);
+      lazy.FormAutofillUtils.compressTel(address);
 
       let possibleRegion = address.country || FormAutofill.DEFAULT_REGION;
-      let tel = PhoneNumber.Parse(address.tel, possibleRegion);
+      let tel = lazy.PhoneNumber.Parse(address.tel, possibleRegion);
 
       if (tel && tel.internationalNumber) {
         // Force to save numbers in E.164 format if parse success.
@@ -1700,7 +1691,7 @@ class CreditCardsBase extends AutofillRecords {
     }
 
     if ("cc-number" in creditCard && !("cc-type" in creditCard)) {
-      let type = CreditCard.getType(creditCard["cc-number"]);
+      let type = lazy.CreditCard.getType(creditCard["cc-number"]);
       if (type) {
         creditCard["cc-type"] = type;
       }
@@ -1708,7 +1699,9 @@ class CreditCardsBase extends AutofillRecords {
 
     // Compute split names
     if (!("cc-given-name" in creditCard)) {
-      let nameParts = FormAutofillNameUtils.splitName(creditCard["cc-name"]);
+      let nameParts = lazy.FormAutofillNameUtils.splitName(
+        creditCard["cc-name"]
+      );
       creditCard["cc-given-name"] = nameParts.given;
       creditCard["cc-additional-name"] = nameParts.middle;
       creditCard["cc-family-name"] = nameParts.family;
@@ -1784,7 +1777,7 @@ class CreditCardsBase extends AutofillRecords {
   async _stripComputedFields(creditCard) {
     if (creditCard["cc-number-encrypted"]) {
       try {
-        creditCard["cc-number"] = await OSKeyStore.decrypt(
+        creditCard["cc-number"] = await lazy.OSKeyStore.decrypt(
           creditCard["cc-number-encrypted"]
         );
       } catch (ex) {
@@ -1812,7 +1805,7 @@ class CreditCardsBase extends AutofillRecords {
       creditCard["cc-family-name"]
     ) {
       if (!creditCard["cc-name"]) {
-        creditCard["cc-name"] = FormAutofillNameUtils.joinNameParts({
+        creditCard["cc-name"] = lazy.FormAutofillNameUtils.joinNameParts({
           given: creditCard["cc-given-name"],
           middle: creditCard["cc-additional-name"],
           family: creditCard["cc-family-name"],
@@ -1828,16 +1821,16 @@ class CreditCardsBase extends AutofillRecords {
     if (!("cc-number" in creditCard)) {
       return;
     }
-    if (!CreditCard.isValidNumber(creditCard["cc-number"])) {
+    if (!lazy.CreditCard.isValidNumber(creditCard["cc-number"])) {
       delete creditCard["cc-number"];
       return;
     }
-    let card = new CreditCard({ number: creditCard["cc-number"] });
+    let card = new lazy.CreditCard({ number: creditCard["cc-number"] });
     creditCard["cc-number"] = card.number;
   }
 
   _normalizeCCExpirationDate(creditCard) {
-    let normalizedExpiration = CreditCard.normalizeExpiration({
+    let normalizedExpiration = lazy.CreditCard.normalizeExpiration({
       expirationMonth: creditCard["cc-exp-month"],
       expirationYear: creditCard["cc-exp-year"],
       expirationString: creditCard["cc-exp"],
@@ -1918,7 +1911,7 @@ class CreditCardsBase extends AutofillRecords {
         continue;
       }
 
-      let decrypted = await OSKeyStore.decrypt(
+      let decrypted = await lazy.OSKeyStore.decrypt(
         creditCard["cc-number-encrypted"],
         false
       );

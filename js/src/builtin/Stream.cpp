@@ -667,7 +667,7 @@ JS_STREAMS_CLASS_SPEC(ReadableByteStreamController, 0, SlotCount,
           cx, GetErrorMessage, nullptr,
           JSMSG_READABLEBYTESTREAMCONTROLLER_CLOSE_PENDING_PULL);
       RootedValue e(cx);
-      RootedSavedFrame stack(cx);
+      Rooted<SavedFrame*> stack(cx);
       if (!cx->isExceptionPending() ||
           !GetAndClearExceptionAndStack(cx, &e, &stack)) {
         // Uncatchable error. Die immediately without erroring the
@@ -749,7 +749,7 @@ enum BYOBRequestSlots {
     return true;
   }
 
-  RootedNativeObject unwrappedBYOBRequest(
+  Rooted<NativeObject*> unwrappedBYOBRequest(
       cx, UnwrapAndDowncastValue<NativeObject>(cx, unwrappedBYOBRequestVal));
   if (!unwrappedBYOBRequest) {
     return false;

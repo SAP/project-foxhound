@@ -15,8 +15,6 @@
 #include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 
-#define SCROLL_TIMELINE_DURATION_MILLISEC 100000
-
 namespace mozilla::dom {
 
 // ---------------------------------
@@ -43,8 +41,6 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(ScrollTimeline,
                                                AnimationTimeline)
 
-TimingParams ScrollTimeline::sTiming;
-
 ScrollTimeline::ScrollTimeline(Document* aDocument, const Scroller& aScroller,
                                StyleScrollAxis aAxis)
     : AnimationTimeline(aDocument->GetParentObject()),
@@ -52,13 +48,26 @@ ScrollTimeline::ScrollTimeline(Document* aDocument, const Scroller& aScroller,
       mSource(aScroller),
       mAxis(aAxis) {
   MOZ_ASSERT(aDocument);
+}
 
-  // Use default values except for |mDuration| and |mFill|.
-  // Use a fixed duration defined in SCROLL_TIMELINE_DURATIONMILLISEC, and use
-  // FillMode::Both to make sure the animation is in effect at 100%.
-  sTiming = TimingParams(SCROLL_TIMELINE_DURATION_MILLISEC, 0.0,
-                         std::numeric_limits<float>::infinity(),
-                         PlaybackDirection::Alternate, FillMode::Both);
+/* static */
+already_AddRefed<ScrollTimeline> ScrollTimeline::GetOrCreateScrollTimeline(
+    Document* aDocument, const Scroller& aScroller,
+    const StyleScrollAxis& aAxis) {
+  MOZ_ASSERT(aScroller);
+
+  RefPtr<ScrollTimeline> timeline;
+  auto* set =
+      ScrollTimelineSet::GetOrCreateScrollTimelineSet(aScroller.mElement);
+  auto key = ScrollTimelineSet::Key{aScroller.mType, aAxis};
+  auto p = set->LookupForAdd(key);
+  if (!p) {
+    timeline = new ScrollTimeline(aDocument, aScroller, aAxis);
+    set->Add(p, key, timeline);
+  } else {
+    timeline = p->value();
+  }
+  return timeline.forget();
 }
 
 static StyleScrollAxis ToStyleScrollAxis(
@@ -83,6 +92,7 @@ static StyleScrollAxis ToStyleScrollAxis(
   return StyleScrollAxis::Block;
 }
 
+/* static */
 already_AddRefed<ScrollTimeline> ScrollTimeline::FromRule(
     const RawServoScrollTimelineRule& aRule, Document* aDocument,
     const NonOwningAnimationTarget& aTarget) {
@@ -96,18 +106,8 @@ already_AddRefed<ScrollTimeline> ScrollTimeline::FromRule(
   StyleScrollAxis axis =
       ToStyleScrollAxis(Servo_ScrollTimelineRule_GetOrientation(&aRule));
 
-  RefPtr<ScrollTimeline> timeline;
   auto autoScroller = Scroller::Root(aTarget.mElement->OwnerDoc());
-  auto* set =
-      ScrollTimelineSet::GetOrCreateScrollTimelineSet(autoScroller.mElement);
-  auto p = set->LookupForAdd(axis);
-  if (!p) {
-    timeline = new ScrollTimeline(aDocument, autoScroller, axis);
-    set->Add(p, axis, timeline);
-  } else {
-    timeline = p->value();
-  }
-  return timeline.forget();
+  return GetOrCreateScrollTimeline(aDocument, autoScroller, axis);
 }
 
 /* static */
@@ -135,18 +135,63 @@ already_AddRefed<ScrollTimeline> ScrollTimeline::FromAnonymousScroll(
       scroller = Scroller::Nearest(curr ? curr : root);
     }
   }
+  return GetOrCreateScrollTimeline(aDocument, scroller, aAxis);
+}
 
-  RefPtr<ScrollTimeline> timeline;
-  auto* set =
-      ScrollTimelineSet::GetOrCreateScrollTimelineSet(scroller.mElement);
-  auto p = set->LookupForAdd(aAxis);
-  if (!p) {
-    timeline = new ScrollTimeline(aDocument, scroller, aAxis);
-    set->Add(p, aAxis, timeline);
-  } else {
-    timeline = p->value();
+/* static*/ already_AddRefed<ScrollTimeline> ScrollTimeline::FromNamedScroll(
+    Document* aDocument, const NonOwningAnimationTarget& aTarget,
+    const nsAtom* aName) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aTarget);
+
+  // A named scroll progress timeline is referenceable in animation-timeline by:
+  // 1. the declaring element itself
+  // 2. that element’s descendants
+  // 3. that element’s following siblings and their descendants
+  // https://drafts.csswg.org/scroll-animations-1/rewrite#timeline-scope
+  //
+  // Note: It's unclear to us about the scope of scroll-timeline, so we
+  // intentionally don't let it cross the shadow dom boundary for now.
+  //
+  // FIXME: We may have to support global scope. This depends on the result of
+  // this spec issue: https://github.com/w3c/csswg-drafts/issues/7047
+  Element* result = nullptr;
+  StyleScrollAxis axis = StyleScrollAxis::Block;
+  for (Element* curr = aTarget.mElement; curr;
+       curr = curr->GetParentElement()) {
+    // If multiple elements have declared the same timeline name, the matching
+    // timeline is the one declared on the nearest element in tree order, which
+    // considers siblings closer than parents.
+    // Note: This should be fine for parallel traversal because we update
+    // animations by SequentialTask.
+    for (Element* e = curr; e; e = e->GetPreviousElementSibling()) {
+      const ComputedStyle* style = Servo_Element_GetMaybeOutOfDateStyle(e);
+      // The elements in the shadow dom might not be in the flat tree.
+      if (!style) {
+        continue;
+      }
+
+      const nsStyleUIReset* styleUIReset = style->StyleUIReset();
+      if (styleUIReset->mScrollTimelineName._0.AsAtom() == aName) {
+        result = e;
+        axis = styleUIReset->mScrollTimelineAxis;
+        break;
+      }
+    }
+
+    if (result) {
+      break;
+    }
   }
-  return timeline.forget();
+
+  // If we cannot find a matched scroll-timeline-name, this animation is not
+  // associated with a timeline.
+  // https://drafts.csswg.org/css-animations-2/#typedef-timeline-name
+  if (!result) {
+    return nullptr;
+  }
+  Scroller scroller = Scroller::Named(result);
+  return GetOrCreateScrollTimeline(aDocument, scroller, axis);
 }
 
 Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
@@ -166,7 +211,7 @@ Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
   // If this orientation is not ready for scrolling (i.e. the scroll range is
   // not larger than or equal to one device pixel), we make it 100%.
   if (!scrollFrame->GetAvailableScrollingDirections().contains(orientation)) {
-    return TimeDuration::FromMilliseconds(SCROLL_TIMELINE_DURATION_MILLISEC);
+    return TimeDuration::FromMilliseconds(PROGRESS_TIMELINE_DURATION_MILLISEC);
   }
 
   const nsPoint& scrollOffset = scrollFrame->GetScrollPosition();
@@ -184,7 +229,7 @@ Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
   // https://drafts.csswg.org/scroll-animations-1/#progress-calculation-algorithm
   double progress = position / range;
   return TimeDuration::FromMilliseconds(progress *
-                                        SCROLL_TIMELINE_DURATION_MILLISEC);
+                                        PROGRESS_TIMELINE_DURATION_MILLISEC);
 }
 
 layers::ScrollDirection ScrollTimeline::Axis() const {
@@ -231,7 +276,7 @@ void ScrollTimeline::UnregisterFromScrollSource() {
 
   if (ScrollTimelineSet* scrollTimelineSet =
           ScrollTimelineSet::GetScrollTimelineSet(mSource.mElement)) {
-    scrollTimelineSet->Remove(mAxis);
+    scrollTimelineSet->Remove(ScrollTimelineSet::Key{mSource.mType, mAxis});
     if (scrollTimelineSet->IsEmpty()) {
       ScrollTimelineSet::DestroyScrollTimelineSet(mSource.mElement);
     }
@@ -244,13 +289,14 @@ const nsIScrollableFrame* ScrollTimeline::GetScrollFrame() const {
   }
 
   switch (mSource.mType) {
-    case StyleScroller::Root:
+    case Scroller::Type::Root:
       if (const PresShell* presShell =
               mSource.mElement->OwnerDoc()->GetPresShell()) {
         return presShell->GetRootScrollFrameAsScrollable();
       }
       return nullptr;
-    case StyleScroller::Nearest:
+    case Scroller::Type::Nearest:
+    case Scroller::Type::Name:
       return nsLayoutUtils::FindScrollableFrameFor(mSource.mElement);
   }
 

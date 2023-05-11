@@ -12,22 +12,22 @@ var EXPORTED_SYMBOLS = [
   "PollPromise",
 ];
 
-var { XPCOMUtils } = ChromeUtils.import(
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
-
-  Services: "resource://gre/modules/Services.jsm",
-
   Log: "chrome://remote/content/shared/Log.jsm",
 });
 
 const { TYPE_ONE_SHOT, TYPE_REPEATING_SLACK } = Ci.nsITimer;
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.REMOTE_AGENT)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.REMOTE_AGENT)
 );
 
 /**
@@ -167,14 +167,14 @@ function EventPromise(subject, eventName, options = {}) {
     }
 
     function listener(event) {
-      logger.trace(`Received DOM event ${event.type} for ${event.target}`);
+      lazy.logger.trace(`Received DOM event ${event.type} for ${event.target}`);
       try {
         if (checkFn && !checkFn(event)) {
           return;
         }
       } catch (e) {
         // Treat an exception in the callback as a falsy value
-        logger.warn(`Event check failed: ${e.message}`);
+        lazy.logger.warn(`Event check failed: ${e.message}`);
       }
 
       cleanUp();
@@ -193,7 +193,9 @@ function EventPromise(subject, eventName, options = {}) {
         () => {
           cleanUp();
           reject(
-            new error.TimeoutError(`EventPromise timed out after ${timeout} ms`)
+            new lazy.error.TimeoutError(
+              `EventPromise timed out after ${timeout} ms`
+            )
           );
         },
         timeout,

@@ -25,7 +25,6 @@
 
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/EventStates.h"
 #include "mozilla/Services.h"
 
 #include <gdk/gdkprivate.h>
@@ -62,32 +61,15 @@ static int gLastGdkError;
 // Return scale factor of the monitor where the window is located
 // by the most part or layout.css.devPixelsPerPx pref if set to > 0.
 static inline gint GetMonitorScaleFactor(nsPresContext* aPresContext) {
-  // When the layout.css.devPixelsPerPx is set the scale can be < 1,
-  // the real monitor scale cannot go under 1.
-  double scale = StaticPrefs::layout_css_devPixelsPerPx();
-  if (scale <= 0) {
-    if (nsCOMPtr<nsIWidget> rootWidget = aPresContext->GetRootWidget()) {
-      // We need to use GetDefaultScale() despite it returns monitor scale
-      // factor multiplied by font scale factor because it is the only scale
-      // updated in nsPuppetWidget.
-      // Since we don't want to apply font scale factor for UI elements
-      // (because GTK does not do so) we need to remove that from returned
-      // value. The computed monitor scale factor needs to be rounded before
-      // casting to integer to avoid rounding errors which would lead to
-      // returning 0.
-      int monitorScale = int(
-          round(rootWidget->GetDefaultScale().scale /
-                LookAndFeel::GetFloat(LookAndFeel::FloatID::TextScaleFactor)));
-      // Monitor scale can be negative if it has not been initialized in the
-      // puppet widget yet. We also make sure that we return positive value.
-      if (monitorScale < 1) {
-        return 1;
-      }
-      return monitorScale;
-    }
-  }
-  // Use monitor scaling factor where devPixelsPerPx is set
-  return ScreenHelperGTK::GetGTKMonitorScaleFactor();
+  nsCOMPtr<nsIWidget> rootWidget = aPresContext->GetRootWidget();
+  auto scale = rootWidget ? rootWidget->GetDefaultScale()
+                          : aPresContext->CSSToDevPixelScale();
+  // We prefer the root widget scale since it doesn't account for text scale
+  // factor, this is the same scrollbars do in GTK.
+  int monitorScale = int(round(scale.scale));
+  // When the layout.css.devPixelsPerPx is set the scale can be < 1, the real
+  // monitor scale cannot go under 1.
+  return std::max(1, monitorScale);
 }
 
 static inline gint GetMonitorScaleFactor(nsIFrame* aFrame) {
@@ -191,26 +173,26 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
     *aWidgetFlags = 0;
   }
 
-  EventStates eventState = GetContentState(aFrame, aAppearance);
+  ElementState elementState = GetContentState(aFrame, aAppearance);
   if (aState) {
     memset(aState, 0, sizeof(GtkWidgetState));
 
     // For XUL checkboxes and radio buttons, the state of the parent
     // determines our state.
     if (aWidgetFlags) {
-      if (eventState.HasState(NS_EVENT_STATE_CHECKED)) {
+      if (elementState.HasState(ElementState::CHECKED)) {
         *aWidgetFlags |= MOZ_GTK_WIDGET_CHECKED;
       }
-      if (eventState.HasState(NS_EVENT_STATE_INDETERMINATE)) {
+      if (elementState.HasState(ElementState::INDETERMINATE)) {
         *aWidgetFlags |= MOZ_GTK_WIDGET_INCONSISTENT;
       }
     }
 
     aState->disabled =
-        eventState.HasState(NS_EVENT_STATE_DISABLED) || IsReadOnly(aFrame);
-    aState->active = eventState.HasState(NS_EVENT_STATE_ACTIVE);
-    aState->focused = eventState.HasState(NS_EVENT_STATE_FOCUS);
-    aState->inHover = eventState.HasState(NS_EVENT_STATE_HOVER);
+        elementState.HasState(ElementState::DISABLED) || IsReadOnly(aFrame);
+    aState->active = elementState.HasState(ElementState::ACTIVE);
+    aState->focused = elementState.HasState(ElementState::FOCUS);
+    aState->inHover = elementState.HasState(ElementState::HOVER);
     aState->isDefault = IsDefaultButton(aFrame);
     aState->canDefault = FALSE;  // XXX fix me
 
@@ -246,7 +228,7 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       // For these widget types, some element (either a child or parent)
       // actually has element focus, so we check the focused attribute
       // to see whether to draw in the focused state.
-      aState->focused = eventState.HasState(NS_EVENT_STATE_FOCUSRING);
+      aState->focused = elementState.HasState(ElementState::FOCUSRING);
       if (aAppearance == StyleAppearance::Radio ||
           aAppearance == StyleAppearance::Checkbox) {
         // In XUL, checkboxes and radios shouldn't have focus rings, their
@@ -490,9 +472,9 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       break;
     case StyleAppearance::Progresschunk: {
       nsIFrame* stateFrame = aFrame->GetParent();
-      EventStates eventStates = GetContentState(stateFrame, aAppearance);
+      ElementState elementState = GetContentState(stateFrame, aAppearance);
 
-      aGtkWidgetType = eventStates.HasState(NS_EVENT_STATE_INDETERMINATE)
+      aGtkWidgetType = elementState.HasState(ElementState::INDETERMINATE)
                            ? IsVerticalProgress(stateFrame)
                                  ? MOZ_GTK_PROGRESS_CHUNK_VERTICAL_INDETERMINATE
                                  : MOZ_GTK_PROGRESS_CHUNK_INDETERMINATE

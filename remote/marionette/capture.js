@@ -10,14 +10,15 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   Log: "chrome://remote/content/shared/Log.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.get(Log.TYPES.MARIONETTE)
+XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
-XPCOMUtils.defineLazyGlobalGetters(this, ["crypto"]);
 
 const CONTEXT_2D = "2d";
 const BG_COLOUR = "rgb(255,255,255)";
@@ -31,7 +32,7 @@ const XHTML_NS = "http://www.w3.org/1999/xhtml";
  *
  * @namespace
  */
-this.capture = {};
+const capture = {};
 
 capture.Format = {
   Base64: 0,
@@ -89,7 +90,7 @@ capture.canvas = async function(
   // which is the maximum allowed canvas size. Higher dimensions will
   // trigger exceptions in Gecko.
   if (canvasWidth > MAX_CANVAS_DIMENSION) {
-    logger.warn(
+    lazy.logger.warn(
       "Limiting screen capture width to maximum allowed " +
         MAX_CANVAS_DIMENSION +
         " pixels"
@@ -99,7 +100,7 @@ capture.canvas = async function(
   }
 
   if (canvasHeight > MAX_CANVAS_DIMENSION) {
-    logger.warn(
+    lazy.logger.warn(
       "Limiting screen capture height to maximum allowed " +
         MAX_CANVAS_DIMENSION +
         " pixels"
@@ -110,7 +111,7 @@ capture.canvas = async function(
 
   // If the area is larger, reduce the height to keep the full width.
   if (canvasWidth * canvasHeight > MAX_CANVAS_AREA) {
-    logger.warn(
+    lazy.logger.warn(
       "Limiting screen capture area to maximum allowed " +
         MAX_CANVAS_AREA +
         " pixels"

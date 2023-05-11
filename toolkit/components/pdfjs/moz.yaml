@@ -20,8 +20,8 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: commit 38c82357b247199b11fb573d0a3d4201347a47fc
-  revision: 38c82357b247199b11fb573d0a3d4201347a47fc
+  release: be2dfe45f96fa58a1926f764fd64d2416cecc501 (2022-06-17T17:37:43Z).
+  revision: be2dfe45f96fa58a1926f764fd64d2416cecc501
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -47,7 +47,7 @@ vendoring:
       cwd: '{yaml_dir}'
 
 updatebot:
-    maintainer-phab: calixte
+    maintainer-phab: "pdfjs-reviewers"
     maintainer-bz: cdenizet@mozilla.com
     fuzzy-query: "'debug | 'opt"
     fuzzy-paths:
@@ -57,3 +57,4 @@ updatebot:
       - type: vendoring
         enabled: true
         frequency: "1 week, 3 commits"
+        blocking: 1626408

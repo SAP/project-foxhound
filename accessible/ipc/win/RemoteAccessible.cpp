@@ -252,7 +252,11 @@ LayoutDeviceIntRect RemoteAccessible::Bounds() const {
   return rect;
 }
 
-nsIntRect RemoteAccessible::BoundsInCSSPixels() {
+nsIntRect RemoteAccessible::BoundsInCSSPixels() const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::BoundsInCSSPixels();
+  }
+
   RefPtr<IGeckoCustom> custom = QueryInterface<IGeckoCustom>(this);
   if (!custom) {
     return nsIntRect();
@@ -683,6 +687,10 @@ int32_t RemoteAccessible::CaretOffset() const {
 }
 
 void RemoteAccessible::SetCaretOffset(int32_t aOffset) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::SetCaretOffset(aOffset);
+  }
+
   RefPtr<IAccessibleText> acc = QueryInterface<IAccessibleText>(this);
   if (!acc) {
     return;
@@ -816,6 +824,11 @@ void RemoteAccessible::TakeFocus() const {
 
 Accessible* RemoteAccessible::ChildAtPoint(
     int32_t aX, int32_t aY, Accessible::EWhichChildAtPoint aWhichChild) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::ChildAtPoint(aX, aY,
+                                                                aWhichChild);
+  }
+
   RefPtr<IAccessible2_2> target = QueryInterface<IAccessible2_2>(this);
   if (!target) {
     return nullptr;

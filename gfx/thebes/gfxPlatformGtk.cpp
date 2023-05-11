@@ -67,7 +67,6 @@
 #  include <gdk/gdkwayland.h>
 #  include "mozilla/widget/nsWaylandDisplay.h"
 #  include "mozilla/widget/DMABufLibWrapper.h"
-#  include "mozilla/widget/VAAPIUtils.h"
 #  include "mozilla/StaticPrefs_widget.h"
 #endif
 
@@ -233,14 +232,13 @@ void gfxPlatformGtk::InitDmabufConfig() {
 void gfxPlatformGtk::InitVAAPIConfig() {
   FeatureState& feature = gfxConfig::GetFeature(Feature::VAAPI);
 #ifdef MOZ_WAYLAND
+#  ifdef NIGHTLY_BUILD
+  feature.EnableByDefault();
+#  else
   feature.DisableByDefault(FeatureStatus::Disabled,
                            "VAAPI is disabled by default",
                            "FEATURE_VAAPI_DISABLED"_ns);
-
-  if (StaticPrefs::media_ffmpeg_vaapi_enabled()) {
-    feature.UserForceEnable("Force enabled by pref");
-  }
-
+#  endif
   nsCString failureId;
   int32_t status;
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
@@ -253,16 +251,13 @@ void gfxPlatformGtk::InitVAAPIConfig() {
                     failureId);
   }
 
+  if (StaticPrefs::media_ffmpeg_vaapi_enabled()) {
+    feature.UserForceEnable("Force enabled by pref");
+  }
+
   if (!gfxVars::UseEGL()) {
     feature.ForceDisable(FeatureStatus::Unavailable, "Requires EGL",
                          "FEATURE_FAILURE_REQUIRES_EGL"_ns);
-  }
-
-  if (feature.IsEnabled()) {
-    if (!VAAPIIsSupported()) {
-      feature.ForceDisable(FeatureStatus::Failed, "Failed to configure",
-                           failureId);
-    }
   }
 #else
   feature.DisableByDefault(FeatureStatus::Unavailable,

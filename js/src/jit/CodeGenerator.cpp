@@ -306,8 +306,7 @@ static void StoreAllLiveRegs(MacroAssembler& masm, LiveRegisterSet liveRegs) {
 
 // Before doing any call to Cpp, you should ensure that volatile
 // registers are evicted by the register allocator.
-void CodeGenerator::callVMInternal(VMFunctionId id, LInstruction* ins,
-                                   const Register* dynStack) {
+void CodeGenerator::callVMInternal(VMFunctionId id, LInstruction* ins) {
   TrampolinePtr code = gen->jitRuntime()->getVMWrapper(id);
   const VMFunctionData& fun = GetVMFunction(id);
 
@@ -344,17 +343,8 @@ void CodeGenerator::callVMInternal(VMFunctionId id, LInstruction* ins,
   }
 #endif
 
-  // Push an exit frame descriptor. If |dynStack| is a valid pointer to a
-  // register, then its value is added to the value of the |framePushed()| to
-  // fill the frame descriptor.
-  if (dynStack) {
-    masm.addPtr(Imm32(masm.framePushed()), *dynStack);
-    masm.makeFrameDescriptor(*dynStack, FrameType::IonJS,
-                             ExitFrameLayout::Size());
-    masm.Push(*dynStack);  // descriptor
-  } else {
-    masm.pushStaticFrameDescriptor(FrameType::IonJS, ExitFrameLayout::Size());
-  }
+  // Push an exit frame descriptor.
+  masm.PushFrameDescriptor(FrameType::IonJS);
 
   // Call the wrapper function.  The wrapper is in charge to unwind the stack
   // when returning from the call.  Failures are handled with exceptions based
@@ -374,20 +364,19 @@ void CodeGenerator::callVMInternal(VMFunctionId id, LInstruction* ins,
   }
 #endif
 
-  // Remove rest of the frame left on the stack. We remove the return address
-  // which is implicitly poped when returning.
-  int framePop = sizeof(ExitFrameLayout) - sizeof(void*);
-
-  // Pop arguments from framePushed.
+  // Pop rest of the exit frame and the arguments left on the stack.
+  int framePop =
+      sizeof(ExitFrameLayout) - ExitFrameLayout::bytesPoppedAfterCall();
   masm.implicitPop(fun.explicitStackSlots() * sizeof(void*) + framePop);
+
   // Stack is:
   //    ... frame ...
 }
 
 template <typename Fn, Fn fn>
-void CodeGenerator::callVM(LInstruction* ins, const Register* dynStack) {
+void CodeGenerator::callVM(LInstruction* ins) {
   VMFunctionId id = VMFunctionToId<Fn, fn>::id;
-  callVMInternal(id, ins, dynStack);
+  callVMInternal(id, ins);
 }
 
 // ArgSeq store arguments for OutOfLineCallVM.
@@ -925,6 +914,24 @@ void CodeGenerator::visitOutOfLineICFallback(OutOfLineICFallback* ool) {
 
       StoreRegisterTo(compareIC->output()).generate(this);
       restoreLiveIgnore(lir, StoreRegisterTo(compareIC->output()).clobbered());
+
+      masm.jump(ool->rejoin());
+      return;
+    }
+    case CacheKind::CloseIter: {
+      IonCloseIterIC* closeIterIC = ic->asCloseIterIC();
+
+      saveLive(lir);
+
+      pushArg(closeIterIC->iter());
+      icInfo_[cacheInfoIndex].icOffsetForPush = pushArgWithPatch(ImmWord(-1));
+      pushArg(ImmGCPtr(gen->outerInfo().script()));
+
+      using Fn =
+          bool (*)(JSContext*, HandleScript, IonCloseIterIC*, HandleObject);
+      callVM<Fn, IonCloseIterIC::update>(lir);
+
+      restoreLive(lir);
 
       masm.jump(ool->rejoin());
       return;
@@ -3723,21 +3730,25 @@ void CodeGenerator::visitOsrEntry(LOsrEntry* lir) {
   }
 #endif
 
-  // If profiling, save the current frame pointer to a per-thread global field.
-  if (isProfilerInstrumentationEnabled()) {
-    masm.profilerEnterFrame(masm.getStackPointer(), temp);
-  }
-
   // Allocate the full frame for this function
   // Note we have a new entry here. So we reset MacroAssembler::framePushed()
   // to 0, before reserving the stack.
   MOZ_ASSERT(masm.framePushed() == frameSize());
   masm.setFramePushed(0);
 
-  // Ensure that the Ion frames is properly aligned.
-  masm.assertStackAlignment(JitStackAlignment, 0);
+  // The Baseline code ensured both the frame pointer and stack pointer point to
+  // the JitFrameLayout on the stack.
+
+  // If profiling, save the current frame pointer to a per-thread global field.
+  if (isProfilerInstrumentationEnabled()) {
+    masm.profilerEnterFrame(FramePointer, temp);
+  }
 
   masm.reserveStack(frameSize());
+  MOZ_ASSERT(masm.framePushed() == frameSize());
+
+  // Ensure that the Ion frames is properly aligned.
+  masm.assertStackAlignment(JitStackAlignment, 0);
 }
 
 void CodeGenerator::visitOsrEnvironmentChain(LOsrEnvironmentChain* lir) {
@@ -4049,7 +4060,8 @@ void CodeGenerator::visitNewVarEnvironmentObject(
   pushArg(ToRegister(lir->enclosing()));
   pushArg(ImmGCPtr(lir->mir()->scope()));
 
-  using Fn = VarEnvironmentObject* (*)(JSContext*, HandleScope, HandleObject);
+  using Fn =
+      VarEnvironmentObject* (*)(JSContext*, Handle<Scope*>, HandleObject);
   callVM<Fn, VarEnvironmentObject::create>(lir);
 }
 
@@ -5340,7 +5352,8 @@ void CodeGenerator::visitCallDOMNative(LCallDOMNative* call) {
 void CodeGenerator::visitCallGetIntrinsicValue(LCallGetIntrinsicValue* lir) {
   pushArg(ImmGCPtr(lir->mir()->name()));
 
-  using Fn = bool (*)(JSContext * cx, HandlePropertyName, MutableHandleValue);
+  using Fn =
+      bool (*)(JSContext * cx, Handle<PropertyName*>, MutableHandleValue);
   callVM<Fn, GetIntrinsicValue>(lir);
 }
 
@@ -5422,12 +5435,9 @@ void CodeGenerator::visitCallGeneric(LCallGeneric* call) {
   // Nestle the StackPointer up to the argument vector.
   masm.freeStack(unusedStack);
 
-  // Construct the IonFramePrefix.
-  uint32_t descriptor = MakeFrameDescriptor(
-      masm.framePushed(), FrameType::IonJS, JitFrameLayout::Size());
-  masm.Push(Imm32(call->numActualArgs()));
+  // Construct the JitFrameLayout.
   masm.PushCalleeToken(calleereg, call->mir()->isConstructing());
-  masm.Push(Imm32(descriptor));
+  masm.PushFrameDescriptorForJitCall(FrameType::IonJS, call->numActualArgs());
 
   // Check whether the provided arguments satisfy target argc.
   // We cannot have lowered to LCallGeneric with a known target. Assert that we
@@ -5460,9 +5470,10 @@ void CodeGenerator::visitCallGeneric(LCallGeneric* call) {
     masm.switchToRealm(gen->realm->realmPtr(), ReturnReg);
   }
 
-  // Increment to remove IonFramePrefix; decrement to fill FrameSizeClass.
-  // The return address has already been removed from the Ion frame.
-  int prefixGarbage = sizeof(JitFrameLayout) - sizeof(void*);
+  // Restore stack pointer: pop JitFrameLayout fields still left on the stack
+  // and undo the earlier |freeStack(unusedStack)|.
+  int prefixGarbage =
+      sizeof(JitFrameLayout) - JitFrameLayout::bytesPoppedAfterCall();
   masm.adjustStack(prefixGarbage - unusedStack);
   masm.jump(&end);
 
@@ -5529,12 +5540,9 @@ void CodeGenerator::visitCallKnown(LCallKnown* call) {
   // Nestle the StackPointer up to the argument vector.
   masm.freeStack(unusedStack);
 
-  // Construct the IonFramePrefix.
-  uint32_t descriptor = MakeFrameDescriptor(
-      masm.framePushed(), FrameType::IonJS, JitFrameLayout::Size());
-  masm.Push(Imm32(call->numActualArgs()));
+  // Construct the JitFrameLayout.
   masm.PushCalleeToken(calleereg, call->mir()->isConstructing());
-  masm.Push(Imm32(descriptor));
+  masm.PushFrameDescriptorForJitCall(FrameType::IonJS, call->numActualArgs());
 
   // Finally call the function in objreg.
   uint32_t callOffset = masm.callJit(objreg);
@@ -5546,9 +5554,10 @@ void CodeGenerator::visitCallKnown(LCallKnown* call) {
     masm.switchToRealm(gen->realm->realmPtr(), ReturnReg);
   }
 
-  // Increment to remove IonFramePrefix; decrement to fill FrameSizeClass.
-  // The return address has already been removed from the Ion frame.
-  int prefixGarbage = sizeof(JitFrameLayout) - sizeof(void*);
+  // Restore stack pointer: pop JitFrameLayout fields still left on the stack
+  // and undo the earlier |freeStack(unusedStack)|.
+  int prefixGarbage =
+      sizeof(JitFrameLayout) - JitFrameLayout::bytesPoppedAfterCall();
   masm.adjustStack(prefixGarbage - unusedStack);
 
   // If the return value of the constructing function is Primitive,
@@ -5569,13 +5578,11 @@ void CodeGenerator::visitCallKnown(LCallKnown* call) {
 }
 
 template <typename T>
-void CodeGenerator::emitCallInvokeFunction(T* apply, Register extraStackSize) {
+void CodeGenerator::emitCallInvokeFunction(T* apply) {
   Register objreg = ToRegister(apply->getTempObject());
-  MOZ_ASSERT(objreg != extraStackSize);
 
   // Push the space used by the arguments.
   masm.moveStackPtrTo(objreg);
-  masm.Push(extraStackSize);
 
   pushArg(objreg);                                     // argv.
   pushArg(ToRegister(apply->getArgc()));               // argc.
@@ -5583,20 +5590,17 @@ void CodeGenerator::emitCallInvokeFunction(T* apply, Register extraStackSize) {
   pushArg(Imm32(apply->mir()->isConstructing()));      // isConstructing.
   pushArg(ToRegister(apply->getFunction()));           // JSFunction*.
 
-  // This specialization of callVM restores the extraStackSize after the call.
   using Fn = bool (*)(JSContext*, HandleObject, bool, bool, uint32_t, Value*,
                       MutableHandleValue);
-  callVM<Fn, jit::InvokeFunction>(apply, &extraStackSize);
-
-  masm.Pop(extraStackSize);
+  callVM<Fn, jit::InvokeFunction>(apply);
 }
 
 // Do not bailout after the execution of this function since the stack no longer
 // correspond to what is expected by the snapshots.
 void CodeGenerator::emitAllocateSpaceForApply(Register argcreg,
-                                              Register extraStackSpace) {
-  // Initialize the loop counter AND Compute the stack usage (if == 0)
-  masm.movePtr(argcreg, extraStackSpace);
+                                              Register scratch) {
+  // Use scratch register to calculate stack space (including padding).
+  masm.movePtr(argcreg, scratch);
 
   // Align the JitFrameLayout on the JitStackAlignment.
   if (JitStackValueAlignment > 1) {
@@ -5606,14 +5610,14 @@ void CodeGenerator::emitAllocateSpaceForApply(Register argcreg,
     Label noPaddingNeeded;
     // if the number of arguments is odd, then we do not need any padding.
     masm.branchTestPtr(Assembler::NonZero, argcreg, Imm32(1), &noPaddingNeeded);
-    masm.addPtr(Imm32(1), extraStackSpace);
+    masm.addPtr(Imm32(1), scratch);
     masm.bind(&noPaddingNeeded);
   }
 
   // Reserve space for copying the arguments.
   NativeObject::elementsSizeMustNotOverflow();
-  masm.lshiftPtr(Imm32(ValueShift), extraStackSpace);
-  masm.subFromStackPtr(extraStackSpace);
+  masm.lshiftPtr(Imm32(ValueShift), scratch);
+  masm.subFromStackPtr(scratch);
 
 #ifdef DEBUG
   // Put a magic value in the space reserved for padding. Note, this code
@@ -5634,10 +5638,10 @@ void CodeGenerator::emitAllocateSpaceForApply(Register argcreg,
 // Do not bailout after the execution of this function since the stack no longer
 // correspond to what is expected by the snapshots.
 void CodeGenerator::emitAllocateSpaceForConstructAndPushNewTarget(
-    Register argcreg, Register newTargetAndExtraStackSpace) {
+    Register argcreg, Register newTargetAndScratch) {
   // Align the JitFrameLayout on the JitStackAlignment. Contrary to
   // |emitAllocateSpaceForApply()|, we're always pushing a magic value, because
-  // we can't write to |newTargetAndExtraStackSpace| before |new.target| has
+  // we can't write to |newTargetAndScratch| before |new.target| has
   // been pushed onto the stack.
   if (JitStackValueAlignment > 1) {
     MOZ_ASSERT(frameSize() % JitStackAlignment == 0,
@@ -5652,31 +5656,15 @@ void CodeGenerator::emitAllocateSpaceForConstructAndPushNewTarget(
   }
 
   // Push |new.target| after the padding value, but before any arguments.
-  masm.pushValue(JSVAL_TYPE_OBJECT, newTargetAndExtraStackSpace);
+  masm.pushValue(JSVAL_TYPE_OBJECT, newTargetAndScratch);
 
-  // Initialize the loop counter AND compute the stack usage.
-  masm.movePtr(argcreg, newTargetAndExtraStackSpace);
+  // Use newTargetAndScratch to calculate stack space (including padding).
+  masm.movePtr(argcreg, newTargetAndScratch);
 
   // Reserve space for copying the arguments.
   NativeObject::elementsSizeMustNotOverflow();
-  masm.lshiftPtr(Imm32(ValueShift), newTargetAndExtraStackSpace);
-  masm.subFromStackPtr(newTargetAndExtraStackSpace);
-
-  // Account for |new.target| which has already been pushed onto the stack.
-  masm.addPtr(Imm32(sizeof(Value)), newTargetAndExtraStackSpace);
-
-  // And account for the padding.
-  if (JitStackValueAlignment > 1) {
-    MOZ_ASSERT(frameSize() % JitStackAlignment == 0,
-               "Stack padding assumes that the frameSize is correct");
-    MOZ_ASSERT(JitStackValueAlignment == 2);
-
-    Label noPaddingNeeded;
-    // If the number of arguments is even, then we do not need any padding.
-    masm.branchTestPtr(Assembler::Zero, argcreg, Imm32(1), &noPaddingNeeded);
-    masm.addPtr(Imm32(sizeof(Value)), newTargetAndExtraStackSpace);
-    masm.bind(&noPaddingNeeded);
-  }
+  masm.lshiftPtr(Imm32(ValueShift), newTargetAndScratch);
+  masm.subFromStackPtr(newTargetAndScratch);
 }
 
 // Destroys argvIndex and copyreg.
@@ -5690,18 +5678,19 @@ void CodeGenerator::emitCopyValuesForApply(Register argvSrcBase,
   // As argvIndex is off by 1, and we use the decBranchPtr instruction
   // to loop back, we have to substract the size of the word which are
   // copied.
-  BaseValueIndex srcPtr(argvSrcBase, argvIndex, argvSrcOffset - sizeof(void*));
+  BaseValueIndex srcPtr(argvSrcBase, argvIndex,
+                        int32_t(argvSrcOffset) - sizeof(void*));
   BaseValueIndex dstPtr(masm.getStackPointer(), argvIndex,
-                        argvDstOffset - sizeof(void*));
+                        int32_t(argvDstOffset) - sizeof(void*));
   masm.loadPtr(srcPtr, copyreg);
   masm.storePtr(copyreg, dstPtr);
 
   // Handle 32 bits architectures.
   if (sizeof(Value) == 2 * sizeof(void*)) {
     BaseValueIndex srcPtrLow(argvSrcBase, argvIndex,
-                             argvSrcOffset - 2 * sizeof(void*));
+                             int32_t(argvSrcOffset) - 2 * sizeof(void*));
     BaseValueIndex dstPtrLow(masm.getStackPointer(), argvIndex,
-                             argvDstOffset - 2 * sizeof(void*));
+                             int32_t(argvDstOffset) - 2 * sizeof(void*));
     masm.loadPtr(srcPtrLow, copyreg);
     masm.storePtr(copyreg, dstPtrLow);
   }
@@ -5709,13 +5698,18 @@ void CodeGenerator::emitCopyValuesForApply(Register argvSrcBase,
   masm.decBranchPtr(Assembler::NonZero, argvIndex, Imm32(1), &loop);
 }
 
-void CodeGenerator::emitPopArguments(Register extraStackSpace) {
-  // Pop |this| and Arguments.
-  masm.freeStack(extraStackSpace);
+void CodeGenerator::emitRestoreStackPointerFromFP() {
+  // This is used to restore the stack pointer after a call with a dynamic
+  // number of arguments.
+
+  MOZ_ASSERT(masm.framePushed() == frameSize());
+
+  int32_t offset = -int32_t(frameSize());
+  masm.computeEffectiveAddress(Address(FramePointer, offset),
+                               masm.getStackPointer());
 }
 
-void CodeGenerator::emitPushArguments(Register argcreg,
-                                      Register extraStackSpace,
+void CodeGenerator::emitPushArguments(Register argcreg, Register scratch,
                                       Register copyreg, uint32_t extraFormals) {
   Label end;
 
@@ -5732,57 +5726,38 @@ void CodeGenerator::emitPushArguments(Register argcreg,
   // clang-format on
 
   // Compute the source and destination offsets into the stack.
-  size_t argvSrcOffset = frameSize() + JitFrameLayout::offsetOfActualArgs() +
-                         extraFormals * sizeof(JS::Value);
+  Register argvSrcBase = FramePointer;
+  size_t argvSrcOffset =
+      JitFrameLayout::offsetOfActualArgs() + extraFormals * sizeof(JS::Value);
   size_t argvDstOffset = 0;
 
-  // Save the extra stack space, and re-use the register as a base.
-  masm.push(extraStackSpace);
-  Register argvSrcBase = extraStackSpace;
-  argvSrcOffset += sizeof(void*);
-  argvDstOffset += sizeof(void*);
-
-  // Save the actual number of register, and re-use the register as an index
-  // register.
-  masm.push(argcreg);
-  Register argvIndex = argcreg;
-  argvSrcOffset += sizeof(void*);
-  argvDstOffset += sizeof(void*);
-
-  // srcPtr = (StackPointer + extraStackSpace) + argvSrcOffset
-  // dstPtr = (StackPointer                  ) + argvDstOffset
-  masm.addStackPtrTo(argvSrcBase);
+  Register argvIndex = scratch;
+  masm.move32(argcreg, argvIndex);
 
   // Copy arguments.
   emitCopyValuesForApply(argvSrcBase, argvIndex, copyreg, argvSrcOffset,
                          argvDstOffset);
-
-  // Restore argcreg and the extra stack space counter.
-  masm.pop(argcreg);
-  masm.pop(extraStackSpace);
 
   // Join with all arguments copied and the extra stack usage computed.
   masm.bind(&end);
 }
 
 void CodeGenerator::emitPushArguments(LApplyArgsGeneric* apply,
-                                      Register extraStackSpace) {
+                                      Register scratch) {
   // Holds the function nargs. Initially the number of args to the caller.
   Register argcreg = ToRegister(apply->getArgc());
   Register copyreg = ToRegister(apply->getTempObject());
   uint32_t extraFormals = apply->numExtraFormals();
 
-  emitAllocateSpaceForApply(argcreg, extraStackSpace);
+  emitAllocateSpaceForApply(argcreg, scratch);
 
-  emitPushArguments(argcreg, extraStackSpace, copyreg, extraFormals);
+  emitPushArguments(argcreg, scratch, copyreg, extraFormals);
 
   // Push |this|.
-  masm.addPtr(Imm32(sizeof(Value)), extraStackSpace);
   masm.pushValue(ToValue(apply, LApplyArgsGeneric::ThisIndex));
 }
 
-void CodeGenerator::emitPushArguments(LApplyArgsObj* apply,
-                                      Register extraStackSpace) {
+void CodeGenerator::emitPushArguments(LApplyArgsObj* apply, Register scratch) {
   // argc and argsObj are mapped to the same calltemp register.
   MOZ_ASSERT(apply->getArgsObj() == apply->getArgc());
 
@@ -5794,8 +5769,8 @@ void CodeGenerator::emitPushArguments(LApplyArgsObj* apply,
   masm.unboxInt32(lengthAddr, tmpArgc);
   masm.rshift32(Imm32(ArgumentsObject::PACKED_BITS_COUNT), tmpArgc);
 
-  // Allocate space on the stack for arguments. This modifies extraStackSpace.
-  emitAllocateSpaceForApply(tmpArgc, extraStackSpace);
+  // Allocate space on the stack for arguments. This modifies scratch.
+  emitAllocateSpaceForApply(tmpArgc, scratch);
 
   // Load arguments data
   masm.loadPrivate(Address(argsObj, ArgumentsObject::getDataSlotOffset()),
@@ -5804,9 +5779,8 @@ void CodeGenerator::emitPushArguments(LApplyArgsObj* apply,
 
   // This is the end of the lifetime of argsObj.
   // After this call, the argsObj register holds the argument count instead.
-  emitPushArrayAsArguments(tmpArgc, argsObj, extraStackSpace, argsSrcOffset);
+  emitPushArrayAsArguments(tmpArgc, argsObj, scratch, argsSrcOffset);
 
-  masm.addPtr(Imm32(sizeof(Value)), extraStackSpace);
   masm.pushValue(ToValue(apply, LApplyArgsObj::ThisIndex));
 }
 
@@ -5824,8 +5798,7 @@ void CodeGenerator::emitPushArrayAsArguments(Register tmpArgc,
   //    the allocated space.
   // 2. |srcBaseAndArgc| now contains the original value of |tmpArgc|.
   //
-  // |scratch| is used as a temp register within this function. It is
-  // restored before returning.
+  // |scratch| is used as a temp register within this function and clobbered.
 
   Label noCopy, epilogue;
 
@@ -5837,10 +5810,7 @@ void CodeGenerator::emitPushArrayAsArguments(Register tmpArgc,
   size_t argvDstOffset = 0;
 
   Register argvSrcBase = srcBaseAndArgc;
-
-  masm.push(scratch);
   Register copyreg = scratch;
-  argvDstOffset += sizeof(void*);
 
   masm.push(tmpArgc);
   Register argvIndex = tmpArgc;
@@ -5852,7 +5822,6 @@ void CodeGenerator::emitPushArrayAsArguments(Register tmpArgc,
 
   // Restore.
   masm.pop(srcBaseAndArgc);  // srcBaseAndArgc now contains argc.
-  masm.pop(scratch);
   masm.jump(&epilogue);
 
   // Clear argc if we skipped the copy step.
@@ -5865,7 +5834,7 @@ void CodeGenerator::emitPushArrayAsArguments(Register tmpArgc,
 }
 
 void CodeGenerator::emitPushArguments(LApplyArrayGeneric* apply,
-                                      Register extraStackSpace) {
+                                      Register scratch) {
   Register tmpArgc = ToRegister(apply->getTempObject());
   Register elementsAndArgc = ToRegister(apply->getElements());
 
@@ -5879,21 +5848,19 @@ void CodeGenerator::emitPushArguments(LApplyArrayGeneric* apply,
   masm.load32(length, tmpArgc);
 
   // Allocate space for the values.
-  emitAllocateSpaceForApply(tmpArgc, extraStackSpace);
+  emitAllocateSpaceForApply(tmpArgc, scratch);
 
   // After this call "elements" has become "argc".
   size_t elementsOffset = 0;
-  emitPushArrayAsArguments(tmpArgc, elementsAndArgc, extraStackSpace,
-                           elementsOffset);
+  emitPushArrayAsArguments(tmpArgc, elementsAndArgc, scratch, elementsOffset);
 
   // Push |this|.
-  masm.addPtr(Imm32(sizeof(Value)), extraStackSpace);
   masm.pushValue(ToValue(apply, LApplyArrayGeneric::ThisIndex));
 }
 
 void CodeGenerator::emitPushArguments(LConstructArgsGeneric* construct,
-                                      Register extraStackSpace) {
-  MOZ_ASSERT(extraStackSpace == ToRegister(construct->getNewTarget()));
+                                      Register scratch) {
+  MOZ_ASSERT(scratch == ToRegister(construct->getNewTarget()));
 
   // Holds the function nargs. Initially the number of args to the caller.
   Register argcreg = ToRegister(construct->getArgc());
@@ -5901,19 +5868,18 @@ void CodeGenerator::emitPushArguments(LConstructArgsGeneric* construct,
   uint32_t extraFormals = construct->numExtraFormals();
 
   // Allocate space for the values.
-  // After this call "newTarget" has become "extraStackSpace".
-  emitAllocateSpaceForConstructAndPushNewTarget(argcreg, extraStackSpace);
+  // After this call "newTarget" has become "scratch".
+  emitAllocateSpaceForConstructAndPushNewTarget(argcreg, scratch);
 
-  emitPushArguments(argcreg, extraStackSpace, copyreg, extraFormals);
+  emitPushArguments(argcreg, scratch, copyreg, extraFormals);
 
   // Push |this|.
-  masm.addPtr(Imm32(sizeof(Value)), extraStackSpace);
   masm.pushValue(ToValue(construct, LConstructArgsGeneric::ThisIndex));
 }
 
 void CodeGenerator::emitPushArguments(LConstructArrayGeneric* construct,
-                                      Register extraStackSpace) {
-  MOZ_ASSERT(extraStackSpace == ToRegister(construct->getNewTarget()));
+                                      Register scratch) {
+  MOZ_ASSERT(scratch == ToRegister(construct->getNewTarget()));
 
   Register tmpArgc = ToRegister(construct->getTempObject());
   Register elementsAndArgc = ToRegister(construct->getElements());
@@ -5928,16 +5894,14 @@ void CodeGenerator::emitPushArguments(LConstructArrayGeneric* construct,
   masm.load32(length, tmpArgc);
 
   // Allocate space for the values.
-  emitAllocateSpaceForConstructAndPushNewTarget(tmpArgc, extraStackSpace);
+  emitAllocateSpaceForConstructAndPushNewTarget(tmpArgc, scratch);
 
   // After this call "elements" has become "argc" and "newTarget" has become
-  // "extraStackSpace".
+  // "scratch".
   size_t elementsOffset = 0;
-  emitPushArrayAsArguments(tmpArgc, elementsAndArgc, extraStackSpace,
-                           elementsOffset);
+  emitPushArrayAsArguments(tmpArgc, elementsAndArgc, scratch, elementsOffset);
 
   // Push |this|.
-  masm.addPtr(Imm32(sizeof(Value)), extraStackSpace);
   masm.pushValue(ToValue(construct, LConstructArrayGeneric::ThisIndex));
 }
 
@@ -5948,7 +5912,7 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
 
   // Temporary register for modifying the function object.
   Register objreg = ToRegister(apply->getTempObject());
-  Register extraStackSpace = ToRegister(apply->getTempStackCounter());
+  Register scratch = ToRegister(apply->getTempForArgCopy());
 
   // Holds the function nargs, computed in the invoker or (for ApplyArray,
   // ConstructArray, or ApplyArgsObj) in the argument pusher.
@@ -5963,13 +5927,10 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
   // after it returns.
   //
   // In the case of ConstructArray or ConstructArgs, also overwrite newTarget
-  // with extraStackSpace; newTarget must not be referenced after this point.
+  // with scratch; newTarget must not be referenced after this point.
   //
   // objreg is dead across this call.
-  //
-  // extraStackSpace is garbage on entry (for ApplyArray and ApplyArgs) and
-  // defined on exit.
-  emitPushArguments(apply, extraStackSpace);
+  emitPushArguments(apply, scratch);
 
   masm.checkStackAlignment();
 
@@ -5978,7 +5939,7 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
   // If the function is native, only emit the call to InvokeFunction.
   if (apply->hasSingleTarget() &&
       apply->getSingleTarget()->isNativeWithoutJitEntry()) {
-    emitCallInvokeFunction(apply, extraStackSpace);
+    emitCallInvokeFunction(apply);
 
 #ifdef DEBUG
     // Native constructors are guaranteed to return an Object value, so we never
@@ -5993,7 +5954,7 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
     }
 #endif
 
-    emitPopArguments(extraStackSpace);
+    emitRestoreStackPointerFromFP();
     return;
   }
 
@@ -6032,22 +5993,14 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
     // Knowing that calleereg is a non-native function, load jitcode.
     masm.loadJitCodeRaw(calleereg, objreg);
 
-    // Create the frame descriptor.
-    unsigned pushed = masm.framePushed();
-    Register stackSpace = extraStackSpace;
-    masm.addPtr(Imm32(pushed), stackSpace);
-    masm.makeFrameDescriptor(stackSpace, FrameType::IonJS,
-                             JitFrameLayout::Size());
-
-    masm.Push(argcreg);
     masm.PushCalleeToken(calleereg, constructing);
-    masm.Push(stackSpace);  // descriptor
+    masm.PushFrameDescriptorForJitCall(FrameType::IonJS, argcreg, scratch);
 
     Label underflow, rejoin;
 
     // Check whether the provided arguments satisfy target argc.
     if (!apply->hasSingleTarget()) {
-      Register nformals = extraStackSpace;
+      Register nformals = scratch;
       masm.loadFunctionArgCount(calleereg, nformals);
       masm.branch32(Assembler::Below, argcreg, nformals, &underflow);
     } else {
@@ -6082,22 +6035,16 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
       masm.switchToRealm(gen->realm->realmPtr(), ReturnReg);
     }
 
-    // Recover the number of arguments from the frame descriptor.
-    masm.loadPtr(Address(masm.getStackPointer(), 0), stackSpace);
-    masm.rshiftPtr(Imm32(FRAMESIZE_SHIFT), stackSpace);
-    masm.subPtr(Imm32(pushed), stackSpace);
-
-    // Increment to remove IonFramePrefix; decrement to fill FrameSizeClass.
-    // The return address has already been removed from the Ion frame.
-    int prefixGarbage = sizeof(JitFrameLayout) - sizeof(void*);
-    masm.adjustStack(prefixGarbage);
+    // Discard JitFrameLayout fields still left on the stack.
+    masm.freeStack(sizeof(JitFrameLayout) -
+                   JitFrameLayout::bytesPoppedAfterCall());
     masm.jump(&end);
   }
 
   // Handle uncompiled or native functions.
   {
     masm.bind(&invoke);
-    emitCallInvokeFunction(apply, extraStackSpace);
+    emitCallInvokeFunction(apply);
   }
 
   masm.bind(&end);
@@ -6120,7 +6067,7 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
   }
 
   // Pop arguments and continue.
-  emitPopArguments(extraStackSpace);
+  emitRestoreStackPointerFromFP();
 }
 
 void CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric* apply) {
@@ -6600,13 +6547,6 @@ bool CodeGenerator::generateBody() {
 
   const bool compilingWasm = gen->compilingWasm();
 
-#if defined(JS_ION_PERF)
-  PerfSpewer* perfSpewer = &perfSpewer_;
-  if (compilingWasm) {
-    perfSpewer = &gen->perfSpewer();
-  }
-#endif
-
   for (size_t i = 0; i < graph.numBlocks(); i++) {
     current = graph.getBlock(i);
 
@@ -6653,18 +6593,15 @@ bool CodeGenerator::generateBody() {
       }
     }
 
-#if defined(JS_ION_PERF)
-    if (!perfSpewer->startBasicBlock(current->mir(), masm)) {
-      return false;
-    }
-#endif
-
     for (LInstructionIterator iter = current->begin(); iter != current->end();
          iter++) {
       if (!alloc().ensureBallast()) {
         return false;
       }
 
+#ifdef JS_ION_PERF
+      perfSpewer_.recordInstruction(masm, iter->op());
+#endif
 #ifdef JS_JITSPEW
       JitSpewStart(JitSpew_Codegen, "                                # LIR=%s",
                    iter->opName());
@@ -6721,10 +6658,6 @@ bool CodeGenerator::generateBody() {
     if (masm.oom()) {
       return false;
     }
-
-#if defined(JS_ION_PERF)
-    perfSpewer->endBasicBlock(masm);
-#endif
   }
 
   JitSpew(JitSpew_Codegen, "==== END CodeGenerator::generateBody ====\n");
@@ -6757,7 +6690,7 @@ void CodeGenerator::visitNewArrayCallVM(LNewArray* lir) {
     pushArg(ImmGCPtr(templateObject->shape()));
     pushArg(Imm32(lir->mir()->length()));
 
-    using Fn = ArrayObject* (*)(JSContext*, uint32_t, HandleShape);
+    using Fn = ArrayObject* (*)(JSContext*, uint32_t, Handle<Shape*>);
     callVM<Fn, NewArrayWithShape>(lir);
   } else {
     pushArg(Imm32(GenericObject));
@@ -6858,7 +6791,7 @@ void CodeGenerator::visitNewArrayDynamicLength(LNewArrayDynamicLength* lir) {
   JSObject* templateObject = lir->mir()->templateObject();
   gc::InitialHeap initialHeap = lir->mir()->initialHeap();
 
-  using Fn = ArrayObject* (*)(JSContext*, HandleArrayObject, int32_t length);
+  using Fn = ArrayObject* (*)(JSContext*, Handle<ArrayObject*>, int32_t length);
   OutOfLineCode* ool = oolCallVM<Fn, ArrayConstructorOneArg>(
       lir, ArgList(ImmGCPtr(templateObject), lengthReg),
       StoreRegisterTo(objReg));
@@ -7046,7 +6979,7 @@ void CodeGenerator::visitNewObjectVMCall(LNewObject* lir) {
     case MNewObject::ObjectCreate: {
       pushArg(ImmGCPtr(templateObject));
 
-      using Fn = PlainObject* (*)(JSContext*, HandlePlainObject);
+      using Fn = PlainObject* (*)(JSContext*, Handle<PlainObject*>);
       callVM<Fn, ObjectCreateWithTemplate>(lir);
       break;
     }
@@ -7189,7 +7122,7 @@ void CodeGenerator::visitNewPlainObject(LNewPlainObject* lir) {
   gc::AllocKind allocKind = mir->allocKind();
 
   using Fn =
-      JSObject* (*)(JSContext*, HandleShape, gc::AllocKind, gc::InitialHeap);
+      JSObject* (*)(JSContext*, Handle<Shape*>, gc::AllocKind, gc::InitialHeap);
   OutOfLineCode* ool = oolCallVM<Fn, NewPlainObjectOptimizedFallback>(
       lir,
       ArgList(ImmGCPtr(shape), Imm32(int32_t(allocKind)), Imm32(initialHeap)),
@@ -7267,7 +7200,7 @@ void CodeGenerator::visitNewCallObject(LNewCallObject* lir) {
 
   CallObject* templateObj = lir->mir()->templateObject();
 
-  using Fn = JSObject* (*)(JSContext*, HandleShape);
+  using Fn = JSObject* (*)(JSContext*, Handle<Shape*>);
   OutOfLineCode* ool = oolCallVM<Fn, NewCallObject>(
       lir, ArgList(ImmGCPtr(templateObj->shape())), StoreRegisterTo(objReg));
 
@@ -7325,7 +7258,8 @@ void CodeGenerator::visitMutateProto(LMutateProto* lir) {
   pushArg(ToValue(lir, LMutateProto::ValueIndex));
   pushArg(objReg);
 
-  using Fn = bool (*)(JSContext * cx, HandlePlainObject obj, HandleValue value);
+  using Fn =
+      bool (*)(JSContext * cx, Handle<PlainObject*> obj, HandleValue value);
   callVM<Fn, MutatePrototype>(lir);
 }
 
@@ -7338,8 +7272,8 @@ void CodeGenerator::visitInitPropGetterSetter(LInitPropGetterSetter* lir) {
   pushArg(obj);
   pushArg(ImmPtr(lir->mir()->resumePoint()->pc()));
 
-  using Fn = bool (*)(JSContext*, jsbytecode*, HandleObject, HandlePropertyName,
-                      HandleObject);
+  using Fn = bool (*)(JSContext*, jsbytecode*, HandleObject,
+                      Handle<PropertyName*>, HandleObject);
   callVM<Fn, InitPropGetterSetterOperation>(lir);
 }
 
@@ -7769,7 +7703,7 @@ void CodeGenerator::visitImplicitThis(LImplicitThis* lir) {
   pushArg(ImmGCPtr(lir->mir()->name()));
   pushArg(ToRegister(lir->env()));
 
-  using Fn = bool (*)(JSContext*, HandleObject, HandlePropertyName,
+  using Fn = bool (*)(JSContext*, HandleObject, Handle<PropertyName*>,
                       MutableHandleValue);
   callVM<Fn, ImplicitThisOperation>(lir);
 }
@@ -8086,13 +8020,13 @@ void CodeGenerator::visitWasmRegisterResult(LWasmRegisterResult* lir) {
 void CodeGenerator::visitWasmCall(LWasmCall* lir) {
   const MWasmCallBase* callBase = lir->callBase();
 
-  // If this call is in Wasm try code block, initialise a WasmTryNote for this
+  // If this call is in Wasm try code block, initialise a wasm::TryNote for this
   // call.
   bool inTry = callBase->inTry();
   if (inTry) {
     size_t tryNoteIndex = callBase->tryNoteIndex();
-    wasm::WasmTryNoteVector& tryNotes = masm.tryNotes();
-    wasm::WasmTryNote& tryNote = tryNotes[tryNoteIndex];
+    wasm::TryNoteVector& tryNotes = masm.tryNotes();
+    wasm::TryNote& tryNote = tryNotes[tryNoteIndex];
     tryNote.setTryBodyBegin(masm.currentOffset());
   }
 
@@ -8215,8 +8149,8 @@ void CodeGenerator::visitWasmCall(LWasmCall* lir) {
   if (inTry) {
     // Set the end of the try note range
     size_t tryNoteIndex = callBase->tryNoteIndex();
-    wasm::WasmTryNoteVector& tryNotes = masm.tryNotes();
-    wasm::WasmTryNote& tryNote = tryNotes[tryNoteIndex];
+    wasm::TryNoteVector& tryNotes = masm.tryNotes();
+    wasm::TryNote& tryNote = tryNotes[tryNoteIndex];
     tryNote.setTryBodyEnd(masm.currentOffset());
 
     // This instruction or the adjunct safepoint must be the last instruction
@@ -8248,8 +8182,8 @@ void CodeGenerator::visitWasmCallLandingPrePad(LWasmCallLandingPrePad* lir) {
   MOZ_RELEASE_ASSERT(*block->begin() == lir || (block->begin()->isMoveGroup() &&
                                                 *(++block->begin()) == lir));
 
-  wasm::WasmTryNoteVector& tryNotes = masm.tryNotes();
-  wasm::WasmTryNote& tryNote = tryNotes[mir->tryNoteIndex()];
+  wasm::TryNoteVector& tryNotes = masm.tryNotes();
+  wasm::TryNote& tryNote = tryNotes[mir->tryNoteIndex()];
   // Set the entry point for the call try note to be the beginning of this
   // block. The above assertions (and assertions in visitWasmCall) guarantee
   // that we are not skipping over instructions that should be executed.
@@ -10789,6 +10723,7 @@ void JitRuntime::generateLazyLinkStub(MacroAssembler& masm) {
 #ifdef JS_USE_LINK_REGISTER
   masm.pushReturnAddress();
 #endif
+  masm.Push(FramePointer);
 
   AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
   Register temp0 = regs.takeAny();
@@ -10806,7 +10741,8 @@ void JitRuntime::generateLazyLinkStub(MacroAssembler& masm) {
   masm.callWithABI<Fn, LazyLinkTopActivation>(
       MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
-  masm.leaveExitFrame();
+  // Discard exit frame and frame pointer.
+  masm.leaveExitFrame(sizeof(void*));
 
 #ifdef JS_USE_LINK_REGISTER
   // Restore the return address such that the emitPrologue function of the
@@ -10824,6 +10760,7 @@ void JitRuntime::generateInterpreterStub(MacroAssembler& masm) {
 #ifdef JS_USE_LINK_REGISTER
   masm.pushReturnAddress();
 #endif
+  masm.Push(FramePointer);
 
   AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
   Register temp0 = regs.takeAny();
@@ -10842,13 +10779,16 @@ void JitRuntime::generateInterpreterStub(MacroAssembler& masm) {
       MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   masm.branchIfFalseBool(ReturnReg, masm.failureLabel());
-  masm.leaveExitFrame();
+
+  // Discard exit frame and frame pointer.
+  masm.leaveExitFrame(sizeof(void*));
 
   // InvokeFromInterpreterStub stores the return value in argv[0], where the
-  // caller stored |this|.
-  masm.loadValue(
-      Address(masm.getStackPointer(), JitFrameLayout::offsetOfThis()),
-      JSReturnOperand);
+  // caller stored |this|. Subtract |sizeof(void*)| for the frame pointer we
+  // just popped.
+  masm.loadValue(Address(masm.getStackPointer(),
+                         JitFrameLayout::offsetOfThis() - sizeof(void*)),
+                 JSReturnOperand);
   masm.ret();
 }
 
@@ -11561,7 +11501,7 @@ void CodeGenerator::visitOutOfLineStoreElementHole(
   }
   pushArg(object);
 
-  using Fn = bool (*)(JSContext*, HandleNativeObject, int32_t, HandleValue,
+  using Fn = bool (*)(JSContext*, Handle<NativeObject*>, int32_t, HandleValue,
                       bool strict);
   callVM<Fn, jit::SetDenseElement>(ins);
 
@@ -11593,7 +11533,7 @@ void CodeGenerator::visitArrayPush(LArrayPush* lir) {
   ValueOperand value = ToValue(lir, LArrayPush::ValueIndex);
   Register spectreTemp = ToTempRegisterOrInvalid(lir->temp1());
 
-  using Fn = bool (*)(JSContext*, HandleArrayObject, HandleValue, uint32_t*);
+  using Fn = bool (*)(JSContext*, Handle<ArrayObject*>, HandleValue, uint32_t*);
   OutOfLineCode* ool = oolCallVM<Fn, jit::ArrayPushDense>(
       lir, ArgList(obj, value), StoreRegisterTo(length));
 
@@ -11849,10 +11789,7 @@ void CodeGenerator::visitFrameArgumentsSlice(LFrameArgumentsSlice* lir) {
   Register output = ToRegister(lir->output());
 
 #ifdef DEBUG
-  Address numActualArgs(masm.getStackPointer(),
-                        frameSize() + JitFrameLayout::offsetOfNumActualArgs());
-  masm.loadPtr(numActualArgs, temp);
-
+  masm.loadNumActualArgs(FramePointer, temp);
   emitAssertArgumentsSliceBounds(RegisterOrInt32(begin), RegisterOrInt32(count),
                                  temp);
 #endif
@@ -12194,6 +12131,16 @@ void CodeGenerator::visitOptimizeSpreadCallCache(
   addIC(lir, allocateIC(ic));
 }
 
+void CodeGenerator::visitCloseIterCache(LCloseIterCache* lir) {
+  LiveRegisterSet liveRegs = lir->safepoint()->liveRegs();
+  Register iter = ToRegister(lir->iter());
+  Register temp = ToRegister(lir->temp0());
+  CompletionKind kind = CompletionKind(lir->mir()->completionKind());
+
+  IonCloseIterIC ic(liveRegs, iter, temp, kind);
+  addIC(lir, allocateIC(ic));
+}
+
 void CodeGenerator::visitIteratorMore(LIteratorMore* lir) {
   const Register obj = ToRegister(lir->iterator());
   const ValueOperand output = ToOutValue(lir);
@@ -12226,10 +12173,7 @@ void CodeGenerator::visitIteratorEnd(LIteratorEnd* lir) {
 void CodeGenerator::visitArgumentsLength(LArgumentsLength* lir) {
   // read number of actual arguments from the JS frame.
   Register argc = ToRegister(lir->output());
-  Address ptr(masm.getStackPointer(),
-              frameSize() + JitFrameLayout::offsetOfNumActualArgs());
-
-  masm.loadPtr(ptr, argc);
+  masm.loadNumActualArgs(FramePointer, argc);
 }
 
 void CodeGenerator::visitGetFrameArgument(LGetFrameArgument* lir) {
@@ -12544,11 +12488,6 @@ bool CodeGenerator::generateWasm(
   masm.bind(&returnLabel_);
   wasm::GenerateFunctionEpilogue(masm, frameSize(), offsets);
 
-#if defined(JS_ION_PERF)
-  // Note the end of the inline code and start of the OOL code.
-  gen->perfSpewer().noteEndInlineCode(masm);
-#endif
-
   if (!generateOutOfLineCode()) {
     return false;
   }
@@ -12564,7 +12503,6 @@ bool CodeGenerator::generateWasm(
   MOZ_ASSERT(snapshots_.listSize() == 0);
   MOZ_ASSERT(snapshots_.RVATableSize() == 0);
   MOZ_ASSERT(recovers_.size() == 0);
-  MOZ_ASSERT(bailouts_.empty());
   MOZ_ASSERT(graph.numConstants() == 0);
   MOZ_ASSERT(osiIndices_.empty());
   MOZ_ASSERT(icList_.empty());
@@ -12621,10 +12559,6 @@ bool CodeGenerator::generate() {
     return false;
   }
 
-  if (frameClass_ != FrameSizeClass::None()) {
-    deoptTable_.emplace(gen->jitRuntime()->getBailoutTable(frameClass_));
-  }
-
   // Reset native => bytecode map table with top-level script and startPc.
   if (!addNativeToBytecodeEntry(startSite)) {
     return false;
@@ -12649,10 +12583,6 @@ bool CodeGenerator::generate() {
   }
 
   generateInvalidateEpilogue();
-#if defined(JS_ION_PERF)
-  // Note the end of the inline code and start of the OOL code.
-  perfSpewer_.noteEndInlineCode(masm);
-#endif
 
   // native => bytecode entries for OOL code will be added
   // by CodeGeneratorShared::generateOutOfLineCode
@@ -12761,10 +12691,6 @@ bool CodeGenerator::link(JSContext* cx, const WarpSnapshot* snapshot) {
   }
 
   uint32_t argumentSlots = (gen->outerInfo().nargs() + 1) * sizeof(Value);
-  uint32_t scriptFrameSize =
-      frameClass_ == FrameSizeClass::None()
-          ? frameDepth_
-          : FrameSizeClass::FromDepth(frameDepth_).frameSize();
 
   // We encode safepoints after the OSI-point offsets have been determined.
   if (!encodeSafepoints()) {
@@ -12774,11 +12700,11 @@ bool CodeGenerator::link(JSContext* cx, const WarpSnapshot* snapshot) {
   size_t numNurseryObjects = snapshot->nurseryObjects().length();
 
   IonScript* ionScript = IonScript::New(
-      cx, compilationId, graph.totalSlotCount(), argumentSlots, scriptFrameSize,
+      cx, compilationId, graph.localSlotsSize(), argumentSlots, frameDepth_,
       snapshots_.listSize(), snapshots_.RVATableSize(), recovers_.size(),
-      bailouts_.length(), graph.numConstants(), numNurseryObjects,
-      safepointIndices_.length(), osiIndices_.length(), icList_.length(),
-      runtimeData_.length(), safepoints_.size());
+      graph.numConstants(), numNurseryObjects, safepointIndices_.length(),
+      osiIndices_.length(), icList_.length(), runtimeData_.length(),
+      safepoints_.size());
   if (!ionScript) {
     return false;
   }
@@ -12936,7 +12862,7 @@ bool CodeGenerator::link(JSContext* cx, const WarpSnapshot* snapshot) {
 
 #if defined(JS_ION_PERF)
   if (PerfEnabled()) {
-    perfSpewer_.writeProfile(script, code, masm);
+    perfSpewer_.writeProfile(script, code);
   }
 #endif
 
@@ -12952,10 +12878,7 @@ bool CodeGenerator::link(JSContext* cx, const WarpSnapshot* snapshot) {
     ionScript->copySafepoints(&safepoints_);
   }
 
-  // for reconvering from an Ion Frame.
-  if (bailouts_.length()) {
-    ionScript->copyBailoutTable(&bailouts_[0]);
-  }
+  // for recovering from an Ion Frame.
   if (osiIndices_.length()) {
     ionScript->copyOsiIndices(&osiIndices_[0]);
   }
@@ -13255,7 +13178,8 @@ void CodeGenerator::visitAddSlotAndCallAddPropHook(
   pushArg(value);
   pushArg(obj);
 
-  using Fn = bool (*)(JSContext*, HandleNativeObject, HandleValue, HandleShape);
+  using Fn =
+      bool (*)(JSContext*, Handle<NativeObject*>, HandleValue, Handle<Shape*>);
   callVM<Fn, AddSlotAndCallAddPropHook>(ins);
 }
 
@@ -13428,7 +13352,7 @@ void CodeGenerator::visitCheckPrivateFieldCache(LCheckPrivateFieldCache* ins) {
 void CodeGenerator::visitNewPrivateName(LNewPrivateName* ins) {
   pushArg(ImmGCPtr(ins->mir()->name()));
 
-  using Fn = JS::Symbol* (*)(JSContext*, HandleAtom);
+  using Fn = JS::Symbol* (*)(JSContext*, Handle<JSAtom*>);
   callVM<Fn, NewPrivateName>(ins);
 }
 
@@ -13436,7 +13360,7 @@ void CodeGenerator::visitCallDeleteProperty(LCallDeleteProperty* lir) {
   pushArg(ImmGCPtr(lir->mir()->name()));
   pushArg(ToValue(lir, LCallDeleteProperty::ValueIndex));
 
-  using Fn = bool (*)(JSContext*, HandleValue, HandlePropertyName, bool*);
+  using Fn = bool (*)(JSContext*, HandleValue, Handle<PropertyName*>, bool*);
   if (lir->mir()->strict()) {
     callVM<Fn, DelPropOperation<true>>(lir);
   } else {
@@ -15852,10 +15776,7 @@ void CodeGenerator::visitNewTarget(LNewTarget* ins) {
                      Imm32(CalleeToken_FunctionConstructing), &notConstructing);
 
   Register argvLen = output.scratchReg();
-
-  Address actualArgsPtr(masm.getStackPointer(),
-                        frameSize() + JitFrameLayout::offsetOfNumActualArgs());
-  masm.loadPtr(actualArgsPtr, argvLen);
+  masm.loadNumActualArgs(FramePointer, argvLen);
 
   Label useNFormals;
 
@@ -16530,7 +16451,7 @@ void CodeGenerator::visitCallAddOrUpdateSparseElement(
   pushArg(object);
 
   using Fn =
-      bool (*)(JSContext*, HandleArrayObject, int32_t, HandleValue, bool);
+      bool (*)(JSContext*, Handle<ArrayObject*>, int32_t, HandleValue, bool);
   callVM<Fn, js::AddOrUpdateSparseElementHelper>(lir);
 }
 
@@ -16542,7 +16463,7 @@ void CodeGenerator::visitCallGetSparseElement(LCallGetSparseElement* lir) {
   pushArg(object);
 
   using Fn =
-      bool (*)(JSContext*, HandleArrayObject, int32_t, MutableHandleValue);
+      bool (*)(JSContext*, Handle<ArrayObject*>, int32_t, MutableHandleValue);
   callVM<Fn, js::GetSparseElementHelper>(lir);
 }
 
@@ -16554,7 +16475,7 @@ void CodeGenerator::visitCallNativeGetElement(LCallNativeGetElement* lir) {
   pushArg(TypedOrValueRegister(MIRType::Object, AnyRegister(object)));
   pushArg(object);
 
-  using Fn = bool (*)(JSContext*, HandleNativeObject, HandleValue, int32_t,
+  using Fn = bool (*)(JSContext*, Handle<NativeObject*>, HandleValue, int32_t,
                       MutableHandleValue);
   callVM<Fn, js::NativeGetElement>(lir);
 }

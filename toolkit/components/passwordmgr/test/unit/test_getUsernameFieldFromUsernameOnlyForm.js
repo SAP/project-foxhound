@@ -1,5 +1,5 @@
 /**
- * Test for LoginManagerChild.getUsernameFieldFromUsernameOnlyForm
+ * Test for LoginFormState.getUsernameFieldFromUsernameOnlyForm
  */
 
 "use strict";
@@ -137,7 +137,7 @@ function _setPrefs() {
   });
 }
 
-this._setPrefs();
+_setPrefs();
 
 for (let tc of TESTCASES) {
   info("Sanity checking the testcase: " + tc.description);
@@ -162,8 +162,9 @@ for (let tc of TESTCASES) {
           form.setAttribute("name", "login");
         }
 
-        let lmc = new LoginManagerChild();
-        let element = lmc.getUsernameFieldFromUsernameOnlyForm(
+        const lmc = new LoginManagerChild();
+        const docState = lmc.stateForDocument(form.ownerDocument);
+        const element = docState.getUsernameFieldFromUsernameOnlyForm(
           form,
           testcase.fieldOverrideRecipe
         );

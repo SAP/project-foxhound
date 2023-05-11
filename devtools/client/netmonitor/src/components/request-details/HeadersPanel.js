@@ -29,6 +29,7 @@ const {
 const {
   fetchNetworkUpdatePacket,
   writeHeaderText,
+  getRequestHeadersRawText,
 } = require("devtools/client/netmonitor/src/utils/request-utils");
 const {
   HeadersProvider,
@@ -168,7 +169,8 @@ class HeadersPanel extends Component {
     ]);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { request, connector } = nextProps;
     fetchNetworkUpdatePacket(connector.requestData, request, [
       "requestHeaders",
@@ -366,13 +368,12 @@ class HeadersPanel extends Component {
       const rawHeaderType = this.getRawHeaderType(path);
       switch (rawHeaderType) {
         case "REQUEST":
-          const hostHeader = requestHeaders.headers.find(
-            ele => ele.name === "Host"
+          value = getRequestHeadersRawText(
+            method,
+            httpVersion,
+            requestHeaders,
+            urlDetails
           );
-          preHeaderText = `${method} ${
-            hostHeader ? urlDetails.url.split(hostHeader.value)[1] : "<unknown>"
-          } ${httpVersion}`;
-          value = writeHeaderText(requestHeaders.headers, preHeaderText).trim();
           break;
         case "RESPONSE":
           preHeaderText = `${httpVersion} ${status} ${statusText}`;
