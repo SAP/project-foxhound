@@ -670,7 +670,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   }
 
   /* Taintfox: enable cleanup of strings in nursery */
-  static void sweepAfterMinorGC(JSFreeOp* fop, JSString* str);
+  static void sweepAfterMinorGC(JSString* str);
 
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler

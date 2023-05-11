@@ -2294,7 +2294,7 @@ JS_PUBLIC_API JSString* js::ToStringSlow(JSContext* cx, HandleValue v) {
 }
 
 /* static */
-void JSString::sweepAfterMinorGC(JSFreeOp* fop, JSString* str) {
+void JSString::sweepAfterMinorGC(JSString* str) {
   if (str) {
     bool wasInsideNursery = IsInsideNursery(str);
     if (wasInsideNursery && !IsForwarded(str)) {

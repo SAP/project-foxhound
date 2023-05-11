@@ -1896,10 +1896,8 @@ void js::Nursery::sweepMapAndSetObjects() {
 }
 
 void js::Nursery::sweepStrings() {
-  auto fop = runtime()->defaultFreeOp();
-
   for (auto str : stringsWithNurseryMemory_) {
-    JSString::sweepAfterMinorGC(fop, str);
+    JSString::sweepAfterMinorGC(str);
   }
   stringsWithNurseryMemory_.clearAndFree();
 }

@@ -3633,40 +3633,34 @@ JS_PUBLIC_API void JS_ReportErrorNumberUCArray(JSContext* cx,
                            errorNumber, args);
 }
 
-JS_PUBLIC_API bool JS_ReportWarningASCII(JSContext* cx, const char* format,
+JS_PUBLIC_API void JS_ReportWarningASCII(JSContext* cx, const char* format,
                                          ...) {
   va_list ap;
-  bool ok;
 
   AssertHeapIsIdle();
   va_start(ap, format);
-  ok = ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreASCII, ap);
+  ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreASCII, ap);
   va_end(ap);
-  return ok;
 }
 
-JS_PUBLIC_API bool JS_ReportWarningLatin1(JSContext* cx, const char* format,
+JS_PUBLIC_API void JS_ReportWarningLatin1(JSContext* cx, const char* format,
                                           ...) {
   va_list ap;
-  bool ok;
 
   AssertHeapIsIdle();
   va_start(ap, format);
-  ok = ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreLatin1, ap);
+  ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreLatin1, ap);
   va_end(ap);
-  return ok;
 }
 
-JS_PUBLIC_API bool JS_ReportWarningUTF8(JSContext* cx, const char* format,
+JS_PUBLIC_API void JS_ReportWarningUTF8(JSContext* cx, const char* format,
                                         ...) {
   va_list ap;
-  bool ok;
 
   AssertHeapIsIdle();
   va_start(ap, format);
-  ok = ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreUTF8, ap);
+  ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreUTF8, ap);
   va_end(ap);
-  return ok;
 }
 
 JS_PUBLIC_API void JS_ReportOutOfMemory(JSContext* cx) {

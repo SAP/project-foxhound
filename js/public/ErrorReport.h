@@ -408,6 +408,9 @@ extern JS_PUBLIC_API void JS_ReportErrorLatin1(JSContext* cx,
 extern JS_PUBLIC_API void JS_ReportErrorUTF8(JSContext* cx, const char* format,
                                              ...) MOZ_FORMAT_PRINTF(2, 3);
 
+extern JS_PUBLIC_API void JS_ReportWarningUTF8(JSContext* cx, const char* format,
+                                                ...) MOZ_FORMAT_PRINTF(2, 3);
+
 /*
  * Use an errorNumber to retrieve the format string, args are char*
  */

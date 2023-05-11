@@ -2299,8 +2299,8 @@ nsresult nsHttpTransaction::HandleContentStart() {
     // add it to the content pipe.
     nsAutoCString serializedTaint;
     if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {
-        std::string taint(serializedTaint.BeginReading());
-        mPipe->SetTaint(ParseTaint(taint));
+        // std::string taint(serializedTaint.BeginReading());
+        // mPipe->SetTaint(ParseTaint(taint));
     }
   }
 

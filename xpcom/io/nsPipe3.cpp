@@ -179,7 +179,7 @@ struct nsPipeReadState {
   // Set to indicate that the input stream has closed and should be drained,
   // but that drain has been delayed due to an active read.  When the read
   // completes, this flag indicate the drain should then be performed.
-  bool mNeedDrain GUARDED_VAR;;
+  bool mNeedDrain GUARDED_VAR;
 
   // TaintFox: Required for accessing the associated taint information.
   int32_t mBytesRead GUARDED_VAR;
@@ -355,7 +355,7 @@ class nsPipe final {
 
   // public constructor
   friend nsresult NS_NewPipe2(nsIAsyncInputStream**, nsIAsyncOutputStream**,
-                              bool, bool, uint32_t, uint32_t);
+                              bool, bool, uint32_t, uint32_t, StringTaint**);
 
  private:
   nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount);
@@ -438,7 +438,7 @@ class nsPipe final {
   // providing all taint information at once is perfectly fine since
   // the taint information for incoming HTTP responses is fully available
   // before the data.
-  StringTaint         mTaint;
+  SafeStringTaint         mTaint;
 };
 
 //-----------------------------------------------------------------------------
@@ -534,7 +534,7 @@ class MOZ_STACK_CLASS AutoReadSegment final {
   uint32_t mOffset;
 
   // TaintFox: taint information for the current segment
-  StringTaint mTaint;
+  SafeStringTaint mTaint;
 };
 
 //
@@ -610,13 +610,6 @@ nsPipe::nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount)
 }
 
 nsPipe::~nsPipe() = default;
-
-NS_IMETHODIMP
-nsPipe::SetTaint(StringTaint aTaint)
-{
-  mTaint = aTaint;
-  return NS_OK;
-}
 
 void nsPipe::PeekSegment(const nsPipeReadState& aReadState, uint32_t aIndex,
                          char*& aCursor, char*& aLimit) {
@@ -1881,7 +1874,7 @@ nsresult NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
 nsresult NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
                      nsIAsyncOutputStream** aPipeOut, bool aNonBlockingInput,
                      bool aNonBlockingOutput, uint32_t aSegmentSize,
-                     uint32_t aSegmentCount, nsIPipe** aPipe) NO_THREAD_SAFETY_ANALYSIS {
+                     uint32_t aSegmentCount, StringTaint** aTaint) NO_THREAD_SAFETY_ANALYSIS {
   RefPtr<nsPipe> pipe =
       new nsPipe(aSegmentSize ? aSegmentSize : DEFAULT_SEGMENT_SIZE,
                  aSegmentCount ? aSegmentCount : DEFAULT_SEGMENT_COUNT);
@@ -1896,9 +1889,8 @@ nsresult NS_NewPipe2(nsIAsyncInputStream** aPipeIn,
   pipeIn.forget(aPipeIn);
   pipeOut.forget(aPipeOut);
 
-  if (aPipe) {
-    RefPtr<nsIPipe> ref = pipe;
-    ref.forget(aPipe);
+  if (aTaint) {
+    // do nothing for the moment
   }
 
   return NS_OK;

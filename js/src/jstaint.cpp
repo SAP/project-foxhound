@@ -14,6 +14,7 @@
 #include "jsapi.h"
 #include "js/Array.h"
 #include "js/CharacterEncoding.h"
+#include "js/ErrorReport.h"
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
 #include "vm/JSContext.h"

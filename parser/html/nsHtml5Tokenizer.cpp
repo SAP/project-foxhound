@@ -1850,7 +1850,7 @@ stateloop:
               NS_HTML5_BREAK(cdatasectionloop);
             }
             case '\0': {
-	      maybeEmitReplacementCharacter(buf, taint, pos);
+              maybeEmitReplacementCharacter(buf, taint, pos);
               continue;
             }
             case '\r': {
@@ -1882,7 +1882,7 @@ stateloop:
             break;
           }
           default: {
-            tokenHandler->characters(nsHtml5Tokenizer::RSQB_RSQB, 0, 1);
+            tokenHandler->characters(nsHtml5Tokenizer::RSQB_RSQB, EmptyTaint, 0, 1);
             cstart = pos;
             reconsume = true;
             state =

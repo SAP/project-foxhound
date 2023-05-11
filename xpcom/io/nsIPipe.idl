@@ -78,10 +78,6 @@ interface nsIPipe : nsISupports
      */
     [must_use] readonly attribute nsIAsyncOutputStream outputStream;
 
-    /**
-     * TaintFox: See taint/docs/Netwerk.md
-     */
-    void setTaint(in StringTaint taint);
 };
 
 /**
@@ -147,7 +143,7 @@ NS_NewPipe2(nsIAsyncInputStream **pipeIn,
             bool nonBlockingOutput = false,
             uint32_t segmentSize = 0,
             uint32_t segmentCount = 0,
-            nsIPipe **pipe = nullptr);
+            StringTaint **taint = nullptr);
 
 /**
  * NS_NewPipe
