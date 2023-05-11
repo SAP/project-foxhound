@@ -4,6 +4,10 @@
 
 "use strict";
 
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+
 var FormAutofillHandler;
 add_task(async function setup() {
   ({ FormAutofillHandler } = ChromeUtils.import(
@@ -476,12 +480,33 @@ const TESTCASES = [
   },
   {
     description:
-      "An invalid credit card form due to non-autocomplete-attr cc-number only",
+      "A valid credit card form with non-autocomplete-attr cc-number only",
     document: `<form>
                <input id="cc-number" name="cc-number">
                </form>`,
-    sections: [[]],
-    validFieldDetails: [],
+    sections: AppConstants.EARLY_BETA_OR_EARLIER
+      ? [
+          [
+            {
+              section: "",
+              addressType: "",
+              contactType: "",
+              fieldName: "cc-number",
+            },
+          ],
+        ]
+      : [[]],
+    validFieldDetails: AppConstants.EARLY_BETA_OR_EARLIER
+      ? [
+          {
+            section: "",
+            addressType: "",
+            contactType: "",
+            fieldName: "cc-number",
+          },
+        ]
+      : [],
+    ids: AppConstants.EARLY_BETA_OR_EARLIER ? ["cc-number"] : [],
   },
   {
     description: "An invalid credit card form due to omitted cc-number.",

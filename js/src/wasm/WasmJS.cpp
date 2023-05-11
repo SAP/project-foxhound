@@ -324,11 +324,11 @@ bool wasm::CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
   bool testSerialization = WasmTestSerializationFlag(cx);
   bool functionReferences = WasmFunctionReferencesFlag(cx);
   bool gc = WasmGcFlag(cx);
-#ifdef JS_CODEGEN_ARM64
   // Cranelift aarch64 has full SIMD support.
+#if !defined(ENABLE_WASM_SIMD) || defined(JS_CODEGEN_ARM64)
   bool simdOnNonAarch64 = false;
 #else
-  bool simdOnNonAarch64 = WasmSimdFlag(cx);
+  bool simdOnNonAarch64 = true;
 #endif
   bool exn = WasmExceptionsFlag(cx);
   if (reason) {
@@ -385,17 +385,14 @@ bool wasm::IsSimdPrivilegedContext(JSContext* cx) {
          cx->realm()->principals()->isSystemOrAddonPrincipal();
 }
 
+bool wasm::SimdAvailable(JSContext* cx) {
+  return js::jit::JitSupportsWasmSimd();
+}
+
 bool wasm::SimdWormholeAvailable(JSContext* cx) {
 #ifdef ENABLE_WASM_SIMD_WORMHOLE
   // The #ifdef ensures that we only enable the wormhole on hardware that
   // supports it and if SIMD support is compiled in.
-  //
-  // Next we must check that the CPU supports SIMD; it might not, even if SIMD
-  // is available.  Do this directly, not via WasmSimdFlag().
-  //
-  // Do not go via WasmSimdFlag() because we do not want to gate on
-  // j.o.wasm_simd.  If the wormhole is available, requesting it will
-  // force-enable SIMD.
   return js::jit::JitSupportsWasmSimd() &&
          (WasmSimdWormholeFlag(cx) || IsSimdPrivilegedContext(cx)) &&
          (IonAvailable(cx) || BaselineAvailable(cx)) && !CraneliftAvailable(cx);
@@ -425,9 +422,12 @@ bool wasm::HasPlatformSupport(JSContext* cx) {
     return false;
   }
 
+#  ifndef __wasi__
+  // WASI doesn't support signals so we don't have this function.
   if (!wasm::EnsureFullSignalHandlers(cx)) {
     return false;
   }
+#  endif
 
   if (!jit::JitSupportsAtomics()) {
     return false;
@@ -1162,8 +1162,7 @@ static JSObject* FuncTypeToObject(JSContext* cx, const FuncType& type) {
     return nullptr;
   }
 
-  return NewPlainObjectWithProperties(cx, props.begin(), props.length(),
-                                      GenericObject);
+  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
 }
 
 static JSObject* TableTypeToObject(JSContext* cx, RefType type,
@@ -1191,8 +1190,7 @@ static JSObject* TableTypeToObject(JSContext* cx, RefType type,
     return nullptr;
   }
 
-  return NewPlainObjectWithProperties(cx, props.begin(), props.length(),
-                                      GenericObject);
+  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
 }
 
 static JSObject* MemoryTypeToObject(JSContext* cx, bool shared,
@@ -1243,8 +1241,7 @@ static JSObject* MemoryTypeToObject(JSContext* cx, bool shared,
     return nullptr;
   }
 
-  return NewPlainObjectWithProperties(cx, props.begin(), props.length(),
-                                      GenericObject);
+  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
 }
 
 static JSObject* GlobalTypeToObject(JSContext* cx, ValType type,
@@ -1264,8 +1261,7 @@ static JSObject* GlobalTypeToObject(JSContext* cx, ValType type,
     return nullptr;
   }
 
-  return NewPlainObjectWithProperties(cx, props.begin(), props.length(),
-                                      GenericObject);
+  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
 }
 
 static JSObject* TagTypeToObject(JSContext* cx,
@@ -1280,8 +1276,7 @@ static JSObject* TagTypeToObject(JSContext* cx,
     return nullptr;
   }
 
-  return NewPlainObjectWithProperties(cx, props.begin(), props.length(),
-                                      GenericObject);
+  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
 }
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
@@ -1537,8 +1532,8 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
     }
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
-    JSObject* obj = NewPlainObjectWithProperties(cx, props.begin(),
-                                                 props.length(), GenericObject);
+    JSObject* obj =
+        NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
     if (!obj) {
       return false;
     }
@@ -1640,8 +1635,8 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
     }
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
-    JSObject* obj = NewPlainObjectWithProperties(cx, props.begin(),
-                                                 props.length(), GenericObject);
+    JSObject* obj =
+        NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
     if (!obj) {
       return false;
     }
@@ -2493,11 +2488,16 @@ bool WasmInstanceObject::getExportedFunction(
     }
   }
 
-  fun->setExtendedSlot(FunctionExtended::WASM_INSTANCE_OBJ_SLOT,
-                       ObjectValue(*instanceObj));
-
   fun->setExtendedSlot(FunctionExtended::WASM_INSTANCE_SLOT,
-                       PrivateValue((void*)&instance));
+                       PrivateValue(const_cast<Instance*>(&instance)));
+
+  const CodeTier& codeTier =
+      instance.code().codeTier(instance.code().bestTier());
+  const CodeRange& codeRange = codeTier.metadata().codeRange(funcExport);
+
+  fun->setExtendedSlot(FunctionExtended::WASM_FUNC_UNCHECKED_ENTRY_SLOT,
+                       PrivateValue(codeTier.segment().base() +
+                                    codeRange.funcUncheckedCallEntry()));
 
   if (!instanceObj->exports().putNew(funcIndex, fun)) {
     ReportOutOfMemory(cx);
@@ -2570,20 +2570,15 @@ bool wasm::IsWasmExportedFunction(JSFunction* fun) {
 }
 
 Instance& wasm::ExportedFunctionToInstance(JSFunction* fun) {
-  return ExportedFunctionToInstanceObject(fun)->instance();
+  return fun->wasmInstance();
 }
 
 WasmInstanceObject* wasm::ExportedFunctionToInstanceObject(JSFunction* fun) {
-  MOZ_ASSERT(fun->kind() == FunctionFlags::Wasm ||
-             fun->kind() == FunctionFlags::AsmJS);
-  const Value& v =
-      fun->getExtendedSlot(FunctionExtended::WASM_INSTANCE_OBJ_SLOT);
-  return &v.toObject().as<WasmInstanceObject>();
+  return fun->wasmInstance().object();
 }
 
 uint32_t wasm::ExportedFunctionToFuncIndex(JSFunction* fun) {
-  Instance& instance = ExportedFunctionToInstanceObject(fun)->instance();
-  return instance.code().getFuncIndex(fun);
+  return fun->wasmInstance().code().getFuncIndex(fun);
 }
 
 // ============================================================================
@@ -2798,9 +2793,9 @@ ArrayBufferObjectMaybeShared& WasmMemoryObject::buffer() const {
       .as<ArrayBufferObjectMaybeShared>();
 }
 
-SharedArrayRawBuffer* WasmMemoryObject::sharedArrayRawBuffer() const {
+WasmSharedArrayRawBuffer* WasmMemoryObject::sharedArrayRawBuffer() const {
   MOZ_ASSERT(isShared());
-  return buffer().as<SharedArrayBufferObject>().rawBufferObject();
+  return buffer().as<SharedArrayBufferObject>().rawWasmBufferObject();
 }
 
 #ifdef ENABLE_WASM_TYPE_REFLECTIONS
@@ -2937,8 +2932,8 @@ bool WasmMemoryObject::addMovingGrowObserver(JSContext* cx,
 /* static */
 uint64_t WasmMemoryObject::growShared(Handle<WasmMemoryObject*> memory,
                                       uint64_t delta) {
-  SharedArrayRawBuffer* rawBuf = memory->sharedArrayRawBuffer();
-  SharedArrayRawBuffer::Lock lock(rawBuf);
+  WasmSharedArrayRawBuffer* rawBuf = memory->sharedArrayRawBuffer();
+  WasmSharedArrayRawBuffer::Lock lock(rawBuf);
 
   Pages oldNumPages = rawBuf->volatileWasmPages();
   Pages newPages = oldNumPages;
@@ -4059,11 +4054,10 @@ WasmExceptionObject* WasmExceptionObject::create(JSContext* cx,
 
   // Allocate the data buffer before initializing the object so that an OOM
   // does not result in a partially constructed object.
-  uint8_t* data = (uint8_t*)js_malloc(tagType->size_);
+  uint8_t* data = (uint8_t*)js_calloc(tagType->size_);
   if (!data) {
     return nullptr;
   }
-  memset(data, 0, tagType->size_);
 
   MOZ_ASSERT(obj->isNewborn());
   obj->initFixedSlot(TAG_SLOT, ObjectValue(*tag));

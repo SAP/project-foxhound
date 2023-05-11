@@ -9,9 +9,8 @@ var EXPORTED_SYMBOLS = ["DevToolsWorkerChild"];
 const { EventEmitter } = ChromeUtils.import(
   "resource://gre/modules/EventEmitter.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -123,7 +122,7 @@ class DevToolsWorkerChild extends JSWindowActorChild {
     for (const [watcherActorID, sessionData] of sessionDataByWatcherActor) {
       const { targets, connectionPrefix, sessionContext } = sessionData;
       if (
-        targets.includes("worker") &&
+        targets?.includes("worker") &&
         lazy.isWindowGlobalPartOfContext(this.manager, sessionContext, {
           acceptInitialDocument: true,
           forceAcceptTopLevelTarget: true,

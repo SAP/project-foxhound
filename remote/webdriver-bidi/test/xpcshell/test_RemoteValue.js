@@ -223,7 +223,7 @@ const REMOTE_COMPLEX_VALUES = [
   },
 ];
 
-const { deserialize, serialize } = ChromeUtils.import(
+const { deserialize, serialize, stringify } = ChromeUtils.import(
   "chrome://remote/content/webdriver-bidi/RemoteValue.jsm"
 );
 
@@ -402,6 +402,28 @@ add_test(function test_deserializeDateLocalValueInvalidValues() {
   run_next_test();
 });
 
+add_test(function test_deserializeLocalValuesInvalidType() {
+  const invalidTypes = [undefined, null, false, 42, {}];
+
+  for (const invalidType of invalidTypes) {
+    info(`Checking type: '${invalidType}'`);
+
+    Assert.throws(
+      () => deserialize({ type: invalidType }),
+      /InvalidArgument/,
+      `Got expected error for type ${invalidType}`
+    );
+
+    Assert.throws(
+      () => deserialize({ type: "array", value: [{ type: invalidType }] }),
+      /InvalidArgument/,
+      `Got expected error for nested type ${invalidType}`
+    );
+  }
+
+  run_next_test();
+});
+
 add_test(function test_deserializeLocalValuesInvalidValues() {
   const invalidValues = [
     { type: "array", values: [undefined, null, false, 42, "foo", {}] },
@@ -531,6 +553,44 @@ add_test(function test_serializeRemoteComplexValues() {
     const serializedValue = serialize(value, maxDepth);
 
     Assert.deepEqual(serialized, serializedValue, "Got expected structure");
+  }
+
+  run_next_test();
+});
+
+add_test(function test_stringify() {
+  const STRINGIFY_TEST_CASES = [
+    [undefined, "undefined"],
+    [null, "null"],
+    ["foobar", "foobar"],
+    ["2", "2"],
+    [-0, "0"],
+    [Infinity, "Infinity"],
+    [-Infinity, "-Infinity"],
+    [3, "3"],
+    [1.4, "1.4"],
+    [true, "true"],
+    [42n, "42"],
+    [{ toString: () => "bar" }, "bar", "toString: () => 'bar'"],
+    [{ toString: () => 4 }, "[object Object]", "toString: () => 4"],
+    [{ toString: undefined }, "[object Object]", "toString: undefined"],
+    [{ toString: null }, "[object Object]", "toString: null"],
+    [
+      {
+        toString: () => {
+          throw new Error("toString error");
+        },
+      },
+      "[object Object]",
+      "toString: () => { throw new Error('toString error'); }",
+    ],
+  ];
+
+  for (const [value, expectedString, description] of STRINGIFY_TEST_CASES) {
+    info(`Checking '${description || value}'`);
+    const stringifiedValue = stringify(value);
+
+    Assert.strictEqual(expectedString, stringifiedValue, "Got expected string");
   }
 
   run_next_test();

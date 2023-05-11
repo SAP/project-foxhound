@@ -20,7 +20,6 @@
 #include "jit/SafepointIndex.h"
 #include "jit/Safepoints.h"
 #include "jit/Snapshots.h"
-#include "vm/TraceLoggingTypes.h"
 
 namespace js {
 namespace jit {
@@ -42,8 +41,6 @@ class CodeGeneratorShared : public LElementVisitor {
 
   MacroAssembler& ensureMasm(MacroAssembler* masm);
   mozilla::Maybe<IonHeapMacroAssembler> maybeMasm_;
-
-  bool useWasmStackArgumentAbi_;
 
  public:
   MacroAssembler& masm;
@@ -80,17 +77,6 @@ class CodeGeneratorShared : public LElementVisitor {
     CodeOffset icOffsetForPush;
   };
   js::Vector<CompileTimeICInfo, 0, SystemAllocPolicy> icInfo_;
-
-#ifdef JS_TRACE_LOGGING
-  struct PatchableTLEvent {
-    CodeOffset offset;
-    const char* event;
-    PatchableTLEvent(CodeOffset offset, const char* event)
-        : offset(offset), event(event) {}
-  };
-  js::Vector<PatchableTLEvent, 0, SystemAllocPolicy> patchableTLEvents_;
-  js::Vector<CodeOffset, 0, SystemAllocPolicy> patchableTLScripts_;
-#endif
 
  protected:
   js::Vector<NativeToBytecode, 0, SystemAllocPolicy> nativeToBytecodeList_;
@@ -139,31 +125,25 @@ class CodeGeneratorShared : public LElementVisitor {
   // spills.
   uint32_t frameDepth_;
 
+  // Offset in bytes to the incoming arguments, relative to the frame pointer.
+  uint32_t offsetOfArgsFromFP_ = 0;
+
   // Offset in bytes of the stack region reserved for passed argument Values.
   uint32_t offsetOfPassedArgSlots_ = 0;
 
-  // For arguments to the current function.
-  inline uint32_t ArgToStackOffset(uint32_t slot) const;
-
-  inline uint32_t SlotToStackOffset(uint32_t slot) const;
-
   // For argument construction for calls. Argslots are Value-sized.
-  inline uint32_t StackOffsetOfPassedArg(uint32_t slot) const;
+  inline Address AddressOfPassedArg(uint32_t slot) const;
+  inline uint32_t UnusedStackBytesForCall(uint32_t numArgSlots) const;
 
-  inline uint32_t ToStackOffset(LAllocation a) const;
-  inline uint32_t ToStackOffset(const LAllocation* a) const;
-
+  template <BaseRegForAddress Base = BaseRegForAddress::Default>
   inline Address ToAddress(const LAllocation& a) const;
+
+  template <BaseRegForAddress Base = BaseRegForAddress::Default>
   inline Address ToAddress(const LAllocation* a) const;
 
   static inline Address ToAddress(Register elements, const LAllocation* index,
                                   Scalar::Type type,
                                   int32_t offsetAdjustment = 0);
-
-  // Returns the offset from FP to address incoming stack arguments
-  // when we use wasm stack argument abi (useWasmStackArgumentAbi()).
-  inline uint32_t ToFramePointerOffset(LAllocation a) const;
-  inline uint32_t ToFramePointerOffset(const LAllocation* a) const;
 
   uint32_t frameSize() const { return frameDepth_; }
 
@@ -171,10 +151,6 @@ class CodeGeneratorShared : public LElementVisitor {
   bool addNativeToBytecodeEntry(const BytecodeSite* site);
   void dumpNativeToBytecodeEntries();
   void dumpNativeToBytecodeEntry(uint32_t idx);
-
-  void setUseWasmStackArgumentAbi() { useWasmStackArgumentAbi_ = true; }
-
-  bool useWasmStackArgumentAbi() const { return useWasmStackArgumentAbi_; }
 
  public:
   MIRGenerator& mirGen() const { return *gen; }
@@ -419,56 +395,7 @@ class CodeGeneratorShared : public LElementVisitor {
 
   bool omitOverRecursedCheck() const;
 
-#ifdef JS_TRACE_LOGGING
- protected:
-  void emitTracelogScript(bool isStart);
-  void emitTracelogTree(bool isStart, uint32_t textId);
-  void emitTracelogTree(bool isStart, const char* text,
-                        TraceLoggerTextId enabledTextId);
-#endif
-
  public:
-#ifdef JS_TRACE_LOGGING
-  void emitTracelogScriptStart() { emitTracelogScript(/* isStart =*/true); }
-  void emitTracelogScriptStop() { emitTracelogScript(/* isStart =*/false); }
-  void emitTracelogStartEvent(uint32_t textId) {
-    emitTracelogTree(/* isStart =*/true, textId);
-  }
-  void emitTracelogStopEvent(uint32_t textId) {
-    emitTracelogTree(/* isStart =*/false, textId);
-  }
-  // Log an arbitrary text. The TraceloggerTextId is used to toggle the
-  // logging on and off.
-  // Note: the text is not copied and need to be kept alive until linking.
-  void emitTracelogStartEvent(const char* text,
-                              TraceLoggerTextId enabledTextId) {
-    emitTracelogTree(/* isStart =*/true, text, enabledTextId);
-  }
-  void emitTracelogStopEvent(const char* text,
-                             TraceLoggerTextId enabledTextId) {
-    emitTracelogTree(/* isStart =*/false, text, enabledTextId);
-  }
-  void emitTracelogIonStart() {
-    emitTracelogScriptStart();
-    emitTracelogStartEvent(TraceLogger_IonMonkey);
-  }
-  void emitTracelogIonStop() {
-    emitTracelogStopEvent(TraceLogger_IonMonkey);
-    emitTracelogScriptStop();
-  }
-#else
-  void emitTracelogScriptStart() {}
-  void emitTracelogScriptStop() {}
-  void emitTracelogStartEvent(uint32_t textId) {}
-  void emitTracelogStopEvent(uint32_t textId) {}
-  void emitTracelogStartEvent(const char* text,
-                              TraceLoggerTextId enabledTextId) {}
-  void emitTracelogStopEvent(const char* text,
-                             TraceLoggerTextId enabledTextId) {}
-  void emitTracelogIonStart() {}
-  void emitTracelogIonStop() {}
-#endif
-
   bool isGlobalObject(JSObject* object);
 };
 

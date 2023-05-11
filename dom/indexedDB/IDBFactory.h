@@ -9,7 +9,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/StorageTypeBinding.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
@@ -50,7 +49,6 @@ class LoggingInfo;
 }  // namespace indexedDB
 
 class IDBFactory final : public nsISupports, public nsWrapperCache {
-  using StorageType = mozilla::dom::StorageType;
   using PBackgroundChild = mozilla::ipc::PBackgroundChild;
   using PrincipalInfo = mozilla::ipc::PrincipalInfo;
 
@@ -96,6 +94,8 @@ class IDBFactory final : public nsISupports, public nsWrapperCache {
 
   static bool AllowedForPrincipal(nsIPrincipal* aPrincipal,
                                   bool* aIsSystemPrincipal = nullptr);
+
+  static bool IsEnabled(JSContext* aCx, JSObject* aGlobal);
 
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(IDBFactory); }
 
@@ -198,8 +198,7 @@ class IDBFactory final : public nsISupports, public nsWrapperCache {
 
   [[nodiscard]] RefPtr<IDBOpenDBRequest> OpenInternal(
       JSContext* aCx, nsIPrincipal* aPrincipal, const nsAString& aName,
-      const Optional<uint64_t>& aVersion,
-      const Optional<StorageType>& aStorageType, bool aDeleting,
+      const Optional<uint64_t>& aVersion, bool aDeleting,
       CallerType aCallerType, ErrorResult& aRv);
 
   nsresult InitiateRequest(const NotNull<RefPtr<IDBOpenDBRequest>>& aRequest,

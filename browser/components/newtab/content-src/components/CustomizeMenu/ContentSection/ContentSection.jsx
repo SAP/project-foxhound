@@ -38,13 +38,22 @@ export class ContentSection extends React.PureComponent {
 
   render() {
     const {
+      enabledSections,
+      mayHaveSponsoredTopSites,
+      pocketRegion,
+      mayHaveSponsoredStories,
+      mayHaveRecentSaves,
+      openPreferences,
+    } = this.props;
+    const {
       topSitesEnabled,
       pocketEnabled,
       highlightsEnabled,
       showSponsoredTopSitesEnabled,
       showSponsoredPocketEnabled,
+      showRecentSavesEnabled,
       topSitesRowsCount,
-    } = this.props.enabledSections;
+    } = enabledSections;
 
     return (
       <div className="home-section">
@@ -115,7 +124,7 @@ export class ContentSection extends React.PureComponent {
                     data-l10n-args='{"num": 4}'
                   />
                 </select>
-                {this.props.mayHaveSponsoredTopSites && (
+                {mayHaveSponsoredTopSites && (
                   <div className="check-wrapper" role="presentation">
                     <input
                       id="sponsored-shortcuts"
@@ -139,7 +148,7 @@ export class ContentSection extends React.PureComponent {
           </div>
         </div>
 
-        {this.props.pocketRegion && (
+        {pocketRegion && (
           <div id="pocket-section" className="section">
             <label className="switch">
               <input
@@ -166,7 +175,7 @@ export class ContentSection extends React.PureComponent {
                 className="subtitle"
                 data-l10n-id="newtab-custom-pocket-subtitle"
               />
-              {this.props.mayHaveSponsoredStories && (
+              {(mayHaveSponsoredStories || mayHaveRecentSaves) && (
                 <div
                   className={`more-info-pocket-wrapper ${
                     pocketEnabled ? "" : "shrink"
@@ -177,23 +186,44 @@ export class ContentSection extends React.PureComponent {
                       pocketEnabled ? "expand" : "shrink"
                     }`}
                   >
-                    <div className="check-wrapper" role="presentation">
-                      <input
-                        id="sponsored-pocket"
-                        className="sponsored-checkbox"
-                        disabled={!pocketEnabled}
-                        checked={showSponsoredPocketEnabled}
-                        type="checkbox"
-                        onChange={this.onPreferenceSelect}
-                        preference="showSponsored"
-                        eventSource="POCKET_SPOCS"
-                      />
-                      <label
-                        className="sponsored"
-                        htmlFor="sponsored-pocket"
-                        data-l10n-id="newtab-custom-pocket-sponsored"
-                      />
-                    </div>
+                    {mayHaveSponsoredStories && (
+                      <div className="check-wrapper" role="presentation">
+                        <input
+                          id="sponsored-pocket"
+                          className="sponsored-checkbox"
+                          disabled={!pocketEnabled}
+                          checked={showSponsoredPocketEnabled}
+                          type="checkbox"
+                          onChange={this.onPreferenceSelect}
+                          preference="showSponsored"
+                          eventSource="POCKET_SPOCS"
+                        />
+                        <label
+                          className="sponsored"
+                          htmlFor="sponsored-pocket"
+                          data-l10n-id="newtab-custom-pocket-sponsored"
+                        />
+                      </div>
+                    )}
+                    {mayHaveRecentSaves && (
+                      <div className="check-wrapper" role="presentation">
+                        <input
+                          id="recent-saves-pocket"
+                          className="sponsored-checkbox"
+                          disabled={!pocketEnabled}
+                          checked={showRecentSavesEnabled}
+                          type="checkbox"
+                          onChange={this.onPreferenceSelect}
+                          preference="showRecentSaves"
+                          eventSource="POCKET_RECENT_SAVES"
+                        />
+                        <label
+                          className="sponsored"
+                          htmlFor="recent-saves-pocket"
+                          data-l10n-id="newtab-custom-pocket-show-recent-saves"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -237,7 +267,7 @@ export class ContentSection extends React.PureComponent {
           <button
             id="settings-link"
             className="external-link"
-            onClick={this.props.openPreferences}
+            onClick={openPreferences}
             data-l10n-id="newtab-custom-settings"
           />
         </div>

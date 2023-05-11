@@ -5,8 +5,8 @@
 
 var EXPORTED_SYMBOLS = ["MacAttribution"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const lazy = {};
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
@@ -21,7 +21,6 @@ XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   };
   return new ConsoleAPI(consoleOptions);
 });
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   lazy,

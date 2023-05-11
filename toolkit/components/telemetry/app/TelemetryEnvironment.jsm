@@ -7,7 +7,6 @@
 var EXPORTED_SYMBOLS = ["TelemetryEnvironment", "Policy"];
 
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
 );
@@ -44,8 +43,8 @@ ChromeUtils.defineModuleGetter(
   "WindowsRegistry",
   "resource://gre/modules/WindowsRegistry.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
   return ChromeUtils.import(
@@ -248,6 +247,7 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.cache.memory.enable", { what: RECORD_PREF_VALUE }],
   ["browser.cache.offline.enable", { what: RECORD_PREF_VALUE }],
   ["browser.formfill.enable", { what: RECORD_PREF_VALUE }],
+  ["browser.fixup.alternate.enabled", { what: RECORD_DEFAULTPREF_VALUE }],
   ["browser.newtabpage.enabled", { what: RECORD_PREF_VALUE }],
   ["browser.shell.checkDefaultBrowser", { what: RECORD_PREF_VALUE }],
   ["browser.search.region", { what: RECORD_PREF_VALUE }],
@@ -258,6 +258,10 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.urlbar.autoFill", { what: RECORD_DEFAULTPREF_VALUE }],
   [
     "browser.urlbar.autoFill.adaptiveHistory.enabled",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
+  [
+    "browser.urlbar.dnsResolveSingleWordsAfterSearch",
     { what: RECORD_DEFAULTPREF_VALUE },
   ],
   [

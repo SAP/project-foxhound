@@ -283,10 +283,6 @@ function invokeContentTask(browser, args, task) {
  */
 async function comparePIDs(browser, isRemote) {
   function getProcessID() {
-    const { Services } = ChromeUtils.import(
-      "resource://gre/modules/Services.jsm"
-    );
-
     return Services.appinfo.processID;
   }
 
@@ -784,7 +780,13 @@ async function contentSpawnMutation(browser, waitFor, func, args = []) {
 }
 
 async function waitForImageMap(browser, accDoc, id = "imgmap") {
-  const acc = findAccessibleChildByID(accDoc, id);
+  let acc = findAccessibleChildByID(accDoc, id);
+
+  if (!acc) {
+    const onShow = waitForEvent(EVENT_SHOW, id);
+    acc = (await onShow).accessible;
+  }
+
   if (acc.firstChild) {
     return;
   }

@@ -3,7 +3,6 @@ root:
   items:
     - type: clip
       id: 3
-      bounds: [0, 0, 256, 256]
       complex:
         - rect: [0, 0, 256, 256]
           radius: 16
@@ -25,4 +24,4 @@ root:
         - type: rect
           bounds: 0 0 256 256
           color: green
-          clip-and-scroll: [root-scroll-node, 5]
+          clip-chain: 5

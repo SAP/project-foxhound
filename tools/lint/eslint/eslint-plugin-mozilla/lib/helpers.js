@@ -45,6 +45,8 @@ const callExpressionMultiDefinitions = [
   "XPCOMUtils.defineLazyModuleGetters(globalThis,",
   "XPCOMUtils.defineLazyServiceGetters(this,",
   "XPCOMUtils.defineLazyServiceGetters(globalThis,",
+  "ChromeUtils.defineESModuleGetters(this,",
+  "ChromeUtils.defineESModuleGetters(globalThis,",
   "loader.lazyRequireGetter(this,",
   "loader.lazyRequireGetter(globalThis,",
 ];
@@ -924,6 +926,25 @@ module.exports = {
       node.arguments[2].type == "Literal"
     ) {
       return node.arguments[2].value;
+    }
+    return null;
+  },
+
+  /**
+   * Returns property name from MemberExpression. Also accepts Identifier for consistency.
+   * @param {import("estree").MemberExpression | import("estree").Identifier} node
+   * @returns {string | null}
+   *
+   * @example `foo` gives "foo"
+   * @example `foo.bar` gives "bar"
+   * @example `foo.bar.baz` gives "baz"
+   */
+  maybeGetMemberPropertyName(node) {
+    if (node.type === "MemberExpression") {
+      return node.property.name;
+    }
+    if (node.type === "Identifier") {
+      return node.name;
     }
     return null;
   },

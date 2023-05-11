@@ -9,12 +9,32 @@
 
 namespace mozilla {
 
+class MFMediaSource;
+
 class MFMediaEngineAudioStream final : public MFMediaEngineStream {
  public:
-  explicit MFMediaEngineAudioStream(const CreateDecoderParams& aParam) {}
+  MFMediaEngineAudioStream() = default;
 
-  RefPtr<InitPromise> Init() override;
-  nsCString GetDescriptionName() const override;
+  static MFMediaEngineAudioStream* Create(uint64_t aStreamId,
+                                          const TrackInfo& aInfo,
+                                          MFMediaSource* aParentSource);
+
+  nsCString GetDescriptionName() const override {
+    return "media engine audio stream"_ns;
+  }
+
+  TrackInfo::TrackType TrackType() override {
+    return TrackInfo::TrackType::kAudioTrack;
+  }
+
+ private:
+  HRESULT CreateMediaType(const TrackInfo& aInfo,
+                          IMFMediaType** aMediaType) override;
+
+  bool HasEnoughRawData() const override;
+
+  // For MF_MT_USER_DATA. Currently only used for AAC.
+  nsTArray<BYTE> mAACUserData;
 };
 
 }  // namespace mozilla

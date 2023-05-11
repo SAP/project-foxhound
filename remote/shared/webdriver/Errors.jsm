@@ -6,8 +6,12 @@
 
 const EXPORTED_SYMBOLS = ["error"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+const { RemoteError } = ChromeUtils.import(
+  "chrome://remote/content/shared/RemoteError.jsm"
 );
 
 const lazy = {};
@@ -178,7 +182,7 @@ const error = {
  * It should not be used directly, as it does not correspond to a real
  * error in the specification.
  */
-class WebDriverError extends Error {
+class WebDriverError extends RemoteError {
   /**
    * @param {(string|Error)=} x
    *     Optional string describing error situation or Error instance

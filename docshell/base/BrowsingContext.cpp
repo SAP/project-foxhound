@@ -1516,7 +1516,7 @@ JSObject* BrowsingContext::ReadStructuredClone(JSContext* aCx,
     return nullptr;
   }
 
-  JS::RootedValue val(aCx, JS::NullValue());
+  JS::Rooted<JS::Value> val(aCx, JS::NullValue());
   // We'll get rooting hazard errors from the RefPtr destructor if it isn't
   // destroyed before we try to return a raw JSObject*, so create it in its own
   // scope.
@@ -2448,6 +2448,8 @@ void BrowsingContext::PostMessageMoz(JSContext* aCx,
   }
 
   JS::CloneDataPolicy clonePolicy;
+  clonePolicy.allowErrorStackFrames();
+
   if (callerInnerWindow && callerInnerWindow->IsSharedMemoryAllowed()) {
     clonePolicy.allowSharedMemoryObjects();
   }
@@ -2466,8 +2468,8 @@ void BrowsingContext::PostMessageMoz(JSContext* aCx,
   if (ContentChild* cc = ContentChild::GetSingleton()) {
     // The clone scope gets set when we write the message data based on the
     // requirements of that data that we're writing.
-    // If the message data contins a shared memory object, then CloneScope would
-    // return SameProcess. Otherwise, it returns DifferentProcess.
+    // If the message data contains a shared memory object, then CloneScope
+    // would return SameProcess. Otherwise, it returns DifferentProcess.
     if (message.CloneScope() ==
         StructuredCloneHolder::StructuredCloneScope::DifferentProcess) {
       ClonedMessageData clonedMessageData;
@@ -2996,19 +2998,21 @@ void BrowsingContext::DidSet(FieldIndex<IDX_IsActiveBrowserWindowInternal>,
       doc->UpdateDocumentStates(DocumentState::WINDOW_INACTIVE, true);
 
       RefPtr<nsPIDOMWindowInner> win = doc->GetInnerWindow();
-      RefPtr<MediaDevices> devices;
-      if (isActivateEvent && (devices = win->GetExtantMediaDevices())) {
-        devices->BrowserWindowBecameActive();
-      }
+      if (win) {
+        RefPtr<MediaDevices> devices;
+        if (isActivateEvent && (devices = win->GetExtantMediaDevices())) {
+          devices->BrowserWindowBecameActive();
+        }
 
-      if (XRE_IsContentProcess() &&
-          (!aContext->GetParent() || !aContext->GetParent()->IsInProcess())) {
-        // Send the inner window an activate/deactivate event if
-        // the context is the top of a sub-tree of in-process
-        // contexts.
-        nsContentUtils::DispatchEventOnlyToChrome(
-            doc, win, isActivateEvent ? u"activate"_ns : u"deactivate"_ns,
-            CanBubble::eYes, Cancelable::eYes, nullptr);
+        if (XRE_IsContentProcess() &&
+            (!aContext->GetParent() || !aContext->GetParent()->IsInProcess())) {
+          // Send the inner window an activate/deactivate event if
+          // the context is the top of a sub-tree of in-process
+          // contexts.
+          nsContentUtils::DispatchEventOnlyToChrome(
+              doc, win, isActivateEvent ? u"activate"_ns : u"deactivate"_ns,
+              CanBubble::eYes, Cancelable::eYes, nullptr);
+        }
       }
     }
   });

@@ -104,7 +104,6 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::invalidation::stylesheets::RuleChangeKind;
 use style::media_queries::MediaList;
 use style::parser::{self, Parse, ParserContext};
-use style::piecewise_linear::PiecewiseLinearFunction;
 use style::properties::animated_properties::{AnimationValue, AnimationValueMap};
 use style::properties::{parse_one_declaration_into, parse_style_attribute};
 use style::properties::{ComputedValues, CountedUnknownProperty, Importance, NonCustomPropertyId};
@@ -138,7 +137,7 @@ use style::use_counters::UseCounters;
 use style::values::animated::{Animate, Procedure, ToAnimatedZero};
 use style::values::animated::color::AnimatedRGBA;
 use style::values::generics::color::ColorInterpolationMethod;
-use style::values::computed::easing::ComputedLinearStop;
+use style::values::generics::easing::BeforeFlag;
 use style::values::computed::font::{FontFamily, FontFamilyList, GenericFontFamily, FontWeight, FontStyle, FontStretch};
 use style::values::computed::{self, Context, ToComputedValue};
 use style::values::distance::ComputeSquaredDistance;
@@ -6235,9 +6234,19 @@ fn fill_in_missing_keyframe_values(
         return;
     }
 
+    // Use auto for missing keyframes.
+    // FIXME: This may be a spec issue in css-animations-2 because the spec says the default
+    // keyframe-specific composite is replace, but web-animations-1 uses auto. Use auto now so we
+    // use the value of animation-composition of the element, for missing keyframes.
+    // https://github.com/w3c/csswg-drafts/issues/7476
+    let composition = structs::CompositeOperationOrAuto::Auto;
     let keyframe = match offset {
-        Offset::Zero => unsafe { Gecko_GetOrCreateInitialKeyframe(keyframes, timing_function) },
-        Offset::One => unsafe { Gecko_GetOrCreateFinalKeyframe(keyframes, timing_function) },
+        Offset::Zero => unsafe {
+            Gecko_GetOrCreateInitialKeyframe(keyframes, timing_function, composition)
+        },
+        Offset::One => unsafe {
+            Gecko_GetOrCreateFinalKeyframe(keyframes, timing_function, composition)
+        },
     };
 
     // Append properties that have not been set at this offset.
@@ -6262,6 +6271,9 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
     inherited_timing_function: &nsTimingFunction,
     keyframes: &mut nsTArray<structs::Keyframe>,
 ) -> bool {
+    use style::gecko_bindings::structs::CompositeOperationOrAuto;
+    use style::properties::longhands::animation_composition::single_value::computed_value::T as Composition;
+
     debug_assert!(keyframes.len() == 0, "keyframes should be initially empty");
 
     let element = GeckoElement(element);
@@ -6302,13 +6314,22 @@ pub unsafe extern "C" fn Servo_StyleSet_GetKeyframesForName(
             },
         };
 
-        // Look for an existing keyframe with the same offset and timing
-        // function or else add a new keyframe at the beginning of the keyframe
-        // array.
+        // Override composite operation if the keyframe has an animation-composition.
+        let composition =
+            step.get_animation_composition(&guard)
+                .map_or(CompositeOperationOrAuto::Auto, |val| match val {
+                    Composition::Replace => CompositeOperationOrAuto::Replace,
+                    Composition::Add => CompositeOperationOrAuto::Add,
+                    Composition::Accumulate => CompositeOperationOrAuto::Accumulate,
+                });
+
+        // Look for an existing keyframe with the same offset, timing function, and compsition, or
+        // else add a new keyframe at the beginning of the keyframe array.
         let keyframe = Gecko_GetOrCreateKeyframeAtStart(
             keyframes,
             step.start_percentage.0 as f32,
             &timing_function,
+            composition,
         );
 
         match step.value {
@@ -7505,26 +7526,6 @@ pub unsafe extern "C" fn Servo_InvalidateForViewportUnits(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_CreatePiecewiseLinearFunction(
-    entries: &style::OwnedSlice<ComputedLinearStop>,
-    result: &mut PiecewiseLinearFunction,
-) {
-    *result = PiecewiseLinearFunction::from_iter(
-        entries
-            .iter()
-            .map(ComputedLinearStop::to_piecewise_linear_build_parameters),
-    );
-}
-
-#[no_mangle]
-pub extern "C" fn Servo_PiecewiseLinearFunctionAt(
-    function: &PiecewiseLinearFunction,
-    progress: f32,
-) -> f32 {
-    function.at(progress)
-}
-
-#[no_mangle]
 pub extern "C" fn Servo_InterpolateColor(
     interpolation: &ColorInterpolationMethod,
     left: &AnimatedRGBA,
@@ -7539,4 +7540,13 @@ pub extern "C" fn Servo_InterpolateColor(
         1.0 - progress,
         /* normalize_weights = */ false,
     )
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_EasingFunctionAt(
+    easing_function: &computed::easing::ComputedTimingFunction,
+    progress: f64,
+    before_flag: BeforeFlag
+) -> f64 {
+    easing_function.calculate_output(progress, before_flag, 1e-7)
 }

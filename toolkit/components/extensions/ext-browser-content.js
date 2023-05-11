@@ -3,10 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   clearTimeout: "resource://gre/modules/Timer.jsm",
@@ -102,7 +101,12 @@ const BrowserListener = {
     switch (event.type) {
       case "DOMDocElementInserted":
         if (this.blockingPromise) {
-          event.target.blockParsing(this.blockingPromise);
+          const doc = event.target;
+          const policy = doc?.nodePrincipal?.addonPolicy;
+          event.target.blockParsing(this.blockingPromise).then(() => {
+            policy?.weakExtension?.get()?.untrackBlockedParsingDocument(doc);
+          });
+          policy?.weakExtension?.get()?.trackBlockedParsingDocument(doc);
         }
         break;
 

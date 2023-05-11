@@ -394,7 +394,7 @@ const GfxDeviceFamily* GfxDriverInfo::GetDeviceFamily(DeviceFamily id) {
       APPEND_DEVICE(0x6779);
       APPEND_DEVICE(0x677b);
       break;
-    case DeviceFamily::RadeonBlockNoVideoCopy:
+    case DeviceFamily::RadeonBlockZeroVideoCopy:
       // Stoney
       APPEND_DEVICE(0x98e4);
       // Carrizo
@@ -830,6 +830,8 @@ const GfxDeviceFamily* GfxDriverInfo::GetDeviceFamily(DeviceFamily id) {
       APPEND_DEVICE(0x1638);
       // Lucienne
       APPEND_DEVICE(0x164c);
+      // Yellow Carp
+      APPEND_DEVICE(0x1681);
 
       // Evergreen
       APPEND_RANGE(0x6840, 0x684b);
@@ -997,7 +999,7 @@ const nsAString& GfxDriverInfo::GetDeviceVendor(DeviceFamily id) {
       vendor = DeviceVendor::NVIDIA;
       break;
     case DeviceFamily::AtiAll:
-    case DeviceFamily::RadeonBlockNoVideoCopy:
+    case DeviceFamily::RadeonBlockZeroVideoCopy:
     case DeviceFamily::RadeonCaicos:
     case DeviceFamily::RadeonX1000:
     case DeviceFamily::Bug1447141:

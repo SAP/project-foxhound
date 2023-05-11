@@ -10,7 +10,6 @@ var EXPORTED_SYMBOLS = ["ProcessHangMonitor"];
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /**
  * Elides the middle of a string by replacing it with an elipsis if it is
@@ -558,7 +557,12 @@ var ProcessHangMonitor = {
       return;
     }
 
-    if (AppConstants.MOZ_DEV_EDITION) {
+    // Show the "debug script" button unconditionally if we are in Developer edition,
+    // or, if DevTools are opened on the slow tab.
+    if (
+      AppConstants.MOZ_DEV_EDITION ||
+      report.scriptBrowser.browsingContext.watchedByDevTools
+    ) {
       buttons.push({
         label: bundle.getString("processHang.button_debug.label"),
         accessKey: bundle.getString("processHang.button_debug.accessKey"),

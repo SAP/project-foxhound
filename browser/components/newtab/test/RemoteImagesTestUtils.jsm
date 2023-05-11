@@ -8,7 +8,9 @@ const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 const { RemoteImages, REMOTE_IMAGES_PATH } = ChromeUtils.import(
   "resource://activity-stream/lib/RemoteImages.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+// This pref is used to override the Remote Settings server URL in tests.
+// See SERVER_URL in services/settings/Utils.jsm for more details.
 const RS_SERVER_PREF = "services.settings.server";
 
 class RemoteSettingsRecord {
@@ -308,7 +310,7 @@ const RemoteImagesTestUtils = {
         recordId: imageInfo.recordId,
         hash: imageInfo.hash,
         mimetype: imageInfo.mimetype,
-        lastLoaded: lastLoaded ?? Date.UTC(),
+        lastLoaded: lastLoaded ?? Date.now(),
       },
     };
   },

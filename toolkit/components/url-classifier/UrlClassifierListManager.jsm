@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // This is the only implementation of nsIUrlListManager.
@@ -725,6 +724,8 @@ PROT_ListManager.prototype.updateSuccess_ = function(
   );
   Services.prefs.setCharPref(nextUpdatePref, targetTime.toString());
 
+  this.recordRemoteSettingsUpdateTelemetry(updateUrl, 0);
+
   Services.obs.notifyObservers(null, "safebrowsing-update-finished", "success");
 };
 
@@ -739,6 +740,8 @@ PROT_ListManager.prototype.updateError_ = function(table, updateUrl, result) {
   // There was some trouble applying the updates. Don't try again for at least
   // updateInterval milliseconds.
   this.setUpdateCheckTimer(updateUrl, this.updateInterval);
+
+  this.recordRemoteSettingsUpdateTelemetry(updateUrl, 1);
 
   Services.obs.notifyObservers(
     null,
@@ -770,6 +773,8 @@ PROT_ListManager.prototype.downloadError_ = function(table, updateUrl, status) {
 
   this.setUpdateCheckTimer(updateUrl, delay);
 
+  this.recordRemoteSettingsUpdateTelemetry(updateUrl, 2);
+
   Services.obs.notifyObservers(
     null,
     "safebrowsing-update-finished",
@@ -796,6 +801,26 @@ PROT_ListManager.prototype.getBackOffTime = function(provider) {
 
   let delay = this.requestBackoffs_[updateUrl].nextRequestDelay();
   return delay == 0 ? 0 : Date.now() + delay;
+};
+
+/**
+ * This telemetry only records the results of updates that are fetched from RemoteSettings.
+ * This is because for normal updates, we already have very detailed telemetry
+ * (Ex. URLCLASSIFIER_UPDATE_REMOTE_STATUS, URLCLASSIFIER_UPDATE_REMOTE_NETWORK_ERROR, etc).
+ *
+ * @param updateUrl - the url for updating the table
+ * @param result - 0=success, 1=update error, 2=download error
+ */
+PROT_ListManager.prototype.recordRemoteSettingsUpdateTelemetry = function(
+  updateUrl,
+  result
+) {
+  if (updateUrl.startsWith("moz-sbrs://")) {
+    // update result when an update is fetched from RemoteSettings.
+    Services.telemetry
+      .getHistogramById("URLCLASSIFIER_UPDATE_REMOTE_SETTINGS_RESULT")
+      .add(result);
+  }
 };
 
 PROT_ListManager.prototype.QueryInterface = ChromeUtils.generateQI([

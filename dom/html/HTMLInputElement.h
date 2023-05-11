@@ -172,6 +172,13 @@ class HTMLInputElement final : public TextControlElement,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
+
+  bool LastValueChangeWasInteractive() const {
+    return mLastValueChangeWasInteractive;
+  }
+
+  void GetLastInteractiveValue(nsAString&);
+
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                       int32_t aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
@@ -1003,11 +1010,6 @@ class HTMLInputElement final : public TextControlElement,
    * and submits the form if either is present.
    */
   MOZ_CAN_RUN_SCRIPT void MaybeSubmitForm(nsPresContext* aPresContext);
-
-  /**
-   * Update mFileList with the currently selected file.
-   */
-  void UpdateFileList();
 
   /**
    * Called after calling one of the SetFilesOrDirectories() functions.

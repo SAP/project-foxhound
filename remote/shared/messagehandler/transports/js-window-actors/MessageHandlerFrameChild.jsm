@@ -6,14 +6,13 @@
 
 var EXPORTED_SYMBOLS = ["MessageHandlerFrameChild"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  error: "chrome://remote/content/shared/messagehandler/Errors.jsm",
   isBrowsingContextCompatible:
     "chrome://remote/content/shared/messagehandler/transports/FrameContextUtils.jsm",
   MessageHandlerRegistry:
@@ -59,9 +58,10 @@ class MessageHandlerFrameChild extends JSWindowActorChild {
       try {
         return await messageHandler.handleCommand(command);
       } catch (e) {
-        if (e instanceof lazy.error.MessageHandlerError) {
+        if (e?.isRemoteError) {
           return {
             error: e.toJSON(),
+            isMessageHandlerError: e.isMessageHandlerError,
           };
         }
         throw e;

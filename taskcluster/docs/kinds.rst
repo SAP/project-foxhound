@@ -697,6 +697,10 @@ system-symbols-upload
 ---------------------
 Upload macOS and windows system symbols to tecken.
 
+system-symbols-reprocess
+------------------------
+Call Crash-Stats API to reprocess after symbols upload.
+
 scriptworker-canary
 -------------------
 Push tasks to try to test new scriptworker deployments.
@@ -726,3 +730,7 @@ fxrecord
 
 Visual metrics computation of desktop Firefox startup. The performance team
 monitors this task to watch for regressions in Firefox startup performance.
+
+are-we-esmified-yet
+---------------------
+Collects data about the transition to ECMAScript Modules from JSMs.

@@ -169,8 +169,8 @@ class HostWebGLContext final : public SupportsWeakPtr {
   }
 
   void Present(const ObjectId xrFb, const layers::TextureType t,
-               const bool webvr) const {
-    return (void)mContext->Present(AutoResolve(xrFb), t, webvr);
+               const bool webvr, const webgl::SwapChainOptions& options) const {
+    return (void)mContext->Present(AutoResolve(xrFb), t, webvr, options);
   }
   void CopyToSwapChain(const ObjectId fb, const layers::TextureType t,
                        const webgl::SwapChainOptions& options) const {
@@ -184,6 +184,12 @@ class HostWebGLContext final : public SupportsWeakPtr {
 
   Maybe<uvec2> FrontBufferSnapshotInto(Maybe<Range<uint8_t>> dest) const {
     return mContext->FrontBufferSnapshotInto(dest);
+  }
+
+  Maybe<uvec2> FrontBufferSnapshotInto(
+      std::shared_ptr<gl::SharedSurface>& front,
+      Maybe<Range<uint8_t>> dest) const {
+    return mContext->FrontBufferSnapshotInto(front, dest);
   }
 
   void ClearVRSwapChain() const { mContext->ClearVRSwapChain(); }

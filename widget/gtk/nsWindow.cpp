@@ -387,6 +387,7 @@ nsWindow::nsWindow()
       mWindowShouldStartDragging(false),
       mHasMappedToplevel(false),
       mRetryPointerGrab(false),
+      mPanInProgress(false),
       mDrawToContainer(false),
       mTitlebarBackdropState(false),
       mIsPIPWindow(false),
@@ -580,7 +581,7 @@ void nsWindow::Destroy() {
     mWaylandVsyncSource = nullptr;
   }
   mWaylandVsyncDispatcher = nullptr;
-  g_clear_pointer(&mXdgToken, xdg_activation_token_v1_destroy);
+  MozClearPointer(mXdgToken, xdg_activation_token_v1_destroy);
 #endif
 
   if (mCompositorPauseTimeoutID) {
@@ -1818,7 +1819,7 @@ void nsWindow::UpdateWaylandPopupHierarchy() {
       if (!useIt) {
         return false;
       }
-      if (WaylandPopupFitsToplevelWindow()) {
+      if (popup->WaylandPopupFitsToplevelWindow()) {
         // Workaround for https://gitlab.gnome.org/GNOME/gtk/-/issues/1986
         // Bug 1760276 - don't use move-to-rect when popup is inside main
         // Firefox window.
@@ -1882,6 +1883,13 @@ void nsWindow::WaylandPopupPropagateChangesToLayout(bool aMove, bool aResize) {
 
 void nsWindow::NativeMoveResizeWaylandPopupCallback(
     const GdkRectangle* aFinalSize, bool aFlippedX, bool aFlippedY) {
+#ifdef NIGHTLY_BUILD
+  // We're getting move-to-rect callback without move-to-rect call.
+  // That indicates a compositor bug
+  MOZ_DIAGNOSTIC_ASSERT(mWaitingForMoveToRectCallback,
+                        "Bogus move-to-rect callback! A compositor bug?");
+#endif
+
   mWaitingForMoveToRectCallback = false;
 
   bool movedByLayout = mMovedAfterMoveToRect;
@@ -2075,6 +2083,8 @@ bool nsWindow::WaylandPopupFitsToplevelWindow() {
 
   GdkPoint topLeft = DevicePixelsToGdkPointRoundDown(mBounds.TopLeft());
   GdkRectangle size = DevicePixelsToGdkSizeRoundUp(mLastSizeRequest);
+  LOG("  popup topleft %d, %d size %d x %d", topLeft.x, topLeft.y, size.width,
+      size.height);
   int fits = topLeft.x >= 0 && topLeft.y >= 0 &&
              topLeft.x + size.width <= parentWidth &&
              topLeft.y + size.height <= parentHeight;
@@ -2511,8 +2521,8 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
     MakeFullScreen(false);
     // NOTE: Fullscreen restoration changes mSizeMode to the state before
     // fullscreen, but we might need to still transition to aMode.
-    if (mSizeMode == aMode) {
-      LOG("    restored to desired state");
+    if (mLastSizeModeBeforeFullscreen == aMode) {
+      LOG("    will restore to desired state");
       return;
     }
   }
@@ -2537,12 +2547,13 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
       // nsSizeMode_Normal, really.
       if (mSizeMode == nsSizeMode_Minimized) {
         gtk_window_deiconify(GTK_WINDOW(mShell));
+        // We need this for actual deiconification on mutter.
+        gtk_window_present(GTK_WINDOW(mShell));
       } else if (mSizeMode == nsSizeMode_Maximized) {
         gtk_window_unmaximize(GTK_WINDOW(mShell));
       }
       break;
   }
-  mSizeMode = aMode;
 }
 
 static bool GetWindowManagerName(GdkWindow* gdk_window, nsACString& wmName) {
@@ -2811,7 +2822,7 @@ guint32 nsWindow::GetLastUserInputTime() {
 #ifdef MOZ_WAYLAND
 void nsWindow::FocusWaylandWindow(const char* aTokenID) {
   auto releaseToken = mozilla::MakeScopeExit(
-      [&]() { g_clear_pointer(&mXdgToken, xdg_activation_token_v1_destroy); });
+      [&]() { MozClearPointer(mXdgToken, xdg_activation_token_v1_destroy); });
 
   LOG("nsWindow::SetFocusWayland");
   if (IsDestroyed()) {
@@ -2888,7 +2899,7 @@ void nsWindow::RequestFocusWaylandWindow(RefPtr<nsWindow> aWindow) {
       focusSerial, wl_proxy_get_id((struct wl_proxy*)KeymapWrapper::GetSeat()));
 
   // Store activation token at activated window for further release.
-  g_clear_pointer(&aWindow->mXdgToken, xdg_activation_token_v1_destroy);
+  MozClearPointer(aWindow->mXdgToken, xdg_activation_token_v1_destroy);
   aWindow->mXdgToken = xdg_activation_v1_get_activation_token(xdg_activation);
 
   // Addref aWindow to avoid potential release untill we get token_done
@@ -4846,6 +4857,7 @@ void nsWindow::OnWindowStateEvent(GtkWidget* aWidget,
     return;
   }
 
+  auto oldSizeMode = mSizeMode;
   if (aEvent->new_window_state & GDK_WINDOW_STATE_ICONIFIED) {
     LOG("\tIconified\n");
     mSizeMode = nsSizeMode_Minimized;
@@ -4869,19 +4881,16 @@ void nsWindow::OnWindowStateEvent(GtkWidget* aWidget,
 #endif  // ACCESSIBILITY
   }
 
-  if (aEvent->new_window_state & GDK_WINDOW_STATE_TILED) {
-    LOG("\tTiled\n");
-    mIsTiled = true;
-  } else {
-    LOG("\tNot tiled\n");
-    mIsTiled = false;
-  }
+  mIsTiled = aEvent->new_window_state & GDK_WINDOW_STATE_TILED;
+  LOG("\tTiled: %d\n", int(mIsTiled));
 
   if (mWidgetListener) {
-    mWidgetListener->SizeModeChanged(mSizeMode);
-    if (aEvent->changed_mask & GDK_WINDOW_STATE_FULLSCREEN) {
-      mWidgetListener->FullscreenChanged(aEvent->new_window_state &
-                                         GDK_WINDOW_STATE_FULLSCREEN);
+    if (mSizeMode != oldSizeMode) {
+      mWidgetListener->SizeModeChanged(mSizeMode);
+      if (mSizeMode == nsSizeMode_Fullscreen ||
+          oldSizeMode == nsSizeMode_Fullscreen) {
+        mWidgetListener->FullscreenChanged(mSizeMode == nsSizeMode_Fullscreen);
+      }
     }
   }
 
@@ -7120,18 +7129,15 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  bool wasFullscreen = mSizeMode == nsSizeMode_Fullscreen;
+  const bool wasFullscreen = mSizeMode == nsSizeMode_Fullscreen;
   if (aFullScreen != wasFullscreen && mWidgetListener) {
     mWidgetListener->FullscreenWillChange(aFullScreen);
   }
 
   if (aFullScreen) {
-    if (mSizeMode != nsSizeMode_Fullscreen) {
-      mLastSizeMode = mSizeMode;
+    if (!wasFullscreen) {
+      mLastSizeModeBeforeFullscreen = mSizeMode;
     }
-
-    mSizeMode = nsSizeMode_Fullscreen;
-
     if (mIsPIPWindow) {
       gtk_window_set_type_hint(GTK_WINDOW(mShell), GDK_WINDOW_TYPE_HINT_NORMAL);
       if (gUseAspectRatio) {
@@ -7143,7 +7149,6 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
 
     gtk_window_fullscreen(GTK_WINDOW(mShell));
   } else {
-    mSizeMode = mLastSizeMode;
     gtk_window_unfullscreen(GTK_WINDOW(mShell));
 
     if (mIsPIPWindow) {
@@ -7156,8 +7161,7 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
     }
   }
 
-  NS_ASSERTION(mLastSizeMode != nsSizeMode_Fullscreen,
-               "mLastSizeMode should never be fullscreen");
+  MOZ_ASSERT(mLastSizeModeBeforeFullscreen != nsSizeMode_Fullscreen);
   return NS_OK;
 }
 

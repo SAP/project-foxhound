@@ -18,8 +18,6 @@
  * Also, this module is only loaded, on-demand from process-helper if devtools are watching for process targets.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const SHARED_DATA_KEY_NAME = "DevTools:watchedPerWatcher";
 
 class ContentProcessStartup {
@@ -170,7 +168,7 @@ class ContentProcessStartup {
       const { connectionPrefix, targets } = sessionData;
       // This is where we only do something significant only if DevTools are opened
       // and requesting to create target actor for content processes
-      if (targets.includes("process")) {
+      if (targets?.includes("process")) {
         this.createTargetActor(watcherActorID, connectionPrefix, sessionData);
       }
     }

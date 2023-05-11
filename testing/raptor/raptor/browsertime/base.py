@@ -289,7 +289,16 @@ class Browsertime(Perftest):
             # running browsertime test in chimera mode
             "--browsertime.chimera",
             "true" if self.config["chimera"] else "false",
+            "--browsertime.test_bytecode_cache",
+            "true" if self.config["test_bytecode_cache"] else "false",
+            "--firefox.perfStats",
+            test.get("perfstats", "false"),
         ]
+
+        if test.get("perfstats") == "true":
+            # Take a non-standard approach for perfstats as we
+            # want to enable them everywhere shortly (bug 1770152)
+            self.results_handler.perfstats = True
 
         if test.get("secondary_url"):
             browsertime_options.extend(

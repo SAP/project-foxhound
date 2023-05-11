@@ -52,10 +52,6 @@ function getFocusedElementForBrowser(browser, dontCheckExtraFocus = false) {
     browser,
     [dontCheckExtraFocus],
     dontCheckExtraFocusChild => {
-      const { Services } = ChromeUtils.import(
-        "resource://gre/modules/Services.jsm"
-      );
-
       let focusedWindow = {};
       let node = Services.focus.getFocusedElementForWindow(
         content,
@@ -573,9 +569,9 @@ function _browser_tabfocus_test_eventOccured(event) {
 
   var id;
 
-  if (event.target instanceof Window) {
+  if (Window.isInstance(event.target)) {
     id = getWindowDocId(event.originalTarget) + "-window";
-  } else if (event.target instanceof Document) {
+  } else if (Document.isInstance(event.target)) {
     id = getWindowDocId(event.originalTarget) + "-document";
   } else if (
     event.target.id == "urlbar" &&

@@ -519,7 +519,7 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
 
   mIPCOpen = true;
 
-  if constexpr (SessionStoreUtils::NATIVE_LISTENER) {
+  if (StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
     mSessionStoreChild = SessionStoreChild::GetOrCreate(mBrowsingContext);
   }
 
@@ -1473,13 +1473,19 @@ bool BrowserChild::NotifyAPZStateChange(
     const layers::GeckoContentController::APZStateChange& aChange,
     const int& aArg) {
   mAPZEventState->ProcessAPZStateChange(aViewId, aChange, aArg);
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
   if (aChange ==
       layers::GeckoContentController::APZStateChange::eTransformEnd) {
     // This is used by tests to determine when the APZ is done doing whatever
     // it's doing. XXX generify this as needed when writing additional tests.
-    nsCOMPtr<nsIObserverService> observerService =
-        mozilla::services::GetObserverService();
     observerService->NotifyObservers(nullptr, "APZ:TransformEnd", nullptr);
+    observerService->NotifyObservers(nullptr, "PanZoom:StateChange",
+                                     u"NOTHING");
+  } else if (aChange ==
+             layers::GeckoContentController::APZStateChange::eTransformBegin) {
+    observerService->NotifyObservers(nullptr, "PanZoom:StateChange",
+                                     u"PANNING");
   }
   return true;
 }
@@ -3084,19 +3090,18 @@ void BrowserChild::DidRequestComposite(const TimeStamp& aCompositeReqStart,
   }
 
   nsDocShell* docShell = static_cast<nsDocShell*>(docShellComPtr.get());
-  RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
 
-  if (timelines && timelines->HasConsumer(docShell)) {
+  if (TimelineConsumers::HasConsumer(docShell)) {
     // Since we're assuming that it's impossible for content JS to directly
     // trigger a synchronous paint, we can avoid capturing a stack trace here,
     // which means we won't run into JS engine reentrancy issues like bug
     // 1310014.
-    timelines->AddMarkerForDocShell(
+    TimelineConsumers::AddMarkerForDocShell(
         docShell, "CompositeForwardTransaction", aCompositeReqStart,
         MarkerTracingType::START, MarkerStackRequest::NO_STACK);
-    timelines->AddMarkerForDocShell(docShell, "CompositeForwardTransaction",
-                                    aCompositeReqEnd, MarkerTracingType::END,
-                                    MarkerStackRequest::NO_STACK);
+    TimelineConsumers::AddMarkerForDocShell(
+        docShell, "CompositeForwardTransaction", aCompositeReqEnd,
+        MarkerTracingType::END, MarkerStackRequest::NO_STACK);
   }
 }
 

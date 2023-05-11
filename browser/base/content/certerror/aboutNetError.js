@@ -315,6 +315,10 @@ function initPage() {
     ld.innerHTML = errDesc.innerHTML;
   }
 
+  if (err == "dnsNotFound") {
+    RPMCheckAlternateHostAvailable();
+  }
+
   if (err == "sslv3Used") {
     document.getElementById("learnMoreContainer").style.display = "block";
     document.body.className = "certerror";
@@ -1176,7 +1180,7 @@ function setFocus(selector, position = "afterbegin") {
     // be focused. We use a requestAnimationFrame to queue up the focus to occur
     // once the button has its frame.
     requestAnimationFrame(() => {
-      button.focus({ preventFocusRing: true });
+      button.focus({ focusVisible: false });
     });
   }
 }

@@ -29,6 +29,8 @@ job-defaults:
 jobs:
     mac:
         description: Extract macOS system symbols found in crashreports
+        attributes:
+            build_platform: macos
         index:
             product: system-symbols
             job-name: mac
@@ -51,6 +53,8 @@ jobs:
             symbol: system-symbols-mac
     win:
         description: Extract windows system symbols found in crashreports
+        attributes:
+            build_platform: windows
         index:
             product: system-symbols
             job-name: win
@@ -71,3 +75,133 @@ jobs:
         fetches:
             toolchain:
                 - linux64-dump_syms
+    archlinux:
+        description: Extract ArchLinux system symbols found in crashreports
+        attributes:
+            build_platform: archlinux
+        index:
+            product: system-symbols
+            job-name: archlinux
+            type: generic
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts/
+            docker-image: {in-tree: system-symbols-linux-scraper}
+            max-run-time: 14400
+        run:
+            using: run-task
+            command: >-
+                ./run.sh arch
+        treeherder:
+            symbol: sys-symbols-archlinux
+        fetches:
+            toolchain:
+                - linux64-dump_syms
+            fetch:
+                - symbol-scrapers
+    debian:
+        description: Extract Debian system symbols found in crashreports
+        attributes:
+            build_platform: debian
+        index:
+            product: system-symbols
+            job-name: debian
+            type: generic
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts/
+            docker-image: {in-tree: system-symbols-linux-scraper}
+            max-run-time: 14400
+        run:
+            using: run-task
+            command: >-
+                ./run.sh debian
+        treeherder:
+            symbol: sys-symbols-debian
+        fetches:
+            toolchain:
+                - linux64-dump_syms
+            fetch:
+                - symbol-scrapers
+    fedora:
+        description: Extract Fedora system symbols found in crashreports
+        attributes:
+            build_platform: fedora
+        index:
+            product: system-symbols
+            job-name: fedora
+            type: generic
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts/
+            docker-image: {in-tree: system-symbols-linux-scraper}
+            max-run-time: 14400
+        run:
+            using: run-task
+            command: >-
+                ./run.sh fedora
+        treeherder:
+            symbol: sys-symbols-fedora
+        fetches:
+            toolchain:
+                - linux64-dump_syms
+            fetch:
+                - symbol-scrapers
+    opensuse:
+        description: Extract OpenSUSE system symbols found in crashreports
+        attributes:
+            build_platform: opensuse
+        index:
+            product: system-symbols
+            job-name: opensuse
+            type: generic
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts/
+            docker-image: {in-tree: system-symbols-linux-scraper}
+            max-run-time: 14400
+        run:
+            using: run-task
+            command: >-
+                ./run.sh opensuse
+        treeherder:
+            symbol: sys-symbols-opensuse
+        fetches:
+            toolchain:
+                - linux64-dump_syms
+            fetch:
+                - symbol-scrapers
+    ubuntu:
+        description: Extract Ubuntu system symbols found in crashreports
+        attributes:
+            build_platform: ubuntu
+        index:
+            product: system-symbols
+            job-name: ubuntu
+            type: generic
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts/
+            docker-image: {in-tree: system-symbols-linux-scraper}
+            max-run-time: 14400
+        run:
+            using: run-task
+            command: >-
+                ./run.sh ubuntu
+        treeherder:
+            symbol: sys-symbols-ubuntu
+        fetches:
+            toolchain:
+                - linux64-dump_syms
+            fetch:
+                - symbol-scrapers

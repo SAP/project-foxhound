@@ -248,7 +248,16 @@ add_task(async function testSourceTreeOnTheIntegrationTestPage() {
     "named-eval.js"
   );
 
+  info("Verify source tree content");
   await waitForSourcesInSourceTree(dbg, INTEGRATION_TEST_PAGE_SOURCES);
+
+  info("Verify Thread Source Items");
+  const mainThreadItem = findSourceTreeThreadByName(dbg, "Main Thread");
+  ok(mainThreadItem, "Found the thread item for the main thread");
+  ok(
+    mainThreadItem.querySelector("span.img.window"),
+    "The thread has the window icon"
+  );
 
   info(
     "Assert the number of sources and source actors for the same-url.sjs sources"
@@ -288,7 +297,7 @@ add_task(async function testSourceTreeOnTheIntegrationTestPage() {
   const workerSameUrlSource = findSourceInThread(
     dbg,
     "same-url.sjs",
-    "same-url.sjs"
+    testServer.urlFor("same-url.sjs")
   );
   ok(workerSameUrlSource, "Found same-url.js in the worker thread");
   is(
@@ -296,6 +305,26 @@ add_task(async function testSourceTreeOnTheIntegrationTestPage() {
     1,
     "same-url.js is loaded one time in the worker thread"
   );
+  const workerThreadItem = findSourceTreeThreadByName(dbg, "same-url.sjs");
+  ok(workerThreadItem, "Found the thread item for the worker");
+  ok(
+    workerThreadItem.querySelector("span.img.worker"),
+    "The thread has the worker icon"
+  );
+
+  info("Verify source icons");
+  assertSourceIcon(dbg, "index.html", "file");
+  assertSourceIcon(dbg, "script.js", "javascript");
+  assertSourceIcon(dbg, "query.js?x=1", "javascript");
+  assertSourceIcon(dbg, "original.js", "javascript");
+  info("Verify blackbox source icon");
+  await selectSource(dbg, "script.js");
+  await clickElement(dbg, "blackbox");
+  await waitForDispatch(dbg.store, "BLACKBOX");
+  assertSourceIcon(dbg, "script.js", "blackBox");
+  await clickElement(dbg, "blackbox");
+  await waitForDispatch(dbg.store, "BLACKBOX");
+  assertSourceIcon(dbg, "script.js", "javascript");
 
   info("Assert the content of the named eval");
   await selectSource(dbg, "named-eval.js");
@@ -323,6 +352,7 @@ add_task(async function testSourceTreeOnTheIntegrationTestPage() {
   clickElement(dbg, "prettyPrintButton");
   await waitForSource(dbg, "query.js?x=1:formatted");
   await waitForSelectedSource(dbg, "query.js?x=1:formatted");
+  assertSourceIcon(dbg, "query.js?x=1", "prettyPrint");
 
   const prettyTab = findElement(dbg, "activeTab");
   is(prettyTab.innerText, "query.js?x=1", "Tab label is query.js?x=1");
@@ -374,6 +404,18 @@ add_task(async function testSourceTreeWithWebExtensionContentScript() {
     findElementWithSelector(dbg, ".sources-list .focused"),
     "Source is focused"
   );
+
+  const contentScriptGroupItem = findSourceNodeWithText(
+    dbg,
+    "Test content script extension"
+  );
+  ok(contentScriptGroupItem, "Found the group item for the content script");
+  ok(
+    contentScriptGroupItem.querySelector("span.img.extension"),
+    "The group has the extension icon"
+  );
+  assertSourceIcon(dbg, "content_script.js", "javascript");
+
   for (let i = 1; i < 3; i++) {
     info(
       `Reloading tab (${i} time), the content script should always be reselected`

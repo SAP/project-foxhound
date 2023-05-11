@@ -21,6 +21,7 @@
 #include "mozilla/UniquePtr.h"
 #include "FilterDescription.h"
 #include "gfx2DGlue.h"
+#include "gfxFontConstants.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsColor.h"
 #include "nsIFrame.h"
@@ -239,11 +240,6 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   TextMetrics* MeasureText(const nsAString& aRawText,
                            mozilla::ErrorResult& aError);
 
-  void AddHitRegion(const HitRegionOptions& aOptions,
-                    mozilla::ErrorResult& aError);
-  void RemoveHitRegion(const nsAString& aId);
-  void ClearHitRegions();
-
   void DrawImage(const CanvasImageSource& aImage, double aDx, double aDy,
                  mozilla::ErrorResult& aError) override {
     DrawImage(aImage, 0.0, 0.0, 0.0, 0.0, aDx, aDy, 0.0, 0.0, 0, aError);
@@ -307,6 +303,9 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   void SetTextBaseline(const nsAString& aTextBaseline);
   void GetDirection(nsAString& aDirection);
   void SetDirection(const nsAString& aDirection);
+
+  void GetFontKerning(nsAString& aFontKerning);
+  void SetFontKerning(const nsAString& aFontKerning);
 
   void ClosePath() override {
     EnsureWritablePath();
@@ -516,12 +515,6 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   virtual UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aFormat) override;
 
-  // Given a point, return hit region ID if it exists
-  nsString GetHitRegion(const mozilla::gfx::Point& aPoint) override;
-
-  // return true and fills in the bound rect if element has a hit region.
-  bool GetHitRegionRect(Element* aElement, nsRect& aRect) override;
-
   virtual void OnShutdown();
 
   /**
@@ -592,8 +585,11 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                    ErrorResult& aError);
 
   // Returns whether the font was successfully updated.
-  virtual bool SetFontInternal(const nsACString& aFont,
-                               mozilla::ErrorResult& aError);
+  bool SetFontInternal(const nsACString& aFont, mozilla::ErrorResult& aError);
+
+  // Helper for SetFontInternal in the case where we have no PresShell.
+  bool SetFontInternalDisconnected(const nsACString& aFont,
+                                   mozilla::ErrorResult& aError);
 
   // Clears the target and updates mOpaque based on mOpaqueAttrValue and
   // mContextAttributesHasAlpha.
@@ -818,20 +814,6 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   uint32_t mInvalidateCount;
   static const uint32_t kCanvasMaxInvalidateCount = 100;
 
-  /**
-   * State information for hit regions
-   */
-  struct RegionInfo {
-    nsString mId;
-    // fallback element for a11y
-    RefPtr<Element> mElement;
-    // Path of the hit region in the 2d context coordinate space (not user
-    // space)
-    RefPtr<gfx::Path> mPath;
-  };
-
-  nsTArray<RegionInfo> mHitRegionsOptions;
-
   mozilla::intl::Bidi mBidiEngine;
 
   /**
@@ -891,6 +873,14 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   enum class TextDrawOperation : uint8_t { FILL, STROKE, MEASURE };
 
   enum class TextDirection : uint8_t { LTR, RTL, INHERIT };
+
+  // Match values from the style system, so we don't have to bother mapping
+  // between them when setting up an nsFont.
+  enum class FontKerning : uint8_t {
+    AUTO = NS_FONT_KERNING_AUTO,
+    NORMAL = NS_FONT_KERNING_NORMAL,
+    NONE = NS_FONT_KERNING_NONE
+  };
 
  protected:
   gfxFontGroup* GetCurrentFontStyle();
@@ -960,6 +950,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     TextAlign textAlign = TextAlign::START;
     TextBaseline textBaseline = TextBaseline::ALPHABETIC;
     TextDirection textDirection = TextDirection::INHERIT;
+    FontKerning fontKerning = FontKerning::AUTO;
 
     nscolor shadowColor = 0;
 

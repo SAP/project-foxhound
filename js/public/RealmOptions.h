@@ -208,9 +208,9 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-  bool getArrayFindLastEnabled() const { return arrayFindLast_; }
-  RealmCreationOptions& setArrayFindLastEnabled(bool flag) {
-    arrayFindLast_ = flag;
+  bool getShadowRealmsEnabled() const { return shadowRealms_; }
+  RealmCreationOptions& setShadowRealmsEnabled(bool flag) {
+    shadowRealms_ = flag;
     return *this;
   }
 
@@ -273,7 +273,7 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool toSource_ = false;
   bool propertyErrorMessageFix_ = false;
   bool iteratorHelpers_ = false;
-  bool arrayFindLast_ = false;
+  bool shadowRealms_ = false;
 #ifdef NIGHTLY_BUILD
   bool arrayGrouping_ = true;
 #endif

@@ -49,9 +49,7 @@
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/PromiseObject.h"  // js::PromiseObject
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingGraph.h"
-#include "vm/Warnings.h"  // js::WarnNumberUC
+#include "vm/Warnings.h"       // js::WarnNumberUC
 #include "wasm/WasmSignalHandlers.h"
 
 #include "debugger/DebugAPI-inl.h"
@@ -161,6 +159,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       stackFormat_(parentRuntime ? js::StackFormat::Default
                                  : js::StackFormat::SpiderMonkey),
       wasmInstances(mutexid::WasmRuntimeInstances),
+      moduleAsyncEvaluatingPostOrder(ASYNC_EVALUATING_POST_ORDER_INIT),
       moduleResolveHook(),
       moduleMetadataHook(),
       moduleDynamicImportHook(),
@@ -310,14 +309,10 @@ void JSRuntime::destroyRuntime() {
 #endif
 }
 
-void JSRuntime::addTelemetry(int id, uint32_t sample, const char* key) {
+void JSRuntime::addTelemetry(JSMetric id, uint32_t sample) {
   if (telemetryCallback) {
-    (*telemetryCallback)(id, sample, key);
+    (*telemetryCallback)(id, sample);
   }
-}
-
-JSTelemetrySender JSRuntime::getTelemetrySender() const {
-  return JSTelemetrySender(telemetryCallback);
 }
 
 void JSRuntime::setTelemetryCallback(
@@ -361,12 +356,6 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
   rtSizes->temporary += cx->tempLifoAlloc().sizeOfExcludingThis(mallocSizeOf);
   rtSizes->interpreterStack +=
       cx->interpreterStack().sizeOfExcludingThis(mallocSizeOf);
-#ifdef JS_TRACE_LOGGING
-  if (cx->traceLogger) {
-    rtSizes->tracelogger += cx->traceLogger->sizeOfIncludingThis(mallocSizeOf);
-  }
-#endif
-
   rtSizes->uncompressedSourceCache +=
       caches().uncompressedSourceCache.sizeOfExcludingThis(mallocSizeOf);
 

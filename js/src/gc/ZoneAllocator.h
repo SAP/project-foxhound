@@ -58,7 +58,7 @@ class ZoneAllocator : public JS::shadow::Zone,
   void reportAllocationOverflow() const;
 
   void updateMemoryCountersOnGCStart();
-  void updateGCStartThresholds(gc::GCRuntime& gc, const js::AutoLockGC& lock);
+  void updateGCStartThresholds(gc::GCRuntime& gc);
   void setGCSliceThresholds(gc::GCRuntime& gc, bool waitingOnBGTask);
   void clearGCSliceThresholds();
 
@@ -166,7 +166,7 @@ class ZoneAllocator : public JS::shadow::Zone,
 
  public:
   // The size of allocated GC arenas in this zone.
-  gc::HeapSize gcHeapSize;
+  gc::HeapSizeChild gcHeapSize;
 
   // Threshold used to trigger GC based on GC heap size.
   gc::GCHeapThreshold gcHeapThreshold;

@@ -15,8 +15,6 @@
 #include "frontend/SharedContext.h"
 #include "util/Poison.h"
 #include "util/StringBuffer.h"
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingTypes.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -488,8 +486,6 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
 
 bool frontend::NameFunctions(JSContext* cx, ParserAtomsTable& parserAtoms,
                              ParseNode* pn) {
-  AutoTraceLog traceLog(TraceLoggerForCurrentThread(cx),
-                        TraceLogger_BytecodeNameFunctions);
   NameResolver nr(cx, parserAtoms);
   return nr.visit(pn);
 }

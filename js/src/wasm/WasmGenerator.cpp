@@ -31,8 +31,6 @@
 #include "util/Text.h"
 #include "vm/HelperThreads.h"
 #include "vm/Time.h"
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingTypes.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
 #include "wasm/WasmCraneliftCompile.h"
@@ -489,6 +487,7 @@ bool ModuleGenerator::linkCallSites() {
       case CallSiteDesc::Breakpoint:
       case CallSiteDesc::EnterFrame:
       case CallSiteDesc::LeaveFrame:
+      case CallSiteDesc::FuncRef:
         break;
       case CallSiteDesc::Func: {
         if (funcIsCompiled(target.funcIndex())) {
@@ -760,9 +759,6 @@ static bool ExecuteCompileTask(CompileTask* task, UniqueChars* error) {
 }
 
 void CompileTask::runHelperThreadTask(AutoLockHelperThreadState& lock) {
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
-  AutoTraceLog logCompile(logger, TraceLogger_WasmCompilation);
-
   UniqueChars error;
   bool ok;
 

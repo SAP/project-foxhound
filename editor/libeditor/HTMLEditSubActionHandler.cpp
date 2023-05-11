@@ -7056,7 +7056,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInHeadingElement(
       // Put caret at the <br> element.
       return SplitNodeResult(
           SplitNodeResult::HandledButDidNotSplitDueToEndOfContainer(
-              *leftHeadingElement, SplitNodeDirection::LeftNodeIsNewOne),
+              *leftHeadingElement, GetSplitNodeDirection()),
           afterEditableBRElement);
     }
   }
@@ -7115,7 +7115,7 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInHeadingElement(
   MOZ_ASSERT(createNewParagraphElementResult.GetNewNode());
   return SplitNodeResult(
       *leftHeadingElement, *createNewParagraphElementResult.GetNewNode(),
-      SplitNodeDirection::LeftNodeIsNewOne,
+      GetSplitNodeDirection(),
       Some(EditorDOMPoint(createNewParagraphElementResult.GetNewNode(), 0u)));
 }
 
@@ -7230,8 +7230,8 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
         // If insertParagraph does not create a new paragraph, default to
         // insertLineBreak.
         if (!createNewParagraph) {
-          return SplitNodeResult::NotHandled(
-              pointToSplit, SplitNodeDirection::LeftNodeIsNewOne);
+          return SplitNodeResult::NotHandled(pointToSplit,
+                                             GetSplitNodeDirection());
         }
         const EditorDOMPoint pointToInsertBR = pointToSplit.ParentPoint();
         MOZ_ASSERT(pointToInsertBR.IsSet());
@@ -7264,8 +7264,8 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
         // If insertParagraph does not create a new paragraph, default to
         // insertLineBreak.
         if (!createNewParagraph) {
-          return SplitNodeResult::NotHandled(
-              pointToSplit, SplitNodeDirection::LeftNodeIsNewOne);
+          return SplitNodeResult::NotHandled(pointToSplit,
+                                             GetSplitNodeDirection());
         }
         const EditorDOMPoint pointToInsertBR =
             EditorDOMPoint::After(*pointToSplit.ContainerAsText());
@@ -7287,8 +7287,8 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
       // If insertParagraph does not create a new paragraph, default to
       // insertLineBreak.
       if (!createNewParagraph) {
-        return SplitNodeResult::NotHandled(
-            pointToSplit, SplitNodeDirection::LeftNodeIsNewOne);
+        return SplitNodeResult::NotHandled(pointToSplit,
+                                           GetSplitNodeDirection());
       }
 
       // If we're splitting the paragraph at middle of a text node, we should
@@ -7379,8 +7379,8 @@ SplitNodeResult HTMLEditor::HandleInsertParagraphInParagraph(
         // If insertParagraph does not create a new paragraph, default to
         // insertLineBreak.
         if (!createNewParagraph) {
-          return SplitNodeResult::NotHandled(
-              pointToSplit, SplitNodeDirection::LeftNodeIsNewOne);
+          return SplitNodeResult::NotHandled(pointToSplit,
+                                             GetSplitNodeDirection());
         }
         CreateElementResult insertBRElementResult =
             InsertBRElement(WithTransaction::Yes, pointToSplit);
@@ -7505,6 +7505,10 @@ SplitNodeResult HTMLEditor::SplitParagraphWithTransaction(
           return NS_OK;
         }
 
+        // XXX: Probably, we should use
+        //      InsertPaddingBRElementForEmptyLastLineWithTransaction here, and
+        //      if there are some empty inline container, we should put the <br>
+        //      into the last one.
         CreateElementResult insertBRElementResult = InsertBRElement(
             WithTransaction::Yes, EditorDOMPoint(&aElement, 0u));
         if (insertBRElementResult.isErr()) {
@@ -7527,19 +7531,75 @@ SplitNodeResult HTMLEditor::SplitParagraphWithTransaction(
         "InsertBRElementIfEmptyBlockElement(leftDivOrParagraphElement) failed");
     return SplitNodeResult(rv);
   }
-  // MOZ_KnownLive(rightDivOrParagraphElement) because it's grabbed by
-  // splitDivOrResult.
-  rv = InsertBRElementIfEmptyBlockElement(
-      MOZ_KnownLive(*rightDivOrParagraphElement));
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "InsertBRElementIfEmptyBlockElement(rightDivOrParagraphElement) "
-        "failed");
-    return SplitNodeResult(rv);
+
+  if (HTMLEditUtils::IsEmptyNode(*rightDivOrParagraphElement)) {
+    // If the right paragraph is empty, it might have an empty inline element
+    // (which may contain other empty inline containers) and optionally a <br>
+    // element which may not be in the deepest inline element.
+    const RefPtr<Element> deepestInlineContainerElement =
+        [](const Element& aBlockElement) {
+          Element* result = nullptr;
+          for (Element* maybeDeepestInlineContainer =
+                   Element::FromNodeOrNull(aBlockElement.GetFirstChild());
+               maybeDeepestInlineContainer &&
+               HTMLEditUtils::IsInlineElement(*maybeDeepestInlineContainer) &&
+               HTMLEditUtils::IsContainerNode(*maybeDeepestInlineContainer);
+               maybeDeepestInlineContainer =
+                   maybeDeepestInlineContainer->GetFirstElementChild()) {
+            result = maybeDeepestInlineContainer;
+          }
+          return result;
+        }(*rightDivOrParagraphElement);
+    if (deepestInlineContainerElement) {
+      RefPtr<HTMLBRElement> brElement =
+          HTMLEditUtils::GetFirstBRElement(*rightDivOrParagraphElement);
+      // If there is a <br> element and it is in the deepest inline container,
+      // we need to do nothing anymore. Let's suggest caret position as at the
+      // <br>.
+      if (brElement &&
+          brElement->GetParentNode() == deepestInlineContainerElement) {
+        brElement->SetFlags(NS_PADDING_FOR_EMPTY_LAST_LINE);
+        return SplitNodeResult(std::move(splitDivOrPResult),
+                               EditorDOMPoint(brElement));
+      }
+      // Otherwise, we should put a padding <br> element into the deepest inline
+      // container and then, existing <br> element (if there is) becomes
+      // unnecessary.
+      if (brElement) {
+        nsresult rv = DeleteNodeWithTransaction(*brElement);
+        if (NS_FAILED(rv)) {
+          NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
+          return SplitNodeResult(rv);
+        }
+      }
+      const CreateElementResult insertPaddingBRElementResult =
+          InsertPaddingBRElementForEmptyLastLineWithTransaction(
+              EditorDOMPoint::AtEndOf(deepestInlineContainerElement));
+      if (insertPaddingBRElementResult.isErr()) {
+        NS_WARNING(
+            "HTMLEditor::"
+            "InsertPaddingBRElementForEmptyLastLineWithTransaction() failed");
+        return SplitNodeResult(insertPaddingBRElementResult.inspectErr());
+      }
+      insertPaddingBRElementResult.IgnoreCaretPointSuggestion();
+      return SplitNodeResult(
+          std::move(splitDivOrPResult),
+          EditorDOMPoint(insertPaddingBRElementResult.GetNewNode()));
+    }
+
+    // If there is no inline container elements, we just need to make the
+    // right paragraph visible.
+    nsresult rv = InsertBRElementIfEmptyBlockElement(
+        MOZ_KnownLive(*rightDivOrParagraphElement));
+    if (NS_FAILED(rv)) {
+      NS_WARNING(
+          "InsertBRElementIfEmptyBlockElement(rightDivOrParagraphElement) "
+          "failed");
+      return SplitNodeResult(rv);
+    }
   }
 
-  // selection to beginning of right hand para;
-  // look inside any containers that are up front.
+  // Let's put caret at start of the first leaf container.
   nsIContent* child = HTMLEditUtils::GetFirstLeafContent(
       *rightDivOrParagraphElement, {LeafNodeType::LeafNodeOrChildBlock});
   if (MOZ_UNLIKELY(!child)) {
@@ -8321,7 +8381,7 @@ SplitNodeResult HTMLEditor::MaybeSplitAncestorsForInsertWithTransaction(
   // as is.
   if (pointToInsert.GetContainer() == aStartOfDeepestRightNode.GetContainer()) {
     return SplitNodeResult::NotHandled(aStartOfDeepestRightNode,
-                                       SplitNodeDirection::LeftNodeIsNewOne);
+                                       GetSplitNodeDirection());
   }
 
   SplitNodeResult splitNodeResult = SplitNodeDeepWithTransaction(
@@ -9002,7 +9062,9 @@ nsresult HTMLEditor::AdjustCaretPositionAndEnsurePaddingBRElement(
         previousEditableContent->IsHTMLElement(nsGkAtoms::br)) {
       // If it's an invisible `<br>` element, we need to insert a padding
       // `<br>` element for making empty line have one-line height.
-      if (HTMLEditUtils::IsInvisibleBRElement(*previousEditableContent)) {
+      if (HTMLEditUtils::IsInvisibleBRElement(*previousEditableContent) &&
+          !EditorUtils::IsPaddingBRElementForEmptyLastLine(
+              *previousEditableContent)) {
         CreateElementResult insertPaddingBRElementResult =
             InsertPaddingBRElementForEmptyLastLineWithTransaction(point);
         if (insertPaddingBRElementResult.isErr()) {

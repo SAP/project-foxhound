@@ -16,7 +16,7 @@
 
 const { Ci } = require("chrome");
 const { DevToolsServer } = require("devtools/server/devtools-server");
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.sys.mjs");
 const protocol = require("devtools/shared/protocol");
 const {
   workerDescriptorSpec,
@@ -65,11 +65,7 @@ const WorkerDescriptorActor = protocol.ActorClassWithSpec(
         threadActor: this._threadActor,
         id: this._dbg.id,
         url: this._dbg.url,
-        traits: {
-          // @backward-compat { version 102 } WorkerDescriptor no longer implement attach method
-          //                  We can remove the trait once 102 is the release channel.
-          doNotAttach: true,
-        },
+        traits: {},
         type: this._dbg.type,
       };
       if (this._dbg.type === Ci.nsIWorkerDebugger.TYPE_SERVICE) {

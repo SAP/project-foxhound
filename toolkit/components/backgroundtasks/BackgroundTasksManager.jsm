@@ -5,9 +5,8 @@
 
 var EXPORTED_SYMBOLS = ["BackgroundTasksManager"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -191,6 +190,10 @@ class BackgroundTasksManager {
     lazy.log.info(
       `${Services.appinfo.processID}: Running background task named '${name}'` +
         ` (with ${commandLine.length} arguments)`
+    );
+    lazy.log.debug(
+      `${Services.appinfo.processID}: Background task using profile` +
+        ` '${Services.dirsvc.get("ProfD", Ci.nsIFile).path}'`
     );
 
     let exitCode = BackgroundTasksManager.EXIT_CODE.NOT_FOUND;

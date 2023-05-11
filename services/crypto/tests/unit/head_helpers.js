@@ -1,7 +1,7 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 try {
@@ -56,9 +56,6 @@ function base64UrlDecode(s) {
 
 // Register resource alias. Normally done in SyncComponents.manifest.
 function addResourceAlias() {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const resProt = Services.io
     .getProtocolHandler("resource")
     .QueryInterface(Ci.nsIResProtocolHandler);

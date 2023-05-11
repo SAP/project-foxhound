@@ -62,7 +62,6 @@
 #include "vm/SharedStencil.h"  // GCThingIndex
 #include "vm/StringType.h"
 #include "vm/ThrowMsgKind.h"  // ThrowMsgKind
-#include "vm/TraceLogging.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
 #  include "vm/TupleType.h"
@@ -401,9 +400,6 @@ bool js::RunScript(JSContext* cx, RunState& state) {
 STATIC_PRECONDITION_ASSUME(ubound(args.argv_) >= argc)
 MOZ_ALWAYS_INLINE bool CallJSNative(JSContext* cx, Native native,
                                     CallReason reason, const CallArgs& args) {
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
-  AutoTraceLog traceLog(logger, TraceLogger_Call);
-
   AutoCheckRecursionLimit recursion(cx);
   if (!recursion.check(cx)) {
     return false;
@@ -2090,11 +2086,6 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
   RootedScript script(cx);
   SET_SCRIPT(REGS.fp()->script());
 
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
-  TraceLoggerEvent scriptEvent(TraceLogger_Scripts, script);
-  TraceLogStartEvent(logger, scriptEvent);
-  TraceLogStartEvent(logger, TraceLogger_Interpreter);
-
   /*
    * Pool of rooters for use in this interpreter frame. References to these
    * are used for local variables within interpreter cases. This avoids
@@ -2303,9 +2294,6 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
       if (activation.entryFrame() != REGS.fp()) {
         // Stop the engine. (No details about which engine exactly, could be
         // interpreter, Baseline or IonMonkey.)
-        TraceLogStopEvent(logger, TraceLogger_Engine);
-        TraceLogStopEvent(logger, TraceLogger_Scripts);
-
         if (MOZ_LIKELY(!frameHalfInitialized)) {
           interpReturnOK =
               DebugAPI::onLeaveFrame(cx, REGS.fp(), REGS.pc, interpReturnOK);
@@ -3403,12 +3391,6 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
 
       SET_SCRIPT(REGS.fp()->script());
 
-      {
-        TraceLoggerEvent event(TraceLogger_Scripts, script);
-        TraceLogStartEvent(logger, event);
-        TraceLogStartEvent(logger, TraceLogger_Interpreter);
-      }
-
       if (!REGS.fp()->prologue(cx)) {
         goto prologue_error;
       }
@@ -4344,11 +4326,6 @@ static MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER bool Interpret(JSContext* cx,
         }
         SET_SCRIPT(generatorScript);
 
-        TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
-        TraceLoggerEvent scriptEvent(TraceLogger_Scripts, script);
-        TraceLogStartEvent(logger, scriptEvent);
-        TraceLogStartEvent(logger, TraceLogger_Interpreter);
-
         if (!probes::EnterScript(cx, generatorScript,
                                  generatorScript->function(), REGS.fp())) {
           goto error;
@@ -4608,9 +4585,6 @@ exit:
   }
 
   gc::MaybeVerifyBarriers(cx, true);
-
-  TraceLogStopEvent(logger, TraceLogger_Engine);
-  TraceLogStopEvent(logger, scriptEvent);
 
   /*
    * This path is used when it's guaranteed the method can be finished

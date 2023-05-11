@@ -99,6 +99,24 @@ static bool GetPrefSetDefaultBrowserUserChoice() {
       .valueOr(false);
 }
 
+static bool SetNeverShowNotificationAgain() {
+  // Unprefixed because, if someone asks not to be shown the message again, they
+  // don't want to say that once per installation.
+  return !RegistrySetValueBool(IsPrefixed::Unprefixed,
+                               L"NeverShowNotificationAgain", true)
+              .isErr();
+}
+
+static bool GetNeverShowNotificationAgain() {
+  // We only ever store a true value, so no value stored is equivalent to false.
+  // But, on error, err on the side of caution rather than potentially showing
+  // a message to someone who asked never to see on again.
+  return RegistryGetValueBool(IsPrefixed::Unprefixed,
+                              L"NeverShowNotificationAgain")
+      .unwrapOr(mozilla::Some(true))
+      .valueOr(false);
+}
+
 struct ToastStrings {
   mozilla::UniquePtr<wchar_t[]> text1;
   mozilla::UniquePtr<wchar_t[]> text2;
@@ -379,6 +397,9 @@ class ToastHandler : public WinToastLib::IWinToastHandler {
         // SetFollowupNotificationRequestTime, there will be no followup
         // notification.
         activitiesPerformed.action = NotificationAction::DismissedByButton;
+        if (!mIsLocalizedNotification) {
+          SetNeverShowNotificationAgain();
+        }
       }
     } else if ((actionIndex == 1 && !mIsLocalizedNotification) ||
                (actionIndex == 0 && mIsLocalizedNotification)) {
@@ -427,9 +448,9 @@ static NotificationActivities ShowNotification(
     NotificationType whichNotification, const wchar_t* aumi) {
   // Initially set the value that will be returned to error. If the notification
   // is shown successfully, we'll update it.
-  NotificationActivities activitiesPerformed = {whichNotification,
-                                                NotificationShown::Error,
-                                                NotificationAction::NoAction};
+  NotificationActivities activitiesPerformed = {
+      whichNotification, NotificationShown::Error, NotificationAction::NoAction,
+      NotificationNotShownReason::NotApplicable};
   using namespace WinToastLib;
 
   if (!WinToast::isCompatible()) {
@@ -605,13 +626,21 @@ NotificationActivities MaybeShowNotification(
     const DefaultBrowserInfo& browserInfo, const wchar_t* aumi) {
   // Default to not showing a notification. Any other value will be returned
   // directly from ShowNotification.
-  NotificationActivities activitiesPerformed = {NotificationType::Initial,
-                                                NotificationShown::NotShown,
-                                                NotificationAction::NoAction};
+  NotificationActivities activitiesPerformed = {
+      NotificationType::Initial, NotificationShown::NotShown,
+      NotificationAction::NoAction, NotificationNotShownReason::NoValueSet};
 
   if (!mozilla::IsWin10OrLater()) {
     // Notifications aren't shown in versions prior to Windows 10 because the
     // notification API we want isn't available.
+    activitiesPerformed.notShownReason = NotificationNotShownReason::WrongOS;
+    return activitiesPerformed;
+  }
+
+  bool neverShowNotificationAgain = GetNeverShowNotificationAgain();
+  if (neverShowNotificationAgain) {
+    activitiesPerformed.notShownReason =
+        NotificationNotShownReason::UserRequest;
     return activitiesPerformed;
   }
 
@@ -621,6 +650,8 @@ NotificationActivities MaybeShowNotification(
         browserInfo.previousDefaultBrowser == Browser::Firefox) {
       return ShowNotification(NotificationType::Initial, aumi);
     }
+    activitiesPerformed.notShownReason =
+        NotificationNotShownReason::NoDefaultBrowserTransition;
     return activitiesPerformed;
   }
   activitiesPerformed.type = NotificationType::Followup;
@@ -642,8 +673,16 @@ NotificationActivities MaybeShowNotification(
         return ShowNotification(NotificationType::Followup, aumi);
       } else {
         SetFollowupNotificationSuppressed(true);
+        activitiesPerformed.notShownReason =
+            NotificationNotShownReason::FollowupSuppressed;
       }
+    } else {
+      activitiesPerformed.notShownReason =
+          NotificationNotShownReason::NotTimeForFollowup;
     }
+  } else {
+    activitiesPerformed.notShownReason =
+        NotificationNotShownReason::NoFollowupScheduled;
   }
   return activitiesPerformed;
 }
@@ -686,6 +725,28 @@ std::string GetStringForNotificationAction(NotificationAction action) {
       return std::string("toast-clicked");
     case NotificationAction::NoAction:
       return std::string("no-action");
+  }
+}
+
+std::string GetStringForNotificationNotShownReason(
+    NotificationNotShownReason notShownAction) {
+  switch (notShownAction) {
+    case NotificationNotShownReason::NotApplicable:
+      return std::string("not-applicable");
+    case NotificationNotShownReason::NoValueSet:
+      return std::string("no-value-set");
+    case NotificationNotShownReason::WrongOS:
+      return std::string("wrong-os");
+    case NotificationNotShownReason::UserRequest:
+      return std::string("user-request");
+    case NotificationNotShownReason::NoDefaultBrowserTransition:
+      return std::string("no-default-browser-transition");
+    case NotificationNotShownReason::FollowupSuppressed:
+      return std::string("followup-suppressed");
+    case NotificationNotShownReason::NotTimeForFollowup:
+      return std::string("not-time-for-followup");
+    case NotificationNotShownReason::NoFollowupScheduled:
+      return std::string("no-followup-scheduled");
   }
 }
 

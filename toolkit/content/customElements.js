@@ -21,9 +21,6 @@
   const MozElements = {};
   window.MozElements = MozElements;
 
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const { AppConstants } = ChromeUtils.import(
     "resource://gre/modules/AppConstants.jsm"
   );
@@ -689,7 +686,7 @@
         get(target, prop, receiver) {
           let propOrMethod = target[prop];
           if (typeof propOrMethod == "function") {
-            if (propOrMethod instanceof MozQueryInterface) {
+            if (MozQueryInterface.isInstance(propOrMethod)) {
               return Reflect.get(target, prop, receiver);
             }
             return function(...args) {

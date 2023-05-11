@@ -12,12 +12,13 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarPrefs", "UrlbarPrefsObserver"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   Region: "resource://gre/modules/Region.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
@@ -105,7 +106,7 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // searched for. If the string is resolved as a valid host, show a
   // "Did you mean to go to 'host'" prompt.
   // 0 - never resolve; 1 - use heuristics (default); 2 - always resolve
-  ["dnsResolveSingleWordsAfterSearch", 1],
+  ["dnsResolveSingleWordsAfterSearch", 0],
 
   // Whether telemetry events should be recorded.
   ["eventTelemetry.enabled", false],
@@ -195,6 +196,7 @@ const PREF_URLBAR_DEFAULTS = new Map([
   ["shortcuts.bookmarks", true],
   ["shortcuts.tabs", true],
   ["shortcuts.history", true],
+  ["shortcuts.quickactions", false],
 
   // Whether to show search suggestions before general results.
   ["showSearchSuggestionsFirst", true],
@@ -224,6 +226,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether results will include synced tab results. The syncing of open tabs
   // must also be enabled, from Sync preferences.
   ["suggest.remotetab", true],
+
+  // Whether results will include QuickActions.
+  ["quickactions.enabled", false],
 
   // Whether results will include non-sponsored quick suggest suggestions.
   ["suggest.quicksuggest.nonsponsored", false],
@@ -432,22 +437,22 @@ function makeResultGroups({ showSearchSuggestionsFirst }) {
       {
         maxResultCount: 1,
         children: [
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
         ],
       },
       // extensions using the omnibox API
       {
-        group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-        availableSpan: UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
+        group: lazy.UrlbarUtils.RESULT_GROUP.OMNIBOX,
+        availableSpan: lazy.UrlbarUtils.MAX_OMNIBOX_RESULT_COUNT - 1,
       },
     ],
   };
@@ -466,52 +471,52 @@ function makeResultGroups({ showSearchSuggestionsFirst }) {
                 // If `maxHistoricalSearchSuggestions` == 0, the muxer forces
                 // `maxResultCount` to be zero and flex is ignored, per query.
                 flex: 2,
-                group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+                group: lazy.UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
               },
               {
                 flex: 4,
-                group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
+                group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
               },
             ],
           },
           {
-            group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
+            group: lazy.UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
           },
         ],
       },
       // general
       {
-        group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
+        group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
         children: [
           {
             availableSpan: 3,
-            group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+            group: lazy.UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
           },
           {
             flexChildren: true,
             children: [
               {
                 flex: 1,
-                group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
+                group: lazy.UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
               },
               {
                 flex: 2,
-                group: UrlbarUtils.RESULT_GROUP.GENERAL,
+                group: lazy.UrlbarUtils.RESULT_GROUP.GENERAL,
               },
               {
                 // We show relatively many about-page results because they're
                 // only added for queries starting with "about:".
                 flex: 2,
-                group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
+                group: lazy.UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
               },
               {
                 flex: 1,
-                group: UrlbarUtils.RESULT_GROUP.PRELOADED,
+                group: lazy.UrlbarUtils.RESULT_GROUP.PRELOADED,
               },
             ],
           },
           {
-            group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+            group: lazy.UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
           },
         ],
       },
@@ -566,7 +571,7 @@ class Preferences {
     // prevent re-entry due to pref observers.
     this._updatingFirefoxSuggestScenario = false;
 
-    NimbusFeatures.urlbar.onUpdate(() => this._onNimbusUpdate());
+    lazy.NimbusFeatures.urlbar.onUpdate(() => this._onNimbusUpdate());
   }
 
   /**
@@ -689,8 +694,8 @@ class Preferences {
       // depend on them. Also note that pref migrations may depend on the
       // scenario, and since each migration is performed only once, at startup,
       // prefs can end up wrong if their migrations use the wrong scenario.
-      await Region.init();
-      await NimbusFeatures.urlbar.ready();
+      await lazy.Region.init();
+      await lazy.NimbusFeatures.urlbar.ready();
       this._clearNimbusCache();
 
       this._updateFirefoxSuggestScenarioHelper(isStartup, testOverrides);
@@ -844,7 +849,7 @@ class Preferences {
     let scenario = this._nimbus.quickSuggestScenario;
     if (!scenario) {
       if (
-        Region.home == "US" &&
+        lazy.Region.home == "US" &&
         Services.locale.appLocaleAsBCP47.substring(0, 2) == "en"
       ) {
         // offline rollout for en locales in the US region
@@ -1292,7 +1297,7 @@ class Preferences {
 
   get _nimbus() {
     if (!this.__nimbus) {
-      this.__nimbus = NimbusFeatures.urlbar.getAllVariables({
+      this.__nimbus = lazy.NimbusFeatures.urlbar.getAllVariables({
         defaultValues: NIMBUS_DEFAULTS,
       });
     }

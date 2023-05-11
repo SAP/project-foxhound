@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -14,13 +13,19 @@ ChromeUtils.import("resource://gre/modules/NotificationDB.jsm");
 
 // lazy module getters
 
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   AboutReaderParent: "resource:///actors/AboutReaderParent.jsm",
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   NewTabPagePreloading: "resource:///modules/NewTabPagePreloading.jsm",
-  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserTelemetryUtils: "resource://gre/modules/BrowserTelemetryUtils.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
@@ -53,9 +58,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PanelMultiView: "resource:///modules/PanelMultiView.jsm",
   PanelView: "resource:///modules/PanelMultiView.jsm",
   PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
-  PlacesTransactions: "resource://gre/modules/PlacesTransactions.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   Pocket: "chrome://pocket/content/Pocket.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
@@ -151,7 +153,12 @@ XPCOMUtils.defineLazyScriptGetter(
 );
 XPCOMUtils.defineLazyScriptGetter(
   this,
-  ["BrowserAddonUI", "gExtensionsNotifications", "gXPInstallObserver"],
+  [
+    "BrowserAddonUI",
+    "gExtensionsNotifications",
+    "gUnifiedExtensions",
+    "gXPInstallObserver",
+  ],
   "chrome://browser/content/browser-addons.js"
 );
 XPCOMUtils.defineLazyScriptGetter(
@@ -535,6 +542,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "gAlwaysOpenPanel",
   "browser.download.alwaysOpenPanel",
   true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gPrivateBrowsingNewIndicatorEnabled",
+  "browser.privatebrowsing.enable-new-indicator",
+  false
 );
 
 customElements.setElementCreationCallback("translation-notification", () => {
@@ -1290,29 +1304,6 @@ var gKeywordURIFixup = {
     // and the ascii-only host for the pref:
     let asciiHost = fixedURI.asciiHost;
 
-    let isIPv4Address = host => {
-      let parts = host.split(".");
-      if (parts.length != 4) {
-        return false;
-      }
-      return parts.every(part => {
-        let n = parseInt(part, 10);
-        return n >= 0 && n <= 255;
-      });
-    };
-    // Avoid showing fixup information if we're suggesting an IP. Note that
-    // decimal representations of IPs are normalized to a 'regular'
-    // dot-separated IP address by network code, but that only happens for
-    // numbers that don't overflow. Longer numbers do not get normalized,
-    // but still work to access IP addresses. So for instance,
-    // 1097347366913 (ff7f000001) gets resolved by using the final bytes,
-    // making it the same as 7f000001, which is 127.0.0.1 aka localhost.
-    // While 2130706433 would get normalized by network, 1097347366913
-    // does not, and we have to deal with both cases here:
-    if (isIPv4Address(asciiHost) || /^(?:\d+|0x[a-f0-9]+)$/i.test(asciiHost)) {
-      return;
-    }
-
     let onLookupCompleteListener = {
       onLookupComplete(request, record, status) {
         let browserRef = weakBrowser.get();
@@ -1381,33 +1372,11 @@ var gKeywordURIFixup = {
       },
     };
 
-    // For dotless hostnames, we want to ensure this ends with a '.' but don't
-    // want the . showing up in the UI if we end up notifying the user, so we
-    // use a separate variable.
-    let lookupName = hostName;
-    if (
-      UrlbarPrefs.get("dnsResolveFullyQualifiedNames") &&
-      !lookupName.includes(".")
-    ) {
-      lookupName += ".";
-    }
-    try {
-      gDNSService.asyncResolve(
-        lookupName,
-        Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
-        0,
-        null,
-        onLookupCompleteListener,
-        Services.tm.mainThread,
-        contentPrincipal.originAttributes
-      );
-    } catch (ex) {
-      // Do nothing if the URL is invalid (we don't want to show a notification in that case).
-      if (ex.result != Cr.NS_ERROR_UNKNOWN_HOST) {
-        // ... otherwise, report:
-        Cu.reportError(ex);
-      }
-    }
+    Services.uriFixup.checkHost(
+      fixedURI,
+      onLookupCompleteListener,
+      contentPrincipal.originAttributes
+    );
   },
 
   observe(fixupInfo, topic, data) {
@@ -1573,7 +1542,7 @@ var gBrowserInit = {
       return this._tabToAdopt;
     }
 
-    if (window.arguments && window.arguments[0] instanceof window.XULElement) {
+    if (window.arguments && window.XULElement.isInstance(window.arguments[0])) {
       this._tabToAdopt = window.arguments[0];
 
       // Clear the reference of the tab being adopted from the arguments.
@@ -1922,7 +1891,6 @@ var gBrowserInit = {
     Services.obs.addObserver(gKeywordURIFixup, "keyword-uri-fixup");
 
     BrowserOffline.init();
-    IndexedDBPromptHelper.init();
     CanvasPermissionPromptHelper.init();
     WebAuthnPromptHelper.init();
 
@@ -2342,6 +2310,11 @@ var gBrowserInit = {
     });
 
     scheduleIdleTask(() => {
+      // Initialize the unified extensions UI.
+      gUnifiedExtensions.init();
+    });
+
+    scheduleIdleTask(() => {
       // Read prefers-reduced-motion setting
       let reduceMotionQuery = window.matchMedia(
         "(prefers-reduced-motion: reduce)"
@@ -2425,7 +2398,7 @@ var gBrowserInit = {
       //                      window (for this case, all other arguments are
       //                      ignored).
       let uri = window.arguments?.[0];
-      if (!uri || uri instanceof window.XULElement) {
+      if (!uri || window.XULElement.isInstance(uri)) {
         return null;
       }
 
@@ -2586,7 +2559,6 @@ var gBrowserInit = {
         MenuTouchModeObserver.uninit();
       }
       BrowserOffline.uninit();
-      IndexedDBPromptHelper.uninit();
       CanvasPermissionPromptHelper.uninit();
       WebAuthnPromptHelper.uninit();
       PanelUI.uninit();
@@ -3250,7 +3222,7 @@ function BrowserPageInfo(
   browsingContext,
   browser
 ) {
-  if (documentURL instanceof HTMLDocument) {
+  if (HTMLDocument.isInstance(documentURL)) {
     Deprecated.warning(
       "Please pass the location URL instead of the document " +
         "to BrowserPageInfo() as the first argument.",
@@ -6489,7 +6461,7 @@ function showFullScreenViewContextMenuItems(popup) {
   }
   let autoHide = popup.querySelector(".fullscreen-context-autohide");
   if (autoHide) {
-    FullScreen.getAutohide(autoHide);
+    FullScreen.updateAutohideMenuitem(autoHide);
   }
 }
 
@@ -7008,9 +6980,9 @@ function hrefAndLinkNodeForClickEvent(event) {
   function isHTMLLink(aNode) {
     // Be consistent with what nsContextMenu.js does.
     return (
-      (aNode instanceof HTMLAnchorElement && aNode.href) ||
-      (aNode instanceof HTMLAreaElement && aNode.href) ||
-      aNode instanceof HTMLLinkElement
+      (HTMLAnchorElement.isInstance(aNode) && aNode.href) ||
+      (HTMLAreaElement.isInstance(aNode) && aNode.href) ||
+      HTMLLinkElement.isInstance(aNode)
     );
   }
 
@@ -7250,7 +7222,7 @@ function middleMousePaste(event) {
     }
   });
 
-  if (event instanceof Event) {
+  if (Event.isInstance(event)) {
     event.stopPropagation();
   }
 }
@@ -7700,88 +7672,6 @@ var BrowserOffline = {
     }
 
     this._uiElement.setAttribute("checked", aOffline);
-  },
-};
-
-var IndexedDBPromptHelper = {
-  _permissionsPrompt: "indexedDB-permissions-prompt",
-  _permissionsResponse: "indexedDB-permissions-response",
-
-  _notificationIcon: "indexedDB-notification-icon",
-
-  init: function IndexedDBPromptHelper_init() {
-    Services.obs.addObserver(this, this._permissionsPrompt);
-  },
-
-  uninit: function IndexedDBPromptHelper_uninit() {
-    Services.obs.removeObserver(this, this._permissionsPrompt);
-  },
-
-  observe: function IndexedDBPromptHelper_observe(subject, topic, data) {
-    if (topic != this._permissionsPrompt) {
-      throw new Error("Unexpected topic!");
-    }
-
-    var request = subject.QueryInterface(Ci.nsIIDBPermissionsRequest);
-
-    var browser = request.browserElement;
-    if (browser.ownerGlobal != window) {
-      // Only listen for notifications for browsers in our chrome window.
-      return;
-    }
-
-    // Get the host name if available or the file path otherwise.
-    var host = browser.currentURI.asciiHost || browser.currentURI.pathQueryRef;
-
-    var message;
-    var responseTopic;
-    if (topic == this._permissionsPrompt) {
-      message = gNavigatorBundle.getFormattedString("offlineApps.available3", [
-        host,
-      ]);
-      responseTopic = this._permissionsResponse;
-    }
-
-    var observer = request.responseObserver;
-
-    var mainAction = {
-      label: gNavigatorBundle.getString("offlineApps.allow.label"),
-      accessKey: gNavigatorBundle.getString("offlineApps.allow.accesskey"),
-      callback() {
-        observer.observe(
-          null,
-          responseTopic,
-          Ci.nsIPermissionManager.ALLOW_ACTION
-        );
-      },
-    };
-
-    var secondaryActions = [
-      {
-        label: gNavigatorBundle.getString("offlineApps.block.label"),
-        accessKey: gNavigatorBundle.getString("offlineApps.block.accesskey"),
-        callback() {
-          observer.observe(
-            null,
-            responseTopic,
-            Ci.nsIPermissionManager.DENY_ACTION
-          );
-        },
-      },
-    ];
-
-    PopupNotifications.show(
-      browser,
-      topic,
-      message,
-      this._notificationIcon,
-      mainAction,
-      secondaryActions,
-      {
-        persistent: true,
-        hideClose: true,
-      }
-    );
   },
 };
 
@@ -8573,6 +8463,13 @@ var gPrivateBrowsingUI = {
       "privatebrowsingmode",
       PrivateBrowsingUtils.permanentPrivateBrowsing ? "permanent" : "temporary"
     );
+    // If enabled, show the new private browsing indicator with label.
+    // This will hide the old indicator.
+    docElement.toggleAttribute(
+      "privatebrowsingnewindicator",
+      gPrivateBrowsingNewIndicatorEnabled
+    );
+
     gBrowser.updateTitlebar();
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {

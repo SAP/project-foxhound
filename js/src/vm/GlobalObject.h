@@ -146,11 +146,6 @@ class GlobalObjectData {
     WrapForValidIteratorProto,
     IteratorHelperProto,
     AsyncIteratorHelperProto,
-    ModuleProto,
-    ImportEntryProto,
-    ExportEntryProto,
-    RequestedModuleProto,
-    ModuleRequestProto,
 
     Limit
   };
@@ -348,6 +343,16 @@ class GlobalObject : public NativeObject {
     return &global->getPrototype(key);
   }
 
+  static JS::Handle<JSObject*> getOrCreatePrototypeHandle(JSContext* cx,
+                                                          JSProtoKey key) {
+    MOZ_ASSERT(key != JSProto_Null);
+    Handle<GlobalObject*> global = cx->global();
+    if (!GlobalObject::ensureConstructor(cx, global, key)) {
+      return nullptr;
+    }
+    return global->getPrototypeHandle(key);
+  }
+
   JSObject* maybeGetConstructor(JSProtoKey protoKey) const {
     MOZ_ASSERT(JSProto_Null < protoKey);
     MOZ_ASSERT(protoKey < JSProto_LIMIT);
@@ -375,6 +380,14 @@ class GlobalObject : public NativeObject {
   JSObject& getPrototype(JSProtoKey key) const {
     MOZ_ASSERT(hasPrototype(key));
     return *maybeGetPrototype(key);
+  }
+
+  JS::Handle<JSObject*> getPrototypeHandle(JSProtoKey protoKey) const {
+    MOZ_ASSERT(hasPrototype(protoKey));
+    MOZ_ASSERT(JSProto_Null < protoKey);
+    MOZ_ASSERT(protoKey < JSProto_LIMIT);
+    return Handle<JSObject*>::fromMarkedLocation(
+        &data().builtinConstructors[protoKey].prototype.get());
   }
 
   void setPrototype(JSProtoKey key, JSObject* obj) {
@@ -469,6 +482,16 @@ class GlobalObject : public NativeObject {
       }
     }
     return &global->getPrototype(JSProto_Object);
+  }
+
+  static Handle<JSObject*> getOrCreateObjectPrototypeHandle(
+      JSContext* cx, Handle<GlobalObject*> global) {
+    if (!global->functionObjectClassesInitialized()) {
+      if (!ensureConstructor(cx, global, JSProto_Object)) {
+        return nullptr;
+      }
+    }
+    return global->getPrototypeHandle(JSProto_Object);
   }
 
   static JSObject* getOrCreateFunctionConstructor(
@@ -656,39 +679,6 @@ class GlobalObject : public NativeObject {
       return nullptr;
     }
     return &global->getPrototype(JSProto_WeakSet).as<NativeObject>();
-  }
-
-  static bool ensureModulePrototypesCreated(JSContext* cx,
-                                            Handle<GlobalObject*> global);
-
-  static JSObject* getOrCreateModulePrototype(JSContext* cx,
-                                              Handle<GlobalObject*> global) {
-    return getOrCreateBuiltinProto(cx, global, ProtoKind::ModuleProto,
-                                   initModuleProto);
-  }
-
-  static JSObject* getOrCreateImportEntryPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return getOrCreateBuiltinProto(cx, global, ProtoKind::ImportEntryProto,
-                                   initImportEntryProto);
-  }
-
-  static JSObject* getOrCreateExportEntryPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return getOrCreateBuiltinProto(cx, global, ProtoKind::ExportEntryProto,
-                                   initExportEntryProto);
-  }
-
-  static JSObject* getOrCreateRequestedModulePrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return getOrCreateBuiltinProto(cx, global, ProtoKind::RequestedModuleProto,
-                                   initRequestedModuleProto);
-  }
-
-  static JSObject* getOrCreateModuleRequestPrototype(
-      JSContext* cx, Handle<GlobalObject*> global) {
-    return getOrCreateBuiltinProto(cx, global, ProtoKind::ModuleRequestProto,
-                                   initModuleRequestProto);
   }
 
   static JSFunction* getOrCreateTypedArrayConstructor(
@@ -930,6 +920,9 @@ class GlobalObject : public NativeObject {
   static bool getIntrinsicValue(JSContext* cx, Handle<GlobalObject*> global,
                                 Handle<PropertyName*> name,
                                 MutableHandleValue value) {
+    // `undefined` in self-hosted JS code should be emitted as JSOp::Undefined.
+    MOZ_ASSERT(name != cx->names().undefined);
+
     if (global->maybeGetIntrinsicValue(name, value.address(), cx)) {
       return true;
     }
@@ -1010,15 +1003,6 @@ class GlobalObject : public NativeObject {
   // Implemented in builtin/MapObject.cpp.
   static bool initMapIteratorProto(JSContext* cx, Handle<GlobalObject*> global);
   static bool initSetIteratorProto(JSContext* cx, Handle<GlobalObject*> global);
-
-  // Implemented in builtin/ModuleObject.cpp
-  static bool initModuleProto(JSContext* cx, Handle<GlobalObject*> global);
-  static bool initImportEntryProto(JSContext* cx, Handle<GlobalObject*> global);
-  static bool initExportEntryProto(JSContext* cx, Handle<GlobalObject*> global);
-  static bool initRequestedModuleProto(JSContext* cx,
-                                       Handle<GlobalObject*> global);
-  static bool initModuleRequestProto(JSContext* cx,
-                                     Handle<GlobalObject*> global);
 
   static bool initStandardClasses(JSContext* cx, Handle<GlobalObject*> global);
 

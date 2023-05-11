@@ -9,8 +9,8 @@
 
 const EXPORTED_SYMBOLS = ["LoginTestUtils"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -18,8 +18,6 @@ const lazy = {};
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 let { Assert: AssertCls } = ChromeUtils.import(
   "resource://testing-common/Assert.jsm"

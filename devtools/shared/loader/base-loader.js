@@ -11,9 +11,8 @@ this.EXPORTED_SYMBOLS = ["Loader", "resolveURI", "Module", "Require", "unload"];
 const { Constructor: CC, manager: Cm } = Components;
 const systemPrincipal = CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")();
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { normalize, dirname } = ChromeUtils.import(
   "resource://gre/modules/osfile/ospath_unix.jsm"
@@ -46,6 +45,9 @@ function isJSONURI(uri) {
 }
 function isJSMURI(uri) {
   return uri.endsWith(".jsm");
+}
+function isSYSMJSURI(uri) {
+  return uri.endsWith(".sys.mjs");
 }
 function isJSURI(uri) {
   return uri.endsWith(".js");
@@ -194,7 +196,7 @@ function load(loader, module) {
 
 // Utility function to normalize module `uri`s so they have `.js` extension.
 function normalizeExt(uri) {
-  if (isJSURI(uri) || isJSONURI(uri) || isJSMURI(uri)) {
+  if (isJSURI(uri) || isJSONURI(uri) || isJSMURI(uri) || isSYSMJSURI(uri)) {
     return uri;
   }
   return uri + ".js";
@@ -315,6 +317,9 @@ function Require(loader, requirer) {
     } else if (isJSMURI(uri)) {
       module = modules[uri] = Module(requirement, uri);
       module.exports = ChromeUtils.import(uri);
+    } else if (isSYSMJSURI(uri)) {
+      module = modules[uri] = Module(requirement, uri);
+      module.exports = ChromeUtils.importESModule(uri);
     } else if (isJSONURI(uri)) {
       let data;
 
@@ -496,6 +501,7 @@ function Loader(options) {
       CC: bind(CC, Components),
       components: Components,
       ChromeWorker,
+      Services,
     },
   };
 

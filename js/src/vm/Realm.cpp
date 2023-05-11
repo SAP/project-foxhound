@@ -13,6 +13,7 @@
 
 #include "jsfriendapi.h"
 
+#include "builtin/WrappedFunctionObject.h"
 #include "debugger/DebugAPI.h"
 #include "debugger/Debugger.h"
 #include "gc/Policy.h"
@@ -394,6 +395,7 @@ void Realm::fixupAfterMovingGC(JSTracer* trc) {
 void Realm::purge() {
   dtoaCache.purge();
   newProxyCache.purge();
+  newPlainObjectWithPropsCache.purge();
   objects_.iteratorCache.clearAndCompact();
   arraySpeciesLookup.purge();
   promiseLookup.purge();
@@ -722,6 +724,11 @@ JS_PUBLIC_API JSObject* JS::GetRealmObjectPrototype(JSContext* cx) {
   return GlobalObject::getOrCreateObjectPrototype(cx, cx->global());
 }
 
+JS_PUBLIC_API JS::Handle<JSObject*> JS::GetRealmObjectPrototypeHandle(
+    JSContext* cx) {
+  return GlobalObject::getOrCreateObjectPrototypeHandle(cx, cx->global());
+}
+
 JS_PUBLIC_API JSObject* JS::GetRealmFunctionPrototype(JSContext* cx) {
   CHECK_THREAD(cx);
   return GlobalObject::getOrCreateFunctionPrototype(cx, cx->global());
@@ -775,6 +782,12 @@ JS_PUBLIC_API Realm* JS::GetFunctionRealm(JSContext* cx, HandleObject objArg) {
 
       obj = fun->getBoundFunctionTarget();
       continue;
+    }
+
+    // WrappedFunctionObjects also have a [[Realm]] internal slot,
+    // which is the nonCCWRealm by construction.
+    if (obj->is<WrappedFunctionObject>()) {
+      return obj->nonCCWRealm();
     }
 
     // Step 4.

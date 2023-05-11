@@ -102,19 +102,19 @@ bool WebTask::Run() {
 
   error.WouldReportJSException();
 
+#ifdef DEBUG
   Promise::PromiseState promiseState = mPromise->State();
 
   // If the state is Rejected, it means the above Call triggers the
   // RunAbortAlgorithm method and rejected the promise
   MOZ_ASSERT_IF(promiseState != Promise::PromiseState::Pending,
                 promiseState == Promise::PromiseState::Rejected);
+#endif
 
-  if (promiseState == Promise::PromiseState::Pending) {
-    if (error.Failed()) {
-      mPromise->MaybeReject(std::move(error));
-    } else {
-      mPromise->MaybeResolve(returnVal);
-    }
+  if (error.Failed()) {
+    mPromise->MaybeReject(std::move(error));
+  } else {
+    mPromise->MaybeResolve(returnVal);
   }
 
   MOZ_ASSERT(!isInList());
@@ -211,6 +211,9 @@ already_AddRefed<Promise> WebTaskScheduler::PostTask(
   }
 
   if (!QueueTask(task)) {
+    MOZ_ASSERT(task->isInList());
+    task->remove();
+
     promise->MaybeRejectWithNotSupportedError("Unable to queue the task");
     return promise.forget();
   }

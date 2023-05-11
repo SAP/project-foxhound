@@ -113,10 +113,6 @@ gfxPlatformGtk::gfxPlatformGtk() {
     if (gfxConfig::IsEnabled(Feature::DMABUF)) {
       gfxVars::SetUseDMABuf(true);
     }
-    InitVAAPIConfig();
-    if (gfxConfig::IsEnabled(Feature::VAAPI)) {
-      gfxVars::SetUseVAAPI(true);
-    }
   }
 
   InitBackendPrefs(GetBackendPrefs());
@@ -229,30 +225,29 @@ void gfxPlatformGtk::InitDmabufConfig() {
 #endif
 }
 
-void gfxPlatformGtk::InitVAAPIConfig() {
-  FeatureState& feature = gfxConfig::GetFeature(Feature::VAAPI);
+bool gfxPlatformGtk::InitVAAPIConfig(bool aForceEnabledByUser) {
+  FeatureState& feature =
+      gfxConfig::GetFeature(Feature::HARDWARE_VIDEO_DECODING);
 #ifdef MOZ_WAYLAND
-#  ifdef NIGHTLY_BUILD
   feature.EnableByDefault();
-#  else
-  feature.DisableByDefault(FeatureStatus::Disabled,
-                           "VAAPI is disabled by default",
-                           "FEATURE_VAAPI_DISABLED"_ns);
-#  endif
+
+  if (aForceEnabledByUser) {
+    feature.UserForceEnable("Force enabled by pref");
+  }
+
   nsCString failureId;
-  int32_t status;
+  int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-  if (NS_FAILED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_VAAPI, failureId,
-                                          &status))) {
+  if (NS_FAILED(gfxInfo->GetFeatureStatus(
+          nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING, failureId, &status))) {
     feature.Disable(FeatureStatus::BlockedNoGfxInfo, "gfxInfo is broken",
                     "FEATURE_FAILURE_NO_GFX_INFO"_ns);
+  } else if (status == nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST) {
+    feature.ForceDisable(FeatureStatus::Unavailable,
+                         "Force disabled by gfxInfo", failureId);
   } else if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
     feature.Disable(FeatureStatus::Blocklisted, "Blocklisted by gfxInfo",
                     failureId);
-  }
-
-  if (StaticPrefs::media_ffmpeg_vaapi_enabled()) {
-    feature.UserForceEnable("Force enabled by pref");
   }
 
   if (!gfxVars::UseEGL()) {
@@ -264,6 +259,7 @@ void gfxPlatformGtk::InitVAAPIConfig() {
                            "Wayland support missing",
                            "FEATURE_FAILURE_NO_WAYLAND"_ns);
 #endif
+  return feature.IsEnabled();
 }
 
 void gfxPlatformGtk::InitWebRenderConfig() {
@@ -725,7 +721,7 @@ class GtkVsyncSource final : public VsyncSource {
     }
 
     mGLContext = gl::GLContextGLX::CreateGLContext(
-        {}, gfx::XlibDisplay::Borrow(mXDisplay), root, config, false, nullptr);
+        {}, gfx::XlibDisplay::Borrow(mXDisplay), root, config);
 
     if (!mGLContext) {
       lock.NotifyAll();
@@ -993,7 +989,7 @@ gfxPlatformGtk::CreateGlobalHardwareVsyncSource() {
   RefPtr<VsyncSource> softwareVsync = new XrandrSoftwareVsyncSource();
   return softwareVsync.forget();
 #else
-  return CreateSoftwareVsyncSource();
+  return GetSoftwareVsyncSource();
 #endif
 }
 

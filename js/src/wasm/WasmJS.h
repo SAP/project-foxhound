@@ -63,10 +63,10 @@ namespace js {
 class ArrayBufferObject;
 class ArrayBufferObjectMaybeShared;
 class JSStringBuilder;
-class SharedArrayRawBuffer;
 class TypedArrayObject;
 class WasmFunctionScope;
 class WasmInstanceScope;
+class WasmSharedArrayRawBuffer;
 
 namespace wasm {
 
@@ -152,6 +152,9 @@ bool ThreadsAvailable(JSContext* cx);
 #define WASM_FEATURE(NAME, ...) bool NAME##Available(JSContext* cx);
 JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 #undef WASM_FEATURE
+
+// SIMD operations.
+bool SimdAvailable(JSContext* cx);
 
 // Privileged content that can access experimental intrinsics
 bool IsSimdPrivilegedContext(JSContext* cx);
@@ -430,7 +433,7 @@ class WasmMemoryObject : public NativeObject {
   size_t boundsCheckLimit() const;
 
   // If isShared() is true then obtain the underlying buffer object.
-  SharedArrayRawBuffer* sharedArrayRawBuffer() const;
+  WasmSharedArrayRawBuffer* sharedArrayRawBuffer() const;
 
   bool addMovingGrowObserver(JSContext* cx, WasmInstanceObject* instance);
   static uint64_t grow(Handle<WasmMemoryObject*> memory, uint64_t delta,

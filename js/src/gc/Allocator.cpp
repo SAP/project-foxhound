@@ -22,7 +22,6 @@
 #include "vm/PropMap.h"
 #include "vm/Runtime.h"
 #include "vm/StringType.h"
-#include "vm/TraceLogging.h"
 
 #include "gc/ArenaList-inl.h"
 #include "gc/Heap-inl.h"
@@ -604,7 +603,7 @@ bool GCRuntime::wantBackgroundAllocation(const AutoLockGC& lock) const {
   // allocation if we already have some empty chunks or when the runtime has
   // a small heap size (and therefore likely has a small growth rate).
   return allocTask.enabled() &&
-         emptyChunks(lock).count() < tunables.minEmptyChunkCount(lock) &&
+         emptyChunks(lock).count() < minEmptyChunkCount(lock) &&
          (fullChunks(lock).count() + availableChunks(lock).count()) >= 4;
 }
 
@@ -620,7 +619,7 @@ Arena* GCRuntime::allocateArena(TenuredChunk* chunk, Zone* zone,
     return nullptr;
 
   Arena* arena = chunk->allocateArena(this, zone, thingKind, lock);
-  zone->gcHeapSize.addGCArena();
+  zone->gcHeapSize.addGCArena(heapSize);
 
   // Trigger an incremental slice if needed.
   if (checkThresholds != ShouldCheckThresholds::DontCheckThresholds) {
@@ -781,9 +780,6 @@ BackgroundAllocTask::BackgroundAllocTask(GCRuntime* gc, ChunkPool& pool)
 
 void BackgroundAllocTask::run(AutoLockHelperThreadState& lock) {
   AutoUnlockHelperThreadState unlock(lock);
-
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread();
-  AutoTraceLog logAllocation(logger, TraceLogger_GCAllocation);
 
   AutoLockGC gcLock(gc);
   while (!isCancelled() && gc->wantBackgroundAllocation(gcLock)) {

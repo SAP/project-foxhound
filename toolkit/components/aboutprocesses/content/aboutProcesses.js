@@ -27,9 +27,8 @@ const ONE_GIGA = 1024 * 1024 * 1024;
 const ONE_MEGA = 1024 * 1024;
 const ONE_KILO = 1024;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -1066,7 +1065,7 @@ var Control = {
         Services.profiler.StartProfiler(
           10000000,
           1,
-          ["default", "ipcmessages"],
+          ["default", "ipcmessages", "power"],
           ["pid:" + target.parentNode.parentNode.process.pid]
         );
         target.classList.add("profiler-active");

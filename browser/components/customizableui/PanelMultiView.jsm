@@ -101,10 +101,9 @@
 
 var EXPORTED_SYMBOLS = ["PanelMultiView", "PanelView"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const lazy = {};
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -573,7 +572,9 @@ var PanelMultiView = class extends AssociatedToNode {
           options &&
           typeof options == "object" &&
           options.triggerEvent &&
-          options.triggerEvent.type == "keypress" &&
+          (options.triggerEvent.type == "keypress" ||
+            options.triggerEvent?.inputSource ==
+              MouseEvent.MOZ_SOURCE_KEYBOARD) &&
           this.openViews.length
         ) {
           // This was opened via the keyboard, so focus the first item.

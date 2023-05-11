@@ -200,7 +200,8 @@ mozilla::ipc::IPCResult ImageBridgeParent::RecvUpdate(
     RefPtr<CompositableHost> compositable =
         FindCompositable(edit.compositable());
     if (!compositable ||
-        !ReceiveCompositableUpdate(edit.detail(), WrapNotNull(compositable))) {
+        !ReceiveCompositableUpdate(edit.detail(), WrapNotNull(compositable),
+                                   edit.compositable())) {
       return IPC_FAIL_NO_REASON(this);
     }
     uint32_t dropped = compositable->GetDroppedFrames();
@@ -380,22 +381,18 @@ already_AddRefed<ImageBridgeParent> ImageBridgeParent::GetInstance(
   return bridge.forget();
 }
 
-bool ImageBridgeParent::AllocShmem(size_t aSize,
-                                   ipc::SharedMemory::SharedMemoryType aType,
-                                   ipc::Shmem* aShmem) {
+bool ImageBridgeParent::AllocShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (mClosed) {
     return false;
   }
-  return PImageBridgeParent::AllocShmem(aSize, aType, aShmem);
+  return PImageBridgeParent::AllocShmem(aSize, aShmem);
 }
 
-bool ImageBridgeParent::AllocUnsafeShmem(
-    size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
-    ipc::Shmem* aShmem) {
+bool ImageBridgeParent::AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) {
   if (mClosed) {
     return false;
   }
-  return PImageBridgeParent::AllocUnsafeShmem(aSize, aType, aShmem);
+  return PImageBridgeParent::AllocUnsafeShmem(aSize, aShmem);
 }
 
 bool ImageBridgeParent::DeallocShmem(ipc::Shmem& aShmem) {

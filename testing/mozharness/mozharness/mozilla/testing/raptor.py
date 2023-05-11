@@ -171,7 +171,7 @@ class Raptor(
             {
                 "dest": "browsertime",
                 "action": "store_true",
-                "default": False,
+                "default": True,
                 "help": argparse.SUPPRESS,
             },
         ],
@@ -440,6 +440,21 @@ class Raptor(
                 },
             ],
             [
+                ["--test-bytecode-cache"],
+                {
+                    "dest": "test_bytecode_cache",
+                    "action": "store_true",
+                    "default": False,
+                    "help": (
+                        "If set, the pageload test will set the preference "
+                        "`dom.script_loader.bytecode_cache.strategy=-1` and wait 20 seconds "
+                        "after the first cold pageload to populate the bytecode cache before "
+                        "running a warm pageload test. Only available if `--chimera` "
+                        "is also provided."
+                    ),
+                },
+            ],
+            [
                 ["--chimera"],
                 {
                     "dest": "chimera",
@@ -549,6 +564,30 @@ class Raptor(
                     "help": (
                         "Clean the python virtualenv (remove, and rebuild) for "
                         "Raptor before running tests."
+                    ),
+                },
+            ],
+            [
+                ["--webext"],
+                {
+                    "action": "store_true",
+                    "dest": "webext",
+                    "default": False,
+                    "help": (
+                        "Whether to use webextension to execute pageload tests "
+                        "(WebExtension is being deprecated).",
+                    ),
+                },
+            ],
+            [
+                ["--collect-perfstats"],
+                {
+                    "action": "store_true",
+                    "dest": "collect_perfstats",
+                    "default": False,
+                    "help": (
+                        "If set, the test will collect perfstats in addition to "
+                        "the regular metrics it gathers."
                     ),
                 },
             ],
@@ -951,21 +990,28 @@ class Raptor(
             options.extend(
                 ["--browser-cycles={}".format(self.config.get("browser_cycles"))]
             )
+        if self.config.get("test_bytecode_cache", False):
+            options.extend(["--test-bytecode-cache"])
+        if self.config.get("collect_perfstats", False):
+            options.extend(["--collect-perfstats"])
 
-        for (arg,), details in Raptor.browsertime_options:
-            # Allow overriding defaults on the `./mach raptor-test ...` command-line
-            value = self.config.get(details["dest"])
-            if value is None or value != getattr(self, details["dest"], None):
-                # Check for modifications done to the instance variables
-                value = getattr(self, details["dest"], None)
-            if value and arg not in self.config.get("raptor_cmd_line_args", []):
-                if isinstance(value, string_types):
-                    options.extend([arg, os.path.expandvars(value)])
-                elif isinstance(value, (tuple, list)):
-                    for val in value:
-                        options.extend([arg, val])
-                else:
-                    options.extend([arg])
+        if self.config.get("webext", False):
+            options.extend(["--webext"])
+        else:
+            for (arg,), details in Raptor.browsertime_options:
+                # Allow overriding defaults on the `./mach raptor-test ...` command-line
+                value = self.config.get(details["dest"])
+                if value is None or value != getattr(self, details["dest"], None):
+                    # Check for modifications done to the instance variables
+                    value = getattr(self, details["dest"], None)
+                if value and arg not in self.config.get("raptor_cmd_line_args", []):
+                    if isinstance(value, string_types):
+                        options.extend([arg, os.path.expandvars(value)])
+                    elif isinstance(value, (tuple, list)):
+                        for val in value:
+                            options.extend([arg, val])
+                    else:
+                        options.extend([arg])
 
         for key, value in kw_options.items():
             options.extend(["--%s" % key, value])

@@ -10,7 +10,7 @@
 #include "js/loader/LoadContextBase.h"
 #include "js/loader/ModuleLoaderBase.h"
 
-class mozJSComponentLoader;
+class mozJSModuleLoader;
 
 namespace mozilla {
 namespace loader {
@@ -48,6 +48,8 @@ class ComponentModuleLoader : public JS::loader::ModuleLoaderBase {
 
   [[nodiscard]] nsresult ProcessRequests();
 
+  void MaybeReportLoadError(JSContext* aCx);
+
  private:
   // An event target that dispatches runnables by executing them
   // immediately. This is used to drive mozPromise dispatch for
@@ -83,6 +85,10 @@ class ComponentModuleLoader : public JS::loader::ModuleLoaderBase {
   void OnModuleLoadComplete(ModuleLoadRequest* aRequest) override;
 
   JS::loader::ScriptLoadRequestList mLoadRequests;
+
+  // If any of module scripts failed to load, exception is set here until it's
+  // reported by MaybeReportLoadError.
+  JS::PersistentRooted<JS::Value> mLoadException;
 };
 
 // Data specific to ComponentModuleLoader that is associated with each load
@@ -93,11 +99,15 @@ class ComponentLoadContext : public JS::loader::LoadContextBase {
       : LoadContextBase(JS::loader::ContextKind::Component) {}
 
  public:
-  // The result of loading a module script. These fields are used temporarily
+  // The result of compiling a module script. These fields are used temporarily
   // before being passed to the module loader.
   nsresult mRv;
-  JS::PersistentRootedValue mExceptionValue;
-  JS::PersistentRootedScript mScript;
+
+  // The exception thrown during compiling a module script. These fields are
+  // used temporarily before being passed to the module loader.
+  JS::PersistentRooted<JS::Value> mExceptionValue;
+
+  JS::PersistentRooted<JSScript*> mScript;
 };
 
 }  // namespace loader

@@ -288,20 +288,8 @@ class CCGCScheduler {
   void NoteCCEnd(const CycleCollectorResults& aResults, TimeStamp aWhen,
                  mozilla::TimeDuration aMaxSliceTime);
 
-  void NoteGCSliceEnd(TimeDuration aSliceDuration) {
-    if (mMajorGCReason == JS::GCReason::NO_REASON) {
-      // Internally-triggered GCs do not wait for the parent's permission to
-      // proceed. This flag won't be checked during an incremental GC anyway,
-      // but it better reflects reality.
-      mReadyForMajorGC = true;
-    }
-
-    // Subsequent slices should be INTER_SLICE_GC unless they are triggered by
-    // something else that provides its own reason.
-    mMajorGCReason = JS::GCReason::INTER_SLICE_GC;
-
-    mGCUnnotifiedTotalTime += aSliceDuration;
-  }
+  // A single slice has completed.
+  void NoteGCSliceEnd(TimeStamp aStart, TimeStamp aEnd);
 
   bool GCRunnerFired(TimeStamp aDeadline);
   bool GCRunnerFiredDoGC(TimeStamp aDeadline, const GCRunnerStep& aStep);
@@ -521,7 +509,10 @@ class CCGCScheduler {
 
   uint32_t mCleanupsSinceLastGC = UINT32_MAX;
 
-  TimeDuration mGCUnnotifiedTotalTime;
+  // If the GC runner triggers a GC slice, this will be set to the idle deadline
+  // or the null timestamp if non-idle. It will be Nothing at the end of an
+  // internally-triggered slice.
+  mozilla::Maybe<TimeStamp> mTriggeredGCDeadline;
 
   RefPtr<IdleTaskRunner> mGCRunner;
   RefPtr<IdleTaskRunner> mCCRunner;

@@ -90,7 +90,8 @@ virtual void TextBeforeOffset(int32_t aOffset,
 
 char16_t CharAt(int32_t aOffset);
 
-int32_t OffsetAtPoint(int32_t aX, int32_t aY, uint32_t aCoordType);
+virtual int32_t OffsetAtPoint(int32_t aX, int32_t aY,
+                              uint32_t aCoordType) override;
 
 bool SetSelectionBoundsAt(int32_t aSelectionNum, int32_t aStartOffset,
                           int32_t aEndOffset);
@@ -187,8 +188,6 @@ void TableUnselectRow(uint32_t aRow);
 RemoteAccessible* AtkTableColumnHeader(int32_t aCol);
 RemoteAccessible* AtkTableRowHeader(int32_t aRow);
 
-KeyBinding AccessKey();
-KeyBinding KeyboardShortcut();
 void AtkKeyBinding(nsString& aBinding);
 
 double CurValue() const override;

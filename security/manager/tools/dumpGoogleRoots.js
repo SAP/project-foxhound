@@ -13,15 +13,7 @@
 // 4. [paste the output into the appropriate section in
 //     security/manager/tools/PreloadedHPKPins.json]
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 Services.prefs.setBoolPref("network.process.enabled", false);
-
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-
-XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest"]);
 
 function downloadRoots() {
   let req = new XMLHttpRequest();

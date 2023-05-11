@@ -3,14 +3,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use crate::{
-    cow_label, identity::IdentityRecyclerFactory, AdapterInformation, ByteBuf,
-    CommandEncoderAction, DeviceAction, DropAction, QueueWriteAction, RawString, TextureAction,
+    identity::IdentityRecyclerFactory, wgpu_string, AdapterInformation, ByteBuf,
+    CommandEncoderAction, DeviceAction, DropAction, QueueWriteAction, TextureAction,
 };
 
+use nsstring::{nsACString, nsCString, nsString};
+
+use wgc::pipeline::CreateShaderModuleError;
 use wgc::{gfx_select, id};
 
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::{error::Error, os::raw::c_char, ptr, slice};
+
+/// We limit the size of buffer allocations for stability reason.
+/// We can reconsider this limit in the future. Note that some drivers (mesa for example),
+/// have issues when the size of a buffer, mapping or copy command does not fit into a
+/// signed 32 bits integer, so beyond a certain size, large allocations will need some form
+/// of driver allow/blocklist.
+const MAX_BUFFER_SIZE: wgt::BufferAddress = 1 << 30;
+// Mesa has issues with height/depth that don't fit in a 16 bits signed integers.
+const MAX_TEXTURE_EXTENT: u32 = std::i16::MAX as u32;
 
 /// A fixed-capacity, null-terminated error buffer owned by C++.
 ///
@@ -207,18 +220,102 @@ pub extern "C" fn wgpu_server_device_drop(global: &Global, self_id: id::DeviceId
     gfx_select!(self_id => global.device_drop(self_id))
 }
 
+impl ShaderModuleCompilationMessage {
+    fn set_error(&mut self, error: &CreateShaderModuleError, source: &str) {
+        // The WebGPU spec says that if the message doesn't point to a particular position in
+        // the source, the line number, position, offset and lengths should be zero.
+        self.line_number = 0;
+        self.line_pos = 0;
+        self.utf16_offset = 0;
+        self.utf16_length = 0;
+
+        if let Some(location) = error.location(source) {
+            self.line_number = location.line_number as u64;
+            self.line_pos = location.line_position as u64;
+
+            let start = location.offset as usize;
+            let end = start + location.length as usize;
+            self.utf16_offset = source[0..start].chars().map(|c| c.len_utf16() as u64).sum();
+            self.utf16_length = source[start..end]
+                .chars()
+                .map(|c| c.len_utf16() as u64)
+                .sum();
+        }
+
+        let error_string = error.to_string();
+
+        if !error_string.is_empty() {
+            self.message = nsString::from(&error_string[..]);
+        }
+    }
+}
+
+/// A compilation message representation for the ffi boundary.
+/// the message is immediately copied into an equivalent C++
+/// structure that owns its strings.
+#[repr(C)]
+#[derive(Clone)]
+pub struct ShaderModuleCompilationMessage {
+    pub line_number: u64,
+    pub line_pos: u64,
+    pub utf16_offset: u64,
+    pub utf16_length: u64,
+    pub message: nsString,
+}
+
+/// Creates a shader module and returns an object describing the errors if any.
+///
+/// If there was no error, the returned pointer is nil.
+#[no_mangle]
+pub extern "C" fn wgpu_server_device_create_shader_module(
+    global: &Global,
+    self_id: id::DeviceId,
+    module_id: id::ShaderModuleId,
+    label: Option<&nsACString>,
+    code: &nsCString,
+    out_message: &mut ShaderModuleCompilationMessage,
+) -> bool {
+    let utf8_label = label.map(|utf16| utf16.to_string());
+    let label = utf8_label.as_ref().map(|s| Cow::from(&s[..]));
+
+    let source_str = code.to_utf8();
+
+    let source = wgc::pipeline::ShaderModuleSource::Wgsl(Cow::from(&source_str[..]));
+
+    let desc = wgc::pipeline::ShaderModuleDescriptor {
+        label,
+        shader_bound_checks: wgt::ShaderBoundChecks::new(),
+    };
+
+    let (_, error) = gfx_select!(
+        self_id => global.device_create_shader_module(
+            self_id, &desc, source, module_id
+        )
+    );
+
+    if let Some(err) = error {
+        out_message.set_error(&err, &source_str[..]);
+        return false;
+    }
+
+    // Avoid allocating the structure that holds errors in the common case (no errors).
+    return true;
+}
+
 #[no_mangle]
 pub extern "C" fn wgpu_server_device_create_buffer(
     global: &Global,
     self_id: id::DeviceId,
     buffer_id: id::BufferId,
-    label_or_null: RawString,
+    label: Option<&nsACString>,
     size: wgt::BufferAddress,
     usage: u32,
     mapped_at_creation: bool,
     mut error_buf: ErrorBuffer,
 ) {
-    let label = cow_label(&label_or_null);
+    let utf8_label = label.map(|utf16| utf16.to_string());
+    let label = utf8_label.as_ref().map(|s| Cow::from(&s[..]));
+
     let usage = match wgt::BufferUsages::from_bits(usage) {
         Some(usage) => usage,
         None => {
@@ -230,6 +327,14 @@ pub extern "C" fn wgpu_server_device_create_buffer(
             return;
         }
     };
+
+    // Don't trust the graphics driver with buffer sizes larger than our conservative max texture size.
+    if size > MAX_BUFFER_SIZE {
+        error_buf.init_str("Out of memory");
+        gfx_select!(self_id => global.create_buffer_error(buffer_id, label));
+        return;
+    }
+
     let desc = wgc::resource::BufferDescriptor {
         label,
         size,
@@ -306,6 +411,15 @@ impl Global {
     ) {
         match action {
             DeviceAction::CreateTexture(id, desc) => {
+                let max = MAX_TEXTURE_EXTENT;
+                if desc.size.width > max
+                    || desc.size.height > max
+                    || desc.size.depth_or_array_layers > max
+                {
+                    gfx_select!(self_id => self.create_texture_error(id, desc.label));
+                    error_buf.init_str("Out of memory");
+                    return;
+                }
                 let (_, error) = self.device_create_texture::<A>(self_id, &desc, id);
                 if let Some(err) = error {
                     error_buf.init(err);
@@ -564,11 +678,14 @@ pub unsafe extern "C" fn wgpu_server_command_encoder_action(
 pub extern "C" fn wgpu_server_device_create_encoder(
     global: &Global,
     self_id: id::DeviceId,
-    desc: &wgt::CommandEncoderDescriptor<RawString>,
+    desc: &wgt::CommandEncoderDescriptor<Option<&nsACString>>,
     new_id: id::CommandEncoderId,
     mut error_buf: ErrorBuffer,
 ) {
-    let desc = desc.map_label(cow_label);
+    let utf8_label = desc.label.map(|utf16| utf16.to_string());
+    let label = utf8_label.as_ref().map(|s| Cow::from(&s[..]));
+
+    let desc = desc.map_label(|_| label);
     let (_, error) =
         gfx_select!(self_id => global.device_create_command_encoder(self_id, &desc, new_id));
     if let Some(err) = error {
@@ -580,10 +697,11 @@ pub extern "C" fn wgpu_server_device_create_encoder(
 pub extern "C" fn wgpu_server_encoder_finish(
     global: &Global,
     self_id: id::CommandEncoderId,
-    desc: &wgt::CommandBufferDescriptor<RawString>,
+    desc: &wgt::CommandBufferDescriptor<Option<&nsACString>>,
     mut error_buf: ErrorBuffer,
 ) {
-    let desc = desc.map_label(cow_label);
+    let label = wgpu_string(desc.label);
+    let desc = desc.map_label(|_| label);
     let (_, error) = gfx_select!(self_id => global.command_encoder_finish(self_id, &desc));
     if let Some(err) = error {
         error_buf.init(err);

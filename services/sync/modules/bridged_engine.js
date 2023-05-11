@@ -14,8 +14,8 @@
  * for your subclass to wrap, and optionally implement and override the tracker.
  */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { Changeset, SyncEngine, Tracker } = ChromeUtils.import(
   "resource://services-sync/engines.js"
@@ -26,9 +26,12 @@ const { RawCryptoWrapper } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   Log: "resource://gre/modules/Log.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
 });
 
 var EXPORTED_SYMBOLS = ["BridgedEngine", "LogAdapter"];

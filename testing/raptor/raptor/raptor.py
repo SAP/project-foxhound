@@ -134,6 +134,7 @@ def main(args=sys.argv[1:]):
             device_name=args.device_name,
             disable_perf_tuning=args.disable_perf_tuning,
             conditioned_profile=args.conditioned_profile,
+            test_bytecode_cache=args.test_bytecode_cache,
             chimera=args.chimera,
             project=args.project,
             verbose=args.verbose,
@@ -146,6 +147,7 @@ def main(args=sys.argv[1:]):
         )
         os.sys.exit(1)
 
+    raptor.results_handler.use_existing_results(args.browsertime_existing_results)
     success = raptor.run_tests(raptor_test_list, raptor_test_names)
 
     if not success:

@@ -484,15 +484,18 @@ void RemoteAccessibleBase<Derived>::ApplyScrollOffset(nsRect& aBounds) const {
 
 template <class Derived>
 nsRect RemoteAccessibleBase<Derived>::BoundsInAppUnits() const {
-  dom::CanonicalBrowsingContext* cbc =
-      static_cast<dom::BrowserParent*>(mDoc->Manager())
-          ->GetBrowsingContext()
-          ->Top();
-  dom::BrowserParent* bp = cbc->GetBrowserParent();
-  nsPresContext* presContext =
-      bp->GetOwnerElement()->OwnerDoc()->GetPresContext();
-  return LayoutDeviceIntRect::ToAppUnits(Bounds(),
-                                         presContext->AppUnitsPerDevPixel());
+  if (dom::CanonicalBrowsingContext* cbc = mDoc->GetBrowsingContext()->Top()) {
+    if (dom::BrowserParent* bp = cbc->GetBrowserParent()) {
+      DocAccessibleParent* topDoc = bp->GetTopLevelDocAccessible();
+      if (topDoc && topDoc->mCachedFields) {
+        auto appUnitsPerDevPixel = topDoc->mCachedFields->GetAttribute<int32_t>(
+            nsGkAtoms::_moz_device_pixel_ratio);
+        MOZ_ASSERT(appUnitsPerDevPixel);
+        return LayoutDeviceIntRect::ToAppUnits(Bounds(), *appUnitsPerDevPixel);
+      }
+    }
+  }
+  return LayoutDeviceIntRect::ToAppUnits(Bounds(), AppUnitsPerCSSPixel());
 }
 
 template <class Derived>
@@ -772,6 +775,13 @@ uint64_t RemoteAccessibleBase<Derived>::State() {
 template <class Derived>
 already_AddRefed<AccAttributes> RemoteAccessibleBase<Derived>::Attributes() {
   RefPtr<AccAttributes> attributes = new AccAttributes();
+  nsAccessibilityService* accService = GetAccService();
+  if (!accService) {
+    // The service can be shut down before RemoteAccessibles. If it is shut
+    // down, we can't calculate some attributes. We're about to die anyway.
+    return attributes.forget();
+  }
+
   if (mCachedFields) {
     // We use GetAttribute instead of GetAttributeRefPtr because we need
     // nsAtom, not const nsAtom.
@@ -818,31 +828,36 @@ already_AddRefed<AccAttributes> RemoteAccessibleBase<Derived>::Attributes() {
       attributes->SetAttribute(nsGkAtoms::layout_guess, layoutGuess);
     }
 
-    if (auto ariaAttrs = GetCachedARIAAttributes()) {
-      ariaAttrs->CopyTo(attributes);
-    }
+    accService->MarkupAttributes(this, attributes);
 
+    const nsRoleMapEntry* roleMap = ARIARoleMap();
     nsAutoString role;
     mCachedFields->GetAttribute(nsGkAtoms::role, role);
     if (role.IsEmpty()) {
-      bool found = false;
-      if (const nsRoleMapEntry* roleMap = ARIARoleMap()) {
-        if (roleMap->roleAtom != nsGkAtoms::_empty) {
-          // Single, known role.
-          attributes->SetAttribute(nsGkAtoms::xmlroles, roleMap->roleAtom);
-          found = true;
-        }
-      }
-      if (!found) {
-        if (nsAtom* landmark = LandmarkRole()) {
-          // Landmark role from markup; e.g. HTML <main>.
-          attributes->SetAttribute(nsGkAtoms::xmlroles, landmark);
-        }
+      if (roleMap && roleMap->roleAtom != nsGkAtoms::_empty) {
+        // Single, known role.
+        attributes->SetAttribute(nsGkAtoms::xmlroles, roleMap->roleAtom);
+      } else if (nsAtom* landmark = LandmarkRole()) {
+        // Landmark role from markup; e.g. HTML <main>.
+        attributes->SetAttribute(nsGkAtoms::xmlroles, landmark);
       }
     } else {
       // Unknown role or multiple roles.
       attributes->SetAttribute(nsGkAtoms::xmlroles, std::move(role));
     }
+
+    if (roleMap) {
+      nsAutoString live;
+      if (nsAccUtils::GetLiveAttrValue(roleMap->liveAttRule, live)) {
+        attributes->SetAttribute(nsGkAtoms::aria_live, std::move(live));
+      }
+    }
+
+    if (auto ariaAttrs = GetCachedARIAAttributes()) {
+      ariaAttrs->CopyTo(attributes);
+    }
+
+    nsAccUtils::SetLiveContainerAttributes(attributes, this);
   }
 
   nsAutoString name;
@@ -886,6 +901,34 @@ Maybe<float> RemoteAccessibleBase<Derived>::Opacity() const {
   }
 
   return Nothing();
+}
+
+template <class Derived>
+void RemoteAccessibleBase<Derived>::LiveRegionAttributes(
+    nsAString* aLive, nsAString* aRelevant, Maybe<bool>* aAtomic,
+    nsAString* aBusy) const {
+  if (!mCachedFields) {
+    return;
+  }
+  RefPtr<const AccAttributes> attrs = GetCachedARIAAttributes();
+  if (!attrs) {
+    return;
+  }
+  if (aLive) {
+    attrs->GetAttribute(nsGkAtoms::aria_live, *aLive);
+  }
+  if (aRelevant) {
+    attrs->GetAttribute(nsGkAtoms::aria_relevant, *aRelevant);
+  }
+  if (aAtomic) {
+    if (auto value =
+            attrs->GetAttribute<RefPtr<nsAtom>>(nsGkAtoms::aria_atomic)) {
+      *aAtomic = Some(*value == nsGkAtoms::_true);
+    }
+  }
+  if (aBusy) {
+    attrs->GetAttribute(nsGkAtoms::aria_busy, *aBusy);
+  }
 }
 
 template <class Derived>
@@ -956,6 +999,17 @@ bool RemoteAccessibleBase<Derived>::DoAction(uint8_t aIndex) const {
 
   Unused << mDoc->SendDoActionAsync(mID, aIndex);
   return true;
+}
+
+template <class Derived>
+KeyBinding RemoteAccessibleBase<Derived>::AccessKey() const {
+  if (mCachedFields) {
+    if (auto value =
+            mCachedFields->GetAttribute<uint64_t>(nsGkAtoms::accesskey)) {
+      return KeyBinding(*value);
+    }
+  }
+  return KeyBinding();
 }
 
 template <class Derived>

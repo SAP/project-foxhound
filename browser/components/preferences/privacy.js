@@ -332,13 +332,13 @@ function initTCPRolloutSection() {
   let updateTCPRolloutSectionVisibilityState = () => {
     // For phase 2 we always hide the TCP preferences section. TCP will be
     // enabled by default in "standard" ETP mode.
-    if (NimbusFeatures.tcpByDefault.isEnabled()) {
+    if (NimbusFeatures.tcpByDefault.getVariable("enabled")) {
       document.getElementById("etpStandardTCPRolloutBox").hidden = true;
       return;
     }
 
     let onboardingEnabled =
-      NimbusFeatures.tcpPreferences.isEnabled() ||
+      NimbusFeatures.tcpPreferences.getVariable("enabled") ||
       (dfpiPref.value && dfpiPref.hasUserValue);
     document.getElementById(
       "etpStandardTCPRolloutBox"
@@ -1629,10 +1629,11 @@ var gPrivacyPane = {
   initDeleteOnCloseBox() {
     let deleteOnCloseBox = document.getElementById("deleteOnClose");
     deleteOnCloseBox.checked =
-      Preferences.get("privacy.sanitize.sanitizeOnShutdown").value &&
-      Preferences.get("privacy.clearOnShutdown.cookies").value &&
-      Preferences.get("privacy.clearOnShutdown.cache").value &&
-      Preferences.get("privacy.clearOnShutdown.offlineApps").value;
+      (Preferences.get("privacy.sanitize.sanitizeOnShutdown").value &&
+        Preferences.get("privacy.clearOnShutdown.cookies").value &&
+        Preferences.get("privacy.clearOnShutdown.cache").value &&
+        Preferences.get("privacy.clearOnShutdown.offlineApps").value) ||
+      Preferences.get("browser.privatebrowsing.autostart").value;
   },
 
   /*

@@ -237,3 +237,43 @@ add_task(async function test_max_list_items() {
     }
   );
 });
+
+add_task(async function test_time_updates_correctly() {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      // Use session store data from previous tests; the last child is the oldest and has
+      // a data-timestamp of approx one minute ago which is below the 'Just now' threshold
+      const lastListItem = document.querySelector("ol.closed-tabs-list")
+        .lastChild;
+      const timeLabel = lastListItem.querySelector("span.closed-tab-li-time");
+
+      ok(
+        timeLabel.textContent.includes("Just now"),
+        "recently-closed-tabs list item time is 'Just now'"
+      );
+
+      await SpecialPowers.pushPrefEnv({
+        set: [["browser.tabs.firefox-view.updateTimeMs", 5]],
+      });
+
+      await BrowserTestUtils.waitForMutationCondition(
+        timeLabel,
+        { childList: true },
+        () => !timeLabel.textContent.includes("now")
+      );
+
+      ok(
+        timeLabel.textContent.includes("second"),
+        "recently-closed-tabs list item time has updated"
+      );
+
+      await SpecialPowers.popPrefEnv();
+    }
+  );
+});

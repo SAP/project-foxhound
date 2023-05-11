@@ -364,6 +364,31 @@ const previewers = {
     },
   ],
 
+  URLSearchParams: [
+    function(objectActor, grip) {
+      const enumEntries = PropertyIterators.enumURLSearchParamsEntries(objectActor);
+
+      grip.preview = {
+        kind: "MapLike",
+        size: enumEntries.size,
+      };
+
+      if (objectActor.hooks.getGripDepth() > 1) {
+        return true;
+      }
+
+      const entries = (grip.preview.entries = []);
+      for (const entry of enumEntries) {
+        entries.push(entry);
+        if (entries.length == OBJECT_PREVIEW_MAX_ITEMS) {
+          break;
+        }
+      }
+
+      return true;
+    },
+  ],
+
   DOMStringMap: [
     function({ obj, hooks }, grip, rawObj) {
       if (!rawObj) {
@@ -529,21 +554,6 @@ function GenericObject(objectActor, grip, rawObj, className) {
     if (typeof length != "number") {
       specialStringBehavior = false;
     }
-  }
-
-  // ToDo: This preference can be removed once the custom formatters feature is stable enough
-  const customFormattersExperimentallyEnabled = isWorker
-    ? false
-    : Services.prefs.getBoolPref("devtools.custom-formatters");
-
-  if (customFormattersExperimentallyEnabled) {
-    const useCustomFormatters = Services.prefs.getBoolPref(
-      "devtools.custom-formatters.enabled"
-    );
-
-    grip.useCustomFormatter = useCustomFormatters;
-    grip.header = null;
-    grip.hasBody = false;
   }
 
   for (const name of names) {

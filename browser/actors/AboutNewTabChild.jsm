@@ -6,9 +6,8 @@
 
 var EXPORTED_SYMBOLS = ["AboutNewTabChild"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -37,7 +36,7 @@ class AboutNewTabChild extends JSWindowActorChild {
       // If the separate about:welcome page is enabled, we can skip all of this,
       // since that mode doesn't load any of the Activity Stream bits.
       if (
-        lazy.NimbusFeatures.aboutwelcome.isEnabled({ defaultValue: true }) &&
+        (lazy.NimbusFeatures.aboutwelcome.getVariable("enabled") ?? true) &&
         this.contentWindow.location.pathname.includes("welcome")
       ) {
         return;

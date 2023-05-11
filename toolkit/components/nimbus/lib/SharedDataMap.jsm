@@ -6,7 +6,6 @@
 
 const EXPORTED_SYMBOLS = ["SharedDataMap"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { EventEmitter } = ChromeUtils.import(
   "resource://gre/modules/EventEmitter.jsm"
 );
@@ -25,8 +24,8 @@ ChromeUtils.defineModuleGetter(
   "JSONFile",
   "resource://gre/modules/JSONFile.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 class SharedDataMap extends EventEmitter {

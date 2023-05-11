@@ -32,7 +32,6 @@
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
-#include "vm/TraceLogging.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmInstance.h"
 
@@ -652,7 +651,6 @@ void HandleExceptionWasm(JSContext* cx, wasm::WasmFrameIter* iter,
 
 void HandleException(ResumeFromException* rfe) {
   JSContext* cx = TlsContext.get();
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
 
 #ifdef DEBUG
   cx->runtime()->jitRuntime()->clearDisallowArbitraryCode();
@@ -718,15 +716,6 @@ void HandleException(ResumeFromException* rfe) {
       IonScript* ionScript = nullptr;
       bool invalidated = frame.checkInvalidation(&ionScript);
 
-#ifdef JS_TRACE_LOGGING
-      if (logger && cx->realm()->isDebuggee() && logger->enabled()) {
-        logger->disable(/* force = */ true,
-                        "Forcefully disabled tracelogger, due to "
-                        "throwing an exception with an active Debugger "
-                        "in IonMonkey.");
-      }
-#endif
-
       // If we hit OOM or overrecursion while bailing out, we don't
       // attempt to bail out a second time for this Ion frame. Just unwind
       // and continue at the next frame.
@@ -752,8 +741,6 @@ void HandleException(ResumeFromException* rfe) {
         probes::ExitScript(cx, script, script->function(),
                            /* popProfilerFrame = */ false);
         if (!frames.more()) {
-          TraceLogStopEvent(logger, TraceLogger_IonMonkey);
-          TraceLogStopEvent(logger, TraceLogger_Scripts);
           break;
         }
         ++frames;
@@ -776,9 +763,6 @@ void HandleException(ResumeFromException* rfe) {
           rfe->kind != ExceptionResumeKind::ForcedReturnBaseline) {
         return;
       }
-
-      TraceLogStopEvent(logger, TraceLogger_Baseline);
-      TraceLogStopEvent(logger, TraceLogger_Scripts);
 
       // Unwind profiler pseudo-stack
       JSScript* script = frame.script();
@@ -2298,7 +2282,7 @@ template <typename T>
 T MachineState::read(FloatRegister reg) const {
   MOZ_ASSERT(reg.size() == sizeof(T));
 
-#if !defined(JS_CODEGEN_NONE)
+#if !defined(JS_CODEGEN_NONE) && !defined(JS_CODEGEN_WASM32)
   if (state_.is<BailoutState>()) {
     uint32_t offset = reg.getRegisterDumpOffsetInBytes();
     MOZ_ASSERT((offset % sizeof(T)) == 0);

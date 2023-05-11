@@ -336,15 +336,11 @@ ipc::IPCResult WebGPUParent::RecvDeviceDestroy(RawId aSelfId) {
 
 ipc::IPCResult WebGPUParent::RecvCreateBuffer(
     RawId aSelfId, RawId aBufferId, dom::GPUBufferDescriptor&& aDesc) {
-  nsCString label;
-  const char* labelOrNull = nullptr;
-  if (aDesc.mLabel.WasPassed()) {
-    LossyCopyUTF16toASCII(aDesc.mLabel.Value(), label);
-    labelOrNull = label.get();
-  }
+  webgpu::StringHelper label(aDesc.mLabel);
+
   ErrorBuffer error;
   ffi::wgpu_server_device_create_buffer(mContext.get(), aSelfId, aBufferId,
-                                        labelOrNull, aDesc.mSize, aDesc.mUsage,
+                                        label.Get(), aDesc.mSize, aDesc.mUsage,
                                         aDesc.mMappedAtCreation, error.ToFFI());
   ForwardError(aSelfId, error);
   return IPC_OK();
@@ -473,6 +469,10 @@ ipc::IPCResult WebGPUParent::RecvCommandEncoderFinish(
     const dom::GPUCommandBufferDescriptor& aDesc) {
   Unused << aDesc;
   ffi::WGPUCommandBufferDescriptor desc = {};
+
+  webgpu::StringHelper label(aDesc.mLabel);
+  desc.label = label.Get();
+
   ErrorBuffer error;
   ffi::wgpu_server_encoder_finish(mContext.get(), aSelfId, &desc,
                                   error.ToFFI());
@@ -633,6 +633,41 @@ ipc::IPCResult WebGPUParent::RecvDeviceCreateSwapChain(
   return IPC_OK();
 }
 
+ipc::IPCResult WebGPUParent::RecvDeviceCreateShaderModule(
+    RawId aSelfId, RawId aBufferId, const nsString& aLabel,
+    const nsCString& aCode, DeviceCreateShaderModuleResolver&& aOutMessage) {
+  // TODO: this should probably be an optional label in the IPC message.
+  const nsACString* label = nullptr;
+  NS_ConvertUTF16toUTF8 utf8Label(aLabel);
+  if (!utf8Label.IsEmpty()) {
+    label = &utf8Label;
+  }
+
+  ffi::WGPUShaderModuleCompilationMessage message;
+
+  bool ok = ffi::wgpu_server_device_create_shader_module(
+      mContext.get(), aSelfId, aBufferId, label, &aCode, &message);
+
+  nsTArray<WebGPUCompilationMessage> messages;
+
+  if (!ok) {
+    WebGPUCompilationMessage msg;
+    msg.lineNum = message.line_number;
+    msg.linePos = message.line_pos;
+    msg.offset = message.utf16_offset;
+    msg.length = message.utf16_length;
+    msg.message = message.message;
+    // wgpu currently only returns errors.
+    msg.messageType = WebGPUCompilationMessageType::Error;
+
+    messages.AppendElement(msg);
+  }
+
+  aOutMessage(messages);
+
+  return IPC_OK();
+}
+
 struct PresentRequest {
   const ffi::WGPUGlobal* mContext;
   RefPtr<PresentationData> mData;
@@ -669,7 +704,6 @@ static void PresentCallback(ffi::WGPUBufferMapAsyncStatus status,
           "webgpu::WebGPUParent::PresentCallback",
           [imageHost = data->mImageHost, texture = data->mTextureHost,
            frameID = data->mNextFrameID++]() {
-            layers::SurfaceDescriptor surfaceDesc;
             AutoTArray<layers::CompositableHost::TimedTexture, 1> textures;
 
             layers::CompositableHost::TimedTexture* timedTexture =
@@ -682,8 +716,8 @@ static void PresentCallback(ffi::WGPUBufferMapAsyncStatus status,
             // here to avoid a race uploading the texture and doing the copy in
             // PresentCallback.
             timedTexture->mTexture = new layers::WebRenderTextureHost(
-                surfaceDesc, layers::TextureFlags::BORROWED_EXTERNAL_ID,
-                texture, texture->GetMaybeExternalImageId().ref());
+                layers::TextureFlags::BORROWED_EXTERNAL_ID, texture,
+                texture->GetMaybeExternalImageId().ref());
             timedTexture->mTimeStamp = TimeStamp();
             timedTexture->mPictureRect =
                 gfx::IntRect(gfx::IntPoint(0, 0), texture->GetSize());
@@ -718,7 +752,7 @@ ipc::IPCResult WebGPUParent::GetFrontBufferSnapshot(
       aSize.width * BytesPerPixel(data->mTextureHost->GetFormat());
   uint32_t len = data->mRowCount * stride;
   Shmem shmem;
-  if (!AllocShmem(len, ipc::Shmem::SharedMemory::TYPE_BASIC, &shmem)) {
+  if (!AllocShmem(len, &shmem)) {
     return IPC_OK();
   }
 

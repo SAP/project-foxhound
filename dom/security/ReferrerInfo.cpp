@@ -25,6 +25,7 @@
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/RequestBinding.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StyleSheet.h"
@@ -233,9 +234,13 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
     nsCOMPtr<nsICookieJarSettings> cjs;
     Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
     if (!cjs) {
+      bool shouldResistFingerprinting =
+          nsContentUtils::ShouldResistFingerprinting(aChannel);
       cjs = aPrivateBrowsing
-                ? net::CookieJarSettings::Create(CookieJarSettings::ePrivate)
-                : net::CookieJarSettings::Create(CookieJarSettings::eRegular);
+                ? net::CookieJarSettings::Create(CookieJarSettings::ePrivate,
+                                                 shouldResistFingerprinting)
+                : net::CookieJarSettings::Create(CookieJarSettings::eRegular,
+                                                 shouldResistFingerprinting);
     }
 
     // We only check if the channel is isolated if it's in the parent process
@@ -431,9 +436,9 @@ bool ReferrerInfo::ShouldSetNullOriginHeader(net::HttpBaseChannel* aChannel,
   // This code should not really be here, but we always need to send an Origin
   // header for CORS requests that aren't GET or HEAD. Also see the comment
   // in nsHttpChannel::SetOriginHeader.
-  uint32_t corsMode = nsIHttpChannelInternal::CORS_MODE_NO_CORS;
-  MOZ_ALWAYS_SUCCEEDS(aChannel->GetCorsMode(&corsMode));
-  if (corsMode == nsIHttpChannelInternal::CORS_MODE_CORS) {
+  RequestMode requestMode = RequestMode::No_cors;
+  MOZ_ALWAYS_SUCCEEDS(aChannel->GetRequestMode(&requestMode));
+  if (requestMode == RequestMode::Cors) {
     return false;
   }
 

@@ -12,6 +12,7 @@ import {
 } from "../../selectors";
 import { features } from "../../utils/prefs";
 import { isUrlExtension } from "../../utils/source";
+import { getDisplayURL } from "../../utils/sources-tree/getURL";
 
 let store;
 
@@ -222,14 +223,13 @@ function createSourceObject({
     // Absolute URL for the source. This may be a fake URL for pretty printed sources
     url,
 
+    // A (slightly tweaked) URL object to represent the source URL.
+    // The URL object is augmented of a "group" attribute and some other standard attributes
+    // are modified from their typical value. See getDisplayURL implementation.
+    displayURL: getDisplayURL(url, extensionName),
+
     // The thread actor id of the thread/target which this source belongs to
     thread,
-
-    // By default refers to the absolute URL, but this will be updated
-    // if user defines a project root. In this case it will be crafted via `getRelativeUrl`
-    // to refer to the relative path based on project root.
-    // (Note that this will rather be a path than a URL)
-    relativeUrl: url,
 
     // Only set for generated sources that are WebExtension sources.
     // This is especially useful to display the extension name for content scripts
@@ -253,10 +253,6 @@ function createSourceObject({
 
     // True for source map original files, as well as pretty printed sources
     isOriginal,
-
-    // By default set to false for all sources, but may later be toggled to true
-    // if the whole source is blackboxed.
-    isBlackBoxed: false,
   };
 }
 

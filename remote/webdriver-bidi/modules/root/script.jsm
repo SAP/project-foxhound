@@ -6,8 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["script"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const { Module } = ChromeUtils.import(
@@ -122,14 +122,92 @@ class ScriptModule extends Module {
    */
 
   /**
+   * Calls a provided function with given arguments and scope in the provided
+   * target, which is either a realm or a browsing context.
+   *
+   * @param {Object=} options
+   * @param {Array<RemoteValue>=} arguments
+   *     The arguments to pass to the function call.
+   * @param {boolean} awaitPromise
+   *     Determines if the command should wait for the return value of the
+   *     expression to resolve, if this return value is a Promise.
+   * @param {string} functionDeclaration
+   *     The expression to evaluate.
+   * @param {OwnershipModel=} resultOwnership [unsupported]
+   *     The ownership model to use for the results of this evaluation.
+   * @param {Object} target
+   *     The target for the evaluation, which either matches the definition for
+   *     a RealmTarget or for ContextTarget.
+   * @param {RemoteValue=} this
+   *     The value of the this keyword for the function call.
+   *
+   * @returns {ScriptEvaluateResult}
+   *
+   * @throws {InvalidArgumentError}
+   *     If any of the arguments has not the expected type.
+   * @throws {NoSuchFrameError}
+   *     If the target cannot be found.
+   */
+  async callFunction(options = {}) {
+    // TODO: Bug 1778976. Remove once command is fully supported.
+    this.assertExperimentalCommandsEnabled("script.callFunction");
+
+    const {
+      arguments: commandArguments = null,
+      awaitPromise,
+      functionDeclaration,
+      resultOwnership = OwnershipModel.None,
+      target = {},
+      this: thisParameter = null,
+    } = options;
+
+    lazy.assert.string(
+      functionDeclaration,
+      `Expected "functionDeclaration" to be a string, got ${functionDeclaration}`
+    );
+
+    lazy.assert.boolean(
+      awaitPromise,
+      `Expected "awaitPromise" to be a boolean, got ${awaitPromise}`
+    );
+
+    this.#assertResultOwnership(resultOwnership);
+
+    if (commandArguments != null) {
+      lazy.assert.array(
+        commandArguments,
+        `Expected "arguments" to be an array, got ${commandArguments}`
+      );
+    }
+
+    const { contextId, realmId, sandbox } = this.#assertTarget(target);
+    const realm = this.#getRealmInfoFromTarget({ contextId, realmId, sandbox });
+    const evaluationResult = await this.messageHandler.forwardCommand({
+      moduleName: "script",
+      commandName: "callFunctionDeclaration",
+      destination: {
+        type: lazy.WindowGlobalMessageHandler.type,
+        id: realm.context.id,
+      },
+      params: {
+        awaitPromise,
+        commandArguments,
+        functionDeclaration,
+        thisParameter,
+      },
+    });
+
+    return this.#buildReturnValue(evaluationResult, realm);
+  }
+
+  /**
    * Evaluate a provided expression in the provided target, which is either a
    * realm or a browsing context.
    *
    * @param {Object=} options
-   * @param {boolean=} awaitPromise [unsupported]
+   * @param {boolean} awaitPromise
    *     Determines if the command should wait for the return value of the
-   *     expression to resolve, if this return value is a Promise. Defaults to
-   *     true.
+   *     expression to resolve, if this return value is a Promise.
    * @param {string} expression
    *     The expression to evaluate.
    * @param {OwnershipModel=} resultOwnership [unsupported]
@@ -150,7 +228,7 @@ class ScriptModule extends Module {
     this.assertExperimentalCommandsEnabled("script.evaluate");
 
     const {
-      awaitPromise = true,
+      awaitPromise,
       expression: source,
       resultOwnership = OwnershipModel.None,
       target = {},
@@ -166,6 +244,27 @@ class ScriptModule extends Module {
       `Expected "awaitPromise" to be a boolean, got ${awaitPromise}`
     );
 
+    this.#assertResultOwnership(resultOwnership);
+
+    const { contextId, realmId, sandbox } = this.#assertTarget(target);
+    const realm = this.#getRealmInfoFromTarget({ contextId, realmId, sandbox });
+    const evaluationResult = await this.messageHandler.forwardCommand({
+      moduleName: "script",
+      commandName: "evaluateExpression",
+      destination: {
+        type: lazy.WindowGlobalMessageHandler.type,
+        id: realm.context.id,
+      },
+      params: {
+        awaitPromise,
+        expression: source,
+      },
+    });
+
+    return this.#buildReturnValue(evaluationResult, realm);
+  }
+
+  #assertResultOwnership(resultOwnership) {
     if (![OwnershipModel.None, OwnershipModel.Root].includes(resultOwnership)) {
       throw new lazy.error.InvalidArgumentError(
         `Expected "resultOwnership" to be one of ${Object.values(
@@ -173,7 +272,9 @@ class ScriptModule extends Module {
         )}, got ${resultOwnership}`
       );
     }
+  }
 
+  #assertTarget(target) {
     lazy.assert.object(
       target,
       `Expected "target" to be an object, got ${target}`
@@ -184,6 +285,7 @@ class ScriptModule extends Module {
       realm: realmId = null,
       sandbox = null,
     } = target;
+
     if (contextId != null) {
       lazy.assert.string(
         contextId,
@@ -211,23 +313,26 @@ class ScriptModule extends Module {
       throw new lazy.error.InvalidArgumentError(`No context or realm provided`);
     }
 
-    const realm = this.#getRealmInfoFromTarget({ contextId, realmId, sandbox });
-    const { result } = await this.messageHandler.forwardCommand({
-      moduleName: "script",
-      commandName: "evaluateExpression",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: realm.context.id,
-      },
-      params: {
-        expression: source,
-      },
-    });
+    return { contextId, realmId, sandbox };
+  }
 
-    return {
-      result,
-      realm: realm.realm,
-    };
+  #buildReturnValue(evaluationResult, realm) {
+    const rv = { realm: realm.realm };
+    switch (evaluationResult.evaluationStatus) {
+      // TODO: Compare with EvaluationStatus.Normal after Bug 1774444 is fixed.
+      case "normal":
+        rv.result = evaluationResult.result;
+        break;
+      // TODO: Compare with EvaluationStatus.Throw after Bug 1774444 is fixed.
+      case "throw":
+        rv.exceptionDetails = evaluationResult.exceptionDetails;
+        break;
+      default:
+        throw new lazy.error.UnsupportedOperationError(
+          `Unsupported evaluation status ${evaluationResult.evaluationStatus}`
+        );
+    }
+    return rv;
   }
 
   #getRealmInfoFromTarget({ contextId, realmId, sandbox }) {
@@ -240,10 +345,16 @@ class ScriptModule extends Module {
         );
       }
 
+      if (!context.currentWindowGlobal) {
+        throw new lazy.error.NoSuchFrameError(
+          `No window found for BrowsingContext with id ${contextId}`
+        );
+      }
+
       // TODO: Return an actual realm once we have proper realm support.
       // See Bug 1766240.
       return {
-        realm: null,
+        realm: String(context.currentWindowGlobal.innerWindowId),
         origin: null,
         type: RealmType.Window,
         context,

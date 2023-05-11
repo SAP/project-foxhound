@@ -4,6 +4,7 @@
 
 @import url("chrome://browser/skin/downloads/indicator.css");
 @import url("chrome://browser/skin/addons/extension-controlled.css");
+@import url("chrome://browser/skin/addons/unified-extensions.css");
 @import url("chrome://browser/skin/toolbarbuttons.css");
 @import url("chrome://browser/skin/toolbarbutton-icons.css");
 @import url("chrome://browser/skin/menupanel.css");
@@ -344,8 +345,24 @@ menupopup::part(drop-indicator) {
   background-image: url("chrome://global/skin/icons/indicator-private-browsing.svg");
 }
 
+/* New Private Browsing Indicator */
+
+#private-browsing-indicator-with-label {
+  -moz-box-align: center;
+  margin-inline: 7px;
+}
+
+.private-browsing-indicator-icon {
+  list-style-image: url("chrome://global/skin/icons/indicator-private-browsing.svg");
+  width: 16px;
+  height: 16px;
+}
+
 :root:not([accessibilitymode]) .accessibility-indicator,
-:root:not([privatebrowsingmode=temporary]) .private-browsing-indicator {
+:root:not([privatebrowsingmode=temporary]) .private-browsing-indicator,
+:root[privatebrowsingnewindicator] .private-browsing-indicator,
+:root:not([privatebrowsingnewindicator]) #private-browsing-indicator-with-label,
+:root:not([privatebrowsingmode=temporary]) #private-browsing-indicator-with-label {
   display: none;
 }
 

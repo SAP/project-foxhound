@@ -37,6 +37,7 @@ interface nsIGfxInfo : nsISupports
   readonly attribute boolean WebRenderEnabled;
   readonly attribute boolean isHeadless;
   readonly attribute unsigned long TargetFrameRate;
+  readonly attribute ACString CodecSupportInfo;
 
   // XXX: Switch to a list of devices, rather than explicitly numbering them.
 
@@ -168,20 +169,20 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_WEBRENDER_SHADER_CACHE = 35;
   /* Whether partial present is allowed with WebRender, starting in 98. */
   const long FEATURE_WEBRENDER_PARTIAL_PRESENT = 36;
-  /* Whether VA-API is supported, starting in 96. */
-  const long FEATURE_VAAPI = 37;
   /* Whether WebGPU is supported, starting in 100. */
-  const long FEATURE_WEBGPU = 38;
+  const long FEATURE_WEBGPU = 37;
   /* Whether video overlay is supported, starting in 100. */
-  const long FEATURE_VIDEO_OVERLAY = 39;
+  const long FEATURE_VIDEO_OVERLAY = 38;
   /* Whether hardware decoded video zero copy is supported, starting in 101. */
-  const long FEATURE_HW_DECODED_VIDEO_ZERO_COPY = 40;
+  const long FEATURE_HW_DECODED_VIDEO_ZERO_COPY = 39;
   /* Whether DMABUF export is supported, starting in 103. */
-  const long FEATURE_DMABUF_SURFACE_EXPORT = 41;
+  const long FEATURE_DMABUF_SURFACE_EXPORT = 40;
   /* Whether reuse decoder device is supported, starting in 104. */
-  const long FEATURE_REUSE_DECODER_DEVICE = 42;
+  const long FEATURE_REUSE_DECODER_DEVICE = 41;
+  /* Whether to allow backdrop filter, starting in 105. */
+  const long FEATURE_BACKDROP_FILTER = 42;
   /* the maximum feature value. */
-  const long FEATURE_MAX_VALUE = FEATURE_REUSE_DECODER_DEVICE;
+  const long FEATURE_MAX_VALUE = FEATURE_BACKDROP_FILTER;
 
   /*
    * A set of return values from GetFeatureStatus
@@ -209,6 +210,8 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_ALLOW_ALWAYS = 9;
   /* This feature is safe to be on this device due to the allowlist, depending on qualified/experiment status. */
   const long FEATURE_ALLOW_QUALIFIED = 10;
+  /* This feature failed in a startup test, e.g. due to a crashing driver. */
+  const long FEATURE_BLOCKED_PLATFORM_TEST = 11;
 
   /**
    * Ask about a feature, and return the status of that feature.

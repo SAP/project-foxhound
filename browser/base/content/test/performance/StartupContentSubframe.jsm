@@ -4,7 +4,6 @@
 /**
  * test helper JSWindowActors used by the browser_startup_content_subframe.js test.
  */
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var EXPORTED_SYMBOLS = [
   "StartupContentSubframeParent",
@@ -37,17 +36,11 @@ class StartupContentSubframeChild extends JSWindowActorChild {
     );
     let collectStacks = AppConstants.NIGHTLY_BUILD || AppConstants.DEBUG;
 
-    let components = {};
-    for (let component of Cu.loadedComponents) {
-      // Keep only the file name for components, as the path is an absolute file
-      // URL rather than a resource:// URL like for modules.
-      components[component.replace(/.*\//, "")] = collectStacks
-        ? Cu.getComponentLoadStack(component)
-        : "";
-    }
-
     let modules = {};
-    for (let module of Cu.loadedModules) {
+    for (let module of Cu.loadedJSModules) {
+      modules[module] = collectStacks ? Cu.getModuleImportStack(module) : "";
+    }
+    for (let module of Cu.loadedESModules) {
       modules[module] = collectStacks ? Cu.getModuleImportStack(module) : "";
     }
 
@@ -60,7 +53,6 @@ class StartupContentSubframeChild extends JSWindowActorChild {
       } catch (e) {}
     }
     this.sendAsyncMessage("LoadedScripts", {
-      components,
       modules,
       services,
     });

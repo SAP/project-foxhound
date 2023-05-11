@@ -46,6 +46,7 @@
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ShadowRealmGlobalScope.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
@@ -893,11 +894,11 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
     NS_ASSERTION(global, "This should never be null!");
 
-    // On worker threads, if the current global is the worker global, we use the
-    // main micro task queue. Otherwise, the current global must be
-    // either the debugger global or a debugger sandbox, and we use the debugger
-    // micro task queue instead.
-    if (IsWorkerGlobal(global)) {
+    // On worker threads, if the current global is the worker global or
+    // ShadowRealm global, we use the main micro task queue. Otherwise, the
+    // current global must be either the debugger global or a debugger sandbox,
+    // and we use the debugger micro task queue instead.
+    if (IsWorkerGlobal(global) || IsShadowRealmGlobal(global)) {
       microTaskQueue = &GetMicroTaskQueue();
     } else {
       MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
@@ -1165,13 +1166,13 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
   } else {
     if (!mNavigatorPropertiesLoaded) {
       Navigator::AppName(mNavigatorProperties.mAppName,
-                         aWorkerPrivate.GetPrincipal(),
+                         aWorkerPrivate.GetDocument(),
                          false /* aUsePrefOverriddenValue */);
       if (NS_FAILED(Navigator::GetAppVersion(
-              mNavigatorProperties.mAppVersion, aWorkerPrivate.GetPrincipal(),
+              mNavigatorProperties.mAppVersion, aWorkerPrivate.GetDocument(),
               false /* aUsePrefOverriddenValue */)) ||
           NS_FAILED(Navigator::GetPlatform(
-              mNavigatorProperties.mPlatform, aWorkerPrivate.GetPrincipal(),
+              mNavigatorProperties.mPlatform, aWorkerPrivate.GetDocument(),
               false /* aUsePrefOverriddenValue */))) {
         UnregisterWorker(aWorkerPrivate);
         return false;
@@ -1264,12 +1265,6 @@ void RuntimeService::UnregisterWorker(WorkerPrivate& aWorkerPrivate) {
       MOZ_ASSERT(domainInfo->mQueuedWorkers.IsEmpty());
       mDomainMap.Remove(domain);
     }
-  }
-
-  if (aWorkerPrivate.IsServiceWorker()) {
-    AssertIsOnMainThread();
-    Telemetry::AccumulateTimeDelta(Telemetry::SERVICE_WORKER_LIFE_TIME,
-                                   aWorkerPrivate.CreationTimeStamp());
   }
 
   // NB: For Shared Workers we used to call ShutdownOnMainThread on the

@@ -4,7 +4,6 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const lazy = {};
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -212,11 +211,6 @@ setupPrototype(GlobalPCList, {
     "nsISupportsWeakReference",
   ]),
   classID: PC_MANAGER_CID,
-  _xpcom_factory: {
-    createInstance(iid) {
-      return _globalPCList.QueryInterface(iid);
-    },
-  },
 });
 
 var _globalPCList = new GlobalPCList();

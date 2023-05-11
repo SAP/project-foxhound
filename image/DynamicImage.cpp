@@ -19,10 +19,8 @@
 
 using namespace mozilla;
 using namespace mozilla::gfx;
-using mozilla::layers::ImageContainer;
 
-namespace mozilla {
-namespace image {
+namespace mozilla::image {
 
 // Inherited methods from Image.
 
@@ -90,11 +88,14 @@ DynamicImage::GetHeight(int32_t* aHeight) {
   return NS_OK;
 }
 
-nsresult DynamicImage::GetNativeSizes(nsTArray<IntSize>& aNativeSizes) const {
+void DynamicImage::MediaFeatureValuesChangedAllDocuments(
+    const mozilla::MediaFeatureChange& aChange) {}
+
+nsresult DynamicImage::GetNativeSizes(nsTArray<IntSize>&) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-size_t DynamicImage::GetNativeSizesLength() const { return 0; }
+size_t DynamicImage::GetNativeSizesLength() { return 0; }
 
 NS_IMETHODIMP
 DynamicImage::GetIntrinsicSize(nsSize* aSize) {
@@ -153,7 +154,7 @@ DynamicImage::GetFrameAtSize(const IntSize& aSize, uint32_t aWhichFrame,
   MOZ_ASSERT(context);  // already checked the draw target above
 
   auto result = Draw(context, aSize, ImageRegion::Create(aSize), aWhichFrame,
-                     SamplingFilter::POINT, Nothing(), aFlags, 1.0);
+                     SamplingFilter::POINT, SVGImageContext(), aFlags, 1.0);
 
   return result == ImgDrawResult::SUCCESS ? dt->Snapshot() : nullptr;
 }
@@ -170,7 +171,7 @@ DynamicImage::IsImageContainerAvailable(WindowRenderer* aRenderer,
 NS_IMETHODIMP_(ImgDrawResult)
 DynamicImage::GetImageProvider(WindowRenderer* aRenderer,
                                const gfx::IntSize& aSize,
-                               const Maybe<SVGImageContext>& aSVGContext,
+                               const SVGImageContext& aSVGContext,
                                const Maybe<ImageIntRegion>& aRegion,
                                uint32_t aFlags,
                                WebRenderImageProvider** aProvider) {
@@ -181,7 +182,7 @@ NS_IMETHODIMP_(ImgDrawResult)
 DynamicImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
                    const ImageRegion& aRegion, uint32_t aWhichFrame,
                    SamplingFilter aSamplingFilter,
-                   const Maybe<SVGImageContext>& aSVGContext, uint32_t aFlags,
+                   const SVGImageContext& aSVGContext, uint32_t aFlags,
                    float aOpacity) {
   MOZ_ASSERT(!aSize.IsEmpty(), "Unexpected empty size");
 
@@ -295,5 +296,4 @@ nsresult DynamicImage::GetHotspotY(int32_t* aY) {
   return Image::GetHotspotY(aY);
 }
 
-}  // namespace image
-}  // namespace mozilla
+}  // namespace mozilla::image

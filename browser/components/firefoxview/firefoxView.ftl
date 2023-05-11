@@ -57,3 +57,14 @@ firefoxview-pickup-tabs-badge = Last active
 #   $targetURI (string) - URL that will be opened in the new tab
 firefoxview-tabs-list-tab-button =
   .title = Open { $targetURI } in a new tab
+
+firefoxview-try-colorways-button = Try colorways
+firefoxview-no-current-colorway-collection = New colorways are on the way
+firefoxview-change-colorway-button = Change colorway
+
+# Variables:
+#  $intensity (String): Colorway intensity
+#  $collection (String): Colorway Collection name
+firefoxview-colorway-description = { $intensity } · { $collection }
+
+firefoxview-synced-tabs-placeholder = No tabs open on other devices <br/> When you use { -brand-product-name } on another device, those tabs will show up here.

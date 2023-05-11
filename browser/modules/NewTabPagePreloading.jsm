@@ -9,10 +9,9 @@
 
 var EXPORTED_SYMBOLS = ["NewTabPagePreloading"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const lazy = {};
 
@@ -117,8 +116,7 @@ let NewTabPagePreloading = {
       !this.enabled ||
       window.gBrowser.preloadedBrowser ||
       !window.toolbar.visible ||
-      window.windowState == window.STATE_MINIMIZED ||
-      window.isFullyOccluded
+      window.document.hidden
     ) {
       return;
     }

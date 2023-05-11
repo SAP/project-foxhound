@@ -14,11 +14,16 @@
 #include "mozilla/ProfileJSONWriter.h"
 #include "mozilla/ProportionValue.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "nsIProfiler.h"
 #include "nsITimer.h"
 #include "nsServiceManagerUtils.h"
 #include "ProfilerCodeAddressService.h"
+
+namespace Json {
+class Value;
+}  // namespace Json
 
 class nsProfiler final : public nsIProfiler {
  public:
@@ -48,15 +53,12 @@ class nsProfiler final : public nsIProfiler {
   void GatheredOOPProfile(base::ProcessId aChildPid,
                           const nsACString& aProfile);
   void FinishGathering();
-  void ResetGathering();
+  void ResetGathering(nsresult aPromiseRejectionIfPending);
   static void GatheringTimerCallback(nsITimer* aTimer, void* aClosure);
   void RestartGatheringTimer();
 
   RefPtr<SymbolTablePromise> GetSymbolTableMozPromise(
       const nsACString& aDebugPath, const nsACString& aBreakpadID);
-
-  RefPtr<nsProfiler::GatheringPromiseAndroid>
-  GetProfileDataAsGzippedArrayBufferAndroid(double aSinceTime) override;
 
   struct ExitProfile {
     nsCString mJSON;
@@ -80,6 +82,17 @@ class nsProfiler final : public nsIProfiler {
   // Returns false if the request could not be sent.
   bool SendProgressRequest(PendingProfile& aPendingProfile);
 
+  // If the log is active, call aJsonLogObjectUpdater(Json::Value&) on the log's
+  // root object.
+  template <typename JsonLogObjectUpdater>
+  void Log(JsonLogObjectUpdater&& aJsonLogObjectUpdater);
+  // If the log is active, call aJsonArrayAppender(Json::Value&) on a Json
+  // array that already contains a timestamp, and to which event-related
+  // elements may be appended.
+  template <typename JsonArrayAppender>
+  void LogEvent(JsonArrayAppender&& aJsonArrayAppender);
+  void LogEventLiteralString(const char* aEventString);
+
   // These fields are all related to profile gathering.
   mozilla::Vector<ExitProfile> mExitProfiles;
   mozilla::Maybe<mozilla::MozPromiseHolder<GatheringPromise>> mPromiseHolder;
@@ -88,6 +101,9 @@ class nsProfiler final : public nsIProfiler {
   mozilla::Vector<PendingProfile> mPendingProfiles;
   bool mGathering;
   nsCOMPtr<nsITimer> mGatheringTimer;
+  // Supplemental log to the profiler's "profilingLog" (which has already been
+  // completed in JSON profiles that are gathered).
+  mozilla::UniquePtr<Json::Value> mGatheringLog;
 };
 
 #endif  // nsProfiler_h

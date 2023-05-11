@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PBackgroundDataBridge;
+include protocol PBackgroundFileSystem;
 include protocol PBackgroundIDBFactory;
 include protocol PBackgroundIndexedDBUtils;
 include protocol PBackgroundSDBConnection;
@@ -40,6 +41,7 @@ include protocol PLockManager;
 include protocol PMIDIManager;
 include protocol PMIDIPort;
 include protocol PQuota;
+include protocol PSelectTLSClientAuthCert;
 include protocol PServiceWorker;
 include protocol PServiceWorkerContainer;
 include protocol PServiceWorkerManager;
@@ -81,6 +83,7 @@ namespace ipc {
 sync protocol PBackground
 {
   manages PBackgroundDataBridge;
+  manages PBackgroundFileSystem;
   manages PBackgroundIDBFactory;
   manages PBackgroundIndexedDBUtils;
   manages PBackgroundSDBConnection;
@@ -118,6 +121,7 @@ sync protocol PBackground
   manages PMIDIManager;
   manages PMIDIPort;
   manages PQuota;
+  manages PSelectTLSClientAuthCert;
   manages PServiceWorker;
   manages PServiceWorkerContainer;
   manages PServiceWorkerManager;
@@ -131,6 +135,8 @@ sync protocol PBackground
 parent:
   // Only called at startup during mochitests to check the basic infrastructure.
   async PBackgroundTest(nsCString testArg);
+
+  async PBackgroundFileSystem(PrincipalInfo principalInfo);
 
   async PBackgroundDataBridge(uint64_t channelID);
 
@@ -264,6 +270,14 @@ parent:
   async PIdleScheduler();
 
   async PMediaTransport();
+
+  async PSelectTLSClientAuthCert(nsCString aHostName,
+                                 OriginAttributes aOriginAttributes,
+                                 int32_t aPort,
+                                 uint32_t aProviderFlags,
+                                 uint32_t aProviderTlsFlags,
+                                 ByteArray aServerCertBytes,
+                                 ByteArray[] aCANames);
 
   async PVerifySSLServerCert(ByteArray[] aPeerCertChain,
                              nsCString aHostName,

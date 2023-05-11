@@ -79,7 +79,8 @@ void Device::Cleanup() {
     mBridge->UnregisterDevice(mId);
   }
 
-  if (mLostPromise) {
+  // Cycle collection may have disconnected the promise object.
+  if (mLostPromise && mLostPromise->PromiseObj() != nullptr) {
     auto info = MakeRefPtr<DeviceLostInfo>(GetParentObject(),
                                            dom::GPUDeviceLostReason::Destroyed,
                                            u"Device destroyed"_ns);
@@ -121,7 +122,7 @@ dom::Promise* Device::GetLost(ErrorResult& aRv) {
 already_AddRefed<Buffer> Device::CreateBuffer(
     const dom::GPUBufferDescriptor& aDesc, ErrorResult& aRv) {
   if (!mBridge->CanSend()) {
-    RefPtr<Buffer> buffer = new Buffer(this, 0, aDesc.mSize, false);
+    RefPtr<Buffer> buffer = new Buffer(this, 0, aDesc.mSize, 0);
     return buffer.forget();
   }
 
@@ -137,8 +138,7 @@ already_AddRefed<Buffer> Device::CreateBuffer(
     const auto& size = checked.value();
 
     // TODO: use `ShmemPool`?
-    if (!mBridge->AllocShmem(size, ipc::Shmem::SharedMemory::TYPE_BASIC,
-                             &shmem)) {
+    if (!mBridge->AllocShmem(size, &shmem)) {
       aRv.ThrowAbortError(
           nsPrintfCString("Unable to allocate shmem of size %" PRIuPTR, size));
       return nullptr;
@@ -151,7 +151,7 @@ already_AddRefed<Buffer> Device::CreateBuffer(
   // If the buffer is not mapped at creation, and it has Shmem, we send it
   // to the GPU process. Otherwise, we keep it.
   RawId id = mBridge->DeviceCreateBuffer(mId, aDesc);
-  RefPtr<Buffer> buffer = new Buffer(this, id, aDesc.mSize, hasMapFlags);
+  RefPtr<Buffer> buffer = new Buffer(this, id, aDesc.mSize, aDesc.mUsage);
   if (aDesc.mMappedAtCreation) {
     buffer->SetMapped(std::move(shmem),
                       !(aDesc.mUsage & dom::GPUBufferUsage_Binding::MAP_READ));
@@ -174,9 +174,7 @@ RefPtr<MappingPromise> Device::MapBufferAsync(RawId aId, uint32_t aMode,
       mode = ffi::WGPUHostMap_Write;
       break;
     default:
-      aRv.ThrowInvalidAccessError(
-          nsPrintfCString("Invalid map flag %u", aMode));
-      return nullptr;
+      MOZ_CRASH("should have checked aMode in Buffer::MapAsync");
   }
 
   const CheckedInt<uint64_t> offset(aOffset);
@@ -268,12 +266,18 @@ already_AddRefed<BindGroup> Device::CreateBindGroup(
 already_AddRefed<ShaderModule> Device::CreateShaderModule(
     JSContext* aCx, const dom::GPUShaderModuleDescriptor& aDesc) {
   Unused << aCx;
-  RawId id = 0;
-  if (mBridge->CanSend()) {
-    id = mBridge->DeviceCreateShaderModule(mId, aDesc);
+
+  if (!mBridge->CanSend()) {
+    return nullptr;
   }
-  RefPtr<ShaderModule> object = new ShaderModule(this, id);
-  return object.forget();
+
+  ErrorResult err;
+  RefPtr<dom::Promise> promise = dom::Promise::Create(GetParentObject(), err);
+  if (NS_WARN_IF(err.Failed())) {
+    return nullptr;
+  }
+
+  return mBridge->DeviceCreateShaderModule(this, aDesc, promise);
 }
 
 already_AddRefed<ComputePipeline> Device::CreateComputePipeline(

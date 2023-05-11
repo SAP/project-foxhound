@@ -41,6 +41,7 @@ import {
   getEditorWrapping,
   getHighlightedCalls,
   getBlackBoxRanges,
+  isSourceBlackBoxed,
 } from "../../selectors";
 
 // Redux actions
@@ -110,6 +111,7 @@ class Editor extends PureComponent {
     return {
       selectedSource: PropTypes.object,
       selectedSourceTextContent: PropTypes.object,
+      selectedSourceIsBlackBoxed: PropTypes.bool,
       cx: PropTypes.object.isRequired,
       closeTab: PropTypes.func.isRequired,
       toggleBreakpointAtLine: PropTypes.func.isRequired,
@@ -159,11 +161,33 @@ class Editor extends PureComponent {
       editor = this.setupEditor();
     }
 
-    startOperation();
-    this.setText(nextProps, editor);
-    this.setSize(nextProps, editor);
-    this.scrollToLocation(nextProps, editor);
-    endOperation();
+    const shouldUpdateText =
+      nextProps.selectedSource !== this.props.selectedSource ||
+      nextProps.selectedSourceTextContent !==
+        this.props.selectedSourceTextContent ||
+      nextProps.symbols !== this.props.symbols;
+
+    const shouldUpdateSize =
+      nextProps.startPanelSize !== this.props.startPanelSize ||
+      nextProps.endPanelSize !== this.props.endPanelSize;
+
+    const shouldScroll =
+      nextProps.selectedLocation &&
+      this.shouldScrollToLocation(nextProps, editor);
+
+    if (shouldUpdateText || shouldUpdateSize || shouldScroll) {
+      startOperation();
+      if (shouldUpdateText) {
+        this.setText(nextProps, editor);
+      }
+      if (shouldUpdateSize) {
+        editor.codeMirror.setSize();
+      }
+      if (shouldScroll) {
+        this.scrollToLocation(nextProps, editor);
+      }
+      endOperation();
+    }
 
     if (this.props.selectedSource != nextProps.selectedSource) {
       this.props.updateViewport();
@@ -467,7 +491,7 @@ class Editor extends PureComponent {
     }
 
     // if user clicks gutter to set breakpoint on blackboxed source, un-blackbox the source.
-    if (selectedSource?.isBlackBoxed) {
+    if (this.props.selectedSourceIsBlackBoxed) {
       toggleBlackBox(cx, selectedSource);
     }
 
@@ -555,30 +579,15 @@ class Editor extends PureComponent {
   scrollToLocation(nextProps, editor) {
     const { selectedLocation, selectedSource } = nextProps;
 
-    if (selectedLocation && this.shouldScrollToLocation(nextProps, editor)) {
-      let { line, column } = toEditorPosition(selectedLocation);
+    let { line, column } = toEditorPosition(selectedLocation);
 
-      if (selectedSource && hasDocument(selectedSource.id)) {
-        const doc = getDocument(selectedSource.id);
-        const lineText = doc.getLine(line);
-        column = Math.max(column, getIndentation(lineText));
-      }
-
-      scrollToColumn(editor.codeMirror, line, column);
-    }
-  }
-
-  setSize(nextProps, editor) {
-    if (!editor) {
-      return;
+    if (selectedSource && hasDocument(selectedSource.id)) {
+      const doc = getDocument(selectedSource.id);
+      const lineText = doc.getLine(line);
+      column = Math.max(column, getIndentation(lineText));
     }
 
-    if (
-      nextProps.startPanelSize !== this.props.startPanelSize ||
-      nextProps.endPanelSize !== this.props.endPanelSize
-    ) {
-      editor.codeMirror.setSize();
-    }
+    scrollToColumn(editor.codeMirror, line, column);
   }
 
   setText(props, editor) {
@@ -609,7 +618,7 @@ class Editor extends PureComponent {
     return showSourceText(
       editor,
       selectedSource,
-      selectedSourceTextContent.value,
+      selectedSourceTextContent,
       symbols
     );
   }
@@ -703,11 +712,11 @@ class Editor extends PureComponent {
   }
 
   render() {
-    const { selectedSource, skipPausing } = this.props;
+    const { selectedSourceIsBlackBoxed, skipPausing } = this.props;
     return (
       <div
         className={classnames("editor-wrapper", {
-          blackboxed: selectedSource?.isBlackBoxed,
+          blackboxed: selectedSourceIsBlackBoxed,
           "skip-pausing": skipPausing,
         })}
         ref={c => (this.$editorWrapper = c)}
@@ -735,6 +744,9 @@ const mapStateToProps = state => {
     selectedLocation: getSelectedLocation(state),
     selectedSource,
     selectedSourceTextContent: getSelectedSourceTextContent(state),
+    selectedSourceIsBlackBoxed: selectedSource
+      ? isSourceBlackBoxed(state, selectedSource)
+      : null,
     searchOn: getActiveSearch(state) === "file",
     conditionalPanelLocation: getConditionalPanelLocation(state),
     symbols: getSymbols(state, selectedSource),

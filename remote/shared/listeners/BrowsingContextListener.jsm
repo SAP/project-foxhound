@@ -6,9 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["BrowsingContextListener"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -19,6 +18,8 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 
 const OBSERVER_TOPIC_ATTACHED = "browsing-context-attached";
 const OBSERVER_TOPIC_DISCARDED = "browsing-context-discarded";
+
+const OBSERVER_TOPIC_SET_EMBEDDER = "browsing-context-did-set-embedder";
 
 /**
  * The BrowsingContextListener can be used to listen for notifications coming
@@ -47,12 +48,18 @@ const OBSERVER_TOPIC_DISCARDED = "browsing-context-discarded";
  */
 class BrowsingContextListener {
   #listening;
+  #topContextsToAttach;
 
   /**
    * Create a new BrowsingContextListener instance.
    */
   constructor() {
     lazy.EventEmitter.decorate(this);
+
+    // A map that temporarily holds attached top-level browsing contexts until
+    // their embedder element is set, which is required to successfully
+    // retrieve a unique id for the content browser by the TabManager.
+    this.#topContextsToAttach = new Map();
 
     this.#listening = false;
   }
@@ -64,10 +71,32 @@ class BrowsingContextListener {
   observe(subject, topic, data) {
     switch (topic) {
       case OBSERVER_TOPIC_ATTACHED:
+        // Delay emitting the event for top-level browsing contexts until
+        // the embedder element has been set.
+        if (!subject.parent) {
+          this.#topContextsToAttach.set(subject, data);
+          return;
+        }
+
         this.emit("attached", { browsingContext: subject, why: data });
         break;
+
       case OBSERVER_TOPIC_DISCARDED:
+        // Remove a recently attached top-level browsing context if it's
+        // immediately discarded.
+        if (this.#topContextsToAttach.has(subject)) {
+          this.#topContextsToAttach.delete(subject);
+        }
+
         this.emit("discarded", { browsingContext: subject, why: data });
+        break;
+
+      case OBSERVER_TOPIC_SET_EMBEDDER:
+        const why = this.#topContextsToAttach.get(subject);
+        if (why !== undefined) {
+          this.emit("attached", { browsingContext: subject, why });
+          this.#topContextsToAttach.delete(subject);
+        }
         break;
     }
   }
@@ -79,6 +108,7 @@ class BrowsingContextListener {
 
     Services.obs.addObserver(this, OBSERVER_TOPIC_ATTACHED);
     Services.obs.addObserver(this, OBSERVER_TOPIC_DISCARDED);
+    Services.obs.addObserver(this, OBSERVER_TOPIC_SET_EMBEDDER);
 
     this.#listening = true;
   }
@@ -90,6 +120,9 @@ class BrowsingContextListener {
 
     Services.obs.removeObserver(this, OBSERVER_TOPIC_ATTACHED);
     Services.obs.removeObserver(this, OBSERVER_TOPIC_DISCARDED);
+    Services.obs.removeObserver(this, OBSERVER_TOPIC_SET_EMBEDDER);
+
+    this.#topContextsToAttach.clear();
 
     this.#listening = false;
   }

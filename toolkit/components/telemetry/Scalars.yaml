@@ -1330,6 +1330,24 @@ security:
       - 'firefox'
     record_in_processes:
       - 'main'
+  client_auth_cert_usage:
+    bug_numbers:
+      - 1749884
+    description: >
+      Measures how many servers have requested a client authentication
+      certificate (key: "requested") and how many times the user has opted to
+      send one in response (key: "sent").
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - dkeeler@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+    record_in_processes:
+      - main
 
 pwmgr:
   potentially_breached_passwords:
@@ -1451,24 +1469,6 @@ privacy:
       - main
 
 datasanitization:
-  network_cookie_lifetimePolicy:
-    bug_numbers:
-      - 1589753
-      - 1617241
-      - 1645089
-      - 1678210
-    description: >
-      This scalar reports the value of the network.cookie.lifetimePolicy pref.
-    expires: never
-    kind: uint
-    notification_emails:
-      - pbz@mozilla.com
-      - seceng-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
   privacy_sanitize_sanitizeOnShutdown:
     bug_numbers:
       - 1589753
@@ -2377,10 +2377,13 @@ dom.contentprocess:
   buildID_mismatch_false_positive:
     bug_numbers:
       - 1651133
+      - 1730045
+      - 1754658
+      - 1777404
     description: >
       The number of times a process crashed early but we could verify it was not
       because of buildID mismatch between the parent and the content processes.
-    expires: "105"
+    expires: "113"
     kind: uint
     notification_emails:
       - alissy@mozilla.com
@@ -5002,9 +5005,11 @@ update:
     notification_emails:
       - application-update-telemetry-alerts@mozilla.com
       - bytesized@mozilla.com
+      - telemetry-client-dev@thunderbird.net
     release_channel_collection: opt-out
     products:
       - 'firefox'
+      - 'thunderbird'
     record_in_processes:
       - main
 
@@ -6529,13 +6534,14 @@ urlbar.impression:
   autofill_about:
     bug_numbers:
       - 1774305
+      - 1780188
     description: >
       Counts how many times about-page type was autofilled per engagement.
     expires: never
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     products:
       - 'firefox'
     record_in_processes:
@@ -6543,13 +6549,14 @@ urlbar.impression:
   autofill_adaptive:
     bug_numbers:
       - 1774305
+      - 1780188
     description: >
       Counts how many times adaptive history type was autofilled per engagement.
     expires: never
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     products:
       - 'firefox'
     record_in_processes:
@@ -6557,13 +6564,14 @@ urlbar.impression:
   autofill_origin:
     bug_numbers:
       - 1774305
+      - 1780188
     description: >
       Counts how many times origin type was autofilled per engagement.
     expires: never
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     products:
       - 'firefox'
     record_in_processes:
@@ -6571,13 +6579,14 @@ urlbar.impression:
   autofill_other:
     bug_numbers:
       - 1774305
+      - 1780188
     description: >
       Counts how many times other type was autofilled per engagement.
     expires: never
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     products:
       - 'firefox'
     record_in_processes:
@@ -6585,13 +6594,14 @@ urlbar.impression:
   autofill_preloaded:
     bug_numbers:
       - 1774305
+      - 1780188
     description: >
       Counts how many times preloaded site type was autofilled per engagement.
     expires: never
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     products:
       - 'firefox'
     record_in_processes:
@@ -6599,13 +6609,14 @@ urlbar.impression:
   autofill_url:
     bug_numbers:
       - 1774305
+      - 1780188
     description: >
       Counts how many times url type was autofilled per engagement.
     expires: never
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-in
+    release_channel_collection: opt-out
     products:
       - 'firefox'
     record_in_processes:

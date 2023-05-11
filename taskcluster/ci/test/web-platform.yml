@@ -5,10 +5,7 @@
 job-defaults:
     suite:
         category: web-platform-tests
-    worker-type:
-        by-test-platform:
-            linux.*: t-linux-xlarge-gcp
-            default: default
+    instance-size: xlarge
     max-run-time:
         by-test-platform:
             android-em-7.0-x86_64/debug: 7200
@@ -74,6 +71,7 @@ web-platform-tests:
                     (linux1804|windows10)-32.*/.*: []
                     linux.*64-qr/debug: built-projects
                     windows10-64-2004-qr/debug: built-projects
+                    android-em-7.0-x86_64-qr/debug: []
                     default: []
             webrender-sw+no-fission:
                 by-test-platform:
@@ -243,6 +241,7 @@ web-platform-tests-wdspec:
                     default: []
             webrender-sw:
                 by-test-platform:
+                    android-em-7.0-x86_64-qr/debug: []
                     (linux1804|windows10)-32.*/.*: []
                     linux.*64-qr/debug: built-projects
                     windows10-64-2004-qr/debug: built-projects
@@ -313,6 +312,7 @@ web-platform-tests-crashtest:
         by-variant:
             webrender-sw:
                 by-test-platform:
+                    android-em-7.0-x86_64-qr/debug: built-projects
                     (linux1804|windows10)-32.*/.*: []
                     linux.*64-qr/debug: built-projects
                     macosx101.*64-qr/debug: built-projects
@@ -334,6 +334,7 @@ web-platform-tests-crashtest:
             default:
                 by-test-platform:
                     android.*: []
+                    android-em-7.0-x86_64-qr/debug: built-projects
                     default: built-projects
     tier: default
 

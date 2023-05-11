@@ -12,9 +12,8 @@ var EXPORTED_SYMBOLS = [
   "remoteSettingsBroadcastHandler",
 ];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -316,6 +315,9 @@ function remoteSettingsFunction() {
         reportStatus = lazy.UptakeTelemetry.STATUS.CONTENT_ERROR;
       } else if (/Server/.test(e.message)) {
         reportStatus = lazy.UptakeTelemetry.STATUS.SERVER_ERROR;
+        // If the server replied with bad request, clear the last ETag
+        // value to unblock the next run of synchronization.
+        lazy.gPrefs.clearUserPref(PREF_SETTINGS_LAST_ETAG);
       } else if (/Timeout/.test(e.message)) {
         reportStatus = lazy.UptakeTelemetry.STATUS.TIMEOUT_ERROR;
       } else if (/NetworkError/.test(e.message)) {

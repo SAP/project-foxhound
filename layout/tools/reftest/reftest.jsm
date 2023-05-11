@@ -54,9 +54,8 @@ const { StructuredLogger } = ChromeUtils.import(
 const { PerTestCoverageUtils } = ChromeUtils.import(
     "resource://reftest/PerTestCoverageUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-    "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+    "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const { E10SUtils } = ChromeUtils.import(
@@ -965,8 +964,13 @@ function UpdateCanvasCache(url, canvas)
 async function DoDrawWindow(ctx, x, y, w, h)
 {
     if (g.useDrawSnapshot) {
-      let image = await g.browser.drawSnapshot(x, y, w, h, 1.0, "#fff");
-      ctx.drawImage(image, x, y);
+      try {
+        let image = await g.browser.drawSnapshot(x, y, w, h, 1.0, "#fff");
+        ctx.drawImage(image, x, y);
+      } catch (ex) {
+        logger.error(g.currentURL + " | drawSnapshot failed: " + ex);
+        ++g.testResults.Exception;
+      }
       return;
     }
 

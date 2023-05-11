@@ -261,7 +261,6 @@ void SessionAccessibility::Paste(int32_t aID) {
 RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
     Accessible* aAccessible) {
   MOZ_ASSERT(NS_IsMainThread());
-  PresShell* presShell = nullptr;
   if (LocalAccessible* localAcc = aAccessible->AsLocal()) {
     DocAccessible* docAcc = localAcc->Document();
     // If the accessible is being shutdown from the doc's shutdown
@@ -271,7 +270,7 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
     dom::Document* doc = docAcc ? docAcc->DocumentNode() : nullptr;
     if (doc && doc->IsContentDocument()) {
       // Only content accessibles should have an associated SessionAccessible.
-      presShell = doc->GetPresShell();
+      return GetInstanceFor(doc->GetPresShell());
     }
   } else {
     dom::CanonicalBrowsingContext* cbc =
@@ -287,15 +286,21 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
     nsPresContext* presContext =
         bp->GetOwnerElement()->OwnerDoc()->GetPresContext();
     if (presContext) {
-      presShell = presContext->PresShell();
+      return GetInstanceFor(presContext->PresShell());
     }
   }
 
-  if (!presShell) {
+  return nullptr;
+}
+
+RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
+    PresShell* aPresShell) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!aPresShell) {
     return nullptr;
   }
 
-  nsViewManager* vm = presShell->GetViewManager();
+  nsViewManager* vm = aPresShell->GetViewManager();
   if (!vm) {
     return nullptr;
   }
@@ -1010,15 +1015,19 @@ void SessionAccessibility::RegisterAccessible(Accessible* aAccessible) {
 
   int32_t virtualViewID = kNoID;
   if (!isTopLevel) {
+    if (sessionAcc->mIDToAccessibleMap.IsEmpty()) {
+      // We expect there to already be at least one accessible
+      // registered (the top-level one). If it isn't we are
+      // probably in a shutdown process where it was already
+      // unregistered. So we don't register this accessible.
+      return;
+    }
     // Don't use the special "unset" value (0).
     while ((virtualViewID = sIDSet.GetID()) == kUnsetID) {
     }
   }
   AccessibleWrap::SetVirtualViewID(aAccessible, virtualViewID);
 
-  MOZ_ASSERT(
-      !sessionAcc->mIDToAccessibleMap.IsEmpty() || virtualViewID == kNoID,
-      "root (kNoID) accessible should be the first one added");
   MOZ_ASSERT(!sessionAcc->mIDToAccessibleMap.Contains(virtualViewID),
              "ID already registered");
   sessionAcc->mIDToAccessibleMap.InsertOrUpdate(virtualViewID, aAccessible);
@@ -1037,6 +1046,7 @@ void SessionAccessibility::UnregisterAccessible(Accessible* aAccessible) {
   }
 
   RefPtr<SessionAccessibility> sessionAcc = GetInstanceFor(aAccessible);
+  MOZ_ASSERT(sessionAcc, "Need SessionAccessibility to unregister Accessible!");
   if (sessionAcc) {
     MOZ_ASSERT(sessionAcc->mIDToAccessibleMap.Contains(virtualViewID),
                "Unregistering unregistered accessible");
@@ -1048,4 +1058,31 @@ void SessionAccessibility::UnregisterAccessible(Accessible* aAccessible) {
   }
 
   AccessibleWrap::SetVirtualViewID(aAccessible, kUnsetID);
+}
+
+void SessionAccessibility::UnregisterAll(PresShell* aPresShell) {
+  if (IPCAccessibilityActive()) {
+    // Don't unregister accessible in content process.
+    return;
+  }
+
+  nsAccessibilityService::GetAndroidMonitor().AssertCurrentThreadOwns();
+  RefPtr<SessionAccessibility> sessionAcc = GetInstanceFor(aPresShell);
+
+  if (!sessionAcc) {
+    return;
+  }
+
+  for (auto iter = sessionAcc->mIDToAccessibleMap.Iter(); !iter.Done();
+       iter.Next()) {
+    int32_t virtualViewID = iter.Key();
+    if (virtualViewID > kNoID) {
+      sIDSet.ReleaseID(virtualViewID);
+    }
+
+    Accessible* accessible = iter.Data();
+    AccessibleWrap::SetVirtualViewID(accessible, kUnsetID);
+
+    iter.Remove();
+  }
 }

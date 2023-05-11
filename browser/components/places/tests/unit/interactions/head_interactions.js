@@ -2,23 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+ChromeUtils.defineESModuleGetters(this, {
+  Interactions: "resource:///modules/Interactions.sys.mjs",
+  PlacesPreviews: "resource://gre/modules/PlacesPreviews.sys.mjs",
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  SnapshotGroups: "resource:///modules/SnapshotGroups.sys.mjs",
+  SnapshotMonitor: "resource:///modules/SnapshotMonitor.sys.mjs",
+  SnapshotScorer: "resource:///modules/SnapshotScorer.sys.mjs",
+  SnapshotSelector: "resource:///modules/SnapshotSelector.sys.mjs",
+  Snapshots: "resource:///modules/Snapshots.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Interactions: "resource:///modules/Interactions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
-  PlacesPreviews: "resource://gre/modules/PlacesPreviews.jsm",
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
-  SnapshotGroups: "resource:///modules/SnapshotGroups.jsm",
-  Snapshots: "resource:///modules/Snapshots.jsm",
-  SnapshotMonitor: "resource:///modules/SnapshotMonitor.jsm",
-  SnapshotScorer: "resource:///modules/SnapshotScorer.jsm",
-  SnapshotSelector: "resource:///modules/SnapshotSelector.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
 });
 
@@ -172,8 +174,10 @@ function assertRecentDate(date, threshold = 1) {
 function assertSnapshot(actual, expected) {
   // This may be a recommendation.
   let score = 0;
+  let source = null;
   if ("snapshot" in actual) {
     score = actual.score;
+    source = actual.source;
     actual = actual.snapshot;
   }
 
@@ -216,6 +220,13 @@ function assertSnapshot(actual, expected) {
       actual.commonName,
       expected.commonName,
       "Should have the Snapshot URL's common name."
+    );
+  }
+  if (expected.source) {
+    Assert.equal(
+      source,
+      expected.source,
+      "Should have the correct recommendation source."
     );
   }
   if (expected.scoreEqualTo != null) {
@@ -432,6 +443,14 @@ function assertRecommendations(recommendations, expected) {
       expected[i].score,
       `Should have set the expected score for ${expected[i].url}`
     );
+
+    if (expected[i].source) {
+      Assert.equal(
+        recommendations[i].source,
+        expected[i].source,
+        `Should have set the correct source for ${expected[i].url}`
+      );
+    }
   }
 }
 

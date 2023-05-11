@@ -20,8 +20,6 @@
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit
 #include "util/StringBuffer.h"      // StringBuffer
 #include "vm/StringType.h"
-#include "vm/TraceLogging.h"
-#include "vm/TraceLoggingTypes.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -1581,8 +1579,5 @@ static bool Fold(FoldInfo info, ParseNode** pnp) {
 
 bool frontend::FoldConstants(JSContext* cx, ParserAtomsTable& parserAtoms,
                              ParseNode** pnp, FullParseHandler* handler) {
-  AutoTraceLog traceLog(TraceLoggerForCurrentThread(cx),
-                        TraceLogger_BytecodeFoldConstants);
-
   return Fold(cx, parserAtoms, handler, pnp);
 }

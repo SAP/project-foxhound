@@ -11,7 +11,9 @@ import copy
 import os
 
 import taskgraph
+from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import keymatch
+from taskgraph.util.schema import Schema, resolve_keyed_by, optionally_keyed_by
 from taskgraph.util.treeherder import join_symbol, split_symbol
 from voluptuous import (
     Any,
@@ -20,10 +22,8 @@ from voluptuous import (
     Required,
 )
 
-from gecko_taskgraph.transforms.base import TransformSequence
 from gecko_taskgraph.transforms.job import job_description_schema
 from gecko_taskgraph.util.hg import get_json_automationrelevance
-from gecko_taskgraph.util.schema import Schema, resolve_keyed_by, optionally_keyed_by
 
 source_test_description_schema = Schema(
     {
@@ -262,4 +262,14 @@ def set_base_revision_in_tgdiff(config, jobs):
         job["run"]["command-context"] = {
             "base_rev": data["changesets"][0]["parents"][0]
         }
+        yield job
+
+
+@transforms.add
+def set_worker_exit_code(config, jobs):
+    for job in jobs:
+        worker = job["worker"]
+        worker.setdefault("retry-exit-status", [])
+        if 137 not in worker["retry-exit-status"]:
+            worker["retry-exit-status"].append(137)
         yield job

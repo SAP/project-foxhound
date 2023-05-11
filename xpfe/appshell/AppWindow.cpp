@@ -2822,6 +2822,8 @@ void AppWindow::SizeModeChanged(nsSizeMode sizeMode) {
   }
   mWindow->SetSizeMode(sizeMode);
 
+  RecomputeBrowsingContextVisibility();
+
   // Persist mode, but not immediately, because in many (all?)
   // cases this will merge with the similar call in NS_SIZE and
   // write the attribute values only once.
@@ -2927,13 +2929,33 @@ void AppWindow::MacFullscreenMenubarOverlapChanged(
   }
 }
 
+void AppWindow::RecomputeBrowsingContextVisibility() {
+  if (!mDocShell) {
+    return;
+  }
+  if (RefPtr bc = mDocShell->GetBrowsingContext()) {
+    nsCOMPtr<nsIWidget> widget;
+    mDocShell->GetMainWidget(getter_AddRefs(widget));
+    const bool isActive = [&] {
+      if (!widget) {
+        return false;
+      }
+      return widget->SizeMode() != nsSizeMode_Minimized &&
+             !widget->IsFullyOccluded();
+    }();
+    bc->SetIsActive(isActive, IgnoreErrors());
+  }
+}
+
 void AppWindow::OcclusionStateChanged(bool aIsFullyOccluded) {
-  nsCOMPtr<nsPIDOMWindowOuter> ourWindow =
-      mDocShell ? mDocShell->GetWindow() : nullptr;
-  if (ourWindow) {
+  if (!mDocShell) {
+    return;
+  }
+  RecomputeBrowsingContextVisibility();
+  if (RefPtr win = mDocShell->GetWindow()) {
     // And always fire a user-defined occlusionstatechange event on the window
-    ourWindow->DispatchCustomEvent(u"occlusionstatechange"_ns,
-                                   ChromeOnlyDispatch::eYes);
+    win->DispatchCustomEvent(u"occlusionstatechange"_ns,
+                             ChromeOnlyDispatch::eYes);
   }
 }
 
@@ -3003,10 +3025,22 @@ void AppWindow::WindowDeactivated() {
 }
 
 #ifdef USE_NATIVE_MENUS
+
+struct LoadNativeMenusListener {
+  LoadNativeMenusListener(Document* aDoc, nsIWidget* aParentWindow)
+      : mDocument(aDoc), mParentWindow(aParentWindow) {}
+
+  RefPtr<Document> mDocument;
+  nsCOMPtr<nsIWidget> mParentWindow;
+};
+
+static bool sHiddenWindowLoadedNativeMenus = false;
+static nsTArray<LoadNativeMenusListener> sLoadNativeMenusListeners;
+
+static void BeginLoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow);
+
 static void LoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
-  if (gfxPlatform::IsHeadless()) {
-    return;
-  }
+  MOZ_ASSERT(!gfxPlatform::IsHeadless());
 
   // Find the menubar tag (if there is more than one, we ignore all but
   // the first).
@@ -3026,6 +3060,14 @@ static void LoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
     NativeMenuSupport::CreateNativeMenuBar(aParentWindow, menubarContent);
   } else {
     NativeMenuSupport::CreateNativeMenuBar(aParentWindow, nullptr);
+  }
+
+  if (!sHiddenWindowLoadedNativeMenus) {
+    sHiddenWindowLoadedNativeMenus = true;
+    for (auto& listener : sLoadNativeMenusListeners) {
+      BeginLoadNativeMenus(listener.mDocument, listener.mParentWindow);
+    }
+    sLoadNativeMenusListeners.Clear();
   }
 }
 
@@ -3058,6 +3100,23 @@ class L10nReadyPromiseHandler final : public dom::PromiseNativeHandler {
 };
 
 NS_IMPL_ISUPPORTS0(L10nReadyPromiseHandler)
+
+static void BeginLoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
+  RefPtr<DocumentL10n> l10n = aDoc->GetL10n();
+  if (l10n) {
+    // Wait for l10n to be ready so the menus are localized.
+    RefPtr<Promise> promise = l10n->Ready();
+    MOZ_ASSERT(promise);
+    RefPtr<L10nReadyPromiseHandler> handler =
+        new L10nReadyPromiseHandler(aDoc, aParentWindow);
+    promise->AppendNativeHandler(handler);
+  } else {
+    // Something went wrong loading the doc and l10n wasn't created. This
+    // shouldn't really happen, but if it does fallback to trying to load
+    // the menus as is.
+    LoadNativeMenus(aDoc, aParentWindow);
+  }
+}
 
 #endif
 
@@ -3152,24 +3211,17 @@ AppWindow::OnStateChange(nsIWebProgress* aProgress, nsIRequest* aRequest,
   // Find the Menubar DOM  and Load the menus, hooking them up to the loaded
   // commands
   ///////////////////////////////
-  nsCOMPtr<nsIContentViewer> cv;
-  mDocShell->GetContentViewer(getter_AddRefs(cv));
-  if (cv) {
-    RefPtr<Document> menubarDoc = cv->GetDocument();
-    if (menubarDoc) {
-      RefPtr<DocumentL10n> l10n = menubarDoc->GetL10n();
-      if (l10n) {
-        // Wait for l10n to be ready so the menus are localized.
-        RefPtr<Promise> promise = l10n->Ready();
-        MOZ_ASSERT(promise);
-        RefPtr<L10nReadyPromiseHandler> handler =
-            new L10nReadyPromiseHandler(menubarDoc, mWindow);
-        promise->AppendNativeHandler(handler);
-      } else {
-        // Something went wrong loading the doc and l10n wasn't created. This
-        // shouldn't really happen, but if it does fallback to trying to load
-        // the menus as is.
-        LoadNativeMenus(menubarDoc, mWindow);
+  if (!gfxPlatform::IsHeadless()) {
+    nsCOMPtr<nsIContentViewer> cv;
+    mDocShell->GetContentViewer(getter_AddRefs(cv));
+    if (cv) {
+      RefPtr<Document> menubarDoc = cv->GetDocument();
+      if (menubarDoc) {
+        if (mIsHiddenWindow || sHiddenWindowLoadedNativeMenus) {
+          BeginLoadNativeMenus(menubarDoc, mWindow);
+        } else {
+          sLoadNativeMenusListeners.EmplaceBack(menubarDoc, mWindow);
+        }
       }
     }
   }

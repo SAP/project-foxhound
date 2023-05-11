@@ -197,6 +197,7 @@ nsJARChannel::~nsJARChannel() {
   }
 
   // Proxy release the following members to main thread.
+  NS_ReleaseOnMainThread("nsJARChannel::mLoadInfo", mLoadInfo.forget());
   NS_ReleaseOnMainThread("nsJARChannel::mCallbacks", mCallbacks.forget());
   NS_ReleaseOnMainThread("nsJARChannel::mProgressSink", mProgressSink.forget());
   NS_ReleaseOnMainThread("nsJARChannel::mLoadGroup", mLoadGroup.forget());
@@ -834,9 +835,19 @@ nsJARChannel::SetContentLength(int64_t aContentLength) {
 }
 
 static void RecordZeroLengthEvent(bool aIsSync, const nsCString& aSpec,
-                                  nsresult aStatus, bool aCanceled) {
+                                  nsresult aStatus, bool aCanceled,
+                                  nsILoadInfo* aLoadInfo) {
   if (!StaticPrefs::network_jar_record_failure_reason()) {
     return;
+  }
+
+  if (aLoadInfo) {
+    bool shouldSkipCheckForBrokenURLOrZeroSized;
+    MOZ_ALWAYS_SUCCEEDS(aLoadInfo->GetShouldSkipCheckForBrokenURLOrZeroSized(
+        &shouldSkipCheckForBrokenURLOrZeroSized));
+    if (shouldSkipCheckForBrokenURLOrZeroSized) {
+      return;
+    }
   }
 
   // The event can only hold 80 characters.
@@ -1017,7 +1028,7 @@ nsJARChannel::Open(nsIInputStream** aStream) {
 
   auto recordEvent = MakeScopeExit([&] {
     if (mContentLength <= 0 || NS_FAILED(rv)) {
-      RecordZeroLengthEvent(true, mSpec, rv, mCanceled);
+      RecordZeroLengthEvent(true, mSpec, rv, mCanceled, mLoadInfo);
     }
   });
 
@@ -1239,7 +1250,7 @@ nsJARChannel::OnStopRequest(nsIRequest* req, nsresult status) {
 
   if (mListener) {
     if (!mOnDataCalled || NS_FAILED(status)) {
-      RecordZeroLengthEvent(false, mSpec, status, mCanceled);
+      RecordZeroLengthEvent(false, mSpec, status, mCanceled, mLoadInfo);
     }
 
     mListener->OnStopRequest(this, status);

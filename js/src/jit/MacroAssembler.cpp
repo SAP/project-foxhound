@@ -33,7 +33,6 @@
 #include "vm/ArrayBufferViewObject.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/JSContext.h"
-#include "vm/TraceLogging.h"
 #include "vm/TypedArrayObject.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCodegenTypes.h"
@@ -2229,119 +2228,6 @@ void MacroAssembler::printf(const char* output, Register value) {
 #endif
 }
 
-#ifdef JS_TRACE_LOGGING
-void MacroAssembler::loadTraceLogger(Register logger) {
-  loadJSContext(logger);
-  loadPtr(Address(logger, offsetof(JSContext, traceLogger)), logger);
-}
-
-void MacroAssembler::tracelogStartId(Register logger, uint32_t textId,
-                                     bool force) {
-  if (!force && !TraceLogTextIdEnabled(textId)) {
-    return;
-  }
-
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  move32(Imm32(textId), temp);
-  passABIArg(temp);
-  callWithABI<Fn, TraceLogStartEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStartId(Register logger, Register textId) {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-  regs.takeUnchecked(textId);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  passABIArg(textId);
-  callWithABI<Fn, TraceLogStartEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStartEvent(Register logger, Register event) {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-  regs.takeUnchecked(event);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread*, const TraceLoggerEvent&);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  passABIArg(event);
-  callWithABI<Fn, TraceLogStartEvent>(MoveOp::GENERAL,
-                                      CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStopId(Register logger, uint32_t textId,
-                                    bool force) {
-  if (!force && !TraceLogTextIdEnabled(textId)) {
-    return;
-  }
-
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  move32(Imm32(textId), temp);
-  passABIArg(temp);
-
-  callWithABI<Fn, TraceLogStopEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-
-void MacroAssembler::tracelogStopId(Register logger, Register textId) {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  LiveRegisterSet save(regs.asLiveSet());
-  PushRegsInMask(save);
-  regs.takeUnchecked(logger);
-  regs.takeUnchecked(textId);
-
-  Register temp = regs.takeAnyGeneral();
-
-  using Fn = void (*)(TraceLoggerThread * logger, uint32_t id);
-  setupUnalignedABICall(temp);
-  passABIArg(logger);
-  passABIArg(textId);
-  callWithABI<Fn, TraceLogStopEventPrivate>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckOther);
-
-  PopRegsInMask(save);
-}
-#endif
-
 void MacroAssembler::convertInt32ValueToDouble(ValueOperand val) {
   Label done;
   branchTestInt32(Assembler::NotEqual, val, &done);
@@ -3221,13 +3107,13 @@ void MacroAssembler::pow32(Register base, Register power, Register dest,
   // Inline int32-specialized implementation of js::powi with overflow
   // detection.
 
-  move32(Imm32(1), dest);  // p = 1
+  move32(Imm32(1), dest);  // result = 1
 
   // x^y where x == 1 returns 1 for any y.
   Label done;
   branch32(Assembler::Equal, base, Imm32(1), &done);
 
-  move32(base, temp1);   // m = x
+  move32(base, temp1);   // runningSquare = x
   move32(power, temp2);  // n = y
 
   // x^y where y < 0 returns a non-int32 value for any x != 1. Except when y is
@@ -3243,19 +3129,19 @@ void MacroAssembler::pow32(Register base, Register power, Register dest,
   Label loop;
   bind(&loop);
 
-  // m *= m
+  // runningSquare *= runningSquare
   branchMul32(Assembler::Overflow, temp1, temp1, onOver);
 
   bind(&start);
 
-  // if ((n & 1) != 0) p *= m
+  // if ((n & 1) != 0) result *= runningSquare
   Label even;
   branchTest32(Assembler::Zero, temp2, Imm32(1), &even);
   branchMul32(Assembler::Overflow, temp1, dest, onOver);
   bind(&even);
 
   // n >>= 1
-  // if (n == 0) return p
+  // if (n == 0) return result
   branchRshift32(Assembler::NonZero, Imm32(1), temp2, &loop);
 
   bind(&done);
@@ -3803,7 +3689,7 @@ CodeOffset MacroAssembler::wasmCallImport(const wasm::CallSiteDesc& desc,
       globalDataOffset + offsetof(wasm::FuncImportInstanceData, code),
       ABINonArgReg0);
 
-#ifndef JS_CODEGEN_NONE
+#if !defined(JS_CODEGEN_NONE) && !defined(JS_CODEGEN_WASM32)
   static_assert(ABINonArgReg0 != InstanceReg, "by constraint");
 #endif
 
@@ -4043,6 +3929,43 @@ void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
   bind(&done);
 }
 
+CodeOffset MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
+                                       const wasm::CalleeDesc& callee) {
+  MOZ_ASSERT(callee.which() == wasm::CalleeDesc::FuncRef);
+  const Register calleeScratch = WasmCallRefCallScratchReg0;
+  const Register calleeFnObj = WasmCallRefReg;
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+
+  // Get InstanceReg from the function's WASM_INSTANCE_SLOT extended slot.
+  size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_INSTANCE_SLOT);
+  loadPtr(Address(calleeFnObj, instanceSlotOffset), InstanceReg);
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(WasmCallRefCallScratchReg0,
+                            WasmCallRefCallScratchReg1);
+
+  // Get funcUncheckedCallEntry() from the function's
+  // WASM_FUNC_UNCHECKED_ENTRY_SLOT extended slot.
+  size_t uncheckedEntrySlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_FUNC_UNCHECKED_ENTRY_SLOT);
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  CodeOffset raOffset = call(desc, calleeScratch);
+
+  // Restore registers and realm and back to this caller's.
+  loadPtr(Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall),
+          InstanceReg);
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
+
+  return raOffset;
+}
+
 void MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
   CodeOffset offset = nopPatchableToCall();
   append(desc, offset);
@@ -4145,6 +4068,8 @@ void MacroAssembler::emitPreBarrierFastPath(JSRuntime* rt, MIRType type,
   ma_dsll(temp1, temp1, temp3);
 #elif JS_CODEGEN_LOONG64
   as_sll_d(temp1, temp1, temp3);
+#elif JS_CODEGEN_WASM32
+  MOZ_CRASH();
 #elif JS_CODEGEN_NONE
   MOZ_CRASH();
 #else
@@ -4742,13 +4667,18 @@ void MacroAssembler::iteratorClose(Register obj, Register temp1, Register temp2,
   // The shared iterator used for for-in with null/undefined is immutable and
   // unlinked. See NativeIterator::isEmptyIteratorSingleton.
   Label done;
-  branchPtr(Assembler::Equal,
-            Address(temp1, NativeIterator::offsetOfObjectBeingIterated()),
-            ImmPtr(nullptr), &done);
+  branchTest32(Assembler::NonZero,
+               Address(temp1, NativeIterator::offsetOfFlagsAndCount()),
+               Imm32(NativeIterator::Flags::IsEmptyIteratorSingleton), &done);
 
   // Clear active bit.
   and32(Imm32(~NativeIterator::Flags::Active),
         Address(temp1, NativeIterator::offsetOfFlagsAndCount()));
+
+  // Clear objectBeingIterated.
+  Address iterObjAddr(temp1, NativeIterator::offsetOfObjectBeingIterated());
+  guardedCallPreBarrierAnyZone(iterObjAddr, MIRType::Object, temp2);
+  storePtr(ImmPtr(nullptr), iterObjAddr);
 
   // Reset property cursor.
   loadPtr(Address(temp1, NativeIterator::offsetOfShapesEnd()), temp2);

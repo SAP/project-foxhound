@@ -8,6 +8,7 @@
  */
 
 import { PROMISE } from "../utils/middleware/promise";
+import { asyncStore } from "../../utils/prefs";
 import {
   getBreakpointsList,
   getXHRBreakpoints,
@@ -127,6 +128,7 @@ export function toggleBreakpointsAtLine(cx, shouldDisableBreakpoints, line) {
 export function removeAllBreakpoints(cx) {
   return async ({ dispatch, getState }) => {
     const breakpointList = getBreakpointsList(getState());
+
     await Promise.all(
       breakpointList.map(bp => dispatch(removeBreakpoint(cx, bp)))
     );
@@ -386,6 +388,20 @@ export function setXHRBreakpoint(path, method) {
       breakpoint,
       [PROMISE]: client.setXHRBreakpoint(path, method),
     });
+  };
+}
+
+export function removeAllXHRBreakpoints() {
+  return async ({ dispatch, getState, client }) => {
+    const xhrBreakpoints = getXHRBreakpoints(getState());
+    const promises = xhrBreakpoints.map(breakpoint =>
+      client.removeXHRBreakpoint(breakpoint.path, breakpoint.method)
+    );
+    await dispatch({
+      type: "CLEAR_XHR_BREAKPOINTS",
+      [PROMISE]: Promise.all(promises),
+    });
+    asyncStore.xhrBreakpoints = [];
   };
 }
 

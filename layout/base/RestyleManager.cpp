@@ -38,6 +38,7 @@
 #include "mozilla/dom/HTMLBodyElement.h"
 
 #include "Layers.h"
+#include "ScrollSnap.h"
 #include "nsAnimationManager.h"
 #include "nsBlockFrame.h"
 #include "nsIScrollableFrame.h"
@@ -743,6 +744,17 @@ static bool RecomputePosition(nsIFrame* aFrame) {
 
   aFrame->SchedulePaint();
 
+  auto postPendingScrollAnchorOrResnap = [](nsIFrame* frame) {
+    if (frame->IsInScrollAnchorChain()) {
+      ScrollAnchorContainer* container = ScrollAnchorContainer::FindFor(frame);
+      frame->PresShell()->PostPendingScrollAnchorAdjustment(container);
+    }
+
+    // We need to trigger re-snapping to this content if we snapped to the
+    // content on the last scroll operation.
+    ScrollSnapUtils::PostPendingResnapIfNeededFor(frame);
+  };
+
   // For relative positioning, we can simply update the frame rect
   if (display->IsRelativelyOrStickyPositionedStyle()) {
     if (aFrame->IsGridItem()) {
@@ -794,10 +806,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
       }
     }
 
-    if (aFrame->IsInScrollAnchorChain()) {
-      ScrollAnchorContainer* container = ScrollAnchorContainer::FindFor(aFrame);
-      aFrame->PresShell()->PostPendingScrollAnchorAdjustment(container);
-    }
+    postPendingScrollAnchorOrResnap(aFrame);
     return true;
   }
 
@@ -911,10 +920,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
                 parentBorder.top + top + margin.top);
     aFrame->SetPosition(pos);
 
-    if (aFrame->IsInScrollAnchorChain()) {
-      ScrollAnchorContainer* container = ScrollAnchorContainer::FindFor(aFrame);
-      aFrame->PresShell()->PostPendingScrollAnchorAdjustment(container);
-    }
+    postPendingScrollAnchorOrResnap(aFrame);
     return true;
   }
 

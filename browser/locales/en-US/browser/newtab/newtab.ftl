@@ -240,17 +240,6 @@ newtab-pocket-pocket-firefox-family = { -pocket-brand-name } is part of the { -b
 newtab-pocket-save-to-pocket = Save to { -pocket-brand-name }
 newtab-pocket-saved-to-pocket = Saved to { -pocket-brand-name }
 
-# This is a button shown at the bottom of the Pocket section that loads more stories when clicked.
-newtab-pocket-load-more-stories-button = Load more stories
-
-## Pocket Final Card Section.
-## This is for the final card in the Pocket grid.
-
-newtab-pocket-last-card-title = You’re all caught up!
-newtab-pocket-last-card-desc = Check back later for more.
-newtab-pocket-last-card-image =
-    .alt = You’re all caught up
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -270,6 +259,7 @@ newtab-custom-sponsored-sites = Sponsored shortcuts
 newtab-custom-pocket-title = Recommended by { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Exceptional content curated by { -pocket-brand-name }, part of the { -brand-product-name } family
 newtab-custom-pocket-sponsored = Sponsored stories
+newtab-custom-pocket-show-recent-saves = Show recent saves
 newtab-custom-recent-title = Recent activity
 newtab-custom-recent-subtitle = A selection of recent sites and content
 newtab-custom-close-button = Close

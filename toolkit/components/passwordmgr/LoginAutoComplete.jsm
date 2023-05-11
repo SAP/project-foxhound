@@ -10,10 +10,9 @@
 
 const EXPORTED_SYMBOLS = ["LoginAutoComplete", "LoginAutoCompleteResult"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const lazy = {};
 
@@ -331,8 +330,8 @@ class LoginAutoCompleteResult {
 
     this.searchString = aSearchString;
 
-    // Insecure field warning comes first if it applies and is enabled.
-    if (!isSecure && lazy.LoginHelper.showInsecureFieldWarning) {
+    // Insecure field warning comes first.
+    if (!isSecure) {
       this.#rows.push(new InsecureLoginFormAutocompleteItem());
     }
 
@@ -550,7 +549,7 @@ class LoginAutoComplete {
       // N.B. This check must occur after the `await` above for it to be
       // effective.
       if (this.#autoCompleteLookupPromise !== autoCompleteLookupPromise) {
-        lazy.log.debug("ignoring result from previous search");
+        lazy.log.debug("Ignoring result from previous search.");
         return;
       }
 

@@ -7,9 +7,13 @@
 #ifndef mozilla_layout_ScrollSnap_h_
 #define mozilla_layout_ScrollSnap_h_
 
+#include <memory>
 #include "mozilla/ScrollTypes.h"
+#include "mozilla/ScrollSnapTargetId.h"
 #include "mozilla/Maybe.h"
 
+class nsIContent;
+class nsIFrame;
 struct nsPoint;
 struct nsRect;
 
@@ -34,10 +38,39 @@ struct ScrollSnapUtils {
    *                 not to touch main-thread-only data structures without
    *                 appropriate locking.
    */
-  static mozilla::Maybe<nsPoint> GetSnapPointForDestination(
+  static Maybe<SnapTarget> GetSnapPointForDestination(
       const layers::ScrollSnapInfo& aSnapInfo, ScrollUnit aUnit,
       ScrollSnapFlags aSnapFlags, const nsRect& aScrollRange,
       const nsPoint& aStartPos, const nsPoint& aDestination);
+
+  /**
+   * Similar to above GetSnapPointForDestination but for re-snapping.
+   *
+   * |aCurrentPosition| are the snap point(s) last time when we scrolled.
+   * |aLastSnapTargetIds| are the snap point(s) last time when we scrolled if
+   * exists.
+   * |aFocusedContent| is the focused content in the document if exists.
+   * Other parameters are same as GetSnapPointForDestination.
+   */
+
+  static mozilla::Maybe<mozilla::SnapTarget> GetSnapPointForResnap(
+      const layers::ScrollSnapInfo& aSnapInfo, const nsRect& aScrollRange,
+      const nsPoint& aCurrentPosition,
+      const UniquePtr<ScrollSnapTargetIds>& aLastSnapTargetIds,
+      const nsIContent* aFocusedContent);
+
+  static ScrollSnapTargetId GetTargetIdFor(const nsIFrame* aFrame);
+
+  // Post a pending re-snap request if the given |aFrame| is one of the snap
+  // points on the last scroll operation.
+  static void PostPendingResnapIfNeededFor(nsIFrame* aFrame);
+
+  // Similar to above PostPendingResnapIfNeededFor but post a pending re-snap
+  // request even if the given |aFrame| is not one of the last snap point.
+  // This is basically used for cases there was no valid snap point on the last
+  // scroll operation but the given |aFrame| might be a valid snap point now,
+  // e.g changing the scroll-snap-align property from `none` to something.
+  static void PostPendingResnapFor(nsIFrame* aFrame);
 };
 
 }  // namespace mozilla

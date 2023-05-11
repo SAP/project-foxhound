@@ -7,6 +7,8 @@ const { ExperimentFakes } = ChromeUtils.import(
   "resource://testing-common/NimbusTestUtils.jsm"
 );
 
+const ENABLED_PREF = "browser.startup.homepage.abouthome_cache.enabled";
+
 registerCleanupFunction(async () => {
   // When the test completes, make sure we cleanup with a populated cache,
   // since this is the default starting state for these tests.
@@ -20,15 +22,21 @@ registerCleanupFunction(async () => {
  * enable and disable the about:home startup cache.
  */
 add_task(async function test_experiments_api_control() {
+  // User prefs take precedence over experiments and rollouts.
+  Services.prefs.clearUserPref(ENABLED_PREF);
+  registerCleanupFunction(() => {
+    Services.prefs.setBoolPref(ENABLED_PREF, true);
+  });
+
   // First, the disabled case.
   await BrowserTestUtils.withNewTab("about:home", async browser => {
     let doEnrollmentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
       featureId: "abouthomecache",
-      enabled: false,
+      value: { enabled: false },
     });
 
     Assert.ok(
-      !NimbusFeatures.abouthomecache.isEnabled(),
+      !NimbusFeatures.abouthomecache.getVariable("enabled"),
       "NimbusFeatures should tell us that the about:home startup cache " +
         "is disabled"
     );
@@ -47,11 +55,11 @@ add_task(async function test_experiments_api_control() {
   await BrowserTestUtils.withNewTab("about:home", async browser => {
     let doEnrollmentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
       featureId: "abouthomecache",
-      enabled: true,
+      value: { enabled: true },
     });
 
     Assert.ok(
-      NimbusFeatures.abouthomecache.isEnabled(),
+      NimbusFeatures.abouthomecache.getVariable("enabled"),
       "NimbusFeatures should tell us that the about:home startup cache " +
         "is enabled"
     );

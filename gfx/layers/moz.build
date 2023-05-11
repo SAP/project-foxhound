@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "Graphics: Layers")
+    BUG_COMPONENT = ("Core", "Graphics")
 
 with Files("apz/**"):
     BUG_COMPONENT = ("Core", "Panning and Zooming")
@@ -186,6 +186,7 @@ EXPORTS.mozilla.layers += [
     "opengl/TextureHostOGL.h",
     "PersistentBufferProvider.h",
     "ProfilerScreenshots.h",
+    "RemoteTextureMap.h",
     "RepaintRequest.h",
     "SampleTime.h",
     "ScreenshotGrabber.h",
@@ -395,6 +396,7 @@ UNIFIED_SOURCES += [
     "opengl/TextureClientOGL.cpp",
     "opengl/TextureHostOGL.cpp",
     "ProfilerScreenshots.cpp",
+    "RemoteTextureMap.cpp",
     "RepaintRequest.cpp",
     "SampleTime.cpp",
     "ScreenshotGrabber.cpp",

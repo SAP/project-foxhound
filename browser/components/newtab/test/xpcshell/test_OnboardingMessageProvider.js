@@ -1,11 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  OnboardingMessageProvider:
-    "resource://activity-stream/lib/OnboardingMessageProvider.jsm",
-  sinon: "resource://testing-common/Sinon.jsm",
-});
+const { OnboardingMessageProvider } = ChromeUtils.import(
+  "resource://activity-stream/lib/OnboardingMessageProvider.jsm"
+);
+const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 add_task(
   async function test_OnboardingMessageProvider_getUpgradeMessage_no_pin() {
@@ -71,3 +70,29 @@ add_task(
     sandbox.restore();
   }
 );
+
+add_task(async function test_schemaValidation() {
+  const { experimentValidator, messageValidators } = await makeValidators();
+
+  const messages = await OnboardingMessageProvider.getMessages();
+  for (const message of messages) {
+    const validator = messageValidators[message.template];
+
+    Assert.ok(
+      typeof validator !== "undefined",
+      typeof validator !== "undefined"
+        ? `Schema validator found for ${message.template}.`
+        : `No schema validator found for template ${message.template}. Please update this test to add one.`
+    );
+    assertValidates(
+      validator,
+      message,
+      `Message ${message.id} validates as template ${message.template}`
+    );
+    assertValidates(
+      experimentValidator,
+      message,
+      `Message ${message.id} validates as MessagingExperiment`
+    );
+  }
+});

@@ -193,11 +193,17 @@ class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
 
   virtual Maybe<float> Opacity() const override;
 
+  virtual void LiveRegionAttributes(nsAString* aLive, nsAString* aRelevant,
+                                    Maybe<bool>* aAtomic,
+                                    nsAString* aBusy) const override;
+
   virtual uint8_t ActionCount() const override;
 
   virtual void ActionNameAt(uint8_t aIndex, nsAString& aName) override;
 
   virtual bool DoAction(uint8_t aIndex) const override;
+
+  virtual KeyBinding AccessKey() const override;
 
   virtual void SelectionRanges(nsTArray<TextRange>* aRanges) const override;
 

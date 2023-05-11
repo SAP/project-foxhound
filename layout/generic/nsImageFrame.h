@@ -86,7 +86,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
               nsReflowStatus&) override;
   bool IsLeafDynamic() const override;
 
-  nsresult GetContentForEvent(mozilla::WidgetEvent*,
+  nsresult GetContentForEvent(const mozilla::WidgetEvent*,
                               nsIContent** aContent) final;
   nsresult HandleEvent(nsPresContext*, mozilla::WidgetGUIEvent*,
                        nsEventStatus*) override;
@@ -472,10 +472,6 @@ class nsDisplayImage final : public nsPaintedDisplayItem {
   }
   ~nsDisplayImage() final { MOZ_COUNT_DTOR(nsDisplayImage); }
 
-  nsDisplayItemGeometry* AllocateGeometry(nsDisplayListBuilder*) final;
-  void ComputeInvalidationRegion(nsDisplayListBuilder*,
-                                 const nsDisplayItemGeometry*,
-                                 nsRegion* aInvalidRegion) const final;
   void Paint(nsDisplayListBuilder*, gfxContext* aCtx) final;
 
   /**

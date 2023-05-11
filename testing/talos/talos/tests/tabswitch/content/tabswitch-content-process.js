@@ -1,4 +1,3 @@
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { ComponentUtils } = ChromeUtils.import(
   "resource://gre/modules/ComponentUtils.jsm"
 );
@@ -34,7 +33,7 @@ const TPSProcessScript = {
       }
     }
 
-    let factory = ComponentUtils._getFactory(TabSwitchAboutModule);
+    let factory = ComponentUtils.generateSingletonFactory(TabSwitchAboutModule);
     this._factory = factory;
 
     Registrar.registerFactory(

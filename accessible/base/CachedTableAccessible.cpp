@@ -182,7 +182,6 @@ CachedTableAccessible::CachedTableAccessible(Accessible* aAcc) : mAcc(aAcc) {
       for (uint32_t spannedCol = colIdx; spannedCol <= lastColForCell;
            ++spannedCol) {
         EnsureRowCol(spannedRow, spannedCol);
-        MOZ_ASSERT(mRowColToCellIdx[spannedRow][spannedCol] == kNoCellIdx);
         auto& rowCol = mRowColToCellIdx[spannedRow][spannedCol];
         // If a cell already occupies this position, it overlaps with this one;
         // e.g. r1..2c2 and r2c1..2. In that case, we want to prefer the first
@@ -229,7 +228,7 @@ Accessible* CachedTableAccessible::Caption() const {
     Accessible* caption = nsAccUtils::GetAccessibleByID(
         nsAccUtils::DocumentFor(mAcc), mCaptionAccID);
     MOZ_ASSERT(caption, "Dead caption Accessible!");
-    MOZ_ASSERT(caption->Role() != roles::CAPTION, "Caption has wrong role");
+    MOZ_ASSERT(caption->Role() == roles::CAPTION, "Caption has wrong role");
     return caption;
   }
   return nullptr;
@@ -456,20 +455,22 @@ void CachedTableCellAccessible::RowHeaderCells(nsTArray<Accessible*>* aCells) {
       return;
     }
   }
+  Accessible* doc = nsAccUtils::DocumentFor(table->AsAccessible());
   // We don't cache implicit row headers because there are usually not that many
   // cells per row. Get all the row headers on the row before this cell.
   uint32_t row = RowIdx();
   uint32_t thisCol = ColIdx();
   for (uint32_t col = thisCol - 1; col < thisCol; --col) {
-    Accessible* cellAcc = table->CellAt(row, col);
-    if (!cellAcc) {
+    int32_t cellIdx = table->CellIndexAt(row, col);
+    if (cellIdx == -1) {
       continue;
     }
-    TableCellAccessibleBase* cell = cellAcc->AsTableCellBase();
-    MOZ_ASSERT(cell);
+    CachedTableCellAccessible& cell = table->mCells[cellIdx];
+    Accessible* cellAcc = nsAccUtils::GetAccessibleByID(doc, cell.mAccID);
+    MOZ_ASSERT(cellAcc);
     // cell might span multiple columns. We don't want to visit it multiple
     // times, so ensure col is set to cell's starting column.
-    col = cell->ColIdx();
+    col = cell.ColIdx();
     if (cellAcc->Role() != roles::ROWHEADER) {
       continue;
     }

@@ -1273,9 +1273,7 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
   MOZ_RELEASE_ASSERT(js::ObjectMayBeSwapped(a));
   MOZ_RELEASE_ASSERT(js::ObjectMayBeSwapped(b));
 
-  if (!Watchtower::watchObjectSwap(cx, a, b)) {
-    oomUnsafe.crash("Watchtower::watchObjectSwap");
-  }
+  Watchtower::watchObjectSwap(cx, a, b);
 
   // Ensure we update any embedded nursery pointers in either object.
   gc::StoreBuffer& storeBuffer = cx->runtime()->gc.storeBuffer();
@@ -2254,13 +2252,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 #endif
-
-  if (key == JSProto_Array &&
-      !cx->realm()->creationOptions().getArrayFindLastEnabled() &&
-      (id == NameToId(cx->names().findLast) ||
-       id == NameToId(cx->names().findLastIndex))) {
-    return true;
-  }
 
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
   if (key == JSProto_Array && !cx->options().changeArrayByCopy() &&

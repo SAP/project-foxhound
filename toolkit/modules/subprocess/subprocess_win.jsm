@@ -16,9 +16,8 @@ const { AppConstants } = ChromeUtils.import(
 );
 const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { BaseProcess, PromiseWorker } = ChromeUtils.import(
   "resource://gre/modules/subprocess/subprocess_common.jsm"

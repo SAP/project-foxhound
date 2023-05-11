@@ -13,9 +13,8 @@
  * they would also miss them.
  */
 
-const { Cu, Cc, Ci } = require("chrome");
+const { Cu, Cc, Ci, Services } = require("chrome");
 const jsmScope = require("resource://devtools/shared/loader/Loader.jsm");
-const { Services } = require("resource://gre/modules/Services.jsm");
 
 const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
 
@@ -70,6 +69,7 @@ const debuggerSandbox = (exports.internalSandbox = Cu.Sandbox(systemPrincipal, {
     "TextDecoder",
     "TextEncoder",
     "URL",
+    "URLSearchParams",
     "Window",
     "XMLHttpRequest",
   ],
@@ -95,6 +95,7 @@ const {
   TextDecoder,
   TextEncoder,
   URL,
+  URLSearchParams,
   Window,
   XMLHttpRequest,
 } = debuggerSandbox;
@@ -296,6 +297,7 @@ exports.globals = {
   TextDecoder,
   TextEncoder,
   URL,
+  URLSearchParams,
   Window,
   XMLHttpRequest,
 };

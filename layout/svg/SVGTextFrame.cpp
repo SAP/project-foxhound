@@ -2035,6 +2035,11 @@ class CharIterator {
   bool IsClusterAndLigatureGroupStart() const;
 
   /**
+   * Returns the glyph run for the current character.
+   */
+  const gfxTextRun::GlyphRun& GlyphRun() const;
+
+  /**
    * Returns whether the current character is trimmed away when painting,
    * due to it being leading/trailing white space.
    */
@@ -2279,6 +2284,15 @@ bool CharIterator::IsClusterAndLigatureGroupStart() const {
   return mTextRun->IsLigatureGroupStart(
              mSkipCharsIterator.GetSkippedOffset()) &&
          mTextRun->IsClusterStart(mSkipCharsIterator.GetSkippedOffset());
+}
+
+const gfxTextRun::GlyphRun& CharIterator::GlyphRun() const {
+  uint32_t numRuns;
+  const gfxTextRun::GlyphRun* glyphRuns = mTextRun->GetGlyphRuns(&numRuns);
+  uint32_t runIndex = mTextRun->FindFirstGlyphRunContaining(
+      mSkipCharsIterator.GetSkippedOffset());
+  MOZ_ASSERT(runIndex < numRuns);
+  return glyphRuns[runIndex];
 }
 
 bool CharIterator::IsOriginalCharTrimmed() const {
@@ -2689,7 +2703,7 @@ class DisplaySVGText final : public nsPaintedDisplayItem {
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   nsDisplayItemGeometry* AllocateGeometry(
       nsDisplayListBuilder* aBuilder) override {
-    return new nsDisplayItemGenericImageGeometry(this, aBuilder);
+    return new nsDisplayItemGenericGeometry(this, aBuilder);
   }
 
   virtual nsRect GetComponentAlphaBounds(
@@ -2735,7 +2749,6 @@ void DisplaySVGText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   gfxContext* ctx = aCtx;
   imgDrawingParams imgParams(aBuilder->GetImageDecodeFlags());
   static_cast<SVGTextFrame*>(mFrame)->PaintSVG(*ctx, tm, imgParams);
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, imgParams.result);
 }
 
 // ---------------------------------------------------------------------
@@ -4025,7 +4038,13 @@ float SVGTextFrame::GetRotationOfChar(nsIContent* aContent, uint32_t aCharNum,
     return 0;
   }
 
-  return mPositions[it.TextElementCharIndex()].mAngle * 180.0 / M_PI;
+  // we need to account for the glyph's underlying orientation
+  const gfxTextRun::GlyphRun& glyphRun = it.GlyphRun();
+  int32_t glyphOrientation =
+      90 * (glyphRun.IsSidewaysRight() - glyphRun.IsSidewaysLeft());
+
+  return mPositions[it.TextElementCharIndex()].mAngle * 180.0 / M_PI +
+         glyphOrientation;
 }
 
 //----------------------------------------------------------------------

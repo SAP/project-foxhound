@@ -30,24 +30,27 @@ export const MultiStageAboutWelcome = props => {
     });
 
     // Remember that a new screen has loaded for browser navigation
-    if (index > window.history.state) {
+    if (props.updateHistory && index > window.history.state) {
       window.history.pushState(index, "");
     }
   }, [index]);
 
   useEffect(() => {
-    // Switch to the screen tracked in state (null for initial state)
-    // or last screen index if a user navigates by pressing back
-    // button from about:home
-    const handler = ({ state }) =>
-      setScreenIndex(Math.min(state, screens.length - 1));
+    if (props.updateHistory) {
+      // Switch to the screen tracked in state (null for initial state)
+      // or last screen index if a user navigates by pressing back
+      // button from about:home
+      const handler = ({ state }) =>
+        setScreenIndex(Math.min(state, screens.length - 1));
 
-    // Handle page load, e.g., going back to about:welcome from about:home
-    handler(window.history);
+      // Handle page load, e.g., going back to about:welcome from about:home
+      handler(window.history);
 
-    // Watch for browser back/forward button navigation events
-    window.addEventListener("popstate", handler);
-    return () => window.removeEventListener("popstate", handler);
+      // Watch for browser back/forward button navigation events
+      window.addEventListener("popstate", handler);
+      return () => window.removeEventListener("popstate", handler);
+    }
+    return false;
   }, []);
 
   const [flowParams, setFlowParams] = useState(null);
@@ -174,6 +177,10 @@ export const MultiStageAboutWelcome = props => {
             screens[0].content.position === "corner"
               ? screens.length - 1
               : screens.length;
+          /* Don't include a starting corner screen when determining step indicator order */
+          const stepOrder =
+            screens[0].content.position === "corner" ? order - 1 : order;
+
           return index === order ? (
             <WelcomeScreen
               key={screen.id + order}
@@ -181,7 +188,7 @@ export const MultiStageAboutWelcome = props => {
               totalNumberOfScreens={totalNumberOfScreens}
               isFirstCenteredScreen={isFirstCenteredScreen}
               isLastCenteredScreen={isLastCenteredScreen}
-              startsWithCorner={screens[0].content.position === "corner"}
+              stepOrder={stepOrder}
               order={order}
               content={screen.content}
               navigate={handleTransition}
@@ -230,7 +237,9 @@ export const SecondaryCTA = props => {
 export const StepsIndicator = props => {
   let steps = [];
   for (let i = 0; i < props.totalNumberOfScreens; i++) {
-    let className = i === props.order ? "current" : "";
+    let className = `${i === props.order ? "current" : ""} ${
+      i < props.order ? "complete" : ""
+    }`;
     steps.push(<div key={i} className={`indicator ${className}`} />);
   }
   return steps;
@@ -322,6 +331,7 @@ export class WelcomeScreen extends React.PureComponent {
         content={this.props.content}
         id={this.props.id}
         order={this.props.order}
+        stepOrder={this.props.stepOrder}
         activeTheme={this.props.activeTheme}
         totalNumberOfScreens={this.props.totalNumberOfScreens}
         appAndSystemLocaleInfo={this.props.appAndSystemLocaleInfo}

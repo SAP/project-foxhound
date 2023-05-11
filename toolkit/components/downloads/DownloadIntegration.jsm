@@ -20,9 +20,8 @@ const { Downloads } = ChromeUtils.import(
 const { Integration } = ChromeUtils.import(
   "resource://gre/modules/Integration.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -81,11 +80,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "gExternalProtocolService",
   "@mozilla.org/uriloader/external-protocol-service;1",
   "nsIExternalProtocolService"
-);
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "RuntimePermissions",
-  "resource://gre/modules/RuntimePermissions.jsm"
 );
 
 XPCOMUtils.defineLazyGetter(lazy, "gParentalControlsService", function() {
@@ -415,21 +409,6 @@ var DownloadIntegration = {
     }
 
     return Promise.resolve(shouldBlock);
-  },
-
-  /**
-   * Checks to determine whether to block downloads for not granted runtime permissions.
-   *
-   * @return {Promise}
-   * @resolves The boolean indicates to block downloads or not.
-   */
-  async shouldBlockForRuntimePermissions() {
-    return (
-      AppConstants.platform == "android" &&
-      !(await lazy.RuntimePermissions.waitForPermissions(
-        lazy.RuntimePermissions.WRITE_EXTERNAL_STORAGE
-      ))
-    );
   },
 
   /**

@@ -49,7 +49,12 @@ var DEBUG = false; // non-const *only* so tweakable in server tests
 /** True if debugging output should be timestamped. */
 var DEBUG_TIMESTAMP = false; // non-const so tweakable in server tests
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+// httpd.js is loaded by Android hostutils that's not up to date.
+// Fallback to Services.jsm if `Services` global variable isn't yet available.
+const Services =
+  globalThis.Services ||
+  ChromeUtils.import("resource://gre/modules/Services.jsm").Services;
+
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -212,6 +217,11 @@ const ServerSocketIPv6 = CC(
   "@mozilla.org/network/server-socket;1",
   "nsIServerSocket",
   "initIPv6"
+);
+const ServerSocketDualStack = CC(
+  "@mozilla.org/network/server-socket;1",
+  "nsIServerSocket",
+  "initDualStack"
 );
 const ScriptableInputStream = CC(
   "@mozilla.org/scriptableinputstream;1",
@@ -523,7 +533,11 @@ nsHttpServer.prototype = {
     this._start(port, "[::1]");
   },
 
-  _start(port, host) {
+  start_dualStack(port) {
+    this._start(port, "[::1]", true);
+  },
+
+  _start(port, host, dualStack) {
     if (this._socket) {
       throw Components.Exception("", Cr.NS_ERROR_ALREADY_INITIALIZED);
     }
@@ -567,7 +581,9 @@ nsHttpServer.prototype = {
       var socket;
       for (var i = 100; i; i--) {
         var temp = null;
-        if (this._host.includes(":")) {
+        if (dualStack) {
+          temp = new ServerSocketDualStack(this._port, maxConnections);
+        } else if (this._host.includes(":")) {
           temp = new ServerSocketIPv6(
             this._port,
             loopback, // true = localhost, false = everybody
@@ -608,7 +624,7 @@ nsHttpServer.prototype = {
 
       socket.asyncListen(this);
       this._port = socket.port;
-      this._identity._initialize(socket.port, host, true);
+      this._identity._initialize(socket.port, host, true, dualStack);
       this._socket = socket;
       dumpn(
         ">>> listening on port " +
@@ -1170,7 +1186,7 @@ ServerIdentity.prototype = {
    * Initializes the primary name for the corresponding server, based on the
    * provided port number.
    */
-  _initialize(port, host, addSecondaryDefault) {
+  _initialize(port, host, addSecondaryDefault, dualStack) {
     this._host = host;
     if (this._primaryPort !== -1) {
       this.add("http", host, port);
@@ -1183,6 +1199,9 @@ ServerIdentity.prototype = {
     if (addSecondaryDefault && host != "127.0.0.1") {
       if (host.includes(":")) {
         this.add("http", "[::1]", port);
+        if (dualStack) {
+          this.add("http", "127.0.0.1", port);
+        }
       } else {
         this.add("http", "127.0.0.1", port);
       }

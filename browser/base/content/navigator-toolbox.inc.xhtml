@@ -94,6 +94,10 @@
       <button class="accessibility-indicator" data-l10n-id="navbar-accessibility-indicator"
               aria-live="polite"/>
       <hbox class="private-browsing-indicator"/>
+      <hbox id="private-browsing-indicator-with-label">
+        <image class="private-browsing-indicator-icon"/>
+        <label data-l10n-id="private-browsing-indicator-label"></label>
+      </hbox>
 
 #include titlebar-items.inc.xhtml
 
@@ -421,6 +425,16 @@
                      </vbox>
       </toolbarbutton>
     </hbox>
+
+    <toolbaritem id="unified-extensions" removable="false">
+      <toolbarbutton id="unified-extensions-button"
+                     class="toolbarbutton-1"
+                     data-l10n-id="unified-extensions-button"
+                     hidden="true"
+                     onkeypress="gUnifiedExtensions.togglePanel(this, event)"
+                     onmousedown="gUnifiedExtensions.togglePanel(this, event)"
+                     removable="false" />
+    </toolbaritem>
 
     <toolbarbutton id="nav-bar-overflow-button"
                    class="toolbarbutton-1 chromeclass-toolbar-additional overflow-button"

@@ -636,6 +636,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   RefPtr<mozilla::gfx::DrawTarget> ScreenReferenceDrawTarget();
 
+  static RefPtr<mozilla::gfx::DrawTarget>
+  ThreadLocalScreenReferenceDrawTarget();
+
   virtual mozilla::gfx::SurfaceFormat Optimal2DFormatForContent(
       gfxContentType aContent);
 
@@ -819,6 +822,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   virtual void InitWebGLConfig();
   virtual void InitWebGPUConfig();
   virtual void InitWindowOcclusionConfig();
+  void InitBackdropFilterConfig();
 
   virtual void GetPlatformDisplayInfo(mozilla::widget::InfoObject& aObj) {}
 

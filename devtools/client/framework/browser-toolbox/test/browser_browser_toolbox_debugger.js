@@ -72,51 +72,23 @@ add_task(async function runTest() {
     /* global gToolbox, createDebuggerContext, waitForSources, waitForPaused,
           addBreakpoint, assertPausedAtSourceAndLine, stepIn, findSource,
           removeBreakpoint, resume, selectSource, assertNotPaused, assertBreakpoint,
-          assertTextContentOnLine */
-    const { Services } = ChromeUtils.import(
-      "resource://gre/modules/Services.jsm"
-    );
-
+          assertTextContentOnLine, waitForResumed */
     Services.prefs.clearUserPref("devtools.debugger.tabs");
     Services.prefs.clearUserPref("devtools.debugger.pending-selected-location");
 
     info("Waiting for debugger load");
     await gToolbox.selectTool("jsdebugger");
     const dbg = createDebuggerContext(gToolbox);
-    const window = dbg.win;
-    const document = window.document;
 
     await waitForSources(dbg, _testUrl);
 
     info("Loaded, selecting the test script to debug");
-    // First expand the main thread
-    const mainThread = [...document.querySelectorAll(".tree-node")].find(
-      node => {
-        return node.querySelector(".label").textContent.trim() == "Main Thread";
-      }
-    );
-    mainThread.querySelector(".arrow").click();
-
-    // Then expand the domain
-    const domain = [...document.querySelectorAll(".tree-node")].find(node => {
-      return node.querySelector(".label").textContent.trim() == "mozilla.org";
-    });
-    const arrow = domain.querySelector(".arrow");
-    arrow.click();
-
     const fileName = _testUrl.match(/browser-toolbox-test.*\.js/)[0];
-
-    // And finally the expected source
-    let script = [...document.querySelectorAll(".tree-node")].find(node => {
-      return node.textContent.includes(fileName);
-    });
-    script = script.querySelector(".node");
-    script.click();
-
-    const onPaused = waitForPaused(dbg);
     await selectSource(dbg, fileName);
-    await addBreakpoint(dbg, fileName, 2);
 
+    info("Add a breakpoint and wait to be paused");
+    const onPaused = waitForPaused(dbg);
+    await addBreakpoint(dbg, fileName, 2);
     await onPaused;
 
     const source = findSource(dbg, fileName);
@@ -212,9 +184,39 @@ add_task(async function runTest() {
 
     assertNotPaused(dbg);
   });
+
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.clearInterval(content.interval);
   });
+
+  info("Trying pausing in a content process that crashes");
+
+  const crashingUrl =
+    "data:text/html,<script>setTimeout(()=>{debugger;})</script>";
+  const crashingTab = await addTab(crashingUrl);
+  await ToolboxTask.spawn(crashingUrl, async url => {
+    const dbg = createDebuggerContext(gToolbox);
+    await waitForPaused(dbg);
+    const source = findSource(dbg, url);
+    assertPausedAtSourceAndLine(dbg, source.id, 1);
+    const thread = dbg.selectors.getThread(dbg.selectors.getCurrentThread());
+    is(thread.isTopLevel, false, "The current thread is not the top level one");
+    is(thread.targetType, "process", "The current thread is the tab one");
+  });
+
+  info(
+    "Crash the tab and ensure the debugger resumes and switch to the main thread"
+  );
+  await BrowserTestUtils.crashFrame(crashingTab.linkedBrowser);
+
+  await ToolboxTask.spawn(null, async () => {
+    const dbg = createDebuggerContext(gToolbox);
+    await waitForResumed(dbg);
+    const thread = dbg.selectors.getThread(dbg.selectors.getCurrentThread());
+    is(thread.isTopLevel, true, "The current thread is the top level one");
+  });
+
+  await removeTab(crashingTab);
 
   await ToolboxTask.destroy();
 });

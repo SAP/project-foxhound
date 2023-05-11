@@ -33,8 +33,6 @@ function listener(callback) {
 /* eslint-env mozilla/frame-script */
 function chromeTouchEventCounter(operation) {
   function chromeProcessCounter() {
-    const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
     const PREFIX = "apz:ctec:";
 
     const LISTENERS = {
@@ -311,7 +309,7 @@ function runContinuation(testFunction) {
       try {
         driveTest();
       } catch (ex) {
-        SimpleTest.ok(
+        ok(
           false,
           "APZ test continuation failed with exception: " + ex
         );

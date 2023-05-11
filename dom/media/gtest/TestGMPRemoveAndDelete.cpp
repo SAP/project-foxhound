@@ -129,6 +129,8 @@ TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredSimple)
  * Test that the plugin is unavailable immediately after a forced
  * RemoveAndDelete, and that the plugin is deleted afterwards.
  */
+// Bug 1115253 - disable test in win64 to reduce failure rate
+#if !defined(_WIN64)
 TEST(GeckoMediaPlugins, RemoveAndDeleteForcedInUse)
 {
   RefPtr<GMPRemoveTest> test(new GMPRemoveTest());
@@ -177,6 +179,7 @@ TEST(GeckoMediaPlugins, RemoveAndDeleteDeferredInUse)
   test->CloseVideoDecoder();
   test->Wait();
 }
+#endif
 
 static StaticRefPtr<GeckoMediaPluginService> gService;
 static StaticRefPtr<GeckoMediaPluginServiceParent> gServiceParent;

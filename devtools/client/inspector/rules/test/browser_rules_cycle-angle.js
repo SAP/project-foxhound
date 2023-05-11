@@ -7,25 +7,29 @@
 
 const TEST_URI = `
   <style type="text/css">
-    body {
+    .turn {
       filter: hue-rotate(1turn);
     }
-    div {
+    .deg {
       filter: hue-rotate(180deg);
     }
   </style>
-  <body><div>Test</div>cycling angle units in the rule view!</body>
+  <body><div class=turn>Test turn</div><div class=deg>Test deg</div>cycling angle units in the rule view!</body>
 `;
 
 add_task(async function() {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
-  const container = getRuleViewProperty(view, "body", "filter").valueSpan;
-  await checkAngleCycling(container, view);
+  await checkAngleCycling(inspector, view);
   await checkAngleCyclingPersist(inspector, view);
 });
 
-async function checkAngleCycling(container, view) {
+async function checkAngleCycling(inspector, view) {
+  await selectNode(".turn", inspector);
+
+  const container = (
+    await getRuleViewProperty(view, ".turn", "filter", { wait: true })
+  ).valueSpan;
   const valueNode = container.querySelector(".ruleview-angle");
   const win = view.styleWindow;
 
@@ -57,8 +61,10 @@ async function checkAngleCycling(container, view) {
 }
 
 async function checkAngleCyclingPersist(inspector, view) {
-  await selectNode("div", inspector);
-  let container = getRuleViewProperty(view, "div", "filter").valueSpan;
+  await selectNode(".deg", inspector);
+  let container = (
+    await getRuleViewProperty(view, ".deg", "filter", { wait: true })
+  ).valueSpan;
   let valueNode = container.querySelector(".ruleview-angle");
   const win = view.styleWindow;
 
@@ -71,14 +77,16 @@ async function checkAngleCyclingPersist(inspector, view) {
     "Angle displayed as a radian value."
   );
 
-  // Select the body and reselect the div to see
+  // Select the .turn div and reselect the .deg div to see
   // if the new angle unit persisted
-  await selectNode("body", inspector);
-  await selectNode("div", inspector);
+  await selectNode(".turn", inspector);
+  await selectNode(".deg", inspector);
 
   // We have to query for the container and the swatch because
   // they've been re-generated
-  container = getRuleViewProperty(view, "div", "filter").valueSpan;
+  container = (
+    await getRuleViewProperty(view, ".deg", "filter", { wait: true })
+  ).valueSpan;
   valueNode = container.querySelector(".ruleview-angle");
   is(
     valueNode.textContent,

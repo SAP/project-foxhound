@@ -63,7 +63,7 @@ class LoadInfo final : public nsILoadInfo {
 
   // Used for TYPE_DOCUMENT load.
   static already_AddRefed<LoadInfo> CreateForDocument(
-      dom::CanonicalBrowsingContext* aBrowsingContext,
+      dom::CanonicalBrowsingContext* aBrowsingContext, nsIURI* aURI,
       nsIPrincipal* aTriggeringPrincipal,
       const OriginAttributes& aOriginAttributes, nsSecurityFlags aSecurityFlags,
       uint32_t aSandboxFlags);
@@ -88,19 +88,21 @@ class LoadInfo final : public nsILoadInfo {
                Maybe<mozilla::dom::ClientInfo>(),
            const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController =
                Maybe<mozilla::dom::ServiceWorkerDescriptor>(),
-           uint32_t aSandboxFlags = 0);
+           uint32_t aSandboxFlags = 0,
+           bool aSkipCheckForBrokenURLOrZeroSized = 0);
 
   // Constructor used for TYPE_DOCUMENT loads which have a different
   // loadingContext than other loads. This ContextForTopLevelLoad is
   // only used for content policy checks.
-  LoadInfo(nsPIDOMWindowOuter* aOuterWindow, nsIPrincipal* aTriggeringPrincipal,
+  LoadInfo(nsPIDOMWindowOuter* aOuterWindow, nsIURI* aURI,
+           nsIPrincipal* aTriggeringPrincipal,
            nsISupports* aContextForTopLevelLoad, nsSecurityFlags aSecurityFlags,
            uint32_t aSandboxFlags);
 
  private:
   // Use factory function CreateForDocument
   // Used for TYPE_DOCUMENT load.
-  LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext,
+  LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext, nsIURI* aURI,
            nsIPrincipal* aTriggeringPrincipal,
            const OriginAttributes& aOriginAttributes,
            nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags);
@@ -230,6 +232,7 @@ class LoadInfo final : public nsILoadInfo {
       bool aIsMetaRefresh, uint32_t aRequestBlockingReason,
       nsINode* aLoadingContext,
       nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
+      bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel,
       nsIURI* aUnstrippedURI);
   LoadInfo(const LoadInfo& rhs);
 
@@ -261,7 +264,6 @@ class LoadInfo final : public nsILoadInfo {
   void UpdateFrameBrowsingContextID(uint64_t aFrameBrowsingContextID) {
     mFrameBrowsingContextID = aFrameBrowsingContextID;
   }
-  bool DispatchRelease();
   MOZ_NEVER_INLINE void ReleaseMembers();
 
   // if you add a member, please also update the copy constructor and consider
@@ -349,12 +351,16 @@ class LoadInfo final : public nsILoadInfo {
   // See nsILoadInfo.isFromObjectOrEmbed
   bool mIsFromObjectOrEmbed = false;
 
+  bool mSkipCheckForBrokenURLOrZeroSized = false;
+
   // The cross origin embedder policy that the loading need to respect.
   // If the value is nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP, CORP checking
   // must be performed for the loading.
   // See https://wicg.github.io/cross-origin-embedder-policy/#corp-check.
   nsILoadInfo::CrossOriginEmbedderPolicy mLoadingEmbedderPolicy =
       nsILoadInfo::EMBEDDER_POLICY_NULL;
+
+  bool mIsOriginTrialCoepCredentiallessEnabledForTopLevel = false;
 
   nsCOMPtr<nsIURI> mUnstrippedURI;
 };

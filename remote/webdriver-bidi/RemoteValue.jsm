@@ -4,10 +4,10 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["deserialize", "serialize"];
+var EXPORTED_SYMBOLS = ["deserialize", "serialize", "stringify"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -139,10 +139,6 @@ function deserializeKeyValueList(/* realm, */ serializedKeyValueList) {
 function deserialize(/* realm, */ serializedValue) {
   const { objectId, type, value } = serializedValue;
 
-  if (type !== undefined) {
-    lazy.assert.string(type, `Expected "type" to be a string, got ${type}`);
-  }
-
   // With an objectId present deserialize as remote reference.
   if (objectId !== undefined) {
     lazy.assert.string(
@@ -156,6 +152,8 @@ function deserialize(/* realm, */ serializedValue) {
     );
     return undefined;
   }
+
+  lazy.assert.string(type, `Expected "type" to be a string, got ${type}`);
 
   // Primitive protocol values
   switch (type) {
@@ -420,8 +418,32 @@ function serialize(
   }
 
   lazy.logger.warn(
-    `Unsupported type: ${type} for remote value: ${value.toString()}`
+    `Unsupported type: ${type} for remote value: ${stringify(value)}`
   );
 
   return undefined;
+}
+
+/**
+ * Safely stringify a value.
+ *
+ * @param {Object} value
+ *     Value of any type to be stringified.
+ *
+ * @returns {String} String representation of the value.
+ */
+function stringify(obj) {
+  let text;
+  try {
+    text =
+      obj !== null && typeof obj === "object" ? obj.toString() : String(obj);
+  } catch (e) {
+    // The error-case will also be handled in `finally {}`.
+  } finally {
+    if (typeof text != "string") {
+      text = Object.prototype.toString.apply(obj);
+    }
+  }
+
+  return text;
 }

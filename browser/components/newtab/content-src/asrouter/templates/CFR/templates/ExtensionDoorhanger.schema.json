@@ -1,32 +1,13 @@
 {
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "file:///ExtensionDoorhanger.schema.json",
   "title": "ExtensionDoorhanger",
   "description": "A template with a heading, addon icon, title and description. No markup allowed.",
-  "version": "1.0.0",
+  "allOf": [
+    { "$ref": "file:///FxMSCommon.schema.json#/$defs/Message" }
+  ],
   "type": "object",
-  "definitions": {
-    "plainText": {
-      "description": "Plain text (no HTML allowed)",
-      "type": "string"
-    },
-    "linkUrl": {
-      "description": "Target for links or buttons",
-      "type": "string",
-      "format": "uri"
-    }
-  },
   "properties": {
-    "id": {
-      "type": "string",
-      "description": "Message identifier"
-    },
-    "groups": {
-      "description": "Array of preferences used to control `enabled` status of the group. If any is `false` the group is disabled.",
-      "type": "array",
-      "items": {
-        "type": "string",
-        "description": "Preference name"
-      }
-    },
     "content": {
       "type": "object",
       "properties": {
@@ -56,23 +37,8 @@
           "description": "Prevent the doorhanger from being dismissed if user interacts with the page or switches between applications."
         },
         "notification_text": {
-          "description": "The text in the small blue chicklet that appears in the URL bar. This can be a reference to a localized string in Firefox or just a plain string.",
-          "oneOf": [
-            {
-              "type": "string",
-              "description": "Message shown in the location bar notification."
-            },
-            {
-              "type": "object",
-              "properties": {
-                "string_id": {
-                  "type": "string",
-                  "description": "Id of localized string for the location bar notification."
-                }
-              },
-              "required": ["string_id"]
-            }
-          ]
+          "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+          "description": "The text in the small blue chicklet that appears in the URL bar. This can be a reference to a localized string in Firefox or just a plain string."
         },
         "info_icon": {
           "type": "object",
@@ -87,7 +53,7 @@
                       "type": "object",
                       "properties": {
                         "tooltiptext": {
-                          "type": "string",
+                          "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
                           "description": "Text for button tooltip used to provide information about the doorhanger."
                         }
                       },
@@ -97,14 +63,7 @@
                   "required": ["attributes"]
                 },
                 {
-                  "type": "object",
-                  "properties": {
-                    "string_id": {
-                      "type": "string",
-                      "description": "Id of localized string used to provide information about the doorhanger."
-                    }
-                  },
-                  "required": ["string_id"]
+                  "$ref": "file:///FxMSCommon.schema.json#/$defs/localizedText"
                 }
               ]
             },
@@ -121,30 +80,12 @@
           "examples": ["extensionpromotions", "extensionrecommendations"]
         },
         "heading_text": {
-          "description": "The larger heading text displayed in the pop-over. This can be a reference to a localized string in Firefox or just a plain string.",
-          "oneOf": [
-            {
-              "type": "string",
-              "description": "The message displayed in the title of the extension doorhanger"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "string_id": {
-                  "type": "string"
-                }
-              },
-              "required": ["string_id"],
-              "description": "Id of localized string for extension doorhanger title"
-            }
-          ]
+          "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+          "description": "The larger heading text displayed in the pop-over. This can be a reference to a localized string in Firefox or just a plain string."
         },
         "icon": {
-          "description": "The icon displayed in the pop-over. Should be 32x32px or 64x64px and png/svg.",
-          "allOf": [
-            { "$ref": "#/definitions/linkUrl" },
-            { "description": "Icon associated with the message" }
-          ]
+          "$ref": "#/$defs/linkUrl",
+          "description": "The icon displayed in the pop-over. Should be 32x32px or 64x64px and png/svg."
         },
         "icon_dark_theme": {
           "type": "string",
@@ -159,29 +100,20 @@
           "type": "object",
           "properties": {
             "id": {
-              "allOf": [
-                { "$ref": "#/definitions/plainText" },
-                { "description": "Unique addon ID" }
-              ]
+              "$ref": "#/$defs/plainText",
+              "description": "Unique addon ID"
             },
             "title": {
-              "allOf": [
-                { "$ref": "#/definitions/plainText" },
-                { "description": "Addon name" }
-              ]
+              "$ref": "#/$defs/plainText",
+              "description": "Addon name"
             },
             "author": {
-              "allOf": [
-                { "$ref": "#/definitions/plainText" },
-                { "description": "Addon author" }
-              ]
+              "$ref": "#/$defs/plainText",
+              "description": "Addon author"
             },
             "icon": {
-              "description": "The icon displayed in the pop-over. Should be 64x64px and png/svg.",
-              "allOf": [
-                { "$ref": "#/definitions/linkUrl" },
-                { "description": "Addon icon" }
-              ]
+              "$ref": "#/$defs/linkUrl",
+              "description": "The icon displayed in the pop-over. Should be 64x64px and png/svg."
             },
             "rating": {
               "type": "number",
@@ -195,51 +127,26 @@
               "description": "Installed users"
             },
             "amo_url": {
-              "allOf": [
-                { "$ref": "#/definitions/linkUrl" },
-                {
-                  "description": "Link that offers more information related to the addon."
-                }
-              ]
+              "$ref": "#/$defs/linkUrl",
+              "description": "Link that offers more information related to the addon."
             }
           },
           "required": ["title", "author", "icon", "amo_url"]
         },
         "text": {
-          "description": "The body text displayed in the pop-over. This can be a reference to a localized string in Firefox or just a plain string.",
-          "oneOf": [
-            {
-              "type": "string",
-              "description": "Description message of the addon."
-            },
-            {
-              "type": "object",
-              "properties": {
-                "string_id": {
-                  "type": "string",
-                  "description": "Id of string to localized addon description"
-                }
-              },
-              "required": ["string_id"]
-            }
-          ]
+          "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
+          "description": "The body text displayed in the pop-over. This can be a reference to a localized string in Firefox or just a plain string."
         },
         "descriptionDetails": {
           "description": "Additional information and steps on how to use",
           "type": "object",
           "properties": {
             "steps": {
-              "description": "Array of messages or string_ids",
+              "description": "Array of string_ids",
               "type": "array",
               "items": {
-                "type": "object",
-                "properties": {
-                  "string_id": {
-                    "type": "string",
-                    "description": "Id of string to localized addon description"
-                  }
-                },
-                "required": ["string_id"]
+                "$ref": "file:///FxMSCommon.schema.json#/$defs/localizedText",
+                "description": "Id of string to localized addon description"
               }
             }
           },
@@ -258,12 +165,8 @@
                     {
                       "properties": {
                         "value": {
-                          "allOf": [
-                            { "$ref": "#/definitions/plainText" },
-                            {
-                              "description": "Button label override used when a localized version is not available."
-                            }
-                          ]
+                          "$ref": "#/$defs/plainText",
+                          "description": "Button label override used when a localized version is not available."
                         },
                         "attributes": {
                           "type": "object",
@@ -280,17 +183,7 @@
                       "required": ["value", "attributes"]
                     },
                     {
-                      "properties": {
-                        "string_id": {
-                          "allOf": [
-                            { "$ref": "#/definitions/plainText" },
-                            {
-                              "description": "Id of localized string for button"
-                            }
-                          ]
-                        }
-                      },
-                      "required": ["string_id"]
+                      "$ref": "file:///FxMSCommon.schema.json#/$defs/localizedText"
                     }
                   ],
                   "description": "Id of localized string or message override."
@@ -313,8 +206,11 @@
                     }
                   }
                 }
-              },
-              "secondary": {
+              }
+            },
+            "secondary": {
+              "type": "array",
+              "items": {
                 "type": "object",
                 "properties": {
                   "label": {
@@ -324,7 +220,7 @@
                         "properties": {
                           "value": {
                             "allOf": [
-                              { "$ref": "#/definitions/plainText" },
+                              { "$ref": "#/$defs/plainText" },
                               {
                                 "description": "Button label override used when a localized version is not available."
                               }
@@ -348,7 +244,7 @@
                         "properties": {
                           "string_id": {
                             "allOf": [
-                              { "$ref": "#/definitions/plainText" },
+                              { "$ref": "#/$defs/plainText" },
                               {
                                 "description": "Id of localized string for button"
                               }
@@ -371,13 +267,13 @@
                         "properties": {
                           "url": {
                             "allOf": [
-                              { "$ref": "#/definitions/linkUrl" },
+                              { "$ref": "#/$defs/linkUrl" },
                               {
                                 "description": "URL used in combination with the primary action dispatched."
                               }
                             ]
+                            }
                           }
-                        }
                       }
                     }
                   }
@@ -390,43 +286,41 @@
       "additionalProperties": true,
       "required": [
         "layout",
-        "category",
         "bucket_id",
-        "notification_text",
         "heading_text",
         "text",
         "buttons"
-      ]
-    },
-    "priority": {
-      "type": "integer"
-    },
-    "targeting": {
-      "type": "string",
-      "description": "A JEXL expression representing targeting information"
-    },
-    "template": {
-      "type": "string"
-    },
-    "trigger": {
-      "type": "object",
-      "description": "An action to trigger potentially showing the message",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "A string identifying the trigger action"
-        },
-        "params": {
-          "type": "array",
-          "description": "An optional array of string parameters for the trigger action",
-          "items": {
-            "anyOf": [{ "type": "integer" }, { "type": "string" }]
+      ],
+      "if": {
+        "properties": {
+          "skip_address_bar_notifier": {
+            "anyOf": [
+              { "const": "false" },
+              { "const": null }
+            ]
           }
         }
       },
-      "required": ["id"]
+      "then": {
+        "required": ["category", "notification_text"]
+      }
+    },
+    "template": {
+      "type": "string",
+      "enum": ["cfr_doorhanger", "milestone_message"]
     }
   },
   "additionalProperties": true,
-  "required": ["id", "groups", "content", "targeting", "template", "trigger"]
+  "required": ["targeting", "trigger"],
+  "$defs": {
+    "plainText": {
+      "description": "Plain text (no HTML allowed)",
+      "type": "string"
+    },
+    "linkUrl": {
+      "description": "Target for links or buttons",
+      "type": "string",
+      "format": "uri"
+    }
+  }
 }

@@ -11,18 +11,21 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarProviderExtension"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetters(this, {
-  SkippableTimer: "resource:///modules/UrlbarUtils.jsm",
+
+const { SkippableTimer, UrlbarProvider, UrlbarUtils } = ChromeUtils.import(
+  "resource:///modules/UrlbarUtils.jsm"
+);
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
-  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 /**
@@ -52,10 +55,10 @@ class UrlbarProviderExtension extends UrlbarProvider {
    *   The provider.
    */
   static getOrCreate(name) {
-    let provider = UrlbarProvidersManager.getProvider(name);
+    let provider = lazy.UrlbarProvidersManager.getProvider(name);
     if (!provider) {
       provider = new UrlbarProviderExtension(name);
-      UrlbarProvidersManager.registerProvider(provider);
+      lazy.UrlbarProvidersManager.registerProvider(provider);
     }
     return provider;
   }
@@ -155,7 +158,7 @@ class UrlbarProviderExtension extends UrlbarProvider {
     } else {
       this._eventListeners.delete(eventName);
       if (!this._eventListeners.size) {
-        UrlbarProvidersManager.unregisterProvider(this);
+        lazy.UrlbarProvidersManager.unregisterProvider(this);
       }
     }
   }
@@ -291,7 +294,7 @@ class UrlbarProviderExtension extends UrlbarProvider {
       // so that we're not stuck waiting forever.
       let timer = new SkippableTimer({
         name: "UrlbarProviderExtension notification timer",
-        time: UrlbarPrefs.get("extension.timeout"),
+        time: lazy.UrlbarPrefs.get("extension.timeout"),
         reportErrorOnTimeout: true,
         logger: this.logger,
       });
@@ -328,7 +331,7 @@ class UrlbarProviderExtension extends UrlbarProvider {
         engine = Services.search.getEngineByName(extResult.payload.engine);
       } else if (extResult.payload.keyword) {
         // Look up the engine by its alias.
-        engine = await UrlbarSearchUtils.engineForAlias(
+        engine = await lazy.UrlbarSearchUtils.engineForAlias(
           extResult.payload.keyword
         );
       } else if (extResult.payload.url) {
@@ -338,7 +341,9 @@ class UrlbarProviderExtension extends UrlbarProvider {
           host = new URL(extResult.payload.url).hostname;
         } catch (err) {}
         if (host) {
-          engine = (await UrlbarSearchUtils.enginesForDomainPrefix(host))[0];
+          engine = (
+            await lazy.UrlbarSearchUtils.enginesForDomainPrefix(host)
+          )[0];
         }
       }
       if (!engine) {
@@ -353,10 +358,10 @@ class UrlbarProviderExtension extends UrlbarProvider {
       extResult.payload.type = extResult.payload.type || "extension";
     }
 
-    let result = new UrlbarResult(
+    let result = new lazy.UrlbarResult(
       UrlbarProviderExtension.RESULT_TYPES[extResult.type],
       UrlbarProviderExtension.SOURCE_TYPES[extResult.source],
-      ...UrlbarResult.payloadAndSimpleHighlights(
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
         context.tokens,
         extResult.payload || {}
       )
@@ -395,4 +400,5 @@ UrlbarProviderExtension.SOURCE_TYPES = {
   network: UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
   search: UrlbarUtils.RESULT_SOURCE.SEARCH,
   tabs: UrlbarUtils.RESULT_SOURCE.TABS,
+  actions: UrlbarUtils.RESULT_SOURCE.ACTIONS,
 };

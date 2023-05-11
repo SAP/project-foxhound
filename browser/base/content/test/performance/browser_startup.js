@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* This test records at which phase of startup the JS components and modules
- * are first loaded.
+/* This test records at which phase of startup the JS modules are first
+ * loaded.
  * If you made changes that cause this test to fail, it's likely because you
  * are loading more JS code during startup.
  * Most code has no reason to run off of the app-startup notification
@@ -29,13 +29,12 @@ const startupPhases = {
     allowlist: {
       modules: new Set([
         "resource:///modules/BrowserGlue.jsm",
+        "resource:///modules/StartupRecorder.jsm",
         "resource://gre/modules/AppConstants.jsm",
         "resource://gre/modules/ActorManagerParent.jsm",
-        "resource://gre/modules/ComponentUtils.jsm",
         "resource://gre/modules/CustomElementsListener.jsm",
         "resource://gre/modules/MainProcessSingleton.jsm",
-        "resource://gre/modules/XPCOMUtils.jsm",
-        "resource://gre/modules/Services.jsm",
+        "resource://gre/modules/XPCOMUtils.sys.mjs",
       ]),
     },
   },
@@ -56,18 +55,16 @@ const startupPhases = {
   // before first paint and delayed it.
   "before first paint": {
     denylist: {
-      components: new Set(["nsSearchService.js"]),
       modules: new Set([
-        "chrome://webcompat/content/data/ua_overrides.jsm",
-        "chrome://webcompat/content/lib/ua_overrider.jsm",
         "resource:///modules/AboutNewTab.jsm",
         "resource:///modules/BrowserUsageTelemetry.jsm",
         "resource:///modules/ContentCrashHandlers.jsm",
         "resource:///modules/ShellService.jsm",
         "resource://gre/modules/NewTabUtils.jsm",
         "resource://gre/modules/PageThumbs.jsm",
-        "resource://gre/modules/PlacesUtils.jsm",
+        "resource://gre/modules/PlacesUtils.sys.mjs",
         "resource://gre/modules/Preferences.jsm",
+        "resource://gre/modules/SearchService.sys.mjs",
         "resource://gre/modules/Sqlite.jsm",
       ]),
       services: new Set(["@mozilla.org/browser/search-service;1"]),
@@ -79,28 +76,21 @@ const startupPhases = {
   // interacting with the first browser window.
   "before handling user events": {
     denylist: {
-      components: new Set([
-        "PageIconProtocolHandler.js",
-        "nsPlacesExpiration.js",
-      ]),
       modules: new Set([
         "resource://gre/modules/Blocklist.jsm",
         // Bug 1391495 - BrowserWindowTracker.jsm is intermittently used.
         // "resource:///modules/BrowserWindowTracker.jsm",
-        "resource://gre/modules/BookmarkHTMLUtils.jsm",
-        "resource://gre/modules/Bookmarks.jsm",
+        "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
+        "resource://gre/modules/Bookmarks.sys.mjs",
         "resource://gre/modules/ContextualIdentityService.jsm",
-        "resource://gre/modules/CrashSubmit.jsm",
         "resource://gre/modules/FxAccounts.jsm",
         "resource://gre/modules/FxAccountsStorage.jsm",
-        "resource://gre/modules/PlacesBackups.jsm",
-        "resource://gre/modules/PlacesSyncUtils.jsm",
+        "resource://gre/modules/PlacesBackups.sys.mjs",
+        "resource://gre/modules/PlacesExpiration.sys.mjs",
+        "resource://gre/modules/PlacesSyncUtils.sys.mjs",
         "resource://gre/modules/PushComponents.jsm",
       ]),
-      services: new Set([
-        "@mozilla.org/browser/annotation-service;1",
-        "@mozilla.org/browser/nav-bookmarks-service;1",
-      ]),
+      services: new Set(["@mozilla.org/browser/nav-bookmarks-service;1"]),
     },
   },
 
@@ -109,7 +99,6 @@ const startupPhases = {
   // be listed here.
   "before becoming idle": {
     denylist: {
-      components: new Set(["UnifiedComplete.js"]),
       modules: new Set([
         "resource://gre/modules/AsyncPrefs.jsm",
         "resource://gre/modules/LoginManagerContextMenu.jsm",
@@ -132,6 +121,12 @@ if (
   );
 }
 
+if (AppConstants.MOZ_CRASHREPORTER) {
+  startupPhases["before handling user events"].denylist.modules.add(
+    "resource://gre/modules/CrashSubmit.jsm"
+  );
+}
+
 add_task(async function() {
   if (
     !AppConstants.NIGHTLY_BUILD &&
@@ -150,26 +145,10 @@ add_task(async function() {
     .wrappedJSObject;
   await startupRecorder.done;
 
-  let componentStacks = new Map();
   let data = Cu.cloneInto(startupRecorder.data.code, {});
-  // Keep only the file name for components, as the path is an absolute file
-  // URL rather than a resource:// URL like for modules.
-  for (let phase in data) {
-    data[phase].components = data[phase].components
-      .map(uri => {
-        let fileName = uri.replace(/.*\//, "");
-        componentStacks.set(fileName, Cu.getComponentLoadStack(uri));
-        return fileName;
-      })
-      .filter(c => c != "startupRecorder.js");
-  }
-
   function getStack(scriptType, name) {
     if (scriptType == "modules") {
       return Cu.getModuleImportStack(name);
-    }
-    if (scriptType == "components") {
-      return componentStacks.get(name);
     }
     return "";
   }
@@ -237,6 +216,29 @@ add_task(async function() {
           } else {
             record(false, message, undefined, getStack(scriptType, file));
           }
+        }
+      }
+
+      if (denylist.modules) {
+        let results = await PerfTestHelpers.throttledMapPromises(
+          denylist.modules,
+          async uri => ({
+            uri,
+            exists: await PerfTestHelpers.checkURIExists(uri),
+          })
+        );
+
+        for (let { uri, exists } of results) {
+          ok(exists, `denylist entry ${uri} for phase "${phase}" must exist`);
+        }
+      }
+
+      if (denylist.services) {
+        for (let contract of denylist.services) {
+          ok(
+            contract in Cc,
+            `denylist entry ${contract} for phase "${phase}" must exist`
+          );
         }
       }
     }

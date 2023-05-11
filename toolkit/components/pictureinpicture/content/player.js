@@ -5,7 +5,6 @@
 const { PictureInPicture } = ChromeUtils.import(
   "resource://gre/modules/PictureInPicture.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { DeferredTask } = ChromeUtils.import(
   "resource://gre/modules/DeferredTask.jsm"
 );
@@ -155,7 +154,7 @@ let Player = {
     browser.setAttribute("nodefaultsrc", "true");
 
     let playPauseBtn = document.getElementById("playpause");
-    playPauseBtn.focus({ preventFocusRing: true });
+    playPauseBtn.focus({ focusVisible: false });
 
     // Set the specific remoteType and browsingContextGroupID to use for the
     // initial about:blank load. The combination of these two properties will

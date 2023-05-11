@@ -23,20 +23,19 @@ exports[`calls updateTree.js adds one source 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/39\\",
                 \\"url\\": \\"https://davidwalsh.name/\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"(index)\\"
+                  \\"filename\\": \\"(index)\\",
+                  \\"fileExtension\\": \\"\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -58,20 +57,19 @@ exports[`calls updateTree.js adds one source 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/37\\",
                 \\"url\\": \\"https://davidwalsh.name/source1.js\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/source1.js\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/source1.js\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"source1.js\\"
+                  \\"filename\\": \\"source1.js\\",
+                  \\"fileExtension\\": \\"js\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -122,20 +120,19 @@ exports[`calls updateTree.js adds two sources 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/39\\",
                 \\"url\\": \\"https://davidwalsh.name/\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"(index)\\"
+                  \\"filename\\": \\"(index)\\",
+                  \\"fileExtension\\": \\"\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -157,20 +154,19 @@ exports[`calls updateTree.js adds two sources 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/37\\",
                 \\"url\\": \\"https://davidwalsh.name/source1.js\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/source1.js\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/source1.js\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"source1.js\\"
+                  \\"filename\\": \\"source1.js\\",
+                  \\"fileExtension\\": \\"js\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -197,20 +193,19 @@ exports[`calls updateTree.js adds two sources 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/40\\",
                 \\"url\\": \\"https://davidwalsh.name/source2.js\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/source2.js\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/source2.js\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"source2.js\\"
+                  \\"filename\\": \\"source2.js\\",
+                  \\"fileExtension\\": \\"js\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -261,20 +256,19 @@ exports[`calls updateTree.js shows all the sources 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/39\\",
                 \\"url\\": \\"https://davidwalsh.name/\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"(index)\\"
+                  \\"filename\\": \\"(index)\\",
+                  \\"fileExtension\\": \\"\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -296,20 +290,19 @@ exports[`calls updateTree.js shows all the sources 1`] = `
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/37\\",
                 \\"url\\": \\"https://davidwalsh.name/source1.js\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/source1.js\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/source1.js\\",
                   \\"search\\": \\"\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"source1.js\\"
+                  \\"filename\\": \\"source1.js\\",
+                  \\"fileExtension\\": \\"js\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",
@@ -360,20 +353,19 @@ exports[`calls updateTree.js update sources that change their display URL 1`] = 
               \\"contents\\": {
                 \\"id\\": \\"server1.conn13.child1/39\\",
                 \\"url\\": \\"https://davidwalsh.name/?param\\",
-                \\"thread\\": \\"FakeThread\\",
-                \\"isBlackBoxed\\": false,
-                \\"isPrettyPrinted\\": false,
-                \\"relativeUrl\\": \\"https://davidwalsh.name/?param\\",
-                \\"isWasm\\": false,
-                \\"extensionName\\": null,
-                \\"isExtension\\": false,
-                \\"isOriginal\\": false,
                 \\"displayURL\\": {
                   \\"path\\": \\"/\\",
                   \\"search\\": \\"?param\\",
                   \\"group\\": \\"davidwalsh.name\\",
-                  \\"filename\\": \\"(index)\\"
+                  \\"filename\\": \\"(index)\\",
+                  \\"fileExtension\\": \\"\\"
                 },
+                \\"thread\\": \\"FakeThread\\",
+                \\"isPrettyPrinted\\": false,
+                \\"isWasm\\": false,
+                \\"extensionName\\": null,
+                \\"isExtension\\": false,
+                \\"isOriginal\\": false,
                 \\"parts\\": [
                   {
                     \\"part\\": \\"FakeThread\\",

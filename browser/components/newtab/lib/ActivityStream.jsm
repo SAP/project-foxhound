@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -396,14 +394,6 @@ const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "discoverystream.engagementLabelEnabled",
-    {
-      title:
-        "Allow the display of engagement labels for discovery stream components (eg: Trending, Popular, etc)",
-      value: false,
-    },
-  ],
-  [
     "discoverystream.isCollectionDismissible",
     {
       title: "Allows Pocket story collections to be dismissed",
@@ -454,6 +444,13 @@ const PREFS_CONFIG = new Map([
       title: "Track rec impressions",
       skipBroadcast: true,
       value: "{}",
+    },
+  ],
+  [
+    "showRecentSaves",
+    {
+      title: "Control whether a user wants recent saves visible on Newtab",
+      value: true,
     },
   ],
 ]);

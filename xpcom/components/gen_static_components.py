@@ -754,7 +754,7 @@ def gen_substs(manifests):
                     value, process = entry
                 else:
                     value, process = entry, 0
-                categories[category].append((key, value, process))
+                categories[category].append(({"name": key}, value, process))
 
     cids = set()
     contracts = []
@@ -996,6 +996,10 @@ namespace xpcom {
 enum class ModuleID : uint16_t {
 %(module_ids)s
 };
+
+// May be added as a friend function to allow constructing services via
+// private constructors and init methods.
+nsresult CreateInstanceImpl(ModuleID aID, const nsIID& aIID, void** aResult);
 
 class MOZ_STACK_CLASS StaticModuleHelper : public nsCOMPtr_helper {
  public:

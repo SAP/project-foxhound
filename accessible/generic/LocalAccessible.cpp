@@ -52,7 +52,6 @@
 
 #include "nsDeckFrame.h"
 #include "nsLayoutUtils.h"
-#include "nsIStringBundle.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
 #include "nsTextFrame.h"
@@ -653,28 +652,6 @@ nsIFrame* LocalAccessible::FindNearestAccessibleAncestorFrame() {
 nsRect LocalAccessible::ParentRelativeBounds() {
   nsIFrame* frame = GetFrame();
   if (frame && mContent) {
-    if (mContent->GetProperty(nsGkAtoms::hitregion) && mContent->IsElement()) {
-      // This is for canvas fallback content
-      // Find a canvas frame the found hit region is relative to.
-      nsIFrame* canvasFrame = frame->GetParent();
-      if (canvasFrame) {
-        canvasFrame = nsLayoutUtils::GetClosestFrameOfType(
-            canvasFrame, LayoutFrameType::HTMLCanvas);
-      }
-
-      if (canvasFrame) {
-        if (auto* canvas =
-                dom::HTMLCanvasElement::FromNode(canvasFrame->GetContent())) {
-          if (auto* context = canvas->GetCurrentContext()) {
-            nsRect bounds;
-            if (context->GetHitRegionRect(mContent->AsElement(), bounds)) {
-              return bounds;
-            }
-          }
-        }
-      }
-    }
-
     nsIFrame* boundingFrame = FindNearestAccessibleAncestorFrame();
     nsRect result = nsLayoutUtils::GetAllInFlowRectsUnion(frame, boundingFrame);
 
@@ -712,30 +689,6 @@ nsRect LocalAccessible::ParentRelativeBounds() {
 nsRect LocalAccessible::RelativeBounds(nsIFrame** aBoundingFrame) const {
   nsIFrame* frame = GetFrame();
   if (frame && mContent) {
-    if (mContent->GetProperty(nsGkAtoms::hitregion) && mContent->IsElement()) {
-      // This is for canvas fallback content
-      // Find a canvas frame the found hit region is relative to.
-      nsIFrame* canvasFrame = frame->GetParent();
-      if (canvasFrame) {
-        canvasFrame = nsLayoutUtils::GetClosestFrameOfType(
-            canvasFrame, LayoutFrameType::HTMLCanvas);
-      }
-
-      // make the canvas the bounding frame
-      if (canvasFrame) {
-        *aBoundingFrame = canvasFrame;
-        if (auto* canvas =
-                dom::HTMLCanvasElement::FromNode(canvasFrame->GetContent())) {
-          if (auto* context = canvas->GetCurrentContext()) {
-            nsRect bounds;
-            if (context->GetHitRegionRect(mContent->AsElement(), bounds)) {
-              return bounds;
-            }
-          }
-        }
-      }
-    }
-
     *aBoundingFrame = nsLayoutUtils::GetContainingBlockForClientRect(frame);
     nsRect unionRect = nsLayoutUtils::GetAllInFlowRectsUnion(
         frame, *aBoundingFrame, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
@@ -958,9 +911,11 @@ nsresult LocalAccessible::HandleAccEvent(AccEvent* aEvent) {
           AccTextChangeEvent* event = downcast_accEvent(aEvent);
           const nsString& text = event->ModifiedText();
 #if defined(XP_WIN)
-          // On Windows, events for live region updates containing embedded
-          // objects require us to dispatch synchronous events.
-          bool sync = text.Contains(L'\xfffc') &&
+          // On Windows with the cache disabled, events for live region updates
+          // containing embedded objects require us to dispatch synchronous
+          // events.
+          bool sync = !StaticPrefs::accessibility_cache_enabled_AtStartup() &&
+                      text.Contains(L'\xfffc') &&
                       nsAccUtils::IsARIALive(aEvent->GetAccessible());
 #endif
           ipcDoc->SendTextChangeEvent(id, text, event->GetStartOffset(),
@@ -1171,7 +1126,7 @@ already_AddRefed<AccAttributes> LocalAccessible::NativeAttributes() {
   // container with the live region attribute. Inner nodes override outer nodes
   // within the same document. The inner nodes can be used to override live
   // region behavior on more general outer nodes.
-  nsAccUtils::SetLiveContainerAttributes(attributes, mContent);
+  nsAccUtils::SetLiveContainerAttributes(attributes, this);
 
   if (!mContent->IsElement()) return attributes.forget();
 
@@ -1465,6 +1420,10 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
       aAttribute == nsGkAtoms::aria_posinset) {
     SendCache(CacheDomain::GroupInfo, CacheUpdateType::Update);
     return;
+  }
+
+  if (aAttribute == nsGkAtoms::accesskey) {
+    mDoc->QueueCacheUpdate(this, CacheDomain::Actions);
   }
 }
 
@@ -2535,6 +2494,14 @@ void LocalAccessible::BindToParent(LocalAccessible* aParent,
         table->GetHeaderCache().Clear();
       }
     }
+  } else if (IsTableRow() && aParent->IsTable() &&
+             StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    // This table might have previously been treated as a layout table. Now that
+    // a row has been added, it might have sufficient rows to be considered a
+    // data table. We do this here rather than when handling the reorder event
+    // because queuing a cache update once we start firing events means waiting
+    // for the next tick before the cache update is sent.
+    mDoc->QueueCacheUpdate(aParent, CacheDomain::Table);
   }
 }
 
@@ -2966,7 +2933,7 @@ bool LocalAccessible::IsActiveDescendant(LocalAccessible** aWidget) const {
   selector.AppendPrintf(
       "[aria-activedescendant=\"%s\"]",
       NS_ConvertUTF16toUTF8(mContent->GetID()->GetUTF16String()).get());
-  ErrorResult er;
+  IgnoredErrorResult er;
 
   dom::Element* widgetElm =
       docOrShadowRoot->AsNode().QuerySelector(selector, er);
@@ -3507,6 +3474,13 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
         fields->SetAttribute(nsGkAtoms::longdesc, DeleteEntry());
       }
     }
+
+    KeyBinding accessKey = AccessKey();
+    if (!accessKey.IsEmpty()) {
+      fields->SetAttribute(nsGkAtoms::accesskey, accessKey.Serialize());
+    } else if (aUpdateType == CacheUpdateType::Update) {
+      fields->SetAttribute(nsGkAtoms::accesskey, DeleteEntry());
+    }
   }
 
   if (aCacheDomain & CacheDomain::Style) {
@@ -3747,6 +3721,33 @@ void LocalAccessible::DOMNodeID(nsString& aID) const {
   }
 }
 
+void LocalAccessible::LiveRegionAttributes(nsAString* aLive,
+                                           nsAString* aRelevant,
+                                           Maybe<bool>* aAtomic,
+                                           nsAString* aBusy) const {
+  dom::Element* el = Elm();
+  if (!el) {
+    return;
+  }
+  if (aLive) {
+    el->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_live, *aLive);
+  }
+  if (aRelevant) {
+    el->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_relevant, *aRelevant);
+  }
+  if (aAtomic) {
+    // XXX We ignore aria-atomic="false", but this probably doesn't conform to
+    // the spec.
+    if (el->AttrValueIs(kNameSpaceID_None, nsGkAtoms::aria_atomic,
+                        nsGkAtoms::_true, eCaseMatters)) {
+      *aAtomic = Some(true);
+    }
+  }
+  if (aBusy) {
+    el->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_busy, *aBusy);
+  }
+}
+
 void LocalAccessible::StaticAsserts() const {
   static_assert(
       eLastStateFlag <= (1 << kStateFlagsBits) - 1,
@@ -3754,86 +3755,6 @@ void LocalAccessible::StaticAsserts() const {
   static_assert(
       eLastContextFlag <= (1 << kContextFlagsBits) - 1,
       "LocalAccessible::mContextFlags was oversized by eLastContextFlag!");
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// KeyBinding class
-
-// static
-uint32_t KeyBinding::AccelModifier() {
-  switch (WidgetInputEvent::AccelModifier()) {
-    case MODIFIER_ALT:
-      return kAlt;
-    case MODIFIER_CONTROL:
-      return kControl;
-    case MODIFIER_META:
-      return kMeta;
-    case MODIFIER_OS:
-      return kOS;
-    default:
-      MOZ_CRASH("Handle the new result of WidgetInputEvent::AccelModifier()");
-      return 0;
-  }
-}
-
-void KeyBinding::ToPlatformFormat(nsAString& aValue) const {
-  nsCOMPtr<nsIStringBundle> keyStringBundle;
-  nsCOMPtr<nsIStringBundleService> stringBundleService =
-      mozilla::components::StringBundle::Service();
-  if (stringBundleService) {
-    stringBundleService->CreateBundle(
-        "chrome://global-platform/locale/platformKeys.properties",
-        getter_AddRefs(keyStringBundle));
-  }
-
-  if (!keyStringBundle) return;
-
-  nsAutoString separator;
-  keyStringBundle->GetStringFromName("MODIFIER_SEPARATOR", separator);
-
-  nsAutoString modifierName;
-  if (mModifierMask & kControl) {
-    keyStringBundle->GetStringFromName("VK_CONTROL", modifierName);
-
-    aValue.Append(modifierName);
-    aValue.Append(separator);
-  }
-
-  if (mModifierMask & kAlt) {
-    keyStringBundle->GetStringFromName("VK_ALT", modifierName);
-
-    aValue.Append(modifierName);
-    aValue.Append(separator);
-  }
-
-  if (mModifierMask & kShift) {
-    keyStringBundle->GetStringFromName("VK_SHIFT", modifierName);
-
-    aValue.Append(modifierName);
-    aValue.Append(separator);
-  }
-
-  if (mModifierMask & kMeta) {
-    keyStringBundle->GetStringFromName("VK_META", modifierName);
-
-    aValue.Append(modifierName);
-    aValue.Append(separator);
-  }
-
-  aValue.Append(mKey);
-}
-
-void KeyBinding::ToAtkFormat(nsAString& aValue) const {
-  nsAutoString modifierName;
-  if (mModifierMask & kControl) aValue.AppendLiteral("<Control>");
-
-  if (mModifierMask & kAlt) aValue.AppendLiteral("<Alt>");
-
-  if (mModifierMask & kShift) aValue.AppendLiteral("<Shift>");
-
-  if (mModifierMask & kMeta) aValue.AppendLiteral("<Meta>");
-
-  aValue.Append(mKey);
 }
 
 TableAccessibleBase* LocalAccessible::AsTableBase() {

@@ -6,16 +6,21 @@ import hashlib
 import json
 import re
 
-from gecko_taskgraph.transforms.base import TransformSequence
-from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
-from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.schema import Schema, resolve_keyed_by
 from mozbuild.schedules import INCLUSIVE_COMPONENTS
 from mozbuild.util import ReadOnlyDict
+from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
+from taskgraph.util.schema import Schema, resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_path, get_index_url
-from voluptuous import Any, Optional, Required
+from voluptuous import (
+    Any,
+    Optional,
+    Required,
+)
+
+from gecko_taskgraph.transforms.test.variant import TEST_VARIANTS
+from gecko_taskgraph.util.platforms import platform_family
 
 transforms = TransformSequence()
 
@@ -231,11 +236,7 @@ def set_download_symbols(config, tasks):
     for task in tasks:
         if task["test-platform"].split("/")[-1] == "debug":
             task["mozharness"]["download-symbols"] = True
-        elif (
-            task["build-platform"] == "linux64-asan/opt"
-            or task["build-platform"] == "linux64-asan-qr/opt"
-            or task["build-platform"] == "windows10-64-asan-qr/opt"
-        ):
+        elif "asan" in task["build-platform"]:
             if "download-symbols" in task["mozharness"]:
                 del task["mozharness"]["download-symbols"]
         else:
@@ -291,7 +292,7 @@ def setup_browsertime(config, tasks):
         # files, the transition is straight-forward.
         extra_options = task.get("mozharness", {}).get("extra-options", [])
 
-        if task["suite"] != "raptor" or "--browsertime" not in extra_options:
+        if task["suite"] != "raptor" or "--webext" in extra_options:
             yield task
             continue
 
@@ -335,6 +336,7 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-100",
                 "linux64-chromedriver-101",
                 "linux64-chromedriver-102",
+                "linux64-chromedriver-103",
             ],
             "macosx.*": [
                 "mac64-chromedriver-98",
@@ -342,6 +344,7 @@ def setup_browsertime(config, tasks):
                 "mac64-chromedriver-100",
                 "mac64-chromedriver-101",
                 "mac64-chromedriver-102",
+                "mac64-chromedriver-103",
             ],
             "windows.*aarch64.*": [
                 "win32-chromedriver-98",
@@ -349,6 +352,7 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-100",
                 "win32-chromedriver-101",
                 "win32-chromedriver-102",
+                "win32-chromedriver-103",
             ],
             "windows.*-32.*": [
                 "win32-chromedriver-98",
@@ -356,6 +360,7 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-100",
                 "win32-chromedriver-101",
                 "win32-chromedriver-102",
+                "win32-chromedriver-103",
             ],
             "windows.*-64.*": [
                 "win32-chromedriver-98",
@@ -363,6 +368,7 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-100",
                 "win32-chromedriver-101",
                 "win32-chromedriver-102",
+                "win32-chromedriver-103",
             ],
         }
 
@@ -671,7 +677,6 @@ def handle_tier(config, tasks):
                 "android-em-7.0-x86_64-shippable-lite/opt",
                 "android-em-7.0-x86_64/debug",
                 "android-em-7.0-x86_64/debug-isolated-process",
-                "android-em-7.0-x86_64-lite/debug",
                 "android-em-7.0-x86_64/opt",
                 "android-em-7.0-x86_64-lite/opt",
                 "android-em-7.0-x86-shippable/opt",
@@ -962,7 +967,8 @@ def set_retry_exit_status(config, tasks):
     """Set the retry exit status to TBPL_RETRY, the value returned by mozharness
     scripts to indicate a transient failure that should be retried."""
     for task in tasks:
-        task["retry-exit-status"] = [4]
+        # add in 137 as it is an error with GCP workers
+        task["retry-exit-status"] = [4, 137]
         yield task
 
 

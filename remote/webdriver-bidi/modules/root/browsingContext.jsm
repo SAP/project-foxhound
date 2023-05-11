@@ -6,9 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["browsingContext"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const { Module } = ChromeUtils.import(
@@ -513,11 +512,6 @@ class BrowsingContextModule extends Module {
     if (!browsingContext.webProgress) {
       return;
     }
-
-    // Wait until navigation starts, so that an active document is attached.
-    await lazy.waitForInitialNavigationCompleted(browsingContext.webProgress, {
-      resolveWhenStarted: true,
-    });
 
     const contextInfo = this.#getBrowsingContextInfo(browsingContext, {
       maxDepth: 0,

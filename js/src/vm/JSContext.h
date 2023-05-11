@@ -402,6 +402,9 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     atomMarking().markAtomValue(this, value);
   }
 
+  // Interface for recording telemetry metrics.
+  js::Metrics metrics() { return js::Metrics(runtime_); }
+
   // Methods specific to any HelperThread for the context.
   bool addPendingCompileError(js::CompileError** err);
   void addPendingOverRecursed();
@@ -523,10 +526,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
  public:
   js::jit::Simulator* simulator() const;
   uintptr_t* addressOfSimulatorStackLimit();
-#endif
-
-#ifdef JS_TRACE_LOGGING
-  js::UnprotectedData<js::TraceLoggerThread*> traceLogger;
 #endif
 
  public:

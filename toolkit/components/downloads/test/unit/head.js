@@ -12,13 +12,16 @@
 var { Integration } = ChromeUtils.import(
   "resource://gre/modules/Integration.jsm"
 );
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
@@ -30,7 +33,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   MockRegistrar: "resource://testing-common/MockRegistrar.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   OS: "resource://gre/modules/osfile.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
@@ -1170,7 +1172,6 @@ add_setup(function test_common_initialize() {
     loadPublicDownloadListFromStore: () => Promise.resolve(),
     shouldKeepBlockedData: () => Promise.resolve(false),
     shouldBlockForParentalControls: () => Promise.resolve(false),
-    shouldBlockForRuntimePermissions: () => Promise.resolve(false),
     shouldBlockForReputationCheck: () =>
       Promise.resolve({
         shouldBlock: false,

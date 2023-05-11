@@ -40,6 +40,12 @@ let AVAILABLE_PIP_OVERRIDES;
       },
     },
 
+    abcnews: {
+      "https://*.abcnews.go.com/*": {
+        videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
+      },
+    },
+
     airmozilla: {
       "https://*.mozilla.hosted.panopto.com/*": {
         videoWrapperScriptPath: "video-wrappers/airmozilla.js",
@@ -61,9 +67,15 @@ let AVAILABLE_PIP_OVERRIDES;
       },
     },
 
+    disneyplus: {
+      "https://*.disneyplus.com/*": {
+        videoWrapperScriptPath: "video-wrappers/disneyplus.js",
+      },
+    },
+
     funimation: {
       "https://*.funimation.com/*": {
-        videoWrapperScriptPath: "video-wrappers/funimation.js",
+        videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
       },
     },
 
@@ -96,9 +108,15 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://*.laracasts.com/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
     },
 
+    mxplayer: {
+      "https://*.mxplayer.in/*": {
+        videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
+      },
+    },
+
     nebula: {
       "https://*.nebula.app/*": {
-        videoWrapperScriptPath: "video-wrappers/nebula.js",
+        videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
       },
     },
 
@@ -114,6 +132,12 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://*.netflix.com/search*": { policy: TOGGLE_POLICIES.HIDDEN },
     },
 
+    pbs: {
+      "https://*.pbs.org/*": {
+        videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
+      },
+    },
+
     piped: {
       "https://*.piped.kavin.rocks/*": {
         videoWrapperScriptPath: "video-wrappers/piped.js",
@@ -125,7 +149,7 @@ let AVAILABLE_PIP_OVERRIDES;
 
     sonyliv: {
       "https://*.sonyliv.com/*": {
-        videoWrapperScriptPath: "video-wrappers/sonyliv.js",
+        videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
       },
     },
 
@@ -145,14 +169,31 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://*.udemy.com/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
     },
 
+    voot: {
+      "https://*.voot.com/*": {
+        videoWrapperScriptPath: "video-wrappers/voot.js",
+      },
+    },
+
     youtube: {
+      /**
+       * The threshold of 0.7 is so that users can click on the "Skip Ads"
+       * button on the YouTube site player without accidentally triggering
+       * PiP.
+       */
       "https://*.youtube.com/*": {
-        visibilityThreshold: 0.9,
+        visibilityThreshold: 0.7,
         videoWrapperScriptPath: "video-wrappers/youtube.js",
       },
       "https://*.youtube-nocookie.com/*": {
         visibilityThreshold: 0.9,
         videoWrapperScriptPath: "video-wrappers/youtube.js",
+      },
+    },
+
+    washingtonpost: {
+      "https://*.washingtonpost.com/*": {
+        videoWrapperScriptPath: "video-wrappers/washingtonpost.js",
       },
     },
 

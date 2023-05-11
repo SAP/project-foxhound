@@ -17,8 +17,8 @@ var EXPORTED_SYMBOLS = [
   "FxAccountsWebChannelHelpers",
 ];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const {
   COMMAND_PROFILE_CHANGE,
@@ -35,6 +35,7 @@ const {
   COMMAND_PAIR_DECLINE,
   COMMAND_PAIR_COMPLETE,
   COMMAND_PAIR_PREFERENCES,
+  COMMAND_FIREFOX_VIEW,
   FX_OAUTH_CLIENT_ID,
   ON_PROFILE_CHANGE_NOTIFICATION,
   PREF_LAST_FXA_USER,
@@ -45,7 +46,6 @@ const {
 
 const lazy = {};
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 ChromeUtils.defineModuleGetter(
   lazy,
   "WebChannel",
@@ -220,7 +220,6 @@ FxAccountsWebChannel.prototype = {
 
   _receiveMessage(message, sendingContext) {
     const { command, data } = message;
-
     let shouldCheckRemoteType =
       lazy.separatePrivilegedMozillaWebContentProcess &&
       lazy.separatedMozillaDomains.some(function(val) {
@@ -278,6 +277,9 @@ FxAccountsWebChannel.prototype = {
             triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
           });
         }
+        break;
+      case COMMAND_FIREFOX_VIEW:
+        this._helpers.openFirefoxView(browser, data.entryPoint);
         break;
       case COMMAND_CHANGE_PASSWORD:
         this._helpers
@@ -672,6 +674,16 @@ FxAccountsWebChannelHelpers.prototype = {
     browser.loadURI(uri, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
+  },
+
+  /**
+   * Open Firefox View in the browser's window
+   *
+   * @param {Object} browser the browser in whose window we'll open Firefox View
+   * @param {String} [entryPoint] entryPoint Optional string to use for logging
+   */
+  openFirefoxView(browser, entryPoint) {
+    browser.ownerGlobal.FirefoxViewHandler.openTab(entryPoint);
   },
 
   /**

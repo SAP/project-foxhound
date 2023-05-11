@@ -2511,9 +2511,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
                                  nsRegion* aInvalidRegion) const override {
     auto geometry = static_cast<const nsDisplayTreeBodyGeometry*>(aGeometry);
 
-    if ((aBuilder->ShouldSyncDecodeImages() &&
-         geometry->ShouldInvalidateToSyncDecodeImages()) ||
-        IsWindowActive() != geometry->mWindowIsActive) {
+    if (IsWindowActive() != geometry->mWindowIsActive) {
       bool snap;
       aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
     }
@@ -2525,10 +2523,8 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      gfxContext* aCtx) override {
     MOZ_ASSERT(aBuilder);
-    ImgDrawResult result = static_cast<nsTreeBodyFrame*>(mFrame)->PaintTreeBody(
+    Unused << static_cast<nsTreeBodyFrame*>(mFrame)->PaintTreeBody(
         *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), aBuilder);
-
-    nsDisplayTreeBodyGeometry::UpdateDrawResult(this, result);
   }
 
   NS_DISPLAY_DECL_NAME("XULTreeBody", TYPE_XUL_TREE_BODY)
@@ -3218,7 +3214,7 @@ ImgDrawResult nsTreeBodyFrame::PaintTwisty(
         }
 
         // Apply context paint if applicable
-        Maybe<SVGImageContext> svgContext;
+        SVGImageContext svgContext;
         SVGImageContext::MaybeStoreContextPaint(svgContext, *aPresContext,
                                                 *twistyContext, image);
 
@@ -3592,7 +3588,7 @@ ImgDrawResult nsTreeBodyFrame::PaintCheckbox(int32_t aRowIndex,
     }
 
     // Apply context paint if applicable
-    Maybe<SVGImageContext> svgContext;
+    SVGImageContext svgContext;
     SVGImageContext::MaybeStoreContextPaint(svgContext, *aPresContext,
                                             *checkboxContext, image);
     // Paint the image.

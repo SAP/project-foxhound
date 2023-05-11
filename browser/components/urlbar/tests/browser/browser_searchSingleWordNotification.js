@@ -2,16 +2,8 @@
 "use strict";
 
 let gDNSResolved = false;
-let gRealDNSService = gDNSService;
 add_setup(async function() {
-  gDNSService = {
-    asyncResolve() {
-      gDNSResolved = true;
-      return gRealDNSService.asyncResolve(...arguments);
-    },
-  };
   registerCleanupFunction(function() {
-    gDNSService = gRealDNSService;
     Services.prefs.clearUserPref("browser.fixup.domainwhitelist.localhost");
   });
 });
@@ -69,6 +61,14 @@ async function runURLBarSearchTest({
 
   for (let i = 0; i < setValueFns.length; ++i) {
     await setValueFns[i](valueToOpen);
+    let topic = "uri-fixup-check-dns";
+    let observer = (aSubject, aTopicInner, aData) => {
+      if (aTopicInner == topic) {
+        gDNSResolved = true;
+      }
+    };
+    Services.obs.addObserver(observer, topic);
+
     if (enterSearchMode) {
       if (!expectSearch) {
         throw new Error("Must execute a search in search mode");
@@ -122,6 +122,8 @@ async function runURLBarSearchTest({
         notificationBox.currentNotification.close();
       }
     }
+
+    Services.obs.removeObserver(observer, topic);
     Assert.equal(
       gDNSResolved,
       expectDNSResolve,
@@ -233,22 +235,35 @@ function get_test_function_for_localhost_with_hostname(
       win = OpenBrowserWindow({ private: true });
       await promiseWin;
       await SimpleTest.promiseFocus(win);
-      // We can do this since the window will be gone shortly.
-      delete win.gDNSService;
-      win.gDNSService = {
-        asyncResolve() {
-          gDNSResolved = true;
-          return gRealDNSService.asyncResolve(...arguments);
-        },
-      };
     } else {
       win = window;
     }
 
-    // Remove the domain from the whitelist, the notification sould appear,
-    // unless we are in private browsing mode.
+    // Remove the domain from the whitelist
     Services.prefs.setBoolPref(pref, false);
 
+    // The notification should not appear because the default value of
+    // browser.urlbar.dnsResolveSingleWordsAfterSearch is 0
+    await BrowserTestUtils.withNewTab(
+      {
+        gBrowser: win.gBrowser,
+        url: "about:blank",
+      },
+      browser =>
+        runURLBarSearchTest({
+          valueToOpen: hostName,
+          expectSearch: true,
+          expectNotification: false,
+          expectDNSResolve: false,
+          aWindow: win,
+        })
+    );
+
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.dnsResolveSingleWordsAfterSearch", 1]],
+    });
+
+    // The notification should appear, unless we are in private browsing mode.
     await BrowserTestUtils.withNewTab(
       {
         gBrowser: win.gBrowser,
@@ -290,6 +305,8 @@ function get_test_function_for_localhost_with_hostname(
       await BrowserTestUtils.closeWindow(win);
       await SimpleTest.promiseFocus(window);
     }
+
+    await SpecialPowers.popPrefEnv();
   };
 }
 

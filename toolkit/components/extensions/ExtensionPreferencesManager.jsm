@@ -23,14 +23,12 @@
 const EXPORTED_SYMBOLS = ["ExtensionPreferencesManager"];
 let ExtensionPreferencesManager;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const { Management } = ChromeUtils.import(
   "resource://gre/modules/Extension.jsm"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};

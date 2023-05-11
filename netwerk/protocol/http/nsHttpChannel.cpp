@@ -344,9 +344,11 @@ void nsHttpChannel::ReleaseMainThreadOnlyReferences() {
 nsresult nsHttpChannel::Init(nsIURI* uri, uint32_t caps, nsProxyInfo* proxyInfo,
                              uint32_t proxyResolveFlags, nsIURI* proxyURI,
                              uint64_t channelId,
-                             ExtContentPolicyType aContentPolicyType) {
-  nsresult rv = HttpBaseChannel::Init(uri, caps, proxyInfo, proxyResolveFlags,
-                                      proxyURI, channelId, aContentPolicyType);
+                             ExtContentPolicyType aContentPolicyType,
+                             nsILoadInfo* aLoadInfo) {
+  nsresult rv =
+      HttpBaseChannel::Init(uri, caps, proxyInfo, proxyResolveFlags, proxyURI,
+                            channelId, aContentPolicyType, aLoadInfo);
   if (NS_FAILED(rv)) return rv;
 
   LOG1(("nsHttpChannel::Init [this=%p]\n", this));
@@ -394,14 +396,16 @@ nsresult nsHttpChannel::PrepareToConnect() {
 
 #ifdef XP_WIN
   // If Windows 10 SSO is enabled, we potentially add auth information to
-  // secure top level loads (DOCUMENTs) that aren't anonymous or
-  // private browsing.
+  // secure top level loads (DOCUMENTs) and iframes (SUBDOCUMENTs) that
+  // aren't anonymous or private browsing.
   if (StaticPrefs::network_http_windows_sso_enabled() &&
-      mURI->SchemeIs("https") &&
-      mLoadInfo->GetExternalContentPolicyType() ==
-          ExtContentPolicy::TYPE_DOCUMENT &&
-      !(mLoadFlags & LOAD_ANONYMOUS) && !mPrivateBrowsing) {
-    AddWindowsSSO(this);
+      mURI->SchemeIs("https") && !(mLoadFlags & LOAD_ANONYMOUS) &&
+      !mPrivateBrowsing) {
+    ExtContentPolicyType type = mLoadInfo->GetExternalContentPolicyType();
+    if (type == ExtContentPolicy::TYPE_DOCUMENT ||
+        type == ExtContentPolicy::TYPE_SUBDOCUMENT) {
+      AddWindowsSSO(this);
+    }
   }
 #endif
 
@@ -961,7 +965,7 @@ void nsHttpChannel::SpeculativeConnect() {
       mConnectionInfo, callbacks,
       mCaps & (NS_HTTP_DISALLOW_SPDY | NS_HTTP_TRR_MODE_MASK |
                NS_HTTP_DISABLE_IPV4 | NS_HTTP_DISABLE_IPV6 |
-               NS_HTTP_DISALLOW_HTTP3),
+               NS_HTTP_DISALLOW_HTTP3 | NS_HTTP_REFRESH_DNS),
       gHttpHandler->EchConfigEnabled());
 }
 
@@ -1130,6 +1134,10 @@ nsresult nsHttpChannel::SetupTransaction() {
 
   if (mLoadFlags & LOAD_ANONYMOUS_ALLOW_CLIENT_CERT) {
     mCaps |= NS_HTTP_LOAD_ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT;
+  }
+
+  if (nsContentUtils::ShouldResistFingerprinting(this)) {
+    mCaps |= NS_HTTP_USE_RFP;
   }
 
   // Use the URI path if not proxying (transparent proxying such as proxy
@@ -1800,9 +1808,8 @@ nsresult nsHttpChannel::ProcessHSTSHeader(nsITransportSecurityInfo* aSecInfo) {
   }
 
   uint32_t failureResult;
-  uint32_t headerSource = nsISiteSecurityService::SOURCE_ORGANIC_REQUEST;
-  rv = sss->ProcessHeader(mURI, securityHeader, aSecInfo, headerSource,
-                          originAttributes, nullptr, nullptr, &failureResult);
+  rv = sss->ProcessHeader(mURI, securityHeader, aSecInfo, originAttributes,
+                          nullptr, nullptr, &failureResult);
   if (NS_FAILED(rv)) {
     nsAutoString consoleErrorCategory(u"Invalid HSTS Headers"_ns);
     nsAutoString consoleErrorTag;
@@ -9520,13 +9527,12 @@ nsresult nsHttpChannel::RedirectToInterceptedChannel() {
 
   ExtContentPolicyType type = mLoadInfo->GetExternalContentPolicyType();
 
-  nsresult rv = intercepted->Init(
-      mURI, mCaps, static_cast<nsProxyInfo*>(mProxyInfo.get()),
-      mProxyResolveFlags, mProxyURI, mChannelId, type);
-
   nsCOMPtr<nsILoadInfo> redirectLoadInfo =
       CloneLoadInfoForRedirect(mURI, nsIChannelEventSink::REDIRECT_INTERNAL);
-  intercepted->SetLoadInfo(redirectLoadInfo);
+
+  nsresult rv = intercepted->Init(
+      mURI, mCaps, static_cast<nsProxyInfo*>(mProxyInfo.get()),
+      mProxyResolveFlags, mProxyURI, mChannelId, type, redirectLoadInfo);
 
   rv = SetupReplacementChannel(mURI, intercepted, true,
                                nsIChannelEventSink::REDIRECT_INTERNAL);

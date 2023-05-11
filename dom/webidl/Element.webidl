@@ -171,9 +171,7 @@ interface Element : Node {
 // https://html.spec.whatwg.org/#focus-management-apis
 dictionary FocusOptions {
   boolean preventScroll = false;
-  // Prevents the focus ring if this is not a text control / editable element.
-  [Func="nsContentUtils::IsCallerChromeOrErrorPage"]
-  boolean preventFocusRing = false;
+  boolean focusVisible;
 };
 
 interface mixin HTMLOrForeignElement {
@@ -396,6 +394,6 @@ dictionary SetHTMLOptions {
 };
 
 partial interface Element {
-  [UseCounter, Throws, Pref="dom.security.sanitizer.enabled"]
+  [SecureContext, UseCounter, Throws, Pref="dom.security.sanitizer.enabled"]
     void setHTML(DOMString aInnerHTML, optional SetHTMLOptions options = {});
 };

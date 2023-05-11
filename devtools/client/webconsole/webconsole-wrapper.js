@@ -8,8 +8,10 @@ const {
   createFactory,
 } = require("devtools/client/shared/vendor/react");
 const ReactDOM = require("devtools/client/shared/vendor/react-dom");
-const { Provider } = require("devtools/client/shared/vendor/react-redux");
-const ToolboxProvider = require("devtools/client/framework/store-provider");
+const {
+  Provider,
+  createProvider,
+} = require("devtools/client/shared/vendor/react-redux");
 const Services = require("Services");
 
 const actions = require("devtools/client/webconsole/actions/index");
@@ -21,6 +23,7 @@ const {
 const {
   getMutableMessagesById,
   getMessage,
+  getAllNetworkMessagesUpdateById,
 } = require("devtools/client/webconsole/selectors/messages");
 const Telemetry = require("devtools/client/shared/telemetry");
 
@@ -47,14 +50,16 @@ loader.lazyGetter(this, "L10N", function() {
   return new LocalizationHelper("devtools/client/locales/startup.properties");
 });
 
-function renderApp({ app, store, toolbox, root }) {
+function renderApp({ app, store, commands, root }) {
   return ReactDOM.render(
     createElement(
       Provider,
       { store },
-      toolbox
-        ? createElement(ToolboxProvider, { store: toolbox.store }, app)
-        : app
+      createElement(
+        createProvider(commands.targetCommand.storeId),
+        { store: commands.targetCommand.store },
+        app
+      )
     ),
     root
   );
@@ -128,7 +133,7 @@ class WebConsoleWrapper {
           app,
           store,
           root: this.parentNode,
-          toolbox: this.toolbox,
+          commands: this.hud.commands,
         });
       } else {
         // If there's no parentNode, we are in a test. So we can resolve immediately.
@@ -143,6 +148,13 @@ class WebConsoleWrapper {
 
   dispatchMessagesAdd(messages) {
     this.batchedMessagesAdd(messages);
+  }
+
+  dispatchNetworkMessagesDisable() {
+    const networkMessageIds = Object.keys(
+      getAllNetworkMessagesUpdateById(store.getState())
+    );
+    store.dispatch(actions.messagesDisable(networkMessageIds));
   }
 
   dispatchMessagesClear() {

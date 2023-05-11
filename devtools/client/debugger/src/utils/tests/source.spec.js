@@ -14,7 +14,6 @@ import {
   isDescendantOfRoot,
   removeThreadActorId,
   isUrlExtension,
-  isExtensionDirectoryPath,
   getLineText,
 } from "../source.js";
 
@@ -40,7 +39,6 @@ const defaultSymbolDeclarations = {
   literals: [],
   hasJsx: false,
   hasTypes: false,
-  loading: false,
   framework: undefined,
 };
 
@@ -542,20 +540,6 @@ describe("sources", () => {
     });
     it("should return false for non-extension assets", () => {
       expect(isUrlExtension("https://example.org/init.js")).toBe(false);
-    });
-  });
-
-  describe("isExtensionDirectoryPath", () => {
-    it("should detect mozilla extension directory", () => {
-      expect(isExtensionDirectoryPath("moz-extension://id")).toBe(true);
-    });
-    it("should detect chrome extension directory", () => {
-      expect(isExtensionDirectoryPath("chrome-extension://id")).toBe(true);
-    });
-    it("should return false for child file within the extension directory", () => {
-      expect(isExtensionDirectoryPath("moz-extension://id/js/content.js")).toBe(
-        false
-      );
     });
   });
 

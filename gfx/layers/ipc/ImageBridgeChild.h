@@ -194,6 +194,11 @@ class ImageBridgeChild final : public PImageBridgeChild,
 
   void UpdateImageClient(RefPtr<ImageContainer> aContainer);
 
+  void UpdateCompositable(const RefPtr<ImageContainer> aContainer,
+                          const RemoteTextureId aTextureId,
+                          const RemoteTextureOwnerId aOwnerId,
+                          const gfx::IntSize aSize, const TextureFlags aFlags);
+
   /**
    * Flush all Images sent to CompositableHost.
    */
@@ -218,7 +223,6 @@ class ImageBridgeChild final : public PImageBridgeChild,
                           ImageContainer* aContainer);
 
   void ProxyAllocShmemNow(SynchronousTask* aTask, size_t aSize,
-                          SharedMemory::SharedMemoryType aType,
                           mozilla::ipc::Shmem* aShmem, bool aUnsafe,
                           bool* aSuccess);
   void ProxyDeallocShmemNow(SynchronousTask* aTask, mozilla::ipc::Shmem* aShmem,
@@ -240,6 +244,15 @@ class ImageBridgeChild final : public PImageBridgeChild,
    */
   void UseTextures(CompositableClient* aCompositable,
                    const nsTArray<TimedTextureClient>& aTextures) override;
+
+  void UseRemoteTexture(CompositableClient* aCompositable,
+                        const RemoteTextureId aTextureId,
+                        const RemoteTextureOwnerId aOwnerId,
+                        const gfx::IntSize aSize,
+                        const TextureFlags aFlags) override;
+
+  void EnableAsyncCompositable(CompositableClient* aCompositable,
+                               bool aEnable) override;
 
   void ReleaseCompositable(const CompositableHandle& aHandle) override;
 
@@ -274,12 +287,8 @@ class ImageBridgeChild final : public PImageBridgeChild,
    * If used outside the ImageBridgeChild thread, it will proxy a synchronous
    * call on the ImageBridgeChild thread.
    */
-  bool AllocUnsafeShmem(size_t aSize,
-                        mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                        mozilla::ipc::Shmem* aShmem) override;
-  bool AllocShmem(size_t aSize,
-                  mozilla::ipc::SharedMemory::SharedMemoryType aShmType,
-                  mozilla::ipc::Shmem* aShmem) override;
+  bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
+  bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
 
   /**
    * See ISurfaceAllocator.h
@@ -307,9 +316,7 @@ class ImageBridgeChild final : public PImageBridgeChild,
 
  protected:
   explicit ImageBridgeChild(uint32_t aNamespace);
-  bool DispatchAllocShmemInternal(size_t aSize,
-                                  SharedMemory::SharedMemoryType aType,
-                                  Shmem* aShmem, bool aUnsafe);
+  bool DispatchAllocShmemInternal(size_t aSize, Shmem* aShmem, bool aUnsafe);
 
   void Bind(Endpoint<PImageBridgeChild>&& aEndpoint);
   void BindSameProcess(RefPtr<ImageBridgeParent> aParent);

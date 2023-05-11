@@ -17,6 +17,7 @@ Object {
       source={
         Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -24,7 +25,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -46,7 +46,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         }
@@ -67,14 +66,16 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -82,7 +83,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -104,7 +104,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         },
@@ -117,6 +116,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -124,7 +124,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -146,7 +145,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -182,15 +180,17 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -198,7 +198,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -220,7 +219,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               },
@@ -235,6 +233,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -242,7 +241,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -264,7 +262,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -299,6 +296,7 @@ Object {
             source={
               Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -306,7 +304,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -328,7 +325,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               }
@@ -347,14 +343,16 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -362,7 +360,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -384,7 +381,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -397,6 +393,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -404,7 +401,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -426,7 +422,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -457,6 +452,7 @@ Object {
       source={
         Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -464,7 +460,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -486,7 +481,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         }
@@ -512,15 +506,17 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "hasMatchingGeneratedSource": true,
       "item": Object {
         "contents": Object {
           "displayURL": Object {
+            "fileExtension": "",
             "filename": "url",
             "group": "",
             "path": "url",
@@ -528,7 +524,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -545,7 +540,6 @@ Object {
               "path": "FakeThread/",
             },
           ],
-          "relativeUrl": "url",
           "thread": "FakeThread",
           "url": "url",
         },
@@ -559,6 +553,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -566,7 +561,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -588,7 +582,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -624,16 +617,18 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           hasMatchingGeneratedSource={true}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
+                  "fileExtension": "",
                   "filename": "url",
                   "group": "",
                   "path": "url",
@@ -641,7 +636,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -658,7 +652,6 @@ Object {
                     "path": "FakeThread/",
                   },
                 ],
-                "relativeUrl": "url",
                 "thread": "FakeThread",
                 "url": "url",
               },
@@ -674,6 +667,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -681,7 +675,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -703,7 +696,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -738,6 +730,7 @@ Object {
             source={
               Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -745,7 +738,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -767,7 +759,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               }
@@ -791,15 +782,17 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "hasMatchingGeneratedSource": true,
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "",
           "filename": "url",
           "group": "",
           "path": "url",
@@ -807,7 +800,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -824,7 +816,6 @@ Object {
             "path": "FakeThread/",
           },
         ],
-        "relativeUrl": "url",
         "thread": "FakeThread",
         "url": "url",
       },
@@ -838,6 +829,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -845,7 +837,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -867,7 +858,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -898,6 +888,7 @@ Object {
       source={
         Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -905,7 +896,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -927,7 +917,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         }
@@ -948,15 +937,17 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 0,
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Object {
           "displayURL": Object {
+            "fileExtension": "",
             "filename": "url",
             "group": "",
             "path": "url",
@@ -964,7 +955,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -981,7 +971,6 @@ Object {
               "path": "FakeThread/",
             },
           ],
-          "relativeUrl": "url",
           "thread": "FakeThread",
           "url": "url",
         },
@@ -995,6 +984,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -1002,7 +992,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -1024,7 +1013,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -1060,16 +1048,18 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={0}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
+                  "fileExtension": "",
                   "filename": "url",
                   "group": "",
                   "path": "url",
@@ -1077,7 +1067,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -1094,7 +1083,6 @@ Object {
                     "path": "FakeThread/",
                   },
                 ],
-                "relativeUrl": "url",
                 "thread": "FakeThread",
                 "url": "url",
               },
@@ -1110,6 +1098,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -1117,7 +1106,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -1139,7 +1127,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -1174,6 +1161,7 @@ Object {
             source={
               Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -1181,7 +1169,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -1203,7 +1190,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               }
@@ -1222,15 +1208,17 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 0,
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "",
           "filename": "url",
           "group": "",
           "path": "url",
@@ -1238,7 +1226,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -1255,7 +1242,6 @@ Object {
             "path": "FakeThread/",
           },
         ],
-        "relativeUrl": "url",
         "thread": "FakeThread",
         "url": "url",
       },
@@ -1269,6 +1255,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -1276,7 +1263,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -1298,7 +1284,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -1342,12 +1327,13 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 0,
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "http://mdn.com",
@@ -1360,6 +1346,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -1367,7 +1354,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -1389,7 +1375,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -1425,12 +1410,13 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={0}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -1446,6 +1432,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -1453,7 +1440,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -1475,7 +1461,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -1521,12 +1506,13 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 0,
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "http://mdn.com",
@@ -1539,6 +1525,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -1546,7 +1533,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -1568,7 +1554,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -1612,13 +1597,14 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 0,
       "expanded": false,
       "focusItem": [MockFunction],
       "focused": true,
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "http://mdn.com",
@@ -1631,6 +1617,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -1638,7 +1625,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -1660,7 +1646,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -1696,13 +1681,14 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={0}
           expanded={false}
           focusItem={[MockFunction]}
           focused={true}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -1718,6 +1704,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -1725,7 +1712,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -1747,7 +1733,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -1793,13 +1778,14 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 0,
     "expanded": false,
     "focusItem": [MockFunction],
     "focused": true,
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "http://mdn.com",
@@ -1812,6 +1798,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -1819,7 +1806,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -1841,7 +1827,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -1885,13 +1870,14 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 1,
       "expanded": true,
       "focusItem": [MockFunction],
       "focused": true,
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "folder",
@@ -1935,13 +1921,14 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={1}
           expanded={true}
           focusItem={[MockFunction]}
           focused={true}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -1996,13 +1983,14 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 1,
     "expanded": true,
     "focusItem": [MockFunction],
     "focused": true,
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "folder",
@@ -2037,12 +2025,12 @@ Object {
       className="arrow"
     />
     <AccessibleImage
-      className="angular"
+      className="folder"
     />
     <span
       className="label"
     >
-      Angular
+      ng://
     </span>
   </div>,
   "defaultState": null,
@@ -2054,11 +2042,12 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "ng://",
@@ -2071,6 +2060,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -2078,7 +2068,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -2100,7 +2089,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -2136,11 +2124,12 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -2156,6 +2145,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -2163,7 +2153,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -2185,7 +2174,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -2216,12 +2204,12 @@ Object {
             className="arrow"
           />
           <AccessibleImage
-            className="angular"
+            className="folder"
           />
           <span
             className="label"
           >
-            Angular
+            ng://
           </span>
         </div>,
         "_rendering": false,
@@ -2231,11 +2219,12 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "ng://",
@@ -2248,6 +2237,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -2255,7 +2245,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -2277,7 +2266,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -2321,12 +2309,13 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 0,
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "folder",
@@ -2339,6 +2328,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -2346,7 +2336,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -2368,7 +2357,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -2405,12 +2393,13 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={0}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -2426,6 +2415,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -2433,7 +2423,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -2455,7 +2444,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -2502,12 +2490,13 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 0,
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "folder",
@@ -2520,6 +2509,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -2527,7 +2517,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -2549,7 +2538,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -2594,11 +2582,12 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "folder",
@@ -2642,11 +2631,12 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -2701,11 +2691,12 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "folder",
@@ -2757,13 +2748,14 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 1,
       "expanded": true,
       "focusItem": [MockFunction],
       "focused": false,
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "folder",
@@ -2807,13 +2799,14 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={1}
           expanded={true}
           focusItem={[MockFunction]}
           focused={false}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -2868,13 +2861,14 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 1,
     "expanded": true,
     "focusItem": [MockFunction],
     "focused": false,
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "folder",
@@ -2909,7 +2903,7 @@ Object {
       className="arrow"
     />
     <AccessibleImage
-      className="extension"
+      className="globe-small"
     />
     <span
       className="label"
@@ -2926,14 +2920,48 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 1,
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
-        "contents": Array [],
+        "contents": Object {
+          "displayURL": Object {
+            "fileExtension": "js",
+            "filename": "foo.js",
+            "group": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+            "path": "/foo.js",
+            "search": "",
+          },
+          "extensionName": null,
+          "id": "server1.conn13.child1/40",
+          "isExtension": true,
+          "isOriginal": false,
+          "isPrettyPrinted": false,
+          "isWasm": false,
+          "parts": Array [
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "FakeThread",
+              "path": "FakeThread",
+            },
+            Object {
+              "mainThreadHostIfRoot": "http://www.example.com",
+              "part": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+              "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+            },
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "foo.js",
+              "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+            },
+          ],
+          "thread": "FakeThread",
+          "url": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+        },
         "name": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
         "path": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
         "type": "directory",
@@ -2944,6 +2972,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -2951,7 +2980,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -2973,7 +3001,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -3009,15 +3036,49 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={1}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
-              "contents": Array [],
+              "contents": Object {
+                "displayURL": Object {
+                  "fileExtension": "js",
+                  "filename": "foo.js",
+                  "group": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+                  "path": "/foo.js",
+                  "search": "",
+                },
+                "extensionName": null,
+                "id": "server1.conn13.child1/40",
+                "isExtension": true,
+                "isOriginal": false,
+                "isPrettyPrinted": false,
+                "isWasm": false,
+                "parts": Array [
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "FakeThread",
+                    "path": "FakeThread",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": "http://www.example.com",
+                    "part": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+                    "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "foo.js",
+                    "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+                  },
+                ],
+                "thread": "FakeThread",
+                "url": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+              },
               "name": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
               "path": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
               "type": "directory",
@@ -3030,6 +3091,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -3037,7 +3099,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -3059,7 +3120,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -3090,7 +3150,7 @@ Object {
             className="arrow"
           />
           <AccessibleImage
-            className="extension"
+            className="globe-small"
           />
           <span
             className="label"
@@ -3105,14 +3165,48 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 1,
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
-      "contents": Array [],
+      "contents": Object {
+        "displayURL": Object {
+          "fileExtension": "js",
+          "filename": "foo.js",
+          "group": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+          "path": "/foo.js",
+          "search": "",
+        },
+        "extensionName": null,
+        "id": "server1.conn13.child1/40",
+        "isExtension": true,
+        "isOriginal": false,
+        "isPrettyPrinted": false,
+        "isWasm": false,
+        "parts": Array [
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "FakeThread",
+            "path": "FakeThread",
+          },
+          Object {
+            "mainThreadHostIfRoot": "http://www.example.com",
+            "part": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+            "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+          },
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "foo.js",
+            "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+          },
+        ],
+        "thread": "FakeThread",
+        "url": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+      },
       "name": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
       "path": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
       "type": "directory",
@@ -3123,6 +3217,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -3130,7 +3225,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -3152,7 +3246,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -3179,7 +3272,7 @@ Object {
       className="arrow"
     />
     <AccessibleImage
-      className="extension"
+      className="globe-small"
     />
     <span
       className="label"
@@ -3196,14 +3289,48 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "depth": 0,
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
-        "contents": Array [],
+        "contents": Object {
+          "displayURL": Object {
+            "fileExtension": "js",
+            "filename": "foo.js",
+            "group": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+            "path": "/foo.js",
+            "search": "",
+          },
+          "extensionName": null,
+          "id": "server1.conn13.child1/40",
+          "isExtension": true,
+          "isOriginal": false,
+          "isPrettyPrinted": false,
+          "isWasm": false,
+          "parts": Array [
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "FakeThread",
+              "path": "FakeThread",
+            },
+            Object {
+              "mainThreadHostIfRoot": "http://www.example.com",
+              "part": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+              "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+            },
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "foo.js",
+              "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+            },
+          ],
+          "thread": "FakeThread",
+          "url": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+        },
         "name": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
         "path": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
         "type": "directory",
@@ -3214,6 +3341,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -3221,7 +3349,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -3243,7 +3370,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -3280,15 +3406,49 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           depth={0}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
-              "contents": Array [],
+              "contents": Object {
+                "displayURL": Object {
+                  "fileExtension": "js",
+                  "filename": "foo.js",
+                  "group": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+                  "path": "/foo.js",
+                  "search": "",
+                },
+                "extensionName": null,
+                "id": "server1.conn13.child1/40",
+                "isExtension": true,
+                "isOriginal": false,
+                "isPrettyPrinted": false,
+                "isWasm": false,
+                "parts": Array [
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "FakeThread",
+                    "path": "FakeThread",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": "http://www.example.com",
+                    "part": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+                    "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "foo.js",
+                    "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+                  },
+                ],
+                "thread": "FakeThread",
+                "url": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+              },
               "name": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
               "path": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
               "type": "directory",
@@ -3301,6 +3461,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -3308,7 +3469,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -3330,7 +3490,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -3362,7 +3521,7 @@ Object {
             className="arrow"
           />
           <AccessibleImage
-            className="extension"
+            className="globe-small"
           />
           <span
             className="label"
@@ -3377,14 +3536,48 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 0,
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
-      "contents": Array [],
+      "contents": Object {
+        "displayURL": Object {
+          "fileExtension": "js",
+          "filename": "foo.js",
+          "group": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+          "path": "/foo.js",
+          "search": "",
+        },
+        "extensionName": null,
+        "id": "server1.conn13.child1/40",
+        "isExtension": true,
+        "isOriginal": false,
+        "isPrettyPrinted": false,
+        "isWasm": false,
+        "parts": Array [
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "FakeThread",
+            "path": "FakeThread",
+          },
+          Object {
+            "mainThreadHostIfRoot": "http://www.example.com",
+            "part": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+            "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+          },
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "foo.js",
+            "path": "FakeThread/moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+          },
+        ],
+        "thread": "FakeThread",
+        "url": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+      },
       "name": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
       "path": "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
       "type": "directory",
@@ -3395,6 +3588,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -3402,7 +3596,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -3424,7 +3617,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -3452,12 +3644,12 @@ Object {
       className="arrow"
     />
     <AccessibleImage
-      className="webpack"
+      className="folder"
     />
     <span
       className="label"
     >
-      Webpack
+      webpack://
     </span>
   </div>,
   "defaultState": null,
@@ -3469,11 +3661,12 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Array [],
         "name": "webpack://",
@@ -3486,6 +3679,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -3493,7 +3687,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -3515,7 +3708,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -3551,11 +3743,12 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Array [],
@@ -3571,6 +3764,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -3578,7 +3772,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -3600,7 +3793,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -3631,12 +3823,12 @@ Object {
             className="arrow"
           />
           <AccessibleImage
-            className="webpack"
+            className="folder"
           />
           <span
             className="label"
           >
-            Webpack
+            webpack://
           </span>
         </div>,
         "_rendering": false,
@@ -3646,11 +3838,12 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Array [],
       "name": "webpack://",
@@ -3663,6 +3856,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -3670,7 +3864,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -3692,7 +3885,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -3718,32 +3910,12 @@ Object {
     <span
       className="img no-arrow"
     />
-    <AccessibleImage
-      className="blackBox"
-    />
-    <span
-      className="label"
-    >
-      one.js
-    </span>
-  </div>,
-  "defaultState": null,
-  "instance": SourceTreeItem {
-    "addBlackboxAllOption": [Function],
-    "addCollapseExpandAllOptions": [Function],
-    "context": Object {},
-    "handleDownloadFile": [Function],
-    "onClick": [Function],
-    "onContextMenu": [Function],
-    "props": Object {
-      "blackBoxSources": [MockFunction],
-      "clearProjectDirectoryRoot": [MockFunction],
-      "expanded": false,
-      "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
-      "item": Object {
-        "contents": Object {
+    <Connect(SourceIcon)
+      modifier={[Function]}
+      source={
+        Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -3773,7 +3945,65 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
+          "thread": "FakeThread",
+          "url": "http://mdn.com/one.js",
+        }
+      }
+    />
+    <span
+      className="label"
+    >
+      one.js
+    </span>
+  </div>,
+  "defaultState": null,
+  "instance": SourceTreeItem {
+    "addBlackboxAllOption": [Function],
+    "addCollapseExpandAllOptions": [Function],
+    "context": Object {},
+    "handleDownloadFile": [Function],
+    "onClick": [Function],
+    "onContextMenu": [Function],
+    "props": Object {
+      "blackBoxRanges": Object {},
+      "blackBoxSources": [MockFunction],
+      "clearProjectDirectoryRoot": [MockFunction],
+      "expanded": false,
+      "focusItem": [MockFunction],
+      "getBlackBoxSourcesGroups": [Function],
+      "item": Object {
+        "contents": Object {
+          "displayURL": Object {
+            "fileExtension": "js",
+            "filename": "one.js",
+            "group": "mdn.com",
+            "path": "/one.js",
+            "search": "",
+          },
+          "extensionName": null,
+          "id": "server1.conn13.child1/39",
+          "isBlackBoxed": true,
+          "isExtension": false,
+          "isOriginal": false,
+          "isPrettyPrinted": false,
+          "isWasm": false,
+          "parts": Array [
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "FakeThread",
+              "path": "FakeThread",
+            },
+            Object {
+              "mainThreadHostIfRoot": "http://www.example.com",
+              "part": "mdn.com",
+              "path": "FakeThread/mdn.com",
+            },
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "one.js",
+              "path": "FakeThread/mdn.com/one.js",
+            },
+          ],
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         },
@@ -3787,6 +4017,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -3816,7 +4047,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -3852,15 +4082,17 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -3890,7 +4122,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               },
@@ -3906,6 +4137,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -3935,7 +4167,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -3965,8 +4196,45 @@ Object {
           <span
             className="img no-arrow"
           />
-          <AccessibleImage
-            className="blackBox"
+          <Connect(SourceIcon)
+            modifier={[Function]}
+            source={
+              Object {
+                "displayURL": Object {
+                  "fileExtension": "js",
+                  "filename": "one.js",
+                  "group": "mdn.com",
+                  "path": "/one.js",
+                  "search": "",
+                },
+                "extensionName": null,
+                "id": "server1.conn13.child1/39",
+                "isBlackBoxed": true,
+                "isExtension": false,
+                "isOriginal": false,
+                "isPrettyPrinted": false,
+                "isWasm": false,
+                "parts": Array [
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "FakeThread",
+                    "path": "FakeThread",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": "http://www.example.com",
+                    "part": "mdn.com",
+                    "path": "FakeThread/mdn.com",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "one.js",
+                    "path": "FakeThread/mdn.com/one.js",
+                  },
+                ],
+                "thread": "FakeThread",
+                "url": "http://mdn.com/one.js",
+              }
+            }
           />
           <span
             className="label"
@@ -3981,14 +4249,16 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -4018,7 +4288,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -4032,6 +4301,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -4061,7 +4331,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -4087,368 +4356,12 @@ Object {
     <span
       className="img no-arrow"
     />
-    <AccessibleImage
-      className="prettyPrint"
-    />
-    <span
-      className="label"
-    >
-      one.js
-    </span>
-  </div>,
-  "defaultState": null,
-  "instance": SourceTreeItem {
-    "addBlackboxAllOption": [Function],
-    "addCollapseExpandAllOptions": [Function],
-    "context": Object {},
-    "handleDownloadFile": [Function],
-    "onClick": [Function],
-    "onContextMenu": [Function],
-    "props": Object {
-      "blackBoxSources": [MockFunction],
-      "clearProjectDirectoryRoot": [MockFunction],
-      "expanded": false,
-      "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
-      "hasPrettyTab": true,
-      "item": Object {
-        "contents": Object {
-          "displayURL": Object {
-            "filename": "url",
-            "group": "",
-            "path": "url",
-            "search": "",
-          },
-          "extensionName": null,
-          "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
-          "isExtension": false,
-          "isOriginal": false,
-          "isPrettyPrinted": false,
-          "isWasm": false,
-          "parts": Array [
-            Object {
-              "mainThreadHostIfRoot": null,
-              "part": "FakeThread",
-              "path": "FakeThread",
-            },
-            Object {
-              "mainThreadHostIfRoot": "http://www.example.com",
-              "part": "",
-              "path": "FakeThread/",
-            },
-          ],
-          "relativeUrl": "url",
-          "thread": "FakeThread",
-          "url": "url",
-        },
-        "name": "one.js",
-        "path": "http://mdn.com/one.js",
-        "type": "source",
-      },
-      "projectRoot": "",
-      "selectItem": [MockFunction],
-      "setExpanded": [MockFunction],
-      "setProjectDirectoryRoot": [MockFunction],
-      "source": Object {
-        "displayURL": Object {
-          "filename": "one.js",
-          "group": "mdn.com",
-          "path": "/one.js",
-          "search": "",
-        },
-        "extensionName": null,
-        "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
-        "isExtension": false,
-        "isOriginal": false,
-        "isPrettyPrinted": false,
-        "isWasm": false,
-        "parts": Array [
-          Object {
-            "mainThreadHostIfRoot": null,
-            "part": "FakeThread",
-            "path": "FakeThread",
-          },
-          Object {
-            "mainThreadHostIfRoot": "http://www.example.com",
-            "part": "mdn.com",
-            "path": "FakeThread/mdn.com",
-          },
-          Object {
-            "mainThreadHostIfRoot": null,
-            "part": "one.js",
-            "path": "FakeThread/mdn.com/one.js",
-          },
-        ],
-        "relativeUrl": "http://mdn.com/one.js",
-        "thread": "FakeThread",
-        "url": "http://mdn.com/one.js",
-      },
-      "threads": Array [
-        Object {
-          "name": "Main Thread",
-        },
-      ],
-      "toggleBlackBox": [MockFunction],
-    },
-    "refs": Object {},
-    "setState": [Function],
-    "state": null,
-    "updater": Updater {
-      "_callbacks": Array [],
-      "_renderer": ReactShallowRenderer {
-        "_context": Object {},
-        "_didScheduleRenderPhaseUpdate": false,
-        "_dispatcher": Object {
-          "readContext": [Function],
-          "useCallback": [Function],
-          "useContext": [Function],
-          "useDebugValue": [Function],
-          "useDeferredValue": [Function],
-          "useEffect": [Function],
-          "useImperativeHandle": [Function],
-          "useLayoutEffect": [Function],
-          "useMemo": [Function],
-          "useReducer": [Function],
-          "useRef": [Function],
-          "useResponder": [Function],
-          "useState": [Function],
-          "useTransition": [Function],
-        },
-        "_element": <SourceTreeItem
-          blackBoxSources={[MockFunction]}
-          clearProjectDirectoryRoot={[MockFunction]}
-          expanded={false}
-          focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
-          hasPrettyTab={true}
-          item={
-            Object {
-              "contents": Object {
-                "displayURL": Object {
-                  "filename": "url",
-                  "group": "",
-                  "path": "url",
-                  "search": "",
-                },
-                "extensionName": null,
-                "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
-                "isExtension": false,
-                "isOriginal": false,
-                "isPrettyPrinted": false,
-                "isWasm": false,
-                "parts": Array [
-                  Object {
-                    "mainThreadHostIfRoot": null,
-                    "part": "FakeThread",
-                    "path": "FakeThread",
-                  },
-                  Object {
-                    "mainThreadHostIfRoot": "http://www.example.com",
-                    "part": "",
-                    "path": "FakeThread/",
-                  },
-                ],
-                "relativeUrl": "url",
-                "thread": "FakeThread",
-                "url": "url",
-              },
-              "name": "one.js",
-              "path": "http://mdn.com/one.js",
-              "type": "source",
-            }
-          }
-          projectRoot=""
-          selectItem={[MockFunction]}
-          setExpanded={[MockFunction]}
-          setProjectDirectoryRoot={[MockFunction]}
-          source={
-            Object {
-              "displayURL": Object {
-                "filename": "one.js",
-                "group": "mdn.com",
-                "path": "/one.js",
-                "search": "",
-              },
-              "extensionName": null,
-              "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
-              "isExtension": false,
-              "isOriginal": false,
-              "isPrettyPrinted": false,
-              "isWasm": false,
-              "parts": Array [
-                Object {
-                  "mainThreadHostIfRoot": null,
-                  "part": "FakeThread",
-                  "path": "FakeThread",
-                },
-                Object {
-                  "mainThreadHostIfRoot": "http://www.example.com",
-                  "part": "mdn.com",
-                  "path": "FakeThread/mdn.com",
-                },
-                Object {
-                  "mainThreadHostIfRoot": null,
-                  "part": "one.js",
-                  "path": "FakeThread/mdn.com/one.js",
-                },
-              ],
-              "relativeUrl": "http://mdn.com/one.js",
-              "thread": "FakeThread",
-              "url": "http://mdn.com/one.js",
-            }
-          }
-          threads={
-            Array [
-              Object {
-                "name": "Main Thread",
-              },
-            ]
-          }
-          toggleBlackBox={[MockFunction]}
-        />,
-        "_firstWorkInProgressHook": null,
-        "_forcedUpdate": false,
-        "_instance": [Circular],
-        "_isReRender": false,
-        "_newState": null,
-        "_numberOfReRenders": 0,
-        "_renderPhaseUpdates": null,
-        "_rendered": <div
-          className="node"
-          onClick={[Function]}
-          onContextMenu={[Function]}
-          title="url"
-        >
-          <span
-            className="img no-arrow"
-          />
-          <AccessibleImage
-            className="prettyPrint"
-          />
-          <span
-            className="label"
-          >
-            one.js
-          </span>
-        </div>,
-        "_rendering": false,
-        "_updater": [Circular],
-        "_workInProgressHook": null,
-      },
-    },
-  },
-  "props": Object {
-    "blackBoxSources": [MockFunction],
-    "clearProjectDirectoryRoot": [MockFunction],
-    "expanded": false,
-    "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
-    "hasPrettyTab": true,
-    "item": Object {
-      "contents": Object {
-        "displayURL": Object {
-          "filename": "url",
-          "group": "",
-          "path": "url",
-          "search": "",
-        },
-        "extensionName": null,
-        "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
-        "isExtension": false,
-        "isOriginal": false,
-        "isPrettyPrinted": false,
-        "isWasm": false,
-        "parts": Array [
-          Object {
-            "mainThreadHostIfRoot": null,
-            "part": "FakeThread",
-            "path": "FakeThread",
-          },
-          Object {
-            "mainThreadHostIfRoot": "http://www.example.com",
-            "part": "",
-            "path": "FakeThread/",
-          },
-        ],
-        "relativeUrl": "url",
-        "thread": "FakeThread",
-        "url": "url",
-      },
-      "name": "one.js",
-      "path": "http://mdn.com/one.js",
-      "type": "source",
-    },
-    "projectRoot": "",
-    "selectItem": [MockFunction],
-    "setExpanded": [MockFunction],
-    "setProjectDirectoryRoot": [MockFunction],
-    "source": Object {
-      "displayURL": Object {
-        "filename": "one.js",
-        "group": "mdn.com",
-        "path": "/one.js",
-        "search": "",
-      },
-      "extensionName": null,
-      "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
-      "isExtension": false,
-      "isOriginal": false,
-      "isPrettyPrinted": false,
-      "isWasm": false,
-      "parts": Array [
-        Object {
-          "mainThreadHostIfRoot": null,
-          "part": "FakeThread",
-          "path": "FakeThread",
-        },
-        Object {
-          "mainThreadHostIfRoot": "http://www.example.com",
-          "part": "mdn.com",
-          "path": "FakeThread/mdn.com",
-        },
-        Object {
-          "mainThreadHostIfRoot": null,
-          "part": "one.js",
-          "path": "FakeThread/mdn.com/one.js",
-        },
-      ],
-      "relativeUrl": "http://mdn.com/one.js",
-      "thread": "FakeThread",
-      "url": "http://mdn.com/one.js",
-    },
-    "threads": Array [
-      Object {
-        "name": "Main Thread",
-      },
-    ],
-    "toggleBlackBox": [MockFunction],
-  },
-}
-`;
-
-exports[`SourceTreeItem renderItem should show source item with source icon 1`] = `
-Object {
-  "component": <div
-    className="node"
-    key="http://mdn.com/one.js"
-    onClick={[Function]}
-    onContextMenu={[Function]}
-    title="url"
-  >
-    <span
-      className="img no-arrow"
-    />
     <Connect(SourceIcon)
       modifier={[Function]}
       source={
         Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -4456,7 +4369,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -4478,7 +4390,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         }
@@ -4499,14 +4410,17 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
+      "hasPrettyTab": true,
       "item": Object {
         "contents": Object {
           "displayURL": Object {
+            "fileExtension": "",
             "filename": "url",
             "group": "",
             "path": "url",
@@ -4514,7 +4428,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -4531,7 +4444,6 @@ Object {
               "path": "FakeThread/",
             },
           ],
-          "relativeUrl": "url",
           "thread": "FakeThread",
           "url": "url",
         },
@@ -4545,6 +4457,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -4552,7 +4465,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -4574,7 +4486,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -4610,15 +4521,18 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
+          hasPrettyTab={true}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
+                  "fileExtension": "",
                   "filename": "url",
                   "group": "",
                   "path": "url",
@@ -4626,7 +4540,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -4643,7 +4556,6 @@ Object {
                     "path": "FakeThread/",
                   },
                 ],
-                "relativeUrl": "url",
                 "thread": "FakeThread",
                 "url": "url",
               },
@@ -4659,6 +4571,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -4666,7 +4579,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -4688,7 +4600,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -4723,6 +4634,7 @@ Object {
             source={
               Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -4730,7 +4642,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -4752,7 +4663,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               }
@@ -4771,14 +4681,17 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
+    "hasPrettyTab": true,
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "",
           "filename": "url",
           "group": "",
           "path": "url",
@@ -4786,7 +4699,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -4803,7 +4715,6 @@ Object {
             "path": "FakeThread/",
           },
         ],
-        "relativeUrl": "url",
         "thread": "FakeThread",
         "url": "url",
       },
@@ -4817,6 +4728,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -4824,7 +4736,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -4846,7 +4757,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -4860,14 +4770,14 @@ Object {
 }
 `;
 
-exports[`SourceTreeItem renderItem should show source item with source icon with focus 1`] = `
+exports[`SourceTreeItem renderItem should show source item with source icon 1`] = `
 Object {
   "component": <div
-    className="node focused"
-    key="mdn.com/one.js"
+    className="node"
+    key="http://mdn.com/one.js"
     onClick={[Function]}
     onContextMenu={[Function]}
-    title=""
+    title="url"
   >
     <span
       className="img no-arrow"
@@ -4877,6 +4787,7 @@ Object {
       source={
         Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -4884,7 +4795,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -4906,7 +4816,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         }
@@ -4927,24 +4836,23 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
-      "depth": 1,
       "expanded": false,
       "focusItem": [MockFunction],
-      "focused": true,
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Object {
           "displayURL": Object {
-            "filename": "one.js",
-            "group": "mdn.com",
-            "path": "/one.js",
+            "fileExtension": "",
+            "filename": "url",
+            "group": "",
+            "path": "url",
             "search": "",
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -4957,21 +4865,16 @@ Object {
             },
             Object {
               "mainThreadHostIfRoot": "http://www.example.com",
-              "part": "mdn.com",
-              "path": "FakeThread/mdn.com",
-            },
-            Object {
-              "mainThreadHostIfRoot": null,
-              "part": "one.js",
-              "path": "FakeThread/mdn.com/one.js",
+              "part": "",
+              "path": "FakeThread/",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
-          "url": "http://mdn.com/one.js",
+          "url": "url",
         },
         "name": "one.js",
-        "path": "mdn.com/one.js",
+        "path": "http://mdn.com/one.js",
+        "type": "source",
       },
       "projectRoot": "",
       "selectItem": [MockFunction],
@@ -4979,6 +4882,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -4986,7 +4890,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -5008,7 +4911,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -5044,25 +4946,24 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
-          depth={1}
           expanded={false}
           focusItem={[MockFunction]}
-          focused={true}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
-                  "filename": "one.js",
-                  "group": "mdn.com",
-                  "path": "/one.js",
+                  "fileExtension": "",
+                  "filename": "url",
+                  "group": "",
+                  "path": "url",
                   "search": "",
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -5075,21 +4976,16 @@ Object {
                   },
                   Object {
                     "mainThreadHostIfRoot": "http://www.example.com",
-                    "part": "mdn.com",
-                    "path": "FakeThread/mdn.com",
-                  },
-                  Object {
-                    "mainThreadHostIfRoot": null,
-                    "part": "one.js",
-                    "path": "FakeThread/mdn.com/one.js",
+                    "part": "",
+                    "path": "FakeThread/",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
-                "url": "http://mdn.com/one.js",
+                "url": "url",
               },
               "name": "one.js",
-              "path": "mdn.com/one.js",
+              "path": "http://mdn.com/one.js",
+              "type": "source",
             }
           }
           projectRoot=""
@@ -5099,6 +4995,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -5106,7 +5003,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -5128,7 +5024,441 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
+              "thread": "FakeThread",
+              "url": "http://mdn.com/one.js",
+            }
+          }
+          threads={
+            Array [
+              Object {
+                "name": "Main Thread",
+              },
+            ]
+          }
+          toggleBlackBox={[MockFunction]}
+        />,
+        "_firstWorkInProgressHook": null,
+        "_forcedUpdate": false,
+        "_instance": [Circular],
+        "_isReRender": false,
+        "_newState": null,
+        "_numberOfReRenders": 0,
+        "_renderPhaseUpdates": null,
+        "_rendered": <div
+          className="node"
+          onClick={[Function]}
+          onContextMenu={[Function]}
+          title="url"
+        >
+          <span
+            className="img no-arrow"
+          />
+          <Connect(SourceIcon)
+            modifier={[Function]}
+            source={
+              Object {
+                "displayURL": Object {
+                  "fileExtension": "js",
+                  "filename": "one.js",
+                  "group": "mdn.com",
+                  "path": "/one.js",
+                  "search": "",
+                },
+                "extensionName": null,
+                "id": "server1.conn13.child1/39",
+                "isExtension": false,
+                "isOriginal": false,
+                "isPrettyPrinted": false,
+                "isWasm": false,
+                "parts": Array [
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "FakeThread",
+                    "path": "FakeThread",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": "http://www.example.com",
+                    "part": "mdn.com",
+                    "path": "FakeThread/mdn.com",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "one.js",
+                    "path": "FakeThread/mdn.com/one.js",
+                  },
+                ],
+                "thread": "FakeThread",
+                "url": "http://mdn.com/one.js",
+              }
+            }
+          />
+          <span
+            className="label"
+          >
+            one.js
+          </span>
+        </div>,
+        "_rendering": false,
+        "_updater": [Circular],
+        "_workInProgressHook": null,
+      },
+    },
+  },
+  "props": Object {
+    "blackBoxRanges": Object {},
+    "blackBoxSources": [MockFunction],
+    "clearProjectDirectoryRoot": [MockFunction],
+    "expanded": false,
+    "focusItem": [MockFunction],
+    "getBlackBoxSourcesGroups": [Function],
+    "item": Object {
+      "contents": Object {
+        "displayURL": Object {
+          "fileExtension": "",
+          "filename": "url",
+          "group": "",
+          "path": "url",
+          "search": "",
+        },
+        "extensionName": null,
+        "id": "server1.conn13.child1/39",
+        "isExtension": false,
+        "isOriginal": false,
+        "isPrettyPrinted": false,
+        "isWasm": false,
+        "parts": Array [
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "FakeThread",
+            "path": "FakeThread",
+          },
+          Object {
+            "mainThreadHostIfRoot": "http://www.example.com",
+            "part": "",
+            "path": "FakeThread/",
+          },
+        ],
+        "thread": "FakeThread",
+        "url": "url",
+      },
+      "name": "one.js",
+      "path": "http://mdn.com/one.js",
+      "type": "source",
+    },
+    "projectRoot": "",
+    "selectItem": [MockFunction],
+    "setExpanded": [MockFunction],
+    "setProjectDirectoryRoot": [MockFunction],
+    "source": Object {
+      "displayURL": Object {
+        "fileExtension": "js",
+        "filename": "one.js",
+        "group": "mdn.com",
+        "path": "/one.js",
+        "search": "",
+      },
+      "extensionName": null,
+      "id": "server1.conn13.child1/39",
+      "isExtension": false,
+      "isOriginal": false,
+      "isPrettyPrinted": false,
+      "isWasm": false,
+      "parts": Array [
+        Object {
+          "mainThreadHostIfRoot": null,
+          "part": "FakeThread",
+          "path": "FakeThread",
+        },
+        Object {
+          "mainThreadHostIfRoot": "http://www.example.com",
+          "part": "mdn.com",
+          "path": "FakeThread/mdn.com",
+        },
+        Object {
+          "mainThreadHostIfRoot": null,
+          "part": "one.js",
+          "path": "FakeThread/mdn.com/one.js",
+        },
+      ],
+      "thread": "FakeThread",
+      "url": "http://mdn.com/one.js",
+    },
+    "threads": Array [
+      Object {
+        "name": "Main Thread",
+      },
+    ],
+    "toggleBlackBox": [MockFunction],
+  },
+}
+`;
+
+exports[`SourceTreeItem renderItem should show source item with source icon with focus 1`] = `
+Object {
+  "component": <div
+    className="node focused"
+    key="mdn.com/one.js"
+    onClick={[Function]}
+    onContextMenu={[Function]}
+    title=""
+  >
+    <span
+      className="img no-arrow"
+    />
+    <Connect(SourceIcon)
+      modifier={[Function]}
+      source={
+        Object {
+          "displayURL": Object {
+            "fileExtension": "js",
+            "filename": "one.js",
+            "group": "mdn.com",
+            "path": "/one.js",
+            "search": "",
+          },
+          "extensionName": null,
+          "id": "server1.conn13.child1/39",
+          "isExtension": false,
+          "isOriginal": false,
+          "isPrettyPrinted": false,
+          "isWasm": false,
+          "parts": Array [
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "FakeThread",
+              "path": "FakeThread",
+            },
+            Object {
+              "mainThreadHostIfRoot": "http://www.example.com",
+              "part": "mdn.com",
+              "path": "FakeThread/mdn.com",
+            },
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "one.js",
+              "path": "FakeThread/mdn.com/one.js",
+            },
+          ],
+          "thread": "FakeThread",
+          "url": "http://mdn.com/one.js",
+        }
+      }
+    />
+    <span
+      className="label"
+    >
+      one.js
+    </span>
+  </div>,
+  "defaultState": null,
+  "instance": SourceTreeItem {
+    "addBlackboxAllOption": [Function],
+    "addCollapseExpandAllOptions": [Function],
+    "context": Object {},
+    "handleDownloadFile": [Function],
+    "onClick": [Function],
+    "onContextMenu": [Function],
+    "props": Object {
+      "blackBoxRanges": Object {},
+      "blackBoxSources": [MockFunction],
+      "clearProjectDirectoryRoot": [MockFunction],
+      "depth": 1,
+      "expanded": false,
+      "focusItem": [MockFunction],
+      "focused": true,
+      "getBlackBoxSourcesGroups": [Function],
+      "item": Object {
+        "contents": Object {
+          "displayURL": Object {
+            "fileExtension": "js",
+            "filename": "one.js",
+            "group": "mdn.com",
+            "path": "/one.js",
+            "search": "",
+          },
+          "extensionName": null,
+          "id": "server1.conn13.child1/39",
+          "isExtension": false,
+          "isOriginal": false,
+          "isPrettyPrinted": false,
+          "isWasm": false,
+          "parts": Array [
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "FakeThread",
+              "path": "FakeThread",
+            },
+            Object {
+              "mainThreadHostIfRoot": "http://www.example.com",
+              "part": "mdn.com",
+              "path": "FakeThread/mdn.com",
+            },
+            Object {
+              "mainThreadHostIfRoot": null,
+              "part": "one.js",
+              "path": "FakeThread/mdn.com/one.js",
+            },
+          ],
+          "thread": "FakeThread",
+          "url": "http://mdn.com/one.js",
+        },
+        "name": "one.js",
+        "path": "mdn.com/one.js",
+      },
+      "projectRoot": "",
+      "selectItem": [MockFunction],
+      "setExpanded": [MockFunction],
+      "setProjectDirectoryRoot": [MockFunction],
+      "source": Object {
+        "displayURL": Object {
+          "fileExtension": "js",
+          "filename": "one.js",
+          "group": "mdn.com",
+          "path": "/one.js",
+          "search": "",
+        },
+        "extensionName": null,
+        "id": "server1.conn13.child1/39",
+        "isExtension": false,
+        "isOriginal": false,
+        "isPrettyPrinted": false,
+        "isWasm": false,
+        "parts": Array [
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "FakeThread",
+            "path": "FakeThread",
+          },
+          Object {
+            "mainThreadHostIfRoot": "http://www.example.com",
+            "part": "mdn.com",
+            "path": "FakeThread/mdn.com",
+          },
+          Object {
+            "mainThreadHostIfRoot": null,
+            "part": "one.js",
+            "path": "FakeThread/mdn.com/one.js",
+          },
+        ],
+        "thread": "FakeThread",
+        "url": "http://mdn.com/one.js",
+      },
+      "threads": Array [
+        Object {
+          "name": "Main Thread",
+        },
+      ],
+      "toggleBlackBox": [MockFunction],
+    },
+    "refs": Object {},
+    "setState": [Function],
+    "state": null,
+    "updater": Updater {
+      "_callbacks": Array [],
+      "_renderer": ReactShallowRenderer {
+        "_context": Object {},
+        "_didScheduleRenderPhaseUpdate": false,
+        "_dispatcher": Object {
+          "readContext": [Function],
+          "useCallback": [Function],
+          "useContext": [Function],
+          "useDebugValue": [Function],
+          "useDeferredValue": [Function],
+          "useEffect": [Function],
+          "useImperativeHandle": [Function],
+          "useLayoutEffect": [Function],
+          "useMemo": [Function],
+          "useReducer": [Function],
+          "useRef": [Function],
+          "useResponder": [Function],
+          "useState": [Function],
+          "useTransition": [Function],
+        },
+        "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
+          blackBoxSources={[MockFunction]}
+          clearProjectDirectoryRoot={[MockFunction]}
+          depth={1}
+          expanded={false}
+          focusItem={[MockFunction]}
+          focused={true}
+          getBlackBoxSourcesGroups={[Function]}
+          item={
+            Object {
+              "contents": Object {
+                "displayURL": Object {
+                  "fileExtension": "js",
+                  "filename": "one.js",
+                  "group": "mdn.com",
+                  "path": "/one.js",
+                  "search": "",
+                },
+                "extensionName": null,
+                "id": "server1.conn13.child1/39",
+                "isExtension": false,
+                "isOriginal": false,
+                "isPrettyPrinted": false,
+                "isWasm": false,
+                "parts": Array [
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "FakeThread",
+                    "path": "FakeThread",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": "http://www.example.com",
+                    "part": "mdn.com",
+                    "path": "FakeThread/mdn.com",
+                  },
+                  Object {
+                    "mainThreadHostIfRoot": null,
+                    "part": "one.js",
+                    "path": "FakeThread/mdn.com/one.js",
+                  },
+                ],
+                "thread": "FakeThread",
+                "url": "http://mdn.com/one.js",
+              },
+              "name": "one.js",
+              "path": "mdn.com/one.js",
+            }
+          }
+          projectRoot=""
+          selectItem={[MockFunction]}
+          setExpanded={[MockFunction]}
+          setProjectDirectoryRoot={[MockFunction]}
+          source={
+            Object {
+              "displayURL": Object {
+                "fileExtension": "js",
+                "filename": "one.js",
+                "group": "mdn.com",
+                "path": "/one.js",
+                "search": "",
+              },
+              "extensionName": null,
+              "id": "server1.conn13.child1/39",
+              "isExtension": false,
+              "isOriginal": false,
+              "isPrettyPrinted": false,
+              "isWasm": false,
+              "parts": Array [
+                Object {
+                  "mainThreadHostIfRoot": null,
+                  "part": "FakeThread",
+                  "path": "FakeThread",
+                },
+                Object {
+                  "mainThreadHostIfRoot": "http://www.example.com",
+                  "part": "mdn.com",
+                  "path": "FakeThread/mdn.com",
+                },
+                Object {
+                  "mainThreadHostIfRoot": null,
+                  "part": "one.js",
+                  "path": "FakeThread/mdn.com/one.js",
+                },
+              ],
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -5163,6 +5493,7 @@ Object {
             source={
               Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -5170,7 +5501,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -5192,7 +5522,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               }
@@ -5211,16 +5540,18 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "depth": 1,
     "expanded": false,
     "focusItem": [MockFunction],
     "focused": true,
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -5228,7 +5559,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -5250,7 +5580,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -5263,6 +5592,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -5270,7 +5600,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -5292,7 +5621,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },
@@ -5323,6 +5651,7 @@ Object {
       source={
         Object {
           "displayURL": Object {
+            "fileExtension": "js",
             "filename": "one.js",
             "group": "mdn.com",
             "path": "/one.js",
@@ -5330,7 +5659,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -5352,7 +5680,6 @@ Object {
               "path": "FakeThread/mdn.com/one.js",
             },
           ],
-          "relativeUrl": "http://mdn.com/one.js",
           "thread": "FakeThread",
           "url": "http://mdn.com/one.js",
         }
@@ -5373,14 +5700,16 @@ Object {
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
+      "blackBoxRanges": Object {},
       "blackBoxSources": [MockFunction],
       "clearProjectDirectoryRoot": [MockFunction],
       "expanded": false,
       "focusItem": [MockFunction],
-      "getSourcesGroups": [Function],
+      "getBlackBoxSourcesGroups": [Function],
       "item": Object {
         "contents": Object {
           "displayURL": Object {
+            "fileExtension": "",
             "filename": "url",
             "group": "",
             "path": "url",
@@ -5388,7 +5717,6 @@ Object {
           },
           "extensionName": null,
           "id": "server1.conn13.child1/39",
-          "isBlackBoxed": false,
           "isExtension": false,
           "isOriginal": false,
           "isPrettyPrinted": false,
@@ -5405,7 +5733,6 @@ Object {
               "path": "FakeThread/",
             },
           ],
-          "relativeUrl": "url",
           "thread": "FakeThread",
           "url": "url",
         },
@@ -5419,6 +5746,7 @@ Object {
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
         "displayURL": Object {
+          "fileExtension": "js",
           "filename": "one.js",
           "group": "mdn.com",
           "path": "/one.js",
@@ -5426,7 +5754,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -5448,7 +5775,6 @@ Object {
             "path": "FakeThread/mdn.com/one.js",
           },
         ],
-        "relativeUrl": "http://mdn.com/one.js",
         "thread": "FakeThread",
         "url": "http://mdn.com/one.js",
       },
@@ -5484,15 +5810,17 @@ Object {
           "useTransition": [Function],
         },
         "_element": <SourceTreeItem
+          blackBoxRanges={Object {}}
           blackBoxSources={[MockFunction]}
           clearProjectDirectoryRoot={[MockFunction]}
           expanded={false}
           focusItem={[MockFunction]}
-          getSourcesGroups={[Function]}
+          getBlackBoxSourcesGroups={[Function]}
           item={
             Object {
               "contents": Object {
                 "displayURL": Object {
+                  "fileExtension": "",
                   "filename": "url",
                   "group": "",
                   "path": "url",
@@ -5500,7 +5828,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -5517,7 +5844,6 @@ Object {
                     "path": "FakeThread/",
                   },
                 ],
-                "relativeUrl": "url",
                 "thread": "FakeThread",
                 "url": "url",
               },
@@ -5533,6 +5859,7 @@ Object {
           source={
             Object {
               "displayURL": Object {
+                "fileExtension": "js",
                 "filename": "one.js",
                 "group": "mdn.com",
                 "path": "/one.js",
@@ -5540,7 +5867,6 @@ Object {
               },
               "extensionName": null,
               "id": "server1.conn13.child1/39",
-              "isBlackBoxed": false,
               "isExtension": false,
               "isOriginal": false,
               "isPrettyPrinted": false,
@@ -5562,7 +5888,6 @@ Object {
                   "path": "FakeThread/mdn.com/one.js",
                 },
               ],
-              "relativeUrl": "http://mdn.com/one.js",
               "thread": "FakeThread",
               "url": "http://mdn.com/one.js",
             }
@@ -5597,6 +5922,7 @@ Object {
             source={
               Object {
                 "displayURL": Object {
+                  "fileExtension": "js",
                   "filename": "one.js",
                   "group": "mdn.com",
                   "path": "/one.js",
@@ -5604,7 +5930,6 @@ Object {
                 },
                 "extensionName": null,
                 "id": "server1.conn13.child1/39",
-                "isBlackBoxed": false,
                 "isExtension": false,
                 "isOriginal": false,
                 "isPrettyPrinted": false,
@@ -5626,7 +5951,6 @@ Object {
                     "path": "FakeThread/mdn.com/one.js",
                   },
                 ],
-                "relativeUrl": "http://mdn.com/one.js",
                 "thread": "FakeThread",
                 "url": "http://mdn.com/one.js",
               }
@@ -5645,14 +5969,16 @@ Object {
     },
   },
   "props": Object {
+    "blackBoxRanges": Object {},
     "blackBoxSources": [MockFunction],
     "clearProjectDirectoryRoot": [MockFunction],
     "expanded": false,
     "focusItem": [MockFunction],
-    "getSourcesGroups": [Function],
+    "getBlackBoxSourcesGroups": [Function],
     "item": Object {
       "contents": Object {
         "displayURL": Object {
+          "fileExtension": "",
           "filename": "url",
           "group": "",
           "path": "url",
@@ -5660,7 +5986,6 @@ Object {
         },
         "extensionName": null,
         "id": "server1.conn13.child1/39",
-        "isBlackBoxed": false,
         "isExtension": false,
         "isOriginal": false,
         "isPrettyPrinted": false,
@@ -5677,7 +6002,6 @@ Object {
             "path": "FakeThread/",
           },
         ],
-        "relativeUrl": "url",
         "thread": "FakeThread",
         "url": "url",
       },
@@ -5691,6 +6015,7 @@ Object {
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
       "displayURL": Object {
+        "fileExtension": "js",
         "filename": "one.js",
         "group": "mdn.com",
         "path": "/one.js",
@@ -5698,7 +6023,6 @@ Object {
       },
       "extensionName": null,
       "id": "server1.conn13.child1/39",
-      "isBlackBoxed": false,
       "isExtension": false,
       "isOriginal": false,
       "isPrettyPrinted": false,
@@ -5720,7 +6044,6 @@ Object {
           "path": "FakeThread/mdn.com/one.js",
         },
       ],
-      "relativeUrl": "http://mdn.com/one.js",
       "thread": "FakeThread",
       "url": "http://mdn.com/one.js",
     },

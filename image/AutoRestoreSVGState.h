@@ -27,8 +27,7 @@ class MOZ_STACK_CLASS AutoRestoreSVGState final {
       : AutoRestoreSVGState(aParams.svgContext, aParams.animationTime,
                             aSVGDocumentWrapper, aContextPaint) {}
 
-  AutoRestoreSVGState(const Maybe<SVGImageContext>& aSVGContext,
-                      float aAnimationTime,
+  AutoRestoreSVGState(const SVGImageContext& aSVGContext, float aAnimationTime,
                       SVGDocumentWrapper* aSVGDocumentWrapper,
                       bool aContextPaint)
       : mIsDrawing(aSVGDocumentWrapper->mIsDrawing),
@@ -42,9 +41,8 @@ class MOZ_STACK_CLASS AutoRestoreSVGState final {
 
     if (auto* pc = aSVGDocumentWrapper->GetDocument()->GetPresContext()) {
       pc->SetColorSchemeOverride([&] {
-        if (aSVGContext && aSVGContext->GetColorScheme()) {
-          auto scheme = *aSVGContext->GetColorScheme();
-          return scheme == ColorScheme::Light
+        if (auto scheme = aSVGContext.GetColorScheme()) {
+          return *scheme == ColorScheme::Light
                      ? dom::PrefersColorSchemeOverride::Light
                      : dom::PrefersColorSchemeOverride::Dark;
         }
@@ -56,8 +54,8 @@ class MOZ_STACK_CLASS AutoRestoreSVGState final {
 
     // Set context paint (if specified) on the document:
     if (aContextPaint) {
-      MOZ_ASSERT(aSVGContext->GetContextPaint());
-      mContextPaint.emplace(*aSVGContext->GetContextPaint(),
+      MOZ_ASSERT(aSVGContext.GetContextPaint());
+      mContextPaint.emplace(*aSVGContext.GetContextPaint(),
                             *aSVGDocumentWrapper->GetDocument());
     }
   }

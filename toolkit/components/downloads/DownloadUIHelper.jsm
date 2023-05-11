@@ -10,8 +10,8 @@
 
 var EXPORTED_SYMBOLS = ["DownloadUIHelper"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -20,7 +20,6 @@ const { AppConstants } = ChromeUtils.import(
 const lazy = {};
 
 ChromeUtils.defineModuleGetter(lazy, "OS", "resource://gre/modules/osfile.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // BrowserWindowTracker and PrivateBrowsingUtils are only used when opening downloaded files into a browser window
 XPCOMUtils.defineLazyModuleGetters(lazy, {

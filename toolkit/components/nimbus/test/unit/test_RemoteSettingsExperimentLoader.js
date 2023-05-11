@@ -159,7 +159,9 @@ add_task(async function test_updateRecipes_someMismatch() {
     loader.manager.onFinalize.calledWith("rs-loader", {
       recipeMismatches: [FAIL_FILTER_RECIPE.slug],
       invalidRecipes: [],
-      invalidBranches: [],
+      invalidBranches: new Map(),
+      invalidFeatures: new Map(),
+      validationEnabled: true,
     }),
     "should call .onFinalize with the recipes that failed targeting"
   );

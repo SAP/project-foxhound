@@ -10,9 +10,8 @@ var EXPORTED_SYMBOLS = ["XPCShellContentUtils"];
 const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // Windowless browsers can create documents that rely on XUL Custom Elements:
@@ -46,9 +45,6 @@ const REMOTE_CONTENT_SUBFRAMES = Services.appinfo.fissionAutostart;
 function frameScript() {
   const { MessageChannel } = ChromeUtils.import(
     "resource://testing-common/MessageChannel.jsm"
-  );
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
   );
 
   // We need to make sure that the ExtensionPolicy service has been initialized

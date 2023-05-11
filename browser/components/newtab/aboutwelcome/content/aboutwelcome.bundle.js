@@ -196,23 +196,27 @@ const MultiStageAboutWelcome = props => {
       }
     }); // Remember that a new screen has loaded for browser navigation
 
-    if (index > window.history.state) {
+    if (props.updateHistory && index > window.history.state) {
       window.history.pushState(index, "");
     }
   }, [index]);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    // Switch to the screen tracked in state (null for initial state)
-    // or last screen index if a user navigates by pressing back
-    // button from about:home
-    const handler = ({
-      state
-    }) => setScreenIndex(Math.min(state, screens.length - 1)); // Handle page load, e.g., going back to about:welcome from about:home
+    if (props.updateHistory) {
+      // Switch to the screen tracked in state (null for initial state)
+      // or last screen index if a user navigates by pressing back
+      // button from about:home
+      const handler = ({
+        state
+      }) => setScreenIndex(Math.min(state, screens.length - 1)); // Handle page load, e.g., going back to about:welcome from about:home
 
 
-    handler(window.history); // Watch for browser back/forward button navigation events
+      handler(window.history); // Watch for browser back/forward button navigation events
 
-    window.addEventListener("popstate", handler);
-    return () => window.removeEventListener("popstate", handler);
+      window.addEventListener("popstate", handler);
+      return () => window.removeEventListener("popstate", handler);
+    }
+
+    return false;
   }, []);
   const [flowParams, setFlowParams] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
   const {
@@ -316,13 +320,16 @@ const MultiStageAboutWelcome = props => {
     /* If first screen is corner positioned, don't include it in the count for the steps indicator. This assumes corner positioning will only be used on the first screen. */
 
     const totalNumberOfScreens = screens[0].content.position === "corner" ? screens.length - 1 : screens.length;
+    /* Don't include a starting corner screen when determining step indicator order */
+
+    const stepOrder = screens[0].content.position === "corner" ? order - 1 : order;
     return index === order ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(WelcomeScreen, {
       key: screen.id + order,
       id: screen.id,
       totalNumberOfScreens: totalNumberOfScreens,
       isFirstCenteredScreen: isFirstCenteredScreen,
       isLastCenteredScreen: isLastCenteredScreen,
-      startsWithCorner: screens[0].content.position === "corner",
+      stepOrder: stepOrder,
       order: order,
       content: screen.content,
       navigate: handleTransition,
@@ -357,7 +364,7 @@ const StepsIndicator = props => {
   let steps = [];
 
   for (let i = 0; i < props.totalNumberOfScreens; i++) {
-    let className = i === props.order ? "current" : "";
+    let className = `${i === props.order ? "current" : ""} ${i < props.order ? "complete" : ""}`;
     steps.push( /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       key: i,
       className: `indicator ${className}`
@@ -460,6 +467,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       content: this.props.content,
       id: this.props.id,
       order: this.props.order,
+      stepOrder: this.props.stepOrder,
       activeTheme: this.props.activeTheme,
       totalNumberOfScreens: this.props.totalNumberOfScreens,
       appAndSystemLocaleInfo: this.props.appAndSystemLocaleInfo,
@@ -627,7 +635,7 @@ const MultiStageProtonScreen = props => {
     handleAction: props.handleAction,
     isFirstCenteredScreen: props.isFirstCenteredScreen,
     isLastCenteredScreen: props.isLastCenteredScreen,
-    startsWithCorner: props.startsWithCorner,
+    stepOrder: props.stepOrder,
     autoAdvance: props.autoAdvance,
     isRtamo: props.isRtamo,
     addonName: props.addonName,
@@ -644,13 +652,14 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
   }
 
   getLogoStyle({
-    imageURL = "chrome://branding/content/about-logo.svg",
-    height = "80px"
+    imageURL,
+    height
   }) {
-    return {
-      background: imageURL === "" ? null : `url(${imageURL}) no-repeat center / contain`,
+    let style = {
       height
     };
+    style.backgroundImage = imageURL ? `url(${imageURL})` : null;
+    return style;
   }
 
   getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles) {
@@ -676,18 +685,18 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     }) : null);
   }
 
-  renderNoodles(includeNoodles, isCornerPosition) {
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, includeNoodles ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `noodle orange-L`
-    }) : null, includeNoodles ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `noodle purple-C`
-    }) : null, isCornerPosition ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `noodle solid-L`
-    }) : null, includeNoodles ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `noodle outline-L`
-    }) : null, includeNoodles ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: `noodle yellow-circle`
-    }) : null);
+  renderNoodles() {
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "noodle orange-L"
+    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "noodle purple-C"
+    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "noodle solid-L"
+    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "noodle outline-L"
+    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "noodle yellow-circle"
+    }));
   }
 
   renderLanguageSwitcher() {
@@ -709,36 +718,12 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     });
   }
 
-  render() {
-    var _this$props$appAndSys, _content$primary_butt, _content$primary_butt2;
-
-    const {
-      autoAdvance,
-      content,
-      isRtamo,
-      isTheme,
-      isFirstCenteredScreen,
-      isLastCenteredScreen,
-      totalNumberOfScreens: total
-    } = this.props;
-    const includeNoodles = content.has_noodles;
-    const isCornerPosition = content.position === "corner";
-    const hideStepsIndicator = autoAdvance || isCornerPosition || isFirstCenteredScreen && isLastCenteredScreen;
-    const textColorClass = content.text_color ? `${content.text_color}-text` : ""; // Assign proton screen style 'screen-1' or 'screen-2' to centered screens
-    // by checking if screen order is even or odd.
-
-    const screenClassName = isCornerPosition ? "" : this.getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles);
-    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
-      className: `screen ${this.props.id || ""} ${screenClassName} ${textColorClass}`,
-      role: "dialog",
-      pos: content.position || "center",
-      tabIndex: "-1",
-      "aria-labelledby": "mainContentHeader",
-      ref: input => {
-        this.mainContentHeader = input;
-      }
-    }, isCornerPosition ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: "section-left"
+  renderSecondarySection(content) {
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "section-secondary",
+      style: content.background ? {
+        background: content.background
+      } : {}
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "message-text"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
@@ -751,15 +736,47 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       text: content.help_text
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
       className: "attrib-text"
-    }))) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    })));
+  }
+
+  render() {
+    var _this$props$appAndSys, _content$primary_butt, _content$primary_butt2;
+
+    const {
+      autoAdvance,
+      content,
+      isRtamo,
+      isTheme,
+      isFirstCenteredScreen,
+      isLastCenteredScreen,
+      totalNumberOfScreens: total
+    } = this.props;
+    const includeNoodles = content.has_noodles; // The default screen position is "center"
+
+    const isCenterPosition = content.position === "center" || !content.position;
+    const hideStepsIndicator = autoAdvance || isFirstCenteredScreen && isLastCenteredScreen;
+    const textColorClass = content.text_color ? `${content.text_color}-text` : ""; // Assign proton screen style 'screen-1' or 'screen-2' to centered screens
+    // by checking if screen order is even or odd.
+
+    const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles) : "";
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
+      className: `screen ${this.props.id || ""} ${screenClassName} ${textColorClass}`,
+      role: "dialog",
+      pos: content.position || "center",
+      tabIndex: "-1",
+      "aria-labelledby": "mainContentHeader",
+      ref: input => {
+        this.mainContentHeader = input;
+      }
+    }, isCenterPosition ? null : this.renderSecondarySection(content), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "section-main"
     }, content.secondary_button_top ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.SecondaryCTA, {
       content: content,
       handleAction: this.props.handleAction,
       position: "top"
-    }) : null, this.renderNoodles(includeNoodles, isCornerPosition), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    }) : null, includeNoodles ? this.renderNoodles() : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `main-content ${hideStepsIndicator ? "no-steps" : ""}`,
-      style: content.background ? {
+      style: content.background && isCenterPosition ? {
         background: content.background
       } : {}
     }, content.dismiss_button ? this.renderDismissButton() : null, content.logo ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
@@ -787,7 +804,9 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
         "addon-name": this.props.addonName,
         ...((_this$props$appAndSys = this.props.appAndSystemLocaleInfo) === null || _this$props$appAndSys === void 0 ? void 0 : _this$props$appAndSys.displayNames)
       })
-    }))), this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    }))), this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "action-buttons"
+    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: (_content$primary_butt = content.primary_button) === null || _content$primary_butt === void 0 ? void 0 : _content$primary_butt.label
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
       className: "primary",
@@ -798,14 +817,14 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       content: content,
       handleAction: this.props.handleAction
     }) : null)), hideStepsIndicator ? null : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("nav", {
-      className: "steps",
+      className: `steps ${content.progress_bar ? "progress-bar" : ""}`,
       "data-l10n-id": "onboarding-welcome-steps-indicator",
       "data-l10n-args": JSON.stringify({
         current: this.props.order,
         total
       })
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("br", null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.StepsIndicator, {
-      order: this.props.startsWithCorner ? this.props.order - 1 : this.props.order,
+      order: this.props.stepOrder,
       totalNumberOfScreens: total
     })))));
   }
@@ -1696,6 +1715,7 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_components_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_3__.MultiStageAboutWelcome, {
       message_id: props.messageId,
       screens: props.screens,
+      updateHistory: !props.disableHistoryUpdates,
       metricsFlowUri: this.state.metricsFlowUri,
       utm_term: props.UTMTerm,
       transitions: props.transitions,

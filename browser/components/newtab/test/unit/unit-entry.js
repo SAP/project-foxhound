@@ -3,6 +3,8 @@ import Adapter from "enzyme-adapter-react-16";
 import { chaiAssertions } from "test/schemas/pings";
 import chaiJsonSchema from "chai-json-schema";
 import enzyme from "enzyme";
+import FxMSCommonSchema from "../../content-src/asrouter/schemas/FxMSCommon.schema.json";
+
 enzyme.configure({ adapter: new Adapter() });
 
 // Cause React warnings to make tests that trigger them fail
@@ -29,6 +31,7 @@ sinon.assert.expose(assert, { prefix: "" });
 
 chai.use(chaiAssertions);
 chai.use(chaiJsonSchema);
+chai.tv4.addSchema("file:///FxMSCommon.schema.json", FxMSCommonSchema);
 
 const overrider = new GlobalOverrider();
 
@@ -143,6 +146,9 @@ const TEST_GLOBAL = {
       return {};
     },
     import() {
+      return global;
+    },
+    importESModule() {
       return global;
     },
   },
@@ -532,14 +538,12 @@ const TEST_GLOBAL = {
       getVariable() {},
     },
     newtab: {
-      isEnabled() {},
       getVariable() {},
       getAllVariables() {},
       onUpdate() {},
       off() {},
     },
     pocketNewtab: {
-      isEnabled() {},
       getVariable() {},
       getAllVariables() {},
       onUpdate() {},
@@ -609,6 +613,9 @@ const TEST_GLOBAL = {
     newtab: {
       submit() {},
     },
+  },
+  Utils: {
+    SERVER_URL: "bogus://foo",
   },
 };
 overrider.set(TEST_GLOBAL);

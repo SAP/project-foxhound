@@ -1378,6 +1378,9 @@ static void JSONRootCheck(const Json::Value& aRoot,
   GET_JSON(meta, aRoot["meta"], Object);
   EXPECT_HAS_JSON(meta["version"], UInt);
   EXPECT_HAS_JSON(meta["startTime"], Double);
+  EXPECT_HAS_JSON(meta["profilingStartTime"], Double);
+  EXPECT_HAS_JSON(meta["contentEarliestTime"], Double);
+  EXPECT_HAS_JSON(meta["profilingEndTime"], Double);
 
   EXPECT_HAS_JSON(aRoot["pages"], Array);
 
@@ -1501,6 +1504,22 @@ static void JSONRootCheck(const Json::Value& aRoot,
       GET_JSON(process, processes[i], Object);
       JSONRootCheck(process, aWithMainThread);
     }
+  }
+
+  GET_JSON(profilingLog, aRoot["profilingLog"], Object);
+  EXPECT_EQ(profilingLog.size(), 1u);
+  for (auto it = profilingLog.begin(); it != profilingLog.end(); ++it) {
+    // The key should be a pid.
+    const auto key = it.name();
+    for (const auto letter : key) {
+      EXPECT_GE(letter, '0');
+      EXPECT_LE(letter, '9');
+    }
+    // And the value should be an object.
+    GET_JSON(logForPid, profilingLog[key], Object);
+    // Its content is not defined, but we expect at least these:
+    EXPECT_HAS_JSON(logForPid["profilingLogBegin_TSms"], Double);
+    EXPECT_HAS_JSON(logForPid["profilingLogEnd_TSms"], Double);
   }
 }
 
@@ -3493,8 +3512,9 @@ TEST(GeckoProfiler, Counters)
   };
 
   int64_t testCounters[] = {10, 7, -17};
-  NumberAndCount expectedTestCounters[] = {{1u, 10}, {0u, 0},   {1u, 7},
-                                           {0u, 0},  {1u, -17}, {0u, 0}};
+  NumberAndCount expectedTestCounters[] = {{1u, 10}, {0u, 0}, {1u, 7},
+                                           {0u, 0},  {0u, 0}, {1u, -17},
+                                           {0u, 0},  {0u, 0}};
   constexpr size_t expectedTestCountersCount =
       MOZ_ARRAY_LENGTH(expectedTestCounters);
 

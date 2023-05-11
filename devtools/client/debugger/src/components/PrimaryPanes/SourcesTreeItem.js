@@ -13,24 +13,13 @@ import AccessibleImage from "../shared/AccessibleImage";
 
 import {
   getGeneratedSourceByURL,
-  hasPrettyTab as checkHasPrettyTab,
   getContext,
-  getExtensionNameBySourceUrl,
   getSourceContent,
 } from "../../selectors";
 import actions from "../../actions";
 
-import {
-  isUrlExtension,
-  isExtensionDirectoryPath,
-  shouldBlackbox,
-  sourceTypes,
-} from "../../utils/source";
-import {
-  isDirectory,
-  getPathWithoutThread,
-  getFileExtension,
-} from "../../utils/sources-tree";
+import { shouldBlackbox, sourceTypes } from "../../utils/source";
+import { isDirectory, getPathWithoutThread } from "../../utils/sources-tree";
 import { copyToTheClipboard } from "../../utils/clipboard";
 import { features } from "../../utils/prefs";
 import { downloadFile } from "../../utils/utils";
@@ -45,12 +34,10 @@ class SourceTreeItem extends Component {
       cx: PropTypes.object.isRequired,
       depth: PropTypes.number.isRequired,
       expanded: PropTypes.bool.isRequired,
-      extensionName: PropTypes.string,
       focusItem: PropTypes.func.isRequired,
       focused: PropTypes.bool.isRequired,
-      getSourcesGroups: PropTypes.func.isRequired,
+      getBlackBoxSourcesGroups: PropTypes.func.isRequired,
       hasMatchingGeneratedSource: PropTypes.bool.isRequired,
-      hasPrettyTab: PropTypes.bool.isRequired,
       item: PropTypes.object.isRequired,
       loadSourceText: PropTypes.func.isRequired,
       projectRoot: PropTypes.string.isRequired,
@@ -61,6 +48,7 @@ class SourceTreeItem extends Component {
       sourceContent: PropTypes.object,
       threads: PropTypes.array.isRequired,
       toggleBlackBox: PropTypes.func.isRequired,
+      isSourceBlackBoxed: PropTypes.bool.isRequired,
     };
   }
 
@@ -109,10 +97,10 @@ class SourceTreeItem extends Component {
         if (source) {
           const blackBoxMenuItem = {
             id: "node-menu-blackbox",
-            label: source.isBlackBoxed
+            label: this.props.isSourceBlackBoxed
               ? L10N.getStr("ignoreContextItem.unignore")
               : L10N.getStr("ignoreContextItem.ignore"),
-            accesskey: source.isBlackBoxed
+            accesskey: this.props.isSourceBlackBoxed
               ? L10N.getStr("ignoreContextItem.unignore.accesskey")
               : L10N.getStr("ignoreContextItem.ignore.accesskey"),
             disabled: !shouldBlackbox(source),
@@ -183,13 +171,12 @@ class SourceTreeItem extends Component {
 
   addBlackboxAllOption = (menuOptions, item) => {
     const { cx, depth, projectRoot } = this.props;
-    const { sourcesInside, sourcesOuside } = this.props.getSourcesGroups(item);
-    const allInsideBlackBoxed = sourcesInside.every(
-      source => source.isBlackBoxed
-    );
-    const allOusideBlackBoxed = sourcesOuside.every(
-      source => source.isBlackBoxed
-    );
+    const {
+      sourcesInside,
+      sourcesOutside,
+      allInsideBlackBoxed,
+      allOutsideBlackBoxed,
+    } = this.props.getBlackBoxSourcesGroups(item);
 
     let blackBoxInsideMenuItemLabel;
     let blackBoxOutsideMenuItemLabel;
@@ -197,8 +184,8 @@ class SourceTreeItem extends Component {
       blackBoxInsideMenuItemLabel = allInsideBlackBoxed
         ? L10N.getStr("unignoreAllInGroup.label")
         : L10N.getStr("ignoreAllInGroup.label");
-      if (sourcesOuside.length > 0) {
-        blackBoxOutsideMenuItemLabel = allOusideBlackBoxed
+      if (sourcesOutside.length > 0) {
+        blackBoxOutsideMenuItemLabel = allOutsideBlackBoxed
           ? L10N.getStr("unignoreAllOutsideGroup.label")
           : L10N.getStr("ignoreAllOutsideGroup.label");
       }
@@ -206,8 +193,8 @@ class SourceTreeItem extends Component {
       blackBoxInsideMenuItemLabel = allInsideBlackBoxed
         ? L10N.getStr("unignoreAllInDir.label")
         : L10N.getStr("ignoreAllInDir.label");
-      if (sourcesOuside.length > 0) {
-        blackBoxOutsideMenuItemLabel = allOusideBlackBoxed
+      if (sourcesOutside.length > 0) {
+        blackBoxOutsideMenuItemLabel = allOutsideBlackBoxed
           ? L10N.getStr("unignoreAllOutsideDir.label")
           : L10N.getStr("ignoreAllOutsideDir.label");
       }
@@ -223,14 +210,14 @@ class SourceTreeItem extends Component {
         this.props.blackBoxSources(cx, sourcesInside, !allInsideBlackBoxed),
     };
 
-    if (sourcesOuside.length > 0) {
+    if (sourcesOutside.length > 0) {
       menuOptions.push({
         id: "node-blackbox-all",
         label: L10N.getStr("ignoreAll.label"),
         submenu: [
           blackBoxInsideMenuItem,
           {
-            id: allOusideBlackBoxed
+            id: allOutsideBlackBoxed
               ? "node-unblackbox-all-outside"
               : "node-blackbox-all-outside",
             label: blackBoxOutsideMenuItemLabel,
@@ -238,8 +225,8 @@ class SourceTreeItem extends Component {
             click: () =>
               this.props.blackBoxSources(
                 cx,
-                sourcesOuside,
-                !allOusideBlackBoxed
+                sourcesOutside,
+                !allOutsideBlackBoxed
               ),
           },
         ],
@@ -277,14 +264,12 @@ class SourceTreeItem extends Component {
   }
 
   renderIcon(item, depth) {
-    const { projectRoot, source, hasPrettyTab, threads } = this.props;
+    const { projectRoot, source, threads } = this.props;
 
-    if (item.name === "webpack://") {
+    if (item.name === "Webpack") {
       return <AccessibleImage className="webpack" />;
-    } else if (item.name === "ng://") {
+    } else if (item.name === "Angular") {
       return <AccessibleImage className="angular" />;
-    } else if (isExtensionDirectoryPath(item.path)) {
-      return <AccessibleImage className="extension" />;
     }
 
     // Threads level
@@ -294,6 +279,26 @@ class SourceTreeItem extends Component {
       if (thread) {
         const icon = thread.targetType.includes("worker") ? "worker" : "window";
         return <AccessibleImage className={classnames(icon)} />;
+      }
+    }
+
+    // Check if the group relates to an extension.
+    // This happens when a webextension injects a content script.
+    if (depth == 1) {
+      // Retrieve the first source in this group, as there is nothing
+      // on `item` to know if we are on an extension
+      function findFirstSource(_item) {
+        if (_item.type == "source") {
+          return _item.contents;
+        }
+        if (_item.contents[0]) {
+          return findFirstSource(_item.contents[0]);
+        }
+        return null;
+      }
+      const firstSource = findFirstSource(item);
+      if (firstSource?.isExtension) {
+        return <AccessibleImage className={classnames("extension")} />;
       }
     }
 
@@ -308,14 +313,6 @@ class SourceTreeItem extends Component {
       return <AccessibleImage className="folder" />;
     }
 
-    if (source?.isBlackBoxed) {
-      return <AccessibleImage className="blackBox" />;
-    }
-
-    if (hasPrettyTab) {
-      return <AccessibleImage className="prettyPrint" />;
-    }
-
     if (source) {
       return (
         <SourceIcon
@@ -324,7 +321,7 @@ class SourceTreeItem extends Component {
             // In the SourceTree, extension files should use the file-extension based icon,
             // whereas we use the extension icon in other Components (eg. source tabs and breakpoints pane).
             icon === "extension"
-              ? sourceTypes[getFileExtension(source)] || "javascript"
+              ? sourceTypes[source.displayURL.fileExtension] || "javascript"
               : icon
           }
         />
@@ -335,7 +332,7 @@ class SourceTreeItem extends Component {
   }
 
   renderItemName(depth) {
-    const { item, threads, extensionName } = this.props;
+    const { item, threads } = this.props;
 
     if (depth === 0) {
       const thread = threads.find(({ actor }) => actor == item.name);
@@ -347,26 +344,11 @@ class SourceTreeItem extends Component {
       }
     }
 
-    if (isExtensionDirectory(depth, extensionName)) {
-      return extensionName;
-    }
-
-    switch (item.name) {
-      case "ng://":
-        return "Angular";
-      case "webpack://":
-        return "Webpack";
-      default:
-        return `${unescape(item.name)}`;
-    }
+    return unescape(item.name);
   }
 
   renderItemTooltip() {
-    const { item, depth, extensionName } = this.props;
-
-    if (isExtensionDirectory(depth, extensionName)) {
-      return item.name;
-    }
+    const { item } = this.props;
 
     return item.type === "source"
       ? unescape(item.contents.url)
@@ -412,21 +394,12 @@ function getSourceContentValue(state, source) {
   return content && isFulfilled(content) ? content.value : null;
 }
 
-function isExtensionDirectory(depth, extensionName) {
-  return extensionName && (depth === 1 || depth === 0);
-}
-
 const mapStateToProps = (state, props) => {
-  const { source, item } = props;
+  const { source } = props;
   return {
     cx: getContext(state),
     hasMatchingGeneratedSource: getHasMatchingGeneratedSource(state, source),
-    hasPrettyTab: source ? checkHasPrettyTab(state, source.url) : false,
     sourceContent: source ? getSourceContentValue(state, source) : null,
-    extensionName:
-      (isUrlExtension(item.name) &&
-        getExtensionNameBySourceUrl(state, item.name)) ||
-      null,
   };
 };
 

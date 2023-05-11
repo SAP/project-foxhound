@@ -54,11 +54,24 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::unicode;
 
-void gfxCharacterMap::NotifyReleased() {
-  if (mShared) {
-    gfxPlatformFontList::PlatformFontList()->RemoveCmap(this);
+nsrefcnt gfxCharacterMap::NotifyMaybeReleased() {
+  auto* pfl = gfxPlatformFontList::PlatformFontList();
+  pfl->Lock();
+
+  // Something may have pulled our raw pointer out of gfxPlatformFontList before
+  // we were able to complete the release.
+  if (mRefCnt > 0) {
+    pfl->Unlock();
+    return mRefCnt;
   }
+
+  if (mShared) {
+    pfl->RemoveCmap(this);
+  }
+
+  pfl->Unlock();
   delete this;
+  return 0;
 }
 
 gfxFontEntry::gfxFontEntry(const nsACString& aName, bool aIsStandardFace)
@@ -98,7 +111,7 @@ gfxFontEntry::gfxFontEntry(const nsACString& aName, bool aIsStandardFace)
 
 gfxFontEntry::~gfxFontEntry() {
   // Should not be dropped by stylo
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!gfxFontUtils::IsInServoTraversal());
 
   hb_blob_destroy(mCOLR.exchange(nullptr));
   hb_blob_destroy(mCPAL.exchange(nullptr));
@@ -253,9 +266,9 @@ nsCString gfxFontEntry::RealFaceName() {
   return Name();
 }
 
-gfxFont* gfxFontEntry::FindOrMakeFont(const gfxFontStyle* aStyle,
-                                      gfxCharacterMap* aUnicodeRangeMap) {
-  gfxFont* font =
+already_AddRefed<gfxFont> gfxFontEntry::FindOrMakeFont(
+    const gfxFontStyle* aStyle, gfxCharacterMap* aUnicodeRangeMap) {
+  RefPtr<gfxFont> font =
       gfxFontCache::GetCache()->Lookup(this, aStyle, aUnicodeRangeMap);
 
   if (!font) {
@@ -271,7 +284,7 @@ gfxFont* gfxFontEntry::FindOrMakeFont(const gfxFontStyle* aStyle,
     font->SetUnicodeRangeMap(aUnicodeRangeMap);
     gfxFontCache::GetCache()->AddNew(font);
   }
-  return font;
+  return font.forget();
 }
 
 uint16_t gfxFontEntry::UnitsPerEm() {
@@ -1918,7 +1931,7 @@ void gfxFontFamily::SearchAllFontsForChar(GlobalFontMatch* aMatchData) {
 gfxFontFamily::~gfxFontFamily() {
   // Should not be dropped by stylo, but the InitFontList thread might use
   // a transient gfxFontFamily and that's OK.
-  MOZ_ASSERT(NS_IsMainThread() || gfxPlatformFontList::IsInitFontListThread());
+  MOZ_ASSERT(!gfxFontUtils::IsInServoTraversal());
 }
 
 // returns true if other names were found, false otherwise

@@ -218,12 +218,22 @@ static std::shared_ptr<EglDisplay> GetAndInitSurfacelessDisplay(
 }
 #endif
 
+static auto EglDebugLayersEnabled() {
+  EGLAttrib ret = LOCAL_EGL_FALSE;
+  if (StaticPrefs::gfx_direct3d11_enable_debug_layer_AtStartup()) {
+    ret = LOCAL_EGL_TRUE;
+  }
+  return ret;
+}
+
 static std::shared_ptr<EglDisplay> GetAndInitWARPDisplay(
     GLLibraryEGL& egl, void* displayType,
     const StaticMutexAutoLock& aProofOfLock) {
   const EGLAttrib attrib_list[] = {
       LOCAL_EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
       LOCAL_EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE,
+      LOCAL_EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE,
+      EglDebugLayersEnabled(),
       // Requires:
       LOCAL_EGL_PLATFORM_ANGLE_TYPE_ANGLE,
       LOCAL_EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE, LOCAL_EGL_NONE};
@@ -577,7 +587,7 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
   const SymbolLoader pfnLoader(mSymbols.fGetProcAddress);
 
   const auto fnLoadSymbols = [&](const SymLoadStruct* symbols) {
-    const bool shouldWarn = gfxEnv::GlSpew();
+    const bool shouldWarn = gfxEnv::MOZ_GL_SPEW();
     if (pfnLoader.LoadSymbols(symbols, shouldWarn)) return true;
 
     ClearSymbols(symbols);
@@ -1006,7 +1016,7 @@ void EglDisplay::DumpEGLConfigs() const {
 }
 
 static bool ShouldTrace() {
-  static bool ret = gfxEnv::GlDebugVerbose();
+  static bool ret = gfxEnv::MOZ_GL_DEBUG_VERBOSE();
   return ret;
 }
 

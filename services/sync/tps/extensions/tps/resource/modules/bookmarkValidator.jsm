@@ -9,8 +9,8 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
@@ -25,17 +25,10 @@ ChromeUtils.defineModuleGetter(
   "resource://services-common/async.js"
 );
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PlacesSyncUtils",
-  "resource://gre/modules/PlacesSyncUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesSyncUtils: "resource://gre/modules/PlacesSyncUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 var EXPORTED_SYMBOLS = ["BookmarkValidator", "BookmarkProblemData"];
 

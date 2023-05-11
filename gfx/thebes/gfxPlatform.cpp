@@ -11,6 +11,7 @@
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for GfxMemoryImageReporter
 #include "mozilla/layers/CompositorBridgeChild.h"
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/webrender_ffi.h"
@@ -21,6 +22,7 @@
 #include "mozilla/gfx/GraphicsMessages.h"
 #include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/gfx/CanvasManagerParent.h"
+#include "mozilla/gfx/CanvasRenderThread.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_apz.h"
@@ -48,6 +50,7 @@
 
 #include "gfxCrashReporterUtils.h"
 #include "gfxPlatform.h"
+#include "gfxPlatformWorker.h"
 
 #include "gfxBlur.h"
 #include "gfxEnv.h"
@@ -372,11 +375,11 @@ void CrashStatsLogForwarder::CrashAction(LogReason aReason) {
 #ifndef RELEASE_OR_BETA
   // Non-release builds crash by default, but will use telemetry
   // if this environment variable is present.
-  static bool useTelemetry = gfxEnv::GfxDevCrashTelemetry();
+  static bool useTelemetry = gfxEnv::MOZ_GFX_CRASH_TELEMETRY();
 #else
   // Release builds use telemetry by default, but will crash instead
   // if this environment variable is present.
-  static bool useTelemetry = !gfxEnv::GfxDevCrashMozCrash();
+  static bool useTelemetry = !gfxEnv::MOZ_GFX_CRASH_MOZ_CRASH();
 #endif
 
   if (useTelemetry) {
@@ -897,6 +900,7 @@ void gfxPlatform::Init() {
   gPlatform->InitWebGLConfig();
   gPlatform->InitWebGPUConfig();
   gPlatform->InitWindowOcclusionConfig();
+  gPlatform->InitBackdropFilterConfig();
 
   // When using WebRender, we defer initialization of the D3D11 devices until
   // the (rare) cases where they're used. Note that the GPU process where
@@ -948,6 +952,7 @@ void gfxPlatform::Init() {
 #ifdef MOZ_ENABLE_FREETYPE
   SkInitCairoFT(gPlatform->FontHintingEnabled());
 #endif
+  gfxGradientCache::Init();
 
   InitLayersIPC();
 
@@ -1289,6 +1294,10 @@ void gfxPlatform::InitLayersIPC() {
     }
 #endif
     if (!gfxConfig::IsEnabled(Feature::GPU_PROCESS) && UseWebRender()) {
+      RemoteTextureMap::Init();
+      if (gfxVars::UseCanvasRenderThread()) {
+        gfx::CanvasRenderThread::Start();
+      }
       wr::RenderThread::Start(GPUProcessManager::Get()->AllocateNamespace());
       image::ImageMemoryReporter::InitForWebRender();
     }
@@ -1320,6 +1329,7 @@ void gfxPlatform::ShutdownLayersIPC() {
     layers::ImageBridgeChild::ShutDown();
     // This could be running on either the Compositor or the Renderer thread.
     gfx::CanvasManagerParent::Shutdown();
+    RemoteTextureMap::Shutdown();
     // This has to happen after shutting down the child protocols.
     layers::CompositorThreadHolder::Shutdown();
     image::ImageMemoryReporter::ShutdownForWebRender();
@@ -1336,6 +1346,9 @@ void gfxPlatform::ShutdownLayersIPC() {
           WebRenderBlobTileSizePrefChangeCallback,
           nsDependentCString(
               StaticPrefs::GetPrefName_gfx_webrender_blob_tile_size()));
+    }
+    if (gfx::CanvasRenderThread::Get()) {
+      gfx::CanvasRenderThread::ShutDown();
     }
 #if defined(XP_WIN)
     widget::WinWindowOcclusionTracker::ShutDown();
@@ -2252,10 +2265,26 @@ mozilla::LogModule* gfxPlatform::GetLog(eGfxLog aWhichLog) {
 }
 
 RefPtr<mozilla::gfx::DrawTarget> gfxPlatform::ScreenReferenceDrawTarget() {
+  MOZ_ASSERT_IF(XRE_IsContentProcess(), NS_IsMainThread());
   return (mScreenReferenceDrawTarget)
              ? mScreenReferenceDrawTarget
              : gPlatform->CreateOffscreenContentDrawTarget(
                    IntSize(1, 1), SurfaceFormat::B8G8R8A8, true);
+}
+
+/* static */ RefPtr<mozilla::gfx::DrawTarget>
+gfxPlatform::ThreadLocalScreenReferenceDrawTarget() {
+  if (NS_IsMainThread() && gPlatform) {
+    return gPlatform->ScreenReferenceDrawTarget();
+  }
+
+  gfxPlatformWorker* platformWorker = gfxPlatformWorker::Get();
+  if (platformWorker) {
+    return platformWorker->ScreenReferenceDrawTarget();
+  }
+
+  return Factory::CreateDrawTarget(BackendType::SKIA, IntSize(1, 1),
+                                   SurfaceFormat::B8G8R8A8);
 }
 
 mozilla::gfx::SurfaceFormat gfxPlatform::Optimal2DFormatForContent(
@@ -2341,9 +2370,11 @@ void gfxPlatform::InitAcceleration() {
   // explicit.
   MOZ_ASSERT(NS_IsMainThread(), "can only initialize prefs on the main thread");
 
+#ifndef MOZ_WIDGET_GTK
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsCString discardFailureId;
   int32_t status;
+#endif
 
   if (XRE_IsParentProcess()) {
     gfxVars::SetBrowserTabsRemoteAutostart(BrowserTabsRemoteAutostart());
@@ -2368,17 +2399,28 @@ void gfxPlatform::InitAcceleration() {
 #endif
   }
 
-  if (Preferences::GetBool("media.hardware-video-decoding.enabled", false) &&
-#ifdef XP_WIN
-      Preferences::GetBool("media.wmf.dxva.enabled", true) &&
-#endif
-      NS_SUCCEEDED(
-          gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
-                                    discardFailureId, &status))) {
-    if (status == nsIGfxInfo::FEATURE_STATUS_OK ||
-        StaticPrefs::media_hardware_video_decoding_force_enabled_AtStartup()) {
-      sLayersSupportsHardwareVideoDecoding = true;
+  if (StaticPrefs::media_hardware_video_decoding_enabled_AtStartup()) {
+#ifdef MOZ_WIDGET_GTK
+    sLayersSupportsHardwareVideoDecoding =
+        gfxPlatformGtk::GetPlatform()->InitVAAPIConfig(
+            StaticPrefs::
+                media_hardware_video_decoding_force_enabled_AtStartup() ||
+            StaticPrefs::media_ffmpeg_vaapi_enabled());
+#else
+    if (
+#  ifdef XP_WIN
+        Preferences::GetBool("media.wmf.dxva.enabled", true) &&
+#  endif
+        NS_SUCCEEDED(gfxInfo->GetFeatureStatus(
+            nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING, discardFailureId,
+            &status))) {
+      if (status == nsIGfxInfo::FEATURE_STATUS_OK ||
+          StaticPrefs::
+              media_hardware_video_decoding_force_enabled_AtStartup()) {
+        sLayersSupportsHardwareVideoDecoding = true;
+      }
     }
+#endif
   }
 
   sLayersAccelerationPrefsInitialized = true;
@@ -2674,7 +2716,7 @@ void gfxPlatform::InitWebRenderConfig() {
                                  "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
         useHwVideoZeroCopy = false;
       } else {
-        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
+        if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
           FeatureState& feature =
               gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
           feature.DisableByDefault(FeatureStatus::Blocked,
@@ -2711,7 +2753,7 @@ void gfxPlatform::InitWebRenderConfig() {
                                  "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
         reuseDecoderDevice = false;
       } else {
-        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
+        if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
           FeatureState& feature =
               gfxConfig::GetFeature(Feature::REUSE_DECODER_DEVICE);
           feature.DisableByDefault(FeatureStatus::Blocked,
@@ -2768,6 +2810,11 @@ void gfxPlatform::InitWebRenderConfig() {
 
 void gfxPlatform::InitHardwareVideoConfig() {
   if (!XRE_IsParentProcess()) {
+    return;
+  }
+
+  // We don't use selective VP8/9 decode control on Linux.
+  if (kIsWayland || kIsX11) {
     return;
   }
 
@@ -2836,6 +2883,10 @@ void gfxPlatform::InitWebGLConfig() {
   threadsafeGL |= StaticPrefs::webgl_threadsafe_gl_force_enabled_AtStartup();
   threadsafeGL &= !StaticPrefs::webgl_threadsafe_gl_force_disabled_AtStartup();
   gfxVars::SetSupportsThreadsafeGL(threadsafeGL);
+
+  bool useCanvasRenderThread =
+      threadsafeGL && StaticPrefs::webgl_use_canvas_render_thread_AtStartup();
+  gfxVars::SetUseCanvasRenderThread(useCanvasRenderThread);
 
   if (kIsAndroid) {
     // Don't enable robust buffer access on Adreno 630 devices.
@@ -2946,6 +2997,54 @@ void gfxPlatform::InitWindowOcclusionConfig() {
           StaticPrefs::
               GetPrefName_widget_windows_window_occlusion_tracking_enabled()));
 #endif
+}
+
+static void BackdropFilterPrefChangeCallback(const char*, void*) {
+  FeatureState& feature = gfxConfig::GetFeature(Feature::BACKDROP_FILTER);
+
+  // We need to reset because the user status needs to be set before the
+  // environment status, but the environment status comes from the blocklist,
+  // and the user status can be updated after the fact.
+  feature.Reset();
+  feature.EnableByDefault();
+
+  if (StaticPrefs::layout_css_backdrop_filter_force_enabled()) {
+    feature.UserForceEnable("Force enabled by pref");
+  }
+
+  nsCString message;
+  nsCString failureId;
+  if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_BACKDROP_FILTER,
+                                        &message, failureId)) {
+    feature.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
+  }
+
+  // This may still be gated by the layout.css.backdrop-filter.enabled pref but
+  // the test infrastructure is very sensitive to how changes to that pref
+  // propagate, so we don't include them in the gfxVars/gfxFeature.
+  gfxVars::SetAllowBackdropFilter(feature.IsEnabled());
+}
+
+void gfxPlatform::InitBackdropFilterConfig() {
+  // This would ideally be in the nsCSSProps code
+  // but nsCSSProps is initialized before gfxPlatform
+  // so it has to be done here.
+  gfxVars::AddReceiver(&nsCSSProps::GfxVarReceiver());
+
+  if (!XRE_IsParentProcess()) {
+    // gfxVars doesn't notify receivers when initialized on content processes
+    // we need to explicitly recompute backdrop-filter's enabled state here.
+    nsCSSProps::RecomputeEnabledState(
+        StaticPrefs::GetPrefName_layout_css_backdrop_filter_enabled());
+    return;
+  }
+
+  BackdropFilterPrefChangeCallback(nullptr, nullptr);
+
+  Preferences::RegisterCallback(
+      BackdropFilterPrefChangeCallback,
+      nsDependentCString(
+          StaticPrefs::GetPrefName_layout_css_backdrop_filter_force_enabled()));
 }
 
 bool gfxPlatform::CanUseHardwareVideoDecoding() {
@@ -3501,7 +3600,11 @@ bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
 void gfxPlatform::DisableGPUProcess() {
   gfxVars::SetRemoteCanvasEnabled(false);
 
+  RemoteTextureMap::Init();
   if (gfxVars::UseWebRender()) {
+    if (gfxVars::UseCanvasRenderThread()) {
+      gfx::CanvasRenderThread::Start();
+    }
     // We need to initialize the parent process to prepare for WebRender if we
     // did not end up disabling it, despite losing the GPU process.
     wr::RenderThread::Start(GPUProcessManager::Get()->AllocateNamespace());

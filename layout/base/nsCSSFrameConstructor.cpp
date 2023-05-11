@@ -1423,6 +1423,10 @@ static void EnsureAutoPageName(nsFrameConstructorState& aState,
   // When building the entire document, this should only happen for the
   // root, which will mean the loop will immediately end. Either way, this will
   // only happen once for each time the frame constructor is run.
+  if (aState.mAutoPageNameValue) {
+    return;
+  }
+
   for (const nsContainerFrame* frame = aFrame; frame;
        frame = frame->GetParent()) {
     const StylePageName& pageName = frame->StylePage()->mPage;
@@ -1693,7 +1697,7 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
       // localized text we have.
       // XXX what if the 'alt' attribute is added later, how will we
       // detect that and do the right thing here?
-      if (aOriginatingElement.HasAttr(kNameSpaceID_None, nsGkAtoms::alt)) {
+      if (aOriginatingElement.HasAttr(nsGkAtoms::alt)) {
         nsCOMPtr<nsIContent> content;
         NS_NewAttributeContent(mDocument->NodeInfoManager(), kNameSpaceID_None,
                                nsGkAtoms::alt, getter_AddRefs(content));
@@ -1701,7 +1705,7 @@ already_AddRefed<nsIContent> nsCSSFrameConstructor::CreateGeneratedContent(
       }
 
       if (aOriginatingElement.IsHTMLElement(nsGkAtoms::input)) {
-        if (aOriginatingElement.HasAttr(kNameSpaceID_None, nsGkAtoms::value)) {
+        if (aOriginatingElement.HasAttr(nsGkAtoms::value)) {
           nsCOMPtr<nsIContent> content;
           NS_NewAttributeContent(mDocument->NodeInfoManager(),
                                  kNameSpaceID_None, nsGkAtoms::value,
@@ -7979,25 +7983,27 @@ void nsCSSFrameConstructor::WillDestroyFrameTree() {
 
 // XXXbz I'd really like this method to go away. Once we have inline-block and
 // I can just use that for sized broken images, that can happen, maybe.
-void nsCSSFrameConstructor::GetAlternateTextFor(Element* aElement, nsAtom* aTag,
+//
+// NOTE(emilio): This needs to match MozAltContent handling.
+void nsCSSFrameConstructor::GetAlternateTextFor(const Element& aElement,
                                                 nsAString& aAltText) {
   // The "alt" attribute specifies alternate text that is rendered
   // when the image can not be displayed.
-  if (aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::alt, aAltText)) {
+  if (aElement.GetAttr(nsGkAtoms::alt, aAltText)) {
     return;
   }
 
-  if (nsGkAtoms::input == aTag) {
-    // If there's no "alt" attribute, and aContent is an input element, then use
-    // the value of the "value" attribute
-    if (aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::value, aAltText)) {
+  if (aElement.IsHTMLElement(nsGkAtoms::input)) {
+    // If there's no "alt" attribute, and aElement is an input element, then use
+    // the value of the "value" attribute.
+    if (aElement.GetAttr(nsGkAtoms::value, aAltText)) {
       return;
     }
 
     // If there's no "value" attribute either, then use the localized string for
     // "Submit" as the alternate text.
     nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                            "Submit", aElement->OwnerDoc(),
+                                            "Submit", aElement.OwnerDoc(),
                                             aAltText);
   }
 }

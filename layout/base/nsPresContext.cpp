@@ -65,6 +65,7 @@
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/StaticPresData.h"
 #include "nsRefreshDriver.h"
 #include "Layers.h"
@@ -206,7 +207,7 @@ void nsPresContext::ForceReflowForFontInfoUpdate(bool aNeedsReframe) {
   // If there's a user font set, discard any src:local() faces it may have
   // loaded because their font entries may no longer be valid.
   if (auto* fonts = Document()->GetFonts()) {
-    fonts->GetUserFontSet()->ForgetLocalFaces();
+    fonts->GetImpl()->ForgetLocalFaces();
   }
 
   FlushFontCache();
@@ -1405,9 +1406,32 @@ nsISupports* nsPresContext::GetContainerWeak() const {
   return mDocument->GetDocShell();
 }
 
+ColorScheme nsPresContext::DefaultBackgroundColorScheme() const {
+  dom::Document* doc = Document();
+  // Use a dark background for top-level about:blank that is inaccessible to
+  // content JS.
+  {
+    BrowsingContext* bc = doc->GetBrowsingContext();
+    if (bc && bc->IsTop() && !bc->HasOpener() && doc->GetDocumentURI() &&
+        NS_IsAboutBlank(doc->GetDocumentURI())) {
+      return doc->PreferredColorScheme(Document::IgnoreRFP::Yes);
+    }
+  }
+  // Prefer the root color-scheme (since generally the default canvas
+  // background comes from the root element's background-color), and fall back
+  // to the default color-scheme if not available.
+  if (auto* frame = FrameConstructor()->GetRootElementStyleFrame()) {
+    return LookAndFeel::ColorSchemeForFrame(frame);
+  }
+  return doc->DefaultColorScheme();
+}
+
 nscolor nsPresContext::DefaultBackgroundColor() const {
+  if (!GetBackgroundColorDraw()) {
+    return NS_RGB(255, 255, 255);
+  }
   return PrefSheetPrefs()
-      .ColorsFor(mDocument->DefaultColorScheme())
+      .ColorsFor(DefaultBackgroundColorScheme())
       .mDefaultBackground;
 }
 

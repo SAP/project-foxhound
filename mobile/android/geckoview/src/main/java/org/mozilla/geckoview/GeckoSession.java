@@ -1311,6 +1311,36 @@ public class GeckoSession {
             }
           });
     }
+
+    @WrapForJNI(calledFrom = "gecko")
+    private void onUpdateSessionStore(final GeckoBundle aBundle) {
+      ThreadUtils.runOnUiThread(
+          () -> {
+            final GeckoSession session = mOwner.get();
+            if (session == null) {
+              return;
+            }
+            GeckoBundle scroll = aBundle.getBundle("scroll");
+            if (scroll == null) {
+              scroll = new GeckoBundle();
+              aBundle.putBundle("scroll", scroll);
+            }
+
+            // Here we unfortunately need to do some re-mapping since `zoom` is passed in a separate
+            // bunds and we wish to keep the bundle format.
+            scroll.putBundle("zoom", aBundle.getBundle("zoom"));
+            final SessionState stateCache = session.mStateCache;
+            stateCache.updateSessionState(aBundle);
+            final SessionState state = new SessionState(stateCache);
+            if (!state.isEmpty()) {
+              final ProgressDelegate progressDelegate = session.getProgressDelegate();
+              if (progressDelegate != null) {
+                progressDelegate.onSessionStateChange(session, state);
+              } else {
+              }
+            }
+          });
+    }
   }
 
   private class Listener implements BundleEventListener {
@@ -4227,15 +4257,15 @@ public class GeckoSession {
         /** Auth prompt flags. */
         public static class Flags {
           /** The auth prompt is for a network host. */
-          public static final int HOST = 1;
+          public static final int HOST = 1 << 0;
           /** The auth prompt is for a proxy. */
-          public static final int PROXY = 2;
+          public static final int PROXY = 1 << 1;
           /** The auth prompt should only request a password. */
-          public static final int ONLY_PASSWORD = 8;
+          public static final int ONLY_PASSWORD = 1 << 3;
           /** The auth prompt is the result of a previous failed login. */
-          public static final int PREVIOUS_FAILED = 16;
+          public static final int PREVIOUS_FAILED = 1 << 4;
           /** The auth prompt is for a cross-origin sub-resource. */
-          public static final int CROSS_ORIGIN_SUB_RESOURCE = 32;
+          public static final int CROSS_ORIGIN_SUB_RESOURCE = 1 << 5;
 
           protected Flags() {}
         }

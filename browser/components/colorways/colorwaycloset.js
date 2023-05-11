@@ -13,7 +13,9 @@ const { AddonManager } = ChromeUtils.import(
 const INTENSITY_SOFT = "soft";
 const INTENSITY_BALANCED = "balanced";
 const INTENSITY_BOLD = "bold";
-const ID_SUFFIX_FOR_PRIMARY_INTENSITY = `-${INTENSITY_BALANCED}-colorway@mozilla.org`;
+const ID_SUFFIX_COLORWAY = "-colorway@mozilla.org";
+const ID_SUFFIX_PRIMARY_INTENSITY = `-${INTENSITY_BALANCED}${ID_SUFFIX_COLORWAY}`;
+const ID_SUFFIX_DARK_COLORWAY = `-${INTENSITY_BOLD}${ID_SUFFIX_COLORWAY}`;
 const ID_SUFFIXES_FOR_SECONDARY_INTENSITIES = new RegExp(
   `-(${INTENSITY_SOFT}|${INTENSITY_BOLD})-colorway@mozilla\\.org$`
 );
@@ -21,7 +23,7 @@ const MATCH_INTENSITY_FROM_ID = new RegExp(
   `-(${INTENSITY_SOFT}|${INTENSITY_BALANCED}|${INTENSITY_BOLD})-colorway@mozilla\\.org$`
 );
 
-const ColorwaySelector = {
+const ColorwayCloset = {
   // This is essentially an instant-apply dialog, but we make an effort to only
   // keep the theme change if the user hits the "Set colorway" button, and
   // otherwise revert to the previous theme upon closing the modal. However,
@@ -29,21 +31,35 @@ const ColorwaySelector = {
   // which case the theme change will be kept.
   revertToPreviousTheme: true,
 
-  colorwayRadios: document.getElementById("colorway-selector"),
-  intensityContainer: document.getElementById("colorway-intensities"),
+  el: {
+    colorwayRadios: document.getElementById("colorway-selector"),
+    intensityContainer: document.getElementById("colorway-intensities"),
+    colorwayFigure: document.getElementById("colorway-figure"),
+    colorwayName: document.getElementById("colorway-name"),
+    collectionTitle: document.getElementById("collection-title"),
+    colorwayDescription: document.getElementById("colorway-description"),
+    expiryDateSpan: document.querySelector("#collection-expiry-date > span"),
+    setColorwayButton: document.getElementById("set-colorway"),
+    cancelButton: document.getElementById("cancel"),
+    homepageResetContainer: document.getElementById("homepage-reset-container"),
+  },
 
   init() {
     this._displayCollectionData();
+    this._displayHomepageResetOption();
 
     AddonManager.addAddonListener(this);
     window.addEventListener("unload", this);
 
     this._initColorwayRadios();
-    this.colorwayRadios.addEventListener("change", this);
-    this.intensityContainer.addEventListener("change", this);
+    this.el.colorwayRadios.addEventListener("change", this);
+    this.el.intensityContainer.addEventListener("change", this);
 
-    document.getElementById("set-colorway").onclick = () => {
+    this.el.setColorwayButton.onclick = () => {
       this.revertToPreviousTheme = false;
+      window.close();
+    };
+    this.el.cancelButton.onclick = () => {
       window.close();
     };
   },
@@ -59,7 +75,7 @@ const ColorwaySelector = {
     // The radio buttons represent colorway "groups". A group is a colorway
     // from the current collection to represent related colorways with another
     // intensity. If the current collection doesn't have intensities, each
-    // colorway has their own group.
+    // colorway is their own group.
     this.colorwayGroups = this.colorways.filter(
       colorway => !ID_SUFFIXES_FOR_SECONDARY_INTENSITIES.test(colorway.id)
     );
@@ -69,20 +85,48 @@ const ColorwaySelector = {
       input.type = "radio";
       input.name = "colorway";
       input.value = addon.id;
-      // TODO bug 1770030: localize name with Fluent
-      // TODO: this name includes the intensity, which we don't want here
-      input.setAttribute("title", addon.name);
+      input.setAttribute("title", this._getColorwayGroupName(addon));
       input.style.setProperty("--colorway-icon", `url(${addon.iconURL})`);
-      this.colorwayRadios.appendChild(input);
+      this.el.colorwayRadios.appendChild(input);
     }
 
     // If the current active theme is part of our collection, make the UI reflect
-    // that. Otherwise go ahead and enable the first theme in our list.
+    // that. Otherwise go ahead and enable the first colorway in our list.
     this.selectedColorway = this.colorways.find(colorway => colorway.isActive);
     if (this.selectedColorway) {
       this.refresh();
     } else {
-      this.colorwayGroups[0].enable();
+      let colorwayToEnable = this.colorwayGroups[0];
+      // If the user has been using a theme with a dark color scheme, make an
+      // effort to default to a colorway with a dark color scheme as well.
+      if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        let firstDarkColorway = this.colorways.find(colorway =>
+          colorway.id.endsWith(ID_SUFFIX_DARK_COLORWAY)
+        );
+        colorwayToEnable = firstDarkColorway || colorwayToEnable;
+      }
+      colorwayToEnable.enable();
+    }
+  },
+
+  _displayHomepageResetOption() {
+    const { HomePage } = ChromeUtils.import("resource:///modules/HomePage.jsm");
+    this.el.homepageResetContainer.hidden = HomePage.isDefault;
+    if (!HomePage.isDefault) {
+      let homeState;
+      this.el.homepageResetContainer
+        .querySelector(".reset-prompt > button")
+        .addEventListener("click", () => {
+          homeState = HomePage.get();
+          HomePage.reset();
+          this.el.homepageResetContainer.classList.add("success");
+        });
+      this.el.homepageResetContainer
+        .querySelector(".success-prompt > button")
+        .addEventListener("click", () => {
+          HomePage.set(homeState);
+          this.el.homepageResetContainer.classList.remove("success");
+        });
     }
   },
 
@@ -94,29 +138,31 @@ const ColorwaySelector = {
       window.close();
     }
     document.l10n.setAttributes(
-      document.getElementById("collection-title"),
+      this.el.collectionTitle,
       collection.l10nId.title
     );
     document.l10n.setAttributes(
-      document.querySelector("#collection-expiry-date > span"),
-      "colorway-collection-expiry-date-span",
+      this.el.expiryDateSpan,
+      "colorway-collection-expiry-label",
       {
         expiryDate: collection.expiry.getTime(),
       }
     );
   },
 
-  _displayColorwayData() {
-    // TODO bug 1770030: localize name and description with Fluent
-    // TODO: this name includes the intensity, which we don't want here
-    document.getElementById(
-      "colorway-name"
-    ).innerText = this.selectedColorway.name;
-    document.getElementById(
-      "colorway-description"
-    ).innerText = this.groupIdForSelectedColorway;
+  _getFigureUrl() {
+    return BuiltInThemes.builtInThemeMap.get(this.selectedColorway.id)
+      .figureUrl;
+  },
 
-    this.intensityContainer.hidden = !this.hasIntensities;
+  _displayColorwayData() {
+    this.el.colorwayName.innerText = this._getColorwayGroupName(
+      this.selectedColorway
+    );
+    this.el.colorwayDescription.innerText = this.selectedColorway.description;
+    this.el.colorwayFigure.src = this._getFigureUrl();
+
+    this.el.intensityContainer.hidden = !this.hasIntensities;
     if (this.hasIntensities) {
       let selectedIntensity = this.selectedColorway.id.match(
         MATCH_INTENSITY_FROM_ID
@@ -125,9 +171,9 @@ const ColorwaySelector = {
         ".colorway-intensity-radio"
       )) {
         let intensity = radio.getAttribute("data-intensity");
-        radio.value = this.selectedColorway.id.replace(
-          MATCH_INTENSITY_FROM_ID,
-          `-${intensity}-colorway@mozilla.org`
+        radio.value = this._changeIntensity(
+          this.selectedColorway.id,
+          intensity
         );
         if (intensity == selectedIntensity) {
           radio.checked = true;
@@ -139,17 +185,36 @@ const ColorwaySelector = {
   _getColorwayGroupId(colorwayId) {
     let groupId = colorwayId.replace(
       ID_SUFFIXES_FOR_SECONDARY_INTENSITIES,
-      ID_SUFFIX_FOR_PRIMARY_INTENSITY
+      ID_SUFFIX_PRIMARY_INTENSITY
     );
     return this.colorwayGroups.map(addon => addon.id).includes(groupId)
       ? groupId
       : null;
   },
 
+  _changeIntensity(colorwayId, intensity) {
+    return colorwayId.replace(
+      MATCH_INTENSITY_FROM_ID,
+      `-${intensity}${ID_SUFFIX_COLORWAY}`
+    );
+  },
+
+  _getColorwayGroupName(addon) {
+    return BuiltInThemes.getLocalizedColorwayGroupName(addon.id) || addon.name;
+  },
+
   handleEvent(e) {
     switch (e.type) {
       case "change":
-        this.colorways.find(colorway => colorway.id == e.target.value).enable();
+        let newId = e.target.value;
+        // Persist the selected intensity when toggling between colorway radios.
+        if (e.currentTarget == this.el.colorwayRadios && this.hasIntensities) {
+          let selectedIntensity = document
+            .querySelector(".colorway-intensity-radio:checked")
+            .getAttribute("data-intensity");
+          newId = this._changeIntensity(newId, selectedIntensity);
+        }
+        this.colorways.find(colorway => colorway.id == newId).enable();
         break;
       case "unload":
         AddonManager.removeAddonListener(this);
@@ -179,39 +244,18 @@ const ColorwaySelector = {
       this.selectedColorway.id
     );
     this.hasIntensities = this.groupIdForSelectedColorway.endsWith(
-      ID_SUFFIX_FOR_PRIMARY_INTENSITY
+      ID_SUFFIX_PRIMARY_INTENSITY
     );
-    for (let input of this.colorwayRadios.children) {
+    for (let input of this.el.colorwayRadios.children) {
       if (input.value == this.groupIdForSelectedColorway) {
         input.checked = true;
         this._displayColorwayData();
         break;
       }
     }
+    this.el.setColorwayButton.disabled =
+      this.previousTheme.id == this.selectedColorway.id;
   },
 };
 
-function showUseFXHomeControls() {
-  const { HomePage } = ChromeUtils.import("resource:///modules/HomePage.jsm");
-  const useFXHomeControls = document.getElementById("use-fx-home-controls");
-  useFXHomeControls.hidden = HomePage.isDefault;
-  if (!HomePage.isDefault) {
-    let homeState;
-    useFXHomeControls
-      .querySelector(".reset-prompt > button")
-      .addEventListener("click", () => {
-        homeState = HomePage.get();
-        HomePage.reset();
-        useFXHomeControls.classList.add("success");
-      });
-    useFXHomeControls
-      .querySelector(".success-prompt > button")
-      .addEventListener("click", () => {
-        HomePage.set(homeState);
-        useFXHomeControls.classList.remove("success");
-      });
-  }
-}
-
-ColorwaySelector.init();
-showUseFXHomeControls();
+ColorwayCloset.init();

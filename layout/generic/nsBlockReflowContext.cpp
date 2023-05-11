@@ -209,17 +209,19 @@ done:
   return dirtiedLine;
 }
 
-void nsBlockReflowContext::ReflowBlock(
-    const LogicalRect& aSpace, bool aApplyBStartMargin,
-    nsCollapsingMargin& aPrevMargin, nscoord aClearance,
-    bool aIsAdjacentWithBStart, nsLineBox* aLine, ReflowInput& aFrameRI,
-    nsReflowStatus& aFrameReflowStatus, BlockReflowState& aState) {
+void nsBlockReflowContext::ReflowBlock(const LogicalRect& aSpace,
+                                       bool aApplyBStartMargin,
+                                       nsCollapsingMargin& aPrevMargin,
+                                       nscoord aClearance, nsLineBox* aLine,
+                                       ReflowInput& aFrameRI,
+                                       nsReflowStatus& aFrameReflowStatus,
+                                       BlockReflowState& aState) {
   mFrame = aFrameRI.mFrame;
   mWritingMode = aState.mReflowInput.GetWritingMode();
   mContainerSize = aState.ContainerSize();
   mSpace = aSpace;
 
-  if (!aIsAdjacentWithBStart) {
+  if (!aState.IsAdjacentWithBStart()) {
     aFrameRI.mFlags.mIsTopOfPage = false;  // make sure this is cleared
   }
 
@@ -237,13 +239,13 @@ void nsBlockReflowContext::ReflowBlock(
     // child frame doesn't think it can reflow into its margin area.
     if (mWritingMode.IsOrthogonalTo(mFrame->GetWritingMode())) {
       if (NS_UNCONSTRAINEDSIZE != aFrameRI.AvailableISize()) {
-        aFrameRI.AvailableISize() -= mBStartMargin.get() + aClearance;
-        aFrameRI.AvailableISize() = std::max(0, aFrameRI.AvailableISize());
+        aFrameRI.SetAvailableISize(std::max(
+            0, aFrameRI.AvailableISize() - mBStartMargin.get() - aClearance));
       }
     } else {
       if (NS_UNCONSTRAINEDSIZE != aFrameRI.AvailableBSize()) {
-        aFrameRI.AvailableBSize() -= mBStartMargin.get() + aClearance;
-        aFrameRI.AvailableBSize() = std::max(0, aFrameRI.AvailableBSize());
+        aFrameRI.SetAvailableBSize(std::max(
+            0, aFrameRI.AvailableBSize() - mBStartMargin.get() - aClearance));
       }
     }
   } else {

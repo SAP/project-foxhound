@@ -96,17 +96,18 @@ function headerFromDate(timestamp) {
 }
 
 export default class LoginList extends HTMLElement {
+  // An array of login GUIDs, stored in sorted order.
+  _loginGuidsSortedOrder = [];
+  // A map of login GUID -> {login, listItem}.
+  _logins = {};
+  // A map of section header -> sectionItem
+  _sections = {};
+  _filter = "";
+  _selectedGuid = null;
+  _blankLoginListItem = LoginListItemFactory.create({});
+
   constructor() {
     super();
-    // An array of login GUIDs, stored in sorted order.
-    this._loginGuidsSortedOrder = [];
-    // A map of login GUID -> {login, listItem}.
-    this._logins = {};
-    // A map of section header -> sectionItem
-    this._sections = {};
-    this._filter = "";
-    this._selectedGuid = null;
-    this._blankLoginListItem = LoginListItemFactory.create({});
     this._blankLoginListItem.hidden = true;
   }
 
@@ -456,33 +457,6 @@ export default class LoginList extends HTMLElement {
     if (!this._selectedGuid || !this._logins[this._selectedGuid]) {
       this._selectFirstVisibleLogin();
     }
-  }
-
-  addFavicons(favicons) {
-    for (let favicon in favicons) {
-      let { login, listItem } = this._logins[favicon];
-      favicon = favicons[favicon];
-      if (favicon && login.title) {
-        favicon.uri = btoa(
-          new Uint8Array(favicon.data).reduce(
-            (data, byte) => data + String.fromCharCode(byte),
-            ""
-          )
-        );
-        let faviconDataURI = `data:${favicon.mimeType};base64,${favicon.uri}`;
-        login.faviconDataURI = faviconDataURI;
-      }
-      LoginListItemFactory.update(listItem, login);
-    }
-    let selectedListItem = this._list.querySelector(
-      ".login-list-item.selected"
-    );
-    if (selectedListItem) {
-      window.dispatchEvent(
-        new CustomEvent("AboutLoginsLoadInitialFavicon", {})
-      );
-    }
-    this.render();
   }
 
   /**

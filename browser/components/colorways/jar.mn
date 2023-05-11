@@ -3,6 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 browser.jar:
-    content/browser/colorwaycloset.html
-    content/browser/colorwaycloset.css
-    content/browser/colorwaycloset.js
+    content/browser/colorways/colorwaycloset.html
+    content/browser/colorways/colorwaycloset.css
+    content/browser/colorways/colorwaycloset.js
+#ifdef EARLY_BETA_OR_EARLIER
+    content/browser/colorways/assets/ (assets/*.avif)
+#endif

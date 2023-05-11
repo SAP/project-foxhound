@@ -26,9 +26,9 @@
 #include "js/Principals.h"
 #include "js/TypeDecls.h"
 #include "js/Vector.h"
+#include "threading/ProtectedData.h"
 #include "util/TrailingArray.h"
 #include "vm/JSScript.h"
-#include "vm/TraceLogging.h"
 
 namespace js {
 
@@ -183,7 +183,6 @@ class RetAddrEntry {
 //    RetAddrEntry[]          retAddrEntries()
 //    OSREntry[]              osrEntries()
 //    DebugTrapEntry[]        debugTrapEntries()
-//    uint32_t[]              traceLoggerToggleOffsets()
 //
 // Note: The arrays are arranged in order of descending alignment requires so
 // that padding is not required.
@@ -193,7 +192,7 @@ class alignas(uintptr_t) BaselineScript final : public TrailingArray {
   HeapPtr<JitCode*> method_ = nullptr;
 
   // An ion compilation that is ready, but isn't linked yet.
-  IonCompileTask* pendingIonCompileTask_ = nullptr;
+  MainThreadData<IonCompileTask*> pendingIonCompileTask_{nullptr};
 
   // Baseline Interpreter can enter Baseline Compiler code at this address. This
   // is right after the warm-up counter check in the prologue.
@@ -203,15 +202,6 @@ class alignas(uintptr_t) BaselineScript final : public TrailingArray {
   uint32_t profilerEnterToggleOffset_ = 0;
   uint32_t profilerExitToggleOffset_ = 0;
 
-  // The offsets and event used for Tracelogger toggling.
-#ifdef JS_TRACE_LOGGING
-#  ifdef DEBUG
-  bool traceLoggerScriptsEnabled_ = false;
-  bool traceLoggerEngineEnabled_ = false;
-#  endif
-  TraceLoggerEvent traceLoggerScriptEvent_ = {};
-#endif
-
  private:
   // Offset (in bytes) from `this` to the start of each trailing array. Each
   // array ends where following one begins. There is no implicit padding (except
@@ -220,7 +210,6 @@ class alignas(uintptr_t) BaselineScript final : public TrailingArray {
   Offset retAddrEntriesOffset_ = 0;
   Offset osrEntriesOffset_ = 0;
   Offset debugTrapEntriesOffset_ = 0;
-  Offset traceLoggerToggleOffsetsOffset_ = 0;
   Offset allocBytes_ = 0;
 
   // See `Flag` type below.
@@ -258,9 +247,6 @@ class alignas(uintptr_t) BaselineScript final : public TrailingArray {
   Offset retAddrEntriesOffset() const { return retAddrEntriesOffset_; }
   Offset osrEntriesOffset() const { return osrEntriesOffset_; }
   Offset debugTrapEntriesOffset() const { return debugTrapEntriesOffset_; }
-  Offset traceLoggerToggleOffsetsOffset() const {
-    return traceLoggerToggleOffsetsOffset_;
-  }
   Offset endOffset() const { return allocBytes_; }
 
   // Use BaselineScript::New to create new instances. It will properly
@@ -291,25 +277,15 @@ class alignas(uintptr_t) BaselineScript final : public TrailingArray {
     return makeSpan<OSREntry>(osrEntriesOffset(), debugTrapEntriesOffset());
   }
   mozilla::Span<DebugTrapEntry> debugTrapEntries() {
-    return makeSpan<DebugTrapEntry>(debugTrapEntriesOffset(),
-                                    traceLoggerToggleOffsetsOffset());
+    return makeSpan<DebugTrapEntry>(debugTrapEntriesOffset(), endOffset());
   }
-
-#ifdef JS_TRACE_LOGGING
-  // By default tracelogger is disabled. Therefore we disable the logging code
-  // by default. We store the offsets we must patch to enable the logging.
-  mozilla::Span<uint32_t> traceLoggerToggleOffsets() {
-    return makeSpan<uint32_t>(traceLoggerToggleOffsetsOffset(), endOffset());
-  }
-#endif
 
  public:
   static BaselineScript* New(JSContext* cx, uint32_t warmUpCheckPrologueOffset,
                              uint32_t profilerEnterToggleOffset,
                              uint32_t profilerExitToggleOffset,
                              size_t retAddrEntries, size_t osrEntries,
-                             size_t debugTrapEntries, size_t resumeEntries,
-                             size_t traceLoggerToggleOffsetEntries);
+                             size_t debugTrapEntries, size_t resumeEntries);
 
   static void Destroy(JS::GCContext* gcx, BaselineScript* script);
 
@@ -379,16 +355,6 @@ class alignas(uintptr_t) BaselineScript final : public TrailingArray {
     return flags_ & PROFILER_INSTRUMENTATION_ON;
   }
 
-#ifdef JS_TRACE_LOGGING
-  void initTraceLogger(JSScript* script, const Vector<CodeOffset>& offsets);
-  void toggleTraceLoggerScripts(JSScript* script, bool enable);
-  void toggleTraceLoggerEngine(bool enable);
-
-  static size_t offsetOfTraceLoggerScriptEvent() {
-    return offsetof(BaselineScript, traceLoggerScriptEvent_);
-  }
-#endif
-
   static size_t offsetOfResumeEntriesOffset() {
     static_assert(sizeof(Offset) == sizeof(uint32_t),
                   "JIT expect Offset to be uint32_t");
@@ -437,9 +403,6 @@ void AddSizeOfBaselineData(JSScript* script, mozilla::MallocSizeOf mallocSizeOf,
                            size_t* data);
 
 void ToggleBaselineProfiling(JSContext* cx, bool enable);
-
-void ToggleBaselineTraceLoggerScripts(JSRuntime* runtime, bool enable);
-void ToggleBaselineTraceLoggerEngine(JSRuntime* runtime, bool enable);
 
 struct alignas(uintptr_t) BaselineBailoutInfo {
   // Pointer into the current C stack, where overwriting will start.

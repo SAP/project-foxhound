@@ -127,8 +127,9 @@ class Runner:
 
     def display_error(self, scenario, customization):
         logger.error("%s x %s failed." % (scenario, customization), exc_info=True)
-        if self.strict:
-            raise
+        # TODO: this might avoid the exceptions that slip through in automation
+        # if self.strict:
+        #     raise
 
     async def one_run(self, scenario, customization):
         """Runs one single conditioned profile.
@@ -206,5 +207,7 @@ def run(
         runner.save()
         if failures > 0:
             raise Exception("At least one scenario failed")
+    except Exception as e:
+        raise e
     finally:
         loop.close()

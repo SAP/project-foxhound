@@ -4,9 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -17,6 +16,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
     "resource://activity-stream/lib/SnippetsTestMessageProvider.jsm",
   PanelTestProvider: "resource://activity-stream/lib/PanelTestProvider.jsm",
   Spotlight: "resource://activity-stream/lib/Spotlight.jsm",
+  ToastNotification: "resource://activity-stream/lib/ToastNotification.jsm",
   ToolbarBadgeHub: "resource://activity-stream/lib/ToolbarBadgeHub.jsm",
   ToolbarPanelHub: "resource://activity-stream/lib/ToolbarPanelHub.jsm",
   MomentsPageHub: "resource://activity-stream/lib/MomentsPageHub.jsm",
@@ -35,6 +35,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.jsm",
   TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
+  Utils: "resource://services-settings/Utils.jsm",
   MacAttribution: "resource:///modules/MacAttribution.jsm",
 });
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -78,7 +79,6 @@ const LOCAL_MESSAGE_PROVIDERS = {
 const STARTPAGE_VERSION = "6";
 
 // Remote Settings
-const RS_SERVER_PREF = "services.settings.server";
 const RS_MAIN_BUCKET = "main";
 const RS_COLLECTION_L10N = "ms-language-packs"; // "ms" stands for Messaging System
 const RS_PROVIDERS_WITH_L10N = ["cfr"];
@@ -284,9 +284,7 @@ const MessageLoaderUtils = {
           lazy.RemoteL10n.isLocaleSupported(MessageLoaderUtils.locale)
         ) {
           const recordId = `${RS_FLUENT_RECORD_PREFIX}-${MessageLoaderUtils.locale}`;
-          const kinto = new lazy.KintoHttpClient(
-            Services.prefs.getStringPref(RS_SERVER_PREF)
-          );
+          const kinto = new lazy.KintoHttpClient(lazy.Utils.SERVER_URL);
           const record = await kinto
             .bucket(RS_MAIN_BUCKET)
             .collection(RS_COLLECTION_L10N)
@@ -328,9 +326,17 @@ const MessageLoaderUtils = {
   },
 
   async _experimentsAPILoader(provider) {
+    // Allow tests to override the set of featureIds
+    const featureIds = provider.featureIds ?? [
+      "cfr",
+      "infobar",
+      "moments-page",
+      "pbNewtab",
+      "spotlight",
+    ];
     let experiments = [];
-    for (const featureId of provider.messageGroups) {
-      let FeatureAPI = lazy.NimbusFeatures[featureId];
+    for (const featureId of featureIds) {
+      let featureAPI = lazy.NimbusFeatures[featureId];
       let experimentData = lazy.ExperimentAPI.getExperimentMetaData({
         featureId,
       });
@@ -339,9 +345,13 @@ const MessageLoaderUtils = {
         continue;
       }
 
-      let message = FeatureAPI.getAllVariables();
+      let message = featureAPI.getAllVariables();
 
       if (message?.id) {
+        // Cache the Nimbus feature ID on the message because there is not a 1-1
+        // correspondance between templates and features. This is used when
+        // recording expose events (see |sendTriggerMessage|).
+        message._nimbusFeature = featureId;
         experiments.push(message);
       }
 
@@ -1236,6 +1246,12 @@ class _ASRouter {
           this.dispatchCFRAction
         );
         break;
+      case "toast_notification":
+        lazy.ToastNotification.showToastNotification(
+          message,
+          this.dispatchCFRAction
+        );
+        break;
     }
 
     return { message };
@@ -1673,7 +1689,11 @@ class _ASRouter {
 
   async sendPBNewTabMessage({ tabId, hideDefault }) {
     let message = null;
-
+    const PromoInfo = {
+      FOCUS: { enabledPref: "browser.promo.focus.enabled" },
+      VPN: { enabledPref: "browser.vpn_promo.enabled" },
+      PIN: { enabledPref: "browser.promo.pin.enabled" },
+    };
     await this.loadMessagesFromAllProviders();
 
     // If message has hideDefault property set to true
@@ -1686,6 +1706,18 @@ class _ASRouter {
       }));
     }
 
+    // Check and filter out messages of any disabled PromoType
+    await this.setState(state => ({
+      messages: state.messages.filter(
+        m =>
+          m.template === "pb_newtab" &&
+          Services.prefs.getBoolPref(
+            PromoInfo[m.content?.promoType]?.enabledPref,
+            true
+          )
+      ),
+    }));
+
     const telemetryObject = { tabId };
     TelemetryStopwatch.start("MS_MESSAGE_REQUEST_TIME_MS", telemetryObject);
     message = await this.handleMessageRequest({
@@ -1694,7 +1726,7 @@ class _ASRouter {
     TelemetryStopwatch.finish("MS_MESSAGE_REQUEST_TIME_MS", telemetryObject);
 
     // Format urls if any are defined
-    ["infoLinkUrl", "promoLinkUrl"].forEach(key => {
+    ["infoLinkUrl"].forEach(key => {
       if (message?.content?.[key]) {
         message.content[key] = Services.urlFormatter.formatURL(
           message.content[key]
@@ -1779,17 +1811,9 @@ class _ASRouter {
     }
 
     if (nonReachMessages.length) {
-      // Map from message template to Nimbus feature
-      let featureMap = {
-        cfr_doorhanger: "cfr",
-        spotlight: "spotlight",
-        infobar: "infobar",
-        update_action: "moments-page",
-        pb_newtab: "pbNewtab",
-      };
-      let feature = featureMap[nonReachMessages[0].template];
-      if (feature) {
-        lazy.NimbusFeatures[feature].recordExposureEvent({ once: true });
+      let featureId = nonReachMessages[0]._nimbusFeature;
+      if (featureId) {
+        lazy.NimbusFeatures[featureId].recordExposureEvent({ once: true });
       }
     }
 

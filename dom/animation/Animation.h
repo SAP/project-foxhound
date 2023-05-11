@@ -164,7 +164,13 @@ class Animation : public DOMEventTargetHelper,
             // won't be relevant and hence won't be returned by GetAnimations().
             // We don't want its timeline to keep it alive (which would happen
             // if we return true) since otherwise it will effectively be leaked.
-            PlaybackRate() != 0.0);
+            PlaybackRate() != 0.0) ||
+           // Always return true for not idle animations attached to not
+           // monotonically increasing timelines even if the animation is
+           // finished. This is required to accommodate cases where timeline
+           // ticks back in time.
+           (mTimeline && !mTimeline->IsMonotonicallyIncreasing() &&
+            PlayState() != AnimationPlayState::Idle);
   }
 
   /**
@@ -451,6 +457,28 @@ class Animation : public DOMEventTargetHelper,
     return mTimeline && mTimeline->IsScrollTimeline();
   }
 
+  /**
+   * Returns true if this is at the progress timeline boundary.
+   * https://drafts.csswg.org/web-animations-2/#at-progress-timeline-boundary
+   */
+  enum class ProgressTimelinePosition : uint8_t { Boundary, NotBoundary };
+  static ProgressTimelinePosition AtProgressTimelineBoundary(
+      const Nullable<TimeDuration>& aTimelineDuration,
+      const Nullable<TimeDuration>& aCurrentTime,
+      const TimeDuration& aEffectStartTime, const double aPlaybackRate);
+  ProgressTimelinePosition AtProgressTimelineBoundary() const {
+    return AtProgressTimelineBoundary(
+        mTimeline ? mTimeline->TimelineDuration() : nullptr,
+        GetCurrentTimeAsDuration(),
+        mStartTime.IsNull() ? TimeDuration() : mStartTime.Value(),
+        mPlaybackRate);
+  }
+
+  void SetHiddenByContentVisibility(bool hidden);
+  bool IsHiddenByContentVisibility() const {
+    return mHiddenByContentVisibility;
+  }
+
  protected:
   void SilentlySetCurrentTime(const TimeDuration& aNewCurrentTime);
   void CancelNoUpdate();
@@ -617,6 +645,8 @@ class Animation : public DOMEventTargetHelper,
 
   bool mFinishedAtLastComposeStyle = false;
   bool mWasReplaceableAtLastTick = false;
+
+  bool mHiddenByContentVisibility = false;
 
   // Indicates that the animation should be exposed in an element's
   // getAnimations() list.

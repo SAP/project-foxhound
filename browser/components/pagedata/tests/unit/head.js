@@ -1,13 +1,12 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PageDataSchema: "resource:///modules/pagedata/PageDataSchema.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  PageDataSchema: "resource:///modules/pagedata/PageDataSchema.sys.mjs",
 });
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");

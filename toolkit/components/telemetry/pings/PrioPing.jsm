@@ -11,8 +11,8 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryPrioPing", "Policy"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -25,7 +25,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const Utils = TelemetryUtils;
 

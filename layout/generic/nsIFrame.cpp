@@ -20,6 +20,8 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DisplayPortUtils.h"
+#include "mozilla/dom/CSSAnimation.h"
+#include "mozilla/dom/CSSTransition.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -107,6 +109,7 @@
 
 #include "gfxContext.h"
 #include "nsAbsoluteContainingBlock.h"
+#include "ScrollSnap.h"
 #include "StickyScrollContainer.h"
 #include "nsFontInflationData.h"
 #include "nsRegion.h"
@@ -810,6 +813,12 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   if (!IsPlaceholderFrame() && !aPrevInFlow) {
     UpdateVisibleDescendantsState();
   }
+
+  // TODO(mrobinson): Once bug 1765615 is fixed, this should be called on
+  // layout changes. In addition, when `content-visibility: auto` is implemented
+  // this should also be called when scrolling or focus causes content to be
+  // skipped or unskipped.
+  UpdateAnimationVisibility();
 }
 
 void nsIFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -1296,6 +1305,16 @@ void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 
       handleStickyChange = disp->mPosition == StylePositionProperty::Sticky ||
                            oldDisp->mPosition == StylePositionProperty::Sticky;
+    }
+    if (disp->mScrollSnapAlign != oldDisp->mScrollSnapAlign) {
+      ScrollSnapUtils::PostPendingResnapFor(this);
+    }
+    if (aOldComputedStyle->IsRootElementStyle() &&
+        disp->mScrollSnapType != oldDisp->mScrollSnapType) {
+      if (nsIScrollableFrame* scrollableFrame =
+              PresShell()->GetRootScrollFrameAsScrollable()) {
+        scrollableFrame->PostPendingResnap();
+      }
     }
   } else {  // !aOldComputedStyle
     handleStickyChange = disp->mPosition == StylePositionProperty::Sticky;
@@ -4375,7 +4394,7 @@ void nsIFrame::MarkAbsoluteFramesForDisplayList(
   }
 }
 
-nsresult nsIFrame::GetContentForEvent(WidgetEvent* aEvent,
+nsresult nsIFrame::GetContentForEvent(const WidgetEvent* aEvent,
                                       nsIContent** aContent) {
   nsIFrame* f = nsLayoutUtils::GetNonGeneratedAncestor(this);
   *aContent = f->GetContent();
@@ -9737,25 +9756,15 @@ static void ComputeAndIncludeOutlineArea(nsIFrame* aFrame,
     SetOrUpdateRectValuedProperty(aFrame, nsIFrame::OutlineInnerRectProperty(),
                                   innerRect);
   }
+
   const nscoord offset = outline->mOutlineOffset.ToAppUnits();
   nsRect outerRect(innerRect);
-  bool useOutlineAuto = false;
-  if (StaticPrefs::layout_css_outline_style_auto_enabled()) {
-    useOutlineAuto = outline->mOutlineStyle.IsAuto();
-    if (MOZ_UNLIKELY(useOutlineAuto)) {
-      nsPresContext* presContext = aFrame->PresContext();
-      nsITheme* theme = presContext->Theme();
-      if (theme->ThemeSupportsWidget(presContext, aFrame,
-                                     StyleAppearance::FocusOutline)) {
-        outerRect.Inflate(offset);
-        theme->GetWidgetOverflow(presContext->DeviceContext(), aFrame,
-                                 StyleAppearance::FocusOutline, &outerRect);
-      } else {
-        useOutlineAuto = false;
-      }
-    }
-  }
-  if (MOZ_LIKELY(!useOutlineAuto)) {
+  if (outline->mOutlineStyle.IsAuto()) {
+    nsPresContext* pc = aFrame->PresContext();
+    outerRect.Inflate(offset);
+    pc->Theme()->GetWidgetOverflow(pc->DeviceContext(), aFrame,
+                                   StyleAppearance::FocusOutline, &outerRect);
+  } else {
     nscoord width = outline->GetOutlineWidth();
     outerRect.Inflate(width + offset);
   }
@@ -11641,6 +11650,31 @@ void nsIFrame::UpdateVisibleDescendantsState() {
     }
   } else {
     mAllDescendantsAreInvisible = HasNoVisibleDescendants(this);
+  }
+}
+
+void nsIFrame::UpdateAnimationVisibility() {
+  auto* animationCollection =
+      AnimationCollection<CSSAnimation>::GetAnimationCollection(this);
+  auto* transitionCollection =
+      AnimationCollection<CSSTransition>::GetAnimationCollection(this);
+
+  if ((!animationCollection || animationCollection->mAnimations.IsEmpty()) &&
+      (!transitionCollection || transitionCollection->mAnimations.IsEmpty())) {
+    return;
+  }
+
+  bool hidden = AncestorHidesContent();
+  if (animationCollection) {
+    for (auto& animation : animationCollection->mAnimations) {
+      animation->SetHiddenByContentVisibility(hidden);
+    }
+  }
+
+  if (transitionCollection) {
+    for (auto& transition : transitionCollection->mAnimations) {
+      transition->SetHiddenByContentVisibility(hidden);
+    }
   }
 }
 

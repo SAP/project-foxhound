@@ -147,6 +147,19 @@ and run the following command to publish the crate:
 Note that if a crate has an in-tree dependency make sure to first
 change the dependency information.
 
+We also publish audit information for the crates, and that must be
+updated for each release. To do that run:
+
+    % ./mach cargo vet certify <name> <version> --force
+
+where `<name>` is the name of the crate and `<version>` is the version of the
+crate that was published.
+
+Once the above steps are done for all published crates, create a single revision
+for the supply-chain changes.
+
+[audit criteria]: https://mozilla.github.io/cargo-vet/audit-criteria.html
+
 ## Export to GitHub
 
 The canonical GitHub repository is

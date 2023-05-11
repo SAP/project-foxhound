@@ -4,10 +4,9 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const lazy = {};
 
@@ -63,9 +62,7 @@ class LoginRelatedRealmsParent extends JSWindowActorParent {
         this.onRemoteSettingsSync(event)
       );
       this._relatedDomainsList = await this._sharedCredentialsClient.get();
-      lazy.log.debug("Initialized related realms", this._relatedDomainsList);
     }
-    lazy.log.debug("this._relatedDomainsList", this._relatedDomainsList);
     return this._relatedDomainsList;
   }
 

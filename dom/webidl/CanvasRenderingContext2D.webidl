@@ -145,7 +145,6 @@ CanvasRenderingContext2D includes CanvasImageData;
 CanvasRenderingContext2D includes CanvasPathDrawingStyles;
 CanvasRenderingContext2D includes CanvasTextDrawingStyles;
 CanvasRenderingContext2D includes CanvasPathMethods;
-CanvasRenderingContext2D includes CanvasHitRegions;
 
 
 interface mixin CanvasState {
@@ -306,6 +305,7 @@ interface mixin CanvasTextDrawingStyles {
   attribute DOMString textAlign; // "start", "end", "left", "right", "center" (default: "start")
   attribute DOMString textBaseline; // "top", "hanging", "middle", "alphabetic", "ideographic", "bottom" (default: "alphabetic")
   attribute DOMString direction; // "ltr", "rtl", "inherit" (default: "inherit")
+  attribute DOMString fontKerning; // "auto", "normal", "none" (default: "auto")
 };
 
 interface mixin CanvasPathMethods {
@@ -335,13 +335,6 @@ interface mixin CanvasPathMethods {
   void ellipse(double x, double y, double radiusX, double radiusY, double rotation, double startAngle, double endAngle, optional boolean anticlockwise = false);
 };
 
-interface mixin CanvasHitRegions {
-  // hit regions
-  [Pref="canvas.hitregions.enabled", Throws] void addHitRegion(optional HitRegionOptions options = {});
-  [Pref="canvas.hitregions.enabled"] void removeHitRegion(DOMString id);
-  [Pref="canvas.hitregions.enabled"] void clearHitRegions();
-};
-
 [Exposed=(Window,Worker),
  Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
 interface CanvasGradient {
@@ -362,7 +355,7 @@ interface CanvasPattern {
   void setTransform(optional DOMMatrix2DInit matrix = {});
 };
 
-[Exposed=Window]
+[Exposed=(Window,Worker)]
 interface TextMetrics {
 
   // x-direction

@@ -284,8 +284,8 @@ CompositorBridgeChild* nsDOMWindowUtils::GetCompositorBridge() {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetLastOverWindowMouseLocationInCSSPixels(float* aX,
-                                                            float* aY) {
+nsDOMWindowUtils::GetLastOverWindowPointerLocationInCSSPixels(float* aX,
+                                                              float* aY) {
   const PresShell* presShell = GetPresShell();
   const nsPresContext* presContext = GetPresContext();
 
@@ -293,18 +293,18 @@ nsDOMWindowUtils::GetLastOverWindowMouseLocationInCSSPixels(float* aX,
     return NS_ERROR_FAILURE;
   }
 
-  const nsPoint& lastOverWindowMouseLocation =
-      presShell->GetLastOverWindowMouseLocation();
+  const nsPoint& lastOverWindowPointerLocation =
+      presShell->GetLastOverWindowPointerLocation();
 
-  if (lastOverWindowMouseLocation.X() == NS_UNCONSTRAINEDSIZE &&
-      lastOverWindowMouseLocation.Y() == NS_UNCONSTRAINEDSIZE) {
+  if (lastOverWindowPointerLocation.X() == NS_UNCONSTRAINEDSIZE &&
+      lastOverWindowPointerLocation.Y() == NS_UNCONSTRAINEDSIZE) {
     *aX = 0;
     *aY = 0;
   } else {
-    const CSSPoint lastOverWindowMouseLocationInCSSPixels =
-        CSSPoint::FromAppUnits(lastOverWindowMouseLocation);
-    *aX = lastOverWindowMouseLocationInCSSPixels.X();
-    *aY = lastOverWindowMouseLocationInCSSPixels.Y();
+    const CSSPoint lastOverWindowPointerLocationInCSSPixels =
+        CSSPoint::FromAppUnits(lastOverWindowPointerLocation);
+    *aX = lastOverWindowPointerLocationInCSSPixels.X();
+    *aY = lastOverWindowPointerLocationInCSSPixels.Y();
   }
 
   return NS_OK;
@@ -777,7 +777,13 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
   wheelEvent.mRefPoint =
       nsContentUtils::ToWidgetPoint(CSSPoint(aX, aY), offset, presContext);
 
-  widget->DispatchInputEvent(&wheelEvent);
+  if (StaticPrefs::test_events_async_enabled()) {
+    widget->DispatchInputEvent(&wheelEvent);
+  } else {
+    nsEventStatus status = nsEventStatus_eIgnore;
+    nsresult rv = widget->DispatchEvent(&wheelEvent, status);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   if (widget->AsyncPanZoomEnabled()) {
     // Computing overflow deltas is not compatible with APZ, so if APZ is
@@ -1893,25 +1899,20 @@ nsDOMWindowUtils::ToScreenRectInCSSUnits(float aX, float aY, float aWidth,
   nsPresContext* presContext = GetPresContext();
   MOZ_ASSERT(presContext);
 
-  auto devRect = ViewAs<LayoutDevicePixel>(
+  const auto devRect = ViewAs<LayoutDevicePixel>(
       rect, PixelCastJustification::ScreenIsParentLayerForRoot);
 
-  // We want to return the screen rect in CSS units of the browser chrome. The
-  // browser chrome doesn't have any built-in zoom, except for the text scale
-  // factor.
+  // We want to return the screen rect in CSS units of the browser chrome.
   //
   // TODO(emilio): It'd be cleaner to convert callers to use plain toScreenRect,
   // and perform the screen -> CSS rect in the parent process instead, probably.
-  LayoutDeviceToCSSScale scale = [&] {
-    float auPerDev =
-        presContext->DeviceContext()->AppUnitsPerDevPixelAtUnitFullZoom();
-    auPerDev /= LookAndFeel::SystemZoomSettings().mFullZoom;
-    return LayoutDeviceToCSSScale(auPerDev / AppUnitsPerCSSPixel());
-  }();
+  const nsRect appUnitsRect = LayoutDeviceRect::ToAppUnits(
+      devRect,
+      presContext->DeviceContext()->AppUnitsPerDevPixelInTopLevelChromePage());
 
-  CSSRect cssRect = devRect * scale;
   RefPtr<DOMRect> outRect = new DOMRect(mWindow);
-  outRect->SetRect(cssRect.x, cssRect.y, cssRect.width, cssRect.height);
+  outRect->SetLayoutRect(appUnitsRect);
+
   outRect.forget(aResult);
   return NS_OK;
 }
@@ -3452,32 +3453,20 @@ nsDOMWindowUtils::GetFilePath(JS::Handle<JS::Value> aFile, JSContext* aCx,
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
-                                    JS::Handle<JS::Value> aOptions,
                                     int32_t* aRefCnt, int32_t* aDBRefCnt,
-                                    JSContext* aCx, bool* aResult) {
+                                    bool* aResult) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   nsCString origin;
   MOZ_TRY_VAR(origin, quota::QuotaManager::GetOriginFromWindow(window));
 
-  IDBOpenDBOptions options;
-  JS::Rooted<JS::Value> optionsVal(aCx, aOptions);
-  if (!options.Init(aCx, optionsVal)) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  const quota::PersistenceType persistenceType =
-      options.mStorage.WasPassed()
-          ? quota::PersistenceTypeFromStorageType(options.mStorage.Value())
-          : quota::PERSISTENCE_TYPE_DEFAULT;
-
   RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
 
   if (mgr) {
-    nsresult rv =
-        mgr->BlockAndGetFileReferences(persistenceType, origin, aDatabaseName,
-                                       aId, aRefCnt, aDBRefCnt, aResult);
+    nsresult rv = mgr->BlockAndGetFileReferences(
+        quota::PERSISTENCE_TYPE_DEFAULT, origin, aDatabaseName, aId, aRefCnt,
+        aDBRefCnt, aResult);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
     *aRefCnt = *aDBRefCnt = -1;
@@ -4715,6 +4704,18 @@ nsDOMWindowUtils::IsCssPropertyRecordedInUseCounter(const nsACString& aPropName,
   *aRecorded = Servo_IsCssPropertyRecordedInUseCounter(
       doc->GetStyleUseCounters(), &aPropName, &knownProp);
   return knownProp ? NS_OK : NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::IsCoepCredentialless(bool* aResult) {
+  Document* doc = GetDocument();
+  if (!doc) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aResult = IsCoepCredentiallessEnabled(
+      doc->Trials().IsEnabled(OriginTrial::CoepCredentialless));
+  return NS_OK;
 }
 
 NS_IMETHODIMP

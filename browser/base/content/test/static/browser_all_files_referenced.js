@@ -77,6 +77,7 @@ if (AppConstants.platform == "macosx") {
 if (AppConstants.MOZ_BACKGROUNDTASKS) {
   // These preferences are active only when we're in background task mode.
   gExceptionPaths.push("resource://gre/defaults/backgroundtasks/");
+  gExceptionPaths.push("resource://app/defaults/backgroundtasks/");
   // `BackgroundTask_id.jsm` is loaded at runtime by `app --backgroundtask id ...`.
   gExceptionPaths.push("resource://gre/modules/backgroundtasks/");
 }
@@ -272,7 +273,7 @@ var whitelist = [
   // find the references)
   { file: "chrome://browser/content/screenshots/copied-notification.svg" },
 
-  { file: "resource://app/modules/SnapshotSelector.jsm" },
+  { file: "resource://app/modules/SnapshotSelector.sys.mjs" },
 
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },
@@ -291,13 +292,6 @@ if (AppConstants.platform == "android") {
   // Referenced by aboutGlean.html
   whitelist.push({
     file: "resource://gre/localization/en-US/toolkit/about/aboutGlean.ftl",
-  });
-}
-
-if (AppConstants.MOZ_BACKGROUNDTASKS && !AppConstants.MOZ_UPDATE_AGENT) {
-  // These utilities are for background tasks, not regular headed browsing.
-  whitelist.push({
-    file: "resource://gre/modules/BackgroundTasksUtils.jsm",
   });
 }
 
@@ -744,30 +738,13 @@ function convertToCodeURI(fileUri) {
   }
 }
 
-function chromeFileExists(aURI) {
-  let available = 0;
+async function chromeFileExists(aURI) {
   try {
-    let channel = NetUtil.newChannel({
-      uri: aURI,
-      loadUsingSystemPrincipal: true,
-      contentPolicyType: Ci.nsIContentPolicy.TYPE_FETCH,
-    });
-    let stream = channel.open();
-    let sstream = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
-      Ci.nsIScriptableInputStream
-    );
-    sstream.init(stream);
-    available = sstream.available();
-    sstream.close();
+    return await PerfTestHelpers.checkURIExists(aURI);
   } catch (e) {
-    if (
-      e.result != Cr.NS_ERROR_FILE_NOT_FOUND &&
-      e.result != Cr.NS_ERROR_NOT_AVAILABLE
-    ) {
-      todo(false, "Failed to check if " + aURI + "exists: " + e);
-    }
+    todo(false, `Failed to check if ${aURI} exists: ${e}`);
+    return false;
   }
-  return available > 0;
 }
 
 function findChromeUrlsFromArray(array, prefix) {
@@ -832,7 +809,6 @@ add_task(async function checkAllTheFiles() {
     ".mjs",
     ".js",
     ".jsm",
-    ".mjs",
     ".json",
     ".html",
     ".xhtml",
@@ -876,7 +852,7 @@ add_task(async function checkAllTheFiles() {
   });
 
   // Wait for all manifest to be parsed
-  await throttledMapPromises(manifestURIs, parseManifest);
+  await PerfTestHelpers.throttledMapPromises(manifestURIs, parseManifest);
 
   for (let jsm of Components.manager.getComponentJSMs()) {
     gReferencesFromCode.set(jsm, null);
@@ -909,7 +885,9 @@ add_task(async function checkAllTheFiles() {
   }
 
   // Wait for all the files to have actually loaded:
-  await throttledMapPromises(allPromises, ([task, uri]) => task(uri));
+  await PerfTestHelpers.throttledMapPromises(allPromises, ([task, uri]) =>
+    task(uri)
+  );
 
   // Keep only chrome:// files, and filter out either the devtools paths or
   // the non-devtools paths:
@@ -1070,7 +1048,7 @@ add_task(async function checkAllTheFiles() {
 
     if (
       (file.startsWith("chrome://") || file.startsWith("resource://")) &&
-      !chromeFileExists(file)
+      !(await chromeFileExists(file))
     ) {
       // Ignore chrome prefixes that have been automatically expanded.
       let pathParts =

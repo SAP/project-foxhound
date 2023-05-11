@@ -134,6 +134,10 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CacheStorage",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CanvasGradient", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CanvasPattern", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CloseEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CountQueuingStrategy", insecureContext: true },
@@ -182,6 +186,16 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FileReaderSync", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FontFace", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FontFaceSet", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "FontFaceSetLoadEvent",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FormData", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Headers", insecureContext: true },
@@ -224,13 +238,19 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MessagePort", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  "NavigationPreloadManager",
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "NetworkInformation", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Notification", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "OffscreenCanvas", insecureContext: true, disabled: true },
+  { name: "OffscreenCanvas", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "OffscreenCanvasRenderingContext2D",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Path2D", insecureContext: true, earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Performance", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -252,14 +272,6 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PromiseRejectionEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushManager", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscription", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "PushSubscriptionOptions",
-    insecureContext: true,
-  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ReadableByteStreamController", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -285,8 +297,6 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Scheduler", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ServiceWorkerRegistration", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "StorageManager", fennec: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "SubtleCrypto" },
@@ -300,6 +310,8 @@ var interfaceNamesInGlobalScope = [
   { name: "TextDecoder", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TextEncoder", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "TextMetrics", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TransformStream", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -318,29 +330,71 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "URLSearchParams", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLActiveInfo", insecureContext: true, disabled: true },
+  {
+    name: "WebGL2RenderingContext",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLBuffer", insecureContext: true, disabled: true },
+  { name: "WebGLActiveInfo", insecureContext: true, earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLContextEvent", insecureContext: true, disabled: true },
+  { name: "WebGLBuffer", insecureContext: true, earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLFramebuffer", insecureContext: true, disabled: true },
+  {
+    name: "WebGLContextEvent",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLProgram", insecureContext: true, disabled: true },
+  { name: "WebGLFramebuffer", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLProgram", insecureContext: true, earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "WebGLQuery", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLRenderbuffer", insecureContext: true, disabled: true },
+  {
+    name: "WebGLRenderbuffer",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLRenderingContext", insecureContext: true, disabled: true },
+  {
+    name: "WebGLRenderingContext",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLShader", insecureContext: true, disabled: true },
+  { name: "WebGLSampler", insecureContext: true, earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLShaderPrecisionFormat", insecureContext: true, disabled: true },
+  { name: "WebGLShader", insecureContext: true, earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLTexture", insecureContext: true, disabled: true },
+  {
+    name: "WebGLShaderPrecisionFormat",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WebGLUniformLocation", insecureContext: true, disabled: true },
+  { name: "WebGLSync", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLTexture", insecureContext: true, earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "WebGLTransformFeedback",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "WebGLUniformLocation",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "WebGLVertexArrayObject",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "WebSocket", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

@@ -4104,6 +4104,16 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
       }
       jit::JitOptions.frequentBailoutThreshold = value;
       break;
+    case JSJITCOMPILER_BASE_REG_FOR_LOCALS:
+      if (value == 0) {
+        jit::JitOptions.baseRegForLocals = jit::BaseRegForAddress::SP;
+      } else if (value == 1) {
+        jit::JitOptions.baseRegForLocals = jit::BaseRegForAddress::FP;
+      } else {
+        jit::DefaultJitOptions defaultValues;
+        jit::JitOptions.baseRegForLocals = defaultValues.baseRegForLocals;
+      }
+      break;
     case JSJITCOMPILER_BASELINE_INTERPRETER_ENABLE:
       if (value == 1) {
         jit::JitOptions.baselineInterpreter = true;
@@ -4225,6 +4235,9 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
       break;
     case JSJITCOMPILER_ION_FREQUENT_BAILOUT_THRESHOLD:
       *valueOut = jit::JitOptions.frequentBailoutThreshold;
+      break;
+    case JSJITCOMPILER_BASE_REG_FOR_LOCALS:
+      *valueOut = uint32_t(jit::JitOptions.baseRegForLocals);
       break;
     case JSJITCOMPILER_INLINING_BYTECODE_MAX_LENGTH:
       *valueOut = jit::JitOptions.smallFunctionMaxBytecodeLength;
@@ -4782,6 +4795,16 @@ JS_PUBLIC_API void JS::SetOutOfMemoryCallback(JSContext* cx,
   cx->runtime()->oomCallbackData = data;
 }
 
+JS_PUBLIC_API void JS::SetShadowRealmInitializeGlobalCallback(
+    JSContext* cx, JS::GlobalInitializeCallback callback) {
+  cx->runtime()->shadowRealmInitializeGlobalCallback = callback;
+}
+
+JS_PUBLIC_API void JS::SetShadowRealmGlobalCreationCallback(
+    JSContext* cx, JS::GlobalCreationCallback callback) {
+  cx->runtime()->shadowRealmGlobalCreationCallback = callback;
+}
+
 JS::FirstSubsumedFrame::FirstSubsumedFrame(
     JSContext* cx, bool ignoreSelfHostedFrames /* = true */)
     : JS::FirstSubsumedFrame(cx, cx->realm()->principals(),
@@ -4808,8 +4831,12 @@ JS_PUBLIC_API bool JS::IsAsyncStackCaptureEnabledForRealm(JSContext* cx) {
     return false;
   }
 
-  return !cx->options().asyncStackCaptureDebuggeeOnly() ||
-         cx->realm()->isDebuggee();
+  if (!cx->options().asyncStackCaptureDebuggeeOnly() ||
+      cx->realm()->isDebuggee()) {
+    return true;
+  }
+
+  return cx->realm()->isAsyncStackCapturingEnabled;
 }
 
 JS_PUBLIC_API bool JS::CopyAsyncStack(JSContext* cx,

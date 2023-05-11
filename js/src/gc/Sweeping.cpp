@@ -37,7 +37,6 @@
 #include "proxy/DeadObjectProxy.h"
 #include "vm/HelperThreads.h"
 #include "vm/JSContext.h"
-#include "vm/TraceLogging.h"
 #include "vm/WrapperObject.h"
 
 #include "gc/PrivateIterators-inl.h"
@@ -399,9 +398,6 @@ BackgroundSweepTask::BackgroundSweepTask(GCRuntime* gc)
     : GCParallelTask(gc, gcstats::PhaseKind::SWEEP, GCUse::Finalizing) {}
 
 void BackgroundSweepTask::run(AutoLockHelperThreadState& lock) {
-  AutoTraceLog logSweeping(TraceLoggerForCurrentThread(),
-                           TraceLogger_GCSweeping);
-
   gc->sweepFromBackgroundThread(lock);
 }
 
@@ -439,8 +435,6 @@ BackgroundFreeTask::BackgroundFreeTask(GCRuntime* gc)
 }
 
 void BackgroundFreeTask::run(AutoLockHelperThreadState& lock) {
-  AutoTraceLog logFreeing(TraceLoggerForCurrentThread(), TraceLogger_GCFree);
-
   gc->freeFromBackgroundThread(lock);
 }
 
@@ -2300,12 +2294,8 @@ void GCRuntime::endSweepPhase(bool destroyingRuntime) {
   {
     gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::DESTROY);
 
-    /*
-     * Sweep script filenames after sweeping functions in the generic loop
-     * above. In this way when a scripted function's finalizer destroys the
-     * script and calls rt->destroyScriptHook, the hook can still access the
-     * script's filename. See bug 323267.
-     */
+    // Sweep shared script bytecode now all zones have been swept and finalizers
+    // for BaseScripts have released their references.
     SweepScriptData(rt);
   }
 

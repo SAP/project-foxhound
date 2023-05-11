@@ -23,7 +23,7 @@
 #include "mozilla/layers/VideoBridgeChild.h"
 #include "mozilla/layers/VideoBridgeParent.h"
 
-#ifdef MOZ_WMF
+#ifdef MOZ_WMF_MEDIA_ENGINE
 #  include "MFMediaEngineParent.h"
 #endif
 
@@ -225,8 +225,8 @@ bool RemoteDecoderManagerParent::DeallocPRemoteDecoderParent(
 }
 
 PMFMediaEngineParent* RemoteDecoderManagerParent::AllocPMFMediaEngineParent() {
-#ifdef MOZ_WMF
-  return new MFMediaEngineParent(this);
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  return new MFMediaEngineParent(this, sRemoteDecoderManagerParentThread);
 #else
   return nullptr;
 #endif
@@ -234,7 +234,7 @@ PMFMediaEngineParent* RemoteDecoderManagerParent::AllocPMFMediaEngineParent() {
 
 bool RemoteDecoderManagerParent::DeallocPMFMediaEngineParent(
     PMFMediaEngineParent* actor) {
-#ifdef MOZ_WMF
+#ifdef MOZ_WMF_MEDIA_ENGINE
   MFMediaEngineParent* parent = static_cast<MFMediaEngineParent*>(actor);
   parent->Destroy();
 #endif
@@ -272,8 +272,7 @@ mozilla::ipc::IPCResult RemoteDecoderManagerParent::RecvReadback(
   size_t length = ImageDataSerializer::ComputeRGBBufferSize(size, format);
 
   Shmem buffer;
-  if (!length ||
-      !AllocShmem(length, Shmem::SharedMemory::TYPE_BASIC, &buffer)) {
+  if (!length || !AllocShmem(length, &buffer)) {
     *aResult = null_t();
     return IPC_OK();
   }

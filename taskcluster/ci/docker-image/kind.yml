@@ -108,7 +108,7 @@ jobs:
             - deb11-valgrind
     lint:
         symbol: I(lnt)
-        parent: ubuntu1804-base
+        parent: debian11-base
     # Neither the debian10-raw nor the debian10-packages images can have
     # packages dependencies.
     debian10-raw:
@@ -194,7 +194,7 @@ jobs:
         parent: push-to-try
     periodic-updates:
         symbol: I(file)
-        parent: ubuntu1804-base
+        parent: debian11-base
     firefox-snap:
         symbol: I(snap)
     firefox-flatpak:
@@ -217,6 +217,9 @@ jobs:
     system-symbols-win:
         symbol: I(system-symbols-win)
         parent: debian10-base
+    system-symbols-linux-scraper:
+        symbol: I(system-symbols-linux)
+        parent: debian11-base
     push-to-try:
         symbol: I(push-to-try)
         parent: debian10-base

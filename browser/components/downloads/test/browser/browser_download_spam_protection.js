@@ -4,8 +4,8 @@
 
 "use strict";
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -110,6 +110,7 @@ add_task(async function check_download_spam_ui() {
   );
 
   ok(browserWin.DownloadsPanel.isPanelShowing, "Download panel should open");
+  await Downloads.getList(Downloads.PUBLIC);
 
   let listbox = document.getElementById("downloadsListBox");
   ok(listbox, "Download list box present");

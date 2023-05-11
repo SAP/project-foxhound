@@ -25,7 +25,7 @@ rev = "3bfc47d9a571d0842676043ba60716318e946c06"
 [source."https://github.com/mozilla/midir.git"]
 git = "https://github.com/mozilla/midir.git"
 replace-with = "vendored-sources"
-rev = "4c11f0ffb5d6a10de4aff40a7b81218b33b94e6f"
+rev = "e1b4dcb767f9e69afe95a860374aaa9635d81e3d"
 
 [source."https://github.com/mozilla/cubeb-pulse-rs"]
 git = "https://github.com/mozilla/cubeb-pulse-rs"
@@ -70,7 +70,7 @@ rev = "746743227485a83123784df0c53227ab466612ed"
 [source."https://github.com/hsivonen/packed_simd"]
 git = "https://github.com/hsivonen/packed_simd"
 replace-with = "vendored-sources"
-rev = "c149d0a519bf878567c7630096737669ec2ff15f"
+rev = "90eebb82a107cbec1c8e406d9223819417e96de1"
 
 [source."https://github.com/hsivonen/chardetng_c"]
 git = "https://github.com/hsivonen/chardetng_c"
@@ -85,12 +85,12 @@ rev = "3484d3e3ebdc8931493aa5df4d7ee9360a90e76b"
 [source."https://github.com/gfx-rs/wgpu"]
 git = "https://github.com/gfx-rs/wgpu"
 replace-with = "vendored-sources"
-rev = "32af4f56"
+rev = "b370b990"
 
 [source."https://github.com/gfx-rs/naga"]
 git = "https://github.com/gfx-rs/naga"
 replace-with = "vendored-sources"
-rev = "571302e"
+rev = "27d38aae"
 
 [source."https://github.com/gfx-rs/metal-rs"]
 git = "https://github.com/gfx-rs/metal-rs"

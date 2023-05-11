@@ -108,11 +108,6 @@ class nsDisplayGradient final : public nsPaintedDisplayItem {
   }
   ~nsDisplayGradient() final { MOZ_COUNT_DTOR(nsDisplayGradient); }
 
-  nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) final {
-    return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-  }
-
   nsRect GetBounds(bool* aSnap) const {
     *aSnap = true;
     return Frame()->GetContentRectRelativeToSelf() + ToReferenceFrame();
@@ -150,7 +145,7 @@ void nsDisplayGradient::Paint(nsDisplayListBuilder* aBuilder,
         frame->PresContext(), *aCtx, dest, dest, dest.TopLeft(),
         GetPaintRect(aBuilder, aCtx), dest.Size(), /* aOpacity = */ 1.0f);
   }
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
+  Unused << result;
 }
 
 bool nsDisplayGradient::CreateWebRenderCommands(
@@ -177,7 +172,6 @@ bool nsDisplayGradient::CreateWebRenderCommands(
       return false;
     }
   }
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   return true;
 }
 
@@ -607,11 +601,9 @@ static nscoord ListImageDefaultLength(const nsImageFrame& aFrame) {
   auto* pc = aFrame.PresContext();
   RefPtr<nsFontMetrics> fm =
       nsLayoutUtils::GetFontMetricsForComputedStyle(aFrame.Style(), pc);
-  auto emAU = fm->GetThebesFontGroup()
-                  ->GetFirstValidFont()
-                  ->GetMetrics(fm->Orientation())
-                  .emHeight *
-              pc->AppUnitsPerDevPixel();
+  RefPtr<gfxFont> font = fm->GetThebesFontGroup()->GetFirstValidFont();
+  auto emAU =
+      font->GetMetrics(fm->Orientation()).emHeight * pc->AppUnitsPerDevPixel();
   return std::max(NSToCoordRound(0.4f * emAU),
                   nsPresContext::CSSPixelsToAppUnits(1));
 }
@@ -648,23 +640,21 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
       ScaleIntrinsicSizeForDensity(intrinsicSize,
                                    aFrame.GetImageFromStyle()->GetResolution());
     }
-    return containAxes.ContainIntrinsicSize(intrinsicSize,
-                                            aFrame.GetWritingMode());
+    return containAxes.ContainIntrinsicSize(intrinsicSize, aFrame);
   }
 
   if (aKind == nsImageFrame::Kind::ListStyleImage) {
     // Note: images are handled above, this handles gradients etc.
     nscoord defaultLength = ListImageDefaultLength(aFrame);
     return containAxes.ContainIntrinsicSize(
-        IntrinsicSize(defaultLength, defaultLength), aFrame.GetWritingMode());
+        IntrinsicSize(defaultLength, defaultLength), aFrame);
   }
 
   if (aFrame.ShouldShowBrokenImageIcon()) {
     nscoord edgeLengthToUse = nsPresContext::CSSPixelsToAppUnits(
         ICON_SIZE + (2 * (ICON_PADDING + ALT_BORDER_WIDTH)));
     return containAxes.ContainIntrinsicSize(
-        IntrinsicSize(edgeLengthToUse, edgeLengthToUse),
-        aFrame.GetWritingMode());
+        IntrinsicSize(edgeLengthToUse, edgeLengthToUse), aFrame);
   }
 
   if (aUseMappedRatio && style.StylePosition()->mAspectRatio.HasRatio()) {
@@ -1549,27 +1539,6 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
   nsDisplayAltFeedback(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
       : nsPaintedDisplayItem(aBuilder, aFrame) {}
 
-  nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) final {
-    return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-  }
-
-  void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
-                                 const nsDisplayItemGeometry* aGeometry,
-                                 nsRegion* aInvalidRegion) const final {
-    auto geometry =
-        static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-    if (aBuilder->ShouldSyncDecodeImages() &&
-        geometry->ShouldInvalidateToSyncDecodeImages()) {
-      bool snap;
-      aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-    }
-
-    nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
-                                             aInvalidRegion);
-  }
-
   nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) const final {
     *aSnap = false;
     return mFrame->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
@@ -1581,10 +1550,8 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
     uint32_t flags = imgIContainer::FLAG_SYNC_DECODE;
 
     nsImageFrame* f = static_cast<nsImageFrame*>(mFrame);
-    ImgDrawResult result = f->DisplayAltFeedback(
-        *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), flags);
-
-    nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
+    Unused << f->DisplayAltFeedback(*aCtx, GetPaintRect(aBuilder, aCtx),
+                                    ToReferenceFrame(), flags);
   }
 
   bool CreateWebRenderCommands(
@@ -1703,7 +1670,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedback(gfxContext& aRenderingContext,
       result = nsLayoutUtils::DrawSingleImage(
           aRenderingContext, PresContext(), imgCon,
           nsLayoutUtils::GetSamplingFilterForFrame(this), dest, aDirtyRect,
-          /* no SVGImageContext */ Nothing(), aFlags);
+          SVGImageContext(), aFlags);
     }
 
     // If we could not draw the icon, just draw some graffiti in the mean time.
@@ -1748,8 +1715,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedback(gfxContext& aRenderingContext,
   // If there's still room, display the alt-text
   if (!inner.IsEmpty()) {
     nsAutoString altText;
-    nsCSSFrameConstructor::GetAlternateTextFor(
-        mContent->AsElement(), mContent->NodeInfo()->NameAtom(), altText);
+    nsCSSFrameConstructor::GetAlternateTextFor(*mContent->AsElement(), altText);
     DisplayAltText(PresContext(), aRenderingContext, altText, inner);
   }
 
@@ -1883,7 +1849,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
       const int32_t factor = PresContext()->AppUnitsPerDevPixel();
       LayoutDeviceRect destRect(LayoutDeviceRect::FromAppUnits(dest, factor));
 
-      Maybe<SVGImageContext> svgContext;
+      SVGImageContext svgContext;
       Maybe<ImageIntRegion> region;
       IntSize decodeSize =
           nsLayoutUtils::ComputeImageContainerDrawingParameters(
@@ -1958,8 +1924,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
     RefPtr<gfxContext> captureCtx = gfxContext::CreateOrNull(textDrawer);
 
     nsAutoString altText;
-    nsCSSFrameConstructor::GetAlternateTextFor(
-        mContent->AsElement(), mContent->NodeInfo()->NameAtom(), altText);
+    nsCSSFrameConstructor::GetAlternateTextFor(*mContent->AsElement(), altText);
     DisplayAltText(PresContext(), *captureCtx.get(), altText, inner);
 
     textDrawer->TerminateShadows();
@@ -2062,29 +2027,6 @@ void nsDisplayImage::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
                             GetPaintRect(aBuilder, aCtx), mPrevImage, flags);
     }
   }
-
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
-}
-
-nsDisplayItemGeometry* nsDisplayImage::AllocateGeometry(
-    nsDisplayListBuilder* aBuilder) {
-  return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-}
-
-void nsDisplayImage::ComputeInvalidationRegion(
-    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-    nsRegion* aInvalidRegion) const {
-  auto geometry =
-      static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-  if (aBuilder->ShouldSyncDecodeImages() &&
-      geometry->ShouldInvalidateToSyncDecodeImages()) {
-    bool snap;
-    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-  }
-
-  nsPaintedDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry,
-                                                  aInvalidRegion);
 }
 
 nsRect nsDisplayImage::GetDestRect() const {
@@ -2141,7 +2083,7 @@ bool nsDisplayImage::CreateWebRenderCommands(
   LayoutDeviceRect destRect(
       LayoutDeviceRect::FromAppUnits(GetDestRect(), factor));
 
-  Maybe<SVGImageContext> svgContext;
+  SVGImageContext svgContext;
   Maybe<ImageIntRegion> region;
   IntSize decodeSize = nsLayoutUtils::ComputeImageContainerDrawingParameters(
       mImage, mFrame, destRect, destRect, aSc, flags, svgContext, region);
@@ -2211,8 +2153,6 @@ bool nsDisplayImage::CreateWebRenderCommands(
   // help us. Hence we can ignore the return value from PushImage.
   aManager->CommandBuilder().PushImageProvider(
       this, provider, drawResult, aBuilder, aResources, destRect, destRect);
-
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, drawResult);
   return true;
 }
 
@@ -2239,7 +2179,7 @@ ImgDrawResult nsImageFrame::PaintImage(gfxContext& aRenderingContext,
       constraintRect, mIntrinsicSize, mIntrinsicRatio, StylePosition(),
       &anchorPoint);
 
-  Maybe<SVGImageContext> svgContext;
+  SVGImageContext svgContext;
   SVGImageContext::MaybeStoreContextPaint(svgContext, this, aImage);
 
   ImgDrawResult result = nsLayoutUtils::DrawSingleImage(
@@ -2455,7 +2395,7 @@ bool nsImageFrame::IsLeafDynamic() const {
   return !shadow;
 }
 
-nsresult nsImageFrame::GetContentForEvent(WidgetEvent* aEvent,
+nsresult nsImageFrame::GetContentForEvent(const WidgetEvent* aEvent,
                                           nsIContent** aContent) {
   NS_ENSURE_ARG_POINTER(aContent);
 

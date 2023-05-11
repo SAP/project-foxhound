@@ -24,39 +24,6 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using mozilla::net::CookieJarSettings;
 
-/**
- * Gets the cookie lifetime policy for a given cookieJarSettings and a given
- * principal by checking the permission value.
- *
- * Used in the implementation of InternalStorageAllowedCheck.
- */
-static void GetCookieLifetimePolicyFromCookieJarSettings(
-    nsICookieJarSettings* aCookieJarSettings, nsIPrincipal* aPrincipal,
-    uint32_t* aLifetimePolicy) {
-  *aLifetimePolicy = StaticPrefs::network_cookie_lifetimePolicy();
-
-  if (aCookieJarSettings) {
-    uint32_t cookiePermission = 0;
-    nsresult rv =
-        aCookieJarSettings->CookiePermission(aPrincipal, &cookiePermission);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return;
-    }
-
-    switch (cookiePermission) {
-      case nsICookiePermission::ACCESS_ALLOW:
-        *aLifetimePolicy = nsICookieService::ACCEPT_NORMALLY;
-        break;
-      case nsICookiePermission::ACCESS_DENY:
-        *aLifetimePolicy = nsICookieService::ACCEPT_NORMALLY;
-        break;
-      case nsICookiePermission::ACCESS_SESSION:
-        *aLifetimePolicy = nsICookieService::ACCEPT_SESSION;
-        break;
-    }
-  }
-}
-
 // This internal method returns ACCESS_DENY if the access is denied,
 // ACCESS_DEFAULT if unknown, some other access code if granted.
 uint32_t CheckCookiePermissionForPrincipal(
@@ -123,27 +90,6 @@ static StorageAccess InternalStorageAllowedCheck(
 
     // Get the document URI for the below about: URI check.
     documentURI = document ? document->GetDocumentURI() : nullptr;
-  }
-
-  uint32_t lifetimePolicy;
-
-  // WebExtensions principals always get BEHAVIOR_ACCEPT as cookieBehavior
-  // and ACCEPT_NORMALLY as lifetimePolicy (See Bug 1406675 for rationale).
-  auto policy = BasePrincipal::Cast(aPrincipal)->AddonPolicy();
-
-  if (policy) {
-    lifetimePolicy = nsICookieService::ACCEPT_NORMALLY;
-  } else {
-    GetCookieLifetimePolicyFromCookieJarSettings(aCookieJarSettings, aPrincipal,
-                                                 &lifetimePolicy);
-  }
-
-  // Check if we should only allow storage for the session, and record that fact
-  if (lifetimePolicy == nsICookieService::ACCEPT_SESSION) {
-    // Storage could be StorageAccess::ePrivateBrowsing or StorageAccess::eAllow
-    // so perform a std::min comparison to make sure we preserve
-    // ePrivateBrowsing if it has been set.
-    access = std::min(StorageAccess::eSessionScoped, access);
   }
 
   // About URIs are allowed to access storage, even if they don't have chrome
@@ -289,11 +235,30 @@ StorageAccess StorageAllowedForWindow(nsPIDOMWindowInner* aWindow,
         *aRejectedReason);
   }
 
-  // No document? Let's return a generic rejected reason.
+  // No document? Try checking Private Browsing Mode without document
+  if (const nsCOMPtr<nsIGlobalObject> global = aWindow->AsGlobal()) {
+    if (const nsCOMPtr<nsIPrincipal> principal = global->PrincipalOrNull()) {
+      if (principal->GetPrivateBrowsingId() > 0) {
+        return StorageAccess::ePrivateBrowsing;
+      }
+    }
+  }
+
+  // Everything failed? Let's return a generic rejected reason.
   return StorageAccess::eDeny;
 }
 
 StorageAccess StorageAllowedForDocument(const Document* aDoc) {
+  StorageAccess cookieAllowed = CookieAllowedForDocument(aDoc);
+  if (StaticPrefs::
+          privacy_partition_always_partition_third_party_non_cookie_storage() &&
+      cookieAllowed > StorageAccess::eDeny) {
+    return StorageAccess::ePartitionForeignOrDeny;
+  }
+  return cookieAllowed;
+}
+
+StorageAccess CookieAllowedForDocument(const Document* aDoc) {
   MOZ_ASSERT(aDoc);
 
   if (nsPIDOMWindowInner* inner = aDoc->GetInnerWindow()) {

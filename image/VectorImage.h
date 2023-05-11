@@ -36,9 +36,6 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
   // (no public constructor - use ImageFactory)
 
   // Methods inherited from Image
-  void MediaFeatureValuesChangedAllDocuments(const MediaFeatureChange&) final;
-  nsresult GetNativeSizes(nsTArray<gfx::IntSize>& aNativeSizes) const override;
-  size_t GetNativeSizesLength() const override;
   virtual size_t SizeOfSourceWithComputedFallback(
       SizeOfState& aState) const override;
 
@@ -85,12 +82,10 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
    * If we cannot rasterize, it will be the requested size to draw at (aSize).
    */
   Tuple<RefPtr<gfx::SourceSurface>, gfx::IntSize> LookupCachedSurface(
-      const gfx::IntSize& aSize, const Maybe<SVGImageContext>& aSVGContext,
+      const gfx::IntSize& aSize, const SVGImageContext& aSVGContext,
       uint32_t aFlags);
 
-  bool MaybeRestrictSVGContext(Maybe<SVGImageContext>& aNewSVGContext,
-                               const Maybe<SVGImageContext>& aSVGContext,
-                               uint32_t aFlags);
+  bool MaybeRestrictSVGContext(SVGImageContext& aSVGContext, uint32_t aFlags);
 
   /// Create a gfxDrawable which callbacks into the SVG document.
   already_AddRefed<gfxDrawable> CreateSVGDrawable(

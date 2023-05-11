@@ -333,6 +333,9 @@ def initialize(topsrcdir):
         "data-review": MachCommandReference(
             "toolkit/components/glean/build_scripts/mach_commands.py"
         ),
+        "perf-data-review": MachCommandReference(
+            "toolkit/components/glean/build_scripts/mach_commands.py"
+        ),
         "update-glean-tags": MachCommandReference(
             "toolkit/components/glean/build_scripts/mach_commands.py"
         ),
@@ -355,6 +358,8 @@ def initialize(topsrcdir):
         "test-interventions": MachCommandReference(
             "testing/webcompat/mach_commands.py"
         ),
+        "esmify": MachCommandReference("tools/esmify/mach_commands.py"),
+        "xpcshell": MachCommandReference("js/xpconnect/mach_commands.py"),
     }
 
     # Set a reasonable limit to the number of open files.

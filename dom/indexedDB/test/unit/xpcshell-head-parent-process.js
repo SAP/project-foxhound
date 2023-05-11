@@ -10,8 +10,6 @@
 
 var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 if (!("self" in this)) {
   this.self = this;
 }
@@ -433,10 +431,10 @@ function verifyBuffers(buffer1, buffer2) {
 
 function verifyBlob(blob1, blob2) {
   is(Blob.isInstance(blob1), true, "Instance of nsIDOMBlob");
-  is(blob1 instanceof File, blob2 instanceof File, "Instance of DOM File");
+  is(File.isInstance(blob1), File.isInstance(blob2), "Instance of DOM File");
   is(blob1.size, blob2.size, "Correct size");
   is(blob1.type, blob2.type, "Correct type");
-  if (blob2 instanceof File) {
+  if (File.isInstance(blob2)) {
     is(blob1.name, blob2.name, "Correct name");
   }
 
@@ -476,7 +474,7 @@ function verifyBlob(blob1, blob2) {
 
 function verifyMutableFile(mutableFile1, file2) {
   is(
-    mutableFile1 instanceof IDBMutableFile,
+    IDBMutableFile.isInstance(mutableFile1),
     true,
     "Instance of IDBMutableFile"
   );

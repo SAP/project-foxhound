@@ -54,8 +54,9 @@ uint32_t MakeCookieBehavior(uint32_t aCookieBehavior) {
  network.cookie.lifetimePolicy
 */
 void MigrateCookieLifetimePrefs() {
-  if (mozilla::Preferences::GetInt("network.cookie.lifetimePolicy") !=
-      nsICookieService::ACCEPT_SESSION) {
+  // Former network.cookie.lifetimePolicy values ACCEPT_SESSION/ACCEPT_NORMALLY
+  // are not available anymore 2 = ACCEPT_SESSION
+  if (mozilla::Preferences::GetInt("network.cookie.lifetimePolicy") != 2) {
     return;
   }
   if (!mozilla::Preferences::GetBool("privacy.sanitize.sanitizeOnShutdown")) {
@@ -355,7 +356,7 @@ CookieService::GetCookieStringFromDocument(Document* aDocument,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveStoragePrincipal();
+  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveCookiePrincipal();
 
   if (!CookieCommons::IsSchemeSupported(principal)) {
     return NS_OK;
@@ -791,7 +792,7 @@ NS_IMETHODIMP
 CookieService::Add(const nsACString& aHost, const nsACString& aPath,
                    const nsACString& aName, const nsACString& aValue,
                    bool aIsSecure, bool aIsHttpOnly, bool aIsSession,
-                   int64_t aExpiry, JS::HandleValue aOriginAttributes,
+                   int64_t aExpiry, JS::Handle<JS::Value> aOriginAttributes,
                    int32_t aSameSite, nsICookie::schemeType aSchemeMap,
                    JSContext* aCx) {
   OriginAttributes attrs;
@@ -876,7 +877,7 @@ nsresult CookieService::Remove(const nsACString& aHost,
 NS_IMETHODIMP
 CookieService::Remove(const nsACString& aHost, const nsACString& aName,
                       const nsACString& aPath,
-                      JS::HandleValue aOriginAttributes, JSContext* aCx) {
+                      JS::Handle<JS::Value> aOriginAttributes, JSContext* aCx) {
   OriginAttributes attrs;
 
   if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
@@ -2061,8 +2062,8 @@ bool CookieService::GetExpiry(CookieStruct& aCookieData,
 NS_IMETHODIMP
 CookieService::CookieExists(const nsACString& aHost, const nsACString& aPath,
                             const nsACString& aName,
-                            JS::HandleValue aOriginAttributes, JSContext* aCx,
-                            bool* aFoundCookie) {
+                            JS::Handle<JS::Value> aOriginAttributes,
+                            JSContext* aCx, bool* aFoundCookie) {
   NS_ENSURE_ARG_POINTER(aCx);
   NS_ENSURE_ARG_POINTER(aFoundCookie);
 
@@ -2127,7 +2128,7 @@ CookieService::CountCookiesFromHost(const nsACString& aHost,
 // the nsICookieManager interface.
 NS_IMETHODIMP
 CookieService::GetCookiesFromHost(const nsACString& aHost,
-                                  JS::HandleValue aOriginAttributes,
+                                  JS::Handle<JS::Value> aOriginAttributes,
                                   JSContext* aCx,
                                   nsTArray<RefPtr<nsICookie>>& aResult) {
   // first, normalize the hostname, and fail if it contains illegal characters.

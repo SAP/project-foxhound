@@ -6,11 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["FindBarContent"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 /* Please keep in sync with toolkit/content/widgets/findbar.js */
 const FIND_NORMAL = 0;

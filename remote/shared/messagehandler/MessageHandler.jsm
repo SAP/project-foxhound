@@ -6,8 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["ContextDescriptorType", "MessageHandler"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const { EventEmitter } = ChromeUtils.import(
@@ -101,12 +101,20 @@ class MessageHandler extends EventEmitter {
     this._eventsDispatcher = new lazy.EventsDispatcher(this);
   }
 
+  get context() {
+    return this._context;
+  }
+
   get contextId() {
     return this._contextId;
   }
 
   get eventsDispatcher() {
     return this._eventsDispatcher;
+  }
+
+  get moduleCache() {
+    return this._moduleCache;
   }
 
   get name() {

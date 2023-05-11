@@ -63,6 +63,8 @@ static const ClassificationStruct classificationArray[] = {
     {CF::CLASSIFIED_FINGERPRINTING_CONTENT, MUC::Fingerprinting_content},
     {CF::CLASSIFIED_CRYPTOMINING, MUC::Cryptomining},
     {CF::CLASSIFIED_CRYPTOMINING_CONTENT, MUC::Cryptomining_content},
+    {CF::CLASSIFIED_EMAILTRACKING, MUC::Emailtracking},
+    {CF::CLASSIFIED_EMAILTRACKING_CONTENT, MUC::Emailtracking_content},
     {CF::CLASSIFIED_TRACKING, MUC::Tracking},
     {CF::CLASSIFIED_TRACKING_AD, MUC::Tracking_ad},
     {CF::CLASSIFIED_TRACKING_ANALYTICS, MUC::Tracking_analytics},
@@ -1217,7 +1219,8 @@ void ChannelWrapper::EventListenerRemoved(nsAtom* aType) {
  * Glue
  *****************************************************************************/
 
-JSObject* ChannelWrapper::WrapObject(JSContext* aCx, HandleObject aGivenProto) {
+JSObject* ChannelWrapper::WrapObject(JSContext* aCx,
+                                     JS::Handle<JSObject*> aGivenProto) {
   return ChannelWrapper_Binding::Wrap(aCx, this, aGivenProto);
 }
 

@@ -8,6 +8,7 @@ import React from "react";
 import { shallow, mount } from "enzyme";
 import { QuickOpenModal } from "../QuickOpenModal";
 import { mockcx } from "../../utils/test-mockup";
+import { getDisplayURL } from "../../utils/sources-tree/getURL";
 
 jest.mock("fuzzaldrin-plus");
 
@@ -20,7 +21,8 @@ function generateModal(propOverrides, renderType = "shallow") {
     query: "",
     searchType: "sources",
     displayedSources: [],
-    tabs: [],
+    blackBoxRanges: {},
+    tabUrls: [],
     selectSpecificLocation: jest.fn(),
     setQuickOpenQuery: jest.fn(),
     highlightLineRange: jest.fn(),
@@ -40,14 +42,6 @@ function generateModal(propOverrides, renderType = "shallow") {
         ? shallow(<QuickOpenModal {...props} />)
         : mount(<QuickOpenModal {...props} />),
     props,
-  };
-}
-
-function generateTab(url) {
-  return {
-    url,
-    isOriginal: false,
-    thread: "FakeThread",
   };
 }
 
@@ -118,8 +112,13 @@ describe("QuickOpenModal", () => {
       {
         enabled: true,
         query: "",
-        displayedSources: [{ url: "mozilla.com", relativeUrl: true }],
-        tabs: [generateTab("mozilla.com")],
+        displayedSources: [
+          {
+            url: "mozilla.com",
+            displayURL: getDisplayURL("mozilla.com"),
+          },
+        ],
+        tabUrls: ["mozilla.com"],
       },
       "shallow"
     );
@@ -127,10 +126,10 @@ describe("QuickOpenModal", () => {
       {
         id: undefined,
         icon: "tab result-item-icon",
-        subtitle: "true",
+        subtitle: "mozilla.com",
         title: "mozilla.com",
         url: "mozilla.com",
-        value: "true",
+        value: "mozilla.com",
       },
     ]);
   });

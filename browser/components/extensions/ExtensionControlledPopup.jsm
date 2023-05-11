@@ -19,12 +19,11 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionControlledPopup"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { ExtensionCommon } = ChromeUtils.import(
   "resource://gre/modules/ExtensionCommon.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};

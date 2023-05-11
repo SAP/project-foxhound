@@ -117,7 +117,7 @@ inline bool ToJSValue(JSContext* aCx, double aArgument,
   // Make sure we're called in a compartment
   MOZ_ASSERT(JS::CurrentGlobalOrNull(aCx));
 
-  aValue.setNumber(aArgument);
+  aValue.set(JS_NumberValue(aArgument));
   return true;
 }
 
@@ -411,7 +411,7 @@ template <typename T>
 template <typename K, typename V>
 [[nodiscard]] bool ToJSValue(JSContext* aCx, const Record<K, V>& aArgument,
                              JS::MutableHandle<JS::Value> aValue) {
-  JS::RootedObject recordObj(aCx, JS_NewPlainObject(aCx));
+  JS::Rooted<JSObject*> recordObj(aCx, JS_NewPlainObject(aCx));
   if (!recordObj) {
     return false;
   }

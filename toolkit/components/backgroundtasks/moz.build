@@ -46,6 +46,7 @@ EXTRA_JS_MODULES.backgroundtasks += [
 EXTRA_JS_MODULES.backgroundtasks += [
     "BackgroundTask_exception.jsm",
     "BackgroundTask_failure.jsm",
+    "BackgroundTask_message.jsm",
     "BackgroundTask_success.jsm",
 ]
 
@@ -66,6 +67,7 @@ TESTING_JS_MODULES.backgroundtasks += [
     "tests/BackgroundTask_file_exists.jsm",
     "tests/BackgroundTask_jsdebugger.jsm",
     "tests/BackgroundTask_localization.jsm",
+    "tests/BackgroundTask_not_ephemeral_profile.jsm",
     "tests/BackgroundTask_policies.jsm",
     "tests/BackgroundTask_profile_is_slim.jsm",
     "tests/BackgroundTask_shouldnotprocessupdates.jsm",
@@ -75,6 +77,16 @@ TESTING_JS_MODULES.backgroundtasks += [
     "tests/BackgroundTask_update_sync_manager.jsm",
     "tests/BackgroundTask_wait.jsm",
 ]
+
+if CONFIG["MOZ_BUILD_APP"] == "browser":
+    # ASRouter is Firefox-only.
+    TESTING_JS_MODULES.backgroundtasks += [
+        "tests/BackgroundTask_targeting.jsm",
+    ]
+
+    FINAL_TARGET_FILES.browser.defaults.backgroundtasks += [
+        "defaults/backgroundtasks_browser.js",
+    ]
 
 FINAL_TARGET_FILES.defaults.backgroundtasks += [
     "defaults/backgroundtasks.js",

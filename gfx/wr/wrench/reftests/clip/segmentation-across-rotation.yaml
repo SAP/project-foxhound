@@ -14,17 +14,18 @@ root:
       id: 2
     -
       type: stacking-context
-      clip-and-scroll: 2
       transform: rotate(0.25)
       items:
        - type: clip
-         bounds: [0, 0, 2400, 900]
          id: 3
          complex:
            - rect: [ 0, 0, 2400, 900 ]
              radius: 50
+       - type: clip-chain
+         id: 4
+         clips: [2, 3]
        - type: rect
          color: [0, 255, 0, 1]
          bounds: [0, 0, 2400, 900]
-         clip-and-scroll: 3
+         clip-chain: 4
 

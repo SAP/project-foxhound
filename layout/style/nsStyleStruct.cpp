@@ -30,7 +30,8 @@
 #include "imgIContainer.h"
 #include "CounterStyleManager.h"
 
-#include "mozilla/dom/AnimationEffectBinding.h"  // for PlaybackDirection
+#include "mozilla/dom/AnimationEffectBinding.h"    // for PlaybackDirection
+#include "mozilla/dom/BaseKeyframeTypesBinding.h"  // for CompositeOperation
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/ImageTracker.h"
 #include "mozilla/CORSMode.h"
@@ -1090,7 +1091,9 @@ nsStylePosition::nsStylePosition(const Document& aDocument)
       mGridTemplateRows(StyleGridTemplateComponent::None()),
       mGridTemplateAreas(StyleGridTemplateAreas::None()),
       mColumnGap(NonNegativeLengthPercentageOrNormal::Normal()),
-      mRowGap(NonNegativeLengthPercentageOrNormal::Normal()) {
+      mRowGap(NonNegativeLengthPercentageOrNormal::Normal()),
+      mContainIntrinsicWidth(StyleContainIntrinsicSize::None()),
+      mContainIntrinsicHeight(StyleContainIntrinsicSize::None()) {
   MOZ_COUNT_CTOR(nsStylePosition);
 
   // The initial value of grid-auto-columns and grid-auto-rows is 'auto',
@@ -1143,7 +1146,9 @@ nsStylePosition::nsStylePosition(const nsStylePosition& aSource)
       mGridRowStart(aSource.mGridRowStart),
       mGridRowEnd(aSource.mGridRowEnd),
       mColumnGap(aSource.mColumnGap),
-      mRowGap(aSource.mRowGap) {
+      mRowGap(aSource.mRowGap),
+      mContainIntrinsicWidth(aSource.mContainIntrinsicWidth),
+      mContainIntrinsicHeight(aSource.mContainIntrinsicHeight) {
   MOZ_COUNT_CTOR(nsStylePosition);
 }
 
@@ -1181,6 +1186,11 @@ nsChangeHint nsStylePosition::CalcDifference(
   if (mObjectFit != aNewData.mObjectFit ||
       mObjectPosition != aNewData.mObjectPosition) {
     hint |= nsChangeHint_RepaintFrame | nsChangeHint_NeedReflow;
+  }
+
+  if (mContainIntrinsicWidth != aNewData.mContainIntrinsicWidth ||
+      mContainIntrinsicHeight != aNewData.mContainIntrinsicHeight) {
+    hint |= NS_STYLE_HINT_REFLOW;
   }
 
   if (mOrder != aNewData.mOrder) {
@@ -2160,6 +2170,7 @@ void StyleAnimation::SetInitialValues() {
   mFillMode = dom::FillMode::None;
   mPlayState = StyleAnimationPlayState::Running;
   mIterationCount = 1.0f;
+  mComposition = dom::CompositeOperation::Replace;
   mTimeline = StyleAnimationTimeline::Auto();
 }
 
@@ -2169,7 +2180,7 @@ bool StyleAnimation::operator==(const StyleAnimation& aOther) const {
          mName == aOther.mName && mDirection == aOther.mDirection &&
          mFillMode == aOther.mFillMode && mPlayState == aOther.mPlayState &&
          mIterationCount == aOther.mIterationCount &&
-         mTimeline == aOther.mTimeline;
+         mComposition == aOther.mComposition && mTimeline == aOther.mTimeline;
 }
 
 // --------------------
@@ -2432,13 +2443,9 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     hint |= nsChangeHint_NeedReflow | nsChangeHint_ReflowChangesSizeOrPosition;
   }
 
-  if (mScrollSnapAlign != aNewData.mScrollSnapAlign) {
-    // FIXME: Bug 1530253 Support re-snapping when scroll-snap-align changes.
-    hint |= nsChangeHint_NeutralChange;
-  }
-  if (mScrollSnapType != aNewData.mScrollSnapType ||
+  if (mScrollSnapAlign != aNewData.mScrollSnapAlign ||
+      mScrollSnapType != aNewData.mScrollSnapType ||
       mScrollSnapStop != aNewData.mScrollSnapStop) {
-    // FIXME: Bug 1530253 Support re-snapping when scroll-snap-type changes.
     hint |= nsChangeHint_RepaintFrame;
   }
   if (mScrollBehavior != aNewData.mScrollBehavior) {
@@ -3183,6 +3190,7 @@ nsStyleUIReset::nsStyleUIReset(const Document& aDocument)
       mAnimationFillModeCount(1),
       mAnimationPlayStateCount(1),
       mAnimationIterationCountCount(1),
+      mAnimationCompositionCount(1),
       mAnimationTimelineCount(1),
       mScrollTimelineAxis(StyleScrollAxis::Block) {
   MOZ_COUNT_CTOR(nsStyleUIReset);
@@ -3215,6 +3223,7 @@ nsStyleUIReset::nsStyleUIReset(const nsStyleUIReset& aSource)
       mAnimationFillModeCount(aSource.mAnimationFillModeCount),
       mAnimationPlayStateCount(aSource.mAnimationPlayStateCount),
       mAnimationIterationCountCount(aSource.mAnimationIterationCountCount),
+      mAnimationCompositionCount(aSource.mAnimationCompositionCount),
       mAnimationTimelineCount(aSource.mAnimationTimelineCount),
       mScrollTimelineName(aSource.mScrollTimelineName),
       mScrollTimelineAxis(aSource.mScrollTimelineAxis) {
@@ -3268,6 +3277,7 @@ nsChangeHint nsStyleUIReset::CalcDifference(
        mAnimationPlayStateCount != aNewData.mAnimationPlayStateCount ||
        mAnimationIterationCountCount !=
            aNewData.mAnimationIterationCountCount ||
+       mAnimationCompositionCount != aNewData.mAnimationCompositionCount ||
        mAnimationTimelineCount != aNewData.mAnimationTimelineCount ||
        mIMEMode != aNewData.mIMEMode ||
        mWindowOpacity != aNewData.mWindowOpacity ||
@@ -3555,39 +3565,57 @@ nscoord StyleCalcNode::Resolve(nscoord aBasis,
   return ResolveInternal(aBasis, aRounder);
 }
 
+static nscoord Resolve(const StyleContainIntrinsicSize& aSize) {
+  if (aSize.IsNone()) {
+    return 0;
+  }
+  if (aSize.IsLength()) {
+    return aSize.AsLength().ToAppUnits();
+  }
+  MOZ_ASSERT(aSize.IsAutoLength());
+  // TODO: use last remembered size if possible.
+  return aSize.AsAutoLength().ToAppUnits();
+}
+
 nsSize ContainSizeAxes::ContainSize(const nsSize& aUncontainedSize,
-                                    const WritingMode& aWM) const {
+                                    const nsIFrame& aFrame) const {
   if (!IsAny()) {
     return aUncontainedSize;
   }
+  const nsStylePosition* stylePos = aFrame.StylePosition();
   if (IsBoth()) {
-    return nsSize();
+    return nsSize(Resolve(stylePos->mContainIntrinsicWidth),
+                  Resolve(stylePos->mContainIntrinsicHeight));
   }
   // At this point, we know that precisely one of our dimensions is contained.
-  const bool zeroWidth =
-      (!aWM.IsVertical() && mIContained) || (aWM.IsVertical() && mBContained);
-  if (zeroWidth) {
-    return nsSize(0, aUncontainedSize.Height());
+  const bool containsWidth =
+      aFrame.GetWritingMode().IsVertical() ? mBContained : mIContained;
+  if (containsWidth) {
+    return nsSize(Resolve(stylePos->mContainIntrinsicWidth),
+                  aUncontainedSize.Height());
   }
-  return nsSize(aUncontainedSize.Width(), 0);
+  return nsSize(aUncontainedSize.Width(),
+                Resolve(stylePos->mContainIntrinsicHeight));
 }
 
 IntrinsicSize ContainSizeAxes::ContainIntrinsicSize(
-    const IntrinsicSize& aUncontainedSize, const WritingMode& aWM) const {
+    const IntrinsicSize& aUncontainedSize, const nsIFrame& aFrame) const {
   if (!IsAny()) {
     return aUncontainedSize;
   }
+  const nsStylePosition* stylePos = aFrame.StylePosition();
   if (IsBoth()) {
-    return IntrinsicSize(0, 0);
+    return IntrinsicSize(Resolve(stylePos->mContainIntrinsicWidth),
+                         Resolve(stylePos->mContainIntrinsicHeight));
   }
   // At this point, we know that precisely one of our dimensions is contained.
-  const bool zeroWidth =
-      (!aWM.IsVertical() && mIContained) || (aWM.IsVertical() && mBContained);
+  const bool containsWidth =
+      aFrame.GetWritingMode().IsVertical() ? mBContained : mIContained;
   IntrinsicSize result(aUncontainedSize);
-  if (zeroWidth) {
-    result.width = Some(0);
+  if (containsWidth) {
+    result.width = Some(Resolve(stylePos->mContainIntrinsicWidth));
   } else {
-    result.height = Some(0);
+    result.height = Some(Resolve(stylePos->mContainIntrinsicHeight));
   }
   return result;
 }

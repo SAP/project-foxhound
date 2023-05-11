@@ -32,6 +32,7 @@ add_task(async function test_profile_fission_no_private_browsing() {
     BrowserTestUtils.loadURI(contentBrowser, url);
     await BrowserTestUtils.browserLoaded(contentBrowser, false, url);
 
+    const parentPid = Services.appinfo.processID;
     const contentPid = await SpecialPowers.spawn(contentBrowser, [], () => {
       return Services.appinfo.processID;
     });
@@ -86,6 +87,43 @@ add_task(async function test_profile_fission_no_private_browsing() {
       }
     }
     Assert.equal(pageFound, true);
+
+    info("Check that the profiling logs exist with the expected properties.");
+    Assert.equal(typeof profile.profilingLog, "object");
+    Assert.equal(typeof profile.profilingLog[parentPid], "object");
+    const parentLog = profile.profilingLog[parentPid];
+    Assert.equal(typeof parentLog.profilingLogBegin_TSms, "number");
+    Assert.equal(typeof parentLog.profilingLogEnd_TSms, "number");
+    Assert.equal(typeof parentLog.bufferGlobalController, "object");
+    Assert.equal(
+      typeof parentLog.bufferGlobalController.controllerCreationTime_TSms,
+      "number"
+    );
+
+    Assert.equal(typeof profile.profileGatheringLog, "object");
+    Assert.equal(typeof profile.profileGatheringLog[parentPid], "object");
+    Assert.equal(
+      typeof profile.profileGatheringLog[parentPid]
+        .profileGatheringLogBegin_TSms,
+      "number"
+    );
+    Assert.equal(
+      typeof profile.profileGatheringLog[parentPid].profileGatheringLogEnd_TSms,
+      "number"
+    );
+
+    Assert.equal(typeof contentProcess.profilingLog, "object");
+    Assert.equal(typeof contentProcess.profilingLog[contentPid], "object");
+    Assert.equal(
+      typeof contentProcess.profilingLog[contentPid].profilingLogBegin_TSms,
+      "number"
+    );
+    Assert.equal(
+      typeof contentProcess.profilingLog[contentPid].profilingLogEnd_TSms,
+      "number"
+    );
+
+    Assert.equal(typeof contentProcess.profileGatheringLog, "undefined");
   } finally {
     await BrowserTestUtils.closeWindow(win);
   }

@@ -72,11 +72,11 @@ class BufferTextureData : public TextureData {
 
   gfx::IntRect GetPictureRect() const;
 
- protected:
   gfx::IntSize GetSize() const;
 
   gfx::SurfaceFormat GetFormat() const;
 
+ protected:
   static BufferTextureData* Create(
       gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
       gfx::BackendType aMoz2DBackend, LayersBackend aLayersBackend,
@@ -95,6 +95,8 @@ class BufferTextureData : public TextureData {
   BufferTextureData(const BufferDescriptor& aDescriptor,
                     gfx::BackendType aMoz2DBackend)
       : mDescriptor(aDescriptor), mMoz2DBackend(aMoz2DBackend) {}
+
+  virtual ~BufferTextureData() = default;
 
   BufferDescriptor mDescriptor;
   gfx::BackendType mMoz2DBackend;

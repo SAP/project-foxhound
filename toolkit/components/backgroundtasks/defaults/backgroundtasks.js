@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// These preferences override Gecko preferences in `greprefs.js`.  Use
+// `backgroundtasks_browser.js` to override browser/-specific preferences in
+// `firefox.js`.
+
 pref("browser.dom.window.dump.enabled", true);
 pref("devtools.console.stdout.chrome", true);
 
@@ -28,8 +32,12 @@ pref("network.cookie.noPersistentStorage", true);
 
 // Background tasks don't need to worry about perceived performance. We disable
 // fast shutdown to reduce the risk of open file handles preventing cleanup of
-// the temporary profile directory.
+// the ephemeral profile directory.
 pref("toolkit.shutdown.fastShutdownStage", 0);
 
-// Prevent key#.db and cert#.db from being created in the temporary profile.
+// Avoid a race between initializing font lists and rapid shutdown,
+// particularly on macOS.  Compare Bug 1777332.
+pref("gfx.font-list-omt.enabled", false);
+
+// Prevent key#.db and cert#.db from being created in the ephemeral profile.
 pref("security.nocertdb", true);

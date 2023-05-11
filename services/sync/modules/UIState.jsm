@@ -16,7 +16,6 @@
 
 var EXPORTED_SYMBOLS = ["UIState"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const lazy = {};
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -235,8 +234,8 @@ const UIStateInternal = {
   },
 };
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 XPCOMUtils.defineLazyGetter(UIStateInternal, "fxAccounts", () => {
   return ChromeUtils.import(

@@ -25,10 +25,9 @@ const MAX_NUMBER_OF_PREFS = 50;
 const MAX_STRING_PREF_LENGTH = 128;
 const PDF_CONTENT_TYPE = "application/pdf";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -605,6 +604,31 @@ class ChromeActions {
     }
     return result;
   }
+
+  /**
+   * Set the different editor states in order to be able to update the context
+   * menu.
+   * @param {Object} details
+   */
+  updateEditorStates({ details }) {
+    const doc = this.domWindow.document;
+    if (!doc.editorStates) {
+      doc.editorStates = {
+        isEditing: false,
+        isEmpty: true,
+        hasEmptyClipboard: true,
+        hasSomethingToUndo: false,
+        hasSomethingToRedo: false,
+        hasSelectedEditor: false,
+      };
+    }
+    const { editorStates } = doc;
+    for (const [key, value] of Object.entries(details)) {
+      if (typeof value === "boolean" && key in editorStates) {
+        editorStates[key] = value;
+      }
+    }
+  }
 }
 
 /**
@@ -1132,6 +1156,13 @@ PdfStreamConverter.prototype = {
       contentDisposition = aRequest.contentDisposition;
       contentDispositionFilename = aRequest.contentDispositionFilename;
     } catch (e) {}
+
+    if (
+      contentDispositionFilename &&
+      !/\.pdf$/i.test(contentDispositionFilename)
+    ) {
+      contentDispositionFilename += ".pdf";
+    }
 
     // Change the content type so we don't get stuck in a loop.
     aRequest.setProperty("contentType", aRequest.contentType);

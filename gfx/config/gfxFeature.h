@@ -39,13 +39,14 @@ namespace gfx {
   _(X11_EGL, Feature, "X11 EGL")                                             \
   _(DMABUF, Feature, "DMABUF")                                               \
   _(WINDOW_OCCLUSION, Feature, "WINDOW_OCCLUSION")                           \
-  _(VAAPI, Feature, "VA-API video decoding")                                 \
+  _(HARDWARE_VIDEO_DECODING, Feature, "Hardware video decoding")             \
   _(VIDEO_OVERLAY, Feature, "video overlay")                                 \
   _(HW_DECODED_VIDEO_ZERO_COPY, Feature, "Hardware decoded video zero copy") \
   _(VP8_HW_DECODE, Feature, "VP8 hardware decoding")                         \
   _(VP9_HW_DECODE, Feature, "VP9 hardware decoding")                         \
   _(DMABUF_SURFACE_EXPORT, Feature, "WebGL DMABuf surface export")           \
-  _(REUSE_DECODER_DEVICE, Feature, "Reuse decoder device")
+  _(REUSE_DECODER_DEVICE, Feature, "Reuse decoder device")                   \
+  _(BACKDROP_FILTER, Feature, "Backdrop filter")
 /* Add new entries above this comment */
 
 enum class Feature : uint32_t {
@@ -105,6 +106,9 @@ class FeatureState {
 
   bool DisabledByDefault() const;
 
+  // Clear all state.
+  void Reset();
+
  private:
   void SetUser(FeatureStatus aStatus, const char* aMessage,
                const nsACString& aFailureId);
@@ -117,9 +121,6 @@ class FeatureState {
   bool IsInitialized() const { return mDefault.IsInitialized(); }
 
   void AssertInitialized() const { MOZ_ASSERT(IsInitialized()); }
-
-  // Clear all state.
-  void Reset();
 
  private:
   struct Instance {

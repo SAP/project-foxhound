@@ -16,15 +16,12 @@
 const { MigrationUtils, MigratorPrototype } = ChromeUtils.import(
   "resource:///modules/MigrationUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PlacesBackups",
-  "resource://gre/modules/PlacesBackups.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   lazy,
   "SessionMigration",

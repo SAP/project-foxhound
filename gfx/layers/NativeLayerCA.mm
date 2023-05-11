@@ -26,6 +26,7 @@
 #include "mozilla/layers/ScreenshotGrabber.h"
 #include "mozilla/layers/SurfacePoolCA.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/webrender/RenderMacIOSurfaceTextureHost.h"
 #include "nsCocoaFeatures.h"
 #include "ScopedGLHelpers.h"
@@ -47,6 +48,48 @@ using gfx::Matrix4x4;
 using gfx::SurfaceFormat;
 using gl::GLContext;
 using gl::GLContextCGL;
+
+static Maybe<Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER> VideoLowPowerTypeToTelemetryType(
+    VideoLowPowerType aVideoLowPower) {
+  switch (aVideoLowPower) {
+    case VideoLowPowerType::LowPower:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::LowPower);
+
+    case VideoLowPowerType::FailMultipleVideo:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailMultipleVideo);
+
+    case VideoLowPowerType::FailWindowed:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailWindowed);
+
+    case VideoLowPowerType::FailOverlaid:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailOverlaid);
+
+    case VideoLowPowerType::FailBacking:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailBacking);
+
+    case VideoLowPowerType::FailMacOSVersion:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailMacOSVersion);
+
+    case VideoLowPowerType::FailPref:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailPref);
+
+    case VideoLowPowerType::FailSurface:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailSurface);
+
+    case VideoLowPowerType::FailEnqueue:
+      return Some(Telemetry::LABELS_GFX_MACOS_VIDEO_LOW_POWER::FailEnqueue);
+
+    default:
+      return Nothing();
+  }
+}
+
+static void EmitTelemetryForVideoLowPower(VideoLowPowerType aVideoLowPower) {
+  auto telemetryValue = VideoLowPowerTypeToTelemetryType(aVideoLowPower);
+  if (telemetryValue.isSome()) {
+    Telemetry::AccumulateCategorical(telemetryValue.value());
+  }
+}
 
 // Utility classes for NativeLayerRootSnapshotter (NLRS) profiler screenshots.
 
@@ -267,6 +310,14 @@ bool NativeLayerRootCA::CommitToScreen() {
     }
   }
 
+  // Decide if we are going to emit telemetry about video low power on this commit.
+  mTelemetryCommitCount = (mTelemetryCommitCount + 1) % TELEMETRY_COMMIT_PERIOD;
+  if (mTelemetryCommitCount == 0) {
+    // Figure out if we are hitting video low power mode.
+    VideoLowPowerType videoLowPower = CheckVideoLowPower();
+    EmitTelemetryForVideoLowPower(videoLowPower);
+  }
+
   return true;
 }
 
@@ -440,6 +491,121 @@ void NativeLayerRootCA::SetWindowIsFullscreen(bool aFullscreen) {
       layer->SetRootWindowIsFullscreen(mWindowIsFullscreen);
     }
   }
+}
+
+/* static */ bool IsCGColorOpaqueBlack(CGColorRef aColor) {
+  if (CGColorEqualToColor(aColor, CGColorGetConstantColor(kCGColorBlack))) {
+    return true;
+  }
+  size_t componentCount = CGColorGetNumberOfComponents(aColor);
+  if (componentCount == 0) {
+    // This will happen if aColor is kCGColorClear. It's not opaque black.
+    return false;
+  }
+
+  const CGFloat* components = CGColorGetComponents(aColor);
+  for (size_t c = 0; c < componentCount - 1; ++c) {
+    if (components[c] > 0.0f) {
+      return false;
+    }
+  }
+  return components[componentCount - 1] >= 1.0f;
+}
+
+VideoLowPowerType NativeLayerRootCA::CheckVideoLowPower() {
+  // This deteremines whether the current layer contents qualify for the
+  // macOS Core Animation video low power mode. Those requirements are
+  // summarized at
+  // https://developer.apple.com/documentation/webkit/delivering_video_content_for_safari
+  // and we verify them by checking:
+  // 1) There must be exactly one video showing.
+  // 2) The topmost CALayer must be a AVSampleBufferDisplayLayer.
+  // 3) The video layer must be showing a buffer encoded in one of the
+  //    kCVPixelFormatType_420YpCbCr pixel formats.
+  // 4) The layer below that must cover the entire screen and have a black
+  //    background color.
+  // 5) The window must be fullscreen.
+  // This function checks these requirements empirically. If one of the checks
+  // fail, we either return immediately or do additional processing to
+  // determine more detail.
+
+  uint32_t videoLayerCount = 0;
+  NativeLayerCA* topLayer = nullptr;
+  CALayer* topCALayer = nil;
+  CALayer* secondCALayer = nil;
+  bool topLayerIsVideo = false;
+
+  for (auto layer : mSublayers) {
+    // Only layers with extent are contributing to our sublayers.
+    if (layer->HasExtent()) {
+      topLayer = layer;
+
+      secondCALayer = topCALayer;
+      topCALayer = topLayer->UnderlyingCALayer(WhichRepresentation::ONSCREEN);
+      topLayerIsVideo = topLayer->IsVideo();
+      if (topLayerIsVideo) {
+        ++videoLayerCount;
+      }
+    }
+  }
+
+  if (videoLayerCount == 0) {
+    return VideoLowPowerType::NotVideo;
+  }
+
+  if (videoLayerCount > 1) {
+    return VideoLowPowerType::FailMultipleVideo;
+  }
+
+  if (!mWindowIsFullscreen) {
+    return VideoLowPowerType::FailWindowed;
+  }
+
+  if (!topLayerIsVideo) {
+    return VideoLowPowerType::FailOverlaid;
+  }
+
+  if (!secondCALayer || !IsCGColorOpaqueBlack(secondCALayer.backgroundColor) ||
+      !CGRectContainsRect(secondCALayer.frame, secondCALayer.superlayer.bounds)) {
+    return VideoLowPowerType::FailBacking;
+  }
+
+  CALayer* topContentCALayer = topCALayer.sublayers[0];
+  if (![topContentCALayer isKindOfClass:[AVSampleBufferDisplayLayer class]]) {
+    // We didn't create a AVSampleBufferDisplayLayer for the top video layer.
+    // Try to figure out why by following some of the logic in
+    // NativeLayerCA::ShouldSpecializeVideo.
+    if (!nsCocoaFeatures::OnHighSierraOrLater()) {
+      return VideoLowPowerType::FailMacOSVersion;
+    }
+
+    if (!StaticPrefs::gfx_core_animation_specialize_video()) {
+      return VideoLowPowerType::FailPref;
+    }
+
+    // The only remaining reason is that the surface wasn't eligible. We
+    // assert this instead of if-ing it, to ensure that we always have a
+    // return value from this clause.
+#ifdef DEBUG
+    MOZ_ASSERT(topLayer->mTextureHost);
+    MacIOSurface* macIOSurface = topLayer->mTextureHost->GetSurface();
+    CFTypeRefPtr<IOSurfaceRef> surface = macIOSurface->GetIOSurfaceRef();
+    OSType pixelFormat = IOSurfaceGetPixelFormat(surface.get());
+    MOZ_ASSERT(!(pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+                 pixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
+                 pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+                 pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange));
+#endif
+    return VideoLowPowerType::FailSurface;
+  }
+
+  AVSampleBufferDisplayLayer* topVideoLayer = (AVSampleBufferDisplayLayer*)topContentCALayer;
+  if (topVideoLayer.status != AVQueuedSampleBufferRenderingStatusRendering) {
+    return VideoLowPowerType::FailEnqueue;
+  }
+
+  // As best we can tell, we're eligible for video low power mode. Hurrah!
+  return VideoLowPowerType::LowPower;
 }
 
 NativeLayerRootSnapshotterCA::NativeLayerRootSnapshotterCA(NativeLayerRootCA* aLayerRoot,
@@ -1200,9 +1366,21 @@ static NSString* NSStringForOSType(OSType type) {
 
 bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
   MOZ_ASSERT([mContentCALayer isKindOfClass:[AVSampleBufferDisplayLayer class]]);
+  AVSampleBufferDisplayLayer* videoLayer = (AVSampleBufferDisplayLayer*)mContentCALayer;
+
+  if (@available(macOS 11.0, iOS 14.0, *)) {
+    if (videoLayer.requiresFlushToResumeDecoding) {
+      [videoLayer flush];
+    }
+  }
 
   // If the layer can't handle a new sample, early exit.
-  if (!((AVSampleBufferDisplayLayer*)mContentCALayer).readyForMoreMediaData) {
+  if (!videoLayer.readyForMoreMediaData) {
+#ifdef NIGHTLY_BUILD
+    if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+      NSLog(@"VIDEO_LOG: EnqueueSurface failed on readyForMoreMediaData.");
+    }
+#endif
     return false;
   }
 
@@ -1212,6 +1390,11 @@ bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
       CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault, aSurfaceRef, nullptr, &pixelBuffer);
   if (cvValue != kCVReturnSuccess) {
     MOZ_ASSERT(pixelBuffer == nullptr, "Failed call shouldn't allocate memory.");
+#ifdef NIGHTLY_BUILD
+    if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+      NSLog(@"VIDEO_LOG: EnqueueSurface failed on allocating pixel buffer.");
+    }
+#endif
     return false;
   }
 
@@ -1250,6 +1433,11 @@ bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
                                                                   &formatDescription);
   if (osValue != noErr) {
     MOZ_ASSERT(formatDescription == nullptr, "Failed call shouldn't allocate memory.");
+#ifdef NIGHTLY_BUILD
+    if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+      NSLog(@"VIDEO_LOG: EnqueueSurface failed on allocating format description.");
+    }
+#endif
     return false;
   }
   CFTypeRefPtr<CMVideoFormatDescriptionRef> formatDescriptionDeallocator =
@@ -1280,6 +1468,11 @@ bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
                                                      formatDescription, &timingInfo, &sampleBuffer);
   if (osValue != noErr) {
     MOZ_ASSERT(sampleBuffer == nullptr, "Failed call shouldn't allocate memory.");
+#ifdef NIGHTLY_BUILD
+    if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+      NSLog(@"VIDEO_LOG: EnqueueSurface failed on allocating sample buffer.");
+    }
+#endif
     return false;
   }
   CFTypeRefPtr<CMSampleBufferRef> sampleBufferDeallocator =
@@ -1299,7 +1492,7 @@ bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
                          kCFBooleanTrue);
   }
 
-  [(AVSampleBufferDisplayLayer*)mContentCALayer enqueueSampleBuffer:sampleBuffer];
+  [videoLayer enqueueSampleBuffer:sampleBuffer];
 
   return true;
 }
@@ -1329,6 +1522,15 @@ bool NativeLayerCA::Representation::ApplyChanges(
 
       if (updateSucceeded) {
         mMutatedFrontSurface = false;
+      } else {
+        // Set mMutatedSpecializeVideo, which will ensure that the next update
+        // will rebuild the video layer.
+        mMutatedSpecializeVideo = true;
+#ifdef NIGHTLY_BUILD
+        if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+          NSLog(@"VIDEO_LOG: EnqueueSurface failed in OnlyVideo update.");
+        }
+#endif
       }
     }
 
@@ -1490,19 +1692,6 @@ bool NativeLayerCA::Representation::ApplyChanges(
     }
   }
 
-  if (mMutatedFrontSurface) {
-    bool isEnqueued = false;
-    IOSurfaceRef surface = aFrontSurface.get();
-    if (aSpecializeVideo) {
-      // Attempt to enqueue this as a video frame. If we fail, we'll fall back to image case.
-      isEnqueued = EnqueueSurface(surface);
-    }
-
-    if (!isEnqueued) {
-      mContentCALayer.contents = (id)surface;
-    }
-  }
-
   if (mContentCALayer && (mMutatedSamplingFilter || layerNeedsInitialization)) {
     if (aSamplingFilter == gfx::SamplingFilter::POINT) {
       mContentCALayer.minificationFilter = kCAFilterNearest;
@@ -1510,6 +1699,32 @@ bool NativeLayerCA::Representation::ApplyChanges(
     } else {
       mContentCALayer.minificationFilter = kCAFilterLinear;
       mContentCALayer.magnificationFilter = kCAFilterLinear;
+    }
+  }
+
+  if (mMutatedFrontSurface) {
+    // This is handled last because a video update could fail, causing us to
+    // early exit, leaving the mutation bits untouched. We do this so that the
+    // *next* update will clear the video layer and setup a regular layer.
+
+    IOSurfaceRef surface = aFrontSurface.get();
+    if (aSpecializeVideo) {
+      // Attempt to enqueue this as a video frame. If we fail, we'll rebuild
+      // our video layer in the next update.
+      bool isEnqueued = EnqueueSurface(surface);
+      if (!isEnqueued) {
+        // Set mMutatedSpecializeVideo, which will ensure that the next update
+        // will rebuild the video layer.
+        mMutatedSpecializeVideo = true;
+#ifdef NIGHTLY_BUILD
+        if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+          NSLog(@"VIDEO_LOG: EnqueueSurface failed in All update.");
+        }
+#endif
+        return false;
+      }
+    } else {
+      mContentCALayer.contents = (id)surface;
     }
   }
 

@@ -8,9 +8,10 @@
  */
 
 #include "mozilla/dom/HTMLImageElement.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/HTMLImageElementBinding.h"
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
@@ -192,9 +193,8 @@ CSSIntPoint HTMLImageElement::GetXY() {
   if (!frame) {
     return CSSIntPoint(0, 0);
   }
-
-  nsIFrame* layer = nsLayoutUtils::GetClosestLayer(frame->GetParent());
-  return CSSIntPoint::FromAppUnitsRounded(frame->GetOffsetTo(layer));
+  return CSSIntPoint::FromAppUnitsRounded(
+      frame->GetOffsetTo(frame->PresShell()->GetRootFrame()));
 }
 
 int32_t HTMLImageElement::X() { return GetXY().x; }

@@ -8,13 +8,9 @@
 
 "use strict";
 
-const { ComponentUtils } = ChromeUtils.import(
-  "resource://gre/modules/ComponentUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const lazy = {};
 
@@ -37,12 +33,6 @@ class LoginManagerStorage_json {
 
   get QueryInterface() {
     return ChromeUtils.generateQI(["nsILoginManagerStorage"]);
-  }
-
-  get _xpcom_factory() {
-    return ComponentUtils.generateSingletonFactory(
-      this.LoginManagerStorage_json
-    );
   }
 
   get _crypto() {
@@ -92,11 +82,11 @@ class LoginManagerStorage_json {
 
       return (async () => {
         // Load the data asynchronously.
-        this.log("Opening database at", this._store.path);
+        this.log(`Opening database at ${this._store.path}.`);
         await this._store.load();
       })().catch(Cu.reportError);
     } catch (e) {
-      this.log("Initialization failed:", e);
+      this.log(`Initialization failed ${e.name}.`);
       throw new Error("Initialization failed");
     }
   }
@@ -132,7 +122,7 @@ class LoginManagerStorage_json {
       return raw ? this._crypto.decrypt(raw) : null;
     } catch (e) {
       if (e.result == Cr.NS_ERROR_FAILURE) {
-        this.log("Could not decrypt the syncID - returning null");
+        this.log("Could not decrypt the syncID - returning null.");
         return null;
       }
       // any other errors get re-thrown.
@@ -379,7 +369,7 @@ class LoginManagerStorage_json {
     // decrypt entries for caller.
     logins = this._decryptLogins(logins);
 
-    this.log("getAllLogins: returning", logins.length, "logins.");
+    this.log(`Returning ${logins.length} logins.`);
     return logins;
   }
 
@@ -420,8 +410,9 @@ class LoginManagerStorage_json {
           // Rethrow other errors (like canceling entry of a primary pw)
           if (e.result == Cr.NS_ERROR_FAILURE) {
             this.log(
-              "Could not decrypt login:",
-              login.QueryInterface(Ci.nsILoginMetaInfo).guid
+              `Could not decrypt login: ${
+                login.QueryInterface(Ci.nsILoginMetaInfo).guid
+              }.`
             );
             continue;
           }
@@ -438,7 +429,7 @@ class LoginManagerStorage_json {
   }
 
   async searchLoginsAsync(matchData) {
-    this.log("searchLoginsAsync:", matchData);
+    this.log(`Searching for matching logins for origin ${matchData.origin}.`);
     let result = this.searchLogins(lazy.LoginHelper.newPropertyBag(matchData));
     // Emulate being async:
     return Promise.resolve(result);
@@ -629,12 +620,7 @@ class LoginManagerStorage_json {
     }
 
     this.log(
-      "_searchLogins: returning",
-      foundLogins.length,
-      "logins for",
-      matchData,
-      "with options",
-      aOptions
+      `Returning ${foundLogins.length} logins for specified origin with options ${aOptions}`
     );
     return [foundLogins, foundIds];
   }
@@ -663,7 +649,7 @@ class LoginManagerStorage_json {
    */
   removeAllUserFacingLogins() {
     this._store.ensureDataReady();
-    this.log("Removing all logins");
+    this.log("Removing all logins.");
 
     let [allLogins] = this._searchLogins({});
 
@@ -706,7 +692,7 @@ class LoginManagerStorage_json {
     // Decrypt entries found for the caller.
     logins = this._decryptLogins(logins);
 
-    this.log("_findLogins: returning", logins.length, "logins");
+    this.log(`Returning ${logins.length} logins.`);
     return logins;
   }
 
@@ -726,7 +712,7 @@ class LoginManagerStorage_json {
     }
     let [logins] = this._searchLogins(matchData);
 
-    this.log("_countLogins: counted logins:", logins.length);
+    this.log(`Counted ${logins.length} logins.`);
     return logins.length;
   }
 

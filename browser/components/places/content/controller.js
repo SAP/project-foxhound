@@ -3,10 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 /* import-globals-from /browser/base/content/utilityOverlay.js */
-/* import-globals-from ../PlacesUIUtils.jsm */
-/* import-globals-from /toolkit/components/places/PlacesUtils.jsm */
-/* import-globals-from /toolkit/components/places/PlacesTransactions.jsm */
 /* import-globals-from ./places.js */
 
 /**
@@ -1619,7 +1622,7 @@ var PlacesControllerDragHelper = {
       if (flavor != TAB_DROP_TYPE) {
         nodes = [...nodes, ...PlacesUtils.unwrapNodes(data, flavor)];
       } else if (
-        data instanceof XULElement &&
+        XULElement.isInstance(data) &&
         data.localName == "tab" &&
         data.ownerGlobal.isChromeWindow
       ) {

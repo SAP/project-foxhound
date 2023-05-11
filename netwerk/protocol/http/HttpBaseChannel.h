@@ -121,7 +121,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
                                       nsProxyInfo* aProxyInfo,
                                       uint32_t aProxyResolveFlags,
                                       nsIURI* aProxyURI, uint64_t aChannelId,
-                                      ExtContentPolicyType aContentPolicyType);
+                                      ExtContentPolicyType aContentPolicyType,
+                                      nsILoadInfo* aLoadInfo);
 
   // nsIRequest
   NS_IMETHOD GetName(nsACString& aName) override;
@@ -294,8 +295,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetLastModifiedTime(PRTime* lastModifiedTime) override;
   NS_IMETHOD GetCorsIncludeCredentials(bool* aInclude) override;
   NS_IMETHOD SetCorsIncludeCredentials(bool aInclude) override;
-  NS_IMETHOD GetCorsMode(uint32_t* aCorsMode) override;
-  NS_IMETHOD SetCorsMode(uint32_t aCorsMode) override;
+  NS_IMETHOD GetRequestMode(dom::RequestMode* aRequestMode) override;
+  NS_IMETHOD SetRequestMode(dom::RequestMode aRequestMode) override;
   NS_IMETHOD GetRedirectMode(uint32_t* aRedirectMode) override;
   NS_IMETHOD SetRedirectMode(uint32_t aRedirectMode) override;
   NS_IMETHOD GetFetchCacheMode(uint32_t* aFetchCacheMode) override;
@@ -329,6 +330,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
       nsILoadInfo::CrossOriginOpenerPolicy* aOutPolicy) override;
   NS_IMETHOD HasCrossOriginOpenerPolicyMismatch(bool* aIsMismatch) override;
   NS_IMETHOD GetResponseEmbedderPolicy(
+      bool aIsOriginTrialCoepCredentiallessEnabled,
       nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) override;
 
   inline void CleanRedirectCacheChainIfNecessary() {
@@ -868,7 +870,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   uint32_t mContentDispositionHint;
 
-  uint32_t mCorsMode;
+  dom::RequestMode mRequestMode;
   uint32_t mRedirectMode;
 
   // If this channel was created as the result of a redirect, then this value

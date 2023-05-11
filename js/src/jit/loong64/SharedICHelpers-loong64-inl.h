@@ -22,7 +22,7 @@ inline void EmitBaselineTailCallVM(TrampolinePtr target, MacroAssembler& masm,
 
   // Compute frame size.
   masm.movePtr(FramePointer, scratch);
-  masm.subPtr(BaselineStackReg, scratch);
+  masm.subPtr(StackPointer, scratch);
 
   // Store frame size without VMFunction arguments for debug assertions.
   masm.subPtr(Imm32(argSize), scratch);
@@ -37,11 +37,8 @@ inline void EmitBaselineTailCallVM(TrampolinePtr target, MacroAssembler& masm,
   // keep it there through the stub calls), but the VMWrapper code being
   // called expects the return address to also be pushed on the stack.
   MOZ_ASSERT(ICTailCallReg == ra);
-  masm.subPtr(Imm32(sizeof(CommonFrameLayout)), StackPointer);
-  masm.storePtr(ImmWord(MakeFrameDescriptor(FrameType::BaselineJS)),
-                Address(StackPointer, CommonFrameLayout::offsetOfDescriptor()));
-  masm.storePtr(
-      ra, Address(StackPointer, CommonFrameLayout::offsetOfReturnAddress()));
+  masm.pushFrameDescriptor(FrameType::BaselineJS);
+  masm.push(ra);
 
   masm.jump(target);
 }
@@ -57,7 +54,7 @@ inline void EmitBaselineEnterStubFrame(MacroAssembler& masm, Register scratch) {
 #ifdef DEBUG
   // Compute frame size.
   masm.movePtr(FramePointer, scratch);
-  masm.subPtr(BaselineStackReg, scratch);
+  masm.subPtr(StackPointer, scratch);
 
   Address frameSizeAddr(FramePointer,
                         BaselineFrame::reverseOffsetOfDebugFrameSize());
@@ -73,7 +70,7 @@ inline void EmitBaselineEnterStubFrame(MacroAssembler& masm, Register scratch) {
 
   // Save old frame pointer, stack pointer and stub reg.
   masm.Push(FramePointer);
-  masm.movePtr(BaselineStackReg, FramePointer);
+  masm.movePtr(StackPointer, FramePointer);
   masm.Push(ICStubReg);
 
   // Stack should remain aligned.

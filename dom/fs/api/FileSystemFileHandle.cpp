@@ -5,10 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileSystemFileHandle.h"
+#include "fs/FileSystemRequestHandler.h"
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemFileHandleBinding.h"
 #include "mozilla/dom/FileSystemHandleBinding.h"
+#include "mozilla/dom/POriginPrivateFileSystem.h"
 #include "mozilla/dom/Promise.h"
 
 namespace mozilla::dom {
@@ -16,6 +18,18 @@ namespace mozilla::dom {
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(FileSystemFileHandle,
                                                FileSystemHandle)
 NS_IMPL_CYCLE_COLLECTION_INHERITED(FileSystemFileHandle, FileSystemHandle)
+
+FileSystemFileHandle::FileSystemFileHandle(
+    nsIGlobalObject* aGlobal, RefPtr<FileSystemActorHolder>& aActor,
+    const fs::FileSystemEntryMetadata& aMetadata,
+    fs::FileSystemRequestHandler* aRequestHandler)
+    : FileSystemHandle(aGlobal, aActor, aMetadata, aRequestHandler) {}
+
+FileSystemFileHandle::FileSystemFileHandle(
+    nsIGlobalObject* aGlobal, RefPtr<FileSystemActorHolder>& aActor,
+    const fs::FileSystemEntryMetadata& aMetadata)
+    : FileSystemFileHandle(aGlobal, aActor, aMetadata,
+                           new fs::FileSystemRequestHandler()) {}
 
 // WebIDL Boilerplate
 
@@ -26,7 +40,7 @@ JSObject* FileSystemFileHandle::WrapObject(JSContext* aCx,
 
 // WebIDL Interface
 
-FileSystemHandleKind FileSystemFileHandle::Kind() {
+FileSystemHandleKind FileSystemFileHandle::Kind() const {
   return FileSystemHandleKind::File;
 }
 

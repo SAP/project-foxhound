@@ -35,7 +35,6 @@
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/Interpreter.h"
 #include "vm/JSFunction.h"
-#include "vm/TraceLogging.h"
 #ifdef MOZ_VTUNE
 #  include "vtune/VTuneWrapper.h"
 #endif
@@ -89,14 +88,12 @@ template <typename... HandlerArgs>
 BaselineCodeGen<Handler>::BaselineCodeGen(JSContext* cx, HandlerArgs&&... args)
     : handler(cx, masm, std::forward<HandlerArgs>(args)...),
       cx(cx),
-      frame(handler.frame()),
-      traceLoggerToggleOffsets_(cx) {}
+      frame(handler.frame()) {}
 
 BaselineCompiler::BaselineCompiler(JSContext* cx, TempAllocator& alloc,
                                    JSScript* script)
     : BaselineCodeGen(cx, /* HandlerArgs = */ alloc, script),
-      profilerPushToggleOffset_(),
-      traceLoggerScriptTextIdOffset_() {
+      profilerPushToggleOffset_() {
 #ifdef JS_CODEGEN_NONE
   MOZ_CRASH();
 #endif
@@ -204,10 +201,6 @@ MethodStatus BaselineCompiler::compile() {
           script->filename(), script->lineno(), script->column());
 
   AutoIncrementalTimer timer(cx->realm()->timers.baselineCompileTime);
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
-  TraceLoggerEvent scriptEvent(TraceLogger_AnnotateScripts, script);
-  AutoTraceLog logScript(logger, scriptEvent);
-  AutoTraceLog logCompile(logger, TraceLogger_BaselineCompilation);
 
   AutoKeepJitScripts keepJitScript(cx);
   if (!script->ensureHasJitScript(cx, keepJitScript)) {
@@ -262,8 +255,7 @@ MethodStatus BaselineCompiler::compile() {
           profilerEnterFrameToggleOffset_.offset(),
           profilerExitFrameToggleOffset_.offset(),
           handler.retAddrEntries().length(), handler.osrEntries().length(),
-          debugTrapEntries_.length(), script->resumeOffsets().size(),
-          traceLoggerToggleOffsets_.length()),
+          debugTrapEntries_.length(), script->resumeOffsets().size()),
       JS::DeletePolicy<BaselineScript>(cx->runtime()));
   if (!baselineScript) {
     return Method_Error;
@@ -285,13 +277,6 @@ MethodStatus BaselineCompiler::compile() {
           cx->runtime())) {
     baselineScript->toggleProfilerInstrumentation(true);
   }
-
-#ifdef JS_TRACE_LOGGING
-  // Initialize the tracelogger instrumentation.
-  if (JS::TraceLoggerSupported()) {
-    baselineScript->initTraceLogger(script, traceLoggerToggleOffsets_);
-  }
-#endif
 
   // Compute native resume addresses for the script's resume offsets.
   baselineScript->computeResumeNativeOffsets(script, resumeOffsetEntries_);
@@ -1566,102 +1551,6 @@ bool BaselineCompiler::emitDebugTrap() {
   return handler.recordCallRetAddr(cx, RetAddrEntry::Kind::DebugTrap,
                                    masm.currentOffset());
 }
-
-#ifdef JS_TRACE_LOGGING
-template <>
-bool BaselineCompilerCodeGen::emitTraceLoggerEnter() {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  Register loggerReg = regs.takeAnyGeneral();
-  Register scriptReg = regs.takeAnyGeneral();
-
-  Label noTraceLogger;
-  if (!traceLoggerToggleOffsets_.append(masm.toggledJump(&noTraceLogger))) {
-    return false;
-  }
-
-  masm.Push(loggerReg);
-  masm.Push(scriptReg);
-
-  masm.loadTraceLogger(loggerReg);
-
-  // Script start.
-  masm.movePtr(ImmPtr(handler.script()->jitScript()), scriptReg);
-  masm.loadPtr(Address(scriptReg, JitScript::offsetOfBaselineScript()),
-               scriptReg);
-  Address scriptEvent(scriptReg,
-                      BaselineScript::offsetOfTraceLoggerScriptEvent());
-  masm.computeEffectiveAddress(scriptEvent, scriptReg);
-  masm.tracelogStartEvent(loggerReg, scriptReg);
-
-  // Engine start.
-  masm.tracelogStartId(loggerReg, TraceLogger_Baseline, /* force = */ true);
-
-  masm.Pop(scriptReg);
-  masm.Pop(loggerReg);
-
-  masm.bind(&noTraceLogger);
-
-  return true;
-}
-
-template <>
-bool BaselineInterpreterCodeGen::emitTraceLoggerEnter() {
-  if (JS::TraceLoggerSupported()) {
-    MOZ_CRASH("NYI: interpreter emitTraceLoggerEnter");
-  }
-  return true;
-}
-
-template <typename Handler>
-bool BaselineCodeGen<Handler>::emitTraceLoggerExit() {
-  AllocatableRegisterSet regs(RegisterSet::Volatile());
-  Register loggerReg = regs.takeAnyGeneral();
-
-  Label noTraceLogger;
-  if (!traceLoggerToggleOffsets_.append(masm.toggledJump(&noTraceLogger))) {
-    return false;
-  }
-
-  masm.Push(loggerReg);
-  masm.loadTraceLogger(loggerReg);
-
-  masm.tracelogStopId(loggerReg, TraceLogger_Baseline, /* force = */ true);
-  masm.tracelogStopId(loggerReg, TraceLogger_Scripts, /* force = */ true);
-
-  masm.Pop(loggerReg);
-
-  masm.bind(&noTraceLogger);
-
-  return true;
-}
-
-template <typename Handler>
-bool BaselineCodeGen<Handler>::emitTraceLoggerResume(
-    Register baselineScript, AllocatableGeneralRegisterSet& regs) {
-  Register scriptId = regs.takeAny();
-  Register loggerReg = regs.takeAny();
-
-  Label noTraceLogger;
-  if (!traceLoggerToggleOffsets_.append(masm.toggledJump(&noTraceLogger))) {
-    return false;
-  }
-
-  masm.loadTraceLogger(loggerReg);
-
-  Address scriptEvent(baselineScript,
-                      BaselineScript::offsetOfTraceLoggerScriptEvent());
-  masm.computeEffectiveAddress(scriptEvent, scriptId);
-  masm.tracelogStartEvent(loggerReg, scriptId);
-  masm.tracelogStartId(loggerReg, TraceLogger_Baseline, /* force = */ true);
-
-  regs.add(loggerReg);
-  regs.add(scriptId);
-
-  masm.bind(&noTraceLogger);
-
-  return true;
-}
-#endif
 
 template <typename Handler>
 void BaselineCodeGen<Handler>::emitProfilerEnterFrame() {
@@ -5795,19 +5684,6 @@ bool BaselineCodeGen<Handler>::emit_Resume() {
                    scratch1);
   masm.branchIfScriptHasNoJitScript(scratch1, &interpret);
 
-#ifdef JS_TRACE_LOGGING
-  if (JS::TraceLoggerSupported()) {
-    // TODO (bug 1565788): add Baseline Interpreter support.
-    MOZ_CRASH("Unimplemented Baseline Interpreter TraceLogger support");
-    masm.loadJitScript(scratch1, scratch1);
-    Address baselineAddr(scratch1, JitScript::offsetOfBaselineScript());
-    masm.loadPtr(baselineAddr, scratch1);
-    if (!emitTraceLoggerResume(scratch1, regs)) {
-      return false;
-    }
-  }
-#endif
-
   // Push |undefined| for all formals.
   Register scratch2 = regs.takeAny();
   Label loop, loopDone;
@@ -6357,12 +6233,6 @@ bool BaselineCodeGen<Handler>::emitPrologue() {
 
   emitInitializeLocals();
 
-#ifdef JS_TRACE_LOGGING
-  if (JS::TraceLoggerSupported() && !emitTraceLoggerEnter()) {
-    return false;
-  }
-#endif
-
   // Ion prologue bailouts will enter here in the Baseline Interpreter.
   masm.bind(&bailoutPrologue_);
 
@@ -6400,12 +6270,6 @@ bool BaselineCodeGen<Handler>::emitEpilogue() {
       return false;
     }
   }
-
-#ifdef JS_TRACE_LOGGING
-  if (JS::TraceLoggerSupported() && !emitTraceLoggerExit()) {
-    return false;
-  }
-#endif
 
   emitProfilerExitFrame();
 

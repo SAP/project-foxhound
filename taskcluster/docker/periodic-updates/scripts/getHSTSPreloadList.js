@@ -12,7 +12,6 @@ var gSSService = Cc["@mozilla.org/ssservice;1"].getService(
   Ci.nsISiteSecurityService
 );
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { FileUtils } = ChromeUtils.import(
   "resource://gre/modules/FileUtils.jsm"
 );
@@ -123,7 +122,6 @@ function processStsHeader(host, header, status, securityInfo) {
         uri,
         header,
         secInfo,
-        Ci.nsISiteSecurityService.SOURCE_PRELOAD_LIST,
         {},
         maxAge,
         includeSubdomains

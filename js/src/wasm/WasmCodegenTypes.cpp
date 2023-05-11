@@ -136,28 +136,13 @@ CodeRange::CodeRange(Kind kind, CallableOffsets offsets)
 
 CodeRange::CodeRange(Kind kind, uint32_t funcIndex, CallableOffsets offsets)
     : begin_(offsets.begin), ret_(offsets.ret), end_(offsets.end), kind_(kind) {
-  MOZ_ASSERT((isImportExit() && !isImportJitExit()) || isJitEntry());
+  MOZ_ASSERT(isImportExit() || isJitEntry());
   MOZ_ASSERT(begin_ < ret_);
   MOZ_ASSERT(ret_ < end_);
   u.funcIndex_ = funcIndex;
   u.func.lineOrBytecode_ = 0;
   u.func.beginToUncheckedCallEntry_ = 0;
   u.func.beginToTierEntry_ = 0;
-}
-
-CodeRange::CodeRange(uint32_t funcIndex, JitExitOffsets offsets)
-    : begin_(offsets.begin),
-      ret_(offsets.ret),
-      end_(offsets.end),
-      kind_(ImportJitExit) {
-  MOZ_ASSERT(isImportJitExit());
-  MOZ_ASSERT(begin_ < ret_);
-  MOZ_ASSERT(ret_ < end_);
-  u.funcIndex_ = funcIndex;
-  u.jitExit.beginToUntrustedFPStart_ = offsets.untrustedFPStart - begin_;
-  u.jitExit.beginToUntrustedFPEnd_ = offsets.untrustedFPEnd - begin_;
-  MOZ_ASSERT(jitExitUntrustedFPStart() == offsets.untrustedFPStart);
-  MOZ_ASSERT(jitExitUntrustedFPEnd() == offsets.untrustedFPEnd);
 }
 
 CodeRange::CodeRange(uint32_t funcIndex, uint32_t funcLineOrBytecode,
@@ -226,5 +211,10 @@ CalleeDesc CalleeDesc::builtinInstanceMethod(SymbolicAddress callee) {
   CalleeDesc c;
   c.which_ = BuiltinInstanceMethod;
   c.u.builtin_ = callee;
+  return c;
+}
+CalleeDesc CalleeDesc::wasmFuncRef() {
+  CalleeDesc c;
+  c.which_ = FuncRef;
   return c;
 }

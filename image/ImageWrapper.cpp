@@ -103,11 +103,14 @@ ImageWrapper::GetHeight(int32_t* aHeight) {
   return mInnerImage->GetHeight(aHeight);
 }
 
-nsresult ImageWrapper::GetNativeSizes(nsTArray<IntSize>& aNativeSizes) const {
+void ImageWrapper::MediaFeatureValuesChangedAllDocuments(
+    const mozilla::MediaFeatureChange& aChange) {}
+
+nsresult ImageWrapper::GetNativeSizes(nsTArray<IntSize>& aNativeSizes) {
   return mInnerImage->GetNativeSizes(aNativeSizes);
 }
 
-size_t ImageWrapper::GetNativeSizesLength() const {
+size_t ImageWrapper::GetNativeSizesLength() {
   return mInnerImage->GetNativeSizesLength();
 }
 
@@ -170,7 +173,7 @@ ImageWrapper::IsImageContainerAvailable(WindowRenderer* aRenderer,
 NS_IMETHODIMP_(ImgDrawResult)
 ImageWrapper::GetImageProvider(WindowRenderer* aRenderer,
                                const gfx::IntSize& aSize,
-                               const Maybe<SVGImageContext>& aSVGContext,
+                               const SVGImageContext& aSVGContext,
                                const Maybe<ImageIntRegion>& aRegion,
                                uint32_t aFlags,
                                WebRenderImageProvider** aProvider) {
@@ -182,7 +185,7 @@ NS_IMETHODIMP_(ImgDrawResult)
 ImageWrapper::Draw(gfxContext* aContext, const nsIntSize& aSize,
                    const ImageRegion& aRegion, uint32_t aWhichFrame,
                    SamplingFilter aSamplingFilter,
-                   const Maybe<SVGImageContext>& aSVGContext, uint32_t aFlags,
+                   const SVGImageContext& aSVGContext, uint32_t aFlags,
                    float aOpacity) {
   return mInnerImage->Draw(aContext, aSize, aRegion, aWhichFrame,
                            aSamplingFilter, aSVGContext, aFlags, aOpacity);

@@ -99,7 +99,7 @@ async function renderSpotlight(ready) {
     // If we just call focus() at some random time, it'll cause a flush,
     // which slows things down unnecessarily, so instead we use rAF...
     requestAnimationFrame(() => {
-      primaryBtn.focus({ preventFocusRing: true });
+      primaryBtn.focus({ focusVisible: false });
     });
   }
   if (secondaryBtn) {
@@ -151,8 +151,10 @@ function renderMultistage(ready) {
 
   // The content handles styling including its own modal shadowing.
   const { classList } = browser.closest(".dialogBox");
-  classList.add("noShadow");
-  addEventListener("pagehide", () => classList.remove("noShadow"));
+  classList.add("noShadow", "fullScreen");
+  addEventListener("pagehide", () =>
+    classList.remove("noShadow", "fullScreen")
+  );
 
   // Load the bundle to render the content as configured.
   document.head.appendChild(document.createElement("script")).src =

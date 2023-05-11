@@ -283,8 +283,6 @@ class nsContentUtils {
   static bool IsCallerChromeOrElementTransformGettersEnabled(JSContext* aCx,
                                                              JSObject*);
 
-  static bool IsCallerChromeOrErrorPage(JSContext*, JSObject*);
-
   // The APIs for checking whether the caller is system (in the sense of system
   // principal) should only be used when the JSContext is known to accurately
   // represent the caller.  In practice, that means you should only use them in
@@ -354,13 +352,22 @@ class nsContentUtils {
   static bool ShouldResistFingerprinting();
   static bool ShouldResistFingerprinting(nsIGlobalObject* aGlobalObject);
   static bool ShouldResistFingerprinting(nsIDocShell* aDocShell);
-  static bool ShouldResistFingerprinting(nsIPrincipal* aPrincipal);
   // These functions are the new, nuanced functions
   static bool ShouldResistFingerprinting(const Document* aDoc);
   static bool ShouldResistFingerprinting(nsIChannel* aChannel);
-  static bool ShouldResistFingerprinting(
-      nsIPrincipal* aPrincipal,
-      const mozilla::OriginAttributes& aOriginAttributes);
+  static bool ShouldResistFingerprinting(nsILoadInfo* aPrincipal);
+  // These functions are labeled as dangerous because they will do the wrong
+  // thing in _most_ cases. They should only be used if you don't have a fully
+  // constructed LoadInfo or Document.
+  // A constant string used as justification is required when calling them,
+  // it should explain why a Document, Channel, LoadInfo, or CookieJarSettings
+  // does not exist in this context.
+  // (see below for more on justification strings.)
+  static bool ShouldResistFingerprinting_dangerous(
+      nsIURI* aURI, const mozilla::OriginAttributes& aOriginAttributes,
+      const char* aJustification);
+  static bool ShouldResistFingerprinting_dangerous(nsIPrincipal* aPrincipal,
+                                                   const char* aJustification);
 
   /**
    * Implement a RFP function that only checks the pref, and does not take
@@ -434,6 +441,13 @@ class nsContentUtils {
    * @see https://dom.spec.whatwg.org/#retarget
    */
   static nsINode* Retarget(nsINode* aTargetA, nsINode* aTargetB);
+
+  /**
+   * @see https://wicg.github.io/element-timing/#get-an-element
+   */
+  static nsINode* GetAnElementForTiming(Element* aTarget,
+                                        const Document* aDocument,
+                                        nsIGlobalObject* aGlobal);
 
   /*
    * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor.

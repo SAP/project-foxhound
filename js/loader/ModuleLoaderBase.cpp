@@ -624,13 +624,13 @@ ResolveResult ModuleLoaderBase::ResolveModuleSpecifier(
   }
 
   if (rv != NS_ERROR_MALFORMED_URI) {
-    return Err(ResolveError::ModuleResolveFailure);
+    return Err(ResolveError::Failure);
   }
 
   if (!StringBeginsWith(aSpecifier, u"/"_ns) &&
       !StringBeginsWith(aSpecifier, u"./"_ns) &&
       !StringBeginsWith(aSpecifier, u"../"_ns)) {
-    return Err(ResolveError::ModuleResolveFailure);
+    return Err(ResolveError::FailureMayBeBare);
   }
 
   // Get the document's base URL if we don't have a referencing script here.
@@ -646,7 +646,7 @@ ResolveResult ModuleLoaderBase::ResolveModuleSpecifier(
     return WrapNotNull(uri);
   }
 
-  return Err(ResolveError::ModuleResolveFailure);
+  return Err(ResolveError::Failure);
 }
 
 nsresult ModuleLoaderBase::ResolveRequestedModules(
@@ -891,6 +891,11 @@ ModuleLoaderBase::~ModuleLoaderBase() {
 
 void ModuleLoaderBase::Shutdown() {
   MOZ_ASSERT(mFetchingModules.IsEmpty());
+
+  for (const auto& entry : mFetchedModules) {
+    entry.GetData()->Shutdown();
+  }
+
   mFetchedModules.Clear();
   mGlobalObject = nullptr;
   mEventTarget = nullptr;
@@ -980,7 +985,7 @@ bool ModuleLoaderBase::InstantiateModuleGraph(ModuleLoadRequest* aRequest) {
     return true;
   }
 
-  if (!JS::ModuleInstantiate(jsapi.cx(), module)) {
+  if (!JS::ModuleLink(jsapi.cx(), module)) {
     LOG(("ScriptLoadRequest (%p): Instantiate failed", aRequest));
     MOZ_ASSERT(jsapi.HasException());
     JS::RootedValue exception(jsapi.cx());

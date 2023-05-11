@@ -8,9 +8,8 @@
 /* import-globals-from /browser/components/downloads/content/allDownloadsView.js */
 
 /* Shared Places Import - change other consumers if you change this: */
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 XPCOMUtils.defineLazyModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
@@ -35,16 +34,10 @@ ChromeUtils.defineModuleGetter(
   "MigrationUtils",
   "resource:///modules/MigrationUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "BookmarkJSONUtils",
-  "resource://gre/modules/BookmarkJSONUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesBackups",
-  "resource://gre/modules/PlacesBackups.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
+  PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "DownloadUtils",
@@ -499,8 +492,8 @@ var PlacesOrganizer = {
     let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     let fpCallback = function fpCallback_done(aResult) {
       if (aResult != Ci.nsIFilePicker.returnCancel && fp.fileURL) {
-        var { BookmarkHTMLUtils } = ChromeUtils.import(
-          "resource://gre/modules/BookmarkHTMLUtils.jsm"
+        var { BookmarkHTMLUtils } = ChromeUtils.importESModule(
+          "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
         );
         BookmarkHTMLUtils.importFromURL(fp.fileURL.spec).catch(Cu.reportError);
       }
@@ -522,8 +515,8 @@ var PlacesOrganizer = {
     let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
     let fpCallback = function fpCallback_done(aResult) {
       if (aResult != Ci.nsIFilePicker.returnCancel) {
-        var { BookmarkHTMLUtils } = ChromeUtils.import(
-          "resource://gre/modules/BookmarkHTMLUtils.jsm"
+        var { BookmarkHTMLUtils } = ChromeUtils.importESModule(
+          "resource://gre/modules/BookmarkHTMLUtils.sys.mjs"
         );
         BookmarkHTMLUtils.exportToFile(fp.file.path).catch(Cu.reportError);
       }
@@ -750,8 +743,8 @@ var PlacesOrganizer = {
     if (gEditItemOverlay.itemId != -1) {
       var focusedElement = document.commandDispatcher.focusedElement;
       if (
-        (focusedElement instanceof HTMLInputElement ||
-          focusedElement instanceof HTMLTextAreaElement) &&
+        (HTMLInputElement.isInstance(focusedElement) ||
+          HTMLTextAreaElement.isInstance(focusedElement)) &&
         /^editBMPanel.*/.test(focusedElement.parentNode.parentNode.id)
       ) {
         focusedElement.blur();

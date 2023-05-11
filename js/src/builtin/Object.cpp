@@ -12,6 +12,7 @@
 #include "mozilla/RangedPtr.h"
 
 #include <algorithm>
+#include <string_view>
 
 #include "jsapi.h"
 
@@ -45,6 +46,7 @@
 #  include "builtin/TupleObject.h"
 #endif
 
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/Shape-inl.h"
@@ -151,6 +153,7 @@ bool js::obj_propertyIsEnumerable(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static bool obj_toSource(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object.prototype", "toSource");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   AutoCheckRecursionLimit recursion(cx);
@@ -174,13 +177,13 @@ static bool obj_toSource(JSContext* cx, unsigned argc, Value* vp) {
 
 template <typename CharT>
 static bool Consume(RangedPtr<const CharT>& s, RangedPtr<const CharT> e,
-                    const char* chars) {
+                    std::string_view chars) {
   MOZ_ASSERT(s <= e);
-  size_t len = strlen(chars);
+  size_t len = chars.length();
   if (e - s < len) {
     return false;
   }
-  if (!EqualChars(s.get(), chars, len)) {
+  if (!EqualChars(s.get(), chars.data(), len)) {
     return false;
   }
   s += len;
@@ -664,6 +667,7 @@ static JSAtom* MaybeObjectToStringPrimitive(JSContext* cx, const Value& v) {
 
 // ES6 19.1.3.6
 bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object.prototype", "toString");
   CallArgs args = CallArgsFromVp(argc, vp);
   RootedObject obj(cx);
 
@@ -1112,6 +1116,7 @@ JS_PUBLIC_API bool JS_AssignObject(JSContext* cx, JS::HandleObject target,
 // ES2018 draft rev 48ad2688d8f964da3ea8c11163ef20eb126fb8a4
 // 19.1.2.1 Object.assign(target, ...sources)
 static bool obj_assign(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "assign");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
@@ -1868,6 +1873,7 @@ static bool EnumerableOwnProperties(JSContext* cx, const JS::CallArgs& args) {
 // ES2018 draft rev c164be80f7ea91de5526b33d54e5c9321ed03d3f
 // 19.1.2.16 Object.keys ( O )
 static bool obj_keys(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "keys");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
@@ -1895,6 +1901,7 @@ static bool obj_keys(JSContext* cx, unsigned argc, Value* vp) {
 // ES2018 draft rev c164be80f7ea91de5526b33d54e5c9321ed03d3f
 // 19.1.2.21 Object.values ( O )
 static bool obj_values(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "values");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-3.
@@ -1904,6 +1911,7 @@ static bool obj_values(JSContext* cx, unsigned argc, Value* vp) {
 // ES2018 draft rev c164be80f7ea91de5526b33d54e5c9321ed03d3f
 // 19.1.2.5 Object.entries ( O )
 static bool obj_entries(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "entries");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-3.
@@ -1978,6 +1986,7 @@ bool js::GetOwnPropertyKeys(JSContext* cx, HandleObject obj, unsigned flags,
 // ES2018 draft rev c164be80f7ea91de5526b33d54e5c9321ed03d3f
 // 19.1.2.9 Object.getOwnPropertyNames ( O )
 static bool obj_getOwnPropertyNames(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "getOwnPropertyNames");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedObject obj(cx, ToObject(cx, args.get(0)));
@@ -2003,6 +2012,7 @@ static bool obj_getOwnPropertyNames(JSContext* cx, unsigned argc, Value* vp) {
 // ES2018 draft rev c164be80f7ea91de5526b33d54e5c9321ed03d3f
 // 19.1.2.10 Object.getOwnPropertySymbols ( O )
 static bool obj_getOwnPropertySymbols(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "getOwnPropertySymbols");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedObject obj(cx, ToObject(cx, args.get(0)));
@@ -2018,6 +2028,7 @@ static bool obj_getOwnPropertySymbols(JSContext* cx, unsigned argc, Value* vp) {
 
 /* ES5 15.2.3.7: Object.defineProperties(O, Properties) */
 static bool obj_defineProperties(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "defineProperties");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   /* Step 1. */

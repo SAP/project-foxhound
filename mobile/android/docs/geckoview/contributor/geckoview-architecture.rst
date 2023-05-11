@@ -1,8 +1,8 @@
 .. -*- Mode: rst; fill-column: 80; -*-
 
-======================
-GeckoView architecture
-======================
+=====================
+Architecture overview
+=====================
 
 .. contents:: Table of Contents
    :depth: 2
@@ -103,6 +103,8 @@ The most important delegates are:
 - ``WebExtension.MessageDelegate`` Used by the embedder to exchange messages
   with built-in extensions. See also `Interacting with Web Content <../consumer/web-extensions.html>`_.
 
+
+.. _GeckoDisplay:
 
 GeckoDisplay
 ------------
@@ -235,6 +237,68 @@ batched to avoid calling this API too frequently.
 Apps can use ``onSessionStateChange`` to store the serialized state to
 disk to support restoring the session at a later time.
 
+Third-party root certificates
+-----------------------------
+
+Gecko maintains its own Certificate Authority store and does not use the
+platform's CA store. GeckoView follows the same policy and will not, by
+default, read Android's CA store to determine root certificates.
+
+However, GeckoView provides a way to import all third-party CA roots added to
+the Android CA store by setting the `enterpriseRootsEnabled
+<https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/GeckoRuntimeSettings.Builder.html#enterpriseRootsEnabled(boolean)>`_
+runtime setting to ``true``, this feature is implemented in `EnterpriseRoots
+<https://searchfox.org/mozilla-central/rev/26a6a38fb515dbab0bb459c40ec4b877477eefef/mobile/android/geckoview/src/main/java/org/mozilla/gecko/EnterpriseRoots.java>`_
+
+There is not currently any API for an app to manually specify additional CA
+roots, although this might change with `Bug 1522162
+<https://bugzilla.mozilla.org/show_bug.cgi?id=1522162>`_.
+
+Lite and Omni builds
+---------------------
+
+A variation of the default GeckoView build, dubbed `Omni` in the codebase,
+provides additional libraries that can be helpful when building a browser app.
+Currently, the `Glean
+<https://docs.telemetry.mozilla.org/concepts/glean/glean.html>`_ library is
+included in the ``geckoview-omni`` package.  The default build ``geckoview``,
+which does not contain such libraries, is similarly dubbed `Lite` in the
+codebase.
+
+The additional libraries in the Omni package are directly built into Gecko's
+main ``.so`` file, ``libxul.so``. These libraries are then declared in the
+``.module`` package inside the ``maven`` repository, e.g. see the ``.module``
+file for `geckoview-omni
+<https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview-omni/102.0.20220623063721/geckoview-omni-102.0.20220623063721.module>`_:
+
+.. code-block:: json
+
+      "capabilities": [
+        {
+          "group": "org.mozilla.geckoview",
+          "name": "geckoview-omni",
+          "version": "102.0.20220623063721"
+        },
+        {
+          "group": "org.mozilla.telemetry",
+          "name": "glean-native",
+          "version": "44.1.1"
+        }
+      ]
+
+Notice the ``org.mozilla.telemetry:glean-native`` capability is declared
+alongside ``org.mozilla.geckoview``.
+
+The main Glean library then depends on ``glean-native`` which is either
+provided in a standalone package (for apps that do not include GeckoView) or by
+the GeckoView capability above.
+
+In Treeherder, the Lite build is denoted with ``Lite``, while the Omni builds
+don't have extra denominations as they are the default build, so e.g. for
+``x86_64`` the platorm names would be:
+
+- ``Android 7.0 x86-64`` for the Omni build
+- ``Android 7.0 x86-64 Lite`` for the Lite build
 
 Extensions
 ----------
@@ -348,6 +412,41 @@ the main process alive.
 It is therefore very important that Gecko is able to recover from process
 disappearing at any moment at runtime.
 
+Priority Hint
+~~~~~~~~~~~~~
+
+Internally, GeckoView ties the lifetime of the ``Surface`` associated to a
+``GeckoSession`` and the process priority of the process where the session
+lives.
+
+The underlying assumption is that a session that is not visible doesn't have a
+surface associated to it and it's not being used by the user so it shouldn't
+receive high priority status.
+
+The way this is implemented is `by setting
+<https://searchfox.org/mozilla-central/rev/5b2d2863bd315f232a3f769f76e0eb16cdca7cb0/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/GeckoView.java#114,123>`_
+the ``active`` property on the ``browser`` object to ``false``, which causes
+Gecko to de-prioritize the process, assuming that no other windows in the same
+process have ``active=true``. See also `GeckoDisplay`_.
+
+However, there are use cases where just looking at the surface is not enough.
+For instance, when the user opens the settings menu, the currently selected tab
+becomes invisible, but the user will still expect the browser to retain that
+tab state with a higher priority than all the other tabs. Similarly, when the
+browser is put in the background, the surface associated to the current tab
+gets destroyed, but the current tab is still more important than the other
+tabs, but because it doesn't have a surface associated to it, we have no way to
+differentiate it from all the other tabs.
+
+To solve the above problem, we expose an API for consumers to *boost* a session
+priority, `setPriorityHint
+<https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/GeckoSession.html#setPriorityHint(int)>`_.
+The priority hint is taken into consideration when calculating the
+priority of a process.  Any process that contains either an active session or a
+session with the priority hint `is boosted
+<https://searchfox.org/mozilla-central/rev/5b2d2863bd315f232a3f769f76e0eb16cdca7cb0/dom/ipc/BrowserParent.cpp#3593>`_
+to the highest priority.
+
 Shutdown
 --------
 
@@ -355,6 +454,30 @@ Android does not provide apps with a notification whenever the app is shutting
 down. As explained in the section above, apps will simply be killed whenever
 the system needs to reclaim resources. This means that Gecko on Android will
 never shutdown cleanly, and that shutdown actions will never execute.
+
+.. _principals:
+
+Principals
+----------
+
+In Gecko, a *website* loaded in a session is represented by an abstraction
+called `principal
+<https://searchfox.org/mozilla-central/rev/5b2d2863bd315f232a3f769f76e0eb16cdca7cb0/caps/nsIPrincipal.idl>`_.
+Principals contain information that is used to determine what permissions have
+been granted to the website instance, what APIs are available to it, which
+container the page is loaded in, is the page in private browsing or not, etc.
+
+Principals are used throughout the Gecko codebase, GeckoView, however, does not
+expose the concept to the API. This is intentional, as exposing it would
+potentially expose the app to various security sensitive concepts, which would
+violate the "secure" requirement for the GeckoView API.
+
+The absence of principals from the API is, e.g., why GeckoView does not offer a
+way to set permissions given a URL string, as permissions are internally stored
+by principal. See also `Setting Permissions`_.
+
+To learn more about principals see `this talk by Bobby Holley
+<https://www.youtube.com/watch?v=28FPetl5Fl4>`_.
 
 Window model
 ------------
@@ -504,6 +627,8 @@ And finally, the Java implementation calls the session delegate.
     });
   }
 
+.. _permissions:
+
 Permissions
 -----------
 
@@ -515,10 +640,10 @@ Content permissions
 ~~~~~~~~~~~~~~~~~~~
 
 Content permissions are granted to individual web sites (more precisely,
-principals) and are managed internally using ``nsIPermissionManager``. Content
-permissions are used by Gecko to keep track which website is allowed to access
-a group of Web APIs or functionality. The Web has the concept of permissions,
-but not all Gecko permissions map to Web-exposed permissions.
+`principals`_) and are managed internally using ``nsIPermissionManager``.
+Content permissions are used by Gecko to keep track which website is allowed to
+access a group of Web APIs or functionality. The Web has the concept of
+permissions, but not all Gecko permissions map to Web-exposed permissions.
 
 For instance, the ``Notification`` permission, which allows websites to fire
 notifications to the user, is exposed to the Web through
@@ -532,7 +657,7 @@ GeckoView retains content permission data, which is an explicit violation of
 the design principle of not storing data. This is done because storing
 permissions is very complex, making a mistake when dealing with permissions
 often ends up being a security vulnerability, and because permissions depend on
-concepts that are not exposed to the GeckoView API like principals.
+concepts that are not exposed to the GeckoView API like `principals`_.
 
 Android permissions
 ~~~~~~~~~~~~~~~~~~~
@@ -570,6 +695,26 @@ the corresponding window child actor, with the exception of requests that are
 not associated with a window, which are redirected to the `current active
 window
 <https://searchfox.org/mozilla-central/rev/9dc5ffe42635b602d4ddfc9a4b8ea0befc94975a/mobile/android/actors/GeckoViewPermissionProcessParent.jsm#28-35>`_.
+
+Setting permissions
+~~~~~~~~~~~~~~~~~~~
+
+Permissions are stored in a map between a `principal <#principals>`_ and a list
+of permission (key, value) pairs. To prevent security vulnerabilities, GeckoView
+does not provide a way to set permissions given an arbitrary URL and requires
+consumers to get hold of the `ContentPermission
+<https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/GeckoSession.PermissionDelegate.ContentPermission.html>`_
+object. The ContentPermission object is returned in `onLocationChange
+<https://mozilla.github.io/geckoview/javadoc/mozilla-central/org/mozilla/geckoview/GeckoSession.NavigationDelegate.html#onLocationChange(org.mozilla.geckoview.GeckoSession,java.lang.String,java.util.List)>`_
+upon navigation, making it unlikely to have confusion bugs whereby the
+permission is given to the wrong website.
+
+Internally, some permissions are only present when a certain override is set,
+e.g. Tracking Protection override permissions are only present when the page
+has been given a TP override. Because the only way to set the value of a
+permission is to get hold of the ``ContentPermission`` object, `we manually insert
+<https://searchfox.org/mozilla-central/rev/5b2d2863bd315f232a3f769f76e0eb16cdca7cb0/mobile/android/modules/geckoview/GeckoViewNavigation.jsm#605-625>`_
+a `trackingprotection` permission on every page load.
 
 Autofill Support
 ----------------
@@ -673,7 +818,7 @@ Testing infrastructure
 ----------------------
 
 For a detailed description of our testing infrastructure see `GeckoView junit
-Test Framework <https://gist.github.com/agi/5154509247fbe1170b2646a5b163433e>`_.
+Test Framework <junit.html>`_.
 
 .. |api-diagram| image:: ../assets/api-diagram.png
 .. |view-runtime-session| image:: ../assets/view-runtime-session.png

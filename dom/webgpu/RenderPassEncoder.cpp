@@ -55,6 +55,9 @@ ffi::WGPURenderPass* BeginRenderPass(
     CommandEncoder* const aParent, const dom::GPURenderPassDescriptor& aDesc) {
   ffi::WGPURenderPassDescriptor desc = {};
 
+  webgpu::StringHelper label(aDesc.mLabel);
+  desc.label = label.Get();
+
   ffi::WGPURenderPassDepthStencilAttachment dsDesc = {};
   if (aDesc.mDepthStencilAttachment.WasPassed()) {
     const auto& dsa = aDesc.mDepthStencilAttachment.Value();
@@ -84,13 +87,13 @@ ffi::WGPURenderPass* BeginRenderPass(
     desc.depth_stencil_attachment = &dsDesc;
   }
 
-  if (aDesc.mColorAttachments.Length() > WGPUMAX_COLOR_TARGETS) {
+  if (aDesc.mColorAttachments.Length() > WGPUMAX_COLOR_ATTACHMENTS) {
     aParent->GetDevice()->GenerateError(nsLiteralCString(
         "Too many color attachments in GPURenderPassDescriptor"));
     return nullptr;
   }
 
-  std::array<ffi::WGPURenderPassColorAttachment, WGPUMAX_COLOR_TARGETS>
+  std::array<ffi::WGPURenderPassColorAttachment, WGPUMAX_COLOR_ATTACHMENTS>
       colorDescs = {};
   desc.color_attachments = colorDescs.data();
   desc.color_attachments_length = aDesc.mColorAttachments.Length();

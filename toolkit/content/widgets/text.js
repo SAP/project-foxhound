@@ -7,9 +7,6 @@
 // This is loaded into all XUL windows. Wrap in a block to prevent
 // leaking to window scope.
 {
-  const { Services } = ChromeUtils.import(
-    "resource://gre/modules/Services.jsm"
-  );
   const MozXULTextElement = MozElements.MozElementMixin(XULTextElement);
 
   let gInsertSeparator = false;
@@ -242,7 +239,7 @@
     if (!element.isConnected) {
       return;
     }
-    if (element.previousSibling instanceof Text) {
+    if (Text.isInstance(element.previousSibling)) {
       element.previousSibling.appendData(element.textContent);
     } else {
       element.parentNode.insertBefore(element.firstChild, element);

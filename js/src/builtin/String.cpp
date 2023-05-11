@@ -17,6 +17,7 @@
 #endif
 #include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
+#include "mozilla/SIMD.h"
 #include "mozilla/TextUtils.h"
 
 #include <algorithm>
@@ -62,6 +63,7 @@
 #include "vm/ToSource.h"       // js::ValueToSource
 #include "vm/WellKnownAtom.h"  // js_*_str
 
+#include "vm/GeckoProfiler-inl.h"
 #include "vm/InlineCharBuffer-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -79,6 +81,7 @@ using mozilla::IsAsciiHexDigit;
 using mozilla::IsNaN;
 using mozilla::PodCopy;
 using mozilla::RangedPtr;
+using mozilla::SIMD;
 
 using JS::AutoCheckCannotGC;
 using JS::AutoStableStringChars;
@@ -482,6 +485,7 @@ static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
 }
 
 static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "escape");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   Rooted<JSLinearString*> str(cx, ArgToLinearString(cx, args, 0));
@@ -646,6 +650,7 @@ static bool Unescape(StringBuffer& sb,
 // ES2018 draft rev f83aa38282c2a60c6916ebc410bfdf105a0f6a54
 // B.2.1.2 unescape ( string )
 static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "unescape");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
@@ -1230,6 +1235,7 @@ JSString* js::StringToLowerCase(JSContext* cx, HandleString string) {
 }
 
 static bool str_toLowerCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "toLowerCase");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedString str(cx,
@@ -1336,6 +1342,8 @@ bool js::intl_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 // When the Intl API is not exposed, String.prototype.toLowerCase is implemented
 // in C++.
 static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "toLocaleLowerCase");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedString str(
@@ -1679,6 +1687,7 @@ JSString* js::StringToUpperCase(JSContext* cx, HandleString string) {
 }
 
 static bool str_toUpperCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "toUpperCase");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedString str(cx,
@@ -1759,6 +1768,8 @@ bool js::intl_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 // When the Intl API is not exposed, String.prototype.toUpperCase is implemented
 // in C++.
 static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "toLocaleUpperCase");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedString str(
@@ -1813,7 +1824,10 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 // String.prototype.localeCompare is implemented in C++ (delegating to
 // JSLocaleCallbacks) when Intl functionality is not exposed.
 static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "localeCompare");
   CallArgs args = CallArgsFromVp(argc, vp);
+
   RootedString str(
       cx, ToStringForStringFunction(cx, "localeCompare", args.thisv()));
   if (!str) {
@@ -1856,6 +1870,7 @@ static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
 // String.prototype.normalize is only implementable if ICU's normalization
 // functionality is available.
 static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "normalize");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
@@ -1953,6 +1968,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 #endif  // JS_HAS_INTL_API
 
 static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "charAt");
   CallArgs args = CallArgsFromVp(argc, vp);
   RootedString str(cx);
   size_t i;
@@ -2031,7 +2047,9 @@ out_of_range:
 }
 
 bool js::str_charCodeAt(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "charCodeAt");
   CallArgs args = CallArgsFromVp(argc, vp);
+
   RootedString str(cx);
   RootedValue index(cx);
   if (args.thisv().isString()) {
@@ -2102,7 +2120,7 @@ struct MemCmp {
   using Extent = uint32_t;
   static MOZ_ALWAYS_INLINE Extent computeExtent(const PatChar*,
                                                 uint32_t patLen) {
-    return (patLen - 1) * sizeof(PatChar);
+    return (patLen - 2) * sizeof(PatChar);
   }
   static MOZ_ALWAYS_INLINE bool match(const PatChar* p, const TextChar* t,
                                       Extent extent) {
@@ -2129,78 +2147,35 @@ struct ManualCmp {
   }
 };
 
-template <typename TextChar, typename PatChar>
-static const TextChar* FirstCharMatcherUnrolled(const TextChar* text,
-                                                uint32_t n, const PatChar pat) {
-  const TextChar* textend = text + n;
-  const TextChar* t = text;
-
-  switch ((textend - t) & 7) {
-    case 0:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 7:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 6:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 5:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 4:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 3:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 2:
-      if (*t++ == pat) return t - 1;
-      [[fallthrough]];
-    case 1:
-      if (*t++ == pat) return t - 1;
-  }
-  while (textend != t) {
-    if (t[0] == pat) return t;
-    if (t[1] == pat) return t + 1;
-    if (t[2] == pat) return t + 2;
-    if (t[3] == pat) return t + 3;
-    if (t[4] == pat) return t + 4;
-    if (t[5] == pat) return t + 5;
-    if (t[6] == pat) return t + 6;
-    if (t[7] == pat) return t + 7;
-    t += 8;
-  }
-  return nullptr;
-}
-
-static const char* FirstCharMatcher8bit(const char* text, uint32_t n,
-                                        const char pat) {
-  return reinterpret_cast<const char*>(memchr(text, pat, n));
-}
-
 template <class InnerMatch, typename TextChar, typename PatChar>
 static int Matcher(const TextChar* text, uint32_t textlen, const PatChar* pat,
                    uint32_t patlen) {
-  MOZ_ASSERT(patlen > 0);
-
-  if (sizeof(TextChar) == 1 && sizeof(PatChar) > 1 && pat[0] > 0xff) {
-    return -1;
-  }
+  MOZ_ASSERT(patlen > 1);
 
   const typename InnerMatch::Extent extent =
       InnerMatch::computeExtent(pat, patlen);
 
   uint32_t i = 0;
   uint32_t n = textlen - patlen + 1;
+
   while (i < n) {
     const TextChar* pos;
 
+    // This is a bit awkward. Consider the case where we're searching "abcdef"
+    // for "def". n will be 4, because we know in advance that the last place we
+    // can *start* a successful search will be at 'd'. However, if we just use n
+    // - i, then our first search will be looking through "abcd" for "de",
+    // because our memchr2xN functions search for two characters at a time. So
+    // we just have to compensate by adding 1. This will never exceed textlen
+    // because we know patlen is at least two.
+    size_t searchLen = n - i + 1;
     if (sizeof(TextChar) == 1) {
       MOZ_ASSERT(pat[0] <= 0xff);
-      pos = (TextChar*)FirstCharMatcher8bit((char*)text + i, n - i, pat[0]);
+      pos = (TextChar*)SIMD::memchr2x8((char*)text + i, pat[0], pat[1],
+                                       searchLen);
     } else {
-      pos = FirstCharMatcherUnrolled(text + i, n - i, char16_t(pat[0]));
+      pos = (TextChar*)SIMD::memchr2x16((char16_t*)(text + i), char16_t(pat[0]),
+                                        char16_t(pat[1]), searchLen);
     }
 
     if (pos == nullptr) {
@@ -2208,7 +2183,9 @@ static int Matcher(const TextChar* text, uint32_t textlen, const PatChar* pat,
     }
 
     i = static_cast<uint32_t>(pos - text);
-    if (InnerMatch::match(pat + 1, text + i + 1, extent)) {
+    const uint32_t inlineLookaheadChars = 2;
+    if (InnerMatch::match(pat + inlineLookaheadChars,
+                          text + i + inlineLookaheadChars, extent)) {
       return i;
     }
 
@@ -2227,22 +2204,26 @@ static MOZ_ALWAYS_INLINE int StringMatch(const TextChar* text, uint32_t textLen,
     return -1;
   }
 
-#if defined(__i386__) || defined(_M_IX86) || defined(__i386)
-  /*
-   * Given enough registers, the unrolled loop below is faster than the
-   * following loop. 32-bit x86 does not have enough registers.
-   */
-  if (patLen == 1) {
-    const PatChar p0 = *pat;
-    const TextChar* end = text + textLen;
-    for (const TextChar* c = text; c != end; ++c) {
-      if (*c == p0) {
-        return c - text;
-      }
-    }
+  if (sizeof(TextChar) == 1 && sizeof(PatChar) > 1 && pat[0] > 0xff) {
     return -1;
   }
-#endif
+
+  if (patLen == 1) {
+    const TextChar* pos;
+    if (sizeof(TextChar) == 1) {
+      MOZ_ASSERT(pat[0] <= 0xff);
+      pos = (TextChar*)SIMD::memchr8((char*)text, pat[0], textLen);
+    } else {
+      pos =
+          (TextChar*)SIMD::memchr16((char16_t*)text, char16_t(pat[0]), textLen);
+    }
+
+    if (pos == nullptr) {
+      return -1;
+    }
+
+    return pos - text;
+  }
 
   /*
    * If the text or pattern string is short, BMH will be more expensive than
@@ -2525,6 +2506,7 @@ static MOZ_ALWAYS_INLINE bool ReportErrorIfFirstArgIsRegExp(
 // ES2018 draft rev de77aaeffce115deaf948ed30c7dbe4c60983c0c
 // 21.1.3.7 String.prototype.includes ( searchString [ , position ] )
 bool js::str_includes(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "includes");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
@@ -2577,6 +2559,7 @@ bool js::str_includes(JSContext* cx, unsigned argc, Value* vp) {
 
 /* ES6 20120927 draft 15.5.4.7. */
 bool js::str_indexOf(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "indexOf");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1, 2, and 3
@@ -2661,6 +2644,7 @@ static int32_t LastIndexOfImpl(const TextChar* text, size_t textLen,
 // ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
 // 21.1.3.9 String.prototype.lastIndexOf ( searchString [ , position ] )
 static bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "lastIndexOf");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
@@ -2759,6 +2743,7 @@ static bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
 // ES2018 draft rev de77aaeffce115deaf948ed30c7dbe4c60983c0c
 // 21.1.3.20 String.prototype.startsWith ( searchString [ , position ] )
 bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "startsWith");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
@@ -2822,6 +2807,7 @@ bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
 // ES2018 draft rev de77aaeffce115deaf948ed30c7dbe4c60983c0c
 // 21.1.3.6 String.prototype.endsWith ( searchString [ , endPosition ] )
 bool js::str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "endsWith");
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
@@ -2955,16 +2941,19 @@ static bool TrimString(JSContext* cx, const CallArgs& args, const char* funName,
 }
 
 static bool str_trim(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "trim");
   CallArgs args = CallArgsFromVp(argc, vp);
   return TrimString(cx, args, "trim", true, true);
 }
 
 static bool str_trimStart(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "trimStart");
   CallArgs args = CallArgsFromVp(argc, vp);
   return TrimString(cx, args, "trimStart", true, false);
 }
 
 static bool str_trimEnd(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "trimEnd");
   CallArgs args = CallArgsFromVp(argc, vp);
   return TrimString(cx, args, "trimEnd", false, true);
 }
@@ -4783,6 +4772,7 @@ static bool Decode(JSContext* cx, Handle<JSLinearString*> str,
 }
 
 static bool str_decodeURI(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "decodeURI");
   CallArgs args = CallArgsFromVp(argc, vp);
   Rooted<JSLinearString*> str(cx, ArgToLinearString(cx, args, 0));
   if (!str) {
@@ -4793,6 +4783,7 @@ static bool str_decodeURI(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static bool str_decodeURI_Component(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "decodeURIComponent");
   CallArgs args = CallArgsFromVp(argc, vp);
   Rooted<JSLinearString*> str(cx, ArgToLinearString(cx, args, 0));
   if (!str) {
@@ -4803,6 +4794,7 @@ static bool str_decodeURI_Component(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static bool str_encodeURI(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "encodeURI");
   CallArgs args = CallArgsFromVp(argc, vp);
   Rooted<JSLinearString*> str(cx, ArgToLinearString(cx, args, 0));
   if (!str) {
@@ -4813,6 +4805,7 @@ static bool str_encodeURI(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "encodeURIComponent");
   CallArgs args = CallArgsFromVp(argc, vp);
   Rooted<JSLinearString*> str(cx, ArgToLinearString(cx, args, 0));
   if (!str) {

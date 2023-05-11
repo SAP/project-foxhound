@@ -9,15 +9,28 @@ var EXPORTED_SYMBOLS = [
   "DefaultBrowserCheck",
 ];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 
 const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
+  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
+  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  Interactions: "resource:///modules/Interactions.sys.mjs",
+  PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
+  PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
+  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
+  SnapshotMonitor: "resource:///modules/SnapshotMonitor.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
@@ -31,9 +44,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
   Blocklist: "resource://gre/modules/Blocklist.jsm",
-  BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.jsm",
-  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.jsm",
-  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
@@ -52,10 +62,8 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   Integration: "resource://gre/modules/Integration.jsm",
-  Interactions: "resource:///modules/Interactions.jsm",
   Log: "resource://gre/modules/Log.jsm",
   LoginBreaches: "resource:///modules/LoginBreaches.jsm",
-  PageDataService: "resource:///modules/pagedata/PageDataService.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
@@ -67,10 +75,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
   PdfJs: "resource://pdf.js/PdfJs.jsm",
   PermissionUI: "resource:///modules/PermissionUI.jsm",
-  PlacesBackups: "resource://gre/modules/PlacesBackups.jsm",
-  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.jsm",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
@@ -83,12 +87,10 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.jsm",
-  SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
-  SnapshotMonitor: "resource:///modules/SnapshotMonitor.jsm",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
@@ -140,7 +142,8 @@ const PREF_DFPI_ENABLED_BY_DEFAULT =
 // Index of Private Browsing icon in firefox.exe
 // Must line up with the one in nsNativeAppSupportWin.h.
 const PRIVATE_BROWSING_ICON_INDEX = 5;
-const PREF_PRIVACY_SEGMENTATION = "browser.privacySegmentation.enabled";
+const PREF_PRIVATE_WINDOW_SEPARATION =
+  "browser.privacySegmentation.windowSeparation.enabled";
 const PREF_PRIVATE_BROWSING_SHORTCUT_CREATED =
   "browser.privacySegmentation.createdShortcut";
 
@@ -1215,6 +1218,10 @@ BrowserGlue.prototype = {
       this._matchCBCategory
     );
     Services.prefs.removeObserver(
+      "privacy.query_stripping.enabled.pbmode",
+      this._matchCBCategory
+    );
+    Services.prefs.removeObserver(
       ContentBlockingCategoriesPrefs.PREF_CB_CATEGORY,
       this._updateCBCategory
     );
@@ -1735,6 +1742,10 @@ BrowserGlue.prototype = {
       this._matchCBCategory
     );
     Services.prefs.addObserver(
+      "privacy.query_stripping.enabled.pbmode",
+      this._matchCBCategory
+    );
+    Services.prefs.addObserver(
       ContentBlockingCategoriesPrefs.PREF_CB_CATEGORY,
       this._updateCBCategory
     );
@@ -1779,7 +1790,7 @@ BrowserGlue.prototype = {
     // rollout.
     // Avoid overwriting cookie behavior set by enterprise policy.
     if (
-      lazy.NimbusFeatures.tcpByDefault.isEnabled() &&
+      lazy.NimbusFeatures.tcpByDefault.getVariable("enabled") &&
       !hasCookieBehaviorPolicy()
     ) {
       Services.telemetry.scalarSet(
@@ -1907,10 +1918,6 @@ BrowserGlue.prototype = {
   },
 
   _recordDataSanitizationPrefs() {
-    Services.telemetry.scalarSet(
-      "datasanitization.network_cookie_lifetimePolicy",
-      Services.prefs.getIntPref("network.cookie.lifetimePolicy")
-    );
     Services.telemetry.scalarSet(
       "datasanitization.privacy_sanitize_sanitizeOnShutdown",
       Services.prefs.getBoolPref("privacy.sanitize.sanitizeOnShutdown")
@@ -2533,7 +2540,7 @@ BrowserGlue.prototype = {
           // Pref'ed off until Private Browsing window separation is enabled by default
           // to avoid a situation where a user pins the Private Browsing shortcut to
           // the Taskbar, which will end up launching into a different Taskbar icon.
-          Services.prefs.getBoolPref(PREF_PRIVACY_SEGMENTATION, false) &&
+          Services.prefs.getBoolPref(PREF_PRIVATE_WINDOW_SEPARATION, false) &&
           // Private Browsing shortcuts for packaged builds come with the package,
           // if they exist at all. We shouldn't try to create our own.
           !Services.sysinfo.getProperty("hasWinPackageId") &&
@@ -2799,6 +2806,14 @@ BrowserGlue.prototype = {
               lazy.RemoteAgent.running) &&
             Services.prefs.getBoolPref("app.update.disabledForTesting", false);
           if (!disabledForTesting) {
+            try {
+              lazy.BackgroundUpdate.scheduleFirefoxMessagingSystemTargetingSnapshotting();
+            } catch (e) {
+              Cu.reportError(
+                "There was an error scheduling Firefox Messaging System targeting snapshotting: " +
+                  e
+              );
+            }
             lazy.BackgroundUpdate.maybeScheduleBackgroundUpdateTask();
           }
         },
@@ -2842,6 +2857,12 @@ BrowserGlue.prototype = {
       {
         task: () => {
           lazy.UpdateListener.maybeShowUnsupportedNotification();
+        },
+      },
+
+      {
+        task: () => {
+          lazy.UrlbarQuickSuggest.init();
         },
       },
 
@@ -4354,7 +4375,9 @@ BrowserGlue.prototype = {
         return "disallow-postUpdate";
       }
 
-      return lazy.NimbusFeatures.upgradeDialog.isEnabled() ? "" : "disabled";
+      return lazy.NimbusFeatures.upgradeDialog.getVariable("enabled")
+        ? ""
+        : "disabled";
     })();
 
     // Record why the dialog is showing or not.
@@ -4805,6 +4828,7 @@ var ContentBlockingCategoriesPrefs = {
         "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation": null,
         "privacy.partition.network_state.ocsp_cache": null,
         "privacy.query_stripping.enabled": null,
+        "privacy.query_stripping.enabled.pbmode": null,
       },
       standard: {
         "network.cookie.cookieBehavior": null,
@@ -4819,6 +4843,7 @@ var ContentBlockingCategoriesPrefs = {
         "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation": null,
         "privacy.partition.network_state.ocsp_cache": null,
         "privacy.query_stripping.enabled": null,
+        "privacy.query_stripping.enabled.pbmode": null,
       },
     };
     let type = "strict";
@@ -4922,6 +4947,16 @@ var ContentBlockingCategoriesPrefs = {
           break;
         case "-qps":
           this.CATEGORY_PREFS[type]["privacy.query_stripping.enabled"] = false;
+          break;
+        case "qpsPBM":
+          this.CATEGORY_PREFS[type][
+            "privacy.query_stripping.enabled.pbmode"
+          ] = true;
+          break;
+        case "-qpsPBM":
+          this.CATEGORY_PREFS[type][
+            "privacy.query_stripping.enabled.pbmode"
+          ] = false;
           break;
         case "cookieBehavior0":
           this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
@@ -5613,7 +5648,7 @@ var AboutHomeStartupCache = {
 
     this.setDeferredResult(this.CACHE_RESULT_SCALARS.UNSET);
 
-    this._enabled = lazy.NimbusFeatures.abouthomecache.isEnabled();
+    this._enabled = !!lazy.NimbusFeatures.abouthomecache.getVariable("enabled");
 
     if (!this._enabled) {
       this.recordResult(this.CACHE_RESULT_SCALARS.DISABLED);

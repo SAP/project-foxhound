@@ -125,6 +125,10 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CacheStorage",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CanvasGradient", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CanvasPattern", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "Client",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Clients",
@@ -176,6 +180,12 @@ var interfaceNamesInGlobalScope = [
   "FileList",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "FileReader",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FontFace", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FontFaceSet", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FontFaceSetLoadEvent", earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "FormData",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -230,6 +240,12 @@ var interfaceNamesInGlobalScope = [
   "Notification",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "NotificationEvent",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "OffscreenCanvas", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "OffscreenCanvasRenderingContext2D", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Path2D", earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Performance",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -305,6 +321,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "TextEncoder",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "TextMetrics",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "TransformStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "TransformStreamDefaultController",
@@ -315,7 +333,39 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebSocket",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGL2RenderingContext", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLActiveInfo", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLBuffer", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLContextEvent", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLFramebuffer", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLProgram", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebGLQuery",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLRenderbuffer", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLRenderingContext", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLSampler", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLShader", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLShaderPrecisionFormat", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLSync", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLTexture", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLTransformFeedback", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLUniformLocation", earlyBetaOrEarlier: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebGLVertexArrayObject", earlyBetaOrEarlier: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WindowClient",
   // IMPORTANT: Do not change this list without review from a DOM peer!

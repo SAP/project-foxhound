@@ -74,7 +74,7 @@ uint32_t wasm::ObservedCPUFeatures() {
 #elif defined(JS_CODEGEN_LOONG64)
   MOZ_ASSERT(jit::GetLOONG64Flags() <= (UINT32_MAX >> ARCH_BITS));
   return LOONG64 | (jit::GetLOONG64Flags() << ARCH_BITS);
-#elif defined(JS_CODEGEN_NONE)
+#elif defined(JS_CODEGEN_NONE) || defined(JS_CODEGEN_WASM32)
   return 0;
 #else
 #  error "unknown architecture"
@@ -92,14 +92,11 @@ FeatureArgs FeatureArgs::build(JSContext* cx, const FeatureOptions& options) {
   features.sharedMemory =
       wasm::ThreadsAvailable(cx) ? Shareable::True : Shareable::False;
 
+  features.simd = jit::JitSupportsWasmSimd();
   // See comments in WasmConstants.h regarding the meaning of the wormhole
   // options.
-  bool wormholeOverride =
+  features.simdWormhole =
       wasm::SimdWormholeAvailable(cx) && options.simdWormhole;
-  features.simdWormhole = wormholeOverride;
-  if (wormholeOverride) {
-    features.v128 = true;
-  }
   features.intrinsics = options.intrinsics;
 
   return features;

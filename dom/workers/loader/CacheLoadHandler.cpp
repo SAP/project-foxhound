@@ -6,6 +6,7 @@
 
 #include "CacheLoadHandler.h"
 #include "ScriptResponseHeaderProcessor.h"  // ScriptResponseHeaderProcessor
+#include "WorkerLoadContext.h"              // WorkerLoadContext
 
 #include "nsIPrincipal.h"
 
@@ -16,6 +17,7 @@
 #include "nsNetUtil.h"
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/dom/Response.h"
@@ -38,21 +40,28 @@ NS_IMPL_ISUPPORTS(CacheLoadHandler, nsIStreamLoaderObserver)
 
 NS_IMPL_ISUPPORTS0(CachePromiseHandler)
 
+CachePromiseHandler::CachePromiseHandler(
+    WorkerScriptLoader* aLoader, JS::loader::ScriptLoadRequest* aRequest)
+    : mLoader(aLoader), mLoadContext(aRequest->GetWorkerLoadContext()) {
+  AssertIsOnMainThread();
+  MOZ_ASSERT(mLoader);
+}
+
 void CachePromiseHandler::ResolvedCallback(JSContext* aCx,
                                            JS::Handle<JS::Value> aValue,
                                            ErrorResult& aRv) {
   AssertIsOnMainThread();
   // May already have been canceled by CacheLoadHandler::Fail from
   // CancelMainThread.
-  MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::WritingToCache ||
-             mLoadInfo.mCacheStatus == ScriptLoadInfo::Cancel);
-  MOZ_ASSERT_IF(mLoadInfo.mCacheStatus == ScriptLoadInfo::Cancel,
-                !mLoadInfo.mCachePromise);
+  MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::WritingToCache ||
+             mLoadContext->mCacheStatus == WorkerLoadContext::Cancel);
+  MOZ_ASSERT_IF(mLoadContext->mCacheStatus == WorkerLoadContext::Cancel,
+                !mLoadContext->mCachePromise);
 
-  if (mLoadInfo.mCachePromise) {
-    mLoadInfo.mCacheStatus = ScriptLoadInfo::Cached;
-    mLoadInfo.mCachePromise = nullptr;
-    mLoader->MaybeExecuteFinishedScripts(mLoadInfo);
+  if (mLoadContext->mCachePromise) {
+    mLoadContext->mCacheStatus = WorkerLoadContext::Cached;
+    mLoadContext->mCachePromise = nullptr;
+    mLoader->MaybeExecuteFinishedScripts(mLoadContext->mRequest);
   }
 }
 
@@ -62,15 +71,15 @@ void CachePromiseHandler::RejectedCallback(JSContext* aCx,
   AssertIsOnMainThread();
   // May already have been canceled by CacheLoadHandler::Fail from
   // CancelMainThread.
-  MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::WritingToCache ||
-             mLoadInfo.mCacheStatus == ScriptLoadInfo::Cancel);
-  mLoadInfo.mCacheStatus = ScriptLoadInfo::Cancel;
+  MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::WritingToCache ||
+             mLoadContext->mCacheStatus == WorkerLoadContext::Cancel);
+  mLoadContext->mCacheStatus = WorkerLoadContext::Cancel;
 
-  mLoadInfo.mCachePromise = nullptr;
+  mLoadContext->mCachePromise = nullptr;
 
   // This will delete the cache object and will call LoadingFinished() with an
   // error for each ongoing operation.
-  mLoader->DeleteCache();
+  mLoadContext->GetCacheCreator()->DeleteCache(NS_ERROR_FAILURE);
 }
 
 CacheCreator::CacheCreator(WorkerPrivate* aWorkerPrivate)
@@ -196,7 +205,7 @@ void CacheCreator::ResolvedCallback(JSContext* aCx,
   }
 }
 
-void CacheCreator::DeleteCache() {
+void CacheCreator::DeleteCache(nsresult aReason) {
   AssertIsOnMainThread();
 
   // This is called when the load is canceled which can occur before
@@ -214,10 +223,10 @@ void CacheCreator::DeleteCache() {
 }
 
 CacheLoadHandler::CacheLoadHandler(WorkerPrivate* aWorkerPrivate,
-                                   ScriptLoadInfo& aLoadInfo,
+                                   JS::loader::ScriptLoadRequest* aRequest,
                                    bool aIsWorkerScript,
                                    WorkerScriptLoader* aLoader)
-    : mLoadInfo(aLoadInfo),
+    : mLoadContext(aRequest->GetWorkerLoadContext()),
       mLoader(aLoader),
       mWorkerPrivate(aWorkerPrivate),
       mIsWorkerScript(aIsWorkerScript),
@@ -229,6 +238,10 @@ CacheLoadHandler::CacheLoadHandler(WorkerPrivate* aWorkerPrivate,
   MOZ_ASSERT(mMainThreadEventTarget);
   mBaseURI = mLoader->GetBaseURI();
   AssertIsOnMainThread();
+
+  // Worker scripts are always decoded as UTF-8 per spec.
+  mDecoder = MakeUnique<ScriptDecoder>(UTF_8_ENCODING,
+                                       ScriptDecoder::BOMHandling::Remove);
 }
 
 void CacheLoadHandler::Fail(nsresult aRv) {
@@ -242,24 +255,20 @@ void CacheLoadHandler::Fail(nsresult aRv) {
   mFailed = true;
 
   if (mPump) {
-    MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::ReadingFromCache);
+    MOZ_ASSERT(mLoadContext->mCacheStatus ==
+               WorkerLoadContext::ReadingFromCache);
     mPump->Cancel(aRv);
     mPump = nullptr;
   }
 
-  mLoadInfo.mCacheStatus = ScriptLoadInfo::Cancel;
+  mLoadContext->mCacheStatus = WorkerLoadContext::Cancel;
 
-  // Stop if the load was aborted on the main thread.
-  // Can't use Finished() because mCachePromise may still be true.
-  if (mLoadInfo.mLoadingFinished) {
-    MOZ_ASSERT(!mLoadInfo.mChannel);
-    MOZ_ASSERT_IF(mLoadInfo.mCachePromise,
-                  mLoadInfo.mCacheStatus == ScriptLoadInfo::WritingToCache ||
-                      mLoadInfo.mCacheStatus == ScriptLoadInfo::Cancel);
-    return;
+  if (mLoadContext->mCachePromise) {
+    mLoadContext->mCachePromise->MaybeReject(aRv);
   }
+  mLoadContext->mCachePromise = nullptr;
 
-  mLoader->LoadingFinished(mLoadInfo, aRv);
+  mLoader->LoadingFinished(mLoadContext->mRequest, aRv);
 }
 
 void CacheLoadHandler::Load(Cache* aCache) {
@@ -267,8 +276,8 @@ void CacheLoadHandler::Load(Cache* aCache) {
   MOZ_ASSERT(aCache);
 
   nsCOMPtr<nsIURI> uri;
-  nsresult rv =
-      NS_NewURI(getter_AddRefs(uri), mLoadInfo.mURL, nullptr, mBaseURI);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), mLoadContext->mRequest->mURL,
+                          nullptr, mBaseURI);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     Fail(rv);
     return;
@@ -281,11 +290,11 @@ void CacheLoadHandler::Load(Cache* aCache) {
     return;
   }
 
-  MOZ_ASSERT(mLoadInfo.mFullURL.IsEmpty());
-  CopyUTF8toUTF16(spec, mLoadInfo.mFullURL);
+  MOZ_ASSERT(mLoadContext->mFullURL.IsEmpty());
+  CopyUTF8toUTF16(spec, mLoadContext->mFullURL);
 
   mozilla::dom::RequestOrUSVString request;
-  request.SetAsUSVString().ShareOrDependUpon(mLoadInfo.mFullURL);
+  request.SetAsUSVString().ShareOrDependUpon(mLoadContext->mFullURL);
 
   mozilla::dom::CacheQueryOptions params;
 
@@ -308,7 +317,7 @@ void CacheLoadHandler::RejectedCallback(JSContext* aCx,
                                         JS::Handle<JS::Value> aValue,
                                         ErrorResult& aRv) {
   AssertIsOnMainThread();
-  MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::Uncached);
+  MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::Uncached);
   Fail(NS_ERROR_FAILURE);
 }
 
@@ -321,7 +330,7 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::Uncached);
+  MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::Uncached);
 
   nsresult rv;
 
@@ -343,8 +352,8 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
       return;
     }
 
-    mLoadInfo.mCacheStatus = ScriptLoadInfo::ToBeCached;
-    rv = mLoader->LoadScript(mLoadInfo);
+    mLoadContext->mCacheStatus = WorkerLoadContext::ToBeCached;
+    rv = mLoader->LoadScript(mLoadContext->mRequest);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       Fail(rv);
     }
@@ -373,7 +382,9 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
   headers->Get("cross-origin-embedder-policy"_ns, coepHeader, IgnoreErrors());
 
   nsILoadInfo::CrossOriginEmbedderPolicy coep =
-      NS_GetCrossOriginEmbedderPolicyFromHeader(coepHeader);
+      NS_GetCrossOriginEmbedderPolicyFromHeader(
+          coepHeader,
+          mWorkerPrivate->Trials().IsEnabled(OriginTrial::CoepCredentialless));
 
   rv = ScriptResponseHeaderProcessor::ProcessCrossOriginEmbedderPolicyHeader(
       mWorkerPrivate, coep, mLoader->IsMainScript());
@@ -392,11 +403,18 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
   }
 
   if (!inputStream) {
-    mLoadInfo.mCacheStatus = ScriptLoadInfo::Cached;
+    mLoadContext->mCacheStatus = WorkerLoadContext::Cached;
+
+    if (mLoader->IsCancelled()) {
+      mLoadContext->GetCacheCreator()->DeleteCache(
+          mLoader->mCancelMainThread.ref());
+      return;
+    }
+
     nsresult rv = DataReceivedFromCache(
         (uint8_t*)"", 0, mChannelInfo, std::move(mPrincipalInfo),
         mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue);
-    mLoader->OnStreamComplete(mLoadInfo, rv);
+    mLoader->OnStreamComplete(mLoadContext->mRequest, rv);
     return;
   }
 
@@ -435,7 +453,7 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
     }
   }
 
-  mLoadInfo.mCacheStatus = ScriptLoadInfo::ReadingFromCache;
+  mLoadContext->mCacheStatus = WorkerLoadContext::ReadingFromCache;
 }
 
 NS_IMETHODIMP
@@ -448,20 +466,28 @@ CacheLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
   mPump = nullptr;
 
   if (NS_FAILED(aStatus)) {
-    MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::ReadingFromCache ||
-               mLoadInfo.mCacheStatus == ScriptLoadInfo::Cancel);
+    MOZ_ASSERT(mLoadContext->mCacheStatus ==
+                   WorkerLoadContext::ReadingFromCache ||
+               mLoadContext->mCacheStatus == WorkerLoadContext::Cancel);
     Fail(aStatus);
     return NS_OK;
   }
 
-  MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::ReadingFromCache);
-  mLoadInfo.mCacheStatus = ScriptLoadInfo::Cached;
+  MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::ReadingFromCache);
+  mLoadContext->mCacheStatus = WorkerLoadContext::Cached;
 
   MOZ_ASSERT(mPrincipalInfo);
+
+  if (mLoader->IsCancelled()) {
+    mLoadContext->GetCacheCreator()->DeleteCache(
+        mLoader->mCancelMainThread.ref());
+    return NS_OK;
+  }
+
   nsresult rv = DataReceivedFromCache(
       aString, aStringLen, mChannelInfo, std::move(mPrincipalInfo),
       mCSPHeaderValue, mCSPReportOnlyHeaderValue, mReferrerPolicyHeaderValue);
-  return mLoader->OnStreamComplete(mLoadInfo, rv);
+  return mLoader->OnStreamComplete(mLoadContext->mRequest, rv);
 }
 
 nsresult CacheLoadHandler::DataReceivedFromCache(
@@ -471,7 +497,8 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
     const nsACString& aCSPReportOnlyHeaderValue,
     const nsACString& aReferrerPolicyHeaderValue) {
   AssertIsOnMainThread();
-  MOZ_ASSERT(mLoadInfo.mCacheStatus == ScriptLoadInfo::Cached);
+
+  MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::Cached);
 
   auto responsePrincipalOrErr = PrincipalInfoToPrincipal(*aPrincipalInfo);
   MOZ_DIAGNOSTIC_ASSERT(responsePrincipalOrErr.isOk());
@@ -485,28 +512,32 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
 
   nsCOMPtr<nsIPrincipal> responsePrincipal = responsePrincipalOrErr.unwrap();
 
-  mLoadInfo.mMutedErrorFlag.emplace(!principal->Subsumes(responsePrincipal));
+  mLoadContext->mMutedErrorFlag.emplace(
+      !principal->Subsumes(responsePrincipal));
 
   // May be null.
   Document* parentDoc = mWorkerPrivate->GetDocument();
 
-  MOZ_ASSERT(mLoadInfo.ScriptTextIsNull());
-
+  // Use the regular ScriptDecoder Decoder for this grunt work! Should be just
+  // fine because we're running on the main thread.
   nsresult rv;
-  if (StaticPrefs::dom_worker_script_loader_utf8_parsing_enabled()) {
-    mLoadInfo.InitUTF8Script();
-    rv = ScriptLoader::ConvertToUTF8(nullptr, aString, aStringLen, u"UTF-8"_ns,
-                                     parentDoc, mLoadInfo.mScript.mUTF8,
-                                     mLoadInfo.mScriptLength);
-  } else {
-    mLoadInfo.InitUTF16Script();
-    rv = ScriptLoader::ConvertToUTF16(nullptr, aString, aStringLen, u"UTF-8"_ns,
-                                      parentDoc, mLoadInfo.mScript.mUTF16,
-                                      mLoadInfo.mScriptLength);
+
+  // Set the Source type to "text" for decoding.
+  mLoadContext->mRequest->SetTextSource();
+
+  rv = mDecoder->DecodeRawData(mLoadContext->mRequest, aString, aStringLen,
+                               /* aEndOfStream = */ true);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!mLoadContext->mRequest->ScriptTextLength()) {
+    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
+                                    parentDoc, nsContentUtils::eDOM_PROPERTIES,
+                                    "EmptyWorkerSourceWarning");
   }
-  if (NS_SUCCEEDED(rv) && mLoader->IsMainWorkerScript()) {
+
+  if (mLoader->IsMainWorkerScript()) {
     nsCOMPtr<nsIURI> finalURI;
-    rv = NS_NewURI(getter_AddRefs(finalURI), mLoadInfo.mFullURL);
+    rv = NS_NewURI(getter_AddRefs(finalURI), mLoadContext->mFullURL);
     if (NS_SUCCEEDED(rv)) {
       mWorkerPrivate->SetBaseURI(finalURI);
     }

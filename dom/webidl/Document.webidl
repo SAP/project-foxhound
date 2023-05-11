@@ -544,6 +544,11 @@ partial interface Document {
   Promise<boolean> hasStorageAccess();
   [Pref="dom.storage_access.enabled", NewObject]
   Promise<void> requestStorageAccess();
+  // https://github.com/privacycg/storage-access/pull/100
+  [Pref="dom.storage_access.forward_declared.enabled", NewObject]
+  Promise<void> requestStorageAccessUnderSite(DOMString serializedSite);
+  [Pref="dom.storage_access.forward_declared.enabled", NewObject]
+  Promise<void> completeStorageAccessRequestFromSite(DOMString serializedSite);
 };
 
 // A privileged API to give chrome privileged code and the content script of the
@@ -735,4 +740,11 @@ dictionary Wireframe {
 partial interface Document {
   [ChromeOnly]
   Wireframe? getWireframe(optional boolean aIncludeNodes = false);
+};
+
+partial interface Document {
+  // Returns true if the document is the current active document in a browsing
+  // context which isn't in bfcache.
+  [ChromeOnly]
+  boolean isActive();
 };

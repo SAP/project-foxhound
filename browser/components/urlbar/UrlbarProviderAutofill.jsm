@@ -10,18 +10,26 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarProviderAutofill"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-XPCOMUtils.defineLazyModuleGetters(this, {
+
+const { UrlbarProvider, UrlbarUtils } = ChromeUtils.import(
+  "resource:///modules/UrlbarUtils.jsm"
+);
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutPagesUtils: "resource://gre/modules/AboutPagesUtils.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
-  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 // AutoComplete query type constants.
@@ -299,7 +307,7 @@ class ProviderAutofill extends UrlbarProvider {
     this._autofillData = null;
 
     // First of all, check for the autoFill pref.
-    if (!UrlbarPrefs.get("autoFill")) {
+    if (!lazy.UrlbarPrefs.get("autoFill")) {
       return false;
     }
 
@@ -329,8 +337,8 @@ class ProviderAutofill extends UrlbarProvider {
     if (
       queryContext.tokens.some(
         t =>
-          t.type == UrlbarTokenizer.TYPE.RESTRICT_TAG ||
-          t.type == UrlbarTokenizer.TYPE.RESTRICT_TITLE
+          t.type == lazy.UrlbarTokenizer.TYPE.RESTRICT_TAG ||
+          t.type == lazy.UrlbarTokenizer.TYPE.RESTRICT_TITLE
       )
     ) {
       return false;
@@ -345,7 +353,7 @@ class ProviderAutofill extends UrlbarProvider {
     // This may confuse completeDefaultIndex cause the AUTOCOMPLETE_MATCH
     // tokenizer ends up trimming the search string and returning a value
     // that doesn't match it, or is even shorter.
-    if (UrlbarTokenizer.REGEXP_SPACES.test(queryContext.searchString)) {
+    if (lazy.UrlbarTokenizer.REGEXP_SPACES.test(queryContext.searchString)) {
       return false;
     }
 
@@ -422,10 +430,10 @@ class ProviderAutofill extends UrlbarProvider {
    * @resolves {string} The top matching host, or null if not found.
    */
   async getTopHostOverThreshold(queryContext, hosts) {
-    let db = await PlacesUtils.promiseLargeCacheDBConnection();
+    let db = await lazy.PlacesUtils.promiseLargeCacheDBConnection();
     let conditions = [];
     // Pay attention to the order of params, since they are not named.
-    let params = [UrlbarPrefs.get("autoFill.stddevMultiplier"), ...hosts];
+    let params = [lazy.UrlbarPrefs.get("autoFill.stddevMultiplier"), ...hosts];
     let sources = queryContext.sources;
     if (
       sources.includes(UrlbarUtils.RESULT_SOURCE.HISTORY) &&
@@ -494,7 +502,7 @@ class ProviderAutofill extends UrlbarProvider {
     let opts = {
       query_type: QUERYTYPE.AUTOFILL_ORIGIN,
       searchString: searchStr.toLowerCase(),
-      stddevMultiplier: UrlbarPrefs.get("autoFill.stddevMultiplier"),
+      stddevMultiplier: lazy.UrlbarPrefs.get("autoFill.stddevMultiplier"),
     };
     if (this._strippedPrefix) {
       opts.prefix = this._strippedPrefix;
@@ -621,18 +629,6 @@ class ProviderAutofill extends UrlbarProvider {
       return [];
     }
 
-    // Change the search target dependent on user's input contains URI scheme.
-    let urlCondition;
-    if (this._strippedPrefix) {
-      urlCondition =
-        "(h.url COLLATE NOCASE BETWEEN :searchString AND :searchString || X'FFFF')";
-    } else {
-      urlCondition = `
-        ((strip_prefix_and_userinfo(h.url) COLLATE NOCASE BETWEEN :searchString AND :searchString || X'FFFF') OR
-         (strip_prefix_and_userinfo(h.url) COLLATE NOCASE BETWEEN 'www.' || :searchString AND 'www.' || :searchString || X'FFFF'))
-      `;
-    }
-
     let selectTitle;
     let joinBookmarks;
     if (UrlbarUtils.RESULT_SOURCE.BOOKMARKS) {
@@ -645,28 +641,37 @@ class ProviderAutofill extends UrlbarProvider {
 
     const params = {
       queryType: QUERYTYPE.AUTOFILL_ADAPTIVE,
-      searchString: queryContext.searchString.toLowerCase(),
-      useCountThreshold: UrlbarPrefs.get(
+      // `fullSearchString` is the value the user typed including a prefix if
+      // they typed one. `searchString` has been stripped of the prefix.
+      fullSearchString: queryContext.searchString.toLowerCase(),
+      searchString: this._searchString,
+      strippedPrefix: this._strippedPrefix,
+      useCountThreshold: lazy.UrlbarPrefs.get(
         "autoFillAdaptiveHistoryUseCountThreshold"
       ),
     };
 
     const query = `
-      WITH matched(input, url, title, stripped_url, is_exact_match, id) AS (
+      WITH matched(input, url, title, stripped_url, is_exact_match, starts_with, id) AS (
         SELECT
           i.input AS input,
           h.url AS url,
           h.title AS title,
           strip_prefix_and_userinfo(h.url) AS stripped_url,
-          strip_prefix_and_userinfo(h.url) = strip_prefix_and_userinfo(:searchString) AS is_exact_match,
+          strip_prefix_and_userinfo(h.url) = :searchString AS is_exact_match,
+          (strip_prefix_and_userinfo(h.url) COLLATE NOCASE BETWEEN :searchString AND :searchString || X'FFFF') AS starts_with,
           h.id AS id
         FROM moz_places h
         JOIN moz_inputhistory i ON i.place_id = h.id
         WHERE LENGTH(i.input) != 0
-          AND :searchString BETWEEN i.input AND i.input || X'FFFF'
+          AND :fullSearchString BETWEEN i.input AND i.input || X'FFFF'
           AND ${sourceCondition}
           AND i.use_count >= :useCountThreshold
-          AND ${urlCondition}
+          AND (:strippedPrefix = '' OR get_prefix(h.url) = :strippedPrefix)
+          AND (
+            starts_with OR
+            (stripped_url COLLATE NOCASE BETWEEN 'www.' || :searchString AND 'www.' || :searchString || X'FFFF')
+          )
         ORDER BY is_exact_match DESC, i.use_count DESC, h.frecency DESC, h.id DESC
         LIMIT 1
       )
@@ -675,11 +680,13 @@ class ProviderAutofill extends UrlbarProvider {
         :searchString AS search_string,
         input,
         url,
+        iif(starts_with, stripped_url, fixup_url(stripped_url)) AS url_fixed,
         ${selectTitle} AS title,
         stripped_url
       FROM matched
       ${joinBookmarks}
     `;
+
     return [query, params];
   }
 
@@ -692,13 +699,44 @@ class ProviderAutofill extends UrlbarProvider {
    */
   _processRow(row, queryContext) {
     let queryType = row.getResultByName("query_type");
-    let searchString = row.getResultByName("search_string");
     let title = row.getResultByName("title");
-    let autofilledValue, finalCompleteValue, autofilledType;
+
+    // `searchString` is `this._searchString` or derived from it. It is
+    // stripped, meaning the prefix (the URL protocol) has been removed.
+    let searchString = row.getResultByName("search_string");
+
+    // `fixedURL` is the part of the matching stripped URL that starts with the
+    // stripped search string. The important point here is "www" handling. If a
+    // stripped URL starts with "www", we allow the user to omit the "www" and
+    // still match it. So if the matching stripped URL starts with "www" but the
+    // stripped search string does not, `fixedURL` will also omit the "www".
+    // Otherwise `fixedURL` will be equivalent to the matching stripped URL.
+    //
+    // Example 1:
+    //   stripped URL: www.example.com/
+    //   searchString: exam
+    //   fixedURL: example.com/
+    // Example 2:
+    //   stripped URL: www.example.com/
+    //   searchString: www.exam
+    //   fixedURL: www.example.com/
+    // Example 3:
+    //   stripped URL: example.com/
+    //   searchString: exam
+    //   fixedURL: example.com/
+    let fixedURL;
+
+    // `finalCompleteValue` will be the UrlbarResult's URL. If the matching
+    // stripped URL starts with "www" but the user omitted it,
+    // `finalCompleteValue` will include it to properly reflect the real URL.
+    let finalCompleteValue;
+
+    let autofilledType;
     let adaptiveHistoryInput;
+
     switch (queryType) {
       case QUERYTYPE.AUTOFILL_ORIGIN: {
-        autofilledValue = row.getResultByName("host_fixed");
+        fixedURL = row.getResultByName("host_fixed");
         finalCompleteValue = row.getResultByName("url");
         autofilledType = "origin";
         break;
@@ -726,43 +764,33 @@ class ProviderAutofill extends UrlbarProvider {
           "/",
           strippedURLIndex + strippedURL.length - 1
         );
-        if (nextSlashIndex == -1) {
-          autofilledValue = url.substr(strippedURLIndex);
-        } else {
-          autofilledValue = url.substring(strippedURLIndex, nextSlashIndex + 1);
-        }
-        finalCompleteValue = strippedPrefix + autofilledValue;
-
+        fixedURL =
+          nextSlashIndex < 0
+            ? url.substr(strippedURLIndex)
+            : url.substring(strippedURLIndex, nextSlashIndex + 1);
+        finalCompleteValue = strippedPrefix + fixedURL;
         if (finalCompleteValue !== url) {
           title = null;
         }
-
         autofilledType = "url";
         break;
       }
       case QUERYTYPE.AUTOFILL_ADAPTIVE: {
         adaptiveHistoryInput = row.getResultByName("input");
+        fixedURL = row.getResultByName("url_fixed");
         finalCompleteValue = row.getResultByName("url");
-
-        if (this._strippedPrefix) {
-          autofilledValue = finalCompleteValue;
-        } else {
-          let strippedURL = row.getResultByName("stripped_url");
-          autofilledValue = strippedURL.substring(
-            strippedURL.toLowerCase().indexOf(adaptiveHistoryInput)
-          );
-        }
-
         autofilledType = "adaptive";
         break;
       }
     }
 
-    // `autofilledValue` is the value that will be set in the input, and it
-    // should respect the case of the characters the user has typed so far.
-    autofilledValue =
-      queryContext.searchString +
-      autofilledValue.substring(searchString.length);
+    // Compute `autofilledValue`, the full value that will be placed in the
+    // input. It includes two parts: the part the user already typed in the
+    // character case they typed it (`queryContext.searchString`), and the
+    // autofilled part, which is the portion of the fixed URL starting after the
+    // stripped search string.
+    let autofilledValue =
+      queryContext.searchString + fixedURL.substring(searchString.length);
 
     // If more than an origin was autofilled and the user typed the full
     // autofilled value, override the final URL by using the exact value the
@@ -807,10 +835,10 @@ class ProviderAutofill extends UrlbarProvider {
       title = [autofilled, UrlbarUtils.HIGHLIGHT.TYPED];
     }
 
-    let result = new UrlbarResult(
+    let result = new lazy.UrlbarResult(
       UrlbarUtils.RESULT_TYPE.URL,
       UrlbarUtils.RESULT_SOURCE.HISTORY,
-      ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         title,
         url: [finalCompleteValue, UrlbarUtils.HIGHLIGHT.TYPED],
         icon: UrlbarUtils.getIconForUrl(finalCompleteValue),
@@ -856,17 +884,17 @@ class ProviderAutofill extends UrlbarProvider {
       return null;
     }
 
-    for (const aboutUrl of AboutPagesUtils.visibleAboutUrls) {
+    for (const aboutUrl of lazy.AboutPagesUtils.visibleAboutUrls) {
       if (aboutUrl.startsWith(`about:${this._searchString.toLowerCase()}`)) {
         let [trimmedUrl] = UrlbarUtils.stripPrefixAndTrim(aboutUrl, {
           stripHttp: true,
           trimEmptyQuery: true,
           trimSlash: !this._searchString.includes("/"),
         });
-        let result = new UrlbarResult(
+        let result = new lazy.UrlbarResult(
           UrlbarUtils.RESULT_TYPE.URL,
           UrlbarUtils.RESULT_SOURCE.HISTORY,
-          ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
             title: [trimmedUrl, UrlbarUtils.HIGHLIGHT.TYPED],
             url: [aboutUrl, UrlbarUtils.HIGHLIGHT.TYPED],
             icon: UrlbarUtils.getIconForUrl(aboutUrl),
@@ -888,15 +916,15 @@ class ProviderAutofill extends UrlbarProvider {
   }
 
   async _matchKnownUrl(queryContext) {
-    let conn = await PlacesUtils.promiseLargeCacheDBConnection();
+    let conn = await lazy.PlacesUtils.promiseLargeCacheDBConnection();
     if (!conn) {
       return null;
     }
 
     // We try to autofill with adaptive history first.
     if (
-      UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
-      UrlbarPrefs.get("autoFillAdaptiveHistoryMinCharsThreshold") <=
+      lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryEnabled") &&
+      lazy.UrlbarPrefs.get("autoFillAdaptiveHistoryMinCharsThreshold") <=
         queryContext.searchString.length
     ) {
       const [query, params] = this._getAdaptiveHistoryQuery(queryContext);
@@ -922,7 +950,7 @@ class ProviderAutofill extends UrlbarProvider {
     // at the end, we still treat it as an URL.
     let query, params;
     if (
-      UrlbarTokenizer.looksLikeOrigin(this._searchString, {
+      lazy.UrlbarTokenizer.looksLikeOrigin(this._searchString, {
         ignoreKnownDomains: true,
       })
     ) {
@@ -943,7 +971,7 @@ class ProviderAutofill extends UrlbarProvider {
 
   async _matchSearchEngineDomain(queryContext) {
     if (
-      !UrlbarPrefs.get("autoFill.searchEngines") ||
+      !lazy.UrlbarPrefs.get("autoFill.searchEngines") ||
       !this._searchString.length
     ) {
       return null;
@@ -960,14 +988,18 @@ class ProviderAutofill extends UrlbarProvider {
     }
     // If the search string looks more like a url than a domain, bail out.
     if (
-      !UrlbarTokenizer.looksLikeOrigin(searchStr, { ignoreKnownDomains: true })
+      !lazy.UrlbarTokenizer.looksLikeOrigin(searchStr, {
+        ignoreKnownDomains: true,
+      })
     ) {
       return null;
     }
 
     // Since we are autofilling, we can only pick one matching engine. Use the
     // first.
-    let engine = (await UrlbarSearchUtils.enginesForDomainPrefix(searchStr))[0];
+    let engine = (
+      await lazy.UrlbarSearchUtils.enginesForDomainPrefix(searchStr)
+    )[0];
     if (!engine) {
       return null;
     }
@@ -988,10 +1020,10 @@ class ProviderAutofill extends UrlbarProvider {
     let value =
       this._strippedPrefix + domain.substr(domain.indexOf(searchStr)) + "/";
 
-    let result = new UrlbarResult(
+    let result = new lazy.UrlbarResult(
       UrlbarUtils.RESULT_TYPE.SEARCH,
       UrlbarUtils.RESULT_SOURCE.SEARCH,
-      ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
         icon: engine.iconURI?.spec,
       })

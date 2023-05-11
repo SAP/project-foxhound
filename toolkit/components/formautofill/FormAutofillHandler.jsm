@@ -10,13 +10,11 @@
 
 var EXPORTED_SYMBOLS = ["FormAutofillHandler"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
@@ -1019,6 +1017,12 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
   }
 
   isValidSection() {
+    // TODO: Bug 1783013 - Re-enable this feature in release
+    if (AppConstants.EARLY_BETA_OR_EARLIER) {
+      // A valid cc section must contain a cc-number field
+      return this.fieldDetails.some(detail => detail.fieldName == "cc-number");
+    }
+
     let ccNumberReason = "";
     let hasCCNumber = false;
     let hasExpiryDate = false;

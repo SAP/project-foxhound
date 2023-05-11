@@ -21,6 +21,11 @@ enum IonRegisterAllocator {
   RegisterAllocator_Testbed,
 };
 
+// Which register to use as base register to access stack slots: frame pointer,
+// stack pointer, or whichever is the default for this platform. See comment
+// for baseRegForLocals in JitOptions.cpp for more information.
+enum class BaseRegForAddress { Default, FP, SP };
+
 static inline mozilla::Maybe<IonRegisterAllocator> LookupRegisterAllocator(
     const char* name) {
   if (!strcmp(name, "backtracking")) {
@@ -69,9 +74,6 @@ struct DefaultJitOptions {
   bool osr;
   bool wasmFoldOffsets;
   bool wasmDelayTier2;
-#ifdef JS_TRACE_LOGGING
-  bool enableTraceLogger;
-#endif
   bool traceRegExpParser;
   bool traceRegExpAssembler;
   bool traceRegExpInterpreter;
@@ -122,6 +124,7 @@ struct DefaultJitOptions {
   bool spectreJitToCxxCalls;
 
   bool supportsUnalignedAccesses;
+  BaseRegForAddress baseRegForLocals;
 
   DefaultJitOptions();
   bool isSmallFunction(JSScript* script) const;

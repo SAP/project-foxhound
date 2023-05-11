@@ -709,7 +709,10 @@ JS_PUBLIC_API bool js::GetPropertyKeys(JSContext* cx, HandleObject obj,
                   props);
 }
 
-static inline void RegisterEnumerator(ObjectRealm& realm, NativeIterator* ni) {
+static inline void RegisterEnumerator(NativeIterator* ni) {
+  MOZ_ASSERT(ni->objectBeingIterated());
+  ObjectRealm& realm = ObjectRealm::get(ni->objectBeingIterated());
+
   // Register non-escaping native enumerators (for-in) with the current
   // context.
   ni->link(realm.enumerators);
@@ -773,16 +776,10 @@ static PropertyIteratorObject* CreatePropertyIterator(
 
   // This also registers |ni| with |propIter|.
   bool hadError = false;
-  NativeIterator* ni = new (mem) NativeIterator(
-      cx, propIter, objBeingIterated, props, numShapes, shapesHash, &hadError);
+  new (mem) NativeIterator(cx, propIter, objBeingIterated, props, numShapes,
+                           shapesHash, &hadError);
   if (hadError) {
     return nullptr;
-  }
-
-  ObjectRealm& realm = objBeingIterated ? ObjectRealm::get(objBeingIterated)
-                                        : ObjectRealm::get(propIter);
-  if (!ni->isEmptyIteratorSingleton()) {
-    RegisterEnumerator(realm, ni);
   }
 
   return propIter;
@@ -1047,8 +1044,8 @@ static JSObject* GetIterator(JSContext* cx, HandleObject obj) {
   if (PropertyIteratorObject* iterobj =
           LookupInIteratorCache(cx, obj, &numShapes)) {
     NativeIterator* ni = iterobj->getNativeIterator();
-    ni->changeObjectBeingIterated(*obj);
-    RegisterEnumerator(ObjectRealm::get(obj), ni);
+    ni->initObjectBeingIterated(*obj);
+    RegisterEnumerator(ni);
     return iterobj;
   }
 
@@ -1081,6 +1078,7 @@ static JSObject* GetIterator(JSContext* cx, HandleObject obj) {
   if (!iterobj) {
     return nullptr;
   }
+  RegisterEnumerator(iterobj->getNativeIterator());
 
   cx->check(iterobj);
 
@@ -1395,7 +1393,7 @@ PropertyIteratorObject* GlobalObject::getOrCreateEmptyIterator(JSContext* cx) {
     if (!iter) {
       return nullptr;
     }
-    MOZ_ASSERT(iter->getNativeIterator()->isEmptyIteratorSingleton());
+    iter->getNativeIterator()->markEmptyIteratorSingleton();
     cx->global()->data().emptyIterator.init(iter);
   }
   return cx->global()->data().emptyIterator;
@@ -1440,6 +1438,8 @@ void js::CloseIterator(JSObject* obj) {
 
   MOZ_ASSERT(ni->isActive());
   ni->markInactive();
+
+  ni->clearObjectBeingIterated();
 
   // Reset the enumerator; it may still be in the cached iterators for
   // this thread and can be reused.

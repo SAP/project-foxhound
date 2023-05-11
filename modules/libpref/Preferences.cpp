@@ -5815,6 +5815,7 @@ static const PrefListEntry sParentOnlyPrefBranchList[] = {
     PREF_LIST_ENTRY("identity.fxaccounts.account.device.name"),
     PREF_LIST_ENTRY("identity.fxaccounts.account.telemetry.sanitized_uid"),
     PREF_LIST_ENTRY("identity.fxaccounts.lastSignedInUserHash"),
+    PREF_LIST_ENTRY("print_printer"),
     PREF_LIST_ENTRY("services."),
 
     // Remove UUIDs
@@ -5834,7 +5835,6 @@ static const PrefListEntry sParentOnlyPrefBranchList[] = {
     PREF_LIST_ENTRY("browser.contextual-services.contextId"),
     PREF_LIST_ENTRY("browser.laterrun.bookkeeping.profileCreationTime"),
     PREF_LIST_ENTRY("browser.newtabpage.activity-stream.discoverystream."),
-    PREF_LIST_ENTRY("browser.region.update.updated"),
     PREF_LIST_ENTRY("browser.sessionstore.upgradeBackup.latestBuildID"),
     PREF_LIST_ENTRY("browser.shell.mostRecentDateSetAsDefault"),
     PREF_LIST_ENTRY("fission.experiment.max-origins.last-"),
@@ -5855,6 +5855,7 @@ static const PrefListEntry sParentOnlyPrefBranchList[] = {
 };
 
 static const PrefListEntry sDynamicPrefOverrideList[]{
+    PREF_LIST_ENTRY("autoadmin.global_config_url"),  // Bug 1780575
     PREF_LIST_ENTRY("browser.contentblocking.category"),
     PREF_LIST_ENTRY("browser.search.region"),
     PREF_LIST_ENTRY(
@@ -5865,15 +5866,21 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("browser.translation.bing.apiKeyOverride"),
     PREF_LIST_ENTRY("browser.translation.yandex.apiKeyOverride"),
     PREF_LIST_ENTRY("browser.translation.yandex.translateURLOverride"),
+    PREF_LIST_ENTRY("browser.uitour.testingOrigins"),
+    PREF_LIST_ENTRY("capability.policy.policynames"),
     PREF_LIST_ENTRY("dom.securecontext.allowlist"),
     PREF_LIST_ENTRY("extensions.foobaz"),
     PREF_LIST_ENTRY("general.appname.override"),
     PREF_LIST_ENTRY("general.appversion.override"),
+    PREF_LIST_ENTRY("general.buildID.override"),
+    PREF_LIST_ENTRY("general.oscpu.override"),
     PREF_LIST_ENTRY("general.useragent.override"),
     PREF_LIST_ENTRY("general.platform.override"),
-    PREF_LIST_ENTRY("gfx.blacklist.hardwarevideodecoding.failureid"),
+    PREF_LIST_ENTRY("gfx.blacklist."),
+    PREF_LIST_ENTRY("font.system.whitelist"),
     PREF_LIST_ENTRY("marionette.log.level"),
     PREF_LIST_ENTRY("media.audio_loopback_dev"),
+    PREF_LIST_ENTRY("media.decoder-doctor."),
     PREF_LIST_ENTRY("media.getusermedia.fake-camera-name"),
     PREF_LIST_ENTRY("media.hls.server.url"),
     PREF_LIST_ENTRY("media.peerconnection.nat_simulator.filtering_type"),
@@ -5882,13 +5889,23 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("media.peerconnection.nat_simulator.redirect_targets"),
     PREF_LIST_ENTRY("media.video_loopback_dev"),
     PREF_LIST_ENTRY("media.webspeech.service.endpoint"),
+    PREF_LIST_ENTRY("network.gio.supported-protocols"),
+    PREF_LIST_ENTRY("pdfjs."),
     PREF_LIST_ENTRY("print.printer_"),
+    PREF_LIST_ENTRY("print_printer"),
     PREF_LIST_ENTRY("places.interactions.customBlocklist"),
+    PREF_LIST_ENTRY(
+        "services.settings.preview_enabled"),  // This is really a boolean
+                                               // dynamic pref, but one Nightly
+                                               // user has it set as a string...
     PREF_LIST_ENTRY("spellchecker.dictionary"),
     PREF_LIST_ENTRY("test.char"),
+    PREF_LIST_ENTRY("Test.IPC."),
+    PREF_LIST_ENTRY("exists.thenDoesNot"),
+    PREF_LIST_ENTRY("type.String."),
     PREF_LIST_ENTRY("toolkit.mozprotocol.url"),
     PREF_LIST_ENTRY("toolkit.telemetry.log.level"),
-    PREF_LIST_ENTRY("ui.-moz-fieldtext.dark"),
+    PREF_LIST_ENTRY("ui."),
 };
 
 #undef PREF_LIST_ENTRY
@@ -5998,10 +6015,10 @@ Atomic<bool, Relaxed> sCrashOnBlocklistedPref(false);
 void OnFissionBlocklistPrefChange(const char* aPref, void* aData) {
   if (strcmp(aPref, kFissionEnforceBlockList) == 0) {
     sCrashOnBlocklistedPref =
-        StaticPrefs::fission_enforceBlocklistedPrefsInSubprocesses_tmp();
+        StaticPrefs::fission_enforceBlocklistedPrefsInSubprocesses();
   } else if (strcmp(aPref, kFissionOmitBlockListValues) == 0) {
     sOmitBlocklistedPrefValues =
-        StaticPrefs::fission_omitBlocklistedPrefsInSubprocesses_tmp();
+        StaticPrefs::fission_omitBlocklistedPrefsInSubprocesses();
   } else {
     MOZ_CRASH("Unknown pref passed to callback");
   }

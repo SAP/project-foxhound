@@ -25,6 +25,7 @@
 #include "mozilla/layers/WebRenderBridgeParent.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/SurfacePool.h"
+#include "mozilla/PerfStats.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/webrender/RendererOGL.h"
@@ -398,6 +399,11 @@ void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
     frame = frameInfo;
   }
 
+  // Sadly this doesn't include the lock, since we don't have the frame there
+  // yet.
+  glean::wr::time_to_render_start.AccumulateRawDuration(TimeStamp::Now() -
+                                                        frame.mStartTime);
+
   // It is for ensuring that PrepareForUse() is called before
   // RenderTextureHost::Lock().
   HandleRenderTextureOps();
@@ -421,8 +427,11 @@ void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
   // The start time is from WebRenderBridgeParent::CompositeToTarget. From that
   // point until now (when the frame is finally pushed to the screen) is
   // equivalent to the COMPOSITE_TIME metric in the non-WR codepath.
-  mozilla::Telemetry::AccumulateTimeDelta(mozilla::Telemetry::COMPOSITE_TIME,
-                                          frame.mStartTime);
+  TimeDuration compositeDuration = TimeStamp::Now() - frame.mStartTime;
+  mozilla::Telemetry::Accumulate(mozilla::Telemetry::COMPOSITE_TIME,
+                                 uint32_t(compositeDuration.ToMilliseconds()));
+  PerfStats::RecordMeasurement(PerfStats::Metric::Compositing,
+                               compositeDuration);
 }
 
 void RenderThread::SetClearColor(wr::WindowId aWindowId, wr::ColorF aColor) {
@@ -561,16 +570,12 @@ void RenderThread::UpdateAndRender(
   renderer->CheckGraphicsResetStatus("PostUpdate", /* aForce */ false);
 
   TimeStamp end = TimeStamp::Now();
-  RefPtr<const WebRenderPipelineInfo> info = renderer->FlushPipelineInfo();
+  RefPtr<const WebRenderPipelineInfo> info = renderer->GetLastPipelineInfo();
 
   layers::CompositorThread()->Dispatch(
       NewRunnableFunction("NotifyDidRenderRunnable", &NotifyDidRender,
                           renderer->GetCompositorBridge(), info, aStartId,
                           aStartTime, start, end, aRender, stats));
-
-  if (latestFrameId.IsValid()) {
-    renderer->MaybeRecordFrame(info);
-  }
 
   ipc::FileDescriptor fenceFd;
 

@@ -9,6 +9,7 @@
 #include "nsAccUtils.h"
 #include "States.h"
 #include "mozilla/a11y/HyperTextAccessibleBase.h"
+#include "mozilla/BasicEvents.h"
 #include "mozilla/Components.h"
 #include "nsIStringBundle.h"
 
@@ -351,8 +352,9 @@ void Accessible::GetPositionAndSetSize(int32_t* aPosInSet, int32_t* aSetSize) {
 }
 
 #ifdef A11Y_LOG
-void Accessible::DebugDescription(nsCString& aDesc) {
+void Accessible::DebugDescription(nsCString& aDesc) const {
   aDesc.Truncate();
+  aDesc.AppendPrintf("%s", IsRemote() ? "Remote" : "Local");
   aDesc.AppendPrintf("[%p] ", this);
   nsAutoString role;
   GetAccService()->GetStringRole(Role(), role);
@@ -380,6 +382,14 @@ void Accessible::DebugDescription(nsCString& aDesc) {
     aDesc.Append("'");
   }
 }
+
+void Accessible::DebugPrint(const char* aPrefix,
+                            const Accessible* aAccessible) {
+  nsAutoCString desc;
+  aAccessible->DebugDescription(desc);
+  printf("%s %s\n", aPrefix, desc.get());
+}
+
 #endif
 
 void Accessible::TranslateString(const nsString& aKey, nsAString& aStringOut) {
@@ -463,4 +473,84 @@ nsAtom* Accessible::LandmarkRole() const {
   return roleMapEntry && roleMapEntry->IsOfType(eLandmark)
              ? roleMapEntry->roleAtom
              : nullptr;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// KeyBinding class
+
+// static
+uint32_t KeyBinding::AccelModifier() {
+  switch (WidgetInputEvent::AccelModifier()) {
+    case MODIFIER_ALT:
+      return kAlt;
+    case MODIFIER_CONTROL:
+      return kControl;
+    case MODIFIER_META:
+      return kMeta;
+    case MODIFIER_OS:
+      return kOS;
+    default:
+      MOZ_CRASH("Handle the new result of WidgetInputEvent::AccelModifier()");
+      return 0;
+  }
+}
+
+void KeyBinding::ToPlatformFormat(nsAString& aValue) const {
+  nsCOMPtr<nsIStringBundle> keyStringBundle;
+  nsCOMPtr<nsIStringBundleService> stringBundleService =
+      mozilla::components::StringBundle::Service();
+  if (stringBundleService) {
+    stringBundleService->CreateBundle(
+        "chrome://global-platform/locale/platformKeys.properties",
+        getter_AddRefs(keyStringBundle));
+  }
+
+  if (!keyStringBundle) return;
+
+  nsAutoString separator;
+  keyStringBundle->GetStringFromName("MODIFIER_SEPARATOR", separator);
+
+  nsAutoString modifierName;
+  if (mModifierMask & kControl) {
+    keyStringBundle->GetStringFromName("VK_CONTROL", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kAlt) {
+    keyStringBundle->GetStringFromName("VK_ALT", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kShift) {
+    keyStringBundle->GetStringFromName("VK_SHIFT", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kMeta) {
+    keyStringBundle->GetStringFromName("VK_META", modifierName);
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  aValue.Append(mKey);
+}
+
+void KeyBinding::ToAtkFormat(nsAString& aValue) const {
+  nsAutoString modifierName;
+  if (mModifierMask & kControl) aValue.AppendLiteral("<Control>");
+
+  if (mModifierMask & kAlt) aValue.AppendLiteral("<Alt>");
+
+  if (mModifierMask & kShift) aValue.AppendLiteral("<Shift>");
+
+  if (mModifierMask & kMeta) aValue.AppendLiteral("<Meta>");
+
+  aValue.Append(mKey);
 }

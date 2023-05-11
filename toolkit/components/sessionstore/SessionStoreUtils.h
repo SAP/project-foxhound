@@ -139,29 +139,22 @@ class SessionStoreUtils {
       const nsTArray<SSCacheCopy>& aValues,
       Record<nsCString, Record<nsString, nsString>>& aStorage);
 
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_THUNDERBIRD) || \
-    defined(MOZ_SUITE)
-  static constexpr bool NATIVE_LISTENER = false;
-#else
-  static constexpr bool NATIVE_LISTENER = true;
-#endif
-
   static bool CopyProperty(JSContext* aCx, JS::HandleObject aDst,
                            JS::HandleObject aSrc, const nsAString& aName);
 
   template <typename T>
-  static bool CopyChildren(JSContext* aCx, JS::HandleObject aDst,
+  static bool CopyChildren(JSContext* aCx, JS::Handle<JSObject*> aDst,
                            const nsTArray<RefPtr<T>>& aChildren) {
     if (!aChildren.IsEmpty()) {
-      JS::RootedObject children(aCx,
-                                JS::NewArrayObject(aCx, aChildren.Length()));
+      JS::Rooted<JSObject*> children(
+          aCx, JS::NewArrayObject(aCx, aChildren.Length()));
 
       for (const auto index : IntegerRange(aChildren.Length())) {
         if (!aChildren[index]) {
           continue;
         }
 
-        JS::RootedObject object(aCx);
+        JS::Rooted<JSObject*> object(aCx);
         aChildren[index]->ToJSON(aCx, &object);
 
         if (!JS_DefineElement(aCx, children, index, object, JSPROP_ENUMERATE)) {

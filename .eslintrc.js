@@ -21,6 +21,11 @@ function removeOverrides(config) {
   return config;
 }
 
+// The expressions defined below for test paths are the main path formats we
+// prefer to support for tests as they are commonly used across the tree.
+// See https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint.html#i-m-adding-tests-how-do-i-set-up-the-right-configuration
+// for more information.
+
 const xpcshellTestPaths = [
   "**/test*/unit*/**/",
   "**/test*/*/unit*/",
@@ -219,7 +224,6 @@ module.exports = {
         "dom/**",
         "netwerk/**",
         "security/manager/ssl/tests/unit/**",
-        "services/**",
         "testing/xpcshell/**",
         "toolkit/components/**",
         "toolkit/modules/**",

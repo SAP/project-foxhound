@@ -1296,14 +1296,16 @@ static void chunk_ensure_zero(void* aPtr, size_t aSize, bool aZeroed);
 static void huge_dalloc(void* aPtr, arena_t* aArena);
 static bool malloc_init_hard();
 
-#ifdef XP_DARWIN
-#  define FORK_HOOK extern "C"
-#else
-#  define FORK_HOOK static
-#endif
+#ifndef XP_WIN
+#  ifdef XP_DARWIN
+#    define FORK_HOOK extern "C"
+#  else
+#    define FORK_HOOK static
+#  endif
 FORK_HOOK void _malloc_prefork(void);
 FORK_HOOK void _malloc_postfork_parent(void);
 FORK_HOOK void _malloc_postfork_child(void);
+#endif
 
 // End forward declarations.
 // ***************************************************************************
@@ -4639,11 +4641,8 @@ inline void MozJemalloc::moz_dispose_arena(arena_id_t aArenaId) {
 // of malloc during fork().  These functions are only called if the program is
 // running in threaded mode, so there is no need to check whether the program
 // is threaded here.
-#  ifndef XP_DARWIN
-static
-#  endif
-    void
-    _malloc_prefork(void) {
+FORK_HOOK
+void _malloc_prefork(void) NO_THREAD_SAFETY_ANALYSIS {
   // Acquire all mutexes in a safe order.
   gArenas.mLock.Lock();
 
@@ -4656,11 +4655,8 @@ static
   huge_mtx.Lock();
 }
 
-#  ifndef XP_DARWIN
-static
-#  endif
-    void
-    _malloc_postfork_parent(void) {
+FORK_HOOK
+void _malloc_postfork_parent(void) NO_THREAD_SAFETY_ANALYSIS {
   // Release all mutexes, now that fork() has completed.
   huge_mtx.Unlock();
 
@@ -4673,11 +4669,8 @@ static
   gArenas.mLock.Unlock();
 }
 
-#  ifndef XP_DARWIN
-static
-#  endif
-    void
-    _malloc_postfork_child(void) {
+FORK_HOOK
+void _malloc_postfork_child(void) {
   // Reinitialize all mutexes, now that fork() has completed.
   huge_mtx.Init();
 

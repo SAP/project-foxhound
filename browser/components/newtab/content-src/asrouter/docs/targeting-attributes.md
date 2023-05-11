@@ -53,6 +53,9 @@ Please note that some targeting attributes require stricter controls on the tele
 * [userMonthlyActivity](#usermonthlyactivity)
 * [doesAppNeedPin](#doesappneedpin)
 * [doesAppNeedPrivatePin](#doesappneedprivatepin)
+* [isBackgroundTaskMode](#isbackgroundtaskmode)
+* [backgroundTaskName](#backgroundtaskname)
+* [userPrefersReducedMotion](#userPrefersReducedMotion)
 
 ## Detailed usage
 
@@ -832,3 +835,17 @@ Checks if Firefox app can be and isn't pinned to OS taskbar/dock.
 ### `doesAppNeedPrivatePin`
 
 Checks if Firefox Private Browsing Mode can be and isn't pinned to OS taskbar/dock. Currently this only works on certain Windows versions.
+
+### `isBackgroundTaskMode`
+
+Checks if this invocation is running in background task mode.
+
+### `backgroundTaskName`
+
+A non-empty string task name if this invocation is running in background task
+mode, or `null` if this invocation is not running in background task mode.
+
+### `userPrefersReducedMotion`
+
+Checks if user prefers reduced motion as indicated by the value of a media query for `prefers-reduced-motion`.
+

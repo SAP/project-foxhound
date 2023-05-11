@@ -20,7 +20,6 @@
 var { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var { Downloads } = ChromeUtils.import("resource://gre/modules/Downloads.jsm");
 var { Integration } = ChromeUtils.import(
@@ -61,6 +60,10 @@ XPCOMUtils.defineLazyServiceGetters(this, {
   gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
 });
 
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
@@ -71,14 +74,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
     "resource://gre/modules/ExtensionPreferencesManager.jsm",
   ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
-  formAutofillParent: "resource://formautofill/FormAutofillParent.jsm",
   FeatureGate: "resource://featuregates/FeatureGate.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   LangPackMatcher: "resource://gre/modules/LangPackMatcher.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   OSKeyStore: "resource://gre/modules/OSKeyStore.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   SelectionChangedMenulist: "resource:///modules/SelectionChangedMenulist.jsm",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   SiteDataManager: "resource:///modules/SiteDataManager.jsm",

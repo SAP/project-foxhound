@@ -188,7 +188,7 @@ ReflowInput::ReflowInput(nsPresContext* aPresContext,
     // in preference to leaving it unconstrained.
     if (AvailableISize() == NS_UNCONSTRAINEDSIZE &&
         aParentReflowInput.ComputedBSize() != NS_UNCONSTRAINEDSIZE) {
-      AvailableISize() = aParentReflowInput.ComputedBSize();
+      SetAvailableISize(aParentReflowInput.ComputedBSize());
     }
   }
 
@@ -323,7 +323,7 @@ void ReflowInput::Init(nsPresContext* aPresContext,
          parent = parent->mParentReflowInput) {
       if (parent->GetWritingMode().IsOrthogonalTo(mWritingMode) &&
           parent->mOrthogonalLimit != NS_UNCONSTRAINEDSIZE) {
-        AvailableISize() = parent->mOrthogonalLimit;
+        SetAvailableISize(parent->mOrthogonalLimit);
         break;
       }
     }
@@ -336,11 +336,8 @@ void ReflowInput::Init(nsPresContext* aPresContext,
 
   mStylePosition = mFrame->StylePosition();
   mStyleDisplay = mFrame->StyleDisplay();
-  mStyleVisibility = mFrame->StyleVisibility();
   mStyleBorder = mFrame->StyleBorder();
   mStyleMargin = mFrame->StyleMargin();
-  mStylePadding = mFrame->StylePadding();
-  mStyleText = mFrame->StyleText();
 
   InitCBReflowInput();
 
@@ -418,15 +415,15 @@ void ReflowInput::Init(nsPresContext* aPresContext,
         mStylePosition->ISize(mWritingMode).IsAuto()) {
       ComputedISize() = NS_UNCONSTRAINEDSIZE;
     } else {
-      AvailableBSize() = NS_UNCONSTRAINEDSIZE;
+      SetAvailableBSize(NS_UNCONSTRAINEDSIZE);
     }
   }
 
   if (mStyleDisplay->GetContainSizeAxes().mBContained) {
     // In the case that a box is size contained in block axis, we want to ensure
-    // that it is also monolithic. We do this by unsetting
-    // AvailableBSize() to avoid fragmentaiton.
-    AvailableBSize() = NS_UNCONSTRAINEDSIZE;
+    // that it is also monolithic. We do this by setting AvailableBSize() to an
+    // unconstrained size to avoid fragmentation.
+    SetAvailableBSize(NS_UNCONSTRAINEDSIZE);
   }
 
   LAYOUT_WARN_IF_FALSE((mStyleDisplay->IsInlineOutsideStyle() &&
@@ -684,7 +681,7 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
     dependsOnCBBSize |= (flexBasis.IsSize() && flexBasis.AsSize().HasPercent());
   }
 
-  if (mStyleText->mLineHeight.IsMozBlockHeight()) {
+  if (mFrame->StyleText()->mLineHeight.IsMozBlockHeight()) {
     // line-height depends on block bsize
     mFrame->AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
     // but only on containing blocks if this frame is not a suitable block
@@ -1098,23 +1095,22 @@ void ReflowInput::CalculateBorderPaddingMargin(
   nscoord paddingStartEnd, marginStartEnd;
 
   // See if the style system can provide us the padding directly
-  nsMargin stylePadding;
-  if (mStylePadding->GetPadding(stylePadding)) {
-    paddingStartEnd = stylePadding.Side(startSide) + stylePadding.Side(endSide);
+  const auto* stylePadding = mFrame->StylePadding();
+  if (nsMargin padding; stylePadding->GetPadding(padding)) {
+    paddingStartEnd = padding.Side(startSide) + padding.Side(endSide);
   } else {
     // We have to compute the start and end values
     nscoord start, end;
     start = nsLayoutUtils::ComputeCBDependentValue(
-        aContainingBlockSize, mStylePadding->mPadding.Get(startSide));
+        aContainingBlockSize, stylePadding->mPadding.Get(startSide));
     end = nsLayoutUtils::ComputeCBDependentValue(
-        aContainingBlockSize, mStylePadding->mPadding.Get(endSide));
+        aContainingBlockSize, stylePadding->mPadding.Get(endSide));
     paddingStartEnd = start + end;
   }
 
   // See if the style system can provide us the margin directly
-  nsMargin styleMargin;
-  if (mStyleMargin->GetMargin(styleMargin)) {
-    marginStartEnd = styleMargin.Side(startSide) + styleMargin.Side(endSide);
+  if (nsMargin margin; mStyleMargin->GetMargin(margin)) {
+    marginStartEnd = margin.Side(startSide) + margin.Side(endSide);
   } else {
     nscoord start, end;
     // We have to compute the start and end values
@@ -2656,20 +2652,19 @@ void ReflowInput::CalculateBlockSideMargins() {
     // 'direction' property of the parent to tell which margin to
     // ignore
     // First check if there is an HTML alignment that we should honor
-    const ReflowInput* pri = mParentReflowInput;
-    if (pri && (pri->mStyleText->mTextAlign == StyleTextAlign::MozLeft ||
-                pri->mStyleText->mTextAlign == StyleTextAlign::MozCenter ||
-                pri->mStyleText->mTextAlign == StyleTextAlign::MozRight)) {
-      if (pri->mWritingMode.IsBidiLTR()) {
-        isAutoStartMargin =
-            pri->mStyleText->mTextAlign != StyleTextAlign::MozLeft;
-        isAutoEndMargin =
-            pri->mStyleText->mTextAlign != StyleTextAlign::MozRight;
+    const StyleTextAlign* textAlign =
+        mParentReflowInput
+            ? &mParentReflowInput->mFrame->StyleText()->mTextAlign
+            : nullptr;
+    if (textAlign && (*textAlign == StyleTextAlign::MozLeft ||
+                      *textAlign == StyleTextAlign::MozCenter ||
+                      *textAlign == StyleTextAlign::MozRight)) {
+      if (mParentReflowInput->mWritingMode.IsBidiLTR()) {
+        isAutoStartMargin = *textAlign != StyleTextAlign::MozLeft;
+        isAutoEndMargin = *textAlign != StyleTextAlign::MozRight;
       } else {
-        isAutoStartMargin =
-            pri->mStyleText->mTextAlign != StyleTextAlign::MozRight;
-        isAutoEndMargin =
-            pri->mStyleText->mTextAlign != StyleTextAlign::MozLeft;
+        isAutoStartMargin = *textAlign != StyleTextAlign::MozRight;
+        isAutoEndMargin = *textAlign != StyleTextAlign::MozLeft;
       }
     }
     // Otherwise apply the CSS rules, and ignore one margin by forcing

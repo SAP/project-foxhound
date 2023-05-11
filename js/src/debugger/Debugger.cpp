@@ -100,7 +100,6 @@
 #include "vm/SavedStacks.h"           // for SavedStacks
 #include "vm/Scope.h"                 // for Scope
 #include "vm/StringType.h"            // for JSString, PropertyName
-#include "vm/TraceLogging.h"          // for TraceLoggerForCurrentThread
 #include "vm/WrapperObject.h"         // for CrossCompartmentWrapperObject
 #include "wasm/WasmDebug.h"           // for DebugState
 #include "wasm/WasmInstance.h"        // for Instance
@@ -535,26 +534,8 @@ Debugger::Debugger(JSContext* cx, NativeObject* dbg)
       objects(cx),
       environments(cx),
       wasmInstanceScripts(cx),
-      wasmInstanceSources(cx),
-#ifdef NIGHTLY_BUILD
-      traceLoggerLastDrainedSize(0),
-      traceLoggerLastDrainedIteration(0),
-#endif
-      traceLoggerScriptedCallsLastDrainedSize(0),
-      traceLoggerScriptedCallsLastDrainedIteration(0) {
+      wasmInstanceSources(cx) {
   cx->check(dbg);
-
-#ifdef JS_TRACE_LOGGING
-  TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
-  if (logger) {
-#  ifdef NIGHTLY_BUILD
-    logger->getIterationAndSize(&traceLoggerLastDrainedIteration,
-                                &traceLoggerLastDrainedSize);
-#  endif
-    logger->getIterationAndSize(&traceLoggerScriptedCallsLastDrainedIteration,
-                                &traceLoggerScriptedCallsLastDrainedSize);
-  }
-#endif
 
   cx->runtime()->debuggerList().insertBack(this);
 }
@@ -4136,6 +4117,8 @@ struct MOZ_STACK_CLASS Debugger::CallData {
   bool adoptDebuggeeValue();
   bool adoptFrame();
   bool adoptSource();
+  bool enableAsyncStack();
+  bool disableAsyncStack();
 
   using Method = bool (CallData::*)();
 
@@ -6290,6 +6273,36 @@ bool Debugger::CallData::adoptSource() {
   return true;
 }
 
+bool Debugger::CallData::enableAsyncStack() {
+  if (!args.requireAtLeast(cx, "Debugger.enableAsyncStack", 1)) {
+    return false;
+  }
+  Rooted<GlobalObject*> global(cx, dbg->unwrapDebuggeeArgument(cx, args[0]));
+  if (!global) {
+    return false;
+  }
+
+  global->realm()->isAsyncStackCapturingEnabled = true;
+
+  args.rval().setUndefined();
+  return true;
+}
+
+bool Debugger::CallData::disableAsyncStack() {
+  if (!args.requireAtLeast(cx, "Debugger.disableAsyncStack", 1)) {
+    return false;
+  }
+  Rooted<GlobalObject*> global(cx, dbg->unwrapDebuggeeArgument(cx, args[0]));
+  if (!global) {
+    return false;
+  }
+
+  global->realm()->isAsyncStackCapturingEnabled = false;
+
+  args.rval().setUndefined();
+  return true;
+}
+
 const JSPropertySpec Debugger::properties[] = {
     JS_DEBUG_PSGS("onDebuggerStatement", getOnDebuggerStatement,
                   setOnDebuggerStatement),
@@ -6332,6 +6345,8 @@ const JSFunctionSpec Debugger::methods[] = {
     JS_DEBUG_FN("adoptDebuggeeValue", adoptDebuggeeValue, 1),
     JS_DEBUG_FN("adoptFrame", adoptFrame, 1),
     JS_DEBUG_FN("adoptSource", adoptSource, 1),
+    JS_DEBUG_FN("enableAsyncStack", enableAsyncStack, 1),
+    JS_DEBUG_FN("disableAsyncStack", disableAsyncStack, 1),
     JS_FS_END};
 
 const JSFunctionSpec Debugger::static_methods[]{

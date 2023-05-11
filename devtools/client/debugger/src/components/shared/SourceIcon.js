@@ -9,33 +9,23 @@ import { connect } from "../../utils/connect";
 
 import AccessibleImage from "./AccessibleImage";
 
-import { getSourceClassnames, isPretty } from "../../utils/source";
-import { getFramework } from "../../utils/tabs";
-import { getSymbols, getTabs } from "../../selectors";
+import { getSourceClassnames } from "../../utils/source";
+import { getSymbols, isSourceBlackBoxed, hasPrettyTab } from "../../selectors";
 
 import "./SourceIcon.css";
 
 class SourceIcon extends PureComponent {
   static get propTypes() {
     return {
-      framework: PropTypes.string.isRequired,
       modifier: PropTypes.func.isRequired,
       source: PropTypes.object.isRequired,
-      symbols: PropTypes.object,
+      iconClass: PropTypes.string,
     };
   }
 
   render() {
-    const { modifier, source, symbols, framework } = this.props;
-    let iconClass = "";
-
-    if (isPretty(source)) {
-      iconClass = "prettyPrint";
-    } else {
-      iconClass = framework
-        ? framework.toLowerCase()
-        : getSourceClassnames(source, symbols);
-    }
+    const { modifier } = this.props;
+    let { iconClass } = this.props;
 
     if (modifier) {
       const modified = modifier(iconClass);
@@ -49,7 +39,22 @@ class SourceIcon extends PureComponent {
   }
 }
 
-export default connect((state, props) => ({
-  symbols: getSymbols(state, props.source),
-  framework: getFramework(getTabs(state), props.source.url),
-}))(SourceIcon);
+export default connect((state, props) => {
+  const { source } = props;
+  const symbols = getSymbols(state, source);
+  const isBlackBoxed = isSourceBlackBoxed(state, source);
+  const hasMatchingPrettyTab = hasPrettyTab(state, source.url);
+
+  // This is the key function that will compute the icon type,
+  // In addition to the "modifier" implemented by each callsite.
+  const iconClass = getSourceClassnames(
+    source,
+    symbols,
+    isBlackBoxed,
+    hasMatchingPrettyTab
+  );
+
+  return {
+    iconClass,
+  };
+})(SourceIcon);

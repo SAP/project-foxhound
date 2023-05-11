@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ScriptLoadContext.h"
+#include "mozilla/dom/WorkerLoadContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -43,9 +44,7 @@ ScriptFetchOptions::ScriptFetchOptions(
     : mCORSMode(aCORSMode),
       mReferrerPolicy(aReferrerPolicy),
       mTriggeringPrincipal(aTriggeringPrincipal),
-      mElement(aElement) {
-  MOZ_ASSERT(mTriggeringPrincipal);
-}
+      mElement(aElement) {}
 
 ScriptFetchOptions::~ScriptFetchOptions() = default;
 
@@ -113,7 +112,7 @@ void ScriptLoadRequest::SetReady() {
 
 void ScriptLoadRequest::Cancel() {
   mState = State::Canceled;
-  if (HasLoadContext()) {
+  if (HasScriptLoadContext()) {
     GetScriptLoadContext()->MaybeCancelOffThreadScript();
   }
 }
@@ -138,6 +137,11 @@ ScriptLoadRequest::GetComponentLoadContext() {
   return mLoadContext->AsComponentContext();
 }
 
+mozilla::dom::WorkerLoadContext* ScriptLoadRequest::GetWorkerLoadContext() {
+  MOZ_ASSERT(mLoadContext);
+  return mLoadContext->AsWorkerContext();
+}
+
 ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() {
   MOZ_ASSERT(IsModuleRequest());
   return static_cast<ModuleLoadRequest*>(this);
@@ -151,6 +155,20 @@ const ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() const {
 void ScriptLoadRequest::SetBytecode() {
   MOZ_ASSERT(IsUnknownDataType());
   mDataType = DataType::eBytecode;
+}
+
+bool ScriptLoadRequest::IsUTF8ParsingEnabled() {
+  if (HasLoadContext()) {
+    if (mLoadContext->IsWindowContext()) {
+      return mozilla::StaticPrefs::
+          dom_script_loader_external_scripts_utf8_parsing_enabled();
+    }
+    if (mLoadContext->IsWorkerContext()) {
+      return mozilla::StaticPrefs::
+          dom_worker_script_loader_utf8_parsing_enabled();
+    }
+  }
+  return false;
 }
 
 void ScriptLoadRequest::ClearScriptSource() {
@@ -177,7 +195,7 @@ bool ScriptLoadRequest::IsMarkedForBytecodeEncoding() const {
 nsresult ScriptLoadRequest::GetScriptSource(JSContext* aCx,
                                             MaybeSourceText* aMaybeSource) {
   // If there's no script text, we try to get it from the element
-  if (HasLoadContext() && GetScriptLoadContext()->mIsInline) {
+  if (HasScriptLoadContext() && GetScriptLoadContext()->mIsInline) {
     nsAutoString inlineData;
     GetScriptLoadContext()->GetScriptElement()->GetScriptText(inlineData);
 

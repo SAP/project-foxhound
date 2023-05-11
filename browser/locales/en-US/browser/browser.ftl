@@ -13,11 +13,11 @@
 # The last two are for use when there *is* a content title.
 # Variables:
 #  $content-title (String): the title of the web content.
-browser-main-window =
+browser-main-window-window-titles =
   .data-title-default = { -brand-full-name }
-  .data-title-private = { -brand-full-name } (Private Browsing)
+  .data-title-private = { -brand-full-name } Private Browsing
   .data-content-title-default = { $content-title } — { -brand-full-name }
-  .data-content-title-private = { $content-title } — { -brand-full-name } (Private Browsing)
+  .data-content-title-private = { $content-title } — { -brand-full-name } Private Browsing
 
 # These are the default window titles on macOS. The first two are for use when
 # there is no content title:
@@ -33,11 +33,11 @@ browser-main-window =
 #
 # Variables:
 #  $content-title (String): the title of the web content.
-browser-main-window-mac =
+browser-main-window-mac-window-titles =
   .data-title-default = { -brand-full-name }
-  .data-title-private = { -brand-full-name } — (Private Browsing)
+  .data-title-private = { -brand-full-name } — Private Browsing
   .data-content-title-default = { $content-title }
-  .data-content-title-private = { $content-title } — (Private Browsing)
+  .data-content-title-private = { $content-title } — Private Browsing
 
 # This gets set as the initial title, and is overridden as soon as we start
 # updating the titlebar based on loaded tabs or private browsing state.
@@ -126,6 +126,7 @@ urlbar-tabtosearch-onboard = Select this shortcut to find what you need faster.
 urlbar-search-mode-bookmarks = Bookmarks
 urlbar-search-mode-tabs = Tabs
 urlbar-search-mode-history = History
+urlbar-search-mode-actions = Actions
 
 ##
 
@@ -232,6 +233,25 @@ search-one-offs-tabs =
     .tooltiptext = Tabs ({ $restrict })
 search-one-offs-history =
     .tooltiptext = History ({ $restrict })
+search-one-offs-actions =
+    .tooltiptext = Actions ({ $restrict })
+
+## QuickActions are shown in the urlbar as the user types a matching string
+
+quickactions-addons = View Add-ons
+quickactions-bookmarks = View Bookmarks
+quickactions-clearhistory = Clear History
+quickactions-downloads = Open Downloads
+quickactions-inspector = Open Inspector
+quickactions-logins = View Logins
+quickactions-print = Print
+quickactions-private = Open Private Browsing Window
+quickactions-refresh = Refresh { -brand-short-name }
+quickactions-restart = Restart { -brand-short-name }
+quickactions-screenshot2 = Take a Screenshot
+quickactions-settings = Open Settings
+quickactions-update = Update { -brand-short-name }
+quickactions-viewsource = View Source
 
 ## Bookmark Panel
 
@@ -461,6 +481,11 @@ urlbar-placeholder-search-mode-other-tabs =
   .placeholder = Enter search terms
   .aria-label = Search tabs
 
+# This placeholder is used when searching quick actions.
+urlbar-placeholder-search-mode-other-actions =
+  .placeholder = Enter search terms
+  .aria-label = Search actions
+
 # Variables
 #  $name (String): the name of the user's default search engine
 urlbar-placeholder-with-name =
@@ -539,6 +564,7 @@ urlbar-result-action-calculator-result = = { $result }
 urlbar-result-action-search-bookmarks = Search Bookmarks
 urlbar-result-action-search-history = Search History
 urlbar-result-action-search-tabs = Search Tabs
+urlbar-result-action-search-actions = Search Actions
 
 ## Labels shown above groups of urlbar results
 
@@ -553,6 +579,10 @@ urlbar-group-firefox-suggest =
 #  $engine (String): the name of the search engine providing the suggestions
 urlbar-group-search-suggestions =
   .label = { $engine } suggestions
+
+# A label shown above Quick Actions in the urlbar results.
+urlbar-group-quickactions =
+  .label = Quick Actions
 
 ## Full Screen and Pointer Lock UI
 
@@ -838,3 +868,12 @@ data-reporting-notification-message = { -brand-short-name } automatically sends 
 data-reporting-notification-button =
     .label = Choose What I Share
     .accesskey = C
+
+# Label for the indicator shown in the private browsing window titlebar.
+private-browsing-indicator-label = Private browsing
+
+## Unified extensions (toolbar) button
+
+unified-extensions-button =
+    .label = Extensions
+    .tooltiptext = Extensions

@@ -16,7 +16,6 @@ import { memoizeLast } from "../utils/memoizeLast";
 import { renderWasmText } from "./wasm";
 import { toEditorLine } from "./editor";
 export { isMinified } from "./isMinified";
-import { getURL, getFileExtension } from "./sources-tree";
 
 import { isFulfilled } from "./async-value";
 
@@ -32,7 +31,7 @@ export const sourceTypes = {
 const javascriptLikeExtensions = ["marko", "es6", "vue", "jsm"];
 
 function getPath(source) {
-  const { path } = getURL(source);
+  const { path } = source.displayURL;
   let lastIndex = path.lastIndexOf("/");
   let nextToLastIndex = path.lastIndexOf("/", lastIndex - 1);
 
@@ -76,7 +75,8 @@ export function shouldBlackbox(source) {
  */
 export function isFrameBlackBoxed(frame, source, blackboxedRanges) {
   return (
-    !!source?.isBlackBoxed &&
+    source &&
+    !!blackboxedRanges[source.url] &&
     (!blackboxedRanges[source.url].length ||
       !!findBlackBoxRange(source, blackboxedRanges, {
         start: frame.location.line,
@@ -125,7 +125,7 @@ export function findBlackBoxRange(source, blackboxedRanges, lineRange) {
  * @static
  */
 export function isJavaScript(source, content) {
-  const extension = getFileExtension(source).toLowerCase();
+  const extension = source.displayURL.fileExtension;
   const contentType = content.type === "wasm" ? null : content.contentType;
   return (
     javascriptLikeExtensions.includes(extension) ||
@@ -210,7 +210,7 @@ export function getFilename(
     return getFormattedSourceId(id);
   }
 
-  const { filename } = getURL(source);
+  const { filename } = source.displayURL;
   return getRawSourceURL(filename);
 }
 
@@ -362,7 +362,7 @@ export function getSourceLineCount(content) {
  */
 // eslint-disable-next-line complexity
 export function getMode(source, content, symbols) {
-  const extension = getFileExtension(source);
+  const extension = source.displayURL.fileExtension;
 
   if (content.type !== "text") {
     return { name: "text" };
@@ -484,7 +484,27 @@ export function getTextAtPosition(sourceId, asyncContent, location) {
   return lineText.slice(column, column + 100).trim();
 }
 
-export function getSourceClassnames(source, symbols) {
+/**
+ * Compute the CSS classname string to use for the icon of a given source.
+ *
+ * @param {Object} source
+ *        The reducer source object.
+ * @param {Object} symbols
+ *        The reducer symbol object for the given source.
+ * @param {Boolean} isBlackBoxed
+ *        To be set to true, when the given source is blackboxed.
+ * @param {Boolean} hasPrettyTab
+ *        To be set to true, if the given source isn't the pretty printed one,
+ *        but another tab for that source is opened pretty printed.
+ * @return String
+ *        The classname to use.
+ */
+export function getSourceClassnames(
+  source,
+  symbols,
+  isBlackBoxed,
+  hasPrettyTab = false
+) {
   // Conditionals should be ordered by priority of icon!
   const defaultClassName = "file";
 
@@ -492,15 +512,18 @@ export function getSourceClassnames(source, symbols) {
     return defaultClassName;
   }
 
-  if (isPretty(source)) {
+  // In the SourceTree, we don't show the pretty printed sources,
+  // but still want to show the pretty print icon when a pretty printed tab
+  // for the current source is opened.
+  if (isPretty(source) || hasPrettyTab) {
     return "prettyPrint";
   }
 
-  if (source.isBlackBoxed) {
+  if (isBlackBoxed) {
     return "blackBox";
   }
 
-  if (symbols && !symbols.loading && symbols.framework) {
+  if (symbols && symbols.framework) {
     return symbols.framework.toLowerCase();
   }
 
@@ -508,11 +531,11 @@ export function getSourceClassnames(source, symbols) {
     return "extension";
   }
 
-  return sourceTypes[getFileExtension(source)] || defaultClassName;
+  return sourceTypes[source.displayURL.fileExtension] || defaultClassName;
 }
 
 export function getRelativeUrl(source, root) {
-  const { group, path } = getURL(source);
+  const { group, path } = source.displayURL;
   if (!root) {
     return path;
   }
@@ -552,7 +575,7 @@ export function removeThreadActorId(root, threads) {
  */
 export function isDescendantOfRoot(source, rootUrlWithoutThreadActor) {
   if (source.url && source.url.includes("chrome://")) {
-    const { group, path } = getURL(source);
+    const { group, path } = source.displayURL;
     return (group + path).includes(rootUrlWithoutThreadActor);
   }
 
@@ -573,15 +596,4 @@ export function getSourceQueryString(source) {
 
 export function isUrlExtension(url) {
   return url.includes("moz-extension:") || url.includes("chrome-extension");
-}
-
-export function isExtensionDirectoryPath(url) {
-  if (isUrlExtension(url)) {
-    const urlArr = url.replace(/\/+/g, "/").split("/");
-    let extensionIndex = urlArr.indexOf("moz-extension:");
-    if (extensionIndex === -1) {
-      extensionIndex = urlArr.indexOf("chrome-extension:");
-    }
-    return !urlArr[extensionIndex + 2];
-  }
 }

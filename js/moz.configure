@@ -150,6 +150,24 @@ def enable_record_tuple(value):
 set_config("ENABLE_RECORD_TUPLE", enable_record_tuple)
 set_define("ENABLE_RECORD_TUPLE", enable_record_tuple)
 
+# Enable decorators
+# ===================================================
+option(
+    "--enable-decorators",
+    default=False,
+    help="Enable experimental JS Decorators support",
+)
+
+
+@depends("--enable-decorators")
+def enable_decorators(value):
+    if value:
+        return True
+
+
+set_config("ENABLE_DECORATORS", enable_decorators)
+set_define("ENABLE_DECORATORS", enable_decorators)
+
 # JIT support
 # =======================================================
 @depends(target, "--enable-record-tuple")
@@ -246,6 +264,7 @@ set_config("JS_CODEGEN_MIPS64", jit_codegen.mips64)
 set_config("JS_CODEGEN_LOONG64", jit_codegen.loong64)
 set_config("JS_CODEGEN_X86", jit_codegen.x86)
 set_config("JS_CODEGEN_X64", jit_codegen.x64)
+set_config("JS_CODEGEN_WASM32", jit_codegen.wasm32)
 set_define("JS_CODEGEN_NONE", jit_codegen.none)
 set_define("JS_CODEGEN_ARM", jit_codegen.arm)
 set_define("JS_CODEGEN_ARM64", jit_codegen.arm64)
@@ -254,6 +273,7 @@ set_define("JS_CODEGEN_MIPS64", jit_codegen.mips64)
 set_define("JS_CODEGEN_LOONG64", jit_codegen.loong64)
 set_define("JS_CODEGEN_X86", jit_codegen.x86)
 set_define("JS_CODEGEN_X64", jit_codegen.x64)
+set_define("JS_CODEGEN_WASM32", jit_codegen.wasm32)
 
 # Profiling
 # =======================================================
@@ -382,23 +402,6 @@ option(
 set_define(
     "JS_GC_SMALL_CHUNK_SIZE", depends(when="--enable-small-chunk-size")(lambda: True)
 )
-
-
-# Trace logging.
-# =======================================================
-@depends(milestone)
-def default_trace_logging(milestone):
-    return milestone.is_nightly
-
-
-option(
-    "--enable-trace-logging",
-    default=default_trace_logging,
-    help="{Enable|Disable} trace logging",
-)
-
-set_config("ENABLE_TRACE_LOGGING", depends_if("--enable-trace-logging")(lambda x: True))
-set_define("JS_TRACE_LOGGING", depends_if("--enable-trace-logging")(lambda x: True))
 
 
 # Enable breakpoint for artificial OOMs

@@ -5,7 +5,6 @@
 const { DeferredTask } = ChromeUtils.import(
   "resource://gre/modules/DeferredTask.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
@@ -442,7 +441,7 @@ if (!Preferences.get("browser.aboutConfig.showWarning")) {
   document.addEventListener("DOMContentLoaded", function() {
     let warningButton = document.getElementById("warningButton");
     warningButton.addEventListener("click", onWarningButtonClick);
-    warningButton.focus({ preventFocusRing: true });
+    warningButton.focus({ focusVisible: false });
   });
 }
 

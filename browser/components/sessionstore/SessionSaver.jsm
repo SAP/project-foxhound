@@ -12,9 +12,8 @@ const {
   requestIdleCallback,
   setTimeout,
 } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -313,15 +312,11 @@ var SessionSaverInternal = {
     ) {
       return;
     }
-
-    let expireCookies =
-      Services.prefs.getIntPref("network.cookie.lifetimePolicy") ==
-      Services.cookies.QueryInterface(Ci.nsICookieService).ACCEPT_SESSION;
     let sanitizeCookies =
       Services.prefs.getBoolPref("privacy.sanitize.sanitizeOnShutdown") &&
       Services.prefs.getBoolPref("privacy.clearOnShutdown.cookies");
 
-    if (expireCookies || sanitizeCookies) {
+    if (sanitizeCookies) {
       // Remove cookies.
       delete state.cookies;
 

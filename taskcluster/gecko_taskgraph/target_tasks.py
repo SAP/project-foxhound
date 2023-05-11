@@ -10,6 +10,7 @@ import re
 
 from redo import retry
 from taskgraph.parameters import Parameters
+from taskgraph.target_tasks import _target_task, get_method
 from taskgraph.util.taskcluster import find_task_id
 
 from gecko_taskgraph import try_option_syntax, GECKO
@@ -20,8 +21,6 @@ from gecko_taskgraph.util.attributes import (
 from gecko_taskgraph.util.platforms import platform_family
 from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
 
-
-_target_task_methods = {}
 
 # Some tasks show up in the target task set, but are possibly special cases,
 # uncommon tasks, or tasks running against limited hardware set that they
@@ -48,19 +47,6 @@ UNCOMMON_TRY_TASK_LABELS = [
     # versions are faster to run. This is mostly perf tests.
     r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
 ]
-
-
-def _target_task(name):
-    def wrap(func):
-        _target_task_methods[name] = func
-        return func
-
-    return wrap
-
-
-def get_method(method):
-    """Get a target_task_method to pass to a TaskGraphGenerator."""
-    return _target_task_methods[method]
 
 
 def index_exists(index_path, reason=""):
@@ -260,6 +246,8 @@ def accept_raptor_android_build(platform):
     if "p2" in platform and "aarch64" in platform:
         return True
     if "g5" in platform:
+        return True
+    if "a51" in platform:
         return True
 
 
@@ -806,6 +794,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     return False
         # Android selection
         elif accept_raptor_android_build(platform):
+            # Bug 1780817 - a51 is failing to install chrome
+            if "chrome-m" in try_name and "-a51" in platform:
+                return False
             # Ignore all fennec tests here, we run those weekly
             if "fennec" in try_name:
                 return False
@@ -1282,7 +1273,11 @@ def target_tasks_system_symbols(full_task_graph, parameters, graph_config):
     Select tasks for scraping and uploading system symbols.
     """
     for name, task in full_task_graph.tasks.items():
-        if task.kind in ["system-symbols", "system-symbols-upload"]:
+        if task.kind in [
+            "system-symbols",
+            "system-symbols-upload",
+            "system-symbols-reprocess",
+        ]:
             yield name
 
 
@@ -1320,3 +1315,13 @@ def target_tasks_l10n_cross_channel(full_task_graph, parameters, graph_config):
         return task.kind in ["l10n-cross-channel"]
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
+@_target_task("are-we-esmified-yet")
+def target_tasks_are_we_esmified_yet(full_task_graph, parameters, graph_config):
+    """
+    select the task to track the progress of the esmification project
+    """
+    return [
+        l for l, t in full_task_graph.tasks.items() if t.kind == "are-we-esmified-yet"
+    ]

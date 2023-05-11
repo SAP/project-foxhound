@@ -36,6 +36,7 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryScalarEnums.h"
@@ -64,7 +65,7 @@ class nsIFile;
 
 namespace mozilla::dom::indexedDB {
 
-static_assert(SNAPPY_VERSION == 0x010108);
+static_assert(SNAPPY_VERSION == 0x010109);
 
 using mozilla::ipc::IsOnBackgroundThread;
 
@@ -403,7 +404,7 @@ GetStructuredCloneReadInfoFromExternalBlob(
   QM_TRY(OkIf(index < files.Length()), Err(NS_ERROR_UNEXPECTED),
          [](const auto&) { MOZ_ASSERT(false, "Bad index value!"); });
 
-  if (IndexedDatabaseManager::PreprocessingEnabled()) {
+  if (StaticPrefs::dom_indexedDB_preprocessing()) {
     return StructuredCloneReadInfoParent{
         JSStructuredCloneData{JS::StructuredCloneScope::DifferentProcess},
         std::move(files), true};

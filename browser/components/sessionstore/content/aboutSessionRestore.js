@@ -4,7 +4,6 @@
 
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -79,7 +78,7 @@ window.onload = function() {
 
   initTreeView();
 
-  errorTryAgainButton.focus({ preventFocusRing: true });
+  errorTryAgainButton.focus({ focusVisible: false });
 };
 
 function isTreeViewVisible() {

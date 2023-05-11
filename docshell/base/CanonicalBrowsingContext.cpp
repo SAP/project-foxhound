@@ -1948,7 +1948,7 @@ CanonicalBrowsingContext::ChangeRemoteness(
     if (blocker && blocker->State() != Promise::PromiseState::Resolved) {
       change->mWaitingForPrepareToChange = true;
       RefPtr<DomPromiseListener> listener = new DomPromiseListener(
-          [change](JSContext* aCx, JS::HandleValue aValue) {
+          [change](JSContext* aCx, JS::Handle<JS::Value> aValue) {
             change->mWaitingForPrepareToChange = false;
             change->MaybeFinish();
           },
@@ -2043,7 +2043,7 @@ void CanonicalBrowsingContext::MaybeSetPermanentKey(Element* aEmbedder) {
 
   if (aEmbedder) {
     if (nsCOMPtr<nsIBrowser> browser = aEmbedder->AsBrowser()) {
-      JS::RootedValue key(RootingCx());
+      JS::Rooted<JS::Value> key(RootingCx());
       if (NS_SUCCEEDED(browser->GetPermanentKey(&key)) && key.isObject()) {
         mPermanentKey = key;
       }
@@ -2276,10 +2276,14 @@ void CanonicalBrowsingContext::SynchronizeLayoutHistoryState() {
     } else if (ContentParent* cp = GetContentParent()) {
       cp->SendGetLayoutHistoryState(this)->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [activeEntry =
-               mActiveEntry](const RefPtr<nsILayoutHistoryState>& aState) {
-            if (aState) {
-              activeEntry->SetLayoutHistoryState(aState);
+          [activeEntry = mActiveEntry](
+              const Tuple<RefPtr<nsILayoutHistoryState>, Maybe<Wireframe>>&
+                  aResult) {
+            if (mozilla::Get<0>(aResult)) {
+              activeEntry->SetLayoutHistoryState(mozilla::Get<0>(aResult));
+            }
+            if (mozilla::Get<1>(aResult)) {
+              activeEntry->SetWireframe(mozilla::Get<1>(aResult));
             }
           },
           []() {});
@@ -2420,10 +2424,10 @@ nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
     return NS_ERROR_FAILURE;
   }
 
-  JS::RootedValue key(jsapi.cx(), Top()->PermanentKey());
+  JS::Rooted<JS::Value> key(jsapi.cx(), Top()->PermanentKey());
 
   Record<nsCString, Record<nsString, nsString>> storage;
-  JS::RootedValue update(jsapi.cx());
+  JS::Rooted<JS::Value> update(jsapi.cx());
 
   if (!aSesssionStorage.IsEmpty()) {
     SessionStoreUtils::ConstructSessionStorageValues(this, aSesssionStorage,
@@ -2441,7 +2445,7 @@ nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
 
 void CanonicalBrowsingContext::UpdateSessionStoreSessionStorage(
     const std::function<void()>& aDone) {
-  if constexpr (!SessionStoreUtils::NATIVE_LISTENER) {
+  if (!StaticPrefs::browser_sessionstore_collect_session_storage_AtStartup()) {
     aDone();
     return;
   }
@@ -2474,7 +2478,7 @@ void CanonicalBrowsingContext::UpdateSessionStoreForStorage(
 }
 
 void CanonicalBrowsingContext::MaybeScheduleSessionStoreUpdate() {
-  if constexpr (!SessionStoreUtils::NATIVE_LISTENER) {
+  if (!StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
     return;
   }
 

@@ -8,10 +8,12 @@
 
 #include "FrameMetrics.h"
 
-#include "mozilla/Maybe.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "nsLineLayout.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "nsIFrame.h"
+#include "nsIScrollableFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
@@ -28,31 +30,56 @@ class CalcSnapPoints final {
   struct SnapPosition {
     SnapPosition() = default;
 
-    SnapPosition(nscoord aPosition, StyleScrollSnapStop aScrollSnapStop)
-        : mPosition(aPosition), mScrollSnapStop(aScrollSnapStop) {}
+    SnapPosition(nscoord aPosition, StyleScrollSnapStop aScrollSnapStop,
+                 ScrollSnapTargetId aTargetId)
+        : mPosition(aPosition),
+          mScrollSnapStop(aScrollSnapStop),
+          mTargetId(aTargetId) {}
 
     nscoord mPosition;
     StyleScrollSnapStop mScrollSnapStop;
+    ScrollSnapTargetId mTargetId;
   };
 
   void AddHorizontalEdge(const SnapPosition& aEdge);
   void AddVerticalEdge(const SnapPosition& aEdge);
+
+  struct CandidateTracker {
+    explicit CandidateTracker(nscoord aDestination)
+        : mBestEdge(SnapPosition{aDestination, StyleScrollSnapStop::Normal,
+                                 ScrollSnapTargetId::None}) {
+      // We use NSCoordSaturatingSubtract to calculate the distance between a
+      // given position and this second best edge position so that it can be an
+      // uninitialized value as the maximum possible value, because the first
+      // distance calculation would always be nscoord_MAX.
+      mSecondBestEdge = SnapPosition{nscoord_MAX, StyleScrollSnapStop::Normal,
+                                     ScrollSnapTargetId::None};
+      mEdgeFound = false;
+    }
+
+    // keeps track of the position of the current best edge on this axis.
+    SnapPosition mBestEdge;
+    // keeps track of the position of the current second best edge on the
+    // opposite side of the best edge on this axis.
+    SnapPosition mSecondBestEdge;
+    bool mEdgeFound;  // true if mBestEdge is storing a valid edge.
+
+    // Assuming in most cases there's no multiple coincide snap points.
+    AutoTArray<ScrollSnapTargetId, 1> mTargetIds;
+  };
   void AddEdge(const SnapPosition& aEdge, nscoord aDestination,
                nscoord aStartPos, nscoord aScrollingDirection,
-               SnapPosition* aBestEdge, SnapPosition* aSecondBestEdge,
-               bool* aEdgeFound);
-
-  void AddEdge(nscoord aEdge, nscoord aDestination, nscoord aStartPos,
-               nscoord aScrollingDirection, nscoord* aBestEdge,
-               nscoord* aSecondBestEdge, bool* aEdgeFound);
-  nsPoint GetBestEdge() const;
+               CandidateTracker* aCandidateTracker);
+  SnapTarget GetBestEdge() const;
   nscoord XDistanceBetweenBestAndSecondEdge() const {
     return std::abs(NSCoordSaturatingSubtract(
-        mSecondBestEdgeX.mPosition, mBestEdgeX.mPosition, nscoord_MAX));
+        mTrackerOnX.mSecondBestEdge.mPosition, mTrackerOnX.mBestEdge.mPosition,
+        nscoord_MAX));
   }
   nscoord YDistanceBetweenBestAndSecondEdge() const {
     return std::abs(NSCoordSaturatingSubtract(
-        mSecondBestEdgeY.mPosition, mBestEdgeY.mPosition, nscoord_MAX));
+        mTrackerOnY.mSecondBestEdge.mPosition, mTrackerOnY.mBestEdge.mPosition,
+        nscoord_MAX));
   }
   const nsPoint& Destination() const { return mDestination; }
 
@@ -63,31 +90,20 @@ class CalcSnapPoints final {
                          // snapping
   nsPoint mStartPos;     // gives the position before scrolling
   nsIntPoint mScrollingDirection;  // always -1, 0, or 1
-  SnapPosition mBestEdgeX;  // keeps track of the position of the current best
-                            // edge on X axis
-  SnapPosition mBestEdgeY;  // keeps track of the position of the current best
-                            // edge on Y axis
-  SnapPosition mSecondBestEdgeX;  // keeps track of the position of the current
-                                  // second best edge on the opposite side of
-                                  // the best edge on X axis
-  SnapPosition mSecondBestEdgeY;  // keeps track of the position of the current
-                                  // second best edge on the opposite side of
-                                  // the best edge on Y axis
-  bool mHorizontalEdgeFound;      // true if mBestEdge.x is storing a valid
-                                  // horizontal edge
-  bool mVerticalEdgeFound;  // true if mBestEdge.y is storing a valid vertical
-                            // edge
+  CandidateTracker mTrackerOnX;
+  CandidateTracker mTrackerOnY;
 };
 
 CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
                                const nsPoint& aDestination,
-                               const nsPoint& aStartPos) {
+                               const nsPoint& aStartPos)
+    : mUnit(aUnit),
+      mSnapFlags(aSnapFlags),
+      mDestination(aDestination),
+      mStartPos(aStartPos),
+      mTrackerOnX(aDestination.x),
+      mTrackerOnY(aDestination.y) {
   MOZ_ASSERT(aSnapFlags != ScrollSnapFlags::Disabled);
-
-  mUnit = aUnit;
-  mSnapFlags = aSnapFlags;
-  mDestination = aDestination;
-  mStartPos = aStartPos;
 
   nsPoint direction = aDestination - aStartPos;
   mScrollingDirection = nsIntPoint(0, 0);
@@ -103,37 +119,30 @@ CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
   if (direction.y > 0) {
     mScrollingDirection.y = 1;
   }
-  mBestEdgeX = SnapPosition{aDestination.x, StyleScrollSnapStop::Normal};
-  mBestEdgeY = SnapPosition{aDestination.y, StyleScrollSnapStop::Normal};
-  // We use NSCoordSaturatingSubtract to calculate the distance between a given
-  // position and this second best edge position so that it can be an
-  // uninitialized value as the maximum possible value, because the first
-  // distance calculation would always be nscoord_MAX.
-  mSecondBestEdgeX = SnapPosition{nscoord_MAX, StyleScrollSnapStop::Normal};
-  mSecondBestEdgeY = SnapPosition{nscoord_MAX, StyleScrollSnapStop::Normal};
-  mHorizontalEdgeFound = false;
-  mVerticalEdgeFound = false;
 }
 
-nsPoint CalcSnapPoints::GetBestEdge() const {
-  return nsPoint(mVerticalEdgeFound ? mBestEdgeX.mPosition : mStartPos.x,
-                 mHorizontalEdgeFound ? mBestEdgeY.mPosition : mStartPos.y);
+SnapTarget CalcSnapPoints::GetBestEdge() const {
+  return SnapTarget{
+      nsPoint(mTrackerOnX.mEdgeFound ? mTrackerOnX.mBestEdge.mPosition
+                                     : mStartPos.x,
+              mTrackerOnY.mEdgeFound ? mTrackerOnY.mBestEdge.mPosition
+                                     : mStartPos.y),
+      ScrollSnapTargetIds{mTrackerOnX.mTargetIds, mTrackerOnY.mTargetIds}};
 }
 
 void CalcSnapPoints::AddHorizontalEdge(const SnapPosition& aEdge) {
   AddEdge(aEdge, mDestination.y, mStartPos.y, mScrollingDirection.y,
-          &mBestEdgeY, &mSecondBestEdgeY, &mHorizontalEdgeFound);
+          &mTrackerOnY);
 }
 
 void CalcSnapPoints::AddVerticalEdge(const SnapPosition& aEdge) {
   AddEdge(aEdge, mDestination.x, mStartPos.x, mScrollingDirection.x,
-          &mBestEdgeX, &mSecondBestEdgeX, &mVerticalEdgeFound);
+          &mTrackerOnX);
 }
 
 void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
                              nscoord aStartPos, nscoord aScrollingDirection,
-                             SnapPosition* aBestEdge,
-                             SnapPosition* aSecondBestEdge, bool* aEdgeFound) {
+                             CandidateTracker* aCandidateTracker) {
   if (mSnapFlags & ScrollSnapFlags::IntendedDirection) {
     // In the case of intended direction, we only want to snap to points ahead
     // of the direction we are scrolling.
@@ -145,9 +154,11 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
     }
   }
 
-  if (!*aEdgeFound) {
-    *aBestEdge = aEdge;
-    *aEdgeFound = true;
+  if (!aCandidateTracker->mEdgeFound) {
+    aCandidateTracker->mBestEdge = aEdge;
+    aCandidateTracker->mTargetIds =
+        AutoTArray<ScrollSnapTargetId, 1>{aEdge.mTargetId};
+    aCandidateTracker->mEdgeFound = true;
     return;
   }
 
@@ -162,8 +173,9 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
                std::abs(aDestination - aStartPos);
   };
 
-  const bool isOnOppositeSide = ((aEdge.mPosition - aDestination) > 0) !=
-                                ((aBestEdge->mPosition - aDestination) > 0);
+  const bool isOnOppositeSide =
+      ((aEdge.mPosition - aDestination) > 0) !=
+      ((aCandidateTracker->mBestEdge.mPosition - aDestination) > 0);
   const nscoord distanceFromStart = aEdge.mPosition - aStartPos;
   // A utility function to update the best and the second best edges in the
   // given conditions.
@@ -192,17 +204,22 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
         // diagram.
         // start        always    dest   other always
         //   |------------|---------|------|
-        *aSecondBestEdge = aEdge;
+        aCandidateTracker->mSecondBestEdge = aEdge;
       } else if (isOnOppositeSide) {
         // Replace the second best edge with the current best edge only if the
         // new best edge (aEdge) is on the opposite side of the current best
         // edge.
-        *aSecondBestEdge = *aBestEdge;
+        aCandidateTracker->mSecondBestEdge = aCandidateTracker->mBestEdge;
       }
-      *aBestEdge = aEdge;
-    } else if (aIsCloserThanSecond) {
-      if (isOnOppositeSide) {
-        *aSecondBestEdge = aEdge;
+      aCandidateTracker->mBestEdge = aEdge;
+      aCandidateTracker->mTargetIds =
+          AutoTArray<ScrollSnapTargetId, 1>{aEdge.mTargetId};
+    } else {
+      if (aEdge.mPosition == aCandidateTracker->mBestEdge.mPosition) {
+        aCandidateTracker->mTargetIds.AppendElement(aEdge.mTargetId);
+      }
+      if (aIsCloserThanSecond && isOnOppositeSide) {
+        aCandidateTracker->mSecondBestEdge = aEdge;
       }
     }
   };
@@ -213,12 +230,14 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
     case ScrollUnit::DEVICE_PIXELS:
     case ScrollUnit::LINES:
     case ScrollUnit::WHOLE: {
-      isCandidateOfBest = std::abs(distanceFromDestination) <
-                          std::abs(aBestEdge->mPosition - aDestination);
+      isCandidateOfBest =
+          std::abs(distanceFromDestination) <
+          std::abs(aCandidateTracker->mBestEdge.mPosition - aDestination);
       isCandidateOfSecondBest =
           std::abs(distanceFromDestination) <
-          std::abs(NSCoordSaturatingSubtract(aSecondBestEdge->mPosition,
-                                             aDestination, nscoord_MAX));
+          std::abs(NSCoordSaturatingSubtract(
+              aCandidateTracker->mSecondBestEdge.mPosition, aDestination,
+              nscoord_MAX));
       break;
     }
     case ScrollUnit::PAGES: {
@@ -228,11 +247,13 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
       // distance to the current best edge from the scrolling destination in the
       // direction of scrolling
       nscoord curOvershoot =
-          (aBestEdge->mPosition - aDestination) * aScrollingDirection;
+          (aCandidateTracker->mBestEdge.mPosition - aDestination) *
+          aScrollingDirection;
 
       nscoord secondOvershoot =
-          NSCoordSaturatingSubtract(aSecondBestEdge->mPosition, aDestination,
-                                    nscoord_MAX) *
+          NSCoordSaturatingSubtract(
+              aCandidateTracker->mSecondBestEdge.mPosition, aDestination,
+              nscoord_MAX) *
           aScrollingDirection;
 
       // edges between the current position and the scrolling destination are
@@ -256,9 +277,10 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
       // If the given position is `scroll-snap-stop: always` and if the position
       // is in between the start and the destination positions, update the best
       // position based on the distance from the __start__ point.
-      isCandidateOfBest = std::abs(distanceFromStart) <
-                          std::abs(aBestEdge->mPosition - aStartPos);
-    } else if (isPreferredStopAlways(*aBestEdge)) {
+      isCandidateOfBest =
+          std::abs(distanceFromStart) <
+          std::abs(aCandidateTracker->mBestEdge.mPosition - aStartPos);
+    } else if (isPreferredStopAlways(aCandidateTracker->mBestEdge)) {
       // If we've found a preferable `scroll-snap-stop:always` position as the
       // best, do not update it unless the given position is also
       // `scroll-snap-stop: always`.
@@ -272,32 +294,25 @@ void CalcSnapPoints::AddEdge(const SnapPosition& aEdge, nscoord aDestination,
 static void ProcessSnapPositions(CalcSnapPoints& aCalcSnapPoints,
                                  const ScrollSnapInfo& aSnapInfo) {
   for (const auto& target : aSnapInfo.mSnapTargets) {
-    nsPoint snapPoint(target.mSnapPositionX ? *target.mSnapPositionX
-                                            : aCalcSnapPoints.Destination().x,
-                      target.mSnapPositionY ? *target.mSnapPositionY
-                                            : aCalcSnapPoints.Destination().y);
-    nsRect snappedPort = nsRect(snapPoint, aSnapInfo.mSnapportSize);
-    // Ignore snap points if snapping to the point would leave the snap area
-    // outside of the snapport.
-    // https://drafts.csswg.org/css-scroll-snap-1/#snap-scope
-    if (!snappedPort.Intersects(target.mSnapArea)) {
+    if (!target.IsValidFor(aCalcSnapPoints.Destination(),
+                           aSnapInfo.mSnapportSize)) {
       continue;
     }
 
     if (target.mSnapPositionX &&
         aSnapInfo.mScrollSnapStrictnessX != StyleScrollSnapStrictness::None) {
       aCalcSnapPoints.AddVerticalEdge(
-          {*target.mSnapPositionX, target.mScrollSnapStop});
+          {*target.mSnapPositionX, target.mScrollSnapStop, target.mTargetId});
     }
     if (target.mSnapPositionY &&
         aSnapInfo.mScrollSnapStrictnessY != StyleScrollSnapStrictness::None) {
       aCalcSnapPoints.AddHorizontalEdge(
-          {*target.mSnapPositionY, target.mScrollSnapStop});
+          {*target.mSnapPositionY, target.mScrollSnapStop, target.mTargetId});
     }
   }
 }
 
-Maybe<nsPoint> ScrollSnapUtils::GetSnapPointForDestination(
+Maybe<SnapTarget> ScrollSnapUtils::GetSnapPointForDestination(
     const ScrollSnapInfo& aSnapInfo, ScrollUnit aUnit,
     ScrollSnapFlags aSnapFlags, const nsRect& aScrollRange,
     const nsPoint& aStartPos, const nsPoint& aDestination) {
@@ -327,7 +342,7 @@ Maybe<nsPoint> ScrollSnapUtils::GetSnapPointForDestination(
         calcSnapPoints.XDistanceBetweenBestAndSecondEdge() >
             aSnapInfo.mSnapportSize.width) {
       calcSnapPoints.AddVerticalEdge(CalcSnapPoints::SnapPosition{
-          clampedDestination.x, StyleScrollSnapStop::Normal});
+          clampedDestination.x, StyleScrollSnapStop::Normal, range.mTargetId});
       break;
     }
   }
@@ -336,31 +351,234 @@ Maybe<nsPoint> ScrollSnapUtils::GetSnapPointForDestination(
         calcSnapPoints.YDistanceBetweenBestAndSecondEdge() >
             aSnapInfo.mSnapportSize.height) {
       calcSnapPoints.AddHorizontalEdge(CalcSnapPoints::SnapPosition{
-          clampedDestination.y, StyleScrollSnapStop::Normal});
+          clampedDestination.y, StyleScrollSnapStop::Normal, range.mTargetId});
       break;
     }
   }
 
   bool snapped = false;
-  nsPoint finalPos = calcSnapPoints.GetBestEdge();
+  auto finalPos = calcSnapPoints.GetBestEdge();
   nscoord proximityThreshold =
       StaticPrefs::layout_css_scroll_snap_proximity_threshold();
   proximityThreshold = nsPresContext::CSSPixelsToAppUnits(proximityThreshold);
   if (aSnapInfo.mScrollSnapStrictnessY ==
           StyleScrollSnapStrictness::Proximity &&
-      std::abs(aDestination.y - finalPos.y) > proximityThreshold) {
-    finalPos.y = aDestination.y;
-  } else {
+      std::abs(aDestination.y - finalPos.mPosition.y) > proximityThreshold) {
+    finalPos.mPosition.y = aDestination.y;
+  } else if (aSnapInfo.mScrollSnapStrictnessY !=
+             StyleScrollSnapStrictness::None) {
     snapped = true;
   }
   if (aSnapInfo.mScrollSnapStrictnessX ==
           StyleScrollSnapStrictness::Proximity &&
-      std::abs(aDestination.x - finalPos.x) > proximityThreshold) {
-    finalPos.x = aDestination.x;
-  } else {
+      std::abs(aDestination.x - finalPos.mPosition.x) > proximityThreshold) {
+    finalPos.mPosition.x = aDestination.x;
+  } else if (aSnapInfo.mScrollSnapStrictnessX !=
+             StyleScrollSnapStrictness::None) {
     snapped = true;
   }
   return snapped ? Some(finalPos) : Nothing();
+}
+
+ScrollSnapTargetId ScrollSnapUtils::GetTargetIdFor(const nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame && aFrame->GetContent());
+  return ScrollSnapTargetId{reinterpret_cast<uintptr_t>(aFrame->GetContent())};
+}
+
+static std::pair<Maybe<nscoord>, Maybe<nscoord>> GetCandidateInLastTargets(
+    const layers::ScrollSnapInfo& aSnapInfo, const nsPoint& aCurrentPosition,
+    const UniquePtr<ScrollSnapTargetIds>& aLastSnapTargetIds,
+    const nsIContent* aFocusedContent) {
+  ScrollSnapTargetId targetIdForFocusedContent = ScrollSnapTargetId::None;
+  if (aFocusedContent && aFocusedContent->GetPrimaryFrame()) {
+    targetIdForFocusedContent =
+        ScrollSnapUtils::GetTargetIdFor(aFocusedContent->GetPrimaryFrame());
+  }
+
+  // Note: Below algorithm doesn't care about cases where the last snap point
+  // was on an element larger than the snapport since it's not clear to us
+  // what we should do for now.
+  // https://github.com/w3c/csswg-drafts/issues/7438
+  const ScrollSnapInfo::SnapTarget* focusedTarget = nullptr;
+  Maybe<nscoord> x, y;
+  for (const auto& target : aSnapInfo.mSnapTargets) {
+    if (!target.IsValidFor(aCurrentPosition, aSnapInfo.mSnapportSize)) {
+      continue;
+    }
+
+    if (target.mSnapPositionX &&
+        aSnapInfo.mScrollSnapStrictnessX != StyleScrollSnapStrictness::None) {
+      if (aLastSnapTargetIds->mIdsOnX.Contains(target.mTargetId)) {
+        if (targetIdForFocusedContent == target.mTargetId) {
+          // If we've already found the candidate on Y axis, but if snapping to
+          // the point results this target is scrolled out, we can't use it.
+          if ((y && !target.mSnapArea.Intersects(
+                        nsRect(nsPoint(*target.mSnapPositionX, *y),
+                               aSnapInfo.mSnapportSize)))) {
+            y.reset();
+          }
+
+          focusedTarget = &target;
+          // If the focused one is valid, then it's the candidate.
+          x = target.mSnapPositionX;
+        }
+
+        if (!x) {
+          // Update the candidate on X axis only if
+          // 1) we haven't yet found the candidate on Y axis
+          // 2) or if we've found the candiate on Y axis and if snapping to the
+          //    candidate position result the target element is visible inside
+          //    the snapport.
+          if (!y || (y && target.mSnapArea.Intersects(
+                              nsRect(nsPoint(*target.mSnapPositionX, *y),
+                                     aSnapInfo.mSnapportSize)))) {
+            x = target.mSnapPositionX;
+          }
+        }
+      }
+    }
+    if (target.mSnapPositionY &&
+        aSnapInfo.mScrollSnapStrictnessY != StyleScrollSnapStrictness::None) {
+      if (aLastSnapTargetIds->mIdsOnY.Contains(target.mTargetId)) {
+        if (targetIdForFocusedContent == target.mTargetId) {
+          MOZ_ASSERT(!focusedTarget || focusedTarget == &target,
+                     "If the focused target has been found on X axis, the "
+                     "target should "
+                     "be same");
+          // If we've already found the candidate on X axis other than the
+          // focused one, but if snapping to the point results this target is
+          // scrolled out, we can't use it.
+          if (!focusedTarget && (x && !target.mSnapArea.Intersects(nsRect(
+                                          nsPoint(*x, *target.mSnapPositionY),
+                                          aSnapInfo.mSnapportSize)))) {
+            x.reset();
+          }
+
+          focusedTarget = &target;
+          y = target.mSnapPositionY;
+        }
+
+        if (!y) {
+          if (!x || (x && target.mSnapArea.Intersects(
+                              nsRect(nsPoint(*x, *target.mSnapPositionY),
+                                     aSnapInfo.mSnapportSize)))) {
+            y = target.mSnapPositionY;
+          }
+        }
+      }
+    }
+
+    // If we found candidates on both axes, it's the one we need.
+    if (x && y &&
+        // If we haven't found the focused target, it's possible that we haven't
+        // iterated it, don't break in such case.
+        (targetIdForFocusedContent == ScrollSnapTargetId::None ||
+         focusedTarget)) {
+      break;
+    }
+  }
+
+  return {x, y};
+}
+
+Maybe<mozilla::SnapTarget> ScrollSnapUtils::GetSnapPointForResnap(
+    const layers::ScrollSnapInfo& aSnapInfo, const nsRect& aScrollRange,
+    const nsPoint& aCurrentPosition,
+    const UniquePtr<ScrollSnapTargetIds>& aLastSnapTargetIds,
+    const nsIContent* aFocusedContent) {
+  if (!aLastSnapTargetIds) {
+    return GetSnapPointForDestination(aSnapInfo, ScrollUnit::DEVICE_PIXELS,
+                                      ScrollSnapFlags::IntendedEndPosition,
+                                      aScrollRange, aCurrentPosition,
+                                      aCurrentPosition);
+  }
+
+  auto [x, y] = GetCandidateInLastTargets(aSnapInfo, aCurrentPosition,
+                                          aLastSnapTargetIds, aFocusedContent);
+  if (!x && !y) {
+    // In the worst case there's no longer valid snap points previously snapped,
+    // try to find new valid snap points.
+    return GetSnapPointForDestination(aSnapInfo, ScrollUnit::DEVICE_PIXELS,
+                                      ScrollSnapFlags::IntendedEndPosition,
+                                      aScrollRange, aCurrentPosition,
+                                      aCurrentPosition);
+  }
+
+  // If there's no candidate on one of the axes in the last snap points, try
+  // to find a new candidate.
+  if (!x || !y) {
+    nsPoint newPosition =
+        nsPoint(x ? *x : aCurrentPosition.x, y ? *y : aCurrentPosition.y);
+    CalcSnapPoints calcSnapPoints(ScrollUnit::DEVICE_PIXELS,
+                                  ScrollSnapFlags::IntendedEndPosition,
+                                  newPosition, newPosition);
+    for (const auto& target : aSnapInfo.mSnapTargets) {
+      if (!target.IsValidFor(newPosition, aSnapInfo.mSnapportSize)) {
+        continue;
+      }
+
+      if (!x && target.mSnapPositionX &&
+          aSnapInfo.mScrollSnapStrictnessX != StyleScrollSnapStrictness::None) {
+        calcSnapPoints.AddVerticalEdge(
+            {*target.mSnapPositionX, target.mScrollSnapStop, target.mTargetId});
+      }
+      if (!y && target.mSnapPositionY &&
+          aSnapInfo.mScrollSnapStrictnessY != StyleScrollSnapStrictness::None) {
+        calcSnapPoints.AddHorizontalEdge(
+            {*target.mSnapPositionY, target.mScrollSnapStop, target.mTargetId});
+      }
+    }
+    auto finalPos = calcSnapPoints.GetBestEdge();
+    if (!x) {
+      x = Some(finalPos.mPosition.x);
+    }
+    if (!y) {
+      y = Some(finalPos.mPosition.y);
+    }
+  }
+
+  SnapTarget snapTarget{nsPoint(*x, *y)};
+  // Collect snap points where the position is still same as the new snap
+  // position.
+  for (const auto& target : aSnapInfo.mSnapTargets) {
+    if (!target.IsValidFor(snapTarget.mPosition, aSnapInfo.mSnapportSize)) {
+      continue;
+    }
+
+    if (target.mSnapPositionX &&
+        aSnapInfo.mScrollSnapStrictnessX != StyleScrollSnapStrictness::None &&
+        target.mSnapPositionX == x) {
+      snapTarget.mTargetIds.mIdsOnX.AppendElement(target.mTargetId);
+    }
+
+    if (target.mSnapPositionY &&
+        aSnapInfo.mScrollSnapStrictnessY != StyleScrollSnapStrictness::None &&
+        target.mSnapPositionY == y) {
+      snapTarget.mTargetIds.mIdsOnY.AppendElement(target.mTargetId);
+    }
+  }
+  return Some(snapTarget);
+}
+
+void ScrollSnapUtils::PostPendingResnapIfNeededFor(nsIFrame* aFrame) {
+  ScrollSnapTargetId id = GetTargetIdFor(aFrame);
+  if (id == ScrollSnapTargetId::None) {
+    return;
+  }
+
+  if (nsIScrollableFrame* sf = nsLayoutUtils::GetNearestScrollableFrame(
+          aFrame, nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                      nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN)) {
+    sf->PostPendingResnapIfNeeded(aFrame);
+  }
+}
+
+void ScrollSnapUtils::PostPendingResnapFor(nsIFrame* aFrame) {
+  if (nsIScrollableFrame* sf = nsLayoutUtils::GetNearestScrollableFrame(
+          aFrame, nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                      nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN)) {
+    sf->PostPendingResnap();
+  }
 }
 
 }  // namespace mozilla

@@ -2,12 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* globals log */
+
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -530,16 +531,9 @@ var Policies = {
         });
       }
 
-      if (param.ExpireAtSessionEnd !== undefined || param.Locked) {
-        let newLifetimePolicy = Ci.nsICookieService.ACCEPT_NORMALLY;
-        if (param.ExpireAtSessionEnd) {
-          newLifetimePolicy = Ci.nsICookieService.ACCEPT_SESSION;
-        }
-
-        PoliciesUtils.setDefaultPref(
-          "network.cookie.lifetimePolicy",
-          newLifetimePolicy,
-          param.Locked
+      if (param.ExpireAtSessionEnd != undefined) {
+        log.error(
+          "'ExpireAtSessionEnd' has been deprecated and it has no effect anymore."
         );
       }
 
@@ -1305,6 +1299,12 @@ var Policies = {
     },
   },
 
+  GoToIntranetSiteForSingleWordEntryInAddressBar: {
+    onBeforeAddons(manager, param) {
+      setAndLockPref("browser.fixup.dns_first_for_single_words", param);
+    },
+  },
+
   Handlers: {
     onBeforeAddons(manager, param) {
       if ("mimeTypes" in param) {
@@ -1719,7 +1719,6 @@ var Policies = {
         "security.default_personal_cert",
         "security.insecure_connection_text.enabled",
         "security.insecure_connection_text.pbmode.enabled",
-        "security.insecure_field_warning.contextual.enabled",
         "security.mixed_content.block_active_content",
         "security.osclientcerts.autoload",
         "security.ssl.errorReporting.enabled",

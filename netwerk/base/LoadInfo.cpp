@@ -64,11 +64,11 @@ static nsContentPolicyType InternalContentPolicyTypeForFrame(
 }
 
 /* static */ already_AddRefed<LoadInfo> LoadInfo::CreateForDocument(
-    dom::CanonicalBrowsingContext* aBrowsingContext,
+    dom::CanonicalBrowsingContext* aBrowsingContext, nsIURI* aURI,
     nsIPrincipal* aTriggeringPrincipal,
     const OriginAttributes& aOriginAttributes, nsSecurityFlags aSecurityFlags,
     uint32_t aSandboxFlags) {
-  return MakeAndAddRef<LoadInfo>(aBrowsingContext, aTriggeringPrincipal,
+  return MakeAndAddRef<LoadInfo>(aBrowsingContext, aURI, aTriggeringPrincipal,
                                  aOriginAttributes, aSecurityFlags,
                                  aSandboxFlags);
 }
@@ -96,7 +96,7 @@ LoadInfo::LoadInfo(
     nsContentPolicyType aContentPolicyType,
     const Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
     const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
-    uint32_t aSandboxFlags)
+    uint32_t aSandboxFlags, bool aSkipCheckForBrokenURLOrZeroSized)
     : mLoadingPrincipal(aLoadingContext ? aLoadingContext->NodePrincipal()
                                         : aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal ? aTriggeringPrincipal
@@ -108,7 +108,8 @@ LoadInfo::LoadInfo(
       mSecurityFlags(aSecurityFlags),
       mSandboxFlags(aSandboxFlags),
 
-      mInternalContentPolicyType(aContentPolicyType) {
+      mInternalContentPolicyType(aContentPolicyType),
+      mSkipCheckForBrokenURLOrZeroSized(aSkipCheckForBrokenURLOrZeroSized) {
   MOZ_ASSERT(mLoadingPrincipal);
   MOZ_ASSERT(mTriggeringPrincipal);
 
@@ -309,7 +310,7 @@ LoadInfo::LoadInfo(
  * This constructor should only be used for TYPE_DOCUMENT loads, since they
  * have a null loadingNode and loadingPrincipal.
  */
-LoadInfo::LoadInfo(nsPIDOMWindowOuter* aOuterWindow,
+LoadInfo::LoadInfo(nsPIDOMWindowOuter* aOuterWindow, nsIURI* aURI,
                    nsIPrincipal* aTriggeringPrincipal,
                    nsISupports* aContextForTopLevelLoad,
                    nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags)
@@ -364,12 +365,17 @@ LoadInfo::LoadInfo(nsPIDOMWindowOuter* aOuterWindow,
   // for the documents' loadInfo. Note that for any other loadInfos,
   // cookieBehavior will be BEHAVIOR_REJECT for security reasons.
   bool isPrivate = mOriginAttributes.mPrivateBrowsingId > 0;
+  bool shouldResistFingerprinting =
+      nsContentUtils::ShouldResistFingerprinting_dangerous(
+          aURI, mOriginAttributes,
+          "We are creating CookieJarSettings, so we can't have one already.");
   mCookieJarSettings = CookieJarSettings::Create(
-      isPrivate ? CookieJarSettings::ePrivate : CookieJarSettings::eRegular);
+      isPrivate ? CookieJarSettings::ePrivate : CookieJarSettings::eRegular,
+      shouldResistFingerprinting);
 }
 
 LoadInfo::LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext,
-                   nsIPrincipal* aTriggeringPrincipal,
+                   nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal,
                    const OriginAttributes& aOriginAttributes,
                    nsSecurityFlags aSecurityFlags, uint32_t aSandboxFlags)
     : mTriggeringPrincipal(aTriggeringPrincipal),
@@ -406,8 +412,13 @@ LoadInfo::LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext,
   // for the documents' loadInfo. Note that for any other loadInfos,
   // cookieBehavior will be BEHAVIOR_REJECT for security reasons.
   bool isPrivate = mOriginAttributes.mPrivateBrowsingId > 0;
+  bool shouldResistFingerprinting =
+      nsContentUtils::ShouldResistFingerprinting_dangerous(
+          aURI, mOriginAttributes,
+          "We are creating CookieJarSettings, so we can't have one already.");
   mCookieJarSettings = CookieJarSettings::Create(
-      isPrivate ? CookieJarSettings::ePrivate : CookieJarSettings::eRegular);
+      isPrivate ? CookieJarSettings::ePrivate : CookieJarSettings::eRegular,
+      shouldResistFingerprinting);
 }
 
 LoadInfo::LoadInfo(dom::WindowGlobalParent* aParentWGP,
@@ -502,6 +513,11 @@ LoadInfo::LoadInfo(dom::WindowGlobalParent* aParentWGP,
   RefPtr<WindowContext> ctx = WindowContext::GetById(mInnerWindowID);
   if (ctx) {
     mLoadingEmbedderPolicy = ctx->GetEmbedderPolicy();
+
+    if (Document* document = ctx->GetDocument()) {
+      mIsOriginTrialCoepCredentiallessEnabledForTopLevel =
+          document->Trials().IsEnabled(OriginTrial::CoepCredentialless);
+    }
   }
 }
 
@@ -590,6 +606,8 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mIsMediaInitialRequest(rhs.mIsMediaInitialRequest),
       mIsFromObjectOrEmbed(rhs.mIsFromObjectOrEmbed),
       mLoadingEmbedderPolicy(rhs.mLoadingEmbedderPolicy),
+      mIsOriginTrialCoepCredentiallessEnabledForTopLevel(
+          rhs.mIsOriginTrialCoepCredentiallessEnabledForTopLevel),
       mUnstrippedURI(rhs.mUnstrippedURI) {}
 
 LoadInfo::LoadInfo(
@@ -629,6 +647,7 @@ LoadInfo::LoadInfo(
     nsILoadInfo::StoragePermissionState aStoragePermission, bool aIsMetaRefresh,
     uint32_t aRequestBlockingReason, nsINode* aLoadingContext,
     nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
+    bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel,
     nsIURI* aUnstrippedURI)
     : mLoadingPrincipal(aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal),
@@ -696,6 +715,8 @@ LoadInfo::LoadInfo(
       mIsMetaRefresh(aIsMetaRefresh),
 
       mLoadingEmbedderPolicy(aLoadingEmbedderPolicy),
+      mIsOriginTrialCoepCredentiallessEnabledForTopLevel(
+          aIsOriginTrialCoepCredentiallessEnabledForTopLevel),
       mUnstrippedURI(aUnstrippedURI) {
   // Only top level TYPE_DOCUMENT loads can have a null loadingPrincipal
   MOZ_ASSERT(mLoadingPrincipal ||
@@ -756,42 +777,30 @@ void LoadInfo::ComputeIsThirdPartyContext(dom::WindowGlobalParent* aGlobal) {
   thirdPartyUtil->IsThirdPartyGlobal(aGlobal, &mIsThirdPartyContext);
 }
 
-NS_IMPL_ADDREF(LoadInfo)
+NS_IMPL_ISUPPORTS(LoadInfo, nsILoadInfo)
 
-bool LoadInfo::DispatchRelease() {
-  if (NS_IsMainThread()) {
-    return false;
-  }
+#ifdef EARLY_BETA_OR_EARLIER
+void LoadInfo::ReleaseMembers() {
+  Unused << NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+      "LoadInfo::ReleasePrincipalAnUrl",
+      [loadinPrinciple{std::move(mLoadingPrincipal)},
+       principalToInherit{std::move(mPrincipalToInherit)},
+       topLevelPrincipal{std::move(mTopLevelPrincipal)},
+       resultPrincipalURI{std::move(mResultPrincipalURI)},
+       unstrippedURI{std::move(mUnstrippedURI)}]() {}));
 
-  NS_DispatchToMainThread(NewNonOwningRunnableMethod("net::LoadInfo::Release",
-                                                     this, &LoadInfo::Release),
-                          NS_DISPATCH_NORMAL);
-  return true;
+  Unused << NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+      "LoadInfo::ReleaseOther",
+      [cspEventListener{std::move(mCSPEventListener)},
+       performanceStorage{std::move(mPerformanceStorage)},
+       cspToInherit{std::move(mCspToInherit)}]() {}));
+
+  Unused << NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+      "LoadInfo::ReleaseCookieJarSettings",
+      [cookieJarSettings{std::move(mCookieJarSettings)}]() {}));
 }
 
-NS_IMETHODIMP_(MozExternalRefCountType)
-LoadInfo::Release() {
-  nsrefcnt count = mRefCnt - 1;
-  if (DispatchRelease()) {
-    // Redispatched to main thread.
-    return count;
-  }
-
-  MOZ_ASSERT(0 != mRefCnt, "dup release");
-  count = --mRefCnt;
-  NS_LOG_RELEASE(this, count, "LoadInfo");
-
-  if (0 == count) {
-    mRefCnt = 1;
-    delete (this);
-    return 0;
-  }
-
-  return count;
-}
-
-NS_IMPL_QUERY_INTERFACE(LoadInfo, nsILoadInfo)
-
+#else
 void LoadInfo::ReleaseMembers() {
   mCSPEventListener = nullptr;
   mCookieJarSettings = nullptr;
@@ -805,6 +814,7 @@ void LoadInfo::ReleaseMembers() {
   mUnstrippedURI = nullptr;
   mAncestorPrincipals.Clear();
 }
+#endif
 
 LoadInfo::~LoadInfo() { ReleaseMembers(); }
 
@@ -1010,10 +1020,13 @@ LoadInfo::GetCookiePolicy(uint32_t* aResult) {
 namespace {
 
 already_AddRefed<nsICookieJarSettings> CreateCookieJarSettings(
-    nsContentPolicyType aContentPolicyType, bool aIsPrivate) {
+    nsContentPolicyType aContentPolicyType, bool aIsPrivate,
+    bool shouldResistFingerprinting) {
   if (StaticPrefs::network_cookieJarSettings_unblocked_for_testing()) {
-    return aIsPrivate ? CookieJarSettings::Create(CookieJarSettings::ePrivate)
-                      : CookieJarSettings::Create(CookieJarSettings::eRegular);
+    return aIsPrivate ? CookieJarSettings::Create(CookieJarSettings::ePrivate,
+                                                  shouldResistFingerprinting)
+                      : CookieJarSettings::Create(CookieJarSettings::eRegular,
+                                                  shouldResistFingerprinting);
   }
 
   // These contentPolictTypes require a real CookieJarSettings because favicon
@@ -1021,11 +1034,13 @@ already_AddRefed<nsICookieJarSettings> CreateCookieJarSettings(
   // send/receive cookies.
   if (aContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON ||
       aContentPolicyType == nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
-    return aIsPrivate ? CookieJarSettings::Create(CookieJarSettings::ePrivate)
-                      : CookieJarSettings::Create(CookieJarSettings::eRegular);
+    return aIsPrivate ? CookieJarSettings::Create(CookieJarSettings::ePrivate,
+                                                  shouldResistFingerprinting)
+                      : CookieJarSettings::Create(CookieJarSettings::eRegular,
+                                                  shouldResistFingerprinting);
   }
 
-  return CookieJarSettings::GetBlockingAll();
+  return CookieJarSettings::GetBlockingAll(shouldResistFingerprinting);
 }
 
 }  // namespace
@@ -1034,8 +1049,14 @@ NS_IMETHODIMP
 LoadInfo::GetCookieJarSettings(nsICookieJarSettings** aCookieJarSettings) {
   if (!mCookieJarSettings) {
     bool isPrivate = mOriginAttributes.mPrivateBrowsingId > 0;
-    mCookieJarSettings =
-        CreateCookieJarSettings(mInternalContentPolicyType, isPrivate);
+    nsCOMPtr<nsIPrincipal> loadingPrincipal;
+    Unused << this->GetLoadingPrincipal(getter_AddRefs(loadingPrincipal));
+    bool shouldResistFingerprinting =
+        nsContentUtils::ShouldResistFingerprinting_dangerous(
+            loadingPrincipal,
+            "CookieJarSettings can't exist yet, we're creating it");
+    mCookieJarSettings = CreateCookieJarSettings(
+        mInternalContentPolicyType, isPrivate, shouldResistFingerprinting);
   }
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings = mCookieJarSettings;
@@ -1547,7 +1568,7 @@ LoadInfo::GetRedirects(JSContext* aCx, JS::MutableHandle<JS::Value> aRedirects,
   nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
 
   for (size_t idx = 0; idx < aArray.Length(); idx++) {
-    JS::RootedObject jsobj(aCx);
+    JS::Rooted<JSObject*> jsobj(aCx);
     nsresult rv =
         xpc->WrapNative(aCx, global, aArray[idx],
                         NS_GET_IID(nsIRedirectHistoryEntry), jsobj.address());
@@ -1898,6 +1919,14 @@ LoadInfo::GetIsFromObjectOrEmbed(bool* aIsFromObjectOrEmbed) {
 }
 
 NS_IMETHODIMP
+LoadInfo::GetShouldSkipCheckForBrokenURLOrZeroSized(
+    bool* aShouldSkipCheckForBrokenURLOrZeroSized) {
+  MOZ_ASSERT(aShouldSkipCheckForBrokenURLOrZeroSized);
+  *aShouldSkipCheckForBrokenURLOrZeroSized = mSkipCheckForBrokenURLOrZeroSized;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 LoadInfo::GetResultPrincipalURI(nsIURI** aURI) {
   *aURI = do_AddRef(mResultPrincipalURI).take();
   return NS_OK;
@@ -2082,6 +2111,22 @@ NS_IMETHODIMP
 LoadInfo::SetLoadingEmbedderPolicy(
     nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) {
   mLoadingEmbedderPolicy = aPolicy;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(
+    bool* aIsOriginTrialCoepCredentiallessEnabledForTopLevel) {
+  *aIsOriginTrialCoepCredentiallessEnabledForTopLevel =
+      mIsOriginTrialCoepCredentiallessEnabledForTopLevel;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetIsOriginTrialCoepCredentiallessEnabledForTopLevel(
+    bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel) {
+  mIsOriginTrialCoepCredentiallessEnabledForTopLevel =
+      aIsOriginTrialCoepCredentiallessEnabledForTopLevel;
   return NS_OK;
 }
 

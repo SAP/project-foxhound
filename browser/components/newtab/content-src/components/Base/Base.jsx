@@ -184,8 +184,10 @@ export class BaseContent extends React.PureComponent {
       highlightsEnabled: prefs["feeds.section.highlights"],
       showSponsoredTopSitesEnabled: prefs.showSponsoredTopSites,
       showSponsoredPocketEnabled: prefs.showSponsored,
+      showRecentSavesEnabled: prefs.showRecentSaves,
       topSitesRowsCount: prefs.topSitesRows,
     };
+
     const pocketRegion = prefs["feeds.system.topstories"];
     const { mayHaveSponsoredTopSites } = prefs;
 

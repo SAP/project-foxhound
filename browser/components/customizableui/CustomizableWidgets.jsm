@@ -9,9 +9,8 @@ var EXPORTED_SYMBOLS = ["CustomizableWidgets"];
 const { CustomizableUI } = ChromeUtils.import(
   "resource:///modules/CustomizableUI.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -297,6 +296,12 @@ const CustomizableWidgets = [
     id: "add-ons-button",
     shortcutId: "key_openAddons",
     l10nId: "toolbar-addons-themes-button",
+    onBeforeCreated() {
+      // If the pref is set to `true`, we won't create this widget.
+      return !Services.prefs.getBoolPref(
+        "extensions.unifiedExtensions.enabled"
+      );
+    },
     onCommand(aEvent) {
       let win = aEvent.target.ownerGlobal;
       win.BrowserOpenAddonsMgr();

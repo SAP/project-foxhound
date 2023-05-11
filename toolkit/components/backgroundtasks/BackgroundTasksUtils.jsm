@@ -5,9 +5,8 @@
 
 var EXPORTED_SYMBOLS = ["BackgroundTasksUtils"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -30,6 +29,22 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/toolkit/profile-service;1",
   "nsIToolkitProfileService"
 );
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "BackgroundTasks",
+  "@mozilla.org/backgroundtasks;1",
+  "nsIBackgroundTasks"
+);
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
+  ASRouterDefaultConfig:
+    "resource://activity-stream/lib/ASRouterDefaultConfig.jsm",
+  ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
+  RemoteSettingsExperimentLoader:
+    "resource://nimbus/lib/RemoteSettingsExperimentLoader.jsm",
+});
 
 class CannotLockProfileError extends Error {
   constructor(message) {
@@ -220,6 +235,35 @@ var BackgroundTasksUtils = {
   },
 
   /**
+   * Reads the snapshotted Firefox Messaging System targeting out of a profile.
+   *
+   * If no `lock` is given, the default profile is locked and the preferences
+   * read from it.  If `lock` is given, read from the given lock's directory.
+   *
+   * @param {nsIProfileLock} [lock] optional lock to use
+   * @returns {string}
+   */
+  async readFirefoxMessagingSystemTargetingSnapshot(lock = null) {
+    if (!lock) {
+      return this.withProfileLock(profileLock =>
+        this.readFirefoxMessagingSystemTargetingSnapshot(profileLock)
+      );
+    }
+
+    this._throwIfNotLocked(lock);
+
+    let snapshotFile = lock.directory.clone();
+    snapshotFile.append("targeting.snapshot.json");
+
+    lazy.log.info(
+      `readFirefoxMessagingSystemTargetingSnapshot: will read Firefox Messaging ` +
+        `System targeting snapshot from ${snapshotFile.path}`
+    );
+
+    return IOUtils.readJSON(snapshotFile.path);
+  },
+
+  /**
    * Reads the Telemetry Client ID out of a profile.
    *
    * If no `lock` is given, the default profile is locked and the preferences
@@ -245,10 +289,126 @@ var BackgroundTasksUtils = {
       `readPreferences: will read Telemetry client ID from ${stateFile.path}`
     );
 
-    // This JSON is always UTF-8.
-    let data = await IOUtils.readUTF8(stateFile.path);
-    let state = JSON.parse(data);
+    let state = await IOUtils.readJSON(stateFile.path);
 
     return state.clientID;
+  },
+
+  /**
+   * Enable the Nimbus experimentation framework.
+   *
+   * @param {nsICommandLine} commandLine if given, accept command line parameters
+   *                                     like `--url about:studies?...` or
+   *                                     `--url file:path/to.json` to explicitly
+   *                                     opt-on to experiment branches.
+   */
+  async enableNimbus(commandLine) {
+    try {
+      await lazy.ExperimentManager.onStartup();
+    } catch (err) {
+      lazy.log.error("Failed to initialize ExperimentManager:", err);
+      throw err;
+    }
+
+    try {
+      await lazy.RemoteSettingsExperimentLoader.init();
+    } catch (err) {
+      lazy.log.error(
+        "Failed to initialize RemoteSettingsExperimentLoader:",
+        err
+      );
+      throw err;
+    }
+
+    // Allow manual explicit opt-in to experiment branches to facilitate testing.
+    //
+    // Process command line arguments, like
+    // `--url about:studies?optin_slug=nalexander-ms-test1&optin_branch=treatment-a&optin_collection=nimbus-preview`
+    // or
+    // `--url file:///Users/nalexander/Mozilla/gecko/experiment.json?optin_branch=treatment-a`.
+    let ar;
+    while ((ar = commandLine?.handleFlagWithParam("url", false))) {
+      let uri = commandLine.resolveURI(ar);
+      const params = new URLSearchParams(uri.query);
+
+      if (uri.schemeIs("about") && uri.filePath == "studies") {
+        // Allow explicit opt-in.  In the future, we might take this pref from
+        // the default browsing profile.
+        Services.prefs.setBoolPref("nimbus.debug", true);
+
+        const data = {
+          slug: params.get("optin_slug"),
+          branch: params.get("optin_branch"),
+          collection: params.get("optin_collection"),
+        };
+        await lazy.RemoteSettingsExperimentLoader.optInToExperiment(data);
+        lazy.log.info(`Opted in to experiment: ${JSON.stringify(data)}`);
+      }
+
+      if (uri.schemeIs("file")) {
+        let branchSlug = params.get("optin_branch");
+        let path = decodeURIComponent(uri.filePath);
+        let response = await fetch(uri.spec);
+        let recipe = await response.json();
+        if (recipe.permissions) {
+          // Saved directly from Experimenter, there's a top-level `data`.  Hand
+          // written, that's not the norm.
+          recipe = recipe.data;
+        }
+        let branch = recipe.branches.find(b => b.slug == branchSlug);
+
+        lazy.ExperimentManager.forceEnroll(recipe, branch);
+        lazy.log.info(`Forced enrollment into: ${path}, branch: ${branchSlug}`);
+      }
+    }
+  },
+
+  /**
+   * Enable the Firefox Messaging System and, when successfully initialized,
+   * trigger a message with trigger id `backgroundTask`.
+   *
+   * @param {object} defaultProfile - snapshot of Firefox Messaging System
+   *                                  targeting from default browsing profile.
+   */
+  async enableFirefoxMessagingSystem(defaultProfile = {}) {
+    function logArgs(tag, ...args) {
+      lazy.log.debug(`FxMS invoked ${tag}: ${JSON.stringify(args)}`);
+    }
+
+    let {
+      messageHandler,
+      router,
+      createStorage,
+    } = lazy.ASRouterDefaultConfig();
+
+    if (!router.initialized) {
+      const storage = await createStorage();
+      await router.init({
+        storage,
+        // Background tasks never send legacy telemetry.
+        sendTelemetry: logArgs.bind(null, "sendTelemetry"),
+        dispatchCFRAction: messageHandler.handleCFRAction.bind(messageHandler),
+        // There's no child process involved in background tasks, so swallow all
+        // of these messages.
+        clearChildMessages: logArgs.bind(null, "clearChildMessages"),
+        clearChildProviders: logArgs.bind(null, "clearChildProviders"),
+        updateAdminState: () => {},
+      });
+    }
+
+    await lazy.ASRouter.waitForInitialized;
+
+    const triggerId = "backgroundTask";
+    await lazy.ASRouter.sendTriggerMessage({
+      browser: null,
+      id: triggerId,
+      context: {
+        backgroundTaskName: lazy.BackgroundTasks.backgroundTaskName(),
+        defaultProfile,
+      },
+    });
+    lazy.log.info(
+      "Triggered Firefox Messaging System with trigger id 'backgroundTask'"
+    );
   },
 };

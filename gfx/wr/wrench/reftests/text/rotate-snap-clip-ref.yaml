@@ -3,7 +3,6 @@ root:
   items:
     - type: clip
       id: 2
-      bounds: [0, 0, 400, 30]
       complex:
         - rect: [0, 0, 400, 30]
           radius: {
@@ -12,8 +11,11 @@ root:
             bottom-left: 2,
             bottom-right: 2,
           }
+    - type: clip-chain
+      id: 12
+      clips: [2]
     - type: stacking-context
-      clip-node: 2
+      clip-chain: 12
       items:
         - type: stacking-context
           items:

@@ -25,8 +25,9 @@
 #include "vm/AsyncIteration.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/ModuleBuilder.h"       // js::ModuleBuilder
-#include "vm/PlainObject.h"         // js::PlainObject
-#include "vm/PromiseObject.h"       // js::PromiseObject
+#include "vm/Modules.h"
+#include "vm/PlainObject.h"    // js::PlainObject
+#include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/SelfHosting.h"
 #include "vm/SharedStencil.h"  // js::GCThingIndex
 
@@ -38,58 +39,50 @@
 
 using namespace js;
 
-static_assert(MODULE_STATUS_UNLINKED < MODULE_STATUS_LINKING &&
-                  MODULE_STATUS_LINKING < MODULE_STATUS_LINKED &&
-                  MODULE_STATUS_LINKED < MODULE_STATUS_EVALUATED &&
-                  MODULE_STATUS_EVALUATED < MODULE_STATUS_EVALUATED_ERROR,
+using mozilla::Maybe;
+using mozilla::Nothing;
+using mozilla::Some;
+
+static_assert(ModuleStatus::Unlinked < ModuleStatus::Linking &&
+                  ModuleStatus::Linking < ModuleStatus::Linked &&
+                  ModuleStatus::Linked < ModuleStatus::Evaluating &&
+                  ModuleStatus::Evaluating < ModuleStatus::EvaluatingAsync &&
+                  ModuleStatus::EvaluatingAsync < ModuleStatus::Evaluated &&
+                  ModuleStatus::Evaluated < ModuleStatus::Evaluated_Error,
               "Module statuses are ordered incorrectly");
 
-template <typename T, Value ValueGetter(const T* obj)>
-static bool ModuleValueGetterImpl(JSContext* cx, const CallArgs& args) {
-  args.rval().set(ValueGetter(&args.thisv().toObject().as<T>()));
-  return true;
+static inline Value ModuleStatusValue(ModuleStatus status) {
+  return Int32Value(int32_t(status));
 }
-
-template <typename T, Value ValueGetter(const T* obj)>
-static bool ModuleValueGetter(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<T::isInstance,
-                              ModuleValueGetterImpl<T, ValueGetter>>(cx, args);
-}
-
-#define DEFINE_GETTER_FUNCTIONS(cls, name, slot)                              \
-  static Value cls##_##name##Value(const cls* obj) {                          \
-    return obj->getReservedSlot(cls::slot);                                   \
-  }                                                                           \
-                                                                              \
-  static bool cls##_##name##Getter(JSContext* cx, unsigned argc, Value* vp) { \
-    return ModuleValueGetter<cls, cls##_##name##Value>(cx, argc, vp);         \
-  }
-
-#define DEFINE_ATOM_ACCESSOR_METHOD(cls, name) \
-  JSAtom* cls::name() const {                  \
-    Value value = cls##_##name##Value(this);   \
-    return &value.toString()->asAtom();        \
-  }
-
-#define DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(cls, name) \
-  JSAtom* cls::name() const {                          \
-    Value value = cls##_##name##Value(this);           \
-    if (value.isNull()) return nullptr;                \
-    return &value.toString()->asAtom();                \
-  }
-
-#define DEFINE_UINT32_ACCESSOR_METHOD(cls, name) \
-  uint32_t cls::name() const {                   \
-    Value value = cls##_##name##Value(this);     \
-    MOZ_ASSERT(value.toNumber() >= 0);           \
-    if (value.isInt32()) return value.toInt32(); \
-    return JS::ToUint32(value.toDouble());       \
-  }
 
 static Value StringOrNullValue(JSString* maybeString) {
   return maybeString ? StringValue(maybeString) : NullValue();
 }
+
+#define DEFINE_ATOM_ACCESSOR_METHOD(cls, name, slot) \
+  JSAtom* cls::name() const {                        \
+    Value value = getReservedSlot(slot);             \
+    return &value.toString()->asAtom();              \
+  }
+
+#define DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(cls, name, slot) \
+  JSAtom* cls::name() const {                                \
+    Value value = getReservedSlot(slot);                     \
+    if (value.isNull()) {                                    \
+      return nullptr;                                        \
+    }                                                        \
+    return &value.toString()->asAtom();                      \
+  }
+
+#define DEFINE_UINT32_ACCESSOR_METHOD(cls, name, slot) \
+  uint32_t cls::name() const {                         \
+    Value value = getReservedSlot(slot);               \
+    MOZ_ASSERT(value.toNumber() >= 0);                 \
+    if (value.isInt32()) {                             \
+      return value.toInt32();                          \
+    }                                                  \
+    return JS::ToUint32(value.toDouble());             \
+  }
 
 ///////////////////////////////////////////////////////////////////////////
 // ImportEntryObject
@@ -97,16 +90,11 @@ static Value StringOrNullValue(JSString* maybeString) {
 /* static */ const JSClass ImportEntryObject::class_ = {
     "ImportEntry", JSCLASS_HAS_RESERVED_SLOTS(ImportEntryObject::SlotCount)};
 
-DEFINE_GETTER_FUNCTIONS(ImportEntryObject, moduleRequest, ModuleRequestSlot)
-DEFINE_GETTER_FUNCTIONS(ImportEntryObject, importName, ImportNameSlot)
-DEFINE_GETTER_FUNCTIONS(ImportEntryObject, localName, LocalNameSlot)
-DEFINE_GETTER_FUNCTIONS(ImportEntryObject, lineNumber, LineNumberSlot)
-DEFINE_GETTER_FUNCTIONS(ImportEntryObject, columnNumber, ColumnNumberSlot)
-
-DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ImportEntryObject, importName)
-DEFINE_ATOM_ACCESSOR_METHOD(ImportEntryObject, localName)
-DEFINE_UINT32_ACCESSOR_METHOD(ImportEntryObject, lineNumber)
-DEFINE_UINT32_ACCESSOR_METHOD(ImportEntryObject, columnNumber)
+DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ImportEntryObject, importName,
+                                    ImportNameSlot)
+DEFINE_ATOM_ACCESSOR_METHOD(ImportEntryObject, localName, LocalNameSlot)
+DEFINE_UINT32_ACCESSOR_METHOD(ImportEntryObject, lineNumber, LineNumberSlot)
+DEFINE_UINT32_ACCESSOR_METHOD(ImportEntryObject, columnNumber, ColumnNumberSlot)
 
 ModuleRequestObject* ImportEntryObject::moduleRequest() const {
   Value value = getReservedSlot(ModuleRequestSlot);
@@ -119,42 +107,11 @@ bool ImportEntryObject::isInstance(HandleValue value) {
 }
 
 /* static */
-bool GlobalObject::initImportEntryProto(JSContext* cx,
-                                        Handle<GlobalObject*> global) {
-  static const JSPropertySpec protoAccessors[] = {
-      JS_PSG("moduleRequest", ImportEntryObject_moduleRequestGetter, 0),
-      JS_PSG("importName", ImportEntryObject_importNameGetter, 0),
-      JS_PSG("localName", ImportEntryObject_localNameGetter, 0),
-      JS_PSG("lineNumber", ImportEntryObject_lineNumberGetter, 0),
-      JS_PSG("columnNumber", ImportEntryObject_columnNumberGetter, 0),
-      JS_PS_END};
-
-  RootedObject proto(
-      cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return false;
-  }
-
-  if (!DefinePropertiesAndFunctions(cx, proto, protoAccessors, nullptr)) {
-    return false;
-  }
-
-  global->initBuiltinProto(ProtoKind::ImportEntryProto, proto);
-  return true;
-}
-
-/* static */
 ImportEntryObject* ImportEntryObject::create(
     JSContext* cx, HandleObject moduleRequest, Handle<JSAtom*> maybeImportName,
     Handle<JSAtom*> localName, uint32_t lineNumber, uint32_t columnNumber) {
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateImportEntryPrototype(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-
   ImportEntryObject* self =
-      NewObjectWithGivenProto<ImportEntryObject>(cx, proto);
+      NewObjectWithGivenProto<ImportEntryObject>(cx, nullptr);
   if (!self) {
     return nullptr;
   }
@@ -173,18 +130,13 @@ ImportEntryObject* ImportEntryObject::create(
 /* static */ const JSClass ExportEntryObject::class_ = {
     "ExportEntry", JSCLASS_HAS_RESERVED_SLOTS(ExportEntryObject::SlotCount)};
 
-DEFINE_GETTER_FUNCTIONS(ExportEntryObject, exportName, ExportNameSlot)
-DEFINE_GETTER_FUNCTIONS(ExportEntryObject, moduleRequest, ModuleRequestSlot)
-DEFINE_GETTER_FUNCTIONS(ExportEntryObject, importName, ImportNameSlot)
-DEFINE_GETTER_FUNCTIONS(ExportEntryObject, localName, LocalNameSlot)
-DEFINE_GETTER_FUNCTIONS(ExportEntryObject, lineNumber, LineNumberSlot)
-DEFINE_GETTER_FUNCTIONS(ExportEntryObject, columnNumber, ColumnNumberSlot)
-
-DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ExportEntryObject, exportName)
-DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ExportEntryObject, importName)
-DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ExportEntryObject, localName)
-DEFINE_UINT32_ACCESSOR_METHOD(ExportEntryObject, lineNumber)
-DEFINE_UINT32_ACCESSOR_METHOD(ExportEntryObject, columnNumber)
+DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ExportEntryObject, exportName,
+                                    ExportNameSlot)
+DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ExportEntryObject, importName,
+                                    ImportNameSlot)
+DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ExportEntryObject, localName, LocalNameSlot)
+DEFINE_UINT32_ACCESSOR_METHOD(ExportEntryObject, lineNumber, LineNumberSlot)
+DEFINE_UINT32_ACCESSOR_METHOD(ExportEntryObject, columnNumber, ColumnNumberSlot)
 
 ModuleRequestObject* ExportEntryObject::moduleRequest() const {
   Value value = getReservedSlot(ModuleRequestSlot);
@@ -197,32 +149,6 @@ bool ExportEntryObject::isInstance(HandleValue value) {
 }
 
 /* static */
-bool GlobalObject::initExportEntryProto(JSContext* cx,
-                                        Handle<GlobalObject*> global) {
-  static const JSPropertySpec protoAccessors[] = {
-      JS_PSG("exportName", ExportEntryObject_exportNameGetter, 0),
-      JS_PSG("moduleRequest", ExportEntryObject_moduleRequestGetter, 0),
-      JS_PSG("importName", ExportEntryObject_importNameGetter, 0),
-      JS_PSG("localName", ExportEntryObject_localNameGetter, 0),
-      JS_PSG("lineNumber", ExportEntryObject_lineNumberGetter, 0),
-      JS_PSG("columnNumber", ExportEntryObject_columnNumberGetter, 0),
-      JS_PS_END};
-
-  RootedObject proto(
-      cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return false;
-  }
-
-  if (!DefinePropertiesAndFunctions(cx, proto, protoAccessors, nullptr)) {
-    return false;
-  }
-
-  global->initBuiltinProto(ProtoKind::ExportEntryProto, proto);
-  return true;
-}
-
-/* static */
 ExportEntryObject* ExportEntryObject::create(
     JSContext* cx, Handle<JSAtom*> maybeExportName, HandleObject moduleRequest,
     Handle<JSAtom*> maybeImportName, Handle<JSAtom*> maybeLocalName,
@@ -230,14 +156,8 @@ ExportEntryObject* ExportEntryObject::create(
   // Line and column numbers are optional for export entries since direct
   // entries are checked at parse time.
 
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateExportEntryPrototype(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-
   ExportEntryObject* self =
-      NewObjectWithGivenProto<ExportEntryObject>(cx, proto);
+      NewObjectWithGivenProto<ExportEntryObject>(cx, nullptr);
   if (!self) {
     return nullptr;
   }
@@ -258,12 +178,9 @@ ExportEntryObject* ExportEntryObject::create(
     "RequestedModule",
     JSCLASS_HAS_RESERVED_SLOTS(RequestedModuleObject::SlotCount)};
 
-DEFINE_GETTER_FUNCTIONS(RequestedModuleObject, moduleRequest, ModuleRequestSlot)
-DEFINE_GETTER_FUNCTIONS(RequestedModuleObject, lineNumber, LineNumberSlot)
-DEFINE_GETTER_FUNCTIONS(RequestedModuleObject, columnNumber, ColumnNumberSlot)
-
-DEFINE_UINT32_ACCESSOR_METHOD(RequestedModuleObject, lineNumber)
-DEFINE_UINT32_ACCESSOR_METHOD(RequestedModuleObject, columnNumber)
+DEFINE_UINT32_ACCESSOR_METHOD(RequestedModuleObject, lineNumber, LineNumberSlot)
+DEFINE_UINT32_ACCESSOR_METHOD(RequestedModuleObject, columnNumber,
+                              ColumnNumberSlot)
 
 ModuleRequestObject* RequestedModuleObject::moduleRequest() const {
   Value value = getReservedSlot(ModuleRequestSlot);
@@ -276,41 +193,12 @@ bool RequestedModuleObject::isInstance(HandleValue value) {
 }
 
 /* static */
-bool GlobalObject::initRequestedModuleProto(JSContext* cx,
-                                            Handle<GlobalObject*> global) {
-  static const JSPropertySpec protoAccessors[] = {
-      JS_PSG("moduleRequest", RequestedModuleObject_moduleRequestGetter, 0),
-      JS_PSG("lineNumber", RequestedModuleObject_lineNumberGetter, 0),
-      JS_PSG("columnNumber", RequestedModuleObject_columnNumberGetter, 0),
-      JS_PS_END};
-
-  RootedObject proto(
-      cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return false;
-  }
-
-  if (!DefinePropertiesAndFunctions(cx, proto, protoAccessors, nullptr)) {
-    return false;
-  }
-
-  global->initBuiltinProto(ProtoKind::RequestedModuleProto, proto);
-  return true;
-}
-
-/* static */
 RequestedModuleObject* RequestedModuleObject::create(JSContext* cx,
                                                      HandleObject moduleRequest,
                                                      uint32_t lineNumber,
                                                      uint32_t columnNumber) {
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateRequestedModulePrototype(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-
   RequestedModuleObject* self =
-      NewObjectWithGivenProto<RequestedModuleObject>(cx, proto);
+      NewObjectWithGivenProto<RequestedModuleObject>(cx, nullptr);
   if (!self) {
     return nullptr;
   }
@@ -322,15 +210,58 @@ RequestedModuleObject* RequestedModuleObject::create(JSContext* cx,
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// ResolvedBindingObject
+
+/* static */ const JSClass ResolvedBindingObject::class_ = {
+    "ResolvedBinding",
+    JSCLASS_HAS_RESERVED_SLOTS(ResolvedBindingObject::SlotCount)};
+
+ModuleObject* ResolvedBindingObject::module() const {
+  Value value = getReservedSlot(ModuleSlot);
+  return &value.toObject().as<ModuleObject>();
+}
+
+JSAtom* ResolvedBindingObject::bindingName() const {
+  Value value = getReservedSlot(BindingNameSlot);
+  return &value.toString()->asAtom();
+}
+
+/* static */
+bool ResolvedBindingObject::isInstance(HandleValue value) {
+  return value.isObject() && value.toObject().is<ResolvedBindingObject>();
+}
+
+/* static */
+ResolvedBindingObject* ResolvedBindingObject::create(
+    JSContext* cx, Handle<ModuleObject*> module, Handle<JSAtom*> bindingName) {
+  ResolvedBindingObject* self =
+      NewObjectWithGivenProto<ResolvedBindingObject>(cx, nullptr);
+  if (!self) {
+    return nullptr;
+  }
+
+  self->initReservedSlot(ModuleSlot, ObjectValue(*module));
+  self->initReservedSlot(BindingNameSlot, StringValue(bindingName));
+  return self;
+}
+
+///////////////////////////////////////////////////////////////////////////
 // ModuleRequestObject
 /* static */ const JSClass ModuleRequestObject::class_ = {
     "ModuleRequest",
     JSCLASS_HAS_RESERVED_SLOTS(ModuleRequestObject::SlotCount)};
 
-DEFINE_GETTER_FUNCTIONS(ModuleRequestObject, specifier, SpecifierSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleRequestObject, assertions, AssertionSlot)
+DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ModuleRequestObject, specifier,
+                                    SpecifierSlot)
 
-DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ModuleRequestObject, specifier)
+ArrayObject* ModuleRequestObject::assertions() const {
+  JSObject* obj = getReservedSlot(AssertionSlot).toObjectOrNull();
+  if (!obj) {
+    return nullptr;
+  }
+
+  return &obj->as<ArrayObject>();
+}
 
 /* static */
 bool ModuleRequestObject::isInstance(HandleValue value) {
@@ -338,38 +269,11 @@ bool ModuleRequestObject::isInstance(HandleValue value) {
 }
 
 /* static */
-bool GlobalObject::initModuleRequestProto(JSContext* cx,
-                                          Handle<GlobalObject*> global) {
-  static const JSPropertySpec protoAccessors[] = {
-      JS_PSG("specifier", ModuleRequestObject_specifierGetter, 0),
-      JS_PSG("assertions", ModuleRequestObject_assertionsGetter, 0), JS_PS_END};
-
-  RootedObject proto(
-      cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return false;
-  }
-
-  if (!DefinePropertiesAndFunctions(cx, proto, protoAccessors, nullptr)) {
-    return false;
-  }
-
-  global->initBuiltinProto(ProtoKind::ModuleRequestProto, proto);
-  return true;
-}
-
-/* static */
 ModuleRequestObject* ModuleRequestObject::create(
     JSContext* cx, Handle<JSAtom*> specifier,
     Handle<ArrayObject*> maybeAssertions) {
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateModuleRequestPrototype(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-
   ModuleRequestObject* self =
-      NewObjectWithGivenProto<ModuleRequestObject>(cx, proto);
+      NewObjectWithGivenProto<ModuleRequestObject>(cx, nullptr);
   if (!self) {
     return nullptr;
   }
@@ -441,7 +345,7 @@ bool IndirectBindingMap::lookup(jsid name, ModuleEnvironmentObject** envOut,
   MOZ_ASSERT(
       binding.environment->containsPure(binding.targetName, binding.prop));
   *envOut = binding.environment;
-  *propOut = mozilla::Some(binding.prop);
+  *propOut = Some(binding.prop);
   return true;
 }
 
@@ -562,8 +466,7 @@ bool ModuleNamespaceObject::ProxyHandler::getOwnPropertyDescriptor(
   Rooted<ModuleNamespaceObject*> ns(cx, &proxy->as<ModuleNamespaceObject>());
   if (id.isSymbol()) {
     if (id.isWellKnownSymbol(JS::SymbolCode::toStringTag)) {
-      desc.set(mozilla::Some(
-          PropertyDescriptor::Data(StringValue(cx->names().Module))));
+      desc.set(Some(PropertyDescriptor::Data(StringValue(cx->names().Module))));
       return true;
     }
 
@@ -586,9 +489,9 @@ bool ModuleNamespaceObject::ProxyHandler::getOwnPropertyDescriptor(
     return false;
   }
 
-  desc.set(mozilla::Some(PropertyDescriptor::Data(
-      value,
-      {JS::PropertyAttribute::Enumerable, JS::PropertyAttribute::Writable})));
+  desc.set(
+      Some(PropertyDescriptor::Data(value, {JS::PropertyAttribute::Enumerable,
+                                            JS::PropertyAttribute::Writable})));
   return true;
 }
 
@@ -825,14 +728,8 @@ static void InitFunctionDeclarations(
 
 /* static */
 ModuleObject* ModuleObject::create(JSContext* cx) {
-  RootedObject proto(
-      cx, GlobalObject::getOrCreateModulePrototype(cx, cx->global()));
-  if (!proto) {
-    return nullptr;
-  }
-
-  Rooted<ModuleObject*> self(cx,
-                             NewObjectWithGivenProto<ModuleObject>(cx, proto));
+  Rooted<ModuleObject*> self(
+      cx, NewObjectWithGivenProto<ModuleObject>(cx, nullptr));
   if (!self) {
     return nullptr;
   }
@@ -877,9 +774,9 @@ ModuleEnvironmentObject* ModuleObject::environment() const {
   // Note that this it's valid to call this even if there was an error
   // evaluating the module.
 
-  // According to the spec the environment record is created during
-  // instantiation, but we create it earlier than that.
-  if (status() < MODULE_STATUS_LINKED) {
+  // According to the spec the environment record is created during linking, but
+  // we create it earlier than that.
+  if (status() < ModuleStatus::Linked) {
     return nullptr;
   }
 
@@ -910,29 +807,36 @@ ScriptSourceObject* ModuleObject::scriptSourceObject() const {
               .as<ScriptSourceObject>();
 }
 
-bool ModuleObject::initAsyncSlots(JSContext* cx, bool isAsync,
+bool ModuleObject::initAsyncSlots(JSContext* cx, bool hasTopLevelAwait,
                                   HandleObject asyncParentModulesList) {
-  initReservedSlot(AsyncSlot, BooleanValue(isAsync));
+  initReservedSlot(HasTopLevelAwaitSlot, BooleanValue(hasTopLevelAwait));
   initReservedSlot(AsyncParentModulesSlot,
                    ObjectValue(*asyncParentModulesList));
   return true;
 }
 
-constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_FALSE = 0;
-constexpr uint32_t ASYNC_EVALUATING_POST_ORDER_INIT = 1;
-uint32_t AsyncPostOrder = ASYNC_EVALUATING_POST_ORDER_INIT;
-
-uint32_t nextPostOrder() {
-  uint32_t ordinal = AsyncPostOrder;
-  MOZ_ASSERT(AsyncPostOrder < MAX_UINT32);
-  AsyncPostOrder++;
+static uint32_t NextPostOrder(JSRuntime* rt) {
+  uint32_t ordinal = rt->moduleAsyncEvaluatingPostOrder;
+  MOZ_ASSERT(ordinal < MAX_UINT32);
+  rt->moduleAsyncEvaluatingPostOrder++;
   return ordinal;
 }
 
-bool ModuleObject::initAsyncEvaluatingSlot() {
+// Reset the runtime's moduleAsyncEvaluatingPostOrder counter when the last
+// module that was async evaluating is finished.
+//
+// The graph is not re-entrant and any future modules will be independent from
+// this one.
+static void MaybeResetPostOrderCounter(JSRuntime* rt,
+                                       uint32_t finishedPostOrder) {
+  if (rt->moduleAsyncEvaluatingPostOrder == finishedPostOrder) {
+    rt->moduleAsyncEvaluatingPostOrder = ASYNC_EVALUATING_POST_ORDER_INIT;
+  }
+}
+
+void ModuleObject::setAsyncEvaluating() {
   initReservedSlot(AsyncEvaluatingPostOrderSlot,
-                   PrivateUint32Value(nextPostOrder()));
-  return true;
+                   PrivateUint32Value(NextPostOrder(runtimeFromMainThread())));
 }
 
 void ModuleObject::initScriptSlots(HandleScript script) {
@@ -948,7 +852,7 @@ void ModuleObject::setInitialEnvironment(
 }
 
 void ModuleObject::initStatusSlot() {
-  initReservedSlot(StatusSlot, Int32Value(MODULE_STATUS_UNLINKED));
+  initReservedSlot(StatusSlot, ModuleStatusValue(ModuleStatus::Unlinked));
 }
 
 void ModuleObject::initImportExportData(
@@ -1036,51 +940,109 @@ JSScript* ModuleObject::script() const {
 }
 
 static inline void AssertValidModuleStatus(ModuleStatus status) {
-  MOZ_ASSERT(status >= MODULE_STATUS_UNLINKED &&
-             status <= MODULE_STATUS_EVALUATED_ERROR);
+  MOZ_ASSERT(status >= ModuleStatus::Unlinked &&
+             status <= ModuleStatus::Evaluated_Error);
 }
 
 ModuleStatus ModuleObject::status() const {
-  ModuleStatus status = getReservedSlot(StatusSlot).toInt32();
+  ModuleStatus status = ModuleStatus(getReservedSlot(StatusSlot).toInt32());
   AssertValidModuleStatus(status);
+  if (status == ModuleStatus::Evaluated_Error) {
+    return ModuleStatus::Evaluated;
+  }
   return status;
 }
 
-bool ModuleObject::isAsync() const {
-  return getReservedSlot(AsyncSlot).toBoolean();
+void ModuleObject::setStatus(ModuleStatus newStatus) {
+  AssertValidModuleStatus(newStatus);
+
+  // Note that under OOM conditions we can fail the module linking process even
+  // after modules have been marked as linked.
+  MOZ_ASSERT((status() <= ModuleStatus::Linked &&
+              newStatus == ModuleStatus::Unlinked) ||
+                 newStatus > status(),
+             "New module status inconsistent with current status");
+
+  setReservedSlot(StatusSlot, ModuleStatusValue(newStatus));
+}
+
+bool ModuleObject::hasTopLevelAwait() const {
+  return getReservedSlot(HasTopLevelAwaitSlot).toBoolean();
 }
 
 bool ModuleObject::isAsyncEvaluating() const {
-  if (getReservedSlot(AsyncEvaluatingPostOrderSlot).isUndefined()) {
-    return false;
-  }
-  return getReservedSlot(AsyncEvaluatingPostOrderSlot).toPrivateUint32() !=
-         ASYNC_EVALUATING_POST_ORDER_FALSE;
+  return !getReservedSlot(AsyncEvaluatingPostOrderSlot).isUndefined() &&
+         !wasAsyncEvaluating();
+}
+
+bool ModuleObject::wasAsyncEvaluating() const {
+  return getReservedSlot(AsyncEvaluatingPostOrderSlot) ==
+         PrivateUint32Value(ASYNC_EVALUATING_POST_ORDER_FALSE);
 }
 
 void ModuleObject::setAsyncEvaluatingFalse() {
-  if (AsyncPostOrder == getAsyncEvaluatingPostOrder()) {
-    // If this condition is true, we can reset postOrder.
-    // Graph is not re-entrant and any future modules will be independent from
-    // this one.
-    AsyncPostOrder = ASYNC_EVALUATING_POST_ORDER_INIT;
-  }
+  JSRuntime* rt = runtimeFromMainThread();
+  MaybeResetPostOrderCounter(rt, getAsyncEvaluatingPostOrder());
   return setReservedSlot(AsyncEvaluatingPostOrderSlot,
                          PrivateUint32Value(ASYNC_EVALUATING_POST_ORDER_FALSE));
 }
 
-uint32_t ModuleObject::dfsIndex() const {
-  return getReservedSlot(DFSIndexSlot).toInt32();
+Maybe<uint32_t> ModuleObject::maybeDfsIndex() const {
+  Value value = getReservedSlot(DFSIndexSlot);
+  if (value.isUndefined()) {
+    return mozilla::Nothing();
+  }
+
+  int32_t index = value.toInt32();
+  MOZ_ASSERT(index >= 0);
+  return Some(index);
+}
+
+uint32_t ModuleObject::dfsIndex() const { return maybeDfsIndex().value(); }
+
+void ModuleObject::setDfsIndex(uint32_t index) {
+  MOZ_ASSERT(index <= INT32_MAX);
+  setReservedSlot(DFSIndexSlot, Int32Value(index));
+}
+
+Maybe<uint32_t> ModuleObject::maybeDfsAncestorIndex() const {
+  Value value = getReservedSlot(DFSAncestorIndexSlot);
+  if (value.isUndefined()) {
+    return mozilla::Nothing();
+  }
+
+  int32_t index = value.toInt32();
+  MOZ_ASSERT(index >= 0);
+  return Some(index);
 }
 
 uint32_t ModuleObject::dfsAncestorIndex() const {
-  return getReservedSlot(DFSAncestorIndexSlot).toInt32();
+  return maybeDfsAncestorIndex().value();
 }
 
-JSObject* ModuleObject::topLevelCapability() const {
-  Value capability = getReservedSlot(TopLevelCapabilitySlot);
-  MOZ_RELEASE_ASSERT(capability.isObject());
-  return &capability.toObject();
+void ModuleObject::setDfsAncestorIndex(uint32_t index) {
+  MOZ_ASSERT(index <= INT32_MAX);
+  setReservedSlot(DFSAncestorIndexSlot, Int32Value(index));
+}
+
+void ModuleObject::clearDfsIndexes() {
+  setReservedSlot(DFSIndexSlot, UndefinedValue());
+  setReservedSlot(DFSAncestorIndexSlot, UndefinedValue());
+}
+
+PromiseObject* ModuleObject::maybeTopLevelCapability() const {
+  Value value = getReservedSlot(TopLevelCapabilitySlot);
+  if (value.isUndefined()) {
+    return nullptr;
+  }
+
+  return &value.toObject().as<PromiseObject>();
+}
+
+PromiseObject* ModuleObject::topLevelCapability() const {
+  PromiseObject* capability = maybeTopLevelCapability();
+  MOZ_RELEASE_ASSERT(capability);
+  return capability;
 }
 
 PromiseObject* ModuleObject::createTopLevelCapability(
@@ -1094,11 +1056,12 @@ PromiseObject* ModuleObject::createTopLevelCapability(
   return resultPromise;
 }
 
-void ModuleObject::setInitialTopLevelCapability(HandleObject promiseObj) {
-  initReservedSlot(TopLevelCapabilitySlot, ObjectValue(*promiseObj));
+void ModuleObject::setInitialTopLevelCapability(
+    Handle<PromiseObject*> capability) {
+  initReservedSlot(TopLevelCapabilitySlot, ObjectValue(*capability));
 }
 
-inline ListObject* ModuleObject::asyncParentModules() const {
+ListObject* ModuleObject::asyncParentModules() const {
   return &getReservedSlot(AsyncParentModulesSlot).toObject().as<ListObject>();
 }
 
@@ -1109,13 +1072,31 @@ bool ModuleObject::appendAsyncParentModule(JSContext* cx,
   return self->asyncParentModules()->append(cx, parentValue);
 }
 
+Maybe<uint32_t> ModuleObject::maybePendingAsyncDependencies() const {
+  Value value = getReservedSlot(PendingAsyncDependenciesSlot);
+  if (value.isUndefined()) {
+    return Nothing();
+  }
+
+  return Some(value.toInt32());
+}
+
 uint32_t ModuleObject::pendingAsyncDependencies() const {
-  return getReservedSlot(PendingAsyncDependenciesSlot).toInt32();
+  return maybePendingAsyncDependencies().value();
+}
+
+Maybe<uint32_t> ModuleObject::maybeAsyncEvaluatingPostOrder() const {
+  Value value = getReservedSlot(AsyncEvaluatingPostOrderSlot);
+  if (value.isUndefined()) {
+    return Nothing();
+  }
+
+  MOZ_ASSERT(isAsyncEvaluating());
+  return Some(value.toPrivateUint32());
 }
 
 uint32_t ModuleObject::getAsyncEvaluatingPostOrder() const {
-  MOZ_ASSERT(isAsyncEvaluating());
-  return getReservedSlot(AsyncEvaluatingPostOrderSlot).toPrivateUint32();
+  return maybeAsyncEvaluatingPostOrder().value();
 }
 
 void ModuleObject::setPendingAsyncDependencies(uint32_t newValue) {
@@ -1137,17 +1118,28 @@ bool ModuleObject::hasTopLevelCapability() const {
 }
 
 bool ModuleObject::hadEvaluationError() const {
-  return status() == MODULE_STATUS_EVALUATED_ERROR;
+  ModuleStatus fullStatus = ModuleStatus(getReservedSlot(StatusSlot).toInt32());
+  return fullStatus == ModuleStatus::Evaluated_Error;
 }
 
 void ModuleObject::setEvaluationError(HandleValue newValue) {
-  setReservedSlot(StatusSlot, Int32Value(MODULE_STATUS_EVALUATED_ERROR));
-  return setReservedSlot(EvaluationErrorSlot, newValue);
+  MOZ_ASSERT(status() != ModuleStatus::Unlinked);
+  MOZ_ASSERT(!hadEvaluationError());
+
+  setReservedSlot(StatusSlot, ModuleStatusValue(ModuleStatus::Evaluated_Error));
+  setReservedSlot(EvaluationErrorSlot, newValue);
+
+  MOZ_ASSERT(status() == ModuleStatus::Evaluated);
+  MOZ_ASSERT(hadEvaluationError());
+}
+
+Value ModuleObject::maybeEvaluationError() const {
+  return getReservedSlot(EvaluationErrorSlot);
 }
 
 Value ModuleObject::evaluationError() const {
   MOZ_ASSERT(hadEvaluationError());
-  return getReservedSlot(EvaluationErrorSlot);
+  return maybeEvaluationError();
 }
 
 JSObject* ModuleObject::metaObject() const {
@@ -1179,7 +1171,7 @@ void ModuleObject::trace(JSTracer* trc, JSObject* obj) {
 bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
                                                    Handle<ModuleObject*> self) {
 #ifdef DEBUG
-  MOZ_ASSERT(self->status() == MODULE_STATUS_LINKING);
+  MOZ_ASSERT(self->status() == ModuleStatus::Linking);
   if (!AssertFrozen(cx, self)) {
     return false;
   }
@@ -1221,11 +1213,12 @@ bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
 }
 
 /* static */
-bool ModuleObject::execute(JSContext* cx, Handle<ModuleObject*> self,
-                           MutableHandleValue rval) {
+bool ModuleObject::execute(JSContext* cx, Handle<ModuleObject*> self) {
 #ifdef DEBUG
-  MOZ_ASSERT(self->status() == MODULE_STATUS_EVALUATING ||
-             self->status() == MODULE_STATUS_EVALUATED);
+  MOZ_ASSERT(self->status() == ModuleStatus::Evaluating ||
+             self->status() == ModuleStatus::EvaluatingAsync ||
+             self->status() == ModuleStatus::Evaluated);
+  MOZ_ASSERT(!self->hadEvaluationError());
   if (!AssertFrozen(cx, self)) {
     return false;
   }
@@ -1234,7 +1227,7 @@ bool ModuleObject::execute(JSContext* cx, Handle<ModuleObject*> self,
   RootedScript script(cx, self->script());
 
   auto guardA = mozilla::MakeScopeExit([&] {
-    if (self->isAsync()) {
+    if (self->hasTopLevelAwait()) {
       // Handled in AsyncModuleExecutionFulfilled and
       // AsyncModuleExecutionRejected.
       return;
@@ -1249,7 +1242,8 @@ bool ModuleObject::execute(JSContext* cx, Handle<ModuleObject*> self,
     return false;
   }
 
-  return Execute(cx, script, env, rval);
+  Rooted<Value> ignored(cx);
+  return Execute(cx, script, env, &ignored);
 }
 
 /* static */
@@ -1294,117 +1288,6 @@ bool ModuleObject::createEnvironment(JSContext* cx,
   self->setInitialEnvironment(env);
   return true;
 }
-
-static bool InvokeSelfHostedMethod(JSContext* cx, Handle<ModuleObject*> self,
-                                   Handle<PropertyName*> name,
-                                   MutableHandleValue rval) {
-  RootedValue thisv(cx, ObjectValue(*self));
-  FixedInvokeArgs<0> args(cx);
-
-  return CallSelfHostedFunction(cx, name, thisv, args, rval);
-}
-
-/* static */
-bool ModuleObject::Instantiate(JSContext* cx, Handle<ModuleObject*> self) {
-  RootedValue ignored(cx);
-  return InvokeSelfHostedMethod(cx, self, cx->names().ModuleInstantiate,
-                                &ignored);
-}
-
-/* static */
-bool ModuleObject::Evaluate(JSContext* cx, Handle<ModuleObject*> self,
-                            MutableHandleValue rval) {
-  return InvokeSelfHostedMethod(cx, self, cx->names().ModuleEvaluate, rval);
-}
-
-/* static */
-ModuleNamespaceObject* ModuleObject::GetOrCreateModuleNamespace(
-    JSContext* cx, Handle<ModuleObject*> self) {
-  FixedInvokeArgs<1> args(cx);
-  args[0].setObject(*self);
-
-  RootedValue result(cx);
-  if (!CallSelfHostedFunction(cx, cx->names().GetModuleNamespace,
-                              UndefinedHandleValue, args, &result)) {
-    return nullptr;
-  }
-
-  return &result.toObject().as<ModuleNamespaceObject>();
-}
-
-DEFINE_GETTER_FUNCTIONS(ModuleObject, namespace_, NamespaceSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, status, StatusSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, evaluationError, EvaluationErrorSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, requestedModules, RequestedModulesSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, importEntries, ImportEntriesSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, localExportEntries,
-                        LocalExportEntriesSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, indirectExportEntries,
-                        IndirectExportEntriesSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, starExportEntries, StarExportEntriesSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, dfsIndex, DFSIndexSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, dfsAncestorIndex, DFSAncestorIndexSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, async, AsyncSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, topLevelCapability,
-                        TopLevelCapabilitySlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, asyncEvaluatingPostOrder,
-                        AsyncEvaluatingPostOrderSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, asyncParentModules,
-                        AsyncParentModulesSlot)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, pendingAsyncDependencies,
-                        PendingAsyncDependenciesSlot)
-
-/* static */
-bool GlobalObject::initModuleProto(JSContext* cx,
-                                   Handle<GlobalObject*> global) {
-  static const JSPropertySpec protoAccessors[] = {
-      JS_PSG("namespace", ModuleObject_namespace_Getter, 0),
-      JS_PSG("status", ModuleObject_statusGetter, 0),
-      JS_PSG("evaluationError", ModuleObject_evaluationErrorGetter, 0),
-      JS_PSG("requestedModules", ModuleObject_requestedModulesGetter, 0),
-      JS_PSG("importEntries", ModuleObject_importEntriesGetter, 0),
-      JS_PSG("localExportEntries", ModuleObject_localExportEntriesGetter, 0),
-      JS_PSG("indirectExportEntries", ModuleObject_indirectExportEntriesGetter,
-             0),
-      JS_PSG("starExportEntries", ModuleObject_starExportEntriesGetter, 0),
-      JS_PSG("dfsIndex", ModuleObject_dfsIndexGetter, 0),
-      JS_PSG("dfsAncestorIndex", ModuleObject_dfsAncestorIndexGetter, 0),
-      JS_PSG("async", ModuleObject_asyncGetter, 0),
-      JS_PSG("topLevelCapability", ModuleObject_topLevelCapabilityGetter, 0),
-      JS_PSG("asyncEvaluatingPostOrder",
-             ModuleObject_asyncEvaluatingPostOrderGetter, 0),
-      JS_PSG("asyncParentModules", ModuleObject_asyncParentModulesGetter, 0),
-      JS_PSG("pendingAsyncDependencies",
-             ModuleObject_pendingAsyncDependenciesGetter, 0),
-      JS_PS_END};
-
-  static const JSFunctionSpec protoFunctions[] = {
-      JS_SELF_HOSTED_FN("getExportedNames", "ModuleGetExportedNames", 1, 0),
-      JS_SELF_HOSTED_FN("resolveExport", "ModuleResolveExport", 2, 0),
-      JS_SELF_HOSTED_FN("declarationInstantiation", "ModuleInstantiate", 0, 0),
-      JS_SELF_HOSTED_FN("evaluation", "ModuleEvaluate", 0, 0),
-      JS_SELF_HOSTED_FN("gatherAsyncParentCompletions",
-                        "GatherAsyncParentCompletions", 2, 0),
-      JS_FS_END};
-
-  RootedObject proto(
-      cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return false;
-  }
-
-  if (!DefinePropertiesAndFunctions(cx, proto, protoAccessors,
-                                    protoFunctions)) {
-    return false;
-  }
-
-  global->initBuiltinProto(ProtoKind::ModuleProto, proto);
-  return true;
-}
-
-#undef DEFINE_GETTER_FUNCTIONS
-#undef DEFINE_STRING_ACCESSOR_METHOD
-#undef DEFINE_ARRAY_SLOT_ACCESSOR
 
 ///////////////////////////////////////////////////////////////////////////
 // ModuleBuilder
@@ -1584,6 +1467,8 @@ static ArrayObject* ModuleBuilderInitArray(
 
         assertionArray->initDenseElement(j, ObjectValue(*assertionObject));
       }
+    } else {
+      assertionArray = nullptr;
     }
 
     moduleRequest = ModuleRequestObject::create(cx, specifier, assertionArray);
@@ -2181,9 +2066,9 @@ JSObject* js::GetOrCreateModuleMetaObject(JSContext* cx,
   return metaObject;
 }
 
-JSObject* js::CallModuleResolveHook(JSContext* cx,
-                                    HandleValue referencingPrivate,
-                                    HandleObject moduleRequest) {
+ModuleObject* js::CallModuleResolveHook(JSContext* cx,
+                                        HandleValue referencingPrivate,
+                                        HandleObject moduleRequest) {
   JS::ModuleResolveHook moduleResolveHook = cx->runtime()->moduleResolveHook;
   if (!moduleResolveHook) {
     JS_ReportErrorASCII(cx, "Module resolve hook not set");
@@ -2201,181 +2086,7 @@ JSObject* js::CallModuleResolveHook(JSContext* cx,
     return nullptr;
   }
 
-  return result;
-}
-
-bool js::AsyncModuleExecutionFulfilledHandler(JSContext* cx, unsigned argc,
-                                              Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  JSFunction& func = args.callee().as<JSFunction>();
-
-  Rooted<ModuleObject*> module(
-      cx, &func.getExtendedSlot(FunctionExtended::MODULE_SLOT)
-               .toObject()
-               .as<ModuleObject>());
-  AsyncModuleExecutionFulfilled(cx, module);
-  args.rval().setUndefined();
-  return true;
-}
-
-bool js::AsyncModuleExecutionRejectedHandler(JSContext* cx, unsigned argc,
-                                             Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  JSFunction& func = args.callee().as<JSFunction>();
-  Rooted<ModuleObject*> module(
-      cx, &func.getExtendedSlot(FunctionExtended::MODULE_SLOT)
-               .toObject()
-               .as<ModuleObject>());
-  AsyncModuleExecutionRejected(cx, module, args.get(0));
-  args.rval().setUndefined();
-  return true;
-}
-
-// Top Level Await
-// https://tc39.es/proposal-top-level-await/#sec-gather-async-parent-completions
-bool ModuleObject::GatherAsyncParentCompletions(
-    JSContext* cx, Handle<ModuleObject*> module,
-    MutableHandle<ArrayObject*> execList) {
-  FixedInvokeArgs<1> args(cx);
-  args[0].setObject(*module);
-
-  RootedValue rval(cx);
-  if (!CallSelfHostedFunction(cx, cx->names().GatherAsyncParentCompletions,
-                              UndefinedHandleValue, args, &rval)) {
-    // This will happen if we OOM, we don't have a good way of handling this in
-    // this specific situationn (promise resolution is in progress) so we will
-    // reject the promise.
-    return false;
-  }
-  execList.set(&rval.toObject().as<ArrayObject>());
-  return true;
-}
-
-// Top Level Await
-// https://tc39.es/proposal-top-level-await/#sec-asyncmodulexecutionfulfilled
-void js::AsyncModuleExecutionFulfilled(JSContext* cx,
-                                       Handle<ModuleObject*> module) {
-  // Step 1.
-  MOZ_ASSERT(module->status() == MODULE_STATUS_EVALUATED);
-
-  // Step 2.
-  MOZ_ASSERT(module->isAsyncEvaluating());
-
-  ModuleObject::onTopLevelEvaluationFinished(module);
-
-  if (module->hasTopLevelCapability()) {
-    MOZ_ASSERT(module->getCycleRoot() == module);
-    if (!ModuleObject::topLevelCapabilityResolve(cx, module)) {
-      // If Resolve fails, there's nothing more we can do here.
-      cx->clearPendingException();
-    }
-  }
-
-  Rooted<ArrayObject*> sortedList(cx);
-  if (!ModuleObject::GatherAsyncParentCompletions(cx, module, &sortedList)) {
-    // We have OOM'd -- all bets are off, reject the promise. Not much more we
-    // can do.
-    MOZ_ASSERT(cx->isExceptionPending());
-    RootedValue exception(cx);
-    if (!cx->getPendingException(&exception)) {
-      return;
-    }
-    cx->clearPendingException();
-    AsyncModuleExecutionRejected(cx, module, exception);
-  }
-
-  // this is out of step with the spec in order to be able to OOM
-  module->setAsyncEvaluatingFalse();
-
-  RootedValue ignored(cx);
-  Rooted<ModuleObject*> m(cx);
-
-  uint32_t length = sortedList->length();
-  for (uint32_t i = 0; i < length; i++) {
-    m = &sortedList->getDenseElement(i).toObject().as<ModuleObject>();
-    // Step 2.
-    if (!m->isAsyncEvaluating()) {
-      MOZ_ASSERT(m->hadEvaluationError());
-      return;
-    }
-
-    if (m->isAsync()) {
-      // Steps for ExecuteAsyncModule
-      MOZ_ASSERT(m->status() == MODULE_STATUS_EVALUATING ||
-                 m->status() == MODULE_STATUS_EVALUATED);
-      MOZ_ASSERT(m->isAsync());
-      MOZ_ASSERT(m->isAsyncEvaluating());
-      ModuleObject::execute(cx, m, &ignored);
-    } else {
-      if (!ModuleObject::execute(cx, m, &ignored)) {
-        MOZ_ASSERT(cx->isExceptionPending());
-        RootedValue exception(cx);
-        if (!cx->getPendingException(&exception)) {
-          return;
-        }
-        cx->clearPendingException();
-        AsyncModuleExecutionRejected(cx, m, exception);
-      } else {
-        m->setAsyncEvaluatingFalse();
-        if (m->hasTopLevelCapability()) {
-          MOZ_ASSERT(m->getCycleRoot() == m);
-          if (!ModuleObject::topLevelCapabilityResolve(cx, m)) {
-            // If Resolve fails, there's nothing more we can do here.
-            cx->clearPendingException();
-          }
-        }
-      }
-    }
-  }
-
-  // Step 6.
-  // Return undefined.
-}
-
-// https://tc39.es/proposal-top-level-await/#sec-asyncmodulexecutionrejected
-void js::AsyncModuleExecutionRejected(JSContext* cx,
-                                      Handle<ModuleObject*> module,
-                                      HandleValue error) {
-  // Step 1.
-  MOZ_ASSERT(module->status() == MODULE_STATUS_EVALUATED ||
-             module->status() == MODULE_STATUS_EVALUATED_ERROR);
-
-  // Step 2.
-  if (!module->isAsyncEvaluating()) {
-    MOZ_ASSERT(module->hadEvaluationError());
-    return;
-  }
-
-  ModuleObject::onTopLevelEvaluationFinished(module);
-
-  // Step 3.
-  MOZ_ASSERT(!module->hadEvaluationError());
-
-  // Step 4.
-  module->setEvaluationError(error);
-
-  // Step 5.
-  module->setAsyncEvaluatingFalse();
-
-  // Step 6.
-  uint32_t length = module->asyncParentModules()->length();
-  Rooted<ModuleObject*> parent(cx);
-  for (uint32_t i = 0; i < length; i++) {
-    parent =
-        &module->asyncParentModules()->get(i).toObject().as<ModuleObject>();
-    AsyncModuleExecutionRejected(cx, parent, error);
-  }
-
-  // Step 7.
-  if (module->hasTopLevelCapability()) {
-    MOZ_ASSERT(module->getCycleRoot() == module);
-    if (!ModuleObject::topLevelCapabilityReject(cx, module, error)) {
-      // If Reject fails, there's nothing more we can do here.
-      cx->clearPendingException();
-    }
-  }
-
-  // Return undefined.
+  return &result->as<ModuleObject>();
 }
 
 bool ModuleObject::topLevelCapabilityResolve(JSContext* cx,
@@ -2686,7 +2397,8 @@ static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   Rooted<ModuleObject*> module(cx, &result->as<ModuleObject>());
-  if (module->status() != MODULE_STATUS_EVALUATED) {
+  if (module->status() != ModuleStatus::EvaluatingAsync &&
+      module->status() != ModuleStatus::Evaluated) {
     JS_ReportErrorASCII(
         cx, "Unevaluated or errored module returned by module resolve hook");
     return RejectPromiseWithPendingError(cx, promise);
@@ -2697,7 +2409,7 @@ static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
                  ->as<PromiseObject>()
                  .state() == JS::PromiseState::Fulfilled);
 
-  RootedObject ns(cx, ModuleObject::GetOrCreateModuleNamespace(cx, module));
+  RootedObject ns(cx, GetOrCreateModuleNamespace(cx, module));
   if (!ns) {
     return RejectPromiseWithPendingError(cx, promise);
   }

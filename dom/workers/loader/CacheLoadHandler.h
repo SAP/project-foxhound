@@ -18,18 +18,22 @@
 #include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/ScriptLoadHandler.h"
 #include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/WorkerCommon.h"
 
-#include "mozilla/dom/ScriptLoadInfo.h"
 #include "mozilla/dom/workerinternals/ScriptLoader.h"
 
 using mozilla::dom::cache::Cache;
 using mozilla::dom::cache::CacheStorage;
 using mozilla::ipc::PrincipalInfo;
 
-namespace mozilla::dom::workerinternals::loader {
+namespace mozilla::dom {
+
+class WorkerLoadContext;
+
+namespace workerinternals::loader {
 
 /*
  * [DOMDOC] CacheLoadHandler for Workers
@@ -75,7 +79,8 @@ class CacheLoadHandler final : public PromiseNativeHandler,
   NS_DECL_ISUPPORTS
   NS_DECL_NSISTREAMLOADEROBSERVER
 
-  CacheLoadHandler(WorkerPrivate* aWorkerPrivate, ScriptLoadInfo& aLoadInfo,
+  CacheLoadHandler(WorkerPrivate* aWorkerPrivate,
+                   JS::loader::ScriptLoadRequest* aRequest,
                    bool aIsWorkerScript, WorkerScriptLoader* aLoader);
 
   void Fail(nsresult aRv);
@@ -99,7 +104,7 @@ class CacheLoadHandler final : public PromiseNativeHandler,
                                  const nsACString& aReferrerPolicyHeaderValue);
   void DataReceived();
 
-  ScriptLoadInfo& mLoadInfo;
+  WorkerLoadContext* mLoadContext;
   const RefPtr<WorkerScriptLoader> mLoader;
   WorkerPrivate* const mWorkerPrivate;
   const bool mIsWorkerScript;
@@ -109,6 +114,7 @@ class CacheLoadHandler final : public PromiseNativeHandler,
   nsCOMPtr<nsIURI> mBaseURI;
   mozilla::dom::ChannelInfo mChannelInfo;
   UniquePtr<PrincipalInfo> mPrincipalInfo;
+  UniquePtr<ScriptDecoder> mDecoder;
   nsCString mCSPHeaderValue;
   nsCString mCSPReportOnlyHeaderValue;
   nsCString mReferrerPolicyHeaderValue;
@@ -158,7 +164,7 @@ class CacheCreator final : public PromiseNativeHandler {
     return mSandboxGlobalObject;
   }
 
-  void DeleteCache();
+  void DeleteCache(nsresult aReason);
 
  private:
   ~CacheCreator() = default;
@@ -190,11 +196,8 @@ class CachePromiseHandler final : public PromiseNativeHandler {
  public:
   NS_DECL_ISUPPORTS
 
-  CachePromiseHandler(WorkerScriptLoader* aLoader, ScriptLoadInfo& aLoadInfo)
-      : mLoader(aLoader), mLoadInfo(aLoadInfo) {
-    AssertIsOnMainThread();
-    MOZ_ASSERT(mLoader);
-  }
+  CachePromiseHandler(WorkerScriptLoader* aLoader,
+                      JS::loader::ScriptLoadRequest* aRequest);
 
   virtual void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                 ErrorResult& aRv) override;
@@ -206,9 +209,10 @@ class CachePromiseHandler final : public PromiseNativeHandler {
   ~CachePromiseHandler() { AssertIsOnMainThread(); }
 
   RefPtr<WorkerScriptLoader> mLoader;
-  ScriptLoadInfo& mLoadInfo;
+  WorkerLoadContext* mLoadContext;
 };
 
-}  // namespace mozilla::dom::workerinternals::loader
+}  // namespace workerinternals::loader
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_workers_CacheLoadHandler_h__ */

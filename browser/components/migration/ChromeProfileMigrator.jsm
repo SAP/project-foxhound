@@ -12,25 +12,27 @@ const AUTH_TYPE = {
   SCHEME_DIGEST: 2,
 };
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-const { MigratorPrototype } = ChromeUtils.import(
+const { MigratorPrototype, MigrationUtils } = ChromeUtils.import(
   "resource:///modules/MigrationUtils.jsm"
 );
 
 const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.jsm",
-  MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   OS: "resource://gre/modules/osfile.jsm",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   Qihoo360seMigrationUtils: "resource:///modules/360seMigrationUtils.jsm",
 });
 
@@ -236,7 +238,7 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
   }
 
   return {
-    type: lazy.MigrationUtils.resourceTypes.BOOKMARKS,
+    type: MigrationUtils.resourceTypes.BOOKMARKS,
 
     migrate(aCallback) {
       return (async function() {
@@ -258,7 +260,7 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
             roots.bookmark_bar.children,
             errorGatherer
           );
-          await lazy.MigrationUtils.insertManyBookmarksWrapper(
+          await MigrationUtils.insertManyBookmarksWrapper(
             bookmarks,
             parentGuid
           );
@@ -270,7 +272,7 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
           // Bookmark menu
           let parentGuid = lazy.PlacesUtils.bookmarks.menuGuid;
           let bookmarks = convertBookmarks(roots.other.children, errorGatherer);
-          await lazy.MigrationUtils.insertManyBookmarksWrapper(
+          await MigrationUtils.insertManyBookmarksWrapper(
             bookmarks,
             parentGuid
           );
@@ -293,7 +295,7 @@ async function GetHistoryResource(aProfileFolder) {
   }
 
   return {
-    type: lazy.MigrationUtils.resourceTypes.HISTORY,
+    type: MigrationUtils.resourceTypes.HISTORY,
 
     migrate(aCallback) {
       (async function() {
@@ -316,7 +318,7 @@ async function GetHistoryResource(aProfileFolder) {
           query += " ORDER BY last_visit_time DESC LIMIT " + LIMIT;
         }
 
-        let rows = await lazy.MigrationUtils.getRowsFromDBWithoutLocks(
+        let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
           historyPath,
           "Chrome history",
           query
@@ -350,7 +352,7 @@ async function GetHistoryResource(aProfileFolder) {
         }
 
         if (pageInfos.length) {
-          await lazy.MigrationUtils.insertVisitsWrapper(pageInfos);
+          await MigrationUtils.insertVisitsWrapper(pageInfos);
         }
       })().then(
         () => {
@@ -372,11 +374,11 @@ async function GetCookiesResource(aProfileFolder) {
   }
 
   return {
-    type: lazy.MigrationUtils.resourceTypes.COOKIES,
+    type: MigrationUtils.resourceTypes.COOKIES,
 
     async migrate(aCallback) {
       // Get columns names and set is_sceure, is_httponly fields accordingly.
-      let columns = await lazy.MigrationUtils.getRowsFromDBWithoutLocks(
+      let columns = await MigrationUtils.getRowsFromDBWithoutLocks(
         cookiesPath,
         "Chrome cookies",
         `PRAGMA table_info(cookies)`
@@ -400,7 +402,7 @@ async function GetCookiesResource(aProfileFolder) {
         : `"${Ci.nsICookie.SCHEME_UNSET}" as source_scheme`;
 
       // We don't support decrypting cookies yet so only import plaintext ones.
-      let rows = await lazy.MigrationUtils.getRowsFromDBWithoutLocks(
+      let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
         cookiesPath,
         "Chrome cookies",
         `SELECT host_key, name, value, path, expires_utc, ${isSecure}, ${isHttponly}, encrypted_value, ${source_scheme}
@@ -484,10 +486,10 @@ ChromeProfileMigrator.prototype._GetPasswordsResource = async function(
   } = this;
 
   return {
-    type: lazy.MigrationUtils.resourceTypes.PASSWORDS,
+    type: MigrationUtils.resourceTypes.PASSWORDS,
 
     async migrate(aCallback) {
-      let rows = await lazy.MigrationUtils.getRowsFromDBWithoutLocks(
+      let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
         loginPath,
         "Chrome passwords",
         `SELECT origin_url, action_url, username_element, username_value,
@@ -603,7 +605,7 @@ ChromeProfileMigrator.prototype._GetPasswordsResource = async function(
       }
       try {
         if (logins.length) {
-          await lazy.MigrationUtils.insertLoginsWrapper(logins);
+          await MigrationUtils.insertLoginsWrapper(logins);
         }
       } catch (e) {
         Cu.reportError(e);

@@ -6,10 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["Module"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -95,6 +93,24 @@ class Module {
     this.messageHandler.emitEvent(name, data, {
       isProtocolEvent: true,
     });
+  }
+
+  /**
+   * Intercept an event and modify the payload.
+   *
+   * It's required to be implemented in windowglobal-in-root modules.
+   *
+   * @param {string} name
+   *     Name of the event.
+   * @param {Object} payload
+   *    The event's payload.
+   * @returns {Object}
+   *     The modified event payload.
+   */
+  interceptEvent(name, payload) {
+    throw new Error(
+      `Could not intercept event ${name}, interceptEvent is not implemented in windowglobal-in-root module`
+    );
   }
 
   /**

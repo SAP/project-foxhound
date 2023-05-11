@@ -8,13 +8,9 @@
 
 "use strict";
 
-const { ComponentUtils } = ChromeUtils.import(
-  "resource://gre/modules/ComponentUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { LoginManagerStorage_json } = ChromeUtils.import(
   "resource://gre/modules/storage-json.js"
 );
@@ -33,12 +29,6 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
   }
   get QueryInterface() {
     return ChromeUtils.generateQI(["nsILoginManagerStorage"]);
-  }
-
-  get _xpcom_factory() {
-    return ComponentUtils.generateSingletonFactory(
-      this.LoginManagerStorage_geckoview
-    );
   }
 
   get _crypto() {
@@ -97,7 +87,9 @@ class LoginManagerStorage_geckoview extends LoginManagerStorage_json {
   }
 
   async searchLoginsAsync(matchData) {
-    this.log("searchLoginsAsync:", matchData);
+    this.log(
+      `Searching for matching saved logins for origin: ${matchData.origin}`
+    );
     return this._getLoginsAsync(matchData);
   }
 

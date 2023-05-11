@@ -8,6 +8,7 @@
 #include "gfxUserFontSet.h"
 #include "gfxPlatform.h"
 #include "gfxFontConstants.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
@@ -16,7 +17,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxPlatformFontList.h"
-#include "mozilla/ServoStyleSet.h"
 #include "mozilla/PostTraversalTask.h"
 #include "gfxOTSUtils.h"
 #include "nsIFontLoadCompleteCallback.h"
@@ -35,7 +35,7 @@ mozilla::LogModule* gfxUserFontSet::GetUserFontsLog() {
 #define LOG_ENABLED() \
   MOZ_LOG_TEST(gfxUserFontSet::GetUserFontsLog(), mozilla::LogLevel::Debug)
 
-static uint64_t sFontSetGeneration = 0;
+static Atomic<uint64_t> sFontSetGeneration(0);
 
 gfxUserFontEntry::gfxUserFontEntry(
     gfxUserFontSet* aFontSet, const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList,
@@ -102,7 +102,7 @@ gfxUserFontEntry::~gfxUserFontEntry() {
   // Assert that we don't drop any gfxUserFontEntry objects during a Servo
   // traversal, since PostTraversalTask objects can hold raw pointers to
   // gfxUserFontEntry objects.
-  MOZ_ASSERT(!ServoStyleSet::IsInServoTraversal());
+  MOZ_ASSERT(!gfxFontUtils::IsInServoTraversal());
 }
 
 bool gfxUserFontEntry::Matches(
@@ -251,14 +251,14 @@ size_t gfxUserFontData::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
 /*virtual*/
 gfxUserFontFamily::~gfxUserFontFamily() {
   // Should not be dropped by stylo
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!gfxFontUtils::IsInServoTraversal());
 }
 
-gfxFontSrcPrincipal* gfxFontFaceSrc::LoadPrincipal(
+already_AddRefed<gfxFontSrcPrincipal> gfxFontFaceSrc::LoadPrincipal(
     const gfxUserFontSet& aFontSet) const {
   MOZ_ASSERT(mSourceType == eSourceType_URL);
   if (mUseOriginPrincipal && mOriginPrincipal) {
-    return mOriginPrincipal;
+    return RefPtr{mOriginPrincipal}.forget();
   }
   return aFontSet.GetStandardFontLoadPrincipal();
 }
@@ -469,7 +469,7 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aForceAsync) {
     else if (currSrc.mSourceType == gfxFontFaceSrc::eSourceType_URL) {
       if (gfxPlatform::GetPlatform()->IsFontFormatSupported(
               currSrc.mFormatFlags)) {
-        if (ServoStyleSet* set = ServoStyleSet::Current()) {
+        if (ServoStyleSet* set = gfxFontUtils::CurrentServoStyleSet()) {
           // Only support style worker threads synchronously getting
           // entries from the font cache when it's not a data: URI
           // @font-face that came from UA or user sheets, since we
@@ -498,7 +498,7 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aForceAsync) {
           return;
         }
 
-        if (ServoStyleSet* set = ServoStyleSet::Current()) {
+        if (ServoStyleSet* set = gfxFontUtils::CurrentServoStyleSet()) {
           // If we need to start a font load and we're on a style
           // worker thread, we have to defer it.
           set->AppendTask(PostTraversalTask::LoadFontEntry(this));
@@ -933,11 +933,15 @@ gfxUserFontSet::gfxUserFontSet()
   }
 }
 
-gfxUserFontSet::~gfxUserFontSet() {
+gfxUserFontSet::~gfxUserFontSet() { Destroy(); }
+
+void gfxUserFontSet::Destroy() {
   gfxPlatformFontList* fp = gfxPlatformFontList::PlatformFontList();
   if (fp) {
     fp->RemoveUserFontSet(this);
   }
+
+  mFontFamilies.Clear();
 }
 
 already_AddRefed<gfxUserFontEntry> gfxUserFontSet::FindOrCreateUserFontEntry(
@@ -1036,9 +1040,9 @@ void gfxUserFontSet::AddUserFontEntry(const nsCString& aFamilyName,
 
 void gfxUserFontSet::IncrementGeneration(bool aIsRebuild) {
   // add one, increment again if zero
-  ++sFontSetGeneration;
-  if (sFontSetGeneration == 0) ++sFontSetGeneration;
-  mGeneration = sFontSetGeneration;
+  do {
+    mGeneration = ++sFontSetGeneration;
+  } while (mGeneration == 0);
   if (aIsRebuild) {
     mRebuildGeneration = mGeneration;
   }
@@ -1259,7 +1263,7 @@ gfxFontEntry* gfxUserFontSet::UserFontCache::GetFont(
   }
 
   // Ignore principal when looking up a data: URI.
-  gfxFontSrcPrincipal* principal =
+  RefPtr<gfxFontSrcPrincipal> principal =
       IgnorePrincipal(aSrc.mURI) ? nullptr
                                  : aSrc.LoadPrincipal(*aUserFontEntry.mFontSet);
 

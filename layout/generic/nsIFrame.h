@@ -2157,7 +2157,7 @@ class nsIFrame : public nsQueryFrame {
   int16_t DetermineDisplaySelection();
 
  public:
-  virtual nsresult GetContentForEvent(mozilla::WidgetEvent* aEvent,
+  virtual nsresult GetContentForEvent(const mozilla::WidgetEvent* aEvent,
                                       nsIContent** aContent);
 
   // This structure keeps track of the content node and offsets associated with
@@ -4704,6 +4704,8 @@ class nsIFrame : public nsQueryFrame {
   }
   // Update mAllDescendantsAreInvisible flag for this frame and ancestors.
   void UpdateVisibleDescendantsState();
+
+  void UpdateAnimationVisibility();
 
   /**
    * If this returns true, the frame it's called on should get the

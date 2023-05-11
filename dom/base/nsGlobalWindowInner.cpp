@@ -451,6 +451,10 @@ class nsGlobalWindowObserver final : public nsIObserver,
     }
   }
 
+  nsIPrincipal* GetEffectiveCookiePrincipal() const override {
+    return mWindow ? mWindow->GetEffectiveCookiePrincipal() : nullptr;
+  }
+
   nsIPrincipal* GetEffectiveStoragePrincipal() const override {
     return mWindow ? mWindow->GetEffectiveStoragePrincipal() : nullptr;
   }
@@ -1163,6 +1167,7 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   if (mDoc) {
     // Remember the document's principal, URI, and CSP.
     mDocumentPrincipal = mDoc->NodePrincipal();
+    mDocumentCookiePrincipal = mDoc->EffectiveCookiePrincipal();
     mDocumentStoragePrincipal = mDoc->EffectiveStoragePrincipal();
     mDocumentPartitionedPrincipal = mDoc->PartitionedPrincipal();
     mDocumentURI = mDoc->GetDocumentURI();
@@ -1408,6 +1413,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mApplicationCache)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIndexedDB)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentPrincipal)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentCookiePrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentStoragePrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentPartitionedPrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentCsp)
@@ -1526,6 +1532,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndexedDB)
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentPrincipal)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentCookiePrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentStoragePrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentPartitionedPrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentCsp)
@@ -1627,6 +1634,13 @@ bool nsGlobalWindowInner::ShouldResistFingerprinting() const {
 
 OriginTrials nsGlobalWindowInner::Trials() const {
   return OriginTrials::FromWindow(this);
+}
+
+FontFaceSet* nsGlobalWindowInner::Fonts() {
+  if (mDoc) {
+    return mDoc->Fonts();
+  }
+  return nullptr;
 }
 
 uint32_t nsGlobalWindowInner::GetPrincipalHashValue() const {
@@ -2253,6 +2267,29 @@ nsIPrincipal* nsGlobalWindowInner::GetPrincipal() {
   return nullptr;
 }
 
+nsIPrincipal* nsGlobalWindowInner::GetEffectiveCookiePrincipal() {
+  if (mDoc) {
+    // If we have a document, get the principal from the document
+    return mDoc->EffectiveCookiePrincipal();
+  }
+
+  if (mDocumentCookiePrincipal) {
+    return mDocumentCookiePrincipal;
+  }
+
+  // If we don't have a cookie principal and we don't have a document we ask
+  // the parent window for the cookie principal.
+
+  nsCOMPtr<nsIScriptObjectPrincipal> objPrincipal =
+      do_QueryInterface(GetInProcessParentInternal());
+
+  if (objPrincipal) {
+    return objPrincipal->GetEffectiveCookiePrincipal();
+  }
+
+  return nullptr;
+}
+
 nsIPrincipal* nsGlobalWindowInner::GetEffectiveStoragePrincipal() {
   if (mDoc) {
     // If we have a document, get the principal from the document
@@ -2263,8 +2300,8 @@ nsIPrincipal* nsGlobalWindowInner::GetEffectiveStoragePrincipal() {
     return mDocumentStoragePrincipal;
   }
 
-  // If we don't have a storage principal and we don't have a document we ask
-  // the parent window for the storage principal.
+  // If we don't have a cookie principal and we don't have a document we ask
+  // the parent window for the cookie principal.
 
   nsCOMPtr<nsIScriptObjectPrincipal> objPrincipal =
       do_QueryInterface(GetInProcessParentInternal());
@@ -3255,6 +3292,14 @@ bool nsGlobalWindowInner::ContentPropertyEnabled(JSContext* aCx, JSObject*) {
 bool nsGlobalWindowInner::CachesEnabled(JSContext* aCx, JSObject*) {
   if (!StaticPrefs::dom_caches_enabled()) {
     return false;
+  }
+  if (StaticPrefs::dom_caches_hide_in_pbmode_enabled()) {
+    if (const nsCOMPtr<nsIGlobalObject> global =
+            xpc::CurrentNativeGlobal(aCx)) {
+      if (global->GetStorageAccess() == StorageAccess::ePrivateBrowsing) {
+        return false;
+      }
+    }
   }
   if (!JS::GetIsSecureContext(js::GetContextRealm(aCx))) {
     return StaticPrefs::dom_caches_testing_enabled() ||
@@ -4787,15 +4832,17 @@ Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
       }
     }
 
-    // If the document has the sandboxed origin flag set
-    // don't allow access to sessionStorage.
     if (!mDoc) {
       aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
 
+    // If the document's sandboxed origin flag is set, then accessing
+    // sessionStorage is prohibited.
     if (mDoc->GetSandboxFlags() & SANDBOXED_ORIGIN) {
-      aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
+      aError.ThrowSecurityError(
+          "Forbidden in a sandboxed document without the 'allow-same-origin' "
+          "flag.");
       return nullptr;
     }
 
@@ -4882,6 +4929,15 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
     return nullptr;
   }
 
+  // If the document's sandboxed origin flag is set, then accessing localStorage
+  // is prohibited.
+  if (mDoc && mDoc->GetSandboxFlags() & SANDBOXED_ORIGIN) {
+    aError.ThrowSecurityError(
+        "Forbidden in a sandboxed document without the 'allow-same-origin' "
+        "flag.");
+    return nullptr;
+  }
+
   // LocalStorage needs to be exposed in every context except for sandboxes and
   // NullPrincipals (data: URLs, for instance). But we need to keep data
   // separate in some scenarios: private-browsing and partitioned trackers.
@@ -4925,7 +4981,10 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
   if (mDoc) {
     cookieJarSettings = mDoc->CookieJarSettings();
   } else {
-    cookieJarSettings = net::CookieJarSettings::GetBlockingAll();
+    bool shouldResistFingerprinting =
+        nsContentUtils::ShouldResistFingerprinting(this->GetExtantDoc());
+    cookieJarSettings =
+        net::CookieJarSettings::GetBlockingAll(shouldResistFingerprinting);
   }
 
   // Note that this behavior is observable: if we grant storage permission to a
@@ -5035,7 +5094,14 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
   return mLocalStorage;
 }
 
-IDBFactory* nsGlobalWindowInner::GetIndexedDB(ErrorResult& aError) {
+IDBFactory* nsGlobalWindowInner::GetIndexedDB(JSContext* aCx,
+                                              ErrorResult& aError) {
+  if (!IDBFactory::IsEnabled(aCx, AsGlobal()->GetGlobalJSObject())) {
+    // Let window.indexedDB be an attribute with a null value, to prevent
+    // undefined identifier error
+    return nullptr;
+  }
+
   if (!mIndexedDB) {
     // This may keep mIndexedDB null without setting an error.
     auto res = IDBFactory::CreateForWindow(this);
@@ -7105,42 +7171,32 @@ bool nsGlobalWindowInner::IsFullyOccluded() {
 }
 
 void nsGlobalWindowInner::Maximize() {
-  nsCOMPtr<nsIWidget> widget = GetMainWidget();
-
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = GetMainWidget()) {
     widget->SetSizeMode(nsSizeMode_Maximized);
   }
 }
 
 void nsGlobalWindowInner::Minimize() {
-  nsCOMPtr<nsIWidget> widget = GetMainWidget();
-
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = GetMainWidget()) {
     widget->SetSizeMode(nsSizeMode_Minimized);
   }
 }
 
 void nsGlobalWindowInner::Restore() {
-  nsCOMPtr<nsIWidget> widget = GetMainWidget();
-
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = GetMainWidget()) {
     widget->SetSizeMode(nsSizeMode_Normal);
   }
 }
 
 void nsGlobalWindowInner::GetWorkspaceID(nsAString& workspaceID) {
-  nsCOMPtr<nsIWidget> widget = GetMainWidget();
-
   workspaceID.Truncate();
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = GetMainWidget()) {
     return widget->GetWorkspaceID(workspaceID);
   }
 }
 
 void nsGlobalWindowInner::MoveToWorkspace(const nsAString& workspaceID) {
-  nsCOMPtr<nsIWidget> widget = GetMainWidget();
-
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = GetMainWidget()) {
     widget->MoveToWorkspace(workspaceID);
   }
 }
@@ -7709,6 +7765,25 @@ void nsGlobalWindowInner::StorageAccessPermissionGranted() {
   // give us the updated localStorage object.
   ClearStorageAllowedCache();
 
+  // If we're always partitioning non-cookie third party storage then
+  // there is no need to clear it when the user accepts requestStorageAccess.
+  if (StaticPrefs::
+          privacy_partition_always_partition_third_party_non_cookie_storage()) {
+    // Just reset the active cookie and storage principals
+    nsCOMPtr<nsICookieJarSettings> cjs;
+    if (mDoc) {
+      cjs = mDoc->CookieJarSettings();
+    }
+    StorageAccess storageAccess = StorageAllowedForWindow(this);
+    if (ShouldPartitionStorage(storageAccess) &&
+        StoragePartitioningEnabled(storageAccess, cjs)) {
+      if (mDoc) {
+        mDoc->ClearActiveCookieAndStoragePrincipals();
+      }
+      return;
+    }
+  }
+
   PropagateStorageAccessPermissionGrantedToWorkers(*this);
 
   // If we have a partitioned localStorage, it's time to replace it with a real
@@ -7738,11 +7813,11 @@ void nsGlobalWindowInner::StorageAccessPermissionGranted() {
   // Reset DOM Cache
   mCacheStorage = nullptr;
 
-  // Reset the active storage principal
+  // Reset the active cookie and storage principals
   if (mDoc) {
-    mDoc->ClearActiveStoragePrincipal();
+    mDoc->ClearActiveCookieAndStoragePrincipals();
     if (mWindowGlobalChild) {
-      // XXX(farre): This is a bit backwards, but clearing the storage
+      // XXX(farre): This is a bit backwards, but clearing the cookie
       // principal might make us end up with a new effective storage
       // principal on the child side than on the parent side, which
       // means that we need to sync it. See bug 1705359.

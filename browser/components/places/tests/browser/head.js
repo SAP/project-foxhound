@@ -1,8 +1,6 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "TestUtils",
@@ -162,14 +160,13 @@ function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
  *        The toolbar to update.
  * @param {boolean} aVisible
  *        True to make the toolbar visible, false to make it hidden.
- * @param {function} aCallback
  *
  * @returns {Promise}
  * @resolves Any animation associated with updating the toolbar's visibility has
  *           finished.
  * @rejects Never.
  */
-function promiseSetToolbarVisibility(aToolbar, aVisible, aCallback) {
+function promiseSetToolbarVisibility(aToolbar, aVisible) {
   if (isToolbarVisible(aToolbar) != aVisible) {
     let visibilityChanged = TestUtils.waitForCondition(
       () => aToolbar.collapsed != aVisible
@@ -552,6 +549,7 @@ async function createAndRemoveDefaultFolder() {
   await PlacesUtils.bookmarks.remove(tempFolder);
 }
 
-registerCleanupFunction(() => {
+registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("browser.bookmarks.defaultLocation");
+  await PlacesTransactions.clearTransactionsHistory(true, true);
 });

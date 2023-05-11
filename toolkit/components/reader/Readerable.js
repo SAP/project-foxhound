@@ -10,9 +10,8 @@
 /* exported Readerable */
 /* import-globals-from Readability-readerable.js */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 function isNodeVisible(node) {
@@ -34,7 +33,7 @@ var Readerable = {
     // Only care about 'real' HTML documents:
     if (
       doc.mozSyntheticDocument ||
-      !(doc instanceof doc.defaultView.HTMLDocument)
+      !doc.defaultView.HTMLDocument.isInstance(doc)
     ) {
       return false;
     }

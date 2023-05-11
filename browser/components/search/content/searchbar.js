@@ -104,8 +104,8 @@
       this.FormHistory = ChromeUtils.import(
         "resource://gre/modules/FormHistory.jsm"
       ).FormHistory;
-      this.SearchSuggestionController = ChromeUtils.import(
-        "resource://gre/modules/SearchSuggestionController.jsm"
+      this.SearchSuggestionController = ChromeUtils.importESModule(
+        "resource://gre/modules/SearchSuggestionController.sys.mjs"
       ).SearchSuggestionController;
 
       Services.obs.addObserver(this.observer, "browser-search-engine-modified");
@@ -321,7 +321,7 @@
         }
       } else {
         if (
-          (aEvent instanceof KeyboardEvent &&
+          (KeyboardEvent.isInstance(aEvent) &&
             (aEvent.altKey || aEvent.getModifierState("AltGraph"))) ^
             newTabPref &&
           !gBrowser.selectedTab.isEmpty
@@ -329,7 +329,7 @@
           where = "tab";
         }
         if (
-          aEvent instanceof MouseEvent &&
+          MouseEvent.isInstance(aEvent) &&
           (aEvent.button == 1 || aEvent.getModifierState("Accel"))
         ) {
           where = "tab";

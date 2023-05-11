@@ -6,12 +6,20 @@
 
 var EXPORTED_SYMBOLS = ["UrlbarProviderQuickSuggest", "QUICK_SUGGEST_SOURCE"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+const {
+  SkippableTimer,
+  TaskQueue,
+  UrlbarProvider,
+  UrlbarUtils,
+} = ChromeUtils.import("resource:///modules/UrlbarUtils.jsm");
+
+const lazy = {};
+
+XPCOMUtils.defineLazyModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   clearInterval: "resource://gre/modules/Timer.jsm",
   CONTEXTUAL_SERVICES_PING_TYPES:
@@ -19,22 +27,24 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
   setInterval: "resource://gre/modules/Timer.jsm",
-  SkippableTimer: "resource:///modules/UrlbarUtils.jsm",
-  TaskQueue: "resource:///modules/UrlbarUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarQuickSuggest: "resource:///modules/UrlbarQuickSuggest.jsm",
-  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 const TIMESTAMP_TEMPLATE = "%YYYYMMDDHH%";
 const TIMESTAMP_LENGTH = 10;
 const TIMESTAMP_REGEXP = /^\d{10}$/;
 
-const MERINO_ENDPOINT_PARAM_QUERY = "q";
-const MERINO_ENDPOINT_PARAM_CLIENT_VARIANTS = "client_variants";
-const MERINO_ENDPOINT_PARAM_PROVIDERS = "providers";
+const MERINO_PARAMS = {
+  CLIENT_VARIANTS: "client_variants",
+  PROVIDERS: "providers",
+  QUERY: "q",
+  SEQUENCE_NUMBER: "seq",
+  SESSION_ID: "sid",
+};
+
+const MERINO_SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 const IMPRESSION_COUNTERS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -99,19 +109,20 @@ class ProviderQuickSuggest extends UrlbarProvider {
   constructor(...args) {
     super(...args);
 
-    UrlbarQuickSuggest.init();
-    UrlbarQuickSuggest.on("config-set", () => this._validateImpressionStats());
+    lazy.UrlbarQuickSuggest.on("config-set", () =>
+      this._validateImpressionStats()
+    );
 
     this._updateFeatureState();
-    NimbusFeatures.urlbar.onUpdate(() => this._updateFeatureState());
+    lazy.NimbusFeatures.urlbar.onUpdate(() => this._updateFeatureState());
 
-    UrlbarPrefs.addObserver(this);
+    lazy.UrlbarPrefs.addObserver(this);
 
     // Periodically record impression counters reset telemetry.
     this._setImpressionCountersResetInterval();
 
     // On shutdown, record any final impression counters reset telemetry.
-    AsyncShutdown.profileChangeTeardown.addBlocker(
+    lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
       "UrlbarProviderQuickSuggest: Record impression counters reset telemetry",
       () => this._resetElapsedImpressionCounters()
     );
@@ -152,19 +163,29 @@ class ProviderQuickSuggest extends UrlbarProvider {
   /**
    * @returns {string} The timestamp template string used in quick suggest URLs.
    */
-  get timestampTemplate() {
+  get TIMESTAMP_TEMPLATE() {
     return TIMESTAMP_TEMPLATE;
   }
 
   /**
    * @returns {number} The length of the timestamp in quick suggest URLs.
    */
-  get timestampLength() {
+  get TIMESTAMP_LENGTH() {
     return TIMESTAMP_LENGTH;
   }
 
-  get telemetryScalars() {
+  /**
+   * @returns {object} An object mapping from mnemonics to scalar names.
+   */
+  get TELEMETRY_SCALARS() {
     return { ...TELEMETRY_SCALARS };
+  }
+
+  /**
+   * @returns {object} An object mapping from mnemonics to Merino search params.
+   */
+  get MERINO_PARAMS() {
+    return { ...MERINO_PARAMS };
   }
 
   /**
@@ -190,10 +211,10 @@ class ProviderQuickSuggest extends UrlbarProvider {
       queryContext.trimmedSearchString &&
       !queryContext.searchMode &&
       !queryContext.isPrivate &&
-      UrlbarPrefs.get("quickSuggestEnabled") &&
-      (UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") ||
-        UrlbarPrefs.get("suggest.quicksuggest.sponsored") ||
-        UrlbarPrefs.get("quicksuggest.dataCollection.enabled"))
+      lazy.UrlbarPrefs.get("quickSuggestEnabled") &&
+      (lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") ||
+        lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored") ||
+        lazy.UrlbarPrefs.get("quicksuggest.dataCollection.enabled"))
     );
   }
 
@@ -215,14 +236,14 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // There are two sources for quick suggest: remote settings (from
     // `UrlbarQuickSuggest`) and Merino.
     let promises = [];
-    if (UrlbarPrefs.get("quickSuggestRemoteSettingsEnabled")) {
+    if (lazy.UrlbarPrefs.get("quickSuggestRemoteSettingsEnabled")) {
       promises.push(
         this._fetchRemoteSettingsSuggestions(queryContext, searchString)
       );
     }
     if (
-      UrlbarPrefs.get("merinoEnabled") &&
-      UrlbarPrefs.get("quicksuggest.dataCollection.enabled") &&
+      lazy.UrlbarPrefs.get("merinoEnabled") &&
+      lazy.UrlbarPrefs.get("quicksuggest.dataCollection.enabled") &&
       queryContext.allowRemoteResults()
     ) {
       promises.push(this._fetchMerinoSuggestions(queryContext, searchString));
@@ -279,8 +300,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let isSuggestionBestMatch = false;
     if (typeof suggestion._test_is_best_match == "boolean") {
       isSuggestionBestMatch = suggestion._test_is_best_match;
-    } else if (UrlbarQuickSuggest.config.best_match) {
-      let { best_match } = UrlbarQuickSuggest.config;
+    } else if (lazy.UrlbarQuickSuggest.config.best_match) {
+      let { best_match } = lazy.UrlbarQuickSuggest.config;
       isSuggestionBestMatch =
         best_match.min_search_string_length <= searchString.length &&
         !best_match.blocked_suggestion_ids.includes(suggestion.block_id);
@@ -289,8 +310,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Determine if the urlbar result should be a best match.
     let isResultBestMatch =
       isSuggestionBestMatch &&
-      UrlbarPrefs.get("bestMatchEnabled") &&
-      UrlbarPrefs.get("suggest.bestmatch");
+      lazy.UrlbarPrefs.get("bestMatchEnabled") &&
+      lazy.UrlbarPrefs.get("suggest.bestmatch");
     if (isResultBestMatch) {
       // Show the result as a best match. Best match titles don't include the
       // `full_keyword`, and the user's search string is highlighted.
@@ -305,10 +326,13 @@ class ProviderQuickSuggest extends UrlbarProvider {
       ];
     }
 
-    let result = new UrlbarResult(
+    let result = new lazy.UrlbarResult(
       UrlbarUtils.RESULT_TYPE.URL,
       UrlbarUtils.RESULT_SOURCE.SEARCH,
-      ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, payload)
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
+        queryContext.tokens,
+        payload
+      )
     );
 
     if (isResultBestMatch) {
@@ -316,12 +340,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
       result.suggestedIndex = 1;
     } else if (
       !isNaN(suggestion.position) &&
-      UrlbarPrefs.get("quickSuggestAllowPositionInSuggestions")
+      lazy.UrlbarPrefs.get("quickSuggestAllowPositionInSuggestions")
     ) {
       result.suggestedIndex = suggestion.position;
     } else {
       result.isSuggestedIndexRelativeToGroup = true;
-      result.suggestedIndex = UrlbarPrefs.get(
+      result.suggestedIndex = lazy.UrlbarPrefs.get(
         suggestion.is_sponsored
           ? "quickSuggestSponsoredIndex"
           : "quickSuggestNonSponsoredIndex"
@@ -345,18 +369,18 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Else if the user is not in a modal experiment:
     //   Record the event
     if (
-      UrlbarPrefs.get("isBestMatchExperiment") ||
-      UrlbarPrefs.get("experimentType") === "best-match"
+      lazy.UrlbarPrefs.get("isBestMatchExperiment") ||
+      lazy.UrlbarPrefs.get("experimentType") === "best-match"
     ) {
       if (
         isSuggestionBestMatch &&
-        (!UrlbarPrefs.get("bestMatchEnabled") ||
-          UrlbarPrefs.get("suggest.bestmatch"))
+        (!lazy.UrlbarPrefs.get("bestMatchEnabled") ||
+          lazy.UrlbarPrefs.get("suggest.bestmatch"))
       ) {
-        UrlbarQuickSuggest.ensureExposureEventRecorded();
+        lazy.UrlbarQuickSuggest.ensureExposureEventRecorded();
       }
-    } else if (UrlbarPrefs.get("experimentType") !== "modal") {
-      UrlbarQuickSuggest.ensureExposureEventRecorded();
+    } else if (lazy.UrlbarPrefs.get("experimentType") !== "modal") {
+      lazy.UrlbarQuickSuggest.ensureExposureEventRecorded();
     }
   }
 
@@ -375,8 +399,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
   blockResult(queryContext, result) {
     if (
       (!result.isBestMatch &&
-        !UrlbarPrefs.get("quickSuggestBlockingEnabled")) ||
-      (result.isBestMatch && !UrlbarPrefs.get("bestMatchBlockingEnabled"))
+        !lazy.UrlbarPrefs.get("quickSuggestBlockingEnabled")) ||
+      (result.isBestMatch && !lazy.UrlbarPrefs.get("bestMatchBlockingEnabled"))
     ) {
       this.logger.info("Blocking disabled, ignoring block");
       return false;
@@ -404,7 +428,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
       let json = JSON.stringify([...this._blockedDigests]);
       this._updatingBlockedDigests = true;
       try {
-        UrlbarPrefs.set("quicksuggest.blockedDigests", json);
+        lazy.UrlbarPrefs.set("quicksuggest.blockedDigests", json);
       } finally {
         this._updatingBlockedDigests = false;
       }
@@ -440,7 +464,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     await this._blockTaskQueue.queue(() => {
       this.logger.info(`Clearing all blocked suggestions`);
       this._blockedDigests.clear();
-      UrlbarPrefs.clear("quicksuggest.blockedDigests");
+      lazy.UrlbarPrefs.clear("quicksuggest.blockedDigests");
     });
   }
 
@@ -462,15 +486,20 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   it describes the search string and picked result.
    */
   onEngagement(isPrivate, state, queryContext, details) {
-    if (!this._resultFromLastQuery) {
-      return;
-    }
     let result = this._resultFromLastQuery;
     this._resultFromLastQuery = null;
 
+    // Reset the Merino session ID when an engagement ends. Per spec, for the
+    // user's privacy, we don't keep it around between engagements. It wouldn't
+    // hurt to do this on start too, it's just not necessary if we always do it
+    // on end.
+    if (this._merinoSessionID && state != "start") {
+      this._resetMerinoSessionID();
+    }
+
     // Per spec, we count impressions only when the user picks a result, i.e.,
     // when `state` is "engagement".
-    if (state == "engagement") {
+    if (result && state == "engagement") {
       this._recordEngagementTelemetry(
         result,
         isPrivate,
@@ -607,7 +636,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
         // Always use lowercase to make the reporting consistent
         advertiser: result.payload.sponsoredAdvertiser.toLocaleLowerCase(),
         block_id: result.payload.sponsoredBlockId,
-        improve_suggest_experience_checked: UrlbarPrefs.get(
+        improve_suggest_experience_checked: lazy.UrlbarPrefs.get(
           "quicksuggest.dataCollection.enabled"
         ),
         position: telemetryResultIndex,
@@ -615,34 +644,34 @@ class ProviderQuickSuggest extends UrlbarProvider {
       };
 
       // impression
-      PartnerLinkAttribution.sendContextualServicesPing(
+      lazy.PartnerLinkAttribution.sendContextualServicesPing(
         {
           ...payload,
           is_clicked,
           reporting_url: result.payload.sponsoredImpressionUrl,
         },
-        CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION
+        lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION
       );
 
       // click
       if (is_clicked) {
-        PartnerLinkAttribution.sendContextualServicesPing(
+        lazy.PartnerLinkAttribution.sendContextualServicesPing(
           {
             ...payload,
             reporting_url: result.payload.sponsoredClickUrl,
           },
-          CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION
+          lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION
         );
       }
 
       // block
       if (selType == "block") {
-        PartnerLinkAttribution.sendContextualServicesPing(
+        lazy.PartnerLinkAttribution.sendContextualServicesPing(
           {
             ...payload,
             iab_category: result.payload.sponsoredIabCategory,
           },
-          CONTEXTUAL_SERVICES_PING_TYPES.QS_BLOCK
+          lazy.CONTEXTUAL_SERVICES_PING_TYPES.QS_BLOCK
         );
       }
     }
@@ -673,29 +702,29 @@ class ProviderQuickSuggest extends UrlbarProvider {
         }
         break;
       case "quicksuggest.dataCollection.enabled":
-        if (!UrlbarPrefs.updatingFirefoxSuggestScenario) {
+        if (!lazy.UrlbarPrefs.updatingFirefoxSuggestScenario) {
           Services.telemetry.recordEvent(
             TELEMETRY_EVENT_CATEGORY,
             "data_collect_toggled",
-            UrlbarPrefs.get(pref) ? "enabled" : "disabled"
+            lazy.UrlbarPrefs.get(pref) ? "enabled" : "disabled"
           );
         }
         break;
       case "suggest.quicksuggest.nonsponsored":
-        if (!UrlbarPrefs.updatingFirefoxSuggestScenario) {
+        if (!lazy.UrlbarPrefs.updatingFirefoxSuggestScenario) {
           Services.telemetry.recordEvent(
             TELEMETRY_EVENT_CATEGORY,
             "enable_toggled",
-            UrlbarPrefs.get(pref) ? "enabled" : "disabled"
+            lazy.UrlbarPrefs.get(pref) ? "enabled" : "disabled"
           );
         }
         break;
       case "suggest.quicksuggest.sponsored":
-        if (!UrlbarPrefs.updatingFirefoxSuggestScenario) {
+        if (!lazy.UrlbarPrefs.updatingFirefoxSuggestScenario) {
           Services.telemetry.recordEvent(
             TELEMETRY_EVENT_CATEGORY,
             "sponsored_toggled",
-            UrlbarPrefs.get(pref) ? "enabled" : "disabled"
+            lazy.UrlbarPrefs.get(pref) ? "enabled" : "disabled"
           );
         }
         break;
@@ -791,7 +820,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let suggestions;
     TelemetryStopwatch.start(TELEMETRY_REMOTE_SETTINGS_LATENCY, queryContext);
     try {
-      suggestions = await UrlbarQuickSuggest.query(searchString);
+      suggestions = await lazy.UrlbarQuickSuggest.query(searchString);
       TelemetryStopwatch.finish(
         TELEMETRY_REMOTE_SETTINGS_LATENCY,
         queryContext
@@ -822,9 +851,27 @@ class ProviderQuickSuggest extends UrlbarProvider {
   async _fetchMerinoSuggestions(queryContext, searchString) {
     let instance = this.queryInstance;
 
+    // Set up the Merino session ID and related state. The session ID is a UUID
+    // without leading and trailing braces.
+    if (!this._merinoSessionID) {
+      let uuid = Services.uuid.generateUUID().toString();
+      this._merinoSessionID = uuid.substring(1, uuid.length - 1);
+      this._merinoSequenceNumber = 0;
+      this._merinoSessionTimer?.cancel();
+
+      // Per spec, for the user's privacy, the session should time out and a new
+      // session ID should be used if the engagement does not end soon.
+      this._merinoSessionTimer = new SkippableTimer({
+        name: "Merino session timeout",
+        time: this._merinoSessionTimeoutMs,
+        logger: this.logger,
+        callback: () => this._resetMerinoSessionID(),
+      });
+    }
+
     // Get the endpoint URL. It's empty by default when running tests so they
     // don't hit the network.
-    let endpointString = UrlbarPrefs.get("merino.endpointURL");
+    let endpointString = lazy.UrlbarPrefs.get("merino.endpointURL");
     if (!endpointString) {
       return null;
     }
@@ -835,26 +882,28 @@ class ProviderQuickSuggest extends UrlbarProvider {
       this.logger.error("Could not make Merino endpoint URL: " + error);
       return null;
     }
-    url.searchParams.set(MERINO_ENDPOINT_PARAM_QUERY, searchString);
+    url.searchParams.set(MERINO_PARAMS.QUERY, searchString);
+    url.searchParams.set(MERINO_PARAMS.SESSION_ID, this._merinoSessionID);
+    url.searchParams.set(
+      MERINO_PARAMS.SEQUENCE_NUMBER,
+      this._merinoSequenceNumber
+    );
 
-    let clientVariants = UrlbarPrefs.get("merino.clientVariants");
+    let clientVariants = lazy.UrlbarPrefs.get("merino.clientVariants");
     if (clientVariants) {
-      url.searchParams.set(
-        MERINO_ENDPOINT_PARAM_CLIENT_VARIANTS,
-        clientVariants
-      );
+      url.searchParams.set(MERINO_PARAMS.CLIENT_VARIANTS, clientVariants);
     }
 
-    let providers = UrlbarPrefs.get("merino.providers");
+    let providers = lazy.UrlbarPrefs.get("merino.providers");
     if (providers) {
-      url.searchParams.set(MERINO_ENDPOINT_PARAM_PROVIDERS, providers);
+      url.searchParams.set(MERINO_PARAMS.PROVIDERS, providers);
     } else if (
-      !UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") &&
-      !UrlbarPrefs.get("suggest.quicksuggest.sponsored")
+      !lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored") &&
+      !lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored")
     ) {
-      // Data collection is enabled but suggestions are not. Set the `providers`
+      // Data collection is enabled but suggestions are not. Set the providers
       // param to an empty string to tell Merino not to fetch any suggestions.
-      url.searchParams.set(MERINO_ENDPOINT_PARAM_PROVIDERS, "");
+      url.searchParams.set(MERINO_PARAMS.PROVIDERS, "");
     }
 
     let responseHistogram = Services.telemetry.getHistogramById(
@@ -866,7 +915,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     };
 
     // Set up the timeout timer.
-    let timeout = UrlbarPrefs.get("merinoTimeoutMs");
+    let timeout = lazy.UrlbarPrefs.get("merinoTimeoutMs");
     let timer = (this._merinoTimeoutTimer = new SkippableTimer({
       name: "Merino timeout",
       time: timeout,
@@ -906,6 +955,15 @@ class ProviderQuickSuggest extends UrlbarProvider {
           response = await fetch(url, { signal: controller.signal });
           TelemetryStopwatch.finish(TELEMETRY_MERINO_LATENCY, queryContext);
           maybeRecordResponse(response.ok ? "success" : "http_error");
+
+          // Increment the sequence number only after the fetch successfully
+          // completes. It should not be incremented if the fetch is aborted or
+          // fails due to a network error. The server should not see gaps in
+          // sequence numbers for searches it never received. In particular, as
+          // the user quickly types a search string and we start a search after
+          // each new character, some of those searches may cancel previous ones
+          // before their fetches complete or even start.
+          this._merinoSequenceNumber++;
         } catch (error) {
           TelemetryStopwatch.cancel(TELEMETRY_MERINO_LATENCY, queryContext);
           if (error.name != "AbortError") {
@@ -959,6 +1017,16 @@ class ProviderQuickSuggest extends UrlbarProvider {
   }
 
   /**
+   * Resets the Merino session ID and related state.
+   */
+  _resetMerinoSessionID() {
+    this._merinoSessionID = null;
+    this._merinoSequenceNumber = 0;
+    this._merinoSessionTimer?.cancel();
+    this._merinoSessionTimer = null;
+  }
+
+  /**
    * Returns whether a given suggestion can be added for a query, assuming the
    * provider itself should be active.
    *
@@ -973,9 +1041,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Return false if suggestions are disabled.
     if (
       (suggestion.is_sponsored &&
-        !UrlbarPrefs.get("suggest.quicksuggest.sponsored")) ||
+        !lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored")) ||
       (!suggestion.is_sponsored &&
-        !UrlbarPrefs.get("suggest.quicksuggest.nonsponsored"))
+        !lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored"))
     ) {
       this.logger.info("Suggestions disabled, not adding suggestion");
       return false;
@@ -984,9 +1052,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Return false if an impression cap has been hit.
     if (
       (suggestion.is_sponsored &&
-        UrlbarPrefs.get("quickSuggestImpressionCapsSponsoredEnabled")) ||
+        lazy.UrlbarPrefs.get("quickSuggestImpressionCapsSponsoredEnabled")) ||
       (!suggestion.is_sponsored &&
-        UrlbarPrefs.get("quickSuggestImpressionCapsNonSponsoredEnabled"))
+        lazy.UrlbarPrefs.get("quickSuggestImpressionCapsNonSponsoredEnabled"))
     ) {
       this._resetElapsedImpressionCounters();
       let type = suggestion.is_sponsored ? "sponsored" : "nonsponsored";
@@ -1067,16 +1135,16 @@ class ProviderQuickSuggest extends UrlbarProvider {
       JSON.stringify({
         isSponsored,
         currentStats: this._impressionStats,
-        impression_caps: UrlbarQuickSuggest.config.impression_caps,
+        impression_caps: lazy.UrlbarQuickSuggest.config.impression_caps,
       })
     );
 
     // Don't bother recording anything if caps are disabled.
     if (
       (isSponsored &&
-        !UrlbarPrefs.get("quickSuggestImpressionCapsSponsoredEnabled")) ||
+        !lazy.UrlbarPrefs.get("quickSuggestImpressionCapsSponsoredEnabled")) ||
       (!isSponsored &&
-        !UrlbarPrefs.get("quickSuggestImpressionCapsNonSponsoredEnabled"))
+        !lazy.UrlbarPrefs.get("quickSuggestImpressionCapsNonSponsoredEnabled"))
     ) {
       this.logger.info("Impression caps disabled, skipping update");
       return;
@@ -1112,7 +1180,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     // Save the stats.
     this._updatingImpressionStats = true;
     try {
-      UrlbarPrefs.set(
+      lazy.UrlbarPrefs.set(
         "quicksuggest.impressionCaps.stats",
         JSON.stringify(this._impressionStats)
       );
@@ -1128,7 +1196,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    * Loads and validates impression stats.
    */
   _loadImpressionStats() {
-    let json = UrlbarPrefs.get("quicksuggest.impressionCaps.stats");
+    let json = lazy.UrlbarPrefs.get("quicksuggest.impressionCaps.stats");
     if (!json) {
       this._impressionStats = {};
     } else {
@@ -1155,7 +1223,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   for more info.
    */
   _validateImpressionStats() {
-    let { impression_caps } = UrlbarQuickSuggest.config;
+    let { impression_caps } = lazy.UrlbarQuickSuggest.config;
 
     this.logger.info("Validating impression stats");
     this.logger.debug(
@@ -1276,7 +1344,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     this.logger.debug(
       JSON.stringify({
         currentStats: this._impressionStats,
-        impression_caps: UrlbarQuickSuggest.config.impression_caps,
+        impression_caps: lazy.UrlbarQuickSuggest.config.impression_caps,
       })
     );
 
@@ -1399,9 +1467,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
     ms = IMPRESSION_COUNTERS_RESET_INTERVAL_MS
   ) {
     if (this._impressionCountersResetInterval) {
-      clearInterval(this._impressionCountersResetInterval);
+      lazy.clearInterval(this._impressionCountersResetInterval);
     }
-    this._impressionCountersResetInterval = setInterval(
+    this._impressionCountersResetInterval = lazy.setInterval(
       () => this._resetElapsedImpressionCounters(),
       ms
     );
@@ -1426,7 +1494,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     this.logger.debug(`Queueing _loadBlockedDigests`);
     await this._blockTaskQueue.queue(() => {
       this.logger.info(`Loading blocked suggestion digests`);
-      let json = UrlbarPrefs.get("quicksuggest.blockedDigests");
+      let json = lazy.UrlbarPrefs.get("quicksuggest.blockedDigests");
       this.logger.debug(
         `browser.urlbar.quicksuggest.blockedDigests value: ${json}`
       );
@@ -1464,7 +1532,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    * Updates state based on the `browser.urlbar.quicksuggest.enabled` pref.
    */
   _updateFeatureState() {
-    let enabled = UrlbarPrefs.get("quickSuggestEnabled");
+    let enabled = lazy.UrlbarPrefs.get("quickSuggestEnabled");
     if (enabled == this._quickSuggestEnabled) {
       // This method is a Nimbus `onUpdate()` callback, which means it's called
       // each time any pref is changed that is a fallback for a Nimbus variable.
@@ -1562,6 +1630,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
   // Whether blocked digests are currently being updated.
   _updatingBlockedDigests = false;
+
+  // State related to the current Merino session.
+  _merinoSessionID = null;
+  _merinoSequenceNumber = 0;
+  _merinoSessionTimer = null;
+  _merinoSessionTimeoutMs = MERINO_SESSION_TIMEOUT_MS;
 }
 
 var UrlbarProviderQuickSuggest = new ProviderQuickSuggest();

@@ -210,56 +210,74 @@ static inline ValueOperand GetTempValue(Register type, Register payload) {
 #endif
 }
 
-uint32_t CodeGeneratorShared::ArgToStackOffset(uint32_t slot) const {
-  return masm.framePushed() +
-         (gen->compilingWasm() ? sizeof(wasm::Frame) : sizeof(JitFrameLayout)) +
-         slot;
-}
-
-uint32_t CodeGeneratorShared::SlotToStackOffset(uint32_t slot) const {
-  MOZ_ASSERT(slot > 0 && slot <= graph.localSlotsSize());
-  MOZ_ASSERT(slot <= masm.framePushed());
-  return masm.framePushed() - slot;
-}
-
 // For argument construction for calls. Argslots are Value-sized.
-uint32_t CodeGeneratorShared::StackOffsetOfPassedArg(uint32_t slot) const {
-  // A slot of 0 is permitted only to calculate %esp offset for calls.
-  MOZ_ASSERT(slot <= graph.argumentSlotCount());
-  uint32_t offsetFromBase = offsetOfPassedArgSlots_ + slot * sizeof(Value);
+Address CodeGeneratorShared::AddressOfPassedArg(uint32_t slot) const {
+  MOZ_ASSERT(masm.framePushed() == frameSize());
 
-  MOZ_ASSERT(offsetFromBase <= masm.framePushed());
-  uint32_t offset = masm.framePushed() - offsetFromBase;
+  MOZ_ASSERT(slot > 0);
+  MOZ_ASSERT(slot <= graph.argumentSlotCount());
+
+  uint32_t offsetFromBase = offsetOfPassedArgSlots_ + slot * sizeof(Value);
+  MOZ_ASSERT(offsetFromBase <= frameSize());
 
   // Space for passed arguments is reserved below a function's local stack
   // storage. Note that passedArgSlotsOffset_ is aligned to at least
   // sizeof(Value) to ensure proper alignment.
-  MOZ_ASSERT(offset % sizeof(Value) == 0);
-  return offset;
-}
+  MOZ_ASSERT((offsetFromBase % sizeof(Value)) == 0);
 
-uint32_t CodeGeneratorShared::ToStackOffset(LAllocation a) const {
-  if (a.isArgument()) {
-    return ArgToStackOffset(a.toArgument()->index());
+  if (JitOptions.baseRegForLocals == BaseRegForAddress::SP) {
+    return Address(masm.getStackPointer(), frameSize() - offsetFromBase);
   }
-  return SlotToStackOffset(a.isStackSlot() ? a.toStackSlot()->slot()
-                                           : a.toStackArea()->base());
+  MOZ_ASSERT(JitOptions.baseRegForLocals == BaseRegForAddress::FP);
+  return Address(FramePointer, -int32_t(offsetFromBase));
 }
 
-uint32_t CodeGeneratorShared::ToStackOffset(const LAllocation* a) const {
-  return ToStackOffset(*a);
+uint32_t CodeGeneratorShared::UnusedStackBytesForCall(
+    uint32_t numArgSlots) const {
+  MOZ_ASSERT(masm.framePushed() == frameSize());
+  MOZ_ASSERT(numArgSlots <= graph.argumentSlotCount());
+  uint32_t unusedArgSlots = graph.argumentSlotCount() - numArgSlots;
+  return unusedArgSlots * sizeof(Value);
 }
 
+template <BaseRegForAddress Base>
 Address CodeGeneratorShared::ToAddress(const LAllocation& a) const {
   MOZ_ASSERT(a.isMemory() || a.isStackArea());
-  if (useWasmStackArgumentAbi() && a.isArgument()) {
-    return Address(FramePointer, ToFramePointerOffset(a));
+  MOZ_ASSERT(masm.framePushed() == frameSize());
+
+  if (a.isArgument()) {
+    // Use the frame pointer, unless the caller explicitly requested a
+    // stack-pointer-relative address.
+    uint32_t offsetFromFP = offsetOfArgsFromFP_ + a.toArgument()->index();
+    if constexpr (Base == BaseRegForAddress::SP) {
+      return Address(masm.getStackPointer(), frameSize() + offsetFromFP);
+    } else {
+      static_assert(Base == BaseRegForAddress::Default ||
+                    Base == BaseRegForAddress::FP);
+      return Address(FramePointer, offsetFromFP);
+    }
   }
-  return Address(masm.getStackPointer(), ToStackOffset(&a));
+
+  uint32_t slot =
+      a.isStackSlot() ? a.toStackSlot()->slot() : a.toStackArea()->base();
+  MOZ_ASSERT(slot > 0 && slot <= graph.localSlotsSize());
+  MOZ_ASSERT(slot <= frameSize());
+
+  BaseRegForAddress base = Base;
+  if constexpr (Base == BaseRegForAddress::Default) {
+    base = JitOptions.baseRegForLocals;
+  }
+
+  if (base == BaseRegForAddress::FP) {
+    return Address(FramePointer, -int32_t(slot));
+  }
+  MOZ_ASSERT(base == BaseRegForAddress::SP);
+  return Address(masm.getStackPointer(), frameSize() - slot);
 }
 
+template <BaseRegForAddress Base>
 Address CodeGeneratorShared::ToAddress(const LAllocation* a) const {
-  return ToAddress(*a);
+  return ToAddress<Base>(*a);
 }
 
 // static
@@ -271,16 +289,6 @@ Address CodeGeneratorShared::ToAddress(Register elements,
   int32_t offset;
   MOZ_ALWAYS_TRUE(ArrayOffsetFitsInInt32(idx, type, offsetAdjustment, &offset));
   return Address(elements, offset);
-}
-
-uint32_t CodeGeneratorShared::ToFramePointerOffset(LAllocation a) const {
-  MOZ_ASSERT(useWasmStackArgumentAbi());
-  MOZ_ASSERT(a.isArgument());
-  return a.toArgument()->index() + sizeof(wasm::Frame);
-}
-
-uint32_t CodeGeneratorShared::ToFramePointerOffset(const LAllocation* a) const {
-  return ToFramePointerOffset(*a);
 }
 
 void CodeGeneratorShared::saveLive(LInstruction* ins) {

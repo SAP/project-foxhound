@@ -32,6 +32,7 @@
 #include "ScopedGLHelpers.h"
 #include "GLBlitHelper.h"
 #include "GLReadTexImageHelper.h"
+#include "nsGtkUtils.h"
 
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/ScopeExit.h"
@@ -69,6 +70,7 @@ RefPtr<GLContext> ClaimSnapshotGLContext() {
       LOGDMABUF(("GetAsSourceSurface: Failed to create snapshot GLContext."));
       return nullptr;
     }
+    sSnapshotContext->mOwningThreadId = Nothing();  // No singular owner.
   }
   if (!sSnapshotContext->MakeCurrent()) {
     LOGDMABUF(("GetAsSourceSurface: Failed to make GLContext current."));
@@ -379,6 +381,11 @@ bool DMABufSurfaceRGBA::Create(int aWidth, int aHeight,
 
   LOGDMABUF(("DMABufSurfaceRGBA::Create() UID %d size %d x %d\n", mUID, mWidth,
              mHeight));
+
+  if (!GetDMABufDevice()->GetGbmDevice()) {
+    LOGDMABUF(("    Missing GbmDevice!"));
+    return false;
+  }
 
   mGmbFormat = GetDMABufDevice()->GetGbmFormat(mSurfaceFlags & DMABUF_ALPHA);
   if (!mGmbFormat) {
@@ -709,7 +716,7 @@ bool DMABufSurfaceRGBA::CreateWlBuffer() {
 }
 
 void DMABufSurfaceRGBA::ReleaseWlBuffer() {
-  g_clear_pointer(&mWlBuffer, wl_buffer_destroy);
+  MozClearPointer(mWlBuffer, wl_buffer_destroy);
 }
 
 // We should synchronize DMA Buffer object access from CPU to avoid potential
@@ -1022,6 +1029,11 @@ bool DMABufSurfaceYUV::CreateYUVPlane(int aPlane, int aWidth, int aHeight,
                                       int aDrmFormat) {
   LOGDMABUF(("DMABufSurfaceYUV::CreateYUVPlane() UID %d size %d x %d", mUID,
              aWidth, aHeight));
+
+  if (!GetDMABufDevice()->GetGbmDevice()) {
+    LOGDMABUF(("    Missing GbmDevice!"));
+    return false;
+  }
 
   mWidth[aPlane] = aWidth;
   mHeight[aPlane] = aHeight;

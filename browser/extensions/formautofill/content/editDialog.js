@@ -11,7 +11,6 @@
 const { FormAutofill } = ChromeUtils.import(
   "resource://autofill/FormAutofill.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -86,8 +85,8 @@ class AutofillEditDialog {
       }
       case "contextmenu": {
         if (
-          !(event.target instanceof HTMLInputElement) &&
-          !(event.target instanceof HTMLTextAreaElement)
+          !HTMLInputElement.isInstance(event.target) &&
+          !HTMLTextAreaElement.isInstance(event.target)
         ) {
           event.preventDefault();
         }

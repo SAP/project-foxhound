@@ -858,15 +858,14 @@ section:not(:empty) ~ #empty-addons-message {
   background-origin: border-box;
   border-radius: 1.5em;
   padding: 1px;
-  vertical-align: bottom;
 }
 
 #colorways-expiry-date > span {
   display: inline-block;
-  color: black;
-  background: white;
+  color: var(--in-content-page-color);
+  background: var(--in-content-page-background);
   border-radius: 1.5em;
-  padding: .2em 1em;
+  padding: .3em 1em;
 }
 
 #colorways-button {
@@ -900,4 +899,14 @@ section:not(:empty) ~ #empty-addons-message {
 
 #colorways-preview-text-container > p {
   font-size: 1.1em;
+}
+
+#colorways-preview-text-container + .card-heading-image {
+  background-color: var(--in-content-box-background-odd);
+}
+
+@media (prefers-color-scheme: dark) {
+  #colorways-preview-text-container + .card-heading-image {
+    background-color: var(--in-content-page-background);
+  }
 }

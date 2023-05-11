@@ -3,7 +3,6 @@ import {
   IntersectionObserver,
   RecentSavesContainer,
   DSSubHeader,
-  GridContainer,
 } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { combineReducers, createStore } from "redux";
 import { INITIAL_STATE, reducers } from "common/Reducers.jsm";
@@ -11,7 +10,6 @@ import { Provider } from "react-redux";
 import {
   DSCard,
   PlaceholderDSCard,
-  LastCardMessage,
 } from "content-src/components/DiscoveryStreamComponents/DSCard/DSCard";
 import { TopicsWidget } from "content-src/components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
@@ -30,7 +28,10 @@ describe("<CardGrid>", () => {
 
   beforeEach(() => {
     wrapper = shallow(
-      <CardGrid DiscoveryStream={INITIAL_STATE.DiscoveryStream} />
+      <CardGrid
+        DiscoveryStream={INITIAL_STATE.DiscoveryStream}
+        Prefs={INITIAL_STATE.Prefs}
+      />
     );
   });
 
@@ -42,24 +43,15 @@ describe("<CardGrid>", () => {
   it("should render DSCards", () => {
     wrapper.setProps({ items: 2, data: { recommendations: [{}, {}] } });
 
-    assert.lengthOf(wrapper.find(GridContainer).children(), 2);
+    assert.lengthOf(wrapper.find(".ds-card-grid").children(), 2);
     assert.equal(
       wrapper
-        .find(GridContainer)
+        .find(".ds-card-grid")
         .children()
         .at(0)
         .type(),
       DSCard
     );
-  });
-
-  it("should add hero classname to card grid", () => {
-    wrapper.setProps({
-      display_variant: "hero",
-      data: { recommendations: [{}, {}] },
-    });
-
-    assert.ok(wrapper.find(".ds-card-grid-hero").exists());
   });
 
   it("should add 4 card classname to card grid", () => {
@@ -81,17 +73,19 @@ describe("<CardGrid>", () => {
   });
 
   it("should render sub header in the middle of the card grid for both regular and compact", () => {
+    const commonProps = {
+      essentialReadsHeader: true,
+      editorsPicksHeader: true,
+      items: 12,
+      data: {
+        recommendations: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
+      },
+      DiscoveryStream: INITIAL_STATE.DiscoveryStream,
+      Prefs: INITIAL_STATE.Prefs,
+    };
     wrapper = mount(
       <WrapWithProvider>
-        <CardGrid
-          essentialReadsHeader={true}
-          editorsPicksHeader={true}
-          items={12}
-          data={{
-            recommendations: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
-          }}
-          DiscoveryStream={INITIAL_STATE.DiscoveryStream}
-        />
+        <CardGrid {...commonProps} />
       </WrapWithProvider>
     );
 
@@ -102,16 +96,7 @@ describe("<CardGrid>", () => {
     });
     wrapper = mount(
       <WrapWithProvider>
-        <CardGrid
-          essentialReadsHeader={true}
-          editorsPicksHeader={true}
-          compact={true}
-          items={12}
-          data={{
-            recommendations: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
-          }}
-          DiscoveryStream={INITIAL_STATE.DiscoveryStream}
-        />
+        <CardGrid {...commonProps} compact={true} />
       </WrapWithProvider>
     );
 
@@ -131,56 +116,6 @@ describe("<CardGrid>", () => {
     });
 
     assert.ok(!wrapper.find(".ds-card-grid-include-descriptions").exists());
-  });
-
-  it("should show last card and more loaded state", () => {
-    const dispatch = sinon.stub();
-    wrapper.setProps({
-      dispatch,
-      compact: true,
-      loadMore: true,
-      lastCardMessageEnabled: true,
-      loadMoreThreshold: 2,
-      data: {
-        recommendations: [{}, {}, {}],
-      },
-    });
-
-    const loadMoreButton = wrapper.find(".ds-card-grid-load-more-button");
-    assert.ok(loadMoreButton.exists());
-
-    loadMoreButton.simulate("click", { preventDefault: () => {} });
-    assert.calledOnce(dispatch);
-    assert.calledWith(
-      dispatch,
-      ac.UserEvent({
-        event: "CLICK",
-        source: "DS_LOAD_MORE_BUTTON",
-      })
-    );
-
-    const lastCard = wrapper.find(LastCardMessage);
-    assert.ok(lastCard.exists());
-  });
-
-  it("should only show load more with more than threshold number of stories", () => {
-    wrapper.setProps({
-      loadMore: true,
-      loadMoreThreshold: 2,
-      data: {
-        recommendations: [{}, {}, {}],
-      },
-    });
-
-    let loadMoreButton = wrapper.find(".ds-card-grid-load-more-button");
-    assert.ok(loadMoreButton.exists());
-
-    wrapper.setProps({
-      loadMoreThreshold: 3,
-    });
-
-    loadMoreButton = wrapper.find(".ds-card-grid-load-more-button");
-    assert.ok(!loadMoreButton.exists());
   });
 
   it("should create a widget card", () => {
@@ -259,43 +194,6 @@ describe("<RecentSavesContainer>", () => {
 
   beforeEach(() => {
     dispatch = sinon.stub();
-    intersectEntries = [{ isIntersecting: false }];
-    fakeWindow = {
-      IntersectionObserver: buildIntersectionObserver(intersectEntries),
-    };
-    wrapper = mount(
-      <WrapWithProvider>
-        <RecentSavesContainer windowObj={fakeWindow} dispatch={dispatch} />
-      </WrapWithProvider>
-    ).find(RecentSavesContainer);
-  });
-
-  it("should render an IntersectionObserver when not visible", () => {
-    assert.ok(wrapper.exists());
-    assert.ok(wrapper.find(IntersectionObserver).exists());
-  });
-
-  it("should render a nothing if visible until we log in", () => {
-    intersectEntries = [{ isIntersecting: true }];
-    fakeWindow = {
-      IntersectionObserver: buildIntersectionObserver(intersectEntries),
-    };
-    wrapper = mount(
-      <WrapWithProvider>
-        <RecentSavesContainer windowObj={fakeWindow} dispatch={dispatch} />
-      </WrapWithProvider>
-    ).find(RecentSavesContainer);
-    assert.ok(!wrapper.find(IntersectionObserver).exists());
-    assert.calledOnce(dispatch);
-    assert.calledWith(
-      dispatch,
-      ac.AlsoToMain({
-        type: at.DISCOVERY_STREAM_POCKET_STATE_INIT,
-      })
-    );
-  });
-
-  it("should render a GridContainer if visible and logged in", () => {
     intersectEntries = [{ isIntersecting: true }];
     fakeWindow = {
       IntersectionObserver: buildIntersectionObserver(intersectEntries),
@@ -315,14 +213,77 @@ describe("<RecentSavesContainer>", () => {
                 excerpt: "excerpt",
               },
             ],
+            experimentData: {
+              utmSource: "utmSource",
+              utmContent: "utmContent",
+              utmCampaign: "utmCampaign",
+            },
           },
         }}
       >
+        <RecentSavesContainer
+          gridClassName="ds-card-grid"
+          windowObj={fakeWindow}
+          dispatch={dispatch}
+        />
+      </WrapWithProvider>
+    ).find(RecentSavesContainer);
+  });
+
+  it("should render an IntersectionObserver when not visible", () => {
+    intersectEntries = [{ isIntersecting: false }];
+    fakeWindow = {
+      IntersectionObserver: buildIntersectionObserver(intersectEntries),
+    };
+    wrapper = mount(
+      <WrapWithProvider>
         <RecentSavesContainer windowObj={fakeWindow} dispatch={dispatch} />
       </WrapWithProvider>
     ).find(RecentSavesContainer);
-    assert.lengthOf(wrapper.find(GridContainer), 1);
+
+    assert.ok(wrapper.exists());
+    assert.ok(wrapper.find(IntersectionObserver).exists());
+  });
+
+  it("should render nothing if visible until we log in", () => {
+    assert.ok(!wrapper.find(IntersectionObserver).exists());
+    assert.calledOnce(dispatch);
+    assert.calledWith(
+      dispatch,
+      ac.AlsoToMain({
+        type: at.DISCOVERY_STREAM_POCKET_STATE_INIT,
+      })
+    );
+  });
+
+  it("should render a grid if visible and logged in", () => {
+    assert.lengthOf(wrapper.find(".ds-card-grid"), 1);
+    assert.lengthOf(wrapper.find(DSSubHeader), 1);
     assert.lengthOf(wrapper.find(PlaceholderDSCard), 2);
     assert.lengthOf(wrapper.find(DSCard), 3);
+  });
+
+  it("should render a my list link with proper utm params", () => {
+    assert.equal(
+      wrapper
+        .find(".section-sub-link")
+        .at(0)
+        .prop("url"),
+      "https://getpocket.com/a?utm_source=utmSource&utm_content=utmContent&utm_campaign=utmCampaign"
+    );
+  });
+
+  it("should fire a UserEvent for my list clicks", () => {
+    wrapper
+      .find(".section-sub-link")
+      .at(0)
+      .simulate("click");
+    assert.calledWith(
+      dispatch,
+      ac.UserEvent({
+        event: "CLICK",
+        source: `CARDGRID_RECENT_SAVES_VIEW_LIST`,
+      })
+    );
   });
 });

@@ -4,17 +4,10 @@
 var { PromiseUtils } = ChromeUtils.import(
   "resource://gre/modules/PromiseUtils.jsm"
 );
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PlacesTestUtils",
-  "resource://testing-common/PlacesTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "TestUtils",
@@ -146,14 +139,13 @@ async function setupMSExperimentWithMessage(message) {
   );
   let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
     featureId: "pbNewtab",
-    enabled: true,
     value: message,
   });
   await SpecialPowers.pushPrefEnv({
     set: [
       [
         "browser.newtabpage.activity-stream.asrouter.providers.messaging-experiments",
-        '{"id":"messaging-experiments","enabled":true,"type":"remote-experiments","messageGroups":["pbNewtab"],"updateCycleInMs":0}',
+        '{"id":"messaging-experiments","enabled":true,"type":"remote-experiments","updateCycleInMs":0}',
       ],
     ],
   });

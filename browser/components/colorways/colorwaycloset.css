@@ -2,23 +2,83 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+:root {
+  height: 100%;
+  --body-columns: 1fr;
+  --body-rows: auto 2fr 1fr 40px;
+  --colorway-name-font-size: 1.5em;
+  --colorway-selector-align: center;
+  --figure-height: 200px;
+  --figure-width: 200px;
+}
+
+@media (min-width: 50em) {
+  :root {
+    --body-columns: 24px repeat(2, 1fr);
+    --body-rows: auto 1fr 64px;
+    --colorway-name-font-size: 2.5em;
+    --colorway-selector-align: start;
+    --customization-panel-column: 3;
+    --customization-panel-padding-inline: 24px;
+    --figure-column: 2;
+    --figure-height: 288px;
+    --figure-row: 2;
+    --figure-width: 288px;
+    --header-column: 2/4;
+  }
+
+  #colorway-name,
+  #modal-buttons {
+    margin-block: 4rem 0;
+  }
+}
+
 body {
+  height: 100%;
   display: grid;
-  grid-template-areas:
-    "title"
-    "main";
+  grid-template-columns: var(--body-columns);
+  grid-template-rows: var(--body-rows);
+  padding: 0 24px;
+}
+
+fieldset {
+  border: unset;
+  margin: 0;
+  padding: 0;
 }
 
 body > header {
-  grid-area: title;
-  margin: 2em;
+  grid-row: 1;
+  margin-top: 1em;
+  grid-column: var(--header-column);
+}
+
+figure {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  grid-column: var(--figure-column);
+  grid-row: var(--figure-row);
+}
+
+figure > img {
+  margin-block-start: 2rem;
+  max-width: var(--figure-height);
+  max-height: var(--figure-width);
+  object-fit: scale-down;
+}
+
+#colorway-customization-panel {
+  padding-inline: var(--customization-panel-padding-inline);
+  grid-column: var(--customization-panel-column);
 }
 
 #collection-title {
   display: inline-block;
-  margin: 0;
+  margin-inline: 0 .7em;
+  margin-block: 0 .2em;
   padding: 0;
-  font-size: 1.8em;
+  font-size: 1.7em;
   font-weight: bold;
 }
 
@@ -28,8 +88,7 @@ body > header {
   background-origin: border-box;
   border-radius: 1.5em;
   padding: 1px;
-  margin: 0.2em 1em;
-  vertical-align: bottom;
+  font-size: 1.1em;
 }
 
 #collection-expiry-date > span {
@@ -37,15 +96,22 @@ body > header {
   color: var(--in-content-page-color);
   background: var(--in-content-page-background);
   border-radius: 1.5em;
-  padding: .2em 1em;
+  padding: .3em 1em;
 }
 
-#use-fx-home-controls:not(.success) > .success-prompt,
-#use-fx-home-controls.success > .reset-prompt {
+#homepage-reset-container:not([hidden]) {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 2em;
+}
+
+#homepage-reset-container:not(.success) > .success-prompt,
+#homepage-reset-container.success > .reset-prompt {
   display: none;
 }
 
-#use-fx-home-controls > .success-prompt::before {
+#homepage-reset-container > .success-prompt::before {
   display: inline-block;
   content: "";
   background: var(--green-50) url('chrome://global/skin/icons/check.svg') center center no-repeat;
@@ -58,15 +124,9 @@ body > header {
   margin-inline-end: 0.5em;
 }
 
-body > section {
-  grid-area: main;
-}
-
 #colorway-selector {
-  border: none;
-  display: flex;
-  flex-direction: row;
-  padding: 0;
+  margin-block-start: 2rem;
+  text-align: var(--colorway-selector-align);
 }
 
 #colorway-selector > input[type="radio"],
@@ -99,39 +159,32 @@ body > section {
   background-color: unset;
 }
 
-#colorway-customization-panel {
-  padding-inline: 24px;
-}
-
-#colorway-details {
-  margin-top: 50px;
+#colorway-description,
+#colorway-intensities {
+  margin-block: 2rem;
 }
 
 #colorway-name {
-  font-size: 2em;
-  margin-block: 0 37px;
+  font-size: var(--colorway-name-font-size);
 }
 
 #colorway-description {
   font-size: 1.1em;
-  margin-block: 0 24px;
+  line-height: 1.5;
 }
 
 /* Intensity Picker */
-#colorway-intensities {
-  border: unset;
-  margin-inline: 0;
-  padding-inline: 0;
-}
 
 #colorway-intensities > legend {
+  font-size: 1.1em;
   padding-inline-start: 0;
+  margin-bottom: .5em;
 }
 
 #colorway-intensity-radios {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: .5em;
 }
 
 #colorway-intensity-radios > label {
@@ -141,8 +194,12 @@ body > section {
   color: var(--in-content-text-color);
   display: flex;
   overflow: clip;
-  padding: 4px 8px;
+  padding: .5em;
   width: 100%;
+}
+
+.colorway-intensity-radio {
+  margin-block: 0 !important;
 }
 
 #set-colorway {

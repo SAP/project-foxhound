@@ -11,8 +11,8 @@ var EXPORTED_SYMBOLS = [
   "Changeset",
 ];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { JSONFile } = ChromeUtils.import("resource://gre/modules/JSONFile.jsm");
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
@@ -38,9 +38,12 @@ const { SerializableSet, Svc, Utils } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   OS: "resource://gre/modules/osfile.jsm",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
 });
 
 function ensureDirectory(path) {

@@ -283,29 +283,6 @@ bool CookieCommons::CheckCookiePermission(
     return false;
   }
 
-  // Here we can have any legacy permission value.
-
-  // now we need to figure out what type of accept policy we're dealing with
-  // if we accept cookies normally, just bail and return
-  if (StaticPrefs::network_cookie_lifetimePolicy() ==
-      nsICookieService::ACCEPT_NORMALLY) {
-    return true;
-  }
-
-  // declare this here since it'll be used in all of the remaining cases
-  int64_t currentTime = PR_Now() / PR_USEC_PER_SEC;
-  int64_t delta = aCookieData.expiry() - currentTime;
-
-  // We are accepting the cookie, but,
-  // if it's not a session cookie, we may have to limit its lifetime.
-  if (!aCookieData.isSession() && delta > 0) {
-    if (StaticPrefs::network_cookie_lifetimePolicy() ==
-        nsICookieService::ACCEPT_SESSION) {
-      // limit lifetime to session
-      aCookieData.isSession() = true;
-    }
-  }
-
   return true;
 }
 
@@ -352,7 +329,7 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
         aHasExistingCookiesLambda,
     nsIURI** aDocumentURI, nsACString& aBaseDomain, OriginAttributes& aAttrs) {
   nsCOMPtr<nsIPrincipal> storagePrincipal =
-      aDocument->EffectiveStoragePrincipal();
+      aDocument->EffectiveCookiePrincipal();
   MOZ_ASSERT(storagePrincipal);
 
   nsCOMPtr<nsIURI> principalURI;
@@ -452,15 +429,19 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
 already_AddRefed<nsICookieJarSettings> CookieCommons::GetCookieJarSettings(
     nsIChannel* aChannel) {
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+  bool shouldResistFingerprinting =
+      nsContentUtils::ShouldResistFingerprinting(aChannel);
   if (aChannel) {
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
     nsresult rv =
         loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      cookieJarSettings = CookieJarSettings::GetBlockingAll();
+      cookieJarSettings =
+          CookieJarSettings::GetBlockingAll(shouldResistFingerprinting);
     }
   } else {
-    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::eRegular);
+    cookieJarSettings = CookieJarSettings::Create(CookieJarSettings::eRegular,
+                                                  shouldResistFingerprinting);
   }
 
   MOZ_ASSERT(cookieJarSettings);

@@ -38,6 +38,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/CanvasRenderThread.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/image/ImageMemoryReporter.h"
@@ -52,6 +53,7 @@
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeParent.h"
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/layers/VideoBridgeParent.h"
 #include "mozilla/webrender/RenderThread.h"
@@ -194,6 +196,7 @@ bool GPUParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
 #endif
 
   CompositorThreadHolder::Start();
+  RemoteTextureMap::Init();
   APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
   apz::InitializeGlobalState();
   LayerTreeOwnerTracker::Initialize();
@@ -358,6 +361,9 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
 
   // Make sure to do this *after* we update gfxVars above.
   if (gfxVars::UseWebRender()) {
+    if (gfxVars::UseCanvasRenderThread()) {
+      gfx::CanvasRenderThread::Start();
+    }
     wr::RenderThread::Start(aWrNamespace);
     image::ImageMemoryReporter::InitForWebRender();
   }
@@ -685,12 +691,16 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
         // This could be running on either the Compositor or the Renderer
         // thread.
         CanvasManagerParent::Shutdown();
+        RemoteTextureMap::Shutdown();
         CompositorThreadHolder::Shutdown();
         // There is a case that RenderThread exists when gfxVars::UseWebRender()
         // is false. This could happen when WebRender was fallbacked to
         // compositor.
         if (wr::RenderThread::Get()) {
           wr::RenderThread::ShutDown();
+        }
+        if (gfx::CanvasRenderThread::Get()) {
+          gfx::CanvasRenderThread::ShutDown();
         }
 #ifdef XP_WIN
         if (widget::WinCompositorWindowThread::Get()) {

@@ -6,6 +6,7 @@
 #define DOM_MEDIA_PLATFORM_WMF_MFMEDIAENGINEDECODERMODULE_H
 
 #include "PlatformDecoderModule.h"
+#include "WMFUtils.h"
 
 namespace mozilla {
 
@@ -14,6 +15,8 @@ class MFMediaEngineDecoderModule final : public PlatformDecoderModule {
   static void Init();
 
   static already_AddRefed<PlatformDecoderModule> Create();
+
+  static bool SupportsConfig(const TrackInfo& aConfig);
 
   already_AddRefed<MediaDataDecoder> CreateVideoDecoder(
       const CreateDecoderParams& aParams) override;
@@ -32,6 +35,7 @@ class MFMediaEngineDecoderModule final : public PlatformDecoderModule {
   media::DecodeSupportSet SupportInternal(
       const SupportDecoderParams& aParams,
       DecoderDoctorDiagnostics* aDiagnostics) const;
+  bool CanCreateMFTDecoder(const WMFStreamType& aType) const;
   MFMediaEngineDecoderModule() = default;
   ~MFMediaEngineDecoderModule() = default;
 };

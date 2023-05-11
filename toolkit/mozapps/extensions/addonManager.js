@@ -10,8 +10,8 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const lazy = {};
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -45,10 +45,6 @@ const MSG_INSTALL_EVENT = "WebAPIInstallEvent";
 const MSG_INSTALL_CLEANUP = "WebAPICleanup";
 const MSG_ADDON_EVENT_REQ = "WebAPIAddonEventRequest";
 const MSG_ADDON_EVENT = "WebAPIAddonEvent";
-
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-var gSingleton = null;
 
 var AddonManager, AddonManagerPrivate;
 function amManager() {
@@ -325,14 +321,6 @@ amManager.prototype = {
   },
 
   classID: Components.ID("{4399533d-08d1-458c-a87a-235f74451cfa}"),
-  _xpcom_factory: {
-    createInstance(aIid) {
-      if (!gSingleton) {
-        gSingleton = new amManager();
-      }
-      return gSingleton.QueryInterface(aIid);
-    },
-  },
   QueryInterface: ChromeUtils.generateQI([
     "amIAddonManager",
     "nsITimerCallback",

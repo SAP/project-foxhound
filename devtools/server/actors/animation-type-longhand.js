@@ -185,6 +185,7 @@ exports.ANIMATION_TYPE_FOR_LONGHANDS = [
   [
     "none",
     new Set([
+      "animation-composition",
       "animation-delay",
       "animation-direction",
       "animation-duration",
@@ -209,6 +210,10 @@ exports.ANIMATION_TYPE_FOR_LONGHANDS = [
       "border-inline-start-width",
       "container-name",
       "container-type",
+      "contain-intrinsic-block-size",
+      "contain-intrinsic-inline-size",
+      "contain-intrinsic-height",
+      "contain-intrinsic-width",
       "content-visibility",
       "-moz-context-properties",
       "-moz-control-character-visibility",

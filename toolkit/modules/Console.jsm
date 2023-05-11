@@ -22,8 +22,6 @@
 
 var EXPORTED_SYMBOLS = ["console", "ConsoleAPI"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 var gTimerRegistry = new Map();
 
 /**
@@ -751,6 +749,10 @@ ConsoleAPI.prototype = {
 
   set maxLogLevel(aValue) {
     this._maxLogLevel = this._maxExplicitLogLevel = aValue;
+  },
+
+  shouldLog(aLevel) {
+    return shouldLog(aLevel, this.maxLogLevel);
   },
 };
 

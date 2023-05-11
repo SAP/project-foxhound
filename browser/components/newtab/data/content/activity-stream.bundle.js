@@ -408,7 +408,7 @@ const actionUtils = {
 
 
 const MESSAGE_TYPE_LIST = ["BLOCK_MESSAGE_BY_ID", "USER_ACTION", "IMPRESSION", "TRIGGER", "NEWTAB_MESSAGE_REQUEST", // PB is Private Browsing
-"PBNEWTAB_MESSAGE_REQUEST", "DOORHANGER_TELEMETRY", "TOOLBAR_BADGE_TELEMETRY", "TOOLBAR_PANEL_TELEMETRY", "MOMENTS_PAGE_TELEMETRY", "INFOBAR_TELEMETRY", "SPOTLIGHT_TELEMETRY", "AS_ROUTER_TELEMETRY_USER_EVENT", // Admin types
+"PBNEWTAB_MESSAGE_REQUEST", "DOORHANGER_TELEMETRY", "TOOLBAR_BADGE_TELEMETRY", "TOOLBAR_PANEL_TELEMETRY", "MOMENTS_PAGE_TELEMETRY", "INFOBAR_TELEMETRY", "SPOTLIGHT_TELEMETRY", "TOAST_NOTIFICATION_TELEMETRY", "AS_ROUTER_TELEMETRY_USER_EVENT", // Admin types
 "ADMIN_CONNECT_STATE", "UNBLOCK_MESSAGE_BY_ID", "UNBLOCK_ALL", "BLOCK_BUNDLE", "UNBLOCK_BUNDLE", "DISABLE_PROVIDER", "ENABLE_PROVIDER", "EVALUATE_JEXL_EXPRESSION", "EXPIRE_QUERY_CACHE", "FORCE_ATTRIBUTION", "FORCE_WHATSNEW_PANEL", "CLOSE_WHATSNEW_PANEL", "OVERRIDE_MESSAGE", "MODIFY_MESSAGE_JSON", "RESET_PROVIDER_PREF", "SET_PROVIDER_USER_PREF", "RESET_GROUPS_STATE"];
 const MESSAGE_TYPE_HASH = MESSAGE_TYPE_LIST.reduce((hash, value) => {
   hash[value] = value;
@@ -959,11 +959,7 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
     this.setAttribution = this.setAttribution.bind(this);
     this.onCopyTargetingParams = this.onCopyTargetingParams.bind(this);
     this.onNewTargetingParams = this.onNewTargetingParams.bind(this);
-    this.handleUpdateWNMessages = this.handleUpdateWNMessages.bind(this);
-    this.handleForceWNP = this.handleForceWNP.bind(this);
-    this.handleCloseWNP = this.handleCloseWNP.bind(this);
     this.resetPanel = this.resetPanel.bind(this);
-    this.restoreWNMessageState = this.restoreWNMessageState.bind(this);
     this.toggleJSON = this.toggleJSON.bind(this);
     this.toggleAllMessages = this.toggleAllMessages.bind(this);
     this.resetGroups = this.resetGroups.bind(this);
@@ -973,7 +969,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
     this.state = {
       messageFilter: "all",
       messageGroupsFilter: "all",
-      WNMessages: [],
       collapsedMessages: [],
       modifiedMessages: [],
       evaluationStatus: {},
@@ -1069,7 +1064,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
 
   resetPanel() {
     this.resetAllJSON();
-    this.handleCloseWNP();
   }
 
   handleOverride(id) {
@@ -1078,27 +1072,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
       this.props.notifyContent({
         message: state.message
       });
-    });
-  }
-
-  async handleUpdateWNMessages() {
-    await this.restoreWNMessageState();
-    let messages = this.state.WNMessages;
-
-    for (const msg of messages) {
-      ASRouterUtils.modifyMessageJson(JSON.parse(msg));
-    }
-  }
-
-  handleForceWNP() {
-    ASRouterUtils.sendMessage({
-      type: "FORCE_WHATSNEW_PANEL"
-    });
-  }
-
-  handleCloseWNP() {
-    ASRouterUtils.sendMessage({
-      type: "CLOSE_WHATSNEW_PANEL"
     });
   }
 
@@ -1388,25 +1361,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
     }, JSON.stringify(msg, null, 2))))));
   }
 
-  restoreWNMessageState() {
-    // check the page for checked boxes, and reset the state of WNMessages based on that.
-    let tempState = [];
-    let messageCheckboxes = document.querySelectorAll('input[type="checkbox"]'); // put the JSON of all the checked checkboxes in the array
-
-    for (const checkbox of messageCheckboxes) {
-      let trimmedId = checkbox.id.replace(" checkbox", "");
-      let msg = document.getElementById(`${trimmedId}-textarea`).value;
-
-      if (checkbox.checked) {
-        tempState.push(msg);
-      }
-    }
-
-    this.setState({
-      WNMessages: tempState
-    });
-  }
-
   modifyJson(content) {
     const message = JSON.parse(document.getElementById(`${content.id}-textarea`).value);
     return ASRouterUtils.modifyMessageJson(message).then(state => {
@@ -1415,40 +1369,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
         message: state.message
       });
     });
-  }
-
-  renderWNMessageItem(msg) {
-    const isBlocked = this.state.messageBlockList.includes(msg.id) || this.state.messageBlockList.includes(msg.campaign);
-    const impressions = this.state.messageImpressions[msg.id] ? this.state.messageImpressions[msg.id].length : 0;
-    const isCollapsed = this.state.collapsedMessages.includes(msg.id);
-    let itemClassName = "message-item";
-
-    if (isBlocked) {
-      itemClassName += " blocked";
-    }
-
-    return /*#__PURE__*/external_React_default().createElement("tr", {
-      className: itemClassName,
-      key: `${msg.id}-${msg.provider}`
-    }, /*#__PURE__*/external_React_default().createElement("td", {
-      className: "message-id"
-    }, /*#__PURE__*/external_React_default().createElement("span", null, msg.id, " ", /*#__PURE__*/external_React_default().createElement("br", null), /*#__PURE__*/external_React_default().createElement("br", null), "(", impressions, " impressions)")), /*#__PURE__*/external_React_default().createElement("td", null, /*#__PURE__*/external_React_default().createElement(ToggleMessageJSON, {
-      msgId: `${msg.id}`,
-      toggleJSON: this.toggleJSON,
-      isCollapsed: isCollapsed
-    })), /*#__PURE__*/external_React_default().createElement("td", null, /*#__PURE__*/external_React_default().createElement("input", {
-      type: "checkbox",
-      id: `${msg.id} checkbox`,
-      name: `${msg.id} checkbox`
-    })), /*#__PURE__*/external_React_default().createElement("td", {
-      className: `message-summary`
-    }, /*#__PURE__*/external_React_default().createElement("pre", {
-      className: isCollapsed ? "collapsed" : "expanded"
-    }, /*#__PURE__*/external_React_default().createElement("textarea", {
-      id: `${msg.id}-textarea`,
-      className: "wnp-textarea",
-      name: msg.id
-    }, JSON.stringify(msg, null, 2)))));
   }
 
   toggleAllMessages(messagesToShow) {
@@ -1489,15 +1409,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
 
     const messagesToShow = this.state.messageGroupsFilter === "all" ? this.state.messages.filter(m => m.groups.length) : this.state.messages.filter(message => message.groups.includes(this.state.messageGroupsFilter));
     return /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, messagesToShow.map(msg => this.renderMessageItem(msg))));
-  }
-
-  renderWNMessages() {
-    if (!this.state.messages) {
-      return null;
-    }
-
-    const messagesToShow = this.state.messages.filter(message => message.provider === "whats-new-panel" && message.content.body);
-    return /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, messagesToShow.map(msg => this.renderWNMessageItem(msg))));
   }
 
   renderMessageFilter() {
@@ -1789,39 +1700,10 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
     return /*#__PURE__*/external_React_default().createElement("p", null, "No errors");
   }
 
-  renderWNPTests() {
-    if (!this.state.messages) {
-      return null;
-    }
-
-    let messagesToShow = this.state.messages.filter(message => message.provider === "whats-new-panel");
-    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("p", {
-      className: "helpLink"
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "icon icon-small-spacer icon-info"
-    }), " ", /*#__PURE__*/external_React_default().createElement("span", null, "To correctly render selected messages, click 'Open What's New Panel', select the messages you want to see, and click 'Render Selected Messages'.", /*#__PURE__*/external_React_default().createElement("br", null), /*#__PURE__*/external_React_default().createElement("br", null), "To modify a message, select it, modify the JSON and click 'Render Selected Messages' again to see your changes.", /*#__PURE__*/external_React_default().createElement("br", null), "Click 'Reset Panel' to close the panel and reset all JSON to its original state.")), /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("button", {
-      className: "ASRouterButton primary button",
-      onClick: this.handleForceWNP
-    }, "Open What's New Panel"), /*#__PURE__*/external_React_default().createElement("button", {
-      className: "ASRouterButton secondary button",
-      onClick: this.handleUpdateWNMessages
-    }, "Render Selected Messages"), /*#__PURE__*/external_React_default().createElement("button", {
-      className: "ASRouterButton secondary button",
-      onClick: this.resetPanel
-    }, "Reset Panel"), /*#__PURE__*/external_React_default().createElement("h2", null, "Messages"), /*#__PURE__*/external_React_default().createElement("button", {
-      className: "ASRouterButton slim button" // eslint-disable-next-line react/jsx-no-bind
-      ,
-      onClick: e => this.toggleAllMessages(messagesToShow)
-    }, "Collapse/Expand All"), this.renderWNMessages()));
-  }
-
   getSection() {
     const [section] = this.props.location.routes;
 
     switch (section) {
-      case "wnpanel":
-        return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("h2", null, "What's New Panel"), this.renderWNPTests());
-
       case "targeting":
         return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("h2", null, "Targeting Utilities"), /*#__PURE__*/external_React_default().createElement("button", {
           className: "button",
@@ -1877,8 +1759,6 @@ class ASRouterAdminInner extends (external_React_default()).PureComponent {
     }, /*#__PURE__*/external_React_default().createElement("ul", null, /*#__PURE__*/external_React_default().createElement("li", null, /*#__PURE__*/external_React_default().createElement("a", {
       href: "#devtools"
     }, "General")), /*#__PURE__*/external_React_default().createElement("li", null, /*#__PURE__*/external_React_default().createElement("a", {
-      href: "#devtools-wnpanel"
-    }, "What's New Panel")), /*#__PURE__*/external_React_default().createElement("li", null, /*#__PURE__*/external_React_default().createElement("a", {
       href: "#devtools-targeting"
     }, "Targeting")), /*#__PURE__*/external_React_default().createElement("li", null, /*#__PURE__*/external_React_default().createElement("a", {
       href: "#devtools-groups"
@@ -7279,25 +7159,21 @@ const ANIMATION_DURATION = 3000;
 const DSMessageLabel = props => {
   const {
     context,
-    context_type,
-    display_engagement_labels,
-    engagement
+    context_type
   } = props;
   const {
     icon,
     fluentID
   } = cardContextTypes[context_type] || {};
 
-  if (!context && (context_type || display_engagement_labels && engagement)) {
+  if (!context && context_type) {
     return /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.TransitionGroup, {
       component: null
     }, /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
       key: fluentID,
       timeout: ANIMATION_DURATION,
       classNames: "story-animate"
-    }, engagement && !context_type ? /*#__PURE__*/external_React_default().createElement("div", {
-      className: "story-view-count"
-    }, engagement) : /*#__PURE__*/external_React_default().createElement(StatusMessage, {
+    }, /*#__PURE__*/external_React_default().createElement(StatusMessage, {
       icon: icon,
       fluentID: fluentID
     })));
@@ -7355,12 +7231,9 @@ const SponsorLabel = ({
 };
 class DSContextFooter extends (external_React_default()).PureComponent {
   render() {
-    // display_engagement_labels is based on pref `browser.newtabpage.activity-stream.discoverystream.engagementLabelEnabled`
     const {
       context,
       context_type,
-      engagement,
-      display_engagement_labels,
       sponsor,
       sponsored_by_override
     } = this.props;
@@ -7371,9 +7244,7 @@ class DSContextFooter extends (external_React_default()).PureComponent {
     });
     const dsMessageLabel = DSMessageLabel({
       context,
-      context_type,
-      display_engagement_labels,
-      engagement
+      context_type
     });
 
     if (sponsorLabel || dsMessageLabel) {
@@ -7390,15 +7261,11 @@ const DSMessageFooter = props => {
   const {
     context,
     context_type,
-    engagement,
-    display_engagement_labels,
     saveToPocketCard
   } = props;
   const dsMessageLabel = DSMessageLabel({
     context,
-    context_type,
-    engagement,
-    display_engagement_labels
+    context_type
   }); // This case is specific and already displayed to the user elsewhere.
 
   if (!dsMessageLabel || saveToPocketCard && context_type === "pocket") {
@@ -7473,10 +7340,8 @@ const DSSource = ({
   return /*#__PURE__*/external_React_default().createElement("p", {
     className: "source clamp"
   }, source);
-}; // Default Meta that displays CTA as link if cta_variant in layout is set as "link"
-
+};
 const DefaultMeta = ({
-  display_engagement_labels,
   source,
   title,
   excerpt,
@@ -7484,9 +7349,6 @@ const DefaultMeta = ({
   newSponsoredLabel,
   context,
   context_type,
-  cta,
-  engagement,
-  cta_variant,
   sponsor,
   sponsored_by_override,
   saveToPocketCard,
@@ -7507,62 +7369,15 @@ const DefaultMeta = ({
   className: "title clamp"
 }, title), excerpt && /*#__PURE__*/external_React_default().createElement("p", {
   className: "excerpt clamp"
-}, excerpt), cta_variant === "link" && cta && /*#__PURE__*/external_React_default().createElement("div", {
-  role: "link",
-  className: "cta-link icon icon-arrow",
-  tabIndex: "0"
-}, cta)), !newSponsoredLabel && /*#__PURE__*/external_React_default().createElement(DSContextFooter, {
+}, excerpt)), !newSponsoredLabel && /*#__PURE__*/external_React_default().createElement(DSContextFooter, {
   context_type: context_type,
   context: context,
   sponsor: sponsor,
-  sponsored_by_override: sponsored_by_override,
-  display_engagement_labels: display_engagement_labels,
-  engagement: engagement
+  sponsored_by_override: sponsored_by_override
 }), newSponsoredLabel && /*#__PURE__*/external_React_default().createElement(DSMessageFooter, {
   context_type: context_type,
   context: null,
-  display_engagement_labels: display_engagement_labels,
-  engagement: engagement,
   saveToPocketCard: saveToPocketCard
-}));
-const CTAButtonMeta = ({
-  display_engagement_labels,
-  source,
-  title,
-  excerpt,
-  context,
-  context_type,
-  cta,
-  engagement,
-  sponsor,
-  sponsored_by_override
-}) => /*#__PURE__*/external_React_default().createElement("div", {
-  className: "meta"
-}, /*#__PURE__*/external_React_default().createElement("div", {
-  className: "info-wrap"
-}, /*#__PURE__*/external_React_default().createElement("p", {
-  className: "source clamp"
-}, context && /*#__PURE__*/external_React_default().createElement(FluentOrText, {
-  message: {
-    id: `newtab-label-sponsored`,
-    values: {
-      sponsorOrSource: sponsor ? sponsor : source
-    }
-  }
-}), !context && (sponsor ? sponsor : source)), /*#__PURE__*/external_React_default().createElement("header", {
-  title: title,
-  className: "title clamp"
-}, title), excerpt && /*#__PURE__*/external_React_default().createElement("p", {
-  className: "excerpt clamp"
-}, excerpt)), context && cta && /*#__PURE__*/external_React_default().createElement("button", {
-  className: "button cta-button"
-}, cta), !context && /*#__PURE__*/external_React_default().createElement(DSContextFooter, {
-  context_type: context_type,
-  context: context,
-  sponsor: sponsor,
-  sponsored_by_override: sponsored_by_override,
-  display_engagement_labels: display_engagement_labels,
-  engagement: engagement
 }));
 class _DSCard extends (external_React_default()).PureComponent {
   constructor(props) {
@@ -7616,14 +7431,14 @@ class _DSCard extends (external_React_default()).PureComponent {
     if (this.props.dispatch) {
       this.props.dispatch(actionCreators.UserEvent({
         event: "CLICK",
-        source: this.props.is_video ? "CARDGRID_VIDEO" : this.props.type.toUpperCase(),
+        source: this.props.type.toUpperCase(),
         action_position: this.props.pos,
         value: {
           card_type: this.props.flightId ? "spoc" : "organic"
         }
       }));
       this.props.dispatch(actionCreators.ImpressionStats({
-        source: this.props.is_video ? "CARDGRID_VIDEO" : this.props.type.toUpperCase(),
+        source: this.props.type.toUpperCase(),
         click: 0,
         window_inner_width: this.props.windowObj.innerWidth,
         window_inner_height: this.props.windowObj.innerHeight,
@@ -7750,34 +7565,7 @@ class _DSCard extends (external_React_default()).PureComponent {
       });
     }
 
-    if (this.props.lastCard) {
-      return /*#__PURE__*/external_React_default().createElement("div", {
-        className: "ds-card last-card-message"
-      }, /*#__PURE__*/external_React_default().createElement("div", {
-        className: "img-wrapper"
-      }, /*#__PURE__*/external_React_default().createElement("picture", {
-        className: "ds-image img loaded"
-      }, /*#__PURE__*/external_React_default().createElement("img", {
-        "data-l10n-id": "newtab-pocket-last-card-image",
-        className: "last-card-message-image",
-        src: "chrome://activity-stream/content/data/content/assets/caught-up-illustration.svg",
-        alt: "You\u2019re all caught up"
-      }))), /*#__PURE__*/external_React_default().createElement("div", {
-        className: "meta"
-      }, /*#__PURE__*/external_React_default().createElement("div", {
-        className: "info-wrap"
-      }, /*#__PURE__*/external_React_default().createElement("header", {
-        className: "title clamp",
-        "data-l10n-id": "newtab-pocket-last-card-title"
-      }), /*#__PURE__*/external_React_default().createElement("p", {
-        className: "ds-last-card-desc",
-        "data-l10n-id": "newtab-pocket-last-card-desc"
-      }))));
-    }
-
-    const isButtonCTA = this.props.cta_variant === "button";
     const {
-      is_video,
       saveToPocketCard,
       hideDescriptions,
       compactImages,
@@ -7794,13 +7582,12 @@ class _DSCard extends (external_React_default()).PureComponent {
       timeToRead = this.props.time_to_read || readTimeFromWordCount(this.props.word_count);
     }
 
-    const videoCardClassName = is_video ? `video-card` : ``;
     const compactImagesClassName = compactImages ? `ds-card-compact-image` : ``;
     const imageGradientClassName = imageGradient ? `ds-card-image-gradient` : ``;
     const titleLinesName = `ds-card-title-lines-${titleLines}`;
     const descLinesClassName = `ds-card-desc-lines-${descLines}`;
     return /*#__PURE__*/external_React_default().createElement("div", {
-      className: `ds-card ${videoCardClassName} ${videoCardClassName} ${compactImagesClassName} ${imageGradientClassName} ${titleLinesName} ${descLinesClassName}`,
+      className: `ds-card ${compactImagesClassName} ${imageGradientClassName} ${titleLinesName} ${descLinesClassName}`,
       ref: this.setContextMenuButtonHostRef
     }, /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
       className: "ds-card-link",
@@ -7814,32 +7601,14 @@ class _DSCard extends (external_React_default()).PureComponent {
       source: this.props.image_src,
       rawSource: this.props.raw_image_src,
       sizes: this.dsImageSizes
-    }), this.props.is_video && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "playhead"
-    }, /*#__PURE__*/external_React_default().createElement("span", null, "Video Content"))), isButtonCTA ? /*#__PURE__*/external_React_default().createElement(CTAButtonMeta, {
-      display_engagement_labels: this.props.display_engagement_labels,
-      source: this.props.source,
-      title: this.props.title,
-      excerpt: excerpt,
-      timeToRead: timeToRead,
-      context: this.props.context,
-      context_type: this.props.context_type,
-      engagement: this.props.engagement,
-      cta: this.props.cta,
-      sponsor: this.props.sponsor,
-      sponsored_by_override: this.props.sponsored_by_override
-    }) : /*#__PURE__*/external_React_default().createElement(DefaultMeta, {
-      display_engagement_labels: this.props.display_engagement_labels,
+    })), /*#__PURE__*/external_React_default().createElement(DefaultMeta, {
       source: this.props.source,
       title: this.props.title,
       excerpt: excerpt,
       newSponsoredLabel: this.props.newSponsoredLabel,
       timeToRead: timeToRead,
       context: this.props.context,
-      engagement: this.props.engagement,
       context_type: this.props.context_type,
-      cta: this.props.cta,
-      cta_variant: this.props.cta_variant,
       sponsor: this.props.sponsor,
       sponsored_by_override: this.props.sponsored_by_override,
       saveToPocketCard: saveToPocketCard
@@ -7853,7 +7622,7 @@ class _DSCard extends (external_React_default()).PureComponent {
         } : {})
       }],
       dispatch: this.props.dispatch,
-      source: this.props.is_video ? "CARDGRID_VIDEO" : this.props.type
+      source: this.props.type
     })), saveToPocketCard && /*#__PURE__*/external_React_default().createElement("div", {
       className: "card-stp-button-hover-background"
     }, /*#__PURE__*/external_React_default().createElement("div", {
@@ -7918,9 +7687,6 @@ const DSCard = (0,external_ReactRedux_namespaceObject.connect)(state => ({
 }))(_DSCard);
 const PlaceholderDSCard = props => /*#__PURE__*/external_React_default().createElement(DSCard, {
   placeholder: true
-});
-const LastCardMessage = props => /*#__PURE__*/external_React_default().createElement(DSCard, {
-  lastCard: true
 });
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -8150,28 +7916,17 @@ const TopicsWidget = (0,external_ReactRedux_namespaceObject.connect)(state => ({
 
 
 
+
 const WIDGET_IDS = {
   TOPICS: 1
 };
-function DSSubHeader(props) {
+function DSSubHeader({
+  children
+}) {
   return /*#__PURE__*/external_React_default().createElement("div", {
     className: "section-top-bar ds-sub-header"
   }, /*#__PURE__*/external_React_default().createElement("h3", {
     className: "section-title-container"
-  }, /*#__PURE__*/external_React_default().createElement("span", {
-    className: "section-title"
-  }, props.children)));
-}
-function GridContainer(props) {
-  const {
-    header,
-    className,
-    children
-  } = props;
-  return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, header && /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
-    message: header
-  })), /*#__PURE__*/external_React_default().createElement("div", {
-    className: `ds-card-grid ${className}`
   }, children));
 }
 function CardGrid_IntersectionObserver({
@@ -8211,14 +7966,20 @@ function CardGrid_IntersectionObserver({
   }, children);
 }
 function RecentSavesContainer({
-  className,
+  gridClassName = "",
   dispatch,
   windowObj = window,
-  items = 3
+  items = 3,
+  source = "CARDGRID_RECENT_SAVES"
 }) {
   const {
     recentSavesData,
-    isUserLoggedIn
+    isUserLoggedIn,
+    experimentData: {
+      utmCampaign,
+      utmContent,
+      utmSource
+    }
   } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
   const [visible, setVisible] = (0,external_React_namespaceObject.useState)(false);
   const onIntersecting = (0,external_React_namespaceObject.useCallback)(() => setVisible(true), []);
@@ -8248,7 +8009,7 @@ function RecentSavesContainer({
       key: `dscard-${(rec === null || rec === void 0 ? void 0 : rec.id) || index}`,
       id: rec.id,
       pos: index,
-      type: "CARDGRID_RECENT_SAVES",
+      type: source,
       image_src: rec.image_src,
       raw_image_src: rec.raw_image_src,
       word_count: rec.word_count,
@@ -8260,6 +8021,19 @@ function RecentSavesContainer({
       isRecentSave: true,
       dispatch: dispatch
     });
+  }
+
+  function onMyListClicked() {
+    dispatch(actionCreators.UserEvent({
+      event: "CLICK",
+      source: `${source}_VIEW_LIST`
+    }));
+  }
+
+  let queryParams = `?utm_source=${utmSource}`;
+
+  if (utmCampaign && utmContent) {
+    queryParams += `&utm_content=${utmContent}&utm_campaign=${utmCampaign}`;
   }
 
   const recentSavesCards = []; // We fill the cards with a for loop over an inline map because
@@ -8281,8 +8055,8 @@ function RecentSavesContainer({
         raw_image_src: recentSave.top_image_url,
         word_count: recentSave.word_count,
         time_to_read: recentSave.time_to_read,
-        title: recentSave.resolved_title,
-        url: recentSave.resolved_url,
+        title: recentSave.resolved_title || recentSave.given_title,
+        url: recentSave.resolved_url || recentSave.given_url,
         domain: (_recentSave$domain_me = recentSave.domain_metadata) === null || _recentSave$domain_me === void 0 ? void 0 : _recentSave$domain_me.name,
         excerpt: recentSave.excerpt
       }, index));
@@ -8290,59 +8064,32 @@ function RecentSavesContainer({
   } // We are visible and logged in.
 
 
-  return /*#__PURE__*/external_React_default().createElement(GridContainer, {
-    className: className,
-    header: "Recently Saved to your List"
-  }, recentSavesCards);
+  return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement("span", {
+    className: "section-title"
+  }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
+    message: "Recently Saved to your List"
+  })), /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
+    onLinkClick: onMyListClicked,
+    className: "section-sub-link",
+    url: `https://getpocket.com/a${queryParams}`
+  }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
+    message: "View My List"
+  }))), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `ds-card-grid-recent-saves ${gridClassName}`
+  }, recentSavesCards));
 }
 class _CardGrid extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.state = {
-      moreLoaded: false
-    };
-    this.loadMoreClicked = this.loadMoreClicked.bind(this);
-  }
-
-  loadMoreClicked() {
-    this.props.dispatch(actionCreators.UserEvent({
-      event: "CLICK",
-      source: "DS_LOAD_MORE_BUTTON"
-    }));
-    this.setState({
-      moreLoaded: true
-    });
-  }
-
-  get showLoadMore() {
-    const {
-      loadMore,
-      data,
-      loadMoreThreshold
-    } = this.props;
-    return loadMore && data.recommendations.length > loadMoreThreshold && !this.state.moreLoaded;
-  }
-
   renderCards() {
     var _widgets$positions, _widgets$data, _essentialReadsCards, _editorsPicksCards;
 
-    let {
-      items
-    } = this.props;
+    const prefs = this.props.Prefs.values;
     const {
-      DiscoveryStream
-    } = this.props;
-    const {
-      recentSavesEnabled
-    } = DiscoveryStream;
-    const {
+      items,
       hybridLayout,
       hideCardBackground,
       fourCardLayout,
       hideDescriptions,
-      lastCardMessageEnabled,
       saveToPocketCard,
-      loadMoreThreshold,
       compactGrid,
       compactImages,
       imageGradient,
@@ -8352,16 +8099,10 @@ class _CardGrid extends (external_React_default()).PureComponent {
       readTime,
       essentialReadsHeader,
       editorsPicksHeader,
-      widgets
+      widgets,
+      recentSavesEnabled
     } = this.props;
-    let showLastCardMessage = lastCardMessageEnabled;
-
-    if (this.showLoadMore) {
-      items = loadMoreThreshold; // We don't want to show this until after load more has been clicked.
-
-      showLastCardMessage = false;
-    }
-
+    const showRecentSaves = prefs.showRecentSaves && recentSavesEnabled;
     const recs = this.props.data.recommendations.slice(0, items);
     const cards = [];
     let essentialReadsCards = [];
@@ -8394,9 +8135,7 @@ class _CardGrid extends (external_React_default()).PureComponent {
         pocket_id: rec.pocket_id,
         context_type: rec.context_type,
         bookmarkGuid: rec.bookmarkGuid,
-        engagement: rec.engagement,
         pocket_button_enabled: this.props.pocket_button_enabled,
-        display_engagement_labels: this.props.display_engagement_labels,
         hideDescriptions: hideDescriptions,
         saveToPocketCard: saveToPocketCard,
         compactImages: compactImages,
@@ -8404,17 +8143,7 @@ class _CardGrid extends (external_React_default()).PureComponent {
         newSponsoredLabel: newSponsoredLabel,
         titleLines: titleLines,
         descLines: descLines,
-        cta: rec.cta,
-        cta_variant: this.props.cta_variant,
-        is_video: this.props.enable_video_playheads && rec.is_video,
         is_collection: this.props.is_collection
-      }));
-    } // Replace last card with "you are all caught up card"
-
-
-    if (showLastCardMessage) {
-      cards.splice(cards.length - 1, 1, /*#__PURE__*/external_React_default().createElement(LastCardMessage, {
-        key: `dscard-last-${cards.length - 1}`
       }));
     }
 
@@ -8452,7 +8181,7 @@ class _CardGrid extends (external_React_default()).PureComponent {
 
     let moreRecsHeader = ""; // For now this is English only.
 
-    if (recentSavesEnabled || essentialReadsHeader && editorsPicksHeader) {
+    if (showRecentSaves || essentialReadsHeader && editorsPicksHeader) {
       let spliceAt = 6; // For 4 card row layouts, second row is 8 cards, and regular it is 6 cards.
 
       if (fourCardLayout) {
@@ -8467,28 +8196,32 @@ class _CardGrid extends (external_React_default()).PureComponent {
       if (essentialReadsHeader && editorsPicksHeader) {
         editorsPicksCards = [...cards.splice(0, cards.length)];
       }
-    } // Used for CSS overrides to default styling (eg: "hero")
+    }
 
-
-    const variantClass = this.props.display_variant ? `ds-card-grid-${this.props.display_variant}` : ``;
     const hideCardBackgroundClass = hideCardBackground ? `ds-card-grid-hide-background` : ``;
     const fourCardLayoutClass = fourCardLayout ? `ds-card-grid-four-card-variant` : ``;
     const hideDescriptionsClassName = !hideDescriptions ? `ds-card-grid-include-descriptions` : ``;
     const compactGridClassName = compactGrid ? `ds-card-grid-compact` : ``;
     const hybridLayoutClassName = hybridLayout ? `ds-card-grid-hybrid-layout` : ``;
-    const className = `ds-card-grid-${this.props.border} ${variantClass} ${hybridLayoutClassName} ${hideCardBackgroundClass} ${fourCardLayoutClass} ${hideDescriptionsClassName} ${compactGridClassName}`;
-    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, ((_essentialReadsCards = essentialReadsCards) === null || _essentialReadsCards === void 0 ? void 0 : _essentialReadsCards.length) > 0 && /*#__PURE__*/external_React_default().createElement(GridContainer, {
-      className: className
-    }, essentialReadsCards), recentSavesEnabled && /*#__PURE__*/external_React_default().createElement(RecentSavesContainer, {
-      className: className,
+    const gridClassName = `ds-card-grid ds-card-grid-border ${hybridLayoutClassName} ${hideCardBackgroundClass} ${fourCardLayoutClass} ${hideDescriptionsClassName} ${compactGridClassName}`;
+    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, ((_essentialReadsCards = essentialReadsCards) === null || _essentialReadsCards === void 0 ? void 0 : _essentialReadsCards.length) > 0 && /*#__PURE__*/external_React_default().createElement("div", {
+      className: gridClassName
+    }, essentialReadsCards), showRecentSaves && /*#__PURE__*/external_React_default().createElement(RecentSavesContainer, {
+      gridClassName: gridClassName,
       dispatch: this.props.dispatch
-    }), ((_editorsPicksCards = editorsPicksCards) === null || _editorsPicksCards === void 0 ? void 0 : _editorsPicksCards.length) > 0 && /*#__PURE__*/external_React_default().createElement(GridContainer, {
-      className: className,
-      header: "Editor\u2019s Picks"
-    }, editorsPicksCards), (cards === null || cards === void 0 ? void 0 : cards.length) > 0 && /*#__PURE__*/external_React_default().createElement(GridContainer, {
-      className: className,
-      header: moreRecsHeader
-    }, cards));
+    }), ((_editorsPicksCards = editorsPicksCards) === null || _editorsPicksCards === void 0 ? void 0 : _editorsPicksCards.length) > 0 && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-title"
+    }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
+      message: "Editor\u2019s Picks"
+    }))), /*#__PURE__*/external_React_default().createElement("div", {
+      className: gridClassName
+    }, editorsPicksCards)), (cards === null || cards === void 0 ? void 0 : cards.length) > 0 && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, moreRecsHeader && /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-title"
+    }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
+      message: moreRecsHeader
+    }))), /*#__PURE__*/external_React_default().createElement("div", {
+      className: gridClassName
+    }, cards)));
   }
 
   render() {
@@ -8516,24 +8249,17 @@ class _CardGrid extends (external_React_default()).PureComponent {
       status: data.status,
       dispatch: this.props.dispatch,
       feed: this.props.feed
-    })) : this.renderCards(), this.showLoadMore && /*#__PURE__*/external_React_default().createElement("button", {
-      className: "ASRouterButton primary ds-card-grid-load-more-button",
-      onClick: this.loadMoreClicked,
-      "data-l10n-id": "newtab-pocket-load-more-stories-button"
-    }));
+    })) : this.renderCards());
   }
 
 }
 _CardGrid.defaultProps = {
-  border: `border`,
   items: 4,
   // Number of stories to display
-  enable_video_playheads: false,
-  lastCardMessageEnabled: false,
-  saveToPocketCard: false,
-  loadMoreThreshold: 12
+  saveToPocketCard: false
 };
 const CardGrid = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  Prefs: state.Prefs,
   DiscoveryStream: state.DiscoveryStream
 }))(_CardGrid);
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSDismiss/DSDismiss.jsx
@@ -8717,7 +8443,6 @@ class CollectionCardGrid extends (external_React_default()).PureComponent {
       context: sponsoredByMessage,
       data: recsData,
       feed: feed,
-      border: this.props.border,
       type: type,
       is_collection: true,
       dispatch: this.props.dispatch,
@@ -13799,8 +13524,6 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
   }
 
   renderComponent(component, embedWidth) {
-    const ENGAGEMENT_LABEL_ENABLED = this.props.Prefs.values[`discoverystream.engagementLabelEnabled`];
-
     switch (component.type) {
       case "Highlights":
         return /*#__PURE__*/external_React_default().createElement(Highlights, null);
@@ -13854,7 +13577,6 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           links: component.properties.links,
           extraLinks: component.properties.extraLinks,
           alignment: component.properties.alignment,
-          display_variant: component.properties.display_variant,
           explore_topics: component.properties.explore_topics,
           header: component.header,
           locale: this.props.App.locale,
@@ -13871,25 +13593,19 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           feed: component.feed,
           spocs: DiscoveryStream.spocs,
           placement: component.placement,
-          border: component.properties.border,
           type: component.type,
           items: component.properties.items,
-          cta_variant: component.cta_variant,
           pocket_button_enabled: component.pocketButtonEnabled,
-          display_engagement_labels: ENGAGEMENT_LABEL_ENABLED,
           dismissible: this.props.DiscoveryStream.isCollectionDismissible,
           dispatch: this.props.dispatch
         });
 
       case "CardGrid":
         return /*#__PURE__*/external_React_default().createElement(CardGrid, {
-          enable_video_playheads: !!component.properties.enable_video_playheads,
           title: component.header && component.header.title,
-          display_variant: component.properties.display_variant,
           data: component.data,
           feed: component.feed,
           widgets: component.widgets,
-          border: component.properties.border,
           type: component.type,
           dispatch: this.props.dispatch,
           items: component.properties.items,
@@ -13906,12 +13622,9 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           essentialReadsHeader: component.properties.essentialReadsHeader,
           editorsPicksHeader: component.properties.editorsPicksHeader,
           readTime: component.properties.readTime,
-          loadMore: component.loadMore,
-          lastCardMessageEnabled: component.lastCardMessageEnabled,
           saveToPocketCard: component.saveToPocketCard,
-          cta_variant: component.cta_variant,
           pocket_button_enabled: component.pocketButtonEnabled,
-          display_engagement_labels: ENGAGEMENT_LABEL_ENABLED
+          recentSavesEnabled: this.props.DiscoveryStream.recentSavesEnabled
         });
 
       case "HorizontalRule":
@@ -14132,13 +13845,22 @@ class ContentSection extends (external_React_default()).PureComponent {
 
   render() {
     const {
+      enabledSections,
+      mayHaveSponsoredTopSites,
+      pocketRegion,
+      mayHaveSponsoredStories,
+      mayHaveRecentSaves,
+      openPreferences
+    } = this.props;
+    const {
       topSitesEnabled,
       pocketEnabled,
       highlightsEnabled,
       showSponsoredTopSitesEnabled,
       showSponsoredPocketEnabled,
+      showRecentSavesEnabled,
       topSitesRowsCount
-    } = this.props.enabledSections;
+    } = enabledSections;
     return /*#__PURE__*/external_React_default().createElement("div", {
       className: "home-section"
     }, /*#__PURE__*/external_React_default().createElement("div", {
@@ -14197,7 +13919,7 @@ class ContentSection extends (external_React_default()).PureComponent {
       value: "4",
       "data-l10n-id": "newtab-custom-row-selector",
       "data-l10n-args": "{\"num\": 4}"
-    })), this.props.mayHaveSponsoredTopSites && /*#__PURE__*/external_React_default().createElement("div", {
+    })), mayHaveSponsoredTopSites && /*#__PURE__*/external_React_default().createElement("div", {
       className: "check-wrapper",
       role: "presentation"
     }, /*#__PURE__*/external_React_default().createElement("input", {
@@ -14213,7 +13935,7 @@ class ContentSection extends (external_React_default()).PureComponent {
       className: "sponsored",
       htmlFor: "sponsored-shortcuts",
       "data-l10n-id": "newtab-custom-sponsored-sites"
-    })))))), this.props.pocketRegion && /*#__PURE__*/external_React_default().createElement("div", {
+    })))))), pocketRegion && /*#__PURE__*/external_React_default().createElement("div", {
       id: "pocket-section",
       className: "section"
     }, /*#__PURE__*/external_React_default().createElement("label", {
@@ -14240,11 +13962,11 @@ class ContentSection extends (external_React_default()).PureComponent {
       id: "custom-pocket-subtitle",
       className: "subtitle",
       "data-l10n-id": "newtab-custom-pocket-subtitle"
-    }), this.props.mayHaveSponsoredStories && /*#__PURE__*/external_React_default().createElement("div", {
+    }), (mayHaveSponsoredStories || mayHaveRecentSaves) && /*#__PURE__*/external_React_default().createElement("div", {
       className: `more-info-pocket-wrapper ${pocketEnabled ? "" : "shrink"}`
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: `more-information ${pocketEnabled ? "expand" : "shrink"}`
-    }, /*#__PURE__*/external_React_default().createElement("div", {
+    }, mayHaveSponsoredStories && /*#__PURE__*/external_React_default().createElement("div", {
       className: "check-wrapper",
       role: "presentation"
     }, /*#__PURE__*/external_React_default().createElement("input", {
@@ -14260,6 +13982,22 @@ class ContentSection extends (external_React_default()).PureComponent {
       className: "sponsored",
       htmlFor: "sponsored-pocket",
       "data-l10n-id": "newtab-custom-pocket-sponsored"
+    })), mayHaveRecentSaves && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "check-wrapper",
+      role: "presentation"
+    }, /*#__PURE__*/external_React_default().createElement("input", {
+      id: "recent-saves-pocket",
+      className: "sponsored-checkbox",
+      disabled: !pocketEnabled,
+      checked: showRecentSavesEnabled,
+      type: "checkbox",
+      onChange: this.onPreferenceSelect,
+      preference: "showRecentSaves",
+      eventSource: "POCKET_RECENT_SAVES"
+    }), /*#__PURE__*/external_React_default().createElement("label", {
+      className: "sponsored",
+      htmlFor: "recent-saves-pocket",
+      "data-l10n-id": "newtab-custom-pocket-show-recent-saves"
     })))))), /*#__PURE__*/external_React_default().createElement("div", {
       id: "recent-section",
       className: "section"
@@ -14293,7 +14031,7 @@ class ContentSection extends (external_React_default()).PureComponent {
     }), /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("button", {
       id: "settings-link",
       className: "external-link",
-      onClick: this.props.openPreferences,
+      onClick: openPreferences,
       "data-l10n-id": "newtab-custom-settings"
     })));
   }
@@ -14361,6 +14099,7 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
       pocketRegion: this.props.pocketRegion,
       mayHaveSponsoredTopSites: this.props.mayHaveSponsoredTopSites,
       mayHaveSponsoredStories: this.props.DiscoveryStream.config.show_spocs,
+      mayHaveRecentSaves: this.props.DiscoveryStream.recentSavesEnabled,
       dispatch: this.props.dispatch
     }))));
   }
@@ -14773,6 +14512,7 @@ class BaseContent extends (external_React_default()).PureComponent {
       highlightsEnabled: prefs["feeds.section.highlights"],
       showSponsoredTopSitesEnabled: prefs.showSponsoredTopSites,
       showSponsoredPocketEnabled: prefs.showSponsored,
+      showRecentSavesEnabled: prefs.showRecentSaves,
       topSitesRowsCount: prefs.topSitesRows
     };
     const pocketRegion = prefs["feeds.system.topstories"];

@@ -120,7 +120,6 @@
 #  include "mozilla/WinHeaderOnlyUtils.h"
 #  include "mozilla/mscom/ProcessRuntime.h"
 #  include "mozilla/mscom/ProfilerMarkers.h"
-#  include "mozilla/widget/AudioSession.h"
 #  include "WinTokenUtils.h"
 
 #  if defined(MOZ_LAUNCHER_PROCESS)
@@ -2071,30 +2070,6 @@ ScopedXPCOMStartup::~ScopedXPCOMStartup() {
     mServiceManager = nullptr;
   }
 }
-
-// {5F5E59CE-27BC-47eb-9D1F-B09CA9049836}
-static const nsCID kProfileServiceCID = {
-    0x5f5e59ce,
-    0x27bc,
-    0x47eb,
-    {0x9d, 0x1f, 0xb0, 0x9c, 0xa9, 0x4, 0x98, 0x36}};
-
-static already_AddRefed<nsIFactory> ProfileServiceFactoryConstructor(
-    const mozilla::Module& module, const mozilla::Module::CIDEntry& entry) {
-  nsCOMPtr<nsIFactory> factory;
-  NS_NewToolkitProfileFactory(getter_AddRefs(factory));
-  return factory.forget();
-}
-
-static const mozilla::Module::CIDEntry kXRECIDs[] = {
-    {&kProfileServiceCID, false, ProfileServiceFactoryConstructor, nullptr},
-    {nullptr}};
-
-static const mozilla::Module::ContractIDEntry kXREContracts[] = {
-    {NS_PROFILESERVICE_CONTRACTID, &kProfileServiceCID}, {nullptr}};
-
-extern const mozilla::Module kXREModule = {mozilla::Module::kVersion, kXRECIDs,
-                                           kXREContracts};
 
 nsresult ScopedXPCOMStartup::Initialize(bool aInitJSContext) {
   NS_ASSERTION(gDirServiceProvider, "Should not get here!");
@@ -4906,32 +4881,8 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     return 0;
   }
 
-#ifdef MOZ_BACKGROUNDTASKS
-  if (BackgroundTasks::IsBackgroundTaskMode()) {
-    // Allow tests to specify profile path via the environment.
-    if (!EnvHasValue("XRE_PROFILE_PATH")) {
-      nsString installHash;
-      mDirProvider.GetInstallHash(installHash);
-
-      nsCOMPtr<nsIFile> file;
-      nsresult rv = BackgroundTasks::CreateTemporaryProfileDirectory(
-          NS_LossyConvertUTF16toASCII(installHash), getter_AddRefs(file));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return 1;
-      }
-
-      SaveFileToEnv("XRE_PROFILE_PATH", file);
-    }
-  }
-#endif
-
-  rv = NS_NewToolkitProfileService(getter_AddRefs(mProfileSvc));
-  if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
-    PR_fprintf(PR_STDERR,
-               "Error: Access was denied while trying to open files in "
-               "your profile directory.\n");
-  }
-  if (NS_FAILED(rv)) {
+  mProfileSvc = NS_GetToolkitProfileService();
+  if (!mProfileSvc) {
     // We failed to choose or create profile - notify user and quit
     ProfileMissingDialog(mNativeApp);
     return 1;
@@ -5952,18 +5903,6 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 
 #ifdef MOZ_X11
   XRE_CleanupX11ErrorHandler();
-#endif
-
-#if defined(XP_WIN)
-  bool wantAudio = true;
-#  ifdef MOZ_BACKGROUNDTASKS
-  if (BackgroundTasks::IsBackgroundTaskMode()) {
-    wantAudio = false;
-  }
-#  endif
-  if (MOZ_LIKELY(wantAudio)) {
-    mozilla::widget::StopAudioSession();
-  }
 #endif
 
 #ifdef MOZ_INSTRUMENT_EVENT_LOOP

@@ -6,8 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["AboutWelcomeChild"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -247,7 +247,9 @@ class AboutWelcomeChild extends JSWindowActorChild {
         "AWPage:GET_APP_AND_SYSTEM_LOCALE_INFO"
       );
     }
-    let defaults = lazy.AboutWelcomeDefaults.getDefaults();
+    let defaults = lazy.AboutWelcomeDefaults.getDefaults(
+      featureConfig.templateMR
+    );
     // FeatureConfig (from prefs or experiments) has higher precendence
     // to defaults. But the `screens` property isn't defined we shouldn't
     // override the default with `null`

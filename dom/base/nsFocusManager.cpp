@@ -1236,6 +1236,10 @@ static bool ShouldMatchFocusVisible(nsPIDOMWindowOuter* aWindow,
     return true;
   }
 
+  if (aFocusFlags & nsIFocusManager::FLAG_NOSHOWRING) {
+    return false;
+  }
+
   if (aWindow->ShouldShowFocusRing()) {
     // The window decision also trumps any other heuristic.
     return true;
@@ -1255,10 +1259,6 @@ static bool ShouldMatchFocusVisible(nsPIDOMWindowOuter* aWindow,
         return true;
       }
     }
-  }
-
-  if (aFocusFlags & nsIFocusManager::FLAG_NOSHOWRING) {
-    return false;
   }
 
   switch (nsFocusManager::GetFocusMoveActionCause(aFocusFlags)) {
@@ -2636,10 +2636,6 @@ void nsFocusManager::Focus(
 
     aWindow->SetFocusedElement(aElement, focusMethod, false);
 
-    // if the focused element changed, scroll it into view
-    if (aElement && aFocusChanged) {
-      ScrollIntoView(presShell, aElement, aFlags);
-    }
     const RefPtr<nsPresContext> presContext = presShell->GetPresContext();
     if (sendFocusEvent) {
       NotifyFocusStateChange(aElement, nullptr, aFlags,
@@ -2662,6 +2658,11 @@ void nsFocusManager::Focus(
         aWindow->UpdateCommands(u"focus"_ns, nullptr, 0);
       }
 
+      // If the focused element changed, scroll it into view
+      if (aFocusChanged) {
+        ScrollIntoView(presShell, aElement, aFlags);
+      }
+
       if (!focusInOtherContentProcess) {
         RefPtr<Document> composedDocument = aElement->GetComposedDoc();
         RefPtr<Element> relatedTargetElement =
@@ -2674,6 +2675,10 @@ void nsFocusManager::Focus(
                                      GetFocusMoveActionCause(aFlags));
       if (!aWindowRaised) {
         aWindow->UpdateCommands(u"focus"_ns, nullptr, 0);
+      }
+      if (aFocusChanged && aElement) {
+        // If the focused element changed, scroll it into view
+        ScrollIntoView(presShell, aElement, aFlags);
       }
     }
   } else {
@@ -3713,8 +3718,8 @@ uint32_t nsFocusManager::ProgrammaticFocusFlags(const FocusOptions& aOptions) {
   if (aOptions.mPreventScroll) {
     flags |= FLAG_NOSCROLL;
   }
-  if (aOptions.mPreventFocusRing) {
-    flags |= FLAG_NOSHOWRING;
+  if (aOptions.mFocusVisible.WasPassed()) {
+    flags |= aOptions.mFocusVisible.Value() ? FLAG_SHOWRING : FLAG_NOSHOWRING;
   }
   if (UserActivation::IsHandlingKeyboardInput()) {
     flags |= FLAG_BYKEY;

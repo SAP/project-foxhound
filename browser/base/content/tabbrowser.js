@@ -29,6 +29,16 @@
         "UrlbarProviderOpenTabs",
         "resource:///modules/UrlbarProviderOpenTabs.jsm"
       );
+      XPCOMUtils.defineLazyModuleGetters(this, {
+        E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+        PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
+      });
+      XPCOMUtils.defineLazyServiceGetters(this, {
+        MacSharingService: [
+          "@mozilla.org/widget/macsharingservice;1",
+          "nsIMacSharingService",
+        ],
+      });
 
       if (AppConstants.MOZ_CRASHREPORTER) {
         ChromeUtils.defineModuleGetter(
@@ -42,8 +52,7 @@
 
       Services.els.addSystemEventListener(document, "keydown", this, false);
       Services.els.addSystemEventListener(document, "keypress", this, false);
-      window.addEventListener("sizemodechange", this);
-      window.addEventListener("occlusionstatechange", this);
+      document.addEventListener("visibilitychange", this);
       window.addEventListener("framefocusrequested", this);
 
       this.tabContainer.init();
@@ -60,17 +69,6 @@
       }
 
       this._setFindbarData();
-
-      XPCOMUtils.defineLazyModuleGetters(this, {
-        E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-        PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
-      });
-      XPCOMUtils.defineLazyServiceGetters(this, {
-        MacSharingService: [
-          "@mozilla.org/widget/macsharingservice;1",
-          "nsIMacSharingService",
-        ],
-      });
 
       // We take over setting the document title, so remove the l10n id to
       // avoid it being re-translated and overwriting document content if
@@ -753,7 +751,7 @@
           .reduce((a, b) => a.concat(b))
           .filter(
             anim =>
-              anim instanceof CSSAnimation &&
+              CSSAnimation.isInstance(anim) &&
               (anim.animationName === "tab-throbber-animation" ||
                 anim.animationName === "tab-throbber-animation-rtl") &&
               anim.playState === "running"
@@ -1101,9 +1099,7 @@
         oldBrowser.removeAttribute("primary");
         oldBrowser.docShellIsActive = false;
         newBrowser.setAttribute("primary", "true");
-        newBrowser.docShellIsActive =
-          window.windowState != window.STATE_MINIMIZED &&
-          !window.isFullyOccluded;
+        newBrowser.docShellIsActive = !document.hidden;
       }
 
       this._selectedBrowser = newBrowser;
@@ -1433,7 +1429,7 @@
         // last clicked when switching back to that tab
         if (
           newFocusedElement &&
-          (newFocusedElement instanceof HTMLAnchorElement ||
+          (HTMLAnchorElement.isInstance(newFocusedElement) ||
             newFocusedElement.getAttributeNS(
               "http://www.w3.org/1999/xlink",
               "type"
@@ -2287,7 +2283,7 @@
             getter = () => {
               if (AppConstants.NIGHTLY_BUILD) {
                 let message = `[bug 1345098] Lazy browser prematurely inserted via '${name}' property access:\n`;
-                console.log(message + new Error().stack);
+                Services.console.logStringMessage(message + new Error().stack);
               }
               this._insertBrowser(aTab);
               return browser[name];
@@ -2295,7 +2291,7 @@
             setter = value => {
               if (AppConstants.NIGHTLY_BUILD) {
                 let message = `[bug 1345098] Lazy browser prematurely inserted via '${name}' property access:\n`;
-                console.log(message + new Error().stack);
+                Services.console.logStringMessage(message + new Error().stack);
               }
               this._insertBrowser(aTab);
               return (browser[name] = value);
@@ -4740,6 +4736,10 @@
         options += "," + name + "=" + aOptions[name];
       }
 
+      if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+        options += ",private=1";
+      }
+
       // Play the tab closing animation to give immediate feedback while
       // waiting for the new window to appear.
       // content area when the docshells are swapped.
@@ -4762,7 +4762,7 @@
      * to a new browser window, unless it is (they are) already the only tab(s)
      * in the current window, in which case this will do nothing.
      */
-    replaceTabsWithWindow(contextTab, aOptions) {
+    replaceTabsWithWindow(contextTab, aOptions = {}) {
       let tabs;
       if (contextTab.multiselected) {
         tabs = this.selectedTabs;
@@ -5312,9 +5312,7 @@
         return this._switcher.shouldActivateDocShell(aBrowser);
       }
       return (
-        (aBrowser == this.selectedBrowser &&
-          window.windowState != window.STATE_MINIMIZED &&
-          !window.isFullyOccluded) ||
+        (aBrowser == this.selectedBrowser && !document.hidden) ||
         this._printPreviewBrowsers.has(aBrowser) ||
         this.PictureInPicture.isOriginatingBrowser(aBrowser)
       );
@@ -5629,16 +5627,11 @@
           aEvent.preventDefault();
           break;
         }
-        case "sizemodechange":
-        case "occlusionstatechange":
-          if (aEvent.target == window && !this._switcher) {
-            this.selectedBrowser.preserveLayers(
-              window.windowState == window.STATE_MINIMIZED ||
-                window.isFullyOccluded
-            );
-            this.selectedBrowser.docShellIsActive = this.shouldActivateDocShell(
-              this.selectedBrowser
-            );
+        case "visibilitychange":
+          const inactive = document.hidden;
+          if (!this._switcher) {
+            this.selectedBrowser.preserveLayers(inactive);
+            this.selectedBrowser.docShellIsActive = !inactive;
           }
           break;
       }
@@ -5765,8 +5758,7 @@
           false
         );
       }
-      window.removeEventListener("sizemodechange", this);
-      window.removeEventListener("occlusionstatechange", this);
+      document.removeEventListener("visibilitychange", this);
       window.removeEventListener("framefocusrequested", this);
 
       if (gMultiProcessBrowser) {
@@ -5857,7 +5849,7 @@
             return;
           }
 
-          let targetIsWindow = event.target instanceof Window;
+          let targetIsWindow = Window.isInstance(event.target);
 
           // We're about to open a modal dialog, so figure out for which tab:
           // If this is a same-process modal dialog, then we're given its DOM

@@ -294,7 +294,8 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * number of layer pixels (so the operation is fast and looks clean).
    */
   virtual void ScrollToCSSPixelsForApz(
-      const mozilla::CSSPoint& aScrollPosition) = 0;
+      const mozilla::CSSPoint& aScrollPosition,
+      mozilla::ScrollSnapTargetIds&& aLastSnapTargetIds) = 0;
 
   /**
    * Returns the scroll position in integer CSS pixels, rounded to the nearest
@@ -456,6 +457,8 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * the last call to NotifyApzTransaction().
    */
   virtual bool HasScrollUpdates() const = 0;
+
+  enum class InScrollingGesture : bool { No, Yes };
   /**
    * Clears the "origin of last scroll" property stored in this frame, if
    * the generation counter passed in matches the current scroll generation
@@ -466,7 +469,8 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
   virtual void ResetScrollInfoIfNeeded(
       const mozilla::MainThreadScrollGeneration& aGeneration,
       const mozilla::APZScrollGeneration& aGenerationOnApz,
-      mozilla::APZScrollAnimationType aAPZScrollAnimationType) = 0;
+      mozilla::APZScrollAnimationType aAPZScrollAnimationType,
+      InScrollingGesture aInScrollingGesture) = 0;
   /**
    * Determine whether it is desirable to be able to asynchronously scroll this
    * scroll frame.
@@ -572,7 +576,15 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
   /**
    * Returns information required to determine where to snap to after a scroll.
    */
-  virtual ScrollSnapInfo GetScrollSnapInfo() const = 0;
+  virtual ScrollSnapInfo GetScrollSnapInfo() = 0;
+
+  virtual void TryResnap() = 0;
+  /**
+   * Post a pending re-snap request if the given |aFrame| is one of the snap
+   * points on the last scroll operation.
+   */
+  virtual void PostPendingResnapIfNeeded(const nsIFrame* aFrame) = 0;
+  virtual void PostPendingResnap() = 0;
 
   /**
    * Given the drag event aEvent, determine whether the mouse is near the edge

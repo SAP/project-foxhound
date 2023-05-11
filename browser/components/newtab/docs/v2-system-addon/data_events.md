@@ -682,25 +682,6 @@ This reports the user's interaction with those Pocket tiles.
 }
 ```
 
-### Load more button ping
-
-```js
-{
-  "event": "CLICK",
-  "source": "DS_LOAD_MORE_BUTTON",
-
-  // Basic metadata
-  "action": "activity_stream_event",
-  "page": ["about:newtab" | "about:home" | "about:welcome" | "unknown"],
-  "client_id": "26288a14-5cc4-d14f-ae0a-bb01ef45be9c",
-  "session_id": "005deed0-e3e4-4c02-a041-17405fd703f6",
-  "browser_session_id": "e7e52665-7db3-f348-9918-e93160eb2ef3",
-  "addon_version": "20180710100040",
-  "locale": "en-US",
-  "user_prefs": 7
-}
-```
-
 ## Save to Pocket button pings
 
 Right now the save to Pocket button, while technically outside of newtab, has some similarities with the newtab telemetry.
@@ -1041,6 +1022,31 @@ Similar policy applied as for the Infobar messages: client_id is reported in all
   "client_id" : "c4beb4bf-4feb-9c4e-9587-9323b28c2e50",
   "version" : "93",
   "message_id" : "SPOTLIGHT_MESSAGE_93",
+  "browser_session_id" : "93714e76-9919-ca49-b697-5e7c09a1394f"
+}
+```
+
+## ToastNotification pings
+
+This reports when the user interacts with a toast notification: an OS-level
+toast notification UI affordance or a pop-up OS-level window.  Similar policy
+applied as for the What's New panel: client_id is reported in all the
+channels. Currently this is only used in experiments.
+
+```
+{
+  "experiments" : {
+    "exp1" : {
+      "branch" : "treatment-a"
+    }
+  },
+  "addon_version" : "20210115035053",
+  "release_channel" : "release",
+  "locale" : "en-US",
+  "event" : ["IMPRESSION"],
+  "client_id" : "c4beb4bf-4feb-9c4e-9587-9323b28c2e50",
+  "version" : "86",
+  "message_id" : "TOAST_NOTIFICATION_EXAMPLE_ID",
   "browser_session_id" : "93714e76-9919-ca49-b697-5e7c09a1394f"
 }
 ```

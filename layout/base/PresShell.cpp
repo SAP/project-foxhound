@@ -204,6 +204,7 @@
 #include "nsIDocShellTreeOwner.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "ScrollSnap.h"
 #include "VisualViewport.h"
 #include "ZoomConstraintsClient.h"
 
@@ -1194,7 +1195,10 @@ void PresShell::Destroy() {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "destroy called on presshell while scripts not blocked");
 
-  AUTO_PROFILER_LABEL("PresShell::Destroy", LAYOUT);
+  [[maybe_unused]] nsIURI* uri = mDocument->GetDocumentURI();
+  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
+      "Layout tree destruction", LAYOUT_Destroy,
+      uri ? uri->GetSpecOrDefault() : "N/A"_ns);
 
   // Try to determine if the page is the user had a meaningful opportunity to
   // zoom this page. This is not 100% accurate but should be "good enough" for
@@ -1366,6 +1370,7 @@ void PresShell::Destroy() {
   mFramesToDirty.Clear();
   mPendingScrollAnchorSelection.Clear();
   mPendingScrollAnchorAdjustment.Clear();
+  mPendingScrollResnap.Clear();
 
   if (mViewManager) {
     // Clear the view manager's weak pointer back to |this| in case it
@@ -2251,6 +2256,7 @@ void PresShell::NotifyDestroyingFrame(nsIFrame* aFrame) {
     if (scrollableFrame) {
       mPendingScrollAnchorSelection.Remove(scrollableFrame);
       mPendingScrollAnchorAdjustment.Remove(scrollableFrame);
+      mPendingScrollResnap.Remove(scrollableFrame);
     }
   }
 }
@@ -2690,6 +2696,17 @@ void PresShell::FlushPendingScrollAnchorAdjustments() {
   mPendingScrollAnchorAdjustment.Clear();
 }
 
+void PresShell::PostPendingScrollResnap(nsIScrollableFrame* aScrollableFrame) {
+  mPendingScrollResnap.Insert(aScrollableFrame);
+}
+
+void PresShell::FlushPendingScrollResnap() {
+  for (nsIScrollableFrame* scrollableFrame : mPendingScrollResnap) {
+    scrollableFrame->TryResnap();
+  }
+  mPendingScrollResnap.Clear();
+}
+
 void PresShell::FrameNeedsReflow(nsIFrame* aFrame,
                                  IntrinsicDirty aIntrinsicDirty,
                                  nsFrameState aBitToAdd,
@@ -3001,7 +3018,8 @@ static void AssertNoFramesOrStyleDataInDescendants(Element& aElement) {
     if (c == &aElement) {
       continue;
     }
-    MOZ_ASSERT(!c->GetPrimaryFrame());
+    // FIXME(emilio): The <area> check is needed because of bug 135040.
+    MOZ_ASSERT(!c->GetPrimaryFrame() || c->IsHTMLElement(nsGkAtoms::area));
     MOZ_ASSERT(!c->IsElement() || !c->AsElement()->HasServoData());
   }
 }
@@ -4319,29 +4337,6 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
       LAYOUT_TELEMETRY_RECORD_BASE(Restyle);
 
       mPresContext->RestyleManager()->ProcessPendingRestyles();
-    }
-
-    // Now those constructors or events might have posted restyle
-    // events.  At the same time, we still need up-to-date style data.
-    // In particular, reflow depends on style being completely up to
-    // date.  If it's not, then style reparenting, which can
-    // happen during reflow, might suddenly pick up the new rules and
-    // we'll end up with frames whose style doesn't match the frame
-    // type.
-    if (MOZ_LIKELY(!mIsDestroying)) {
-      nsAutoScriptBlocker scriptBlocker;
-      Maybe<uint64_t> innerWindowID;
-      if (auto* window = mDocument->GetInnerWindow()) {
-        innerWindowID = Some(window->WindowID());
-      }
-      AutoProfilerStyleMarker tracingStyleFlush(std::move(mStyleCause),
-                                                innerWindowID);
-      PerfStats::AutoMetricRecording<PerfStats::Metric::Styling> autoRecording;
-      LAYOUT_TELEMETRY_RECORD_BASE(Restyle);
-
-      mPresContext->RestyleManager()->ProcessPendingRestyles();
-      // Clear mNeedStyleFlush here agagin to make this flag work properly for
-      // optimization since the flag might have set in ProcessPendingRestyles().
       mNeedStyleFlush = false;
     }
 
@@ -4369,6 +4364,8 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
         }
       }
     }
+
+    FlushPendingScrollResnap();
 
     if (flushType >= FlushType::Layout) {
       if (!mIsDestroying) {
@@ -5391,9 +5388,9 @@ bool PresShell::IsTransparentContainerElement() const {
     if (BrowsingContext* bc = pc->Document()->GetBrowsingContext()) {
       switch (bc->GetEmbedderColorScheme()) {
         case dom::PrefersColorSchemeOverride::Light:
-          return DefaultBackgroundColorScheme() == ColorScheme::Light;
+          return pc->DefaultBackgroundColorScheme() == ColorScheme::Light;
         case dom::PrefersColorSchemeOverride::Dark:
-          return DefaultBackgroundColorScheme() == ColorScheme::Dark;
+          return pc->DefaultBackgroundColorScheme() == ColorScheme::Dark;
         case dom::PrefersColorSchemeOverride::None:
         case dom::PrefersColorSchemeOverride::EndGuard_:
           break;
@@ -5421,34 +5418,11 @@ bool PresShell::IsTransparentContainerElement() const {
   return false;
 }
 
-ColorScheme PresShell::DefaultBackgroundColorScheme() const {
-  Document* doc = GetDocument();
-  // Use a dark background for top-level about:blank that is inaccessible to
-  // content JS.
-  {
-    BrowsingContext* bc = doc->GetBrowsingContext();
-    if (bc && bc->IsTop() && !bc->HasOpener() && doc->GetDocumentURI() &&
-        NS_IsAboutBlank(doc->GetDocumentURI())) {
-      return doc->PreferredColorScheme(Document::IgnoreRFP::Yes);
-    }
-  }
-  // Prefer the root color-scheme (since generally the default canvas
-  // background comes from the root element's background-color), and fall back
-  // to the default color-scheme if not available.
-  if (auto* frame = mFrameConstructor->GetRootElementStyleFrame()) {
-    return LookAndFeel::ColorSchemeForFrame(frame);
-  }
-  return doc->DefaultColorScheme();
-}
-
 nscolor PresShell::GetDefaultBackgroundColorToDraw() const {
-  if (!mPresContext || !mPresContext->GetBackgroundColorDraw()) {
+  if (!mPresContext) {
     return NS_RGB(255, 255, 255);
   }
-
-  return mPresContext->PrefSheetPrefs()
-      .ColorsFor(DefaultBackgroundColorScheme())
-      .mDefaultBackground;
+  return mPresContext->DefaultBackgroundColor();
 }
 
 void PresShell::UpdateCanvasBackground() {
@@ -6695,13 +6669,30 @@ bool PresShell::MouseLocationWasSetBySynthesizedMouseEventForTests() const {
          rootPresShell->mMouseLocationWasSetBySynthesizedMouseEventForTests;
 }
 
-void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
-  if (!mPresContext) return;
+nsPoint PresShell::GetEventLocation(const WidgetMouseEvent& aEvent) const {
+  nsIFrame* rootFrame = GetRootFrame();
+  if (rootFrame) {
+    RelativeTo relativeTo{rootFrame};
+    if (rootFrame->PresContext()->IsRootContentDocumentCrossProcess()) {
+      relativeTo.mViewportType = ViewportType::Visual;
+    }
+    return nsLayoutUtils::GetEventCoordinatesRelativeTo(&aEvent, relativeTo);
+  }
+
+  nsView* rootView = mViewManager->GetRootView();
+  return nsLayoutUtils::TranslateWidgetToView(mPresContext, aEvent.mWidget,
+                                              aEvent.mRefPoint, rootView);
+}
+
+void PresShell::RecordPointerLocation(WidgetGUIEvent* aEvent) {
+  if (!mPresContext) {
+    return;
+  }
 
   if (!mPresContext->IsRoot()) {
     PresShell* rootPresShell = GetRootPresShell();
     if (rootPresShell) {
-      rootPresShell->RecordMouseLocation(aEvent);
+      rootPresShell->RecordPointerLocation(aEvent);
     }
     return;
   }
@@ -6710,25 +6701,8 @@ void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
        aEvent->AsMouseEvent()->mReason == WidgetMouseEvent::eReal) ||
       aEvent->mMessage == eMouseEnterIntoWidget ||
       aEvent->mMessage == eMouseDown || aEvent->mMessage == eMouseUp) {
-    nsIFrame* rootFrame = GetRootFrame();
-    if (!rootFrame) {
-      nsView* rootView = mViewManager->GetRootView();
-      mMouseLocation = nsLayoutUtils::TranslateWidgetToView(
-          mPresContext, aEvent->mWidget, aEvent->mRefPoint, rootView);
-      // TODO: instead, encapsulate `mMouseLocation` and
-      // `mLastOverWindowMouseLocation` in a struct.
-      mLastOverWindowMouseLocation = mMouseLocation;
-      mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
-    } else {
-      RelativeTo relativeTo{rootFrame};
-      if (rootFrame->PresContext()->IsRootContentDocumentCrossProcess()) {
-        relativeTo.mViewportType = ViewportType::Visual;
-      }
-      mMouseLocation =
-          nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, relativeTo);
-      mLastOverWindowMouseLocation = mMouseLocation;
-      mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
-    }
+    mMouseLocation = GetEventLocation(*aEvent->AsMouseEvent());
+    mMouseEventTargetGuid = InputAPZContext::GetTargetLayerGuid();
     mMouseLocationWasSetBySynthesizedMouseEventForTests =
         aEvent->mFlags.mIsSynthesizedForTests;
 #ifdef DEBUG_MOUSE_LOCATION
@@ -6755,6 +6729,13 @@ void PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent) {
     printf("[ps=%p]got mouse exit for %p\n", this, aEvent->mWidget);
     printf("[ps=%p]clearing mouse location\n", this);
 #endif
+  } else if ((aEvent->mMessage == ePointerMove &&
+              aEvent->AsMouseEvent()->mReason == WidgetMouseEvent::eReal) ||
+             aEvent->mMessage == ePointerDown ||
+             aEvent->mMessage == ePointerUp) {
+    // TODO: instead, encapsulate `mMouseLocation` and
+    // `mLastOverWindowPointerLocation` in a struct.
+    mLastOverWindowPointerLocation = GetEventLocation(*aEvent->AsMouseEvent());
   }
 }
 
@@ -6904,7 +6885,7 @@ nsresult PresShell::EventHandler::HandleEvent(nsIFrame* aFrameForPresShell,
     return NS_OK;
   }
 
-  mPresShell->RecordMouseLocation(aGUIEvent);
+  mPresShell->RecordPointerLocation(aGUIEvent);
 
   if (MaybeHandleEventWithAccessibleCaret(aFrameForPresShell, aGUIEvent,
                                           aEventStatus)) {
@@ -8107,6 +8088,9 @@ nsresult PresShell::EventHandler::HandleEventWithTarget(
 #endif
   NS_ENSURE_STATE(!aNewEventContent ||
                   aNewEventContent->GetComposedDoc() == GetDocument());
+  if (aEvent->mClass == ePointerEventClass) {
+    mPresShell->RecordPointerLocation(aEvent->AsMouseEvent());
+  }
   AutoPointerEventTargetUpdater updater(mPresShell, aEvent, aNewEventFrame,
                                         aTargetContent);
   AutoCurrentEventInfoSetter eventInfoSetter(*this, aNewEventFrame,
@@ -9515,12 +9499,11 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
 
   nsDocShell* docShell =
       static_cast<nsDocShell*>(GetPresContext()->GetDocShell());
-  RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
-  bool isTimelineRecording = timelines && timelines->HasConsumer(docShell);
+  bool isTimelineRecording = TimelineConsumers::HasConsumer(docShell);
 
   if (isTimelineRecording) {
-    timelines->AddMarkerForDocShell(docShell, "Reflow",
-                                    MarkerTracingType::START);
+    TimelineConsumers::AddMarkerForDocShell(docShell, "Reflow",
+                                            MarkerTracingType::START);
   }
 
   Maybe<uint64_t> innerWindowID;
@@ -9723,7 +9706,8 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
   }
 
   if (isTimelineRecording) {
-    timelines->AddMarkerForDocShell(docShell, "Reflow", MarkerTracingType::END);
+    TimelineConsumers::AddMarkerForDocShell(docShell, "Reflow",
+                                            MarkerTracingType::END);
   }
 
   return !interrupted;

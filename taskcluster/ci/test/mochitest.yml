@@ -126,7 +126,7 @@ mochitest-plain:
             default: 5
     instance-size:
         by-test-platform:
-            linux.*64-tsan-qr/opt: xlarge  # runs out of memory on default/m3.large
+            linux.*64-tsan-qr/opt: xlarge  # runs out of memory using 8GB
             default: default
     max-run-time: 5400
     allow-software-gl-layers: false
@@ -147,10 +147,6 @@ mochitest-a11y:
     treeherder-symbol: M(a11y)
     schedules-component: mochitest-a11y
     test-manifest-loader: default  # ensure we don't run with manifest-scheduling
-    worker-type:
-        by-test-platform:
-            linux.*: t-linux-large-gcp
-            default: default
     loopback-video: true
     run-without-variant: false
     variants:
@@ -249,7 +245,7 @@ mochitest-browser-chrome:
     # Bug 1281241: migrating to m3.large instances
     instance-size:
         by-test-platform:
-            linux.*64-tsan-qr/opt: xlarge  # runs out of memory on default/m3.large
+            linux.*64-tsan-qr/opt: xlarge  # runs out of memory using 8GB
             default: default
     allow-software-gl-layers: false
 
@@ -257,10 +253,6 @@ mochitest-browser-a11y:
     description: "Mochitest browser-a11y run"
     suite:
         name: mochitest-browser-a11y
-    worker-type:
-        by-test-platform:
-            linux.*: t-linux-large-gcp
-            default: default
     treeherder-symbol: M(ba)
     schedules-component: mochitest-browser-a11y
     loopback-video: true
@@ -280,10 +272,6 @@ browser-screenshots:
     description: "Browser Screenshots"
     suite:
         name: mochitest-browser-chrome-screenshots
-    worker-type:
-        by-test-platform:
-            linux.*: t-linux-large-gcp
-            default: default
     treeherder-symbol: M(ss)
     loopback-video: true
     test-manifest-loader: null  # don't load tests in the taskgraph
@@ -300,11 +288,6 @@ browser-screenshots:
 mochitest-chrome:
     description: "Mochitest chrome run"
     treeherder-symbol: M(c)
-    worker-type:
-        by-test-platform:
-            linux.*64-tsan-qr/opt: t-linux-xlarge-gcp
-            linux.*: t-linux-large-gcp
-            default: default
     schedules-component: mochitest-chrome
     loopback-video: true
     run-without-variant: false
@@ -346,7 +329,7 @@ mochitest-chrome:
         chunked: true
     instance-size:
         by-test-platform:
-            linux.*64-tsan-qr/opt: xlarge  # runs out of memory on default/m3.large
+            linux.*64-tsan-qr/opt: xlarge  # runs out of memory otherwise using 8GB
             default: default
 
 mochitest-devtools-chrome:
@@ -355,11 +338,6 @@ mochitest-devtools-chrome:
         name: mochitest-devtools-chrome
     schedules-component: mochitest-browser-chrome
     treeherder-symbol: M(dt)
-    worker-type:
-        by-test-platform:
-            linux.*64-[at]san(-qr)?/opt: t-linux-xlarge-gcp
-            linux.*: t-linux-large-gcp
-            default: default
     loopback-video: true
     variants:
         - a11y-checks
@@ -417,7 +395,7 @@ mochitest-devtools-chrome:
         chunked: true
     instance-size:
         by-test-platform:
-            linux.*64-[at]san(-qr)?/opt: xlarge  # runs out of memory on default/m3.large
+            linux.*64-[at]san(-qr)?/opt: xlarge  # runs out of memory otherwise using 8GB
             default: default
     # Bug 1296086: high number of intermittents observed with software GL and large instances
     allow-software-gl-layers: false
@@ -479,7 +457,7 @@ mochitest-plain-gpu:
                     - --mochitest-suite=mochitest-plain-gpu
     instance-size:
         by-test-platform:
-            linux.*64-tsan-qr/opt: xlarge  # runs out of memory on default/m3.large
+            linux.*64-tsan-qr/opt: xlarge  # runs out of memory otherwise using 8GB
             default: default
 
 mochitest-chrome-gpu:
@@ -524,7 +502,7 @@ mochitest-chrome-gpu:
                     - --mochitest-suite=mochitest-chrome-gpu
     instance-size:
         by-test-platform:
-            linux.*64-tsan-qr/opt: xlarge  # runs out of memory on default/m3.large
+            linux.*64-tsan-qr/opt: xlarge  # runs out of memory using 8GB of memory
             default: default
 
 mochitest-media:
@@ -605,10 +583,6 @@ mochitest-media:
                     windows10-aarch64-qr/.*: ['mozilla-central', 'mozilla-beta', 'mozilla-release']
                     default: built-projects
     loopback-video: true
-    instance-size:
-        by-test-platform:
-            linux.*64-tsan-qr/opt: xlarge  # runs out of memory on default/m3.large
-            default: large
     chunks:
         by-test-platform:
             android-em-7.*: 1

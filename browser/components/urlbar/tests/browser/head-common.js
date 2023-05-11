@@ -1,13 +1,16 @@
 /* eslint-env mozilla/frame-script */
 
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
+ChromeUtils.defineESModuleGetters(this, {
+  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.js",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
-  PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   Preferences: "resource://gre/modules/Preferences.jsm",
   UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
@@ -40,8 +43,8 @@ XPCOMUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
 });
 
 XPCOMUtils.defineLazyGetter(this, "SearchTestUtils", () => {
-  const { SearchTestUtils: module } = ChromeUtils.import(
-    "resource://testing-common/SearchTestUtils.jsm"
+  const { SearchTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/SearchTestUtils.sys.mjs"
   );
   module.init(this);
   return module;

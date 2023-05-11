@@ -33,6 +33,9 @@ function testValues(values, expected) {
 
 function do_test() {
   var allColors = [ "COLOR", "currentColor", "transparent", "rgb", "rgba", "hsl", "hsla", "hwb" ];
+  if (SpecialPowers.getBoolPref("layout.css.color-mix.enabled")) {
+    allColors.push("color-mix");
+  }
   var allGradients = [
     "linear-gradient",
     "-webkit-linear-gradient",

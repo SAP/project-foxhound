@@ -9,8 +9,8 @@ const { GeckoViewUtils } = ChromeUtils.import(
   "resource://gre/modules/GeckoViewUtils.jsm"
 );
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -40,9 +40,6 @@ class ColorPickerDelegate {
   }
 }
 
-ColorPickerDelegate.prototype.classID = Components.ID(
-  "{aa0dd6fc-73dd-4621-8385-c0b377e02cee}"
-);
 ColorPickerDelegate.prototype.QueryInterface = ChromeUtils.generateQI([
   "nsIColorPicker",
 ]);

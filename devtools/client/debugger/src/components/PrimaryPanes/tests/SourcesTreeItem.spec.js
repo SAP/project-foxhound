@@ -350,7 +350,14 @@ describe("SourceTreeItem", () => {
     it("should show icon for moz-extension item", async () => {
       const item = createMockDirectory(
         "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
-        "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856"
+        "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+        {
+          ...makeMockDisplaySource(
+            "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+            "server1.conn13.child1/40"
+          ),
+          isExtension: true,
+        }
       );
       const node = render({ item, depth: 1 });
       expect(node).toMatchSnapshot();
@@ -359,7 +366,14 @@ describe("SourceTreeItem", () => {
     it("should show icon for moz-extension item when a thread is set to root", async () => {
       const item = createMockDirectory(
         "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
-        "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856"
+        "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856",
+        {
+          ...makeMockDisplaySource(
+            "moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856/foo.js",
+            "server1.conn13.child1/40"
+          ),
+          isExtension: true,
+        }
       );
       const node = render({
         item,
@@ -555,6 +569,7 @@ function generateDefaults(overrides) {
     item,
     source,
     projectRoot: "",
+    blackBoxRanges: {},
     clearProjectDirectoryRoot: jest.fn(),
     setProjectDirectoryRoot: jest.fn(),
     toggleBlackBox: jest.fn(),
@@ -562,7 +577,7 @@ function generateDefaults(overrides) {
     focusItem: jest.fn(),
     setExpanded: jest.fn(),
     blackBoxSources: jest.fn(),
-    getSourcesGroups: () => {
+    getBlackBoxSourcesGroups: () => {
       return {
         sourcesInside: [
           makeMockDisplaySource("https://example.com/a.js", "actor1"),

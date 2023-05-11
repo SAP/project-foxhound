@@ -19,6 +19,7 @@
 
 #include "gc/GCEnum.h"
 #include "js/AllocPolicy.h"
+#include "js/friend/UsageStatistics.h"
 #include "js/GCAPI.h"
 #include "js/SliceBudget.h"
 #include "js/UniquePtr.h"
@@ -463,7 +464,8 @@ struct Statistics {
   void sccDurations(TimeDuration* total, TimeDuration* maxPause) const;
   void printStats();
 
-  void reportLongestPhaseInMajorGC(PhaseKind longest, int telemetryId);
+  template <typename Fn>
+  void reportLongestPhaseInMajorGC(PhaseKind longest, Fn reportFn);
 
   UniqueChars formatCompactSlicePhaseTimes(const PhaseTimes& phaseTimes) const;
 

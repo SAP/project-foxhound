@@ -30,9 +30,8 @@ const EXPORTED_SYMBOLS = [
  * been put into an abstract base class.
  */
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -127,7 +126,7 @@ const AboutHomeStartupCacheChild = {
       );
     }
 
-    if (!lazy.NimbusFeatures.abouthomecache.isEnabled()) {
+    if (!lazy.NimbusFeatures.abouthomecache.getVariable("enabled")) {
       return;
     }
 
@@ -446,7 +445,7 @@ class BaseAboutNewTabService {
      */
 
     lazy.NimbusFeatures.aboutwelcome.recordExposureEvent({ once: true });
-    if (lazy.NimbusFeatures.aboutwelcome.isEnabled({ defaultValue: true })) {
+    if (lazy.NimbusFeatures.aboutwelcome.getVariable("enabled") ?? true) {
       return ABOUT_WELCOME_URL;
     }
     return this.defaultURL;

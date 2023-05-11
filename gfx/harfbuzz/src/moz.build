@@ -42,7 +42,6 @@ UNIFIED_SOURCES += [
     'hb-aat-map.cc',
     'hb-blob.cc',
     'hb-buffer-serialize.cc',
-    'hb-buffer-verify.cc',
     'hb-buffer.cc',
     'hb-common.cc',
     'hb-draw.cc',
@@ -61,21 +60,21 @@ UNIFIED_SOURCES += [
     'hb-ot-meta.cc',
     'hb-ot-metrics.cc',
     'hb-ot-name.cc',
-    'hb-ot-shape-complex-arabic.cc',
-    'hb-ot-shape-complex-default.cc',
-    'hb-ot-shape-complex-hangul.cc',
-    'hb-ot-shape-complex-hebrew.cc',
-    'hb-ot-shape-complex-indic-table.cc',
-    'hb-ot-shape-complex-indic.cc',
-    'hb-ot-shape-complex-khmer.cc',
-    'hb-ot-shape-complex-myanmar.cc',
-    'hb-ot-shape-complex-syllabic.cc',
-    'hb-ot-shape-complex-thai.cc',
-    'hb-ot-shape-complex-use.cc',
-    'hb-ot-shape-complex-vowel-constraints.cc',
     'hb-ot-shape-fallback.cc',
     'hb-ot-shape-normalize.cc',
     'hb-ot-shape.cc',
+    'hb-ot-shaper-arabic.cc',
+    'hb-ot-shaper-default.cc',
+    'hb-ot-shaper-hangul.cc',
+    'hb-ot-shaper-hebrew.cc',
+    'hb-ot-shaper-indic-table.cc',
+    'hb-ot-shaper-indic.cc',
+    'hb-ot-shaper-khmer.cc',
+    'hb-ot-shaper-myanmar.cc',
+    'hb-ot-shaper-syllabic.cc',
+    'hb-ot-shaper-thai.cc',
+    'hb-ot-shaper-use.cc',
+    'hb-ot-shaper-vowel-constraints.cc',
     'hb-ot-tag.cc',
     'hb-ot-var.cc',
     'hb-set.cc',
@@ -99,21 +98,16 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
 # We allow warnings for third-party code that can be updated from upstream.
 AllowCompilerWarnings()
 
-if CONFIG['CC_TYPE'] == 'clang-cl':
-    CXXFLAGS += ['-Wno-unused-variable']
-
 FINAL_LIBRARY = 'gkmedias'
 
 DEFINES['PACKAGE_VERSION'] = '"moz"'
 DEFINES['PACKAGE_BUGREPORT'] = '"http://bugzilla.mozilla.org/"'
 DEFINES['HAVE_OT'] = 1
 DEFINES['HAVE_ROUND'] = 1
+DEFINES['HB_NO_BUFFER_VERIFY'] = True
 DEFINES['HB_NO_FALLBACK_SHAPE'] = True
 DEFINES['HB_NO_UCD'] = True
 DEFINES['HB_NO_UNICODE_FUNCS'] = True
-# Cancel the effect of the -DDEBUG macro if present,
-# because harfbuzz uses that name for its own purposes
-DEFINES['DEBUG'] = False
 
 # On Android, we want to use harfbuzz's mmap support for file access,
 # so we need to set the appropriate configuration flags as we're not

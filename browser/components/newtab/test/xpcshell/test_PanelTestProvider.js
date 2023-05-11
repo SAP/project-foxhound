@@ -4,138 +4,80 @@
 const { PanelTestProvider } = ChromeUtils.import(
   "resource://activity-stream/lib/PanelTestProvider.jsm"
 );
-const { JsonSchema } = ChromeUtils.import(
-  "resource://gre/modules/JsonSchema.jsm"
-);
 
-Cu.importGlobalProperties(["fetch"]);
-
-let CFR_SCHEMA;
-let UPDATE_ACTION_SCHEMA;
-let WHATS_NEW_SCHEMA;
-let SPOTLIGHT_SCHEMA;
-let PB_NEWTAB_SCHEMA;
+const MESSAGE_VALIDATORS = {};
+let EXPERIMENT_VALIDATOR;
 
 add_setup(async function setup() {
-  function fetchSchema(uri) {
-    return fetch(uri, { credentials: "omit" }).then(rsp => rsp.json());
-  }
+  const validators = await makeValidators();
 
-  CFR_SCHEMA = await fetchSchema(
-    "resource://activity-stream/schemas/CFR/ExtensionDoorhanger.schema.json"
-  );
-  UPDATE_ACTION_SCHEMA = await fetchSchema(
-    "resource://activity-stream/schemas/OnboardingMessage/UpdateAction.schema.json"
-  );
-  WHATS_NEW_SCHEMA = await fetchSchema(
-    "resource://activity-stream/schemas/OnboardingMessage/WhatsNewMessage.schema.json"
-  );
-  SPOTLIGHT_SCHEMA = await fetchSchema(
-    "resource://activity-stream/schemas/OnboardingMessage/Spotlight.schema.json"
-  );
-  PB_NEWTAB_SCHEMA = await fetchSchema(
-    "resource://activity-stream/schemas/PBNewtab/NewtabPromoMessage.schema.json"
-  );
+  EXPERIMENT_VALIDATOR = validators.experimentValidator;
+  Object.assign(MESSAGE_VALIDATORS, validators.messageValidators);
 });
-
-function assertSchema(obj, schema, log) {
-  Assert.deepEqual(
-    JsonSchema.validate(obj, schema),
-    { valid: true, errors: [] },
-    log
-  );
-}
 
 add_task(async function test_PanelTestProvider() {
   const messages = await PanelTestProvider.getMessages();
 
-  // Careful: when changing this number make sure the new messages also go
-  // through schema validation.
+  const EXPECTED_MESSAGE_COUNTS = {
+    cfr_doorhanger: 2,
+    milestone_message: 0,
+    update_action: 1,
+    whatsnew_panel_message: 7,
+    spotlight: 5,
+    pb_newtab: 2,
+    toast_notification: 1,
+  };
+
+  const EXPECTED_TOTAL_MESSAGE_COUNT = Object.values(
+    EXPECTED_MESSAGE_COUNTS
+  ).reduce((a, b) => a + b, 0);
+
   Assert.strictEqual(
     messages.length,
-    16,
+    EXPECTED_TOTAL_MESSAGE_COUNT,
     "PanelTestProvider should have the correct number of messages"
   );
 
-  for (const [i, msg] of messages
-    .filter(m => m.template === "update_action")
-    .entries()) {
-    assertSchema(
-      msg,
-      UPDATE_ACTION_SCHEMA,
-      `update_action message ${msg.id ?? i} is valid`
-    );
-  }
-
-  for (const [i, msg] of messages
-    .filter(m => m.template === "whatsnew_panel_message")
-    .entries()) {
-    assertSchema(
-      msg.content,
-      WHATS_NEW_SCHEMA,
-      `whatsnew_panel_message message ${msg.id ?? i} is valid`
-    );
-    Assert.ok(
-      Object.keys(msg).includes("order"),
-      `whatsnew_panel_message message ${msg.id ?? i} has "order" property`
-    );
-  }
-
-  for (const [i, msg] of messages
-    .filter(m => m.template === "spotlight")
-    .entries()) {
-    assertSchema(
-      msg,
-      SPOTLIGHT_SCHEMA,
-      `spotlight message ${msg.id ?? i} is valid`
-    );
-  }
-
-  for (const [i, msg] of messages
-    .filter(m => m.template === "pb_newtab")
-    .entries()) {
-    assertSchema(
-      msg,
-      PB_NEWTAB_SCHEMA,
-      `pb_newtab message ${msg.id ?? i} is valid`
-    );
-  }
-
-  Assert.strictEqual(
-    messages.filter(m => m.template === "pb_newtab").length,
-    1,
-    "There is one pb_newtab message"
+  const messageCounts = Object.assign(
+    {},
+    ...Object.keys(EXPECTED_MESSAGE_COUNTS).map(key => ({ [key]: 0 }))
   );
+
+  for (const message of messages) {
+    const validator = MESSAGE_VALIDATORS[message.template];
+    Assert.ok(
+      typeof validator !== "undefined",
+      typeof validator !== "undefined"
+        ? `Schema validator found for ${message.template}`
+        : `No schema validator found for template ${message.template}. Please update this test to add one.`
+    );
+    assertValidates(
+      validator,
+      message,
+      `Message ${message.id} validates as ${message.template} template`
+    );
+    assertValidates(
+      EXPERIMENT_VALIDATOR,
+      message,
+      `Message ${message.id} validates as MessagingExperiment`
+    );
+
+    messageCounts[message.template]++;
+  }
+
+  for (const [template, count] of Object.entries(messageCounts)) {
+    Assert.equal(
+      count,
+      EXPECTED_MESSAGE_COUNTS[template],
+      `Expected ${EXPECTED_MESSAGE_COUNTS[template]} ${template} messages`
+    );
+  }
 });
 
-add_task(async function test_SpotlightAsCFR() {
-  let message = await PanelTestProvider.getMessages().then(msgs =>
-    msgs.find(msg => msg.id === "SPOTLIGHT_MESSAGE_93")
+add_task(async function test_emptyMessage() {
+  info(
+    "Testing blank FxMS messages validate with the Messaging Experiment schema"
   );
 
-  message = {
-    ...message,
-    content: {
-      ...message.content,
-      category: "",
-      layout: "icon_and_message",
-      bucket_id: "",
-      notification_text: "",
-      heading_text: "",
-      text: "",
-      buttons: {},
-    },
-  };
-
-  assertSchema(
-    message,
-    CFR_SCHEMA,
-    "Munged spotlight message validates with CFR ExtensionDoorhanger schema"
-  );
-
-  assertSchema(
-    message,
-    SPOTLIGHT_SCHEMA,
-    "Munged Spotlight message validates with Spotlight schema"
-  );
+  assertValidates(EXPERIMENT_VALIDATOR, {}, "Empty message should validate");
 });

@@ -6,9 +6,8 @@
 
 const EXPORTED_SYMBOLS = ["reftest"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -240,7 +239,7 @@ reftest.Runner = class {
 
   async abort() {
     if (this.reftestWin && this.reftestWin != this.parentWindow) {
-      this.driver.closeChromeWindow();
+      await this.driver.closeChromeWindow();
       let parentHandle = lazy.windowManager.getWindowProperties(
         this.parentWindow
       );

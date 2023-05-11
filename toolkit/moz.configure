@@ -367,6 +367,10 @@ include("../js/moz.configure")
 # ==============================================================
 include("../build/moz.configure/node.configure")
 
+# JsonCpp
+# ==============================================================
+set_define("JSON_USE_EXCEPTION", 0)
+
 # L10N
 # ==============================================================
 option("--with-l10n-base", nargs=1, env="L10NBASEDIR", help="Path to l10n repositories")
@@ -635,8 +639,16 @@ def wmf(value, target):
         return True
 
 
+@depends(c_compiler, when=wmf)
+def wmfmediaengine(c_compiler):
+    return c_compiler and c_compiler.type == "clang-cl"
+
+
 set_config("MOZ_WMF", wmf)
 set_define("MOZ_WMF", wmf)
+
+set_config("MOZ_WMF_MEDIA_ENGINE", True, when=wmfmediaengine)
+set_define("MOZ_WMF_MEDIA_ENGINE", True, when=wmfmediaengine)
 
 # FFmpeg H264/AAC Decoding Support
 # ==============================================================
@@ -981,7 +993,6 @@ set_config("MOZ_GPSD", depends_if(system_gpsd)(lambda _: True))
 
 check_prog("TAR", ("gnutar", "gtar", "tar"))
 check_prog("UNZIP", ("unzip",))
-check_prog("GN", ("gn",), allow_missing=True)
 
 # Key files
 # ==============================================================
@@ -2142,7 +2153,7 @@ with only_when(compile_environment):
 
     @depends(target)
     def libav_fft(target):
-        return target.kernel == "WINNT" or target.cpu == "x86_64"
+        return target.kernel in ("WINNT", "Darwin") or target.cpu == "x86_64"
 
     set_config("MOZ_LIBAV_FFT", depends(when=libav_fft)(lambda: True))
     set_define("MOZ_LIBAV_FFT", depends(when=libav_fft)(lambda: True))
@@ -2173,18 +2184,16 @@ with only_when(compile_environment | artifact_builds):
                 flags = ["-DPIC", "-DWIN64"]
                 use_nasm = False
         elif target.kernel == "Darwin":
+            # 32/64-bit macosx assemblers need to prefix symbols with an
+            # underscore.
+            flags = ["-DPIC", "-DMACHO", "-DPREFIX"]
             if target.cpu == "x86_64":
-                # 32/64-bit macosx asemblers need to prefix symbols with an
-                # underscore.
-                flags = [
+                flags += [
                     "-D__x86_64__",
-                    "-DPIC",
-                    "-DMACHO",
-                    "-DPREFIX",
                     "-Pconfig_darwin64.asm",
                 ]
-            else:
-                flac_only = True
+            elif target.cpu == "aarch64":
+                use_nasm = False
         elif target.cpu == "x86_64":
             flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_unix64.asm"]
         elif target.cpu in ("x86", "arm", "aarch64"):

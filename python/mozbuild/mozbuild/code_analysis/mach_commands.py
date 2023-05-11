@@ -560,7 +560,6 @@ def _get_clang_tidy_command(
         "-clang-apply-replacements-binary",
         clang_paths._clang_apply_replacements,
         "-checks=%s" % checks,
-        "-extra-arg=-std=c++17",
         "-extra-arg=-DMOZ_CLANG_PLUGIN",
     ]
 
@@ -987,7 +986,7 @@ def _create_temp_compilation_db(command_context):
             file = item + ".cpp"
             element = {}
             element["directory"] = director
-            element["command"] = "cpp " + file
+            element["command"] = "cpp -std=c++17 " + file
             element["file"] = mozpath.join(director, file)
             compile_commands.append(element)
 

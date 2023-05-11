@@ -20,11 +20,11 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: 626ff35955c2c35b806b3e0ecf551a1a8611cdbf (Wed Oct 06 17:41:19 2021).
+  release: 168b312774166958897f727196a59ee8ad423e78 (Thu Jul 14 04:56:29 2022).
 
   # Revision to pull in
   # Must be a long or short commit SHA (long preferred)
-  revision: 626ff35955c2c35b806b3e0ecf551a1a8611cdbf
+  revision: 168b312774166958897f727196a59ee8ad423e78
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -58,13 +58,22 @@ vendoring:
     - bug1137614.patch
     - input_frame_validation.patch
     - input_frame_validation_vp9.patch
-    - rename_duplicate_files.patch
-    - win64_build_fix.patch
 
   update-actions:
     - action: move-file
       from: '{vendor_dir}/vpx_dsp/x86/loopfilter_sse2.c'
       to: '{vendor_dir}/vpx_dsp/x86/loopfilter_intrin_sse2.c'
+    - action: move-file
+      from: '{vendor_dir}/vpx_dsp/loongarch/quantize_lsx.c'
+      to: '{vendor_dir}/vpx_dsp/loongarch/quantize_intrin_lsx.c'
+    - action: run-command
+      command: patch
+      args: ['-p1', '-i', '{yaml_dir}/rename_duplicate_files.patch', '-d', '{yaml_dir}/libvpx']
+      cwd: '{yaml_dir}'
+    - action: run-command
+      command: patch
+      args: ['-p1', '-i', '{yaml_dir}/win64_build_fix.patch', '-d', '{yaml_dir}/libvpx']
+      cwd: '{yaml_dir}'
     - action: run-script
       script: '{yaml_dir}/generate_sources_mozbuild.sh'
       cwd: '{yaml_dir}'

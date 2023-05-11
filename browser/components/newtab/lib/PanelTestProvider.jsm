@@ -160,6 +160,7 @@ const MESSAGES = () => [
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
+      bucket_id: "PERSONALIZED_CFR_MESSAGE",
       notification_text: "Personalized CFR Recommendation",
       heading_text: { string_id: "cfr-doorhanger-bookmark-fxa-header" },
       info_icon: {
@@ -484,12 +485,14 @@ const MESSAGES = () => [
             background:
               "url(chrome://activity-stream/content/data/content/assets/proton-bkg.avif) no-repeat center/cover",
             text_color: "light",
+            progress_bar: true,
             logo: {
               imageURL:
                 "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/ms-images/a3c640c8-7594-4bb2-bc18-8b4744f3aaf2.gif",
             },
             title: "A dialog with a background image",
-            subtitle: "The text color is configurable",
+            subtitle:
+              "The text color is configurable and a progress bar style step indicator is used",
             primary_button: {
               label: "Continue",
               action: {
@@ -510,6 +513,7 @@ const MESSAGES = () => [
           id: "BACKGROUND_COLOR",
           content: {
             background: "white",
+            progress_bar: true,
             logo: {
               height: "200px",
               imageURL: "",
@@ -521,8 +525,7 @@ const MESSAGES = () => [
             },
             title_style: "fancy shine",
             text_color: "dark",
-            subtitle:
-              "For the best privacy protection, keep Firefox in easy reach.",
+            subtitle: "Using progress bar style step indicator",
             primary_button: {
               label: "Continue",
               action: {
@@ -635,8 +638,6 @@ const MESSAGES = () => [
       promoEnabled: true,
       promoType: "VPN",
       infoEnabled: true,
-      infoIcon: "",
-      infoTitle: "",
       infoBody: "fluent:about-private-browsing-info-description-private-window",
       infoLinkText: "fluent:about-private-browsing-learn-more-link",
       infoTitleEnabled: false,
@@ -647,8 +648,102 @@ const MESSAGES = () => [
       promoTitle: "fluent:about-private-browsing-hide-activity-1",
       promoTitleEnabled: true,
       promoImageLarge: "chrome://browser/content/assets/moz-vpn.svg",
+      promoButton: {
+        action: {
+          type: "OPEN_URL",
+          data: {
+            args: "https://vpn.mozilla.org/",
+          },
+        },
+      },
     },
+    groups: ["panel-test-provider"],
     targeting: "region != 'CN' && !hasActiveEnterprisePolicies",
+    frequency: { lifetime: 3 },
+  },
+  {
+    id: "PB_NEWTAB_PIN_PROMO",
+    template: "pb_newtab",
+    groups: ["pbNewtab"],
+    content: {
+      infoBody: "fluent:about-private-browsing-info-description-simplified",
+      infoEnabled: true,
+      infoIcon: "chrome://global/skin/icons/indicator-private-browsing.svg",
+      infoLinkText: "fluent:about-private-browsing-learn-more-link",
+      infoTitle: "",
+      infoTitleEnabled: false,
+      promoEnabled: true,
+      promoType: "PIN",
+      promoHeader: "Private browsing freedom in one click",
+      promoImageLarge:
+        "chrome://browser/content/assets/private-promo-asset.svg",
+      promoLinkText: "Pin To Taskbar",
+      promoLinkType: "button",
+      promoSectionStyle: "below-search",
+      promoTitle:
+        "No saved cookies or history, right from your desktop. Browse like no one’s watching.",
+      promoTitleEnabled: true,
+      promoButton: {
+        action: {
+          type: "MULTI_ACTION",
+          data: {
+            actions: [
+              {
+                type: "SET_PREF",
+                data: {
+                  pref: {
+                    name:
+                      "browser.privacySegmentation.windowSeparation.enabled",
+                    value: true,
+                  },
+                },
+              },
+              {
+                type: "PIN_FIREFOX_TO_TASKBAR",
+              },
+              {
+                type: "BLOCK_MESSAGE",
+                data: {
+                  id: "PB_NEWTAB_PIN_PROMO",
+                },
+              },
+              {
+                type: "OPEN_ABOUT_PAGE",
+                data: { args: "privatebrowsing", where: "current" },
+              },
+            ],
+          },
+        },
+      },
+    },
+    priority: 3,
+    frequency: {
+      custom: [
+        {
+          cap: 3,
+          period: 604800000, // Max 3 per week
+        },
+      ],
+      lifetime: 12,
+    },
+    targeting:
+      "region != 'CN' && !hasActiveEnterprisePolicies && doesAppNeedPin",
+  },
+  {
+    id: "TEST_TOAST_NOTIFICATION1",
+    weight: 100,
+    template: "toast_notification",
+    content: {
+      title: {
+        string_id: "cfr-doorhanger-bookmark-fxa-header",
+      },
+      body: "Body",
+      image_url:
+        "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/ms-images/a3c640c8-7594-4bb2-bc18-8b4744f3aaf2.gif",
+    },
+    groups: ["panel-test-provider"],
+    targeting: "!hasActiveEnterprisePolicies",
+    trigger: { id: "backgroundTaskMessage" },
     frequency: { lifetime: 3 },
   },
 ];
