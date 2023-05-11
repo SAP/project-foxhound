@@ -125,7 +125,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       // Taintfox: taint propagated by NewDependentString, just need
       // to add the operation here
       if (str->taint().hasTaint()) {
-        RootedAtom src(cx, re->getSource());
+        Rooted<JSAtom*> src(cx, re->getSource());
         JSString* srcStr = EscapeRegExpPattern(cx, src);
         str->taint().extend(
           TaintOperation("RegExp.prototype.exec", true, TaintLocationFromContext(cx),

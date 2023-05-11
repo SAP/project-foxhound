@@ -242,7 +242,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     if (i.hasScript()) {
       // Get source
       JSScript* script = i.script();
-      ScriptSource* ss = script->scriptSource();
+      js::ScriptSource* ss = script->scriptSource();
       if (ss) {
         scriptStartline = ss->startLine();
         hash = ss->md5Checksum(cx);
