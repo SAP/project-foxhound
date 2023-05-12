@@ -45,12 +45,17 @@ function ThrowIncompatibleMethod(name, thisv) {
 // ES 2016 draft Mar 25, 2016 21.1.3.11.
 function String_match(regexp) {
   // Step 1.
-  if (this === undefined || this === null)
+  if (this === undefined || this === null) {
     ThrowIncompatibleMethod("match", this);
+  }
 
   // Step 2.
-  var isPatternString = (typeof regexp === "string");
-  if (!(isPatternString && StringProtoHasNoMatch()) && regexp !== undefined && regexp !== null) {
+  var isPatternString = typeof regexp === "string";
+  if (
+    !(isPatternString && StringProtoHasNoMatch()) &&
+    regexp !== undefined &&
+    regexp !== null
+  ) {
     // Step 2.a.
     var matcher = GetMethod(regexp, GetBuiltinSymbol("match"));
 
@@ -242,12 +247,16 @@ function Substring(str, from, length) {
 // ES 2016 draft Mar 25, 2016 21.1.3.14.
 function String_replace(searchValue, replaceValue) {
   // Step 1.
-  if (this === undefined || this === null)
+  if (this === undefined || this === null) {
     ThrowIncompatibleMethod("replace", this);
+  }
 
   // Step 2.
-  if (!(typeof searchValue === "string" && StringProtoHasNoReplace()) &&
-    searchValue !== undefined && searchValue !== null) {
+  if (
+    !(typeof searchValue === "string" && StringProtoHasNoReplace()) &&
+    searchValue !== undefined &&
+    searchValue !== null
+  ) {
     // Step 2.a.
     var replacer = GetMethod(searchValue, GetBuiltinSymbol("replace"));
 
@@ -293,22 +302,26 @@ function String_replace(searchValue, replaceValue) {
   }
 
   // Step 8.
-  var replStr = ToString(callContentFunction(replaceValue, undefined, searchString, pos, string));
+  var replStr = ToString(
+    callContentFunction(replaceValue, undefined, searchString, pos, string)
+  );
 
   // Step 10.
   var tailPos = pos + searchString.length;
 
   // Step 11.
   var newString;
-  if (pos === 0)
+  if (pos === 0) {
     newString = "";
-  else
+  } else {
     newString = Substring(string, 0, pos);
+  }
 
   newString += replStr;
   var stringLength = string.length;
-  if (tailPos < stringLength)
+  if (tailPos < stringLength) {
     newString += Substring(string, tailPos, stringLength - tailPos);
+  }
 
   AddTaintOperationNativeFull(newString, "replace", searchValue, replaceValue);
 
@@ -617,6 +630,9 @@ function String_substring(start, end) {
   // Step 8.
   var from = std_Math_min(finalStart, finalEnd);
 
+  // Step 9.
+  var to = std_Math_max(finalStart, finalEnd);
+
   // Step 10.
   // While |from| and |to - from| are bounded to the length of |str| and this
   // and thus definitely in the int32 range, they can still be typed as
@@ -631,8 +647,9 @@ SetIsInlinableLargeFunction(String_substring);
 // B.2.3.1 String.prototype.substr ( start, length )
 function String_substr(start, length) {
   // Steps 1.
-  if (this === undefined || this === null)
+  if (this === undefined || this === null) {
     ThrowIncompatibleMethod("substr", this);
+  }
 
   // Step 2.
   var str = ToString(this);
@@ -644,11 +661,15 @@ function String_substr(start, length) {
   var size = str.length;
   // Use |size| instead of +Infinity to avoid performing calculations with
   // doubles. (The result is the same either way.)
-  var end = (length === undefined) ? size : ToInteger(length);
+  var end = length === undefined ? size : ToInteger(length);
 
   // Step 6.
-  if (intStart < 0)
+  if (intStart < 0) {
     intStart = std_Math_max(intStart + size, 0);
+  } else {
+    // Restrict the input range to allow better Ion optimizations.
+    intStart = std_Math_min(intStart, size);
+  }
 
   // Step 7.
   var resultLength = std_Math_min(std_Math_max(end, 0), size - intStart);
