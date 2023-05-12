@@ -476,6 +476,9 @@ inline js::NormalAtom::NormalAtom(size_t length, JS::Latin1Char** chars,
   setLengthAndFlags(length,
                     INIT_THIN_INLINE_FLAGS | LATIN1_CHARS_BIT | ATOM_BIT);
   *chars = d.inlineStorageLatin1;
+
+  // TaintFox
+  initTaint();
 }
 
 inline js::NormalAtom::NormalAtom(size_t length, char16_t** chars,
@@ -484,6 +487,9 @@ inline js::NormalAtom::NormalAtom(size_t length, char16_t** chars,
   MOZ_ASSERT(JSInlineString::lengthFits<char16_t>(length));
   setLengthAndFlags(length, INIT_THIN_INLINE_FLAGS | ATOM_BIT);
   *chars = d.inlineStorageTwoByte;
+
+  // TaintFox
+  initTaint();
 }
 
 inline js::NormalAtom::NormalAtom(const char16_t* chars, size_t length,
@@ -493,6 +499,9 @@ inline js::NormalAtom::NormalAtom(const char16_t* chars, size_t length,
   // Check that the new buffer is located in the StringBufferArena
   checkStringCharsArena(chars);
   d.s.u2.nonInlineCharsTwoByte = chars;
+
+  // TaintFox
+  initTaint();
 }
 
 inline js::NormalAtom::NormalAtom(const JS::Latin1Char* chars, size_t length,
@@ -502,6 +511,9 @@ inline js::NormalAtom::NormalAtom(const JS::Latin1Char* chars, size_t length,
   // Check that the new buffer is located in the StringBufferArena
   checkStringCharsArena(chars);
   d.s.u2.nonInlineCharsLatin1 = chars;
+
+  // TaintFox
+  initTaint();
 }
 
 inline js::FatInlineAtom::FatInlineAtom(size_t length, JS::Latin1Char** chars,
@@ -511,6 +523,9 @@ inline js::FatInlineAtom::FatInlineAtom(size_t length, JS::Latin1Char** chars,
   setLengthAndFlags(length,
                     INIT_FAT_INLINE_FLAGS | LATIN1_CHARS_BIT | ATOM_BIT);
   *chars = d.inlineStorageLatin1;
+
+  // TaintFox
+  initTaint();
 }
 
 inline js::FatInlineAtom::FatInlineAtom(size_t length, char16_t** chars,
@@ -519,6 +534,9 @@ inline js::FatInlineAtom::FatInlineAtom(size_t length, char16_t** chars,
   MOZ_ASSERT(JSFatInlineString::lengthFits<char16_t>(length));
   setLengthAndFlags(length, INIT_FAT_INLINE_FLAGS | ATOM_BIT);
   *chars = d.inlineStorageTwoByte;
+
+  // TaintFox
+  initTaint();
 }
 
 inline JSLinearString* js::StaticStrings::getUnitStringForElement(
