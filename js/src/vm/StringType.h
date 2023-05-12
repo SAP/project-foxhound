@@ -18,6 +18,7 @@
 
 #include <string_view>  // std::basic_string_view
 
+#include "jstaint.h"
 #include "jstypes.h"  // js::Bit
 
 #include "gc/Allocator.h"

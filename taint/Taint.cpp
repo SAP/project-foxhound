@@ -687,7 +687,6 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
 
     while (it != end()) {
         auto& range = *it;
-        MOZ_ASSERT(range.begin() >= last);
         ranges->emplace_back(range.begin(), range.end(), range.flow());
         it++;
     }
