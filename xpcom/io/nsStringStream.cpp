@@ -149,6 +149,7 @@ class nsStringInputStream final : public nsIStringInputStream,
   nsresult Init(nsTArray<uint8_t>&& aArray);
 
   void SetTaint(const StringTaint& aTaint) {
+    ReentrantMonitorAutoEnter lock(mMon);
     if (mSource) {
       mSource->setTaint(aTaint);
     }
@@ -165,7 +166,8 @@ class nsStringInputStream final : public nsIStringInputStream,
                                 uint32_t aCount,
                                 uint32_t* aReadCount);
 
-  StringTaint Taint() const MOZ_REQUIRES(mMon) {
+  StringTaint Taint() {
+    ReentrantMonitorAutoEnter lock(mMon);
     return mSource ? mSource->Taint().safeSubTaint(mOffset, Length()) : EmptyTaint;
   }
   
