@@ -72,7 +72,12 @@ impl MemoryDistribution for MemoryDistributionMetric {
                 // If the value doesn't fit into `i64` it's definitely to large
                 // and cause an error.
                 // glean-core handles that.
-                let sample = sample.try_into().unwrap_or(i64::MAX);
+                let sample = sample.try_into().unwrap_or_else(|_| {
+                    log::warn!(
+                        "Memory size too large to fit into into 64-bytes. Saturating at i64::MAX."
+                    );
+                    i64::MAX
+                });
                 inner.accumulate(sample);
             }
             MemoryDistributionMetric::Child(c) => {
@@ -125,15 +130,10 @@ impl MemoryDistribution for MemoryDistributionMetric {
     /// # Returns
     ///
     /// The number of errors recorded.
-    pub fn test_get_num_recorded_errors<'a, S: Into<Option<&'a str>>>(
-        &self,
-        error: glean::ErrorType,
-        ping_name: S,
-    ) -> i32 {
-        let ping_name = ping_name.into().map(|s| s.to_string());
+    pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             MemoryDistributionMetric::Parent { inner, .. } => {
-                inner.test_get_num_recorded_errors(error, ping_name)
+                inner.test_get_num_recorded_errors(error)
             }
             MemoryDistributionMetric::Child(c) => panic!(
                 "Cannot get the number of recorded errors for {:?} in non-parent process!",

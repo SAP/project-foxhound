@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 @use 'sass:math';
 @import '../styles/normalize';
+@import '../styles/feature-callout';
 
 $break-point-small: 570px;
 $break-point-medium: 610px;
@@ -20,8 +21,11 @@ html {
 
 body {
   // sass-lint:disable no-color-literals
+
   --grey-subtitle-1: #696977;
   --newtab-button-secondary-color: #0060DF;
+  --mr-welcome-background-color: #F8F6F4;
+  --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.2) 0%, rgba(2, 144, 238, 0.2) 100%);
 
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Ubuntu',
   'Helvetica Neue', sans-serif;
@@ -31,7 +35,15 @@ body {
   &[lwt-newtab-brighttext] {
     --grey-subtitle-1: #FFF;
     --newtab-button-secondary-color: #FFF;
+    --mr-welcome-background-color: #333336;
+    --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.3) 0%, rgba(2, 144, 238, 0.3) 100%);
   }
+}
+
+// Below variables are used via config JSON in AboutWelcomeDefaults
+// and referenced below inside dummy class to pass test browser_parsable_css
+.dummy {
+  background: var(--mr-welcome-background-color) var(--mr-welcome-background-gradient) var(--mr-secondary-position);
 }
 
 // Styling for content rendered in a Spotlight messaging surface.
@@ -48,9 +60,11 @@ body {
         transform: unset;
       }
 
-      .screen {
-        background-color: transparent;
+      .logo-container {
+        pointer-events: none;
+      }
 
+      .screen {
         &:dir(rtl) {
           transform: unset;
         }
@@ -176,28 +190,12 @@ body {
   }
 
   .screen {
-    background-color: rgba(21, 20, 26, 0.5);
     display: flex;
     position: relative;
     flex-flow: row nowrap;
     height: 100%;
     min-height: 500px;
     overflow: hidden;
-
-    &:is(.UPGRADE_PIN_FIREFOX, .UPGRADE_ONLY_DEFAULT, .UPGRADE_GET_STARTED) {
-      .brand-logo {
-        margin-top: 120px;
-
-        @media (prefers-reduced-motion: reduce) {
-          // sass-lint:disable-block no-important
-          background-image: url('chrome://activity-stream/content/data/content/assets/heart.svg') !important;
-        }
-      }
-
-      .no-steps {
-        padding-bottom: 12px;
-      }
-    }
 
     &.light-text {
       --in-content-page-color: rgb(251, 251, 254);
@@ -236,6 +234,7 @@ body {
     }
 
     &[pos='center'] {
+      background-color: rgba(21, 20, 26, 0.5);
       min-width: $main-section-width;
 
       &.with-noodles {
@@ -256,6 +255,18 @@ body {
       .section-main {
         width: 400px;
         height: 550px;
+      }
+
+      .secondary-cta.top {
+        padding-inline-end: 0;
+
+        @media (max-height: 650px) and (max-width: 990px) {
+          display: none;
+        }
+
+        button {
+          color: var(--in-content-page-color);
+        }
       }
 
       .section-main {
@@ -279,6 +290,19 @@ body {
 
           .main-content-inner {
             min-height: 330px;
+
+            .language-switcher-container {
+              .secondary {
+                margin-inline-start: 0;
+                margin: 5px 0;
+                color: var(--in-content-primary-button-text-color);
+                background-color: var(--in-content-primary-button-background);
+
+                &:hover {
+                  background-color: var(--in-content-primary-button-background-hover);
+                }
+              }
+            }
           }
 
           .action-buttons {
@@ -309,14 +333,13 @@ body {
             }
           }
 
+          .logo-container {
+            text-align: start;
+          }
+
           .brand-logo {
             height: 25px;
             margin-block: 0;
-            background-position: left;
-
-            &:dir(rtl) {
-              background-position: right;
-            }
           }
 
           .welcome-text {
@@ -326,7 +349,9 @@ body {
             align-items: initial;
 
             h1 {
-              font-size: 29px;
+              font-size: 24px;
+              line-height: 1.2;
+              width: 300px;
             }
 
             h2 {
@@ -334,6 +359,7 @@ body {
               margin: 10px 0 0;
               min-height: 1em;
               font-size: 15px;
+              line-height: 1.5;
             }
           }
 
@@ -360,11 +386,14 @@ body {
       }
 
       .section-secondary {
+        --mr-secondary-position: center center / contain;
         border-radius: 8px 0 0 8px;
         box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);
         margin: auto 0 auto auto;
         display: flex;
         align-items: center;
+        -moz-context-properties: fill, stroke, fill-opacity, stroke-opacity;
+        stroke: currentColor;
 
         &:dir(rtl) {
           border-radius: 0 8px 8px 0;
@@ -373,13 +402,43 @@ body {
 
         h1 {
           font-weight: 700;
-          font-size: clamp(52px, 7vw, 104px);
+          font-size: 47px;
           line-height: 110%;
           max-width: 340px;
           text-align: initial;
           white-space: pre-wrap;
           text-shadow: none;
           margin-inline: 40px 0;
+        }
+
+        .hero-image {
+          flex: 1;
+          display: flex;
+          justify-content: center;
+          max-height: 100%;
+
+          img {
+            width: 100%;
+            max-width: 150px;
+            margin: 25px 0;
+          }
+        }
+      }
+
+      .tiles-theme-container {
+        margin-block: -20px auto;
+        align-items: initial;
+
+        .colorway-text {
+          text-align: initial;
+          transition: var(--transition);
+          font-size: 13px;
+          line-height: 1.5;
+          margin-block: 10px 20px;
+        }
+
+        .theme {
+          min-width: 38px;
         }
       }
 
@@ -395,6 +454,12 @@ body {
         }
       }
 
+      @media only screen and (min-width: 800px) {
+        .tiles-theme-section {
+          margin-inline-start: -10px;
+        }
+      }
+
       @media only screen and (max-width: 800px) {
         flex-direction: column;
 
@@ -404,12 +469,16 @@ body {
         }
 
         .section-secondary {
+          --mr-secondary-background-position-y: top;
+          --mr-secondary-position: center var(--mr-secondary-background-position-y) / cover;
           border-radius: 8px 8px 0 0;
           margin: auto auto 0;
           height: 150px;
 
           h1 {
-            display: none;
+            font-size: 35px;
+            text-align: center;
+            white-space: normal;
           }
 
           &:dir(rtl) {
@@ -430,18 +499,24 @@ body {
               align-items: center;
             }
 
-            .brand-logo {
-              min-height: 25px;
+            .logo-container {
+              text-align: center;
 
-              &,
-              &:dir(rtl) {
-                background-position: center;
+              .brand-logo {
+                min-height: 25px;
+
+                &,
+                &:dir(rtl) {
+                  background-position: center;
+                }
               }
             }
 
             .welcome-text {
+              align-items: center;
               text-align: center;
               margin-inline: 0;
+              padding-inline: 30px;
 
               .spacer-bottom,
               .spacer-top {
@@ -461,7 +536,12 @@ body {
 
             .primary,
             .secondary {
-              width: 240px;
+              min-width: 240px;
+            }
+
+            .colorway-text {
+              text-align: center;
+              margin-inline: 30px;
             }
 
             .steps {
@@ -482,6 +562,7 @@ body {
             }
           }
         }
+
       }
     }
   }
@@ -489,10 +570,6 @@ body {
   .brand-logo {
     margin-block: 60px 10px;
     transition: var(--transition);
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    background-image: url('chrome://branding/content/about-logo.svg');
     height: 80px;
 
     &.cta-top {
@@ -576,6 +653,14 @@ body {
         to {
           background-position: 400%;
         }
+      }
+    }
+
+    .cta-paragraph {
+      a {
+        margin: 0;
+        text-decoration: underline;
+        cursor: pointer;
       }
     }
   }
@@ -955,6 +1040,10 @@ body {
         &.default,
         &.automatic {
           background-image: url('resource://default-theme/icon.svg');
+
+          &.colorway {
+            background-image: url('chrome://activity-stream/content/data/content/assets/default.svg');
+          }
         }
 
         &.abstract {
@@ -979,6 +1068,30 @@ body {
 
         &.lush {
           background-image: url('resource://builtin-themes/colorways/2021lush/balanced/icon.svg');
+        }
+
+        &.playmaker {
+          background-image: url('resource://builtin-themes/colorways/2022playmaker/balanced/icon.svg');
+        }
+
+        &.expressionist {
+          background-image: url('resource://builtin-themes/colorways/2022expressionist/balanced/icon.svg');
+        }
+
+        &.visionary {
+          background-image: url('resource://builtin-themes/colorways/2022visionary/balanced/icon.svg');
+        }
+
+        &.dreamer {
+          background-image: url('resource://builtin-themes/colorways/2022dreamer/balanced/icon.svg');
+        }
+
+        &.innovator {
+          background-image: url('resource://builtin-themes/colorways/2022innovator/balanced/icon.svg');
+        }
+
+        &.activist {
+          background-image: url('resource://builtin-themes/colorways/2022activist/balanced/icon.svg');
         }
       }
 
@@ -1175,6 +1288,7 @@ body {
     padding-block: 16px 0;
     transition: var(--transition);
     z-index: -1;
+    height: 48px;
 
     &.has-helptext {
       padding-bottom: 0;
@@ -1281,7 +1395,6 @@ body {
   }
 
   [pos='corner'] {
-    background-color: transparent;
     min-width: $container-min-width;
 
     .section-secondary {
@@ -1462,7 +1575,8 @@ body {
   // Delays for transitioning-in of intermediate screens
   .screen:not(.dialog-initial):not([pos='corner']) {
     .colorway-variations,
-    .tiles-theme-section {
+    .tiles-theme-section,
+    .colorway-text {
       transition-delay: 0.2s;
     }
 
@@ -1558,6 +1672,7 @@ body {
       .welcome-text,
       .colorway-variations,
       .tiles-theme-section,
+      .colorway-text,
       .primary,
       .secondary,
       .secondary-cta:not(.top) {
@@ -1610,7 +1725,8 @@ body {
       }
 
       .colorway-variations,
-      .tiles-theme-section {
+      .tiles-theme-section,
+      .colorway-text {
         opacity: 0;
         translate: 0 var(--translate);
         transition-delay: 0.2s;

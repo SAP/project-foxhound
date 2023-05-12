@@ -23,7 +23,7 @@ add_task(async () => {
 
   await installTemporaryExtensionFromXPI(
     {
-      background: function() {
+      background() {
         window.someRandomMethodName = () => {
           // This will not be referred from anywhere.
           // However this is necessary to show as the source code in the debugger.
@@ -47,8 +47,8 @@ add_task(async () => {
 
   info("Check the state of redux");
   ok(
-    panelWin.dbg.store.getState().threads.isWebExtension,
-    "isWebExtension flag in threads is true"
+    panelWin.dbg.store.getState().sourcesTree.isWebExtension,
+    "isWebExtension flag in sourcesTree is true"
   );
 
   info("Check whether the element displays correctly");

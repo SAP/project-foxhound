@@ -85,22 +85,25 @@ BaselineInterpreterHandler::BaselineInterpreterHandler(JSContext* cx,
 
 template <typename Handler>
 template <typename... HandlerArgs>
-BaselineCodeGen<Handler>::BaselineCodeGen(JSContext* cx, HandlerArgs&&... args)
+BaselineCodeGen<Handler>::BaselineCodeGen(JSContext* cx, TempAllocator& alloc,
+                                          HandlerArgs&&... args)
     : handler(cx, masm, std::forward<HandlerArgs>(args)...),
       cx(cx),
+      masm(cx, alloc),
       frame(handler.frame()) {}
 
 BaselineCompiler::BaselineCompiler(JSContext* cx, TempAllocator& alloc,
                                    JSScript* script)
-    : BaselineCodeGen(cx, /* HandlerArgs = */ alloc, script),
+    : BaselineCodeGen(cx, alloc, /* HandlerArgs = */ alloc, script),
       profilerPushToggleOffset_() {
 #ifdef JS_CODEGEN_NONE
   MOZ_CRASH();
 #endif
 }
 
-BaselineInterpreterGenerator::BaselineInterpreterGenerator(JSContext* cx)
-    : BaselineCodeGen(cx /* no handlerArgs */) {}
+BaselineInterpreterGenerator::BaselineInterpreterGenerator(JSContext* cx,
+                                                           TempAllocator& alloc)
+    : BaselineCodeGen(cx, alloc /* no handlerArgs */) {}
 
 bool BaselineCompilerHandler::init(JSContext* cx) {
   if (!analysis_.init(alloc_)) {
@@ -4279,6 +4282,11 @@ bool BaselineCodeGen<Handler>::emit_Call() {
 }
 
 template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_CallContent() {
+  return emitCall(JSOp::CallContent);
+}
+
+template <typename Handler>
 bool BaselineCodeGen<Handler>::emit_CallIgnoresRv() {
   return emitCall(JSOp::CallIgnoresRv);
 }
@@ -4289,8 +4297,18 @@ bool BaselineCodeGen<Handler>::emit_CallIter() {
 }
 
 template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_CallContentIter() {
+  return emitCall(JSOp::CallContentIter);
+}
+
+template <typename Handler>
 bool BaselineCodeGen<Handler>::emit_New() {
   return emitCall(JSOp::New);
+}
+
+template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_NewContent() {
+  return emitCall(JSOp::NewContent);
 }
 
 template <typename Handler>
@@ -6373,7 +6391,7 @@ MethodStatus BaselineCompiler::emitBody() {
 #endif
   }
 
-  MOZ_ASSERT(JSOp(*prevpc) == JSOp::RetRval);
+  MOZ_ASSERT(JSOp(*prevpc) == JSOp::RetRval || JSOp(*prevpc) == JSOp::Return);
   return Method_Compiled;
 }
 
@@ -6665,7 +6683,8 @@ bool BaselineInterpreterGenerator::generate(BaselineInterpreter& interpreter) {
 
 JitCode* JitRuntime::generateDebugTrapHandler(JSContext* cx,
                                               DebugTrapHandlerKind kind) {
-  StackMacroAssembler masm;
+  TempAllocator temp(&cx->tempLifoAlloc());
+  StackMacroAssembler masm(cx, temp);
   AutoCreatedBy acb(masm, "JitRuntime::generateDebugTrapHandler");
 
   AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());

@@ -414,10 +414,13 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvSetIsUnderHiddenEmbedderElement(
       const bool& aIsUnderHiddenEmbedderElement);
 
-  mozilla::ipc::IPCResult RecvInsertText(const nsString& aStringToInsert);
+  mozilla::ipc::IPCResult RecvInsertText(const nsAString& aStringToInsert);
+
+  mozilla::ipc::IPCResult RecvUpdateRemoteStyle(
+      const StyleImageRendering& aImageRendering);
 
   mozilla::ipc::IPCResult RecvNormalPriorityInsertText(
-      const nsString& aStringToInsert);
+      const nsAString& aStringToInsert);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvPasteTransferable(
@@ -425,13 +428,13 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       nsIPrincipal* aRequestingPrincipal,
       const nsContentPolicyType& aContentPolicyType);
 
-  mozilla::ipc::IPCResult RecvActivateFrameEvent(const nsString& aType,
+  mozilla::ipc::IPCResult RecvActivateFrameEvent(const nsAString& aType,
                                                  const bool& aCapture);
 
-  mozilla::ipc::IPCResult RecvLoadRemoteScript(const nsString& aURL,
+  mozilla::ipc::IPCResult RecvLoadRemoteScript(const nsAString& aURL,
                                                const bool& aRunInGlobalScope);
 
-  mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMessage,
+  mozilla::ipc::IPCResult RecvAsyncMessage(const nsAString& aMessage,
                                            const ClonedMessageData& aData);
   mozilla::ipc::IPCResult RecvSwappedWithOtherRemoteLoader(
       const IPCTabContext& aContext);
@@ -447,12 +450,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   bool DeallocPDocAccessibleChild(PDocAccessibleChild*);
 #endif
 
-  PColorPickerChild* AllocPColorPickerChild(const nsString& aTitle,
-                                            const nsString& aInitialColor);
+  PColorPickerChild* AllocPColorPickerChild(const nsAString& aTitle,
+                                            const nsAString& aInitialColor);
 
   bool DeallocPColorPickerChild(PColorPickerChild* aActor);
 
-  PFilePickerChild* AllocPFilePickerChild(const nsString& aTitle,
+  PFilePickerChild* AllocPFilePickerChild(const nsAString& aTitle,
                                           const int16_t& aMode);
 
   RefPtr<VsyncMainChild> GetVsyncChild();
@@ -545,15 +548,15 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvHandleAccessKey(const WidgetKeyboardEvent& aEvent,
                                               nsTArray<uint32_t>&& aCharCodes);
-
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvPrintPreview(const PrintData& aPrintData,
                                            const MaybeDiscardedBrowsingContext&,
                                            PrintPreviewResolver&& aCallback);
 
   mozilla::ipc::IPCResult RecvExitPrintPreview();
 
-  mozilla::ipc::IPCResult RecvPrint(const MaybeDiscardedBrowsingContext&,
-                                    const PrintData&);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvPrint(
+      const MaybeDiscardedBrowsingContext&, const PrintData&);
 
   mozilla::ipc::IPCResult RecvUpdateNativeWindowHandle(
       const uintptr_t& aNewHandle);

@@ -21,6 +21,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "nsISocketTransportService.h"
 #include "nsICancelable.h"
+#include "nsSocketTransportService2.h"
 
 #include "WebrtcTCPSocketCallback.h"
 #include "WebrtcTCPSocketLog.h"
@@ -149,11 +150,12 @@ void WebrtcTCPSocket::CloseWithReason(nsresult aReason) {
 }
 
 nsresult WebrtcTCPSocket::Open(
-    const nsCString& aHost, const int& aPort, const nsCString& aLocalAddress,
+    const nsACString& aHost, const int& aPort, const nsACString& aLocalAddress,
     const int& aLocalPort, bool aUseTls,
     const Maybe<net::WebrtcProxyConfig>& aProxyConfig) {
   LOG(("WebrtcTCPSocket::Open %p remote-host=%s local-addr=%s local-port=%d",
-       this, aHost.BeginReading(), aLocalAddress.BeginReading(), aLocalPort));
+       this, PromiseFlatCString(aHost).get(),
+       PromiseFlatCString(aLocalAddress).get(), aLocalPort));
   MOZ_ASSERT(NS_IsMainThread());
 
   if (NS_WARN_IF(mOpened)) {
@@ -163,8 +165,8 @@ nsresult WebrtcTCPSocket::Open(
   }
 
   mOpened = true;
-  nsCString schemePrefix = aUseTls ? "https://"_ns : "http://"_ns;
-  nsCString spec = schemePrefix;
+  const nsLiteralCString schemePrefix = aUseTls ? "https://"_ns : "http://"_ns;
+  nsAutoCString spec(schemePrefix);
 
   bool ipv6Literal = aHost.Find(":") != kNotFound;
   if (ipv6Literal) {

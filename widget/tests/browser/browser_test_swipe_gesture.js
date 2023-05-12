@@ -21,6 +21,14 @@ async function waitForWhile() {
   await new Promise(r => requestAnimationFrame(r));
 }
 
+const NativePanHandlerForLinux = {
+  beginPhase: SpecialPowers.DOMWindowUtils.PHASE_BEGIN,
+  updatePhase: SpecialPowers.DOMWindowUtils.PHASE_UPDATE,
+  endPhase: SpecialPowers.DOMWindowUtils.PHASE_END,
+  promiseNativePanEvent: promiseNativeTouchpadPanEventAndWaitForObserver,
+  deltaOnRTL: -50,
+};
+
 const NativePanHandlerForWindows = {
   beginPhase: SpecialPowers.DOMWindowUtils.PHASE_BEGIN,
   updatePhase: SpecialPowers.DOMWindowUtils.PHASE_UPDATE,
@@ -40,6 +48,8 @@ const NativePanHandlerForMac = {
 
 function getPanHandler() {
   switch (getPlatform()) {
+    case "linux":
+      return NativePanHandlerForLinux;
     case "windows":
       return NativePanHandlerForWindows;
     case "mac":
@@ -134,6 +144,8 @@ async function panLeftToRightEnd(aElement, aX, aY, aMultiplier) {
     NativePanHandler.endPhase
   );
 }
+
+requestLongerTimeout(2);
 
 add_task(async () => {
   await SpecialPowers.pushPrefEnv({
@@ -254,6 +266,7 @@ add_task(async () => {
     set: [
       ["browser.gesture.swipe.left", "Browser:BackOrBackDuplicate"],
       ["browser.gesture.swipe.eight", "Browser:ForwardOrForwardDuplicate"],
+      ["browser.swipe.navigation-icon-move-distance", 0],
       ["widget.disable-swipe-tracker", false],
       ["widget.swipe.velocity-twitch-tolerance", 0.0000001],
       // Set the velocity-contribution to 0 so we can exactly control the
@@ -302,6 +315,20 @@ add_task(async () => {
   let opacity = gHistorySwipeAnimation._prevBox.style.opacity;
   ok(0.98 < opacity && opacity < 0.99, "opacity of prevbox is not quite 1");
 
+  const translateDistance = Services.prefs.getIntPref(
+    "browser.swipe.navigation-icon-move-distance",
+    0
+  );
+  if (translateDistance != 0) {
+    isnot(
+      window
+        .getComputedStyle(gHistorySwipeAnimation._prevBox)
+        .getPropertyValue("translate"),
+      "none",
+      "translate of prevbox is not `none` during gestures"
+    );
+  }
+
   await panLeftToRightEnd(tab.linkedBrowser, 100, 100, 0.9);
 
   // NOTE: We only get a wheel event for the beginPhase, rest of events have
@@ -335,6 +362,18 @@ add_task(async () => {
   ok(computedOpacity == 1, "computed opacity of prevbox is 1");
   opacity = gHistorySwipeAnimation._prevBox.style.opacity;
   ok(opacity == 0, "element.style opacity of prevbox 0");
+
+  if (translateDistance != 0) {
+    // We don't have a transition for translate property so that we still have
+    // some amount of translate.
+    isnot(
+      window
+        .getComputedStyle(gHistorySwipeAnimation._prevBox)
+        .getPropertyValue("translate"),
+      "none",
+      "translate of prevbox is not `none` during the opacity transition"
+    );
+  }
 
   // Make sure the gesture triggered going back to the previous page.
   await Promise.all([startLoadingPromise, stoppedLoadingPromise]);
@@ -798,4 +837,72 @@ add_task(async () => {
   });
 
   BrowserTestUtils.removeTab(tab);
+});
+
+// A simple test case on RTL.
+add_task(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.gesture.swipe.left", "Browser:BackOrBackDuplicate"],
+      ["browser.gesture.swipe.eight", "Browser:ForwardOrForwardDuplicate"],
+      ["widget.disable-swipe-tracker", false],
+      ["widget.swipe.velocity-twitch-tolerance", 0.0000001],
+      ["widget.swipe.success-velocity-contribution", 0.5],
+      ["intl.l10n.pseudo", "bidi"],
+    ],
+  });
+
+  const newWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  const firstPage = "about:about";
+  const secondPage = "about:mozilla";
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    newWin.gBrowser,
+    firstPage,
+    true /* waitForLoad */
+  );
+
+  BrowserTestUtils.loadURI(tab.linkedBrowser, secondPage);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, secondPage);
+
+  // Make sure we can go back to the previous page.
+  ok(newWin.gBrowser.webNavigation.canGoBack);
+  // and we cannot go forward to the next page.
+  ok(!newWin.gBrowser.webNavigation.canGoForward);
+
+  // Make sure that our gesture support stuff has been initialized in the new
+  // browser window.
+  await TestUtils.waitForCondition(() => {
+    return newWin.gHistorySwipeAnimation.active;
+  });
+
+  // Try to navigate backward.
+  let startLoadingPromise = BrowserTestUtils.browserStarted(
+    tab.linkedBrowser,
+    firstPage
+  );
+  let stoppedLoadingPromise = BrowserTestUtils.browserStopped(
+    tab.linkedBrowser,
+    firstPage
+  );
+  await panRightToLeft(tab.linkedBrowser, 100, 100, 1);
+  await Promise.all([startLoadingPromise, stoppedLoadingPromise]);
+
+  ok(newWin.gBrowser.webNavigation.canGoForward);
+
+  // Now try to navigate forward again.
+  startLoadingPromise = BrowserTestUtils.browserStarted(
+    tab.linkedBrowser,
+    secondPage
+  );
+  stoppedLoadingPromise = BrowserTestUtils.browserStopped(
+    tab.linkedBrowser,
+    secondPage
+  );
+  await panLeftToRight(tab.linkedBrowser, 100, 100, 1);
+  await Promise.all([startLoadingPromise, stoppedLoadingPromise]);
+
+  ok(newWin.gBrowser.webNavigation.canGoBack);
+
+  await BrowserTestUtils.closeWindow(newWin);
 });

@@ -24,7 +24,7 @@
 
 namespace mozilla::gfx {
 
-// Inserts (allocated) a rectangle of the requested size into the tree.
+// Inserts (allocates) a rectangle of the requested size into the tree.
 Maybe<IntPoint> TexturePacker::Insert(const IntSize& aSize) {
   // Check if the available space could possibly fit the requested size. If
   // not, there is no reason to continue searching within this sub-tree.
@@ -32,17 +32,17 @@ Maybe<IntPoint> TexturePacker::Insert(const IntSize& aSize) {
       mBounds.width < aSize.width || mBounds.height < aSize.height) {
     return Nothing();
   }
-  if (mChildren[0]) {
+  if (mChildren) {
     // If this node has children, then try to insert into each of the children
     // in turn.
-    Maybe<IntPoint> inserted = mChildren[0]->Insert(aSize);
+    Maybe<IntPoint> inserted = mChildren[0].Insert(aSize);
     if (!inserted) {
-      inserted = mChildren[1]->Insert(aSize);
+      inserted = mChildren[1].Insert(aSize);
     }
     // If the insertion succeeded, adjust the available state to reflect the
     // remaining space in the children.
     if (inserted) {
-      mAvailable = std::max(mChildren[0]->mAvailable, mChildren[1]->mAvailable);
+      mAvailable = std::max(mChildren[0].mAvailable, mChildren[1].mAvailable);
       if (!mAvailable) {
         DiscardChildren();
       }
@@ -60,29 +60,29 @@ Maybe<IntPoint> TexturePacker::Insert(const IntSize& aSize) {
   // most excess space beyond the requested size and split it so that at least
   // one of the children matches the requested size for that axis.
   if (mBounds.width - aSize.width > mBounds.height - aSize.height) {
-    mChildren[0].reset(new TexturePacker(
-        IntRect(mBounds.x, mBounds.y, aSize.width, mBounds.height)));
-    mChildren[1].reset(new TexturePacker(
-        IntRect(mBounds.x + aSize.width, mBounds.y, mBounds.width - aSize.width,
-                mBounds.height)));
+    mChildren.reset(new TexturePacker[2]{
+        TexturePacker(
+            IntRect(mBounds.x, mBounds.y, aSize.width, mBounds.height)),
+        TexturePacker(IntRect(mBounds.x + aSize.width, mBounds.y,
+                              mBounds.width - aSize.width, mBounds.height))});
   } else {
-    mChildren[0].reset(new TexturePacker(
-        IntRect(mBounds.x, mBounds.y, mBounds.width, aSize.height)));
-    mChildren[1].reset(new TexturePacker(
-        IntRect(mBounds.x, mBounds.y + aSize.height, mBounds.width,
-                mBounds.height - aSize.height)));
+    mChildren.reset(new TexturePacker[2]{
+        TexturePacker(
+            IntRect(mBounds.x, mBounds.y, mBounds.width, aSize.height)),
+        TexturePacker(IntRect(mBounds.x, mBounds.y + aSize.height,
+                              mBounds.width, mBounds.height - aSize.height))});
   }
   // After splitting, try to insert into the first child, which should usually
   // be big enough to accomodate the request. Adjust the available state to the
   // remaining space.
-  Maybe<IntPoint> inserted = mChildren[0]->Insert(aSize);
-  mAvailable = std::max(mChildren[0]->mAvailable, mChildren[1]->mAvailable);
+  Maybe<IntPoint> inserted = mChildren[0].Insert(aSize);
+  mAvailable = std::max(mChildren[0].mAvailable, mChildren[1].mAvailable);
   return inserted;
 }
 
 // Removes (frees) a rectangle with the given bounds from the tree.
 bool TexturePacker::Remove(const IntRect& aBounds) {
-  if (!mChildren[0]) {
+  if (!mChildren) {
     // If there are no children, we encountered a leaf node. Non-zero available
     // state means that this node was already removed previously. Also, if the
     // bounds don't contain the request, and assuming the tree was previously
@@ -107,22 +107,24 @@ bool TexturePacker::Remove(const IntRect& aBounds) {
       int split = aBounds.x - mBounds.x > mBounds.XMost() - aBounds.XMost()
                       ? aBounds.x
                       : aBounds.XMost();
-      mChildren[0].reset(new TexturePacker(
-          IntRect(mBounds.x, mBounds.y, split - mBounds.x, mBounds.height),
-          false));
-      mChildren[1].reset(new TexturePacker(
-          IntRect(split, mBounds.y, mBounds.XMost() - split, mBounds.height),
-          false));
+      mChildren.reset(new TexturePacker[2]{
+          TexturePacker(
+              IntRect(mBounds.x, mBounds.y, split - mBounds.x, mBounds.height),
+              false),
+          TexturePacker(IntRect(split, mBounds.y, mBounds.XMost() - split,
+                                mBounds.height),
+                        false)});
     } else {
       int split = aBounds.y - mBounds.y > mBounds.YMost() - aBounds.YMost()
                       ? aBounds.y
                       : aBounds.YMost();
-      mChildren[0].reset(new TexturePacker(
-          IntRect(mBounds.x, mBounds.y, mBounds.width, split - mBounds.y),
-          false));
-      mChildren[1].reset(new TexturePacker(
-          IntRect(mBounds.x, split, mBounds.width, mBounds.YMost() - split),
-          false));
+      mChildren.reset(new TexturePacker[2]{
+          TexturePacker(
+              IntRect(mBounds.x, mBounds.y, mBounds.width, split - mBounds.y),
+              false),
+          TexturePacker(
+              IntRect(mBounds.x, split, mBounds.width, mBounds.YMost() - split),
+              false)});
     }
   }
   // We've encountered a branch node. Determine which of the two child nodes
@@ -130,16 +132,16 @@ bool TexturePacker::Remove(const IntRect& aBounds) {
   // children were split on and then whether the removed bounds on that axis
   // are past the start of the second child. Proceed to recurse into that
   // child node for removal.
-  bool next = mChildren[0]->mBounds.x < mChildren[1]->mBounds.x
-                  ? aBounds.x >= mChildren[1]->mBounds.x
-                  : aBounds.y >= mChildren[1]->mBounds.y;
-  bool removed = mChildren[next ? 1 : 0]->Remove(aBounds);
+  bool next = mChildren[0].mBounds.x < mChildren[1].mBounds.x
+                  ? aBounds.x >= mChildren[1].mBounds.x
+                  : aBounds.y >= mChildren[1].mBounds.y;
+  bool removed = mChildren[next ? 1 : 0].Remove(aBounds);
   if (removed) {
-    if (mChildren[0]->IsFullyAvailable() && mChildren[1]->IsFullyAvailable()) {
+    if (mChildren[0].IsFullyAvailable() && mChildren[1].IsFullyAvailable()) {
       DiscardChildren();
       mAvailable = std::min(mBounds.width, mBounds.height);
     } else {
-      mAvailable = std::max(mChildren[0]->mAvailable, mChildren[1]->mAvailable);
+      mAvailable = std::max(mChildren[0].mAvailable, mChildren[1].mAvailable);
     }
   }
   return removed;
@@ -601,15 +603,20 @@ already_AddRefed<TextureHandle> DrawTargetWebgl::SharedContext::WrapSnapshot(
   return handle.forget();
 }
 
+void DrawTargetWebgl::SharedContext::SetTexFilter(WebGLTextureJS* aTex,
+                                                  bool aFilter) {
+  mWebgl->TexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER,
+                        aFilter ? LOCAL_GL_LINEAR : LOCAL_GL_NEAREST);
+  mWebgl->TexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER,
+                        aFilter ? LOCAL_GL_LINEAR : LOCAL_GL_NEAREST);
+}
+
 void DrawTargetWebgl::SharedContext::InitTexParameters(WebGLTextureJS* aTex) {
   mWebgl->TexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S,
                         LOCAL_GL_CLAMP_TO_EDGE);
   mWebgl->TexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T,
                         LOCAL_GL_CLAMP_TO_EDGE);
-  mWebgl->TexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER,
-                        LOCAL_GL_LINEAR);
-  mWebgl->TexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER,
-                        LOCAL_GL_LINEAR);
+  SetTexFilter(aTex, true);
 }
 
 // Copy the contents of the WebGL framebuffer into a WebGL texture.
@@ -645,27 +652,28 @@ already_AddRefed<TextureHandle> DrawTargetWebgl::CopySnapshot() {
   return mSharedContext->CopySnapshot();
 }
 
+// Borrow a snapshot that may be used by another thread for composition. Only
+// Skia snapshots are safe to pass around.
+already_AddRefed<SourceSurface> DrawTargetWebgl::GetDataSnapshot() {
+  if (!mSkiaValid) {
+    ReadIntoSkia();
+  } else if (mSkiaLayer) {
+    FlattenSkia();
+  }
+  return mSkia->Snapshot(mFormat);
+}
+
 already_AddRefed<SourceSurface> DrawTargetWebgl::Snapshot() {
   // If already using the Skia fallback, then just snapshot that.
   if (mSkiaValid) {
-    if (mSkiaLayer) {
-      FlattenSkia();
-    }
-    return mSkia->Snapshot(mFormat);
+    return GetDataSnapshot();
   }
 
   // There's no valid Skia snapshot, so we need to get one from the WebGL
   // context.
   if (!mSnapshot) {
-    // First just try to create a copy-on-write reference to this target.
-    RefPtr<SourceSurfaceWebgl> snapshot = new SourceSurfaceWebgl;
-    if (snapshot->Init(this)) {
-      mSnapshot = snapshot;
-    } else {
-      // Otherwse, we have to just read back the framebuffer contents. This may
-      // fail if the WebGL context is lost.
-      mSnapshot = ReadSnapshot();
-    }
+    // Create a copy-on-write reference to this target.
+    mSnapshot = new SourceSurfaceWebgl(this);
   }
   return do_AddRef(mSnapshot);
 }
@@ -789,6 +797,7 @@ bool DrawTargetWebgl::LockBits(uint8_t** aData, IntSize* aSize,
                                IntPoint* aOrigin) {
   // Can only access pixels if there is valid, flattened Skia data.
   if (mSkiaValid && !mSkiaLayer) {
+    MarkSkiaChanged();
     return mSkia->LockBits(aData, aSize, aStride, aFormat, aOrigin);
   }
   return false;
@@ -1321,6 +1330,16 @@ bool DrawTargetWebgl::SharedContext::UploadSurface(DataSourceSurface* aData,
   return true;
 }
 
+static inline SamplingFilter GetSamplingFilter(const Pattern& aPattern) {
+  return aPattern.GetType() == PatternType::SURFACE
+             ? static_cast<const SurfacePattern&>(aPattern).mSamplingFilter
+             : SamplingFilter::GOOD;
+}
+
+static inline bool UseNearestFilter(const Pattern& aPattern) {
+  return GetSamplingFilter(aPattern) == SamplingFilter::POINT;
+}
+
 // Common rectangle and pattern drawing function shared by many DrawTarget
 // commands. If aMaskColor is specified, the provided surface pattern will be
 // treated as a mask. If aHandle is specified, then the surface pattern's
@@ -1708,9 +1727,20 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
       mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramTexBounds, false,
                           {(const uint8_t*)texBounds, sizeof(texBounds)});
 
+      // Ensure we use nearest filtering when no antialiasing is requested.
+      if (UseNearestFilter(surfacePattern)) {
+        SetTexFilter(tex, false);
+      }
+
       // Finally draw the image rectangle.
       mWebgl->DrawArrays(
           aStrokeOptions ? LOCAL_GL_LINE_LOOP : LOCAL_GL_TRIANGLE_FAN, 0, 4);
+
+      // Restore the default linear filter if overridden.
+      if (UseNearestFilter(surfacePattern)) {
+        SetTexFilter(tex, true);
+      }
+
       success = true;
       break;
     }
@@ -1882,11 +1912,13 @@ static inline bool HasMatchingScale(const Matrix& aTransform1,
 
 // Determines if an existing path cache entry matches an incoming path and
 // pattern.
-bool PathCacheEntry::MatchesPath(const SkPath& aPath, const Pattern* aPattern,
-                                 const StrokeOptions* aStrokeOptions,
-                                 const Matrix& aTransform,
-                                 const IntRect& aBounds, const Point& aOrigin,
-                                 HashNumber aHash, float aSigma) {
+inline bool PathCacheEntry::MatchesPath(const SkPath& aPath,
+                                        const Pattern* aPattern,
+                                        const StrokeOptions* aStrokeOptions,
+                                        const Matrix& aTransform,
+                                        const IntRect& aBounds,
+                                        const Point& aOrigin, HashNumber aHash,
+                                        float aSigma) {
   return aHash == mHash && HasMatchingScale(aTransform, mTransform) &&
          // Ensure the clipped relative bounds fit inside those of the entry
          aBounds.x - aOrigin.x >= mBounds.x - mOrigin.x &&
@@ -1925,7 +1957,7 @@ already_AddRefed<PathCacheEntry> PathCache::FindOrInsertEntry(
     const IntRect& aBounds, const Point& aOrigin, float aSigma) {
   HashNumber hash =
       PathCacheEntry::HashPath(aPath, aPattern, aTransform, aBounds);
-  for (const RefPtr<PathCacheEntry>& entry : mEntries) {
+  for (const RefPtr<PathCacheEntry>& entry : GetChain(hash)) {
     if (entry->MatchesPath(aPath, aPattern, aStrokeOptions, aTransform, aBounds,
                            aOrigin, hash, aSigma)) {
       return do_AddRef(entry);
@@ -1948,7 +1980,7 @@ already_AddRefed<PathCacheEntry> PathCache::FindOrInsertEntry(
   RefPtr<PathCacheEntry> entry =
       new PathCacheEntry(aPath, pattern, strokeOptions, aTransform, aBounds,
                          aOrigin, hash, aSigma);
-  mEntries.insertFront(entry);
+  Insert(entry);
   return entry.forget();
 }
 
@@ -2027,6 +2059,8 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
       shadowColor->a *= color->a;
     }
   }
+  SamplingFilter filter =
+      aShadow ? SamplingFilter::GOOD : GetSamplingFilter(aPattern);
   if (handle && handle->IsValid()) {
     // If the entry has a valid texture handle still, use it. However, the
     // entry texture is assumed to be located relative to its previous bounds.
@@ -2037,7 +2071,7 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
     Point offset =
         (bounds.TopLeft() - entry->GetOrigin()) + entry->GetBounds().TopLeft();
     SurfacePattern pathPattern(nullptr, ExtendMode::CLAMP,
-                               Matrix::Translation(offset));
+                               Matrix::Translation(offset), filter);
     if (DrawRectAccel(Rect(intBounds), pathPattern, aOptions, shadowColor,
                       &handle, false, true, true)) {
       return true;
@@ -2064,6 +2098,9 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
       static const ColorPattern maskPattern(
           DeviceColor(1.0f, 1.0f, 1.0f, 1.0f));
       const Pattern& cachePattern = color ? maskPattern : aPattern;
+      // If the source pattern is a DrawTargetWebgl snapshot, we may shift
+      // targets when drawing the path, so back up the old target.
+      DrawTargetWebgl* oldTarget = mCurrentTarget;
       if (aStrokeOptions) {
         pathDT->Stroke(aPath, cachePattern, *aStrokeOptions, drawOptions);
       } else {
@@ -2084,8 +2121,13 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
       }
       RefPtr<SourceSurface> pathSurface = pathDT->Snapshot();
       if (pathSurface) {
+        // If the target changed, try to restore it.
+        if (mCurrentTarget != oldTarget && !oldTarget->PrepareContext()) {
+          return false;
+        }
         SurfacePattern pathPattern(pathSurface, ExtendMode::CLAMP,
-                                   Matrix::Translation(intBounds.TopLeft()));
+                                   Matrix::Translation(intBounds.TopLeft()),
+                                   filter);
         // Try and upload the rasterized path to a texture. If there is a
         // valid texture handle after this, then link it to the entry.
         // Otherwise, we might have to fall back to software drawing the
@@ -2378,6 +2420,37 @@ void DrawTargetWebgl::StrokeGlyphs(ScaledFont* aFont,
   mSkia->StrokeGlyphs(aFont, aBuffer, aPattern, aStrokeOptions, aOptions);
 }
 
+// Depending on whether we enable subpixel position for a given font, Skia may
+// round transformed coordinates differently on each axis. By default, text is
+// subpixel quantized horizontally and snapped to a whole integer vertical
+// baseline. Axis-flip transforms instead snap to horizontal boundaries while
+// subpixel quantizing along the vertical. For other types of transforms, Skia
+// just applies subpixel quantization to both axes.
+// We must duplicate the amount of quantization Skia applies carefully as a
+// boundary value such as 0.49 may round to 0.5 with subpixel quantization,
+// but if Skia actually snapped it to a whole integer instead, it would round
+// down to 0. If a subsequent glyph with offset 0.51 came in, we might
+// mistakenly round it down to 0.5, whereas Skia would round it up to 1. Thus
+// we would alias 0.49 and 0.51 to the same cache entry, while Skia would
+// actually snap the offset to 0 or 1, depending, resulting in mismatched
+// hinting.
+static inline IntPoint QuantizeScale(ScaledFont* aFont,
+                                     const Matrix& aTransform) {
+  if (!aFont->UseSubpixelPosition()) {
+    return {1, 1};
+  }
+  if (aTransform._12 == 0) {
+    // Glyphs are rendered subpixel horizontally, so snap vertically.
+    return {4, 1};
+  }
+  if (aTransform._11 == 0) {
+    // Glyphs are rendered subpixel vertically, so snap horizontally.
+    return {1, 4};
+  }
+  // The transform isn't aligned, so don't snap.
+  return {4, 4};
+}
+
 // Skia only supports subpixel positioning to the nearest 1/4 fraction. It
 // would be wasteful to attempt to cache text runs with positioning that is
 // anymore precise than this. To prevent this cache bloat, we quantize the
@@ -2392,14 +2465,27 @@ static inline IntPoint QuantizePosition(const Matrix& aTransform,
   return RoundedToInt(aTransform.TransformPoint(aPosition)) - aOffset;
 }
 
+// Get a quantized starting offset for the glyph buffer. We want this offset
+// to encapsulate the transform and buffer offset while still preserving the
+// relative subpixel positions of the glyphs this offset is subtracted from.
+static inline IntPoint QuantizeOffset(const Matrix& aTransform,
+                                      const IntPoint& aQuantizeScale,
+                                      const GlyphBuffer& aBuffer) {
+  IntPoint offset =
+      RoundedToInt(aTransform.TransformPoint(aBuffer.mGlyphs[0].mPosition));
+  offset.x &= ~(aQuantizeScale.x - 1);
+  offset.y &= ~(aQuantizeScale.y - 1);
+  return offset;
+}
+
 // Hashes a glyph buffer to a single hash value that can be used for quick
 // comparisons. Each glyph position is transformed and quantized before
 // hashing.
 HashNumber GlyphCacheEntry::HashGlyphs(const GlyphBuffer& aBuffer,
-                                       const Matrix& aTransform) {
+                                       const Matrix& aTransform,
+                                       const IntPoint& aQuantizeScale) {
   HashNumber hash = 0;
-  IntPoint offset =
-      TruncatedToInt(aTransform.TransformPoint(aBuffer.mGlyphs[0].mPosition));
+  IntPoint offset = QuantizeOffset(aTransform, aQuantizeScale, aBuffer);
   for (size_t i = 0; i < aBuffer.mNumGlyphs; i++) {
     const Glyph& glyph = aBuffer.mGlyphs[i];
     hash = AddToHash(hash, glyph.mIndex);
@@ -2411,21 +2497,15 @@ HashNumber GlyphCacheEntry::HashGlyphs(const GlyphBuffer& aBuffer,
 }
 
 // Determines if an existing glyph cache entry matches an incoming text run.
-bool GlyphCacheEntry::MatchesGlyphs(const GlyphBuffer& aBuffer,
-                                    const DeviceColor& aColor,
-                                    const Matrix& aTransform,
-                                    const IntRect& aBounds, HashNumber aHash) {
+inline bool GlyphCacheEntry::MatchesGlyphs(
+    const GlyphBuffer& aBuffer, const DeviceColor& aColor,
+    const Matrix& aTransform, const IntPoint& aQuantizeOffset,
+    const IntPoint& aBoundsOffset, const IntRect& aClipRect, HashNumber aHash) {
   // First check if the hash matches to quickly reject the text run before any
-  // more expensive checking. If it matches, then check if the color, transform,
-  // and bounds are the same.
+  // more expensive checking. If it matches, then check if the color and
+  // transform are the same.
   if (aHash != mHash || aBuffer.mNumGlyphs != mBuffer.mNumGlyphs ||
-      aColor != mColor || !HasMatchingScale(aTransform, mTransform) ||
-      aBounds.Size() != mBounds.Size()) {
-    return false;
-  }
-  IntPoint offset =
-      TruncatedToInt(aTransform.TransformPoint(aBuffer.mGlyphs[0].mPosition));
-  if (aBounds.TopLeft() - offset != mBounds.TopLeft()) {
+      aColor != mColor || !HasMatchingScale(aTransform, mTransform)) {
     return false;
   }
   // Finally check if all glyphs and their quantized positions match.
@@ -2433,26 +2513,36 @@ bool GlyphCacheEntry::MatchesGlyphs(const GlyphBuffer& aBuffer,
     const Glyph& dst = mBuffer.mGlyphs[i];
     const Glyph& src = aBuffer.mGlyphs[i];
     if (dst.mIndex != src.mIndex ||
-        dst.mPosition !=
-            Point(QuantizePosition(aTransform, offset, src.mPosition))) {
+        dst.mPosition != Point(QuantizePosition(aTransform, aQuantizeOffset,
+                                                src.mPosition))) {
       return false;
     }
   }
-  return true;
+  // Verify that the full bounds, once translated and clipped, are equal to the
+  // clipped bounds.
+  return (mFullBounds + aBoundsOffset)
+      .Intersect(aClipRect)
+      .IsEqualEdges(GetBounds() + aBoundsOffset);
 }
 
 GlyphCacheEntry::GlyphCacheEntry(const GlyphBuffer& aBuffer,
                                  const DeviceColor& aColor,
                                  const Matrix& aTransform,
-                                 const IntRect& aBounds, HashNumber aHash)
+                                 const IntPoint& aQuantizeScale,
+                                 const IntRect& aBounds,
+                                 const IntRect& aFullBounds, HashNumber aHash)
     : CacheEntryImpl<GlyphCacheEntry>(aTransform, aBounds, aHash),
-      mColor(aColor) {
+      mColor(aColor),
+      mFullBounds(aFullBounds) {
   // Store a copy of the glyph buffer with positions already quantized for fast
   // comparison later.
   Glyph* glyphs = new Glyph[aBuffer.mNumGlyphs];
-  IntPoint offset =
-      TruncatedToInt(aTransform.TransformPoint(aBuffer.mGlyphs[0].mPosition));
-  mBounds -= offset;
+  IntPoint offset = QuantizeOffset(aTransform, aQuantizeScale, aBuffer);
+  // Make the bounds relative to the offset so we can add a new offset later.
+  IntPoint boundsOffset(offset.x / aQuantizeScale.x,
+                        offset.y / aQuantizeScale.y);
+  mBounds -= boundsOffset;
+  mFullBounds -= boundsOffset;
   for (size_t i = 0; i < aBuffer.mNumGlyphs; i++) {
     Glyph& dst = glyphs[i];
     const Glyph& src = aBuffer.mGlyphs[i];
@@ -2465,22 +2555,33 @@ GlyphCacheEntry::GlyphCacheEntry(const GlyphBuffer& aBuffer,
 
 GlyphCacheEntry::~GlyphCacheEntry() { delete[] mBuffer.mGlyphs; }
 
-// Attempt to find a matching entry in the glyph cache. If one isn't found,
-// a new entry will be created. The caller should check whether the contained
-// texture handle is valid to determine if it will need to render the text run
-// or just reuse the cached texture.
-already_AddRefed<GlyphCacheEntry> GlyphCache::FindOrInsertEntry(
+// Attempt to find a matching entry in the glyph cache. The caller should check
+// whether the contained texture handle is valid to determine if it will need to
+// render the text run or just reuse the cached texture.
+already_AddRefed<GlyphCacheEntry> GlyphCache::FindEntry(
     const GlyphBuffer& aBuffer, const DeviceColor& aColor,
-    const Matrix& aTransform, const IntRect& aBounds) {
-  HashNumber hash = GlyphCacheEntry::HashGlyphs(aBuffer, aTransform);
-  for (const RefPtr<GlyphCacheEntry>& entry : mEntries) {
-    if (entry->MatchesGlyphs(aBuffer, aColor, aTransform, aBounds, hash)) {
+    const Matrix& aTransform, const IntPoint& aQuantizeScale,
+    const IntRect& aClipRect, HashNumber aHash) {
+  IntPoint offset = QuantizeOffset(aTransform, aQuantizeScale, aBuffer);
+  IntPoint boundsOffset(offset.x / aQuantizeScale.x,
+                        offset.y / aQuantizeScale.y);
+  for (const RefPtr<GlyphCacheEntry>& entry : GetChain(aHash)) {
+    if (entry->MatchesGlyphs(aBuffer, aColor, aTransform, offset, boundsOffset,
+                             aClipRect, aHash)) {
       return do_AddRef(entry);
     }
   }
-  RefPtr<GlyphCacheEntry> entry =
-      new GlyphCacheEntry(aBuffer, aColor, aTransform, aBounds, hash);
-  mEntries.insertFront(entry);
+  return nullptr;
+}
+
+// Insert a new entry in the glyph cache.
+already_AddRefed<GlyphCacheEntry> GlyphCache::InsertEntry(
+    const GlyphBuffer& aBuffer, const DeviceColor& aColor,
+    const Matrix& aTransform, const IntPoint& aQuantizeScale,
+    const IntRect& aBounds, const IntRect& aFullBounds, HashNumber aHash) {
+  RefPtr<GlyphCacheEntry> entry = new GlyphCacheEntry(
+      aBuffer, aColor, aTransform, aQuantizeScale, aBounds, aFullBounds, aHash);
+  Insert(entry);
   return entry.forget();
 }
 
@@ -2527,31 +2628,12 @@ static bool CheckForColorGlyphs(const RefPtr<SourceSurface>& aSurface) {
   return false;
 }
 
+// Draws glyphs to the WebGL target by trying to generate a cached texture for
+// the text run that can be subsequently reused to quickly render the text run
+// without using any software surfaces.
 bool DrawTargetWebgl::SharedContext::FillGlyphsAccel(
     ScaledFont* aFont, const GlyphBuffer& aBuffer, const Pattern& aPattern,
     const DrawOptions& aOptions, bool aUseSubpixelAA) {
-  // Draws glyphs to the WebGL target by trying to generate a cached texture for
-  // the text run that can be subsequently reused to quickly render the text run
-  // without using any software surfaces.
-  // Get the local bounds of the text run.
-  Maybe<Rect> bounds = mCurrentTarget->mSkia->GetGlyphLocalBounds(
-      aFont, aBuffer, aPattern, nullptr, aOptions);
-  if (!bounds) {
-    return false;
-  }
-
-  // Transform the local bounds into device space so that we know how big
-  // the cached texture will be.
-  const Matrix& currentTransform = GetTransform();
-  Rect xformBounds = currentTransform.TransformBounds(*bounds).Intersect(
-      Rect(IntRect(IntPoint(), mViewportSize)));
-  if (xformBounds.IsEmpty()) {
-    return true;
-  }
-  // Ensure there is a clear border around the text.
-  xformBounds.Inflate(2);
-  IntRect intBounds = RoundedOut(xformBounds);
-
   // Whether the font may use bitmaps. If so, we need to render the glyphs with
   // color as grayscale bitmaps will use the color while color emoji will not,
   // with no easy way to know ahead of time. We currently have to check the
@@ -2560,34 +2642,6 @@ bool DrawTargetWebgl::SharedContext::FillGlyphsAccel(
   // subpixel mask rather than try to interpret it as a normal RGBA result such
   // as for color emoji.
   bool useBitmaps = aFont->MayUseBitmaps();
-
-  // Depending on whether we enable subpixel position for a given font, Skia may
-  // round transformed coordinates differently on each axis. By default, text is
-  // subpixel quantized horizontally and snapped to a whole integer vertical
-  // baseline. Axis-flip transforms instead snap to horizontal boundaries while
-  // subpixel quantizing along the vertical. For other types of transforms, Skia
-  // just applies subpixel quantization to both axes.
-  // We must duplicate the amount of quantization Skia applies carefully as a
-  // boundary value such as 0.49 may round to 0.5 with subpixel quantization,
-  // but if Skia actually snapped it to a whole integer instead, it would round
-  // down to 0. If a subsequent glyph with offset 0.51 came in, we might
-  // mistakenly round it down to 0.5, whereas Skia would round it up to 1. Thus
-  // we would alias 0.49 and 0.51 to the same cache entry, while Skia would
-  // actually snap the offset to 0 or 1, depending, resulting in mismatched
-  // hinting.
-  Matrix quantizeTransform = currentTransform;
-  if (aFont->UseSubpixelPosition()) {
-    if (currentTransform._12 == 0) {
-      // Glyphs are rendered subpixel horizontally, so snap vertically.
-      quantizeTransform.PostScale(4, 1);
-    } else if (currentTransform._11 == 0) {
-      // Glyphs are rendered subpixel vertically, so snap horizontally.
-      quantizeTransform.PostScale(1, 4);
-    } else {
-      // The transform isn't aligned, so don't snap.
-      quantizeTransform.PostScale(4, 4);
-    }
-  }
 
   // Look for an existing glyph cache on the font. If not there, create it.
   GlyphCache* cache =
@@ -2604,8 +2658,9 @@ bool DrawTargetWebgl::SharedContext::FillGlyphsAccel(
   // dark-on-light, we may end up with different amounts of dilation applied, so
   // we can't use the same mask in the two circumstances, or the glyphs will be
   // dilated incorrectly.
-  bool lightOnDark = !useBitmaps && color.r >= 0.33f && color.g >= 0.33f &&
-                     color.b >= 0.33f && color.r + color.g + color.b >= 2.0f;
+  bool lightOnDark =
+      useBitmaps || (color.r >= 0.33f && color.g >= 0.33f && color.b >= 0.33f &&
+                     color.r + color.g + color.b >= 2.0f);
 #else
   // On other platforms, we assume no color-dependent dilation.
   const bool lightOnDark = true;
@@ -2613,15 +2668,60 @@ bool DrawTargetWebgl::SharedContext::FillGlyphsAccel(
   // If the font has bitmaps, use the color directly. Otherwise, the texture
   // will hold a grayscale mask, so encode the key's subpixel and light-or-dark
   // state in the color.
-  RefPtr<GlyphCacheEntry> entry = cache->FindOrInsertEntry(
-      aBuffer,
+  const Matrix& currentTransform = GetTransform();
+  IntPoint quantizeScale = QuantizeScale(aFont, currentTransform);
+  Matrix quantizeTransform = currentTransform;
+  quantizeTransform.PostScale(quantizeScale.x, quantizeScale.y);
+  HashNumber hash =
+      GlyphCacheEntry::HashGlyphs(aBuffer, quantizeTransform, quantizeScale);
+  DeviceColor colorOrMask =
       useBitmaps
           ? color
-          : DeviceColor::Mask(aUseSubpixelAA ? 1 : 0, lightOnDark ? 1 : 0),
-      quantizeTransform, intBounds);
+          : DeviceColor::Mask(aUseSubpixelAA ? 1 : 0, lightOnDark ? 1 : 0);
+  IntRect clipRect(IntPoint(), mViewportSize);
+  RefPtr<GlyphCacheEntry> entry = cache->FindEntry(
+      aBuffer, colorOrMask, quantizeTransform, quantizeScale, clipRect, hash);
   if (!entry) {
-    return false;
+    // For small text runs, bounds computations can be expensive relative to the
+    // cost of looking up a cache result. Avoid doing local bounds computations
+    // until actually inserting the entry into the cache.
+    Maybe<Rect> bounds = mCurrentTarget->mSkia->GetGlyphLocalBounds(
+        aFont, aBuffer, aPattern, nullptr, aOptions);
+    if (!bounds) {
+      return true;
+    }
+    // Transform the local bounds into device space so that we know how big
+    // the cached texture will be.
+    Rect xformBounds = currentTransform.TransformBounds(*bounds);
+    // Check if the transform flattens out the bounds before rounding.
+    if (xformBounds.IsEmpty()) {
+      return true;
+    }
+    IntRect fullBounds = RoundedOut(currentTransform.TransformBounds(*bounds));
+    IntRect clipBounds = fullBounds.Intersect(clipRect);
+    // Check if the bounds are completely clipped out.
+    if (clipBounds.IsEmpty()) {
+      return true;
+    }
+    entry = cache->InsertEntry(aBuffer, colorOrMask, quantizeTransform,
+                               quantizeScale, clipBounds, fullBounds, hash);
+    if (!entry) {
+      return false;
+    }
   }
+
+  // The bounds of the entry may have a different transform offset from the
+  // bounds of the currently drawn text run. The entry bounds are relative to
+  // the entry's quantized offset already, so just move the bounds to the new
+  // offset.
+  IntRect intBounds = entry->GetBounds();
+  IntPoint newOffset =
+      QuantizeOffset(quantizeTransform, quantizeScale, aBuffer);
+  intBounds +=
+      IntPoint(newOffset.x / quantizeScale.x, newOffset.y / quantizeScale.y);
+  // Ensure there is a clear border around the text. This must be applied only
+  // after clipping so that we always have some border texels for filtering.
+  intBounds.Inflate(2);
 
   RefPtr<TextureHandle> handle = entry->GetHandle();
   if (handle && handle->IsValid()) {

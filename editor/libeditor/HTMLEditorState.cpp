@@ -9,12 +9,13 @@
 #include <algorithm>
 #include <utility>
 
+#include "AutoRangeArray.h"
+#include "CSSEditUtils.h"
+#include "EditAction.h"
 #include "HTMLEditUtils.h"
 #include "WSRunObject.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/CSSEditUtils.h"
-#include "mozilla/EditAction.h"
 #include "mozilla/EditorUtils.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/dom/Element.h"
@@ -265,7 +266,7 @@ AlignStateAtSelection::AlignStateAtSelection(HTMLEditor& aHTMLEditor,
   // If selection is collapsed or in a text node, take the container.
   if (aHTMLEditor.SelectionRef().IsCollapsed() ||
       atStartOfSelection.IsInTextNode()) {
-    editTargetContent = atStartOfSelection.GetContainerAsContent();
+    editTargetContent = atStartOfSelection.GetContainerAs<nsIContent>();
     if (NS_WARN_IF(!editTargetContent)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
@@ -512,16 +513,11 @@ ParagraphStateAtSelection::ParagraphStateAtSelection(HTMLEditor& aHTMLEditor,
   if (arrayOfContents.IsEmpty()) {
     const auto atCaret =
         aHTMLEditor.GetFirstSelectionStartPoint<EditorRawDOMPoint>();
-    if (NS_WARN_IF(!atCaret.IsSet())) {
+    if (NS_WARN_IF(!atCaret.IsInContentNode())) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
-    nsIContent* content = atCaret.GetContainerAsContent();
-    if (NS_WARN_IF(!content)) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-    arrayOfContents.AppendElement(*content);
+    arrayOfContents.AppendElement(*atCaret.ContainerAs<nsIContent>());
   }
 
   dom::Element* bodyOrDocumentElement = aHTMLEditor.GetRoot();

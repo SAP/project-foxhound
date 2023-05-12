@@ -179,6 +179,7 @@
 #include "vm/ArgumentsObject.h"
 #include "vm/Compression.h"
 #include "vm/ErrorObject.h"
+#include "vm/ErrorReporting.h"
 #include "vm/HelperThreads.h"
 #include "vm/JSAtom.h"
 #include "vm/JSContext.h"
@@ -619,9 +620,6 @@ JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_DEFAULT_FEATURE,
 #undef WASM_DEFAULT_FEATURE
 #undef WASM_EXPERIMENTAL_FEATURE
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-bool shell::enableWasmSimdWormhole = false;
-#endif
 bool shell::enableWasmVerbose = false;
 bool shell::enableTestWasmAwaitTier2 = false;
 bool shell::enableSourcePragmas = true;
@@ -2517,7 +2515,8 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
       }
     }
 
-    if (!SetSourceOptions(cx, script->scriptSource(), displayURL,
+    MainThreadErrorContext ec(cx);
+    if (!SetSourceOptions(cx, &ec, script->scriptSource(), displayURL,
                           sourceMapURL)) {
       return false;
     }
@@ -3230,72 +3229,6 @@ static bool PCToLine(JSContext* cx, unsigned argc, Value* vp) {
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
 
-[[nodiscard]] static bool SrcNotes(JSContext* cx, HandleScript script,
-                                   Sprinter* sp) {
-  if (!sp->put("\nSource notes:\n") ||
-      !sp->jsprintf("%4s %4s %6s %5s %6s %-10s %s\n", "ofs", "line", "column",
-                    "pc", "delta", "desc", "args") ||
-      !sp->put("---- ---- ------ ----- ------ ---------- ------\n")) {
-    return false;
-  }
-
-  unsigned offset = 0;
-  unsigned lineno = script->lineno();
-  unsigned column = script->column();
-  SrcNote* notes = script->notes();
-  for (SrcNoteIterator iter(notes); !iter.atEnd(); ++iter) {
-    auto sn = *iter;
-
-    unsigned delta = sn->delta();
-    offset += delta;
-    SrcNoteType type = sn->type();
-    const char* name = sn->name();
-    if (!sp->jsprintf("%3u: %4u %6u %5u [%4u] %-10s", unsigned(sn - notes),
-                      lineno, column, offset, delta, name)) {
-      return false;
-    }
-
-    switch (type) {
-      case SrcNoteType::Null:
-      case SrcNoteType::AssignOp:
-      case SrcNoteType::Breakpoint:
-      case SrcNoteType::StepSep:
-      case SrcNoteType::XDelta:
-        break;
-
-      case SrcNoteType::ColSpan: {
-        uint32_t colspan = SrcNote::ColSpan::getSpan(sn);
-        if (!sp->jsprintf(" colspan %u", colspan)) {
-          return false;
-        }
-        column += colspan;
-        break;
-      }
-
-      case SrcNoteType::SetLine:
-        lineno = SrcNote::SetLine::getLine(sn, script->lineno());
-        if (!sp->jsprintf(" lineno %u", lineno)) {
-          return false;
-        }
-        column = 0;
-        break;
-
-      case SrcNoteType::NewLine:
-        ++lineno;
-        column = 0;
-        break;
-
-      default:
-        MOZ_ASSERT_UNREACHABLE("unrecognized srcnote");
-    }
-    if (!sp->put("\n")) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 static bool Notes(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   Sprinter sprinter(cx);
@@ -3309,7 +3242,7 @@ static bool Notes(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    if (!SrcNotes(cx, script, &sprinter)) {
+    if (!JSScript::dumpSrcNotes(cx, script, &sprinter)) {
       return false;
     }
   }
@@ -3322,316 +3255,19 @@ static bool Notes(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static const char* TryNoteName(TryNoteKind kind) {
-  switch (kind) {
-    case TryNoteKind::Catch:
-      return "catch";
-    case TryNoteKind::Finally:
-      return "finally";
-    case TryNoteKind::ForIn:
-      return "for-in";
-    case TryNoteKind::ForOf:
-      return "for-of";
-    case TryNoteKind::Loop:
-      return "loop";
-    case TryNoteKind::ForOfIterClose:
-      return "for-of-iterclose";
-    case TryNoteKind::Destructuring:
-      return "destructuring";
-  }
-
-  MOZ_CRASH("Bad TryNoteKind");
-}
-
-[[nodiscard]] static bool TryNotes(JSContext* cx, HandleScript script,
-                                   Sprinter* sp) {
-  if (!sp->put(
-          "\nException table:\nkind               stack    start      end\n")) {
-    return false;
-  }
-
-  for (const js::TryNote& tn : script->trynotes()) {
-    if (!sp->jsprintf(" %-16s %6u %8u %8u\n", TryNoteName(tn.kind()),
-                      tn.stackDepth, tn.start, tn.start + tn.length)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-[[nodiscard]] static bool ScopeNotes(JSContext* cx, HandleScript script,
-                                     Sprinter* sp) {
-  if (!sp->put("\nScope notes:\n   index   parent    start      end\n")) {
-    return false;
-  }
-
-  for (const ScopeNote& note : script->scopeNotes()) {
-    if (note.index == ScopeNote::NoScopeIndex) {
-      if (!sp->jsprintf("%8s ", "(none)")) {
-        return false;
-      }
-    } else {
-      if (!sp->jsprintf("%8u ", note.index.index)) {
-        return false;
-      }
-    }
-    if (note.parent == ScopeNote::NoScopeIndex) {
-      if (!sp->jsprintf("%8s ", "(none)")) {
-        return false;
-      }
-    } else {
-      if (!sp->jsprintf("%8u ", note.parent)) {
-        return false;
-      }
-    }
-    if (!sp->jsprintf("%8u %8u\n", note.start, note.start + note.length)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-[[nodiscard]] static bool GCThings(JSContext* cx, HandleScript script,
-                                   Sprinter* sp) {
-  if (!sp->put("\nGC things:\n   index   type       value\n")) {
-    return false;
-  }
-
-  size_t i = 0;
-  for (JS::GCCellPtr gcThing : script->gcthings()) {
-    if (!sp->jsprintf("%8zu   ", i)) {
-      return false;
-    }
-    if (gcThing.is<BigInt>()) {
-      if (!sp->put("BigInt     ")) {
-        return false;
-      }
-      gcThing.as<BigInt>().dump(*sp);
-      if (!sp->put("\n")) {
-        return false;
-      }
-    } else if (gcThing.is<Scope>()) {
-      if (!sp->put("Scope      ")) {
-        return false;
-      }
-      Rooted<Scope*> scope(cx, &gcThing.as<Scope>());
-      if (!Scope::dumpForDisassemble(cx, scope, *sp,
-                                     "                      ")) {
-        return false;
-      }
-      if (!sp->put("\n")) {
-        return false;
-      }
-    } else if (gcThing.is<JSObject>()) {
-      JSObject* obj = &gcThing.as<JSObject>();
-      if (obj->is<JSFunction>()) {
-        if (!sp->put("Function   ")) {
-          return false;
-        }
-        RootedFunction fun(cx, &obj->as<JSFunction>());
-        if (fun->displayAtom()) {
-          Rooted<JSAtom*> name(cx, fun->displayAtom());
-          UniqueChars utf8chars = JS_EncodeStringToUTF8(cx, name);
-          if (!utf8chars) {
-            return false;
-          }
-          if (!sp->put(utf8chars.get())) {
-            return false;
-          }
-        } else {
-          if (!sp->put("(anonymous)")) {
-            return false;
-          }
-        }
-
-        if (fun->hasBaseScript()) {
-          BaseScript* script = fun->baseScript();
-          if (!sp->jsprintf(" @ %u:%u\n", script->lineno(), script->column())) {
-            return false;
-          }
-        } else {
-          if (!sp->put(" (no script)\n")) {
-            return false;
-          }
-        }
-      } else {
-        if (obj->is<RegExpObject>()) {
-          if (!sp->put("RegExp     ")) {
-            return false;
-          }
-        } else {
-          if (!sp->put("Object     ")) {
-            return false;
-          }
-        }
-
-        RootedValue objValue(cx, ObjectValue(*obj));
-        RootedString str(cx, ValueToSource(cx, objValue));
-        if (!str) {
-          return false;
-        }
-        UniqueChars utf8chars = JS_EncodeStringToUTF8(cx, str);
-        if (!utf8chars) {
-          return false;
-        }
-        if (!sp->put(utf8chars.get())) {
-          return false;
-        }
-
-        if (!sp->put("\n")) {
-          return false;
-        }
-      }
-    } else if (gcThing.is<JSString>()) {
-      RootedString str(cx, &gcThing.as<JSString>());
-      if (str->isAtom()) {
-        if (!sp->put("Atom       ")) {
-          return false;
-        }
-      } else {
-        if (!sp->put("String     ")) {
-          return false;
-        }
-      }
-      UniqueChars chars = QuoteString(cx, str, '"');
-      if (!chars) {
-        return false;
-      }
-      if (!sp->put(chars.get())) {
-        return false;
-      }
-      if (!sp->put("\n")) {
-        return false;
-      }
-    } else {
-      if (!sp->put("Unknown\n")) {
-        return false;
-      }
-    }
-    i++;
-  }
-
-  return true;
-}
-
-[[nodiscard]] static bool DisassembleScript(JSContext* cx, HandleScript script,
-                                            HandleFunction fun, bool lines,
-                                            bool recursive, bool sourceNotes,
-                                            bool gcThings, Sprinter* sp) {
-  if (fun) {
-    if (!sp->put("flags:")) {
-      return false;
-    }
-    if (fun->isLambda()) {
-      if (!sp->put(" LAMBDA")) {
-        return false;
-      }
-    }
-    if (fun->needsCallObject()) {
-      if (!sp->put(" NEEDS_CALLOBJECT")) {
-        return false;
-      }
-    }
-    if (fun->needsExtraBodyVarEnvironment()) {
-      if (!sp->put(" NEEDS_EXTRABODYVARENV")) {
-        return false;
-      }
-    }
-    if (fun->needsNamedLambdaEnvironment()) {
-      if (!sp->put(" NEEDS_NAMEDLAMBDAENV")) {
-        return false;
-      }
-    }
-    if (fun->isConstructor()) {
-      if (!sp->put(" CONSTRUCTOR")) {
-        return false;
-      }
-    }
-    if (fun->isSelfHostedBuiltin()) {
-      if (!sp->put(" SELF_HOSTED")) {
-        return false;
-      }
-    }
-    if (fun->isArrow()) {
-      if (!sp->put(" ARROW")) {
-        return false;
-      }
-    }
-    if (!sp->put("\n")) {
-      return false;
-    }
-  }
-
-  if (!Disassemble(cx, script, lines, sp)) {
-    return false;
-  }
-  if (sourceNotes) {
-    if (!SrcNotes(cx, script, sp)) {
-      return false;
-    }
-  }
-  if (!TryNotes(cx, script, sp)) {
-    return false;
-  }
-  if (!ScopeNotes(cx, script, sp)) {
-    return false;
-  }
-  if (gcThings) {
-    if (!GCThings(cx, script, sp)) {
-      return false;
-    }
-  }
-
-  if (recursive) {
-    for (JS::GCCellPtr gcThing : script->gcthings()) {
-      if (!gcThing.is<JSObject>()) {
-        continue;
-      }
-
-      JSObject* obj = &gcThing.as<JSObject>();
-      if (obj->is<JSFunction>()) {
-        if (!sp->put("\n")) {
-          return false;
-        }
-
-        RootedFunction fun(cx, &obj->as<JSFunction>());
-        if (fun->isInterpreted()) {
-          RootedScript script(cx, JSFunction::getOrCreateScript(cx, fun));
-          if (!script || !DisassembleScript(cx, script, fun, lines, recursive,
-                                            sourceNotes, gcThings, sp)) {
-            return false;
-          }
-        } else {
-          if (!sp->put("[native code]\n")) {
-            return false;
-          }
-        }
-      }
-    }
-  }
-
-  return true;
-}
-
 namespace {
 
 struct DisassembleOptionParser {
   unsigned argc;
   Value* argv;
-  bool lines;
-  bool recursive;
-  bool sourceNotes;
-  bool gcThings;
+  JSScript::DumpOptions options;
 
   DisassembleOptionParser(unsigned argc, Value* argv)
-      : argc(argc),
-        argv(argv),
-        lines(false),
-        recursive(false),
-        sourceNotes(true),
-        gcThings(false) {}
+      : argc(argc), argv(argv) {}
 
   bool parse(JSContext* cx) {
+    options.recursive = false;
+
     /* Read options off early arguments */
     while (argc > 0 && argv[0].isString()) {
       JSString* str = argv[0].toString();
@@ -3639,14 +3275,8 @@ struct DisassembleOptionParser {
       if (!linearStr) {
         return false;
       }
-      if (JS_LinearStringEqualsLiteral(linearStr, "-l")) {
-        lines = true;
-      } else if (JS_LinearStringEqualsLiteral(linearStr, "-r")) {
-        recursive = true;
-      } else if (JS_LinearStringEqualsLiteral(linearStr, "-S")) {
-        sourceNotes = false;
-      } else if (JS_LinearStringEqualsLiteral(linearStr, "-g")) {
-        gcThings = true;
+      if (JS_LinearStringEqualsLiteral(linearStr, "-r")) {
+        options.recursive = true;
       } else {
         break;
       }
@@ -3672,22 +3302,8 @@ static bool DisassembleToSprinter(JSContext* cx, unsigned argc, Value* vp,
     RootedScript script(cx, GetTopScript(cx));
     if (script) {
       JSAutoRealm ar(cx, script);
-      if (!Disassemble(cx, script, p.lines, sprinter)) {
+      if (!JSScript::dump(cx, script, p.options, sprinter)) {
         return false;
-      }
-      if (!SrcNotes(cx, script, sprinter)) {
-        return false;
-      }
-      if (!TryNotes(cx, script, sprinter)) {
-        return false;
-      }
-      if (!ScopeNotes(cx, script, sprinter)) {
-        return false;
-      }
-      if (p.gcThings) {
-        if (!GCThings(cx, script, sprinter)) {
-          return false;
-        }
       }
     }
   } else {
@@ -3706,8 +3322,8 @@ static bool DisassembleToSprinter(JSContext* cx, unsigned argc, Value* vp,
       if (!script) {
         return false;
       }
-      if (!DisassembleScript(cx, script, fun, p.lines, p.recursive,
-                             p.sourceNotes, p.gcThings, sprinter)) {
+
+      if (!JSScript::dump(cx, script, p.options, sprinter)) {
         return false;
       }
     }
@@ -3804,8 +3420,7 @@ static bool DisassFile(JSContext* cx, unsigned argc, Value* vp) {
   if (!sprinter.init()) {
     return false;
   }
-  if (!DisassembleScript(cx, script, nullptr, p.lines, p.recursive,
-                         p.sourceNotes, p.gcThings, &sprinter)) {
+  if (JSScript::dump(cx, script, p.options, &sprinter)) {
     return false;
   }
 
@@ -4317,6 +3932,9 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
       .setShadowRealmsEnabled(enableShadowRealms)
 #ifdef NIGHTLY_BUILD
       .setArrayGroupingEnabled(enableArrayGrouping)
+#endif
+#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
+      .setChangeArrayByCopyEnabled(enableChangeArrayByCopy)
 #endif
 #ifdef ENABLE_NEW_SET_METHODS
       .setNewSetMethodsEnabled(enableNewSetMethods)
@@ -5382,7 +5000,10 @@ static bool ParseModule(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedObject module(cx, frontend::CompileModule(cx, options, srcBuf));
+  MainThreadErrorContext ec(cx);
+  RootedObject module(
+      cx, frontend::CompileModule(cx, &ec, cx->stackLimitForCurrentPrincipal(),
+                                  options, srcBuf));
   if (!module) {
     return false;
   }
@@ -5508,9 +5129,10 @@ static bool InstantiateModuleStencil(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Prepare the CompilationStencil for decoding. */
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForModule(cx)) {
+  if (!input.get().initForModule(cx, &ec)) {
     return false;
   }
 
@@ -5566,9 +5188,10 @@ static bool InstantiateModuleStencilXDR(JSContext* cx, uint32_t argc,
   }
 
   /* Prepare the CompilationStencil for decoding. */
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForModule(cx)) {
+  if (!input.get().initForModule(cx, &ec)) {
     return false;
   }
   frontend::CompilationStencil stencil(nullptr);
@@ -5651,6 +5274,14 @@ static bool RegisterModule(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
   args.rval().setObject(*wrapper);
+  return true;
+}
+
+static bool ClearModules(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  ShellContext* sc = GetShellContext(cx);
+  sc->moduleLoader->clearModules(cx);
+  args.rval().setUndefined();
   return true;
 }
 
@@ -5825,10 +5456,11 @@ static bool DumpAST(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
                     js::frontend::ParseGoal goal) {
   using namespace js::frontend;
 
-  Parser<FullParseHandler, Unit> parser(cx, options, units, length,
-                                        /* foldConstants = */ false,
-                                        compilationState,
-                                        /* syntaxParser = */ nullptr);
+  MainThreadErrorContext ec(cx);
+  Parser<FullParseHandler, Unit> parser(
+      cx, &ec, cx->stackLimitForCurrentPrincipal(), options, units, length,
+      /* foldConstants = */ false, compilationState,
+      /* syntaxParser = */ nullptr);
   if (!parser.checkOptions()) {
     return false;
   }
@@ -5836,7 +5468,7 @@ static bool DumpAST(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
   // Emplace the top-level stencil.
   MOZ_ASSERT(compilationState.scriptData.length() ==
              CompilationStencil::TopLevelIndex);
-  if (!compilationState.appendScriptStencilAndData(cx)) {
+  if (!compilationState.appendScriptStencilAndData(&ec)) {
     return false;
   }
 
@@ -5847,7 +5479,7 @@ static bool DumpAST(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     ModuleBuilder builder(cx, &parser);
 
     SourceExtent extent = SourceExtent::makeGlobalExtent(length);
-    ModuleSharedContext modulesc(cx, options, builder, extent);
+    ModuleSharedContext modulesc(cx, &ec, options, builder, extent);
     pn = parser.moduleBody(&modulesc);
   }
 
@@ -5876,12 +5508,15 @@ template <typename Unit>
     return false;
   }
 
+  MainThreadErrorContext ec(cx);
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (goal == frontend::ParseGoal::Script) {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-        cx, input.get(), srcBuf, ScopeKind::Global);
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf,
+        ScopeKind::Global);
   } else {
-    stencil = frontend::ParseModuleToExtensibleStencil(cx, input.get(), srcBuf);
+    stencil = frontend::ParseModuleToExtensibleStencil(
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf);
   }
 
   if (!stencil) {
@@ -6044,11 +5679,13 @@ static bool FrontendTest(JSContext* cx, unsigned argc, Value* vp,
             return false;
           }
 
+          MainThreadErrorContext ec(cx);
           Rooted<frontend::CompilationInput> input(
               cx, frontend::CompilationInput(options));
           UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
           if (!Smoosh::tryCompileGlobalScriptToExtensibleStencil(
-                  cx, input.get(), srcBuf, stencil)) {
+                  cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(),
+                  srcBuf, stencil)) {
             return false;
           }
           if (!stencil) {
@@ -6094,21 +5731,22 @@ static bool FrontendTest(JSContext* cx, unsigned argc, Value* vp,
     return true;
   }
 
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
   if (goal == frontend::ParseGoal::Script) {
-    if (!input.get().initForGlobal(cx)) {
+    if (!input.get().initForGlobal(cx, &ec)) {
       return false;
     }
   } else {
-    if (!input.get().initForModule(cx)) {
+    if (!input.get().initForModule(cx, &ec)) {
       return false;
     }
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   frontend::CompilationState compilationState(cx, allocScope, input.get());
-  if (!compilationState.init(cx)) {
+  if (!compilationState.init(cx, &ec)) {
     return false;
   }
 
@@ -6175,20 +5813,21 @@ static bool SyntaxParse(JSContext* cx, unsigned argc, Value* vp) {
   const char16_t* chars = stableChars.twoByteRange().begin().get();
   size_t length = scriptContents->length();
 
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx)) {
+  if (!input.get().initForGlobal(cx, &ec)) {
     return false;
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   frontend::CompilationState compilationState(cx, allocScope, input.get());
-  if (!compilationState.init(cx)) {
+  if (!compilationState.init(cx, &ec)) {
     return false;
   }
 
   Parser<frontend::SyntaxParseHandler, char16_t> parser(
-      cx, options, chars, length,
+      cx, &ec, cx->stackLimitForCurrentPrincipal(), options, chars, length,
       /* foldConstants = */ false, compilationState,
       /* syntaxParser = */ nullptr);
   if (!parser.checkOptions()) {
@@ -7493,6 +7132,8 @@ static void SingleStepCallback(void* arg, jit::Simulator* sim, void* pc) {
     JS::ProfilingFrameIterator::Frame frames[16];
     uint32_t nframes = i.extractStack(frames, 0, 16);
     for (uint32_t i = 0; i < nframes; i++) {
+      // Assert endStackAddress never exceeds sp (bug 1782188).
+      MOZ_ASSERT(frames[i].endStackAddress >= state.sp);
       if (frameNo > 0) {
         if (!stack.append(",", 1)) {
           oomUnsafe.crash("stack.append");
@@ -8483,6 +8124,8 @@ static bool GetMarks(JSContext* cx, unsigned argc, Value* vp) {
     JSObject* obj = observers->get()[i];
     if (!obj) {
       color = "dead";
+    } else if (obj->zone()->isGCPreparing()) {
+      color = "unmarked";
     } else {
       gc::TenuredCell* cell = &obj->asTenured();
       if (cell->isMarkedGray()) {
@@ -8864,9 +8507,7 @@ static bool WasmLoop(JSContext* cx, unsigned argc, Value* vp) {
 
     Rooted<TypedArrayObject*> typedArray(cx, &ret->as<TypedArrayObject>());
     Rooted<WasmInstanceObject*> instanceObj(cx);
-    // No additional compile options here, we don't need them for this use case.
-    RootedValue maybeOptions(cx);
-    if (!wasm::Eval(cx, typedArray, importObj, maybeOptions, &instanceObj)) {
+    if (!wasm::Eval(cx, typedArray, importObj, &instanceObj)) {
       // Clear any pending exceptions, we don't care about them
       cx->clearPendingException();
     }
@@ -9467,6 +9108,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "registerModule(specifier, module)",
 "  Register a module with the module loader, so that subsequent import from\n"
 "  |specifier| will resolve to |module|.  Returns |module|."),
+
+    JS_FN_HELP("clearModules", ClearModules, 0, 0,
+"clearModules()",
+"  Clear knowledge of all loaded modules."),
 
     JS_FN_HELP("moduleLink", ModuleLink, 1, 0,
 "moduleLink(moduleOjbect)",
@@ -11132,21 +10777,12 @@ static bool SetContextOptions(JSContext* cx, const OptionParser& op) {
                strcmp(str, "baseline+optimized") == 0) {
       MOZ_ASSERT(enableWasmBaseline);
       MOZ_ASSERT(enableWasmOptimizing);
-#ifdef ENABLE_WASM_CRANELIFT
-    } else if (strcmp(str, "cranelift") == 0) {
-      enableWasmBaseline = false;
-      enableWasmOptimizing = true;
-    } else if (strcmp(str, "baseline+cranelift") == 0) {
-      MOZ_ASSERT(enableWasmBaseline);
-      enableWasmOptimizing = true;
-#else
     } else if (strcmp(str, "ion") == 0) {
       enableWasmBaseline = false;
       enableWasmOptimizing = true;
     } else if (strcmp(str, "baseline+ion") == 0) {
       MOZ_ASSERT(enableWasmBaseline);
       enableWasmOptimizing = true;
-#endif
     } else {
       return OptionFailure("wasm-compiler", str);
     }
@@ -11163,9 +10799,6 @@ static bool SetContextOptions(JSContext* cx, const OptionParser& op) {
 #undef WASM_DEFAULT_FEATURE
 #undef WASM_EXPERIMENTAL_FEATURE
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  enableWasmSimdWormhole = op.getBoolOption("wasm-simd-wormhole");
-#endif
   enableWasmVerbose = op.getBoolOption("wasm-verbose");
   enableTestWasmAwaitTier2 = op.getBoolOption("test-wasm-await-tier2");
   enableSourcePragmas = !op.getBoolOption("no-source-pragmas");
@@ -11196,32 +10829,17 @@ static bool SetContextOptions(JSContext* cx, const OptionParser& op) {
       .setWasm(enableWasm)
       .setWasmForTrustedPrinciples(enableWasm)
       .setWasmBaseline(enableWasmBaseline)
-#if defined(ENABLE_WASM_CRANELIFT)
-      .setWasmCranelift(enableWasmOptimizing)
-      .setWasmIon(false)
-#else
-      .setWasmCranelift(false)
       .setWasmIon(enableWasmOptimizing)
-#endif
 
 #define WASM_FEATURE(NAME, ...) .setWasm##NAME(enableWasm##NAME)
           JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 #undef WASM_FEATURE
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-      .setWasmSimdWormhole(enableWasmSimdWormhole)
-#endif
       .setWasmVerbose(enableWasmVerbose)
       .setTestWasmAwaitTier2(enableTestWasmAwaitTier2)
       .setSourcePragmas(enableSourcePragmas)
       .setAsyncStack(enableAsyncStacks)
       .setAsyncStackCaptureDebuggeeOnly(enableAsyncStackCaptureDebuggeeOnly)
-#ifdef NIGHTLY_BUILD
-      .setArrayGrouping(enableArrayGrouping)
-#endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-      .setChangeArrayByCopy(enableChangeArrayByCopy)
-#endif
       .setImportAssertions(enableImportAssertions);
 
   JS::SetUseFdlibmForSinCosTan(useFdlibmForSinCosTan);
@@ -11442,22 +11060,6 @@ static bool SetContextOptions(JSContext* cx, const OptionParser& op) {
     jit::JitOptions.baselineJit = false;
   }
 
-  if (op.getBoolOption("no-warp-async")) {
-    jit::JitOptions.warpAsync = false;
-  }
-
-  if (op.getBoolOption("no-warp-generator")) {
-    jit::JitOptions.warpGenerator = false;
-  }
-
-  if (op.getBoolOption("warp-async")) {
-    jit::JitOptions.warpAsync = true;
-  }
-
-  if (op.getBoolOption("warp-generator")) {
-    jit::JitOptions.warpGenerator = true;
-  }
-
   if (op.getBoolOption("no-ion")) {
     jit::JitOptions.ion = false;
   }
@@ -11606,20 +11208,11 @@ static void SetWorkerContextOptions(JSContext* cx) {
       .setAsmJS(enableAsmJS)
       .setWasm(enableWasm)
       .setWasmBaseline(enableWasmBaseline)
-#if defined(ENABLE_WASM_CRANELIFT)
-      .setWasmCranelift(enableWasmOptimizing)
-      .setWasmIon(false)
-#else
-      .setWasmCranelift(false)
       .setWasmIon(enableWasmOptimizing)
-#endif
 #define WASM_FEATURE(NAME, ...) .setWasm##NAME(enableWasm##NAME)
           JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 #undef WASM_FEATURE
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-      .setWasmSimdWormhole(enableWasmSimdWormhole)
-#endif
       .setWasmVerbose(enableWasmVerbose)
       .setTestWasmAwaitTier2(enableTestWasmAwaitTier2)
       .setSourcePragmas(enableSourcePragmas);
@@ -12141,13 +11734,8 @@ int main(int argc, char** argv) {
       !op.addStringOption(
           '\0', "wasm-compiler", "[option]",
           "Choose to enable a subset of the wasm compilers, valid options are "
-          "'none', 'baseline', 'ion', 'cranelift', 'optimizing', "
-          "'baseline+ion', "
-          "'baseline+cranelift', 'baseline+optimizing'. Choosing 'ion' when "
-          "Ion is "
-          "not available or 'cranelift' when Cranelift is not available will "
-          "fail; "
-          "use 'optimizing' for cross-compiler compatibility.") ||
+          "'none', 'baseline', 'ion', 'optimizing', "
+          "'baseline+ion', 'baseline+optimizing'.") ||
       !op.addBoolOption('\0', "wasm-verbose",
                         "Enable WebAssembly verbose logging") ||
       !op.addBoolOption('\0', "disable-wasm-huge-memory",
@@ -12173,14 +11761,8 @@ int main(int argc, char** argv) {
 #undef WASM_DEFAULT_FEATURE
 #undef WASM_TENTATIVE_FEATURE
 #undef WASM_EXPERIMENTAL_FEATURE
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-          !op.addBoolOption('\0', "wasm-simd-wormhole",
-                            "Enable wasm SIMD wormhole (UTSL)") ||
-#else
-          !op.addBoolOption('\0', "wasm-simd-wormhole", "No-op") ||
-#endif
-      !op.addBoolOption('\0', "no-native-regexp",
-                        "Disable native regexp compilation") ||
+          !op.addBoolOption('\0', "no-native-regexp",
+                            "Disable native regexp compilation") ||
       !op.addIntOption(
           '\0', "regexp-warmup-threshold", "COUNT",
           "Wait for COUNT invocations before compiling regexps to native code "
@@ -12327,13 +11909,6 @@ int main(int argc, char** argv) {
       !op.addBoolOption('\0', "baseline",
                         "Enable baseline compiler (default)") ||
       !op.addBoolOption('\0', "no-baseline", "Disable baseline compiler") ||
-      !op.addBoolOption('\0', "no-warp-async",
-                        "Don't Warp compile Async Functions") ||
-      !op.addBoolOption('\0', "no-warp-generator",
-                        "Warp compile Generator Functions") ||
-      !op.addBoolOption('\0', "warp-async", "Warp compile Async Functions") ||
-      !op.addBoolOption('\0', "warp-generator",
-                        "Don't Warp compile Generator Functions") ||
       !op.addBoolOption('\0', "baseline-eager",
                         "Always baseline-compile methods") ||
       !op.addIntOption(
@@ -12910,10 +12485,9 @@ int main(int argc, char** argv) {
                            WASM_EXPERIMENTAL_FEATURE)
 #  undef WASM_DEFAULT_FEATURE
 #  undef WASM_EXPERIMENTAL_FEATURE
-      // Feature selection options
-      "--wasm-simd-wormhole",
       // Compiler selection options
-      "--test-wasm-await-tier2", NULL};
+      "--test-wasm-await-tier2",
+      NULL};
   for (const char** p = &to_propagate[0]; *p; p++) {
     if (op.getBoolOption(&(*p)[2] /* 2 => skip the leading '--' */)) {
       if (!sCompilerProcessFlags.append(*p)) {
@@ -12936,9 +12510,8 @@ int main(int argc, char** argv) {
     static char buf[n_avail];
     // `n_needed` depends on the compiler name specified.  However, it can't
     // be arbitrarily long, since previous flag-checking should have limited
-    // it to a set of known possibilities: "baseline", "ion", "cranelift",
-    // "baseline+ion", "baseline+cranelift", etc.  Still, assert this for
-    // safety.
+    // it to a set of known possibilities: "baseline", "ion",
+    // "baseline+ion",  Still, assert this for safety.
     MOZ_RELEASE_ASSERT(n_needed < n_avail);
     memset(buf, 0, sizeof(buf));
     SprintfBuf(buf, n_avail, "--%s=%s", "wasm-compiler", wasm_compiler);

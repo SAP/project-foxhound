@@ -9,8 +9,11 @@
 
 #include "mozilla/dom/Blob.h"
 #include "mozilla/dom/ClipboardBinding.h"
+#include "mozilla/MozPromise.h"
 
 #include "nsWrapperCache.h"
+
+class nsITransferable;
 
 namespace mozilla::dom {
 
@@ -21,16 +24,53 @@ class Promise;
 
 class ClipboardItem final : public nsWrapperCache {
  public:
-  struct ItemEntry {
+  class ItemEntry final {
+   public:
+    NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ItemEntry)
+    NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ItemEntry)
+
+    ItemEntry(const nsAString& aType, const nsACString& aFormat);
+    ItemEntry(const nsAString& aType, const nsACString& aFormat,
+              OwningStringOrBlob&& aData)
+        : ItemEntry(aType, aFormat) {
+      mData = std::move(aData);
+    }
+    ItemEntry(const nsAString& aType, const nsACString& aFormat,
+              const OwningStringOrBlob& aData)
+        : ItemEntry(aType, aFormat) {
+      mData = aData;
+    }
+
+    const nsString& Type() const { return mType; }
+    const nsCString& Format() const { return mFormat; }
+    const OwningStringOrBlob& Data() const { return mData; }
+
+    void SetData(already_AddRefed<Blob>&& aBlob);
+    void LoadData(nsIGlobalObject& aGlobal, nsITransferable& aTransferable);
+    // If clipboard data is in the process of loading from system clipboard, add
+    // `aPromise` to the pending list which will be resolved/rejected later when
+    // process is finished. Otherwise, resolve/reject `aPromise` based on
+    // `mData`.
+    void ReactPromise(nsIGlobalObject& aGlobal, Promise& aPromise);
+
+   private:
+    ~ItemEntry() { mLoadingPromise.DisconnectIfExists(); }
+
+    void ResolvePendingGetTypePromises(Blob& aBlob);
+    void RejectPendingGetTypePromises(nsresult rv);
+
     nsString mType;
+    nsCString mFormat;
     OwningStringOrBlob mData;
+    MozPromiseRequestHolder<GenericPromise> mLoadingPromise;
+    nsTArray<RefPtr<Promise>> mPendingGetTypeRequests;
   };
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ClipboardItem)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(ClipboardItem)
+  NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(ClipboardItem)
 
   ClipboardItem(nsISupports* aOwner, dom::PresentationStyle aPresentationStyle,
-                nsTArray<ItemEntry>&& aItems);
+                nsTArray<RefPtr<ItemEntry>>&& aItems);
 
   static already_AddRefed<ClipboardItem> Constructor(
       const GlobalObject& aGlobal,
@@ -49,14 +89,14 @@ class ClipboardItem final : public nsWrapperCache {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  const nsTArray<ItemEntry>& Entries() const { return mItems; }
+  const nsTArray<RefPtr<ItemEntry>>& Entries() const { return mItems; }
 
  private:
   ~ClipboardItem() = default;
 
   nsCOMPtr<nsISupports> mOwner;
   dom::PresentationStyle mPresentationStyle;
-  nsTArray<ItemEntry> mItems;
+  nsTArray<RefPtr<ItemEntry>> mItems;
 };
 
 }  // namespace mozilla::dom

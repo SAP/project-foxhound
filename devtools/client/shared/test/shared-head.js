@@ -284,7 +284,7 @@ async function safeCloseBrowserConsole({ clearOutput = false } = {}) {
     if (ui.outputNode.querySelector(".object-inspector")) {
       promises.push(ui.once("fronts-released"));
     }
-    ui.clearOutput(true);
+    await ui.clearOutput(true);
     await Promise.all(promises);
     info("Browser console cleared");
   }
@@ -322,6 +322,7 @@ async function safeCloseBrowserConsole({ clearOutput = false } = {}) {
  * we listen to this message to cleanup the observer.
  */
 function highlighterTestActorBootstrap() {
+  /* eslint-env mozilla/process-script */
   const HIGHLIGHTER_TEST_ACTOR_URL =
     "chrome://mochitests/content/browser/devtools/client/shared/test/highlighter-test-actor.js";
 
@@ -787,16 +788,10 @@ function _watchForPanelReload(toolbox, toolId) {
       info("Waiting for inspector updates after page reload");
       await onReloaded;
     };
-  } else if (toolId == "netmonitor") {
+  } else if (["netmonitor", "accessibility", "webconsole"].includes(toolId)) {
     const onReloaded = panel.once("reloaded");
     return async function() {
-      info("Waiting for netmonitor updates after page reload");
-      await onReloaded;
-    };
-  } else if (toolId == "accessibility") {
-    const onReloaded = panel.once("reloaded");
-    return async function() {
-      info("Waiting for accessibility updates after page reload");
+      info(`Waiting for ${toolId} updates after page reload`);
       await onReloaded;
     };
   }
@@ -1521,8 +1516,13 @@ function colorAt(image, x, y) {
 let allDownloads = [];
 /**
  * Returns a Promise that resolves when a new screenshot is available in the download folder.
+ *
+ * @param {Object} [options]
+ * @param {Boolean} options.isWindowPrivate: Set to true if the window from which the screenshot
+ *                  is taken is a private window. This will ensure that we check that the
+ *                  screenshot appears in the private window, not the non-private one (See Bug 1783373)
  */
-async function waitUntilScreenshot() {
+async function waitUntilScreenshot({ isWindowPrivate = false } = {}) {
   const { Downloads } = require("resource://gre/modules/Downloads.jsm");
   const list = await Downloads.getList(Downloads.ALL);
 
@@ -1533,6 +1533,14 @@ async function waitUntilScreenshot() {
         if (allDownloads.includes(download)) {
           return;
         }
+
+        is(
+          !!download.source.isPrivate,
+          isWindowPrivate,
+          `The download occured in the expected${
+            isWindowPrivate ? " private" : ""
+          } window`
+        );
 
         allDownloads.push(download);
         resolve(download.target.path);
@@ -1550,10 +1558,10 @@ async function waitUntilScreenshot() {
 async function resetDownloads() {
   info("Reset downloads");
   const { Downloads } = require("resource://gre/modules/Downloads.jsm");
-  const publicList = await Downloads.getList(Downloads.PUBLIC);
-  const downloads = await publicList.getAll();
+  const downloadList = await Downloads.getList(Downloads.ALL);
+  const downloads = await downloadList.getAll();
   for (const download of downloads) {
-    publicList.remove(download);
+    downloadList.remove(download);
     await download.finalize(true);
   }
   allDownloads = [];

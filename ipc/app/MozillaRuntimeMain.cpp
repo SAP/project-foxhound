@@ -7,6 +7,8 @@
 #include "../contentproc/plugin-container.cpp"
 
 #include "mozilla/Bootstrap.h"
+#include "mozilla/RuntimeExceptionModule.h"
+#include "mozilla/ScopeExit.h"
 #if defined(XP_WIN)
 #  include "mozilla/WindowsDllBlocklist.h"
 #  include "mozilla/GeckoArgs.h"
@@ -66,6 +68,19 @@ int main(int argc, char* argv[]) {
   if (UseForkServer(argc, argv)) {
     ret = RunForkServer(std::move(bootstrap), argc, argv);
   } else {
+    // Set the process type. We don't remove the arg here as that will be done
+    // later in common code.
+    SetGeckoProcessType(argv[argc - 1]);
+
+    // Register an external module to report on otherwise uncatchable
+    // exceptions. Note that in child processes this must be called after Gecko
+    // process type has been set.
+    CrashReporter::RegisterRuntimeExceptionModule();
+
+    // Make sure we unregister the runtime exception module before returning.
+    auto unregisterRuntimeExceptionModule = MakeScopeExit(
+        [] { CrashReporter::UnregisterRuntimeExceptionModule(); });
+
 #ifdef HAS_DLL_BLOCKLIST
     uint32_t initFlags = eDllBlocklistInitFlagIsChildProcess;
 #  if defined(MOZ_SANDBOX)

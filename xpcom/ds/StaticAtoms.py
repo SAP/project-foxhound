@@ -1003,6 +1003,7 @@ STATIC_ATOMS = [
     Atom("popupgroup", "popupgroup"),
     Atom("popupset", "popupset"),
     Atom("popupsinherittooltip", "popupsinherittooltip"),
+    Atom("portal", "portal"),
     Atom("position", "position"),
     Atom("poster", "poster"),
     Atom("pre", "pre"),
@@ -1121,6 +1122,7 @@ STATIC_ATOMS = [
     Atom("selected", "selected"),
     Atom("selectedIndex", "selectedIndex"),
     Atom("selectedindex", "selectedindex"),
+    Atom("selectmenu", "selectmenu"),
     Atom("self", "self"),
     Atom("seltype", "seltype"),
     Atom("setcookie", "set-cookie"),
@@ -1978,6 +1980,7 @@ STATIC_ATOMS = [
     Atom("proxy", "proxy"),
     Atom("privateBrowsingAllowedPermission", "internal:privateBrowsingAllowed"),
     Atom("svgContextPropertiesAllowedPermission", "internal:svgContextPropertiesAllowed"),
+    Atom("theme", "theme"),
     # CSS Counter Styles
     Atom("decimal_leading_zero", "decimal-leading-zero"),
     Atom("arabic_indic", "arabic-indic"),
@@ -2254,6 +2257,7 @@ STATIC_ATOMS = [
     Atom("_moz_content_prefers_color_scheme", "-moz-content-prefers-color-scheme"),
     Atom("_moz_content_preferred_color_scheme", "-moz-content-preferred-color-scheme"),
     Atom("_moz_system_dark_theme", "-moz-system-dark-theme"),
+    Atom("_moz_box_flexbox_emulation", "-moz-box-flexbox-emulation"),
     # application commands
     Atom("Back", "Back"),
     Atom("Forward", "Forward"),

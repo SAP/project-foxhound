@@ -106,9 +106,6 @@ with Files("DelayNode.webidl"):
 with Files("DynamicsCompressorNode.webidl"):
     BUG_COMPONENT = ("Core", "Web Audio")
 
-with Files("FakePluginTagInit.webidl"):
-    BUG_COMPONENT = ("Core", "Plug-ins")
-
 with Files("FeaturePolicy.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Security")
 
@@ -571,6 +568,7 @@ WEBIDL_FILES = [
     "GamepadPose.webidl",
     "GamepadServiceTest.webidl",
     "GamepadTouch.webidl",
+    "GenericTransformStream.webidl",
     "Geolocation.webidl",
     "GeolocationCoordinates.webidl",
     "GeolocationPosition.webidl",
@@ -946,7 +944,9 @@ WEBIDL_FILES = [
     "Text.webidl",
     "TextClause.webidl",
     "TextDecoder.webidl",
+    "TextDecoderStream.webidl",
     "TextEncoder.webidl",
+    "TextEncoderStream.webidl",
     "TextTrack.webidl",
     "TextTrackCue.webidl",
     "TextTrackCueList.webidl",
@@ -1098,6 +1098,7 @@ WEBIDL_FILES += [
     "ExtensionMockAPI.webidl",
     "ExtensionPort.webidl",
     "ExtensionRuntime.webidl",
+    "ExtensionScripting.webidl",
     "ExtensionTest.webidl",
 ]
 

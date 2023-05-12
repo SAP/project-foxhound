@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals log */
-
 "use strict";
 
 const { XPCOMUtils } = ChromeUtils.importESModule(
@@ -532,7 +530,7 @@ var Policies = {
       }
 
       if (param.ExpireAtSessionEnd != undefined) {
-        log.error(
+        lazy.log.error(
           "'ExpireAtSessionEnd' has been deprecated and it has no effect anymore."
         );
       }
@@ -2095,7 +2093,10 @@ var Policies = {
               }
               if (defaultEngine) {
                 try {
-                  await Services.search.setDefault(defaultEngine);
+                  await Services.search.setDefault(
+                    defaultEngine,
+                    Ci.nsISearchService.CHANGE_REASON_ENTERPRISE
+                  );
                 } catch (ex) {
                   lazy.log.error("Unable to set the default search engine", ex);
                 }
@@ -2126,7 +2127,10 @@ var Policies = {
               }
               if (defaultPrivateEngine) {
                 try {
-                  await Services.search.setDefaultPrivate(defaultPrivateEngine);
+                  await Services.search.setDefaultPrivate(
+                    defaultPrivateEngine,
+                    Ci.nsISearchService.CHANGE_REASON_ENTERPRISE
+                  );
                 } catch (ex) {
                   lazy.log.error(
                     "Unable to set the default private search engine",

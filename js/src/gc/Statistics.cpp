@@ -601,7 +601,7 @@ UniqueChars Statistics::renderJsonSlice(size_t sliceNum) const {
   if (!printer.init()) {
     return UniqueChars(nullptr);
   }
-  JSONPrinter json(printer);
+  JSONPrinter json(printer, false);
 
   formatJsonSlice(sliceNum, json);
   return printer.release();
@@ -612,7 +612,7 @@ UniqueChars Statistics::renderNurseryJson() const {
   if (!printer.init()) {
     return UniqueChars(nullptr);
   }
-  JSONPrinter json(printer);
+  JSONPrinter json(printer, false);
   gc->nursery().renderProfileJSON(json);
   return printer.release();
 }
@@ -649,7 +649,7 @@ UniqueChars Statistics::renderJsonMessage() const {
   if (!printer.init()) {
     return UniqueChars(nullptr);
   }
-  JSONPrinter json(printer);
+  JSONPrinter json(printer, false);
 
   json.beginObject();
   json.property("status", "completed");
@@ -991,6 +991,8 @@ void Statistics::beginGC(JS::GCOptions options, const TimeStamp& currentTime) {
   if (gc->lastGCEndTime()) {
     timeSinceLastGC = currentTime - gc->lastGCEndTime();
   }
+
+  totalGCTime_ = TimeDuration();
 }
 
 void Statistics::measureInitialHeapSize() {
@@ -1185,6 +1187,8 @@ void Statistics::endSlice() {
     sendSliceTelemetry(slice);
 
     sliceCount_++;
+
+    totalGCTime_ += slice.end - slice.start;
   }
 
   bool last = !gc->isIncrementalGCInProgress();

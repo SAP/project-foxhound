@@ -33,7 +33,6 @@
 #include "vm/Time.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
-#include "wasm/WasmCraneliftCompile.h"
 #include "wasm/WasmGC.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmStubs.h"
@@ -57,15 +56,6 @@ bool CompiledCode::swap(MacroAssembler& masm) {
   symbolicAccesses.swap(masm.symbolicAccesses());
   tryNotes.swap(masm.tryNotes());
   codeLabels.swap(masm.codeLabels());
-  return true;
-}
-
-bool CompiledCode::swapCranelift(MacroAssembler& masm,
-                                 CraneliftReusableData& data) {
-  if (!swap(masm)) {
-    return false;
-  }
-  std::swap(data, craneliftReusableData);
   return true;
 }
 
@@ -100,9 +90,7 @@ ModuleGenerator::ModuleGenerator(const CompileArgs& args,
       outstanding_(0),
       currentTask_(nullptr),
       batchedBytecode_(0),
-      finishedFuncDefs_(false) {
-  MOZ_ASSERT(IsCompilingWasm());
-}
+      finishedFuncDefs_(false) {}
 
 ModuleGenerator::~ModuleGenerator() {
   MOZ_ASSERT_IF(finishedFuncDefs_, !batchedBytecode_);
@@ -253,12 +241,8 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
 
     moduleEnv_->funcImportGlobalDataOffsets[i] = globalDataOffset;
 
-    FuncType copy;
-    if (!copy.clone(*moduleEnv_->funcs[i].type)) {
-      return false;
-    }
-    if (!metadataTier_->funcImports.emplaceBack(std::move(copy),
-                                                globalDataOffset)) {
+    if (!metadataTier_->funcImports.emplaceBack(
+            FuncImport(moduleEnv_->funcs[i].typeIndex, globalDataOffset))) {
       return false;
     }
   }
@@ -277,15 +261,31 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
     }
   }
 
-  if (!isAsmJS()) {
-    // Copy type definitions to metadata that are required at runtime,
-    // allocating global data so that codegen can find the type id's at
-    // runtime.
-    for (uint32_t typeIndex = 0; typeIndex < moduleEnv_->types->length();
-         typeIndex++) {
-      const TypeDef& typeDef = (*moduleEnv_->types)[typeIndex];
-      TypeIdDesc& typeId = moduleEnv_->typeIds[typeIndex];
+  // Copy type definitions to metadata
+  if (!metadata_->types.resize(moduleEnv_->types->length())) {
+    return false;
+  }
 
+  for (uint32_t i = 0; i < moduleEnv_->types->length(); i++) {
+    const TypeDef& typeDef = (*moduleEnv_->types)[i];
+    if (!metadata_->types[i].clone(typeDef)) {
+      return false;
+    }
+  }
+
+  // Generate type id's for all types. This will be either an immediate that
+  // can be generated, or a slot in global data to load.
+  if (!metadata_->typeIds.resize(moduleEnv_->types->length())) {
+    return false;
+  }
+
+  // asm.js requires no signature checks to be emitted as every table only
+  // stores the same type of func, and so we leave each type id as 'none'.
+  if (!isAsmJS()) {
+    for (uint32_t i = 0; i < moduleEnv_->types->length(); i++) {
+      const TypeDef& typeDef = (*moduleEnv_->types)[i];
+
+      TypeIdDesc typeId;
       if (TypeIdDesc::isGlobal(typeDef)) {
         uint32_t globalDataOffset;
         if (!allocateGlobalBytes(sizeof(void*), sizeof(void*),
@@ -294,45 +294,12 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
         }
 
         typeId = TypeIdDesc::global(typeDef, globalDataOffset);
-
-        TypeDef copy;
-        if (!copy.clone(typeDef)) {
-          return false;
-        }
-
-        if (!metadata_->types.emplaceBack(std::move(copy), typeId)) {
-          return false;
-        }
       } else {
         typeId = TypeIdDesc::immediate(typeDef);
       }
-    }
 
-    // If we allow type indices, then we need to rewrite the index space to
-    // account for types that are omitted from metadata, such as function
-    // types that fit in an immediate.
-    if (moduleEnv_->functionReferencesEnabled()) {
-      // Do a linear pass to create a map from src index to dest index.
-      RenumberVector renumbering;
-      if (!renumbering.reserve(moduleEnv_->types->length())) {
-        return false;
-      }
-      for (uint32_t srcIndex = 0, destIndex = 0;
-           srcIndex < moduleEnv_->types->length(); srcIndex++) {
-        const TypeDef& typeDef = (*moduleEnv_->types)[srcIndex];
-        if (!TypeIdDesc::isGlobal(typeDef)) {
-          renumbering.infallibleAppend(UINT32_MAX);
-          continue;
-        }
-        MOZ_ASSERT(renumbering.length() == srcIndex);
-        renumbering.infallibleAppend(destIndex++);
-      }
-
-      // Apply the renumbering
-      for (TypeDefWithId& typeDef : metadata_->types) {
-        typeDef.renumber(renumbering);
-      }
-      metadata_->typesRenumbering = std::move(renumbering);
+      moduleEnv_->typeIds[i] = typeId;
+      metadata_->typeIds[i] = typeId;
     }
   }
 
@@ -378,12 +345,8 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
       continue;
     }
 
-    FuncType funcType;
-    if (!funcType.clone(*func.type)) {
-      return false;
-    }
-    metadataTier_->funcExports.infallibleEmplaceBack(std::move(funcType),
-                                                     funcIndex, func.isEager());
+    metadataTier_->funcExports.infallibleEmplaceBack(
+        FuncExport(func.typeIndex, funcIndex, func.isEager()));
   }
 
   // Determine whether parallel or sequential compilation is to be used and
@@ -488,6 +451,7 @@ bool ModuleGenerator::linkCallSites() {
       case CallSiteDesc::EnterFrame:
       case CallSiteDesc::LeaveFrame:
       case CallSiteDesc::FuncRef:
+      case CallSiteDesc::FuncRefFast:
         break;
       case CallSiteDesc::Func: {
         if (funcIsCompiled(target.funcIndex())) {
@@ -624,6 +588,7 @@ static bool AppendForEach(Vec* dstVec, const Vec& srcVec, MutateOp mutateOp) {
 
 bool ModuleGenerator::linkCompiledCode(CompiledCode& code) {
   AutoCreatedBy acb(masm_, "ModuleGenerator::linkCompiledCode");
+  JitContext jcx;
 
   // Before merging in new code, if calls in a prior code range might go out of
   // range, insert far jumps to extend the range.
@@ -727,13 +692,6 @@ static bool ExecuteCompileTask(CompileTask* task, UniqueChars* error) {
   switch (task->compilerEnv.tier()) {
     case Tier::Optimized:
       switch (task->compilerEnv.optimizedBackend()) {
-        case OptimizedBackend::Cranelift:
-          if (!CraneliftCompileFunctions(task->moduleEnv, task->compilerEnv,
-                                         task->lifo, task->inputs,
-                                         &task->output, error)) {
-            return false;
-          }
-          break;
         case OptimizedBackend::Ion:
           if (!IonCompileFunctions(task->moduleEnv, task->compilerEnv,
                                    task->lifo, task->inputs, &task->output,
@@ -885,9 +843,6 @@ bool ModuleGenerator::compileFuncDef(uint32_t funcIndex,
       switch (compilerEnv_->optimizedBackend()) {
         case OptimizedBackend::Ion:
           threshold = JitOptions.wasmBatchIonThreshold;
-          break;
-        case OptimizedBackend::Cranelift:
-          threshold = JitOptions.wasmBatchCraneliftThreshold;
           break;
         default:
           MOZ_CRASH("Invalid optimizedBackend value");
@@ -1119,21 +1074,11 @@ SharedMetadata ModuleGenerator::finishMetadata(const Bytes& bytecode) {
     metadata_->debugEnabled = true;
 
     const size_t numFuncs = moduleEnv_->funcs.length();
-    if (!metadata_->debugFuncArgTypes.resize(numFuncs)) {
-      return nullptr;
-    }
-    if (!metadata_->debugFuncReturnTypes.resize(numFuncs)) {
+    if (!metadata_->debugFuncTypeIndices.resize(numFuncs)) {
       return nullptr;
     }
     for (size_t i = 0; i < numFuncs; i++) {
-      if (!metadata_->debugFuncArgTypes[i].appendAll(
-              moduleEnv_->funcs[i].type->args())) {
-        return nullptr;
-      }
-      if (!metadata_->debugFuncReturnTypes[i].appendAll(
-              moduleEnv_->funcs[i].type->results())) {
-        return nullptr;
-      }
+      metadata_->debugFuncTypeIndices[i] = moduleEnv_->funcs[i].typeIndex;
     }
 
     static_assert(sizeof(ModuleHash) <= sizeof(mozilla::SHA1Sum::Hash),

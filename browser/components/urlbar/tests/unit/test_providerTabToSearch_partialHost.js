@@ -9,12 +9,13 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.sys.mjs",
 });
 
 add_task(async function setup() {
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
   // Disable tab-to-search onboarding results.
   Services.prefs.setIntPref(
     "browser.urlbar.tabToSearch.onboard.interactionsLeft",
@@ -27,6 +28,7 @@ add_task(async function setup() {
 
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
     Services.prefs.clearUserPref(
       "browser.search.separatePrivateDefault.ui.enabled"
     );
@@ -44,9 +46,15 @@ add_task(async function test() {
   });
   let engine = Services.search.getEngineByName("TestEngine");
   let defaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(defaultEngine);
+    await Services.search.setDefault(
+      defaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   });
   // Make sure the engine domain would be autofilled.
   await PlacesUtils.bookmarks.insert({

@@ -32,7 +32,7 @@ add_task(async function test_profile_feature_ipcmessges() {
   const url = BASE_URL + "simple.html";
 
   info("Open a tab while profiling IPC messages.");
-  await startProfiler({ features: ["leaf", "ipcmessages"] });
+  await startProfiler({ features: ["js", "ipcmessages"] });
   info("Started the profiler sucessfully! Now, let's open a tab.");
 
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {
@@ -50,9 +50,10 @@ add_task(async function test_profile_feature_ipcmessges() {
         "the feature is enabled."
     );
     {
-      const { parentThread, contentThread } = await stopProfilerAndGetThreads(
-        contentPid
-      );
+      const {
+        parentThread,
+        contentThread,
+      } = await waitSamplingAndStopProfilerAndGetThreads(contentPid);
 
       Assert.greater(
         getPayloadsOfType(parentThread, "IPC").length,
@@ -71,7 +72,7 @@ add_task(async function test_profile_feature_ipcmessges() {
   });
 
   info("Now open a tab without profiling IPC messages.");
-  await startProfiler({ features: ["leaf"] });
+  await startProfiler({ features: ["js"] });
 
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {
     const contentPid = await SpecialPowers.spawn(
@@ -86,9 +87,10 @@ add_task(async function test_profile_feature_ipcmessges() {
         "feature is turned off."
     );
     {
-      const { parentThread, contentThread } = await stopProfilerAndGetThreads(
-        contentPid
-      );
+      const {
+        parentThread,
+        contentThread,
+      } = await waitSamplingAndStopProfilerAndGetThreads(contentPid);
       Assert.equal(
         getPayloadsOfType(parentThread, "IPC").length,
         0,

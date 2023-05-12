@@ -795,6 +795,10 @@ ITypeInfo* MsaaAccessible::GetTI(LCID lcid) {
 
 /* static */
 MsaaAccessible* MsaaAccessible::GetFrom(Accessible* aAcc) {
+  if (!aAcc) {
+    return nullptr;
+  }
+
   if (RemoteAccessible* remoteAcc = aAcc->AsRemote()) {
     return reinterpret_cast<MsaaAccessible*>(remoteAcc->GetWrapper());
   }
@@ -1263,15 +1267,9 @@ MsaaAccessible::get_accFocus(
   if (!mAcc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  LocalAccessible* localAcc = LocalAcc();
-  if (!localAcc) {
-    return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-  }
-
   // Return the current IAccessible child that has focus
-  LocalAccessible* focusedAccessible = localAcc->FocusedChild();
-
-  if (focusedAccessible == localAcc) {
+  Accessible* focusedAccessible = mAcc->FocusedChild();
+  if (focusedAccessible == mAcc) {
     pvarChild->vt = VT_I4;
     pvarChild->lVal = CHILDID_SELF;
   } else if (focusedAccessible) {
@@ -1607,10 +1605,7 @@ MsaaAccessible::accNavigate(
   pvarEndUpAt->vt = VT_EMPTY;
 
   if (xpRelation) {
-    if (mAcc->IsRemote()) {
-      return E_NOTIMPL;  // XXX Not supported for RemoteAccessible yet.
-    }
-    Relation rel = mAcc->AsLocal()->RelationByType(*xpRelation);
+    Relation rel = mAcc->RelationByType(*xpRelation);
     navAccessible = rel.Next();
   }
 

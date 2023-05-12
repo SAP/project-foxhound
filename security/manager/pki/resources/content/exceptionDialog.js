@@ -10,16 +10,19 @@ var gCert;
 var gChecking;
 var gBroken;
 var gNeedReset;
-var gSecHistogram;
 
 const { PrivateBrowsingUtils } = ChromeUtils.import(
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
 
 function initExceptionDialog() {
+  Services.telemetry.keyedScalarSet(
+    "security.psm_ui_interaction",
+    "add_cert_exception_dialog",
+    true
+  );
   gNeedReset = false;
   gDialog = document.getElementById("exceptiondialog");
-  gSecHistogram = Services.telemetry.getHistogramById("SECURITY_UI");
   let warningText = document.getElementById("warningText");
   document.l10n.setAttributes(warningText, "add-exception-branded-warning");
   let confirmButton = gDialog.getButton("extra1");
@@ -117,6 +120,11 @@ async function checkCert() {
   let uri = getURI();
 
   if (uri) {
+    Services.telemetry.keyedScalarSet(
+      "security.psm_ui_interaction",
+      "add_cert_exception_dialog_get",
+      true
+    );
     let req = new XMLHttpRequest();
     req.open("GET", uri.prePath);
     req.onerror = grabCert.bind(this, req);
@@ -194,8 +202,6 @@ function updateCertStatus() {
   var shortDesc3, longDesc3;
   var use2 = false;
   var use3 = false;
-  let bucketId =
-    Ci.nsISecurityUITelemetry.WARNING_BAD_CERT_TOP_ADD_EXCEPTION_BASE;
   let l10nUpdatedElements = [];
   if (gCert) {
     if (gBroken) {
@@ -207,17 +213,11 @@ function updateCertStatus() {
       var utl = "add-exception-unverified-or-bad-signature-long";
       var use1 = false;
       if (gSecInfo.isDomainMismatch) {
-        bucketId +=
-          Ci.nsISecurityUITelemetry
-            .WARNING_BAD_CERT_TOP_ADD_EXCEPTION_FLAG_DOMAIN;
         use1 = true;
         shortDesc = mms;
         longDesc = mml;
       }
       if (gSecInfo.isNotValidAtThisTime) {
-        bucketId +=
-          Ci.nsISecurityUITelemetry
-            .WARNING_BAD_CERT_TOP_ADD_EXCEPTION_FLAG_TIME;
         if (!use1) {
           use1 = true;
           shortDesc = exs;
@@ -229,9 +229,6 @@ function updateCertStatus() {
         }
       }
       if (gSecInfo.isUntrusted) {
-        bucketId +=
-          Ci.nsISecurityUITelemetry
-            .WARNING_BAD_CERT_TOP_ADD_EXCEPTION_FLAG_UNTRUSTED;
         if (!use1) {
           use1 = true;
           shortDesc = uts;
@@ -246,8 +243,6 @@ function updateCertStatus() {
           longDesc3 = utl;
         }
       }
-      gSecHistogram.add(bucketId);
-
       // In these cases, we do want to enable the "Add Exception" button
       gDialog.getButton("extra1").disabled = false;
 
@@ -334,10 +329,12 @@ function updateCertStatus() {
  * Handle user request to display certificate details
  */
 function viewCertButtonClick() {
-  gSecHistogram.add(
-    Ci.nsISecurityUITelemetry.WARNING_BAD_CERT_TOP_CLICK_VIEW_CERT
-  );
   if (gCert) {
+    Services.telemetry.keyedScalarSet(
+      "security.psm_ui_interaction",
+      "add_cert_exception_dialog_view",
+      true
+    );
     viewCertHelper(this, gCert);
   }
 }
@@ -350,41 +347,29 @@ function addException() {
     return;
   }
 
+  Services.telemetry.keyedScalarSet(
+    "security.psm_ui_interaction",
+    "add_cert_exception_dialog_confirm",
+    true
+  );
+
   var overrideService = Cc["@mozilla.org/security/certoverride;1"].getService(
     Ci.nsICertOverrideService
   );
   var flags = 0;
-  let confirmBucketId =
-    Ci.nsISecurityUITelemetry.WARNING_BAD_CERT_TOP_CONFIRM_ADD_EXCEPTION_BASE;
   if (gSecInfo.isUntrusted) {
     flags |= overrideService.ERROR_UNTRUSTED;
-    confirmBucketId +=
-      Ci.nsISecurityUITelemetry
-        .WARNING_BAD_CERT_TOP_CONFIRM_ADD_EXCEPTION_FLAG_UNTRUSTED;
   }
   if (gSecInfo.isDomainMismatch) {
     flags |= overrideService.ERROR_MISMATCH;
-    confirmBucketId +=
-      Ci.nsISecurityUITelemetry
-        .WARNING_BAD_CERT_TOP_CONFIRM_ADD_EXCEPTION_FLAG_DOMAIN;
   }
   if (gSecInfo.isNotValidAtThisTime) {
     flags |= overrideService.ERROR_TIME;
-    confirmBucketId +=
-      Ci.nsISecurityUITelemetry
-        .WARNING_BAD_CERT_TOP_CONFIRM_ADD_EXCEPTION_FLAG_TIME;
   }
 
   var permanentCheckbox = document.getElementById("permanent");
   var shouldStorePermanently =
     permanentCheckbox.checked && !inPrivateBrowsingMode();
-  if (!permanentCheckbox.checked) {
-    gSecHistogram.add(
-      Ci.nsISecurityUITelemetry.WARNING_BAD_CERT_TOP_DONT_REMEMBER_EXCEPTION
-    );
-  }
-
-  gSecHistogram.add(confirmBucketId);
   var uri = getURI();
   overrideService.rememberValidityOverride(
     uri.asciiHost,

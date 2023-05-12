@@ -1146,10 +1146,10 @@ void TestLEB128() {
   printf("TestLEB128 done\n");
 }
 
-struct StringWriteFunc : public JSONWriteFunc {
+struct StringWriteFunc final : public JSONWriteFunc {
   std::string mString;
 
-  void Write(const mozilla::Span<const char>& aStr) override {
+  void Write(const mozilla::Span<const char>& aStr) final {
     mString.append(aStr.data(), aStr.size());
   }
 };
@@ -1157,7 +1157,7 @@ struct StringWriteFunc : public JSONWriteFunc {
 void CheckJSON(mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
                const char* aExpected, int aLine) {
   const std::string& actual =
-      static_cast<StringWriteFunc*>(aWriter.WriteFunc())->mString;
+      static_cast<StringWriteFunc&>(aWriter.WriteFunc()).mString;
   if (strcmp(aExpected, actual.c_str()) != 0) {
     fprintf(stderr,
             "---- EXPECTED ---- (line %d)\n<<<%s>>>\n"
@@ -1170,14 +1170,14 @@ void CheckJSON(mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
 void TestJSONTimeOutput() {
   printf("TestJSONTimeOutput...\n");
 
-#  define TEST(in, out)                                        \
-    do {                                                       \
-      mozilla::baseprofiler::SpliceableJSONWriter writer(      \
-          mozilla::MakeUnique<StringWriteFunc>());             \
-      writer.Start(mozilla::JSONWriter::SingleLineStyle);      \
-      writer.TimeDoubleMsProperty("time_ms", (in));            \
-      writer.End();                                            \
-      CheckJSON(writer, "{\"time_ms\": " out "}\n", __LINE__); \
+#  define TEST(in, out)                                     \
+    do {                                                    \
+      mozilla::baseprofiler::SpliceableJSONWriter writer(   \
+          mozilla::MakeUnique<StringWriteFunc>());          \
+      writer.Start();                                       \
+      writer.TimeDoubleMsProperty("time_ms", (in));         \
+      writer.End();                                         \
+      CheckJSON(writer, "{\"time_ms\":" out "}", __LINE__); \
     } while (false);
 
   TEST(0, "0");
@@ -4575,8 +4575,7 @@ void TestProfiler() {
     Vector<const char*> filters;
     // Profile all registered threads.
     MOZ_RELEASE_ASSERT(filters.append(""));
-    const uint32_t features = baseprofiler::ProfilerFeature::Leaf |
-                              baseprofiler::ProfilerFeature::StackWalk;
+    const uint32_t features = baseprofiler::ProfilerFeature::StackWalk;
     baseprofiler::profiler_start(baseprofiler::BASE_PROFILER_DEFAULT_ENTRIES,
                                  BASE_PROFILER_DEFAULT_INTERVAL, features,
                                  filters.begin(), filters.length());
@@ -4770,14 +4769,14 @@ void TestProfiler() {
     constexpr const auto svnpos = std::string_view::npos;
     // TODO: Properly parse profile and check fields.
     // Check for some expected marker schema JSON output.
-    MOZ_RELEASE_ASSERT(profileSV.find("\"markerSchema\": [") != svnpos);
-    MOZ_RELEASE_ASSERT(profileSV.find("\"name\": \"Text\",") != svnpos);
-    MOZ_RELEASE_ASSERT(profileSV.find("\"name\": \"tracing\",") != svnpos);
-    MOZ_RELEASE_ASSERT(profileSV.find("\"name\": \"MediaSample\",") != svnpos);
-    MOZ_RELEASE_ASSERT(profileSV.find("\"display\": [") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"markerSchema\":[") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"Text\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"tracing\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"name\":\"MediaSample\",") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"display\":[") != svnpos);
     MOZ_RELEASE_ASSERT(profileSV.find("\"marker-chart\"") != svnpos);
     MOZ_RELEASE_ASSERT(profileSV.find("\"marker-table\"") != svnpos);
-    MOZ_RELEASE_ASSERT(profileSV.find("\"format\": \"string\"") != svnpos);
+    MOZ_RELEASE_ASSERT(profileSV.find("\"format\":\"string\"") != svnpos);
     // TODO: Add more checks for what's expected in the profile. Some of them
     // are done in gtest's.
 
@@ -4834,19 +4833,17 @@ static void VerifyUniqueStringContents(
   mozilla::baseprofiler::SpliceableChunkedJSONWriter writer;
 
   // By default use a local UniqueJSONStrings, otherwise use the one provided.
-  mozilla::baseprofiler::UniqueJSONStrings localUniqueStrings(
-      mozilla::JSONWriter::SingleLineStyle);
+  mozilla::baseprofiler::UniqueJSONStrings localUniqueStrings;
   mozilla::baseprofiler::UniqueJSONStrings& uniqueStrings =
       aUniqueStringsOrNull ? *aUniqueStringsOrNull : localUniqueStrings;
 
-  writer.Start(mozilla::JSONWriter::SingleLineStyle);
+  writer.Start();
   {
-    writer.StartArrayProperty("data", mozilla::JSONWriter::SingleLineStyle);
+    writer.StartArrayProperty("data");
     { std::forward<F>(aF)(writer, uniqueStrings); }
     writer.EndArray();
 
-    writer.StartArrayProperty("stringTable",
-                              mozilla::JSONWriter::SingleLineStyle);
+    writer.StartArrayProperty("stringTable");
     { uniqueStrings.SpliceStringTableElements(writer); }
     writer.EndArray();
   }
@@ -4857,11 +4854,11 @@ static void VerifyUniqueStringContents(
   std::string_view jsonStringView(jsonString.get());
   const size_t length = writer.ChunkedWriteFunc().Length();
   MOZ_RELEASE_ASSERT(length == jsonStringView.length());
-  std::string expected = "{\"data\": [";
+  std::string expected = "{\"data\":[";
   expected += aExpectedData;
-  expected += "], \"stringTable\": [";
+  expected += "],\"stringTable\":[";
   expected += aExpectedUniqueStrings;
-  expected += "]}\n";
+  expected += "]}";
   if (jsonStringView != expected) {
     fprintf(stderr,
             "Expected:\n"
@@ -4909,7 +4906,7 @@ void TestUniqueJSONStrings() {
         aUniqueStrings.WriteElement(aWriter, "string");
         aUniqueStrings.WriteElement(aWriter, "string");
       },
-      "0, 0", R"("string")");
+      "0,0", R"("string")");
 
   // Two single unique strings.
   VerifyUniqueStringContents(
@@ -4917,7 +4914,7 @@ void TestUniqueJSONStrings() {
         aUniqueStrings.WriteElement(aWriter, "string0");
         aUniqueStrings.WriteElement(aWriter, "string1");
       },
-      "0, 1", R"("string0", "string1")");
+      "0,1", R"("string0","string1")");
 
   // Two unique strings with repetition.
   VerifyUniqueStringContents(
@@ -4926,13 +4923,13 @@ void TestUniqueJSONStrings() {
         aUniqueStrings.WriteElement(aWriter, "string1");
         aUniqueStrings.WriteElement(aWriter, "string0");
       },
-      "0, 1, 0", R"("string0", "string1")");
+      "0,1,0", R"("string0","string1")");
 
   // Mix some object properties, for coverage.
   VerifyUniqueStringContents(
       [](SCJW& aWriter, UJS& aUniqueStrings) {
         aUniqueStrings.WriteElement(aWriter, "string0");
-        aWriter.StartObjectElement(mozilla::JSONWriter::SingleLineStyle);
+        aWriter.StartObjectElement();
         {
           aUniqueStrings.WriteProperty(aWriter, "p0", "prop");
           aUniqueStrings.WriteProperty(aWriter, "p1", "string0");
@@ -4943,12 +4940,11 @@ void TestUniqueJSONStrings() {
         aUniqueStrings.WriteElement(aWriter, "string0");
         aUniqueStrings.WriteElement(aWriter, "prop");
       },
-      R"(0, {"p0": 1, "p1": 0, "p2": 1}, 2, 0, 1)",
-      R"("string0", "prop", "string1")");
+      R"(0,{"p0":1,"p1":0,"p2":1},2,0,1)", R"("string0","prop","string1")");
 
   // Unique string table with pre-existing data.
   {
-    UJS ujs(mozilla::JSONWriter::SingleLineStyle);
+    UJS ujs;
     {
       SCJW writer;
       ujs.WriteElement(writer, "external0");
@@ -4961,27 +4957,26 @@ void TestUniqueJSONStrings() {
           aUniqueStrings.WriteElement(aWriter, "string1");
           aUniqueStrings.WriteElement(aWriter, "string0");
         },
-        "2, 3, 2", R"("external0", "external1", "string0", "string1")", &ujs);
+        "2,3,2", R"("external0","external1","string0","string1")", &ujs);
   }
 
   // Unique string table with pre-existing data from another table.
   {
-    UJS ujs(mozilla::JSONWriter::SingleLineStyle);
+    UJS ujs;
     {
       SCJW writer;
       ujs.WriteElement(writer, "external0");
       ujs.WriteElement(writer, "external1");
       ujs.WriteElement(writer, "external0");
     }
-    UJS ujsCopy(ujs, mozilla::ProgressLogger{},
-                mozilla::JSONWriter::SingleLineStyle);
+    UJS ujsCopy(ujs, mozilla::ProgressLogger{});
     VerifyUniqueStringContents(
         [](SCJW& aWriter, UJS& aUniqueStrings) {
           aUniqueStrings.WriteElement(aWriter, "string0");
           aUniqueStrings.WriteElement(aWriter, "string1");
           aUniqueStrings.WriteElement(aWriter, "string0");
         },
-        "2, 3, 2", R"("external0", "external1", "string0", "string1")", &ujs);
+        "2,3,2", R"("external0","external1","string0","string1")", &ujs);
   }
 
   // Unique string table through SpliceableJSONWriter.
@@ -4989,7 +4984,7 @@ void TestUniqueJSONStrings() {
       [](SCJW& aWriter, UJS& aUniqueStrings) {
         aWriter.SetUniqueStrings(aUniqueStrings);
         aWriter.UniqueStringElement("string0");
-        aWriter.StartObjectElement(mozilla::JSONWriter::SingleLineStyle);
+        aWriter.StartObjectElement();
         {
           aWriter.UniqueStringProperty("p0", "prop");
           aWriter.UniqueStringProperty("p1", "string0");
@@ -5001,8 +4996,7 @@ void TestUniqueJSONStrings() {
         aWriter.UniqueStringElement("prop");
         aWriter.ResetUniqueStrings();
       },
-      R"(0, {"p0": 1, "p1": 0, "p2": 1}, 2, 0, 1)",
-      R"("string0", "prop", "string1")");
+      R"(0,{"p0":1,"p1":0,"p2":1},2,0,1)", R"("string0","prop","string1")");
 
   printf("TestUniqueJSONStrings done\n");
 }

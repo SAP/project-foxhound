@@ -331,7 +331,7 @@ UniqueModuleSegment ModuleSegment::create(Tier tier, const Bytes& unlinkedBytes,
                                        linkData);
 }
 
-bool ModuleSegment::initialize(IsTier2 isTier2, const CodeTier& codeTier,
+bool ModuleSegment::initialize(const CodeTier& codeTier,
                                const LinkData& linkData,
                                const Metadata& metadata,
                                const MetadataTier& metadataTier) {
@@ -341,13 +341,9 @@ bool ModuleSegment::initialize(IsTier2 isTier2, const CodeTier& codeTier,
 
   // Optimized compilation finishes on a background thread, so we must make sure
   // to flush the icaches of all the executing threads.
-  FlushICacheSpec flushIcacheSpec = isTier2 == IsTier2::Tier2
-                                        ? FlushICacheSpec::AllThreads
-                                        : FlushICacheSpec::LocalThreadOnly;
-
   // Reprotect the whole region to avoid having separate RW and RX mappings.
   if (!ExecutableAllocator::makeExecutableAndFlushICache(
-          flushIcacheSpec, base(), RoundupCodeLength(length()))) {
+          base(), RoundupCodeLength(length()))) {
     return false;
   }
 
@@ -367,14 +363,6 @@ const CodeRange* ModuleSegment::lookupRange(const void* pc) const {
   return codeTier().lookupRange(pc);
 }
 
-size_t FuncExport::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
-  return funcType_.sizeOfExcludingThis(mallocSizeOf);
-}
-
-size_t FuncImport::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
-  return funcType_.sizeOfExcludingThis(mallocSizeOf);
-}
-
 size_t CacheableChars::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   return mallocSizeOf(get());
 }
@@ -385,8 +373,8 @@ size_t MetadataTier::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
          callSites.sizeOfExcludingThis(mallocSizeOf) +
          tryNotes.sizeOfExcludingThis(mallocSizeOf) +
          trapSites.sizeOfExcludingThis(mallocSizeOf) +
-         SizeOfVectorExcludingThis(funcImports, mallocSizeOf) +
-         SizeOfVectorExcludingThis(funcExports, mallocSizeOf);
+         funcImports.sizeOfExcludingThis(mallocSizeOf) +
+         funcExports.sizeOfExcludingThis(mallocSizeOf);
 }
 
 UniqueLazyStubSegment LazyStubSegment::create(const CodeTier& codeTier,
@@ -409,7 +397,7 @@ bool LazyStubSegment::hasSpace(size_t bytes) const {
   return bytes <= length() && usedBytes_ <= length() - bytes;
 }
 
-bool LazyStubSegment::addStubs(size_t codeLength,
+bool LazyStubSegment::addStubs(const Metadata& metadata, size_t codeLength,
                                const Uint32Vector& funcExportIndices,
                                const FuncExportVector& funcExports,
                                const CodeRangeVector& codeRanges,
@@ -429,6 +417,8 @@ bool LazyStubSegment::addStubs(size_t codeLength,
 
   size_t i = 0;
   for (uint32_t funcExportIndex : funcExportIndices) {
+    const FuncExport& fe = funcExports[funcExportIndex];
+    const FuncType& funcType = metadata.getFuncExportType(fe);
     const CodeRange& interpRange = codeRanges[i];
     MOZ_ASSERT(interpRange.isInterpEntry());
     MOZ_ASSERT(interpRange.funcIndex() ==
@@ -438,7 +428,7 @@ bool LazyStubSegment::addStubs(size_t codeLength,
     codeRanges_.back().offsetBy(offsetInSegment);
     i++;
 
-    if (!funcExports[funcExportIndex].canHaveJitEntry()) {
+    if (!funcType.canHaveJitEntry()) {
       continue;
     }
 
@@ -498,35 +488,36 @@ static void PadCodeForSingleStub(MacroAssembler& masm) {
 static constexpr unsigned LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE = 8 * 1024;
 
 bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
+                                        const Metadata& metadata,
                                         const CodeTier& codeTier,
-                                        bool flushAllThreadsIcaches,
                                         size_t* stubSegmentIndex) {
   MOZ_ASSERT(funcExportIndices.length());
 
   LifoAlloc lifo(LAZY_STUB_LIFO_DEFAULT_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
-  JitContext jitContext(&alloc);
+  JitContext jitContext;
   WasmMacroAssembler masm(alloc);
 
   if (funcExportIndices.length() == 1) {
     PadCodeForSingleStub(masm);
   }
 
-  const MetadataTier& metadata = codeTier.metadata();
-  const FuncExportVector& funcExports = metadata.funcExports;
+  const MetadataTier& metadataTier = codeTier.metadata();
+  const FuncExportVector& funcExports = metadataTier.funcExports;
   uint8_t* moduleSegmentBase = codeTier.segment().base();
 
   CodeRangeVector codeRanges;
   DebugOnly<uint32_t> numExpectedRanges = 0;
   for (uint32_t funcExportIndex : funcExportIndices) {
     const FuncExport& fe = funcExports[funcExportIndex];
+    const FuncType& funcType = metadata.getFuncExportType(fe);
     // Exports that don't support a jit entry get only the interp entry.
-    numExpectedRanges += (fe.canHaveJitEntry() ? 2 : 1);
+    numExpectedRanges += (funcType.canHaveJitEntry() ? 2 : 1);
     void* calleePtr =
-        moduleSegmentBase + metadata.codeRange(fe).funcUncheckedCallEntry();
+        moduleSegmentBase + metadataTier.codeRange(fe).funcUncheckedCallEntry();
     Maybe<ImmPtr> callee;
     callee.emplace(calleePtr, ImmPtr::NoCheckToken());
-    if (!GenerateEntryStubs(masm, funcExportIndex, fe, callee,
+    if (!GenerateEntryStubs(masm, funcExportIndex, fe, funcType, callee,
                             /* asmjs */ false, &codeRanges)) {
       return false;
     }
@@ -566,8 +557,8 @@ bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
 
   size_t interpRangeIndex;
   uint8_t* codePtr = nullptr;
-  if (!segment->addStubs(codeLength, funcExportIndices, funcExports, codeRanges,
-                         &codePtr, &interpRangeIndex)) {
+  if (!segment->addStubs(metadata, codeLength, funcExportIndices, funcExports,
+                         codeRanges, &codePtr, &interpRangeIndex)) {
     return false;
   }
 
@@ -579,13 +570,7 @@ bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
     Assembler::Bind(codePtr, label);
   }
 
-  // Optimized compilation finishes on a background thread, so we must make sure
-  // to flush the icaches of all the executing threads.
-  FlushICacheSpec flushIcacheSpec = flushAllThreadsIcaches
-                                        ? FlushICacheSpec::AllThreads
-                                        : FlushICacheSpec::LocalThreadOnly;
-  if (!ExecutableAllocator::makeExecutableAndFlushICache(flushIcacheSpec,
-                                                         codePtr, codeLength)) {
+  if (!ExecutableAllocator::makeExecutableAndFlushICache(codePtr, codeLength)) {
     return false;
   }
 
@@ -596,6 +581,7 @@ bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
 
   for (uint32_t funcExportIndex : funcExportIndices) {
     const FuncExport& fe = funcExports[funcExportIndex];
+    const FuncType& funcType = metadata.getFuncExportType(fe);
 
     DebugOnly<CodeRange> cr = segment->codeRanges()[interpRangeIndex];
     MOZ_ASSERT(cr.value.isInterpEntry());
@@ -616,26 +602,22 @@ bool LazyStubTier::createManyEntryStubs(const Uint32Vector& funcExportIndices,
         exports_.insert(exports_.begin() + exportIndex, std::move(lazyExport)));
 
     // Exports that don't support a jit entry get only the interp entry.
-    interpRangeIndex += (fe.canHaveJitEntry() ? 2 : 1);
+    interpRangeIndex += (funcType.canHaveJitEntry() ? 2 : 1);
   }
 
   return true;
 }
 
 bool LazyStubTier::createOneEntryStub(uint32_t funcExportIndex,
+                                      const Metadata& metadata,
                                       const CodeTier& codeTier) {
   Uint32Vector funcExportIndexes;
   if (!funcExportIndexes.append(funcExportIndex)) {
     return false;
   }
 
-  // This happens on the executing thread (when createOneEntryStub is called
-  // from GetInterpEntryAndEnsureStubs), so no need to flush the icaches on all
-  // the threads.
-  bool flushAllThreadIcaches = false;
-
   size_t stubSegmentIndex;
-  if (!createManyEntryStubs(funcExportIndexes, codeTier, flushAllThreadIcaches,
+  if (!createManyEntryStubs(funcExportIndexes, metadata, codeTier,
                             &stubSegmentIndex)) {
     return false;
   }
@@ -643,8 +625,11 @@ bool LazyStubTier::createOneEntryStub(uint32_t funcExportIndex,
   const UniqueLazyStubSegment& segment = stubSegments_[stubSegmentIndex];
   const CodeRangeVector& codeRanges = segment->codeRanges();
 
+  const FuncExport& fe = codeTier.metadata().funcExports[funcExportIndex];
+  const FuncType& funcType = metadata.getFuncExportType(fe);
+
   // Exports that don't support a jit entry get only the interp entry.
-  if (!codeTier.metadata().funcExports[funcExportIndex].canHaveJitEntry()) {
+  if (!funcType.canHaveJitEntry()) {
     MOZ_ASSERT(codeRanges.length() >= 1);
     MOZ_ASSERT(codeRanges.back().isInterpEntry());
     return true;
@@ -661,18 +646,15 @@ bool LazyStubTier::createOneEntryStub(uint32_t funcExportIndex,
 }
 
 bool LazyStubTier::createTier2(const Uint32Vector& funcExportIndices,
+                               const Metadata& metadata,
                                const CodeTier& codeTier,
                                Maybe<size_t>* outStubSegmentIndex) {
   if (!funcExportIndices.length()) {
     return true;
   }
 
-  // This compilation happens on a background compiler thread, so the icache may
-  // need to be flushed on all the threads.
-  bool flushAllThreadIcaches = true;
-
   size_t stubSegmentIndex;
-  if (!createManyEntryStubs(funcExportIndices, codeTier, flushAllThreadIcaches,
+  if (!createManyEntryStubs(funcExportIndices, metadata, codeTier,
                             &stubSegmentIndex)) {
     return false;
   }
@@ -729,46 +711,9 @@ void LazyStubTier::addSizeOfMisc(MallocSizeOf mallocSizeOf, size_t* code,
   }
 }
 
-bool MetadataTier::clone(const MetadataTier& src) {
-  if (!funcToCodeRange.appendAll(src.funcToCodeRange)) {
-    return false;
-  }
-  if (!codeRanges.appendAll(src.codeRanges)) {
-    return false;
-  }
-  if (!callSites.appendAll(src.callSites)) {
-    return false;
-  }
-  if (!tryNotes.appendAll(src.tryNotes)) {
-    return false;
-  }
-
-  for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    if (!trapSites[trap].appendAll(src.trapSites[trap])) {
-      return false;
-    }
-  }
-
-  if (!funcImports.resize(src.funcImports.length())) {
-    return false;
-  }
-  for (size_t i = 0; i < src.funcImports.length(); i++) {
-    funcImports[i].clone(src.funcImports[i]);
-  }
-
-  if (!funcExports.resize(src.funcExports.length())) {
-    return false;
-  }
-  for (size_t i = 0; i < src.funcExports.length(); i++) {
-    funcExports[i].clone(src.funcExports[i]);
-  }
-
-  return true;
-}
-
 size_t Metadata::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   return SizeOfVectorExcludingThis(types, mallocSizeOf) +
-         typesRenumbering.sizeOfExcludingThis(mallocSizeOf) +
+         typeIds.sizeOfExcludingThis(mallocSizeOf) +
          globals.sizeOfExcludingThis(mallocSizeOf) +
          tables.sizeOfExcludingThis(mallocSizeOf) +
          tags.sizeOfExcludingThis(mallocSizeOf) +
@@ -851,15 +796,15 @@ bool Metadata::getFuncName(NameContext ctx, uint32_t funcIndex,
   return AppendFunctionIndexName(funcIndex, name);
 }
 
-bool CodeTier::initialize(IsTier2 isTier2, const Code& code,
-                          const LinkData& linkData, const Metadata& metadata) {
+bool CodeTier::initialize(const Code& code, const LinkData& linkData,
+                          const Metadata& metadata) {
   MOZ_ASSERT(!initialized());
   code_ = &code;
 
   MOZ_ASSERT(lazyStubs_.readLock()->entryStubsEmpty());
 
   // See comments in CodeSegment::initialize() for why this must be last.
-  if (!segment_->initialize(isTier2, *this, linkData, metadata, *metadata_)) {
+  if (!segment_->initialize(*this, linkData, metadata, *metadata_)) {
     return false;
   }
 
@@ -948,7 +893,7 @@ Code::Code(UniqueCodeTier tier1, const Metadata& metadata,
 bool Code::initialize(const LinkData& linkData) {
   MOZ_ASSERT(!initialized());
 
-  if (!tier1_->initialize(IsTier2::NotTier2, *this, linkData, *metadata_)) {
+  if (!tier1_->initialize(*this, linkData, *metadata_)) {
     return false;
   }
 
@@ -962,7 +907,7 @@ bool Code::setAndBorrowTier2(UniqueCodeTier tier2, const LinkData& linkData,
   MOZ_RELEASE_ASSERT(tier2->tier() == Tier::Optimized &&
                      tier1_->tier() == Tier::Baseline);
 
-  if (!tier2->initialize(IsTier2::Tier2, *this, linkData, *metadata_)) {
+  if (!tier2->initialize(*this, linkData, *metadata_)) {
     return false;
   }
 

@@ -119,7 +119,7 @@ const tests = [
   },
 ];
 
-add_task(async function setup() {
+add_setup(async () => {
   await SpecialPowers.pushPrefEnv({"set": [["signon.includeOtherSubdomainsInLookup", true]]});
   ok(readyPromise, "check promise is available");
   await readyPromise;
@@ -137,8 +137,8 @@ async function testResultOfTabInteractions(testData) {
   await processed;
   // check autofill results
   checkForm(1, testData.expectedAutofillUsername, testData.expectedAutofillPassword);
-  let pword = $_(1, "pword");
-  let uname = $_(1, "uname");
+  let pword = getFormElementByName(1, "pword");
+  let uname = getFormElementByName(1, "uname");
 
   SpecialPowers.wrap(pword).setUserInput("");
   SpecialPowers.wrap(uname).setUserInput("");
@@ -181,7 +181,7 @@ async function testResultOfTabInteractions(testData) {
     }, "Password field should be filled");
   }
 
-  ok($_(1, "pword").matches("input:focus"), "pword field is focused");
+  ok(getFormElementByName(1, "pword").matches("input:focus"), "pword field is focused");
   checkForm(1, testData.expectedTabbedUsername, testData.expectedTabbedPassword);
 
   recreateTree(document.getElementById("form1"));

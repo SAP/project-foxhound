@@ -901,12 +901,13 @@ void LIRGenerator::visitTest(MTest* test) {
       return;
     }
 
-    // Compare and branch Int32, Symbol or Object pointers.
+    // Compare and branch Int32, Symbol, Object, or RefOrNull pointers.
     if (comp->isInt32Comparison() ||
         comp->compareType() == MCompare::Compare_UInt32 ||
         comp->compareType() == MCompare::Compare_UIntPtr ||
         comp->compareType() == MCompare::Compare_Object ||
-        comp->compareType() == MCompare::Compare_Symbol) {
+        comp->compareType() == MCompare::Compare_Symbol ||
+        comp->compareType() == MCompare::Compare_RefOrNull) {
       JSOp op = ReorderComparison(comp->jsop(), &left, &right);
       LAllocation lhs = useRegister(left);
       LAllocation rhs;
@@ -1071,6 +1072,20 @@ static inline bool CanEmitCompareAtUses(MInstruction* ins) {
   return iter == ins->usesEnd();
 }
 
+static bool CanCompareCharactersInline(const JSLinearString* linear) {
+  size_t length = linear->length();
+
+  // Limit the number of inline instructions used for character comparisons. Use
+  // the same instruction limit for both encodings, i.e. two-byte uses half the
+  // limit of Latin-1 strings.
+  constexpr size_t Latin1StringCompareCutoff = 32;
+  constexpr size_t TwoByteStringCompareCutoff = 16;
+
+  return length > 0 &&
+         (linear->hasLatin1Chars() ? length <= Latin1StringCompareCutoff
+                                   : length <= TwoByteStringCompareCutoff);
+}
+
 void LIRGenerator::visitCompare(MCompare* comp) {
   MDefinition* left = comp->lhs();
   MDefinition* right = comp->rhs();
@@ -1096,19 +1111,8 @@ void LIRGenerator::visitCompare(MCompare* comp) {
 
       if (constant) {
         JSLinearString* linear = &constant->toString()->asLinear();
-        size_t length = linear->length();
 
-        // Limit the number of inline instructions used for character
-        // comparisons. Use the same instruction limit for both encodings, i.e.
-        // two-byte uses half the limit of Latin-1 strings.
-        constexpr size_t Latin1StringCompareCutoff = 32;
-        constexpr size_t TwoByteStringCompareCutoff = 16;
-
-        bool canCompareInline =
-            length > 0 &&
-            (linear->hasLatin1Chars() ? length <= Latin1StringCompareCutoff
-                                      : length <= TwoByteStringCompareCutoff);
-        if (canCompareInline) {
+        if (CanCompareCharactersInline(linear)) {
           MDefinition* input = left->isConstant() ? right : left;
 
           auto* lir = new (alloc()) LCompareSInline(useRegister(input), linear);
@@ -2268,8 +2272,8 @@ void LIRGenerator::visitCharCodeAt(MCharCodeAt* ins) {
   MOZ_ASSERT(str->type() == MIRType::String);
   MOZ_ASSERT(idx->type() == MIRType::Int32);
 
-  LCharCodeAt* lir =
-      new (alloc()) LCharCodeAt(useRegister(str), useRegister(idx), temp());
+  LCharCodeAt* lir = new (alloc())
+      LCharCodeAt(useRegister(str), useRegister(idx), temp(), temp());
   define(lir, ins);
   assignSafepoint(lir, ins);
 }
@@ -2293,6 +2297,69 @@ void LIRGenerator::visitFromCodePoint(MFromCodePoint* ins) {
       new (alloc()) LFromCodePoint(useRegister(codePoint), temp(), temp());
   assignSnapshot(lir, ins->bailoutKind());
   define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitStringIndexOf(MStringIndexOf* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  auto* lir = new (alloc())
+      LStringIndexOf(useRegisterAtStart(string), useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitStringStartsWith(MStringStartsWith* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  if (searchStr->isConstant()) {
+    JSLinearString* linear = &searchStr->toConstant()->toString()->asLinear();
+
+    if (CanCompareCharactersInline(linear)) {
+      auto* lir = new (alloc())
+          LStringStartsWithInline(useRegister(string), temp(), linear);
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      return;
+    }
+  }
+
+  auto* lir = new (alloc()) LStringStartsWith(useRegisterAtStart(string),
+                                              useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitStringEndsWith(MStringEndsWith* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  if (searchStr->isConstant()) {
+    JSLinearString* linear = &searchStr->toConstant()->toString()->asLinear();
+
+    if (CanCompareCharactersInline(linear)) {
+      auto* lir = new (alloc())
+          LStringEndsWithInline(useRegister(string), temp(), linear);
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      return;
+    }
+  }
+
+  auto* lir = new (alloc()) LStringEndsWith(useRegisterAtStart(string),
+                                            useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
   assignSafepoint(lir, ins);
 }
 
@@ -5499,6 +5566,10 @@ void LIRGenerator::visitWasmCall(MWasmCallT ins) {
     lir->setOperand(ins->numArgs(),
                     useFixedAtStart(index, WasmTableCallIndexReg));
   }
+  if (ins->callee().isFuncRef()) {
+    MDefinition* ref = ins->getOperand(ins->numArgs());
+    lir->setOperand(ins->numArgs(), useFixedAtStart(ref, WasmCallRefReg));
+  }
 
   add(lir, ins);
   assignWasmSafepoint(lir);
@@ -5935,8 +6006,8 @@ void LIRGenerator::visitGuardInt32IsNonNegative(MGuardInt32IsNonNegative* ins) {
   redefine(ins, index);
 }
 
-void LIRGenerator::visitGuardIndexGreaterThanDenseInitLength(
-    MGuardIndexGreaterThanDenseInitLength* ins) {
+void LIRGenerator::visitGuardIndexIsNotDenseElement(
+    MGuardIndexIsNotDenseElement* ins) {
   MDefinition* object = ins->object();
   MOZ_ASSERT(object->type() == MIRType::Object);
 
@@ -5946,7 +6017,7 @@ void LIRGenerator::visitGuardIndexGreaterThanDenseInitLength(
   LDefinition spectreTemp =
       BoundsCheckNeedsSpectreTemp() ? temp() : LDefinition::BogusTemp();
 
-  auto* guard = new (alloc()) LGuardIndexGreaterThanDenseInitLength(
+  auto* guard = new (alloc()) LGuardIndexIsNotDenseElement(
       useRegister(object), useRegister(index), temp(), spectreTemp);
   assignSnapshot(guard, ins->bailoutKind());
   add(guard, ins);

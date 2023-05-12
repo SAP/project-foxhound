@@ -252,22 +252,6 @@ static bool IsXULBoxWrapped(const nsIFrame* aFrame) {
          !aFrame->IsXULBoxFrame();
 }
 
-void nsReflowStatus::UpdateTruncated(const ReflowInput& aReflowInput,
-                                     const ReflowOutput& aMetrics) {
-  const WritingMode containerWM = aMetrics.GetWritingMode();
-  if (aReflowInput.GetWritingMode().IsOrthogonalTo(containerWM)) {
-    // Orthogonal flows are always reflowed with an unconstrained dimension,
-    // so should never end up truncated (see ReflowInput::Init()).
-    mTruncated = false;
-  } else if (aReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE &&
-             aReflowInput.AvailableBSize() < aMetrics.BSize(containerWM) &&
-             !aReflowInput.mFlags.mIsTopOfPage) {
-    mTruncated = true;
-  } else {
-    mTruncated = false;
-  }
-}
-
 /* static */
 void nsIFrame::DestroyAnonymousContent(
     nsPresContext* aPresContext, already_AddRefed<nsIContent>&& aContent) {
@@ -298,7 +282,6 @@ std::ostream& operator<<(std::ostream& aStream, const nsReflowStatus& aStatus) {
   aStream << "["
           << "Complete=" << complete << ","
           << "NIF=" << (aStatus.NextInFlowNeedsReflow() ? 'Y' : 'N') << ","
-          << "Truncated=" << (aStatus.IsTruncated() ? 'Y' : 'N') << ","
           << "Break=" << brk << ","
           << "FirstLetter=" << (aStatus.FirstLetterComplete() ? 'Y' : 'N')
           << "]";
@@ -306,21 +289,6 @@ std::ostream& operator<<(std::ostream& aStream, const nsReflowStatus& aStatus) {
 }
 
 #ifdef DEBUG
-static bool gShowFrameBorders = false;
-
-void nsIFrame::ShowFrameBorders(bool aEnable) { gShowFrameBorders = aEnable; }
-
-bool nsIFrame::GetShowFrameBorders() { return gShowFrameBorders; }
-
-static bool gShowEventTargetFrameBorder = false;
-
-void nsIFrame::ShowEventTargetFrameBorder(bool aEnable) {
-  gShowEventTargetFrameBorder = aEnable;
-}
-
-bool nsIFrame::GetShowEventTargetFrameBorder() {
-  return gShowEventTargetFrameBorder;
-}
 
 /**
  * Note: the log module is created during library initialization which
@@ -756,6 +724,10 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
   }
 
+  if (disp->mContainerType) {
+    PresContext()->RegisterContainerQueryFrame(this);
+  }
+
   if (disp->IsContainLayout() && disp->GetContainSizeAxes().IsBoth() &&
       // All frames that support contain:layout also support contain:size.
       IsFrameOfType(eSupportsContainLayoutAndPaint) && !IsTableWrapperFrame()) {
@@ -836,12 +808,16 @@ void nsIFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   SVGObserverUtils::InvalidateDirectRenderingObservers(this);
 
-  if (StyleDisplay()->mPosition == StylePositionProperty::Sticky) {
-    StickyScrollContainer* ssc =
-        StickyScrollContainer::GetStickyScrollContainerForFrame(this);
-    if (ssc) {
+  const auto* disp = StyleDisplay();
+  if (disp->mPosition == StylePositionProperty::Sticky) {
+    if (auto* ssc =
+            StickyScrollContainer::GetStickyScrollContainerForFrame(this)) {
       ssc->RemoveFrame(this);
     }
+  }
+
+  if (disp->mContainerType) {
+    PresContext()->UnregisterContainerQueryFrame(this);
   }
 
   nsPresContext* presContext = PresContext();
@@ -1441,9 +1417,46 @@ void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
     }
   }
 
+  if (IsPrimaryFrame()) {
+    HandleLastRememberedSize();
+  }
+
   RemoveStateBits(NS_FRAME_SIMPLE_EVENT_REGIONS | NS_FRAME_SIMPLE_DISPLAYLIST);
 
   mMayHaveRoundedCorners = true;
+}
+
+void nsIFrame::HandleLastRememberedSize() {
+  MOZ_ASSERT(IsPrimaryFrame());
+  // Storing a last remembered size requires contain-intrinsic-size, and using
+  // a previously stored last remembered size requires content-visibility.
+  if (!StaticPrefs::layout_css_contain_intrinsic_size_enabled() ||
+      !StaticPrefs::layout_css_content_visibility_enabled()) {
+    return;
+  }
+  auto* element = Element::FromNodeOrNull(mContent);
+  if (!element) {
+    return;
+  }
+  const WritingMode wm = GetWritingMode();
+  const nsStylePosition* stylePos = StylePosition();
+  bool canRememberBSize = stylePos->ContainIntrinsicBSize(wm).IsAutoLength();
+  bool canRememberISize = stylePos->ContainIntrinsicISize(wm).IsAutoLength();
+  if (!canRememberBSize) {
+    element->RemoveLastRememberedBSize();
+  }
+  if (!canRememberISize) {
+    element->RemoveLastRememberedISize();
+  }
+  if (canRememberBSize || canRememberISize) {
+    const auto containAxes = StyleDisplay()->GetContainSizeAxes();
+    if ((canRememberBSize && !containAxes.mBContained) ||
+        (canRememberISize && !containAxes.mIContained)) {
+      PresContext()->Document()->ObserveForLastRememberedSize(*element);
+      return;
+    }
+  }
+  PresContext()->Document()->UnobserveForLastRememberedSize(*element);
 }
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -2765,45 +2778,6 @@ nsSize nsIFrame::OverflowClipMargin(PhysicalAxes aClipAxes) const {
   return result;
 }
 
-#ifdef DEBUG
-static void PaintDebugBorder(nsIFrame* aFrame, DrawTarget* aDrawTarget,
-                             const nsRect& aDirtyRect, nsPoint aPt) {
-  nsRect r(aPt, aFrame->GetSize());
-  int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-  sRGBColor blueOrRed(aFrame->HasView() ? sRGBColor(0.f, 0.f, 1.f, 1.f)
-                                        : sRGBColor(1.f, 0.f, 0.f, 1.f));
-  aDrawTarget->StrokeRect(NSRectToRect(r, appUnitsPerDevPixel),
-                          ColorPattern(ToDeviceColor(blueOrRed)));
-}
-
-static void PaintEventTargetBorder(nsIFrame* aFrame, DrawTarget* aDrawTarget,
-                                   const nsRect& aDirtyRect, nsPoint aPt) {
-  nsRect r(aPt, aFrame->GetSize());
-  int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-  ColorPattern purple(ToDeviceColor(sRGBColor(.5f, 0.f, .5f, 1.f)));
-  aDrawTarget->StrokeRect(NSRectToRect(r, appUnitsPerDevPixel), purple);
-}
-
-static void DisplayDebugBorders(nsDisplayListBuilder* aBuilder,
-                                nsIFrame* aFrame,
-                                const nsDisplayListSet& aLists) {
-  // Draw a border around the child
-  // REVIEW: From nsContainerFrame::PaintChild
-  if (nsIFrame::GetShowFrameBorders() && !aFrame->GetRect().IsEmpty()) {
-    aLists.Outlines()->AppendNewToTop<nsDisplayGeneric>(
-        aBuilder, aFrame, PaintDebugBorder, "DebugBorder",
-        DisplayItemType::TYPE_DEBUG_BORDER);
-  }
-  // Draw a border around the current event target
-  if (nsIFrame::GetShowEventTargetFrameBorder() &&
-      aFrame->PresShell()->GetDrawEventTargetFrame() == aFrame) {
-    aLists.Outlines()->AppendNewToTop<nsDisplayGeneric>(
-        aBuilder, aFrame, PaintEventTargetBorder, "EventTargetBorder",
-        DisplayItemType::TYPE_EVENT_TARGET_BORDER);
-  }
-}
-#endif
-
 /**
  * Returns whether a display item that gets created with the builder's current
  * state will have a scrolled clip, i.e. a clip that is scrolled by a scroll
@@ -3497,10 +3471,6 @@ void nsIFrame::BuildDisplayListForStackingContext(
   nsDisplayList resultList(aBuilder);
   set.SerializeWithCorrectZOrder(&resultList, content);
 
-#ifdef DEBUG
-  DisplayDebugBorders(aBuilder, this, set);
-#endif
-
   // Get the ASR to use for the container items that we create here.
   const ActiveScrolledRoot* containerItemASR = contASRTracker.GetContainerASR();
 
@@ -4000,9 +3970,6 @@ void nsIFrame::BuildDisplayListForSimpleChild(nsDisplayListBuilder* aBuilder,
   aChild->SetBuiltDisplayList(true);
   aBuilder->Check();
   aBuilder->DisplayCaret(aChild, aLists.Outlines());
-#ifdef DEBUG
-  DisplayDebugBorders(aBuilder, aChild, aLists);
-#endif
 }
 
 nsIFrame::DisplayChildFlag nsIFrame::DisplayFlagForFlexOrGridItem() const {
@@ -4325,9 +4292,6 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
       child->BuildDisplayList(aBuilder, aLists);
       aBuilder->Check();
       aBuilder->DisplayCaret(child, aLists.Outlines());
-#ifdef DEBUG
-      DisplayDebugBorders(aBuilder, child, aLists);
-#endif
       return;
     }
 
@@ -4353,9 +4317,6 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
     list.AppendToTop(pseudoStack.Content());
     list.AppendToTop(pseudoStack.Outlines());
     extraPositionedDescendants.AppendToTop(pseudoStack.PositionedDescendants());
-#ifdef DEBUG
-    DisplayDebugBorders(aBuilder, child, aLists);
-#endif
   }
 
   buildingForChild.RestoreBuildingInvisibleItemsValue();
@@ -6885,7 +6846,6 @@ void nsIFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
   DO_GLOBAL_REFLOW_COUNT("nsFrame");
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   aDesiredSize.ClearSize();
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 bool nsIFrame::IsContentDisabled() const {
@@ -10683,10 +10643,10 @@ nsSize nsIFrame::GetXULMaxSize(nsBoxLayoutState& aState) {
   return size;
 }
 
-nscoord nsIFrame::GetXULFlex() {
+int32_t nsIFrame::GetXULFlex() {
   nsBoxLayoutMetrics* metrics = BoxMetrics();
   if (XULNeedsRecalc(metrics->mFlex)) {
-    nsIFrame::AddXULFlex(this, metrics->mFlex);
+    metrics->mFlex = nsIFrame::ComputeXULFlex(this);
   }
 
   return metrics->mFlex;

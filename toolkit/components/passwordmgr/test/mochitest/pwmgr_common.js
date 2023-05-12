@@ -42,36 +42,6 @@ let authPromptIsCommonDialog =
     ));
 
 /**
- * Returns the element with the specified |name| attribute.
- */
-function $_(formNum, name) {
-  var form = document.getElementById("form" + formNum);
-  if (!form) {
-    ok(false, "$_ couldn't find requested form " + formNum);
-    return null;
-  }
-
-  var element = form.children.namedItem(name);
-  if (!element) {
-    ok(false, "$_ couldn't find requested element " + name);
-    return null;
-  }
-
-  // Note that namedItem is a bit stupid, and will prefer an
-  // |id| attribute over a |name| attribute when looking for
-  // the element. Login Mananger happens to use .namedItem
-  // anyway, but let's rigorously check it here anyway so
-  // that we don't end up with tests that mistakenly pass.
-
-  if (element.getAttribute("name") != name) {
-    ok(false, "$_ got confused.");
-    return null;
-  }
-
-  return element;
-}
-
-/**
  * Recreate a DOM tree using the outerHTML to ensure that any event listeners
  * and internal state for the elements are removed.
  */
@@ -80,13 +50,24 @@ function recreateTree(element) {
   element.outerHTML = element.outerHTML;
 }
 
+function _checkArrayValues(actualValues, expectedValues, msg) {
+  is(
+    actualValues.length,
+    expectedValues.length,
+    "Checking array values: " + msg
+  );
+  for (let i = 0; i < expectedValues.length; i++) {
+    is(actualValues[i], expectedValues[i], msg + " Checking array entry #" + i);
+  }
+}
+
 /**
  * Check autocomplete popup results to ensure that expected
  * *labels* are being shown correctly as items in the popup.
  */
 function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
   if (hostname === null) {
-    checkArrayValues(actualValues, expectedValues, msg);
+    _checkArrayValues(actualValues, expectedValues, msg);
     return;
   }
 
@@ -118,7 +99,7 @@ function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
   }
 
   // Check the rest of the autocomplete item values.
-  checkArrayValues(actualValues.slice(0, -1), expectedValues, msg);
+  _checkArrayValues(actualValues.slice(0, -1), expectedValues, msg);
 }
 
 function getIframeBrowsingContext(window, iframeNumber = 0) {
@@ -728,6 +709,7 @@ function runInParent(aFunctionOrURL) {
  */
 function addLoginsInParent(...aLogins) {
   let script = runInParent(function addLoginsInParentInner() {
+    /* eslint-env mozilla/chrome-script */
     addMessageListener("addLogins", logins => {
       let nsLoginInfo = Components.Constructor(
         "@mozilla.org/login-manager/loginInfo;1",
@@ -809,6 +791,7 @@ SimpleTest.registerCleanupFunction(() => {
   PWMGR_COMMON_PARENT.sendAsyncMessage("cleanup");
 
   runInParent(function cleanupParent() {
+    /* eslint-env mozilla/chrome-script */
     // eslint-disable-next-line no-shadow
     const { LoginManagerParent } = ChromeUtils.import(
       "resource://gre/modules/LoginManagerParent.jsm"

@@ -42,6 +42,7 @@
 #include "nsIImageLoadingContent.h"
 #include "nsImageLoadingContent.h"
 #include "nsImageRenderer.h"
+#include "nsObjectLoadingContent.h"
 #include "nsString.h"
 #include "nsPrintfCString.h"
 #include "nsPresContext.h"
@@ -355,6 +356,8 @@ void nsImageFrame::DisconnectMap() {
 
 void nsImageFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                PostDestroyData& aPostDestroyData) {
+  MaybeSendIntrinsicSizeAndRatioToEmbedder(Nothing(), Nothing());
+
   if (mReflowCallbackPosted) {
     PresShell()->CancelReflowCallback(this);
     mReflowCallbackPosted = false;
@@ -513,6 +516,12 @@ void nsImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     // We have a PresContext now, so we need to notify the image content node
     // that it can register images.
     imageLoader->FrameCreated(this);
+    AssertSyncDecodingHintIsInSync();
+    if (nsIDocShell* docShell = PresContext()->GetDocShell()) {
+      RefPtr<BrowsingContext> bc = docShell->GetBrowsingContext();
+      mIsInObjectOrEmbed = bc->IsEmbedderTypeObjectOrEmbed() &&
+                           PresContext()->Document()->IsImageDocument();
+    }
   } else {
     const StyleImage* image = GetImageFromStyle();
     MOZ_ASSERT(mKind == Kind::ListStyleImage || image->IsImageRequestType(),
@@ -538,6 +547,8 @@ void nsImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
     currentRequest->BoostPriority(categoryToBoostPriority);
   }
+
+  MaybeSendIntrinsicSizeAndRatioToEmbedder();
 }
 
 void nsImageFrame::SetupForContentURLRequest() {
@@ -612,10 +623,9 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
                                           bool aUseMappedRatio,
                                           nsImageFrame::Kind aKind,
                                           const nsImageFrame& aFrame) {
-  const ComputedStyle& style = *aFrame.Style();
-  const auto containAxes = style.StyleDisplay()->GetContainSizeAxes();
+  const auto containAxes = aFrame.StyleDisplay()->GetContainSizeAxes();
   if (containAxes.IsBoth()) {
-    return IntrinsicSize(0, 0);
+    return containAxes.ContainIntrinsicSize(IntrinsicSize(0, 0), aFrame);
   }
 
   nsSize size;
@@ -657,7 +667,7 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
         IntrinsicSize(edgeLengthToUse, edgeLengthToUse), aFrame);
   }
 
-  if (aUseMappedRatio && style.StylePosition()->mAspectRatio.HasRatio()) {
+  if (aUseMappedRatio && aFrame.StylePosition()->mAspectRatio.HasRatio()) {
     return IntrinsicSize();
   }
 
@@ -951,6 +961,13 @@ void nsImageFrame::UpdateImage(imgIRequest* aRequest, imgIContainer* aImage) {
     bool intrinsicRatioChanged = UpdateIntrinsicRatio();
     return intrinsicSizeChanged || intrinsicRatioChanged;
   }();
+
+  if (intrinsicSizeOrRatioChanged) {
+    // Our aspect-ratio property value changed, and an embedding <object> or
+    // <embed> might care about that.
+    MaybeSendIntrinsicSizeAndRatioToEmbedder();
+  }
+
   if (!GotInitialReflow()) {
     return;
   }
@@ -1023,6 +1040,47 @@ void nsImageFrame::InvalidateSelf(const nsIntRect* aLayerInvalidRect,
   }
 }
 
+void nsImageFrame::MaybeSendIntrinsicSizeAndRatioToEmbedder() {
+  MaybeSendIntrinsicSizeAndRatioToEmbedder(Some(GetIntrinsicSize()),
+                                           Some(GetAspectRatio()));
+}
+
+void nsImageFrame::MaybeSendIntrinsicSizeAndRatioToEmbedder(
+    Maybe<IntrinsicSize> aIntrinsicSize, Maybe<AspectRatio> aIntrinsicRatio) {
+  if (!mIsInObjectOrEmbed || !mImage) {
+    return;
+  }
+
+  nsCOMPtr<nsIDocShell> docShell = PresContext()->GetDocShell();
+  if (!docShell) {
+    return;
+  }
+
+  BrowsingContext* bc = docShell->GetBrowsingContext();
+  if (!bc) {
+    return;
+  }
+  MOZ_ASSERT(bc->IsContentSubframe());
+
+  if (bc->GetParent()->IsInProcess()) {
+    if (Element* embedder = bc->GetEmbedderElement()) {
+      if (nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(embedder)) {
+        static_cast<nsObjectLoadingContent*>(olc.get())
+            ->SubdocumentIntrinsicSizeOrRatioChanged(aIntrinsicSize,
+                                                     aIntrinsicRatio);
+      } else {
+        MOZ_ASSERT_UNREACHABLE("Got out of sync?");
+      }
+      return;
+    }
+  }
+
+  if (BrowserChild* browserChild = BrowserChild::GetFrom(docShell)) {
+    Unused << browserChild->SendIntrinsicSizeOrRatioChanged(aIntrinsicSize,
+                                                            aIntrinsicRatio);
+  }
+}
+
 void nsImageFrame::OnLoadComplete(imgIRequest* aRequest, nsresult aStatus) {
   NotifyNewCurrentRequest(aRequest, aStatus);
 }
@@ -1039,6 +1097,10 @@ void nsImageFrame::ResponsiveContentDensityChanged() {
   if (!UpdateIntrinsicSize() && !UpdateIntrinsicRatio()) {
     return;
   }
+
+  // Our aspect-ratio property value changed, and an embedding <object> or
+  // <embed> might care about that.
+  MaybeSendIntrinsicSizeAndRatioToEmbedder();
 
   PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                 NS_FRAME_IS_DIRTY);
@@ -1134,10 +1196,13 @@ bool nsImageFrame::IsForMarkerPseudo() const {
 }
 
 void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
-  if (StyleDisplay()->GetContainSizeAxes().IsBoth()) {
-    // If we have 'contain:size', then our intrinsic size and ratio are 0,0
+  const auto containAxes = StyleDisplay()->GetContainSizeAxes();
+  if (containAxes.IsBoth()) {
+    // If we have 'contain:size', then we have no intrinsic aspect ratio,
+    // and the intrinsic size is determined by contain-intrinsic-size,
     // regardless of what our underlying image may think.
-    mIntrinsicSize = IntrinsicSize(0, 0);
+    mIntrinsicSize =
+        containAxes.ContainIntrinsicSize(IntrinsicSize(0, 0), *this);
     mIntrinsicRatio = AspectRatio();
     return;
   }
@@ -1149,8 +1214,15 @@ void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
     return;
   }
 
-  UpdateIntrinsicSize();
-  UpdateIntrinsicRatio();
+  bool intrinsicSizeOrRatioChanged = UpdateIntrinsicSize();
+  intrinsicSizeOrRatioChanged =
+      UpdateIntrinsicRatio() || intrinsicSizeOrRatioChanged;
+
+  if (intrinsicSizeOrRatioChanged) {
+    // Our aspect-ratio property value changed, and an embedding <object> or
+    // <embed> might care about that.
+    MaybeSendIntrinsicSizeAndRatioToEmbedder();
+  }
 }
 
 nsIFrame::SizeComputationResult nsImageFrame::ComputeSize(
@@ -1328,7 +1400,6 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
 
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS, ("exit nsImageFrame::Reflow: size=%d,%d",
                                         aMetrics.Width(), aMetrics.Height()));
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aMetrics);
 }
 
 bool nsImageFrame::ReflowFinished() {
@@ -1936,21 +2007,6 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
   return textDrawResult ? ImgDrawResult::SUCCESS : ImgDrawResult::NOT_READY;
 }
 
-#ifdef DEBUG
-static void PaintDebugImageMap(nsIFrame* aFrame, DrawTarget* aDrawTarget,
-                               const nsRect& aDirtyRect, nsPoint aPt) {
-  nsImageFrame* f = static_cast<nsImageFrame*>(aFrame);
-  nsRect inner = f->GetContentRectRelativeToSelf() + aPt;
-  gfxPoint devPixelOffset = nsLayoutUtils::PointToGfxPoint(
-      inner.TopLeft(), aFrame->PresContext()->AppUnitsPerDevPixel());
-  AutoRestoreTransform autoRestoreTransform(aDrawTarget);
-  aDrawTarget->SetTransform(
-      aDrawTarget->GetTransform().PreTranslate(ToPoint(devPixelOffset)));
-  f->GetImageMap()->Draw(aFrame, *aDrawTarget,
-                         ColorPattern(ToDeviceColor(sRGBColor::OpaqueBlack())));
-}
-#endif
-
 // We want to sync-decode in this case, as otherwise we either need to flash
 // white while waiting to decode the new image, or paint the old image with a
 // different aspect-ratio, which would be bad as it'd be stretched.
@@ -1997,9 +2053,24 @@ static bool OldImageHasDifferentRatio(const nsImageFrame& aFrame,
   return oldRatio != currentRatio;
 }
 
+#ifdef DEBUG
+void nsImageFrame::AssertSyncDecodingHintIsInSync() const {
+  if (!IsForElement()) {
+    return;
+  }
+  nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
+  MOZ_ASSERT(imageLoader);
+
+  // The opposite is not true, we might have some other heuristics which force
+  // sync-decoding of images.
+  MOZ_ASSERT_IF(imageLoader->GetSyncDecodingHint(), mForceSyncDecoding);
+}
+#endif
+
 void nsDisplayImage::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   MOZ_ASSERT(mImage);
   auto* frame = static_cast<nsImageFrame*>(mFrame);
+  frame->AssertSyncDecodingHintIsInSync();
 
   const bool oldImageIsDifferent =
       OldImageHasDifferentRatio(*frame, *mImage, mPrevImage);
@@ -2063,6 +2134,7 @@ bool nsDisplayImage::CreateWebRenderCommands(
     return false;
   }
 
+  frame->AssertSyncDecodingHintIsInSync();
   const bool oldImageIsDifferent =
       OldImageHasDifferentRatio(*frame, *mImage, mPrevImage);
 
@@ -2294,14 +2366,6 @@ void nsImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         gIconLoad->RemoveIconObserver(this);
         mDisplayingIcon = false;
       }
-
-#ifdef DEBUG
-      if (GetShowFrameBorders() && GetImageMap()) {
-        aLists.Outlines()->AppendNewToTop<nsDisplayGeneric>(
-            aBuilder, this, PaintDebugImageMap, "DebugImageMap",
-            DisplayItemType::TYPE_DEBUG_IMAGE_MAP);
-      }
-#endif
     }
   }
 

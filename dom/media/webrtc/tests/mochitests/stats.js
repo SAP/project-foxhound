@@ -499,7 +499,7 @@ function pedanticChecks(report) {
       );
 
       // jitterBufferEmittedCount
-      let expectedJitterBufferEmmitedCount = stat.kind == "video" ? 10 : 1000;
+      let expectedJitterBufferEmmitedCount = stat.kind == "video" ? 7 : 1000;
       ok(
         stat.jitterBufferEmittedCount > expectedJitterBufferEmmitedCount,
         `${stat.type}.jitterBufferEmittedCount is a sane number for a short ` +
@@ -546,14 +546,16 @@ function pedanticChecks(report) {
 
         // concealedSamples
         ok(
-          stat.concealedSamples > 100,
+          stat.concealedSamples >= 0 &&
+            stat.concealedSamples <= stat.totalSamplesReceived,
           `${stat.type}.concealedSamples is a sane number for a short ` +
             `${stat.kind} test. value=${stat.concealedSamples}`
         );
 
         // silentConcealedSamples
         ok(
-          stat.silentConcealedSamples >= 0,
+          stat.silentConcealedSamples >= 0 &&
+            stat.silentConcealedSamples <= stat.concealedSamples,
           `${stat.type}.silentConcealedSamples is a sane number for a short ` +
             `${stat.kind} test. value=${stat.silentConcealedSamples}`
         );

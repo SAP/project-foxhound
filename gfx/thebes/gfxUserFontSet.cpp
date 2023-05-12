@@ -231,7 +231,8 @@ void gfxUserFontEntry::StoreUserFontData(gfxFontEntry* aFontEntry,
       break;
   }
   userFontData->mPrivate = aPrivate;
-  userFontData->mFormat = src.mFormatFlags;
+  userFontData->mTechFlags = src.mTechFlags;
+  userFontData->mFormatHint = src.mFormatHint;
   userFontData->mRealName = aOriginalName;
   if (aMetadata) {
     userFontData->mMetadata = std::move(*aMetadata);
@@ -257,7 +258,8 @@ gfxUserFontFamily::~gfxUserFontFamily() {
 already_AddRefed<gfxFontSrcPrincipal> gfxFontFaceSrc::LoadPrincipal(
     const gfxUserFontSet& aFontSet) const {
   MOZ_ASSERT(mSourceType == eSourceType_URL);
-  if (mUseOriginPrincipal && mOriginPrincipal) {
+  if (mUseOriginPrincipal) {
+    MOZ_ASSERT(mOriginPrincipal);
     return RefPtr{mOriginPrincipal}.forget();
   }
   return aFontSet.GetStandardFontLoadPrincipal();
@@ -468,7 +470,7 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aForceAsync) {
     // src url ==> start the load process
     else if (currSrc.mSourceType == gfxFontFaceSrc::eSourceType_URL) {
       if (gfxPlatform::GetPlatform()->IsFontFormatSupported(
-              currSrc.mFormatFlags)) {
+              currSrc.mFormatHint, currSrc.mTechFlags)) {
         if (ServoStyleSet* set = gfxFontUtils::CurrentServoStyleSet()) {
           // Only support style worker threads synchronously getting
           // entries from the font cache when it's not a data: URI

@@ -7,6 +7,8 @@
 #include "UrlClassifierFeatureEmailTrackingDataCollection.h"
 
 #include "mozilla/AntiTrackingUtils.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/UrlClassifierCommon.h"
@@ -42,6 +44,18 @@ namespace {
 
 StaticRefPtr<UrlClassifierFeatureEmailTrackingDataCollection>
     gFeatureEmailTrackingDataCollection;
+StaticAutoPtr<nsCString> gEmailWebAppDomainsPref;
+static constexpr char kEmailWebAppDomainPrefName[] =
+    "privacy.trackingprotection.emailtracking.webapp.domains";
+
+void EmailWebAppDomainPrefChangeCallback(const char* aPrefName, void*) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!strcmp(aPrefName, kEmailWebAppDomainPrefName));
+  MOZ_ASSERT(gEmailWebAppDomainsPref);
+
+  Preferences::GetCString(kEmailWebAppDomainPrefName, *gEmailWebAppDomainsPref);
+}
+
 }  // namespace
 
 UrlClassifierFeatureEmailTrackingDataCollection::
@@ -176,8 +190,22 @@ UrlClassifierFeatureEmailTrackingDataCollection::ProcessChannel(
     return NS_OK;
   }
 
-  bool isTopEmailWebApp = topWindowParent->DocumentPrincipal()->IsURIInPrefList(
-      "privacy.trackingprotection.emailtracking.webapp.domains");
+  // Cache the email webapp domains pref value and register the callback
+  // function to update the cached value when the pref changes.
+  if (!gEmailWebAppDomainsPref) {
+    gEmailWebAppDomainsPref = new nsCString();
+
+    Preferences::RegisterCallbackAndCall(EmailWebAppDomainPrefChangeCallback,
+                                         kEmailWebAppDomainPrefName);
+    RunOnShutdown([]() {
+      Preferences::UnregisterCallback(EmailWebAppDomainPrefChangeCallback,
+                                      kEmailWebAppDomainPrefName);
+      gEmailWebAppDomainsPref = nullptr;
+    });
+  }
+
+  bool isTopEmailWebApp = topWindowParent->DocumentPrincipal()->IsURIInList(
+      *gEmailWebAppDomainsPref);
 
   uint32_t flags = UrlClassifierCommon::TablesToClassificationFlags(
       aList, sClassificationData,
@@ -189,11 +217,30 @@ UrlClassifierFeatureEmailTrackingDataCollection::ProcessChannel(
         isTopEmailWebApp
             ? Telemetry::LABELS_EMAIL_TRACKER_COUNT::content_email_webapp
             : Telemetry::LABELS_EMAIL_TRACKER_COUNT::content_normal);
+
+    // Notify the load event to record the content blocking log.
+    //
+    // Note that we need to change the code here if we decided to block content
+    // email trackers in the future.
+    ContentBlockingNotifier::OnEvent(
+        aChannel,
+        nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_2_CONTENT);
   } else {
     Telemetry::AccumulateCategorical(
         isTopEmailWebApp
             ? Telemetry::LABELS_EMAIL_TRACKER_COUNT::base_email_webapp
             : Telemetry::LABELS_EMAIL_TRACKER_COUNT::base_normal);
+    // Notify to record content blocking log. Note that we don't need to notify
+    // if email tracking is enabled because the email tracking protection
+    // feature will be responsible for notifying the blocking event.
+    //
+    // Note that we need to change the code here if we decided to block content
+    // email trackers in the future.
+    if (!StaticPrefs::privacy_trackingprotection_emailtracking_enabled()) {
+      ContentBlockingNotifier::OnEvent(
+          aChannel,
+          nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_1_CONTENT);
+    }
   }
 
   return NS_OK;

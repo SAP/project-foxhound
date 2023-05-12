@@ -47,11 +47,6 @@ using mozilla::EnumeratedArray;
 struct TableDesc;
 struct V128;
 
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-bool IsWormholeTrigger(const V128& shuffleMask);
-jit::SimdConstant WormholeSignature();
-#endif
-
 // ArgTypeVector type.
 //
 // Functions usually receive one ABI argument per WebAssembly argument.  However
@@ -416,6 +411,7 @@ class CallSiteDesc {
     Indirect,      // dynamic callee called via register, context on stack
     IndirectFast,  // dynamically determined to be same-instance
     FuncRef,       // call using direct function reference
+    FuncRefFast,   // call using direct function reference within same-instance
     Symbolic,      // call to a single symbolic callee
     EnterFrame,    // call to a enter frame handler
     LeaveFrame,    // call to a leave frame handler
@@ -709,6 +705,7 @@ class CalleeDesc {
     MOZ_ASSERT(which_ == Builtin || which_ == BuiltinInstanceMethod);
     return u.builtin_;
   }
+  bool isFuncRef() const { return which_ == FuncRef; }
 };
 
 WASM_DECLARE_CACHEABLE_POD(CalleeDesc);

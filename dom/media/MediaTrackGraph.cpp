@@ -1533,9 +1533,9 @@ auto MediaTrackGraphImpl::OneIterationImpl(GraphTime aStateTime,
   // > LIFECYCLE_RUNNING)
 
   // Ignore mutex warning: static during execution of the graph
-  PUSH_IGNORE_THREAD_SAFETY
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   MOZ_DIAGNOSTIC_ASSERT(mLifecycleState <= LIFECYCLE_RUNNING);
-  POP_THREAD_SAFETY
+  MOZ_POP_THREAD_SAFETY
 
   MOZ_ASSERT(OnGraphThread());
 
@@ -1737,8 +1737,6 @@ class MediaTrackGraphShutDownRunnable : public Runnable {
       RefPtr<GraphRunner>(mGraph->mGraphRunner)->Shutdown();
     }
 
-    // This will wait until it's shutdown since
-    // we'll start tearing down the graph after this
     RefPtr<GraphDriver>(mGraph->mDriver)->Shutdown();
 
     // Release the driver now so that an AudioCallbackDriver will release its
@@ -2725,7 +2723,7 @@ bool SourceMediaTrack::PullNewData(GraphTime aDesiredUpToTime) {
 static void MoveToSegment(SourceMediaTrack* aTrack, MediaSegment* aIn,
                           MediaSegment* aOut, TrackTime aCurrentTime,
                           TrackTime aDesiredUpToTime)
-    REQUIRES(aTrack->GetMutex()) {
+    MOZ_REQUIRES(aTrack->GetMutex()) {
   MOZ_ASSERT(aIn->GetType() == aOut->GetType());
   MOZ_ASSERT(aOut->GetDuration() >= aCurrentTime);
   MOZ_ASSERT(aDesiredUpToTime >= aCurrentTime);

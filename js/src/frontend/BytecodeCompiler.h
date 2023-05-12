@@ -14,6 +14,7 @@
 
 #include "frontend/FunctionSyntaxKind.h"
 #include "js/SourceText.h"
+#include "js/Stack.h"      // JS::NativeStackLimit
 #include "js/UniquePtr.h"  // js::UniquePtr
 
 /*
@@ -103,6 +104,7 @@ namespace js {
 
 class ModuleObject;
 class ScriptSourceObject;
+class ErrorContext;
 
 namespace frontend {
 
@@ -116,26 +118,30 @@ class ParseNode;
 class TaggedParserAtomIndex;
 
 // Compile a module of the given source using the given options.
-ModuleObject* CompileModule(JSContext* cx,
+ModuleObject* CompileModule(JSContext* cx, ErrorContext* ec,
+                            JS::NativeStackLimit stackLimit,
                             const JS::ReadOnlyCompileOptions& options,
                             JS::SourceText<char16_t>& srcBuf);
-ModuleObject* CompileModule(JSContext* cx,
+ModuleObject* CompileModule(JSContext* cx, ErrorContext* ec,
+                            JS::NativeStackLimit stackLimit,
                             const JS::ReadOnlyCompileOptions& options,
                             JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 // Parse a module of the given source.  This is an internal API; if you want to
 // compile a module as a user, use CompileModule above.
 already_AddRefed<CompilationStencil> ParseModuleToStencil(
-    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
 already_AddRefed<CompilationStencil> ParseModuleToStencil(
-    JSContext* cx, CompilationInput& input,
-    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
-    JSContext* cx, CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<char16_t>& srcBuf);
 UniquePtr<ExtensibleCompilationStencil> ParseModuleToExtensibleStencil(
-    JSContext* cx, CompilationInput& input,
-    JS::SourceText<mozilla::Utf8Unit>& srcBuf);
+    JSContext* cx, ErrorContext* ec, JS::NativeStackLimit stackLimit,
+    CompilationInput& input, JS::SourceText<mozilla::Utf8Unit>& srcBuf);
 
 //
 // Compile a single function. The source in srcBuf must match the ECMA-262

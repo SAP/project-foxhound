@@ -52,6 +52,7 @@
 #include "mozilla/dom/HTMLMediaElementBinding.h"
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/InspectorFontFace.h"
+#include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/SVGViewportElement.h"
 #include "mozilla/dom/UIEvent.h"
@@ -1776,7 +1777,8 @@ nsIFrame* nsLayoutUtils::GetPopupFrameForEventCoordinates(
 
 nsIFrame* nsLayoutUtils::GetPopupFrameForPoint(
     nsPresContext* aRootPresContext, nsIWidget* aWidget,
-    const mozilla::LayoutDeviceIntPoint& aPoint) {
+    const mozilla::LayoutDeviceIntPoint& aPoint,
+    GetPopupFrameForPointFlags aFlags /* = GetPopupFrameForPointFlags(0) */) {
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
   if (!pm) {
     return nullptr;
@@ -1785,11 +1787,19 @@ nsIFrame* nsLayoutUtils::GetPopupFrameForPoint(
   pm->GetVisiblePopups(popups);
   // Search from top to bottom
   for (nsIFrame* popup : popups) {
-    if (popup->PresContext()->GetRootPresContext() == aRootPresContext &&
-        popup->ScrollableOverflowRect().Contains(GetEventCoordinatesRelativeTo(
-            aWidget, aPoint, RelativeTo{popup}))) {
-      return popup;
+    if (popup->PresContext()->GetRootPresContext() != aRootPresContext) {
+      continue;
     }
+    if (!popup->ScrollableOverflowRect().Contains(GetEventCoordinatesRelativeTo(
+            aWidget, aPoint, RelativeTo{popup}))) {
+      continue;
+    }
+    if (aFlags & GetPopupFrameForPointFlags::OnlyReturnFramesWithWidgets) {
+      if (!popup->HasView() || !popup->GetView()->HasWidget()) {
+        continue;
+      }
+    }
+    return popup;
   }
   return nullptr;
 }
@@ -3198,6 +3208,14 @@ void nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext, nsIFrame* aFrame,
   }
 
   nsRect rootInkOverflow = aFrame->InkOverflowRectRelativeToSelf();
+
+  // If the dynamic toolbar is completely collapsed, the visible rect should
+  // be expanded to include this area.
+  if (presContext->IsRootContentDocumentCrossProcess() &&
+      presContext->HasDynamicToolbar()) {
+    rootInkOverflow.SizeTo(nsLayoutUtils::ExpandHeightForDynamicToolbar(
+        presContext, rootInkOverflow.Size()));
+  }
 
   // If we are in a remote browser, then apply clipping from ancestor browsers
   if (BrowserChild* browserChild = BrowserChild::GetFrom(presShell)) {
@@ -7110,6 +7128,35 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromOffscreenCanvas(
   result.mIsWriteOnly = aOffscreenCanvas->IsWriteOnly();
 
   nsIGlobalObject* global = aOffscreenCanvas->GetParentObject();
+  if (global) {
+    result.mPrincipal = global->PrincipalOrNull();
+  }
+
+  return result;
+}
+
+SurfaceFromElementResult nsLayoutUtils::SurfaceFromImageBitmap(
+    mozilla::dom::ImageBitmap* aImageBitmap, uint32_t aSurfaceFlags) {
+  SurfaceFromElementResult result;
+  RefPtr<DrawTarget> dt = Factory::CreateDrawTarget(
+      BackendType::SKIA, IntSize(1, 1), SurfaceFormat::B8G8R8A8);
+
+  // An ImageBitmap, not being a DOM element, only has `origin-clean`
+  // (via our `IsWriteOnly`), and does not participate in CORS.
+  // Right now we mark this by setting mCORSUsed to true.
+  result.mCORSUsed = true;
+  result.mIsWriteOnly = aImageBitmap->IsWriteOnly();
+  result.mSourceSurface = aImageBitmap->PrepareForDrawTarget(dt);
+
+  if (result.mSourceSurface) {
+    result.mSize = result.mIntrinsicSize = result.mSourceSurface->GetSize();
+    result.mHasSize = true;
+    result.mAlphaType = IsOpaque(result.mSourceSurface->GetFormat())
+                            ? gfxAlphaType::Opaque
+                            : gfxAlphaType::Premult;
+  }
+
+  nsCOMPtr<nsIGlobalObject> global = aImageBitmap->GetParentObject();
   if (global) {
     result.mPrincipal = global->PrincipalOrNull();
   }

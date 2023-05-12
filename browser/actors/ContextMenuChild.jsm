@@ -167,8 +167,11 @@ class ContextMenuChild extends JSWindowActorChild {
         let img = lazy.ContentDOMReference.resolve(
           message.data.targetIdentifier
         );
-        img.recognizeCurrentImageText();
-        break;
+        const { direction } = this.contentWindow.getComputedStyle(img);
+
+        return img.recognizeCurrentImageText().then(results => {
+          return { results, direction };
+        });
       }
 
       case "ContextMenu:ToggleRevealPassword": {
@@ -1097,6 +1100,8 @@ class ContextMenuChild extends JSWindowActorChild {
       context.onNumeric = (editFlags & lazy.SpellCheckHelper.NUMERIC) !== 0;
       context.onEditable = (editFlags & lazy.SpellCheckHelper.EDITABLE) !== 0;
       context.onPassword = (editFlags & lazy.SpellCheckHelper.PASSWORD) !== 0;
+      context.isDesignMode =
+        (editFlags & lazy.SpellCheckHelper.CONTENTEDITABLE) !== 0;
       context.passwordRevealed =
         context.onPassword && context.target.revealPassword;
       context.onSpellcheckable =
@@ -1180,6 +1185,11 @@ class ContextMenuChild extends JSWindowActorChild {
           context.onTelLink = context.linkProtocol == "tel";
           context.onMozExtLink = context.linkProtocol == "moz-extension";
           context.onSaveableLink = this._isLinkSaveable(context.link);
+
+          context.isSponsoredLink =
+            (elem.ownerDocument.URL === "about:newtab" ||
+              elem.ownerDocument.URL === "about:home") &&
+            elem.dataset.isSponsoredLink === "true";
 
           try {
             if (elem.download) {

@@ -102,7 +102,6 @@ bool HasSupport(JSContext* cx);
 
 bool BaselineAvailable(JSContext* cx);
 bool IonAvailable(JSContext* cx);
-bool CraneliftAvailable(JSContext* cx);
 
 // Test all three.
 
@@ -130,8 +129,6 @@ bool BaselineDisabledByFeatures(JSContext* cx, bool* isDisabled,
                                 JSStringBuilder* reason = nullptr);
 bool IonDisabledByFeatures(JSContext* cx, bool* isDisabled,
                            JSStringBuilder* reason = nullptr);
-bool CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
-                                 JSStringBuilder* reason = nullptr);
 
 // Predicates for feature availability.
 //
@@ -159,9 +156,6 @@ bool SimdAvailable(JSContext* cx);
 // Privileged content that can access experimental intrinsics
 bool IsSimdPrivilegedContext(JSContext* cx);
 
-// Very experimental SIMD operations.
-bool SimdWormholeAvailable(JSContext* cx);
-
 #if defined(ENABLE_WASM_SIMD) && defined(DEBUG)
 // Report the result of a Simd simplification to the testing infrastructure.
 void ReportSimdAnalysis(const char* data);
@@ -175,7 +169,7 @@ bool ExceptionsAvailable(JSContext* cx);
 // and links the module's imports with the given import object.
 
 [[nodiscard]] bool Eval(JSContext* cx, Handle<TypedArrayObject*> code,
-                        HandleObject importObj, HandleValue maybeOptions,
+                        HandleObject importObj,
                         MutableHandle<WasmInstanceObject*> instanceObj);
 
 // Extracts the various imports from the given import object into the given

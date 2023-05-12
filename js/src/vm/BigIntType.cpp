@@ -1220,7 +1220,7 @@ JSLinearString* BigInt::toStringBasePowerOfTwo(JSContext* cx, HandleBigInt x,
 
   if (charsRequired > JSString::MAX_LENGTH) {
     if constexpr (allowGC) {
-      ReportOutOfMemory(cx);
+      ReportAllocationOverflow(cx);
     }
     return nullptr;
   }
@@ -1368,7 +1368,7 @@ JSLinearString* BigInt::toStringGeneric(JSContext* cx, HandleBigInt x,
   size_t maximumCharactersRequired =
       calculateMaximumCharactersRequired(x, radix);
   if (maximumCharactersRequired > JSString::MAX_LENGTH) {
-    ReportOutOfMemory(cx);
+    ReportAllocationOverflow(cx);
     return nullptr;
   }
 
@@ -1550,7 +1550,7 @@ bool BigInt::calculateMaximumDigitsRequired(JSContext* cx, uint8_t radix,
   uint64_t n = CeilDiv(static_cast<uint64_t>(charcount) * bitsPerChar,
                        DigitBits * bitsPerCharTableMultiplier);
   if (n > MaxDigitLength) {
-    ReportOutOfMemory(cx);
+    ReportOversizedAllocation(cx, JSMSG_BIGINT_TOO_LARGE);
     return false;
   }
 
@@ -3615,8 +3615,7 @@ static inline BigInt* ParseStringBigIntLiteral(JSContext* cx,
 }
 
 // Called from BigInt constructor.
-JS::Result<BigInt*, JS::OOM> js::StringToBigInt(JSContext* cx,
-                                                HandleString str) {
+JS::Result<BigInt*> js::StringToBigInt(JSContext* cx, HandleString str) {
   JSLinearString* linear = str->ensureLinear(cx);
   if (!linear) {
     return cx->alreadyReportedOOM();
@@ -3635,9 +3634,9 @@ JS::Result<BigInt*, JS::OOM> js::StringToBigInt(JSContext* cx,
     res = ParseStringBigIntLiteral(cx, chars.twoByteRange(), &parseError);
   }
 
-  // A nullptr result can indicate either a parse error or out-of-memory.
+  // A nullptr result can indicate either a parse error or generic error.
   if (!res && !parseError) {
-    return cx->alreadyReportedOOM();
+    return cx->alreadyReportedError();
   }
 
   return res;

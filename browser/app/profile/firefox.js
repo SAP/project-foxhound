@@ -345,7 +345,11 @@ pref("browser.warnOnQuit", true);
 
 pref("browser.overlink-delay", 80);
 
+#ifdef NIGHTLY_BUILD
+pref("browser.theme.colorway-closet", true);
+#else
 pref("browser.theme.colorway-closet", false);
+#endif
 
 // Whether using `ctrl` when hitting return/enter in the URL bar
 // (or clicking 'go') should prefix 'www.' and suffix
@@ -394,6 +398,13 @@ pref("browser.urlbar.suggest.searches",             true);
 pref("browser.urlbar.suggest.topsites",             true);
 pref("browser.urlbar.suggest.engines",              true);
 pref("browser.urlbar.suggest.calculator",           false);
+
+#if defined(EARLY_BETA_OR_EARLIER)
+  // Enable QuickActions and its urlbar search mode button.
+  pref("browser.urlbar.suggest.quickactions", true);
+  pref("browser.urlbar.shortcuts.quickactions", true);
+  pref("browser.urlbar.quickactions.showPrefs", true);
+#endif
 
 // When `browser.urlbar.bestMatch.enabled` is true, this controls whether best
 // match results are shown in the urlbar. This pref is exposed to the user in
@@ -636,6 +647,9 @@ pref("browser.privatebrowsing.vpnpromourl", "https://vpn.mozilla.org/?utm_source
 // Enables the new private browsing indicator.
 pref("browser.privatebrowsing.enable-new-indicator", false);
 
+// Enables the new about:privatebrowsing logo.
+pref("browser.privatebrowsing.enable-new-logo", false);
+
 // Whether the user is opted-in to privacy segmentation.
 pref("browser.privacySegmentation.enabled", false);
 
@@ -773,7 +787,11 @@ pref("security.allow_eval_in_parent_process", false);
 pref("security.allow_parent_unrestricted_js_loads", false);
 
 // Unload tabs when available memory is running low
-pref("browser.tabs.unloadOnLowMemory", true);
+#if defined(XP_MACOSX) || defined(XP_WIN)
+    pref("browser.tabs.unloadOnLowMemory", true);
+#else
+    pref("browser.tabs.unloadOnLowMemory", false);
+#endif
 
 // Tab Unloader does not unload tabs whose last inactive period is longer than
 // this value (in milliseconds).
@@ -1007,10 +1025,6 @@ pref("accessibility.typeaheadfind.timeout", 5000);
 pref("accessibility.typeaheadfind.linksonly", false);
 pref("accessibility.typeaheadfind.flashBar", 1);
 
-// Accessibility indicator preferences such as support URL, enabled flag.
-pref("accessibility.support.url", "https://support.mozilla.org/%LOCALE%/kb/accessibility-services");
-pref("accessibility.indicator.enabled", false);
-
 pref("plugins.testmode", false);
 
 // Should plugins that are hidden show the infobar UI?
@@ -1109,8 +1123,6 @@ pref("browser.sessionstore.upgradeBackup.maxUpgradeBackups", 3);
 pref("browser.sessionstore.debug", false);
 // Forget closed windows/tabs after two weeks
 pref("browser.sessionstore.cleanup.forget_closed_after", 1209600000);
-// Platform collects data for session store
-pref("browser.sessionstore.platform_collection", true);
 // Platform collects session storage data for session store
 pref("browser.sessionstore.collect_session_storage", true);
 
@@ -1478,7 +1490,7 @@ pref("services.sync.syncedTabs.showRemoteIcons", true);
 // A preference (in milliseconds) controlling if we sync after a tab change and
 // how long to delay before we schedule the sync
 // Anything <= 0 means disabled
-pref("services.sync.syncedTabs.syncDelayAfterTabChange", 0);
+pref("services.sync.syncedTabs.syncDelayAfterTabChange", 5000);
 
 // Whether the character encoding menu is under the main Firefox button. This
 // preference is a string so that localizers can alter it.
@@ -1940,7 +1952,7 @@ pref("browser.promo.focus.disallowed_regions", "cn");
 pref("browser.promo.focus.enabled", true);
 
 // Default to enabling pin promos to be shown where allowed.
-pref("browser.promo.pin.enabled", true);
+pref("browser.promo.pin.enabled", false);
 
 // Comma separated string of mozilla vpn supported platforms.
 pref("browser.contentblocking.report.vpn_platforms", "win,mac,linux");
@@ -2050,8 +2062,8 @@ pref("browser.tabs.crashReporting.includeURL", false);
 // nightly and developer edition.
 pref("extensions.experiments.enabled", false);
 
-#if defined(XP_WIN)
-  // Allows us to deprioritize the processes of background tabs at an OS level
+#if defined(XP_LINUX) || defined(XP_WIN)
+  // Allows us to adjust the priority of child processes at the OS level
   pref("dom.ipc.processPriorityManager.enabled", true);
 #endif
 
@@ -2286,20 +2298,15 @@ pref("devtools.toolbox.splitconsoleHeight", 100);
 pref("devtools.toolbox.tabsOrder", "");
 
 // The fission pref for enabling the "Multiprocess Browser Toolbox", which will
-// make it possible to debug anything in Firefox (See Bug 1570639 for more
-// information).
-#if defined(NIGHTLY_BUILD)
+// make it possible to debug anything in Firefox (See Bug 1570639 for more information).
 pref("devtools.browsertoolbox.fission", true);
-#else
-pref("devtools.browsertoolbox.fission", false);
-#endif
 
 // When the Multiprocess Browser Toolbox is enabled, you can configure the scope of it:
 // - "everything" will enable debugging absolutely everything in the browser
 //   All processes, all documents, all workers, all add-ons.
 // - "parent-process" will restrict debugging to the parent process
 //   All privileged javascript, documents and workers running in the parent process.
-pref("devtools.browsertoolbox.scope", "everything");
+pref("devtools.browsertoolbox.scope", "parent-process");
 
 // This preference will enable watching top-level targets from the server side.
 pref("devtools.target-switching.server.enabled", true);
@@ -2710,4 +2717,4 @@ pref("browser.places.snapshots.expiration.userManaged.days", 420);
 
 // If the user has seen the Firefox View feature tour this value reflects the tour
 // message id, the id of the last screen they saw, and whether they completed the tour
-pref("browser.browser.firefoxView.featureTour", "default, default, true");
+pref("browser.firefox-view.feature-tour", "{\"message\":\"FIREFOX_VIEW_FEATURE_TOUR\",\"screen\":\"\",\"complete\":true}");

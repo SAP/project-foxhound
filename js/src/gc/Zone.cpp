@@ -54,16 +54,20 @@ void ZoneAllocator::fixupAfterMovingGC() {
 #endif
 }
 
-void js::ZoneAllocator::updateMemoryCountersOnGCStart() {
+void js::ZoneAllocator::updateSchedulingStateOnGCStart() {
   gcHeapSize.updateOnGCStart();
   mallocHeapSize.updateOnGCStart();
   jitHeapSize.updateOnGCStart();
+  perZoneGCTime = mozilla::TimeDuration();
 }
 
 void js::ZoneAllocator::updateGCStartThresholds(GCRuntime& gc) {
   bool isAtomsZone = JS::Zone::from(this)->isAtomsZone();
-  gcHeapThreshold.updateStartThreshold(gcHeapSize.retainedBytes(), gc.tunables,
-                                       gc.schedulingState, isAtomsZone);
+  gcHeapThreshold.updateStartThreshold(
+      gcHeapSize.retainedBytes(), smoothedAllocationRate.ref(),
+      smoothedCollectionRate.ref(), gc.tunables, gc.schedulingState,
+      isAtomsZone);
+
   mallocHeapThreshold.updateStartThreshold(mallocHeapSize.retainedBytes(),
                                            gc.tunables, gc.schedulingState);
 }
@@ -165,7 +169,6 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
       stringStats(this),
       pretenuring(this),
       uniqueIds_(this),
-      tenuredAllocsSinceMinorGC_(0),
       gcWeakMapList_(this),
       compartments_(),
       crossZoneStringWrappers_(this),
@@ -676,7 +679,7 @@ void* ZoneAllocator::onOutOfMemory(js::AllocFunction allocFunc,
 }
 
 void ZoneAllocator::reportAllocationOverflow() const {
-  js::ReportAllocationOverflow(nullptr);
+  js::ReportAllocationOverflow(static_cast<JSContext*>(nullptr));
 }
 
 ZoneList::ZoneList() : head(nullptr), tail(nullptr) {}

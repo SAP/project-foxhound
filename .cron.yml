@@ -231,6 +231,28 @@ jobs:
           - {weekday: 'Monday', hour: 8, minute: 0}
           - {weekday: 'Thursday', hour: 8, minute: 0}
 
+    - name: daily-beta-perf
+      job:
+          type: decision-task
+          treeherder-symbol: d-perf
+          target-tasks-method: daily_beta_perf
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-beta
+      when:
+          - {hour: 16, minute: 0}
+
+    - name: weekly-release-perf
+      job:
+          type: decision-task
+          treeherder-symbol: w-perf
+          target-tasks-method: weekly_release_perf
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-release
+      when:
+          - {weekday: 'Friday', hour: 16, minute: 0}
+
     - name: raptor-tp6m
       job:
           type: decision-task

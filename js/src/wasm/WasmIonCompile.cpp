@@ -337,7 +337,6 @@ class FunctionCompiler {
         case ValType::F64:
           ins = MConstant::New(alloc(), DoubleValue(0.0), MIRType::Double);
           break;
-        case ValType::Rtt:
         case ValType::Ref:
           ins = MWasmNullConstant::New(alloc());
           break;
@@ -812,12 +811,109 @@ class FunctionCompiler {
     curBlock_->setSlot(info().localSlot(slot), def);
   }
 
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+  MDefinition* compareIsNull(MDefinition* value, JSOp compareOp) {
+    MDefinition* nullVal = nullRefConstant();
+    if (!nullVal) {
+      return nullptr;
+    }
+    return compare(value, nullVal, compareOp, MCompare::Compare_RefOrNull);
+  }
+
+  bool refAsNonNull(MDefinition* value) {
+    if (inDeadCode()) {
+      return true;
+    }
+
+    MBasicBlock* joinBlock = nullptr;
+    if (!newBlock(curBlock_, &joinBlock)) {
+      return false;
+    }
+
+    MBasicBlock* trapBlock = nullptr;
+    if (!newBlock(curBlock_, &trapBlock)) {
+      return false;
+    }
+    auto* ins = MWasmTrap::New(alloc(), wasm::Trap::NullPointerDereference,
+                               bytecodeOffset());
+    trapBlock->end(ins);
+
+    MDefinition* check = compareIsNull(value, JSOp::Ne);
+    if (!check) {
+      return false;
+    }
+    MTest* test = MTest::New(alloc(), check, joinBlock, trapBlock);
+    curBlock_->end(test);
+    curBlock_ = joinBlock;
+    return true;
+  }
+
+  bool brOnNull(uint32_t relativeDepth, const DefVector& values,
+                const ResultType& type, MDefinition* condition) {
+    if (inDeadCode()) {
+      return true;
+    }
+
+    MBasicBlock* joinBlock = nullptr;
+    if (!newBlock(curBlock_, &joinBlock)) {
+      return false;
+    }
+
+    MDefinition* check = compareIsNull(condition, JSOp::Eq);
+    if (!check) {
+      return false;
+    }
+    MTest* test = MTest::New(alloc(), check, joinBlock);
+    if (!addControlFlowPatch(test, relativeDepth, MTest::TrueBranchIndex)) {
+      return false;
+    }
+
+    if (!pushDefs(values)) {
+      return false;
+    }
+
+    curBlock_->end(test);
+    curBlock_ = joinBlock;
+    return true;
+  }
+
+  bool brOnNonNull(uint32_t relativeDepth, const DefVector& values,
+                   const ResultType& type, MDefinition* condition) {
+    if (inDeadCode()) {
+      return true;
+    }
+
+    MBasicBlock* joinBlock = nullptr;
+    if (!newBlock(curBlock_, &joinBlock)) {
+      return false;
+    }
+
+    MDefinition* check = compareIsNull(condition, JSOp::Ne);
+    if (!check) {
+      return false;
+    }
+    MTest* test = MTest::New(alloc(), check, joinBlock);
+    if (!addControlFlowPatch(test, relativeDepth, MTest::TrueBranchIndex)) {
+      return false;
+    }
+
+    if (!pushDefs(values)) {
+      return false;
+    }
+
+    curBlock_->end(test);
+    curBlock_ = joinBlock;
+    return true;
+  }
+
+#endif  // ENABLE_WASM_FUNCTION_REFERENCES
+
 #ifdef ENABLE_WASM_SIMD
   // About Wasm SIMD as supported by Ion:
   //
   // The expectation is that Ion will only ever support SIMD on x86 and x64,
-  // since Cranelift will be the optimizing compiler for Arm64, ARMv7 will cease
-  // to be a tier-1 platform soon, and MIPS64 will never implement SIMD.
+  // since ARMv7 will cease to be a tier-1 platform soon, and MIPS64 will never
+  // implement SIMD.
   //
   // The division of the operations into MIR nodes reflects that expectation,
   // and is a good fit for x86/x64.  Should the expectation change we'll
@@ -1939,7 +2035,6 @@ class FunctionCompiler {
             def = MWasmFloatRegisterResult::New(alloc(), MIRType::Double,
                                                 result.fpr());
             break;
-          case wasm::ValType::Rtt:
           case wasm::ValType::Ref:
             def = MWasmRegisterResult::New(alloc(), MIRType::RefOrNull,
                                            result.gpr());
@@ -1974,7 +2069,7 @@ class FunctionCompiler {
   bool catchableCall(const CallSiteDesc& desc, const CalleeDesc& callee,
                      const MWasmCallBase::Args& args,
                      const ArgTypeVector& argTypes,
-                     MDefinition* index = nullptr) {
+                     MDefinition* indexOrRef = nullptr) {
     MWasmCallTryDesc tryDesc;
     if (!beginTryCall(&tryDesc)) {
       return false;
@@ -1984,11 +2079,11 @@ class FunctionCompiler {
     if (tryDesc.inTry) {
       ins = MWasmCallCatchable::New(alloc(), desc, callee, args,
                                     StackArgAreaSizeUnaligned(argTypes),
-                                    tryDesc, index);
+                                    tryDesc, indexOrRef);
     } else {
-      ins =
-          MWasmCallUncatchable::New(alloc(), desc, callee, args,
-                                    StackArgAreaSizeUnaligned(argTypes), index);
+      ins = MWasmCallUncatchable::New(alloc(), desc, callee, args,
+                                      StackArgAreaSizeUnaligned(argTypes),
+                                      indexOrRef);
     }
     if (!ins) {
       return false;
@@ -2126,6 +2221,28 @@ class FunctionCompiler {
 
     return def ? collectUnaryCallResult(builtin.retType, def) : true;
   }
+
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+  bool callRef(const FuncType& funcType, MDefinition* ref,
+               uint32_t lineOrBytecode, const CallCompileState& call,
+               DefVector* results) {
+    if (inDeadCode()) {
+      return true;
+    }
+
+    CalleeDesc callee = CalleeDesc::wasmFuncRef();
+
+    CallSiteDesc desc(lineOrBytecode, CallSiteDesc::FuncRef);
+    ArgTypeVector args(funcType);
+    ResultType resultType = ResultType::Vector(funcType.results());
+
+    if (!catchableCall(desc, callee, call.regArgs_, args, ref)) {
+      return false;
+    }
+    return collectCallResults(resultType, call.stackResultArea_, results);
+  }
+
+#endif  // ENABLE_WASM_FUNCTION_REFERENCES
 
   /*********************************************** Control flow generation */
 
@@ -5553,29 +5670,6 @@ static bool EmitShuffleSimd128(FunctionCompiler& f) {
     return false;
   }
 
-#  ifdef ENABLE_WASM_SIMD_WORMHOLE
-  if (f.moduleEnv().simdWormholeEnabled() && IsWormholeTrigger(control)) {
-    switch (control.bytes[15]) {
-      case 0:
-        f.iter().setResult(
-            f.binarySimd128(v1, v2, false, wasm::SimdOp::MozWHSELFTEST));
-        return true;
-#    if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-      case 1:
-        f.iter().setResult(
-            f.binarySimd128(v1, v2, false, wasm::SimdOp::MozWHPMADDUBSW));
-        return true;
-      case 2:
-        f.iter().setResult(
-            f.binarySimd128(v1, v2, false, wasm::SimdOp::MozWHPMADDWD));
-        return true;
-#    endif
-      default:
-        return f.iter().fail("Unrecognized wormhole opcode");
-    }
-  }
-#  endif
-
   f.iter().setResult(f.shuffleSimd128(v1, v2, control));
   return true;
 }
@@ -5636,7 +5730,77 @@ static bool EmitStoreLaneSimd128(FunctionCompiler& f, uint32_t laneSize) {
   return true;
 }
 
-#endif
+#endif  // ENABLE_WASM_SIMD
+
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+static bool EmitRefAsNonNull(FunctionCompiler& f) {
+  MDefinition* value;
+  if (!f.iter().readRefAsNonNull(&value)) {
+    return false;
+  }
+
+  return f.refAsNonNull(value);
+}
+
+static bool EmitBrOnNull(FunctionCompiler& f) {
+  uint32_t relativeDepth;
+  ResultType type;
+  DefVector values;
+  MDefinition* condition;
+  if (!f.iter().readBrOnNull(&relativeDepth, &type, &values, &condition)) {
+    return false;
+  }
+
+  return f.brOnNull(relativeDepth, values, type, condition);
+}
+
+static bool EmitBrOnNonNull(FunctionCompiler& f) {
+  uint32_t relativeDepth;
+  ResultType type;
+  DefVector values;
+  MDefinition* condition;
+  if (!f.iter().readBrOnNonNull(&relativeDepth, &type, &values, &condition)) {
+    return false;
+  }
+
+  return f.brOnNonNull(relativeDepth, values, type, condition);
+}
+
+static bool EmitCallRef(FunctionCompiler& f) {
+  uint32_t lineOrBytecode = f.readCallSiteLineOrBytecode();
+
+  const FuncType* funcType;
+  bool maybeNull;
+  MDefinition* callee;
+  DefVector args;
+
+  if (!f.iter().readCallRef(&funcType, &maybeNull, &callee, &args)) {
+    return false;
+  }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  if (maybeNull && !f.refAsNonNull(callee)) {
+    return false;
+  }
+
+  CallCompileState call;
+  if (!EmitCallArgs(f, *funcType, args, &call)) {
+    return false;
+  }
+
+  DefVector results;
+  if (!f.callRef(*funcType, callee, lineOrBytecode, call, &results)) {
+    return false;
+  }
+
+  f.iter().setResults(results.length(), results);
+  return true;
+}
+
+#endif  // ENABLE_WASM_FUNCTION_REFERENCES
 
 static bool EmitIntrinsic(FunctionCompiler& f) {
   const Intrinsic* intrinsic;
@@ -5669,7 +5833,7 @@ static bool EmitIntrinsic(FunctionCompiler& f) {
 }
 
 static bool EmitBodyExprs(FunctionCompiler& f) {
-  if (!f.iter().startFunction(f.funcIndex())) {
+  if (!f.iter().startFunction(f.funcIndex(), f.locals())) {
     return false;
   }
 
@@ -6164,7 +6328,33 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
       case uint16_t(Op::I64Extend32S):
         CHECK(EmitSignExtend(f, 4, 8));
 
-        // Gc operations
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+      case uint16_t(Op::RefAsNonNull):
+        if (!f.moduleEnv().functionReferencesEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitRefAsNonNull(f));
+      case uint16_t(Op::BrOnNull): {
+        if (!f.moduleEnv().functionReferencesEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitBrOnNull(f));
+      }
+      case uint16_t(Op::BrOnNonNull): {
+        if (!f.moduleEnv().functionReferencesEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitBrOnNonNull(f));
+      }
+      case uint16_t(Op::CallRef): {
+        if (!f.moduleEnv().functionReferencesEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitCallRef(f));
+      }
+#endif
+
+      // Gc operations
 #ifdef ENABLE_WASM_GC
       case uint16_t(Op::GcPrefix): {
         return f.iter().unrecognizedOpcode(&op);
@@ -6848,7 +7038,7 @@ bool wasm::IonCompileFunctions(const ModuleEnvironment& moduleEnv,
   MOZ_ASSERT(compilerEnv.optimizedBackend() == OptimizedBackend::Ion);
 
   TempAllocator alloc(&lifo);
-  JitContext jitContext(&alloc);
+  JitContext jitContext;
   MOZ_ASSERT(IsCompilingWasm());
   WasmMacroAssembler masm(alloc, moduleEnv);
 #if defined(JS_CODEGEN_ARM64)

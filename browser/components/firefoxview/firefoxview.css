@@ -4,10 +4,16 @@
 
 :host,
 :root {
-  --content-area-gutter: 24px;
+  --content-area-padding-inline: 24px;
+  --content-area-padding-block: 16px;
   --sidebar-width: 200px;
   --header-spacing: 40px;
   --footer-spacing: 80px;
+  --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
+
+  --success-fill-color: #2AC3A2;
+  --success-background-color: #87FFD1;
+  --success-box-text-color: #15141A;
 
   --colorways-figure-size: 225px;
   --colorways-grid-template-areas:
@@ -19,33 +25,68 @@
   --colorways-grid-template-rows: auto auto auto;
   --colorways-figure-display: flex;
   --colorways-header-flex-direction: column;
+  --colorways-no-collection-border-radius: 8px;
+  --colorways-no-collection-div-bg-position: center top;
+  --colorways-no-collection-div-bg-size: 100%;
+  --colorways-no-collection-div-padding-inline: var(--content-area-padding-inline);
+  --colorways-no-collection-div-padding-block: var(--content-area-padding-block);
+  --colorways-no-collection-notice-padding-block: 0 1em;
+  --colorways-no-collection-notice-padding-inline: 1em;
+  --colorways-no-collection-notice-height: auto;
+  --colorways-no-collection-notice-justify-content: center;
+  --colorways-no-collection-notice-margin: 0;
+  --colorways-no-collection-notice-width: auto;
+  --colorways-no-collection-notice-text-color: #FFF;
 
-  --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
+  --info-icon-background-color: #0090ED;
 }
 
 :root {
   /* align the base font-size on root element with that of <body>
      so rem-based layout widths and break-points behave predictably */
   font-size: 15px;
+  /* override --in-content-page-background from common-shared.css */
+  background-color: transparent;
 }
 
 body {
+  --fxview-background-color: var(--newtab-background-color, var(--in-content-page-background));
+  --fxview-element-hover-color: color-mix(in srgb, var(--fxview-background-color) 90%, currentColor);
+  --fxview-element-active-color: color-mix(in srgb, var(--fxview-background-color) 80%, currentColor);
+  --fxview-contrast-border: color-mix(in hsl, currentColor 45%, transparent);
+  --fxview-text-secondary-color: color-mix(in srgb, currentColor 80%, transparent);
+  --newtab-background-color-secondary: #FFF;
+  --colorways-no-collection-notice-bg-color: transparent;
+
+  /* ensure utility button hover states match those of the rest of the page */
+  --in-content-button-background-hover: var(--fxview-element-hover-color);
+  --in-content-button-background-active: var(--fxview-element-active-color);
+
   display: flex;
   justify-content: center;
   padding-block: var(--header-spacing) var(--footer-spacing);
-  padding-inline: var(--content-area-gutter);
+  padding-inline: var(--content-area-padding-inline);
   max-width: 96rem;
   margin-inline: auto;
+  background-color: var(--fxview-background-color);
+  color: var(--newtab-text-primary-color);
+}
+
+body[lwt-newtab-brighttext] {
+  --fxview-element-hover-color: color-mix(in srgb, var(--fxview-background-color) 80%, white);
+  --fxview-element-active-color: color-mix(in srgb, var(--fxview-background-color) 60%, white);
+  --newtab-background-color-secondary: #42414d;
 }
 
 h1 {
+  color: var(--newtab-text-primary-color);
   font-weight: 500;
   font-size: 1.5em;
 }
 
 .content-container {
-  padding-inline: var(--content-area-gutter);
-  padding-block: 16px;
+  padding-inline: var(--content-area-padding-inline);
+  padding-block: var(--content-area-padding-block);
 }
 
 body > nav {
@@ -71,7 +112,7 @@ body > main > aside {
   :host,
   :root {
     --sidebar-width: 40px;
-    --content-area-gutter: 12px;
+    --content-area-padding-inline: 12px;
   }
   .brand-logo > .brand-feature-name {
     display: none;
@@ -79,6 +120,9 @@ body > main > aside {
 }
 
 @media (max-width: 65rem) {
+  body {
+    --colorways-no-collection-notice-bg-color: var(--newtab-background-color-secondary);
+  }
   body > main > section,
   body > main > aside {
     grid-column: 1 / -1;
@@ -92,6 +136,17 @@ body > main > aside {
     --colorways-grid-template-columns: 1fr var(--colorways-figure-size);
     --colorways-grid-template-rows: min-content min-content 1fr;
     --colorways-header-flex-direction: row;
+    --colorways-no-collection-div-bg-position: right top;
+    --colorways-no-collection-div-bg-size: 230px;
+    --colorways-no-collection-div-padding-inline: 0 246px;
+    --colorways-no-collection-div-padding-block: 0;
+    --colorways-no-collection-notice-padding-block: 0;
+    --colorways-no-collection-notice-padding-inline: var(--colorways-no-collection-border-radius);
+    --colorways-no-collection-notice-height: 107px;
+    --colorways-no-collection-notice-justify-content: flex-start;
+    --colorways-no-collection-notice-margin: 1px;
+    --colorways-no-collection-notice-width: 100%;
+    --colorways-no-collection-notice-text-color: inherit;
   }
 }
 
@@ -108,6 +163,8 @@ body > main > aside {
     --colorways-grid-template-rows: auto;
     --colorways-figure-display: none;
     --colorways-header-flex-direction: column;
+    --colorways-no-collection-div-bg-size: 15%;
+    --colorways-no-collection-div-padding-inline: 0 15%;
   }
 }
 
@@ -150,18 +207,21 @@ body > main > aside {
 #colorways.no-collection {
   display: block;
   background: linear-gradient(51.95deg, #7542E5 -8.36%, #C953F2 98.73%);
-  border-radius: 8px;
+  border-radius: var(--colorways-no-collection-border-radius);
 }
 
 #colorways.no-collection > div {
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding-inline: var(--colorways-no-collection-div-padding-inline);
+  padding-block: var(--colorways-no-collection-div-padding-block);
   justify-content: flex-end;
   background: url("chrome://browser/content/colorway-background.svg");
-  background-size: 100%;
-  background-position: center top;
+  background-size: var(--colorways-no-collection-div-bg-size);
+  background-position: var(--colorways-no-collection-div-bg-position);
   background-repeat: no-repeat;
+  border-radius: inherit;
 }
 
 #colorways > header {
@@ -173,10 +233,19 @@ body > main > aside {
 }
 
 #no-current-colorway-collection-notice {
-  color: #FFF;
+  display: flex;
+  width: var(--colorways-no-collection-notice-width);
+  height: var(--colorways-no-collection-notice-height);
+  border-start-start-radius: calc(var(--colorways-no-collection-border-radius) - var(--colorways-no-collection-notice-margin));
+  border-end-start-radius: calc(var(--colorways-no-collection-border-radius) - var(--colorways-no-collection-notice-margin));
+  margin: var(--colorways-no-collection-notice-margin);
+  padding-block: var(--colorways-no-collection-notice-padding-block);
+  padding-inline: var(--colorways-no-collection-notice-padding-inline);
+  justify-content: var(--colorways-no-collection-notice-justify-content);
+  align-items: center;
   font-size: 2em;
-  text-align: center;
-  margin: 0 1em 1em;
+  background-color: var(--colorways-no-collection-notice-bg-color);
+  color: var(--colorways-no-collection-notice-text-color);
 }
 
 #no-current-colorway-collection-notice,
@@ -213,8 +282,7 @@ body > main > aside {
 
 #colorways-collection-expiry-date > span {
   display: inline-block;
-  color: var(--in-content-page-color);
-  background: var(--in-content-page-background);
+  background: var(--fxview-background-color);
   border-radius: 1.5em;
   padding: .3em 1em;
 }
@@ -239,17 +307,57 @@ body > main > aside {
   display: none !important;
 }
 
+button.ghost-button,
+button.ghost-button:not(.semi-transparent):enabled:is(:hover, :active) {
+  color: inherit;
+}
+
+@media (prefers-contrast) {
+  button.ghost-button:not(.semi-transparent):enabled:is(:hover, :active) {
+    background-color: ButtonText;
+    color: ButtonFace;
+  }
+}
+
+button.primary {
+  white-space: nowrap;
+  min-width: fit-content;
+}
+
+button.close {
+  background-image: url(chrome://global/skin/icons/close.svg);
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.card,
+.synced-tab-a,
+.synced-tab-li-placeholder,
 .empty-container {
-  background-color: rgba(240, 240, 244, 0.4);
+  background-color: var(--newtab-background-color-secondary);
+  border: 1px solid var(--fxview-contrast-border);
+}
+
+.empty-container {
+  border-radius: 4px;
+}
+
+.error-state {
+  text-align: center;
+  padding: 0 0 20px;
+  border: 1px solid var(--fxview-contrast-border);
+  border-radius: 4px;
+}
+
+.error-state > h3 {
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 0;
 }
 
 .placeholder-content {
   text-align: center;
-  padding: 20px 0 10px;
-}
-
-.placeholder-text, .synced-tabs, .history {
-  color: var(--in-content-deemphasized-text);
+  padding: 24px 16px;
 }
 
 .page-section-header {
@@ -264,14 +372,12 @@ body > main > aside {
 }
 
 .page-section-header > h1 {
-  color: var(--in-content-deemphasized-text);
   grid-area: head;
   margin: 0;
   padding-block: 4px;
 }
 
 .page-section-header > .twisty {
-  color: var(--in-content-deemphasized-text);
   grid-area: twisty;
   justify-self: end;
   margin-block: 0;
@@ -281,7 +387,23 @@ body > main > aside {
 
 .page-section-header > .section-description {
   grid-area: desc;
-  color: var(--in-content-deemphasized-text)
+}
+
+.card-body {
+  display: flex;
+  flex-grow: 1;
+  align-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+@media only screen and (max-width: 45rem) {
+  .card-body {
+    flex-wrap: wrap;
+  }
+}
+
+.card-body > button.primary {
+  margin-inline-start: 0;
 }
 
 .setup-step {
@@ -290,12 +412,12 @@ body > main > aside {
 }
 
 /* Bug 1770534 - Only use the zap-gradient for built-in, color-neutral themes */
-.setup-step {
+.zap-card {
   border: none;
   position: relative;
   z-index: 0;
 }
-.setup-step::before {
+.zap-card::before {
   content: "";
   position: absolute;
   z-index: -1;
@@ -311,21 +433,12 @@ body > main > aside {
   margin-block: 0 8px;
 }
 
-.setup-step > .step-body {
-  display: flex;
-  align-content: space-between;
-  align-items: center;
+.setup-step > .card-body {
   margin-block: 8px;
   padding-block: 8px;
 }
-
-.setup-step > .step-body > .step-content {
+.setup-step > .card-body > .step-content {
   flex: 1 1 auto;
-}
-
-.setup-step > .step-body > button.primary {
-  white-space: nowrap;
-  min-width: fit-content;
 }
 
 .setup-step > footer {
@@ -334,8 +447,78 @@ body > main > aside {
   margin-block: 0 8px;
 }
 
-.setup-step > footer > progress {
+.step-progress {
+  background-color: #E0E0E6;
+  border-radius: 8px;
+  border-style: none;
+  height: 8px;
   margin-block: 0 8px;
+  margin-inline: 0 2px;
+}
+
+.step-progress::-moz-progress-bar {
+  background-color: var(--success-fill-color);
+  border-radius: 8px;
+}
+
+@media (prefers-contrast) {
+  .step-progress {
+    background-color: -moz-Dialog;
+    border: 1px solid ButtonText;
+  }
+
+  .step-progress::-moz-progress-bar {
+    background-color: SelectedItem;
+  }
+}
+
+.message-box {
+  display: flex;
+  align-items: center;
+  margin-block: 8px;
+  gap: 8px;
+}
+
+.message-content {
+  flex: 1 1 auto;
+}
+
+.message-content > .message-header {
+  font-size: 1.12em;
+  margin-block: 0 0.33em;
+}
+
+.message-content > .message-description {
+  margin-block: 0 0.33em;
+}
+
+.confirmation-message-box {
+  background-color: var(--success-background-color);
+  color: var(--success-box-text-color);
+  border-color: var(--success-fill-color);
+}
+.confirmation-message-box > .message-content {
+  text-align: center;
+}
+.confirmation-message-box > .message-content > .message-header {
+  font-size: inherit;
+  display: inline;
+}
+/* ensure we get the local color values as container doesnt change color with theme */
+.confirmation-message-box > .icon-button {
+  color: inherit;
+}
+.confirmation-message-box > button.icon-button:enabled:is(:hover, :active) {
+  background-color: color-mix(in srgb, var(--success-background-color) 90%, currentColor);
+}
+@media (prefers-contrast) {
+  .confirmation-message-box > button.icon-button {
+    border-color: ButtonText;
+  }
+  .confirmation-message-box > button.icon-button:enabled:is(:hover, :active) {
+    background-color: ButtonText;
+    color: ButtonFace;
+  }
 }
 
 /* 117px is the total height of the collapsible-tabs-container; setting that size
@@ -358,12 +541,9 @@ body > main > aside {
 
 .synced-tabs-container > .loading-content {
   text-align: center;
-  -moz-context-properties: fill;
-  fill: currentColor;
-  background: url(chrome://global/skin/icons/loading-dial.svg) no-repeat center top;
-  background-size: 32px;
-  margin-top: 32px;
-  padding: 48px 16px 16px;
+  color: var(--fxview-text-secondary-color);
+  margin-top: 40px;
+  padding: 20px 16px 16px;
 }
 
 .closed-tabs-list {
@@ -376,15 +556,15 @@ body > main > aside {
   column-gap: 16px;
   padding: 8px;
   cursor: pointer;
+  align-items: center;
 }
 
 .closed-tab-li:hover {
-  background-color: var(--in-content-button-background-hover);
-  color: var(--in-content-button-text-color-hover);
+  background-color: var(--fxview-element-hover-color);
 }
 
-.closed-tab-li:hover:active {
-  background-color: var(--in-content-button-background-active);
+.closed-tab-li:active {
+  background-color: var(--fxview-element-active-color);
 }
 
 .closed-tab-li-title {
@@ -402,26 +582,34 @@ body > main > aside {
   text-align: end;
 }
 
+.synced-tab-a,
+.synced-tab-a:hover,
+.synced-tab-a:active,
+.synced-tab-a:hover:active,
+.synced-tab-a:visited {
+  color: inherit;
+  text-decoration: none;
+  height: 100%;
+}
+
 .closed-tab-li-url,
 .closed-tab-li-time,
 .synced-tab-li-device,
 .synced-tab-li-url,
-.synced-tab-li-time,
-.synced-tab-li-url-device {
-  color: var(--in-content-deemphasized-text);
+.synced-tab-li-time {
   font-weight: 400;
+  color: var(--fxview-text-secondary-color);
 }
 
 .closed-tab-li-title,
 .closed-tab-li-url,
-.synced-tab-li:not(:first-child) > .synced-tab-li-title,
-.synced-tab-li-device,
-.synced-tab-li-url-device {
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-title,
+.synced-tab-li-device {
   overflow: hidden;
 }
 
 .closed-tab-li-title,
-.synced-tab-li:not(:first-child) > .synced-tab-li-title,
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-title,
 .synced-tab-li-device {
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -445,26 +633,25 @@ body > main > aside {
       "first third";
 }
 
-.synced-tab-li,
+.synced-tab-a,
 .synced-tab-li-placeholder {
   box-sizing: border-box;
-  border: 1px solid #CFCFD8;
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 10px;
   display: grid;
   grid-template-columns: min-content repeat(2, 1fr) minmax(min-content, auto);
-  grid-template-rows: auto auto;
+  grid-template-rows: auto;
   grid-template-areas:
   "favicon title title title"
-  "favicon url-device url-device time"
+  "favicon domain domain domain"
+  "favicon device device time"
 }
 
-.synced-tab-li:hover {
-  box-shadow: 0px 2px 6px rgba(58, 57, 68, 0.2);
-  cursor: pointer;
+.synced-tab-a:hover {
+  box-shadow: 0px 2px 14px var(--fxview-contrast-border);
 }
 
-.synced-tab-li:not(:first-child) {
+.synced-tab-a:not(:first-child) {
   align-content: center;
 }
 
@@ -472,9 +659,10 @@ body > main > aside {
   .synced-tab-li {
     grid-template-areas:
     "favicon title title title"
-    "favicon url-device url-device url-device"
+    "favicon domain domain domain"
+    "favicon device device device"
   }
-  .synced-tab-li:not(:first-child) > .synced-tab-li-time {
+  .synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-time {
     display: none;
   }
 }
@@ -498,7 +686,7 @@ body > main > aside {
 }
 
 .li-placeholder-domain {
-  grid-area: url-device;
+  grid-area: url;
   height: 8px;
   width: 100%;
 }
@@ -512,8 +700,11 @@ body > main > aside {
 }
 
 .synced-tab-li:first-child {
-  padding-top: 20px;
   grid-area: first;
+}
+
+.synced-tab-li:first-child > .synced-tab-a {
+  padding-top: 20px;
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: auto;
   grid-template-areas:
@@ -534,7 +725,7 @@ body > main > aside {
 .synced-tab-li-url,
 .synced-tab-li-device,
 .synced-tab-li-time,
-.synced-tab-li:not(:first-child) > .synced-tab-li-title {
+.synced-tab-li:not(:first-child) > .synced-tab-a > .synced-tab-li-title {
   font-size: .85em;
 }
 
@@ -542,9 +733,13 @@ body > main > aside {
   text-decoration-line: underline;
 }
 
-.synced-tab-li:first-child > .synced-tab-li-url {
+.synced-tab-li:first-child > .synced-tab-a > .synced-tab-li-url {
   align-self: end;
   grid-area: domain;
+}
+
+.synced-tab-li:not(:first-child) > .synced-tab-li-url {
+  margin-top: 4px;
 }
 
 .synced-tab-li-title {
@@ -552,7 +747,7 @@ body > main > aside {
   font-weight: 500;
 }
 
-.synced-tab-li:first-child > .synced-tab-li-title {
+.synced-tab-li:first-child > .synced-tab-a > .synced-tab-li-title {
   color: inherit;
   padding-top: 5px;
   overflow: hidden;
@@ -562,12 +757,7 @@ body > main > aside {
   height: 2.5em;
 }
 
-.synced-tab-li-url-device {
-  grid-area: url-device;
-  padding-top: 4px
-}
-
-.synced-tab-li:first-child > .synced-tab-li-device {
+.synced-tab-li-device {
   grid-area: device;
   margin-top: 5px;
 }
@@ -575,11 +765,10 @@ body > main > aside {
 .synced-tab-li-time {
   grid-area: time;
   justify-self: end;
-  color: var(--in-content-deemphasized-text);
   align-self: end;
 }
 
-.synced-tab-li:first-child > .synced-tab-li-time {
+.synced-tab-li:first-child > .synced-tab-a > .synced-tab-li-time {
   align-self: center;
 }
 
@@ -630,13 +819,45 @@ body > main > aside {
   background-image: url('chrome://browser/skin/synced-tabs.svg');
 }
 
+.info {
+  background-image: url('chrome://global/skin/icons/info-filled.svg');
+}
+
+.error-state > .info {
+  vertical-align: text-top;
+  margin-inline-end: 7px;
+  margin-top: 1px;
+  color: var(--info-icon-background-color);
+}
+
 .favicon {
   background-size: cover;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .favicon, .icon, .synced-tab-li-favicon {
   width: 16px;
   height: 16px;
+}
+
+.sync {
+  background-image: url(chrome://browser/skin/sync.svg);
+  background-size: cover;
+  height: 19px;
+  width: 19px;
+  color: var(--fxview-text-secondary-color);
+}
+
+@keyframes syncRotate {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sync {
+    animation: syncRotate 0.8s linear infinite;
+  }
 }
 
 .last-active-badge {
@@ -653,7 +874,7 @@ body > main > aside {
 .dot {
   height: 8px;
   width: 8px;
-  background-color: #2AC3A2;
+  background-color: var(--success-fill-color);
   border-radius: 50%;
   display: inline-block;
 }

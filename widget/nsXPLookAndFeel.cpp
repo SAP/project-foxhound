@@ -26,6 +26,7 @@
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_editor.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/dom/Document.h"
@@ -256,6 +257,7 @@ static const char sColorPrefs[][41] = {
     "ui.-moz-buttonhoverface",
     "ui.-moz_buttonhovertext",
     "ui.-moz_menuhover",
+    "ui.-moz_menuhoverdisabled",
     "ui.-moz_menuhovertext",
     "ui.-moz_menubartext",
     "ui.-moz_menubarhovertext",
@@ -450,6 +452,21 @@ void nsXPLookAndFeel::OnPrefChanged(const char* aPref, void* aClosure) {
   }
 }
 
+bool LookAndFeel::WindowsNonNativeMenusEnabled() {
+  switch (StaticPrefs::browser_display_windows_non_native_menus()) {
+    case 0:
+      return false;
+    case 1:
+      return true;
+    default:
+#ifdef XP_WIN
+      return GetInt(IntID::WindowsDefaultTheme) && IsWin10OrLater();
+#else
+      return false;
+#endif
+  }
+}
+
 static constexpr struct {
   nsLiteralCString mName;
   widget::ThemeChangeKind mChangeKind =
@@ -478,6 +495,7 @@ static constexpr struct {
     // need to re-layout.
     {"browser.theme.toolbar-theme"_ns, widget::ThemeChangeKind::AllBits},
     {"browser.theme.content-theme"_ns},
+    {"layout.css.moz-box-flexbox-emulation.enabled"_ns},
 };
 
 // Read values from the user's preferences.
@@ -651,6 +669,7 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(MozMenuhovertext, 0x00, 0x00, 0x00)
       COLOR(MozMenubartext, 0x00, 0x00, 0x00)
       COLOR(MozMenubarhovertext, 0x00, 0x00, 0x00)
+      COLOR(MozMenuhoverdisabled, 0xF0, 0xF0, 0xF0)
       COLOR(MozEventreerow, 0xFF, 0xFF, 0xFF)
       COLOR(MozOddtreerow, 0xFF, 0xFF, 0xFF)
       COLOR(MozMacChromeActive, 0xB2, 0xB2, 0xB2)
@@ -691,15 +710,32 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
   switch (aID) {
     case ColorID::Window:  // --in-content-page-background
     case ColorID::Background:
-    case ColorID::Menu:
       color = kWindowBackground;
       break;
+
+    case ColorID::Menu:
+      color = NS_RGB(0x2b, 0x2a, 0x33);
+      break;
+
+    case ColorID::MozMenuhovertext:
+    case ColorID::MozMenubarhovertext:
+    case ColorID::Menutext:
+      color = NS_RGB(0xfb, 0xfb, 0xfe);
+      break;
+
+    case ColorID::MozMenuhover:
+      color = NS_RGB(0x52, 0x52, 0x5e);
+      break;
+
+    case ColorID::MozMenuhoverdisabled:
+      color = NS_RGB(0x3a, 0x39, 0x44);
+      break;
+
     case ColorID::MozOddtreerow:
     case ColorID::MozDialog:  // --in-content-box-background
       color = NS_RGB(35, 34, 43);
       break;
     case ColorID::Windowtext:  // --in-content-page-color
-    case ColorID::Menutext:
     case ColorID::MozDialogtext:
     case ColorID::Fieldtext:
     case ColorID::Buttontext:  // --in-content-button-text-color (via
@@ -1271,7 +1307,8 @@ void LookAndFeel::RecomputeColorSchemes() {
 }
 
 ColorScheme LookAndFeel::ColorSchemeForStyle(
-    const dom::Document& aDoc, const StyleColorSchemeFlags& aFlags) {
+    const dom::Document& aDoc, const StyleColorSchemeFlags& aFlags,
+    ColorSchemeMode aMode) {
   using Choice = PreferenceSheet::Prefs::ColorSchemeChoice;
 
   const auto& prefs = PreferenceSheet::PrefsFor(aDoc);
@@ -1303,7 +1340,8 @@ ColorScheme LookAndFeel::ColorSchemeForStyle(
   }
   // No value specified. Chrome docs always supports both, so use the preferred
   // color-scheme.
-  if (nsContentUtils::IsChromeDoc(&aDoc)) {
+  if (aMode == ColorSchemeMode::Preferred ||
+      nsContentUtils::IsChromeDoc(&aDoc)) {
     return aDoc.PreferredColorScheme();
   }
   // Default content to light.
@@ -1311,9 +1349,9 @@ ColorScheme LookAndFeel::ColorSchemeForStyle(
 }
 
 LookAndFeel::ColorScheme LookAndFeel::ColorSchemeForFrame(
-    const nsIFrame* aFrame) {
+    const nsIFrame* aFrame, ColorSchemeMode aMode) {
   return ColorSchemeForStyle(*aFrame->PresContext()->Document(),
-                             aFrame->StyleUI()->mColorScheme.bits);
+                             aFrame->StyleUI()->mColorScheme.bits, aMode);
 }
 
 // static

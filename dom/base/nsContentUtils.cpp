@@ -112,6 +112,7 @@
 #include "mozilla/ScrollbarPreferences.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticAnalysisFunctions.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #ifdef FUZZING
 #  include "mozilla/StaticPrefs_fuzzing.h"
@@ -2365,8 +2366,10 @@ bool nsContentUtils::ShouldResistFingerprinting_dangerous(
 // ----------------------------------------------------------------------
 /* static */
 bool nsContentUtils::ShouldResistFingerprinting(nsILoadInfo* aLoadInfo) {
-  MOZ_ASSERT(aLoadInfo->GetExternalContentPolicyType() != ExtContentPolicy::TYPE_DOCUMENT &&
-             aLoadInfo->GetExternalContentPolicyType() != ExtContentPolicy::TYPE_SUBDOCUMENT);
+  MOZ_ASSERT(aLoadInfo->GetExternalContentPolicyType() !=
+                 ExtContentPolicy::TYPE_DOCUMENT &&
+             aLoadInfo->GetExternalContentPolicyType() !=
+                 ExtContentPolicy::TYPE_SUBDOCUMENT);
 
   if (!ShouldResistFingerprinting("Legacy quick-check")) {
     return false;
@@ -4189,7 +4192,7 @@ nsresult nsContentUtils::FormatLocalizedString(
 
 /* static */
 void nsContentUtils::LogSimpleConsoleError(const nsAString& aErrorText,
-                                           const char* aCategory,
+                                           const nsACString& aCategory,
                                            bool aFromPrivateWindow,
                                            bool aFromChromeContext,
                                            uint32_t aErrorFlags) {
@@ -5946,7 +5949,7 @@ void nsContentUtils::WarnScriptWasIgnored(Document* aDocument) {
 
   msg.AppendLiteral(
       "Unable to run script because scripts are blocked internally.");
-  LogSimpleConsoleError(msg, "DOM", privateBrowsing, chromeContext);
+  LogSimpleConsoleError(msg, "DOM"_ns, privateBrowsing, chromeContext);
 }
 
 /* static */
@@ -7387,6 +7390,7 @@ bool nsContentUtils::IsForbiddenSystemRequestHeader(const nsACString& aHeader) {
                                           "keep-alive",
                                           "origin",
                                           "referer",
+                                          "set-cookie",
                                           "te",
                                           "trailer",
                                           "transfer-encoding",
@@ -10314,7 +10318,7 @@ uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
   }
 
   if (imgLoader::SupportImageWithMimeType(aMIMEType)) {
-    return nsIObjectLoadingContent::TYPE_IMAGE;
+    return ResolveObjectType(nsIObjectLoadingContent::TYPE_IMAGE);
   }
 
   // Faking support of the PDF content as a document for EMBED tags
@@ -10829,7 +10833,7 @@ bool nsContentUtils::IsURIInList(nsIURI* aURI, const nsCString& aList) {
     ToLowerCase(host);
 
     for (;;) {
-      int32_t index = token.Find(host, false);
+      int32_t index = token.Find(host);
       if (index >= 0 &&
           static_cast<uint32_t>(index) + host.Length() <= token.Length()) {
         // If we found a full match, return true.
@@ -10858,7 +10862,7 @@ bool nsContentUtils::IsURIInList(nsIURI* aURI, const nsCString& aList) {
       }
       int32_t startIndexOfCurrentLevel = host[0] == '*' ? 1 : 0;
       int32_t startIndexOfNextLevel =
-          host.Find(".", false, startIndexOfCurrentLevel + 1);
+          host.Find(".", startIndexOfCurrentLevel + 1);
       if (startIndexOfNextLevel <= 0) {
         break;
       }
@@ -11031,6 +11035,28 @@ nsresult nsContentUtils::AnonymizeId(nsAString& aId,
 
   CopyUTF8toUTF16(macBase64, aId);
   return NS_OK;
+}
+
+/* static */
+bool nsContentUtils::ShouldHideObjectOrEmbedImageDocument() {
+  return StaticPrefs::
+             browser_opaqueResponseBlocking_syntheticBrowsingContext_AtStartup() &&
+         StaticPrefs::
+             browser_opaqueResponseBlocking_syntheticBrowsingContext_filter_AtStartup_DoNotUseDirectly();
+}
+
+/* static */
+uint32_t nsContentUtils::ResolveObjectType(uint32_t aType) {
+  if (!StaticPrefs::
+          browser_opaqueResponseBlocking_syntheticBrowsingContext_AtStartup()) {
+    return aType;
+  }
+
+  if (aType != nsIObjectLoadingContent::TYPE_IMAGE) {
+    return aType;
+  }
+
+  return nsIObjectLoadingContent::TYPE_DOCUMENT;
 }
 
 namespace mozilla {

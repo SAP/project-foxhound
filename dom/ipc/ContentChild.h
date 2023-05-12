@@ -45,6 +45,10 @@ class RemoteSpellcheckEngineChild;
 class ChildProfilerController;
 class BenchmarkStorageChild;
 
+namespace ipc {
+class UntypedEndpoint;
+}
+
 namespace loader {
 class PScriptCacheChild;
 }
@@ -102,9 +106,8 @@ class ContentChild final : public PContentChild,
       nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
       BrowsingContext** aReturn);
 
-  void Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            mozilla::ipc::ScopedPort aPort, uint64_t aChildID,
-            bool aIsForBrowser);
+  void Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+            const char* aParentBuildID, uint64_t aChildID, bool aIsForBrowser);
 
   void InitXPCOM(XPCOMInitData&& aXPCOMInit,
                  const mozilla::dom::ipc::StructuredCloneData& aInitialData,
@@ -412,27 +415,27 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvEndDragSession(
       const bool& aDoneDrag, const bool& aUserCancelled,
       const mozilla::LayoutDeviceIntPoint& aEndDragPoint,
-      const uint32_t& aKeyModifiers);
+      const uint32_t& aKeyModifiers, const uint32_t& aDropEffect);
 
   mozilla::ipc::IPCResult RecvPush(const nsCString& aScope,
-                                   const IPC::Principal& aPrincipal,
+                                   nsIPrincipal* aPrincipal,
                                    const nsString& aMessageId);
 
   mozilla::ipc::IPCResult RecvPushWithData(const nsCString& aScope,
-                                           const IPC::Principal& aPrincipal,
+                                           nsIPrincipal* aPrincipal,
                                            const nsString& aMessageId,
                                            nsTArray<uint8_t>&& aData);
 
-  mozilla::ipc::IPCResult RecvPushSubscriptionChange(
-      const nsCString& aScope, const IPC::Principal& aPrincipal);
+  mozilla::ipc::IPCResult RecvPushSubscriptionChange(const nsCString& aScope,
+                                                     nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvPushError(const nsCString& aScope,
-                                        const IPC::Principal& aPrincipal,
+                                        nsIPrincipal* aPrincipal,
                                         const nsString& aMessage,
                                         const uint32_t& aFlags);
 
   mozilla::ipc::IPCResult RecvNotifyPushSubscriptionModifiedObservers(
-      const nsCString& aScope, const IPC::Principal& aPrincipal);
+      const nsCString& aScope, nsIPrincipal* aPrincipal);
 
   mozilla::ipc::IPCResult RecvRefreshScreens(
       nsTArray<ScreenDetails>&& aScreens);
@@ -473,10 +476,8 @@ class ContentChild final : public PContentChild,
 #endif
 
   PContentPermissionRequestChild* AllocPContentPermissionRequestChild(
-      const nsTArray<PermissionRequest>& aRequests,
-      const IPC::Principal& aPrincipal,
-      const IPC::Principal& aTopLevelPrincipal,
-      const bool& aIsHandlingUserInput,
+      const nsTArray<PermissionRequest>& aRequests, nsIPrincipal* aPrincipal,
+      nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
       const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId);
   bool DeallocPContentPermissionRequestChild(
       PContentPermissionRequestChild* actor);
@@ -493,8 +494,8 @@ class ContentChild final : public PContentChild,
       const nsID& aUUID, const GetFilesResponseResult& aResult);
 
   mozilla::ipc::IPCResult RecvBlobURLRegistration(
-      const nsCString& aURI, const IPCBlob& aBlob,
-      const IPC::Principal& aPrincipal, const Maybe<nsID>& aAgentClusterId);
+      const nsCString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
+      const Maybe<nsID>& aAgentClusterId);
 
   mozilla::ipc::IPCResult RecvBlobURLUnregistration(const nsCString& aURI);
 
@@ -553,7 +554,7 @@ class ContentChild final : public PContentChild,
   }
 
   // PURLClassifierChild
-  PURLClassifierChild* AllocPURLClassifierChild(const Principal& aPrincipal,
+  PURLClassifierChild* AllocPURLClassifierChild(nsIPrincipal* aPrincipal,
                                                 bool* aSuccess);
   bool DeallocPURLClassifierChild(PURLClassifierChild* aActor);
 
@@ -803,8 +804,7 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvUpdateMediaCodecsSupported(
-      RemoteDecodeIn aLocation,
-      const PDMFactory::MediaCodecsSupported& aSupported);
+      RemoteDecodeIn aLocation, const media::MediaCodecsSupported& aSupported);
 
 #ifdef NIGHTLY_BUILD
   virtual void OnChannelReceivedMessage(const Message& aMsg) override;

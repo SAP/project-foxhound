@@ -5,6 +5,7 @@
 
 #include "HTMLEditUtils.h"
 
+#include "AutoRangeArray.h"  // for AutoRangeArray
 #include "CSSEditUtils.h"    // for CSSEditUtils
 #include "EditAction.h"      // for EditAction
 #include "EditorBase.h"      // for EditorBase, EditorType
@@ -15,6 +16,7 @@
 
 #include "mozilla/ArrayUtils.h"   // for ArrayLength
 #include "mozilla/Assertions.h"   // for MOZ_ASSERT, etc.
+#include "mozilla/RangeUtils.h"   // for RangeUtils
 #include "mozilla/dom/Element.h"  // for Element, nsINode
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
@@ -95,6 +97,19 @@ template EditorDOMPoint HTMLEditUtils::GetBetterInsertionPointFor(
 template EditorRawDOMPoint HTMLEditUtils::GetBetterInsertionPointFor(
     const nsIContent& aContentToInsert, const EditorDOMPoint& aPointToInsert,
     const Element& aEditingHost);
+
+template Result<EditorDOMPoint, nsresult>
+HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
+    const Element& aElement, const EditorDOMPoint& aCurrentPoint);
+template Result<EditorRawDOMPoint, nsresult>
+HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
+    const Element& aElement, const EditorDOMPoint& aCurrentPoint);
+template Result<EditorDOMPoint, nsresult>
+HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
+    const Element& aElement, const EditorRawDOMPoint& aCurrentPoint);
+template Result<EditorRawDOMPoint, nsresult>
+HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
+    const Element& aElement, const EditorRawDOMPoint& aCurrentPoint);
 
 bool HTMLEditUtils::CanContentsBeJoined(const nsIContent& aLeftContent,
                                         const nsIContent& aRightContent,
@@ -687,7 +702,7 @@ bool HTMLEditUtils::ShouldInsertLinefeedCharacter(
   // element.
   Element* closestEditableBlockElement =
       HTMLEditUtils::GetInclusiveAncestorElement(
-          *aPointToInsert.ContainerAsContent(),
+          *aPointToInsert.ContainerAs<nsIContent>(),
           HTMLEditUtils::ClosestEditableBlockElement);
 
   // If and only if the nearest block is the editing host or its parent,
@@ -697,7 +712,7 @@ bool HTMLEditUtils::ShouldInsertLinefeedCharacter(
           closestEditableBlockElement == &aEditingHost) &&
          HTMLEditUtils::IsDisplayOutsideInline(aEditingHost) &&
          EditorUtils::IsNewLinePreformatted(
-             *aPointToInsert.ContainerAsContent());
+             *aPointToInsert.ContainerAs<nsIContent>());
 }
 
 // We use bitmasks to test containment of elements. Elements are marked to be
@@ -1070,7 +1085,8 @@ nsIContent* HTMLEditUtils::GetPreviousContent(
   if (aPoint.IsStartOfContainer() || aPoint.IsInTextNode()) {
     if (aOptions.contains(WalkTreeOption::StopAtBlockBoundary) &&
         aPoint.IsInContentNode() &&
-        HTMLEditUtils::IsBlockElement(*aPoint.ContainerAsContent())) {
+        HTMLEditUtils::IsBlockElement(
+            *aPoint.template ContainerAs<nsIContent>())) {
       // If we aren't allowed to cross blocks, don't look before this block.
       return nullptr;
     }
@@ -1161,7 +1177,8 @@ nsIContent* HTMLEditUtils::GetNextContent(
   // and want the next one.
   if (aOptions.contains(WalkTreeOption::StopAtBlockBoundary) &&
       point.IsInContentNode() &&
-      HTMLEditUtils::IsBlockElement(*point.ContainerAsContent())) {
+      HTMLEditUtils::IsBlockElement(
+          *point.template ContainerAs<nsIContent>())) {
     // don't cross out of parent block
     return nullptr;
   }
@@ -1794,6 +1811,69 @@ EditorDOMPointType HTMLEditUtils::GetBetterInsertionPointFor(
       .template PointAfterContent<EditorDOMPointType>();
 }
 
+//  static
+template <typename EditorDOMPointType, typename EditorDOMPointTypeInput>
+Result<EditorDOMPointType, nsresult>
+HTMLEditUtils::ComputePointToPutCaretInElementIfOutside(
+    const Element& aElement, const EditorDOMPointTypeInput& aCurrentPoint) {
+  MOZ_ASSERT(aCurrentPoint.IsSet());
+
+  // FYI: This was moved from
+  // https://searchfox.org/mozilla-central/rev/d3c2f51d89c3ca008ff0cb5a057e77ccd973443e/editor/libeditor/HTMLEditSubActionHandler.cpp#9193
+
+  // Use ranges and RangeUtils::CompareNodeToRange() to compare selection
+  // start to new block.
+  RefPtr<StaticRange> staticRange =
+      StaticRange::Create(aCurrentPoint.ToRawRangeBoundary(),
+                          aCurrentPoint.ToRawRangeBoundary(), IgnoreErrors());
+  if (MOZ_UNLIKELY(!staticRange)) {
+    NS_WARNING("StaticRange::Create() failed");
+    return Err(NS_ERROR_FAILURE);
+  }
+
+  bool nodeBefore, nodeAfter;
+  nsresult rv = RangeUtils::CompareNodeToRange(
+      const_cast<Element*>(&aElement), staticRange, &nodeBefore, &nodeAfter);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("RangeUtils::CompareNodeToRange() failed");
+    return Err(rv);
+  }
+
+  if (nodeBefore && nodeAfter) {
+    return EditorDOMPointType();  // aCurrentPoint is in aElement
+  }
+
+  if (nodeBefore) {
+    // selection is after block.  put at end of block.
+    const nsIContent* lastEditableContent = HTMLEditUtils::GetLastChild(
+        aElement, {WalkTreeOption::IgnoreNonEditableNode});
+    if (!lastEditableContent) {
+      lastEditableContent = &aElement;
+    }
+    if (lastEditableContent->IsText() ||
+        HTMLEditUtils::IsContainerNode(*lastEditableContent)) {
+      return EditorDOMPointType::AtEndOf(*lastEditableContent);
+    }
+    MOZ_ASSERT(lastEditableContent->GetParentNode());
+    return EditorDOMPointType::After(*lastEditableContent);
+  }
+
+  // selection is before block.  put at start of block.
+  const nsIContent* firstEditableContent = HTMLEditUtils::GetFirstChild(
+      aElement, {WalkTreeOption::IgnoreNonEditableNode});
+  if (!firstEditableContent) {
+    firstEditableContent = &aElement;
+  }
+  if (firstEditableContent->IsText() ||
+      HTMLEditUtils::IsContainerNode(*firstEditableContent)) {
+    MOZ_ASSERT(firstEditableContent->GetParentNode());
+    // XXX Shouldn't this be EditorDOMPointType(firstEditableContent, 0u)?
+    return EditorDOMPointType(firstEditableContent);
+  }
+  // XXX And shouldn't this be EditorDOMPointType(firstEditableContent)?
+  return EditorDOMPointType(firstEditableContent, 0u);
+}
+
 // static
 size_t HTMLEditUtils::CollectChildren(
     nsINode& aNode, nsTArray<OwningNonNull<nsIContent>>& aOutArrayOfContents,
@@ -1821,6 +1901,71 @@ size_t HTMLEditUtils::CollectChildren(
     }
   }
   return numberOfFoundChildren;
+}
+
+// static
+size_t HTMLEditUtils::CollectEmptyInlineContainerDescendants(
+    const nsINode& aNode,
+    nsTArray<OwningNonNull<nsIContent>>& aOutArrayOfContents,
+    const EmptyCheckOptions& aOptions) {
+  size_t numberOfFoundElements = 0;
+  for (Element* element = aNode.GetFirstElementChild(); element;) {
+    if (HTMLEditUtils::IsEmptyInlineContainer(*element, aOptions)) {
+      aOutArrayOfContents.AppendElement(*element);
+      numberOfFoundElements++;
+      nsIContent* nextContent = element->GetNextNonChildNode(&aNode);
+      element = nullptr;
+      for (; nextContent; nextContent = nextContent->GetNextNode(&aNode)) {
+        if (nextContent->IsElement()) {
+          element = nextContent->AsElement();
+          break;
+        }
+      }
+      continue;
+    }
+
+    nsIContent* nextContent = element->GetNextNode(&aNode);
+    element = nullptr;
+    for (; nextContent; nextContent = nextContent->GetNextNode(&aNode)) {
+      if (nextContent->IsElement()) {
+        element = nextContent->AsElement();
+        break;
+      }
+    }
+  }
+  return numberOfFoundElements;
+}
+
+/******************************************************************************
+ * SelectedTableCellScanner
+ ******************************************************************************/
+
+SelectedTableCellScanner::SelectedTableCellScanner(
+    const AutoRangeArray& aRanges) {
+  if (aRanges.Ranges().IsEmpty()) {
+    return;
+  }
+  Element* firstSelectedCellElement =
+      HTMLEditUtils::GetTableCellElementIfOnlyOneSelected(
+          aRanges.FirstRangeRef());
+  if (!firstSelectedCellElement) {
+    return;  // We're not in table cell selection mode.
+  }
+  mSelectedCellElements.SetCapacity(aRanges.Ranges().Length());
+  mSelectedCellElements.AppendElement(*firstSelectedCellElement);
+  for (uint32_t i = 1; i < aRanges.Ranges().Length(); i++) {
+    nsRange* range = aRanges.Ranges()[i];
+    if (NS_WARN_IF(!range) || NS_WARN_IF(!range->IsPositioned())) {
+      continue;  // Shouldn't occur in normal conditions.
+    }
+    // Just ignore selection ranges which do not select only one table
+    // cell element.  This is possible case if web apps sets multiple
+    // selections and first range selects a table cell element.
+    if (Element* selectedCellElement =
+            HTMLEditUtils::GetTableCellElementIfOnlyOneSelected(*range)) {
+      mSelectedCellElements.AppendElement(*selectedCellElement);
+    }
+  }
 }
 
 }  // namespace mozilla

@@ -60,6 +60,8 @@ class _ExperimentManager {
     this.id = id;
     this.store = store || new lazy.ExperimentStore();
     this.sessions = new Map();
+    // By default, no extra context.
+    this.extraContext = {};
     Services.prefs.addObserver(UPLOAD_ENABLED_PREF, this);
     Services.prefs.addObserver(STUDIES_OPT_OUT_PREF, this);
   }
@@ -84,6 +86,7 @@ class _ExperimentManager {
   createTargetingContext() {
     let context = {
       isFirstStartup: lazy.FirstStartup.state === lazy.FirstStartup.IN_PROGRESS,
+      ...this.extraContext,
     };
     Object.defineProperty(context, "activeExperiments", {
       get: async () => {
@@ -101,10 +104,15 @@ class _ExperimentManager {
   }
 
   /**
-   * Runs on startup, including before first run
+   * Runs on startup, including before first run.
+   *
+   * @param {object} extraContext extra targeting context provided by the
+   * ambient environment.
    */
-  async onStartup() {
+  async onStartup(extraContext = {}) {
     await this.store.init();
+    this.extraContext = extraContext;
+
     const restoredExperiments = this.store.getAllActive();
     const restoredRollouts = this.store.getAllRollouts();
 
@@ -405,17 +413,18 @@ class _ExperimentManager {
 
     recipe.userFacingName = `${recipe.userFacingName} - Forced enrollment`;
 
+    const slug = `optin-${recipe.slug}`;
     const experiment = this._enroll(
       {
         ...recipe,
-        slug: `optin-${recipe.slug}`,
+        slug,
       },
       branch,
       source,
       { force: true }
     );
 
-    Services.obs.notifyObservers(null, "nimbus:force-enroll");
+    Services.obs.notifyObservers(null, "nimbus:force-enroll", slug);
 
     return experiment;
   }

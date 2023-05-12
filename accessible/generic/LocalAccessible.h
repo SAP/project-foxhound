@@ -255,15 +255,7 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual Accessible* ChildAtPoint(int32_t aX, int32_t aY,
                                    EWhichChildAtPoint aWhichChild) override;
 
-  /**
-   * Return the focused child if any.
-   */
-  virtual LocalAccessible* FocusedChild();
-
-  /**
-   * Get the relation of the given type.
-   */
-  virtual Relation RelationByType(RelationType aType) const;
+  virtual Relation RelationByType(RelationType aType) const override;
 
   //////////////////////////////////////////////////////////////////////////////
   // Initializing methods

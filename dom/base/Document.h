@@ -40,6 +40,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/SegmentedVector.h"
+#include "mozilla/StorageAccessAPIHelper.h"
 #include "mozilla/TaskCategory.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -270,6 +271,7 @@ class SVGDocument;
 class SVGElement;
 class SVGSVGElement;
 class SVGUseElement;
+class ImageDocument;
 class Touch;
 class TouchList;
 class TreeWalker;
@@ -1255,19 +1257,14 @@ class Document : public nsINode,
 
   Selection* GetSelection(ErrorResult& aRv);
 
+  void MakeBrowsingContextNonSynthetic();
   nsresult HasStorageAccessSync(bool& aHasStorageAccess);
   already_AddRefed<Promise> HasStorageAccess(ErrorResult& aRv);
 
-  // This function performs the asynchronous portion of checking if requests
-  // for storage access will be sucessful or not. This includes creating a
-  // permission prompt request and trying to perform an "autogrant"
-  // This will return a promise whose values correspond to those of a
-  // ContentBlocking::AllowAccessFor call that ends the funciton.
-  RefPtr<MozPromise<int, bool, true>> RequestStorageAccessAsyncHelper(
-      nsPIDOMWindowInner* aInnerWindow, BrowsingContext* aBrowsingContext,
-      nsIPrincipal* aPrincipal, bool aHasUserInteraction,
-      ContentBlockingNotifier::StorageAccessPermissionGrantedReason aNotifier,
-      bool performFinalChecks);
+  StorageAccessAPIHelper::PerformPermissionGrant CreatePermissionGrantPromise(
+      nsPIDOMWindowInner* aInnerWindow, nsIPrincipal* aPrincipal,
+      bool aHasUserInteraction, const Maybe<nsCString>& aTopLevelBaseDomain);
+
   already_AddRefed<Promise> RequestStorageAccess(ErrorResult& aRv);
 
   already_AddRefed<Promise> RequestStorageAccessForOrigin(
@@ -1534,6 +1531,7 @@ class Document : public nsINode,
 
   void DoNotifyPossibleTitleChange();
 
+  void InitFeaturePolicy();
   nsresult InitFeaturePolicy(nsIChannel* aChannel);
 
  protected:
@@ -1806,12 +1804,6 @@ class Document : public nsINode,
    */
   nsIGlobalObject* GetScopeObject() const;
   void SetScopeObject(nsIGlobalObject* aGlobal);
-
-  /**
-   * Return the cross-origin-isolated state from browsing context. If it's a
-   * data document, we get its creator's state.
-   */
-  bool CrossOriginIsolated() const;
 
   /**
    * Return the window containing the document (the outer window).
@@ -2206,6 +2198,9 @@ class Document : public nsINode,
    */
   bool IsHTMLDocument() const { return mType == eHTML; }
   bool IsHTMLOrXHTML() const { return mType == eHTML || mType == eXHTML; }
+  bool IsImageDocument() const {
+    return MediaDocumentKind() == MediaDocumentKind::Image;
+  }
   bool IsXMLDocument() const { return !IsHTMLDocument(); }
   bool IsSVGDocument() const { return mType == eSVG; }
   bool IsUnstyledDocument() { return IsLoadedAsData(); }
@@ -3581,6 +3576,13 @@ class Document : public nsINode,
   inline SVGDocument* AsSVGDocument();
   inline const SVGDocument* AsSVGDocument() const;
 
+  /**
+   * Asserts IsImageDocument, and can't return null.
+   * Defined inline in ImageDocument.h
+   */
+  inline ImageDocument* AsImageDocument();
+  inline const ImageDocument* AsImageDocument() const;
+
   /*
    * Given a node, get a weak reference to it and append that reference to
    * mBlockedNodesByClassifier. Can be used later on to look up a node in it.
@@ -3753,6 +3755,13 @@ class Document : public nsINode,
   }
   void IncLazyLoadImageStarted() { ++mLazyLoadImageStarted; }
   void IncLazyLoadImageReachViewport(bool aLoading);
+
+  ResizeObserver* GetLastRememberedSizeObserver() {
+    return mLastRememberedSizeObserver;
+  }
+  ResizeObserver& EnsureLastRememberedSizeObserver();
+  void ObserveForLastRememberedSize(Element&);
+  void UnobserveForLastRememberedSize(Element&);
 
   // Dispatch a runnable related to the document.
   nsresult Dispatch(TaskCategory aCategory,
@@ -4197,7 +4206,6 @@ class Document : public nsINode,
              mCommand != mozilla::Command::Copy &&
              mCommand != mozilla::Command::Paste &&
              mCommand != mozilla::Command::SetDocumentReadOnly &&
-             mCommand != mozilla::Command::GetHTML &&
              mCommand != mozilla::Command::SelectAll;
     }
     bool IsCutOrCopyCommand() const {
@@ -5119,6 +5127,10 @@ class Document : public nsINode,
   RefPtr<DOMIntersectionObserver> mLazyLoadImageObserver;
   // Used to measure how effective the lazyload thresholds are.
   RefPtr<DOMIntersectionObserver> mLazyLoadImageObserverViewport;
+
+  // ResizeObserver for storing and removing the last remembered size.
+  // @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
+  RefPtr<ResizeObserver> mLastRememberedSizeObserver;
 
   // Stack of top layer elements.
   nsTArray<nsWeakPtr> mTopLayer;

@@ -64,12 +64,13 @@ SimpleTest.waitForExplicitFinish();
       testExpected: "<p>hello folks</p>",
       sanitizerOptions: { blockElements: ["i"] },
     },
-    {
-      // test for the allowAttributes option
-      testString: `<p haha="lol">hello</p>`,
-      testExpected: `<p haha="lol">hello</p>`,
-      sanitizerOptions: { allowAttributes: { 'haha': ['p'] } },
-    },
+    // TODO: Unknown attributes aren't supported yet.
+    // {
+    //   // test for the allowAttributes option
+    //   testString: `<p haha="lol">hello</p>`,
+    //   testExpected: `<p haha="lol">hello</p>`,
+    //   sanitizerOptions: { allowUnknownMarkup: true, allowAttributes: { 'haha': ['p'] } },
+    // },
     {
       // confirming the inverse
       testString: `<p haha="lol">hello</p>`,

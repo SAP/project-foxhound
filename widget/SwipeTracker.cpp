@@ -10,6 +10,7 @@
 #include "mozilla/FlushType.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/SimpleGestureEventBinding.h"
@@ -140,13 +141,30 @@ nsEventStatus SwipeTracker::ProcessEvent(
   // success here and the user does not lift their fingers and then decreases
   // the total swipe so that we go below the success threshold the opacity would
   // also decrease in that case but that seems okay.
+  // We don't want above tweak if we move the UI along with the opacity change
+  // since it forces the UI element jump to the last position and jump back to
+  // the original position if the navigation didn't happen.
   double eventAmount = mGestureAmount;
-  if (computedSwipeSuccess) {
+  if (computedSwipeSuccess &&
+      StaticPrefs::browser_swipe_navigation_icon_move_distance() == 0) {
     eventAmount = kSwipeSuccessThreshold;
     if (mGestureAmount < 0.f) {
       eventAmount = -eventAmount;
     }
   }
+
+  // If ComputeSwipeSuccess returned false because the users fingers were moving
+  // slightly away from the target direction then we do not want to display
+  // the UI as if we were at the success threshold as that would give a false
+  // indication that navigation would happen.
+  if (!computedSwipeSuccess && (eventAmount >= kSwipeSuccessThreshold ||
+                                eventAmount <= -kSwipeSuccessThreshold)) {
+    eventAmount = 0.999 * kSwipeSuccessThreshold;
+    if (mGestureAmount < 0.f) {
+      eventAmount = -eventAmount;
+    }
+  }
+
   SendSwipeEvent(eSwipeGestureUpdate, 0, eventAmount, aEvent.mTimeStamp);
 
   if (aEvent.mType == PanGestureInput::PANGESTURE_END) {
@@ -163,15 +181,15 @@ nsEventStatus SwipeTracker::ProcessEvent(
                                    swipeTracker->SwipeFinished(timeStamp);
                                  }));
     } else {
-      StartAnimating(0.0);
+      StartAnimating(eventAmount, 0.0);
     }
   }
 
   return nsEventStatus_eConsumeNoDefault;
 }
 
-void SwipeTracker::StartAnimating(double aTargetValue) {
-  mAxis.SetPosition(mGestureAmount);
+void SwipeTracker::StartAnimating(double aStartValue, double aTargetValue) {
+  mAxis.SetPosition(aStartValue);
   mAxis.SetDestination(aTargetValue);
   mAxis.SetVelocity(mCurrentVelocity);
 

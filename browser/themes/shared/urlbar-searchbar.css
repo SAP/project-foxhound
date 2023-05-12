@@ -267,6 +267,11 @@
   -moz-box-align: center;
 }
 
+#urlbar-container,
+#wrapper-urlbar-container {
+  -moz-box-flex: 400;
+}
+
 #urlbar-search-splitter {
   /* The splitter width should equal the location and search bars' combined
      neighboring margin and border width. */
@@ -638,6 +643,11 @@
 
 #search-container {
   min-width: 125px;
+}
+
+#search-container,
+#wrapper-search-container {
+  -moz-box-flex: 175;
 }
 
 #search-container[cui-areatype="menu-panel"] > #searchbar:-moz-lwtheme {

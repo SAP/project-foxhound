@@ -210,7 +210,6 @@ class nsReflowStatus final {
         mInlineBreak(InlineBreak::None),
         mCompletion(Completion::FullyComplete),
         mNextInFlowNeedsReflow(false),
-        mTruncated(false),
         mFirstLetterComplete(false) {}
 
   // Reset all the member variables.
@@ -219,14 +218,13 @@ class nsReflowStatus final {
     mInlineBreak = InlineBreak::None;
     mCompletion = Completion::FullyComplete;
     mNextInFlowNeedsReflow = false;
-    mTruncated = false;
     mFirstLetterComplete = false;
   }
 
   // Return true if all member variables have their default values.
   bool IsEmpty() const {
     return (IsFullyComplete() && !IsInlineBreak() && !mNextInFlowNeedsReflow &&
-            !mTruncated && !mFirstLetterComplete);
+            !mFirstLetterComplete);
   }
 
   // There are three possible completion statuses, represented by
@@ -273,15 +271,6 @@ class nsReflowStatus final {
   bool NextInFlowNeedsReflow() const { return mNextInFlowNeedsReflow; }
   void SetNextInFlowNeedsReflow() { mNextInFlowNeedsReflow = true; }
 
-  // mTruncated bit flag means that the part of the frame before the first
-  // possible break point was unable to fit in the available space.
-  // Therefore, the entire frame should be moved to the next continuation of
-  // the parent frame. A frame that begins at the top of the page must never
-  // be truncated. Doing so would likely cause an infinite loop.
-  bool IsTruncated() const { return mTruncated; }
-  void UpdateTruncated(const mozilla::ReflowInput& aReflowInput,
-                       const mozilla::ReflowOutput& aMetrics);
-
   // Merge the frame completion status bits from aStatus into this.
   void MergeCompletionStatusFrom(const nsReflowStatus& aStatus) {
     if (mCompletion < aStatus.mCompletion) {
@@ -296,7 +285,6 @@ class nsReflowStatus final {
         "mCompletion merging won't work without this!");
 
     mNextInFlowNeedsReflow |= aStatus.mNextInFlowNeedsReflow;
-    mTruncated |= aStatus.mTruncated;
   }
 
   // There are three possible inline-break statuses, represented by
@@ -324,6 +312,12 @@ class nsReflowStatus final {
   // Set the inline line-break-before status, and reset other bit flags. The
   // break type is StyleClear::Line. Note that other frame completion status
   // isn't expected to matter after calling this method.
+  //
+  // Here's one scenario where a child frame would report this status. Suppose
+  // the child has "break-inside:avoid" in its style, and the child (and its
+  // content) won't fit in the available block-size. This child would want to
+  // report this status so that it gets pushed (in its entirety) to the next
+  // column/page where it will hopefully fit.
   void SetInlineLineBreakBeforeAndReset() {
     Reset();
     mBreakType = StyleClear::Line;
@@ -349,12 +343,8 @@ class nsReflowStatus final {
   InlineBreak mInlineBreak;
   Completion mCompletion;
   bool mNextInFlowNeedsReflow : 1;
-  bool mTruncated : 1;
   bool mFirstLetterComplete : 1;
 };
-
-#define NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aMetrics) \
-  aStatus.UpdateTruncated(aReflowInput, aMetrics);
 
 // Convert nsReflowStatus to a human-readable string.
 std::ostream& operator<<(std::ostream& aStream, const nsReflowStatus& aStatus);
@@ -3977,6 +3967,16 @@ class nsIFrame : public nsQueryFrame {
     }
   }
 
+  Maybe<nscoord> ContainIntrinsicBSize(nscoord aNoneValue = 0) const {
+    return StyleDisplay()->GetContainSizeAxes().ContainIntrinsicBSize(
+        *this, aNoneValue);
+  }
+
+  Maybe<nscoord> ContainIntrinsicISize(nscoord aNoneValue = 0) const {
+    return StyleDisplay()->GetContainSizeAxes().ContainIntrinsicISize(
+        *this, aNoneValue);
+  }
+
  protected:
   // This does the actual work of UpdateStyleOfOwnedAnonBoxes.  It calls
   // AppendDirectlyOwnedAnonBoxes to find all of the anonymous boxes
@@ -4265,13 +4265,7 @@ class nsIFrame : public nsQueryFrame {
    */
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState);
 
-  /**
-   * This returns the minimum size for the scroll area if this frame is
-   * being scrolled. Usually it's (0,0).
-   */
-  virtual nsSize GetXULMinSizeForScrollArea(nsBoxLayoutState& aBoxLayoutState);
-
-  virtual nscoord GetXULFlex();
+  virtual int32_t GetXULFlex();
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState);
   virtual bool IsXULCollapsed();
   // This does not alter the overflow area. If the caller is changing
@@ -4316,7 +4310,7 @@ class nsIFrame : public nsQueryFrame {
                             bool& aHeightSet);
   static bool AddXULMaxSize(nsIFrame* aBox, nsSize& aSize, bool& aWidth,
                             bool& aHeightSet);
-  static bool AddXULFlex(nsIFrame* aBox, nscoord& aFlex);
+  static int32_t ComputeXULFlex(nsIFrame* aBox);
 
   void AddXULBorderAndPadding(nsSize& aSize);
 
@@ -4968,6 +4962,15 @@ class nsIFrame : public nsQueryFrame {
    */
   inline void PropagateWritingModeToSelfAndAncestors(mozilla::WritingMode aWM);
 
+  /**
+   * Observes or unobserves the element with an internal ResizeObserver,
+   * depending on whether it needs to update its last remembered size.
+   * Also removes a previously stored last remembered size if the element
+   * can no longer have it.
+   * @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
+   */
+  void HandleLastRememberedSize();
+
  protected:
   static void DestroyAnonymousContent(nsPresContext* aPresContext,
                                       already_AddRefed<nsIContent>&& aContent);
@@ -5495,14 +5498,6 @@ class nsIFrame : public nsQueryFrame {
   static void DisplayReflowShutdown();
 
   static mozilla::LazyLogModule sFrameLogModule;
-
-  // Show frame borders when rendering
-  static void ShowFrameBorders(bool aEnable);
-  static bool GetShowFrameBorders();
-
-  // Show frame border of event target
-  static void ShowEventTargetFrameBorder(bool aEnable);
-  static bool GetShowEventTargetFrameBorder();
 #endif
 };
 

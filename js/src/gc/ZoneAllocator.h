@@ -11,6 +11,8 @@
 #ifndef gc_ZoneAllocator_h
 #define gc_ZoneAllocator_h
 
+#include "mozilla/Maybe.h"
+
 #include "jstypes.h"
 #include "gc/Cell.h"
 #include "gc/Scheduling.h"
@@ -57,7 +59,7 @@ class ZoneAllocator : public JS::shadow::Zone,
                                     void* reallocPtr = nullptr);
   void reportAllocationOverflow() const;
 
-  void updateMemoryCountersOnGCStart();
+  void updateSchedulingStateOnGCStart();
   void updateGCStartThresholds(gc::GCRuntime& gc);
   void setGCSliceThresholds(gc::GCRuntime& gc, bool waitingOnBGTask);
   void clearGCSliceThresholds();
@@ -164,9 +166,14 @@ class ZoneAllocator : public JS::shadow::Zone,
     }
   }
 
+  void updateCollectionRate(mozilla::TimeDuration mainThreadGCTime,
+                            size_t initialBytesForAllZones);
+
+  void updateAllocationRate(mozilla::TimeDuration mutatorTime);
+
  public:
   // The size of allocated GC arenas in this zone.
-  gc::HeapSizeChild gcHeapSize;
+  gc::PerZoneGCHeapSize gcHeapSize;
 
   // Threshold used to trigger GC based on GC heap size.
   gc::GCHeapThreshold gcHeapThreshold;
@@ -188,6 +195,16 @@ class ZoneAllocator : public JS::shadow::Zone,
   // Memory recorded here is also recorded in mallocHeapSize.  This structure
   // is used to avoid over-counting in mallocHeapSize.
   gc::SharedMemoryMap sharedMemoryUseCounts;
+
+  // Collection rate estimate for this zone in MB/s, and state used to calculate
+  // it. Updated every time this zone is collected.
+  MainThreadData<mozilla::Maybe<double>> smoothedCollectionRate;
+  MainThreadOrGCTaskData<mozilla::TimeDuration> perZoneGCTime;
+
+  // Allocation rate estimate in MB/s of mutator time, and state used to
+  // calculate it.
+  MainThreadData<mozilla::Maybe<double>> smoothedAllocationRate;
+  MainThreadData<size_t> prevGCHeapSize;
 
  private:
 #ifdef DEBUG

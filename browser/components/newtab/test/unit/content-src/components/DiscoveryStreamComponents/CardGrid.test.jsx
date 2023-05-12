@@ -29,8 +29,8 @@ describe("<CardGrid>", () => {
   beforeEach(() => {
     wrapper = shallow(
       <CardGrid
-        DiscoveryStream={INITIAL_STATE.DiscoveryStream}
         Prefs={INITIAL_STATE.Prefs}
+        DiscoveryStream={INITIAL_STATE.DiscoveryStream}
       />
     );
   });
@@ -80,8 +80,8 @@ describe("<CardGrid>", () => {
       data: {
         recommendations: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
       },
-      DiscoveryStream: INITIAL_STATE.DiscoveryStream,
       Prefs: INITIAL_STATE.Prefs,
+      DiscoveryStream: INITIAL_STATE.DiscoveryStream,
     };
     wrapper = mount(
       <WrapWithProvider>
@@ -280,7 +280,7 @@ describe("<RecentSavesContainer>", () => {
       .simulate("click");
     assert.calledWith(
       dispatch,
-      ac.UserEvent({
+      ac.DiscoveryStreamUserEvent({
         event: "CLICK",
         source: `CARDGRID_RECENT_SAVES_VIEW_LIST`,
       })

@@ -180,7 +180,6 @@
 #ifndef MOZ_WIDGET_GTK
   skin/classic/browser/import-export.svg              (../shared/icons/import-export.svg)
 #endif
-  skin/classic/browser/indicator-accessibility.svg    (../shared/icons/indicator-accessibility.svg)
   skin/classic/browser/library.svg                    (../shared/icons/library.svg)
   skin/classic/browser/login.svg                      (../shared/icons/login.svg)
   skin/classic/browser/logo-android.svg               (../shared/icons/logo-android.svg)
@@ -193,6 +192,7 @@
   skin/classic/browser/open.svg                       (../shared/icons/open.svg)
   skin/classic/browser/pin-12.svg                     (../shared/icons/pin-12.svg)
   skin/classic/browser/privateBrowsing.svg            (../shared/icons/privateBrowsing.svg)
+  skin/classic/browser/quickactions.svg               (../shared/icons/quickactions.svg)
   skin/classic/browser/reader-mode.svg                (../shared/icons/reader-mode.svg)
   skin/classic/browser/reload-to-stop.svg             (../shared/icons/reload-to-stop.svg)
   skin/classic/browser/save.svg                       (../shared/icons/save.svg)

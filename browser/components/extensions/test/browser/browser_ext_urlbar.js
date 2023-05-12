@@ -3,11 +3,8 @@
 ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 async function loadTipExtension(options = {}) {
@@ -93,6 +90,10 @@ async function updateTopSites(condition, searchShortcuts = false) {
 }
 
 add_task(async function setUp() {
+  Services.prefs.setBoolPref("browser.urlbar.suggest.quickactions", false);
+  registerCleanupFunction(async () => {
+    Services.prefs.clearUserPref("browser.urlbar.suggest.quickactions");
+  });
   // Set the notification timeout to a really high value to avoid intermittent
   // failures due to the mock extensions not responding in time.
   await SpecialPowers.pushPrefEnv({

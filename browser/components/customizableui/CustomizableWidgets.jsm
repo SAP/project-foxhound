@@ -471,8 +471,24 @@ const CustomizableWidgets = [
     onBeforeCreated() {
       return Services.prefs.getBoolPref("browser.tabs.firefox-view");
     },
+    onCreated(aNode) {
+      aNode.setAttribute("role", "tab");
+      aNode.addEventListener("mousedown", this);
+      aNode.ownerGlobal.addEventListener(
+        "unload",
+        () => {
+          aNode.removeEventListener("mousedown", this);
+        },
+        { once: true }
+      );
+    },
     onCommand(e) {
       e.view.FirefoxViewHandler.openTab();
+    },
+    handleEvent(e) {
+      if (e.type == "mousedown" && e.button == 0) {
+        e.view.FirefoxViewHandler.openTab();
+      }
     },
   },
 ];

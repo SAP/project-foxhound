@@ -710,6 +710,7 @@ var PrintEventHandler = {
           );
         }
 
+        let unwriteableMarginsInvalid = false;
         if (
           verticalMarginsInvalid(this.viewSettings.customMargins) ||
           this.viewSettings.customMargins.marginTop < 0 ||
@@ -720,6 +721,7 @@ var PrintEventHandler = {
             let marginsNone = this.getMarginPresets("none");
             marginTop = marginsNone.marginTop;
             marginBottom = marginsNone.marginBottom;
+            unwriteableMarginsInvalid = true;
           }
           changedSettings.marginTop = changedSettings.customMarginTop = marginTop;
           changedSettings.marginBottom = changedSettings.customMarginBottom = marginBottom;
@@ -736,10 +738,15 @@ var PrintEventHandler = {
             let marginsNone = this.getMarginPresets("none");
             marginLeft = marginsNone.marginLeft;
             marginRight = marginsNone.marginRight;
+            unwriteableMarginsInvalid = true;
           }
           changedSettings.marginLeft = changedSettings.customMarginLeft = marginLeft;
           changedSettings.marginRight = changedSettings.customMarginRight = marginRight;
           delete this._userChangedSettings.customMargins;
+        }
+
+        if (unwriteableMarginsInvalid) {
+          changedSettings.ignoreUnwriteableMargins = true;
         }
       } catch (e) {
         this.reportPrintingError("PAPER_MARGINS");
@@ -1308,15 +1315,31 @@ var PrintSettingsViewProxy = {
         };
         // see if they match the none, minimum, or default margin values
         let allMarginPresets = this.get(target, "marginPresets");
-        for (let presetName of ["none", "minimum", "default"]) {
+        const marginsMatch = function(lhs, rhs) {
+          return Object.keys(marginSettings).every(
+            name => lhs[name].toFixed(2) == rhs[name].toFixed(2)
+          );
+        };
+        const potentialPresets = (function() {
+          let presets = [];
+          const minimumIsNone = marginsMatch(
+            allMarginPresets.none,
+            allMarginPresets.minimum
+          );
+          // We only attempt to match the serialized values against the "none"
+          // preset if the unwriteable margins are being ignored or are zero.
+          if (target.ignoreUnwriteableMargins || minimumIsNone) {
+            presets.push("none");
+          }
+          if (!minimumIsNone) {
+            presets.push("minimum");
+          }
+          presets.push("default");
+          return presets;
+        })();
+        for (let presetName of potentialPresets) {
           let marginPresets = allMarginPresets[presetName];
-          if (
-            Object.keys(marginSettings).every(
-              name =>
-                marginSettings[name].toFixed(2) ==
-                marginPresets[name].toFixed(2)
-            )
-          ) {
+          if (marginsMatch(marginSettings, marginPresets)) {
             return presetName;
           }
         }
@@ -1413,6 +1436,7 @@ var PrintSettingsViewProxy = {
           target[settingName] = presetValue;
         }
         target.honorPageRuleMargins = value == "default";
+        target.ignoreUnwriteableMargins = value == "none";
         break;
 
       case "paperId": {
@@ -2081,7 +2105,17 @@ class PageRangeInput extends PrintUIControlMixin(HTMLElement) {
 
   updatePageRange() {
     let isCustom = this._rangePicker.value == "custom";
+    let isCurrent = this._rangePicker.value == "current";
+
+    if (!isCurrent) {
+      this._currentPage = null;
+    }
+
     if (isCustom) {
+      this.validateRangeInput();
+    } else if (isCurrent) {
+      this._currentPage = this._rangeInput.value =
+        this._currentPage || this.getCurrentVisiblePageNumber();
       this.validateRangeInput();
     } else {
       this._pagesSet.clear();
@@ -2183,12 +2217,14 @@ class PageRangeInput extends PrintUIControlMixin(HTMLElement) {
 
   update(settings) {
     let { pageRanges, printerName } = settings;
+
     this.toggleAttribute("all-pages", !pageRanges.length);
     if (!this.printerName) {
       this.printerName = printerName;
     }
 
     let isValid = this._rangeInput.checkValidity();
+
     if (this.printerName != printerName && !isValid) {
       this.printerName = printerName;
       this._rangeInput.value = "";
@@ -2273,9 +2309,19 @@ class PageRangeInput extends PrintUIControlMixin(HTMLElement) {
   }
 
   validateRangeInput() {
-    let value =
-      this._rangePicker.value == "custom" ? this._rangeInput.value : "";
+    let value = ["custom", "current"].includes(this._rangePicker.value)
+      ? this._rangeInput.value
+      : "";
     this._validateRangeInput(value, this._numPages);
+  }
+
+  getCurrentVisiblePageNumber() {
+    let pageNum = parseInt(
+      PrintEventHandler.printPreviewEl.lastPreviewBrowser.getAttribute(
+        "current-page"
+      )
+    );
+    return isNaN(pageNum) ? 1 : pageNum;
   }
 
   handleEvent(e) {

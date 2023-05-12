@@ -17,45 +17,37 @@ add_setup(async function() {
   }
 });
 
-function assertFirefoxViewTab(w = window) {
-  ok(w.FirefoxViewHandler.tab, "Firefox View tab exists");
-  ok(w.FirefoxViewHandler.tab?.hidden, "Firefox View tab is hidden");
+add_task(async function aria_attributes() {
   is(
-    w.gBrowser.tabs.indexOf(w.FirefoxViewHandler.tab),
-    0,
-    "Firefox View tab is the first tab"
+    FirefoxViewHandler.button.getAttribute("role"),
+    "tab",
+    "Firefox View button should have the 'tab' ARIA role"
+  );
+  await openFirefoxViewTab();
+  isnot(
+    FirefoxViewHandler.button.getAttribute("aria-controls"),
+    "",
+    "Firefox View button should have non-empty `aria-controls` attribute"
   );
   is(
-    w.gBrowser.visibleTabs.indexOf(w.FirefoxViewHandler.tab),
-    -1,
-    "Firefox View tab is not in the list of visible tabs"
+    FirefoxViewHandler.button.getAttribute("aria-controls"),
+    FirefoxViewHandler.tab.linkedPanel,
+    "Firefox View button should refence the hidden tab's linked panel via `aria-controls`"
   );
-}
-
-async function openFirefoxViewTab(w = window) {
-  ok(
-    !w.FirefoxViewHandler.tab,
-    "Firefox View tab doesn't exist prior to clicking the button"
+  is(
+    FirefoxViewHandler.button.getAttribute("aria-selected"),
+    "true",
+    'Firefox View button should have `aria-selected="true"` upon selecting it'
   );
-  info("Clicking the Firefox View button");
-  await EventUtils.synthesizeMouseAtCenter(
-    w.document.getElementById("firefox-view-button"),
-    {},
-    w
+  BrowserOpenTab();
+  is(
+    FirefoxViewHandler.button.getAttribute("aria-selected"),
+    "false",
+    'Firefox View button should have `aria-selected="false"` upon selecting a different tab'
   );
-  assertFirefoxViewTab(w);
-  is(w.gBrowser.tabContainer.selectedIndex, 0, "Firefox View tab is selected");
-  await BrowserTestUtils.browserLoaded(w.FirefoxViewHandler.tab.linkedBrowser);
-  return w.FirefoxViewHandler.tab;
-}
-
-function closeFirefoxViewTab(w = window) {
-  w.gBrowser.removeTab(w.FirefoxViewHandler.tab);
-  ok(
-    !w.FirefoxViewHandler.tab,
-    "Reference to Firefox View tab got removed when closing the tab"
-  );
-}
+  gBrowser.removeCurrentTab();
+  closeFirefoxViewTab();
+});
 
 add_task(async function load_opens_new_tab() {
   await openFirefoxViewTab();

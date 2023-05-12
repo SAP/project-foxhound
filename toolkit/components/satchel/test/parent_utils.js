@@ -1,6 +1,4 @@
-/* eslint-env mozilla/frame-script */
-// assert is available to chrome scripts loaded via SpecialPowers.loadChromeScript.
-/* global assert */
+/* eslint-env mozilla/chrome-script */
 
 const { FormHistory } = ChromeUtils.import(
   "resource://gre/modules/FormHistory.jsm"
@@ -27,13 +25,8 @@ var ParentUtils = {
     return entries;
   },
 
-  cleanUpFormHist(callback) {
-    FormHistory.update(
-      { op: "remove" },
-      {
-        handleCompletion: callback,
-      }
-    );
+  cleanUpFormHistory() {
+    return FormHistory.update({ op: "remove" });
   },
 
   updateFormHistory(changes) {
@@ -159,19 +152,18 @@ var ParentUtils = {
     ).then(reply);
   },
 
-  observe(subject, topic, data) {
-    assert.ok(topic === "satchel-storage-changed");
+  observe(_subject, topic, data) {
+    // This function can be called after SimpleTest.finish().
+    // Do not write assertions here, they will lead to intermittent failures.
     sendAsyncMessage("satchel-storage-changed", { subject: null, topic, data });
   },
 
-  cleanup() {
+  async cleanup() {
     gAutocompletePopup.removeEventListener(
       "popupshown",
       this._popupshownListener
     );
-    this.cleanUpFormHist(() => {
-      sendAsyncMessage("cleanup-done");
-    });
+    await this.cleanUpFormHistory();
   },
 };
 
@@ -182,7 +174,7 @@ gAutocompletePopup.addEventListener(
   "popupshown",
   ParentUtils._popupshownListener
 );
-ParentUtils.cleanUpFormHist();
+ParentUtils.cleanUpFormHistory();
 
 addMessageListener("updateFormHistory", msg => {
   ParentUtils.updateFormHistory(msg.changes);
@@ -217,6 +209,6 @@ addMessageListener("removeObserver", () => {
   Services.obs.removeObserver(ParentUtils, "satchel-storage-changed");
 });
 
-addMessageListener("cleanup", () => {
-  ParentUtils.cleanup();
+addMessageListener("cleanup", async () => {
+  await ParentUtils.cleanup();
 });

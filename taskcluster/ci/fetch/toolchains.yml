@@ -182,13 +182,13 @@ grcov-osx-x86_64:
         sha256: c7c323e0647b1309b412874000d677e8f5b898401ec57761c57a9c396c433823
         size: 2476735
 
-zlib-1.2.11:
-    description: zlib 1.2.11 source code
+zlib-1.2.12:
+    description: zlib 1.2.12 source code
     fetch:
         type: static-url
-        url: http://zlib.net/zlib-1.2.11.tar.gz
-        sha256: c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1
-        size: 607698
+        url: http://zlib.net/zlib-1.2.12.tar.gz
+        sha256: 91844808532e5ce316b3c010929493c0244f3d37593afd6de04f71821d5136d9
+        size: 1490071
         gpg-signature:
             sig-url: "{url}.asc"
             key-path: build/unix/build-gcc/5ED46A6721D365587791E2AA783FCD8E58BCAFBA.key
@@ -365,13 +365,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.62.0:
-    description: Rust 1.62.0 source code
+rust-1.63.0:
+    description: Rust 1.63.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: a8314ef7d0ec7b75c336af2c9857bfaf43002bfc
+        revision: 4b91a6ea7258a947e59c6522cd5898e7c0a6a88f
 
 wasi-sdk:
     description: wasi-sdk-16 source code
@@ -406,21 +406,21 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: 29c131802494c52e9e89597f1d763f79e797b348
+        revision: 516b66603c390b3a361c508adc0140a6840ce22b
 
 rust-minidump:
-    description: rust-minidump 0.10.4-prerelease source code (for minidump-stackwalk)
+    description: rust-minidump 0.14.0 source code (for minidump-stackwalk)
     fetch:
         type: git
-        repo: https://github.com/luser/rust-minidump/
-        revision: 7f83ad8f2cab043ed19a7f96718606e718d99488
+        repo: https://github.com/rust-minidump/rust-minidump/
+        revision: a6a486b8992008c6865ee70fc68421c38e45ef42
 
 fix-stacks:
     description: fix-stacks source code
     fetch:
         type: git
         repo: https://github.com/mozilla/fix-stacks/
-        revision: d7829964fb9ebf14b1f283403408ecabead4c5da
+        revision: cfa7048e437c6778b066e7ecb5ce834eb8c3efe7
 
 winchecksec:
     description: winchecksec source code
@@ -471,9 +471,9 @@ nodejs-12-linux64:
     description: nodejs 12 for x64 linux
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v12.22.1/node-v12.22.1-linux-x64.tar.xz
-        sha256: 8b537282c222ae4a40e019a52f769ca27b6640699bdde1510375e8d72da7d041
-        size: 14594952
+        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-linux-x64.tar.xz
+        sha256: e6d052364bfa2c17da92cf31794100cfd709ba147415ddaeed2222eec9ca1469
+        size: 14584388
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -482,9 +482,9 @@ nodejs-16-linux64:
     description: nodejs 16 for x64 linux
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.0.0/node-v16.0.0-linux-x64.tar.xz
-        sha256: 1736446bb102e19942addce29f6a12b157ca71f38b9159d0446f51ba69618b8d
-        size: 22206588
+        url: https://nodejs.org/dist/v16.16.0/node-v16.16.0-linux-x64.tar.xz
+        sha256: edcb6e9bb049ae365611aa209fc03c4bfc7e0295dbcc5b2f1e710ac70384a8ec
+        size: 22051952
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -493,9 +493,9 @@ nodejs-12-macosx64:
     description: nodejs 12 for x64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v12.22.1/node-v12.22.1-darwin-x64.tar.xz
-        sha256: de5e317580732530961d83b0fb9b2c370d222bd0c5a1b331900e9ddc0fdfe086
-        size: 13670384
+        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-darwin-x64.tar.xz
+        sha256: 95799e1276d65b599635f839248d3b3f7d3986873da8f01902a541b9588a6c71
+        size: 13678092
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -504,9 +504,9 @@ nodejs-16-macosx64:
     description: nodejs 16 for x64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.0.0/node-v16.0.0-darwin-x64.tar.xz
-        sha256: 66ecffa48b98cf1ca4d038b42b74f05bfc4d31681e2aa43a1ba50919ea23823b
-        size: 20650712
+        url: https://nodejs.org/dist/v16.16.0/node-v16.16.0-darwin-x64.tar.xz
+        sha256: a65b2b92ede6be9004eae1ca9da26da2178bc696f35e8cca1840c33b777a5421
+        size: 20498416
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -515,9 +515,9 @@ nodejs-16-macosx64-arm64:
     description: nodejs 16 for arm64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.0.0/node-v16.0.0-darwin-arm64.tar.xz
-        sha256: f8710a83738b4408da82fe81b7934373e4d2f84d40c8c1217676119fd3c77c7e
-        size: 19028900
+        url: https://nodejs.org/dist/v16.16.0/node-v16.16.0-darwin-arm64.tar.xz
+        sha256: e4468368bf25ee1c504f08ecfd0d9fec17a9e72ef27c4495406b958cd7b4bafd
+        size: 18889796
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -526,9 +526,9 @@ nodejs-12-win32:
     description: nodejs 12 for x86 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v12.22.1/node-v12.22.1-win-x86.zip
-        sha256: 832bd047d3709e4229d1cc95d04391aceb991a5c957b8efd395e01f51832a774
-        size: 17132424
+        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-win-x86.zip
+        sha256: 2f7fa563c9477d5e9fddc5c22451b21b8a963c9b5004c80dd0140c3a3675a4e8
+        size: 17134607
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -537,9 +537,9 @@ nodejs-16-win32:
     description: nodejs 16 for x86 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.0.0/node-v16.0.0-win-x86.zip
-        sha256: 0600dffb5331b6f49e6ff4fa97770811746e0e2ecaf53de6deaafff277a644b4
-        size: 25092862
+        url: https://nodejs.org/dist/v16.16.0/node-v16.16.0-win-x86.zip
+        sha256: 957783527844fcd7da1d0b6dd311b64f92e2c5185112ada2d92e52c1a71fb373
+        size: 24587144
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -548,9 +548,9 @@ nodejs-12-win64:
     description: nodejs 12 for x64 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v12.22.1/node-v12.22.1-win-x64.zip
-        sha256: 0cf3545c1ff9717bf3196eed6a423d878709ed4560125fdc29b42bd80ee661c3
-        size: 18677788
+        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-win-x64.zip
+        sha256: 09639bac66d4dc4dd52179968209413ad4b7360e917dcbe8834052a4b936a087
+        size: 18681823
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -559,9 +559,9 @@ nodejs-16-win64:
     description: nodejs 16 for x64 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.0.0/node-v16.0.0-win-x64.zip
-        sha256: 99c2b01afb8d966fc876ec30ac7dfdbd9da9b17a3daeda92c19ce657ab9bea61
-        size: 26841308
+        url: https://nodejs.org/dist/v16.16.0/node-v16.16.0-win-x64.zip
+        sha256: c657acc98af55018c8fd6113c7e08d67c8083af75ba0306f9561b0117abc39d4
+        size: 26245926
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -595,12 +595,12 @@ pkgconf:
         strip-components: 1
         add-prefix: pkgconf/
 
-aflplusplus-4.0:
-    description: AFL++ 4.00 source
+afl-2.5:
+    description: AFL 2.5x source
     fetch:
         type: git
-        repo: https://github.com/AFLplusplus/AFLplusplus
-        revision: ba3c7bfe40f9b17a691958e3525828385127ad25
+        repo: https://github.com/google/AFL
+        revision: e75894a889fe854c02b9435186bd1e2927d6d490
 
 cargo-vet:
     description: cargo-vet source
@@ -614,4 +614,4 @@ symbol-scrapers:
     fetch:
         type: git
         repo: http://github.com/mozilla/symbol-scrapers
-        revision: 18ee2027bcc8ea12a1419c5d49934db5e92c6829
+        revision: ee16dc130246a6260c327b2c619f2338b2b30f12

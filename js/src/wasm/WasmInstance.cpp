@@ -33,10 +33,12 @@
 #include "jit/Registers.h"
 #include "js/ForOfIterator.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Stack.h"                 // JS::NativeStackLimitMin
 #include "util/StringBuffer.h"
 #include "util/Text.h"
 #include "vm/BigIntType.h"
 #include "vm/ErrorObject.h"
+#include "vm/Iteration.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "wasm/TypedObject.h"
 #include "wasm/WasmBuiltins.h"
@@ -59,10 +61,8 @@ using namespace js::jit;
 using namespace js::wasm;
 
 using mozilla::BitwiseCast;
-using mozilla::CheckedInt;
+using mozilla::CheckedUint32;
 using mozilla::DebugOnly;
-
-using CheckedU32 = CheckedInt<uint32_t>;
 
 // Instance must be aligned at least as much as any of the integer, float,
 // or SIMD values that we'd like to store in it.
@@ -150,36 +150,6 @@ GCPtr<WasmTagObject*>& Instance::tagInstanceData(const TagDesc& td) const {
   return *(GCPtr<WasmTagObject*>*)(globalData() + td.globalDataOffset);
 }
 
-// TODO(1626251): Consolidate definitions into Iterable.h
-static bool IterableToArray(JSContext* cx, HandleValue iterable,
-                            MutableHandle<ArrayObject*> array) {
-  JS::ForOfIterator iterator(cx);
-  if (!iterator.init(iterable, JS::ForOfIterator::ThrowOnNonIterable)) {
-    return false;
-  }
-
-  array.set(NewDenseEmptyArray(cx));
-  if (!array) {
-    return false;
-  }
-
-  RootedValue nextValue(cx);
-  while (true) {
-    bool done;
-    if (!iterator.next(&nextValue, &done)) {
-      return false;
-    }
-    if (done) {
-      break;
-    }
-
-    if (!NewbornArrayPush(cx, array, nextValue)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 static bool UnpackResults(JSContext* cx, const ValTypeVector& resultTypes,
                           const Maybe<char*> stackResultsArea, uint64_t* argv,
                           MutableHandleValue rval) {
@@ -264,14 +234,15 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
   Tier tier = code().bestTier();
 
   const FuncImport& fi = metadata(tier).funcImports[funcImportIndex];
+  const FuncType& funcType = metadata().getFuncImportType(fi);
 
-  ArgTypeVector argTypes(fi.funcType());
+  ArgTypeVector argTypes(funcType);
   InvokeArgs args(cx);
   if (!args.init(cx, argTypes.lengthWithoutStackResults())) {
     return false;
   }
 
-  if (fi.funcType().hasUnexposableArgOrRet()) {
+  if (funcType.hasUnexposableArgOrRet()) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_BAD_VAL_TYPE);
     return false;
@@ -286,7 +257,7 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
       continue;
     }
     size_t naturalIndex = argTypes.naturalIndex(i);
-    ValType type = fi.funcType().args()[naturalIndex];
+    ValType type = funcType.args()[naturalIndex];
     MutableHandleValue argValue = args[naturalIndex];
     if (!ToJSValue(cx, rawArgLoc, type, argValue)) {
       return false;
@@ -304,8 +275,7 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
     return false;
   }
 
-  if (!UnpackResults(cx, fi.funcType().results(), stackResultPointer, argv,
-                     &rval)) {
+  if (!UnpackResults(cx, funcType.results(), stackResultPointer, argv, &rval)) {
     return false;
   }
 
@@ -334,7 +304,7 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
   }
 
   // Skip if the function does not have a signature that allows for a JIT exit.
-  if (!fi.canHaveJitExit()) {
+  if (!funcType.canHaveJitExit()) {
     return true;
   }
 
@@ -1215,13 +1185,13 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   return TypedObject::createStruct(cx, rttValue);
 }
 
-/* static */ void* Instance::arrayNew(Instance* instance, uint32_t length,
+/* static */ void* Instance::arrayNew(Instance* instance, uint32_t numElements,
                                       void* arrayDescr) {
   MOZ_ASSERT(SASigArrayNew.failureMode == FailureMode::FailOnNullPtr);
   JSContext* cx = instance->cx();
   Rooted<RttValue*> rttValue(cx, (RttValue*)arrayDescr);
   MOZ_ASSERT(rttValue);
-  return TypedObject::createArray(cx, rttValue, length);
+  return TypedObject::createArray(cx, rttValue, numElements);
 }
 
 /* static */ void* Instance::exceptionNew(Instance* instance, JSObject* tag) {
@@ -1264,22 +1234,6 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   Rooted<RttValue*> rtt(
       cx, &AnyRef::fromCompiledCode(rttPtr).asJSObject()->as<RttValue>());
   return int32_t(ref->isRuntimeSubtype(rtt));
-}
-
-/* static */ void* Instance::rttSub(Instance* instance, void* rttParentPtr,
-                                    void* rttSubCanonPtr) {
-  MOZ_ASSERT(SASigRttSub.failureMode == FailureMode::FailOnNullPtr);
-  JSContext* cx = instance->cx();
-
-  ASSERT_ANYREF_IS_JSOBJECT;
-  Rooted<RttValue*> parentRtt(
-      cx, &AnyRef::fromCompiledCode(rttParentPtr).asJSObject()->as<RttValue>());
-  Rooted<RttValue*> subCanonRtt(
-      cx,
-      &AnyRef::fromCompiledCode(rttSubCanonPtr).asJSObject()->as<RttValue>());
-
-  Rooted<RttValue*> subRtt(cx, RttValue::rttSub(cx, parentRtt, subCanonRtt));
-  return AnyRef::fromJSObject(subRtt.get()).forCompiledCode();
 }
 
 /* static */ int32_t Instance::intrI8VecMul(Instance* instance, uint32_t dest,
@@ -1385,7 +1339,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
   memoryBase_ =
       memory_ ? memory_->buffer().dataPointerEither().unwrap() : nullptr;
   size_t limit = memory_ ? memory_->boundsCheckLimit() : 0;
-#if !defined(JS_64BIT) || defined(ENABLE_WASM_CRANELIFT)
+#if !defined(JS_64BIT)
   // We assume that the limit is a 32-bit quantity
   MOZ_ASSERT(limit <= UINT32_MAX);
 #endif
@@ -1403,6 +1357,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
   for (size_t i = 0; i < metadata(callerTier).funcImports.length(); i++) {
     JSFunction* f = funcImports[i];
     const FuncImport& fi = metadata(callerTier).funcImports[i];
+    const FuncType& funcType = metadata().getFuncImportType(fi);
     FuncImportInstanceData& import = funcImportInstanceData(fi);
     import.fun = f;
     if (!isAsmJS() && IsWasmExportedFunction(f)) {
@@ -1416,7 +1371,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
       import.realm = f->realm();
       import.code = calleeInstance.codeBase(calleeTier) +
                     codeRange.funcUncheckedCallEntry();
-    } else if (void* thunk = MaybeGetBuiltinThunk(f, fi.funcType())) {
+    } else if (void* thunk = MaybeGetBuiltinThunk(f, funcType)) {
       import.instance = this;
       import.realm = f->realm();
       import.code = thunk;
@@ -1447,7 +1402,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
 
   // Add debug filtering table.
   if (metadata().debugEnabled) {
-    size_t numFuncs = metadata().debugFuncReturnTypes.length();
+    size_t numFuncs = metadata().debugNumFuncs();
     size_t numWords = std::max<size_t>((numFuncs + 31) / 32, 1);
     debugFilter_ = (uint32_t*)js_calloc(numWords, sizeof(uint32_t));
     if (!debugFilter_) {
@@ -1474,14 +1429,16 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
     if (GcAvailable(cx)) {
       // Transfer and allocate type objects for the struct types in the module
       MutableTypeContext tycx = js_new<TypeContext>();
-      if (!tycx || !tycx->cloneDerived(metadata().types)) {
+      if (!tycx || !tycx->clone(metadata().types)) {
         return false;
       }
 
       for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
            typeIndex++) {
-        const TypeDefWithId& typeDef = metadata().types[typeIndex];
-        if (!typeDef.isStructType() && !typeDef.isArrayType()) {
+        const TypeDef& typeDef = metadata().types[typeIndex];
+        const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
+        if (!typeId.isGlobal() ||
+            (!typeDef.isStructType() && !typeDef.isArrayType())) {
           continue;
         }
 
@@ -1493,7 +1450,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
         // We do not need to use a barrier here because RttValue is always
         // tenured
         MOZ_ASSERT(rttValue.get()->isTenured());
-        *((GCPtr<JSObject*>*)addressOfTypeId(typeDef.id)) = rttValue;
+        *((GCPtr<JSObject*>*)addressOfTypeId(typeId)) = rttValue;
         hasGcTypes_ = true;
       }
     }
@@ -1504,7 +1461,13 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
     ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
         funcTypeIdSet.lock();
 
-    for (const TypeDefWithId& typeDef : metadata().types) {
+    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
+         typeIndex++) {
+      const TypeDef& typeDef = metadata().types[typeIndex];
+      const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
+      if (!typeId.isGlobal()) {
+        continue;
+      }
       switch (typeDef.kind()) {
         case TypeDefKind::Func: {
           const FuncType& funcType = typeDef.funcType();
@@ -1513,7 +1476,7 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
                                                        &funcTypeId)) {
             return false;
           }
-          *addressOfTypeId(typeDef.id) = funcTypeId;
+          *addressOfTypeId(typeId) = funcTypeId;
           break;
         }
         case TypeDefKind::Struct:
@@ -1605,12 +1568,15 @@ Instance::~Instance() {
     ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
         funcTypeIdSet.lock();
 
-    for (const TypeDefWithId& typeDef : metadata().types) {
-      if (!typeDef.isFuncType()) {
+    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
+         typeIndex++) {
+      const TypeDef& typeDef = metadata().types[typeIndex];
+      const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
+      if (!typeDef.isFuncType() || !typeId.isGlobal()) {
         continue;
       }
       const FuncType& funcType = typeDef.funcType();
-      if (const void* funcTypeId = *addressOfTypeId(typeDef.id)) {
+      if (const void* funcTypeId = *addressOfTypeId(typeId)) {
         lockedFuncTypeIdSet->deallocateFuncTypeId(funcType, funcTypeId);
       }
     }
@@ -1626,11 +1592,11 @@ Instance::~Instance() {
 
 void Instance::setInterrupt() {
   interrupt_ = true;
-  stackLimit_ = UINTPTR_MAX;
+  stackLimit_ = JS::NativeStackLimitMin;
 }
 
 bool Instance::isInterrupted() const {
-  return interrupt_ || stackLimit_ == UINTPTR_MAX;
+  return interrupt_ || stackLimit_ == JS::NativeStackLimitMin;
 }
 
 void Instance::resetInterrupt(JSContext* cx) {
@@ -1706,11 +1672,15 @@ void Instance::tracePrivate(JSTracer* trc) {
   TraceNullableEdge(trc, &memory_, "wasm buffer");
 #ifdef ENABLE_WASM_GC
   if (hasGcTypes_) {
-    for (const TypeDefWithId& typeDef : metadata().types) {
-      if (!typeDef.isStructType() && !typeDef.isArrayType()) {
+    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
+         typeIndex++) {
+      const TypeDef& typeDef = metadata().types[typeIndex];
+      const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
+      if (!typeId.isGlobal() ||
+          (!typeDef.isStructType() && !typeDef.isArrayType())) {
         continue;
       }
-      TraceNullableEdge(trc, ((GCPtr<JSObject*>*)addressOfTypeId(typeDef.id)),
+      TraceNullableEdge(trc, ((GCPtr<JSObject*>*)addressOfTypeId(typeId)),
                         "wasm rtt value");
     }
   }
@@ -1762,13 +1732,6 @@ uintptr_t Instance::traceFrame(JSTracer* trc, const wasm::WasmFrameIter& wfi,
   // This is so as to ensure there are no areas of stack inadvertently ignored
   // by a stackmap, nor covered by two stackmaps.  Hence any failure of this
   // assertion is serious and should be investigated.
-
-  // This condition isn't kept for Cranelift
-  // (https://github.com/bytecodealliance/wasmtime/issues/2281), but this is ok
-  // to disable this assertion because when CL compiles a function, in the
-  // prologue, it (generates code) copies all of the in-memory arguments into
-  // registers. So, because of that, none of the in-memory argument words are
-  // actually live.
 #ifndef JS_CODEGEN_ARM64
   MOZ_ASSERT_IF(highestByteVisitedInPrevFrame != 0,
                 highestByteVisitedInPrevFrame + 1 == scanStart);
@@ -1898,9 +1861,10 @@ static bool EnsureEntryStubs(const Instance& instance, uint32_t funcIndex,
   // The best tier might have changed after we've taken the lock.
   Tier prevTier = tier;
   tier = instance.code().bestTier();
+  const Metadata& metadata = instance.metadata();
   const CodeTier& codeTier = instance.code(tier);
   if (tier == prevTier) {
-    if (!stubs->createOneEntryStub(funcExportIndex, codeTier)) {
+    if (!stubs->createOneEntryStub(funcExportIndex, metadata, codeTier)) {
       return false;
     }
 
@@ -1916,7 +1880,7 @@ static bool EnsureEntryStubs(const Instance& instance, uint32_t funcIndex,
   // shouldn't have made one in the second tier.
   MOZ_ASSERT(!stubs2->hasEntryStub(fe.funcIndex()));
 
-  if (!stubs2->createOneEntryStub(funcExportIndex, codeTier)) {
+  if (!stubs2->createOneEntryStub(funcExportIndex, metadata, codeTier)) {
     return false;
   }
 
@@ -1934,12 +1898,14 @@ static bool GetInterpEntryAndEnsureStubs(JSContext* cx, Instance& instance,
     return false;
   }
 
+  *funcType = &instance.metadata().getFuncExportType(*funcExport);
+
 #ifdef DEBUG
   // EnsureEntryStubs() has ensured proper jit-entry stubs have been created and
   // installed in funcIndex's JumpTable entry, so check against the presence of
   // the provisional lazy stub.  See also
   // WasmInstanceObject::getExportedFunction().
-  if (!funcExport->hasEagerStubs() && funcExport->canHaveJitEntry()) {
+  if (!funcExport->hasEagerStubs() && (*funcType)->canHaveJitEntry()) {
     if (!EnsureBuiltinThunksInitialized()) {
       return false;
     }
@@ -1950,8 +1916,6 @@ static bool GetInterpEntryAndEnsureStubs(JSContext* cx, Instance& instance,
     MOZ_ASSERT(*callee.wasmJitEntry() != provisionalLazyJitEntryStub);
   }
 #endif
-
-  *funcType = &funcExport->funcType();
   return true;
 }
 
@@ -2248,38 +2212,6 @@ bool Instance::constantRefFunc(uint32_t funcIndex,
   return true;
 }
 
-bool Instance::constantRttCanon(JSContext* cx, uint32_t sourceTypeIndex,
-                                MutableHandle<RttValue*> result) {
-  // Get the renumbered type index from the source type index
-  uint32_t renumberedTypeIndex = metadata().typesRenumbering[sourceTypeIndex];
-  // The original type definition cannot have been a function type, so it
-  // could not have been an immediate type
-  MOZ_ASSERT(renumberedTypeIndex != UINT32_MAX);
-  // Get the TypeIdDesc to find the canonical RttValue
-  const TypeDefWithId& typeDef = metadata().types[renumberedTypeIndex];
-  MOZ_ASSERT(typeDef.isStructType() || typeDef.isArrayType());
-  // Cast from untyped storage to RttValue
-  result.set(*(RttValue**)addressOfTypeId(typeDef.id));
-  return true;
-}
-
-bool Instance::constantRttSub(JSContext* cx, Handle<RttValue*> parentRtt,
-                              uint32_t sourceChildTypeIndex,
-                              MutableHandle<RttValue*> result) {
-  Rooted<RttValue*> subCanonRtt(cx, nullptr);
-  // Get the canonical rtt value from the child type index, this is used to
-  // memoize results of rtt.sub
-  if (!constantRttCanon(cx, sourceChildTypeIndex, &subCanonRtt)) {
-    return false;
-  }
-  result.set(RttValue::rttSub(cx, parentRtt, subCanonRtt));
-  if (!result) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
-}
-
 JSAtom* Instance::getFuncDisplayAtom(JSContext* cx, uint32_t funcIndex) const {
   // The "display name" of a function is primarily shown in Error.stack which
   // also includes location, so use getFuncNameBeforeLocation.
@@ -2302,7 +2234,7 @@ void Instance::onMovingGrowMemory() {
   ArrayBufferObject& buffer = memory_->buffer().as<ArrayBufferObject>();
   memoryBase_ = buffer.dataPointer();
   size_t limit = memory_->boundsCheckLimit();
-#if !defined(JS_64BIT) || defined(ENABLE_WASM_CRANELIFT)
+#if !defined(JS_64BIT)
   // We assume that the limit is a 32-bit quantity
   MOZ_ASSERT(limit <= UINT32_MAX);
 #endif

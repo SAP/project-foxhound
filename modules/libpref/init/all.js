@@ -200,8 +200,14 @@ pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode.addl", "")
 // explanation for the detail.
 pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
 
-// Enable experimental text recognition features for supported OSes.
-pref("dom.text-recognition.enabled", false);
+// Text recognition is a macOS 10.15+ feature that is currently in development.
+// It is surfaced through the browser's context menu. There is no need to pref it
+// on by OS, as there is a specific check if that version of the OS supports the feature.
+#ifdef EARLY_BETA_OR_EARLIER
+  pref("dom.text-recognition.enabled", true);
+#else
+  pref("dom.text-recognition.enabled", false);
+#endif
 
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
@@ -318,6 +324,7 @@ pref("media.videocontrols.picture-in-picture.video-toggle.position", "right");
 pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.display-text-tracks.size", "medium");
+pref("media.videocontrols.picture-in-picture.improved-video-controls.enabled", false);
 pref("media.videocontrols.keyboard-tab-to-all-controls", true);
 
 #ifdef MOZ_WEBRTC
@@ -1062,6 +1069,12 @@ pref("javascript.options.mem.gc_high_frequency_large_heap_growth", 150);
 // JSGC_LOW_FREQUENCY_HEAP_GROWTH
 pref("javascript.options.mem.gc_low_frequency_heap_growth", 150);
 
+// JSGC_BALANCED_HEAP_LIMITS_ENABLED
+pref("javascript.options.mem.gc_balanced_heap_limits", false);
+
+// JSGC_HEAP_GROWTH_FACTOR
+pref("javascript.options.mem.gc_heap_growth_factor", 40);
+
 // JSGC_ALLOCATION_THRESHOLD
 pref("javascript.options.mem.gc_allocation_threshold_mb", 27);
 
@@ -1093,9 +1106,6 @@ pref("javascript.options.shared_memory", true);
 
 pref("javascript.options.throw_on_debuggee_would_run", false);
 pref("javascript.options.dump_stack_on_debuggee_would_run", false);
-
-// Dynamic module import.
-pref("javascript.options.dynamicImport", true);
 
 // advanced prefs
 pref("image.animation_mode",                "normal");
@@ -3291,11 +3301,6 @@ pref("font.size.monospace.x-math", 13);
   // snooper.  So, let's use true for its default value.
   pref("intl.ime.hack.uim.using_key_snooper", true);
 
-  #ifdef MOZ_WIDGET_GTK
-    // maximum number of fonts to substitute for a generic
-    pref("gfx.font_rendering.fontconfig.max_generic_substitutions", 3);
-  #endif
-
 #endif // !ANDROID && !XP_MACOSX && XP_UNIX
 
 #if defined(ANDROID)
@@ -3495,13 +3500,6 @@ pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2
 // by ImageAcceptHeader() in nsHttpHandler.cpp. If set, this pref overrides it.
 // There is also network.http.accept which works in scope of document.
 pref("image.http.accept", "");
-
-//
-// Image memory management prefs
-//
-
-pref("webgl.renderer-string-override", "");
-pref("webgl.vendor-string-override", "");
 
 // sendbuffer of 0 means use OS default, sendbuffer unset means use
 // gecko default which varies depending on windows version and is OS
@@ -3922,7 +3920,7 @@ pref("browser.search.log", false);
 pref("browser.search.update", true);
 pref("browser.search.suggest.enabled", true);
 pref("browser.search.suggest.enabled.private", false);
-pref("browser.search.separatePrivateDefault", false);
+pref("browser.search.separatePrivateDefault", true);
 pref("browser.search.separatePrivateDefault.ui.enabled", false);
 pref("browser.search.removeEngineInfobar.enabled", true);
 
@@ -4436,3 +4434,6 @@ pref("extensions.formautofill.loglevel", "Warn");
 pref("toolkit.osKeyStore.loglevel", "Warn");
 
 pref("extensions.formautofill.supportRTL", false);
+
+// Controls the log level for CookieBannerListService.jsm.
+pref("cookiebanners.listService.logLevel", "Error");

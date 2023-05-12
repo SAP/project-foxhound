@@ -176,7 +176,7 @@ export class _DSCard extends React.PureComponent {
   onLinkClick(event) {
     if (this.props.dispatch) {
       this.props.dispatch(
-        ac.UserEvent({
+        ac.DiscoveryStreamUserEvent({
           event: "CLICK",
           source: this.props.type.toUpperCase(),
           action_position: this.props.pos,
@@ -214,7 +214,7 @@ export class _DSCard extends React.PureComponent {
       );
 
       this.props.dispatch(
-        ac.UserEvent({
+        ac.DiscoveryStreamUserEvent({
           event: "SAVE_TO_POCKET",
           source: "CARDGRID_HOVER",
           action_position: this.props.pos,
@@ -317,16 +317,19 @@ export class _DSCard extends React.PureComponent {
       );
     }
 
+    const { isRecentSave, DiscoveryStream, saveToPocketCard } = this.props;
+
     const {
-      saveToPocketCard,
+      pocketButtonEnabled,
       hideDescriptions,
       compactImages,
       imageGradient,
+      newSponsoredLabel,
       titleLines = 3,
       descLines = 3,
-      displayReadTime,
-      isRecentSave,
-    } = this.props;
+      readTime: displayReadTime,
+    } = DiscoveryStream;
+
     const excerpt = !hideDescriptions ? this.props.excerpt : "";
 
     let timeToRead;
@@ -365,7 +368,7 @@ export class _DSCard extends React.PureComponent {
             source={this.props.source}
             title={this.props.title}
             excerpt={excerpt}
-            newSponsoredLabel={this.props.newSponsoredLabel}
+            newSponsoredLabel={newSponsoredLabel}
             timeToRead={timeToRead}
             context={this.props.context}
             context_type={this.props.context_type}
@@ -422,7 +425,7 @@ export class _DSCard extends React.PureComponent {
                 onMenuUpdate={this.onMenuUpdate}
                 onMenuShow={this.onMenuShow}
                 saveToPocketCard={saveToPocketCard}
-                pocket_button_enabled={this.props.pocket_button_enabled}
+                pocket_button_enabled={pocketButtonEnabled}
                 isRecentSave={isRecentSave}
               />
             </div>
@@ -447,7 +450,7 @@ export class _DSCard extends React.PureComponent {
             hostRef={this.contextMenuButtonHostRef}
             onMenuUpdate={this.onMenuUpdate}
             onMenuShow={this.onMenuShow}
-            pocket_button_enabled={this.props.pocket_button_enabled}
+            pocket_button_enabled={pocketButtonEnabled}
             isRecentSave={isRecentSave}
           />
         )}
@@ -462,6 +465,7 @@ _DSCard.defaultProps = {
 
 export const DSCard = connect(state => ({
   App: state.App,
+  DiscoveryStream: state.DiscoveryStream,
 }))(_DSCard);
 
 export const PlaceholderDSCard = props => <DSCard placeholder={true} />;

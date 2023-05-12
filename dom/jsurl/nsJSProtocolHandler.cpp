@@ -36,10 +36,10 @@
 #include "mozilla/dom/Document.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsITextToSubURI.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsSandboxFlags.h"
+#include "nsTextToSubURI.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/AutoEntryScript.h"
@@ -137,9 +137,11 @@ static bool AllowedByCSP(nsIContentSecurityPolicy* aCSP,
     return true;
   }
 
+  // javascript: is a "navigation" type, so script-src-elem applies.
+  // https://w3c.github.io/webappsec-csp/#effective-directive-for-inline-check
   bool allowsInlineScript = true;
   nsresult rv =
-      aCSP->GetAllowsInline(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
+      aCSP->GetAllowsInline(nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE,
                             u""_ns,                  // aNonce
                             true,                    // aParserCreated
                             nullptr,                 // aElement,
@@ -1100,15 +1102,9 @@ NS_IMPL_ISUPPORTS(nsJSProtocolHandler, nsIProtocolHandler)
     const nsCString& aSpec, const char* aCharset, nsACString& aUTF8Spec) {
   aUTF8Spec.Truncate();
 
-  nsresult rv;
-
-  nsCOMPtr<nsITextToSubURI> txtToSubURI =
-      do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsAutoString uStr;
-  rv = txtToSubURI->UnEscapeNonAsciiURI(nsDependentCString(aCharset), aSpec,
-                                        uStr);
+  nsresult rv = nsTextToSubURI::UnEscapeNonAsciiURI(
+      nsDependentCString(aCharset), aSpec, uStr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!IsAscii(uStr)) {

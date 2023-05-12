@@ -356,7 +356,7 @@ bool nsNativeTheme::IsBottomTab(nsIFrame* aFrame) {
                                                nsGkAtoms::_class, classStr);
   }
   // FIXME: This looks bogus, shouldn't this be looking at GetClasses()?
-  return !classStr.IsEmpty() && classStr.Find("tab-bottom") != kNotFound;
+  return !classStr.IsEmpty() && classStr.Find(u"tab-bottom") != kNotFound;
 }
 
 bool nsNativeTheme::IsFirstTab(nsIFrame* aFrame) {
@@ -548,7 +548,7 @@ bool nsNativeTheme::IsRangeHorizontal(nsIFrame* aFrame) {
 }
 
 /* static */
-bool nsNativeTheme::IsDarkBackground(nsIFrame* aFrame) {
+bool nsNativeTheme::IsDarkBackgroundForScrollbar(nsIFrame* aFrame) {
   // Try to find the scrolled frame. Note that for stuff like xul <tree> there
   // might be none.
   {
@@ -565,6 +565,11 @@ bool nsNativeTheme::IsDarkBackground(nsIFrame* aFrame) {
     }
   }
 
+  return IsDarkBackground(aFrame);
+}
+
+/* static */
+bool nsNativeTheme::IsDarkBackground(nsIFrame* aFrame) {
   auto color =
       nsCSSRendering::FindEffectiveBackgroundColor(
           aFrame, /* aStopAtThemed = */ false, /* aPreferBodyToCanvas = */ true)

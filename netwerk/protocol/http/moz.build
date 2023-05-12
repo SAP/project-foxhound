@@ -109,6 +109,9 @@ UNIFIED_SOURCES += [
     "Http2Push.cpp",
     "Http2Session.cpp",
     "Http2Stream.cpp",
+    "Http2StreamBase.cpp",
+    "Http2StreamTunnel.cpp",
+    "Http2StreamWebSocket.cpp",
     "Http3Session.cpp",
     "Http3Stream.cpp",
     "HttpAuthUtils.cpp",
@@ -153,10 +156,9 @@ UNIFIED_SOURCES += [
     "PendingTransactionInfo.cpp",
     "PendingTransactionQueue.cpp",
     "QuicSocketControl.cpp",
-    "SocketWrapper.cpp",
     "SpeculativeTransaction.cpp",
-    "TLSFilterTransaction.cpp",
     "TlsHandshaker.cpp",
+    "TLSTransportLayer.cpp",
     "TRRServiceChannel.cpp",
 ]
 

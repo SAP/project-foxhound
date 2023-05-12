@@ -47,6 +47,7 @@
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StorageAccessAPIHelper.h"
 #include "mozilla/TelemetryIPC.h"
@@ -697,8 +698,8 @@ class nsGtkNativeInitRunnable : public Runnable {
   }
 };
 
-void ContentChild::Init(base::ProcessId aParentPid, const char* aParentBuildID,
-                        mozilla::ipc::ScopedPort aPort, uint64_t aChildID,
+void ContentChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+                        const char* aParentBuildID, uint64_t aChildID,
                         bool aIsForBrowser) {
 #ifdef MOZ_WIDGET_GTK
   // When running X11 only build we need to pass a display down
@@ -752,8 +753,8 @@ void ContentChild::Init(base::ProcessId aParentPid, const char* aParentBuildID,
     MOZ_CRASH("Failed to initialize the thread manager in ContentChild::Init");
   }
 
-  if (!Open(std::move(aPort), aParentPid)) {
-    MOZ_CRASH("Open failed in ContentChild::Init");
+  if (!aEndpoint.Bind(this)) {
+    MOZ_CRASH("Bind failed in ContentChild::Init");
   }
   sSingleton = this;
 
@@ -1219,7 +1220,7 @@ nsresult ContentChild::ProvideWindowCommon(
   SendCreateWindow(aTabOpener, parent, newChild, aChromeFlags, aCalledFromJS,
                    aOpenWindowInfo->GetIsForPrinting(),
                    aOpenWindowInfo->GetIsForWindowDotPrint(), aURI, features,
-                   Principal(triggeringPrincipal), csp, referrerInfo,
+                   triggeringPrincipal, csp, referrerInfo,
                    aOpenWindowInfo->GetOriginAttributes(), std::move(resolve),
                    std::move(reject));
 
@@ -2670,6 +2671,15 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
   }
   // else "prealloc" or "web" type -> "Web Content" already set
 
+  // Turn off Spectre mitigations in isolated web content processes.
+  if (StaticPrefs::javascript_options_spectre_disable_for_isolated_content() &&
+      (remoteTypePrefix == FISSION_WEB_REMOTE_TYPE ||
+       remoteTypePrefix == SERVICEWORKER_REMOTE_TYPE ||
+       remoteTypePrefix == WITH_COOP_COEP_REMOTE_TYPE ||
+       aRemoteType == PRIVILEGEDABOUT_REMOTE_TYPE)) {
+    JS::DisableSpectreMitigationsAfterInit();
+  }
+
   // Use the prefix to avoid URIs from Fission isolated processes.
   CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::RemoteType,
                                      remoteTypePrefix);
@@ -3078,9 +3088,8 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateWindow(
 
 PContentPermissionRequestChild*
 ContentChild::AllocPContentPermissionRequestChild(
-    const nsTArray<PermissionRequest>& aRequests,
-    const IPC::Principal& aPrincipal, const IPC::Principal& aTopLevelPrincipal,
-    const bool& aIsHandlingUserInput,
+    const nsTArray<PermissionRequest>& aRequests, nsIPrincipal* aPrincipal,
+    nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
     const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId) {
   MOZ_CRASH("unused");
   return nullptr;
@@ -3183,16 +3192,23 @@ mozilla::ipc::IPCResult ContentChild::RecvInvokeDragSession(
 
 mozilla::ipc::IPCResult ContentChild::RecvEndDragSession(
     const bool& aDoneDrag, const bool& aUserCancelled,
-    const LayoutDeviceIntPoint& aDragEndPoint, const uint32_t& aKeyModifiers) {
+    const LayoutDeviceIntPoint& aDragEndPoint, const uint32_t& aKeyModifiers,
+    const uint32_t& aDropEffect) {
   nsCOMPtr<nsIDragService> dragService =
       do_GetService("@mozilla.org/widget/dragservice;1");
   if (dragService) {
-    if (aUserCancelled) {
-      nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
-      if (dragSession) {
+    nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+    if (dragSession) {
+      if (aUserCancelled) {
         dragSession->UserCancelled();
       }
+
+      RefPtr<DataTransfer> dataTransfer = dragSession->GetDataTransfer();
+      if (dataTransfer) {
+        dataTransfer->SetDropEffectInt(aDropEffect);
+      }
     }
+
     static_cast<nsBaseDragService*>(dragService.get())
         ->SetDragEndPoint(aDragEndPoint);
     dragService->EndDragSession(aDoneDrag, aKeyModifiers);
@@ -3201,7 +3217,7 @@ mozilla::ipc::IPCResult ContentChild::RecvEndDragSession(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvPush(const nsCString& aScope,
-                                               const IPC::Principal& aPrincipal,
+                                               nsIPrincipal* aPrincipal,
                                                const nsString& aMessageId) {
   PushMessageDispatcher dispatcher(aScope, aPrincipal, aMessageId, Nothing());
   Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
@@ -3209,7 +3225,7 @@ mozilla::ipc::IPCResult ContentChild::RecvPush(const nsCString& aScope,
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvPushWithData(
-    const nsCString& aScope, const IPC::Principal& aPrincipal,
+    const nsCString& aScope, nsIPrincipal* aPrincipal,
     const nsString& aMessageId, nsTArray<uint8_t>&& aData) {
   PushMessageDispatcher dispatcher(aScope, aPrincipal, aMessageId,
                                    Some(std::move(aData)));
@@ -3218,15 +3234,16 @@ mozilla::ipc::IPCResult ContentChild::RecvPushWithData(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvPushSubscriptionChange(
-    const nsCString& aScope, const IPC::Principal& aPrincipal) {
+    const nsCString& aScope, nsIPrincipal* aPrincipal) {
   PushSubscriptionChangeDispatcher dispatcher(aScope, aPrincipal);
   Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentChild::RecvPushError(
-    const nsCString& aScope, const IPC::Principal& aPrincipal,
-    const nsString& aMessage, const uint32_t& aFlags) {
+mozilla::ipc::IPCResult ContentChild::RecvPushError(const nsCString& aScope,
+                                                    nsIPrincipal* aPrincipal,
+                                                    const nsString& aMessage,
+                                                    const uint32_t& aFlags) {
   PushErrorDispatcher dispatcher(aScope, aPrincipal, aMessage, aFlags);
   Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
   return IPC_OK();
@@ -3234,15 +3251,15 @@ mozilla::ipc::IPCResult ContentChild::RecvPushError(
 
 mozilla::ipc::IPCResult
 ContentChild::RecvNotifyPushSubscriptionModifiedObservers(
-    const nsCString& aScope, const IPC::Principal& aPrincipal) {
+    const nsCString& aScope, nsIPrincipal* aPrincipal) {
   PushSubscriptionModifiedDispatcher dispatcher(aScope, aPrincipal);
   Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObservers()));
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvBlobURLRegistration(
-    const nsCString& aURI, const IPCBlob& aBlob,
-    const IPC::Principal& aPrincipal, const Maybe<nsID>& aAgentClusterId) {
+    const nsCString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
+    const Maybe<nsID>& aAgentClusterId) {
   RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(aBlob);
   MOZ_ASSERT(blobImpl);
 
@@ -3271,8 +3288,7 @@ void ContentChild::CreateGetFilesRequest(const nsAString& aDirectoryPath,
   MOZ_ASSERT(aChild);
   MOZ_ASSERT(!mGetFilesPendingRequests.Contains(aUUID));
 
-  Unused << SendGetFilesRequest(aUUID, nsString(aDirectoryPath),
-                                aRecursiveFlag);
+  Unused << SendGetFilesRequest(aUUID, aDirectoryPath, aRecursiveFlag);
   mGetFilesPendingRequests.InsertOrUpdate(aUUID, RefPtr{aChild});
 }
 
@@ -3333,7 +3349,7 @@ void ContentChild::FatalErrorIfNotUsingGPUProcess(const char* const aErrorMsg,
 }
 
 PURLClassifierChild* ContentChild::AllocPURLClassifierChild(
-    const Principal& aPrincipal, bool* aSuccess) {
+    nsIPrincipal* aPrincipal, bool* aSuccess) {
   *aSuccess = true;
   return new URLClassifierChild();
 }
@@ -4633,8 +4649,7 @@ IPCResult ContentChild::RecvFlushFOGData(FlushFOGDataResolver&& aResolver) {
 }
 
 IPCResult ContentChild::RecvUpdateMediaCodecsSupported(
-    RemoteDecodeIn aLocation,
-    const PDMFactory::MediaCodecsSupported& aSupported) {
+    RemoteDecodeIn aLocation, const media::MediaCodecsSupported& aSupported) {
   RemoteDecoderManagerChild::SetSupported(aLocation, aSupported);
 
   return IPC_OK();

@@ -1742,10 +1742,18 @@
      * Invoke `callee` with `this` and `args`, and push the return value. Throw
      * a TypeError if `callee` isn't a function.
      *
+     * `JSOp::CallContent` is for `callContentFunction` in self-hosted JS, and
+     * this is for handling it differently in debugger's `onNativeCall` hook.
+     * `onNativeCall` hook disables all JITs, and `JSOp::CallContent` is
+     * treated exactly the same as `JSOP::Call` in JIT.
+     *
      * `JSOp::CallIter` is used for implicit calls to @@iterator methods, to
      * ensure error messages are formatted with `JSMSG_NOT_ITERABLE` ("x is not
      * iterable") rather than `JSMSG_NOT_FUNCTION` ("x[Symbol.iterator] is not
      * a function"). The `argc` operand must be 0 for this variation.
+     *
+     * `JSOp::CallContentIter` is `JSOp::CallContent` variant of
+     * `JSOp::CallIter`.
      *
      * `JSOp::CallIgnoresRv` hints to the VM that the return value is ignored.
      * This allows alternate faster implementations to be used that avoid
@@ -1761,7 +1769,9 @@
      *   Stack: callee, this, args[0], ..., args[argc-1] => rval
      */ \
     MACRO(Call, call, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC) \
+    MACRO(CallContent, call_content, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC) \
     MACRO(CallIter, call_iter, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC) \
+    MACRO(CallContentIter, call_content_iter, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC) \
     MACRO(CallIgnoresRv, call_ignores_rv, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_IC) \
     /*
      * Like `JSOp::Call`, but the arguments are provided in an array rather than
@@ -1921,6 +1931,9 @@
      * *SuperCall* expressions, to allow JITs to distinguish them from `new`
      * expressions.
      *
+     * `JSOp::NewContent` is for `constructContentFunction` in self-hosted JS.
+     * See the comment for `JSOp::CallContent` for more details.
+     *
      * Implements: [EvaluateConstruct][1] steps 7 and 8.
      *
      * [1]: https://tc39.es/ecma262/#sec-evaluatenew
@@ -1931,6 +1944,7 @@
      *   Stack: callee, isConstructing, args[0], ..., args[argc-1], newTarget => rval
      */ \
     MACRO(New, new_, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_CONSTRUCT|JOF_IC) \
+    MACRO(NewContent, new_content, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_CONSTRUCT|JOF_IC) \
     MACRO(SuperCall, super_call, NULL, 3, -1, 1, JOF_ARGC|JOF_INVOKE|JOF_CONSTRUCT|JOF_IC) \
     /*
      * Spread-call variant of `JSOp::New`.
@@ -3517,16 +3531,13 @@
  * a power of two.  Use this macro to do so.
  */
 #define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-  IF_RECORD_TUPLE(/* empty */, MACRO(224))     \
-  IF_RECORD_TUPLE(/* empty */, MACRO(225))     \
-  IF_RECORD_TUPLE(/* empty */, MACRO(226))     \
   IF_RECORD_TUPLE(/* empty */, MACRO(227))     \
   IF_RECORD_TUPLE(/* empty */, MACRO(228))     \
   IF_RECORD_TUPLE(/* empty */, MACRO(229))     \
   IF_RECORD_TUPLE(/* empty */, MACRO(230))     \
-  MACRO(231)                                   \
-  MACRO(232)                                   \
-  MACRO(233)                                   \
+  IF_RECORD_TUPLE(/* empty */, MACRO(231))     \
+  IF_RECORD_TUPLE(/* empty */, MACRO(232))     \
+  IF_RECORD_TUPLE(/* empty */, MACRO(233))     \
   MACRO(234)                                   \
   MACRO(235)                                   \
   MACRO(236)                                   \

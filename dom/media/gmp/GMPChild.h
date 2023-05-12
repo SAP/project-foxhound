@@ -28,8 +28,8 @@ class GMPChild : public PGMPChild {
   GMPChild();
   virtual ~GMPChild();
 
-  bool Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
-            mozilla::ipc::ScopedPort aPort);
+  bool Init(const nsAString& aPluginPath,
+            mozilla::ipc::UntypedEndpoint&& aEndpoint);
   MessageLoop* GMPMessageLoop();
 
   // Main thread only.
@@ -76,7 +76,7 @@ class GMPChild : public PGMPChild {
   void ProcessingError(Result aCode, const char* aReason) override;
 
   GMPErr GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
-                const nsCString aKeySystem = ""_ns);
+                const nsACString& aKeySystem = ""_ns);
 
   nsTArray<std::pair<nsCString, nsCString>> MakeCDMHostVerificationPaths();
 

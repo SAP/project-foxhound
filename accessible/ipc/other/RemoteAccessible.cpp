@@ -13,6 +13,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/Unused.h"
 #include "mozilla/a11y/Platform.h"
+#include "Relation.h"
 #include "RelationType.h"
 #include "mozilla/a11y/Role.h"
 #include "mozilla/StaticPrefs_accessibility.h"
@@ -76,21 +77,15 @@ already_AddRefed<AccAttributes> RemoteAccessible::Attributes() {
   return attrs.forget();
 }
 
-nsTArray<RemoteAccessible*> RemoteAccessible::RelationByType(
-    RelationType aType) const {
+Relation RemoteAccessible::RelationByType(RelationType aType) const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::RelationByType(aType);
+  }
+
   nsTArray<uint64_t> targetIDs;
   Unused << mDoc->SendRelationByType(mID, static_cast<uint32_t>(aType),
                                      &targetIDs);
-
-  size_t targetCount = targetIDs.Length();
-  nsTArray<RemoteAccessible*> targets(targetCount);
-  for (size_t i = 0; i < targetCount; i++) {
-    if (RemoteAccessible* proxy = mDoc->GetAccessible(targetIDs[i])) {
-      targets.AppendElement(proxy);
-    }
-  }
-
-  return targets;
+  return Relation(new RemoteAccIterator(std::move(targetIDs), Document()));
 }
 
 void RemoteAccessible::Relations(
@@ -891,45 +886,6 @@ double RemoteAccessible::Step() const {
   double step = UnspecifiedNaN<double>();
   Unused << mDoc->SendStep(mID, &step);
   return step;
-}
-
-RemoteAccessible* RemoteAccessible::FocusedChild() {
-  if (IsOuterDoc()) {
-    // If FocusedChild was called on an outer doc, it should behave
-    // like a non-doc accessible and return its focused child, or null.
-    // If the inner doc is OOP (fission), calling FocusedChild on the outer
-    // doc would return null.
-    RemoteAccessible* child = RemoteFirstChild();
-    if (!child) {
-      return (State() & states::FOCUSED) ? this : nullptr;
-    }
-    MOZ_ASSERT(child->IsDoc());
-    return (child->State() & states::FOCUSED) ? child : nullptr;
-  }
-
-  auto* doc = mDoc;
-  uint64_t id = mID;
-  if (IsDoc()) {
-    // If this is a doc we should return the focused descendant, not just the
-    // direct child. In order to do that, we need to get a doc that is in
-    // the same process as the focused accessible. So we need the focused doc.
-    if (dom::BrowserParent* browser = dom::BrowserParent::GetFocused()) {
-      if (auto* focusedDoc = browser->GetTopLevelDocAccessible()) {
-        if (!focusedDoc->IsTopLevel()) {
-          // Redirect SendFocusedChild to OOP iframe doc.
-          doc = focusedDoc;
-        }
-      }
-    }
-  }
-
-  PDocAccessibleParent* resultDoc = nullptr;
-  uint64_t resultID = 0;
-  Unused << doc->SendFocusedChild(id, &resultDoc, &resultID);
-
-  auto* useDoc = static_cast<DocAccessibleParent*>(resultDoc);
-  // If useDoc is null, this means there is no focused child.
-  return useDoc ? useDoc->GetAccessible(resultID) : nullptr;
 }
 
 Accessible* RemoteAccessible::ChildAtPoint(

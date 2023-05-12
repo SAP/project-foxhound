@@ -4,9 +4,8 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -425,6 +424,7 @@ export class SearchOneOffs {
       let textboxWidth = await this.window.promiseDocumentFlushed(() => {
         return this._textbox.clientWidth;
       });
+
       if (
         this._engineInfo?.domWasUpdated &&
         this._textboxWidth == textboxWidth &&
@@ -434,6 +434,12 @@ export class SearchOneOffs {
       }
       this._textboxWidth = textboxWidth;
       this._addEngines = addEngines;
+    }
+
+    const isSearchBar = this.hasAttribute("is_searchbar");
+    if (isSearchBar) {
+      // Hide the container during updating to avoid flickering.
+      this.container.hidden = true;
     }
 
     // Finally, build the list of one-off buttons.
@@ -447,7 +453,10 @@ export class SearchOneOffs {
     headerText.id = this.telemetryOrigin + "-one-offs-header-label";
     this.buttons.setAttribute("aria-labelledby", headerText.id);
 
-    let hideOneOffs = await this.willHide();
+    // For the search-bar, always show the one-off buttons where there is an
+    // option to add an engine.
+    let addEngineNeeded = isSearchBar && addEngines.length;
+    let hideOneOffs = (await this.willHide()) && !addEngineNeeded;
 
     // The _engineInfo cache is used by more consumers, thus it is not a good
     // representation of whether this method already updated the one-off buttons
@@ -465,29 +474,6 @@ export class SearchOneOffs {
     // Ensure we can refer to the settings buttons by ID:
     let origin = this.telemetryOrigin;
     this.settingsButton.id = origin + "-anon-search-settings";
-
-    if (this.popup) {
-      let buttonsWidth = this.popup.clientWidth;
-
-      // There's one weird thing to guard against: when layout pixels
-      // aren't an integral multiple of device pixels, the last button
-      // of each row sometimes gets pushed to the next row, depending on the
-      // panel and button widths.
-      // This is likely because the clientWidth getter rounds the value, but
-      // the panel's border width is not an integer.
-      // As a workaround, decrement the width if the scale is not an integer.
-      let scale = this.window.devicePixelRatio;
-      if (Math.floor(scale) != scale) {
-        --buttonsWidth;
-      }
-
-      // 8 is for the margin-inline of the setting button.
-      buttonsWidth -= this.settingsButton.clientWidth + 8;
-
-      // If the header string is very long, then the searchbar buttons will
-      // overflow their container unless max-width is set.
-      this.buttons.style.setProperty("max-width", `${buttonsWidth}px`);
-    }
 
     let engines = (await this.getEngineInfo()).engines;
     this._rebuildEngineList(engines, addEngines);
@@ -1087,7 +1073,17 @@ export class SearchOneOffs {
         button.engine = currentEngine;
       }
 
-      Services.search[engineType] = this._contextEngine;
+      if (isPrivateButton) {
+        Services.search.setDefaultPrivate(
+          this._contextEngine,
+          Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR_CONTEXT
+        );
+      } else {
+        Services.search.setDefault(
+          this._contextEngine,
+          Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR_CONTEXT
+        );
+      }
     }
   }
 

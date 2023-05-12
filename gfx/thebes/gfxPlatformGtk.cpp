@@ -102,7 +102,6 @@ gfxPlatformGtk::gfxPlatformGtk() {
     gtk_init(nullptr, nullptr);
   }
 
-  mMaxGenericSubstitutions = UNINITIALIZED_VALUE;
   mIsX11Display = gfxPlatform::IsHeadless() ? false : GdkIsX11Display();
   if (XRE_IsParentProcess()) {
     InitX11EGLConfig();
@@ -474,22 +473,9 @@ void gfxPlatformGtk::FontsPrefsChanged(const char* aPref) {
     return;
   }
 
-  mMaxGenericSubstitutions = UNINITIALIZED_VALUE;
   gfxFcPlatformFontList* pfl = gfxFcPlatformFontList::PlatformFontList();
   pfl->ClearGenericMappings();
   FlushFontAndWordCaches();
-}
-
-uint32_t gfxPlatformGtk::MaxGenericSubstitions() {
-  if (mMaxGenericSubstitutions == UNINITIALIZED_VALUE) {
-    mMaxGenericSubstitutions =
-        Preferences::GetInt(GFX_PREF_MAX_GENERIC_SUBSTITUTIONS, 3);
-    if (mMaxGenericSubstitutions < 0) {
-      mMaxGenericSubstitutions = 3;
-    }
-  }
-
-  return uint32_t(mMaxGenericSubstitutions);
 }
 
 bool gfxPlatformGtk::AccelerateLayersByDefault() { return true; }
@@ -962,10 +948,10 @@ gfxPlatformGtk::CreateGlobalHardwareVsyncSource() {
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsString windowProtocol;
   gfxInfo->GetWindowProtocol(windowProtocol);
-  bool isXwayland = windowProtocol.Find("xwayland") != -1;
+  bool isXwayland = windowProtocol.Find(u"xwayland") != -1;
   nsString adapterDriverVendor;
   gfxInfo->GetAdapterDriverVendor(adapterDriverVendor);
-  bool isMesa = adapterDriverVendor.Find("mesa") != -1;
+  bool isMesa = adapterDriverVendor.Find(u"mesa") != -1;
 
   // Only use GLX vsync when the OpenGL compositor / WebRender is being used.
   // The extra cost of initializing a GLX context while blocking the main thread

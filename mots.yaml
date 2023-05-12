@@ -2,13 +2,13 @@
 ---
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2022-07-08T13:24:54.472587'
+updated_at: '2022-08-11T13:07:31.289055'
 export:
   path: ./docs/mots/index.rst
   format: rst
   searchfox_enabled: true
 description: |
-  Mozilla operates under a `module ownership governance system <http://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
+  Mozilla operates under a `module ownership governance system <https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
 
   The system is overseen by the owner and peers of the Module Ownership module. For the modules that make up Firefox, oversight is provided by the Firefox Technical Leadership module. Owners may add and remove peers from their modules as they wish, without reference to anyone else.
 
@@ -27,7 +27,7 @@ people:
     nick: agashlin
   - &agi
     bmo_id: 421286
-    name: Agi Sferro
+    name: ''
     nick: agi
   - &ahal
     bmo_id: 382067
@@ -165,10 +165,10 @@ people:
     bmo_id: 644229
     name: Caroline Cullen
     nick: caroline
-  - &chutten
+  - &chuttenPTO
     bmo_id: 553004
     name: Chris H-C
-    nick: chutten
+    nick: chutten|PTO
   - &ckerschbaumer
     bmo_id: 521513
     name: ''
@@ -225,6 +225,10 @@ people:
     bmo_id: 436087
     name: Kannan Vijayan
     nick: djvj
+  - &dlrobertson
+    bmo_id: 705145
+    name: Dan Robertson
+    nick: dlrobertson
   - &dminor
     bmo_id: 466787
     name: Dan Minor
@@ -977,6 +981,8 @@ modules:
     meta:
       owners_emeritus:
         - Kartikaya Gupta
+      peers_emeritus:
+        - Ryan Hunt
       group: dev-platform
       url: https://wiki.mozilla.org/Platform/GFX/APZ
       components:
@@ -985,7 +991,8 @@ modules:
       - *botond
     peers:
       - *tnikkel
-      - *rhunt
+      - *dlrobertson
+      - *hiro
       - *mstange
     machine_name: core_apz_graphics_submodule
 
@@ -3563,7 +3570,7 @@ modules:
           group: fx-data-dev
           url: https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/index.html
         owners:
-          - *chutten
+          - *chuttenPTO
         peers:
           - *aplacitelli
           - *janerik
@@ -3600,5 +3607,5 @@ modules:
         machine_name: webextensions
     machine_name: toolkit
 hashes:
-  config: 6c931f02fdd0d60b6a71e6c9852d4768c079ae4f
-  export: 46336ebc3fe281f466467b7464dcd0781d20656b
+  config: 94b11222bd4d452c7e55cd605834609f9b1bfae9
+  export: 8c296abc98008b6a2e09bb13401043d95218d526

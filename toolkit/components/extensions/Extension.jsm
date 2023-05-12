@@ -59,6 +59,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.jsm",
   ExtensionProcessScript: "resource://gre/modules/ExtensionProcessScript.jsm",
+  ExtensionScriptingStore: "resource://gre/modules/ExtensionScriptingStore.jsm",
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
@@ -209,6 +210,9 @@ if (
   }
 }
 
+const PREF_DNR_ENABLED = "extensions.dnr.enabled";
+const PREF_DNR_FEEDBACK = "extensions.dnr.feedback";
+
 // Message included in warnings and errors related to privileged permissions and
 // privileged manifest properties. Provides a link to the firefox-source-docs.mozilla.org
 // section related to developing and sign Privileged Add-ons.
@@ -262,6 +266,23 @@ function isMozillaExtension(extension) {
   return isSigned && isMozillaLineExtension;
 }
 
+function isDNRPermissionAllowed(perm) {
+  // DNR is under development and therefore disabled by default for now.
+  if (!Services.prefs.getBoolPref(PREF_DNR_ENABLED, false)) {
+    return false;
+  }
+
+  // APIs tied to declarativeNetRequestFeedback are for debugging purposes and
+  // are only supposed to be available when the (add-on dev) user opts in.
+  if (
+    perm === "declarativeNetRequestFeedback" &&
+    !Services.prefs.getBoolPref(PREF_DNR_FEEDBACK, false)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Classify an individual permission from a webextension manifest
  * as a host/origin permission, an api permission, or a regular permission.
@@ -294,6 +315,11 @@ function classifyPermission(perm, restrictSchemes, isPrivileged) {
     return { api: match[2] };
   } else if (!isPrivileged && PRIVILEGED_PERMS.has(match[1])) {
     return { invalid: perm, privileged: true };
+  } else if (
+    perm.startsWith("declarativeNetRequest") &&
+    !isDNRPermissionAllowed(perm)
+  ) {
+    return { invalid: perm };
   }
   return { permission: perm };
 }
@@ -480,6 +506,13 @@ var ExtensionAddonObserver = {
     lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
       `Clear ServiceWorkers for ${addon.id}`,
       lazy.ServiceWorkerCleanUp.removeFromPrincipal(principal)
+    );
+
+    // Clear the persisted dynamic content scripts created with the scripting
+    // API (if any).
+    lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
+      `Clear scripting store for ${addon.id}`,
+      lazy.ExtensionScriptingStore.clearOnUninstall(addon.id)
     );
 
     if (!Services.prefs.getBoolPref(LEAVE_STORAGE_PREF, false)) {
@@ -1234,6 +1267,16 @@ class ExtensionData {
       !manifest.background.persistent
     ) {
       this.logWarning("Event pages are not currently supported.");
+    }
+
+    if (
+      this.isPrivileged &&
+      manifest.hidden &&
+      (manifest.action || manifest.browser_action || manifest.page_action)
+    ) {
+      this.manifestError(
+        "Cannot use browser and/or page actions in hidden add-ons"
+      );
     }
 
     let apiNames = new Set();
@@ -2684,6 +2727,7 @@ class Extension extends ExtensionData {
       id: this.id,
       uuid: this.uuid,
       name: this.name,
+      type: this.type,
       manifestVersion: this.manifestVersion,
       extensionPageCSP: this.extensionPageCSP,
       instanceId: this.instanceId,
@@ -3019,6 +3063,12 @@ class Extension extends ExtensionData {
         this.permissions.add(PRIVATE_ALLOWED_PERMISSION);
       }
 
+      // Allow other extensions to access static themes in private browsing windows
+      // (See Bug 1790115).
+      if (this.type === "theme") {
+        this.permissions.add(PRIVATE_ALLOWED_PERMISSION);
+      }
+
       // We only want to update the SVG_CONTEXT_PROPERTIES_PERMISSION during install and
       // upgrade/downgrade startups.
       if (INSTALL_AND_UPDATE_STARTUP_REASONS.has(this.startupReason)) {
@@ -3052,6 +3102,20 @@ class Extension extends ExtensionData {
       }
 
       GlobalManager.init(this);
+
+      if (this.hasPermission("scripting")) {
+        this.state = "Startup: Initialize scripting store";
+        // We have to await here because `initSharedData` depends on the data
+        // fetched from the scripting store. This has to be done early because
+        // we need the data to run the content scripts in existing pages at
+        // startup.
+        try {
+          await lazy.ExtensionScriptingStore.initExtension(this);
+          this.state = "Startup: Scripting store initialized";
+        } catch (err) {
+          this.logError(`Failed to initialize scripting store: ${err}`);
+        }
+      }
 
       this.initSharedData();
 

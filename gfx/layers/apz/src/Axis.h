@@ -30,7 +30,7 @@ const float EPSILON = 0.0001f;
  * due to floating-point operations (which can be larger than COORDINATE_EPISLON
  * for sufficiently large coordinate values).
  */
-bool FuzzyEqualsCoordinate(float aValue1, float aValue2);
+bool FuzzyEqualsCoordinate(CSSCoord aValue1, CSSCoord aValue2);
 
 struct FrameMetrics;
 class AsyncPanZoomController;
@@ -229,6 +229,7 @@ class Axis {
   /**
    * Returns whether this axis can scroll any more in a particular direction.
    */
+  bool CanScroll(CSSCoord aDelta) const;
   bool CanScroll(ParentLayerCoord aDelta) const;
 
   /**

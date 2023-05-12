@@ -684,6 +684,12 @@ function test_http2_post() {
   do_post(posts[0], chan, listener, "POST");
 }
 
+function test_http2_empty_post() {
+  var chan = makeChan("https://localhost:" + serverPort + "/post");
+  var listener = new Http2PostListener("0");
+  do_post("", chan, listener, "POST");
+}
+
 // Make sure we can do a simple PATCH
 function test_http2_patch() {
   var chan = makeChan("https://localhost:" + serverPort + "/patch");
@@ -718,7 +724,7 @@ var altsvcClientListener = {
     );
     if (!isHttp2Connection) {
       dump("/altsvc1 not over h2 yet - retry\n");
-      var chan = makeChan(
+      let chan = makeChan(
         "http://foo.example.com:" + httpserv.identity.primaryPort + "/altsvc1"
       ).QueryInterface(Ci.nsIHttpChannel);
       // we use this header to tell the server to issue a altsvc frame for the
@@ -732,7 +738,7 @@ var altsvcClientListener = {
       chan.asyncOpen(altsvcClientListener);
     } else {
       Assert.ok(isHttp2Connection);
-      var chan = makeChan(
+      let chan = makeChan(
         "http://foo.example.com:" + httpserv2.identity.primaryPort + "/altsvc2"
       ).QueryInterface(Ci.nsIHttpChannel);
       chan.loadFlags = Ci.nsIRequest.LOAD_BYPASS_CACHE;
@@ -1319,6 +1325,7 @@ var tests = [
   test_http2_big,
   test_http2_huge_suspended,
   test_http2_post,
+  test_http2_empty_post,
   test_http2_patch,
   test_http2_pushapi_1,
   test_http2_continuations,

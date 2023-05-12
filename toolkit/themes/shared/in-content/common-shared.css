@@ -264,9 +264,11 @@
   color: var(--in-content-page-color);
 }
 
-html|body {
+:root:not(.system-font-size) {
   font-size: 15px;
-  font-weight: normal;
+}
+
+html|body {
   margin: 0;
 }
 

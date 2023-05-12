@@ -3202,6 +3202,18 @@ def disable_smart_cards(build_project):
 set_config("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
 set_define("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
 
+# Enable UniFFI fixtures
+# ==============================================================
+# These are used to test the uniffi-bindgen-gecko-js code generation.  They
+# should not be enabled in release builds.
+
+option(
+    "--enable-uniffi-fixtures",
+    help="Enable UniFFI Fixtures/Examples",
+)
+
+set_config("MOZ_UNIFFI_FIXTURES", True, when="--enable-uniffi-fixtures")
+
 # Checks for library functions
 # ==============================================================
 with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT")):
@@ -3219,3 +3231,13 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
     set_define("HAVE_ARC4RANDOM", check_symbol("arc4random"))
     set_define("HAVE_ARC4RANDOM_BUF", check_symbol("arc4random_buf"))
     set_define("HAVE_MALLINFO", check_symbol("mallinfo"))
+
+# System policies
+# ==============================================================
+
+option(
+    "--disable-system-policies",
+    help="Disable reading policies from Windows registry, macOS's file system attributes, and /etc/firefox",
+)
+
+set_config("MOZ_SYSTEM_POLICIES", True, when="--enable-system-policies")

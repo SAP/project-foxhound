@@ -15,6 +15,7 @@
   /* --tabpanel-background-color matches $in-content-page-background in newtab
      (browser/components/newtab/content-src/styles/_variables.scss) */
   --tabpanel-background-color: #F9F9FB;
+  --tab-attention-icon-color: var(--lwt-tab-attention-icon-color, rgb(42,195,162));
 }
 
 #tabbrowser-tabpanels browser {
@@ -74,7 +75,7 @@
   padding-inline: var(--tab-shadow-max-size);
 }
 
-@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+@media (-moz-box-flexbox-emulation) {
   .tab-stack {
     /* Needed to allow tabs to shrink to be skinnier than their page-title: */
     min-width: 0;
@@ -131,13 +132,13 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  :root[sessionrestored] .tab-loading-burst {
+  .tab-loading-burst {
     border-radius: inherit;
     position: relative;
     overflow: hidden;
   }
 
-  :root[sessionrestored] .tab-loading-burst::before {
+  .tab-loading-burst::before {
     position: absolute;
     content: "";
     /* We set the width to be a percentage of the tab's width so that we can use
@@ -151,13 +152,13 @@
     margin-inline-start: calc(17px - 2.5%);
   }
 
-  :root[sessionrestored] .tab-loading-burst[pinned]::before {
+  .tab-loading-burst[pinned]::before {
     /* This is like the margin-inline-start rule above, except that icons for
        pinned tabs are 12px from the edge. */
     margin-inline-start: calc(20px - 2.5%);
   }
 
-  :root[sessionrestored] .tab-loading-burst[bursting]::before {
+  .tab-loading-burst[bursting]::before {
     background-image: url("chrome://browser/skin/tabbrowser/loading-burst.svg");
     background-position: center center;
     background-size: 100% auto;
@@ -167,7 +168,7 @@
     fill: var(--tab-loading-fill);
   }
 
-  :root[sessionrestored] .tab-loading-burst[bursting][notselectedsinceload]::before {
+  .tab-loading-burst[bursting][notselectedsinceload]::before {
     animation-name: tab-burst-animation-light;
   }
 
@@ -267,11 +268,6 @@
   @keyframes tab-throbber-animation-rtl {
     0% { transform: translateX(0); }
     100% { transform: translateX(100%); }
-  }
-
-  #TabsToolbar[brighttext] .tab-throbber[busy]:not([selected=true])::before {
-    fill: var(--lwt-tab-loading-fill-inactive, #717171);
-    opacity: 1;
   }
 
   :root[sessionrestored] .tab-throbber[progress]::before {
@@ -623,17 +619,14 @@
 
 /* Pinned tabs */
 
-#TabsToolbar {
-  --attention-icon-color: var(--lwt-tab-attention-icon-color, rgb(42,195,162));
-}
-
-#TabsToolbar[brighttext] {
-  --attention-icon-color: var(--lwt-tab-attention-icon-color, rgb(84,255,189));
+toolbar[brighttext] {
+  --tab-attention-icon-color: var(--lwt-tab-attention-icon-color, rgb(84,255,189));
 }
 
 .tabbrowser-tab:is([image], [pinned]) > .tab-stack > .tab-content[attention]:not([selected="true"]),
-.tabbrowser-tab > .tab-stack > .tab-content[pinned][titlechanged]:not([selected="true"]) {
-  background-image: radial-gradient(circle, var(--attention-icon-color), var(--attention-icon-color) 2px, transparent 2px);
+.tabbrowser-tab > .tab-stack > .tab-content[pinned][titlechanged]:not([selected="true"]),
+#firefox-view-button[attention] {
+  background-image: radial-gradient(circle, var(--tab-attention-icon-color), var(--tab-attention-icon-color) 2px, transparent 2px);
   background-position: center bottom calc(6.5px + var(--tabs-navbar-shadow-size));
   background-size: 4px 4px;
   background-repeat: no-repeat;
@@ -691,6 +684,23 @@
 
 :root[privatebrowsingmode=temporary] :is(#firefox-view-button, #menu_openFirefoxView) {
   display: none;
+}
+
+toolbar:not(#TabsToolbar) #firefox-view-button {
+  background-position: top 25% right 25%;
+}
+
+:is(#widget-overflow-mainView, #widget-overflow-fixed-list) #firefox-view-button {
+  background-position: top 25% left 22px;
+}
+
+/* RTL notification dot */
+toolbar:not(#TabsToolbar) #firefox-view-button:-moz-locale-dir(rtl) {
+  background-position-x: left 25%;
+}
+
+:is(#widget-overflow-mainView, #widget-overflow-fixed-list) #firefox-view-button:-moz-locale-dir(rtl) {
+  background-position-x: right 22px;
 }
 
 /* Tab bar scroll arrows */

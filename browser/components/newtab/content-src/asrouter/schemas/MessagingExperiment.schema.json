@@ -1220,6 +1220,10 @@
             "disableHistoryUpdates": {
               "type": "boolean",
               "description": "Don't alter the browser session's history stack - used with messaging surfaces like Feature Callouts"
+            },
+            "startScreen": {
+              "type": "integer",
+              "description": "Index of first screen to show from message, defaulting to 0"
             }
           },
           "additionalProperties": true,
@@ -1596,19 +1600,8 @@
                 "type": "object",
                 "properties": {
                   "period": {
-                    "oneOf": [
-                      {
-                        "type": "integer",
-                        "description": "Period of time in milliseconds (e.g. 86400000 for one day)"
-                      },
-                      {
-                        "type": "string",
-                        "description": "One of a preset list of short forms for period of time (e.g. 'daily' for one day)",
-                        "enum": [
-                          "daily"
-                        ]
-                      }
-                    ]
+                    "type": "integer",
+                    "description": "Period of time in milliseconds (e.g. 86400000 for one day)"
                   },
                   "cap": {
                     "type": "integer",

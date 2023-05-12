@@ -14,11 +14,9 @@
   locale/@AB_CD@/global/autocomplete.properties         (%chrome/global/autocomplete.properties)
   locale/@AB_CD@/global/appPicker.dtd                   (%chrome/global/appPicker.dtd)
   locale/@AB_CD@/global/browser.properties              (%chrome/global/browser.properties)
-  locale/@AB_CD@/global/commonDialog.dtd                (%chrome/global/commonDialog.dtd)
   locale/@AB_CD@/global/commonDialogs.properties        (%chrome/global/commonDialogs.properties)
   locale/@AB_CD@/global/contentAreaCommands.properties  (%chrome/global/contentAreaCommands.properties)
   locale/@AB_CD@/global/datetimebox.dtd                 (%chrome/global/datetimebox.dtd)
-  locale/@AB_CD@/global/dialogOverlay.dtd               (%chrome/global/dialogOverlay.dtd)
 #ifndef MOZ_FENNEC
   locale/@AB_CD@/global/editMenuOverlay.dtd             (%chrome/global/editMenuOverlay.dtd)
 #endif
@@ -39,10 +37,8 @@
 #if !defined(XP_WIN) && !defined(MOZ_FENNEC)
   locale/@AB_CD@/global/printdialog.properties          (%chrome/global/printdialog.properties)
 #endif
-  locale/@AB_CD@/global/resetProfile.dtd                (%chrome/global/resetProfile.dtd)
   locale/@AB_CD@/global/resetProfile.properties         (%chrome/global/resetProfile.properties)
   locale/@AB_CD@/global/dialog.properties               (%chrome/global/dialog.properties)
-  locale/@AB_CD@/global/tree.dtd                        (%chrome/global/tree.dtd)
   locale/@AB_CD@/global/viewSource.properties           (%chrome/global/viewSource.properties)
   locale/@AB_CD@/global/wizard.properties               (%chrome/global/wizard.properties)
 % locale global-platform @AB_CD@ %locale/@AB_CD@/global-platform/unix/ os=LikeUnix os=Android
@@ -62,7 +58,6 @@
   locale/@AB_CD@/mozapps/update/updates.properties                (%chrome/mozapps/update/updates.properties)
 #endif
 % locale alerts @AB_CD@ %locale/@AB_CD@/alerts/
-  locale/@AB_CD@/alerts/alert.dtd                                (%chrome/alerts/alert.dtd)
   locale/@AB_CD@/alerts/alert.properties                         (%chrome/alerts/alert.properties)
 % locale passwordmgr @AB_CD@ %locale/@AB_CD@/passwordmgr/
   locale/@AB_CD@/passwordmgr/passwordmgr.properties (%chrome/passwordmgr/passwordmgr.properties)

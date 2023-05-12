@@ -3,6 +3,8 @@
 
 "use strict";
 
+requestLongerTimeout(2);
+
 /* import-globals-from ../../../../../toolkit/mozapps/extensions/test/browser/head.js */
 
 // This is needed to import the `MockProvider`.
@@ -11,120 +13,61 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const promiseUnifiedExtensionsWidgetExists = async win => {
-  await BrowserTestUtils.waitForCondition(
-    () => !!win.CustomizableUI.getWidget("unified-extensions"),
-    "Wait unified-extensions widget"
+loadTestSubscript("head_unified_extensions.js");
+
+const openCustomizationUI = async win => {
+  const customizationReady = BrowserTestUtils.waitForEvent(
+    win.gNavToolbox,
+    "customizationready"
+  );
+  win.gCustomizeMode.enter();
+  await customizationReady;
+  ok(
+    win.CustomizationHandler.isCustomizing(),
+    "expected customizing mode to be enabled"
   );
 };
 
-const promiseUnifiedExtensionsInitialized = async win => {
-  await new Promise(resolve => {
-    win.requestIdleCallback(resolve);
+const closeCustomizationUI = async win => {
+  const afterCustomization = BrowserTestUtils.waitForEvent(
+    win.gNavToolbox,
+    "aftercustomization"
+  );
+  win.gCustomizeMode.exit();
+  await afterCustomization;
+  ok(
+    !win.CustomizationHandler.isCustomizing(),
+    "expected customizing mode to be disabled"
+  );
+};
+
+let win;
+
+add_setup(async function() {
+  win = await promiseEnableUnifiedExtensions();
+
+  registerCleanupFunction(async () => {
+    await BrowserTestUtils.closeWindow(win);
   });
-  await TestUtils.waitForCondition(
-    () => win.gUnifiedExtensions._initialized,
-    "Wait gUnifiedExtensions to have been initialized"
-  );
-};
-
-const promiseEnableUnifiedExtensions = async () => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.unifiedExtensions.enabled", true]],
-  });
-
-  const win = await BrowserTestUtils.openNewBrowserWindow();
-  await promiseUnifiedExtensionsInitialized(win);
-  await promiseUnifiedExtensionsWidgetExists(win);
-  return win;
-};
-
-const promiseDisableUnifiedExtensions = async () => {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.unifiedExtensions.enabled", false]],
-  });
-
-  const win = await BrowserTestUtils.openNewBrowserWindow();
-  await promiseUnifiedExtensionsInitialized(win);
-  await promiseUnifiedExtensionsWidgetExists(win);
-  return win;
-};
-
-const getListView = win => {
-  return win.document.getElementById("unified-extensions-view");
-};
-
-const openExtensionsPanel = async win => {
-  const button = win.document.getElementById("unified-extensions-button");
-  ok(button, "expected button");
-
-  const listView = getListView(win);
-  ok(listView, "expected list view");
-
-  const viewShown = BrowserTestUtils.waitForEvent(listView, "ViewShown");
-  button.click();
-  await viewShown;
-};
-
-const closeExtensionsPanel = async win => {
-  const listView = getListView(win);
-  ok(listView, "expected list view");
-
-  const hidden = BrowserTestUtils.waitForEvent(
-    win.document,
-    "popuphidden",
-    true
-  );
-  listView.closest("panel").hidePopup();
-  await hidden;
-};
-
-const getUnifiedExtensionsItem = (win, extensionId) => {
-  return getListView(win).querySelector(
-    `unified-extensions-item[extension-id="${extensionId}"]`
-  );
-};
-
-let extensionsCreated = 0;
-const createExtensions = (
-  arrayOfManifestData,
-  { useAddonManager = true } = {}
-) => {
-  return arrayOfManifestData.map(manifestData =>
-    ExtensionTestUtils.loadExtension({
-      manifest: {
-        name: "default-extension-name",
-        applications: {
-          gecko: { id: `@ext-${extensionsCreated++}` },
-        },
-        ...manifestData,
-      },
-      useAddonManager: useAddonManager ? "temporary" : undefined,
-    })
-  );
-};
+});
 
 add_task(async function test_button_enabled_by_pref() {
-  const win = await promiseEnableUnifiedExtensions();
-
-  const button = win.document.getElementById("unified-extensions-button");
+  const { button } = win.gUnifiedExtensions;
   is(button.hidden, false, "expected button to be visible");
-
-  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function test_button_disabled_by_pref() {
-  const win = await promiseDisableUnifiedExtensions();
+  const anotherWindow = await promiseDisableUnifiedExtensions();
 
-  const button = win.document.getElementById("unified-extensions-button");
+  const button = anotherWindow.document.getElementById(
+    "unified-extensions-button"
+  );
   is(button.hidden, true, "expected button to be hidden");
 
-  await BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(anotherWindow);
 });
 
 add_task(async function test_open_panel_on_button_click() {
-  const win = await promiseEnableUnifiedExtensions();
-
   const extensions = createExtensions([
     { name: "Extension #1" },
     { name: "Another extension", icons: { 16: "test-icon-16.png" } },
@@ -150,6 +93,16 @@ add_task(async function test_open_panel_on_button_click() {
     "chrome://mozapps/skin/extensions/extensionGeneric.svg",
     "expected generic icon for the first extension"
   );
+  Assert.deepEqual(
+    win.document.l10n.getAttributes(
+      item.querySelector(".unified-extensions-item-open-menu")
+    ),
+    {
+      id: "unified-extensions-item-open-menu",
+      args: { extensionName: "Extension #1" },
+    },
+    "expected l10n attributes for the first extension"
+  );
 
   item = getUnifiedExtensionsItem(win, extensions[1].id);
   is(
@@ -162,6 +115,16 @@ add_task(async function test_open_panel_on_button_click() {
       .querySelector(".unified-extensions-item-icon")
       .src.endsWith("/test-icon-16.png"),
     "expected custom icon for the second extension"
+  );
+  Assert.deepEqual(
+    win.document.l10n.getAttributes(
+      item.querySelector(".unified-extensions-item-open-menu")
+    ),
+    {
+      id: "unified-extensions-item-open-menu",
+      args: { extensionName: "Another extension" },
+    },
+    "expected l10n attributes for the second extension"
   );
 
   item = getUnifiedExtensionsItem(win, extensions[2].id);
@@ -176,17 +139,23 @@ add_task(async function test_open_panel_on_button_click() {
       .src.endsWith("/test-icon-32.png"),
     "expected custom icon for the third extension"
   );
+  Assert.deepEqual(
+    win.document.l10n.getAttributes(
+      item.querySelector(".unified-extensions-item-open-menu")
+    ),
+    {
+      id: "unified-extensions-item-open-menu",
+      args: { extensionName: "Yet another extension with an icon" },
+    },
+    "expected l10n attributes for the third extension"
+  );
 
   await closeExtensionsPanel(win);
 
   await Promise.all(extensions.map(extension => extension.unload()));
-
-  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function test_item_shows_the_best_addon_icon() {
-  const win = await promiseEnableUnifiedExtensions();
-
   const extensions = createExtensions([
     {
       name: "Extension with different icons",
@@ -228,15 +197,11 @@ add_task(async function test_item_shows_the_best_addon_icon() {
   }
 
   await Promise.all(extensions.map(extension => extension.unload()));
-
-  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function test_panel_has_a_manage_extensions_button() {
-  const win = await promiseEnableUnifiedExtensions();
-
   // Navigate away from the initial page so that about:addons always opens in a
-  // new tab during tests
+  // new tab during tests.
   BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "about:robots");
   await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
 
@@ -266,14 +231,15 @@ add_task(async function test_panel_has_a_manage_extensions_button() {
     "about:addons",
     "Manage opened about:addons"
   );
+  is(
+    win.gBrowser.selectedBrowser.contentWindow.gViewController.currentViewId,
+    "addons://list/extension",
+    "expected about:addons to show the list of extensions"
+  );
   BrowserTestUtils.removeTab(tab);
-
-  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function test_list_active_extensions_only() {
-  const win = await promiseEnableUnifiedExtensions();
-
   const arrayOfManifestData = [
     { name: "hidden addon", hidden: true },
     { name: "regular addon", hidden: false },
@@ -335,15 +301,13 @@ add_task(async function test_list_active_extensions_only() {
 
   await Promise.all(extensions.map(extension => extension.unload()));
   mockProvider.unregister();
-
-  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function test_unified_extensions_and_addons_themes_widget() {
   const addonsAndThemesWidgetId = "add-ons-button";
 
   // Let's start with the unified extensions feature is disabled.
-  let win = await promiseDisableUnifiedExtensions();
+  let anotherWindow = await promiseDisableUnifiedExtensions();
 
   // Add the button to the navbar.
   CustomizableUI.addWidgetToArea(
@@ -361,26 +325,92 @@ add_task(async function test_unified_extensions_and_addons_themes_widget() {
   };
   registerCleanupFunction(cleanup);
 
-  let addonsButton = win.document.getElementById(addonsAndThemesWidgetId);
+  let addonsButton = anotherWindow.document.getElementById(
+    addonsAndThemesWidgetId
+  );
   ok(addonsButton, "expected add-ons and themes button");
 
-  await BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(anotherWindow);
   // Now we enable the unified extensions feature, which should remove the
   // add-ons button.
-  win = await promiseEnableUnifiedExtensions();
+  anotherWindow = await promiseEnableUnifiedExtensions();
 
-  addonsButton = win.document.getElementById(addonsAndThemesWidgetId);
+  addonsButton = anotherWindow.document.getElementById(addonsAndThemesWidgetId);
   is(addonsButton, null, "expected no add-ons and themes button");
 
-  await BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(anotherWindow);
   // Disable the unified extensions feature again. We expect the add-ons and
   // themes button to be back (i.e. visible).
-  win = await promiseDisableUnifiedExtensions();
+  anotherWindow = await promiseDisableUnifiedExtensions();
 
-  addonsButton = win.document.getElementById(addonsAndThemesWidgetId);
+  addonsButton = anotherWindow.document.getElementById(addonsAndThemesWidgetId);
   ok(addonsButton, "expected add-ons and themes button");
 
   cleanup();
 
-  await BrowserTestUtils.closeWindow(win);
+  await BrowserTestUtils.closeWindow(anotherWindow);
 });
+
+add_task(async function test_button_opens_discopane_when_no_extension() {
+  // The test harness registers regular extensions so we need to mock the
+  // `getActiveExtensions` extension to simulate zero extensions installed.
+  const origGetActionExtensions = win.gUnifiedExtensions.getActiveExtensions;
+  win.gUnifiedExtensions.getActiveExtensions = () => Promise.resolve([]);
+
+  // Navigate away from the initial page so that about:addons always opens in a
+  // new tab during tests.
+  BrowserTestUtils.loadURI(win.gBrowser.selectedBrowser, "about:robots");
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+
+  const { button } = win.gUnifiedExtensions;
+  ok(button, "expected button");
+
+  const tabPromise = BrowserTestUtils.waitForNewTab(
+    win.gBrowser,
+    "about:addons",
+    true
+  );
+
+  button.click();
+
+  const tab = await tabPromise;
+  is(
+    win.gBrowser.currentURI.spec,
+    "about:addons",
+    "expected about:addons to be open"
+  );
+  is(
+    win.gBrowser.selectedBrowser.contentWindow.gViewController.currentViewId,
+    "addons://discover/",
+    "expected about:addons to show the recommendations"
+  );
+  BrowserTestUtils.removeTab(tab);
+
+  win.gUnifiedExtensions.getActiveExtensions = origGetActionExtensions;
+});
+
+add_task(
+  async function test_unified_extensions_panel_not_open_in_customization_mode() {
+    const listView = getListView(win);
+    ok(listView, "expected list view");
+    const throwIfExecuted = () => {
+      throw new Error("panel should not have been shown");
+    };
+    listView.addEventListener("ViewShown", throwIfExecuted);
+
+    await openCustomizationUI(win);
+
+    const unifiedExtensionsButtonToggled = BrowserTestUtils.waitForEvent(
+      win,
+      "UnifiedExtensionsTogglePanel"
+    );
+    const button = win.document.getElementById("unified-extensions-button");
+
+    button.click();
+    await unifiedExtensionsButtonToggled;
+
+    await closeCustomizationUI(win);
+
+    listView.removeEventListener("ViewShown", throwIfExecuted);
+  }
+);

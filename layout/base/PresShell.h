@@ -386,6 +386,13 @@ class PresShell final : public nsStubDocumentObserver,
 
  public:
   /**
+   * Updates pending layout, assuming reasonable (up-to-date, or mid-update for
+   * container queries) styling of the page. Returns whether a reflow did not
+   * get interrupted (and thus layout should be considered fully up-to-date).
+   */
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool DoFlushLayout(bool aInterruptible);
+
+  /**
    * Note that the assumptions that determine whether we need a mobile viewport
    * manager may have changed.
    */
@@ -591,27 +598,25 @@ class PresShell final : public nsStubDocumentObserver,
    * the rect is empty.
    * @param aVertical see ScrollContentIntoView and ScrollAxis
    * @param aHorizontal see ScrollContentIntoView and ScrollAxis
-   * @param aScrollFlags if SCROLL_FIRST_ANCESTOR_ONLY is set, only the
+   * @param aScrollFlags if ScrollFirstAncestorOnly is set, only the
    * nearest scrollable ancestor is scrolled, otherwise all
    * scrollable ancestors may be scrolled if necessary
-   * if SCROLL_OVERFLOW_HIDDEN is set then we may scroll in a direction
+   * if ScrollOverflowHidden is set then we may scroll in a direction
    * even if overflow:hidden is specified in that direction; otherwise
    * we will not scroll in that direction when overflow:hidden is
    * set for that direction
-   * If SCROLL_NO_PARENT_FRAMES is set then we only scroll
+   * If ScrollNoParentFrames is set then we only scroll
    * nodes in this document, not in any parent documents which
    * contain this document in a iframe or the like.
-   * If SCROLL_IGNORE_SCROLL_MARGIN_AND_PADDING is set we ignore scroll-margin
-   * value specified for |aFrame| and scroll-padding value for the scroll
-   * container. This option is typically used to locate poped-up frames into
-   * view.
+   * @param aTarget optional, specifying the targe frame where we want to scroll
+   * if it's different from aFrame.
    * @return true if any scrolling happened, false if no scrolling happened
    */
   MOZ_CAN_RUN_SCRIPT
   bool ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
                                const nsMargin& aMargin, ScrollAxis aVertical,
-                               ScrollAxis aHorizontal,
-                               ScrollFlags aScrollFlags);
+                               ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
+                               const nsIFrame* aTarget = nullptr);
 
   /**
    * Suppress notification of the frame manager that frames are
@@ -1156,6 +1161,7 @@ class PresShell final : public nsStubDocumentObserver,
   bool HasHandledUserInput() const { return mHasHandledUserInput; }
 
   MOZ_CAN_RUN_SCRIPT void FireResizeEvent();
+  MOZ_CAN_RUN_SCRIPT void FireResizeEventSync();
 
   void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
 
@@ -1730,10 +1736,6 @@ class PresShell final : public nsStubDocumentObserver,
    * This allows any outstanding references to the frame to be cleaned up
    */
   void NotifyDestroyingFrame(nsIFrame* aFrame);
-
-#ifdef DEBUG
-  nsIFrame* GetDrawEventTargetFrame() { return mDrawEventTargetFrame; }
-#endif
 
   bool GetZoomableByAPZ() const;
 
@@ -2833,14 +2835,11 @@ class PresShell final : public nsStubDocumentObserver,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY bool VerifyIncrementalReflow();
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DoVerifyReflow();
   void VerifyHasDirtyRootAncestor(nsIFrame* aFrame);
-  void ShowEventTargetDebug();
 
   bool mInVerifyReflow = false;
   // The reflow root under which we're currently reflowing.  Null when
   // not in reflow.
   nsIFrame* mCurrentReflowRoot = nullptr;
-
-  nsIFrame* mDrawEventTargetFrame = nullptr;
 #endif  // #ifdef DEBUG
 
   // Send, and reset, the current per tick telemetry. This includes:

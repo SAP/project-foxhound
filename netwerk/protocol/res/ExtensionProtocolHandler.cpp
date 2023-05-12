@@ -416,15 +416,21 @@ nsresult ExtensionProtocolHandler::GetFlagsForURI(nsIURI* aURI,
 
   URLInfo url(aURI);
   if (auto* policy = EPS().GetByURL(url)) {
-    // In general a moz-extension URI is only loadable by chrome, but a
-    // whitelisted subset are web-accessible (and cross-origin fetchable). Check
-    // that whitelist.  For Manifest V3 extensions, an additional whitelist
-    // for the source loading the url must be checked so we add the flag
-    // WEBEXT_URI_WEB_ACCESSIBLE, which is then checked in
-    // nsScriptSecurityManager.
+    // In general a moz-extension URI is only loadable by chrome, but an
+    // allowlist subset are web-accessible (and cross-origin fetchable).
+    // The allowlist is checked using EPS.SourceMayLoadExtensionURI in
+    // BasePrincipal and nsScriptSecurityManager.
     if (policy->IsWebAccessiblePath(url.FilePath())) {
-      flags |= URI_LOADABLE_BY_ANYONE | URI_FETCHABLE_BY_ANYONE |
-               WEBEXT_URI_WEB_ACCESSIBLE;
+      if (policy->ManifestVersion() < 3) {
+        flags |= URI_LOADABLE_BY_ANYONE | URI_FETCHABLE_BY_ANYONE;
+      } else {
+        flags |= WEBEXT_URI_WEB_ACCESSIBLE;
+      }
+    } else if (policy->Type() == nsGkAtoms::theme) {
+      // Static themes cannot set web accessible resources, however using this
+      // flag here triggers SourceMayAccessPath calls necessary to allow another
+      // extension to access static theme resources in this extension.
+      flags |= WEBEXT_URI_WEB_ACCESSIBLE;
     } else {
       flags |= URI_DANGEROUS_TO_LOAD;
     }
@@ -584,7 +590,9 @@ nsresult ExtensionProtocolHandler::SubstituteChannel(nsIURI* aURI,
     size_t matchIdx;
     if (BinarySearchIf(
             sStaticFileExtensions, 0, ArrayLength(sStaticFileExtensions),
-            [&ext](const char* aOther) { return ext.Compare(aOther); },
+            [&ext](const char* aOther) {
+              return Compare(ext, nsDependentCString(aOther));
+            },
             &matchIdx)) {
       // This is a static resource that shouldn't depend on the extension being
       // ready. Don't bother waiting for it.

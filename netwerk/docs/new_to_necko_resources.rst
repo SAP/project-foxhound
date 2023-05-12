@@ -7,15 +7,15 @@ should get familiar with.
 Code Generation and IPC
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-* `IPC`_ and `IPDL`_
-* `IDL`_
+* `IPC`_ (Inter-Process Communication) and `IPDL`_ (Inter-Thread and Inter-Process Message Passing)
+* `IDL`_ (Interface Description Language)
     - Implementing an interface (C++/JS)
     - XPCONNECT (scriptable/builtin)
-    - QueryInterface - do_QueryInterface/do_QueryObject
-    - do_GetService, do_GetInstance
+    - QueryInterface (QI) - do_QueryInterface/do_QueryObject
+    - do_GetService, do_CreateInstance
 * `WebIDL`_
 
-.. _IPC: /toolkit/components/glean/dev/ipc.html
+.. _IPC: /ipc/index.html
 .. _IDL: /xpcom/xpidl.html
 .. _IPDL: /ipc/ipdl.html
 .. _WebIDL: /toolkit/components/extensions/webextensions/webidl_bindings.html
@@ -23,12 +23,15 @@ Code Generation and IPC
 
 Necko interfaces
 ~~~~~~~~~~~~~~~~
-* nsISupports
-* nsIRequest -> nsIChannel -> nsIHttpChannel
-* nsIRequestObserver (onStart/onStopRequest)
-* nsIStreamListener (onDataAvailable)
-* nsIInputStream/nsIOutputStream
 
+* :searchfox:`nsISupports <xpcom/base/nsISupports.idl>`
+* :searchfox:`nsIRequest <netwerk/base/nsIRequest.idl>` ->
+  :searchfox:`nsIChannel <netwerk/base/nsIChannel.idl>` ->
+  :searchfox:`nsIHttpChannel <netwerk/protocol/http/nsIHttpChannel.idl>`
+* :searchfox:`nsIRequestObserver <netwerk/base/nsIRequestObserver.idl>` (onStart/onStopRequest)
+* :searchfox:`nsIStreamListener <netwerk/base/nsIStreamListener.idl>` (onDataAvailable)
+* :searchfox:`nsIInputStream <xpcom/io/nsIInputStream.idl>`/
+  :searchfox:`nsIOutputStream <xpcom/io/nsIOutputStream.idl>`
 
 Libraries
 ~~~~~~~~~
@@ -43,14 +46,15 @@ Libraries
 
 Preferences
 ~~~~~~~~~~~
-* `all.js`_
-* `firefox.js`_
-* `StaticPrefList.yaml`_
+* :searchfox:`all.js <modules/libpref/init/all.js>`
+* :searchfox:`firefox.js <browser/app/profile/firefox.js>`
+* :searchfox:`StaticPrefList.yaml <modules/libpref/init/StaticPrefList.yaml>`
 
-.. _all.js: https://searchfox.org/mozilla-central/source/modules/libpref/init/all.js
-.. _firefox.js: https://searchfox.org/mozilla-central/source/browser/app/profile/firefox.js
-.. _StaticPrefList.yaml: https://searchfox.org/mozilla-central/source/modules/libpref/init/StaticPrefList.yaml
+Debugging
+~~~~~~~~~
+* `HTTP Logging`_
 
+.. _HTTP Logging: /networking/http/logging.html
 
 Testing
 ~~~~~~~
@@ -69,5 +73,8 @@ Testing
 
 See also
 ~~~~~~~~
-  - E10S (Electrolysis) -> Split ``HttpChannel`` into: ``HttpChannelChild`` & ``HttpChannelParent``
-  - Fission -> Site isolation
+  - E10S_ (Electrolysis) -> Split ``HttpChannel`` into: ``HttpChannelChild`` & ``HttpChannelParent``
+  - Fission_ -> Site isolation
+
+  .. _E10s: https://wiki.mozilla.org/Electrolysis
+  .. _Fission: https://hacks.mozilla.org/2021/05/introducing-firefox-new-site-isolation-security-architecture/

@@ -379,8 +379,14 @@ void RestyleManager::ContentRemoved(nsIContent* aOldChild,
 
   // Computed style data isn't useful for detached nodes, and we'll need to
   // recompute it anyway if we ever insert the nodes back into a document.
-  if (aOldChild->IsElement()) {
-    RestyleManager::ClearServoDataFromSubtree(aOldChild->AsElement());
+  if (auto* element = Element::FromNode(aOldChild)) {
+    RestyleManager::ClearServoDataFromSubtree(element);
+    // If this element is undisplayed or may have undisplayed descendants, we
+    // need to invalidate the cache, since there's the unlikely event of those
+    // elements getting destroyed and their addresses reused in a way that we
+    // look up the cache with their address for a different element before it's
+    // invalidated.
+    IncrementUndisplayedRestyleGeneration();
   }
 
   // The container might be a document or a ShadowRoot.
@@ -3058,6 +3064,12 @@ void RestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags) {
   // mActiveTimer and mMostRecentRefresh time.
   presContext->RefreshDriver()->MostRecentRefresh();
 
+  // This might post new restyles, so need to do it here.
+  {
+    presContext->UpdateContainerQueryStyles();
+    presContext->FinishedContainerQueryUpdate();
+  }
+
   // Perform the Servo traversal, and the post-traversal if required. We do this
   // in a loop because certain rare paths in the frame constructor can trigger
   // additional style invalidations.
@@ -3111,6 +3123,7 @@ void RestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags) {
     }
 
     doc->ClearServoRestyleRoot();
+    ClearSnapshots();
 
     // Process the change hints.
     //
@@ -3163,12 +3176,17 @@ void RestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags) {
       // case.
       IncrementRestyleGeneration();
     }
+
+    mInStyleRefresh = false;
+    presContext->UpdateContainerQueryStyles();
+    mInStyleRefresh = true;
   }
 
   doc->ClearServoRestyleRoot();
-
+  presContext->FinishedContainerQueryUpdate();
   ClearSnapshots();
   styleSet->AssertTreeIsClean();
+
   mHaveNonAnimationRestyles = false;
   mRestyleForCSSRuleChanges = false;
   mInStyleRefresh = false;
@@ -3355,10 +3373,6 @@ void RestyleManager::TakeSnapshotForAttributeChange(Element& aElement,
                                                     nsAtom* aAttribute) {
   MOZ_DIAGNOSTIC_ASSERT(!mInStyleRefresh);
 
-  if (!aElement.HasServoData()) {
-    return;
-  }
-
   bool influencesOtherPseudoClassState;
   if (!NeedToRecordAttrChange(*StyleSet(), aElement, aNameSpaceID, aAttribute,
                               &influencesOtherPseudoClassState)) {
@@ -3370,6 +3384,10 @@ void RestyleManager::TakeSnapshotForAttributeChange(Element& aElement,
   // during the restyle traversal. So just assume that the attribute change can
   // cause the style to change.
   IncrementUndisplayedRestyleGeneration();
+
+  if (!aElement.HasServoData()) {
+    return;
+  }
 
   // Some other random attribute changes may also affect the transitions,
   // so we also set this true here.

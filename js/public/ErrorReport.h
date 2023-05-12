@@ -20,6 +20,7 @@
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Maybe.h"       // mozilla::Maybe
 
+#include <cstdarg>
 #include <iterator>  // std::input_iterator_tag, std::iterator
 #include <stdarg.h>
 #include <stddef.h>  // size_t
@@ -43,7 +44,14 @@ class ExceptionStack;
 }
 namespace js {
 class SystemAllocPolicy;
-}
+
+enum ErrorArgumentsType {
+  ArgumentsAreUnicode,
+  ArgumentsAreASCII,
+  ArgumentsAreLatin1,
+  ArgumentsAreUTF8
+};
+}  // namespace js
 
 /**
  * Possible exception types. These types are part of a JSErrorFormatString
@@ -134,6 +142,19 @@ class JSErrorBase {
         errorNumber(0),
         errorMessageName(nullptr),
         ownsMessage_(false) {}
+  JSErrorBase(JSErrorBase&& other) noexcept
+      : message_(other.message_),
+        filename(other.filename),
+        sourceId(other.sourceId),
+        lineno(other.lineno),
+        column(other.column),
+        errorNumber(other.errorNumber),
+        errorMessageName(other.errorMessageName),
+        ownsMessage_(other.ownsMessage_) {
+    if (ownsMessage_) {
+      other.ownsMessage_ = false;
+    }
+  }
 
   ~JSErrorBase() { freeMessage(); }
 
@@ -166,6 +187,12 @@ class JSErrorNotes {
   // Stores pointers to each note.
   js::Vector<js::UniquePtr<Note>, 1, js::SystemAllocPolicy> notes_;
 
+  bool addNoteVA(js::ErrorContext* ec, const char* filename, unsigned sourceId,
+                 unsigned lineno, unsigned column,
+                 JSErrorCallback errorCallback, void* userRef,
+                 const unsigned errorNumber,
+                 js::ErrorArgumentsType argumentsType, va_list ap);
+
  public:
   JSErrorNotes();
   ~JSErrorNotes();
@@ -175,12 +202,24 @@ class JSErrorNotes {
                     unsigned lineno, unsigned column,
                     JSErrorCallback errorCallback, void* userRef,
                     const unsigned errorNumber, ...);
+  bool addNoteASCII(js::ErrorContext* ec, const char* filename,
+                    unsigned sourceId, unsigned lineno, unsigned column,
+                    JSErrorCallback errorCallback, void* userRef,
+                    const unsigned errorNumber, ...);
   bool addNoteLatin1(JSContext* cx, const char* filename, unsigned sourceId,
                      unsigned lineno, unsigned column,
                      JSErrorCallback errorCallback, void* userRef,
                      const unsigned errorNumber, ...);
+  bool addNoteLatin1(js::ErrorContext* ec, const char* filename,
+                     unsigned sourceId, unsigned lineno, unsigned column,
+                     JSErrorCallback errorCallback, void* userRef,
+                     const unsigned errorNumber, ...);
   bool addNoteUTF8(JSContext* cx, const char* filename, unsigned sourceId,
                    unsigned lineno, unsigned column,
+                   JSErrorCallback errorCallback, void* userRef,
+                   const unsigned errorNumber, ...);
+  bool addNoteUTF8(js::ErrorContext* ec, const char* filename,
+                   unsigned sourceId, unsigned lineno, unsigned column,
                    JSErrorCallback errorCallback, void* userRef,
                    const unsigned errorNumber, ...);
 
@@ -256,6 +295,20 @@ class JSErrorReport : public JSErrorBase {
         isMuted(false),
         isWarning_(false),
         ownsLinebuf_(false) {}
+  JSErrorReport(JSErrorReport&& other) noexcept
+      : JSErrorBase(std::move(other)),
+        linebuf_(other.linebuf_),
+        linebufLength_(other.linebufLength_),
+        tokenOffset_(other.tokenOffset_),
+        notes(std::move(other.notes)),
+        exnType(other.exnType),
+        isMuted(other.isMuted),
+        isWarning_(other.isWarning_),
+        ownsLinebuf_(other.ownsLinebuf_) {
+    if (ownsLinebuf_) {
+      other.ownsLinebuf_ = false;
+    }
+  }
 
   ~JSErrorReport() { freeLinebuf(); }
 

@@ -87,6 +87,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/HTMLBodyElement.h"
+#include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/TreeWalker.h"
 #include "mozilla/dom/UserActivation.h"
@@ -463,15 +464,6 @@ bool LocalAccessible::NativelyUnavailable() const {
   return mContent->IsElement() && mContent->AsElement()->AttrValueIs(
                                       kNameSpaceID_None, nsGkAtoms::disabled,
                                       nsGkAtoms::_true, eCaseMatters);
-}
-
-LocalAccessible* LocalAccessible::FocusedChild() {
-  LocalAccessible* focus = FocusMgr()->FocusedAccessible();
-  if (focus && (focus == this || focus->LocalParent() == this)) {
-    return focus;
-  }
-
-  return nullptr;
 }
 
 Accessible* LocalAccessible::ChildAtPoint(int32_t aX, int32_t aY,
@@ -1333,6 +1325,7 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
   }
 
   if (aAttribute == nsGkAtoms::aria_describedby) {
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
     mDoc->FireDelayedEvent(nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE, this);
     if (aModType == dom::MutationEvent_Binding::MODIFICATION ||
         aModType == dom::MutationEvent_Binding::ADDITION) {
@@ -1348,6 +1341,10 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
   }
 
   if (aAttribute == nsGkAtoms::aria_labelledby) {
+    // We only queue cache updates for explicit relations. Implicit, reverse
+    // relations are handled in ApplyCache and stored in a map on the remote
+    // document itself.
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
     mDoc->FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, this);
     if (aModType == dom::MutationEvent_Binding::MODIFICATION ||
         aModType == dom::MutationEvent_Binding::ADDITION) {
@@ -1368,6 +1365,11 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
        aModType == dom::MutationEvent_Binding::REMOVAL)) {
     // The presence of aria-expanded adds an expand/collapse action.
     SendCache(CacheDomain::Actions, CacheUpdateType::Update);
+  }
+
+  if (aAttribute == nsGkAtoms::aria_controls ||
+      aAttribute == nsGkAtoms::aria_flowto) {
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
   }
 
   if (aAttribute == nsGkAtoms::alt &&
@@ -1469,7 +1471,7 @@ uint64_t LocalAccessible::State() {
         // If focus is in a child of the tab panel surely the tab is selected!
         Relation rel = RelationByType(RelationType::LABEL_FOR);
         LocalAccessible* relTarget = nullptr;
-        while ((relTarget = rel.Next())) {
+        while ((relTarget = rel.LocalNext())) {
           if (relTarget->Role() == roles::PROPERTYPAGE &&
               FocusMgr()->IsFocusWithin(relTarget)) {
             state |= states::SELECTED;
@@ -1755,7 +1757,7 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
       // Listbox is owned by a combobox
       Relation rel = RelationByType(RelationType::NODE_CHILD_OF);
       LocalAccessible* targetAcc = nullptr;
-      while ((targetAcc = rel.Next())) {
+      while ((targetAcc = rel.LocalNext())) {
         if (targetAcc->IsCombobox()) return roles::COMBOBOX_LIST;
       }
     }
@@ -2317,13 +2319,6 @@ void LocalAccessible::Shutdown() {
   // parent
   mStateFlags |= eIsDefunct;
 
-  // Usually, when a subtree is removed, we do this in
-  // DocAccessible::UncacheChildrenInSubtree. However, that won't get called
-  // when the document is shut down, so we handle that here.
-  if (StaticPrefs::accessibility_cache_enabled_AtStartup() && IsTable()) {
-    CachedTableAccessible::Invalidate(this);
-  }
-
   int32_t childCount = mChildren.Length();
   for (int32_t childIdx = 0; childIdx < childCount; childIdx++) {
     mChildren.ElementAt(childIdx)->UnbindFromParent();
@@ -2466,14 +2461,14 @@ void LocalAccessible::BindToParent(LocalAccessible* aParent,
   // a name/description provider is added to doc.
   Relation rel = RelationByType(RelationType::LABELLED_BY);
   LocalAccessible* relTarget = nullptr;
-  while ((relTarget = rel.Next())) {
+  while ((relTarget = rel.LocalNext())) {
     if (!relTarget->HasNameDependent()) {
       relTarget->ModifySubtreeContextFlags(eHasNameDependent, true);
     }
   }
 
   rel = RelationByType(RelationType::DESCRIBED_BY);
-  while ((relTarget = rel.Next())) {
+  while ((relTarget = rel.LocalNext())) {
     if (!relTarget->HasDescriptionDependent()) {
       relTarget->ModifySubtreeContextFlags(eHasDescriptionDependent, true);
     }
@@ -2507,6 +2502,13 @@ void LocalAccessible::BindToParent(LocalAccessible* aParent,
 
 // LocalAccessible protected
 void LocalAccessible::UnbindFromParent() {
+  // We do this here to handle document shutdown and an Accessible being moved.
+  // We do this for subtree removal in DocAccessible::UncacheChildrenInSubtree.
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
+      (IsTable() || IsTableCell())) {
+    CachedTableAccessible::Invalidate(this);
+  }
+
   mParent = nullptr;
   mIndexInParent = -1;
   mIndexOfEmbeddedChild = -1;
@@ -3555,6 +3557,39 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
       fields->SetAttribute(nsGkAtoms::aria, std::move(ariaAttrs));
     } else if (aUpdateType == CacheUpdateType::Update) {
       fields->SetAttribute(nsGkAtoms::aria, DeleteEntry());
+    }
+  }
+
+  if (aCacheDomain & CacheDomain::Relations && mContent) {
+    for (auto const& data : kRelationTypeAtoms) {
+      nsTArray<uint64_t> ids;
+      nsStaticAtom* const relAtom = data.mAtom;
+
+      Relation rel;
+      if (data.mType == RelationType::LABEL_FOR) {
+        // Labels are a special case -- we need to validate that the target of
+        // their `for` attribute is in fact labelable. DOM checks this when we
+        // call GetControl().
+        if (dom::HTMLLabelElement* labelEl =
+                dom::HTMLLabelElement::FromNode(mContent)) {
+          rel.AppendTarget(mDoc, labelEl->GetControl());
+        }
+      } else {
+        // We use an IDRefsIterator here instead of calling RelationByType
+        // directly because we only want to cache explicit relations. Implicit
+        // relations will be computed and stored separately in the parent
+        // process.
+        rel.AppendIter(new IDRefsIterator(mDoc, mContent, relAtom));
+      }
+
+      while (LocalAccessible* acc = rel.LocalNext()) {
+        ids.AppendElement(acc->IsDoc() ? 0 : acc->ID());
+      }
+      if (ids.Length()) {
+        fields->SetAttribute(relAtom, std::move(ids));
+      } else if (aUpdateType == CacheUpdateType::Update) {
+        fields->SetAttribute(relAtom, DeleteEntry());
+      }
     }
   }
 

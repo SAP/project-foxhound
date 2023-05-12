@@ -113,7 +113,7 @@ ExternalEngineStateMachine::ExternalEngineStateMachine(
   LOG("Created ExternalEngineStateMachine");
   MOZ_ASSERT(mState.IsInitEngine());
 #ifdef MOZ_WMF_MEDIA_ENGINE
-  mEngine.reset(new MFMediaEngineWrapper(this));
+  mEngine.reset(new MFMediaEngineWrapper(this, mFrameStats));
 #endif
   if (mEngine) {
     auto* state = mState.AsInitEngine();
@@ -439,11 +439,6 @@ RefPtr<ShutdownPromise> ExternalEngineStateMachine::Shutdown() {
   return state->mShutdown;
 }
 
-void ExternalEngineStateMachine::SetPlaybackRate(double aPlaybackRate) {
-  AssertOnTaskQueue();
-  mEngine->SetVolume(aPlaybackRate);
-}
-
 void ExternalEngineStateMachine::BufferedRangeUpdated() {
   AssertOnTaskQueue();
   AUTO_PROFILER_LABEL("ExternalEngineStateMachine::BufferedRangeUpdated",
@@ -474,17 +469,18 @@ void ExternalEngineStateMachine::BufferedRangeUpdated() {
   }
 }
 
-#define PERFORM_WHEN_ALLOW(Func)                                              \
+// Note: the variadic only supports passing member variables.
+#define PERFORM_WHEN_ALLOW(Func, ...)                                         \
   do {                                                                        \
     /* Initialzation is not done yet, posepone the operation */               \
     if (mState.IsInitEngine() && mState.AsInitEngine()->mInitPromise) {       \
       LOG("%s is called before init", __func__);                              \
       mState.AsInitEngine()->mInitPromise->Then(                              \
           OwnerThread(), __func__,                                            \
-          [self = RefPtr{this}](                                              \
+          [self = RefPtr{this}, this](                                        \
               const GenericNonExclusivePromise::ResolveOrRejectValue& aVal) { \
             if (aVal.IsResolve()) {                                           \
-              self->Func();                                                   \
+              Func(__VA_ARGS__);                                              \
             }                                                                 \
           });                                                                 \
       return;                                                                 \
@@ -492,6 +488,13 @@ void ExternalEngineStateMachine::BufferedRangeUpdated() {
       return;                                                                 \
     }                                                                         \
   } while (false)
+
+void ExternalEngineStateMachine::SetPlaybackRate(double aPlaybackRate) {
+  AssertOnTaskQueue();
+  mPlaybackRate = aPlaybackRate;
+  PERFORM_WHEN_ALLOW(SetPlaybackRate, mPlaybackRate);
+  mEngine->SetPlaybackRate(aPlaybackRate);
+}
 
 void ExternalEngineStateMachine::VolumeChanged() {
   AssertOnTaskQueue();
@@ -724,7 +727,7 @@ void ExternalEngineStateMachine::OnRequestVideo() {
                                    Info().mVideo.mImage.height);
   perfRecorder.Start();
   RefPtr<ExternalEngineStateMachine> self = this;
-  mReader->RequestVideoData(mCurrentPosition.Ref(), false)
+  mReader->RequestVideoData(GetVideoThreshold(), false)
       ->Then(
           OwnerThread(), __func__,
           [this, self, perfRecorder(std::move(perfRecorder))](
@@ -737,9 +740,8 @@ void ExternalEngineStateMachine::OnRequestVideo() {
                 MEDIA_PLAYBACK);
             MOZ_ASSERT(aVideo);
             RunningEngineUpdate(MediaData::Type::VIDEO_DATA);
-            // TODO : figure out the relationship between setting image and the
-            // DCOMP mode.
-            SetBlankVideoToVideoContainer();
+            mVideoFrameContainer->SetCurrentFrame(
+                mInfo->mVideo.mDisplay, aVideo->mImage, TimeStamp::Now());
           },
           [this, self](const MediaResult& aError) {
             mVideoDataRequest.Complete();
@@ -764,18 +766,6 @@ void ExternalEngineStateMachine::OnRequestVideo() {
             }
           })
       ->Track(mVideoDataRequest);
-}
-
-void ExternalEngineStateMachine::SetBlankVideoToVideoContainer() {
-  AssertOnTaskQueue();
-  MOZ_ASSERT(mState.IsRunningEngine() || mState.IsSeekingData());
-  if (!mBlankImage) {
-    mBlankImage =
-        mVideoFrameContainer->GetImageContainer()->CreatePlanarYCbCrImage();
-  }
-  MOZ_ASSERT(mInfo->HasVideo());
-  mVideoFrameContainer->SetCurrentFrame(mInfo->mVideo.mDisplay, mBlankImage,
-                                        TimeStamp::Now());
 }
 
 void ExternalEngineStateMachine::OnLoadedFirstFrame() {
@@ -912,11 +902,15 @@ void ExternalEngineStateMachine::NotifyEventInternal(
       break;
     case ExternalEngineEvent::RequestForAudio:
       mHasEnoughAudio = false;
-      RunningEngineUpdate(MediaData::Type::AUDIO_DATA);
+      if (ShouldRunEngineUpdateForRequest()) {
+        RunningEngineUpdate(MediaData::Type::AUDIO_DATA);
+      }
       break;
     case ExternalEngineEvent::RequestForVideo:
       mHasEnoughVideo = false;
-      RunningEngineUpdate(MediaData::Type::VIDEO_DATA);
+      if (ShouldRunEngineUpdateForRequest()) {
+        RunningEngineUpdate(MediaData::Type::VIDEO_DATA);
+      }
       break;
     case ExternalEngineEvent::AudioEnough:
       mHasEnoughAudio = true;
@@ -928,6 +922,16 @@ void ExternalEngineStateMachine::NotifyEventInternal(
       MOZ_ASSERT_UNREACHABLE("Undefined event!");
       break;
   }
+}
+
+bool ExternalEngineStateMachine::ShouldRunEngineUpdateForRequest() {
+  // Running engine update will request new data, which could be run on
+  // `RunningEngine` or `SeekingData` state. However, in `SeekingData` we should
+  // only request new data after finishing reader seek, otherwise the reader
+  // would start requesting data from a wrong position.
+  return mState.IsRunningEngine() ||
+         (mState.AsSeekingData() &&
+          !mState.AsSeekingData()->mWaitingReaderSeeked);
 }
 
 void ExternalEngineStateMachine::NotifyErrorInternal(
@@ -942,6 +946,14 @@ void ExternalEngineStateMachine::NotifyErrorInternal(
   } else {
     DecodeError(aError);
   }
+}
+
+media::TimeUnit ExternalEngineStateMachine::GetVideoThreshold() {
+  AssertOnTaskQueue();
+  if (auto* state = mState.AsSeekingData()) {
+    return state->GetTargetTime();
+  }
+  return mCurrentPosition.Ref();
 }
 
 #undef FMT

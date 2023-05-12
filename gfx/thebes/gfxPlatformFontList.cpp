@@ -164,7 +164,7 @@ static void FontListPrefChanged(const char* aPref, void* aData = nullptr) {
   // XXX this could be made to only clear out the cache for the prefs that were
   // changed but it probably isn't that big a deal.
   gfxPlatformFontList::PlatformFontList()->ClearLangGroupPrefFonts();
-  gfxFontCache::GetCache()->AgeAllGenerations();
+  gfxFontCache::GetCache()->Flush();
 }
 
 static gfxFontListPrefObserver* gFontListPrefObserver = nullptr;
@@ -279,6 +279,7 @@ gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
   mFontPrefs = MakeUnique<FontPrefs>();
 
   gfxFontUtils::GetPrefsFontList(kFontSystemWhitelistPref, mEnabledFontsList);
+  mFontFamilyWhitelistActive = !mEnabledFontsList.IsEmpty();
 
   // pref changes notification setup
   NS_ASSERTION(!gFontListPrefObserver,
@@ -354,7 +355,6 @@ void gfxPlatformFontList::FontWhitelistPrefChanged(const char* aPref,
 
 void gfxPlatformFontList::ApplyWhitelist() {
   uint32_t numFonts = mEnabledFontsList.Length();
-  mFontFamilyWhitelistActive = (numFonts > 0);
   if (!mFontFamilyWhitelistActive) {
     return;
   }
@@ -396,7 +396,6 @@ void gfxPlatformFontList::ApplyWhitelist() {
 void gfxPlatformFontList::ApplyWhitelist(
     nsTArray<fontlist::Family::InitData>& aFamilies) {
   mLock.AssertCurrentThreadIn();
-  mFontFamilyWhitelistActive = !mEnabledFontsList.IsEmpty();
   if (!mFontFamilyWhitelistActive) {
     return;
   }
@@ -548,6 +547,7 @@ bool gfxPlatformFontList::InitFontList() {
     }
 
     gfxFontUtils::GetPrefsFontList(kFontSystemWhitelistPref, mEnabledFontsList);
+    mFontFamilyWhitelistActive = !mEnabledFontsList.IsEmpty();
   }
 
   // From here, gfxPlatformFontList::IsInitialized will return true,

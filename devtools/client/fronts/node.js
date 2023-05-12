@@ -19,10 +19,22 @@ loader.lazyRequireGetter(
   "devtools/shared/dom-node-constants"
 );
 
+const ChromeUtils = require("ChromeUtils");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "browserToolboxScope",
+  "devtools.browsertoolbox.scope"
+);
+
 const BROWSER_TOOLBOX_FISSION_ENABLED = Services.prefs.getBoolPref(
   "devtools.browsertoolbox.fission",
   false
 );
+const BROWSER_TOOLBOX_SCOPE_EVERYTHING = "everything";
 
 const HIDDEN_CLASS = "__fx-devtools-hide-shortcut__";
 
@@ -301,18 +313,45 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return this.getAttribute("class") || "";
   }
 
+  // Check if the node has children but the current DevTools session is unable
+  // to retrieve them.
+  // Typically: a <frame> or <browser> element which loads a document in another
+  // process, but the toolbox' configuration prevents to inspect it (eg the
+  // parent-process only Browser Toolbox).
+  get childrenUnavailable() {
+    return (
+      // If form.useChildTargetToFetchChildren is true, it means the node HAS
+      // children in another target.
+      // Note: useChildTargetToFetchChildren might be undefined, force
+      // conversion to boolean. See Bug 1783613 to try and improve this.
+      !!this._form.useChildTargetToFetchChildren &&
+      // But if useChildTargetToFetchChildren is false, it means the client
+      // configuration prevents from displaying such children.
+      // This is the only case where children are considered as unavailable:
+      // they exist, but can't be retrieved by configuration.
+      !this.useChildTargetToFetchChildren
+    );
+  }
   get hasChildren() {
-    return this._form.numChildren > 0;
+    return this.numChildren > 0;
   }
   get numChildren() {
+    if (this.childrenUnavailable) {
+      return 0;
+    }
+
     return this._form.numChildren;
   }
   get useChildTargetToFetchChildren() {
-    if (!BROWSER_TOOLBOX_FISSION_ENABLED && this._hasParentProcessTarget) {
+    if (
+      this._hasParentProcessTarget &&
+      (!BROWSER_TOOLBOX_FISSION_ENABLED ||
+        browserToolboxScope != BROWSER_TOOLBOX_SCOPE_EVERYTHING)
+    ) {
       return false;
     }
 
-    return this._form.useChildTargetToFetchChildren;
+    return !!this._form.useChildTargetToFetchChildren;
   }
   get hasEventListeners() {
     return this._form.hasEventListeners;
@@ -571,6 +610,12 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     this._childBrowsingContextTarget = await this.targetFront.getWindowGlobalTarget(
       this._form.browsingContextID
     );
+
+    // Bug 1776250: When the target is destroyed, we need to easily find the
+    // parent node front so that we can update its frontend container in the
+    // markup-view.
+    this._childBrowsingContextTarget.setParentNodeFront(this);
+
     return this._childBrowsingContextTarget;
   }
 }

@@ -9,6 +9,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
 
+#include <tuple>
+
 #include "jsapi.h"
 #include "jsmath.h"
 
@@ -1135,8 +1137,6 @@ static bool IsWindowProxyForScriptGlobal(JSScript* script, JSObject* obj) {
 static ObjOperandId GuardAndLoadWindowProxyWindow(CacheIRWriter& writer,
                                                   ObjOperandId objId,
                                                   GlobalObject* windowObj) {
-  // Note: update AddCacheIRGetPropFunction in BaselineInspector.cpp when making
-  // changes here.
   writer.guardClass(objId, GuardClassKind::WindowProxy);
   ObjOperandId windowObjId = writer.loadWrapperTarget(objId);
   writer.guardSpecificObject(windowObjId, windowObj);
@@ -2282,17 +2282,14 @@ static bool CanAttachStringChar(const Value& val, const Value& idVal) {
     return false;
   }
 
-  // This follows JSString::getChar, otherwise we fail to attach getChar in a
-  // lot of cases.
+  // This follows JSString::getChar and MacroAssembler::loadStringChar.
   if (str->isRope()) {
     JSRope* rope = &str->asRope();
-
-    // Make sure the left side contains the index.
-    if (size_t(index) >= rope->leftChild()->length()) {
-      return false;
+    if (size_t(index) < rope->leftChild()->length()) {
+      str = rope->leftChild();
+    } else {
+      str = rope->rightChild();
     }
-
-    str = rope->leftChild();
   }
 
   if (!str->isLinear()) {
@@ -2501,7 +2498,11 @@ AttachDecision GetPropIRGenerator::tryAttachDenseElement(
     return AttachDecision::NoAction;
   }
 
-  TestMatchingNativeReceiver(writer, nobj, objId);
+  if (mode_ == ICState::Mode::Megamorphic) {
+    writer.guardIsNativeObject(objId);
+  } else {
+    TestMatchingNativeReceiver(writer, nobj, objId);
+  }
   writer.loadDenseElementResult(objId, indexId);
   writer.returnFromIC();
 
@@ -2544,17 +2545,22 @@ AttachDecision GetPropIRGenerator::tryAttachSparseElement(
   NativeObject* nobj = &obj->as<NativeObject>();
 
   // Stub doesn't handle negative indices.
-  if (index > INT_MAX) {
+  if (index > INT32_MAX) {
     return AttachDecision::NoAction;
   }
 
-  // We also need to be past the end of the dense capacity, to ensure sparse.
-  if (index < nobj->getDenseInitializedLength()) {
+  // The object must have sparse elements.
+  if (!nobj->isIndexed()) {
     return AttachDecision::NoAction;
   }
 
-  // Only handle Array objects in this stub.
-  if (!nobj->is<ArrayObject>()) {
+  // The index must not be for a dense element.
+  if (nobj->containsDenseElement(index)) {
+    return AttachDecision::NoAction;
+  }
+
+  // Only handle ArrayObject and PlainObject in this stub.
+  if (!nobj->is<ArrayObject>() && !nobj->is<PlainObject>()) {
     return AttachDecision::NoAction;
   }
 
@@ -2571,11 +2577,16 @@ AttachDecision GetPropIRGenerator::tryAttachSparseElement(
     return AttachDecision::NoAction;
   }
 
-  // Ensure that obj is an Array.
-  writer.guardClass(objId, GuardClassKind::Array);
+  // Ensure that obj is an ArrayObject or PlainObject.
+  if (nobj->is<ArrayObject>()) {
+    writer.guardClass(objId, GuardClassKind::Array);
+  } else {
+    MOZ_ASSERT(nobj->is<PlainObject>());
+    writer.guardClass(objId, GuardClassKind::PlainObject);
+  }
 
   // The helper we are going to call only applies to non-dense elements.
-  writer.guardIndexGreaterThanDenseInitLength(objId, indexId);
+  writer.guardIndexIsNotDenseElement(objId, indexId);
 
   // Ensures we are able to efficiently able to map to an integral jsid.
   writer.guardInt32IsNonNegative(indexId);
@@ -2669,7 +2680,7 @@ AttachDecision GetPropIRGenerator::tryAttachGenericElement(
     NativeObject* nobj = &obj->as<NativeObject>();
     TestMatchingNativeReceiver(writer, nobj, objId);
   }
-  writer.guardIndexGreaterThanDenseInitLength(objId, indexId);
+  writer.guardIndexIsNotDenseElement(objId, indexId);
   writer.callNativeGetElementResult(objId, indexId);
   writer.returnFromIC();
 
@@ -3207,8 +3218,12 @@ AttachDecision HasPropIRGenerator::tryAttachDense(HandleObject obj,
     return AttachDecision::NoAction;
   }
 
-  // Guard shape to ensure object class is NativeObject.
-  TestMatchingNativeReceiver(writer, nobj, objId);
+  if (mode_ == ICState::Mode::Megamorphic) {
+    writer.guardIsNativeObject(objId);
+  } else {
+    // Guard shape to ensure object class is NativeObject.
+    TestMatchingNativeReceiver(writer, nobj, objId);
+  }
   writer.loadDenseElementExistsResult(objId, indexId);
   writer.returnFromIC();
 
@@ -4227,7 +4242,7 @@ AttachDecision SetPropIRGenerator::tryAttachSetDenseElementHole(
   return AttachDecision::Attach;
 }
 
-// Add an IC for adding or updating a sparse array element.
+// Add an IC for adding or updating a sparse element.
 AttachDecision SetPropIRGenerator::tryAttachAddOrUpdateSparseElement(
     HandleObject obj, ObjOperandId objId, uint32_t index,
     Int32OperandId indexId, ValOperandId rhsId) {
@@ -4249,39 +4264,46 @@ AttachDecision SetPropIRGenerator::tryAttachAddOrUpdateSparseElement(
   }
 
   // Stub doesn't handle negative indices.
-  if (index > INT_MAX) {
+  if (index > INT32_MAX) {
     return AttachDecision::NoAction;
   }
 
-  // We also need to be past the end of the dense capacity, to ensure sparse.
-  if (index < nobj->getDenseInitializedLength()) {
+  // The index must not be for a dense element.
+  if (nobj->containsDenseElement(index)) {
     return AttachDecision::NoAction;
   }
 
-  // Only handle Array objects in this stub.
-  if (!nobj->is<ArrayObject>()) {
+  // Only handle ArrayObject and PlainObject in this stub.
+  if (!nobj->is<ArrayObject>() && !nobj->is<PlainObject>()) {
     return AttachDecision::NoAction;
   }
-  ArrayObject* aobj = &nobj->as<ArrayObject>();
 
   // Don't attach if we're adding to an array with non-writable length.
-  bool isAdd = (index >= aobj->length());
-  if (isAdd && !aobj->lengthIsWritable()) {
-    return AttachDecision::NoAction;
+  if (nobj->is<ArrayObject>()) {
+    ArrayObject* aobj = &nobj->as<ArrayObject>();
+    bool isAdd = (index >= aobj->length());
+    if (isAdd && !aobj->lengthIsWritable()) {
+      return AttachDecision::NoAction;
+    }
   }
 
   // Check for class hooks or indexed properties on the prototype chain that
   // we're not allowed to shadow.
-  if (!CanAttachAddElement(aobj, /* isInit = */ false,
+  if (!CanAttachAddElement(nobj, /* isInit = */ false,
                            AllowIndexedReceiver::Yes)) {
     return AttachDecision::NoAction;
   }
 
-  // Ensure we are still talking about an array class.
-  writer.guardClass(objId, GuardClassKind::Array);
+  // Ensure that obj is an ArrayObject or PlainObject.
+  if (nobj->is<ArrayObject>()) {
+    writer.guardClass(objId, GuardClassKind::Array);
+  } else {
+    MOZ_ASSERT(nobj->is<PlainObject>());
+    writer.guardClass(objId, GuardClassKind::PlainObject);
+  }
 
   // The helper we are going to call only applies to non-dense elements.
-  writer.guardIndexGreaterThanDenseInitLength(objId, indexId);
+  writer.guardIndexIsNotDenseElement(objId, indexId);
 
   // Guard extensible: We may be trying to add a new element, and so we'd best
   // be able to do so safely.
@@ -4293,19 +4315,21 @@ AttachDecision SetPropIRGenerator::tryAttachAddOrUpdateSparseElement(
   // Shape guard the prototype chain to avoid shadowing indexes from appearing.
   // Guard the prototype of the receiver explicitly, because the receiver's
   // shape is not being guarded as a proxy for that.
-  GuardReceiverProto(writer, aobj, objId);
+  GuardReceiverProto(writer, nobj, objId);
 
   // Dense elements may appear on the prototype chain (and prototypes may
   // have a different notion of which elements are dense), but they can
   // only be data properties, so our specialized Set handler is ok to bind
   // to them.
   if (IsPropertySetOp(op)) {
-    ShapeGuardProtoChain(writer, aobj, objId);
+    ShapeGuardProtoChain(writer, nobj, objId);
   }
 
   // Ensure that if we're adding an element to the object, the object's
   // length is writable.
-  writer.guardIndexIsValidUpdateOrAdd(objId, indexId);
+  if (nobj->is<ArrayObject>()) {
+    writer.guardIndexIsValidUpdateOrAdd(objId, indexId);
+  }
 
   writer.callAddOrUpdateSparseElementHelper(
       objId, indexId, rhsId,
@@ -5408,6 +5432,9 @@ void InlinableNativeIRGenerator::emitNativeCalleeGuard() {
   // native from a different realm.
   MOZ_ASSERT(callee_->isNativeWithoutJitEntry());
 
+  MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Standard ||
+             flags_.getArgFormat() == CallFlags::FunCall);
+
   ObjOperandId calleeObjId;
   if (flags_.getArgFormat() == CallFlags::FunCall) {
     MOZ_ASSERT(generator_.writer.numOperandIds() > 0, "argcId is initialized");
@@ -5430,6 +5457,37 @@ void InlinableNativeIRGenerator::emitNativeCalleeGuard() {
     ObjOperandId newTargetObjId = writer.guardToObject(newTargetValId);
     writer.guardSpecificFunction(newTargetObjId, callee_);
   }
+}
+
+ObjOperandId
+InlinableNativeIRGenerator::emitNativeCalleeGuardAndLoadArgsArray() {
+  // Note: we rely on GuardSpecificFunction to also guard against the same
+  // native from a different realm.
+  MOZ_ASSERT(callee_->isNativeWithoutJitEntry());
+
+  MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Spread ||
+             flags_.getArgFormat() == CallFlags::FunApplyArray);
+
+  MOZ_ASSERT(!flags_.isConstructing());
+
+  ObjOperandId calleeObjId;
+  ObjOperandId argObjId;
+  if (flags_.getArgFormat() == CallFlags::FunApplyArray) {
+    MOZ_ASSERT(generator_.writer.numOperandIds() > 0, "argcId is initialized");
+
+    Int32OperandId argcId(0);
+    std::tie(calleeObjId, argObjId) =
+        generator_.emitFunApplyGuard(argcId, flags_.getArgFormat());
+  } else {
+    ValOperandId calleeValId =
+        writer.loadArgumentFixedSlot(ArgumentKind::Callee, argc_, flags_);
+    calleeObjId = writer.guardToObject(calleeValId);
+    argObjId = writer.loadSpreadArgs();
+  }
+
+  writer.guardSpecificFunction(calleeObjId, callee_);
+
+  return argObjId;
 }
 
 void IRGenerator::emitCalleeGuard(ObjOperandId calleeId, JSFunction* callee) {
@@ -5460,6 +5518,47 @@ ObjOperandId CallIRGenerator::emitFunCallGuard(Int32OperandId argcId) {
   ValOperandId thisValId =
       writer.loadArgumentDynamicSlot(ArgumentKind::This, argcId);
   return writer.guardToObject(thisValId);
+}
+
+std::pair<ObjOperandId, ObjOperandId> CallIRGenerator::emitFunApplyGuard(
+    Int32OperandId argcId, CallFlags::ArgFormat format) {
+  MOZ_ASSERT(argc_ == 2);
+
+  JSFunction* callee = &callee_.toObject().as<JSFunction>();
+  MOZ_ASSERT(callee->native() == fun_apply);
+
+  // Guard that callee is the |fun_apply| native function.
+  ValOperandId calleeValId =
+      writer.loadArgumentDynamicSlot(ArgumentKind::Callee, argcId);
+  ObjOperandId calleeObjId = writer.guardToObject(calleeValId);
+  writer.guardSpecificFunction(calleeObjId, callee);
+
+  // Guard that |this| is an object.
+  ValOperandId thisValId =
+      writer.loadArgumentDynamicSlot(ArgumentKind::This, argcId);
+  ObjOperandId thisObjId = writer.guardToObject(thisValId);
+
+  ValOperandId argValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::Arg1, argc_);
+
+  ObjOperandId argObjId = writer.guardToObject(argValId);
+  if (format == CallFlags::FunApplyArgsObj) {
+    if (args_[1].toObject().is<MappedArgumentsObject>()) {
+      writer.guardClass(argObjId, GuardClassKind::MappedArguments);
+    } else {
+      MOZ_ASSERT(args_[1].toObject().is<UnmappedArgumentsObject>());
+      writer.guardClass(argObjId, GuardClassKind::UnmappedArguments);
+    }
+    uint8_t flags = ArgumentsObject::ELEMENT_OVERRIDDEN_BIT |
+                    ArgumentsObject::FORWARDED_ARGUMENTS_BIT;
+    writer.guardArgumentsObjectFlags(argObjId, flags);
+  } else {
+    MOZ_ASSERT(format == CallFlags::FunApplyArray);
+    writer.guardClass(argObjId, GuardClassKind::Array);
+    writer.guardArrayIsPacked(argObjId);
+  }
+
+  return {thisObjId, argObjId};
 }
 
 AttachDecision InlinableNativeIRGenerator::tryAttachArrayPush() {
@@ -5921,7 +6020,7 @@ AttachDecision InlinableNativeIRGenerator::tryAttachUnsafeGetReservedSlot(
   ValOperandId arg0Id = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
   ObjOperandId objId = writer.guardToObject(arg0Id);
 
-  // BytecodeEmitter::checkSelfHostedUnsafeGetReservedSlot ensures that the
+  // BytecodeEmitter::assertSelfHostedUnsafeGetReservedSlot ensures that the
   // slot argument is constant. (At least for direct calls)
 
   switch (native) {
@@ -5936,9 +6035,6 @@ AttachDecision InlinableNativeIRGenerator::tryAttachUnsafeGetReservedSlot(
       break;
     case InlinableNative::IntrinsicUnsafeGetStringFromReservedSlot:
       writer.loadFixedSlotTypedResult(objId, offset, ValueType::String);
-      break;
-    case InlinableNative::IntrinsicUnsafeGetBooleanFromReservedSlot:
-      writer.loadFixedSlotTypedResult(objId, offset, ValueType::Boolean);
       break;
     default:
       MOZ_CRASH("unexpected native");
@@ -5972,7 +6068,7 @@ AttachDecision InlinableNativeIRGenerator::tryAttachUnsafeSetReservedSlot() {
   ValOperandId arg0Id = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
   ObjOperandId objId = writer.guardToObject(arg0Id);
 
-  // BytecodeEmitter::checkSelfHostedUnsafeSetReservedSlot ensures that the
+  // BytecodeEmitter::assertSelfHostedUnsafeSetReservedSlot ensures that the
   // slot argument is constant. (At least for direct calls)
 
   // Get the value to set.
@@ -6701,6 +6797,105 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStringFromCodePoint() {
   return AttachDecision::Attach;
 }
 
+AttachDecision InlinableNativeIRGenerator::tryAttachStringIndexOf() {
+  // Need one string argument.
+  if (argc_ != 1 || !args_[0].isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Ensure |this| is a primitive string value.
+  if (!thisval_.isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the 'indexOf' native function.
+  emitNativeCalleeGuard();
+
+  // Guard this is a string.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  StringOperandId strId = writer.guardToString(thisValId);
+
+  // Guard string argument.
+  ValOperandId argId = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+  StringOperandId searchStrId = writer.guardToString(argId);
+
+  writer.stringIndexOfResult(strId, searchStrId);
+  writer.returnFromIC();
+
+  trackAttached("StringIndexOf");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachStringStartsWith() {
+  // Need one string argument.
+  if (argc_ != 1 || !args_[0].isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Ensure |this| is a primitive string value.
+  if (!thisval_.isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the 'startsWith' native function.
+  emitNativeCalleeGuard();
+
+  // Guard this is a string.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  StringOperandId strId = writer.guardToString(thisValId);
+
+  // Guard string argument.
+  ValOperandId argId = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+  StringOperandId searchStrId = writer.guardToString(argId);
+
+  writer.stringStartsWithResult(strId, searchStrId);
+  writer.returnFromIC();
+
+  trackAttached("StringStartsWith");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachStringEndsWith() {
+  // Need one string argument.
+  if (argc_ != 1 || !args_[0].isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Ensure |this| is a primitive string value.
+  if (!thisval_.isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the 'endsWith' native function.
+  emitNativeCalleeGuard();
+
+  // Guard this is a string.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  StringOperandId strId = writer.guardToString(thisValId);
+
+  // Guard string argument.
+  ValOperandId argId = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+  StringOperandId searchStrId = writer.guardToString(argId);
+
+  writer.stringEndsWithResult(strId, searchStrId);
+  writer.returnFromIC();
+
+  trackAttached("StringEndsWith");
+  return AttachDecision::Attach;
+}
+
 AttachDecision InlinableNativeIRGenerator::tryAttachStringToLowerCase() {
   // Expecting no arguments.
   if (argc_ != 0) {
@@ -7338,7 +7533,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachMathMinMax(bool isMax) {
 
 AttachDecision InlinableNativeIRGenerator::tryAttachSpreadMathMinMax(
     bool isMax) {
-  MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Spread);
+  MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Spread ||
+             flags_.getArgFormat() == CallFlags::FunApplyArray);
 
   // The result will be an int32 if there is at least one argument,
   // and all the arguments are int32.
@@ -7355,11 +7551,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachSpreadMathMinMax(
   // Initialize the input operand.
   initializeInputOperand();
 
-  // Guard callee is this Math function.
-  emitNativeCalleeGuard();
-
-  // Load the argument array
-  ObjOperandId argsId = writer.loadSpreadArgs();
+  // Guard callee is this Math function and load the argument array.
+  ObjOperandId argsId = emitNativeCalleeGuardAndLoadArgsArray();
 
   if (int32Result) {
     writer.int32MinMaxArrayResult(argsId, isMax);
@@ -9151,7 +9344,7 @@ AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
   if (!thisval_.isObject() || !thisval_.toObject().is<JSFunction>()) {
     return AttachDecision::NoAction;
   }
-  auto* target = &thisval_.toObject().as<JSFunction>();
+  Rooted<JSFunction*> target(cx_, &thisval_.toObject().as<JSFunction>());
 
   bool isScripted = target->hasJitEntry();
   MOZ_ASSERT_IF(!isScripted, target->isNativeWithoutJitEntry());
@@ -9171,7 +9364,8 @@ AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
     format = CallFlags::FunApplyArgsObj;
   } else if (args_[1].isObject() && args_[1].toObject().is<ArrayObject>() &&
              args_[1].toObject().as<ArrayObject>().length() <=
-                 JIT_ARGS_LENGTH_MAX) {
+                 JIT_ARGS_LENGTH_MAX &&
+             IsPackedArray(&args_[1].toObject())) {
     format = CallFlags::FunApplyArray;
   } else {
     return AttachDecision::NoAction;
@@ -9179,46 +9373,33 @@ AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
 
   Int32OperandId argcId(writer.setInputOperandId(0));
 
-  // Guard that callee is the |fun_apply| native function.
-  ValOperandId calleeValId =
-      writer.loadArgumentDynamicSlot(ArgumentKind::Callee, argcId);
-  ObjOperandId calleeObjId = writer.guardToObject(calleeValId);
-  writer.guardSpecificFunction(calleeObjId, calleeFunc);
-
-  // Guard that |this| is an object.
-  ValOperandId thisValId =
-      writer.loadArgumentDynamicSlot(ArgumentKind::This, argcId);
-  ObjOperandId thisObjId = writer.guardToObject(thisValId);
-
-  ValOperandId argValId =
-      writer.loadArgumentFixedSlot(ArgumentKind::Arg1, argc_);
-
-  if (format == CallFlags::FunApplyArgsObj) {
-    ObjOperandId argObjId = writer.guardToObject(argValId);
-    if (args_[1].toObject().is<MappedArgumentsObject>()) {
-      writer.guardClass(argObjId, GuardClassKind::MappedArguments);
-    } else {
-      MOZ_ASSERT(args_[1].toObject().is<UnmappedArgumentsObject>());
-      writer.guardClass(argObjId, GuardClassKind::UnmappedArguments);
-    }
-    uint8_t flags = ArgumentsObject::ELEMENT_OVERRIDDEN_BIT |
-                    ArgumentsObject::FORWARDED_ARGUMENTS_BIT;
-    writer.guardArgumentsObjectFlags(argObjId, flags);
-  } else {
-    MOZ_ASSERT(format == CallFlags::FunApplyArray);
-    ObjOperandId argObjId = writer.guardToObject(argValId);
-    writer.guardClass(argObjId, GuardClassKind::Array);
-    writer.guardArrayIsPacked(argObjId);
-  }
-
   CallFlags targetFlags(format);
   if (mode_ == ICState::Mode::Specialized) {
-    // Ensure that |this| is the expected target function.
-    emitCalleeGuard(thisObjId, target);
-
     if (cx_->realm() == target->realm()) {
       targetFlags.setIsSameRealm();
     }
+  }
+
+  if (mode_ == ICState::Mode::Specialized && !isScripted &&
+      format == CallFlags::FunApplyArray) {
+    HandleValue newTarget = NullHandleValue;
+    HandleValue thisValue = args_[0];
+    Rooted<ArrayObject*> aobj(cx_, &args_[1].toObject().as<ArrayObject>());
+    HandleValueArray args = HandleValueArray::fromMarkedLocation(
+        aobj->length(), aobj->getDenseElements());
+
+    // Check for specific native-function optimizations.
+    InlinableNativeIRGenerator nativeGen(*this, target, newTarget, thisValue,
+                                         args, targetFlags);
+    TRY_ATTACH(nativeGen.tryAttachStub());
+  }
+
+  ObjOperandId thisObjId;
+  std::tie(thisObjId, std::ignore) = emitFunApplyGuard(argcId, format);
+
+  if (mode_ == ICState::Mode::Specialized) {
+    // Ensure that |this| is the expected target function.
+    emitCalleeGuard(thisObjId, target);
 
     if (isScripted) {
       writer.callScriptedFunction(thisObjId, argcId, targetFlags);
@@ -9270,7 +9451,9 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
   if (!isFirstStub_) {
     return AttachDecision::NoAction;
   }
-  if (JSOp(*pc_) != JSOp::Call && JSOp(*pc_) != JSOp::CallIgnoresRv) {
+  JSOp op = JSOp(*pc_);
+  if (op != JSOp::Call && op != JSOp::CallContent &&
+      op != JSOp::CallIgnoresRv) {
     return AttachDecision::NoAction;
   }
   if (cx_->realm() != calleeFunc->realm()) {
@@ -9283,12 +9466,10 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
   auto bestTier = inst.code().bestTier();
   const wasm::FuncExport& funcExport =
       inst.metadata(bestTier).lookupFuncExport(funcIndex);
+  const wasm::FuncType& sig = inst.metadata().getFuncExportType(funcExport);
 
   MOZ_ASSERT(!IsInsideNursery(inst.object()));
-  MOZ_ASSERT(funcExport.canHaveJitEntry(),
-             "Function should allow a Wasm JitEntry");
-
-  const wasm::FuncType& sig = funcExport.funcType();
+  MOZ_ASSERT(sig.canHaveJitEntry(), "Function should allow a Wasm JitEntry");
 
   // If there are too many arguments, don't optimize (we won't be able to store
   // the arguments in the LIR node).
@@ -9345,7 +9526,6 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
           return AttachDecision::NoAction;
         }
         break;
-      case wasm::ValType::Rtt:
       case wasm::ValType::V128:
         MOZ_CRASH("Function should not have a Wasm JitEntry");
       case wasm::ValType::Ref:
@@ -9391,9 +9571,12 @@ AttachDecision CallIRGenerator::tryAttachInlinableNative(HandleFunction callee,
                                                          CallFlags flags) {
   MOZ_ASSERT(mode_ == ICState::Mode::Specialized);
   MOZ_ASSERT(callee->isNativeWithoutJitEntry());
+  MOZ_ASSERT(flags.getArgFormat() == CallFlags::Standard ||
+             flags.getArgFormat() == CallFlags::Spread);
 
   // Special case functions are only optimized for normal calls.
-  if (op_ != JSOp::Call && op_ != JSOp::New && op_ != JSOp::CallIgnoresRv &&
+  if (op_ != JSOp::Call && op_ != JSOp::CallContent && op_ != JSOp::New &&
+      op_ != JSOp::NewContent && op_ != JSOp::CallIgnoresRv &&
       op_ != JSOp::SpreadCall) {
     return AttachDecision::NoAction;
   }
@@ -9418,6 +9601,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
 
   // Check for special-cased native constructors.
   if (flags_.isConstructing()) {
+    MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Standard);
+
     // newTarget must match the callee. CacheIR for this is emitted in
     // emitNativeCalleeGuard.
     if (ObjectValue(*callee_) != newTarget_) {
@@ -9437,7 +9622,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
   }
 
   // Check for special-cased native spread calls.
-  if (flags_.getArgFormat() == CallFlags::Spread) {
+  if (flags_.getArgFormat() == CallFlags::Spread ||
+      flags_.getArgFormat() == CallFlags::FunApplyArray) {
     switch (native) {
       case InlinableNative::MathMin:
         return tryAttachSpreadMathMinMax(/*isMax = */ false);
@@ -9448,6 +9634,9 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
     }
     return AttachDecision::NoAction;
   }
+
+  MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Standard ||
+             flags_.getArgFormat() == CallFlags::FunCall);
 
   // Check for special-cased native functions.
   switch (native) {
@@ -9523,7 +9712,6 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
     case InlinableNative::IntrinsicUnsafeGetObjectFromReservedSlot:
     case InlinableNative::IntrinsicUnsafeGetInt32FromReservedSlot:
     case InlinableNative::IntrinsicUnsafeGetStringFromReservedSlot:
-    case InlinableNative::IntrinsicUnsafeGetBooleanFromReservedSlot:
       return tryAttachUnsafeGetReservedSlot(native);
     case InlinableNative::IntrinsicUnsafeSetReservedSlot:
       return tryAttachUnsafeSetReservedSlot();
@@ -9605,6 +9793,12 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachStringFromCharCode();
     case InlinableNative::StringFromCodePoint:
       return tryAttachStringFromCodePoint();
+    case InlinableNative::StringIndexOf:
+      return tryAttachStringIndexOf();
+    case InlinableNative::StringStartsWith:
+      return tryAttachStringStartsWith();
+    case InlinableNative::StringEndsWith:
+      return tryAttachStringEndsWith();
     case InlinableNative::StringToLowerCase:
       return tryAttachStringToLowerCase();
     case InlinableNative::StringToUpperCase:
@@ -10082,10 +10276,13 @@ AttachDecision CallIRGenerator::tryAttachStub() {
   // Some opcodes are not yet supported.
   switch (op_) {
     case JSOp::Call:
+    case JSOp::CallContent:
     case JSOp::CallIgnoresRv:
     case JSOp::CallIter:
+    case JSOp::CallContentIter:
     case JSOp::SpreadCall:
     case JSOp::New:
+    case JSOp::NewContent:
     case JSOp::SpreadNew:
     case JSOp::SuperCall:
     case JSOp::SpreadSuperCall:
@@ -10119,7 +10316,8 @@ AttachDecision CallIRGenerator::tryAttachStub() {
   // Try inlining Function.prototype.{call,apply}. We don't use the
   // InlinableNative mechanism for this because we want to optimize these more
   // aggressively than other natives.
-  if (op_ == JSOp::Call || op_ == JSOp::CallIgnoresRv) {
+  if (op_ == JSOp::Call || op_ == JSOp::CallContent ||
+      op_ == JSOp::CallIgnoresRv) {
     TRY_ATTACH(tryAttachFunCall(calleeFunc));
     TRY_ATTACH(tryAttachFunApply(calleeFunc));
   }
@@ -10655,9 +10853,6 @@ AttachDecision CompareIRGenerator::tryAttachStub() {
 
   constexpr uint8_t lhsIndex = 0;
   constexpr uint8_t rhsIndex = 1;
-
-  static_assert(lhsIndex == 0 && rhsIndex == 1,
-                "Indexes relied upon by baseline inspector");
 
   ValOperandId lhsId(writer.setInputOperandId(lhsIndex));
   ValOperandId rhsId(writer.setInputOperandId(rhsIndex));

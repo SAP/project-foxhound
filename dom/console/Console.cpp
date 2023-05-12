@@ -793,7 +793,7 @@ class ConsoleProfileWorkerRunnable final : public ConsoleWorkerRunnable {
   nsString mAction;
 };
 
-NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(Console)
+NS_IMPL_CYCLE_COLLECTION_CLASS(Console)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Console)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
@@ -2816,7 +2816,7 @@ ConsoleLogLevel PrefToValue(const nsAString& aPref,
     message.AssignLiteral("Invalid Console.maxLogLevelPref value: ");
     message.Append(NS_ConvertUTF8toUTF16(value));
 
-    nsContentUtils::LogSimpleConsoleError(message, "chrome", false,
+    nsContentUtils::LogSimpleConsoleError(message, "chrome"_ns, false,
                                           true /* from chrome context*/);
     return aLevel;
   }

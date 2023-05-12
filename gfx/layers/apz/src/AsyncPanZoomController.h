@@ -575,6 +575,9 @@ class AsyncPanZoomController {
   SampleTime GetFrameTime() const;
 
   bool IsZero(const ParentLayerPoint& aPoint) const;
+  bool IsZero(ParentLayerCoord aCoord) const;
+
+  bool FuzzyGreater(ParentLayerCoord aCoord1, ParentLayerCoord aCoord2) const;
 
  private:
   // Get whether the horizontal content of the honoured target of auto-dir
@@ -942,9 +945,12 @@ class AsyncPanZoomController {
     FREE,     /* No locking at all */
     STANDARD, /* Default axis locking mode that remains locked until pan ends */
     STICKY,   /* Allow lock to be broken, with hysteresis */
+    DOMINANT_AXIS, /* Only allow movement on one axis */
   };
 
   static AxisLockMode GetAxisLockMode();
+
+  bool UsingStatefulAxisLock() const;
 
   enum PinchLockMode {
     PINCH_FREE,     /* No locking at all */

@@ -8,6 +8,7 @@ const xpcshellTestConfig = require("eslint-plugin-mozilla/lib/configs/xpcshell-t
 const browserTestConfig = require("eslint-plugin-mozilla/lib/configs/browser-test.js");
 const mochitestTestConfig = require("eslint-plugin-mozilla/lib/configs/mochitest-test.js");
 const chromeTestConfig = require("eslint-plugin-mozilla/lib/configs/chrome-test.js");
+const { testPaths } = require("./.eslintrc-test-paths.js");
 const fs = require("fs");
 const path = require("path");
 
@@ -20,31 +21,6 @@ function removeOverrides(config) {
   delete config.overrides;
   return config;
 }
-
-// The expressions defined below for test paths are the main path formats we
-// prefer to support for tests as they are commonly used across the tree.
-// See https://firefox-source-docs.mozilla.org/code-quality/lint/linters/eslint.html#i-m-adding-tests-how-do-i-set-up-the-right-configuration
-// for more information.
-
-const xpcshellTestPaths = [
-  "**/test*/unit*/**/",
-  "**/test*/*/unit*/",
-  "**/test*/xpcshell/**/",
-];
-
-const browserTestPaths = ["**/test*/**/browser*/"];
-
-const mochitestTestPaths = [
-  // Note: we do not want to match testing/mochitest as that would apply
-  // too many globals for that directory.
-  "**/test/mochitest/",
-  "**/tests/mochitest/",
-  "**/test/mochitests/",
-  "testing/mochitest/tests/SimpleTest/",
-  "testing/mochitest/tests/Harness_sanity/",
-];
-
-const chromeTestPaths = ["**/test*/chrome/"];
 
 const ignorePatterns = [
   ...fs
@@ -116,15 +92,17 @@ module.exports = {
         "import/no-named-as-default-member": "error",
         "import/no-self-import": "error",
         "import/no-unassigned-import": "error",
-        "import/no-unresolved": "error",
+        "import/no-unresolved": [
+          "error",
+          // Bug 1773473 - Ignore resolver URLs for chrome and resource as we
+          // do not yet have a resolver for them.
+          { ignore: ["chrome://", "resource://"] },
+        ],
         "import/no-useless-path-segments": "error",
       },
     },
     {
       files: [
-        // Bug 1773473 - Turn off no-unresolved for system mjs modules, as we
-        // do not yet have a resolver for resource:// uris.
-        "*.sys.mjs",
         // Bug 1773475 - For now, turn off no-unresolved on some paths where we import
         // from node_modules, as the ESLint setup only installs modules at the
         // top-level.
@@ -135,13 +113,7 @@ module.exports = {
       },
     },
     {
-      files: [
-        "*.html",
-        "*.xhtml",
-        "*.xml",
-        "js/src/builtin/**/*.js",
-        "js/src/shell/**/*.js",
-      ],
+      files: ["*.html", "*.xhtml", "*.xml"],
       rules: {
         // Curly brackets are required for all the tree via recommended.js,
         // however these files aren't auto-fixable at the moment.
@@ -157,15 +129,14 @@ module.exports = {
     },
     {
       ...removeOverrides(xpcshellTestConfig),
-      files: xpcshellTestPaths.map(path => `${path}**`),
-      excludedFiles: "devtools/**",
+      files: testPaths.xpcshell.map(path => `${path}**`),
     },
     {
       // If it is an xpcshell head file, we turn off global unused variable checks, as it
       // would require searching the other test files to know if they are used or not.
       // This would be expensive and slow, and it isn't worth it for head files.
       // We could get developers to declare as exported, but that doesn't seem worth it.
-      files: xpcshellTestPaths.map(path => `${path}head*.js`),
+      files: testPaths.xpcshell.map(path => `${path}head*.js`),
       rules: {
         "no-unused-vars": [
           "error",
@@ -183,7 +154,7 @@ module.exports = {
       // section.
       // Bug 1612907: This section should go away once the exclusions are removed
       // from the following section.
-      files: xpcshellTestPaths.map(path => `${path}test*.js`),
+      files: testPaths.xpcshell.map(path => `${path}test*.js`),
       rules: {
         // No declaring variables that are never used
         "no-unused-vars": [
@@ -199,11 +170,10 @@ module.exports = {
       // This section makes global issues with no-unused-vars be reported as
       // errors - except for the excluded lists which are being fixed in the
       // dependencies of bug 1612907.
-      files: xpcshellTestPaths.map(path => `${path}test*.js`),
+      files: testPaths.xpcshell.map(path => `${path}test*.js`),
       excludedFiles: [
         // These are suitable as good first bugs, take one or two related lines
         // per bug.
-        "caps/tests/unit/test_origin.js",
         "extensions/permissions/**",
         "image/test/unit/**",
         "intl/uconv/tests/unit/test_bug340714.js",
@@ -219,14 +189,8 @@ module.exports = {
         // These are more complicated bugs which may require some in-depth
         // investigation or different solutions. They are also likely to be
         // a reasonable size.
-        "browser/components/**",
-        "browser/modules/**",
         "dom/**",
         "netwerk/**",
-        "security/manager/ssl/tests/unit/**",
-        "testing/xpcshell/**",
-        "toolkit/components/**",
-        "toolkit/modules/**",
       ],
       rules: {
         // No declaring variables that are never used
@@ -241,16 +205,16 @@ module.exports = {
     },
     {
       ...browserTestConfig,
-      files: browserTestPaths.map(path => `${path}**`),
+      files: testPaths.browser.map(path => `${path}**`),
     },
     {
       ...removeOverrides(mochitestTestConfig),
-      files: mochitestTestPaths.map(path => `${path}**`),
+      files: testPaths.mochitest.map(path => `${path}**`),
       excludedFiles: ["security/manager/ssl/tests/mochitest/browser/**"],
     },
     {
       ...removeOverrides(chromeTestConfig),
-      files: chromeTestPaths.map(path => `${path}**`),
+      files: testPaths.chrome.map(path => `${path}**`),
     },
     {
       env: {
@@ -260,27 +224,14 @@ module.exports = {
         "mozilla/simpletest": true,
       },
       files: [
-        ...mochitestTestPaths.map(path => `${path}/**/*.js`),
-        ...chromeTestPaths.map(path => `${path}/**/*.js`),
+        ...testPaths.mochitest.map(path => `${path}/**/*.js`),
+        ...testPaths.chrome.map(path => `${path}/**/*.js`),
       ],
     },
     {
-      files: [
-        "netwerk/cookie/test/browser/**",
-        "netwerk/test/browser/**",
-        "netwerk/test/mochitests/**",
-        "netwerk/test/unit*/**",
-      ],
+      files: ["netwerk/test/mochitests/**", "netwerk/test/unit*/**"],
       rules: {
-        "mozilla/no-arbitrary-setTimeout": "off",
-        "mozilla/no-define-cc-etc": "off",
-        "consistent-return": "off",
-        "no-eval": "off",
-        "no-global-assign": "off",
-        "no-nested-ternary": "off",
-        "no-redeclare": "off",
-        "no-shadow": "off",
-        "no-throw-literal": "off",
+        "no-shadow": "warn",
       },
     },
     {
@@ -327,29 +278,29 @@ module.exports = {
     },
     {
       files: [
-        "dom/animation/**",
+        "dom/animation/test/**",
         "dom/base/test/*.*",
         "dom/base/test/unit/test_serializers_entities*.js",
         "dom/base/test/unit_ipc/**",
         "dom/base/test/jsmodules/**",
-        "dom/base/*.*",
-        "dom/canvas/**",
-        "dom/encoding/**",
-        "dom/events/**",
-        "dom/fetch/**",
-        "dom/file/**",
-        "dom/html/**",
-        "dom/jsurl/**",
+        "dom/canvas/test/**",
+        "dom/encoding/test/**",
+        "dom/events/test/**",
+        "dom/fetch/tests/**",
+        "dom/file/ipc/tests/**",
+        "dom/file/tests/**",
+        "dom/html/test/**",
+        "dom/jsurl/test/**",
         "dom/media/tests/**",
-        "dom/media/webaudio/**",
+        "dom/media/webaudio/test/**",
         "dom/media/webrtc/tests/**",
-        "dom/media/webspeech/**",
-        "dom/messagechannel/**",
-        "dom/midi/**",
-        "dom/network/**",
-        "dom/payments/**",
-        "dom/performance/**",
-        "dom/permission/**",
+        "dom/media/webspeech/recognition/test/**",
+        "dom/media/webspeech/synth/test/**",
+        "dom/messagechannel/tests/**",
+        "dom/midi/tests/**",
+        "dom/network/tests/**",
+        "dom/payments/test/**",
+        "dom/performance/tests/**",
         "dom/quota/test/browser/**",
         "dom/quota/test/common/**",
         "dom/quota/test/mochitest/**",
@@ -357,19 +308,19 @@ module.exports = {
         "dom/security/test/cors/**",
         "dom/security/test/csp/**",
         "dom/security/test/mixedcontentblocker/**",
-        "dom/serviceworkers/**",
-        "dom/smil/**",
+        "dom/serviceworkers/test/**",
+        "dom/smil/test/**",
         "dom/tests/mochitest/**",
-        "dom/u2f/**",
-        "dom/vr/**",
-        "dom/webauthn/**",
-        "dom/webgpu/**",
-        "dom/websocket/**",
-        "dom/workers/**",
-        "dom/worklet/**",
-        "dom/xml/**",
-        "dom/xslt/**",
-        "dom/xul/**",
+        "dom/u2f/tests/**",
+        "dom/vr/test/**",
+        "dom/webauthn/tests/**",
+        "dom/webgpu/mochitest/**",
+        "dom/websocket/tests/**",
+        "dom/workers/test/**",
+        "dom/worklet/tests/**",
+        "dom/xml/test/**",
+        "dom/xslt/tests/**",
+        "dom/xul/test/**",
         "dom/ipc/test.xhtml",
       ],
       rules: {

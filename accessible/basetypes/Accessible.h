@@ -23,6 +23,8 @@ class AccAttributes;
 class AccGroupInfo;
 class HyperTextAccessibleBase;
 class LocalAccessible;
+class Relation;
+enum class RelationType;
 class RemoteAccessible;
 class TableAccessibleBase;
 class TableCellAccessibleBase;
@@ -200,6 +202,11 @@ class Accessible {
                                    EWhichChildAtPoint aWhichChild) = 0;
 
   /**
+   * Return the focused child if any.
+   */
+  virtual Accessible* FocusedChild();
+
+  /**
    * Return ARIA role map if any.
    */
   const nsRoleMapEntry* ARIARoleMap() const;
@@ -326,6 +333,11 @@ class Accessible {
   LayoutDeviceIntPoint Position(uint32_t aCoordType);
 
   virtual Maybe<int32_t> GetIntARIAAttr(nsAtom* aAttrName) const = 0;
+
+  /**
+   * Get the relation of the given type.
+   */
+  virtual Relation RelationByType(RelationType aType) const = 0;
 
   // Methods that interact with content.
 

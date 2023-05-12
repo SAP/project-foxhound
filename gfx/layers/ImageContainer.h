@@ -108,6 +108,9 @@ class Image {
     return gfx::IntRect(GetOrigin().x, GetOrigin().y, GetSize().width,
                         GetSize().height);
   }
+  virtual gfx::ColorDepth GetColorDepth() const {
+    return gfx::ColorDepth::COLOR_8;
+  }
 
   ImageBackendData* GetBackendData(LayersBackend aBackend) {
     return mBackendData[aBackend].get();
@@ -747,13 +750,6 @@ class PlanarYCbCrImage : public Image {
   bool CreateEmptyBuffer(const Data& aData) {
     return CreateEmptyBuffer(aData, aData.YDataSize(), aData.CbCrDataSize());
   }
-
-  /**
-   * Ask this Image to not convert YUV to RGB during SetData, and make
-   * the original data available through GetData. This is optional,
-   * and not all PlanarYCbCrImages will support it.
-   */
-  virtual void SetDelayedConversion(bool aDelayed) {}
 
   /**
    * Grab the original YUV data. This is optional.

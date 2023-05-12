@@ -489,6 +489,26 @@ void Element::SetShadowRoot(ShadowRoot* aShadowRoot) {
   slots->mShadowRoot = aShadowRoot;
 }
 
+void Element::SetLastRememberedBSize(float aBSize) {
+  ExtendedDOMSlots()->mLastRememberedBSize = Some(aBSize);
+}
+
+void Element::SetLastRememberedISize(float aISize) {
+  ExtendedDOMSlots()->mLastRememberedISize = Some(aISize);
+}
+
+void Element::RemoveLastRememberedBSize() {
+  if (nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
+    slots->mLastRememberedBSize.reset();
+  }
+}
+
+void Element::RemoveLastRememberedISize() {
+  if (nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
+    slots->mLastRememberedISize.reset();
+  }
+}
+
 void Element::Blur(mozilla::ErrorResult& aError) {
   if (!ShouldBlur(this)) {
     return;
@@ -2022,6 +2042,15 @@ void Element::UnbindFromTree(bool aNullParent) {
         nsContentUtils::UnregisterUnresolvedElement(this);
       }
     }
+
+    if (HasLastRememberedBSize() || HasLastRememberedISize()) {
+      // Need to remove the last remembered size at the next ResizeObserver
+      // opportunity, so observe the element. But if already observed, we still
+      // want the callback to be invoked even if the size was already 0x0, so
+      // unobserve it first.
+      document->UnobserveForLastRememberedSize(*this);
+      document->ObserveForLastRememberedSize(*this);
+    }
   }
 
   // This has to be here, rather than in nsGenericHTMLElement::UnbindFromTree,
@@ -3216,11 +3245,21 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
           mouseEvent->mButton == MouseButton::eMiddle;
 
       if (mouseEvent->mButton == MouseButton::ePrimary) {
+        // For avoiding focus popup opened by clicking this link to get blurred,
+        // we need this to get focused now.  However, if the mousedown occurs
+        // in editable element in this link, we should not do this because its
+        // editing host will get focus.
         if (IsInComposedDoc()) {
-          if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
-            RefPtr<Element> kungFuDeathGrip(this);
-            fm->SetFocus(kungFuDeathGrip, nsIFocusManager::FLAG_BYMOUSE |
-                                              nsIFocusManager::FLAG_NOSCROLL);
+          Element* targetElement = Element::FromEventTargetOrNull(
+              aVisitor.mEvent->GetDOMEventTarget());
+          if (targetElement && targetElement->IsInclusiveDescendantOf(this) &&
+              (!targetElement->IsEditable() ||
+               targetElement->GetEditingHost() == this)) {
+            if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
+              RefPtr<Element> kungFuDeathGrip(this);
+              fm->SetFocus(kungFuDeathGrip, nsIFocusManager::FLAG_BYMOUSE |
+                                                nsIFocusManager::FLAG_NOSCROLL);
+            }
           }
         }
 
@@ -4808,20 +4847,28 @@ void Element::SetHTML(const nsAString& aInnerHTML,
 
     int32_t oldChildCount = static_cast<int32_t>(target->GetChildCount());
 
-    if (!aOptions.IsAnyMemberPresent() || !aOptions.mSanitizer.WasPassed()) {
-      SanitizerConfig options;
-      nsCOMPtr<nsIGlobalObject> ownerGlobal = GetOwnerGlobal();
-      if (!ownerGlobal) {
-        aError.Throw(NS_ERROR_FAILURE);
+    RefPtr<Sanitizer> sanitizer;
+    if (!aOptions.mSanitizer.WasPassed()) {
+      nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+      if (!global) {
+        aError.ThrowInvalidStateError("Missing owner global.");
         return;
       }
-      RefPtr<Sanitizer> sanitizer = new Sanitizer(ownerGlobal, options);
-      sanitizer->SanitizeFragment(fragment, aError);
+      sanitizer = new Sanitizer(global, {});
     } else {
-      aOptions.mSanitizer.Value().SanitizeFragment(fragment, aError);
+      sanitizer = &aOptions.mSanitizer.Value();
+    }
+
+    sanitizer->SanitizeFragment(fragment, aError);
+    if (aError.Failed()) {
+      return;
     }
 
     target->AppendChild(*fragment, aError);
+    if (aError.Failed()) {
+      return;
+    }
+
     mb.NodesAdded();
     nsContentUtils::FireMutationEventsForDirectParsing(doc, target,
                                                        oldChildCount);

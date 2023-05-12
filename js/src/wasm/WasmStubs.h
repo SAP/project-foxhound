@@ -60,7 +60,6 @@ class ABIResult {
       case ValType::F64:
         MOZ_ASSERT(loc_ == Location::Fpr);
         break;
-      case ValType::Rtt:
       case ValType::Ref:
         MOZ_ASSERT(loc_ == Location::Gpr);
         break;
@@ -262,6 +261,7 @@ extern bool GenerateStubs(const ModuleEnvironment& env,
 
 extern bool GenerateEntryStubs(jit::MacroAssembler& masm,
                                size_t funcExportIndex, const FuncExport& fe,
+                               const FuncType& funcType,
                                const Maybe<jit::ImmPtr>& callee, bool isAsmJS,
                                CodeRangeVector* codeRanges);
 

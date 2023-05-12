@@ -2211,6 +2211,7 @@ Result<bool, nsresult> nsGenericHTMLElement::PerformAccesskey(
 
   if (aKeyCausesActivation) {
     // Click on it if the users prefs indicate to do so.
+    AutoHandlingUserInputStatePusher userInputStatePusher(aIsTrustedEvent);
     AutoPopupStatePusher popupStatePusher(
         aIsTrustedEvent ? PopupBlocker::openAllowed : PopupBlocker::openAbused);
     DispatchSimulatedClick(this, aIsTrustedEvent, presContext);

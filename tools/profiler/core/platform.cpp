@@ -357,7 +357,7 @@ static uint32_t AvailableFeatures() {
 
 // Default features common to all contexts (even if not available).
 static constexpr uint32_t DefaultFeatures() {
-  return ProfilerFeature::Java | ProfilerFeature::JS | ProfilerFeature::Leaf |
+  return ProfilerFeature::Java | ProfilerFeature::JS |
          ProfilerFeature::StackWalk | ProfilerFeature::CPUUtilization |
          ProfilerFeature::Screenshots | ProfilerFeature::ProcessCPU;
 }
@@ -368,6 +368,19 @@ static constexpr uint32_t StartupExtraDefaultFeatures() {
   // Enable file I/Os by default for startup profiles as startup is heavy on
   // I/O operations.
   return ProfilerFeature::FileIOAll | ProfilerFeature::IPCMessages;
+}
+
+Json::String ToCompactString(const Json::Value& aJsonValue) {
+  Json::StreamWriterBuilder builder;
+  // No indentations, and no newlines.
+  builder["indentation"] = "";
+  // This removes spaces after colons.
+  builder["enableYAMLCompatibility"] = false;
+  // Only 6 digits after the decimal point; timestamps in ms have ns precision.
+  builder["precision"] = 6;
+  builder["precisionType"] = "decimal";
+
+  return Json::writeString(builder, aJsonValue);
 }
 
 /* static */ mozilla::baseprofiler::detail::BaseProfilerMutex
@@ -1031,7 +1044,7 @@ class ActivePS {
     }
 
     {
-      aWriter.StartArrayProperty("features", aWriter.SingleLineStyle);
+      aWriter.StartArrayProperty("features");
 #define WRITE_ACTIVE_FEATURES(n_, str_, Name_, desc_)    \
   if (profiler_feature_active(ProfilerFeature::Name_)) { \
     aWriter.StringElement(str_);                         \
@@ -1042,7 +1055,7 @@ class ActivePS {
       aWriter.EndArray();
     }
     {
-      aWriter.StartArrayProperty("threads", aWriter.SingleLineStyle);
+      aWriter.StartArrayProperty("threads");
       for (const auto& filter : sInstance->mFilters) {
         aWriter.StringElement(filter);
       }
@@ -1367,13 +1380,13 @@ class ActivePS {
     return std::move(sInstance->mBaseProfileThreads);
   }
 
-  static void AddExitProfile(PSLockRef aLock, const nsCString& aExitProfile) {
+  static void AddExitProfile(PSLockRef aLock, const nsACString& aExitProfile) {
     MOZ_ASSERT(sInstance);
 
     ClearExpiredExitProfiles(aLock);
 
-    MOZ_RELEASE_ASSERT(sInstance->mExitProfiles.append(
-        ExitProfile{aExitProfile, sInstance->mProfileBuffer.BufferRangeEnd()}));
+    MOZ_RELEASE_ASSERT(sInstance->mExitProfiles.append(ExitProfile{
+        nsCString(aExitProfile), sInstance->mProfileBuffer.BufferRangeEnd()}));
   }
 
   static Vector<nsCString> MoveExitProfiles(PSLockRef aLock) {
@@ -2496,8 +2509,7 @@ static inline void DoSharedSample(
                 collector, aJsFrames, jsFramesCount);
 
     // We can't walk the whole native stack, but we can record the top frame.
-    if (ProfilerFeature::HasLeaf(aFeatures) &&
-        aCaptureOptions == StackCaptureOptions::Full) {
+    if (aCaptureOptions == StackCaptureOptions::Full) {
       aBuffer.AddEntry(ProfileBufferEntry::NativeLeafAddr((void*)aRegs.mPC));
     }
   }
@@ -2920,7 +2932,7 @@ static void StreamMetaJSCustomObject(
         ExtensionPolicyService::GetSingleton().GetAll(exts);
 
         for (auto& ext : exts) {
-          aWriter.StartArrayElement(JSONWriter::SingleLineStyle);
+          aWriter.StartArrayElement();
 
           nsAutoString id;
           ext->GetId(id);
@@ -3343,7 +3355,7 @@ static void locked_profiler_stream_json_for_this_process(
     {
       nsAutoCString pid;
       pid.AppendInt(int64_t(profiler_current_process_id().ToNumber()));
-      Json::String logString = aProfilingLogObject.toStyledString();
+      Json::String logString = ToCompactString(aProfilingLogObject);
       aWriter.SplicedJSONProperty(pid, logString);
     }
     aWriter.EndObject();
@@ -5350,27 +5362,6 @@ bool profiler_get_profile_json(
           99.9_pc, "profiler_get_profile_json: WriteProfileToJSONWriter done"));
 }
 
-void profiler_get_profile_json_into_lazily_allocated_buffer(
-    const std::function<char*(size_t)>& aAllocator, double aSinceTime,
-    bool aIsShuttingDown, mozilla::ProgressLogger aProgressLogger) {
-  LOG("profiler_get_profile_json_into_lazily_allocated_buffer");
-
-  SpliceableChunkedJSONWriter b;
-  if (!profiler_get_profile_json(
-          b, aSinceTime, aIsShuttingDown,
-          aProgressLogger.CreateSubLoggerFromTo(
-              1_pc,
-              "profiler_get_profile_json_into_lazily_allocated_buffer: "
-              "profiler_get_profile_json started",
-              98_pc,
-              "profiler_get_profile_json_into_lazily_allocated_buffer: "
-              "profiler_get_profile_json done"))) {
-    return;
-  }
-
-  b.ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(aAllocator);
-}
-
 void profiler_get_start_params(int* aCapacity, Maybe<double>* aDuration,
                                double* aInterval, uint32_t* aFeatures,
                                Vector<const char*>* aFilters,
@@ -5476,7 +5467,7 @@ void GetProfilerEnvVarsForChildProcess(
 
 }  // namespace mozilla
 
-void profiler_received_exit_profile(const nsCString& aExitProfile) {
+void profiler_received_exit_profile(const nsACString& aExitProfile) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   MOZ_RELEASE_ASSERT(CorePS::Exists());
   PSAutoLock lock;
@@ -5507,7 +5498,8 @@ static void locked_profiler_save_profile_to_file(
   std::ofstream stream;
   stream.open(aFilename);
   if (stream.is_open()) {
-    SpliceableJSONWriter w(MakeUnique<OStreamJSONWriteFunc>(stream));
+    OStreamJSONWriteFunc sw(stream);
+    SpliceableJSONWriter w(sw);
     w.Start();
     {
       locked_profiler_stream_json_for_this_process(
@@ -6886,9 +6878,7 @@ static void profiler_suspend_and_sample_thread(
       MergeStacks(aFeatures, !aLockIfAsynchronousSampling, aThreadData, aRegs,
                   nativeStack, aCollector, aJsFrames, jsFramesCount);
 
-      if (ProfilerFeature::HasLeaf(aFeatures)) {
-        aCollector.CollectNativeLeafAddr((void*)aRegs.mPC);
-      }
+      aCollector.CollectNativeLeafAddr((void*)aRegs.mPC);
     }
   };
 

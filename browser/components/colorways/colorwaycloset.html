@@ -3,7 +3,7 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <!DOCTYPE html>
-<html>
+<html style="width: 70em; height: 40em;">
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
@@ -14,17 +14,18 @@
   <link rel="stylesheet" type="text/css"
         href="chrome://browser/content/colorways/colorwaycloset.css">
   <link rel="localization" href="branding/brand.ftl">
+  <link rel="localization" href="browser/branding/brandings.ftl">
   <link rel="localization" href="browser/colorwaycloset.ftl">
   <link rel="localization" href="browser/colorways.ftl">
-  <script src="chrome://browser/content/colorways/colorwaycloset.js" defer="async"></script>
+  <script src="chrome://browser/content/colorways/colorwaycloset.js" defer></script>
 </head>
 <body>
   <header>
     <h1 id="collection-title"></h1>
     <span id="collection-expiry-date"><span></span></span>
   </header>
-  <figure>
-    <img id="colorway-figure">
+  <figure role="presentation">
+    <img id="colorway-figure" role="presentation">
   </figure>
   <main id="colorway-customization-panel">
     <fieldset id="colorway-selector"></fieldset>

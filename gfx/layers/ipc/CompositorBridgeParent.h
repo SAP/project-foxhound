@@ -623,7 +623,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   void PauseComposition();
   void ResumeComposition();
   void ResumeCompositionAndResize(int x, int y, int width, int height);
-  void Invalidate();
   bool IsPaused() { return mPaused; }
 
  protected:
@@ -675,7 +674,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   static bool sStable;
   static uint32_t sFramesComposited;
 
-  RefPtr<Compositor> mCompositor;
   RefPtr<AsyncImagePipelineManager> mAsyncImageManager;
   RefPtr<WebRenderBridgeParent> mWrBridge;
   widget::CompositorWidget* mWidget;
@@ -696,9 +694,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   gfx::IntSize mEGLSurfaceSize;
 
   CompositorOptions mOptions;
-
-  mozilla::Monitor mPauseCompositionMonitor MOZ_UNANNOTATED;
-  mozilla::Monitor mResumeCompositionMonitor MOZ_UNANNOTATED;
 
   uint64_t mCompositorBridgeID;
   LayersId mRootLayerTreeID;

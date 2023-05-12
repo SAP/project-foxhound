@@ -10,11 +10,12 @@ ecdsa==0.15
 esprima==4.0.1
 fluent.migrate==0.11
 fluent.syntax==0.18.1
-glean_parser==6.1.1
+glean_parser==6.1.2
 # Pin importlib-metadata to a version compatible with poetry
 importlib-metadata==1.7.0
 jsmin==2.1.0
 json-e==2.7.0
+looseversion==1.0.1
 mozilla-version==0.3.4
 packaging==20.9
 pathspec==0.9.0
@@ -37,7 +38,7 @@ setuptools==51.2.0
 six==1.13.0
 slugid==2.0.0
 taskcluster==44.2.2
-taskcluster-taskgraph==1.7.1
+taskcluster-taskgraph==2.0.0
 taskcluster-urls==13.0.1
 tqdm==4.62.3
 urllib3==1.26

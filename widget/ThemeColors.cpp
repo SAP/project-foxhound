@@ -6,6 +6,7 @@
 #include "ThemeColors.h"
 
 #include "mozilla/RelativeLuminanceUtils.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "ThemeDrawing.h"
 #include "nsNativeTheme.h"
@@ -180,7 +181,8 @@ ColorScheme ThemeColors::ColorSchemeForWidget(const nsIFrame* aFrame,
   if (StaticPrefs::widget_disable_dark_scrollbar()) {
     return ColorScheme::Light;
   }
-  return nsNativeTheme::IsDarkBackground(const_cast<nsIFrame*>(aFrame))
+  return nsNativeTheme::IsDarkBackgroundForScrollbar(
+             const_cast<nsIFrame*>(aFrame))
              ? ColorScheme::Dark
              : ColorScheme::Light;
 }

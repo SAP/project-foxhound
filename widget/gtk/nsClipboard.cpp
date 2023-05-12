@@ -585,6 +585,17 @@ nsClipboard::GetData(nsITransferable* aTransferable, int32_t aWhichClipboard) {
   return NS_OK;
 }
 
+RefPtr<GenericPromise> nsClipboard::AsyncGetData(nsITransferable* aTransferable,
+                                                 int32_t aWhichClipboard) {
+  // XXX we should read the clipboard data asynchronously instead, bug 1778201.
+  nsresult rv = GetData(aTransferable, aWhichClipboard);
+  if (NS_FAILED(rv)) {
+    return GenericPromise::CreateAndReject(rv, __func__);
+  }
+
+  return GenericPromise::CreateAndResolve(true, __func__);
+}
+
 NS_IMETHODIMP
 nsClipboard::EmptyClipboard(int32_t aWhichClipboard) {
   LOGCLIP("nsClipboard::EmptyClipboard (%s)\n",
@@ -713,6 +724,24 @@ nsClipboard::HasDataMatchingFlavors(const nsTArray<nsCString>& aFlavorList,
 #endif
 
   return NS_OK;
+}
+
+RefPtr<DataFlavorsPromise> nsClipboard::AsyncHasDataMatchingFlavors(
+    const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) {
+  LOGCLIP("nsClipboard::AsyncHasDataMatchingFlavors (%s)\n",
+          aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard");
+
+  nsTArray<nsCString> results;
+  for (const auto& flavor : aFlavorList) {
+    bool hasMatchingFlavor = false;
+    nsresult rv = HasDataMatchingFlavors(AutoTArray<nsCString, 1>{flavor},
+                                         aWhichClipboard, &hasMatchingFlavor);
+    if (NS_SUCCEEDED(rv) && hasMatchingFlavor) {
+      results.AppendElement(flavor);
+    }
+  }
+
+  return DataFlavorsPromise::CreateAndResolve(std::move(results), __func__);
 }
 
 NS_IMETHODIMP

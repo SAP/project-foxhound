@@ -1297,13 +1297,13 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvSetDocumentDomain(
     }
   }
 
-  if (!Document::IsValidDomain(uri, aDomain)) {
+  if (!aDomain || !Document::IsValidDomain(uri, aDomain)) {
     // Error: illegal domain
     return IPC_FAIL(
         this, "Setting domain that's not a suffix of existing domain value.");
   }
 
-  if (GetBrowsingContext()->CrossOriginIsolated()) {
+  if (Group()->IsPotentiallyCrossOriginIsolated()) {
     return IPC_FAIL(this, "Setting domain in a cross-origin isolated BC.");
   }
 
@@ -1453,8 +1453,8 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
   WindowContext::Discard();
 
   // Report content blocking log when destroyed.
-  // There shouldn't have any content blocking log when a documnet is loaded in
-  // the parent process(See NotifyContentBlockingeEvent), so we could skip
+  // There shouldn't have any content blocking log when a document is loaded in
+  // the parent process(See NotifyContentBlockingEvent), so we could skip
   // reporting log when it is in-process.
   if (!IsInProcess()) {
     RefPtr<BrowserParent> browserParent =
@@ -1468,6 +1468,7 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
         if (mDocumentURI && (net::SchemeIsHTTP(mDocumentURI) ||
                              net::SchemeIsHTTPS(mDocumentURI))) {
           GetContentBlockingLog()->ReportOrigins();
+          GetContentBlockingLog()->ReportEmailTrackingLog(DocumentPrincipal());
         }
       }
     }

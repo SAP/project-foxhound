@@ -635,12 +635,21 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
 
     if (aClearStyle) {
       // pasting does not inherit local inline styles
-      EditResult result = mHTMLEditor.ClearStyleAt(
-          EditorDOMPoint(mHTMLEditor.SelectionRef().AnchorRef()), nullptr,
-          nullptr, SpecifiedStyle::Preserve);
-      if (result.Failed()) {
+      Result<EditorDOMPoint, nsresult> pointToPutCaretOrError =
+          mHTMLEditor.ClearStyleAt(
+              EditorDOMPoint(mHTMLEditor.SelectionRef().AnchorRef()), nullptr,
+              nullptr, SpecifiedStyle::Preserve);
+      if (MOZ_UNLIKELY(pointToPutCaretOrError.isErr())) {
         NS_WARNING("HTMLEditor::ClearStyleAt() failed");
-        return result.Rv();
+        return pointToPutCaretOrError.unwrapErr();
+      }
+      if (pointToPutCaretOrError.inspect().IsSet()) {
+        nsresult rv =
+            mHTMLEditor.CollapseSelectionTo(pointToPutCaretOrError.unwrap());
+        if (NS_FAILED(rv)) {
+          NS_WARNING("EditorBase::CollapseSelectionTo() failed");
+          return rv;
+        }
       }
     }
   } else {
@@ -742,7 +751,7 @@ nsresult HTMLEditor::HTMLWithContextInserter::Run(
   if (pointToInsert.IsInTextNode()) {
     const SplitNodeResult splitNodeResult =
         mHTMLEditor.SplitNodeDeepWithTransaction(
-            MOZ_KnownLive(*pointToInsert.GetContainerAsContent()),
+            MOZ_KnownLive(*pointToInsert.ContainerAs<nsIContent>()),
             pointToInsert, SplitAtEdges::eAllowToCreateEmptyContainer);
     if (splitNodeResult.isErr()) {
       NS_WARNING("HTMLEditor::SplitNodeDeepWithTransaction() failed");
@@ -835,7 +844,7 @@ HTMLEditor::HTMLWithContextInserter::InsertContents(
   const RefPtr<const Element> maybeNonEditableBlockElement =
       pointToInsert.IsInContentNode()
           ? HTMLEditUtils::GetInclusiveAncestorElement(
-                *pointToInsert.ContainerAsContent(),
+                *pointToInsert.ContainerAs<nsIContent>(),
                 HTMLEditUtils::ClosestBlockElement)
           : nullptr;
 
@@ -1449,14 +1458,14 @@ void RemoveFragComments(nsCString& aStr) {
   // remove the StartFragment/EndFragment comments from the str, if present
   int32_t startCommentIndx = aStr.Find("<!--StartFragment");
   if (startCommentIndx >= 0) {
-    int32_t startCommentEnd = aStr.Find("-->", false, startCommentIndx);
+    int32_t startCommentEnd = aStr.Find("-->", startCommentIndx);
     if (startCommentEnd > startCommentIndx) {
       aStr.Cut(startCommentIndx, (startCommentEnd + 3) - startCommentIndx);
     }
   }
   int32_t endCommentIndx = aStr.Find("<!--EndFragment");
   if (endCommentIndx >= 0) {
-    int32_t endCommentEnd = aStr.Find("-->", false, endCommentIndx);
+    int32_t endCommentEnd = aStr.Find("-->", endCommentIndx);
     if (endCommentEnd > endCommentIndx) {
       aStr.Cut(endCommentIndx, (endCommentEnd + 3) - endCommentIndx);
     }

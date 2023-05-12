@@ -154,9 +154,9 @@ ia2AccessibleText::get_offsetAtPoint(long aX, long aY,
           ? nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE
           : nsIAccessibleCoordinateType::COORDTYPE_PARENT_RELATIVE;
 
-  auto [textAcc, hr] = LocalTextAcc();
+  HyperTextAccessibleBase* textAcc = TextAcc();
   if (!textAcc) {
-    return hr;
+    return CO_E_OBJNOTCONNECTED;
   }
 
   *aOffset = textAcc->OffsetAtPoint(aX, aY, geckoCoordType);
@@ -468,7 +468,8 @@ void ia2AccessibleText::InitTextChangeData() {
 }
 
 void ia2AccessibleText::UpdateTextChangeData(HyperTextAccessibleBase* aAcc,
-                                             bool aInsert, const nsString& aStr,
+                                             bool aInsert,
+                                             const nsAString& aStr,
                                              int32_t aStart, uint32_t aLen) {
   if (!sLastTextChangeString) sLastTextChangeString = new nsString();
 

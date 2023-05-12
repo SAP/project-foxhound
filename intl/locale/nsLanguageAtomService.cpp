@@ -195,6 +195,9 @@ nsStaticAtom* nsLanguageAtomService::GetUncachedLanguageGroup(
       // If so, fix it up and re-try parsing.
       if (langStr.Contains('_')) {
         langStr.ReplaceChar('_', '-');
+
+        // Throw away the partially parsed locale and re-start parsing.
+        loc = {};
         result = LocaleParser::TryParse(langStr, loc);
       }
     }
@@ -221,7 +224,7 @@ nsStaticAtom* nsLanguageAtomService::GetUncachedLanguageGroup(
       if (BinarySearchIf(
               kScriptLangGroup, 0, ArrayLength(kScriptLangGroup),
               [script](const auto& entry) -> int {
-                return script.Compare(entry.mTag);
+                return Compare(script, nsDependentCString(entry.mTag));
               },
               &foundIndex)) {
         return kScriptLangGroup[foundIndex].mAtom;

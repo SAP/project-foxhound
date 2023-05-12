@@ -2247,18 +2247,27 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
 #ifdef NIGHTLY_BUILD
   if (key == JSProto_Array &&
       !cx->realm()->creationOptions().getArrayGroupingEnabled() &&
-      (id == NameToId(cx->names().groupBy) ||
-       id == NameToId(cx->names().groupByToMap))) {
+      (id == NameToId(cx->names().group) ||
+       id == NameToId(cx->names().groupToMap))) {
     return true;
   }
 #endif
 
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  if (key == JSProto_Array && !cx->options().changeArrayByCopy() &&
+  if (key == JSProto_Array &&
+      !cx->realm()->creationOptions().getChangeArrayByCopyEnabled() &&
       (id == NameToId(cx->names().with) ||
        id == NameToId(cx->names().toReversed) ||
        id == NameToId(cx->names().toSorted) ||
        id == NameToId(cx->names().toSpliced))) {
+    return true;
+  }
+
+  if (key == JSProto_TypedArray &&
+      !cx->realm()->creationOptions().getChangeArrayByCopyEnabled() &&
+      (id == NameToId(cx->names().with) ||
+       id == NameToId(cx->names().toReversed) ||
+       id == NameToId(cx->names().toSorted))) {
     return true;
   }
 #endif

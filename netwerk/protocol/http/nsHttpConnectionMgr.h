@@ -209,7 +209,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   ReentrantMonitor mReentrantMonitor{"nsHttpConnectionMgr.mReentrantMonitor"};
   // This is used as a flag that we're shut down, and no new events should be
   // dispatched.
-  nsCOMPtr<nsIEventTarget> mSocketThreadTarget GUARDED_BY(mReentrantMonitor);
+  nsCOMPtr<nsIEventTarget> mSocketThreadTarget
+      MOZ_GUARDED_BY(mReentrantMonitor);
 
   Atomic<bool, mozilla::Relaxed> mIsShuttingDown{false};
 
@@ -275,7 +276,8 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
 
   ConnectionEntry* GetOrCreateConnectionEntry(
       nsHttpConnectionInfo*, bool prohibitWildCard, bool aNoHttp2,
-      bool aNoHttp3, bool* aAvailableForDispatchNow = nullptr);
+      bool aNoHttp3, bool* aIsWildcard,
+      bool* aAvailableForDispatchNow = nullptr);
 
   [[nodiscard]] nsresult MakeNewConnection(
       ConnectionEntry* ent, PendingTransactionInfo* pendingTransInfo);

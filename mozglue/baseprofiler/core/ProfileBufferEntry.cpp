@@ -154,7 +154,7 @@ class MOZ_RAII AutoArraySchemaWriter {
  public:
   explicit AutoArraySchemaWriter(SpliceableJSONWriter& aWriter)
       : mJSONWriter(aWriter), mNextFreeIndex(0) {
-    mJSONWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
+    mJSONWriter.StartArrayElement();
   }
 
   ~AutoArraySchemaWriter() { mJSONWriter.EndArray(); }
@@ -320,15 +320,6 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
     writer.IntElement(SUBCATEGORY, info.mSubcategoryIndex);
   }
 }
-
-struct CStringWriteFunc : public JSONWriteFunc {
-  std::string& mBuffer;  // The struct must not outlive this buffer
-  explicit CStringWriteFunc(std::string& aBuffer) : mBuffer(aBuffer) {}
-
-  void Write(const Span<const char>& aStr) override {
-    mBuffer.append(aStr.data(), aStr.size());
-  }
-};
 
 struct ProfileSample {
   uint32_t mStack;

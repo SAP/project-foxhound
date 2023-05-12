@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/process-script */
+
 "use strict";
 
 /**
@@ -44,11 +46,11 @@ class ContentProcessStartup {
     }
   }
 
-  destroy() {
+  destroy(options) {
     this.removeListeners();
 
     for (const [, connectionInfo] of this._connections) {
-      connectionInfo.connection.close();
+      connectionInfo.connection.close(options);
     }
     this._connections.clear();
   }
@@ -131,7 +133,7 @@ class ContentProcessStartup {
         );
         break;
       case "debug:destroy-process-script":
-        this.destroy();
+        this.destroy(msg.data.options);
         break;
       default:
         throw new Error(`Unsupported message name ${msg.name}`);

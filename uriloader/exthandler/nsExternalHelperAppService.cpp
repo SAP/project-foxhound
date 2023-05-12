@@ -314,7 +314,7 @@ static nsresult GetDownloadDirectory(nsIFile** _directory,
       nsAutoString userDir;
       userDir.AssignLiteral("mozilla_");
       userDir.AppendASCII(userName);
-      userDir.ReplaceChar(FILE_PATH_SEPARATOR FILE_ILLEGAL_CHARACTERS, '_');
+      userDir.ReplaceChar(u"" FILE_PATH_SEPARATOR FILE_ILLEGAL_CHARACTERS, '_');
 
       int counter = 0;
       bool pathExists;
@@ -545,16 +545,15 @@ static const nsExtraMimeTypeEntry extraMimeEntries[] = {
     {TEXT_CSS, "css", "Style Sheet"},
     {TEXT_VCARD, "vcf,vcard", "Contact Information"},
     {TEXT_CALENDAR, "ics,ical,ifb,icalendar", "iCalendar"},
-    {VIDEO_OGG, "ogv", "Ogg Video"},
-    {VIDEO_OGG, "ogg", "Ogg Video"},
+    {VIDEO_OGG, "ogv,ogg", "Ogg Video"},
     {APPLICATION_OGG, "ogg", "Ogg Video"},
     {AUDIO_OGG, "oga", "Ogg Audio"},
     {AUDIO_OGG, "opus", "Opus Audio"},
     {VIDEO_WEBM, "webm", "Web Media Video"},
     {AUDIO_WEBM, "webm", "Web Media Audio"},
-    {AUDIO_MP3, "mp3", "MPEG Audio"},
+    {AUDIO_MP3, "mp3,mpega,mp2", "MPEG Audio"},
     {VIDEO_MP4, "mp4", "MPEG-4 Video"},
-    {AUDIO_MP4, "m4a", "MPEG-4 Audio"},
+    {AUDIO_MP4, "m4a,m4b", "MPEG-4 Audio"},
     {VIDEO_RAW, "yuv", "Raw YUV Video"},
     {AUDIO_WAV, "wav", "Waveform Audio"},
     {VIDEO_3GPP, "3gpp,3gp", "3GPP Video"},
@@ -773,7 +772,7 @@ NS_IMETHODIMP nsExternalHelperAppService::CreateListener(
   }
 
   nsAutoString extension;
-  int32_t dotidx = fileName.RFind(".");
+  int32_t dotidx = fileName.RFind(u".");
   if (dotidx != -1) {
     extension = Substring(fileName, dotidx + 1);
   }
@@ -3332,7 +3331,7 @@ nsExternalHelperAppService::ValidateFileNameForSaving(
       }
     } else {
       // Determine the current extension for the filename.
-      int32_t dotidx = fileName.RFind(".");
+      int32_t dotidx = fileName.RFind(u".");
       if (dotidx != -1) {
         CopyUTF16toUTF8(Substring(fileName, dotidx + 1), extension);
       }
@@ -3438,7 +3437,7 @@ nsExternalHelperAppService::ValidateFileNameForSaving(
           ModifyExtensionType modify =
               ShouldModifyExtension(mimeInfo, originalExtension);
           if (modify == ModifyExtension_Replace) {
-            int32_t dotidx = fileName.RFind(".");
+            int32_t dotidx = fileName.RFind(u".");
             if (dotidx != -1) {
               // Remove the existing extension and replace it.
               fileName.Truncate(dotidx);
@@ -3471,7 +3470,7 @@ nsExternalHelperAppService::ValidateFileNameForSaving(
 
   // If no filename is present, use a default filename.
   if (!(aFlags & VALIDATE_NO_DEFAULT_FILENAME) &&
-      (fileName.Length() == 0 || fileName.RFind(".") == 0)) {
+      (fileName.Length() == 0 || fileName.RFind(u".") == 0)) {
     nsCOMPtr<nsIStringBundleService> stringService =
         mozilla::components::StringBundle::Service();
     if (stringService) {
@@ -3504,8 +3503,8 @@ void nsExternalHelperAppService::SanitizeFileName(nsAString& aFileName,
   nsAutoString fileName(aFileName);
 
   // Replace known invalid characters.
-  fileName.ReplaceChar(u"" KNOWN_PATH_SEPARATORS, '_');
-  fileName.ReplaceChar(u"" FILE_ILLEGAL_CHARACTERS, ' ');
+  fileName.ReplaceChar(u"" KNOWN_PATH_SEPARATORS, u'_');
+  fileName.ReplaceChar(u"" FILE_ILLEGAL_CHARACTERS, u' ');
   fileName.StripChar(char16_t(0));
 
   const char16_t *startStr, *endStr;
@@ -3635,7 +3634,7 @@ void nsExternalHelperAppService::SanitizeFileName(nsAString& aFileName,
   if (bytesLength > maxBytes && !outFileName.IsEmpty()) {
     // Get the sanitized extension from the filename without the dot.
     nsAutoCString extension;
-    int32_t dotidx = outFileName.RFind(".");
+    int32_t dotidx = outFileName.RFind(u".");
     if (dotidx != -1) {
       extension = NS_ConvertUTF16toUTF8(Substring(outFileName, dotidx + 1));
     }

@@ -125,6 +125,7 @@ class FunctionBox;
   F(WithStmt, BinaryNode)                                        \
   F(ReturnStmt, UnaryNode)                                       \
   F(NewExpr, BinaryNode)                                         \
+  IF_DECORATORS(F(DecoratorList, ListNode))                      \
   /* Delete operations.  These must be sequential. */            \
   F(DeleteNameExpr, UnaryNode)                                   \
   F(DeletePropExpr, UnaryNode)                                   \
@@ -471,6 +472,12 @@ inline bool IsTypeofKind(ParseNodeKind kind) {
  * NewExpr (BinaryNode)
  *   left: ctor expression on the left of the '('
  *   right: Arguments
+ * DecoratorList (ListNode)
+ *   head: list of N nodes, each item is one of:
+ *           * NameNode (DecoratorMemberExpression)
+ *           * CallNode (DecoratorCallExpression)
+ *           * Node (DecoratorParenthesizedExpression)
+ *   count: N > 0
  * DeleteNameExpr, DeletePropExpr, DeleteElemExpr, DeleteExpr (UnaryNode)
  *   kid: expression that's evaluated, then the overall delete evaluates to
  *        true; can't be a kind for a more-specific ParseNodeKind::Delete*
@@ -1597,7 +1604,7 @@ class NumericLiteral : public ParseNode {
   void setDecimalPoint(DecimalPoint d) { decimalPoint_ = d; }
 
   // Return the decimal string representation of this numeric literal.
-  TaggedParserAtomIndex toAtom(JSContext* cx,
+  TaggedParserAtomIndex toAtom(ErrorContext* ec,
                                ParserAtomsTable& parserAtoms) const;
 };
 
@@ -1932,7 +1939,8 @@ class RegExpLiteral : public ParseNode {
       : ParseNode(ParseNodeKind::RegExpExpr, pos), index_(dataIndex) {}
 
   // Create a RegExp object of this RegExp literal.
-  RegExpObject* create(JSContext* cx, ParserAtomsTable& parserAtoms,
+  RegExpObject* create(JSContext* cx, ErrorContext* ec,
+                       ParserAtomsTable& parserAtoms,
                        CompilationAtomCache& atomCache,
                        ExtensibleCompilationStencil& stencil) const;
 
@@ -2197,6 +2205,10 @@ class ClassMethod : public BinaryNode {
   AccessorType accessorType_;
   FunctionNode* initializerIfPrivate_;
 
+#ifdef ENABLE_DECORATORS
+  ListNode* decorators_;
+#endif
+
  public:
   /*
    * Method definitions often keep a name and function body that overlap,
@@ -2204,12 +2216,22 @@ class ClassMethod : public BinaryNode {
    */
   ClassMethod(ParseNodeKind kind, ParseNode* name, ParseNode* body,
               AccessorType accessorType, bool isStatic,
-              FunctionNode* initializerIfPrivate)
+              FunctionNode* initializerIfPrivate
+#ifdef ENABLE_DECORATORS
+              ,
+              ListNode* decorators
+#endif
+              )
       : BinaryNode(kind, TokenPos(name->pn_pos.begin, body->pn_pos.end), name,
                    body),
         isStatic_(isStatic),
         accessorType_(accessorType),
-        initializerIfPrivate_(initializerIfPrivate) {
+        initializerIfPrivate_(initializerIfPrivate)
+#ifdef ENABLE_DECORATORS
+        ,
+        decorators_(decorators)
+#endif
+  {
     MOZ_ASSERT(kind == ParseNodeKind::DefaultConstructor ||
                kind == ParseNodeKind::ClassMethod);
   }
@@ -2230,16 +2252,29 @@ class ClassMethod : public BinaryNode {
   AccessorType accessorType() const { return accessorType_; }
 
   FunctionNode* initializerIfPrivate() const { return initializerIfPrivate_; }
+
+#ifdef ENABLE_DECORATORS
+  ListNode* decorators() const { return decorators_; }
+#endif
 };
 
 class ClassField : public BinaryNode {
   bool isStatic_;
+#ifdef ENABLE_DECORATORS
+  ListNode* decorators_;
+#endif
 
  public:
-  ClassField(ParseNode* name, ParseNode* initializer, bool isStatic)
+  ClassField(ParseNode* name, ParseNode* initializer, bool isStatic
+#ifdef ENABLE_DECORATORS
+             ,
+             ListNode* decorators
+#endif
+             )
       : BinaryNode(ParseNodeKind::ClassField, initializer->pn_pos, name,
                    initializer),
-        isStatic_(isStatic) {}
+        isStatic_(isStatic) {
+  }
 
   static bool test(const ParseNode& node) {
     bool match = node.isKind(ParseNodeKind::ClassField);
@@ -2252,6 +2287,10 @@ class ClassField : public BinaryNode {
   FunctionNode* initializer() const { return &right()->as<FunctionNode>(); }
 
   bool isStatic() const { return isStatic_; }
+
+#ifdef ENABLE_DECORATORS
+  ListNode* decorators() const { return decorators_; }
+#endif
 };
 
 // Hold onto the function generated for a class static block like
@@ -2379,11 +2418,23 @@ class ClassNode : public TernaryNode {
     return &innerScope()->scopeBody()->as<ClassBodyScopeNode>();
   }
 
+#ifdef ENABLE_DECORATORS
+  ListNode* decorators_;
+#endif
+
  public:
   ClassNode(ParseNode* names, ParseNode* heritage,
-            LexicalScopeNode* memberBlock, const TokenPos& pos)
-      : TernaryNode(ParseNodeKind::ClassDecl, names, heritage, memberBlock,
-                    pos) {
+            LexicalScopeNode* memberBlock,
+#ifdef ENABLE_DECORATORS
+            ListNode* decorators,
+#endif
+            const TokenPos& pos)
+      : TernaryNode(ParseNodeKind::ClassDecl, names, heritage, memberBlock, pos)
+#ifdef ENABLE_DECORATORS
+        ,
+        decorators_(decorators)
+#endif
+  {
     MOZ_ASSERT(innerScope()->scopeBody()->is<ClassBodyScopeNode>());
     MOZ_ASSERT_IF(names, names->is<ClassNames>());
   }
@@ -2411,6 +2462,9 @@ class ClassNode : public TernaryNode {
     ClassBodyScopeNode* scope = bodyScope();
     return scope->isEmptyScope() ? nullptr : scope;
   }
+#ifdef ENABLE_DECORATORS
+  ListNode* decorators() const { return decorators_; }
+#endif
 };
 
 #ifdef DEBUG
@@ -2420,13 +2474,13 @@ void DumpParseTree(ParserBase* parser, ParseNode* pn, GenericPrinter& out,
 
 class ParseNodeAllocator {
  public:
-  explicit ParseNodeAllocator(JSContext* cx, LifoAlloc& alloc)
-      : cx(cx), alloc(alloc) {}
+  explicit ParseNodeAllocator(ErrorContext* ec, LifoAlloc& alloc)
+      : ec(ec), alloc(alloc) {}
 
   void* allocNode(size_t size);
 
  private:
-  JSContext* cx;
+  ErrorContext* ec;
   LifoAlloc& alloc;
 };
 

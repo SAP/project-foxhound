@@ -540,7 +540,7 @@
     obj: ObjId
     index: Int32Id
 
-- name: GuardIndexGreaterThanDenseInitLength
+- name: GuardIndexIsNotDenseElement
   shared: true
   transpile: true
   cost_estimate: 1
@@ -1164,6 +1164,30 @@
   args:
     code: Int32Id
 
+- name: StringIndexOfResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringStartsWithResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringEndsWithResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
 - name: StringToLowerCaseResult
   shared: true
   transpile: true
@@ -1695,7 +1719,7 @@
     flags: CallFlagsImm
 
 
-# Meta ops generate no code, but contain data for BaselineInspector.
+# Meta ops generate no code, but contain data for the Warp Transpiler.
 - name: MetaScriptedThisShape
   shared: true
   transpile: true

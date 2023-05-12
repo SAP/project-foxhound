@@ -76,7 +76,7 @@ function checkSelectedIndexAfterResponseTime(expectedIndex) {
   });
 }
 
-let input = $_(1, "field1");
+const input = getFormElementByName(1, "field1");
 
 function doKeyUnprivileged(key) {
   let keyName = "DOM_VK_" + key.toUpperCase();
@@ -138,7 +138,7 @@ function doClickWithMouseEventUnprivileged() {
   input.dispatchEvent(ckEvent);
 }
 
-add_task(async function test_initialize() {
+add_setup(async () => {
   await new Promise(resolve => updateFormHistory([
     { op: "remove" },
     { op: "add", fieldname: "field1", value: "value1" },

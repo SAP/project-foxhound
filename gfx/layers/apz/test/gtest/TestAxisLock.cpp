@@ -12,6 +12,47 @@
 
 #include <cmath>
 
+class APZCAxisLockCompatTester : public APZCTreeManagerTester,
+                                 public testing::WithParamInterface<int> {
+ public:
+  APZCAxisLockCompatTester() : oldAxisLockMode(0) { CreateMockHitTester(); }
+
+  int oldAxisLockMode;
+
+  UniquePtr<ScopedLayerTreeRegistration> registration;
+
+  RefPtr<TestAsyncPanZoomController> apzc;
+
+  void SetUp() {
+    APZCTreeManagerTester::SetUp();
+
+    oldAxisLockMode = Preferences::GetInt("apz.axis_lock.mode");
+
+    Preferences::SetInt("apz.axis_lock.mode", GetParam());
+  }
+
+  void TearDown() {
+    APZCTreeManagerTester::TearDown();
+
+    Preferences::SetInt("apz.axis_lock.mode", oldAxisLockMode);
+  }
+
+  static std::string PrintFromParam(const testing::TestParamInfo<int>& info) {
+    switch (info.param) {
+      case 0:
+        return "FREE";
+      case 1:
+        return "STANDARD";
+      case 2:
+        return "STICKY";
+      case 3:
+        return "DOMINANT_AXIS";
+      default:
+        return "UNKNOWN";
+    }
+  }
+};
+
 class APZCAxisLockTester : public APZCTreeManagerTester {
  public:
   APZCAxisLockTester() { CreateMockHitTester(); }
@@ -407,9 +448,7 @@ TEST_F(APZCAxisLockTester, BreakAxisLockByLockAngle) {
 }
 
 TEST_F(APZCAxisLockTester, TestDominantAxisScrolling) {
-  SCOPED_GFX_PREF_INT("apz.axis_lock.mode", 2);
-  SCOPED_GFX_PREF_FLOAT("apz.axis_lock.lock_angle", M_PI / 4.0f);
-  SCOPED_GFX_PREF_FLOAT("apz.axis_lock.breakout_angle", M_PI / 4.0f);
+  SCOPED_GFX_PREF_INT("apz.axis_lock.mode", 3);
 
   int panY;
   int panX;
@@ -423,7 +462,7 @@ TEST_F(APZCAxisLockTester, TestDominantAxisScrolling) {
 
   // In dominant axis mode, test pan gesture events with varying gesture
   // angles and ensure that we only pan on one axis.
-  for (panX = 0, panY = 50; panY >= 0; panY -= 10, panX += 10) {
+  for (panX = 0, panY = 50; panY >= 0; panY -= 10, panX += 5) {
     // Gesture that should be locked onto one axis
     QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID);
     PanGesture(PanGestureInput::PANGESTURE_START, manager,
@@ -569,3 +608,38 @@ TEST_F(APZCAxisLockTester, TestScrollHandoffAxisLockConflict) {
   EXPECT_EQ(parentFinalOffset.y, 0);
   EXPECT_EQ(parentFinalOffset.x, 0);
 }
+
+// The delta from the initial pan gesture should be reflected in the
+// current offset for all axis locking modes.
+TEST_P(APZCAxisLockCompatTester, TestPanGestureStart) {
+  const char* treeShape = "x";
+  LayerIntRegion layerVisibleRegion[] = {
+      LayerIntRect(0, 0, 100, 100),
+  };
+  CreateScrollData(treeShape, layerVisibleRegion);
+  SetScrollableFrameMetrics(root, ScrollableLayerGuid::START_SCROLL_ID,
+                            CSSRect(0, 0, 500, 500));
+
+  registration = MakeUnique<ScopedLayerTreeRegistration>(LayersId{0}, mcc);
+
+  UpdateHitTestingTree();
+
+  apzc = ApzcOf(root);
+
+  QueueMockHitResult(ScrollableLayerGuid::START_SCROLL_ID);
+  PanGesture(PanGestureInput::PANGESTURE_START, manager, ScreenIntPoint(50, 50),
+             ScreenIntPoint(0, 10), mcc->Time());
+  mcc->AdvanceByMillis(5);
+  apzc->AdvanceAnimationsUntilEnd();
+  ParentLayerPoint currentOffset = apzc->GetCurrentAsyncScrollOffset(
+      AsyncPanZoomController::AsyncTransformConsumer::eForHitTesting);
+
+  EXPECT_EQ(currentOffset.x, 0);
+  EXPECT_EQ(currentOffset.y, 10);
+}
+
+// All APZCAxisLockCompatTester tests should be run for each apz.axis_lock.mode.
+// If another mode is added, the value should be added to this list.
+INSTANTIATE_TEST_SUITE_P(APZCAxisLockCompat, APZCAxisLockCompatTester,
+                         testing::Values(0, 1, 2, 3),
+                         APZCAxisLockCompatTester::PrintFromParam);

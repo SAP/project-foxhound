@@ -19,6 +19,7 @@
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
+#include <cstdarg>
 #ifdef __linux__
 #  include <dlfcn.h>
 #endif
@@ -61,7 +62,7 @@
 #include "js/Proxy.h"
 #include "js/ScriptPrivate.h"
 #include "js/StableStringChars.h"
-#include "js/Stack.h"
+#include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimitMax, JS::GetNativeStackLimit
 #include "js/StreamConsumer.h"
 #include "js/String.h"  // JS::MaxStringLength
 #include "js/Symbol.h"
@@ -75,6 +76,7 @@
 #include "util/StringBuffer.h"
 #include "util/Text.h"
 #include "vm/EnvironmentObject.h"
+#include "vm/ErrorContext.h"
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/Interpreter.h"
@@ -418,20 +420,6 @@ JS_PUBLIC_API JSRuntime* JS_GetRuntime(JSContext* cx) { return cx->runtime(); }
 
 JS_PUBLIC_API JS::ContextOptions& JS::ContextOptionsRef(JSContext* cx) {
   return cx->options();
-}
-
-JS::ContextOptions& JS::ContextOptions::setWasmCranelift(bool flag) {
-#ifdef ENABLE_WASM_CRANELIFT
-  wasmCranelift_ = flag;
-#endif
-  return *this;
-}
-
-JS::ContextOptions& JS::ContextOptions::setWasmSimdWormhole(bool flag) {
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  wasmSimdWormhole_ = flag;
-#endif
-  return *this;
 }
 
 JS::ContextOptions& JS::ContextOptions::setFuzzing(bool flag) {
@@ -1476,37 +1464,29 @@ JS_GetExternalStringCallbacks(JSString* str) {
   return str->asExternal().callbacks();
 }
 
-static void SetNativeStackLimit(JSContext* cx, JS::StackKind kind,
-                                size_t stackSize) {
+static void SetNativeStackSize(JSContext* cx, JS::StackKind kind,
+                               JS::NativeStackSize stackSize) {
 #ifdef __wasi__
   // WASI makes this easy: we build with the "stack-first" wasm-ld option, so
   // the stack grows downward toward zero. Let's set a limit just a bit above
   // this so that we catch an overflow before a Wasm trap occurs.
   cx->nativeStackLimit[kind] = 1024;
-#else  // __wasi__
-#  if JS_STACK_GROWTH_DIRECTION > 0
+#else   // __wasi__
   if (stackSize == 0) {
-    cx->nativeStackLimit[kind] = UINTPTR_MAX;
+    cx->nativeStackLimit[kind] = JS::NativeStackLimitMax;
   } else {
-    MOZ_ASSERT(cx->nativeStackBase() <= size_t(-1) - stackSize);
-    cx->nativeStackLimit[kind] = cx->nativeStackBase() + stackSize - 1;
+    cx->nativeStackLimit[kind] =
+        JS::GetNativeStackLimit(cx->nativeStackBase(), stackSize - 1);
   }
-#  else   // stack grows up
-  if (stackSize == 0) {
-    cx->nativeStackLimit[kind] = 0;
-  } else {
-    MOZ_ASSERT(cx->nativeStackBase() >= stackSize);
-    cx->nativeStackLimit[kind] = cx->nativeStackBase() - (stackSize - 1);
-  }
-#  endif  // stack grows down
-#endif    // !__wasi__
+#endif  // !__wasi__
 }
 
-JS_PUBLIC_API void JS_SetNativeStackQuota(JSContext* cx,
-                                          size_t systemCodeStackSize,
-                                          size_t trustedScriptStackSize,
-                                          size_t untrustedScriptStackSize) {
+JS_PUBLIC_API void JS_SetNativeStackQuota(
+    JSContext* cx, JS::NativeStackSize systemCodeStackSize,
+    JS::NativeStackSize trustedScriptStackSize,
+    JS::NativeStackSize untrustedScriptStackSize) {
   MOZ_ASSERT(!cx->activation());
+  MOZ_ASSERT(cx->isMainThreadContext());
 
   if (!trustedScriptStackSize) {
     trustedScriptStackSize = systemCodeStackSize;
@@ -1520,14 +1500,11 @@ JS_PUBLIC_API void JS_SetNativeStackQuota(JSContext* cx,
     MOZ_ASSERT(untrustedScriptStackSize < trustedScriptStackSize);
   }
 
-  SetNativeStackLimit(cx, JS::StackForSystemCode, systemCodeStackSize);
-  SetNativeStackLimit(cx, JS::StackForTrustedScript, trustedScriptStackSize);
-  SetNativeStackLimit(cx, JS::StackForUntrustedScript,
-                      untrustedScriptStackSize);
+  SetNativeStackSize(cx, JS::StackForSystemCode, systemCodeStackSize);
+  SetNativeStackSize(cx, JS::StackForTrustedScript, trustedScriptStackSize);
+  SetNativeStackSize(cx, JS::StackForUntrustedScript, untrustedScriptStackSize);
 
-  if (cx->isMainThreadContext()) {
-    cx->initJitStackLimit();
-  }
+  cx->initJitStackLimit();
 }
 
 /************************************************************************/
@@ -3688,7 +3665,8 @@ JS_PUBLIC_API bool JS_ExpandErrorArgumentsASCII(JSContext* cx,
 
   AssertHeapIsIdle();
   va_start(ap, reportp);
-  ok = ExpandErrorArgumentsVA(cx, errorCallback, nullptr, errorNumber,
+  MainThreadErrorContext ec(cx);
+  ok = ExpandErrorArgumentsVA(&ec, errorCallback, nullptr, errorNumber,
                               ArgumentsAreASCII, reportp, ap);
   va_end(ap);
   return ok;
@@ -3858,12 +3836,12 @@ JSErrorNotes::JSErrorNotes() : notes_() {}
 JSErrorNotes::~JSErrorNotes() = default;
 
 static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
-    JSContext* cx, const char* filename, unsigned sourceId, unsigned lineno,
+    ErrorContext* ec, const char* filename, unsigned sourceId, unsigned lineno,
     unsigned column, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, ErrorArgumentsType argumentsType, va_list ap) {
   auto note = MakeUnique<JSErrorNotes::Note>();
   if (!note) {
-    ReportOutOfMemory(cx);
+    ReportOutOfMemory(ec);
     return nullptr;
   }
 
@@ -3873,7 +3851,7 @@ static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
   note->lineno = lineno;
   note->column = column;
 
-  if (!ExpandErrorArgumentsVA(cx, errorCallback, userRef, errorNumber, nullptr,
+  if (!ExpandErrorArgumentsVA(ec, errorCallback, userRef, errorNumber, nullptr,
                               argumentsType, note.get(), ap)) {
     return nullptr;
   }
@@ -3881,26 +3859,50 @@ static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
   return note;
 }
 
+bool JSErrorNotes::addNoteVA(ErrorContext* ec, const char* filename,
+                             unsigned sourceId, unsigned lineno,
+                             unsigned column, JSErrorCallback errorCallback,
+                             void* userRef, const unsigned errorNumber,
+                             ErrorArgumentsType argumentsType, va_list ap) {
+  auto note =
+      CreateErrorNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                        userRef, errorNumber, argumentsType, ap);
+
+  if (!note) {
+    return false;
+  }
+  if (!notes_.append(std::move(note))) {
+    ReportOutOfMemory(ec);
+    return false;
+  }
+  return true;
+}
+
 bool JSErrorNotes::addNoteASCII(JSContext* cx, const char* filename,
+                                unsigned sourceId, unsigned lineno,
+                                unsigned column, JSErrorCallback errorCallback,
+                                void* userRef, const unsigned errorNumber,
+                                ...) {
+  MainThreadErrorContext ec(cx);
+  va_list ap;
+  va_start(ap, errorNumber);
+  bool ok = addNoteVA(&ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreASCII, ap);
+  va_end(ap);
+  return ok;
+}
+
+bool JSErrorNotes::addNoteASCII(ErrorContext* ec, const char* filename,
                                 unsigned sourceId, unsigned lineno,
                                 unsigned column, JSErrorCallback errorCallback,
                                 void* userRef, const unsigned errorNumber,
                                 ...) {
   va_list ap;
   va_start(ap, errorNumber);
-  auto note =
-      CreateErrorNoteVA(cx, filename, sourceId, lineno, column, errorCallback,
-                        userRef, errorNumber, ArgumentsAreASCII, ap);
+  bool ok = addNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreASCII, ap);
   va_end(ap);
-
-  if (!note) {
-    return false;
-  }
-  if (!notes_.append(std::move(note))) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
+  return ok;
 }
 
 bool JSErrorNotes::addNoteLatin1(JSContext* cx, const char* filename,
@@ -3908,42 +3910,51 @@ bool JSErrorNotes::addNoteLatin1(JSContext* cx, const char* filename,
                                  unsigned column, JSErrorCallback errorCallback,
                                  void* userRef, const unsigned errorNumber,
                                  ...) {
+  MainThreadErrorContext ec(cx);
   va_list ap;
   va_start(ap, errorNumber);
-  auto note =
-      CreateErrorNoteVA(cx, filename, sourceId, lineno, column, errorCallback,
-                        userRef, errorNumber, ArgumentsAreLatin1, ap);
+  bool ok = addNoteVA(&ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreLatin1, ap);
   va_end(ap);
+  return ok;
+}
 
-  if (!note) {
-    return false;
-  }
-  if (!notes_.append(std::move(note))) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
+bool JSErrorNotes::addNoteLatin1(ErrorContext* ec, const char* filename,
+                                 unsigned sourceId, unsigned lineno,
+                                 unsigned column, JSErrorCallback errorCallback,
+                                 void* userRef, const unsigned errorNumber,
+                                 ...) {
+  va_list ap;
+  va_start(ap, errorNumber);
+  bool ok = addNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreLatin1, ap);
+  va_end(ap);
+  return ok;
 }
 
 bool JSErrorNotes::addNoteUTF8(JSContext* cx, const char* filename,
                                unsigned sourceId, unsigned lineno,
                                unsigned column, JSErrorCallback errorCallback,
                                void* userRef, const unsigned errorNumber, ...) {
+  MainThreadErrorContext ec(cx);
   va_list ap;
   va_start(ap, errorNumber);
-  auto note =
-      CreateErrorNoteVA(cx, filename, sourceId, lineno, column, errorCallback,
-                        userRef, errorNumber, ArgumentsAreUTF8, ap);
+  bool ok = addNoteVA(&ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreUTF8, ap);
   va_end(ap);
+  return ok;
+}
 
-  if (!note) {
-    return false;
-  }
-  if (!notes_.append(std::move(note))) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
+bool JSErrorNotes::addNoteUTF8(ErrorContext* ec, const char* filename,
+                               unsigned sourceId, unsigned lineno,
+                               unsigned column, JSErrorCallback errorCallback,
+                               void* userRef, const unsigned errorNumber, ...) {
+  va_list ap;
+  va_start(ap, errorNumber);
+  bool ok = addNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreUTF8, ap);
+  va_end(ap);
+  return ok;
 }
 
 JS_PUBLIC_API size_t JSErrorNotes::length() { return notes_.length(); }
@@ -4187,13 +4198,7 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
       JS::ContextOptionsRef(cx).setWasmBaseline(!!value);
       break;
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
-#ifdef ENABLE_WASM_CRANELIFT
-      JS::ContextOptionsRef(cx).setWasmCranelift(!!value);
-      JS::ContextOptionsRef(cx).setWasmIon(!value);
-#else
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
-      JS::ContextOptionsRef(cx).setWasmCranelift(!value);
-#endif
       break;
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
@@ -4254,6 +4259,21 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_OFFTHREAD_COMPILATION_ENABLE:
       *valueOut = rt->canUseOffthreadIonCompilation();
       break;
+    case JSJITCOMPILER_SPECTRE_INDEX_MASKING:
+      *valueOut = jit::JitOptions.spectreIndexMasking ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_OBJECT_MITIGATIONS:
+      *valueOut = jit::JitOptions.spectreObjectMitigations ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_STRING_MITIGATIONS:
+      *valueOut = jit::JitOptions.spectreStringMitigations ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_VALUE_MASKING:
+      *valueOut = jit::JitOptions.spectreValueMasking ? 1 : 0;
+      break;
+    case JSJITCOMPILER_SPECTRE_JIT_TO_CXX_CALLS:
+      *valueOut = jit::JitOptions.spectreJitToCxxCalls ? 1 : 0;
+      break;
     case JSJITCOMPILER_WATCHTOWER_MEGAMORPHIC:
       *valueOut = jit::JitOptions.enableWatchtowerMegamorphic ? 1 : 0;
       break;
@@ -4264,11 +4284,7 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
       *valueOut = JS::ContextOptionsRef(cx).wasmBaseline() ? 1 : 0;
       break;
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
-#  ifdef ENABLE_WASM_CRANELIFT
-      *valueOut = JS::ContextOptionsRef(cx).wasmCranelift() ? 1 : 0;
-#  else
       *valueOut = JS::ContextOptionsRef(cx).wasmIon() ? 1 : 0;
-#  endif
       break;
 #  ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
@@ -4282,6 +4298,25 @@ JS_PUBLIC_API bool JS_GetGlobalJitCompilerOption(JSContext* cx,
   *valueOut = 0;
 #endif
   return true;
+}
+
+JS_PUBLIC_API void JS::DisableSpectreMitigationsAfterInit() {
+  // This is used to turn off Spectre mitigations in pre-allocated child
+  // processes used for isolated web content. Assert there's a single runtime
+  // and cancel off-thread compilations, to ensure we're not racing with any
+  // compilations.
+  JSContext* cx = TlsContext.get();
+  MOZ_RELEASE_ASSERT(cx);
+  MOZ_RELEASE_ASSERT(JSRuntime::hasSingleLiveRuntime());
+  MOZ_RELEASE_ASSERT(cx->runtime()->wasmInstances.lock()->empty());
+
+  CancelOffThreadIonCompile(cx->runtime());
+
+  jit::JitOptions.spectreIndexMasking = false;
+  jit::JitOptions.spectreObjectMitigations = false;
+  jit::JitOptions.spectreStringMitigations = false;
+  jit::JitOptions.spectreValueMasking = false;
+  jit::JitOptions.spectreJitToCxxCalls = false;
 }
 
 /************************************************************************/

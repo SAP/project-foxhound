@@ -51,7 +51,7 @@ class ReadableStreamDefaultReader final : public ReadableStreamGenericReader,
 {
  public:
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS_INHERITED(
       ReadableStreamDefaultReader, ReadableStreamGenericReader)
 
  public:
@@ -75,8 +75,7 @@ class ReadableStreamDefaultReader final : public ReadableStreamGenericReader,
   static already_AddRefed<ReadableStreamDefaultReader> Constructor(
       const GlobalObject& aGlobal, ReadableStream& stream, ErrorResult& aRv);
 
-  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> Read(JSContext* aCx,
-                                                    ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> Read(ErrorResult& aRv);
 
   void ReleaseLock(ErrorResult& aRv);
 

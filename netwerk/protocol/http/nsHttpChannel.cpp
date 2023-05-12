@@ -314,6 +314,15 @@ nsHttpChannel::nsHttpChannel() : HttpAsyncAborter<nsHttpChannel>(this) {
 nsHttpChannel::~nsHttpChannel() {
   LOG(("Destroying nsHttpChannel [this=%p]\n", this));
 
+  if (LOG_ENABLED()) {
+    nsCString webExtension;
+    this->GetPropertyAsACString(u"cancelledByExtension"_ns, webExtension);
+    if (!webExtension.IsEmpty()) {
+      LOG(("channel [%p] cancelled by extension [id=%s]", this,
+           webExtension.get()));
+    }
+  }
+
   if (mAuthProvider) {
     DebugOnly<nsresult> rv = mAuthProvider->Disconnect(NS_ERROR_ABORT);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -391,6 +400,9 @@ nsHttpChannel::LogMimeTypeMismatch(const nsACString& aMessageName,
 
 nsresult nsHttpChannel::PrepareToConnect() {
   LOG(("nsHttpChannel::PrepareToConnect [this=%p]\n", this));
+
+  // notify "http-on-modify-request-before-cookies" observers
+  gHttpHandler->OnModifyRequestBeforeCookies(this);
 
   AddCookiesToRequest();
 
@@ -7984,7 +7996,7 @@ nsHttpChannel::GetCacheEntryId(uint64_t* aCacheEntryId) {
 }
 
 NS_IMETHODIMP
-nsHttpChannel::GetCacheTokenFetchCount(int32_t* _retval) {
+nsHttpChannel::GetCacheTokenFetchCount(uint32_t* _retval) {
   NS_ENSURE_ARG_POINTER(_retval);
   nsCOMPtr<nsICacheEntry> cacheEntry =
       mCacheEntry ? mCacheEntry : mAltDataCacheEntry;

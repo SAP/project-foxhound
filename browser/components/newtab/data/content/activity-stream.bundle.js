@@ -103,7 +103,7 @@ const globalImportContext = typeof Window === "undefined" ? BACKGROUND_PROCESS :
 
 const actionTypes = {};
 
-for (const type of ["ABOUT_SPONSORED_TOP_SITES", "ADDONS_INFO_REQUEST", "ADDONS_INFO_RESPONSE", "ARCHIVE_FROM_POCKET", "AS_ROUTER_INITIALIZED", "AS_ROUTER_PREF_CHANGED", "AS_ROUTER_TARGETING_UPDATE", "AS_ROUTER_TELEMETRY_USER_EVENT", "BLOCK_URL", "BOOKMARK_URL", "CLEAR_PREF", "COPY_DOWNLOAD_LINK", "DELETE_BOOKMARK_BY_ID", "DELETE_FROM_POCKET", "DELETE_HISTORY_URL", "DIALOG_CANCEL", "DIALOG_OPEN", "DISABLE_SEARCH", "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE", "DISCOVERY_STREAM_CONFIG_CHANGE", "DISCOVERY_STREAM_CONFIG_RESET", "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS", "DISCOVERY_STREAM_CONFIG_SETUP", "DISCOVERY_STREAM_CONFIG_SET_VALUE", "DISCOVERY_STREAM_DEV_EXPIRE_CACHE", "DISCOVERY_STREAM_DEV_IDLE_DAILY", "DISCOVERY_STREAM_DEV_SYNC_RS", "DISCOVERY_STREAM_DEV_SYSTEM_TICK", "DISCOVERY_STREAM_EXPERIMENT_DATA", "DISCOVERY_STREAM_FEEDS_UPDATE", "DISCOVERY_STREAM_FEED_UPDATE", "DISCOVERY_STREAM_IMPRESSION_STATS", "DISCOVERY_STREAM_LAYOUT_RESET", "DISCOVERY_STREAM_LAYOUT_UPDATE", "DISCOVERY_STREAM_LINK_BLOCKED", "DISCOVERY_STREAM_LOADED_CONTENT", "DISCOVERY_STREAM_PERSONALIZATION_INIT", "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED", "DISCOVERY_STREAM_PERSONALIZATION_TOGGLE", "DISCOVERY_STREAM_POCKET_STATE_INIT", "DISCOVERY_STREAM_POCKET_STATE_SET", "DISCOVERY_STREAM_PREFS_SETUP", "DISCOVERY_STREAM_RECENT_SAVES", "DISCOVERY_STREAM_RETRY_FEED", "DISCOVERY_STREAM_SPOCS_CAPS", "DISCOVERY_STREAM_SPOCS_ENDPOINT", "DISCOVERY_STREAM_SPOCS_PLACEMENTS", "DISCOVERY_STREAM_SPOCS_UPDATE", "DISCOVERY_STREAM_SPOC_BLOCKED", "DISCOVERY_STREAM_SPOC_IMPRESSION", "DOWNLOAD_CHANGED", "FAKE_FOCUS_SEARCH", "FILL_SEARCH_TERM", "HANDOFF_SEARCH_TO_AWESOMEBAR", "HIDE_PRIVACY_INFO", "INIT", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_REHYDRATED", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_DOWNLOAD_FILE", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "OPEN_WEBEXT_SETTINGS", "PARTNER_LINK_ATTRIBUTION", "PLACES_BOOKMARKS_REMOVED", "PLACES_BOOKMARK_ADDED", "PLACES_HISTORY_CLEARED", "PLACES_LINKS_CHANGED", "PLACES_LINKS_DELETED", "PLACES_LINK_BLOCKED", "PLACES_SAVED_TO_POCKET", "POCKET_CTA", "POCKET_LINK_DELETED_OR_ARCHIVED", "POCKET_LOGGED_IN", "POCKET_WAITING_FOR_SPOC", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "PREVIEW_REQUEST", "PREVIEW_REQUEST_CANCEL", "PREVIEW_RESPONSE", "REMOVE_DOWNLOAD_FILE", "RICH_ICON_MISSING", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_MOVE", "SECTION_OPTIONS_CHANGED", "SECTION_REGISTER", "SECTION_UPDATE", "SECTION_UPDATE_CARD", "SETTINGS_CLOSE", "SETTINGS_OPEN", "SET_PREF", "SHOW_DOWNLOAD_FILE", "SHOW_FIREFOX_ACCOUNTS", "SHOW_PRIVACY_INFO", "SHOW_SEARCH", "SKIPPED_SIGNIN", "SNIPPETS_BLOCKLIST_CLEARED", "SNIPPETS_BLOCKLIST_UPDATED", "SNIPPETS_DATA", "SNIPPETS_PREVIEW_MODE", "SNIPPETS_RESET", "SNIPPET_BLOCKED", "SUBMIT_EMAIL", "SUBMIT_SIGNIN", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_USER_EVENT", "TOP_SITES_CANCEL_EDIT", "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_EDIT", "TOP_SITES_IMPRESSION_STATS", "TOP_SITES_INSERT", "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_PIN", "TOP_SITES_PREFS_UPDATED", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "TOTAL_BOOKMARKS_REQUEST", "TOTAL_BOOKMARKS_RESPONSE", "UNINIT", "UPDATE_PINNED_SEARCH_SHORTCUTS", "UPDATE_SEARCH_SHORTCUTS", "UPDATE_SECTION_PREFS", "WEBEXT_CLICK", "WEBEXT_DISMISS"]) {
+for (const type of ["ABOUT_SPONSORED_TOP_SITES", "ADDONS_INFO_REQUEST", "ADDONS_INFO_RESPONSE", "ARCHIVE_FROM_POCKET", "AS_ROUTER_INITIALIZED", "AS_ROUTER_PREF_CHANGED", "AS_ROUTER_TARGETING_UPDATE", "AS_ROUTER_TELEMETRY_USER_EVENT", "BLOCK_URL", "BOOKMARK_URL", "CLEAR_PREF", "COPY_DOWNLOAD_LINK", "DELETE_BOOKMARK_BY_ID", "DELETE_FROM_POCKET", "DELETE_HISTORY_URL", "DIALOG_CANCEL", "DIALOG_OPEN", "DISABLE_SEARCH", "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE", "DISCOVERY_STREAM_CONFIG_CHANGE", "DISCOVERY_STREAM_CONFIG_RESET", "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS", "DISCOVERY_STREAM_CONFIG_SETUP", "DISCOVERY_STREAM_CONFIG_SET_VALUE", "DISCOVERY_STREAM_DEV_EXPIRE_CACHE", "DISCOVERY_STREAM_DEV_IDLE_DAILY", "DISCOVERY_STREAM_DEV_SYNC_RS", "DISCOVERY_STREAM_DEV_SYSTEM_TICK", "DISCOVERY_STREAM_EXPERIMENT_DATA", "DISCOVERY_STREAM_FEEDS_UPDATE", "DISCOVERY_STREAM_FEED_UPDATE", "DISCOVERY_STREAM_IMPRESSION_STATS", "DISCOVERY_STREAM_LAYOUT_RESET", "DISCOVERY_STREAM_LAYOUT_UPDATE", "DISCOVERY_STREAM_LINK_BLOCKED", "DISCOVERY_STREAM_LOADED_CONTENT", "DISCOVERY_STREAM_PERSONALIZATION_INIT", "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED", "DISCOVERY_STREAM_PERSONALIZATION_TOGGLE", "DISCOVERY_STREAM_POCKET_STATE_INIT", "DISCOVERY_STREAM_POCKET_STATE_SET", "DISCOVERY_STREAM_PREFS_SETUP", "DISCOVERY_STREAM_RECENT_SAVES", "DISCOVERY_STREAM_RETRY_FEED", "DISCOVERY_STREAM_SPOCS_CAPS", "DISCOVERY_STREAM_SPOCS_ENDPOINT", "DISCOVERY_STREAM_SPOCS_PLACEMENTS", "DISCOVERY_STREAM_SPOCS_UPDATE", "DISCOVERY_STREAM_SPOC_BLOCKED", "DISCOVERY_STREAM_SPOC_IMPRESSION", "DISCOVERY_STREAM_USER_EVENT", "DOWNLOAD_CHANGED", "FAKE_FOCUS_SEARCH", "FILL_SEARCH_TERM", "HANDOFF_SEARCH_TO_AWESOMEBAR", "HIDE_PRIVACY_INFO", "INIT", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_REHYDRATED", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_DOWNLOAD_FILE", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "OPEN_WEBEXT_SETTINGS", "PARTNER_LINK_ATTRIBUTION", "PLACES_BOOKMARKS_REMOVED", "PLACES_BOOKMARK_ADDED", "PLACES_HISTORY_CLEARED", "PLACES_LINKS_CHANGED", "PLACES_LINKS_DELETED", "PLACES_LINK_BLOCKED", "PLACES_SAVED_TO_POCKET", "POCKET_CTA", "POCKET_LINK_DELETED_OR_ARCHIVED", "POCKET_LOGGED_IN", "POCKET_WAITING_FOR_SPOC", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "PREVIEW_REQUEST", "PREVIEW_REQUEST_CANCEL", "PREVIEW_RESPONSE", "REMOVE_DOWNLOAD_FILE", "RICH_ICON_MISSING", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_MOVE", "SECTION_OPTIONS_CHANGED", "SECTION_REGISTER", "SECTION_UPDATE", "SECTION_UPDATE_CARD", "SETTINGS_CLOSE", "SETTINGS_OPEN", "SET_PREF", "SHOW_DOWNLOAD_FILE", "SHOW_FIREFOX_ACCOUNTS", "SHOW_PRIVACY_INFO", "SHOW_SEARCH", "SKIPPED_SIGNIN", "SNIPPETS_BLOCKLIST_CLEARED", "SNIPPETS_BLOCKLIST_UPDATED", "SNIPPETS_DATA", "SNIPPETS_PREVIEW_MODE", "SNIPPETS_RESET", "SNIPPET_BLOCKED", "SUBMIT_EMAIL", "SUBMIT_SIGNIN", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_USER_EVENT", "TOP_SITES_CANCEL_EDIT", "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_EDIT", "TOP_SITES_IMPRESSION_STATS", "TOP_SITES_INSERT", "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_PIN", "TOP_SITES_PREFS_UPDATED", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "TOTAL_BOOKMARKS_REQUEST", "TOTAL_BOOKMARKS_RESPONSE", "UNINIT", "UPDATE_PINNED_SEARCH_SHORTCUTS", "UPDATE_SEARCH_SHORTCUTS", "UPDATE_SECTION_PREFS", "WEBEXT_CLICK", "WEBEXT_DISMISS"]) {
   actionTypes[type] = type;
 } // Helper function for creating routed actions between content and main
 // Not intended to be used by consumers
@@ -242,6 +242,21 @@ function UserEvent(data) {
   });
 }
 /**
+ * DiscoveryStreamUserEvent - A telemetry ping indicating a user action from Discovery Stream. This should only
+ *                     be sent from the UI during a user session.
+ *
+ * @param  {object} data Fields to include in the ping (source, etc.)
+ * @return {object} An AlsoToMain action
+ */
+
+
+function DiscoveryStreamUserEvent(data) {
+  return AlsoToMain({
+    type: actionTypes.DISCOVERY_STREAM_USER_EVENT,
+    data
+  });
+}
+/**
  * ASRouterUserEvent - A telemetry ping indicating a user action from AS router. This should only
  *                     be sent from the UI during a user session.
  *
@@ -331,6 +346,7 @@ function WebExtEvent(type, data, importContext = globalImportContext) {
 const actionCreators = {
   BroadcastToContent,
   UserEvent,
+  DiscoveryStreamUserEvent,
   ASRouterUserEvent,
   ImpressionStats,
   AlsoToOneContent,
@@ -6334,7 +6350,8 @@ const LinkMenuOptions = {
       data: {
         referrer: site.referrer,
         typedBonus: site.typedBonus,
-        url: site.url
+        url: site.url,
+        sponsored_tile_id: site.sponsored_tile_id
       }
     }),
     userEvent: "OPEN_NEW_WINDOW"
@@ -6577,7 +6594,8 @@ class _LinkMenu extends (external_React_default()).PureComponent {
       source,
       isPrivateBrowsingEnabled,
       siteInfo,
-      platform
+      platform,
+      userEvent = actionCreators.UserEvent
     } = props; // Handle special case of default site
 
     const propOptions = site.isDefault && !site.searchTopSite && !site.sponsored_position ? DEFAULT_SITE_MENU_OPTIONS : props.options;
@@ -6587,7 +6605,7 @@ class _LinkMenu extends (external_React_default()).PureComponent {
         impression,
         id,
         type,
-        userEvent
+        userEvent: eventName
       } = option;
 
       if (!type && id) {
@@ -6612,13 +6630,13 @@ class _LinkMenu extends (external_React_default()).PureComponent {
 
           props.dispatch(action);
 
-          if (userEvent) {
+          if (eventName) {
             const userEventData = Object.assign({
-              event: userEvent,
+              event: eventName,
               source,
               action_position: index
             }, siteInfo);
-            props.dispatch(actionCreators.UserEvent(userEventData));
+            props.dispatch(userEvent(userEventData));
           }
 
           if (impression && props.shouldSendImpressionStats) {
@@ -6737,6 +6755,7 @@ class ContextMenuButton extends (external_React_default()).PureComponent {
 
 
 
+
 class DSLinkMenu extends (external_React_default()).PureComponent {
   render() {
     const {
@@ -6771,6 +6790,7 @@ class DSLinkMenu extends (external_React_default()).PureComponent {
       onShow: this.props.onMenuShow,
       options: TOP_STORIES_CONTEXT_MENU_OPTIONS,
       shouldSendImpressionStats: true,
+      userEvent: actionCreators.DiscoveryStreamUserEvent,
       site: {
         referrer: "https://getpocket.com/recommendations",
         title: this.props.title,
@@ -7429,7 +7449,7 @@ class _DSCard extends (external_React_default()).PureComponent {
 
   onLinkClick(event) {
     if (this.props.dispatch) {
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: "CLICK",
         source: this.props.type.toUpperCase(),
         action_position: this.props.pos,
@@ -7464,7 +7484,7 @@ class _DSCard extends (external_React_default()).PureComponent {
           }
         }
       }));
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: "SAVE_TO_POCKET",
         source: "CARDGRID_HOVER",
         action_position: this.props.pos
@@ -7566,15 +7586,20 @@ class _DSCard extends (external_React_default()).PureComponent {
     }
 
     const {
-      saveToPocketCard,
+      isRecentSave,
+      DiscoveryStream,
+      saveToPocketCard
+    } = this.props;
+    const {
+      pocketButtonEnabled,
       hideDescriptions,
       compactImages,
       imageGradient,
+      newSponsoredLabel,
       titleLines = 3,
       descLines = 3,
-      displayReadTime,
-      isRecentSave
-    } = this.props;
+      readTime: displayReadTime
+    } = DiscoveryStream;
     const excerpt = !hideDescriptions ? this.props.excerpt : "";
     let timeToRead;
 
@@ -7605,7 +7630,7 @@ class _DSCard extends (external_React_default()).PureComponent {
       source: this.props.source,
       title: this.props.title,
       excerpt: excerpt,
-      newSponsoredLabel: this.props.newSponsoredLabel,
+      newSponsoredLabel: newSponsoredLabel,
       timeToRead: timeToRead,
       context: this.props.context,
       context_type: this.props.context_type,
@@ -7654,7 +7679,7 @@ class _DSCard extends (external_React_default()).PureComponent {
       onMenuUpdate: this.onMenuUpdate,
       onMenuShow: this.onMenuShow,
       saveToPocketCard: saveToPocketCard,
-      pocket_button_enabled: this.props.pocket_button_enabled,
+      pocket_button_enabled: pocketButtonEnabled,
       isRecentSave: isRecentSave
     }))), !saveToPocketCard && /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
       id: this.props.id,
@@ -7672,7 +7697,7 @@ class _DSCard extends (external_React_default()).PureComponent {
       hostRef: this.contextMenuButtonHostRef,
       onMenuUpdate: this.onMenuUpdate,
       onMenuShow: this.onMenuShow,
-      pocket_button_enabled: this.props.pocket_button_enabled,
+      pocket_button_enabled: pocketButtonEnabled,
       isRecentSave: isRecentSave
     }));
   }
@@ -7683,7 +7708,8 @@ _DSCard.defaultProps = {
 
 };
 const DSCard = (0,external_ReactRedux_namespaceObject.connect)(state => ({
-  App: state.App
+  App: state.App,
+  DiscoveryStream: state.DiscoveryStream
 }))(_DSCard);
 const PlaceholderDSCard = props => /*#__PURE__*/external_React_default().createElement(DSCard, {
   placeholder: true
@@ -7842,7 +7868,7 @@ function _TopicsWidget(props) {
 
   function onLinkClick(topic, positionInCard) {
     if (dispatch) {
-      dispatch(actionCreators.UserEvent({
+      dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: "CLICK",
         source,
         action_position: position,
@@ -8024,7 +8050,7 @@ function RecentSavesContainer({
   }
 
   function onMyListClicked() {
-    dispatch(actionCreators.UserEvent({
+    dispatch(actionCreators.DiscoveryStreamUserEvent({
       event: "CLICK",
       source: `${source}_VIEW_LIST`
     }));
@@ -8088,20 +8114,17 @@ class _CardGrid extends (external_React_default()).PureComponent {
       hybridLayout,
       hideCardBackground,
       fourCardLayout,
-      hideDescriptions,
-      saveToPocketCard,
       compactGrid,
-      compactImages,
-      imageGradient,
-      newSponsoredLabel,
-      titleLines,
-      descLines,
-      readTime,
       essentialReadsHeader,
       editorsPicksHeader,
       widgets,
-      recentSavesEnabled
+      recentSavesEnabled,
+      hideDescriptions,
+      DiscoveryStream
     } = this.props;
+    const {
+      saveToPocketCard
+    } = DiscoveryStream;
     const showRecentSaves = prefs.showRecentSaves && recentSavesEnabled;
     const recs = this.props.data.recommendations.slice(0, items);
     const cards = [];
@@ -8120,7 +8143,6 @@ class _CardGrid extends (external_React_default()).PureComponent {
         raw_image_src: rec.raw_image_src,
         word_count: rec.word_count,
         time_to_read: rec.time_to_read,
-        displayReadTime: readTime,
         title: rec.title,
         excerpt: rec.excerpt,
         url: rec.url,
@@ -8135,15 +8157,8 @@ class _CardGrid extends (external_React_default()).PureComponent {
         pocket_id: rec.pocket_id,
         context_type: rec.context_type,
         bookmarkGuid: rec.bookmarkGuid,
-        pocket_button_enabled: this.props.pocket_button_enabled,
-        hideDescriptions: hideDescriptions,
-        saveToPocketCard: saveToPocketCard,
-        compactImages: compactImages,
-        imageGradient: imageGradient,
-        newSponsoredLabel: newSponsoredLabel,
-        titleLines: titleLines,
-        descLines: descLines,
-        is_collection: this.props.is_collection
+        is_collection: this.props.is_collection,
+        saveToPocketCard: saveToPocketCard
       }));
     }
 
@@ -8254,9 +8269,8 @@ class _CardGrid extends (external_React_default()).PureComponent {
 
 }
 _CardGrid.defaultProps = {
-  items: 4,
-  // Number of stories to display
-  saveToPocketCard: false
+  items: 4 // Number of stories to display
+
 };
 const CardGrid = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   Prefs: state.Prefs,
@@ -8359,7 +8373,7 @@ class CollectionCardGrid extends (external_React_default()).PureComponent {
         userEvent
       } = blockUrlOption;
       this.props.dispatch(action);
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: userEvent,
         source,
         action_position: pos
@@ -8792,7 +8806,7 @@ class DSPrivacyModal extends (external_React_default()).PureComponent {
   }
 
   onLearnLinkClick(event) {
-    this.props.dispatch(actionCreators.UserEvent({
+    this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
       event: "CLICK_PRIVACY_INFO",
       source: "DS_PRIVACY_MODAL"
     }));
@@ -8902,7 +8916,7 @@ class DSSignup extends (external_React_default()).PureComponent {
       const source = this.props.type.toUpperCase(); // Grab the first item in the array as we only have 1 spoc position.
 
       const [spoc] = data.spocs;
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: "CLICK",
         source,
         action_position: 0
@@ -8977,6 +8991,7 @@ class DSSignup extends (external_React_default()).PureComponent {
       onShow: this.onMenuShow,
       options: SIGNUP_CONTEXT_MENU_OPTIONS,
       shouldSendImpressionStats: true,
+      userEvent: actionCreators.DiscoveryStreamUserEvent,
       site: {
         referrer: "https://getpocket.com/recommendations",
         title,
@@ -9021,7 +9036,7 @@ class DSTextPromo extends (external_React_default()).PureComponent {
       const source = this.props.type.toUpperCase(); // Grab the first item in the array as we only have 1 spoc position.
 
       const [spoc] = data.spocs;
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: "CLICK",
         source,
         action_position: 0
@@ -9062,7 +9077,7 @@ class DSTextPromo extends (external_React_default()).PureComponent {
         userEvent
       } = blockUrlOption;
       this.props.dispatch(action);
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: userEvent,
         source,
         action_position: index
@@ -10858,7 +10873,16 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
 
     case actionTypes.DISCOVERY_STREAM_PREFS_SETUP:
       return { ...prevState,
-        recentSavesEnabled: action.data.recentSavesEnabled
+        recentSavesEnabled: action.data.recentSavesEnabled,
+        pocketButtonEnabled: action.data.pocketButtonEnabled,
+        saveToPocketCard: action.data.saveToPocketCard,
+        hideDescriptions: action.data.hideDescriptions,
+        compactImages: action.data.compactImages,
+        imageGradient: action.data.imageGradient,
+        newSponsoredLabel: action.data.newSponsoredLabel,
+        titleLines: action.data.titleLines,
+        descLines: action.data.descLines,
+        readTime: action.data.readTime
       };
 
     case actionTypes.DISCOVERY_STREAM_RECENT_SAVES:
@@ -11587,7 +11611,8 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       tabIndex: "0",
       onKeyPress: this.onKeyPress,
       onClick: onClick,
-      draggable: true
+      draggable: true,
+      "data-is-sponsored-link": !!link.sponsored_tile_id
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "tile",
       "aria-hidden": true
@@ -12954,7 +12979,7 @@ class Navigation_Topic extends (external_React_default()).PureComponent {
 
   onLinkClick(event) {
     if (this.props.dispatch) {
-      this.props.dispatch(actionCreators.UserEvent({
+      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
         event: "CLICK",
         source: "POPULAR_TOPICS",
         action_position: 0,
@@ -13595,7 +13620,6 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           placement: component.placement,
           type: component.type,
           items: component.properties.items,
-          pocket_button_enabled: component.pocketButtonEnabled,
           dismissible: this.props.DiscoveryStream.isCollectionDismissible,
           dispatch: this.props.dispatch
         });
@@ -13612,19 +13636,11 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
           hybridLayout: component.properties.hybridLayout,
           hideCardBackground: component.properties.hideCardBackground,
           fourCardLayout: component.properties.fourCardLayout,
-          hideDescriptions: component.properties.hideDescriptions,
           compactGrid: component.properties.compactGrid,
-          compactImages: component.properties.compactImages,
-          imageGradient: component.properties.imageGradient,
-          newSponsoredLabel: component.properties.newSponsoredLabel,
-          titleLines: component.properties.titleLines,
-          descLines: component.properties.descLines,
           essentialReadsHeader: component.properties.essentialReadsHeader,
           editorsPicksHeader: component.properties.editorsPicksHeader,
-          readTime: component.properties.readTime,
-          saveToPocketCard: component.saveToPocketCard,
-          pocket_button_enabled: component.pocketButtonEnabled,
-          recentSavesEnabled: this.props.DiscoveryStream.recentSavesEnabled
+          recentSavesEnabled: this.props.DiscoveryStream.recentSavesEnabled,
+          hideDescriptions: this.props.DiscoveryStream.hideDescriptions
         });
 
       case "HorizontalRule":
@@ -13811,7 +13827,10 @@ class BackgroundsSection extends (external_React_default()).PureComponent {
 class ContentSection extends (external_React_default()).PureComponent {
   constructor(props) {
     super(props);
-    this.onPreferenceSelect = this.onPreferenceSelect.bind(this);
+    this.onPreferenceSelect = this.onPreferenceSelect.bind(this); // Refs are necessary for dynamically measuring drawer heights for slide animations
+
+    this.topSitesDrawerRef = /*#__PURE__*/external_React_default().createRef();
+    this.pocketDrawerRef = /*#__PURE__*/external_React_default().createRef();
   }
 
   inputUserEvent(eventSource, status) {
@@ -13827,7 +13846,8 @@ class ContentSection extends (external_React_default()).PureComponent {
 
   onPreferenceSelect(e) {
     let prefName = e.target.getAttribute("preference");
-    const eventSource = e.target.getAttribute("eventSource");
+    const eventSource = e.target.getAttribute("eventSource"); // TOP_SITES, TOP_STORIES, HIGHLIGHTS
+
     let value;
 
     if (e.target.nodeName === "SELECT") {
@@ -13841,6 +13861,45 @@ class ContentSection extends (external_React_default()).PureComponent {
     }
 
     this.props.setPref(prefName, value);
+  }
+
+  componentDidMount() {
+    this.setDrawerMargins();
+  }
+
+  componentDidUpdate() {
+    this.setDrawerMargins();
+  }
+
+  setDrawerMargins() {
+    this.setDrawerMargin(`TOP_SITES`, this.props.enabledSections.topSitesEnabled);
+    this.setDrawerMargin(`TOP_STORIES`, this.props.enabledSections.pocketEnabled);
+  }
+
+  setDrawerMargin(drawerID, isOpen) {
+    let drawerRef;
+
+    if (drawerID === `TOP_SITES`) {
+      drawerRef = this.topSitesDrawerRef.current;
+    } else if (drawerID === `TOP_STORIES`) {
+      drawerRef = this.pocketDrawerRef.current;
+    } else {
+      return;
+    }
+
+    let drawerHeight;
+
+    if (drawerRef) {
+      var _window$getComputedSt;
+
+      drawerHeight = parseFloat((_window$getComputedSt = window.getComputedStyle(drawerRef)) === null || _window$getComputedSt === void 0 ? void 0 : _window$getComputedSt.height);
+
+      if (isOpen) {
+        drawerRef.style.marginTop = `0`;
+      } else {
+        drawerRef.style.marginTop = `-${drawerHeight}px`;
+      }
+    }
   }
 
   render() {
@@ -13891,9 +13950,10 @@ class ContentSection extends (external_React_default()).PureComponent {
       className: "subtitle",
       "data-l10n-id": "newtab-custom-shortcuts-subtitle"
     }), /*#__PURE__*/external_React_default().createElement("div", {
-      className: `more-info-top-wrapper ${topSitesEnabled ? "" : "shrink"}`
+      className: "more-info-top-wrapper"
     }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: `more-information ${topSitesEnabled ? "expand" : "shrink"}`
+      className: "more-information",
+      ref: this.topSitesDrawerRef
     }, /*#__PURE__*/external_React_default().createElement("select", {
       id: "row-selector",
       className: "selector",
@@ -13963,9 +14023,10 @@ class ContentSection extends (external_React_default()).PureComponent {
       className: "subtitle",
       "data-l10n-id": "newtab-custom-pocket-subtitle"
     }), (mayHaveSponsoredStories || mayHaveRecentSaves) && /*#__PURE__*/external_React_default().createElement("div", {
-      className: `more-info-pocket-wrapper ${pocketEnabled ? "" : "shrink"}`
+      className: "more-info-pocket-wrapper"
     }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: `more-information ${pocketEnabled ? "expand" : "shrink"}`
+      className: "more-information",
+      ref: this.pocketDrawerRef
     }, mayHaveSponsoredStories && /*#__PURE__*/external_React_default().createElement("div", {
       className: "check-wrapper",
       role: "presentation"
@@ -14641,7 +14702,7 @@ const external_Redux_namespaceObject = Redux;
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/remote-page */
 
 
 const MERGE_STORE_ACTION = "NEW_TAB_INITIAL_STATE";

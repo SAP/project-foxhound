@@ -87,10 +87,8 @@ pub unsafe extern "C" fn nsKeyValueServiceConstructor(
 // The XPCOM methods are implemented using the xpcom_method! declarative macro
 // from the xpcom crate.
 
-#[derive(xpcom)]
-#[xpimplements(nsIKeyValueService)]
-#[refcnt = "atomic"]
-pub struct InitKeyValueService {}
+#[xpcom(implement(nsIKeyValueService), atomic)]
+pub struct KeyValueService {}
 
 impl KeyValueService {
     fn new() -> RefPtr<KeyValueService> {
@@ -122,10 +120,8 @@ impl KeyValueService {
     }
 }
 
-#[derive(xpcom)]
-#[xpimplements(nsIKeyValueDatabase)]
-#[refcnt = "atomic"]
-pub struct InitKeyValueDatabase {
+#[xpcom(implement(nsIKeyValueDatabase), atomic)]
+pub struct KeyValueDatabase {
     rkv: Arc<RwLock<Rkv>>,
     store: SingleStore,
     queue: RefPtr<nsISerialEventTarget>,
@@ -174,18 +170,22 @@ impl KeyValueDatabase {
     xpcom_method!(
         write_many => WriteMany(
             callback: *const nsIKeyValueVoidCallback,
-            pairs: *const ThinVec<RefPtr<nsIKeyValuePair>>
+            pairs: *const ThinVec<Option<RefPtr<nsIKeyValuePair>>>
         )
     );
 
     fn write_many(
         &self,
         callback: &nsIKeyValueVoidCallback,
-        pairs: &ThinVec<RefPtr<nsIKeyValuePair>>,
+        pairs: &ThinVec<Option<RefPtr<nsIKeyValuePair>>>,
     ) -> Result<(), nsresult> {
         let mut entries = Vec::with_capacity(pairs.len());
 
         for pair in pairs {
+            let pair = pair
+                .as_ref()
+                .ok_or(nsresult::from(KeyValueError::UnexpectedValue))?;
+
             let mut key = nsCString::new();
             unsafe { pair.GetKey(&mut *key) }.to_result()?;
             if key.is_empty() {
@@ -308,10 +308,8 @@ impl KeyValueDatabase {
     }
 }
 
-#[derive(xpcom)]
-#[xpimplements(nsIKeyValueEnumerator)]
-#[refcnt = "atomic"]
-pub struct InitKeyValueEnumerator {
+#[xpcom(implement(nsIKeyValueEnumerator), atomic)]
+pub struct KeyValueEnumerator {
     iter: AtomicRefCell<IntoIter<KeyValuePairResult>>,
 }
 
@@ -345,10 +343,8 @@ impl KeyValueEnumerator {
     }
 }
 
-#[derive(xpcom)]
-#[xpimplements(nsIKeyValuePair)]
-#[refcnt = "atomic"]
-pub struct InitKeyValuePair {
+#[xpcom(implement(nsIKeyValuePair), atomic)]
+pub struct KeyValuePair {
     key: String,
     value: OwnedValue,
 }

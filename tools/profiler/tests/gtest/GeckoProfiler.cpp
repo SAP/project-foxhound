@@ -1252,6 +1252,46 @@ TEST(BaseProfiler, BlocksRingBuffer)
 
 // Common JSON checks.
 
+// Check that the given JSON string include no JSON whitespace characters
+// (excluding those in property names and strings).
+void JSONWhitespaceCheck(const char* aOutput) {
+  ASSERT_NE(aOutput, nullptr);
+
+  enum class State { Data, String, StringEscaped };
+  State state = State::Data;
+  size_t length = 0;
+  size_t whitespaces = 0;
+  for (const char* p = aOutput; *p != '\0'; ++p) {
+    ++length;
+    const char c = *p;
+
+    switch (state) {
+      case State::Data:
+        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') {
+          ++whitespaces;
+        } else if (c == '"') {
+          state = State::String;
+        }
+        break;
+
+      case State::String:
+        if (c == '"') {
+          state = State::Data;
+        } else if (c == '\\') {
+          state = State::StringEscaped;
+        }
+        break;
+
+      case State::StringEscaped:
+        state = State::String;
+        break;
+    }
+  }
+
+  EXPECT_EQ(whitespaces, 0u);
+  EXPECT_GT(length, 0u);
+}
+
 // Does the GETTER return a non-null TYPE? (Non-critical)
 #  define EXPECT_HAS_JSON(GETTER, TYPE)              \
     do {                                             \
@@ -1530,6 +1570,8 @@ void JSONOutputCheck(const char* aOutput,
                      JSONCheckFunction&& aJSONCheckFunction) {
   ASSERT_NE(aOutput, nullptr);
 
+  JSONWhitespaceCheck(aOutput);
+
   // Extract JSON.
   Json::Value parsedRoot;
   Json::CharReaderBuilder builder;
@@ -1617,6 +1659,7 @@ TEST(GeckoProfiler, FeaturesAndParams)
     uint32_t features = ProfilerFeature::JS;
     const char* filters[] = {"GeckoMain", "Compositor"};
 
+#  define PROFILER_DEFAULT_DURATION 20 /* seconds, for tests only */
     profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
                    features, filters, MOZ_ARRAY_LENGTH(filters), 100,
                    Some(PROFILER_DEFAULT_DURATION));
@@ -1785,7 +1828,7 @@ TEST(GeckoProfiler, EnsureStarted)
     // Call profiler_ensure_started with a different feature set than the one
     // it's currently running with. This is supposed to stop and restart the
     // profiler, thereby discarding the buffer contents.
-    uint32_t differentFeatures = features | ProfilerFeature::Leaf;
+    uint32_t differentFeatures = features | ProfilerFeature::CPUUtilization;
     profiler_ensure_started(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL,
                             differentFeatures, filters,
                             MOZ_ARRAY_LENGTH(filters), 0);
@@ -3857,7 +3900,7 @@ void DoSuspendAndSample(ProfilerThreadId aTidToSample,
       NS_NewRunnableFunction(
           "GeckoProfiler_SuspendAndSample_Test::TestBody",
           [&]() {
-            uint32_t features = ProfilerFeature::Leaf;
+            uint32_t features = ProfilerFeature::CPUUtilization;
             GTestStackCollector collector;
             profiler_suspend_and_sample_thread(aTidToSample, features,
                                                collector,

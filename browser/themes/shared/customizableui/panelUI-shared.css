@@ -236,7 +236,7 @@ toolbarseparator + .panel-subview-body,
 
 #PlacesToolbar menupopup {
   appearance: none;
-  background: var(--arrowpanel-background);
+  --panel-background: var(--arrowpanel-background);
   font: menu;
 }
 
@@ -866,7 +866,8 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
 
 .PanelUI-fxa-signin-button > .toolbarbutton-text,
 .PanelUI-remotetabs-button > .toolbarbutton-text {
-  display: -moz-box;
+  /* Overrides toolbar[mode="icons"] from xul.css */
+  display: block;
 }
 
 #PanelUI-remotetabs[mainview] { /* panel anchored to toolbar button might be too skinny */
@@ -1096,7 +1097,7 @@ panelview .toolbarbutton-1,
 
 .subviewbutton > .toolbarbutton-text {
   text-align: start;
-  display: -moz-box;
+  display: block;
 }
 
 .panel-subview-footer-button {
@@ -1247,8 +1248,7 @@ panelview .toolbarbutton-1 {
   .toolbaritem-combined-buttons:is(
     :not([cui-areatype="toolbar"]),
     [overflowedItem=true]
-  ) > toolbarbutton,
-  .panel-subview-body .subviewbutton.complex-subviewbutton
+  ) > toolbarbutton
 ):focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-inset);
@@ -1262,8 +1262,7 @@ panelview .toolbarbutton-1 {
   .toolbaritem-combined-buttons:is(
     :not([cui-areatype="toolbar"]),
     [overflowedItem=true]
-  ) > toolbarbutton,
-  .panel-subview-body .subviewbutton.complex-subviewbutton
+  ) > toolbarbutton
 ):not([disabled]):hover {
   color: inherit;
   background-color: var(--panel-item-hover-bgcolor);
@@ -1277,8 +1276,7 @@ panelview .toolbarbutton-1 {
   .toolbaritem-combined-buttons:is(
     :not([cui-areatype="toolbar"]),
     [overflowedItem=true]
-  ) > toolbarbutton,
-  .panel-subview-body .subviewbutton.complex-subviewbutton
+  ) > toolbarbutton
 ):not([disabled]):hover:active {
   color: inherit;
   background-color: var(--panel-item-active-bgcolor);
@@ -2078,6 +2076,7 @@ panelview:not([mainview]) #PanelUI-whatsNew-title {
 #PanelUI-profiler-learn-more {
   margin: 4px 15px 13px;
   color: #fff;
+  text-decoration: underline;
 }
 
 #PanelUI-profiler-learn-more:hover:active {

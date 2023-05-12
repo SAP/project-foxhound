@@ -165,24 +165,24 @@ class nsStringInputStream final : public nsIStringInputStream,
                                 uint32_t aCount,
                                 uint32_t* aReadCount);
 
-  template <typename M>
-  void SerializeInternal(InputStreamParams& aParams, bool aDelayedStart,
-                         uint32_t aMaxSize, uint32_t* aSizeUsed, M* aManager);
-
-  size_t Length() const REQUIRES(mMon) {
+  StringTaint Taint() const MOZ_REQUIRES(mMon) {
+    return mSource ? mSource->Taint().safeSubTaint(mOffset, Length()) : EmptyTaint;
+  }
+  
+  size_t Length() const MOZ_REQUIRES(mMon) {
     return mSource ? mSource->Data().Length() : 0;
   }
 
-  StringTaint Taint() const { return mSource ? mSource->Taint().safeSubTaint(mOffset, Length()) : EmptyTaint; }
+  size_t LengthRemaining() const MOZ_REQUIRES(mMon) {
+    return Length() - mOffset;
+  }
 
-  size_t LengthRemaining() const REQUIRES(mMon) { return Length() - mOffset; }
+  void Clear() MOZ_REQUIRES(mMon) { mSource = nullptr; }
 
-  void Clear() REQUIRES(mMon) { mSource = nullptr; }
+  bool Closed() MOZ_REQUIRES(mMon) { return !mSource; }
 
-  bool Closed() REQUIRES(mMon) { return !mSource; }
-
-  RefPtr<StreamBufferSource> mSource GUARDED_BY(mMon);
-  size_t mOffset GUARDED_BY(mMon) = 0;
+  RefPtr<StreamBufferSource> mSource MOZ_GUARDED_BY(mMon);
+  size_t mOffset MOZ_GUARDED_BY(mMon) = 0;
 
   mutable mozilla::ReentrantMonitor mMon{"nsStringInputStream"};
 };

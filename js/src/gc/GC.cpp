@@ -481,7 +481,8 @@ GCRuntime::GCRuntime(JSRuntime* rt)
       freeTask(this),
       decommitTask(this),
       nursery_(this),
-      storeBuffer_(rt, nursery()) {
+      storeBuffer_(rt, nursery()),
+      lastAllocRateUpdateTime(ReallyNow()) {
   marker.setIncrementalGCEnabled(incrementalGCEnabled);
 }
 
@@ -1164,6 +1165,10 @@ uint32_t GCRuntime::getParameter(JSGCParamKey key, const AutoLockGC& lock) {
       return uint32_t(tunables.highFrequencyLargeHeapGrowth() * 100);
     case JSGC_LOW_FREQUENCY_HEAP_GROWTH:
       return uint32_t(tunables.lowFrequencyHeapGrowth() * 100);
+    case JSGC_BALANCED_HEAP_LIMITS_ENABLED:
+      return uint32_t(tunables.balancedHeapLimitsEnabled());
+    case JSGC_HEAP_GROWTH_FACTOR:
+      return uint32_t(tunables.heapGrowthFactor());
     case JSGC_ALLOCATION_THRESHOLD:
       return tunables.gcZoneAllocThresholdBase() / 1024 / 1024;
     case JSGC_SMALL_HEAP_INCREMENTAL_LIMIT:
@@ -2709,7 +2714,7 @@ void GCRuntime::beginMarkPhase(AutoGCSession& session) {
     traceRuntimeForMajorGC(&marker, session);
   }
 
-  updateMemoryCountersOnGCStart();
+  updateSchedulingStateOnGCStart();
   stats().measureInitialHeapSize();
 }
 
@@ -2783,12 +2788,12 @@ void GCRuntime::findDeadCompartments() {
   }
 }
 
-void GCRuntime::updateMemoryCountersOnGCStart() {
+void GCRuntime::updateSchedulingStateOnGCStart() {
   heapSize.updateOnGCStart();
 
   // Update memory counters for the zones we are collecting.
   for (GCZonesIter zone(this); !zone.done(); zone.next()) {
-    zone->updateMemoryCountersOnGCStart();
+    zone->updateSchedulingStateOnGCStart();
   }
 }
 
@@ -2823,7 +2828,9 @@ void GCRuntime::finishCollection() {
 
   maybeStopPretenuring();
 
-  updateGCThresholdsAfterCollection();
+  TimeStamp currentTime = ReallyNow();
+
+  updateSchedulingStateAfterCollection(currentTime);
 
   for (GCZonesIter zone(this); !zone.done(); zone.next()) {
     zone->changeGCState(Zone::Finished, Zone::NoGC);
@@ -2834,7 +2841,6 @@ void GCRuntime::finishCollection() {
   clearSelectedForMarking();
 #endif
 
-  auto currentTime = ReallyNow();
   schedulingState.updateHighFrequencyMode(lastGCEndTime_, currentTime,
                                           tunables);
   lastGCEndTime_ = currentTime;
@@ -2900,8 +2906,14 @@ void GCRuntime::maybeStopPretenuring() {
   }
 }
 
-void GCRuntime::updateGCThresholdsAfterCollection() {
+void GCRuntime::updateSchedulingStateAfterCollection(TimeStamp currentTime) {
+  TimeDuration totalGCTime = stats().totalGCTime();
+  size_t totalInitialBytes = stats().initialCollectedBytes();
+
   for (GCZonesIter zone(this); !zone.done(); zone.next()) {
+    if (tunables.balancedHeapLimitsEnabled() && totalInitialBytes != 0) {
+      zone->updateCollectionRate(totalGCTime, totalInitialBytes);
+    }
     zone->clearGCSliceThresholds();
     zone->updateGCStartThresholds(*this);
   }
@@ -2911,6 +2923,32 @@ void GCRuntime::updateAllGCStartThresholds() {
   for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
     zone->updateGCStartThresholds(*this);
   }
+}
+
+void GCRuntime::updateAllocationRates() {
+  TimeStamp currentTime = ReallyNow();
+  MOZ_ASSERT(currentTime - lastAllocRateUpdateTime >=
+             collectorTimeSinceAllocRateUpdate.ref());
+
+  // Calculate mutator time since the last update. This ignores the fact that
+  // the zone could have been created since the last update.
+
+  TimeDuration totalTime = currentTime - lastAllocRateUpdateTime;
+  if (collectorTimeSinceAllocRateUpdate >= totalTime) {
+    // It shouldn't happen but occasionally we see collector time being larger
+    // than total time. Skip the update in that case.
+    return;
+  }
+
+  TimeDuration mutatorTime = totalTime - collectorTimeSinceAllocRateUpdate;
+
+  for (AllZonesIter zone(this); !zone.done(); zone.next()) {
+    zone->updateAllocationRate(mutatorTime);
+    zone->updateGCStartThresholds(*this);
+  }
+
+  lastAllocRateUpdateTime = currentTime;
+  collectorTimeSinceAllocRateUpdate = TimeDuration();
 }
 
 static const char* GCHeapStateToLabel(JS::HeapState heapState) {
@@ -3618,8 +3656,18 @@ bool GCRuntime::maybeIncreaseSliceBudgetForUrgentCollections(
   return false;
 }
 
-static void ScheduleZones(GCRuntime* gc) {
+static void ScheduleZones(GCRuntime* gc, JS::GCReason reason) {
   for (ZonesIter zone(gc, WithAtoms); !zone.done(); zone.next()) {
+    // Re-check heap threshold for alloc-triggered zones that were not
+    // previously collected. Now we have allocation rate data, the heap limit
+    // may have been increased beyond the current size.
+    if (gc->tunables.balancedHeapLimitsEnabled() && zone->isGCScheduled() &&
+        zone->smoothedCollectionRate.ref().isNothing() &&
+        reason == JS::GCReason::ALLOC_TRIGGER &&
+        zone->gcHeapSize.bytes() < zone->gcHeapThreshold.startBytes()) {
+      zone->unscheduleGC();  // May still be re-scheduled below.
+    }
+
     if (!gc->isPerZoneGCEnabled()) {
       zone->scheduleGC();
     }
@@ -3738,7 +3786,14 @@ MOZ_NEVER_INLINE GCRuntime::IncrementalResult GCRuntime::gcCycle(
   SliceBudget budget(budgetArg);
   bool budgetWasIncreased = maybeIncreaseSliceBudget(budget);
 
-  ScheduleZones(this);
+  ScheduleZones(this, reason);
+
+  auto updateCollectorTime = MakeScopeExit([&] {
+    if (const gcstats::Statistics::SliceData* slice = stats().lastSlice()) {
+      collectorTimeSinceAllocRateUpdate += slice->duration();
+    }
+  });
+
   gcstats::AutoGCSlice agc(stats(), scanZonesBeforeGC(), gcOptions(), budget,
                            reason, budgetWasIncreased);
 
@@ -3941,6 +3996,10 @@ void GCRuntime::collect(bool nonincrementalByAPI, const SliceBudget& budget,
   AutoSetZoneSliceThresholds sliceThresholds(this);
 
   schedulingState.updateHighFrequencyModeForReason(reason);
+
+  if (!isIncrementalGCInProgress() && tunables.balancedHeapLimitsEnabled()) {
+    updateAllocationRates();
+  }
 
   bool repeat;
   do {
@@ -4174,11 +4233,7 @@ void GCRuntime::collectNursery(JS::GCOptions options, JS::GCReason reason,
                                gcstats::PhaseKind phase) {
   AutoMaybeLeaveAtomsZone leaveAtomsZone(rt->mainContextFromOwnThread());
 
-  // Note that we aren't collecting the updated alloc counts from any helper
-  // threads.  We should be but I'm not sure where to add that
-  // synchronisation.
-  uint32_t numAllocs =
-      rt->mainContextFromOwnThread()->getAndResetAllocsThisZoneSinceMinorGC();
+  uint32_t numAllocs = 0;
   for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
     numAllocs += zone->getAndResetTenuredAllocsSinceMinorGC();
   }
@@ -4673,19 +4728,10 @@ T* js::gc::ClearEdgesTracer::onEdge(T* thing) {
 }
 
 void GCRuntime::setPerformanceHint(PerformanceHint hint) {
-  bool wasInPageLoad = inPageLoadCount != 0;
-
   if (hint == PerformanceHint::InPageLoad) {
     inPageLoadCount++;
   } else {
     MOZ_ASSERT(inPageLoadCount);
     inPageLoadCount--;
   }
-
-  bool inPageLoad = inPageLoadCount != 0;
-  if (inPageLoad == wasInPageLoad) {
-    return;
-  }
-
-  atomsZone->updateGCStartThresholds(*this);
 }

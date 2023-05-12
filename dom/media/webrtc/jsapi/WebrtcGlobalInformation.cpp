@@ -418,8 +418,7 @@ void WebrtcGlobalInformation::GetLogging(
 
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  nsAutoCString pattern;
-  CopyUTF16toUTF8(aPattern, pattern);
+  nsAutoString pattern(aPattern);
 
   // CallbackObject does not support threadsafe refcounting, and must be
   // destroyed on main.
@@ -522,7 +521,7 @@ MOZ_IMPLICIT WebrtcGlobalParent::~WebrtcGlobalParent() {
 }
 
 mozilla::ipc::IPCResult WebrtcGlobalChild::RecvGetStats(
-    const nsString& aPcIdFilter, GetStatsResolver&& aResolve) {
+    const nsAString& aPcIdFilter, GetStatsResolver&& aResolve) {
   if (!mShutdown) {
     GetStatsPromiseForThisProcess(aPcIdFilter)
         ->Then(
@@ -625,7 +624,7 @@ static void StoreLongTermICEStatisticsImpl_m(RTCStatsReportInternal* report) {
   report->mClosed = true;
 
   for (const auto& inboundRtpStats : report->mInboundRtpStreamStats) {
-    bool isVideo = (inboundRtpStats.mId.Value().Find("video") != -1);
+    bool isVideo = (inboundRtpStats.mId.Value().Find(u"video") != -1);
     if (!isVideo) {
       continue;
     }

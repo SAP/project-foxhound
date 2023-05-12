@@ -26,7 +26,7 @@ from mozbuild.vendor.rewrite_mozbuild import (
 )
 
 DEFAULT_EXCLUDE_FILES = [".git*"]
-DEFAULT_KEEP_FILES = ["moz.build", "moz.yaml"]
+DEFAULT_KEEP_FILES = ["**/moz.build", "**/moz.yaml"]
 DEFAULT_INCLUDE_FILES = []
 
 
@@ -39,12 +39,17 @@ def _replace_in_file(file, pattern, replacement, regex=False):
         contents = f.read()
 
     if regex:
-        contents = re.sub(pattern, replacement, contents)
+        newcontents = re.sub(pattern, replacement, contents)
     else:
-        contents = contents.replace(pattern, replacement)
+        newcontents = contents.replace(pattern, replacement)
+
+    if newcontents == contents:
+        raise Exception(
+            "Could not find %s in %s to replace with %s" % (pattern, file, replacement)
+        )
 
     with open(file, "w") as f:
-        f.write(contents)
+        f.write(newcontents)
 
 
 class VendorManifest(MozbuildObject):
@@ -132,7 +137,11 @@ class VendorManifest(MozbuildObject):
     ):
         # First update the Cargo.toml
         cargo_file = os.path.join(os.path.dirname(self.yaml_file), "Cargo.toml")
-        _replace_in_file(cargo_file, old_revision, new_revision)
+        try:
+            _replace_in_file(cargo_file, old_revision, new_revision)
+        except Exception:
+            # If we can't find it the first time, try again with a short hash
+            _replace_in_file(cargo_file, old_revision[:8], new_revision)
 
         # Then call ./mach vendor rust
         from mozbuild.vendor.vendor_rust import VendorRust
@@ -543,11 +552,17 @@ class VendorManifest(MozbuildObject):
                     },
                     "action: {type} command: {command} working dir: {run_dir} args: {args}",
                 )
+                extra_env = (
+                    {"GECKO_PATH": os.getcwd()}
+                    if "GECKO_PATH" not in os.environ
+                    else {}
+                )
                 self.run_process(
                     args=[command] + args,
                     cwd=run_dir,
                     log_name=command,
                     require_unix_environment=True,
+                    append_env=extra_env,
                 )
             else:
                 assert False, "Unknown action supplied (how did this pass validation?)"

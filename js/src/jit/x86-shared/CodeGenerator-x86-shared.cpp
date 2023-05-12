@@ -122,7 +122,8 @@ void CodeGeneratorX86Shared::emitCompare(MCompare::CompareType type,
                                          const LAllocation* right) {
 #ifdef JS_CODEGEN_X64
   if (type == MCompare::Compare_Object || type == MCompare::Compare_Symbol ||
-      type == MCompare::Compare_UIntPtr) {
+      type == MCompare::Compare_UIntPtr ||
+      type == MCompare::Compare_RefOrNull) {
     if (right->isConstant()) {
       MOZ_ASSERT(type == MCompare::Compare_UIntPtr);
       masm.cmpPtr(ToRegister(left), Imm32(ToInt32(right)));
@@ -2677,17 +2678,9 @@ void CodeGenerator::visitWasmBinarySimd128(LWasmBinarySimd128* ins) {
     case wasm::SimdOp::I16x8DotI8x16I7x16S:
       masm.dotInt8x16Int7x16(lhs, rhs, dest);
       break;
-#  ifdef ENABLE_WASM_SIMD_WORMHOLE
-    case wasm::SimdOp::MozWHSELFTEST:
-      masm.loadConstantSimd128(wasm::WormholeSignature(), dest);
-      break;
-    case wasm::SimdOp::MozWHPMADDUBSW:
+    case wasm::SimdOp::MozPMADDUBSW:
       masm.vpmaddubsw(rhs, lhs, dest);
       break;
-    case wasm::SimdOp::MozWHPMADDWD:
-      masm.widenDotInt16x8(lhs, rhs, dest);
-      break;
-#  endif
     default:
       MOZ_CRASH("Binary SimdOp not implemented");
   }

@@ -194,6 +194,7 @@ function verifySectionFieldDetails(sections, expectedResults) {
       let expectedField = expectedSectionInfo[fieldIndex];
       delete field._reason;
       delete field.elementWeakRef;
+      delete field.confidence;
       Assert.deepEqual(field, expectedField);
     });
   });
@@ -203,7 +204,7 @@ var FormAutofillHeuristics, LabelUtils;
 var AddressDataLoader, FormAutofillUtils;
 
 async function runHeuristicsTest(patterns, fixturePathPrefix) {
-  add_task(async function setup() {
+  add_setup(async () => {
     ({ FormAutofillHeuristics } = ChromeUtils.import(
       "resource://autofill/FormAutofillHeuristics.jsm"
     ));

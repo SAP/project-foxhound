@@ -7,11 +7,17 @@
 "no-feature-firefox-desktop":
   description: A dummy feature for experiments that target no feature.
   owner: barret@mozilla.com
+  applications:
+    - firefox-desktop
+    - firefox-desktop-background-task
   hasExposure: false
   variables: {}
 testFeature:
   description: Test only feature
   owner: barret@mozilla.com
+  applications:
+    - firefox-desktop
+    - firefox-desktop-background-task
   hasExposure: false
   isEarlyStartup: true
   variables:
@@ -24,7 +30,7 @@ testFeature:
       description: Int pref used by platform API tests
 search:
   description: The Search Services
-  owner: standard8@mozilla.com
+  owner: search-and-suggest-program@mozilla.com
   hasExposure: false
   variables:
     experiment:
@@ -36,9 +42,15 @@ search:
     extraParams:
       type: json
       description: Query parameters values for search engine configurations.
+    seperatePrivateDefaultUIEnabled:
+      type: boolean
+      description: Whether the UI for the separate private default feature is enabled.
+    seperatePrivateDefaultUrlbarResultEnabled:
+      type: boolean
+      description: Whether the urlbar result for the separate private default is shown.
 urlbar:
   description: The Address Bar
-  owner: adw@mozilla.com
+  owner: search-and-suggest-program@mozilla.com
   hasExposure: true
   exposureDescription: >-
     The timing of the exposure event depends on the experiment, but generally
@@ -85,6 +97,10 @@ urlbar:
       type: boolean
       fallbackPref: browser.urlbar.merino.enabled
       description: Whether Merino is enabled as a quick suggest source
+    merinoEndpointURL:
+      type: string
+      fallbackPref: browser.urlbar.merino.endpointURL
+      description: The Merino endpoint URL, not including parameters.
     merinoTimeoutMs:
       type: int
       fallbackPref: browser.urlbar.merino.timeoutMs
@@ -402,7 +418,7 @@ password-autocomplete:
       description: Enable direct migration?
 shellService:
   description: "Interface with OS, e.g., pinning and set default"
-  owner: bhearsum@mozilla.com
+  owner: desktop-integrations@mozilla.com
   hasExposure: false
   isEarlyStartup: true
   variables:
@@ -521,6 +537,9 @@ pbNewtab:
   variables: {}
 backgroundTaskMessage:
   description: "A Firefox Messaging System message for the background task message channel"
+  owner: nalexander@mozilla.com
+  applications:
+    - firefox-desktop-background-task
   hasExposure: true
   exposureDescription: >-
     Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched.
@@ -531,7 +550,7 @@ backgroundTaskMessage:
   variables: {}
 syncAfterTabChange:
   description: "Schedule a sync after any tab change"
-  owner: mhammond@mozilla.com
+  owner: sync-team@mozilla.com
   hasExposure: false
   isEarlyStartup: false
   variables:
@@ -540,6 +559,9 @@ syncAfterTabChange:
       fallbackPref: "services.sync.syncedTabs.syncDelayAfterTabChange"
       description: >-
         "How long to wait (in milliseconds) to schedule a sync after tab change"
+    syncDelayAfterTabChangeOverride:
+      type: boolean
+      description: Whether to override the pref in case we need to lengthen or diable the increased sync
 pictureinpicture:
   description: Message for first time Picture-in-Picture users
   owner: nbaumgardner@mozilla.com
@@ -557,10 +579,16 @@ pictureinpicture:
       description: Whether to show the first time PiP toggle or show the PiP icon only
 glean:
   description: "The Glean data collection SDK within Firefox Desktop"
-  owner: chutten@mozilla.com
+  owner: glean-team@mozilla.com
   hasExposure: false
   variables:
     newtabPingEnabled:
       type: "boolean"
       fallbackPref: "browser.newtabpage.ping.enabled"
       description: "Whether to submit the 'newtab' ping"
+majorRelease2022:
+  description: Major Release 2022
+  owner: firefoxview@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables: {}

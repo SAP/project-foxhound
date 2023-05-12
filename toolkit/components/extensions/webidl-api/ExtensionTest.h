@@ -32,12 +32,6 @@ bool IsInAutomation(JSContext* aCx, JSObject* aGlobal);
 class ExtensionTest final : public nsISupports,
                             public nsWrapperCache,
                             public ExtensionAPINamespace {
-  nsCOMPtr<nsIGlobalObject> mGlobal;
-  RefPtr<ExtensionBrowser> mExtensionBrowser;
-  RefPtr<ExtensionEventManager> mOnMessageEventMgr;
-
-  ~ExtensionTest() = default;
-
  public:
   ExtensionTest(nsIGlobalObject* aGlobal, ExtensionBrowser* aExtensionBrowser);
 
@@ -92,7 +86,14 @@ class ExtensionTest final : public nsISupports,
   ExtensionEventManager* OnMessage();
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ExtensionTest)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(ExtensionTest)
+
+ private:
+  ~ExtensionTest() = default;
+
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  RefPtr<ExtensionBrowser> mExtensionBrowser;
+  RefPtr<ExtensionEventManager> mOnMessageEventMgr;
 };
 
 }  // namespace extensions

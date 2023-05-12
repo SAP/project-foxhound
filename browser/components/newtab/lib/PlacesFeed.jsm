@@ -31,11 +31,9 @@ ChromeUtils.defineModuleGetter(
   "PartnerLinkAttribution",
   "resource:///modules/PartnerLinkAttribution.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PlacesUtils",
-  "resource://gre/modules/PlacesUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   lazy,
   "PrivateBrowsingUtils",
@@ -279,6 +277,11 @@ class PlacesFeed {
       private: isPrivate,
       targetBrowser: action._target.browser,
       fromChrome: false, // This ensure we maintain user preference for how to open new tabs.
+      globalHistoryOptions: {
+        triggeringSponsoredURL: action.data.sponsored_tile_id
+          ? action.data.url
+          : undefined,
+      },
     };
 
     // Always include the referrer (even for http links) if we have one

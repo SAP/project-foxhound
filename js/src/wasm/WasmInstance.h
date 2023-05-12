@@ -24,6 +24,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Zone.h"
+#include "js/Stack.h"  // JS::NativeStackLimit
 #include "js/TypeDecls.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmExprType.h"   // for ResultType
@@ -100,7 +101,7 @@ class alignas(16) Instance {
   // Usually equal to cx->stackLimitForJitCode(JS::StackForUntrustedScript),
   // but can be racily set to trigger immediate trap as an opportunity to
   // CheckForInterrupt without an additional branch.
-  Atomic<uintptr_t, mozilla::Relaxed> stackLimit_;
+  Atomic<JS::NativeStackLimit, mozilla::Relaxed> stackLimit_;
 
   // Set to 1 when wasm should call CheckForInterrupt.
   Atomic<uint32_t, mozilla::Relaxed> interrupt_;
@@ -339,11 +340,6 @@ class alignas(16) Instance {
 
   [[nodiscard]] bool constantRefFunc(uint32_t funcIndex,
                                      MutableHandleFuncRef result);
-  [[nodiscard]] bool constantRttCanon(JSContext* cx, uint32_t sourceTypeIndex,
-                                      MutableHandle<RttValue*> result);
-  [[nodiscard]] bool constantRttSub(JSContext* cx, Handle<RttValue*> parentRtt,
-                                    uint32_t sourceChildTypeIndex,
-                                    MutableHandle<RttValue*> result);
 
   // Return the name associated with a given function index, or generate one
   // if none was given by the module.
@@ -453,10 +449,9 @@ class alignas(16) Instance {
   static void* structNew(Instance* instance, void* structDescr);
   static void* exceptionNew(Instance* instance, JSObject* tag);
   static int32_t throwException(Instance* instance, JSObject* exn);
-  static void* arrayNew(Instance* instance, uint32_t length, void* arrayDescr);
+  static void* arrayNew(Instance* instance, uint32_t numElements,
+                        void* arrayDescr);
   static int32_t refTest(Instance* instance, void* refPtr, void* rttPtr);
-  static void* rttSub(Instance* instance, void* rttParentPtr,
-                      void* rttSubCanonPtr);
   static int32_t intrI8VecMul(Instance* instance, uint32_t dest, uint32_t src1,
                               uint32_t src2, uint32_t len, uint8_t* memBase);
 };

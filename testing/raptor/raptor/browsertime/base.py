@@ -300,6 +300,17 @@ class Browsertime(Perftest):
             # want to enable them everywhere shortly (bug 1770152)
             self.results_handler.perfstats = True
 
+        if self.config["app"] in ("fenix",):
+            # Fenix can take a lot of time to startup
+            browsertime_options.extend(
+                [
+                    "--browsertime.browserRestartTries",
+                    "10",
+                    "--timeouts.browserStart",
+                    "180000",
+                ]
+            )
+
         if test.get("secondary_url"):
             browsertime_options.extend(
                 ["--browsertime.secondary_url", test.get("secondary_url")]
@@ -693,9 +704,12 @@ class Browsertime(Perftest):
             if self.benchmark:
                 output_timeout = BROWSERTIME_BENCHMARK_OUTPUT_TIMEOUT
 
-            # Double the timeouts on live sites
-            if self.config["live_sites"]:
-                output_timeout *= 2
+            # Double the timeouts on live sites and when running with Fenix
+            if self.config["live_sites"] or self.config["app"] in ("fenix",):
+                # Since output_timeout is None for benchmark tests we should
+                # not perform any operations on it.
+                if output_timeout is not None:
+                    output_timeout *= 2
                 proc_timeout *= 2
 
             proc = self.process_handler(cmd, processOutputLine=_line_handler, env=env)

@@ -9,6 +9,7 @@
 #include "GLContext.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsPrintfCString.h"
 #include "WebGLBuffer.h"
@@ -77,6 +78,9 @@ ScopedResolveTexturesForDraw::ScopedResolveTexturesForDraw(
     : mWebGL(webgl) {
   const auto& fb = mWebGL->mBoundDrawFramebuffer;
 
+  std::unordered_map<uint32_t, const webgl::SamplerUniformInfo*>
+      samplerByTexUnit;
+
   MOZ_ASSERT(mWebGL->mActiveProgramLinkInfo);
   const auto& samplerUniforms = mWebGL->mActiveProgramLinkInfo->samplerUniforms;
   for (const auto& pUniform : samplerUniforms) {
@@ -86,6 +90,40 @@ ScopedResolveTexturesForDraw::ScopedResolveTexturesForDraw(
     const auto& uniformBaseType = uniform.texBaseType;
     for (const auto& texUnit : uniform.texUnits) {
       MOZ_ASSERT(texUnit < texList.Length());
+
+      {
+        samplerByTexUnit.reserve(
+            32);  // Only allocate if we need, but don't start too small.
+        auto& prevSamplerForTexUnit = samplerByTexUnit[texUnit];
+        if (!prevSamplerForTexUnit) {
+          prevSamplerForTexUnit = &uniform;
+        }
+        if (&uniform.texListForType != &prevSamplerForTexUnit->texListForType) {
+          // Pointing to different tex lists means different types!
+          const auto linkInfo = mWebGL->mActiveProgramLinkInfo;
+          const auto LocInfoBySampler = [&](const webgl::SamplerUniformInfo* p)
+              -> const webgl::LocationInfo* {
+            for (const auto& pair : linkInfo->locationMap) {
+              const auto& locInfo = pair.second;
+              if (locInfo.samplerInfo == p) {
+                return &locInfo;
+              }
+            }
+            MOZ_CRASH("Can't find sampler location.");
+          };
+          const auto& cur = *LocInfoBySampler(&uniform);
+          const auto& prev = *LocInfoBySampler(prevSamplerForTexUnit);
+          mWebGL->ErrorInvalidOperation(
+              "Tex unit %u referenced by samplers of different types:"
+              " %s (via %s) and %s (via %s).",
+              texUnit, EnumString(cur.info.info.elemType).c_str(),
+              cur.PrettyName().c_str(),
+              EnumString(prev.info.info.elemType).c_str(),
+              prev.PrettyName().c_str());
+          *out_error = true;
+          return;
+        }
+      }
 
       const auto& tex = texList[texUnit];
       if (!tex) continue;
@@ -1059,6 +1097,15 @@ bool WebGLContext::DoFakeVertexAttrib0(const uint64_t totalVertCount) {
   }
 
   ////
+
+  const auto maxFakeVerts = StaticPrefs::webgl_fake_verts_max();
+  if (totalVertCount > maxFakeVerts) {
+    ErrorOutOfMemory(
+        "Draw requires faking a vertex attrib 0 array, but required vert count"
+        " (%" PRIu64 ") is more than webgl.fake-verts.max (%u).",
+        totalVertCount, maxFakeVerts);
+    return false;
+  }
 
   const auto bytesPerVert = sizeof(mFakeVertexAttrib0Data);
   const auto checked_dataSize =

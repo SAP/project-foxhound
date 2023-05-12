@@ -30,70 +30,38 @@ async function openContextMenuAt(browser, x, y) {
 }
 
 /**
- * The text layer contains some spans with the text of the pdf.
- * @param {Object} browser
- * @param {string} text
- * @returns {Object} the bbox of the span containing the text.
- */
-async function getSpanBox(browser, text) {
-  return SpecialPowers.spawn(browser, [text], async function(text) {
-    const { ContentTaskUtils } = ChromeUtils.import(
-      "resource://testing-common/ContentTaskUtils.jsm"
-    );
-    const { document } = content;
-
-    await ContentTaskUtils.waitForCondition(
-      () => !!document.querySelector(".textLayer .endOfContent"),
-      "The text layer must be displayed"
-    );
-
-    let targetSpan = null;
-    for (const span of document.querySelectorAll(
-      `.textLayer span[role="presentation"]`
-    )) {
-      if (span.innerText.includes(text)) {
-        targetSpan = span;
-        break;
-      }
-    }
-
-    Assert.ok(targetSpan, `document must have a span containing '${text}'`);
-
-    const { x, y, width, height } = targetSpan.getBoundingClientRect();
-    return { x, y, width, height };
-  });
-}
-
-/**
  * Open a context menu and get the pdfjs entries
  * @param {Object} browser
  * @param {Object} box
  * @returns {Map<string,HTMLElement>} the pdfjs menu entries.
  */
 async function getContextMenuItems(browser, box) {
-  const { x, y, width, height } = box;
-  const menuitems = [
-    "context-pdfjs-undo",
-    "context-pdfjs-redo",
-    "context-sep-pdfjs-redo",
-    "context-pdfjs-cut",
-    "context-pdfjs-copy",
-    "context-pdfjs-paste",
-    "context-pdfjs-delete",
-    "context-pdfjs-selectall",
-    "context-sep-pdfjs-selectall",
-  ];
+  return new Promise(resolve => {
+    setTimeout(async () => {
+      const { x, y, width, height } = box;
+      const menuitems = [
+        "context-pdfjs-undo",
+        "context-pdfjs-redo",
+        "context-sep-pdfjs-redo",
+        "context-pdfjs-cut",
+        "context-pdfjs-copy",
+        "context-pdfjs-paste",
+        "context-pdfjs-delete",
+        "context-pdfjs-selectall",
+        "context-sep-pdfjs-selectall",
+      ];
 
-  await openContextMenuAt(browser, x + width / 2, y + height / 2);
+      await openContextMenuAt(browser, x + width / 2, y + height / 2);
+      const results = new Map();
+      const doc = browser.ownerDocument;
+      for (const menuitem of menuitems) {
+        const item = doc.getElementById(menuitem);
+        results.set(menuitem, item || null);
+      }
 
-  const results = new Map();
-  const doc = browser.ownerDocument;
-  for (const menuitem of menuitems) {
-    const item = doc.getElementById(menuitem);
-    results.set(menuitem, item || null);
-  }
-
-  return results;
+      resolve(results);
+    }, 0);
+  });
 }
 
 /**
@@ -119,118 +87,32 @@ async function getContextMenuItemsOn(browser, selector) {
  * @param {Object} browser
  */
 async function hideContextMenu(browser) {
-  const doc = browser.ownerDocument;
-  const contextMenu = doc.getElementById("contentAreaContextMenu");
+  await new Promise(resolve =>
+    setTimeout(async () => {
+      const doc = browser.ownerDocument;
+      const contextMenu = doc.getElementById("contentAreaContextMenu");
 
-  const popupHiddenPromise = BrowserTestUtils.waitForEvent(
-    contextMenu,
-    "popuphidden"
-  );
-  contextMenu.hidePopup();
-  await popupHiddenPromise;
-}
-
-/**
- * Enable an editor (Ink, FreeText, ...).
- * @param {Object} browser
- * @param {string} name
- */
-async function enableEditor(browser, name) {
-  await SpecialPowers.spawn(browser, [name], async function(name) {
-    const button = content.document.querySelector(`#editor${name}`);
-    button.click();
-  });
-}
-
-/**
- * Click at the given coordinates.
- * @param {Object} browser
- * @param {number} x
- * @param {number} y
- */
-async function clickAt(browser, x, y) {
-  BrowserTestUtils.synthesizeMouseAtPoint(
-    x,
-    y,
-    {
-      type: "mousedown",
-      button: 0,
-    },
-    browser
-  );
-  BrowserTestUtils.synthesizeMouseAtPoint(
-    x,
-    y,
-    {
-      type: "mouseup",
-      button: 0,
-    },
-    browser
+      const popupHiddenPromise = BrowserTestUtils.waitForEvent(
+        contextMenu,
+        "popuphidden"
+      );
+      contextMenu.hidePopup();
+      await popupHiddenPromise;
+      resolve();
+    }, 0)
   );
 }
 
-/**
- * Click on the element corresponding to the given selector.
- * @param {Object} browser
- * @param {string} selector
- */
-async function clickOn(browser, selector) {
-  const [x, y] = await SpecialPowers.spawn(browser, [selector], async function(
-    selector
-  ) {
-    const element = content.document.querySelector(selector);
-    const { x, y, width, height } = element.getBoundingClientRect();
-    return [x + width / 2, y + height / 2];
-  });
-  await clickAt(browser, x, y);
-}
-
-/**
- * Write some text using the keyboard.
- * @param {Object} browser
- * @param {string} text
- */
-async function write(browser, text) {
-  await SpecialPowers.spawn(browser, [text], async function(text) {
-    const { ContentTaskUtils } = ChromeUtils.import(
-      "resource://testing-common/ContentTaskUtils.jsm"
-    );
-    const EventUtils = ContentTaskUtils.getEventUtils(content);
-
-    for (const char of text.split("")) {
-      EventUtils.synthesizeKey(char, {}, content);
-    }
-  });
-}
-
-/**
- * Add a FreeText annotation and write some text inside.
- * @param {Object} browser
- * @param {string} text
- * @param {Object} box
- */
-async function addFreeText(browser, text, box) {
-  const { x, y, width, height } = box;
-  await clickAt(browser, x + 0.1 * width, y + 0.5 * height);
-  await write(browser, text);
-  await clickAt(browser, x + 0.1 * width, y + 2 * height);
-}
-
-/**
- * Count the number of elements corresponding to the given selector.
- * @param {Object} browser
- * @param {string} selector
- * @returns
- */
-async function countElements(browser, selector) {
-  return SpecialPowers.spawn(browser, [selector], async function(selector) {
-    const { document } = content;
-    return new Promise(resolve => {
-      content.setTimeout(() => {
-        resolve(document.querySelectorAll(selector).length);
-      }, 0);
-    });
-  });
+async function clickOnItem(browser, items, entry) {
+  const editingPromise = BrowserTestUtils.waitForContentEvent(
+    browser,
+    "editingaction",
+    false,
+    null,
+    true
+  );
+  items.get(entry).click();
+  await editingPromise;
 }
 
 /**
@@ -299,7 +181,22 @@ add_task(async function test() {
       await enableEditor(browser, "FreeText");
       await addFreeText(browser, "hello", spanBox);
 
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 0
+      );
+
+      await TestUtils.waitForTick();
+
       Assert.equal(await countElements(browser, ".freeTextEditor"), 1);
+
+      // Unselect.
+      await escape(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".selectedEditor")) !== 1
+      );
+
+      Assert.equal(await countElements(browser, ".selectedEditor"), 0);
 
       menuitems = await getContextMenuItems(browser, spanBox);
       assertMenuitems(menuitems, [
@@ -307,9 +204,12 @@ add_task(async function test() {
         "context-pdfjs-selectall", // and selectable.
       ]);
       // Undo.
-      menuitems.get("context-pdfjs-undo").click();
-
+      await clickOnItem(browser, menuitems, "context-pdfjs-undo");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 1
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -321,9 +221,12 @@ add_task(async function test() {
 
       // The editor removed thanks to "undo" is now redoable
       assertMenuitems(menuitems, ["context-pdfjs-redo"]);
-      menuitems.get("context-pdfjs-redo").click();
-
+      await clickOnItem(browser, menuitems, "context-pdfjs-redo");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 0
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -345,8 +248,12 @@ add_task(async function test() {
         "context-pdfjs-selectall",
       ]);
 
-      menuitems.get("context-pdfjs-cut").click();
+      await clickOnItem(browser, menuitems, "context-pdfjs-cut");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 1
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -357,8 +264,12 @@ add_task(async function test() {
       menuitems = await getContextMenuItems(browser, spanBox);
       assertMenuitems(menuitems, ["context-pdfjs-undo", "context-pdfjs-paste"]);
 
-      menuitems.get("context-pdfjs-paste").click();
+      await clickOnItem(browser, menuitems, "context-pdfjs-paste");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 0
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -381,8 +292,12 @@ add_task(async function test() {
         "context-pdfjs-selectall",
       ]);
 
-      menuitems.get("context-pdfjs-delete").click();
+      await clickOnItem(browser, menuitems, "context-pdfjs-delete");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 1
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -391,8 +306,12 @@ add_task(async function test() {
       );
 
       menuitems = await getContextMenuItems(browser, spanBox);
-      menuitems.get("context-pdfjs-paste").click();
+      await clickOnItem(browser, menuitems, "context-pdfjs-paste");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 0
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -405,9 +324,14 @@ add_task(async function test() {
         browser,
         "#pdfjs_internal_editor_2"
       );
-      menuitems.get("context-pdfjs-copy").click();
-      menuitems.get("context-pdfjs-paste").click();
+
+      await clickOnItem(browser, menuitems, "context-pdfjs-copy");
+      await clickOnItem(browser, menuitems, "context-pdfjs-paste");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 1
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),
@@ -416,9 +340,13 @@ add_task(async function test() {
       );
 
       menuitems = await getContextMenuItems(browser, spanBox);
-      menuitems.get("context-pdfjs-selectall").click();
-      menuitems.get("context-pdfjs-delete").click();
+      await clickOnItem(browser, menuitems, "context-pdfjs-selectall");
+      await clickOnItem(browser, menuitems, "context-pdfjs-delete");
       await hideContextMenu(browser);
+
+      await BrowserTestUtils.waitForCondition(
+        async () => (await countElements(browser, ".freeTextEditor")) !== 2
+      );
 
       Assert.equal(
         await countElements(browser, ".freeTextEditor"),

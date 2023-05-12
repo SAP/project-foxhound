@@ -16,12 +16,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
   SearchSuggestionController:
     "resource://gre/modules/SearchSuggestionController.sys.mjs",
+
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   FormHistory: "resource://gre/modules/FormHistory.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
 });
 
 const MAX_LOCAL_SUGGESTIONS = 3;
@@ -476,7 +477,10 @@ let ContentSearch = {
   },
 
   _onMessageSetCurrentEngine({ data }) {
-    Services.search.defaultEngine = Services.search.getEngineByName(data);
+    Services.search.setDefault(
+      Services.search.getEngineByName(data),
+      Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR
+    );
   },
 
   _onMessageManageEngines({ browser }) {

@@ -55,6 +55,7 @@ class MOZ_STACK_CLASS DocInfo final {
   const URLInfo& PrincipalURL() const;
 
   bool IsTopLevel() const;
+  bool IsSameOriginWithTop() const;
   bool ShouldMatchActiveTabPermission() const;
 
   uint64_t FrameID() const;
@@ -104,7 +105,7 @@ class MOZ_STACK_CLASS DocInfo final {
 
 class MozDocumentMatcher : public nsISupports, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MozDocumentMatcher)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MozDocumentMatcher)
 
   using MatchGlobArray = nsTArray<RefPtr<MatchGlob>>;
 

@@ -102,7 +102,7 @@ loader.lazyRequireGetter(
  * iteration: alliterative lazy live lists.
  */
 exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
-  initialize: function(conn, parameters) {
+  initialize(conn, parameters) {
     protocol.Actor.prototype.initialize.call(this, conn);
 
     this._parameters = parameters;
@@ -133,8 +133,8 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
       hasWebConsoleClearMessagesCacheAsync: true,
       networkMonitor: true,
       resources: supportedResources,
-      // @backward-compat { version 103 } Clear resources not supported by old servers
-      supportsClearResources: true,
+      // @backward-compat { version 105 } isSwitchingMode not supported by old servers
+      supportsSwitchingMode: true,
       // @backward-compat { version 84 } Expose the pref value to the client.
       // Services.prefs is undefined in xpcshell tests.
       workerConsoleApiMessagesDispatchedToMainThread: Services.prefs
@@ -148,7 +148,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
   /**
    * Return a 'hello' packet as specified by the Remote Debugging Protocol.
    */
-  sayHello: function() {
+  sayHello() {
     return {
       from: this.actorID,
       applicationType: this.applicationType,
@@ -158,7 +158,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     };
   },
 
-  forwardingCancelled: function(prefix) {
+  forwardingCancelled(prefix) {
     return {
       from: this.actorID,
       type: "forwardingCancelled",
@@ -169,7 +169,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
   /**
    * Destroys the actor from the browser window.
    */
-  destroy: function() {
+  destroy() {
     Resources.unwatchAllResources(this);
 
     protocol.Actor.prototype.destroy.call(this);
@@ -227,7 +227,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
    * Gets the "root" form, which lists all the global actors that affect the entire
    * browser.
    */
-  getRoot: function() {
+  getRoot() {
     // Create global actors
     if (!this._globalActorPool) {
       this._globalActorPool = new LazyPool(this.conn);
@@ -247,7 +247,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
    * Handles the listTabs request. The actors will survive until at least
    * the next listTabs request.
    */
-  listTabs: async function() {
+  async listTabs() {
     const tabList = this._parameters.tabList;
     if (!tabList) {
       throw {
@@ -287,7 +287,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
    *
    * See BrowserTabList.prototype.getTab for the definition of these IDs.
    */
-  getTab: async function({ browserId }) {
+  async getTab({ browserId }) {
     const tabList = this._parameters.tabList;
     if (!tabList) {
       throw {
@@ -324,7 +324,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return descriptorActor;
   },
 
-  onTabListChanged: function() {
+  onTabListChanged() {
     this.conn.send({ from: this.actorID, type: "tabListChanged" });
     /* It's a one-shot notification; no need to watch any more. */
     this._parameters.tabList.onListChanged = null;
@@ -340,7 +340,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
    *            retrieving addons from a remote device, because the raw iconURL might not
    *            be accessible on the client.
    */
-  listAddons: async function(option) {
+  async listAddons(option) {
     const addonList = this._parameters.addonList;
     if (!addonList) {
       throw {
@@ -370,12 +370,12 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return addonTargetActors;
   },
 
-  onAddonListChanged: function() {
+  onAddonListChanged() {
     this.conn.send({ from: this.actorID, type: "addonListChanged" });
     this._parameters.addonList.onListChanged = null;
   },
 
-  listWorkers: function() {
+  listWorkers() {
     const workerList = this._parameters.workerList;
     if (!workerList) {
       throw {
@@ -407,12 +407,12 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     });
   },
 
-  onWorkerListChanged: function() {
+  onWorkerListChanged() {
     this.conn.send({ from: this.actorID, type: "workerListChanged" });
     this._parameters.workerList.onListChanged = null;
   },
 
-  listServiceWorkerRegistrations: function() {
+  listServiceWorkerRegistrations() {
     const registrationList = this._parameters.serviceWorkerRegistrationList;
     if (!registrationList) {
       throw {
@@ -441,7 +441,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     });
   },
 
-  onServiceWorkerRegistrationListChanged: function() {
+  onServiceWorkerRegistrationListChanged() {
     this.conn.send({
       from: this.actorID,
       type: "serviceWorkerRegistrationListChanged",
@@ -449,7 +449,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     this._parameters.serviceWorkerRegistrationList.onListChanged = null;
   },
 
-  listProcesses: function() {
+  listProcesses() {
     const { processList } = this._parameters;
     if (!processList) {
       throw {
@@ -479,7 +479,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return [...this._processDescriptorActorPool.poolChildren()];
   },
 
-  onProcessListChanged: function() {
+  onProcessListChanged() {
     this.conn.send({ from: this.actorID, type: "processListChanged" });
     this._parameters.processList.onListChanged = null;
   },
@@ -531,7 +531,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
    * Remove the extra actor (added by ActorRegistry.addGlobalActor or
    * ActorRegistry.addTargetScopedActor) name |name|.
    */
-  removeActorByName: function(name) {
+  removeActorByName(name) {
     if (name in this._extraActors) {
       const actor = this._extraActors[name];
       if (this._globalActorPool.has(actor.actorID)) {

@@ -174,7 +174,7 @@ function deserialize(/* realm, */ serializedValue) {
       }
 
       // Otherwise it has to be one of the special strings
-      lazy.assert.in(value, ["NaN", "-0", "+Infinity", "-Infinity"]);
+      lazy.assert.in(value, ["NaN", "-0", "Infinity", "-Infinity"]);
       return Number(value);
     case "boolean":
       lazy.assert.boolean(
@@ -354,7 +354,7 @@ function serialize(
   } else if (Object.is(value, -0)) {
     return { type: "number", value: "-0" };
   } else if (Object.is(value, Infinity)) {
-    return { type: "number", value: "+Infinity" };
+    return { type: "number", value: "Infinity" };
   } else if (Object.is(value, -Infinity)) {
     return { type: "number", value: "-Infinity" };
   } else if (type == "bigint") {
@@ -411,6 +411,23 @@ function serialize(
         ownershipType,
         serializationInternalMap,
         realm */
+      );
+    }
+
+    return remoteValue;
+  }
+  // TODO: Bug 1770754. Remove the if condition when the serialization of all the other types is implemented,
+  // since then the serialization of plain objects should be the fallback.
+  else if (className == "Object") {
+    const remoteValue = { type: "object" };
+
+    if (maxDepth !== null && maxDepth > 0) {
+      remoteValue.value = serializeMapping(
+        Object.entries(value),
+        maxDepth /*,
+          ownershipType,
+          serializationInternalMap,
+          realm */
       );
     }
 

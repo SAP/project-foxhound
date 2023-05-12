@@ -24,6 +24,7 @@
 #include "nsAccUtils.h"
 #include "nsTextEquivUtils.h"
 #include "Pivot.h"
+#include "Relation.h"
 #include "RelationType.h"
 #include "xpcAccessibleDocument.h"
 
@@ -56,8 +57,22 @@ void RemoteAccessibleBase<Derived>::Shutdown() {
     CachedTableAccessible::Invalidate(this);
   }
 
-  // XXX Ideally  this wouldn't be necessary, but it seems OuterDoc accessibles
-  // can be destroyed before the doc they own.
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    // Remove this acc's relation map from the doc's map of
+    // reverse relations. We don't need to do additional processing
+    // of the corresponding forward relations, because this shutdown
+    // should trigger a cache update from the content process.
+    // Similarly, we don't need to remove the reverse rels created
+    // by this acc's forward rels because they'll be cleared during
+    // the next update's call to PreProcessRelations().
+    // In short, accs are responsible for managing their own
+    // reverse relation map, both in PreProcessRelations() and in
+    // Shutdown().
+    Unused << mDoc->mReverseRelations.Remove(ID());
+  }
+
+  // XXX Ideally  this wouldn't be necessary, but it seems OuterDoc
+  // accessibles can be destroyed before the doc they own.
   uint32_t childCount = mChildren.Length();
   if (!IsOuterDoc()) {
     for (uint32_t idx = 0; idx < childCount; idx++) mChildren[idx]->Shutdown();
@@ -400,7 +415,6 @@ Accessible* RemoteAccessibleBase<Derived>::ChildAtPoint(
 
 template <class Derived>
 Maybe<nsRect> RemoteAccessibleBase<Derived>::RetrieveCachedBounds() const {
-  MOZ_ASSERT(mCachedFields);
   if (!mCachedFields) {
     return Nothing();
   }
@@ -614,6 +628,56 @@ LayoutDeviceIntRect RemoteAccessibleBase<Derived>::Bounds() const {
 }
 
 template <class Derived>
+Relation RemoteAccessibleBase<Derived>::RelationByType(
+    RelationType aType) const {
+  // We are able to handle some relations completely in the
+  // parent process, without the help of the cache. Those
+  // relations are enumerated here. Other relations, whose
+  // types are stored in kRelationTypeAtoms, are processed
+  // below using the cache.
+  if (aType == RelationType::CONTAINING_TAB_PANE) {
+    if (dom::CanonicalBrowsingContext* cbc = mDoc->GetBrowsingContext()) {
+      if (dom::CanonicalBrowsingContext* topCbc = cbc->Top()) {
+        if (dom::BrowserParent* bp = topCbc->GetBrowserParent()) {
+          return Relation(bp->GetTopLevelDocAccessible());
+        }
+      }
+    }
+    return Relation();
+  }
+
+  Relation rel;
+  if (!mCachedFields) {
+    return rel;
+  }
+
+  for (auto data : kRelationTypeAtoms) {
+    if (data.mType != aType ||
+        (data.mValidTag && TagName() != data.mValidTag)) {
+      continue;
+    }
+
+    if (auto maybeIds =
+            mCachedFields->GetAttribute<nsTArray<uint64_t>>(data.mAtom)) {
+      rel.AppendIter(new RemoteAccIterator(*maybeIds, Document()));
+    }
+    // Each relation type has only one relevant cached attribute,
+    // so break after we've handled the attr for this type,
+    // even if we didn't find any targets.
+    break;
+  }
+
+  if (auto accRelMapEntry = mDoc->mReverseRelations.Lookup(ID())) {
+    if (auto reverseIdsEntry =
+            accRelMapEntry.Data().Lookup(static_cast<uint64_t>(aType))) {
+      rel.AppendIter(new RemoteAccIterator(reverseIdsEntry.Data(), Document()));
+    }
+  }
+
+  return rel;
+}
+
+template <class Derived>
 void RemoteAccessibleBase<Derived>::AppendTextTo(nsAString& aText,
                                                  uint32_t aStartOffset,
                                                  uint32_t aLength) {
@@ -640,6 +704,97 @@ void RemoteAccessibleBase<Derived>::AppendTextTo(nsAString& aText,
     aText += kImaginaryEmbeddedObjectChar;
   } else {
     aText += kEmbeddedObjectChar;
+  }
+}
+
+template <class Derived>
+nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
+    AccAttributes* aFields) {
+  nsTArray<bool> updateTracker(ArrayLength(kRelationTypeAtoms));
+  for (auto const& data : kRelationTypeAtoms) {
+    if (data.mValidTag) {
+      // The relation we're currently processing only applies to particular
+      // elements. Check to see if we're one of them.
+      nsAtom* tag = TagName();
+      if (!tag) {
+        // TagName() returns null on an initial cache push -- check aFields
+        // for a tag name instead.
+        if (auto maybeTag =
+                aFields->GetAttribute<RefPtr<nsAtom>>(nsGkAtoms::tag)) {
+          tag = *maybeTag;
+        }
+      }
+      MOZ_ASSERT(
+          tag || IsTextLeaf(),
+          "Could not fetch tag via TagName() or from initial cache push!");
+      if (tag != data.mValidTag) {
+        // If this rel doesn't apply to us, do no pre-processing. Also,
+        // note in our updateTracker that we should do no post-processing.
+        updateTracker.AppendElement(false);
+        continue;
+      }
+    }
+
+    nsStaticAtom* const relAtom = data.mAtom;
+    auto newRelationTargets =
+        aFields->GetAttribute<nsTArray<uint64_t>>(relAtom);
+    bool shouldAddNewImplicitRels =
+        newRelationTargets && newRelationTargets->Length();
+
+    // Remove existing implicit relations if we need to perform an update, or
+    // if we've recieved a DeleteEntry(). Only do this if mCachedFields is
+    // initialized. If mCachedFields is not initialized, we still need to
+    // construct the update array so we correctly handle reverse rels in
+    // PostProcessRelations
+    if ((shouldAddNewImplicitRels ||
+         aFields->GetAttribute<DeleteEntry>(relAtom)) &&
+        mCachedFields) {
+      if (auto maybeOldIDs =
+              mCachedFields->GetAttribute<nsTArray<uint64_t>>(relAtom)) {
+        for (uint64_t id : *maybeOldIDs) {
+          // For each target, fetch its reverse relation map
+          nsTHashMap<nsUint64HashKey, nsTArray<uint64_t>>& reverseRels =
+              Document()->mReverseRelations.LookupOrInsert(id);
+          // Then fetch its reverse relation's ID list
+          nsTArray<uint64_t>& reverseRelIDs = reverseRels.LookupOrInsert(
+              static_cast<uint64_t>(data.mReverseType));
+          //  There might be other reverse relations stored for this acc, so
+          //  remove our ID instead of deleting the array entirely.
+          DebugOnly<bool> removed = reverseRelIDs.RemoveElement(ID());
+          MOZ_ASSERT(removed, "Can't find old reverse relation");
+        }
+      }
+    }
+
+    updateTracker.AppendElement(shouldAddNewImplicitRels);
+  }
+
+  return updateTracker;
+}
+
+template <class Derived>
+void RemoteAccessibleBase<Derived>::PostProcessRelations(
+    const nsTArray<bool>& aToUpdate) {
+  size_t updateCount = aToUpdate.Length();
+  MOZ_ASSERT(updateCount == ArrayLength(kRelationTypeAtoms),
+             "Did not note update status for every relation type!");
+  for (size_t i = 0; i < updateCount; i++) {
+    if (aToUpdate.ElementAt(i)) {
+      // Since kRelationTypeAtoms was used to generate aToUpdate, we
+      // know the ith entry of aToUpdate corresponds to the relation type in
+      // the ith entry of kRelationTypeAtoms. Fetch the related data here.
+      auto const& data = kRelationTypeAtoms[i];
+
+      const nsTArray<uint64_t>& newIDs =
+          *mCachedFields->GetAttribute<nsTArray<uint64_t>>(data.mAtom);
+      for (uint64_t id : newIDs) {
+        nsTHashMap<nsUint64HashKey, nsTArray<uint64_t>>& relations =
+            Document()->mReverseRelations.LookupOrInsert(id);
+        nsTArray<uint64_t>& ids =
+            relations.LookupOrInsert(static_cast<uint64_t>(data.mReverseType));
+        ids.AppendElement(ID());
+      }
+    }
   }
 }
 

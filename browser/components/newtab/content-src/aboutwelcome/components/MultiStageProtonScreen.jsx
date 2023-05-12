@@ -4,11 +4,13 @@
 
 import React, { useEffect } from "react";
 import { Localized } from "./MSLocalized";
-import { Colorways } from "./Colorways";
+import { Colorways } from "./MRColorways";
 import { MobileDownloads } from "./MobileDownloads";
 import { Themes } from "./Themes";
 import { SecondaryCTA, StepsIndicator } from "./MultiStageAboutWelcome";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { CTAParagraph } from "./CTAParagraph";
+import { HeroImage } from "./HeroImage";
 
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
@@ -55,12 +57,6 @@ export class ProtonScreen extends React.PureComponent {
     this.mainContentHeader.focus();
   }
 
-  getLogoStyle({ imageURL, height }) {
-    let style = { height };
-    style.backgroundImage = imageURL ? `url(${imageURL})` : null;
-    return style;
-  }
-
   getScreenClassName(
     isFirstCenteredScreen,
     isLastCenteredScreen,
@@ -70,6 +66,29 @@ export class ProtonScreen extends React.PureComponent {
     return `${isFirstCenteredScreen ? `dialog-initial` : ``} ${
       isLastCenteredScreen ? `dialog-last` : ``
     } ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
+  }
+
+  renderLogo({
+    imageURL = "chrome://branding/content/about-logo.svg",
+    alt = "",
+    darkModeImageURL,
+    height,
+  }) {
+    return (
+      <picture className="logo-container">
+        <source
+          srcSet={darkModeImageURL}
+          media="(prefers-color-scheme: dark)"
+        />
+        <img
+          className="brand-logo"
+          style={{ height }}
+          src={imageURL}
+          alt={alt}
+          role={alt ? null : "presentation"}
+        />
+      </picture>
+    );
   }
 
   renderContentTiles() {
@@ -145,18 +164,32 @@ export class ProtonScreen extends React.PureComponent {
     return (
       <div
         className="section-secondary"
-        style={content.background ? { background: content.background } : {}}
+        style={
+          content.background
+            ? {
+                background: content.background,
+                "--mr-secondary-background-position-y":
+                  content.split_narrow_bkg_position,
+              }
+            : {}
+        }
       >
-        <div className="message-text">
-          <div className="spacer-top" />
-          <Localized text={content.hero_text}>
-            <h1 />
-          </Localized>
-          <div className="spacer-bottom" />
-        </div>
-        <Localized text={content.help_text}>
-          <span className="attrib-text" />
-        </Localized>
+        {content.hero_image ? (
+          <HeroImage url={content.hero_image.url} />
+        ) : (
+          <React.Fragment>
+            <div className="message-text">
+              <div className="spacer-top" />
+              <Localized text={content.hero_text}>
+                <h1 />
+              </Localized>
+              <div className="spacer-bottom" />
+            </div>
+            <Localized text={content.help_text}>
+              <span className="attrib-text" />
+            </Localized>
+          </React.Fragment>
+        )}
       </div>
     );
   }
@@ -220,12 +253,9 @@ export class ProtonScreen extends React.PureComponent {
             }
           >
             {content.dismiss_button ? this.renderDismissButton() : null}
-            {content.logo ? (
-              <div
-                className={`brand-logo`}
-                style={this.getLogoStyle(content.logo)}
-              />
-            ) : null}
+
+            {content.logo ? this.renderLogo(content.logo) : null}
+
             <div className={`${isRtamo ? "rtamo-icon" : "hide-rtamo-icon"}`}>
               <img
                 className={`${isTheme ? "rtamo-theme-icon" : ""}`}
@@ -247,6 +277,12 @@ export class ProtonScreen extends React.PureComponent {
                     })}
                   />
                 </Localized>
+                {content.cta_paragraph ? (
+                  <CTAParagraph
+                    content={content.cta_paragraph}
+                    handleAction={this.props.handleAction}
+                  />
+                ) : null}
               </div>
               {this.renderContentTiles()}
               {this.renderLanguageSwitcher()}
@@ -268,24 +304,26 @@ export class ProtonScreen extends React.PureComponent {
               </div>
             </div>
             {hideStepsIndicator ? null : (
-              <nav
+              <div
                 className={`steps ${
                   content.progress_bar ? "progress-bar" : ""
                 }`}
-                data-l10n-id={"onboarding-welcome-steps-indicator"}
+                data-l10n-id={"onboarding-welcome-steps-indicator2"}
                 data-l10n-args={JSON.stringify({
                   current: this.props.order,
                   total,
                 })}
+                data-l10n-attrs="aria-valuetext"
+                role="meter"
+                aria-valuenow={this.props.order}
+                aria-valuemin={1}
+                aria-valuemax={total}
               >
-                {/* These empty elements are here to help trigger the nav for screen readers. */}
-                <br />
-                <p />
                 <StepsIndicator
                   order={this.props.stepOrder}
                   totalNumberOfScreens={total}
                 />
-              </nav>
+              </div>
             )}
           </div>
         </div>

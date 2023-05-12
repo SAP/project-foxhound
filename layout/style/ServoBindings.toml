@@ -17,7 +17,6 @@ headers = [
     "mozilla/ipc/ByteBuf.h",
     "mozilla/AnimationPropertySegment.h",
     "mozilla/ComputedTiming.h",
-    "mozilla/ComputedTimingFunction.h",
     "mozilla/CORSMode.h",
     "mozilla/Keyframe.h",
     "mozilla/ServoElementSnapshot.h",
@@ -47,6 +46,7 @@ raw-lines = [
 hide-types = [
     ".*char_traits",
     ".*incompatible_char_type",
+    ".*nsTStringRepr_string_view",
     # https://github.com/rust-lang/rust-bindgen/issues/1503
     "mozilla::StyleTimingFunction.*",
     # https://github.com/rust-lang/rust-bindgen/issues/1559
@@ -147,6 +147,7 @@ rusty-enums = [
     "mozilla::StyleTopLayer",
     "mozilla::StyleIsolation",
     "mozilla::StyleTextOrientation",
+    "mozilla::StyleMozBoxLayout",
     "mozilla::StyleTableLayout",
     "mozilla::StyleEmptyCells",
     "nsStyleImageType",
@@ -204,7 +205,6 @@ allowlist-types = [
     "mozilla::AnonymousCounterStyle",
     "mozilla::AtomArray",
     "mozilla::ComputedTiming",
-    "mozilla::ComputedTimingFunction",
     "mozilla::Matrix4x4Components",
     "mozilla::PreferenceSheet",
     "mozilla::SeenPtrs",
@@ -424,6 +424,7 @@ cbindgen-types = [
     { gecko = "StyleFillRule", servo = "crate::values::generics::basic_shape::FillRule" },
     { gecko = "StyleFontDisplay", servo = "crate::font_face::FontDisplay" },
     { gecko = "StyleFontFaceSourceListComponent", servo = "crate::font_face::FontFaceSourceListComponent" },
+    { gecko = "StyleFontFaceSourceTechFlags", servo = "crate::font_face::FontFaceSourceTechFlags" },
     { gecko = "StyleFontLanguageOverride", servo = "crate::values::computed::font::FontLanguageOverride" },
     { gecko = "StyleOffsetPath", servo = "crate::values::computed::motion::OffsetPath" },
     { gecko = "StyleGenericOffsetPath", servo = "crate::values::generics::motion::OffsetPath" },

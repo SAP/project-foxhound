@@ -13,7 +13,7 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -1091,8 +1091,7 @@ NotificationObserver::Observe(nsISupports* aSubject, const char* aTopic,
     // Permissions can't be removed from the content process. Send a message
     // to the parent; `ContentParent::RecvDisableNotifications` will call
     // `RemovePermission`.
-    ContentChild::GetSingleton()->SendDisableNotifications(
-        IPC::Principal(mPrincipal));
+    ContentChild::GetSingleton()->SendDisableNotifications(mPrincipal);
     return NS_OK;
   } else if (!strcmp("alertsettingscallback", aTopic)) {
     if (XRE_IsParentProcess()) {
@@ -1100,8 +1099,7 @@ NotificationObserver::Observe(nsISupports* aSubject, const char* aTopic,
     }
     // `ContentParent::RecvOpenNotificationSettings` notifies observers in the
     // parent process.
-    ContentChild::GetSingleton()->SendOpenNotificationSettings(
-        IPC::Principal(mPrincipal));
+    ContentChild::GetSingleton()->SendOpenNotificationSettings(mPrincipal);
     return NS_OK;
   } else if (!strcmp("alertshow", aTopic) || !strcmp("alertfinished", aTopic)) {
     Unused << NS_WARN_IF(NS_FAILED(AdjustPushQuota(aTopic)));
@@ -1317,17 +1315,6 @@ bool Notification::IsInPrivateBrowsing() {
   return false;
 }
 
-namespace {
-struct StringWriteFunc : public JSONWriteFunc {
-  nsAString& mBuffer;  // This struct must not outlive this buffer
-  explicit StringWriteFunc(nsAString& buffer) : mBuffer(buffer) {}
-
-  void Write(const Span<const char>& aStr) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr.data(), aStr.size()));
-  }
-};
-}  // namespace
-
 void Notification::ShowInternal() {
   AssertIsOnMainThread();
   MOZ_ASSERT(mTempRef,
@@ -1433,9 +1420,8 @@ void Notification::ShowInternal() {
   NS_ENSURE_SUCCESS_VOID(rv);
 
   if (isPersistent) {
-    nsAutoString persistentData;
-
-    JSONWriter w(MakeUnique<StringWriteFunc>(persistentData));
+    JSONStringWriteFunc<nsAutoCString> persistentData;
+    JSONWriter w(persistentData);
     w.Start();
 
     nsAutoString origin;
@@ -1450,8 +1436,9 @@ void Notification::ShowInternal() {
 
     w.End();
 
-    alertService->ShowPersistentNotification(persistentData, alert,
-                                             alertObserver);
+    alertService->ShowPersistentNotification(
+        NS_ConvertUTF8toUTF16(persistentData.StringCRef()), alert,
+        alertObserver);
   } else {
     alertService->ShowAlert(alert, alertObserver);
   }

@@ -36,7 +36,6 @@ const REASON_TEST_PING = "test-ping";
 const REASON_DAILY = "daily";
 const REASON_ENVIRONMENT_CHANGE = "environment-change";
 
-const IGNORE_HISTOGRAM_TO_CLONE = "MEMORY_HEAP_ALLOCATED";
 const IGNORE_CLONED_HISTOGRAM = "test::ignore_me_also";
 // Add some unicode characters here to ensure that sending them works correctly.
 const SHUTDOWN_TIME = 10000;
@@ -93,21 +92,6 @@ function setupTestData() {
   k1.add("a");
   k1.add("a");
   k1.add("b");
-}
-
-function getSavedPingFile(basename) {
-  let tmpDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
-  let pingFile = tmpDir.clone();
-  pingFile.append(basename);
-  if (pingFile.exists()) {
-    pingFile.remove(true);
-  }
-  registerCleanupFunction(function() {
-    try {
-      pingFile.remove(true);
-    } catch (e) {}
-  });
-  return pingFile;
 }
 
 function checkPingFormat(aPing, aType, aHasClientId, aHasEnvironment) {
@@ -290,7 +274,7 @@ function checkScalars(processes) {
     "The keyedScalars entry must be an object."
   );
 
-  let checkScalar = function(scalar) {
+  let checkScalar = function(scalar, name) {
     // Check if the value is of a supported type.
     const valueType = typeof scalar;
     switch (valueType) {
@@ -321,7 +305,7 @@ function checkScalars(processes) {
   const scalars = parentProcess.scalars;
   for (let name in scalars) {
     Assert.equal(typeof name, "string", "Scalar names must be strings.");
-    checkScalar(scalars[name]);
+    checkScalar(scalars[name], name);
   }
 
   // Check that we have valid keyed scalar entries.
@@ -338,7 +322,7 @@ function checkScalars(processes) {
         key.length <= 70,
         "Keyed scalar keys can't have more than 70 characters."
       );
-      checkScalar(scalars[name][key]);
+      checkScalar(scalars[name][key], name);
     }
   }
 }
@@ -436,7 +420,11 @@ function checkPayload(payload, reason, successfulPings) {
   // Telemetry doesn't touch a memory reporter with these units that's
   // available on all platforms.
 
-  Assert.ok("MEMORY_TOTAL" in payload.histograms); // UNITS_BYTES
+  if (AppConstants.platform != "macosx") {
+    // This is not present on MacOS for now as it relied on calculating unique
+    // memory which is slow on MacOS.
+    Assert.ok("MEMORY_TOTAL" in payload.histograms); // UNITS_BYTES
+  }
   Assert.ok("MEMORY_JS_GC_HEAP" in payload.histograms); // UNITS_BYTES
   Assert.ok("MEMORY_JS_COMPARTMENTS_SYSTEM" in payload.histograms); // UNITS_COUNT
 

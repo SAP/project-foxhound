@@ -58,6 +58,7 @@ DEFAULTS = dict(
         setup=None,
         cleanup=None,
         preferences={},
+        pine=True,
     ),
 )
 
@@ -293,6 +294,7 @@ def get_test(config, global_overrides, counters, test_instance):
             _counters.extend(
                 [counter for counter in counters if counter not in _counters]
             )
+
     return dict(test_instance.items())
 
 

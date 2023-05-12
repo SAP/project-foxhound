@@ -37,7 +37,6 @@
 #include "jit/ABIArgGenerator.h"
 #include "jit/ABIFunctions.h"
 #include "jit/AtomicOp.h"
-#include "jit/AutoJitContextAlloc.h"
 #include "jit/IonTypes.h"
 #include "jit/MoveResolver.h"
 #include "jit/VMFunctions.h"
@@ -334,25 +333,23 @@ struct AllocSiteInput
 // use cx->lifoAlloc, so take care not to interleave masm use with other
 // lifoAlloc use if one will be destroyed before the other.
 class MacroAssembler : public MacroAssemblerSpecific {
- public:
-  mozilla::Maybe<JitContext> jitContext_;
-  mozilla::Maybe<AutoJitContextAlloc> alloc_;
-
  private:
+  // Information about the current JSRuntime. This is nullptr only for Wasm
+  // compilations.
+  CompileRuntime* maybeRuntime_ = nullptr;
+
+  // Information about the current Realm. This is nullptr for Wasm compilations
+  // and when compiling JitRuntime trampolines.
+  CompileRealm* maybeRealm_ = nullptr;
+
   // Labels for handling exceptions and failures.
   NonAssertingLabel failureLabel_;
 
  protected:
-  // Constructors are protected. Use one of the derived classes!
-  MacroAssembler();
-
-  // This constructor should only be used when there is no JitContext active
-  // (for example when generating string and regexp stubs).
-  explicit MacroAssembler(JSContext* cx);
-
-  // wasm compilation handles its own JitContext-pushing
-  struct WasmToken {};
-  explicit MacroAssembler(WasmToken, TempAllocator& alloc);
+  // Constructor is protected. Use one of the derived classes!
+  explicit MacroAssembler(TempAllocator& alloc,
+                          CompileRuntime* maybeRuntime = nullptr,
+                          CompileRealm* maybeRealm = nullptr);
 
  public:
   MoveResolver& moveResolver() {
@@ -365,6 +362,15 @@ class MacroAssembler : public MacroAssemblerSpecific {
   }
 
   size_t instructionsSize() const { return size(); }
+
+  CompileRealm* realm() const {
+    MOZ_ASSERT(maybeRealm_);
+    return maybeRealm_;
+  }
+  CompileRuntime* runtime() const {
+    MOZ_ASSERT(maybeRuntime_);
+    return maybeRuntime_;
+  }
 
 #ifdef JS_HAS_HIDDEN_SP
   void Push(RegisterOrSP reg);
@@ -3743,8 +3749,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   // This function takes care of loading the callee's instance and address from
   // pinned reg.
-  CodeOffset wasmCallRef(const wasm::CallSiteDesc& desc,
-                         const wasm::CalleeDesc& callee);
+  void wasmCallRef(const wasm::CallSiteDesc& desc,
+                   const wasm::CalleeDesc& callee, CodeOffset* fastCallOffset,
+                   CodeOffset* slowCallOffset);
 
   // WasmTableCallIndexReg must contain the index of the indirect call.
   // This is for asm.js calls only.
@@ -4378,9 +4385,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void loadInlineStringCharsForStore(Register str, Register dest);
 
   void loadStringChar(Register str, Register index, Register output,
-                      Register scratch, Label* fail);
+                      Register scratch1, Register scratch2, Label* fail);
 
   void loadRopeLeftChild(Register str, Register dest);
+  void loadRopeRightChild(Register str, Register dest);
   void storeRopeChildren(Register left, Register right, Register str);
 
   void loadDependentStringBase(Register str, Register dest);
@@ -5277,8 +5285,7 @@ class MOZ_RAII StackMacroAssembler : public MacroAssembler {
   JS::AutoCheckCannotGC nogc;
 
  public:
-  StackMacroAssembler() : MacroAssembler() {}
-  explicit StackMacroAssembler(JSContext* cx) : MacroAssembler(cx) {}
+  StackMacroAssembler(JSContext* cx, TempAllocator& alloc);
 };
 
 // WasmMacroAssembler does not contain GC pointers, so it doesn't need the no-GC
@@ -5296,9 +5303,7 @@ class MOZ_RAII WasmMacroAssembler : public MacroAssembler {
 // GC cancels off-thread compilations.
 class IonHeapMacroAssembler : public MacroAssembler {
  public:
-  IonHeapMacroAssembler() : MacroAssembler() {
-    MOZ_ASSERT(CurrentThreadIsIonCompiling());
-  }
+  IonHeapMacroAssembler(TempAllocator& alloc, CompileRealm* realm);
 };
 
 //{{{ check_macroassembler_style

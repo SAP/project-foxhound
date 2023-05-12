@@ -75,17 +75,19 @@ struct gfxFontFaceSrc {
   SourceType mSourceType;
 
   // if url, whether to use the origin principal or not
-  bool mUseOriginPrincipal;
+  bool mUseOriginPrincipal = false;
 
-  // format hint flags, union of all possible formats
-  // (e.g. TrueType, EOT, SVG, etc.)
-  // see FLAG_FORMAT_* enum values below
-  uint32_t mFormatFlags;
+  // Required font technologies.
+  mozilla::StyleFontFaceSourceTechFlags mTechFlags;
 
-  nsCString mLocalName;                          // full font name if local
-  RefPtr<gfxFontSrcURI> mURI;                    // uri if url
-  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;       // referrer info if url
-  RefPtr<gfxFontSrcPrincipal> mOriginPrincipal;  // principal if url
+  // Format hint, if any was specified.
+  mozilla::StyleFontFaceSourceFormatKeyword mFormatHint;
+
+  nsCString mLocalName;                     // full font name if local
+  RefPtr<gfxFontSrcURI> mURI;               // uri if url
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;  // referrer info if url
+  RefPtr<gfxFontSrcPrincipal>
+      mOriginPrincipal;  // principal if url and mUseOriginPrincipal
 
   RefPtr<gfxFontFaceBufferSource> mBuffer;
 
@@ -106,12 +108,18 @@ inline bool operator==(const gfxFontFaceSrc& a, const gfxFontFaceSrc& b) {
     case gfxFontFaceSrc::eSourceType_Local:
       return a.mLocalName == b.mLocalName;
     case gfxFontFaceSrc::eSourceType_URL: {
+      if (a.mUseOriginPrincipal != b.mUseOriginPrincipal) {
+        return false;
+      }
+      if (a.mUseOriginPrincipal &&
+          !a.mOriginPrincipal->Equals(b.mOriginPrincipal)) {
+        return false;
+      }
       bool equals;
-      return a.mUseOriginPrincipal == b.mUseOriginPrincipal &&
-             a.mFormatFlags == b.mFormatFlags &&
+      return a.mFormatHint == b.mFormatHint && a.mTechFlags == b.mTechFlags &&
              (a.mURI == b.mURI || a.mURI->Equals(b.mURI)) &&
              NS_SUCCEEDED(a.mReferrerInfo->Equals(b.mReferrerInfo, &equals)) &&
-             equals && a.mOriginPrincipal->Equals(b.mOriginPrincipal);
+             equals;
     }
     case gfxFontFaceSrc::eSourceType_Buffer:
       return a.mBuffer == b.mBuffer;
@@ -130,8 +138,9 @@ class gfxUserFontData {
  public:
   gfxUserFontData()
       : mSrcIndex(0),
-        mFormat(0),
         mMetaOrigLen(0),
+        mTechFlags(mozilla::StyleFontFaceSourceTechFlags::Empty()),
+        mFormatHint(mozilla::StyleFontFaceSourceFormatKeyword::None),
         mCompression(kUnknownCompression),
         mPrivate(false),
         mIsBuffer(false) {}
@@ -146,11 +155,13 @@ class gfxUserFontData {
   nsCString mLocalName;   // font name used for the source, if local()
   nsCString mRealName;    // original fullname from the font resource
   uint32_t mSrcIndex;     // index in the rule's source list
-  uint32_t mFormat;       // format hint for the source used, if any
   uint32_t mMetaOrigLen;  // length needed to decompress metadata
-  uint8_t mCompression;   // compression type
-  bool mPrivate;          // whether font belongs to a private window
-  bool mIsBuffer;         // whether the font source was a buffer
+  mozilla::StyleFontFaceSourceTechFlags mTechFlags;  // required font tech
+  mozilla::StyleFontFaceSourceFormatKeyword
+      mFormatHint;       // format hint for the source used, if any
+  uint8_t mCompression;  // compression type
+  bool mPrivate;         // whether font belongs to a private window
+  bool mIsBuffer;        // whether the font source was a buffer
 
   enum {
     kUnknownCompression = 0,
@@ -231,34 +242,6 @@ class gfxUserFontSet {
   gfxUserFontSet();
 
   void Destroy();
-
-  enum {
-    // no flags ==> no hint set
-    // unknown ==> unknown format hint set
-    FLAG_FORMAT_UNKNOWN = 1,
-    FLAG_FORMAT_OPENTYPE = 1 << 1,
-    FLAG_FORMAT_TRUETYPE = 1 << 2,
-    FLAG_FORMAT_TRUETYPE_AAT = 1 << 3,
-    FLAG_FORMAT_EOT = 1 << 4,
-    FLAG_FORMAT_SVG = 1 << 5,
-    FLAG_FORMAT_WOFF = 1 << 6,
-    FLAG_FORMAT_WOFF2 = 1 << 7,
-
-    FLAG_FORMAT_OPENTYPE_VARIATIONS = 1 << 8,
-    FLAG_FORMAT_TRUETYPE_VARIATIONS = 1 << 9,
-    FLAG_FORMAT_WOFF_VARIATIONS = 1 << 10,
-    FLAG_FORMAT_WOFF2_VARIATIONS = 1 << 11,
-
-    // the common formats that we support everywhere
-    FLAG_FORMATS_COMMON =
-        FLAG_FORMAT_OPENTYPE | FLAG_FORMAT_TRUETYPE | FLAG_FORMAT_WOFF |
-        FLAG_FORMAT_WOFF2 | FLAG_FORMAT_OPENTYPE_VARIATIONS |
-        FLAG_FORMAT_TRUETYPE_VARIATIONS | FLAG_FORMAT_WOFF_VARIATIONS |
-        FLAG_FORMAT_WOFF2_VARIATIONS,
-
-    // mask of all unused bits, update when adding new formats
-    FLAG_FORMAT_NOT_USED = ~((1 << 12) - 1)
-  };
 
   // creates a font face without adding it to a particular family
   // weight - [100, 900] (multiples of 100)

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/frame-script */
+/* eslint-env mozilla/remote-page */
 
 /**
  * Determines whether a given value is a fluent id or plain text and adds it to an element
@@ -276,6 +276,15 @@ document.addEventListener("DOMContentLoaded", function() {
       });
     return;
   }
+
+  let newLogoEnabled = RPMGetBoolPref(
+    "browser.privatebrowsing.enable-new-logo",
+    false
+  );
+
+  document
+    .getElementById("about-private-browsing-logo")
+    .toggleAttribute("legacy", !newLogoEnabled);
 
   // We don't do this setup until now, because we don't want to record any impressions until we're
   // sure we're actually running a private window, not just about:privatebrowsing in a normal window.

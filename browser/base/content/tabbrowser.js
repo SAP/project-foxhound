@@ -24,11 +24,10 @@
         "AsyncTabSwitcher",
         "resource:///modules/AsyncTabSwitcher.jsm"
       );
-      ChromeUtils.defineModuleGetter(
-        this,
-        "UrlbarProviderOpenTabs",
-        "resource:///modules/UrlbarProviderOpenTabs.jsm"
-      );
+      ChromeUtils.defineESModuleGetters(this, {
+        UrlbarProviderOpenTabs:
+          "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
+      });
       XPCOMUtils.defineLazyModuleGetters(this, {
         E10SUtils: "resource://gre/modules/E10SUtils.jsm",
         PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
@@ -1660,6 +1659,7 @@
       var aName;
       var aCsp;
       var aSkipLoad;
+      var aGlobalHistoryOptions;
       if (
         arguments.length == 2 &&
         typeof arguments[1] == "object" &&
@@ -1689,6 +1689,7 @@
         aName = params.name;
         aCsp = params.csp;
         aSkipLoad = params.skipLoad;
+        aGlobalHistoryOptions = params.globalHistoryOptions;
       }
 
       // all callers of loadOneTab need to pass a valid triggeringPrincipal.
@@ -1728,6 +1729,7 @@
         name: aName,
         csp: aCsp,
         skipLoad: aSkipLoad,
+        globalHistoryOptions: aGlobalHistoryOptions,
       });
       if (!bgLoad) {
         this.selectedTab = tab;
@@ -2159,22 +2161,14 @@
       let notificationbox = document.createXULElement("notificationbox");
       notificationbox.setAttribute("notificationside", "top");
 
-      // We set large flex on both containers to allow the devtools toolbox to
-      // set a flex attribute. We don't want the toolbox to actually take up free
-      // space, but we do want it to collapse when the window shrinks, and with
-      // flex=0 it can't. When the toolbox is on the bottom it's a sibling of
-      // browserStack, and when it's on the side it's a sibling of
-      // browserContainer.
       let stack = document.createXULElement("stack");
       stack.className = "browserStack";
       stack.appendChild(b);
-      stack.setAttribute("flex", "10000");
 
       let browserContainer = document.createXULElement("vbox");
       browserContainer.className = "browserContainer";
       browserContainer.appendChild(notificationbox);
       browserContainer.appendChild(stack);
-      browserContainer.setAttribute("flex", "10000");
 
       let browserSidebarContainer = document.createXULElement("hbox");
       browserSidebarContainer.className = "browserSidebarContainer";
@@ -2585,6 +2579,7 @@
         csp,
         skipLoad,
         batchInsertingTabs,
+        globalHistoryOptions,
       } = {}
     ) {
       // all callers of addTab that pass a params object need to pass
@@ -2916,6 +2911,7 @@
               charset,
               postData,
               csp,
+              globalHistoryOptions,
             });
           } catch (ex) {
             Cu.reportError(ex);
@@ -7163,7 +7159,7 @@ var TabContextMenu = {
       closeTabsToTheEndItem.disabled &&
       closeOtherTabsItem.disabled;
 
-    // Hide "Bookmark Tab" for multiselection.
+    // Hide "Bookmark Tab…" for multiselection.
     // Update its state if visible.
     let bookmarkTab = document.getElementById("context_bookmarkTab");
     bookmarkTab.hidden = multiselectionContext;

@@ -159,8 +159,8 @@ static bool GetPluginPaths(const nsAString& aPluginPath,
 #  endif  // MOZ_SANDBOX
 #endif    // XP_MACOSX
 
-bool GMPChild::Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
-                    mozilla::ipc::ScopedPort aPort) {
+bool GMPChild::Init(const nsAString& aPluginPath,
+                    mozilla::ipc::UntypedEndpoint&& aEndpoint) {
   GMP_CHILD_LOG_DEBUG("%s pluginPath=%s", __FUNCTION__,
                       NS_ConvertUTF16toUTF8(aPluginPath).get());
 
@@ -170,7 +170,7 @@ bool GMPChild::Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
     return false;
   }
 
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
 
@@ -189,7 +189,7 @@ mozilla::ipc::IPCResult GMPChild::RecvProvideStorageId(
 }
 
 GMPErr GMPChild::GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
-                        const nsCString aKeySystem) {
+                        const nsACString& aKeySystem) {
   if (!mGMPLoader) {
     return GMPGenericErr;
   }
@@ -210,6 +210,7 @@ mozilla::ipc::IPCResult GMPChild::RecvPreloadLibs(const nsCString& aLibs) {
       u"msmpeg2vdec.dll",  // H.264 decoder
       u"nss3.dll",         // NSS for clearkey CDM
       u"ole32.dll",        // required for OPM
+      u"oleaut32.dll",     // For fake-cdm, unclear dependency, see bug 1785030
       u"psapi.dll",        // For GetMappedFileNameW, see bug 1383611
       u"softokn3.dll",     // NSS for clearkey CDM
       u"winmm.dll",        // Dependency for widevine

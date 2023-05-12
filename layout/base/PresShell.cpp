@@ -2165,6 +2165,13 @@ void PresShell::FireResizeEvent() {
   }
 
   mResizeEventPending = false;
+  FireResizeEventSync();
+}
+
+void PresShell::FireResizeEventSync() {
+  if (mIsDocumentGone) {
+    return;
+  }
 
   // Send resize event from here.
   WidgetEvent event(true, mozilla::eResize);
@@ -2233,12 +2240,6 @@ void PresShell::NotifyDestroyingFrame(nsIFrame* aFrame) {
       mCurrentEventContent = aFrame->GetContent();
       mCurrentEventFrame = nullptr;
     }
-
-#ifdef DEBUG
-    if (aFrame == mDrawEventTargetFrame) {
-      mDrawEventTargetFrame = nullptr;
-    }
-#endif
 
     for (unsigned int i = 0; i < mCurrentEventFrameStack.Length(); i++) {
       if (aFrame == mCurrentEventFrameStack.ElementAt(i)) {
@@ -3502,6 +3503,21 @@ static nscoord ComputeWhereToScroll(WhereToScroll aWhereToScroll,
   return resultCoord;
 }
 
+static WhereToScroll GetApplicableWhereToScroll(
+    StyleScrollSnapAlignKeyword aAlign, WhereToScroll aOriginal) {
+  switch (aAlign) {
+    case StyleScrollSnapAlignKeyword::None:
+      return aOriginal;
+    case StyleScrollSnapAlignKeyword::Start:
+      return kScrollToTop;
+    case StyleScrollSnapAlignKeyword::Center:
+      return kScrollToCenter;
+    case StyleScrollSnapAlignKeyword::End:
+      return kScrollToBottom;
+  }
+  return aOriginal;
+}
+
 /**
  * This function takes a scrollable frame, a rect in the coordinate system
  * of the scrolled frame, and a desired percentage-based scroll
@@ -3511,9 +3527,9 @@ static nscoord ComputeWhereToScroll(WhereToScroll aWhereToScroll,
  * This needs to work even if aRect has a width or height of zero.
  */
 static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
-                             const nsRect& aRect, const nsMargin& aMargin,
-                             ScrollAxis aVertical, ScrollAxis aHorizontal,
-                             ScrollFlags aScrollFlags) {
+                             const nsIFrame* aTarget, const nsRect& aRect,
+                             const nsMargin& aMargin, ScrollAxis aVertical,
+                             ScrollAxis aHorizontal, ScrollFlags aScrollFlags) {
   nsPoint scrollPt = aFrameAsScrollable->GetVisualViewportOffset();
   const nsPoint originalScrollPt = scrollPt;
   const nsRect visibleRect(scrollPt,
@@ -3549,9 +3565,14 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
     if (ComputeNeedToScroll(aVertical.mWhenToScroll, lineSize.height, aRect.y,
                             aRect.YMost(), visibleRect.y + padding.top,
                             visibleRect.YMost() - padding.bottom)) {
+      // If the scroll-snap-align on the frame is valid, we need to respect it.
+      WhereToScroll whereToScroll = GetApplicableWhereToScroll(
+          aFrameAsScrollable->GetScrollSnapAlignFor(aTarget).second,
+          aVertical.mWhereToScroll);
+
       nscoord maxHeight;
       scrollPt.y = ComputeWhereToScroll(
-          aVertical.mWhereToScroll, scrollPt.y, rectToScrollIntoView.y,
+          whereToScroll, scrollPt.y, rectToScrollIntoView.y,
           rectToScrollIntoView.YMost(), visibleRect.y, visibleRect.YMost(),
           &allowedRange.y, &maxHeight);
       allowedRange.height = maxHeight - allowedRange.y;
@@ -3565,9 +3586,14 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
     if (ComputeNeedToScroll(aHorizontal.mWhenToScroll, lineSize.width, aRect.x,
                             aRect.XMost(), visibleRect.x + padding.left,
                             visibleRect.XMost() - padding.right)) {
+      // If the scroll-snap-align on the frame is valid, we need to respect it.
+      WhereToScroll whereToScroll = GetApplicableWhereToScroll(
+          aFrameAsScrollable->GetScrollSnapAlignFor(aTarget).first,
+          aHorizontal.mWhereToScroll);
+
       nscoord maxWidth;
       scrollPt.x = ComputeWhereToScroll(
-          aHorizontal.mWhereToScroll, scrollPt.x, rectToScrollIntoView.x,
+          whereToScroll, scrollPt.x, rectToScrollIntoView.x,
           rectToScrollIntoView.XMost(), visibleRect.x, visibleRect.XMost(),
           &allowedRange.x, &maxWidth);
       allowedRange.width = maxWidth - allowedRange.x;
@@ -3715,6 +3741,7 @@ void PresShell::DoScrollContentIntoView() {
   // over all continuation frames below.
   const nsMargin scrollMargin = GetScrollMargin(mContentToScrollTo, frame);
 
+  const nsIFrame* target = frame;
   // This is a two-step process.
   // Step 1: Find the bounds of the rect we want to scroll into view.  For
   //         example, for an inline frame we may want to scroll in the whole
@@ -3746,14 +3773,15 @@ void PresShell::DoScrollContentIntoView() {
 
   ScrollFrameRectIntoView(container, frameBounds, scrollMargin,
                           data->mContentScrollVAxis, data->mContentScrollHAxis,
-                          data->mContentToScrollToFlags);
+                          data->mContentToScrollToFlags, target);
 }
 
 bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
                                         const nsMargin& aMargin,
                                         ScrollAxis aVertical,
                                         ScrollAxis aHorizontal,
-                                        ScrollFlags aScrollFlags) {
+                                        ScrollFlags aScrollFlags,
+                                        const nsIFrame* aTarget) {
   if (aFrame->AncestorHidesContent()) {
     return false;
   }
@@ -3762,6 +3790,7 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
   // This function needs to work even if rect has a width or height of 0.
   nsRect rect = aRect;
   nsIFrame* container = aFrame;
+  const nsIFrame* target = aTarget ? aTarget : aFrame;
   // Walk up the frame hierarchy scrolling the rect into view and
   // keeping rect relative to container
   do {
@@ -3795,8 +3824,8 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
 
       {
         AutoWeakFrame wf(container);
-        ScrollToShowRect(sf, targetRect, aMargin, aVertical, aHorizontal,
-                         aScrollFlags);
+        ScrollToShowRect(sf, target, targetRect, aMargin, aVertical,
+                         aHorizontal, aScrollFlags);
         if (!wf.IsAlive()) {
           return didScroll;
         }
@@ -3815,6 +3844,10 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
       if (aScrollFlags & ScrollFlags::ScrollFirstAncestorOnly) {
         break;
       }
+
+      // This scroll container will be the next target element in the nearest
+      // ancestor scroll container.
+      target = container;
     }
     nsIFrame* parent;
     if (container->IsTransformed()) {
@@ -4138,7 +4171,10 @@ void PresShell::HandlePostedReflowCallbacks(bool aInterruptible) {
 
   FlushType flushType =
       aInterruptible ? FlushType::InterruptibleLayout : FlushType::Layout;
-  if (shouldFlush && !mIsDestroying) {
+  if (shouldFlush && !mIsDestroying && nsContentUtils::IsSafeToRunScript()) {
+    // We don't want to flush when not allowed to run script (e.g., like when
+    // running container query updates), since that trivially executes script.
+    // We'll flush layout again at the end of that process if necessary.
     FlushPendingNotifications(flushType);
   }
 }
@@ -4353,8 +4389,7 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
                           : FlushType::InterruptibleLayout) &&
         !mIsDestroying) {
       didLayoutFlush = true;
-      mFrameConstructor->RecalcQuotesAndCounters();
-      if (ProcessReflowCommands(flushType < FlushType::Layout)) {
+      if (DoFlushLayout(/* aInterruptible = */ flushType < FlushType::Layout)) {
         if (mContentToScrollTo) {
           DoScrollContentIntoView();
           if (mContentToScrollTo) {
@@ -5610,8 +5645,9 @@ void PresShell::SynthesizeMouseMove(bool aFromScroll) {
 static nsView* FindFloatingViewContaining(nsPresContext* aRootPresContext,
                                           nsIWidget* aRootWidget,
                                           const LayoutDeviceIntPoint& aPt) {
-  nsIFrame* popupFrame =
-      nsLayoutUtils::GetPopupFrameForPoint(aRootPresContext, aRootWidget, aPt);
+  nsIFrame* popupFrame = nsLayoutUtils::GetPopupFrameForPoint(
+      aRootPresContext, aRootWidget, aPt,
+      nsLayoutUtils::GetPopupFrameForPointFlags::OnlyReturnFramesWithWidgets);
   return popupFrame ? popupFrame->GetView() : nullptr;
 }
 
@@ -7115,9 +7151,6 @@ nsresult PresShell::EventHandler::HandleEventUsingCoordinates(
   nsresult rv = eventHandler.HandleEventWithCurrentEventInfo(
       aGUIEvent, aEventStatus, true,
       MOZ_KnownLive(eventTargetData.mOverrideClickTarget));
-#ifdef DEBUG
-  eventTargetData.mPresShell->ShowEventTargetDebug();
-#endif
   return rv;
 }
 
@@ -7914,11 +7947,6 @@ nsresult PresShell::EventHandler::HandleEventAtFocusedContent(
 
   nsresult rv =
       HandleEventWithCurrentEventInfo(aGUIEvent, aEventStatus, true, nullptr);
-
-#ifdef DEBUG
-  mPresShell->ShowEventTargetDebug();
-#endif
-
   return rv;
 }
 
@@ -8020,10 +8048,6 @@ nsresult PresShell::EventHandler::HandleEventWithFrameForPresShell(
         HandleEventWithCurrentEventInfo(aGUIEvent, aEventStatus, true, nullptr);
   }
 
-#ifdef DEBUG
-  mPresShell->ShowEventTargetDebug();
-#endif
-
   return rv;
 }
 
@@ -8054,19 +8078,6 @@ Document* PresShell::GetPrimaryContentDocument() {
 
   return childDocShell->GetExtantDocument();
 }
-
-#ifdef DEBUG
-void PresShell::ShowEventTargetDebug() {
-  if (nsIFrame::GetShowEventTargetFrameBorder() && GetCurrentEventFrame()) {
-    if (mDrawEventTargetFrame) {
-      mDrawEventTargetFrame->InvalidateFrame();
-    }
-
-    mDrawEventTargetFrame = mCurrentEventFrame;
-    mDrawEventTargetFrame->InvalidateFrame();
-  }
-}
-#endif
 
 nsresult PresShell::EventHandler::HandleEventWithTarget(
     WidgetEvent* aEvent, nsIFrame* aNewEventFrame, nsIContent* aNewEventContent,
@@ -9846,6 +9857,11 @@ bool PresShell::ProcessReflowCommands(bool aInterruptible) {
   }
 
   return !interrupted;
+}
+
+bool PresShell::DoFlushLayout(bool aInterruptible) {
+  mFrameConstructor->RecalcQuotesAndCounters();
+  return ProcessReflowCommands(aInterruptible);
 }
 
 void PresShell::WindowSizeMoveDone() {

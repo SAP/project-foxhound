@@ -21,16 +21,20 @@ add_task(
 
         // this test has been disabled for a long time so the functionality doesn't work
         const response = await threadFront.setBreakpoint(
-          { sourceUrl: source.url, line: line },
+          { sourceUrl: source.url, line },
           {}
         );
         // check that the breakpoint has properly skipped forward one line.
         assert.equal(response.actuallocation.source.actor, source.actor);
+        // This is wrong - location is not defined, but the test has been disabled
+        // for a long time and currently doesn't work.
+        // eslint-disable-next-line no-undef
         Assert.equal(response.actualLocation.line, location.line + 1);
 
         threadFront.once("paused", function(packet) {
           // Check the return value.
           Assert.equal(packet.frame.where.actor, source.actor);
+          // eslint-disable-next-line no-undef
           Assert.equal(packet.frame.where.line, location.line + 1);
           Assert.equal(packet.why.type, "breakpoint");
           Assert.equal(packet.why.actors[0], response.bpClient.actor);

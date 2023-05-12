@@ -38,17 +38,6 @@ if CONFIG['MOZ_MEMORY']:
 if CONFIG['MOZ_PLACES']:
     gkrust_features += ['moz_places']
 
-if CONFIG['ENABLE_WASM_CRANELIFT']:
-    gkrust_features += ['spidermonkey_rust']
-    if CONFIG['JS_CODEGEN_X86'] or CONFIG['JS_CODEGEN_X64']:
-        gkrust_features += ['cranelift_x86']
-    elif CONFIG['JS_CODEGEN_ARM']:
-        gkrust_features += ['cranelift_arm32']
-    elif CONFIG['JS_CODEGEN_ARM64']:
-        gkrust_features += ['cranelift_arm64']
-    else:
-        gkrust_features += ['cranelift_none']
-
 if CONFIG['JS_ENABLE_SMOOSH']:
     gkrust_features += ['smoosh']
 
@@ -85,6 +74,8 @@ if CONFIG["MOZ_CRASHREPORTER"] and CONFIG['MOZ_OXIDIZED_BREAKPAD']:
 if CONFIG["MOZ_WEBMIDI_MIDIR_IMPL"]:
     gkrust_features += ['webmidi_midir_impl']
 
+if CONFIG["MOZ_UNIFFI_FIXTURES"]:
+    gkrust_features += ['uniffi_fixtures']
 
 # This must remain last.
 gkrust_features = ["gkrust-shared/%s" % f for f in gkrust_features]

@@ -627,6 +627,7 @@ browser.startup:
       - 1714258
       - 1730042
       - 1754641
+      - 1781978
     description: >
       How the about:home startup cache functioned on startup.
 
@@ -641,7 +642,7 @@ browser.startup:
       8: User did not load about:home on its own by default.
       9: Cache is disabled because about:newtab preloading is disabled.
 
-    expires: "106"
+    expires: "112"
     kind: uint
     notification_emails:
       - mconley@mozilla.com
@@ -660,11 +661,12 @@ browser.startup:
       - 1714258
       - 1730042
       - 1754641
+      - 1781978
     description: >
       True if the about:home startup cache was written via the AsyncShutdown
       blocker.
 
-    expires: "106"
+    expires: "112"
     kind: boolean
     notification_emails:
       - mconley@mozilla.com
@@ -1348,6 +1350,22 @@ security:
       - 'fennec'
     record_in_processes:
       - main
+  psm_ui_interaction:
+    bug_numbers:
+      - 1781466
+    description: >
+      Whether or not the identified PSM UI element has been interacted
+      with this session.
+    expires: "110"
+    kind: boolean
+    keyed: true
+    notification_emails:
+      - dkeeler@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
 
 pwmgr:
   potentially_breached_passwords:
@@ -1436,23 +1454,6 @@ contentblocking:
       - main
 
 privacy:
-  dfpi_rollout_enabledByDefault:
-    bug_numbers:
-      - 1740232
-      - 1758828
-    description: >
-      Records if a client is opted into dFPI in standard ETP mode as part of the
-      rollout experiment. 0: opted out, 1: opted in, 2: not part of the
-      experiment
-    expires: "106"
-    kind: uint
-    notification_emails:
-      - pbz@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
   dfpi_rollout_tcpByDefault_feature:
     bug_numbers:
       - 1767415
@@ -1933,6 +1934,7 @@ os.environment:
   launched_to_handle:
     bug_numbers:
       - 1243603
+      - 1781984
     description: >
       Records counts for when Firefox was launched afresh (i.e., was not already
       running) to handle a file type or protocol with `-osint -url ...`.  The
@@ -1945,7 +1947,7 @@ os.environment:
       recorded as ".<other extension>" or "<other protocol>", respectively
       (neither of which are valid extension or protocol identifiers).
     keyed: true
-    expires: "106"
+    expires: never
     kind: uint
     notification_emails:
       - application-update-telemetry-alerts@mozilla.com
@@ -1960,6 +1962,7 @@ os.environment:
   invoked_to_handle:
     bug_numbers:
       - 1243603
+      - 1781984
     description: >
       Records counts for when Firefox was invoked (i.e., was already running and
       was not launched) to handle a file type or protocol with `-osint -url
@@ -1973,7 +1976,7 @@ os.environment:
       respectively (neither of which are valid extension or protocol
       identifiers).
     keyed: true
-    expires: "106"
+    expires: never
     kind: uint
     notification_emails:
       - application-update-telemetry-alerts@mozilla.com
@@ -1988,6 +1991,7 @@ os.environment:
   is_default_handler:
     bug_numbers:
       - 1743914
+      - 1781984
     description: >
       Records whether Firefox was the default handler for particular file types
       or protocols.  The result is split into keys which represent the file
@@ -1996,7 +2000,7 @@ os.environment:
       and/or a subset of the protocol schemes that Firefox registers to may be
       recorded.
     keyed: true
-    expires: "106"
+    expires: never
     kind: boolean
     notification_emails:
       - application-update-telemetry-alerts@mozilla.com
@@ -2254,8 +2258,7 @@ mediarecorder:
     expires: "72"
     kind: uint
     notification_emails:
-      - bvandyk@mozilla.com
-      - nohlmeier@mozilla.com
+      - media-alerts@mozilla.com
     release_channel_collection: opt-in
     products:
       - 'firefox'
@@ -2276,8 +2279,7 @@ media:
     expires: never
     kind: uint
     notification_emails:
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
+      - media-alerts@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -2293,8 +2295,7 @@ media:
     kind: uint
     keyed: true
     notification_emails:
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
+      - media-alerts@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -2310,8 +2311,7 @@ media:
     kind: uint
     keyed: true
     notification_emails:
-      - alwu@mozilla.com
-      - bvandyk@mozilla.com
+      - media-alerts@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -2328,8 +2328,7 @@ media:
     kind: boolean
     keyed: true
     notification_emails:
-      - alwu@mozilla.com
-      - bvandyk@mozilla.com
+      - media-alerts@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'
@@ -2347,8 +2346,7 @@ media:
     kind: boolean
     keyed: true
     notification_emails:
-      - alwu@mozilla.com
-      - bvandyk@mozilla.com
+      - media-alerts@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'

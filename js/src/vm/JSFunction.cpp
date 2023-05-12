@@ -52,6 +52,7 @@
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
 #include "vm/BooleanObject.h"
+#include "vm/ErrorContext.h"           // MainThreadErrorContext
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
 #include "vm/GlobalObject.h"
@@ -981,7 +982,7 @@ bool js::fun_call(JSContext* cx, unsigned argc, Value* vp) {
     iargs[i].set(args[i + 1]);
   }
 
-  return Call(cx, func, args.get(0), iargs, args.rval());
+  return Call(cx, func, args.get(0), iargs, args.rval(), CallReason::FunCall);
 }
 
 // ES5 15.3.4.3
@@ -1033,7 +1034,7 @@ bool js::fun_apply(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 9.
-  return Call(cx, fval, args[0], args2, args.rval());
+  return Call(cx, fval, args[0], args2, args.rval(), CallReason::FunCall);
 }
 
 static const JSFunctionSpec function_methods[] = {
@@ -1422,7 +1423,9 @@ bool JSFunction::delazifyLazilyInterpretedFunction(JSContext* cx,
   }
 
   // Finally, compile the script if it really doesn't exist.
-  if (!frontend::DelazifyCanonicalScriptedFunction(cx, fun)) {
+  MainThreadErrorContext ec(cx);
+  if (!frontend::DelazifyCanonicalScriptedFunction(
+          cx, &ec, cx->stackLimitForCurrentPrincipal(), fun)) {
     // The frontend shouldn't fail after linking the function and the
     // non-lazy script together.
     MOZ_ASSERT(fun->baseScript() == lazy);

@@ -282,6 +282,13 @@ fn prepare_interned_prim_for_render(
                                     .ceil().to_i32();
                 }
 
+                // It's plausible, due to float accuracy issues that the line decoration may be considered
+                // visible even if the scale factors are ~0. However, the render task allocation below requires
+                // that the size of the task is > 0. To work around this, ensure that the task size is at least
+                // 1x1 pixels
+                task_size.width = task_size.width.max(1);
+                task_size.height = task_size.height.max(1);
+
                 // Request a pre-rendered image task.
                 // TODO(gw): This match is a bit untidy, but it should disappear completely
                 //           once the prepare_prims and batching are unified. When that
@@ -753,7 +760,7 @@ fn prepare_interned_prim_for_render(
                         frame_context.spatial_tree,
                         prim_spatial_node_index,
                         local_prim_rect,
-                        &prim_instance.vis.combined_local_clip_rect,
+                        &prim_instance.vis.clip_chain.local_clip_rect,
                         dirty_rect,
                         plane_split_anchor,
                     );
@@ -852,7 +859,8 @@ fn decompose_repeated_gradient(
     // produce primitives that are partially covering the original image
     // rect and we want to clip these extra parts out.
     if let Some(tight_clip_rect) = prim_vis
-        .combined_local_clip_rect
+        .clip_chain
+        .local_clip_rect
         .intersection(prim_local_rect) {
 
         let visible_rect = compute_conservative_visible_rect(
@@ -1230,10 +1238,17 @@ fn write_brush_segment_description(
         return false;
     }
 
+    // NOTE: The local clip rect passed to the segment builder must be the unmodified
+    //       local clip rect from the clip leaf, not the local_clip_rect from the
+    //       clip-chain instance. The clip-chain instance may have been reduced by
+    //       clips that are in the same coordinate system, but not the same spatial
+    //       node as the primitive. This can result in the clip for the segment building
+    //       being affected by scrolling clips, which we can't handle (since the segments
+    //       are not invalidated during frame building after being built).
     segment_builder.initialize(
         prim_local_rect,
         None,
-        prim_local_clip_rect
+        prim_local_clip_rect,
     );
 
     // Segment the primitive on all the local-space clip sources that we can.
@@ -1375,10 +1390,11 @@ fn build_segments_if_needed(
 
     if *segment_instance_index == SegmentInstanceIndex::INVALID {
         let mut segments: SmallVec<[BrushSegment; 8]> = SmallVec::new();
+        let clip_leaf = frame_state.clip_tree.get_leaf(instance.clip_leaf_id);
 
         if write_brush_segment_description(
             prim_local_rect,
-            instance.clip_set.local_clip_rect,
+            clip_leaf.local_clip_rect,
             prim_clip_chain,
             &mut frame_state.segment_builder,
             frame_state.clip_store,

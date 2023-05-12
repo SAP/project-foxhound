@@ -23,12 +23,15 @@
 #include "js/RootingAPI.h"         // JS::MutableHandle
 #include "js/Value.h"              // JS::Value
 #include "vm/EnvironmentObject.h"  // js::ModuleEnvironmentObject
+#include "vm/ErrorContext.h"       // js::MainThreadErrorContext
 #include "vm/JSContext.h"          // CHECK_THREAD, JSContext
 #include "vm/JSObject.h"           // JSObject
+#include "vm/List.h"               // ListObject
 #include "vm/Runtime.h"            // JSRuntime
 
 #include "builtin/Array-inl.h"
 #include "vm/JSContext-inl.h"  // JSContext::{c,releaseC}heck
+#include "vm/JSObject-inl.h"
 
 using namespace js;
 
@@ -113,7 +116,9 @@ static JSObject* CompileModuleHelper(JSContext* cx,
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
-  return frontend::CompileModule(cx, options, srcBuf);
+  MainThreadErrorContext ec(cx);
+  return frontend::CompileModule(cx, &ec, cx->stackLimitForCurrentPrincipal(),
+                                 options, srcBuf);
 }
 
 JS_PUBLIC_API JSObject* JS::CompileModule(JSContext* cx,
@@ -1325,10 +1330,7 @@ bool js::ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
     MOZ_ASSERT(!module->hadEvaluationError());
 
     // Step 10.c. If module.[[AsyncEvaluation]] is false, then:
-    if (!module->isAsyncEvaluating()) {
-      // Step 10.c.i. Assert: module.[[Status]] is evaluated.
-      MOZ_ASSERT(module->status() == ModuleStatus::Evaluated);
-
+    if (module->status() == ModuleStatus::Evaluated) {
       // Step 10.c.ii. Perform ! Call(capability.[[Resolve]], undefined,
       //               undefined).
       if (!ModuleObject::topLevelCapabilityResolve(cx, module)) {
@@ -1462,7 +1464,8 @@ static bool InnerModuleEvaluation(JSContext* cx, Handle<ModuleObject*> module,
     }
 
     // Step 11.d.v. If requiredModule.[[AsyncEvaluation]] is true, then:
-    if (requiredModule->isAsyncEvaluating()) {
+    if (requiredModule->isAsyncEvaluating() &&
+        requiredModule->status() != ModuleStatus::Evaluated) {
       // Step 11.d.v.2. Append module to requiredModule.[[AsyncParentModules]].
       if (!ModuleObject::appendAsyncParentModule(cx, requiredModule, module)) {
         return false;
@@ -1480,7 +1483,7 @@ static bool InnerModuleEvaluation(JSContext* cx, Handle<ModuleObject*> module,
   if (module->pendingAsyncDependencies() > 0 || module->hasTopLevelAwait()) {
     // Step 12.a. Assert: module.[[AsyncEvaluation]] is false and was never
     //            previously set to true.
-    MOZ_ASSERT(!module->isAsyncEvaluating() && !module->wasAsyncEvaluating());
+    MOZ_ASSERT(!module->isAsyncEvaluating());
 
     // Step 12.b. Set module.[[AsyncEvaluation]] to true.
     // Step 12.c. NOTE: The order in which module records have their
@@ -1705,11 +1708,9 @@ void js::AsyncModuleExecutionFulfilled(JSContext* cx,
 
   ModuleObject::onTopLevelEvaluationFinished(module);
 
-  // Step 5. Set module.[[AsyncEvaluation]] to false.
-  module->setAsyncEvaluatingFalse();
-
   // Step 6. Set module.[[Status]] to evaluated.
   module->setStatus(ModuleStatus::Evaluated);
+  module->clearAsyncEvaluatingPostOrder();
 
   // Step 7. If module.[[TopLevelCapability]] is not empty, then:
   if (module->hasTopLevelCapability()) {
@@ -1751,11 +1752,7 @@ void js::AsyncModuleExecutionFulfilled(JSContext* cx,
         // Step 12.c.iii. Else:
         // Step 12.c.iii.1. Set m.[[Status]] to evaluated.
         m->setStatus(ModuleStatus::Evaluated);
-
-        // Note: This step is no longer in the spec. We do this to ensure the
-        // that the async evaluating state is set to false after evaluation has
-        // finished.
-        m->setAsyncEvaluatingFalse();
+        m->clearAsyncEvaluatingPostOrder();
 
         // Step 12.c.iii.2. If m.[[TopLevelCapability]] is not empty, then:
         if (m->hasTopLevelCapability()) {
@@ -1808,10 +1805,7 @@ void js::AsyncModuleExecutionRejected(JSContext* cx,
   // Step 6. Set module.[[Status]] to evaluated.
   MOZ_ASSERT(module->status() == ModuleStatus::Evaluated);
 
-  // Note: This step is no longer in the spec. We do this to ensure the
-  // that the async evaluating state is set to false after evaluation has
-  // finished.
-  module->setAsyncEvaluatingFalse();
+  module->clearAsyncEvaluatingPostOrder();
 
   // Step 7. For each Cyclic Module Record m of module.[[AsyncParentModules]],
   //         do:

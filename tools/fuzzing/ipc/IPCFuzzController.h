@@ -89,6 +89,7 @@ class IPCFuzzController {
                           bool* is_cons, bool update = true);
 
   void OnActorConnected(mozilla::ipc::IProtocol* protocol);
+  void OnActorDestroyed(mozilla::ipc::IProtocol* protocol);
   void OnDropPeer(const char* reason, const char* file, int line);
   void OnMessageTaskStart();
   void OnMessageTaskStop();
@@ -122,6 +123,16 @@ class IPCFuzzController {
   // This is a mapping from port name to pairs of actor Id and ProtocolId.
   std::unordered_map<mojo::core::ports::PortName, std::vector<ActorIdPair>>
       actorIds;
+
+  // If set, `lastActorPortName` is valid and fuzzing is pinned to this port.
+  Atomic<bool> useLastPortName;
+
+  // Last port where a new actor appeared. Only valid with `useLastPortName`.
+  mojo::core::ports::PortName lastActorPortName;
+
+  // Counter to indicate how long fuzzing should stay pinned to the last
+  // actor that appeared on `lastActorPortName`.
+  Atomic<uint32_t> useLastActor;
 
   // This is the deterministic ordering of toplevel actors for fuzzing.
   // In this matrix, each row (toplevel index) corresponds to one toplevel

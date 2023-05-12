@@ -757,18 +757,16 @@ var invalidNonUrlImageValues = [
   "-webkit-linear-gradient(top right red, blue)",
   "-webkit-linear-gradient(bottom red, blue)",
 
-  // Linear-gradient with calc expression containing mixed units or division
-  // by zero (bug 1363349)
+  // Linear-gradient with calc expression containing mixed units
+  // (bug 1363349)
   "-webkit-gradient(linear, calc(5 + 5%) top, calc(10 + 10) top, from(blue), to(lime))",
   "-webkit-gradient(linear, left calc(25 - 10%), right calc(75% + 10%), from(blue), to(lime))",
-  "-webkit-gradient(linear, calc(1 / 0) 2, 3 4)",
 
-  // Radial-gradient with calc expression containing mixed units, division
-  // by zero, or a percentage in the radius (bug 1363349)
+  // Radial-gradient with calc expression containing mixed units, or a
+  // percentage in the radius (bug 1363349)
   "-webkit-gradient(radial, 1 2, 0, 3 4, calc(1% + 5%), from(blue), to(lime))",
   "-webkit-gradient(radial, 1 2, calc(1 + 2), 3 4, calc(1 + 5%), from(blue), to(lime))",
   "-webkit-gradient(radial, calc(0 + 1) calc(1 + 1), calc(1% + 2%), calc(1 + 2) 4, calc(1 + 5), from(blue), to(lime))",
-  "-webkit-gradient(radial, 1 2, calc(8 / 0), 3 4, 9)",
 
   // Linear syntax that's invalid for both -webkit & unprefixed, but valid
   // for -moz:
@@ -1684,6 +1682,25 @@ var gCSSProperties = {
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
     alias_for: "appearance",
     subproperties: ["appearance"],
+  },
+  "aspect-ratio": {
+    domProp: "aspectRatio",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: [
+      "1",
+      "1.0",
+      "1 / 2",
+      "1/2",
+      "16.2 / 9.5",
+      "1/0",
+      "0/1",
+      "0 / 0",
+      "auto 1",
+      "0 auto",
+    ],
+    invalid_values: ["none", "1 test", "1 / auto", "auto / 1"],
   },
   "border-inline": {
     domProp: "borderInline",
@@ -2777,7 +2794,6 @@ var gCSSProperties = {
       "-moz-max(5px)",
       "-moz-min(5px,2em)",
       "-moz-max(5px,2em)",
-      "calc(50px/(2 - 2))",
       "calc(5 + 5)",
       "calc(5 * 5)",
       "calc(5em * 5em)",
@@ -8474,7 +8490,6 @@ var gCSSProperties = {
       "-moz-max(5px)",
       "-moz-min(5px,2em)",
       "-moz-max(5px,2em)",
-      "calc(50px/(2 - 2))",
       /* If we ever support division by values, which is
        * complicated for the reasons described in
        * http://lists.w3.org/Archives/Public/www-style/2010Jan/0007.html
@@ -9786,7 +9801,6 @@ var gCSSProperties = {
       "-moz-max(5px)",
       "-moz-min(5px,2em)",
       "-moz-max(5px,2em)",
-      "calc(50px/(2 - 2))",
       // If we ever support division by values, which is
       // complicated for the reasons described in
       // http://lists.w3.org/Archives/Public/www-style/2010Jan/0007.html
@@ -13489,28 +13503,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.zoom-transform-hack.enabled")) {
     initial_values: ["normal", "1.0", "0", "0%", "100%"],
     other_values: ["10%", "2", "2.5"],
     invalid_values: ["0 0", "foo", "10px"],
-  };
-}
-
-if (IsCSSPropertyPrefEnabled("layout.css.aspect-ratio.enabled")) {
-  gCSSProperties["aspect-ratio"] = {
-    domProp: "aspectRatio",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: [
-      "1",
-      "1.0",
-      "1 / 2",
-      "1/2",
-      "16.2 / 9.5",
-      "1/0",
-      "0/1",
-      "0 / 0",
-      "auto 1",
-      "0 auto",
-    ],
-    invalid_values: ["none", "1 test", "1 / auto", "auto / 1"],
   };
 }
 

@@ -63,6 +63,7 @@ const debuggerSandbox = (exports.internalSandbox = Cu.Sandbox(systemPrincipal, {
     "Event",
     "FileReader",
     "FormData",
+    "Headers",
     "indexedDB",
     "InspectorUtils",
     "Node",
@@ -89,6 +90,7 @@ const {
   Event,
   FileReader,
   FormData,
+  Headers,
   indexedDB,
   InspectorUtils,
   Node,
@@ -113,7 +115,7 @@ const {
  */
 function defineLazyGetter(object, name, lambda) {
   Object.defineProperty(object, name, {
-    get: function() {
+    get() {
       // Redefine this accessor property as a data property.
       // Delete it first, to rule out "too much recursion" in case object is
       // a proxy whose defineProperty handler might unwittingly trigger this
@@ -278,6 +280,7 @@ exports.globals = {
   Element,
   FileReader,
   FormData,
+  Headers,
   IOUtils,
   isWorker: false,
   L10nRegistry,
@@ -285,7 +288,7 @@ exports.globals = {
     lazyGetter: defineLazyGetter,
     lazyImporter: defineLazyModuleGetter,
     lazyServiceGetter: defineLazyServiceGetter,
-    lazyRequireGetter: lazyRequireGetter,
+    lazyRequireGetter,
     // Defined by Loader.jsm
     id: null,
   },
@@ -310,7 +313,7 @@ const globals = {};
 function lazyGlobal(name, getter) {
   defineLazyGetter(globals, name, getter);
   Object.defineProperty(exports.globals, name, {
-    get: function() {
+    get() {
       return globals[name];
     },
     configurable: true,

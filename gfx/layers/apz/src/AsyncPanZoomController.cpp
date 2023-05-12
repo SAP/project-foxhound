@@ -37,13 +37,13 @@
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/BasicEvents.h"        // for Modifiers, MODIFIER_*
 #include "mozilla/ClearOnShutdown.h"    // for ClearOnShutdown
-#include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
-#include "mozilla/EventForwards.h"           // for nsEventStatus_*
-#include "mozilla/EventStateManager.h"       // for EventStateManager
-#include "mozilla/MouseEvents.h"             // for WidgetWheelEvent
-#include "mozilla/Preferences.h"             // for Preferences
-#include "mozilla/RecursiveMutex.h"          // for RecursiveMutexAutoLock, etc
-#include "mozilla/RefPtr.h"                  // for RefPtr
+#include "mozilla/ServoStyleConsts.h"   // for StyleComputedTimingFunction
+#include "mozilla/EventForwards.h"      // for nsEventStatus_*
+#include "mozilla/EventStateManager.h"  // for EventStateManager
+#include "mozilla/MouseEvents.h"        // for WidgetWheelEvent
+#include "mozilla/Preferences.h"        // for Preferences
+#include "mozilla/RecursiveMutex.h"     // for RecursiveMutexAutoLock, etc
+#include "mozilla/RefPtr.h"             // for RefPtr
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_general.h"
@@ -80,10 +80,9 @@
 #include "nsMathUtils.h"  // for NS_hypot
 #include "nsPoint.h"      // for nsIntPoint
 #include "nsStyleConsts.h"
-#include "nsTimingFunction.h"
 #include "nsTArray.h"        // for nsTArray, nsTArray_Impl, etc
 #include "nsThreadUtils.h"   // for NS_IsMainThread
-#include "nsViewportInfo.h"  // for kViewportMinScale, kViewportMaxScale
+#include "nsViewportInfo.h"  // for ViewportMinScale(), ViewportMaxScale()
 #include "prsystem.h"        // for PR_GetPhysicalMemorySize
 #include "mozilla/ipc/SharedMemoryBasic.h"  // for SharedMemoryBasic
 #include "ScrollSnap.h"                     // for ScrollSnapUtils
@@ -505,12 +504,12 @@ typedef PlatformSpecificStateBase
 /**
  * Computed time function used for sampling frames of a zoom to animation.
  */
-StaticAutoPtr<ComputedTimingFunction> gZoomAnimationFunction;
+StaticAutoPtr<StyleComputedTimingFunction> gZoomAnimationFunction;
 
 /**
  * Computed time function used for curving up velocity when it gets high.
  */
-StaticAutoPtr<ComputedTimingFunction> gVelocityCurveFunction;
+StaticAutoPtr<StyleComputedTimingFunction> gVelocityCurveFunction;
 
 /**
  * The estimated duration of a paint for the purposes of calculating a new
@@ -553,6 +552,32 @@ bool AsyncPanZoomController::IsZero(const ParentLayerPoint& aPoint) const {
   }
 
   return layers::IsZero(aPoint / zoom);
+}
+
+bool AsyncPanZoomController::IsZero(ParentLayerCoord aCoord) const {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+
+  const auto zoom = Metrics().GetZoom();
+
+  if (zoom == CSSToParentLayerScale(0)) {
+    return true;
+  }
+
+  return FuzzyEqualsAdditive((aCoord / zoom).value, 0.0f,
+                             COORDINATE_EPSILON.value);
+}
+
+bool AsyncPanZoomController::FuzzyGreater(ParentLayerCoord aCoord1,
+                                          ParentLayerCoord aCoord2) const {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+
+  const auto zoom = Metrics().GetZoom();
+
+  if (zoom == CSSToParentLayerScale(0)) {
+    return false;
+  }
+
+  return (aCoord1 - aCoord2) / zoom > COORDINATE_EPSILON;
 }
 
 class MOZ_STACK_CLASS StateChangeNotificationBlocker final {
@@ -648,8 +673,8 @@ class ZoomAnimation : public AsyncPanZoomAnimation {
 
     // Sample the zoom at the current time point.  The sampled zoom
     // will affect the final computed resolution.
-    float sampledPosition = gZoomAnimationFunction->GetValue(
-        animPosition, StyleEasingBeforeFlag::Unset);
+    float sampledPosition =
+        gZoomAnimationFunction->At(animPosition, /* aBeforeFlag = */ false);
 
     // We scale the scrollOffset linearly with sampledPosition, so the zoom
     // needs to scale inversely to match.
@@ -699,14 +724,15 @@ void AsyncPanZoomController::InitializeGlobalState() {
 
   MOZ_ASSERT(NS_IsMainThread());
 
-  gZoomAnimationFunction =
-      new ComputedTimingFunction(nsTimingFunction(StyleTimingKeyword::Ease));
+  gZoomAnimationFunction = new StyleComputedTimingFunction(
+      StyleComputedTimingFunction::Keyword(StyleTimingKeyword::Ease));
   ClearOnShutdown(&gZoomAnimationFunction);
-  gVelocityCurveFunction = new ComputedTimingFunction(
-      nsTimingFunction(StaticPrefs::apz_fling_curve_function_x1_AtStartup(),
-                       StaticPrefs::apz_fling_curve_function_y1_AtStartup(),
-                       StaticPrefs::apz_fling_curve_function_x2_AtStartup(),
-                       StaticPrefs::apz_fling_curve_function_y2_AtStartup()));
+  gVelocityCurveFunction =
+      new StyleComputedTimingFunction(StyleComputedTimingFunction::CubicBezier(
+          StaticPrefs::apz_fling_curve_function_x1_AtStartup(),
+          StaticPrefs::apz_fling_curve_function_y1_AtStartup(),
+          StaticPrefs::apz_fling_curve_function_x2_AtStartup(),
+          StaticPrefs::apz_fling_curve_function_y2_AtStartup()));
   ClearOnShutdown(&gVelocityCurveFunction);
 
   uint64_t sysmem = PR_GetPhysicalMemorySize();
@@ -733,9 +759,9 @@ AsyncPanZoomController::AsyncPanZoomController(
           StaticPrefs::apz_pinch_lock_buffer_max_age_AtStartup())),
       mZoomConstraints(false, false,
                        mScrollMetadata.GetMetrics().GetDevPixelsPerCSSPixel() *
-                           kViewportMinScale / ParentLayerToScreenScale(1),
+                           ViewportMinScale() / ParentLayerToScreenScale(1),
                        mScrollMetadata.GetMetrics().GetDevPixelsPerCSSPixel() *
-                           kViewportMaxScale / ParentLayerToScreenScale(1)),
+                           ViewportMaxScale() / ParentLayerToScreenScale(1)),
       mLastSampleTime(GetFrameTime()),
       mLastCheckerboardReport(GetFrameTime()),
       mLastNotifiedZoom(),
@@ -827,6 +853,10 @@ ScreenCoord AsyncPanZoomController::GetSecondTapTolerance() const {
 /* static */ AsyncPanZoomController::AxisLockMode
 AsyncPanZoomController::GetAxisLockMode() {
   return static_cast<AxisLockMode>(StaticPrefs::apz_axis_lock_mode());
+}
+
+bool AsyncPanZoomController::UsingStatefulAxisLock() const {
+  return (GetAxisLockMode() == STANDARD || GetAxisLockMode() == STICKY);
 }
 
 /* static */ AsyncPanZoomController::PinchLockMode
@@ -2228,7 +2258,8 @@ ScrollDirections AsyncPanZoomController::GetAllowedHandoffDirections() const {
 
 bool AsyncPanZoomController::CanScroll(const ParentLayerPoint& aDelta) const {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
-  return mX.CanScroll(aDelta.x) || mY.CanScroll(aDelta.y);
+  return mX.CanScroll(ParentLayerCoord(aDelta.x)) ||
+         mY.CanScroll(ParentLayerCoord(aDelta.y));
 }
 
 bool AsyncPanZoomController::CanScrollWithWheel(
@@ -2239,11 +2270,11 @@ bool AsyncPanZoomController::CanScrollWithWheel(
   // code in struct ScrollMetadata which defines mDisregardedDirection.
   Maybe<ScrollDirection> disregardedDirection =
       mScrollMetadata.GetDisregardedDirection();
-  if (mX.CanScroll(aDelta.x) &&
+  if (mX.CanScroll(ParentLayerCoord(aDelta.x)) &&
       disregardedDirection != Some(ScrollDirection::eHorizontal)) {
     return true;
   }
-  if (mY.CanScroll(aDelta.y) &&
+  if (mY.CanScroll(ParentLayerCoord(aDelta.y)) &&
       disregardedDirection != Some(ScrollDirection::eVertical)) {
     return true;
   }
@@ -2567,19 +2598,18 @@ nsEventStatus AsyncPanZoomController::OnPanBegin(
 
   StartTouch(aEvent.mLocalPanStartPoint, aEvent.mTimeStamp);
 
-  if (GetAxisLockMode() == FREE) {
+  if (!UsingStatefulAxisLock()) {
     SetState(PANNING);
-    return nsEventStatus_eConsumeNoDefault;
-  }
-
-  float dx = aEvent.mPanDisplacement.x, dy = aEvent.mPanDisplacement.y;
-
-  if (dx || dy) {
-    double angle = atan2(dy, dx);  // range [-pi, pi]
-    angle = fabs(angle);           // range [0, pi]
-    HandlePanning(angle);
   } else {
-    SetState(PANNING);
+    float dx = aEvent.mPanDisplacement.x, dy = aEvent.mPanDisplacement.y;
+
+    if (dx != 0.0f || dy != 0.0f) {
+      double angle = atan2(dy, dx);  // range [-pi, pi]
+      angle = fabs(angle);           // range [0, pi]
+      HandlePanning(angle);
+    } else {
+      SetState(PANNING);
+    }
   }
 
   // Call into OnPan in order to process any delta included in this event.
@@ -2654,6 +2684,21 @@ AsyncPanZoomController::GetDisplacementsForPanGesture(
   AdjustDeltaForAllowedScrollDirections(
       logicalPanDisplacement,
       GetCurrentPanGestureBlock()->GetAllowedScrollDirections());
+
+  if (GetAxisLockMode() == DOMINANT_AXIS) {
+    // Given a pan gesture and both directions have a delta, implement
+    // dominant axis scrolling and only use the delta for the larger
+    // axis.
+    if (logicalPanDisplacement.y != 0 && logicalPanDisplacement.x != 0) {
+      if (fabs(logicalPanDisplacement.y) >= fabs(logicalPanDisplacement.x)) {
+        logicalPanDisplacement.x = 0;
+        physicalPanDisplacement.x = 0;
+      } else {
+        logicalPanDisplacement.y = 0;
+        physicalPanDisplacement.y = 0;
+      }
+    }
+  }
 
   return {logicalPanDisplacement, physicalPanDisplacement};
 }
@@ -3241,6 +3286,8 @@ void AsyncPanZoomController::HandlePanning(double aAngle) {
       !mY.IsAxisLocked() && overscrollHandoffChain->CanScrollInDirection(
                                 this, ScrollDirection::eVertical);
 
+  MOZ_ASSERT(UsingStatefulAxisLock());
+
   if (!canScrollHorizontal || !canScrollVertical) {
     SetState(PANNING);
   } else if (apz::IsCloseToHorizontal(
@@ -3619,10 +3666,10 @@ void AsyncPanZoomController::OverscrollBy(ParentLayerPoint& aOverscroll) {
   // Do not go into overscroll in a direction in which we have no room to
   // scroll to begin with.
   ScrollDirections overscrollableDirections = GetOverscrollableDirections();
-  if (FuzzyEqualsAdditive(aOverscroll.x, 0.0f, COORDINATE_EPSILON)) {
+  if (IsZero(aOverscroll.x)) {
     overscrollableDirections -= ScrollDirection::eHorizontal;
   }
-  if (FuzzyEqualsAdditive(aOverscroll.y, 0.0f, COORDINATE_EPSILON)) {
+  if (IsZero(aOverscroll.y)) {
     overscrollableDirections -= ScrollDirection::eVertical;
   }
 
@@ -4307,12 +4354,11 @@ bool AsyncPanZoomController::SnapBackIfOverscrolled() {
   if (SnapBackIfOverscrolledForMomentum(ParentLayerPoint(0, 0))) {
     return true;
   }
-  // If we don't kick off an overscroll animation, we still need to ask the
-  // main thread to snap to any nearby snap points, assuming we haven't already
-  // done so when we started this fling
+  // If we don't kick off an overscroll animation, we still need to snap to any
+  // nearby snap points, assuming we haven't already done so when we started
+  // this fling
   if (mState != FLING) {
-    ScrollSnap(ScrollSnapFlags::IntendedEndPosition |
-               ScrollSnapFlags::IntendedDirection);
+    ScrollSnap(ScrollSnapFlags::IntendedEndPosition);
   }
   return false;
 }
@@ -5139,7 +5185,13 @@ void AsyncPanZoomController::NotifyLayersUpdated(
   bool viewportSizeUpdated = false;
   bool needToReclampScroll = false;
 
-  if ((aIsFirstPaint && aThisLayerTreeUpdated) || isDefault) {
+  if ((aIsFirstPaint && aThisLayerTreeUpdated) || isDefault ||
+      Metrics().IsRootContent() != aLayerMetrics.IsRootContent()) {
+    if (Metrics().IsRootContent() && !aLayerMetrics.IsRootContent()) {
+      // We only support zooming on root content APZCs
+      SetZoomAnimationId(Nothing());
+    }
+
     // Initialize our internal state to something sane when the content
     // that was just painted is something we knew nothing about previously
     CancelAnimation();
@@ -6054,9 +6106,9 @@ void AsyncPanZoomController::UpdateZoomConstraints(
 
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   CSSToParentLayerScale min = Metrics().GetDevPixelsPerCSSPixel() *
-                              kViewportMinScale / ParentLayerToScreenScale(1);
+                              ViewportMinScale() / ParentLayerToScreenScale(1);
   CSSToParentLayerScale max = Metrics().GetDevPixelsPerCSSPixel() *
-                              kViewportMaxScale / ParentLayerToScreenScale(1);
+                              ViewportMaxScale() / ParentLayerToScreenScale(1);
 
   // inf float values and other bad cases should be sanitized by the code below.
   mZoomConstraints.mAllowZoom = aConstraints.mAllowZoom;

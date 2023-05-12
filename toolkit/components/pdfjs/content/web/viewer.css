@@ -293,7 +293,6 @@
 
 .annotationLayer .popup {
   position: absolute;
-  z-index: 200;
   max-width: calc(180px * var(--scale-factor));
   background-color: rgba(255, 255, 153, 1);
   box-shadow: 0 calc(2px * var(--scale-factor)) calc(5px * var(--scale-factor))
@@ -353,6 +352,21 @@
   position: absolute;
   width: 100%;
   height: 100%;
+}
+
+.annotationLayer .annotationTextContent {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  color: transparent;
+  user-select: none;
+  pointer-events: none;
+}
+
+.annotationLayer .annotationTextContent span {
+  width: 100%;
+  display: inline-block;
 }
 
 
@@ -1366,7 +1380,6 @@ select {
   height: auto;
   padding: 0 4px;
   margin: 4px 2px;
-  color: rgba(217, 217, 217, 1);
   font-size: 12px;
   line-height: 14px;
   text-align: left;
@@ -1469,13 +1482,12 @@ select {
 .editorParamsToolbarContainer .editorParamsSlider::-moz-range-progress {
   background-color: black;
 }
-.editorParamsToolbarContainer .editorParamsSlider::-moz-range-track,
-.editorParamsToolbarContainer
-  .editorParamsSlider::-webkit-slider-runnable-track {
+
+.editorParamsToolbarContainer .editorParamsSlider::-moz-range-track {
   background-color: black;
 }
-.editorParamsToolbarContainer .editorParamsSlider::-moz-range-thumb,
-.editorParamsToolbarContainer .editorParamsSlider::-webkit-slider-thumb {
+
+.editorParamsToolbarContainer .editorParamsSlider::-moz-range-thumb {
   background-color: white;
 }
 

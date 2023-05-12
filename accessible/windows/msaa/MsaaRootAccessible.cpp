@@ -65,7 +65,6 @@ already_AddRefed<IUnknown> MsaaRootAccessible::GetInternalUnknown() {
 
 ////////////////////////////////////////////////////////////////////////////////
 // MsaaRootAccessible
-
 STDMETHODIMP
 MsaaRootAccessible::accNavigate(
     /* [in] */ long navDir,
@@ -110,58 +109,5 @@ MsaaRootAccessible::accNavigate(
   VariantInit(pvarEndUpAt);
   pvarEndUpAt->pdispVal = NativeAccessible(target);
   pvarEndUpAt->vt = VT_DISPATCH;
-  return S_OK;
-}
-
-STDMETHODIMP
-MsaaRootAccessible::get_accFocus(
-    /* [retval][out] */ VARIANT __RPC_FAR* pvarChild) {
-  HRESULT hr = MsaaDocAccessible::get_accFocus(pvarChild);
-  if (FAILED(hr) || pvarChild->vt != VT_EMPTY || !IsWin8OrLater()) {
-    // 1. We got a definite result (either failure or an accessible); or
-    // 2. This is Windows 7, where we don't want to retrieve the focus from a
-    // remote document because this causes mysterious intermittent crashes
-    // when we're called by UIA clients; see bug 1424505.
-    return hr;
-  }
-
-  // The base implementation reported no focus.
-  // Focus might be in a remote document.
-  // (The base implementation can't handle this.)
-  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
-    return S_FALSE;
-  }
-  dom::BrowserParent* browser = dom::BrowserParent::GetFocused();
-  if (!browser) {
-    return hr;
-  }
-  DocAccessibleParent* docProxy = browser->GetTopLevelDocAccessible();
-  if (!docProxy) {
-    return hr;
-  }
-  RefPtr<IDispatch> docDisp = NativeAccessible(docProxy);
-  if (!docDisp) {
-    return E_FAIL;
-  }
-  RefPtr<IAccessible> docIa;
-  hr = docDisp->QueryInterface(IID_IAccessible, (void**)getter_AddRefs(docIa));
-  MOZ_ASSERT(SUCCEEDED(hr));
-  MOZ_ASSERT(docIa);
-
-  // Ask this document for its focused descendant.
-  // We return this as is to the client except for CHILDID_SELF (see below).
-  hr = docIa->get_accFocus(pvarChild);
-  if (FAILED(hr)) {
-    return hr;
-  }
-
-  if (pvarChild->vt == VT_I4 && pvarChild->lVal == CHILDID_SELF) {
-    // The document itself has focus.
-    // We're handling a call to accFocus on the root accessible,
-    // so replace CHILDID_SELF with the document accessible.
-    pvarChild->vt = VT_DISPATCH;
-    docDisp.forget(&pvarChild->pdispVal);
-  }
-
   return S_OK;
 }

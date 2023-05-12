@@ -13,6 +13,7 @@
 #include "mozilla/AspectRatio.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/URLExtraData.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "nsGkAtoms.h"
 #include "MainThreadUtils.h"
 #include "nsNetUtil.h"
@@ -419,15 +420,18 @@ inline const URLExtraData& StyleCssUrl::ExtraData() const {
 }
 
 inline StyleLoadData& StyleCssUrl::LoadData() const {
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   if (MOZ_LIKELY(_0->load_data.tag == StyleLoadDataSource::Tag::Owned)) {
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread() ||
+                          dom::IsCurrentThreadRunningWorker());
     return const_cast<StyleLoadData&>(_0->load_data.owned._0);
   }
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(),
+                        "Lazy load datas should come from user-agent sheets, "
+                        "which don't make sense on workers");
   return const_cast<StyleLoadData&>(*Servo_LoadData_GetLazy(&_0->load_data));
 }
 
 inline nsIURI* StyleCssUrl::GetURI() const {
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   auto& loadData = LoadData();
   if (!(loadData.flags & StyleLoadDataFlags::TRIED_TO_RESOLVE_URI)) {
     loadData.flags |= StyleLoadDataFlags::TRIED_TO_RESOLVE_URI;
@@ -1079,6 +1083,27 @@ inline float StyleFontStyle::ObliqueAngle() const { return ToFloat(); }
 using FontStretch = StyleFontStretch;
 using FontSlantStyle = StyleFontStyle;
 using FontWeight = StyleFontWeight;
+
+template <>
+inline double StyleComputedTimingFunction::At(double aPortion,
+                                              bool aBeforeFlag) const {
+  return Servo_EasingFunctionAt(
+      this, aPortion,
+      aBeforeFlag ? StyleEasingBeforeFlag::Set : StyleEasingBeforeFlag::Unset);
+}
+
+template <>
+inline void StyleComputedTimingFunction::AppendToString(
+    nsACString& aOut) const {
+  return Servo_SerializeEasing(this, &aOut);
+}
+
+template <>
+inline double StyleComputedTimingFunction::GetPortion(
+    const Maybe<StyleComputedTimingFunction>& aFn, double aPortion,
+    bool aBeforeFlag) {
+  return aFn ? aFn->At(aPortion, aBeforeFlag) : aPortion;
+}
 
 }  // namespace mozilla
 

@@ -33,8 +33,7 @@ nsClipboardProxy::SetData(nsITransferable* aTransferable,
   nsCOMPtr<nsIPrincipal> requestingPrincipal =
       aTransferable->GetRequestingPrincipal();
   nsContentPolicyType contentPolicyType = aTransferable->GetContentPolicyType();
-  child->SendSetClipboard(ipcDataTransfer, isPrivateData,
-                          IPC::Principal(requestingPrincipal),
+  child->SendSetClipboard(ipcDataTransfer, isPrivateData, requestingPrincipal,
                           contentPolicyType, aWhichClipboard);
 
   return NS_OK;
@@ -87,4 +86,62 @@ nsClipboardProxy::SupportsFindClipboard(bool* aIsSupported) {
 void nsClipboardProxy::SetCapabilities(
     const ClipboardCapabilities& aClipboardCaps) {
   mClipboardCaps = aClipboardCaps;
+}
+
+RefPtr<DataFlavorsPromise> nsClipboardProxy::AsyncHasDataMatchingFlavors(
+    const nsTArray<nsCString>& aFlavorList, int32_t aWhichClipboard) {
+  auto promise = MakeRefPtr<DataFlavorsPromise::Private>(__func__);
+  ContentChild::GetSingleton()
+      ->SendClipboardHasTypesAsync(aFlavorList, aWhichClipboard)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          /* resolve */
+          [promise](nsTArray<nsCString> types) {
+            promise->Resolve(std::move(types), __func__);
+          },
+          /* reject */
+          [promise](mozilla::ipc::ResponseRejectReason aReason) {
+            promise->Reject(NS_ERROR_FAILURE, __func__);
+          });
+
+  return promise.forget();
+}
+
+RefPtr<GenericPromise> nsClipboardProxy::AsyncGetData(
+    nsITransferable* aTransferable, int32_t aWhichClipboard) {
+  if (!aTransferable) {
+    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+
+  // Get a list of flavors this transferable can import
+  nsTArray<nsCString> flavors;
+  nsresult rv = aTransferable->FlavorsTransferableCanImport(flavors);
+  if (NS_FAILED(rv)) {
+    return GenericPromise::CreateAndReject(rv, __func__);
+  }
+
+  nsCOMPtr<nsITransferable> transferable(aTransferable);
+  auto promise = MakeRefPtr<GenericPromise::Private>(__func__);
+  ContentChild::GetSingleton()
+      ->SendGetClipboardAsync(flavors, aWhichClipboard)
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          /* resolve */
+          [promise, transferable](const IPCDataTransfer& ipcDataTransfer) {
+            nsresult rv = nsContentUtils::IPCTransferableToTransferable(
+                ipcDataTransfer, false /* aAddDataFlavor */, transferable,
+                ContentChild::GetSingleton());
+            if (NS_FAILED(rv)) {
+              promise->Reject(rv, __func__);
+              return;
+            }
+
+            promise->Resolve(true, __func__);
+          },
+          /* reject */
+          [promise](mozilla::ipc::ResponseRejectReason aReason) {
+            promise->Reject(NS_ERROR_FAILURE, __func__);
+          });
+
+  return promise.forget();
 }

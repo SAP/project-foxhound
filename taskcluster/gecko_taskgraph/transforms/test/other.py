@@ -90,6 +90,9 @@ def setup_talos(config, tasks):
             extra_options.append("--add-option")
             extra_options.append("--setpref,gfx.direct2d.disabled=true")
 
+        if config.params.get("project", None):
+            extra_options.append("--project=%s" % config.params["project"])
+
         yield task
 
 
@@ -331,44 +334,39 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-87",
             ],
             "linux.*": [
-                "linux64-chromedriver-98",
-                "linux64-chromedriver-99",
                 "linux64-chromedriver-100",
                 "linux64-chromedriver-101",
                 "linux64-chromedriver-102",
                 "linux64-chromedriver-103",
+                "linux64-chromedriver-104",
             ],
             "macosx.*": [
-                "mac64-chromedriver-98",
-                "mac64-chromedriver-99",
                 "mac64-chromedriver-100",
                 "mac64-chromedriver-101",
                 "mac64-chromedriver-102",
                 "mac64-chromedriver-103",
+                "mac64-chromedriver-104",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-98",
-                "win32-chromedriver-99",
                 "win32-chromedriver-100",
                 "win32-chromedriver-101",
                 "win32-chromedriver-102",
                 "win32-chromedriver-103",
+                "win32-chromedriver-104",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-98",
-                "win32-chromedriver-99",
                 "win32-chromedriver-100",
                 "win32-chromedriver-101",
                 "win32-chromedriver-102",
                 "win32-chromedriver-103",
+                "win32-chromedriver-104",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-98",
-                "win32-chromedriver-99",
                 "win32-chromedriver-100",
                 "win32-chromedriver-101",
                 "win32-chromedriver-102",
                 "win32-chromedriver-103",
+                "win32-chromedriver-104",
             ],
         }
 

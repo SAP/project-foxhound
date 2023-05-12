@@ -66,9 +66,11 @@ add_task(
     // Install and start a test webextension.
     const extension = ExtensionTestUtils.loadExtension({
       useAddonManager: "temporary",
-      background: function() {
+      background() {
         const { browser } = this;
         browser.test.log("background script executed");
+        // window is available in background scripts
+        // eslint-disable-next-line no-undef
         browser.test.sendMessage("background page ready", window.location.href);
       },
     });

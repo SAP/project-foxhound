@@ -34,22 +34,19 @@ for (let [valtype, def, nondef] of GENERAL_TESTS) {
     (func (export "create") (param i32 ${valtype}) (result eqref)
       local.get 1
       local.get 0
-      rtt.canon $a
-      array.new_with_rtt $a
+      array.new $a
     )
 
     (; new T[0] ;)
     (func (export "createDefault") (param i32) (result eqref)
       local.get 0
-      rtt.canon $a
-      array.new_default_with_rtt $a
+      array.new_default $a
     )
 
     (; 0[1] ;)
     (func (export "get") (param eqref i32) (result ${valtype})
       local.get 0
-      rtt.canon $a
-      ref.cast
+      ref.cast $a
       local.get 1
       array.get $a
     )
@@ -57,8 +54,7 @@ for (let [valtype, def, nondef] of GENERAL_TESTS) {
     (; 0[1] = 2 ;)
     (func (export "set") (param eqref i32 ${valtype})
       local.get 0
-      rtt.canon $a
-      ref.cast
+      ref.cast $a
       local.get 1
       local.get 2
       array.set $a
@@ -67,8 +63,7 @@ for (let [valtype, def, nondef] of GENERAL_TESTS) {
     (; len(a) ;)
     (func (export "len") (param eqref) (result i32)
       local.get 0
-      rtt.canon $a
-      ref.cast
+      ref.cast $a
       array.len $a
     )
   )`).exports;
@@ -130,15 +125,13 @@ for (let [fieldtype, max] of [
     (func (export "create") (param i32 i32) (result eqref)
       local.get 1
       local.get 0
-      rtt.canon $a
-      array.new_with_rtt $a
+      array.new $a
     )
 
     (; 0[1] ;)
     (func (export "getS") (param eqref i32) (result i32)
       local.get 0
-      rtt.canon $a
-      ref.cast
+      ref.cast $a
       local.get 1
       array.get_s $a
     )
@@ -146,8 +139,7 @@ for (let [fieldtype, max] of [
     (; 0[1] ;)
     (func (export "getU") (param eqref i32) (result i32)
       local.get 0
-      rtt.canon $a
-      ref.cast
+      ref.cast $a
       local.get 1
       array.get_u $a
     )
@@ -155,8 +147,7 @@ for (let [fieldtype, max] of [
     (; 0[1] = 2 ;)
     (func (export "set") (param eqref i32 i32)
       local.get 0
-      rtt.canon $a
-      ref.cast
+      ref.cast $a
       local.get 1
       local.get 2
       array.set $a
@@ -193,10 +184,9 @@ assertErrorMessage(() => wasmEvalText(`(module
     (type $a (array i32))
     (func
       (array.set $a
-        (array.new_with_rtt $a
+        (array.new $a
           i32.const 0xff
-          i32.const 10
-          rtt.canon $a)
+          i32.const 10)
         i32.const 0
         i32.const 0
       )
@@ -286,4 +276,192 @@ for ([fieldtype, packed] of [
     wasmFailValidateText(extensionModule, /must not specify signedness/);
     wasmValidateText(noExtensionModule);
   }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// array.new_fixed
+/*
+  validation:
+    array-type imm-operand needs to be "in range"
+    array-type imm-operand must refer to an array type
+    operands (on stack) must all match ("be compatible with") the array elem
+      type
+    number of operands (on stack) must not be less than the num-of-elems
+      imm-operand
+    zero elements doesn't fail compilation
+    reftypes elements doesn't fail compilation
+    trying to create a 1-billion-element array fails gracefully
+  run:
+    resulting 4-element array is as expected
+    resulting zero-element array is as expected
+    resulting 30-element array is as expected
+*/
+
+// validation: array-type imm-operand needs to be "in range"
+assertErrorMessage(() => wasmEvalText(`(module
+    (type $a (array i8))
+    (func (result eqref)
+      i32.const 66
+      i32.const 77
+      array.new_fixed 2 2  ;; type index 2 is the first invalid one
+    )
+)
+`), WebAssembly.CompileError, /type index out of range/);
+
+// validation: array-type imm-operand must refer to an array type
+assertErrorMessage(() => wasmEvalText(`(module
+    (type $a (func (param f64) (result f64)))
+    (func (result eqref)
+      i32.const 66
+      i32.const 77
+      array.new_fixed $a 2
+    )
+)
+`), WebAssembly.CompileError, /not an array type/);
+
+// validation: operands (on stack) must all match ("be compatible with")
+//   the array elem type
+assertErrorMessage(() => wasmEvalText(`(module
+    (type $a (array i32))
+    (func (result eqref)
+      f32.const 66.6
+      f64.const 77.7
+      array.new_fixed $a 2
+    )
+)
+`), WebAssembly.CompileError, /expression has type f64 but expected i32/);
+
+// validation: number of operands (on stack) must not be less than the
+//   num-of-elems imm-operand
+assertNoWarning(() => wasmEvalText(`(module
+    (type $a (array f32))
+    (func
+      f64.const 66.6  ;; we won't put this in the array
+      f32.const 77.7
+      f32.const 88.8
+      array.new_fixed $a 2  ;; use up 88.8 and 77.7 and replace with array
+      drop            ;; dump the array
+      f64.const 99.9
+      f64.mul         ;; check the 66.6 value is still on the stack
+      drop            ;; now should be empty
+    )
+)
+`));
+// (more)
+assertErrorMessage(() => wasmEvalText(`(module
+    (type $a (array i64))
+    (func (param i64) (result eqref)
+       local.get 0
+       array.new_fixed $a 2
+    )
+)
+`), WebAssembly.CompileError, /popping value from empty stack/);
+
+// validation: zero elements doesn't fail compilation
+assertNoWarning(() => wasmEvalText(`(module
+    (type $a (array i32))
+    (func (result eqref)
+       array.new_fixed $a 0
+    )
+)
+`));
+
+// validation: reftyped elements doesn't fail compilation
+assertNoWarning(() => wasmEvalText(`(module
+    (type $a (array eqref))
+    (func (param eqref) (result eqref)
+       local.get 0
+       array.new_fixed $a 1
+    )
+)
+`));
+
+// validation: trying to create a 1-billion-element array fails gracefully
+assertErrorMessage(() => wasmEvalText(`(module
+    (type $a (array f32))
+    (func (export "newFixed") (result eqref)
+            f32.const 1337.0
+            f32.const 4771.0
+            array.new_fixed $a 1000000000
+    )
+)
+`), WebAssembly.CompileError, /popping value from empty stack/);
+
+// run: resulting 4-element array is as expected
+{
+    let { newFixed } = wasmEvalText(`(module
+        (type $a (array i8))
+        (func (export "newFixed") (result eqref)
+                (; the spec seems ambiguous about the operand ordering here ;)
+                i32.const 66
+                i32.const 77
+                i32.const 88
+                i32.const 99
+                array.new_fixed $a 4
+        )
+        )`).exports;
+    let a = newFixed();
+    assertEq(a.length, 4);
+    assertEq(a[0], 99);
+    assertEq(a[1], 88);
+    assertEq(a[2], 77);
+    assertEq(a[3], 66);
+}
+
+// run: resulting zero-element array is as expected
+{
+    let { newFixed } = wasmEvalText(`(module
+        (type $a (array i16))
+        (func (export "newFixed") (result eqref)
+                array.new_fixed $a 0
+        )
+        )`).exports;
+    let a = newFixed();
+    assertEq(a.length, 0);
+}
+
+// run: resulting 30-element array is as expected
+{
+    let { newFixed } = wasmEvalText(`(module
+        (type $a (array i16))
+        (func (export "newFixed") (result eqref)
+                i32.const 1
+                i32.const 2
+                i32.const 3
+                i32.const 4
+                i32.const 5
+                i32.const 6
+                i32.const 7
+                i32.const 8
+                i32.const 9
+                i32.const 10
+                i32.const 11
+                i32.const 12
+                i32.const 13
+                i32.const 14
+                i32.const 15
+                i32.const 16
+                i32.const 17
+                i32.const 18
+                i32.const 19
+                i32.const 20
+                i32.const 21
+                i32.const 22
+                i32.const 23
+                i32.const 24
+                i32.const 25
+                i32.const 26
+                i32.const 27
+                i32.const 28
+                i32.const 29
+                i32.const 30
+                array.new_fixed $a 30
+        )
+        )`).exports;
+    let a = newFixed();
+    assertEq(a.length, 30);
+    for (i = 0; i < 30; i++) {
+        assertEq(a[i], 30 - i);
+    }
 }

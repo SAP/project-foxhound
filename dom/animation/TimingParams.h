@@ -13,10 +13,10 @@
 #include "nsPrintfCString.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/UnionTypes.h"  // For OwningUnrestrictedDoubleOrString
-#include "mozilla/ComputedTimingFunction.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StickyTimeDuration.h"
 #include "mozilla/TimeStamp.h"  // for TimeDuration
+#include "mozilla/ServoStyleConsts.h"
 
 #include "mozilla/dom/AnimationEffectBinding.h"  // for FillMode
                                                  // and PlaybackDirection
@@ -43,7 +43,7 @@ struct TimingParams {
                const TimeDuration& aEndDelay, float aIterations,
                float aIterationStart, dom::PlaybackDirection aDirection,
                dom::FillMode aFillMode,
-               Maybe<ComputedTimingFunction>&& aFunction)
+               const Maybe<StyleComputedTimingFunction>& aFunction)
       : mDelay(aDelay),
         mEndDelay(aEndDelay),
         mIterations(aIterations),
@@ -119,8 +119,8 @@ struct TimingParams {
     }
   }
 
-  static Maybe<ComputedTimingFunction> ParseEasing(const nsACString& aEasing,
-                                                   ErrorResult& aRv);
+  static Maybe<StyleComputedTimingFunction> ParseEasing(const nsACString&,
+                                                        ErrorResult&);
 
   static StickyTimeDuration CalcActiveDuration(
       const Maybe<StickyTimeDuration>& aDuration, double aIterations) {
@@ -132,7 +132,17 @@ struct TimingParams {
       return zeroDuration;
     }
 
-    return aDuration->MultDouble(aIterations);
+    MOZ_ASSERT(*aDuration >= zeroDuration && aIterations >= 0.0,
+               "Both animation duration and ieration count should be greater "
+               "than zero");
+
+    StickyTimeDuration result = aDuration->MultDouble(aIterations);
+    if (result < zeroDuration) {
+      // If the result of multiplying above is less than zero, it's likely an
+      // overflow happened. we consider it's +Inf here.
+      return StickyTimeDuration::Forever();
+    }
+    return result;
   }
   // Return the duration of the active interval calculated by duration and
   // iteration count.
@@ -143,10 +153,28 @@ struct TimingParams {
   }
 
   StickyTimeDuration EndTime() const {
-    MOZ_ASSERT(mEndTime == std::max(mDelay + ActiveDuration() + mEndDelay,
-                                    StickyTimeDuration()),
+    MOZ_ASSERT(mEndTime == CalcEndTime(),
                "Cached value of end time should be up to date");
     return mEndTime;
+  }
+
+  StickyTimeDuration CalcBeforeActiveBoundary() const {
+    static constexpr StickyTimeDuration zeroDuration;
+    // https://drafts.csswg.org/web-animations-1/#before-active-boundary-time
+    return std::max(std::min(StickyTimeDuration(mDelay), mEndTime),
+                    zeroDuration);
+  }
+
+  StickyTimeDuration CalcActiveAfterBoundary() const {
+    if (mActiveDuration == StickyTimeDuration::Forever()) {
+      return StickyTimeDuration::Forever();
+    }
+
+    static constexpr StickyTimeDuration zeroDuration;
+    // https://drafts.csswg.org/web-animations-1/#active-after-boundary-time
+    return std::max(
+        std::min(StickyTimeDuration(mDelay + mActiveDuration), mEndTime),
+        zeroDuration);
   }
 
   bool operator==(const TimingParams& aOther) const;
@@ -195,10 +223,10 @@ struct TimingParams {
   void SetFill(dom::FillMode aFill) { mFill = aFill; }
   dom::FillMode Fill() const { return mFill; }
 
-  void SetTimingFunction(Maybe<ComputedTimingFunction>&& aFunction) {
+  void SetTimingFunction(Maybe<StyleComputedTimingFunction>&& aFunction) {
     mFunction = std::move(aFunction);
   }
-  const Maybe<ComputedTimingFunction>& TimingFunction() const {
+  const Maybe<StyleComputedTimingFunction>& TimingFunction() const {
     return mFunction;
   }
 
@@ -209,9 +237,14 @@ struct TimingParams {
  private:
   void Update() {
     mActiveDuration = CalcActiveDuration(mDuration, mIterations);
+    mEndTime = CalcEndTime();
+  }
 
-    mEndTime =
-        std::max(mDelay + mActiveDuration + mEndDelay, StickyTimeDuration());
+  StickyTimeDuration CalcEndTime() const {
+    if (mActiveDuration == StickyTimeDuration::Forever()) {
+      return StickyTimeDuration::Forever();
+    }
+    return std::max(mDelay + mActiveDuration + mEndDelay, StickyTimeDuration());
   }
 
   // mDuration.isNothing() represents the "auto" value
@@ -222,7 +255,7 @@ struct TimingParams {
   double mIterationStart = 0.0;
   dom::PlaybackDirection mDirection = dom::PlaybackDirection::Normal;
   dom::FillMode mFill = dom::FillMode::Auto;
-  Maybe<ComputedTimingFunction> mFunction;
+  Maybe<StyleComputedTimingFunction> mFunction;
   StickyTimeDuration mActiveDuration = StickyTimeDuration();
   StickyTimeDuration mEndTime = StickyTimeDuration();
 };

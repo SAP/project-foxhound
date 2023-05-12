@@ -324,6 +324,8 @@ class BrowserParent final : public PBrowserParent,
       const Maybe<IntrinsicSize>& aIntrinsicSize,
       const Maybe<AspectRatio>& aIntrinsicRatio);
 
+  mozilla::ipc::IPCResult RecvImageLoadComplete(const nsresult& aResult);
+
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsString& aMessage, const ClonedMessageData& aData,
       nsTArray<ipc::StructuredCloneData>* aRetVal);
@@ -668,7 +670,7 @@ class BrowserParent final : public PBrowserParent,
 
   bool DeallocPPaymentRequestParent(PPaymentRequestParent* aActor);
 
-  bool SendLoadRemoteScript(const nsString& aURL,
+  bool SendLoadRemoteScript(const nsAString& aURL,
                             const bool& aRunInGlobalScope);
 
   void LayerTreeUpdate(const LayersObserverEpoch& aEpoch, bool aActive);
@@ -747,7 +749,8 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvGetSystemFont(nsCString* aFontName);
 
   mozilla::ipc::IPCResult RecvVisitURI(nsIURI* aURI, nsIURI* aLastVisitedURI,
-                                       const uint32_t& aFlags);
+                                       const uint32_t& aFlags,
+                                       const uint64_t& aBrowserId);
 
   mozilla::ipc::IPCResult RecvQueryVisitedState(
       nsTArray<RefPtr<nsIURI>>&& aURIs);

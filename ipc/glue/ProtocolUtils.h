@@ -275,11 +275,12 @@ class IProtocol : public HasResultCodes {
                    UniquePtr<IPC::Message>* aReply);
   template <typename Value>
   void ChannelSend(UniquePtr<IPC::Message> aMsg,
+                   IPC::Message::msgid_t aReplyMsgId,
                    ResolveCallback<Value>&& aResolve,
                    RejectCallback&& aReject) {
     if (CanSend()) {
-      GetIPCChannel()->Send(std::move(aMsg), this, std::move(aResolve),
-                            std::move(aReject));
+      GetIPCChannel()->Send(std::move(aMsg), Id(), aReplyMsgId,
+                            std::move(aResolve), std::move(aReject));
     } else {
       WarnMessageDiscarded(aMsg.get());
       aReject(ResponseRejectReason::SendError);
@@ -364,6 +365,8 @@ class IPCResult {
   bool mSuccess;
 };
 
+class UntypedEndpoint;
+
 template <class PFooSide>
 class Endpoint;
 
@@ -412,7 +415,8 @@ class IToplevelProtocol : public IProtocol {
   virtual void OnChannelError() = 0;
   virtual void ProcessingError(Result aError, const char* aMsgName) {}
 
-  bool Open(ScopedPort aPort, base::ProcessId aOtherPid,
+  bool Open(ScopedPort aPort, const nsID& aMessageChannelId,
+            base::ProcessId aOtherPid,
             nsISerialEventTarget* aEventTarget = nullptr);
 
   bool Open(IToplevelProtocol* aTarget, nsISerialEventTarget* aEventTarget,

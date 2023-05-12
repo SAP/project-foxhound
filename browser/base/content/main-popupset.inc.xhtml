@@ -38,7 +38,7 @@
               data-lazy-l10n-id="bookmark-selected-tabs"
               oncommand="PlacesUIUtils.showBookmarkPagesDialog(PlacesCommandHook.uniqueSelectedPages);"/>
     <menuitem id="context_bookmarkTab"
-              data-lazy-l10n-id="bookmark-tab"
+              data-lazy-l10n-id="tab-context-bookmark-tab"
               oncommand="PlacesUIUtils.showBookmarkPagesDialog(PlacesCommandHook.getUniquePages([TabContextMenu.contextTab]));"/>
     <menu id="context_moveTabOptions"
           data-lazy-l10n-id="tab-context-move-tabs"
@@ -495,10 +495,10 @@
              onpopupshowing="BrowserPageActions.onContextMenuShowing(event, this);">
     <menuitem class="pageActionContextMenuItem extensionPinned extensionUnpinned manageExtensionItem"
               oncommand="BrowserPageActions.openAboutAddonsForContextAction();"
-              data-l10n-id="page-action-manage-extension"/>
+              data-l10n-id="page-action-manage-extension2"/>
     <menuitem class="pageActionContextMenuItem extensionPinned extensionUnpinned removeExtensionItem"
               oncommand="BrowserPageActions.removeExtensionForContextAction();"
-              data-l10n-id="page-action-remove-extension"/>
+              data-l10n-id="page-action-remove-extension2"/>
   </menupopup>
 
 #include ../../components/places/content/bookmarksHistoryTooltip.inc.xhtml
@@ -555,7 +555,7 @@
     <menuitem data-lazy-l10n-id="synced-tabs-context-open-in-private-window"
               id="syncedTabsOpenSelectedInPrivateWindow" where="window" private="true"/>
     <menuseparator/>
-    <menuitem data-lazy-l10n-id="synced-tabs-context-bookmark-tab"
+    <menuitem data-lazy-l10n-id="synced-tabs-context-bookmark"
               id="syncedTabsBookmarkSelected"/>
     <menuitem data-lazy-l10n-id="synced-tabs-context-copy"
               id="syncedTabsCopySelected"/>
@@ -632,4 +632,17 @@
       </hbox>
     </panel>
   </html:template>
+
+  <menupopup id="unified-extensions-context-menu"
+             onpopupshowing="gUnifiedExtensions.updateContextMenu(this, event)">
+    <menuitem data-lazy-l10n-id="unified-extensions-context-menu-manage-extension"
+              class="unified-extensions-context-menu-manage-extension"
+              oncommand="gUnifiedExtensions.manageExtension(this.parentElement)" />
+    <menuitem data-lazy-l10n-id="unified-extensions-context-menu-remove-extension"
+              class="unified-extensions-context-menu-remove-extension"
+              oncommand="gUnifiedExtensions.removeExtension(this.parentElement)" />
+    <menuitem data-lazy-l10n-id="unified-extensions-context-menu-report-extension"
+              class="unified-extensions-context-menu-report-extension"
+              oncommand="gUnifiedExtensions.reportExtension(this.parentElement)" />
+  </menupopup>
 </popupset>

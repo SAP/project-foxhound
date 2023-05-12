@@ -1769,6 +1769,10 @@ bool WarpBuilder::buildCallOp(BytecodeLocation loc) {
 
 bool WarpBuilder::build_Call(BytecodeLocation loc) { return buildCallOp(loc); }
 
+bool WarpBuilder::build_CallContent(BytecodeLocation loc) {
+  return buildCallOp(loc);
+}
+
 bool WarpBuilder::build_CallIgnoresRv(BytecodeLocation loc) {
   return buildCallOp(loc);
 }
@@ -1777,7 +1781,15 @@ bool WarpBuilder::build_CallIter(BytecodeLocation loc) {
   return buildCallOp(loc);
 }
 
+bool WarpBuilder::build_CallContentIter(BytecodeLocation loc) {
+  return buildCallOp(loc);
+}
+
 bool WarpBuilder::build_New(BytecodeLocation loc) { return buildCallOp(loc); }
+
+bool WarpBuilder::build_NewContent(BytecodeLocation loc) {
+  return buildCallOp(loc);
+}
 
 bool WarpBuilder::build_SuperCall(BytecodeLocation loc) {
   return buildCallOp(loc);

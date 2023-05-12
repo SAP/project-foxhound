@@ -7,7 +7,7 @@
 Modules
 =======
 
-Mozilla operates under a `module ownership governance system <http://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
+Mozilla operates under a `module ownership governance system <https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
 
 The system is overseen by the owner and peers of the Module Ownership module. For the modules that make up Firefox, oversight is provided by the Firefox Technical Leadership module. Owners may add and remove peers from their modules as they wish, without reference to anyone else.
 
@@ -150,10 +150,13 @@ Asynchronous panning and zooming
     * - Peer(s)
       -
         | `Timothy Nikkel (tnikkel) <https://people.mozilla.org/s?query=tnikkel>`__
-        | `Ryan Hunt (rhunt) <https://people.mozilla.org/s?query=rhunt>`__
+        | `Dan Robertson (dlrobertson) <https://people.mozilla.org/s?query=dlrobertson>`__
+        | `Hiroyuki Ikezoe (hiro) <https://people.mozilla.org/s?query=hiro>`__
         | `Markus Stange (mstange) <https://people.mozilla.org/s?query=mstange>`__
     * - Owner(s) Emeritus
       - Kartikaya Gupta
+    * - Peer(s) Emeritus
+      - Ryan Hunt
     * - Includes
       -
         | `gfx/layers/apz/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=gfx/layers/apz/\*\*/\*>`__
@@ -737,7 +740,7 @@ Framework for embedding Gecko into Android applications
 
     * - Owner(s)
       -
-        | `Agi Sferro (agi) <https://people.mozilla.org/s?query=agi>`__
+        | `agi <https://people.mozilla.org/s?query=agi>`__
     * - Peer(s)
       -
         | `Makoto Kato (m_kato) <https://people.mozilla.org/s?query=m_kato>`__
@@ -2361,7 +2364,7 @@ This is part of the [https://wiki.mozilla.org/Modules/Core#GeckoView GeckoView] 
 
     * - Owner(s)
       -
-        | `Agi Sferro (agi) <https://people.mozilla.org/s?query=agi>`__
+        | `agi <https://people.mozilla.org/s?query=agi>`__
 
 Core: Widget - GTK
 ~~~~~~~~~~~~~~~~~~
@@ -3593,7 +3596,7 @@ The core infrastructure in the Firefox client to send back Telemetry and FHR dat
 
     * - Owner(s)
       -
-        | `Chris H-C (chutten) <https://people.mozilla.org/s?query=chutten>`__
+        | `Chris H-C (chutten|PTO) <https://people.mozilla.org/s?query=chutten|PTO>`__
     * - Peer(s)
       -
         | `aplacitelli <https://people.mozilla.org/s?query=aplacitelli>`__

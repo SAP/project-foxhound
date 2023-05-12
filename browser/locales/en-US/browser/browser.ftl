@@ -167,10 +167,12 @@ urlbar-star-add-bookmark =
 
 ## Page Action Context Menu
 
-page-action-manage-extension =
+page-action-manage-extension2 =
     .label = Manage Extension…
-page-action-remove-extension =
+    .accesskey = E
+page-action-remove-extension2 =
     .label = Remove Extension
+    .accesskey = v
 
 ## Auto-hide Context Menu
 
@@ -237,21 +239,64 @@ search-one-offs-actions =
     .tooltiptext = Actions ({ $restrict })
 
 ## QuickActions are shown in the urlbar as the user types a matching string
+## The -cmd- strings are comma separated list of keywords that will match
+## the action.
 
+# Opens the about:addons page
 quickactions-addons = View Add-ons
+quickactions-cmd-addons = add-ons, extensions, themes
+
+# Opens the bookmarks library window
 quickactions-bookmarks = View Bookmarks
+quickactions-cmd-bookmarks = bookmarks
+
+# Opens a SUMO article explaining how to clear history
 quickactions-clearhistory = Clear History
+quickactions-cmd-clearhistory = clear history
+
+# Opens about:downloads page
 quickactions-downloads = Open Downloads
+quickactions-cmd-downloads = downloads
+
+# Opens the devtools web inspector
 quickactions-inspector = Open Inspector
+quickactions-cmd-inspector = inspector, devtools
+
+# Opens about:logins
 quickactions-logins = View Logins
+quickactions-cmd-logins = logins, passwords
+
+# Opens the print dialog
 quickactions-print = Print
+quickactions-cmd-print = print
+
+# Opens a new private browsing window
 quickactions-private = Open Private Browsing Window
+quickactions-cmd-private = private browsing
+
+# Opens a SUMO article explaining how to refresh
 quickactions-refresh = Refresh { -brand-short-name }
+quickactions-cmd-refresh = refresh
+
+# Restarts the browser
 quickactions-restart = Restart { -brand-short-name }
+quickactions-cmd-restart = restart
+
+# Opens the screenshot tool
 quickactions-screenshot2 = Take a Screenshot
+quickactions-cmd-screenshot = screenshot
+
+# Opens about:preferences
 quickactions-settings = Open Settings
+quickactions-cmd-settings = settings, preferences, options
+
+# Opens a SUMO article explaining how to update the browser
 quickactions-update = Update { -brand-short-name }
+quickactions-cmd-update = update
+
+# Opens the view-source UI with current pages source
 quickactions-viewsource = View Source
+quickactions-cmd-viewsource = view source, source
 
 ## Bookmark Panel
 
@@ -656,8 +701,8 @@ bookmarks-search =
   .label = Search bookmarks
 bookmarks-tools =
   .label = Bookmarking Tools
-bookmarks-bookmark-edit-panel =
-  .label = Edit this bookmark
+bookmarks-subview-edit-bookmark =
+  .label = Edit this bookmark…
 
 # The aria-label is a spoken label that should not include the word "toolbar" or
 # such, because screen readers already know that this container is a toolbar.
@@ -674,8 +719,8 @@ bookmarks-toolbar-placeholder-button =
   .label = Bookmarks toolbar items
 
 # "Bookmark" is a verb, as in "Add current tab to bookmarks".
-bookmarks-current-tab =
-  .label = Bookmark current tab
+bookmarks-subview-bookmark-tab =
+  .label = Bookmark current tab…
 
 ## Library Panel items
 
@@ -839,9 +884,6 @@ navbar-library =
 
 navbar-search =
     .title = Search
-
-navbar-accessibility-indicator =
-    .tooltiptext = Accessibility Features Enabled
 
 # Name for the tabs toolbar as spoken by screen readers. The word
 # "toolbar" is appended automatically and should not be included in

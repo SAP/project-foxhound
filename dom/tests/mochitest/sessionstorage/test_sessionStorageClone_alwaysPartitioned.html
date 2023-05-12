@@ -28,7 +28,10 @@ async function doNextTest()
   }
 
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.partition.always_partition_third_party_non_cookie_storage", true]],
+    set: [
+      ["privacy.partition.always_partition_third_party_non_cookie_storage", true],
+      ["privacy.partition.always_partition_third_party_non_cookie_storage.exempt_sessionstorage", false]
+    ],
   });
 
   // We must perform the first step of the test

@@ -3300,6 +3300,23 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "animation-composition": {
+    "isInherited": false,
+    "subproperties": [
+      "animation-composition"
+    ],
+    "supports": [],
+    "values": [
+      "accumulate",
+      "add",
+      "inherit",
+      "initial",
+      "replace",
+      "revert",
+      "revert-layer",
+      "unset"
+    ]
+  },
   "animation-delay": {
     "isInherited": false,
     "subproperties": [
@@ -11708,10 +11725,6 @@ exports.PSEUDO_ELEMENTS = [
  * exposed for testing purposes.
  */
 exports.PREFERENCES = [
-  [
-    "aspect-ratio",
-    "layout.css.aspect-ratio.enabled"
-  ],
   [
     "container-type",
     "layout.css.container-queries.enabled"

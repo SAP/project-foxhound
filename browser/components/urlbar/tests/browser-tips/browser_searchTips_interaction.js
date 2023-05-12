@@ -9,12 +9,16 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarProviderSearchTips:
+    "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.jsm",
   HttpServer: "resource://testing-common/httpd.js",
   ProfileAge: "resource://gre/modules/ProfileAge.jsm",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
-  UrlbarProviderSearchTips: "resource:///modules/UrlbarProviderSearchTips.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -541,14 +545,17 @@ add_task(async function pasteAndGo_nonURL() {
 
   let engine = Services.search.getEngineByName("Example");
   let oldDefaultEngine = await Services.search.getDefault();
-  Services.search.setDefault(engine);
+  Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UNKNOWN);
 
   await doPasteAndGoTest(
     "pasteAndGo_nonURL",
     "https://example.com/?q=pasteAndGo_nonURL"
   );
 
-  Services.search.setDefault(oldDefaultEngine);
+  Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 });
 
 async function doPasteAndGoTest(searchString, expectedURL) {

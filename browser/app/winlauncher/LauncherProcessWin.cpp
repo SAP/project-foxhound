@@ -30,11 +30,19 @@
 #include "ErrorHandler.h"
 #include "LaunchUnelevated.h"
 #include "ProcThreadAttributes.h"
+#include "../BrowserDefines.h"
 
 #if defined(MOZ_LAUNCHER_PROCESS)
 #  include "mozilla/LauncherRegistryInfo.h"
 #  include "SameBinary.h"
 #endif  // defined(MOZ_LAUNCHER_PROCESS)
+
+namespace mozilla {
+// "const" because nothing in this process modifies it.
+// "volatile" because something in another process may.
+const volatile DeelevationStatus gDeelevationStatus =
+    DeelevationStatus::DefaultStaticValue;
+}  // namespace mozilla
 
 /**
  * At this point the child process has been created in a suspended state. Any
@@ -44,7 +52,28 @@
  */
 static mozilla::LauncherVoidResult PostCreationSetup(
     const wchar_t* aFullImagePath, HANDLE aChildProcess,
-    HANDLE aChildMainThread, const bool aIsSafeMode) {
+    HANDLE aChildMainThread, mozilla::DeelevationStatus aDStatus,
+    const bool aIsSafeMode) {
+  /* scope for txManager */ {
+    mozilla::nt::CrossExecTransferManager txManager(aChildProcess);
+    if (!txManager) {
+      return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
+    }
+
+    using mozilla::gDeelevationStatus;
+
+    void* targetAddress = (LPVOID)&gDeelevationStatus;
+
+    auto const guard = txManager.Protect(
+        targetAddress, sizeof(gDeelevationStatus), PAGE_READWRITE);
+
+    mozilla::LauncherVoidResult result =
+        txManager.Transfer(targetAddress, &aDStatus, sizeof(aDStatus));
+    if (result.isErr()) {
+      return result;
+    }
+  }
+
   return mozilla::InitializeDllBlocklistOOPFromLauncher(aFullImagePath,
                                                         aChildProcess);
 }
@@ -117,29 +146,29 @@ static void SetMitigationPolicies(mozilla::ProcThreadAttributes& aAttrs,
 static mozilla::LauncherFlags ProcessCmdLine(int& aArgc, wchar_t* aArgv[]) {
   mozilla::LauncherFlags result = mozilla::LauncherFlags::eNone;
 
-  if (mozilla::CheckArg(aArgc, aArgv, L"wait-for-browser",
-                        static_cast<const wchar_t**>(nullptr),
+  if (mozilla::CheckArg(aArgc, aArgv, "wait-for-browser", nullptr,
                         mozilla::CheckArgFlag::RemoveArg) ==
           mozilla::ARG_FOUND ||
-      mozilla::CheckArg(aArgc, aArgv, L"marionette",
-                        static_cast<const wchar_t**>(nullptr),
+      mozilla::CheckArg(aArgc, aArgv, "marionette", nullptr,
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
-      mozilla::CheckArg(aArgc, aArgv, L"backgroundtask",
-                        static_cast<const wchar_t**>(nullptr),
+      mozilla::CheckArg(aArgc, aArgv, "backgroundtask", nullptr,
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
-      mozilla::CheckArg(aArgc, aArgv, L"headless",
-                        static_cast<const wchar_t**>(nullptr),
+      mozilla::CheckArg(aArgc, aArgv, "headless", nullptr,
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
-      mozilla::CheckArg(aArgc, aArgv, L"remote-debugging-port",
-                        static_cast<const wchar_t**>(nullptr),
+      mozilla::CheckArg(aArgc, aArgv, "remote-debugging-port", nullptr,
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND ||
       mozilla::EnvHasValue("MOZ_AUTOMATION") ||
       mozilla::EnvHasValue("MOZ_HEADLESS")) {
     result |= mozilla::LauncherFlags::eWaitForBrowser;
   }
 
-  if (mozilla::CheckArg(aArgc, aArgv, L"no-deelevate") == mozilla::ARG_FOUND) {
+  if (mozilla::CheckArg(aArgc, aArgv, "no-deelevate") == mozilla::ARG_FOUND) {
     result |= mozilla::LauncherFlags::eNoDeelevate;
+  }
+
+  if (mozilla::CheckArg(aArgc, aArgv, ATTEMPTING_DEELEVATION_FLAG) ==
+      mozilla::ARG_FOUND) {
+    result |= mozilla::LauncherFlags::eDeelevating;
   }
 
   return result;
@@ -186,9 +215,9 @@ static bool DoLauncherProcessChecks(int& argc, wchar_t** argv) {
     result = true;
   }
 
-  result |= mozilla::CheckArg(
-                argc, argv, L"launcher", static_cast<const wchar_t**>(nullptr),
-                mozilla::CheckArgFlag::RemoveArg) == mozilla::ARG_FOUND;
+  result |=
+      mozilla::CheckArg(argc, argv, "launcher", nullptr,
+                        mozilla::CheckArgFlag::RemoveArg) == mozilla::ARG_FOUND;
 
   return result;
 }
@@ -204,8 +233,7 @@ static mozilla::Maybe<bool> RunAsLauncherProcess(int& argc, wchar_t** argv) {
 #if defined(MOZ_LAUNCHER_PROCESS)
   bool forceLauncher =
       runAsLauncher &&
-      mozilla::CheckArg(argc, argv, L"force-launcher",
-                        static_cast<const wchar_t**>(nullptr),
+      mozilla::CheckArg(argc, argv, "force-launcher", nullptr,
                         mozilla::CheckArgFlag::RemoveArg) == mozilla::ARG_FOUND;
 
   mozilla::LauncherRegistryInfo::ProcessType desiredType =
@@ -241,14 +269,11 @@ namespace mozilla {
 
 Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
                         const StaticXREAppData& aAppData) {
-  // Note: keep in sync with nsBrowserApp.
-  const wchar_t* acceptableParams[] = {L"url", L"private-window", nullptr};
-  EnsureCommandlineSafe(argc, argv, acceptableParams);
+  EnsureBrowserCommandlineSafe(argc, argv);
 
   SetLauncherErrorAppData(aAppData);
 
-  if (CheckArg(argc, argv, L"log-launcher-error",
-               static_cast<const wchar_t**>(nullptr),
+  if (CheckArg(argc, argv, "log-launcher-error", nullptr,
                mozilla::CheckArgFlag::RemoveArg) == ARG_FOUND) {
     SetLauncherErrorForceEventLog();
   }
@@ -256,8 +281,7 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
   // return fast when we're a child process.
   // (The remainder of this function has some side effects that are
   // undesirable for content processes)
-  if (mozilla::CheckArg(argc, argv, L"contentproc",
-                        static_cast<const wchar_t**>(nullptr),
+  if (mozilla::CheckArg(argc, argv, "contentproc", nullptr,
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND) {
     // A child process should not instantiate LauncherRegistryInfo.
     return Nothing();
@@ -313,21 +337,50 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
     return Nothing();
   }
 
-  // If we're elevated, we should relaunch ourselves as a normal user.
-  // Note that we only call LaunchUnelevated when we don't need to wait for the
-  // browser process.
-  if (elevationState.unwrap() == ElevationState::eElevated &&
-      !(flags &
-        (LauncherFlags::eWaitForBrowser | LauncherFlags::eNoDeelevate)) &&
-      !mediumIlToken.get()) {
-    LauncherVoidResult launchedUnelevated = LaunchUnelevated(argc, argv);
-    bool failed = launchedUnelevated.isErr();
-    if (failed) {
-      HandleLauncherError(launchedUnelevated);
-      return Nothing();
+  // Distill deelevation status, and/or attempt to perform launcher deelevation
+  // via an indirect relaunch.
+  DeelevationStatus deelevationStatus = DeelevationStatus::Unknown;
+  if (mediumIlToken.get()) {
+    // Rather than indirectly relaunch the launcher, we'll attempt to directly
+    // launch the main process with a reduced-privilege security token.
+    deelevationStatus = DeelevationStatus::PartiallyDeelevated;
+  } else if (elevationState.unwrap() == ElevationState::eElevated) {
+    if (flags & LauncherFlags::eWaitForBrowser) {
+      // An indirect relaunch won't provide a process-handle to block on,
+      // so we have to continue onwards with this process.
+      deelevationStatus = DeelevationStatus::DeelevationProhibited;
+    } else if (flags & LauncherFlags::eNoDeelevate) {
+      // Our invoker (hopefully, the user) has explicitly requested that the
+      // launcher not deelevate itself.
+      deelevationStatus = DeelevationStatus::DeelevationProhibited;
+    } else if (flags & LauncherFlags::eDeelevating) {
+      // We've already tried to deelevate, to no effect. Continue onward.
+      deelevationStatus = DeelevationStatus::UnsuccessfullyDeelevated;
+    } else {
+      // Otherwise, attempt to relaunch the launcher process itself via the
+      // shell, which hopefully will not be elevated. (But see bug 1733821.)
+      LauncherVoidResult launchedUnelevated = LaunchUnelevated(argc, argv);
+      if (launchedUnelevated.isErr()) {
+        // On failure, don't even try for a launcher process. Continue onwards
+        // in this one. (TODO: why? This isn't technically fatal...)
+        HandleLauncherError(launchedUnelevated);
+        return Nothing();
+      }
+      // Otherwise, tell our caller to exit with a success code.
+      return Some(0);
     }
-
-    return Some(0);
+  } else if (elevationState.unwrap() == ElevationState::eNormalUser) {
+    if (flags & LauncherFlags::eDeelevating) {
+      // Deelevation appears to have been successful!
+      deelevationStatus = DeelevationStatus::SuccessfullyDeelevated;
+    } else {
+      // We haven't done anything and we don't need to.
+      deelevationStatus = DeelevationStatus::StartedUnprivileged;
+    }
+  } else {
+    // Some other elevation state with no medium-integrity token.
+    // (This should probably not happen.)
+    deelevationStatus = DeelevationStatus::Unknown;
   }
 
 #if defined(MOZ_LAUNCHER_PROCESS)
@@ -389,7 +442,7 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
   }
 
   // Pass on the path of the shortcut used to launch this process, if any.
-  STARTUPINFOW currentStartupInfo;
+  STARTUPINFOW currentStartupInfo = {.cb = sizeof(STARTUPINFOW)};
   GetStartupInfoW(&currentStartupInfo);
   if ((currentStartupInfo.dwFlags & STARTF_TITLEISLINKNAME) &&
       currentStartupInfo.lpTitle) {
@@ -424,8 +477,9 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
     job = CreateJobAndAssignProcess(process.get());
   }
 
-  LauncherVoidResult setupResult = PostCreationSetup(
-      argv[0], process.get(), mainThread.get(), isSafeMode.value());
+  LauncherVoidResult setupResult =
+      PostCreationSetup(argv[0], process.get(), mainThread.get(),
+                        deelevationStatus, isSafeMode.value());
   if (setupResult.isErr()) {
     HandleLauncherError(setupResult);
     ::TerminateProcess(process.get(), 1);

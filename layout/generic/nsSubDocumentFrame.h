@@ -135,6 +135,8 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   void ClearRetainedPaintData();
 
   void MaybeUpdateEmbedderColorScheme();
+
+  void MaybeUpdateRemoteStyle(ComputedStyle* aOldComputedStyle = nullptr);
   void PropagateIsUnderHiddenEmbedderElementToSubView(
       bool aIsUnderHiddenEmbedderElement);
 
@@ -163,8 +165,8 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   }
 
   nscoord GetIntrinsicISize() {
-    if (StyleDisplay()->GetContainSizeAxes().mIContained) {
-      return 0;
+    if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
+      return *containISize;
     }
     auto size = GetIntrinsicSize();
     Maybe<nscoord> iSize =
@@ -193,6 +195,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   bool mPostedReflowCallback : 1;
   bool mDidCreateDoc : 1;
   bool mCallingShow : 1;
+  bool mIsInObjectOrEmbed : 1;
 };
 
 namespace mozilla {

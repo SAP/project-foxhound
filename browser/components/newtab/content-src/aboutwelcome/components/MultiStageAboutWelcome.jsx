@@ -18,7 +18,7 @@ const TRANSITION_OUT_TIME = 1000;
 export const MultiStageAboutWelcome = props => {
   let { screens } = props;
 
-  const [index, setScreenIndex] = useState(0);
+  const [index, setScreenIndex] = useState(props.startScreen);
   useEffect(() => {
     // Send impression ping when respective screen first renders
     screens.forEach((screen, order) => {
@@ -167,10 +167,12 @@ export const MultiStageAboutWelcome = props => {
       >
         {screens.map((screen, order) => {
           const isFirstCenteredScreen =
-            screen.content.position !== "corner" &&
+            (!screen.content.position ||
+              screen.content.position === "center") &&
             screen === centeredScreens[0];
           const isLastCenteredScreen =
-            screen.content.position !== "corner" &&
+            (!screen.content.position ||
+              screen.content.position === "center") &&
             screen === centeredScreens[centeredScreens.length - 1];
           /* If first screen is corner positioned, don't include it in the count for the steps indicator. This assumes corner positioning will only be used on the first screen. */
           const totalNumberOfScreens =
@@ -240,7 +242,9 @@ export const StepsIndicator = props => {
     let className = `${i === props.order ? "current" : ""} ${
       i < props.order ? "complete" : ""
     }`;
-    steps.push(<div key={i} className={`indicator ${className}`} />);
+    steps.push(
+      <div key={i} className={`indicator ${className}`} role="presentation" />
+    );
   }
   return steps;
 };
@@ -280,7 +284,8 @@ export class WelcomeScreen extends React.PureComponent {
 
   async handleAction(event) {
     let { props } = this;
-    let { value } = event.currentTarget;
+    const value =
+      event.currentTarget.value ?? event.currentTarget.getAttribute("value");
     let targetContent =
       props.content[value] ||
       props.content.tiles ||

@@ -276,8 +276,6 @@ CompositorBridgeParent::CompositorBridgeParent(
       mUseExternalSurfaceSize(aUseExternalSurfaceSize),
       mEGLSurfaceSize(aSurfaceSize),
       mOptions(aOptions),
-      mPauseCompositionMonitor("PauseCompositionMonitor"),
-      mResumeCompositionMonitor("ResumeCompositionMonitor"),
       mCompositorBridgeID(0),
       mRootLayerTreeID{0},
       mOverrideComposeReadiness(false),
@@ -366,7 +364,7 @@ CompositorBridgeParent::~CompositorBridgeParent() {
     tex->DeallocateDeviceData();
   }
   // Check if WebRender/Compositor was shutdown.
-  if (mWrBridge || mCompositor) {
+  if (mWrBridge) {
     gfxCriticalNote << "CompositorBridgeParent destroyed without shutdown";
   }
 }
@@ -434,11 +432,6 @@ void CompositorBridgeParent::StopAndClearResources() {
       // WebRenderAPI should be already destructed
       mAsyncImageManager = nullptr;
     }
-  }
-
-  if (mCompositor) {
-    mCompositor->Destroy();
-    mCompositor = nullptr;
   }
 
   // This must be destroyed now since it accesses the widget.
@@ -539,8 +532,6 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvForcePresent(
   return IPC_OK();
 }
 
-void CompositorBridgeParent::Invalidate() {}
-
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvStartFrameTimeRecording(
     const int32_t& aBufferSize, uint32_t* aOutStartIndex) {
   if (mWrBridge) {
@@ -593,33 +584,22 @@ void CompositorBridgeParent::PauseComposition() {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread(),
              "PauseComposition() can only be called on the compositor thread");
 
-  MonitorAutoLock lock(mPauseCompositionMonitor);
-
   if (!mPaused) {
     mPaused = true;
 
     TimeStamp now = TimeStamp::Now();
-    if (mCompositor) {
-      mCompositor->Pause();
-      DidComposite(VsyncId(), now, now);
-    } else if (mWrBridge) {
+    if (mWrBridge) {
       mWrBridge->Pause();
       NotifyPipelineRendered(mWrBridge->PipelineId(),
                              mWrBridge->GetCurrentEpoch(), VsyncId(), now, now,
                              now);
     }
   }
-
-  // if anyone's waiting to make sure that composition really got paused, tell
-  // them
-  lock.NotifyAll();
 }
 
 void CompositorBridgeParent::ResumeComposition() {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread(),
              "ResumeComposition() can only be called on the compositor thread");
-
-  MonitorAutoLock lock(mResumeCompositionMonitor);
 
   bool resumed = mWidget->OnResumeComposition();
   resumed = resumed && mWrBridge->Resume();
@@ -632,19 +612,13 @@ void CompositorBridgeParent::ResumeComposition() {
         ANDROID_LOG_INFO, "CompositorBridgeParent",
         "Unable to renew compositor surface; remaining in paused state");
 #endif
-    lock.NotifyAll();
     return;
   }
 
   mPaused = false;
 
-  Invalidate();
   mCompositorScheduler->ForceComposeToTarget(wr::RenderReasons::WIDGET, nullptr,
                                              nullptr);
-
-  // if anyone's waiting to make sure that composition really got resumed, tell
-  // them
-  lock.NotifyAll();
 }
 
 void CompositorBridgeParent::ForceComposition(wr::RenderReasons aReasons) {
@@ -662,13 +636,6 @@ void CompositorBridgeParent::SetEGLSurfaceRect(int x, int y, int width,
   NS_ASSERTION(mUseExternalSurfaceSize,
                "Compositor created without UseExternalSurfaceSize provided");
   mEGLSurfaceSize.SizeTo(width, height);
-  if (mCompositor) {
-    mCompositor->SetDestinationSurfaceSize(
-        gfx::IntSize(mEGLSurfaceSize.width, mEGLSurfaceSize.height));
-    if (mCompositor->AsCompositorOGL()) {
-      mCompositor->AsCompositorOGL()->SetSurfaceOrigin(ScreenIntPoint(x, y));
-    }
-  }
 }
 
 void CompositorBridgeParent::ResumeCompositionAndResize(int x, int y, int width,
@@ -950,7 +917,6 @@ void CompositorBridgeParent::SetFixedLayerMargins(ScreenIntCoord aTop,
     mApzcTreeManager->SetFixedLayerMargins(aTop, aBottom);
   }
 
-  Invalidate();
   ScheduleComposition(wr::RenderReasons::RESIZE);
 }
 
@@ -1193,7 +1159,6 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     const WindowKind& aWindowKind) {
   MOZ_ASSERT(wr::AsLayersId(aPipelineId) == mRootLayerTreeID);
   MOZ_ASSERT(!mWrBridge);
-  MOZ_ASSERT(!mCompositor);
   MOZ_ASSERT(!mCompositorScheduler);
   MOZ_ASSERT(mWidget);
 

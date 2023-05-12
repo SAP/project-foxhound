@@ -1582,28 +1582,25 @@ void gfxTextRun::SetSpaceGlyph(gfxFont* aFont, DrawTarget* aDrawTarget,
     return;
   }
 
-  static const uint8_t space = ' ';
   gfx::ShapedTextFlags flags =
       gfx::ShapedTextFlags::TEXT_IS_8BIT | aOrientation;
   bool vertical =
       !!(GetFlags() & gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT);
   gfxFontShaper::RoundingFlags roundingFlags =
       aFont->GetRoundOffsetsToPixels(aDrawTarget);
-  gfxShapedWord* sw = aFont->GetShapedWord(
-      aDrawTarget, &space, 1, gfxShapedWord::HashMix(0, ' '), Script::LATIN,
-      /* aLanguage = */ nullptr, vertical, mAppUnitsPerDevUnit, flags,
-      roundingFlags, nullptr);
-  if (sw) {
-    const GlyphRun* prevRun = TrailingGlyphRun();
-    bool isCJK = prevRun && prevRun->mFont == aFont &&
-                         prevRun->mOrientation == aOrientation
-                     ? prevRun->mIsCJK
-                     : false;
-    AddGlyphRun(aFont, FontMatchType::Kind::kUnspecified, aCharIndex, false,
-                aOrientation, isCJK);
-    CopyGlyphDataFrom(sw, aCharIndex);
-    GetCharacterGlyphs()[aCharIndex].SetIsSpace();
-  }
+  aFont->ProcessSingleSpaceShapedWord(
+      aDrawTarget, vertical, mAppUnitsPerDevUnit, flags, roundingFlags,
+      [&](gfxShapedWord* aShapedWord) {
+        const GlyphRun* prevRun = TrailingGlyphRun();
+        bool isCJK = prevRun && prevRun->mFont == aFont &&
+                             prevRun->mOrientation == aOrientation
+                         ? prevRun->mIsCJK
+                         : false;
+        AddGlyphRun(aFont, FontMatchType::Kind::kUnspecified, aCharIndex, false,
+                    aOrientation, isCJK);
+        CopyGlyphDataFrom(aShapedWord, aCharIndex);
+        GetCharacterGlyphs()[aCharIndex].SetIsSpace();
+      });
 }
 
 bool gfxTextRun::SetSpaceGlyphIfSimple(gfxFont* aFont, uint32_t aCharIndex,
@@ -2012,11 +2009,9 @@ void gfxFontGroup::AddFamilyToFontList(fontlist::Family* aFamily,
                                        StyleGenericFontFamily aGeneric) {
   gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
   if (!aFamily->IsInitialized()) {
-    if (!NS_IsMainThread() && ServoStyleSet::Current()) {
+    if (ServoStyleSet* set = gfxFontUtils::CurrentServoStyleSet()) {
       // If we need to initialize a Family record, but we're on a style
       // worker thread, we have to defer it.
-      ServoStyleSet* set = ServoStyleSet::Current();
-      MOZ_ASSERT(set);
       set->AppendTask(PostTraversalTask::InitializeFamily(aFamily));
       set->AppendTask(PostTraversalTask::FontInfoUpdate(set));
       return;

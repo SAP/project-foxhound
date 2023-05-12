@@ -613,6 +613,20 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
+    id: "bug1784302",
+    platform: "android",
+    domain: "open.toutiao.com",
+    bug: "1784302",
+    contentScripts: {
+      matches: ["*://open.toutiao.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1784302-effectiveType-shim.js",
+        },
+      ],
+    },
+  },
+  {
     id: "bug1784309",
     platform: "all",
     domain: "bet365.com",
@@ -632,6 +646,89 @@ const AVAILABLE_INJECTIONS = [
       js: [
         {
           file: "injections/js/bug1784309-bet365.com-math-pow.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1784141",
+    platform: "android",
+    domain: "aveeno.com",
+    bug: "1784141",
+    contentScripts: {
+      matches: [
+        "*://*.aveeno.com/*",
+        "*://*.aveeno.ca/*",
+        "*://*.aveeno.com.au/*",
+        "*://*.aveeno.co.kr/*",
+        "*://*.aveeno.co.uk/*",
+        "*://*.aveeno.ie/*",
+      ],
+      css: [
+        {
+          file: "injections/css/bug1784141-aveeno.com-unsupported.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1784195",
+    platform: "android",
+    domain: "nutmeg.morrisons.com",
+    bug: "1784195",
+    contentScripts: {
+      matches: ["*://nutmeg.morrisons.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1784195-nutmeg.morrisons.com-overflow.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1784546",
+    platform: "android",
+    domain: "seznam.cz",
+    bug: "1784546",
+    contentScripts: {
+      matches: ["*://*.seznam.cz/*"],
+      css: [
+        {
+          file: "injections/css/bug1784546-seznam.cz-popup-height.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1784351",
+    platform: "desktop",
+    domain: "movistar.com.ar",
+    bug: "1784351",
+    contentScripts: {
+      matches: ["*://*.movistar.com.ar/*"],
+      css: [
+        {
+          file:
+            "injections/css/bug1784351-movistar.com.ar-overflow-overlay-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1784199",
+    platform: "all",
+    domain: "Sites based on Entrata Platform",
+    bug: "1784199",
+    contentScripts: {
+      matches: [
+        "*://*.aptsovation.com/*",
+        "*://*.nhcalaska.com/*",
+        "*://*.securityproperties.com/*",
+        "*://*.theloftsorlando.com/*",
+      ],
+      css: [
+        {
+          file: "injections/css/bug1784199-entrata-platform-unsupported.css",
         },
       ],
     },

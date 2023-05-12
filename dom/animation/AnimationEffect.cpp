@@ -16,7 +16,7 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(AnimationEffect)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(AnimationEffect)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AnimationEffect)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocument, mAnimation)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
@@ -25,8 +25,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AnimationEffect)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocument, mAnimation)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(AnimationEffect)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(AnimationEffect)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(AnimationEffect)
@@ -139,14 +137,8 @@ ComputedTiming AnimationEffect::GetComputedTimingAt(
       aProgressTimelinePosition ==
       Animation::ProgressTimelinePosition::Boundary;
 
-  StickyTimeDuration beforeActiveBoundary =
-      std::max(std::min(StickyTimeDuration(aTiming.Delay()), result.mEndTime),
-               zeroDuration);
-
-  StickyTimeDuration activeAfterBoundary = std::max(
-      std::min(StickyTimeDuration(aTiming.Delay() + result.mActiveDuration),
-               result.mEndTime),
-      zeroDuration);
+  StickyTimeDuration beforeActiveBoundary = aTiming.CalcBeforeActiveBoundary();
+  StickyTimeDuration activeAfterBoundary = aTiming.CalcActiveAfterBoundary();
 
   if (localTime > activeAfterBoundary ||
       (aPlaybackRate >= 0 && localTime == activeAfterBoundary &&
@@ -258,12 +250,12 @@ ComputedTiming AnimationEffect::GetComputedTimingAt(
        thisIterationReverse) ||
       (result.mPhase == ComputedTiming::AnimationPhase::Before &&
        !thisIterationReverse)) {
-    result.mBeforeFlag = StyleEasingBeforeFlag::Set;
+    result.mBeforeFlag = true;
   }
 
   // Apply the easing.
-  if (aTiming.TimingFunction()) {
-    progress = aTiming.TimingFunction()->GetValue(progress, result.mBeforeFlag);
+  if (const auto& fn = aTiming.TimingFunction()) {
+    progress = fn->At(progress, result.mBeforeFlag);
   }
 
   MOZ_ASSERT(IsFinite(progress), "Progress value should be finite");

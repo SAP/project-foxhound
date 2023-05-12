@@ -24,6 +24,7 @@
 #include "mozilla/dom/ScriptLoadContext.h"
 #include "mozilla/CycleCollectedJSContext.h"  // nsAutoMicroTask
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"  // nsICacheInfoChannel
 #include "nsNetUtil.h"            // NS_NewURI
@@ -75,23 +76,7 @@ void ModuleLoaderBase::EnsureModuleHooksInitialized() {
   JS::SetScriptPrivateReferenceHooks(rt, HostAddRefTopLevelScript,
                                      HostReleaseTopLevelScript);
   JS::SetSupportedAssertionsHook(rt, HostGetSupportedImportAssertions);
-
-  Preferences::RegisterCallbackAndCall(DynamicImportPrefChangedCallback,
-                                       "javascript.options.dynamicImport",
-                                       (void*)nullptr);
-}
-
-// static
-void ModuleLoaderBase::DynamicImportPrefChangedCallback(const char* aPrefName,
-                                                        void* aClosure) {
-  bool enabled = Preferences::GetBool(aPrefName);
-  JS::ModuleDynamicImportHook hook =
-      enabled ? HostImportModuleDynamically : nullptr;
-
-  AutoJSAPI jsapi;
-  jsapi.Init();
-  JSRuntime* rt = JS_GetRuntime(jsapi.cx());
-  JS::SetModuleDynamicImportHook(rt, hook);
+  JS::SetModuleDynamicImportHook(rt, HostImportModuleDynamically);
 }
 
 // 8.1.3.8.1 HostResolveImportedModule(referencingModule, moduleRequest)
@@ -597,16 +582,23 @@ nsresult ModuleLoaderBase::HandleResolveFailure(
   return NS_OK;
 }
 
+// Helper for getting import maps pref across main thread and workers
+bool ImportMapsEnabled() {
+  if (NS_IsMainThread()) {
+    return mozilla::StaticPrefs::dom_importMaps_enabled();
+  }
+  return false;
+}
+
 ResolveResult ModuleLoaderBase::ResolveModuleSpecifier(
     LoadedScript* aScript, const nsAString& aSpecifier) {
-  bool importMapsEnabled = Preferences::GetBool("dom.importMaps.enabled");
   // If import map is enabled, forward to the updated 'Resolve a module
   // specifier' algorithm defined in Import maps spec.
   //
   // Once import map is enabled by default,
   // ModuleLoaderBase::ResolveModuleSpecifier should be replaced by
   // ImportMap::ResolveModuleSpecifier.
-  if (importMapsEnabled) {
+  if (ImportMapsEnabled()) {
     return ImportMap::ResolveModuleSpecifier(mImportMap.get(), mLoader, aScript,
                                              aSpecifier);
   }
@@ -1052,7 +1044,8 @@ nsresult ModuleLoaderBase::EvaluateModule(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->mLoader == this);
 
   mozilla::nsAutoMicroTask mt;
-  mozilla::dom::AutoEntryScript aes(mGlobalObject, "EvaluateModule", true);
+  mozilla::dom::AutoEntryScript aes(mGlobalObject, "EvaluateModule",
+                                    NS_IsMainThread());
 
   return EvaluateModuleInContext(aes.cx(), aRequest,
                                  JS::ReportModuleErrorsAsync);

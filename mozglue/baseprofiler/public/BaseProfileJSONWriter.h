@@ -52,7 +52,7 @@ class ChunkedJSONWriteFunc final : public JSONWriteFunc {
     return totalLen;
   }
 
-  void Write(const Span<const char>& aStr) override {
+  void Write(const Span<const char>& aStr) final {
     MOZ_ASSERT(mChunkPtr >= mChunkList.back().get() && mChunkPtr <= mChunkEnd);
     MOZ_ASSERT(mChunkEnd >= mChunkList.back().get() + mChunkLengths.back());
     MOZ_ASSERT(*mChunkPtr == '\0');
@@ -151,7 +151,7 @@ class ChunkedJSONWriteFunc final : public JSONWriteFunc {
 struct OStreamJSONWriteFunc final : public JSONWriteFunc {
   explicit OStreamJSONWriteFunc(std::ostream& aStream) : mStream(aStream) {}
 
-  void Write(const Span<const char>& aStr) override {
+  void Write(const Span<const char>& aStr) final {
     std::string_view sv(aStr.data(), aStr.size());
     mStream << sv;
   }
@@ -163,12 +163,13 @@ class UniqueJSONStrings;
 
 class SpliceableJSONWriter : public JSONWriter {
  public:
-  explicit SpliceableJSONWriter(UniquePtr<JSONWriteFunc> aWriter)
-      : JSONWriter(std::move(aWriter)) {}
+  explicit SpliceableJSONWriter(JSONWriteFunc& aWriter)
+      : JSONWriter(aWriter, JSONWriter::SingleLineStyle) {}
 
-  void StartBareList(CollectionStyle aStyle = MultiLineStyle) {
-    StartCollection(scEmptyString, scEmptyString, aStyle);
-  }
+  explicit SpliceableJSONWriter(UniquePtr<JSONWriteFunc> aWriter)
+      : JSONWriter(std::move(aWriter), JSONWriter::SingleLineStyle) {}
+
+  void StartBareList() { StartCollection(scEmptyString, scEmptyString); }
 
   void EndBareList() { EndCollection(scEmptyString); }
 
@@ -257,13 +258,13 @@ class SpliceableJSONWriter : public JSONWriter {
 
   void Splice(const Span<const char>& aStr) {
     Separator();
-    WriteFunc()->Write(aStr);
+    WriteFunc().Write(aStr);
     mNeedComma[mDepth] = true;
   }
 
   void Splice(const char* aStr, size_t aLen) {
     Separator();
-    WriteFunc()->Write(Span<const char>(aStr, aLen));
+    WriteFunc().Write(Span<const char>(aStr, aLen));
     mNeedComma[mDepth] = true;
   }
 
@@ -276,7 +277,7 @@ class SpliceableJSONWriter : public JSONWriter {
   void CopyAndSplice(const ChunkedJSONWriteFunc& aFunc) {
     Separator();
     for (size_t i = 0; i < aFunc.mChunkList.length(); i++) {
-      WriteFunc()->Write(
+      WriteFunc().Write(
           Span<const char>(aFunc.mChunkList[i].get(), aFunc.mChunkLengths[i]));
     }
     mNeedComma[mDepth] = true;
@@ -288,7 +289,7 @@ class SpliceableJSONWriter : public JSONWriter {
   virtual void TakeAndSplice(ChunkedJSONWriteFunc&& aFunc) {
     Separator();
     for (size_t i = 0; i < aFunc.mChunkList.length(); i++) {
-      WriteFunc()->Write(
+      WriteFunc().Write(
           Span<const char>(aFunc.mChunkList[i].get(), aFunc.mChunkLengths[i]));
     }
     aFunc.mChunkPtr = nullptr;
@@ -319,13 +320,35 @@ class SpliceableJSONWriter : public JSONWriter {
   // index as an array element.
   inline void UniqueStringElement(const Span<const char>& aStr);
 
+  // THe following functions override JSONWriter functions non-virtually. The
+  // goal is to try and prevent calls that specify a style, which would be
+  // ignored anyway because the whole thing is single-lined. It's fine if some
+  // calls still make it through a `JSONWriter&`, no big deal.
+  void Start() { JSONWriter::Start(); }
+  void StartArrayProperty(const Span<const char>& aName) {
+    JSONWriter::StartArrayProperty(aName);
+  }
+  template <size_t N>
+  void StartArrayProperty(const char (&aName)[N]) {
+    JSONWriter::StartArrayProperty(Span<const char>(aName, N));
+  }
+  void StartArrayElement() { JSONWriter::StartArrayElement(); }
+  void StartObjectProperty(const Span<const char>& aName) {
+    JSONWriter::StartObjectProperty(aName);
+  }
+  template <size_t N>
+  void StartObjectProperty(const char (&aName)[N]) {
+    JSONWriter::StartObjectProperty(Span<const char>(aName, N));
+  }
+  void StartObjectElement() { JSONWriter::StartObjectElement(); }
+
  private:
   UniqueJSONStrings* mUniqueStrings = nullptr;
 };
 
 class SpliceableChunkedJSONWriter final : public SpliceableJSONWriter {
  public:
-  explicit SpliceableChunkedJSONWriter()
+  SpliceableChunkedJSONWriter()
       : SpliceableJSONWriter(MakeUnique<ChunkedJSONWriteFunc>()) {}
 
   // Access the ChunkedJSONWriteFunc as reference-to-const, usually to copy data
@@ -333,8 +356,8 @@ class SpliceableChunkedJSONWriter final : public SpliceableJSONWriter {
   const ChunkedJSONWriteFunc& ChunkedWriteFunc() const {
     MOZ_ASSERT(!mTaken);
     // The WriteFunc was non-fallibly allocated as a ChunkedJSONWriteFunc in the
-    // only constructor above, so it's safe to cast to ChunkedJSONWriteFunc*.
-    return *static_cast<const ChunkedJSONWriteFunc*>(WriteFunc());
+    // only constructor above, so it's safe to cast to ChunkedJSONWriteFunc&.
+    return static_cast<const ChunkedJSONWriteFunc&>(WriteFunc());
   }
 
   // Access the ChunkedJSONWriteFunc as rvalue-reference, usually to take its
@@ -345,8 +368,8 @@ class SpliceableChunkedJSONWriter final : public SpliceableJSONWriter {
     mTaken = true;
 #endif  //
     // The WriteFunc was non-fallibly allocated as a ChunkedJSONWriteFunc in the
-    // only constructor above, so it's safe to cast to ChunkedJSONWriteFunc*.
-    return std::move(*static_cast<ChunkedJSONWriteFunc*>(WriteFunc()));
+    // only constructor above, so it's safe to cast to ChunkedJSONWriteFunc&.
+    return std::move(static_cast<ChunkedJSONWriteFunc&>(WriteFunc()));
   }
 
   // Adopts the chunks from aFunc without copying.
@@ -354,8 +377,8 @@ class SpliceableChunkedJSONWriter final : public SpliceableJSONWriter {
     MOZ_ASSERT(!mTaken);
     Separator();
     // The WriteFunc was non-fallibly allocated as a ChunkedJSONWriteFunc in the
-    // only constructor above, so it's safe to cast to ChunkedJSONWriteFunc*.
-    static_cast<ChunkedJSONWriteFunc*>(WriteFunc())->Take(std::move(aFunc));
+    // only constructor above, so it's safe to cast to ChunkedJSONWriteFunc&.
+    static_cast<ChunkedJSONWriteFunc&>(WriteFunc()).Take(std::move(aFunc));
     mNeedComma[mDepth] = true;
   }
 
@@ -407,13 +430,11 @@ class JSONSchemaWriter {
 class UniqueJSONStrings {
  public:
   // Start an empty list of unique strings.
-  MFBT_API explicit UniqueJSONStrings(
-      JSONWriter::CollectionStyle aStyle = JSONWriter::MultiLineStyle);
+  MFBT_API UniqueJSONStrings();
 
   // Start with a copy of the strings from another list.
-  MFBT_API explicit UniqueJSONStrings(
-      const UniqueJSONStrings& aOther, ProgressLogger aProgressLogger,
-      JSONWriter::CollectionStyle aStyle = JSONWriter::MultiLineStyle);
+  MFBT_API UniqueJSONStrings(const UniqueJSONStrings& aOther,
+                             ProgressLogger aProgressLogger);
 
   MFBT_API ~UniqueJSONStrings();
 

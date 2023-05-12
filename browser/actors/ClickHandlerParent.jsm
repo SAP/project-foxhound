@@ -117,6 +117,17 @@ class ClickHandlerParent extends JSWindowActorParent {
       hasValidUserGestureActivation: true,
     };
 
+    if (data.globalHistoryOptions) {
+      params.globalHistoryOptions = data.globalHistoryOptions;
+    } else {
+      params.globalHistoryOptions = {
+        triggeringSponsoredURL: browser.getAttribute("triggeringSponsoredURL"),
+        triggeringSponsoredURLVisitTimeMS: browser.getAttribute(
+          "triggeringSponsoredURLVisitTimeMS"
+        ),
+      };
+    }
+
     // The new tab/window must use the same userContextId.
     if (data.originAttributes.userContextId) {
       params.userContextId = data.originAttributes.userContextId;

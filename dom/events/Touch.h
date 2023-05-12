@@ -39,7 +39,7 @@ class Touch final : public nsISupports,
   Touch(const Touch& aOther);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Touch)
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Touch)
 
   void InitializePoints(nsPresContext* aPresContext, WidgetEvent* aEvent);
 
@@ -69,6 +69,8 @@ class Touch final : public nsISupports,
   int32_t RadiusY(CallerType aCallerType) const;
   float RotationAngle(CallerType aCallerType) const;
   float Force(CallerType aCallerType) const;
+
+  EventTarget* GetOriginalTarget() const;
 
   nsCOMPtr<EventTarget> mOriginalTarget;
   nsCOMPtr<EventTarget> mTarget;

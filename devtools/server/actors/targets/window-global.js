@@ -262,7 +262,7 @@ const windowGlobalTargetPrototype = {
    *          The Session Context to help know what is debugged.
    *          See devtools/server/actors/watcher/session-context.js
    */
-  initialize: function(
+  initialize(
     connection,
     {
       docShell,
@@ -602,7 +602,7 @@ const windowGlobalTargetPrototype = {
       // True for targets created by JSWindowActors, see constructor JSDoc.
       followWindowGlobalLifeCycle: this.followWindowGlobalLifeCycle,
       innerWindowId,
-      parentInnerWindowId: parentInnerWindowId,
+      parentInnerWindowId,
       topInnerWindowId: this.browsingContext.topWindowContext.innerWindowId,
       isTopLevelTarget: this.isTopLevelTarget,
       ignoreSubFrames: this.ignoreSubFrames,
@@ -658,8 +658,10 @@ const windowGlobalTargetPrototype = {
    * @params {Object} options
    * @params {Boolean} options.isTargetSwitching: Set to true when this is called during
    *         a target switch.
+   * @params {Boolean} options.isModeSwitching: Set to true true when this is called as the
+   *         result of a change to the devtools.browsertoolbox.scope pref.
    */
-  destroy({ isTargetSwitching = false } = {}) {
+  destroy({ isTargetSwitching = false, isModeSwitching = false } = {}) {
     // Avoid reentrancy. We will destroy the Transport when emitting "destroyed",
     // which will force destroying all actors.
     if (this.destroying) {
@@ -684,10 +686,10 @@ const windowGlobalTargetPrototype = {
     if (this.docShell) {
       this._unwatchDocShell(this.docShell);
 
-      // If this target is being destroyed as part of a target switch, we don't need to
-      // restore the configuration (this might cause the content page to be focused again
-      // and cause issues in tets).
-      if (!isTargetSwitching) {
+      // If this target is being destroyed as part of a target switch or a mode switch,
+      // we don't need to restore the configuration (this might cause the content page to
+      // be focused again, causing issues in tests and disturbing the user when switching modes).
+      if (!isTargetSwitching && !isModeSwitching) {
         this._restoreTargetConfiguration();
       }
     }
@@ -727,7 +729,7 @@ const windowGlobalTargetPrototype = {
 
     // Emit a last event before calling Actor.destroy
     // which will destroy the EventEmitter API
-    this.emit("destroyed");
+    this.emit("destroyed", { isTargetSwitching, isModeSwitching });
 
     Actor.prototype.destroy.call(this);
     TargetActorRegistry.unregisterTargetActor(this);
@@ -1544,8 +1546,8 @@ const windowGlobalTargetPrototype = {
     // This event is fired once the document is loaded,
     // after the load event, it's document ready-state is 'complete'.
     this.emit("navigate", {
-      window: window,
-      isTopLevel: isTopLevel,
+      window,
+      isTopLevel,
     });
 
     // We don't do anything for inner frames here.
@@ -1569,7 +1571,7 @@ const windowGlobalTargetPrototype = {
       url: this.url,
       title: this.title,
       state: "stop",
-      isFrameSwitching: isFrameSwitching,
+      isFrameSwitching,
     });
   },
 

@@ -384,8 +384,6 @@ void NativeObject::shrinkSlots(JSContext* cx, uint32_t oldCapacity,
   MOZ_ASSERT(newCapacity < oldCapacity);
   MOZ_ASSERT(oldCapacity == getSlotsHeader()->capacity());
 
-  uint32_t dictionarySpan = getSlotsHeader()->dictionarySlotSpan();
-
   ObjectSlots* oldHeaderSlots = ObjectSlots::fromSlots(slots_);
   MOZ_ASSERT(oldHeaderSlots->capacity() == oldCapacity);
 
@@ -395,11 +393,14 @@ void NativeObject::shrinkSlots(JSContext* cx, uint32_t oldCapacity,
     size_t nbytes = ObjectSlots::allocSize(oldCapacity);
     RemoveCellMemory(this, nbytes, MemoryUse::ObjectSlots);
     FreeSlots(cx, this, oldHeaderSlots, nbytes);
-    setEmptyDynamicSlots(dictionarySpan);
+    // dictionarySlotSpan is initialized to the correct value by the callers.
+    setEmptyDynamicSlots(0);
     return;
   }
 
   MOZ_ASSERT_IF(!is<ArrayObject>(), newCapacity >= SLOT_CAPACITY_MIN);
+
+  uint32_t dictionarySpan = getSlotsHeader()->dictionarySlotSpan();
 
   uint32_t newAllocated = ObjectSlots::allocCount(newCapacity);
 
@@ -1104,7 +1105,7 @@ static bool WouldDefinePastNonwritableLength(ArrayObject* arr, uint32_t index) {
 static bool ChangeProperty(JSContext* cx, Handle<NativeObject*> obj,
                            HandleId id, HandleObject getter,
                            HandleObject setter, PropertyFlags flags,
-                           PropertyResult* existing) {
+                           PropertyResult* existing, uint32_t* slotOut) {
   MOZ_ASSERT(existing);
 
   Rooted<GetterSetter*> gs(cx);
@@ -1128,18 +1129,17 @@ static bool ChangeProperty(JSContext* cx, Handle<NativeObject*> obj,
     }
   }
 
-  uint32_t slot;
   if (existing->isNativeProperty()) {
-    if (!NativeObject::changeProperty(cx, obj, id, flags, &slot)) {
+    if (!NativeObject::changeProperty(cx, obj, id, flags, slotOut)) {
       return false;
     }
   } else {
-    if (!NativeObject::addProperty(cx, obj, id, flags, &slot)) {
+    if (!NativeObject::addProperty(cx, obj, id, flags, slotOut)) {
       return false;
     }
   }
 
-  obj->setSlot(slot, PrivateGCThingValue(gs));
+  obj->setSlot(*slotOut, PrivateGCThingValue(gs));
   return true;
 }
 
@@ -1203,6 +1203,7 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
     }
   }
 
+  uint32_t slot;
   if constexpr (AddOrChange == IsAddOrChange::Add) {
     if (desc.isAccessorDescriptor()) {
       Rooted<GetterSetter*> gs(
@@ -1210,13 +1211,11 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
       if (!gs) {
         return false;
       }
-      uint32_t slot;
       if (!NativeObject::addProperty(cx, obj, id, flags, &slot)) {
         return false;
       }
       obj->initSlot(slot, PrivateGCThingValue(gs));
     } else {
-      uint32_t slot;
       if (!NativeObject::addProperty(cx, obj, id, flags, &slot)) {
         return false;
       }
@@ -1225,11 +1224,10 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
   } else {
     if (desc.isAccessorDescriptor()) {
       if (!ChangeProperty(cx, obj, id, desc.getter(), desc.setter(), flags,
-                          existing)) {
+                          existing, &slot)) {
         return false;
       }
     } else {
-      uint32_t slot;
       if (existing->isNativeProperty()) {
         if (!NativeObject::changeProperty(cx, obj, id, flags, &slot)) {
           return false;
@@ -1243,6 +1241,8 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
     }
   }
 
+  MOZ_ASSERT(slot < obj->slotSpan());
+
   // Clear any existing dense index after adding a sparse indexed property,
   // and investigate converting the object to dense indexes.
   if (id.isInt()) {
@@ -1252,14 +1252,22 @@ static MOZ_ALWAYS_INLINE bool AddOrChangeProperty(
     } else {
       obj->removeDenseElementForSparseIndex(index);
     }
-    DenseElementResult edResult =
-        NativeObject::maybeDensifySparseElements(cx, obj);
-    if (edResult == DenseElementResult::Failure) {
-      return false;
-    }
-    if (edResult == DenseElementResult::Success) {
-      MOZ_ASSERT(!desc.isAccessorDescriptor());
-      return CallAddPropertyHookDense(cx, obj, index, desc.value());
+    // Only try to densify sparse elements if the property we just added/changed
+    // is in the last slot. This avoids a perf cliff in pathological cases: in
+    // maybeDensifySparseElements we densify if the slot span is a power-of-two,
+    // but if we get slots from the free list, the slot span will stay the same
+    // until the free list is empty. This means we'd get quadratic behavior by
+    // trying to densify for each sparse element we add. See bug 1782487.
+    if (slot == obj->slotSpan() - 1) {
+      DenseElementResult edResult =
+          NativeObject::maybeDensifySparseElements(cx, obj);
+      if (edResult == DenseElementResult::Failure) {
+        return false;
+      }
+      if (edResult == DenseElementResult::Success) {
+        MOZ_ASSERT(!desc.isAccessorDescriptor());
+        return CallAddPropertyHookDense(cx, obj, index, desc.value());
+      }
     }
   }
 
@@ -1807,16 +1815,18 @@ static bool DefineNonexistentProperty(JSContext* cx, Handle<NativeObject*> obj,
   return result.succeed();
 }
 
-bool js::AddOrUpdateSparseElementHelper(JSContext* cx, Handle<ArrayObject*> obj,
+bool js::AddOrUpdateSparseElementHelper(JSContext* cx,
+                                        Handle<NativeObject*> obj,
                                         int32_t int_id, HandleValue v,
                                         bool strict) {
+  MOZ_ASSERT(obj->is<ArrayObject>() || obj->is<PlainObject>());
+
+  // This helper doesn't handle the case where the index is a dense element.
+  MOZ_ASSERT(int_id >= 0);
+  MOZ_ASSERT(!obj->containsDenseElement(int_id));
+
   MOZ_ASSERT(PropertyKey::fitsInInt(int_id));
   RootedId id(cx, PropertyKey::Int(int_id));
-
-  // This helper doesn't handle the case where the index may be in the dense
-  // elements
-  MOZ_ASSERT(int_id >= 0);
-  MOZ_ASSERT(uint32_t(int_id) >= obj->getDenseInitializedLength());
 
   // First decide if this is an add or an update. Because the IC guards have
   // already ensured this exists exterior to the dense array range, and the
@@ -1826,7 +1836,8 @@ bool js::AddOrUpdateSparseElementHelper(JSContext* cx, Handle<ArrayObject*> obj,
   PropMap* map = obj->shape()->lookup(cx, id, &index);
 
   // If we didn't find the property, we're on the add path: delegate to
-  // AddOrChangeProperty.
+  // AddOrChangeProperty. This will add either a sparse element or a dense
+  // element.
   if (map == nullptr) {
     Rooted<PropertyDescriptor> desc(
         cx, PropertyDescriptor::Data(v, {JS::PropertyAttribute::Configurable,
@@ -2089,8 +2100,14 @@ static inline bool GeneralizedGetProperty(JSContext* cx, JSObject* obj, jsid id,
   return GetPropertyNoGC(cx, obj, receiver, id, vp.address());
 }
 
-bool js::GetSparseElementHelper(JSContext* cx, Handle<ArrayObject*> obj,
+bool js::GetSparseElementHelper(JSContext* cx, Handle<NativeObject*> obj,
                                 int32_t int_id, MutableHandleValue result) {
+  MOZ_ASSERT(obj->is<ArrayObject>() || obj->is<PlainObject>());
+
+  // This helper doesn't handle the case where the index is a dense element.
+  MOZ_ASSERT(int_id >= 0);
+  MOZ_ASSERT(!obj->containsDenseElement(int_id));
+
   // Indexed properties can not exist on the prototype chain.
   MOZ_ASSERT(!PrototypeMayHaveIndexedProperties(obj));
 

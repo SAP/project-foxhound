@@ -30,6 +30,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SnapshotMonitor: "resource:///modules/SnapshotMonitor.sys.mjs",
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarQuickSuggest: "resource:///modules/UrlbarQuickSuggest.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
@@ -99,8 +101,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   TRRRacer: "resource:///modules/TRRPerformance.jsm",
   UIState: "resource://services-sync/UIState.jsm",
   UpdateListener: "resource://gre/modules/UpdateListener.jsm",
-  UrlbarQuickSuggest: "resource:///modules/UrlbarQuickSuggest.jsm",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   WebChannel: "resource://gre/modules/WebChannel.jsm",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.jsm",
 });
@@ -139,9 +139,10 @@ const PREF_PDFJS_ISDEFAULT_CACHE_STATE = "pdfjs.enabledCache.state";
 const PREF_DFPI_ENABLED_BY_DEFAULT =
   "privacy.restrict3rdpartystorage.rollout.enabledByDefault";
 
-// Index of Private Browsing icon in firefox.exe
-// Must line up with the one in nsNativeAppSupportWin.h.
-const PRIVATE_BROWSING_ICON_INDEX = 5;
+const PRIVATE_BROWSING_BINARY = "private_browsing.exe";
+// Index of Private Browsing icon in private_browsing.exe
+// Must line up with IDI_PBICON_PB_PB_EXE in nsNativeAppSupportWin.h.
+const PRIVATE_BROWSING_EXE_ICON_INDEX = 1;
 const PREF_PRIVATE_WINDOW_SEPARATION =
   "browser.privacySegmentation.windowSeparation.enabled";
 const PREF_PRIVATE_BROWSING_SHORTCUT_CREATED =
@@ -561,6 +562,7 @@ let JSWINDOWACTORS = {
       "chrome://browser/content/syncedtabs/sidebar.xhtml",
       "chrome://browser/content/places/historySidebar.xhtml",
       "chrome://browser/content/places/bookmarksSidebar.xhtml",
+      "about:firefoxview",
     ],
   },
 
@@ -1815,7 +1817,6 @@ BrowserGlue.prototype = {
     // For the initial rollout of dFPI, set the default cookieBehavior based on the pref
     // set during onboarding when the user chooses to enable protections or not.
     if (!Services.prefs.prefHasUserValue(PREF_DFPI_ENABLED_BY_DEFAULT)) {
-      Services.telemetry.scalarSet("privacy.dfpi_rollout_enabledByDefault", 2);
       return;
     }
     let dFPIEnabled = Services.prefs.getBoolPref(PREF_DFPI_ENABLED_BY_DEFAULT);
@@ -1825,11 +1826,6 @@ BrowserGlue.prototype = {
       dFPIEnabled
         ? Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
         : BrowserGlue._defaultCookieBehaviorAtStartup
-    );
-
-    Services.telemetry.scalarSet(
-      "privacy.dfpi_rollout_enabledByDefault",
-      dFPIEnabled ? 1 : 0
     );
   },
 
@@ -2565,7 +2561,9 @@ BrowserGlue.prototype = {
               true
             )
           ) {
-            let exe = Services.dirsvc.get("XREExeF", Ci.nsIFile);
+            let appdir = Services.dirsvc.get("GreD", Ci.nsIFile);
+            let exe = appdir.clone();
+            exe.append(PRIVATE_BROWSING_BINARY);
             let strings = new Localization(
               ["branding/brand.ftl", "browser/browser.ftl"],
               true
@@ -2575,15 +2573,15 @@ BrowserGlue.prototype = {
             ]);
             shellService.createShortcut(
               exe,
-              ["-private-window"],
+              [],
               desc,
               exe,
               // The code we're calling indexes from 0 instead of 1
-              PRIVATE_BROWSING_ICON_INDEX - 1,
+              PRIVATE_BROWSING_EXE_ICON_INDEX - 1,
               winTaskbar.defaultPrivateGroupId,
               "Programs",
               desc + ".lnk",
-              Services.dirsvc.get("GreD", Ci.nsIFile)
+              appdir
             );
             Services.prefs.setBoolPref(
               PREF_PRIVATE_BROWSING_SHORTCUT_CREATED,
@@ -4130,50 +4128,6 @@ BrowserGlue.prototype = {
       // 116 (bug 1717509): Remove HEURISTIC_UNIFIED_COMPLETE group
       // 117 (bug 1710518): Add GENERAL_PARENT group
       lazy.UrlbarPrefs.migrateResultGroups();
-    }
-
-    if (currentUIVersion < 119 && AppConstants.NIGHTLY_BUILD) {
-      // Uninstall outdated monochromatic themes for the following UI versions:
-      // 118: Uninstall prototype monochromatic purple theme.
-      // 119 (bug 1732957): Uninstall themes with old IDs.
-      const themeIdsToMigrate = [
-        "firefox-monochromatic-purple@mozilla.org",
-        "firefox-lush-soft@mozilla.org",
-        "firefox-lush-balanced@mozilla.org",
-        "firefox-lush-bold@mozilla.org",
-        "firefox-abstract-soft@mozilla.org",
-        "firefox-abstract-balanced@mozilla.org",
-        "firefox-abstract-bold@mozilla.org",
-        "firefox-elemental-soft@mozilla.org",
-        "firefox-elemental-balanced@mozilla.org",
-        "firefox-elemental-bold@mozilla.org",
-        "firefox-cheers-soft@mozilla.org",
-        "firefox-cheers-balanced@mozilla.org",
-        "firefox-cheers-bold@mozilla.org",
-        "firefox-graffiti-soft@mozilla.org",
-        "firefox-graffiti-balanced@mozilla.org",
-        "firefox-graffiti-bold@mozilla.org",
-        "firefox-foto-soft@mozilla.org",
-        "firefox-foto-balanced@mozilla.org",
-        "firefox-foto-bold@mozilla.org",
-      ];
-      try {
-        for (let id of themeIdsToMigrate) {
-          lazy.AddonManager.getAddonByID(id).then(addon => {
-            if (!addon) {
-              // Either the addon wasn't installed, or the call to getAddonByID failed.
-              return;
-            }
-            addon.uninstall().catch(Cu.reportError);
-          }, Cu.reportError);
-        }
-      } catch (error) {
-        Cu.reportError(
-          "Could not access the AddonManager to upgrade the profile. This is most " +
-            "likely because the upgrader is being run from an xpcshell test where " +
-            "the AddonManager is not initialized."
-        );
-      }
     }
 
     if (currentUIVersion < 120) {

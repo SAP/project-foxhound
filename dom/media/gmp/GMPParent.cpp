@@ -51,7 +51,6 @@
 using mozilla::ipc::GeckoChildProcessHost;
 
 using CrashReporter::AnnotationTable;
-using CrashReporter::GetIDFromMinidump;
 
 namespace mozilla::gmp {
 
@@ -188,10 +187,10 @@ RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
   // set |mChildLaunchArch| to x64 and allow the library to be used as long
   // as this process is a universal binary.
   if (!(pluginArch & arm64) && (pluginArch & x86)) {
-    bool isWidevine = parentLeafName.Find("widevine") != kNotFound;
+    bool isWidevine = parentLeafName.Find(u"widevine") != kNotFound;
     bool isWidevineAllowed =
         StaticPrefs::media_gmp_widevinecdm_allow_x64_plugin_on_arm64();
-    bool isH264 = parentLeafName.Find("openh264") != kNotFound;
+    bool isH264 = parentLeafName.Find(u"openh264") != kNotFound;
     bool isH264Allowed =
         StaticPrefs::media_gmp_gmpopenh264_allow_x64_plugin_on_arm64();
 
@@ -327,8 +326,7 @@ nsresult GMPParent::LoadProcess() {
     mChildPid = base::GetProcId(mProcess->GetChildProcessHandle());
     GMP_PARENT_LOG_DEBUG("%s: Launched new child process", __FUNCTION__);
 
-    bool opened = Open(mProcess->TakeInitialPort(),
-                       base::GetProcId(mProcess->GetChildProcessHandle()));
+    bool opened = mProcess->TakeInitialEndpoint().Bind(this);
     if (!opened) {
       GMP_PARENT_LOG_DEBUG("%s: Failed to open channel to new child process",
                            __FUNCTION__);
@@ -570,7 +568,7 @@ nsCOMPtr<nsISerialEventTarget> GMPParent::GMPEventTarget() {
 
 /* static */
 bool GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
-                             const nsCString& aAPI,
+                             const nsACString& aAPI,
                              const nsTArray<nsCString>& aTags) {
   for (const nsCString& tag : aTags) {
     if (!GMPCapability::Supports(aCapabilities, aAPI, tag)) {
@@ -582,7 +580,7 @@ bool GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
 
 /* static */
 bool GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
-                             const nsCString& aAPI, const nsCString& aTag) {
+                             const nsACString& aAPI, const nsCString& aTag) {
   for (const GMPCapability& capabilities : aCapabilities) {
     if (!capabilities.mAPIName.Equals(aAPI)) {
       continue;
@@ -948,7 +946,7 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
     // The fake CDM just exposes a key system with id "fake".
     video.mAPITags.AppendElement(nsCString{"fake"});
 #if XP_WIN
-    mLibs = "dxva2.dll, ole32.dll"_ns;
+    mLibs = "dxva2.dll, ole32.dll, oleaut32.dll"_ns;
 #endif
   } else {
     GMP_PARENT_LOG_DEBUG("%s: Unrecognized key system: %s, failing.",

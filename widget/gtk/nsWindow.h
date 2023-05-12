@@ -353,6 +353,12 @@ class nsWindow final : public nsBaseWidget {
                                          LayoutDeviceIntPoint aPoint,
                                          int32_t aModifierFlags) override;
 
+  nsresult SynthesizeNativeTouchpadPan(TouchpadGesturePhase aEventPhase,
+                                       LayoutDeviceIntPoint aPoint,
+                                       double aDeltaX, double aDeltaY,
+                                       int32_t aModifierFlags,
+                                       nsIObserver* aObserver) override;
+
   void GetCompositorWidgetInitData(
       mozilla::widget::CompositorWidgetInitData* aInitData) override;
 
@@ -432,21 +438,21 @@ class nsWindow final : public nsBaseWidget {
   typedef enum {
     // WebRender compositor is enabled
     COMPOSITOR_ENABLED,
-    // WebRender compositor is paused after window creation.
-    COMPOSITOR_PAUSED_INITIALLY,
-    // WebRender compositor is paused because GtkWindow is hidden,
-    // we can't draw into GL context.
-    COMPOSITOR_PAUSED_MISSING_WINDOW,
     // WebRender compositor is paused as we're repainting whole window and
     // we're waiting for content process to update page content.
     COMPOSITOR_PAUSED_FLICKERING
   } WindowCompositorState;
 
   // Pause compositor to avoid rendering artifacts from content process.
-  void ResumeCompositor();
+  void ResumeCompositorImpl();
+  void ResumeCompositorFlickering();
   void ResumeCompositorFromCompositorThread();
-  void PauseCompositor();
+  void PauseCompositorFlickering();
   bool IsWaitingForCompositorResume();
+
+  // Force hide this window, remove compositor etc. to avoid
+  // rendering queue blocking (see Bug 1782948).
+  void ClearRenderingQueue();
 
  protected:
   virtual ~nsWindow();
@@ -458,9 +464,7 @@ class nsWindow final : public nsBaseWidget {
   void DispatchPanGesture(mozilla::PanGestureInput& aPanInput);
 
   void RegisterTouchWindow() override;
-  bool CompositorInitiallyPaused() override {
-    return mCompositorState == COMPOSITOR_PAUSED_INITIALLY;
-  }
+
   nsCOMPtr<nsIWidget> mParent;
   nsPopupType mPopupHint{};
   int mWindowScaleFactor = 1;
@@ -483,10 +487,6 @@ class nsWindow final : public nsBaseWidget {
 
   void TryToShowNativeWindowMenu(GdkEventButton* aEvent);
 
-  void EnableRenderingToWindow();
-  void DisableRenderingToWindow();
-  void ResumeCompositorHiddenWindow();
-  void PauseCompositorHiddenWindow();
   void WaylandStartVsync();
   void WaylandStopVsync();
   void DestroyChildWindows();
@@ -523,6 +523,9 @@ class nsWindow final : public nsBaseWidget {
 
   void AddCSDDecorationSize(int* aWidth, int* aHeight);
 
+  void CreateAndPutGdkScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
+                                  double aDeltaX, double aDeltaY);
+
   nsCString mGtkWindowAppName;
   nsCString mGtkWindowRoleName;
   void RefreshWindowClass();
@@ -535,7 +538,7 @@ class nsWindow final : public nsBaseWidget {
       COMPOSITOR_ENABLED};
   // This is used in COMPOSITOR_PAUSED_FLICKERING mode only to resume compositor
   // in some reasonable time when page content is not updated.
-  int mCompositorPauseTimeoutID = 0;
+  guint mCompositorPauseTimeoutID = 0;
 
   // The actual size mode that's in effect.
   nsSizeMode mSizeMode = nsSizeMode_Normal;
@@ -555,6 +558,29 @@ class nsWindow final : public nsBaseWidget {
   // This field omits duplicate scroll events caused by GNOME bug 726878.
   guint32 mLastScrollEventTime = GDK_CURRENT_TIME;
   mozilla::ScreenCoord mLastPinchEventSpan;
+
+  struct TouchpadPinchGestureState {
+    // Focus point of the PHASE_BEGIN event
+    ScreenPoint mBeginFocus;
+
+    // Focus point of the most recent PHASE_UPDATE event
+    ScreenPoint mCurrentFocus;
+  };
+
+  // Used for handling touchpad pinch gestures
+  ScreenPoint mCurrentTouchpadFocus;
+
+  // Used for synthesizing touchpad pinch gestures
+  TouchpadPinchGestureState mCurrentSynthesizedTouchpadPinch;
+
+  // Used for synthesizing touchpad pan gestures
+  struct TouchpadPanGestureState {
+    mozilla::Maybe<TouchpadGesturePhase> mTouchpadGesturePhase;
+    uint64_t mSavedObserver = 0;
+  };
+
+  // Used for synthesizing touchpad pan gestures
+  TouchpadPanGestureState mCurrentSynthesizedTouchpadPan;
 
   // for touch event handling
   nsRefPtrHashtable<nsPtrHashKey<GdkEventSequence>, mozilla::dom::Touch>
@@ -761,14 +787,13 @@ class nsWindow final : public nsBaseWidget {
   // rendering to released window.
   void ConfigureGdkWindow();
   void ReleaseGdkWindow();
+  void ConfigureCompositor();
 
   // nsBaseWidget
   WindowRenderer* GetWindowRenderer() override;
   void DidGetNonBlankPaint() override;
 
   void SetCompositorWidgetDelegate(CompositorWidgetDelegate* delegate) override;
-
-  void CleanLayerManagerRecursive();
 
   int32_t RoundsWidgetCoordinatesTo() override;
 
@@ -789,13 +814,16 @@ class nsWindow final : public nsBaseWidget {
   bool WaylandPopupIsMenu();
   bool WaylandPopupIsContextMenu();
   bool WaylandPopupIsPermanent();
+  // First popup means it's attached directly to toplevel window
+  bool WaylandPopupIsFirst();
   bool IsWidgetOverflowWindow();
   void RemovePopupFromHierarchyList();
-  void ShowWaylandWindow();
-  void HideWaylandWindow();
+  void ShowWaylandPopupWindow();
   void HideWaylandPopupWindow(bool aTemporaryHidden, bool aRemoveFromPopupList);
+  void ShowWaylandToplevelWindow();
   void HideWaylandToplevelWindow();
   void WaylandPopupHideTooltips();
+  void WaylandPopupCloseOrphanedPopups();
   void AppendPopupToHierarchyList(nsWindow* aToplevelWindow);
   void WaylandPopupHierarchyHideTemporary();
   void WaylandPopupHierarchyShowTemporaryHidden();
@@ -811,6 +839,8 @@ class nsWindow final : public nsBaseWidget {
   void WaylandPopupHideClosedPopups();
   void WaylandPopupMove();
   bool WaylandPopupRemoveNegativePosition(int* aX = nullptr, int* aY = nullptr);
+  bool WaylandPopupCheckAndGetAnchor(GdkRectangle* aPopupAnchor);
+  bool WaylandPopupAnchorAdjustForParentPopup(GdkRectangle* aPopupAnchor);
   nsWindow* WaylandPopupGetTopmostWindow();
   bool IsPopupInLayoutPopupChain(nsTArray<nsIWidget*>* aLayoutWidgetHierarchy,
                                  bool aMustMatchParent);

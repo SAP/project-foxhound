@@ -29,6 +29,7 @@ add_task(async function init() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault.ui.enabled", false],
+      ["browser.urlbar.suggest.quickactions", false],
       ["browser.urlbar.shortcuts.quickactions", true],
     ],
   });
@@ -291,7 +292,10 @@ add_task(async function editedView() {
 add_task(async function searchWith() {
   // Enable suggestions for this subtest so we can check non-heuristic results.
   let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.suggest.searches", true]],
   });
@@ -362,7 +366,10 @@ add_task(async function searchWith() {
   );
 
   await SpecialPowers.popPrefEnv();
-  await Services.search.setDefault(oldDefaultEngine);
+  await Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await hidePopup();
 });
 
@@ -702,7 +709,10 @@ add_task(async function avoidWillHideRace() {
 
   info("Hide all engines but the test engine.");
   let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   let engines = (await Services.search.getVisibleEngines()).filter(
     e => e.name != engine.name
   );
@@ -761,7 +771,10 @@ add_task(async function avoidWillHideRace() {
   await UrlbarTestUtils.promisePopupClose(window);
 
   await SpecialPowers.popPrefEnv();
-  await Services.search.setDefault(oldDefaultEngine);
+  await Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await SpecialPowers.popPrefEnv();
 });
 

@@ -14,6 +14,15 @@ const URLs = [
   "http://example.org",
 ];
 
+const RECENTLY_CLOSED_EVENT = [
+  ["firefoxview", "entered", "firefoxview", undefined],
+  ["firefoxview", "recently_closed", "tabs", undefined],
+];
+
+const CLOSED_TABS_OPEN_EVENT = [
+  ["firefoxview", "closed_tabs_open", "tabs", "false"],
+];
+
 async function add_new_tab(URL) {
   let tab = BrowserTestUtils.addTab(gBrowser, URL);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
@@ -107,6 +116,7 @@ add_task(async function test_list_ordering() {
     0,
     "Closed tab count after purging session history"
   );
+  await clearAllParentTelemetryEvents();
 
   await BrowserTestUtils.withNewTab(
     {
@@ -159,6 +169,57 @@ add_task(async function test_list_ordering() {
           .querySelector("ol.closed-tabs-list")
           .children[2].textContent.includes("example.net"),
         "last list item in recently-closed-tabs-list is in the correct order"
+      );
+
+      let ele = document.querySelector("ol.closed-tabs-list").firstElementChild;
+      let uri = ele.getAttribute("data-target-u-r-i");
+      let newTabPromise = BrowserTestUtils.waitForNewTab(gBrowser, uri);
+      ele.click();
+      await newTabPromise;
+
+      await TestUtils.waitForCondition(
+        () => {
+          let events = Services.telemetry.snapshotEvents(
+            Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+            false
+          ).parent;
+          return events && events.length >= 2;
+        },
+        "Waiting for entered and recently_closed firefoxview telemetry events.",
+        200,
+        100
+      );
+
+      TelemetryTestUtils.assertEvents(
+        RECENTLY_CLOSED_EVENT,
+        { category: "firefoxview" },
+        { clear: true, process: "parent" }
+      );
+
+      gBrowser.removeTab(gBrowser.selectedTab);
+
+      await clearAllParentTelemetryEvents();
+
+      await waitForElementVisible(browser, "#collapsible-tabs-button");
+      document.getElementById("collapsible-tabs-button").click();
+
+      await TestUtils.waitForCondition(
+        () => {
+          let events = Services.telemetry.snapshotEvents(
+            Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+            false
+          ).parent;
+          return events && events.length >= 1;
+        },
+        "Waiting for closed_tabs_open firefoxview telemetry event.",
+        200,
+        100
+      );
+
+      TelemetryTestUtils.assertEvents(
+        CLOSED_TABS_OPEN_EVENT,
+        { category: "firefoxview" },
+        { clear: true, process: "parent" }
       );
     }
   );
@@ -274,6 +335,52 @@ add_task(async function test_time_updates_correctly() {
       );
 
       await SpecialPowers.popPrefEnv();
+    }
+  );
+});
+
+add_task(async function test_arrow_keys() {
+  Services.obs.notifyObservers(null, "browser:purge-session-history");
+  is(
+    SessionStore.getClosedTabCount(window),
+    0,
+    "Closed tab count after purging session history"
+  );
+
+  await open_then_close(URLs[0]);
+  await open_then_close(URLs[1]);
+  await open_then_close(URLs[2]);
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+      const list = document.querySelectorAll(".closed-tab-li");
+      const arrowDown = () => {
+        info("Arrow down");
+        EventUtils.synthesizeKey("KEY_ArrowDown");
+      };
+      const arrowUp = () => {
+        info("Arrow up");
+        EventUtils.synthesizeKey("KEY_ArrowUp");
+      };
+      list[0].focus();
+      ok(list[0].matches(":focus"), "The first link is focused");
+      arrowDown();
+      ok(list[1].matches(":focus"), "The second link is focused");
+      arrowDown();
+      ok(list[2].matches(":focus"), "The third link is focused");
+      arrowDown();
+      ok(list[2].matches(":focus"), "The third link is still focused");
+      arrowUp();
+      ok(list[1].matches(":focus"), "The second link is focused");
+      arrowUp();
+      ok(list[0].matches(":focus"), "The first link is focused");
+      arrowUp();
+      ok(list[0].matches(":focus"), "The first link is still focused");
     }
   );
 });

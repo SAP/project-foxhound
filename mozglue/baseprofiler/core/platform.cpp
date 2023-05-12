@@ -242,7 +242,7 @@ static uint32_t AvailableFeatures() {
 
 // Default features common to all contexts (even if not available).
 static constexpr uint32_t DefaultFeatures() {
-  return ProfilerFeature::Java | ProfilerFeature::JS | ProfilerFeature::Leaf |
+  return ProfilerFeature::Java | ProfilerFeature::JS |
          ProfilerFeature::StackWalk | ProfilerFeature::CPUUtilization |
          ProfilerFeature::ProcessCPU;
 }
@@ -1696,8 +1696,7 @@ static inline void DoSharedSample(
                 aRegs, nativeStack, collector);
 
     // We can't walk the whole native stack, but we can record the top frame.
-    if (ActivePS::FeatureLeaf(aLock) &&
-        aCaptureOptions == StackCaptureOptions::Full) {
+    if (aCaptureOptions == StackCaptureOptions::Full) {
       aBuffer.AddEntry(ProfileBufferEntry::NativeLeafAddr((void*)aRegs.mPC));
     }
   }
@@ -2918,19 +2917,6 @@ UniquePtr<char[]> profiler_get_profile(double aSinceTime, bool aIsShuttingDown,
   return b.ChunkedWriteFunc().CopyData();
 }
 
-void profiler_get_profile_json_into_lazily_allocated_buffer(
-    const std::function<char*(size_t)>& aAllocator, double aSinceTime,
-    bool aIsShuttingDown) {
-  LOG("profiler_get_profile_json_into_lazily_allocated_buffer");
-
-  SpliceableChunkedJSONWriter b;
-  if (!WriteProfileToJSONWriter(b, aSinceTime, aIsShuttingDown)) {
-    return;
-  }
-
-  b.ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(aAllocator);
-}
-
 void profiler_get_start_params(int* aCapacity, Maybe<double>* aDuration,
                                double* aInterval, uint32_t* aFeatures,
                                Vector<const char*>* aFilters) {
@@ -3029,7 +3015,8 @@ static void locked_profiler_save_profile_to_file(PSLockRef aLock,
   std::ofstream stream;
   stream.open(aFilename);
   if (stream.is_open()) {
-    SpliceableJSONWriter w(MakeUnique<OStreamJSONWriteFunc>(stream));
+    OStreamJSONWriteFunc jw(stream);
+    SpliceableJSONWriter w(jw);
     w.Start();
     {
       locked_profiler_stream_json_for_this_process(aLock, w, /* sinceTime */ 0,
@@ -3792,9 +3779,7 @@ void profiler_suspend_and_sample_thread(BaseProfilerThreadId aThreadId,
           MergeStacks(aFeatures, isSynchronous, registeredThread, aRegs,
                       nativeStack, aCollector);
 
-          if (ProfilerFeature::HasLeaf(aFeatures)) {
-            aCollector.CollectNativeLeafAddr((void*)aRegs.mPC);
-          }
+          aCollector.CollectNativeLeafAddr((void*)aRegs.mPC);
         }
       };
 

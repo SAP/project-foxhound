@@ -876,7 +876,7 @@ void nsPresContext::AttachPresShell(mozilla::PresShell* aPresShell) {
 }
 
 Maybe<ColorScheme> nsPresContext::GetOverriddenOrEmbedderColorScheme() const {
-  if (IsPrintingOrPrintPreview()) {
+  if (Medium() == nsGkAtoms::print) {
     return Some(ColorScheme::Light);
   }
 
@@ -900,12 +900,9 @@ void nsPresContext::SetColorSchemeOverride(
   mOverriddenOrEmbedderColorScheme = aOverride;
 
   if (mDocument->PreferredColorScheme() != oldScheme) {
-    // We need to restyle because not only media queries have changed, system
-    // colors may as well via the prefers-color-scheme meta tag / effective
-    // color-scheme property value.
-    MediaFeatureValuesChanged({RestyleHint::RecascadeSubtree(), nsChangeHint(0),
-                               MediaFeatureChangeReason::SystemMetricsChange},
-                              MediaFeatureChangePropagation::JustThisDocument);
+    MediaFeatureValuesChanged(
+        MediaFeatureChange::ForPreferredColorSchemeChange(),
+        MediaFeatureChangePropagation::JustThisDocument);
   }
 }
 
@@ -999,6 +996,84 @@ void nsPresContext::DetachPresShell() {
     mRefreshDriver->Disconnect();
     // Can't null out the refresh driver here.
   }
+}
+
+struct QueryContainerState {
+  nsSize mSize;
+  WritingMode mWm;
+
+  nscoord GetInlineSize() const { return LogicalSize(mWm, mSize).ISize(mWm); }
+
+  bool Changed(const QueryContainerState& aNewState, StyleContainerType aType) {
+    if (aType & StyleContainerType::SIZE) {
+      return mSize != aNewState.mSize;
+    }
+    if (aType & StyleContainerType::INLINE_SIZE) {
+      return GetInlineSize() != aNewState.GetInlineSize();
+    }
+    return false;
+  }
+};
+NS_DECLARE_FRAME_PROPERTY_DELETABLE(ContainerState, QueryContainerState);
+
+void nsPresContext::RegisterContainerQueryFrame(nsIFrame* aFrame) {
+  mContainerQueryFrames.Insert(aFrame);
+}
+
+void nsPresContext::UnregisterContainerQueryFrame(nsIFrame* aFrame) {
+  mContainerQueryFrames.Remove(aFrame);
+}
+
+void nsPresContext::FinishedContainerQueryUpdate() {
+  mUpdatedContainerQueryContents.Clear();
+}
+
+bool nsPresContext::UpdateContainerQueryStyles() {
+  if (mContainerQueryFrames.IsEmpty()) {
+    return false;
+  }
+
+  PresShell()->DoFlushLayout(/* aInterruptible = */ false);
+
+  bool anyChanged = false;
+  for (nsIFrame* frame : mContainerQueryFrames) {
+    if (!frame->IsPrimaryFrame()) {
+      continue;
+    }
+
+    auto type = frame->StyleDisplay()->mContainerType;
+    MOZ_ASSERT(type, "Non-container frames shouldn't be in this type");
+
+    if (!mUpdatedContainerQueryContents.EnsureInserted(frame->GetContent())) {
+      continue;
+    }
+
+    const QueryContainerState newState{frame->GetSize(),
+                                       frame->GetWritingMode()};
+    QueryContainerState* oldState = frame->GetProperty(ContainerState());
+
+    const bool changed = !oldState || oldState->Changed(newState, type);
+
+    // Make sure to update the state regardless. It's cheap and it keeps tracks
+    // of both axes correctly even if only one axis is contained.
+    if (oldState) {
+      *oldState = newState;
+    } else {
+      frame->SetProperty(ContainerState(), new QueryContainerState(newState));
+    }
+
+    if (!changed) {
+      continue;
+    }
+
+    // TODO(emilio): More fine-grained invalidation rather than invalidating the
+    // whole subtree, probably!
+    RestyleManager()->PostRestyleEvent(frame->GetContent()->AsElement(),
+                                       RestyleHint::RestyleSubtree(),
+                                       nsChangeHint(0));
+    anyChanged = true;
+  }
+  return anyChanged;
 }
 
 void nsPresContext::DocumentCharSetChanged(NotNull<const Encoding*> aCharSet) {
@@ -1677,8 +1752,12 @@ void nsPresContext::UIResolutionChangedInternal() {
     AppUnitsPerDevPixelChanged();
   }
 
-  if (GetPresShell()) {
-    GetPresShell()->RefreshZoomConstraintsForScreenSizeChange();
+  if (mPresShell) {
+    mPresShell->RefreshZoomConstraintsForScreenSizeChange();
+    if (RefPtr<MobileViewportManager> mvm =
+            mPresShell->GetMobileViewportManager()) {
+      mvm->UpdateSizesBeforeReflow();
+    }
   }
 
   // Recursively notify all remote leaf descendants of the change.
@@ -1697,13 +1776,22 @@ void nsPresContext::UIResolutionChangedInternal() {
 
 void nsPresContext::EmulateMedium(nsAtom* aMediaType) {
   MOZ_ASSERT(!aMediaType || aMediaType->IsAsciiLowercase());
+
   RefPtr<const nsAtom> oldMedium = Medium();
+  auto oldScheme = mDocument->PreferredColorScheme();
+
   mMediaEmulationData.mMedium = aMediaType;
 
-  if (Medium() != oldMedium) {
-    MediaFeatureValuesChanged({MediaFeatureChangeReason::MediumChange},
-                              MediaFeatureChangePropagation::JustThisDocument);
+  if (Medium() == oldMedium) {
+    return;
   }
+
+  MediaFeatureChange change(MediaFeatureChangeReason::MediumChange);
+  if (oldScheme != mDocument->PreferredColorScheme()) {
+    change |= MediaFeatureChange::ForPreferredColorSchemeChange();
+  }
+  MediaFeatureValuesChanged(change,
+                            MediaFeatureChangePropagation::JustThisDocument);
 }
 
 void nsPresContext::ContentLanguageChanged() {
@@ -1911,13 +1999,15 @@ void nsPresContext::SetPrintSettings(nsIPrintSettings* aPrintSettings) {
   mDrawColorBackground = mPrintSettings->GetPrintBGColors();
   mDrawImageBackground = mPrintSettings->GetPrintBGImages();
 
-  nsIntMargin unwriteableTwips = mPrintSettings->GetUnwriteableMarginInTwips();
-  NS_ASSERTION(unwriteableTwips.top >= 0 && unwriteableTwips.right >= 0 &&
-                   unwriteableTwips.bottom >= 0 && unwriteableTwips.left >= 0,
-               "Unwriteable twips should be non-negative");
-
   nsIntMargin marginTwips = mPrintSettings->GetMarginInTwips();
-  marginTwips.EnsureAtLeast(unwriteableTwips);
+  if (!mPrintSettings->GetIgnoreUnwriteableMargins()) {
+    nsIntMargin unwriteableTwips =
+        mPrintSettings->GetUnwriteableMarginInTwips();
+    NS_ASSERTION(unwriteableTwips.top >= 0 && unwriteableTwips.right >= 0 &&
+                     unwriteableTwips.bottom >= 0 && unwriteableTwips.left >= 0,
+                 "Unwriteable twips should be non-negative");
+    marginTwips.EnsureAtLeast(unwriteableTwips);
+  }
   mDefaultPageMargin = nsPresContext::CSSTwipsToAppUnits(marginTwips);
 }
 

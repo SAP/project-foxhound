@@ -184,6 +184,7 @@ const SpecialMessageActions = {
       "browser.privacySegmentation.enabled",
       "browser.startup.homepage",
       "browser.privacySegmentation.windowSeparation.enabled",
+      "browser.firefox-view.feature-tour",
     ];
 
     if (!allowedPrefs.includes(pref.name)) {
@@ -256,6 +257,9 @@ const SpecialMessageActions = {
           aboutPageURL.toString(),
           action.data.where || "tab"
         );
+        break;
+      case "OPEN_FIREFOX_VIEW":
+        window.FirefoxViewHandler.openTab();
         break;
       case "OPEN_PREFERENCES_PAGE":
         window.openPreferences(

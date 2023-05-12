@@ -291,8 +291,6 @@ const SymbolicAddressSignature SASigArrayNew = {SymbolicAddress::ArrayNew,
                                                 {_PTR, _I32, _RoN, _END}};
 const SymbolicAddressSignature SASigRefTest = {
     SymbolicAddress::RefTest, _I32, _Infallible, 3, {_PTR, _RoN, _RoN, _END}};
-const SymbolicAddressSignature SASigRttSub = {
-    SymbolicAddress::RttSub, _RoN, _FailOnNullPtr, 3, {_PTR, _RoN, _RoN, _END}};
 #define DECL_SAS_FOR_INTRINSIC(op, export, sa_name, abitype, entry, idx) \
   const SymbolicAddressSignature SASig##sa_name = {                      \
       SymbolicAddress::sa_name, _VOID, _FailOnNegI32,                    \
@@ -780,10 +778,11 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
   const Code& code = instance->code();
   const FuncExport& fe =
       code.metadata(code.stableTier()).funcExports[funcExportIndex];
+  const FuncType& funcType = code.metadata().getFuncExportType(fe);
 
-  for (size_t i = 0; i < fe.funcType().args().length(); i++) {
+  for (size_t i = 0; i < funcType.args().length(); i++) {
     HandleValue arg = HandleValue::fromMarkedLocation(&argv[i]);
-    switch (fe.funcType().args()[i].kind()) {
+    switch (funcType.args()[i].kind()) {
       case ValType::I32: {
         int32_t i32;
         if (!ToInt32(cx, arg, &i32)) {
@@ -815,7 +814,7 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
         break;
       }
       case ValType::Ref: {
-        switch (fe.funcType().args()[i].refTypeKind()) {
+        switch (funcType.args()[i].refTypeKind()) {
           case RefType::Extern:
             // Leave Object and Null alone, we will unbox inline.  All we need
             // to do is convert other values to an Object representation.
@@ -1267,10 +1266,6 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralGeneralGeneral;
       MOZ_ASSERT(*abiType == ToABIType(SASigRefTest));
       return FuncCast(Instance::refTest, *abiType);
-    case SymbolicAddress::RttSub:
-      *abiType = Args_General3;
-      MOZ_ASSERT(*abiType == ToABIType(SASigRttSub));
-      return FuncCast(Instance::rttSub, *abiType);
     case SymbolicAddress::InlineTypedObjectClass:
       // The ABI type is not used here, but assigning one to avoid garbage.
       *abiType = Args_General1;
@@ -1453,7 +1448,6 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::ThrowException:
     case SymbolicAddress::ArrayNew:
     case SymbolicAddress::RefTest:
-    case SymbolicAddress::RttSub:
 #define OP(op, export, sa_name, abitype, entry, idx) \
   case SymbolicAddress::sa_name:
       FOR_EACH_INTRINSIC(OP)
@@ -1714,7 +1708,7 @@ bool wasm::EnsureBuiltinThunksInitialized() {
 #ifdef DEBUG
   // We need to allow this machine code to bake in a C++ code pointer, so we
   // disable the wasm restrictions while generating this stub.
-  JitContext jitContext(&tempAlloc);
+  JitContext jitContext;
   bool oldFlag = jitContext.setIsCompilingWasm(false);
 #endif
 
@@ -1755,9 +1749,8 @@ bool wasm::EnsureBuiltinThunksInitialized() {
   MOZ_ASSERT(masm.trapSites().empty());
   MOZ_ASSERT(masm.tryNotes().empty());
 
-  if (!ExecutableAllocator::makeExecutableAndFlushICache(
-          FlushICacheSpec::LocalThreadOnly, thunks->codeBase,
-          thunks->codeSize)) {
+  if (!ExecutableAllocator::makeExecutableAndFlushICache(thunks->codeBase,
+                                                         thunks->codeSize)) {
     return false;
   }
 

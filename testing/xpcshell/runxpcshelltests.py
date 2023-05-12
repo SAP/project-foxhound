@@ -24,6 +24,7 @@ import six
 
 from argparse import Namespace
 from collections import defaultdict, deque, namedtuple
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from distutils import dir_util
 from functools import partial
@@ -120,6 +121,25 @@ def cleanup_encoding(s):
     return _cleanup_encoding_re.sub(_cleanup_encoding_repl, s)
 
 
+@contextmanager
+def popenCleanupHack():
+    """
+    Hack to work around https://bugs.python.org/issue37380
+    The basic idea is that on old versions of Python on Windows,
+    we need to clear subprocess._cleanup before we call Popen(),
+    then restore it afterwards.
+    """
+    savedCleanup = None
+    if mozinfo.isWin and sys.version_info[0] == 3 and sys.version_info < (3, 7, 5):
+        savedCleanup = subprocess._cleanup
+        subprocess._cleanup = lambda: None
+    try:
+        yield
+    finally:
+        if savedCleanup:
+            subprocess._cleanup = savedCleanup
+
+
 """ Control-C handling """
 gotSIGINT = False
 
@@ -178,7 +198,7 @@ class XPCShellTestThread(Thread):
         self.crashAsPass = kwargs.get("crashAsPass")
         self.conditionedProfileDir = kwargs.get("conditionedProfileDir")
         if self.runFailures:
-            retry = False
+            self.retry = False
 
         # Default the test prefsFile to the rootPrefsFile.
         self.prefsFile = self.rootPrefsFile
@@ -295,18 +315,9 @@ class XPCShellTestThread(Thread):
         else:
             popen_func = Popen
 
-        cleanup_hack = None
-        if mozinfo.isWin and sys.version_info[0] == 3 and sys.version_info < (3, 7, 5):
-            # Hack to work around https://bugs.python.org/issue37380
-            cleanup_hack = subprocess._cleanup
-
-        try:
-            if cleanup_hack:
-                subprocess._cleanup = lambda: None
+        with popenCleanupHack():
             proc = popen_func(cmd, stdout=stdout, stderr=stderr, env=env, cwd=cwd)
-        finally:
-            if cleanup_hack:
-                subprocess._cleanup = cleanup_hack
+
         return proc
 
     def checkForCrashes(self, dump_directory, symbols_path, test_name=None):
@@ -1339,15 +1350,16 @@ class XPCShellTests(object):
             try:
                 # We pipe stdin to node because the server will exit when its
                 # stdin reaches EOF
-                process = Popen(
-                    [nodeBin, serverJs],
-                    stdin=PIPE,
-                    stdout=PIPE,
-                    stderr=PIPE,
-                    env=self.env,
-                    cwd=os.getcwd(),
-                    universal_newlines=True,
-                )
+                with popenCleanupHack():
+                    process = Popen(
+                        [nodeBin, serverJs],
+                        stdin=PIPE,
+                        stdout=PIPE,
+                        stderr=PIPE,
+                        env=self.env,
+                        cwd=os.getcwd(),
+                        universal_newlines=True,
+                    )
                 self.nodeProc[name] = process
 
                 # Check to make sure the server starts properly by waiting for it to
@@ -1428,15 +1440,16 @@ class XPCShellTests(object):
             self.log.info("Using %s" % (dbPath))
             # We pipe stdin to the server because it will exit when its stdin
             # reaches EOF
-            process = Popen(
-                [http3ServerPath, dbPath],
-                stdin=PIPE,
-                stdout=PIPE,
-                stderr=PIPE,
-                env=self.env,
-                cwd=os.getcwd(),
-                universal_newlines=True,
-            )
+            with popenCleanupHack():
+                process = Popen(
+                    [http3ServerPath, dbPath],
+                    stdin=PIPE,
+                    stdout=PIPE,
+                    stderr=PIPE,
+                    env=self.env,
+                    cwd=os.getcwd(),
+                    universal_newlines=True,
+                )
             self.http3ServerProc["http3Server"] = process
 
             # Check to make sure the server starts properly by waiting for it to
@@ -2116,11 +2129,12 @@ class XPCShellTests(object):
                         "after killing one with SIGINT)"
                     )
                     break
-                # we don't want to retry these tests
-                test.retry = False
                 self.start_test(test)
                 test.join()
                 self.test_ended(test)
+                if test.failCount > 0 or test.passCount <= 0:
+                    self.try_again_list.append(test.test_object)
+                    continue
                 self.addTestResults(test)
                 # did the test encounter any exception?
                 if test.exception:

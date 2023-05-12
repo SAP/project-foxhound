@@ -42,6 +42,7 @@
 #include "js/Interrupt.h"
 #include "js/MemoryMetrics.h"
 #include "js/SliceBudget.h"
+#include "js/Stack.h"  // JS::NativeStackLimitMin
 #include "js/Wrapper.h"
 #include "util/WindowsWrapper.h"
 #include "vm/DateTime.h"
@@ -463,7 +464,7 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
 
 void JSContext::requestInterrupt(InterruptReason reason) {
   interruptBits_ |= uint32_t(reason);
-  jitStackLimit = UINTPTR_MAX;
+  jitStackLimit = JS::NativeStackLimitMin;
 
   if (reason == InterruptReason::CallbackUrgent) {
     // If this interrupt is urgent (slow script dialog for instance), take
@@ -480,7 +481,7 @@ void JSContext::requestInterrupt(InterruptReason reason) {
 
 bool JSContext::handleInterrupt() {
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
-  if (hasAnyPendingInterrupt() || jitStackLimit == UINTPTR_MAX) {
+  if (hasAnyPendingInterrupt() || jitStackLimit == JS::NativeStackLimitMin) {
     bool invokeCallback =
         hasPendingInterrupt(InterruptReason::CallbackUrgent) ||
         hasPendingInterrupt(InterruptReason::CallbackCanWait);

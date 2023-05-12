@@ -2178,6 +2178,12 @@ nsresult nsNSSComponent::Init() {
                        u"requested"_ns, zero);
   Telemetry::ScalarSet(Telemetry::ScalarID::SECURITY_CLIENT_AUTH_CERT_USAGE,
                        u"sent"_ns, zero);
+  Telemetry::ScalarSet(Telemetry::ScalarID::SECURITY_PSM_UI_INTERACTION,
+                       u"backup_client_auth_cert"_ns, false);
+  Telemetry::ScalarSet(Telemetry::ScalarID::SECURITY_PSM_UI_INTERACTION,
+                       u"add_cert_exception_dialog"_ns, false);
+  Telemetry::ScalarSet(Telemetry::ScalarID::SECURITY_PSM_UI_INTERACTION,
+                       u"pkcs11_module_manager"_ns, false);
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("Beginning NSS initialization\n"));
 
@@ -2519,11 +2525,6 @@ static inline void CopyCertificatesTo(UniqueCERTCertList& from,
 // the client auth data callback, and NSS ignores any errors returned by the
 // callback.
 UniqueCERTCertList FindClientCertificatesWithPrivateKeys() {
-  TimeStamp begin(TimeStamp::Now());
-  auto exitTelemetry = MakeScopeExit([&] {
-    Telemetry::AccumulateTimeDelta(Telemetry::CLIENT_CERTIFICATE_SCAN_TIME,
-                                   begin, TimeStamp::Now());
-  });
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("FindClientCertificatesWithPrivateKeys"));
 

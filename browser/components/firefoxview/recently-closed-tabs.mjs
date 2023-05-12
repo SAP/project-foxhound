@@ -51,7 +51,7 @@ class RecentlyClosedTabsList extends HTMLElement {
 
   get fluentStrings() {
     if (!this._fluentStrings) {
-      this._fluentStrings = new Localization(["preview/firefoxView.ftl"], true);
+      this._fluentStrings = new Localization(["browser/firefoxView.ftl"], true);
     }
     return this._fluentStrings;
   }
@@ -76,6 +76,20 @@ class RecentlyClosedTabsList extends HTMLElement {
       (event.type == "keydown" && event.keyCode == KeyEvent.DOM_VK_RETURN)
     ) {
       this.openTabAndUpdate(event);
+    } else if (
+      event.type == "keydown" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      event.target.classList.contains("closed-tab-li")
+    ) {
+      switch (event.key) {
+        case "ArrowDown":
+          event.target.nextSibling?.focus();
+          break;
+        case "ArrowUp":
+          event.target.previousSibling?.focus();
+          break;
+      }
     }
   }
 
@@ -104,10 +118,28 @@ class RecentlyClosedTabsList extends HTMLElement {
   openTabAndUpdate(event) {
     event.preventDefault();
     const item = event.target.closest(".closed-tab-li");
-    const index = [...this.tabsList.children].indexOf(item);
+    let index = [...this.tabsList.children].indexOf(item);
 
     lazy.SessionStore.undoCloseTab(getWindow(), index);
     this.tabsList.removeChild(item);
+
+    // record telemetry
+    let tabClosedAt = parseInt(
+      item.querySelector(".closed-tab-li-time").getAttribute("data-timestamp")
+    );
+
+    let now = Date.now();
+    let deltaSeconds = (now - tabClosedAt) / 1000;
+    Services.telemetry.recordEvent(
+      "firefoxview",
+      "recently_closed",
+      "tabs",
+      null,
+      {
+        position: (++index).toString(),
+        delta: deltaSeconds.toString(),
+      }
+    );
   }
 
   initiateTabsList() {

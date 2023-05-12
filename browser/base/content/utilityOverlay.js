@@ -307,6 +307,7 @@ function openLinkIn(url, where, params) {
   var aResolveOnNewTabCreated = params.resolveOnNewTabCreated;
   // This callback will be called with the content browser once it's created.
   var aResolveOnContentBrowserReady = params.resolveOnContentBrowserCreated;
+  var aGlobalHistoryOptions = params.globalHistoryOptions;
 
   if (!aTriggeringPrincipal) {
     throw new Error("Must load with a triggering Principal");
@@ -419,6 +420,18 @@ function openLinkIn(url, where, params) {
     }
     if (params.fromExternal !== undefined) {
       extraOptions.setPropertyAsBool("fromExternal", params.fromExternal);
+    }
+    if (aGlobalHistoryOptions?.triggeringSponsoredURL) {
+      extraOptions.setPropertyAsACString(
+        "triggeringSponsoredURL",
+        aGlobalHistoryOptions.triggeringSponsoredURL
+      );
+      if (aGlobalHistoryOptions.triggeringSponsoredURLVisitTimeMS) {
+        extraOptions.setPropertyAsUint64(
+          "triggeringSponsoredURLVisitTimeMS",
+          aGlobalHistoryOptions.triggeringSponsoredURLVisitTimeMS
+        );
+      }
     }
 
     var allowThirdPartyFixupSupports = Cc[
@@ -608,6 +621,7 @@ function openLinkIn(url, where, params) {
         postData: aPostData,
         userContextId: aUserContextId,
         hasValidUserGestureActivation: params.hasValidUserGestureActivation,
+        globalHistoryOptions: aGlobalHistoryOptions,
       });
       if (aResolveOnContentBrowserReady) {
         aResolveOnContentBrowserReady(targetBrowser);
@@ -645,6 +659,7 @@ function openLinkIn(url, where, params) {
         focusUrlBar,
         openerBrowser: params.openerBrowser,
         fromExternal: params.fromExternal,
+        globalHistoryOptions: aGlobalHistoryOptions,
       });
       targetBrowser = tabUsedForLoad.linkedBrowser;
 

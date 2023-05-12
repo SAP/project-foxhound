@@ -41,16 +41,16 @@
 #include "gfxUtils.h"
 #include "IPDLActor.h"
 
-#ifdef MOZ_ENABLE_D3D10_LAYER
-#  include "../d3d11/CompositorD3D11.h"
-#endif
-
 #ifdef XP_MACOSX
 #  include "../opengl/MacIOSurfaceTextureHostOGL.h"
 #endif
 
 #ifdef XP_WIN
+#  include "../d3d11/CompositorD3D11.h"
 #  include "mozilla/layers/TextureD3D11.h"
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+#    include "mozilla/layers/DcompSurfaceImage.h"
+#  endif
 #endif
 
 #if 0
@@ -211,6 +211,12 @@ already_AddRefed<TextureHost> TextureHost::Create(
     case SurfaceDescriptor::TSurfaceDescriptorDXGIYCbCr:
       result = CreateTextureHostD3D11(aDesc, aDeallocator, aBackend, aFlags);
       break;
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+    case SurfaceDescriptor::TSurfaceDescriptorDcompSurface:
+      result =
+          CreateTextureHostDcompSurface(aDesc, aDeallocator, aBackend, aFlags);
+      break;
+#  endif
 #endif
     case SurfaceDescriptor::TSurfaceDescriptorRecorded: {
       const SurfaceDescriptorRecorded& desc =
@@ -338,8 +344,9 @@ already_AddRefed<TextureHost> CreateBackendIndependentTextureHost(
   return result.forget();
 }
 
-TextureHost::TextureHost(TextureFlags aFlags)
+TextureHost::TextureHost(TextureHostType aType, TextureFlags aFlags)
     : AtomicRefCountedWithFinalize("TextureHost"),
+      mTextureHostType(aType),
       mActor(nullptr),
       mFlags(aFlags),
       mCompositableCount(0),
@@ -445,7 +452,7 @@ TextureSource::TextureSource() : mCompositableCount(0) {}
 TextureSource::~TextureSource() = default;
 BufferTextureHost::BufferTextureHost(const BufferDescriptor& aDesc,
                                      TextureFlags aFlags)
-    : TextureHost(aFlags), mLocked(false) {
+    : TextureHost(TextureHostType::Buffer, aFlags), mLocked(false) {
   mDescriptor = aDesc;
   switch (mDescriptor.type()) {
     case BufferDescriptor::TYCbCrDescriptor: {

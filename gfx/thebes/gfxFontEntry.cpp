@@ -230,17 +230,13 @@ uint16_t gfxFontEntry::GetUVSGlyph(uint32_t aCh, uint32_t aVS) {
 
 bool gfxFontEntry::SupportsScriptInGSUB(const hb_tag_t* aScriptTags,
                                         uint32_t aNumTags) {
-  hb_face_t* face = GetHBFace();
-  if (!face) {
-    return false;
-  }
+  auto face(GetHBFace());
 
   unsigned int index;
   hb_tag_t chosenScript;
   bool found = hb_ot_layout_table_select_script(
       face, TRUETYPE_TAG('G', 'S', 'U', 'B'), aNumTags, aScriptTags, &index,
       &chosenScript);
-  hb_face_destroy(face);
 
   return found && chosenScript != TRUETYPE_TAG('D', 'F', 'L', 'T');
 }
@@ -270,21 +266,16 @@ already_AddRefed<gfxFont> gfxFontEntry::FindOrMakeFont(
     const gfxFontStyle* aStyle, gfxCharacterMap* aUnicodeRangeMap) {
   RefPtr<gfxFont> font =
       gfxFontCache::GetCache()->Lookup(this, aStyle, aUnicodeRangeMap);
-
-  if (!font) {
-    gfxFont* newFont = CreateFontInstance(aStyle);
-    if (!newFont) {
-      return nullptr;
-    }
-    if (!newFont->Valid()) {
-      delete newFont;
-      return nullptr;
-    }
-    font = newFont;
-    font->SetUnicodeRangeMap(aUnicodeRangeMap);
-    gfxFontCache::GetCache()->AddNew(font);
+  if (font) {
+    return font.forget();
   }
-  return font.forget();
+
+  font = CreateFontInstance(aStyle);
+  if (!font || !font->Valid()) {
+    return nullptr;
+  }
+  font->SetUnicodeRangeMap(aUnicodeRangeMap);
+  return gfxFontCache::GetCache()->MaybeInsert(std::move(font));
 }
 
 uint16_t gfxFontEntry::UnitsPerEm() {
@@ -398,7 +389,7 @@ bool gfxFontEntry::TryGetColorGlyphs() {
   auto* colr = GetFontTable(TRUETYPE_TAG('C', 'O', 'L', 'R'));
   auto* cpal = colr ? GetFontTable(TRUETYPE_TAG('C', 'P', 'A', 'L')) : nullptr;
 
-  if (colr && cpal && gfxFontUtils::ValidateColorGlyphs(colr, cpal)) {
+  if (colr && cpal && gfx::COLRFonts::ValidateColorGlyphs(colr, cpal)) {
     if (!mCOLR.compareExchange(nullptr, colr)) {
       hb_blob_destroy(colr);
     }
@@ -525,7 +516,7 @@ hb_blob_t* gfxFontEntry::FontTableHashEntry::GetBlob() const {
 bool gfxFontEntry::GetExistingFontTable(uint32_t aTag, hb_blob_t** aBlob) {
   // Accessing the mFontTableCache pointer is atomic, so we don't need to take
   // a write lock even if we're initializing it here...
-  PUSH_IGNORE_THREAD_SAFETY
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   if (MOZ_UNLIKELY(!mFontTableCache)) {
     // We do this here rather than on fontEntry construction
     // because not all shapers will access the table cache at all.
@@ -538,7 +529,7 @@ bool gfxFontEntry::GetExistingFontTable(uint32_t aTag, hb_blob_t** aBlob) {
     }
   }
   FontTableCache* cache = GetFontTableCache();
-  POP_THREAD_SAFETY
+  MOZ_POP_THREAD_SAFETY
 
   // ...but we do need a lock to read the actual hashtable contents.
   AutoReadLock lock(mLock);
@@ -553,7 +544,7 @@ bool gfxFontEntry::GetExistingFontTable(uint32_t aTag, hb_blob_t** aBlob) {
 
 hb_blob_t* gfxFontEntry::ShareFontTableAndGetBlob(uint32_t aTag,
                                                   nsTArray<uint8_t>* aBuffer) {
-  PUSH_IGNORE_THREAD_SAFETY
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   if (MOZ_UNLIKELY(!mFontTableCache)) {
     auto* newCache = new FontTableCache(8);
     if (MOZ_UNLIKELY(!mFontTableCache.compareExchange(nullptr, newCache))) {
@@ -561,7 +552,7 @@ hb_blob_t* gfxFontEntry::ShareFontTableAndGetBlob(uint32_t aTag,
     }
   }
   FontTableCache* cache = GetFontTableCache();
-  POP_THREAD_SAFETY
+  MOZ_POP_THREAD_SAFETY
 
   AutoWriteLock lock(mLock);
   FontTableHashEntry* entry = cache->PutEntry(aTag);
@@ -619,26 +610,6 @@ hb_blob_t* gfxFontEntry::HBGetTable(hb_face_t* face, uint32_t aTag,
   }
 
   return fontEntry->GetFontTable(aTag);
-}
-
-/*static*/
-void gfxFontEntry::HBFaceDeletedCallback(void* aUserData) {
-  gfxFontEntry* fe = static_cast<gfxFontEntry*>(aUserData);
-  fe->ForgetHBFace();
-}
-
-void gfxFontEntry::ForgetHBFace() { mHBFace.exchange(nullptr); }
-
-hb_face_t* gfxFontEntry::GetHBFace() {
-  if (!mHBFace) {
-    hb_face_t* face =
-        hb_face_create_for_tables(HBGetTable, this, HBFaceDeletedCallback);
-    if (mHBFace.compareExchange(nullptr, face)) {
-      return face;
-    }
-    hb_face_destroy(face);
-  }
-  return hb_face_reference(mHBFace);
 }
 
 struct gfxFontEntry::GrSandboxData {
@@ -869,7 +840,7 @@ bool gfxFontEntry::SupportsOpenTypeFeature(Script aScript,
   uint32_t scriptFeature = SCRIPT_FEATURE(aScript, aFeatureTag);
   return mSupportedFeatures->LookupOrInsertWith(scriptFeature, [&] {
     bool result = false;
-    hb_face_t* face = GetHBFace();
+    auto face(GetHBFace());
 
     if (hb_ot_layout_has_substitution(face)) {
       hb_script_t hbScript =
@@ -901,8 +872,6 @@ bool gfxFontEntry::SupportsOpenTypeFeature(Script aScript,
                            });
     }
 
-    hb_face_destroy(face);
-
     return result;
   });
 }
@@ -927,7 +896,7 @@ const hb_set_t* gfxFontEntry::InputsForOpenTypeFeature(Script aScript,
 
   inputGlyphs = hb_set_create();
 
-  hb_face_t* face = GetHBFace();
+  auto face(GetHBFace());
 
   if (hb_ot_layout_has_substitution(face)) {
     hb_script_t hbScript =
@@ -958,8 +927,6 @@ const hb_set_t* gfxFontEntry::InputsForOpenTypeFeature(Script aScript,
     }
     hb_set_destroy(featurelookups);
   }
-
-  hb_face_destroy(face);
 
   mFeatureInputs->InsertOrUpdate(scriptFeature, inputGlyphs);
   return inputGlyphs;
@@ -1004,7 +971,10 @@ bool gfxFontEntry::SupportsGraphiteFeature(uint32_t aFeatureTag) {
 void gfxFontEntry::GetFeatureInfo(nsTArray<gfxFontFeatureInfo>& aFeatureInfo) {
   // TODO: implement alternative code path for graphite fonts
 
-  hb_face_t* face = GetHBFace();
+  auto autoFace(GetHBFace());
+  // Expose the raw hb_face_t to be captured by the lambdas (not the
+  // AutoHBFace wrapper).
+  hb_face_t* face = autoFace;
 
   // Get the list of features for a specific <script,langSys> pair and
   // append them to aFeatureInfo.
@@ -1067,17 +1037,6 @@ void gfxFontEntry::GetFeatureInfo(nsTArray<gfxFontFeatureInfo>& aFeatureInfo) {
   // supported by the font resource.
   collectForTable(HB_TAG('G', 'S', 'U', 'B'));
   collectForTable(HB_TAG('G', 'P', 'O', 'S'));
-
-  hb_face_destroy(face);
-}
-
-bool gfxFontEntry::GetColorLayersInfo(
-    uint32_t aGlyphId, const mozilla::gfx::DeviceColor& aDefaultColor,
-    nsTArray<uint16_t>& aLayerGlyphs,
-    nsTArray<mozilla::gfx::DeviceColor>& aLayerColors) {
-  return gfxFontUtils::GetColorGlyphLayers(GetCOLR(), GetCPAL(), aGlyphId,
-                                           aDefaultColor, aLayerGlyphs,
-                                           aLayerColors);
 }
 
 typedef struct {
@@ -1220,7 +1179,7 @@ float gfxFontEntry::TrackingForCSSPx(float aSize) const {
 void gfxFontEntry::SetupVariationRanges() {
   // No locking because this is done during initialization before any other
   // thread has access to the entry.
-  if (!gfxPlatform::GetPlatform()->HasVariationFontSupport() ||
+  if (!gfxPlatform::HasVariationFontSupport() ||
       !StaticPrefs::layout_css_font_variations_enabled() || !HasVariations() ||
       IsUserFont()) {
     return;
@@ -1342,7 +1301,7 @@ bool gfxFontEntry::HasOpticalSize() {
 
 void gfxFontEntry::GetVariationsForStyle(nsTArray<gfxFontVariation>& aResult,
                                          const gfxFontStyle& aStyle) {
-  if (!gfxPlatform::GetPlatform()->HasVariationFontSupport() ||
+  if (!gfxPlatform::HasVariationFontSupport() ||
       !StaticPrefs::layout_css_font_variations_enabled()) {
     return;
   }
@@ -2054,8 +2013,16 @@ bool gfxFontFamily::CheckForLegacyFamilyNames(gfxPlatformFontList* aFontList) {
   mCheckedForLegacyFamilyNames = true;
   bool added = false;
   const uint32_t kNAME = TRUETYPE_TAG('n', 'a', 'm', 'e');
-  AutoReadLock lock(mLock);
-  for (const auto& fe : mAvailableFonts) {
+  AutoTArray<RefPtr<gfxFontEntry>, 16> faces;
+  {
+    // Take a local copy of the array of font entries, because it's possible
+    // AddWithLegacyFamilyName will mutate it (and it needs to be able to take
+    // an exclusive lock on the family to do so, so we release the read lock
+    // here).
+    AutoReadLock lock(mLock);
+    faces.AppendElements(mAvailableFonts);
+  }
+  for (const auto& fe : faces) {
     if (!fe) {
       continue;
     }

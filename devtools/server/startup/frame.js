@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/frame-script */
+
 "use strict";
 
-/* global content, docShell, addEventListener, addMessageListener, removeMessageListener,
-  sendAsyncMessage */
+/* global addEventListener */
 
 /*
  * Frame script that listens for requests to start a `DevToolsServer` for a frame in a
@@ -89,7 +90,7 @@ try {
           prefix,
           sessionContext: createWebExtensionSessionContext(
             {
-              addonId: addonId,
+              addonId,
               browsingContextID: browsingContext.id,
               innerWindowId: browsingContext.currentWindowContext.innerWindowId,
             },
@@ -131,7 +132,7 @@ try {
       }
       actor.manage(actor);
 
-      sendAsyncMessage("debug:actor", { actor: actor.form(), prefix: prefix });
+      sendAsyncMessage("debug:actor", { actor: actor.form(), prefix });
     });
 
     addMessageListener("debug:connect", onConnect);

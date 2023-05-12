@@ -171,7 +171,8 @@ static const uint64_t kCacheInitialized = ((uint64_t)0x1) << 63;
   return mRole == roles::GROUPING || mRole == roles::RADIO_GROUP ||
          mRole == roles::FIGURE || mRole == roles::GRAPHIC ||
          mRole == roles::DOCUMENT || mRole == roles::OUTLINE ||
-         mRole == roles::ARTICLE;
+         mRole == roles::ARTICLE || mRole == roles::ENTRY ||
+         mRole == roles::SPINBUTTON;
 }
 
 - (mozilla::a11y::Accessible*)geckoAccessible {
@@ -226,33 +227,12 @@ static const uint64_t kCacheInitialized = ((uint64_t)0x1) << 63;
 
 - (id)moxFocusedUIElement {
   MOZ_ASSERT(mGeckoAccessible);
-
-  LocalAccessible* acc = mGeckoAccessible->AsLocal();
-  RemoteAccessible* proxy = mGeckoAccessible->AsRemote();
-
-  mozAccessible* focusedChild = nil;
-  if (acc) {
-    LocalAccessible* focusedGeckoChild = acc->FocusedChild();
-    if (focusedGeckoChild) {
-      focusedChild = GetNativeFromGeckoAccessible(focusedGeckoChild);
-    } else {
-      dom::BrowserParent* browser = dom::BrowserParent::GetFocused();
-      if (browser) {
-        a11y::DocAccessibleParent* proxyDoc =
-            browser->GetTopLevelDocAccessible();
-        if (proxyDoc) {
-          mozAccessible* nativeRemoteChild =
-              GetNativeFromGeckoAccessible(proxyDoc);
-          return [nativeRemoteChild accessibilityFocusedUIElement];
-        }
-      }
-    }
-  } else if (proxy) {
-    RemoteAccessible* focusedGeckoChild = proxy->FocusedChild();
-    if (focusedGeckoChild) {
-      focusedChild = GetNativeFromGeckoAccessible(focusedGeckoChild);
-    }
-  }
+  // This only gets queried on the web area or the root group
+  // so just use the doc's focused child instead of trying to get
+  // the focused child of mGeckoAccessible.
+  Accessible* doc = nsAccUtils::DocumentFor(mGeckoAccessible);
+  mozAccessible* focusedChild =
+      GetNativeFromGeckoAccessible(doc->FocusedChild());
 
   if ([focusedChild isAccessibilityElement]) {
     return focusedChild;
@@ -990,22 +970,16 @@ struct RoleDescrComparator {
 }
 
 - (NSArray<mozAccessible*>*)getRelationsByType:(RelationType)relationType {
-  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
-    NSMutableArray<mozAccessible*>* relations =
-        [[[NSMutableArray alloc] init] autorelease];
-    Relation rel = acc->RelationByType(relationType);
-    while (LocalAccessible* relAcc = rel.Next()) {
-      if (mozAccessible* relNative = GetNativeFromGeckoAccessible(relAcc)) {
-        [relations addObject:relNative];
-      }
+  NSMutableArray<mozAccessible*>* relations =
+      [[[NSMutableArray alloc] init] autorelease];
+  Relation rel = mGeckoAccessible->RelationByType(relationType);
+  while (Accessible* relAcc = rel.Next()) {
+    if (mozAccessible* relNative = GetNativeFromGeckoAccessible(relAcc)) {
+      [relations addObject:relNative];
     }
-
-    return relations;
   }
 
-  RemoteAccessible* proxy = mGeckoAccessible->AsRemote();
-  nsTArray<RemoteAccessible*> rel = proxy->RelationByType(relationType);
-  return utils::ConvertToNSArray(rel);
+  return relations;
 }
 
 - (void)handleAccessibleTextChangeEvent:(NSString*)change

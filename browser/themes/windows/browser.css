@@ -399,7 +399,7 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 }
 
 #PlacesToolbar menu menupopup {
-  margin-top: -12px;
+  margin-top: -13px;
 }
 
 /* Status panel */
@@ -453,17 +453,9 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
   margin-bottom: var(--tabs-navbar-shadow-size);
 }
 
-:root:not([privatebrowsingmode=temporary]) .accessibility-indicator,
 .private-browsing-indicator {
-  margin-inline-end: 12px;
+  margin-inline: 12px;
 }
-
-:root:not([accessibilitymode]) .private-browsing-indicator,
-.accessibility-indicator {
-  margin-inline-start: 12px;
-}
-
-/* End private browsing and accessibility indicators */
 
 #UITourTooltipButtons {
   /**
@@ -541,11 +533,12 @@ menupopup[touchmode] menuitem {
     padding: 8px 1em;
     margin: 0;
   }
-  #context-navigation > .menuitem-iconic[_moz-menuactive="true"]:not([disabled="true"]) > .menu-iconic-left > .menu-iconic-icon {
-    background-color: var(--menuitem-hover-background-color);
+  #context-navigation > .menuitem-iconic[_moz-menuactive="true"] > .menu-iconic-left > .menu-iconic-icon {
+    background-color: -moz-menuhover;
   }
+
   #context-navigation > .menuitem-iconic[_moz-menuactive="true"][disabled="true"] > .menu-iconic-left > .menu-iconic-icon {
-    background-color: var(--menuitem-disabled-hover-background-color);
+    background-color: -moz-menuhoverdisabled;
   }
 
   /* If the menu is wider than the icons strictly need, the <menuitem> elements
@@ -592,4 +585,23 @@ menupopup[touchmode] menuitem {
 .webextension-popup-browser,
 .webextension-popup-stack {
   border-radius: inherit;
+}
+
+#historySwipeAnimationPreviousArrow {
+  background: url("chrome://browser/skin/history-swipe-arrow.svg")
+              center left / 192px 192px no-repeat transparent;
+  will-change: transform;
+  -moz-context-properties: fill;
+}
+#historySwipeAnimationPreviousArrow:-moz-locale-dir(rtl) {
+  transform: scaleX(-1);
+}
+#historySwipeAnimationNextArrow {
+  background: url("chrome://browser/skin/history-swipe-arrow.svg")
+              center left / 192px 192px no-repeat transparent;
+  will-change: transform;
+  -moz-context-properties: fill;
+}
+#historySwipeAnimationNextArrow:-moz-locale-dir(ltr) {
+  transform: scaleX(-1);
 }

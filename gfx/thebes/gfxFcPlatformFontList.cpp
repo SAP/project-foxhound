@@ -951,7 +951,7 @@ bool gfxFontconfigFontEntry::HasVariations() {
   mHasVariationsInitialized = true;
   mHasVariations = false;
 
-  if (!gfxPlatform::GetPlatform()->HasVariationFontSupport()) {
+  if (!gfxPlatform::HasVariationFontSupport()) {
     return mHasVariations;
   }
 
@@ -1036,7 +1036,7 @@ void gfxFontconfigFontFamily::FindStyleVariationsLocked(
     gfxFontconfigFontEntry* fontEntry =
         new gfxFontconfigFontEntry(faceName, face, mContainsAppFonts);
 
-    if (gfxPlatform::GetPlatform()->HasVariationFontSupport()) {
+    if (gfxPlatform::HasVariationFontSupport()) {
       fontEntry->SetupVariationRanges();
     }
 
@@ -2415,8 +2415,8 @@ gfxPlatformFontList::PrefFontList* gfxFcPlatformFontList::FindGenericFamilies(
           // -- select the fonts to be used for the generic
           auto prefFonts = MakeUnique<PrefFontList>();  // can be empty but in
                                                         // practice won't happen
-          uint32_t limit =
-              gfxPlatformGtk::GetPlatform()->MaxGenericSubstitions();
+          uint32_t limit = StaticPrefs::
+              gfx_font_rendering_fontconfig_max_generic_substitutions();
           bool foundFontWithLang = false;
           for (int i = 0; i < faces->nfont; i++) {
             FcPattern* font = faces->fonts[i];

@@ -107,7 +107,7 @@ const gSelects = {
     "  option { color: white; }" +
     "</style></head>" +
     "<body><select id='one'>" +
-    '  <option>{"color": "rgb(255, 255, 255)", "backgroundColor": "rgb(0, 0, 0)"}</option>' +
+    '  <option>{"colorScheme": "dark", "color": "rgb(255, 255, 255)", "backgroundColor": "rgb(0, 0, 0)"}</option>' +
     '  <option selected="true">{"end": "true"}</option>' +
     "</select></body></html>",
 
@@ -215,6 +215,15 @@ const gSelects = {
    </select></body></html>
 `,
 
+  DEFAULT_DARKMODE_DARK: `
+   <meta name=color-scheme content=dark>
+   <select id='one'>
+     <option>{"color": "MenuText", "backgroundColor": "rgba(0, 0, 0, 0)"}</option>
+     <option>{"color": "MenuText", "backgroundColor": "rgba(0, 0, 0, 0)"}</option>
+     <option selected="true">{"end": "true"}</option>
+   </select>
+`,
+
   SPLIT_FG_BG_OPTION_DARKMODE: `
    <html><head><style>
      select { background-color: #fff; }
@@ -231,8 +240,8 @@ const gSelects = {
      select { background-color: #fff; }
      option { color: #2b2b2b; background-color: #fff; }
    </style></head><body><select id='one'>
-     <option>{"color": "rgb(43, 43, 43)", "backgroundColor": "rgb(255, 255, 255)"}</option>
-     <option>{"color": "rgb(43, 43, 43)", "backgroundColor": "rgb(255, 255, 255)"}</option>
+     <option>{"colorScheme": "light", "color": "rgb(43, 43, 43)", "backgroundColor": "rgb(255, 255, 255)"}</option>
+     <option>{"colorScheme": "light", "color": "rgb(43, 43, 43)", "backgroundColor": "rgb(255, 255, 255)"}</option>
      <option selected="true">{"end": "true"}</option>
    </select></body></html>
 `,
@@ -298,6 +307,7 @@ function computeLabels(tab) {
       let any = false;
       for (let color of Object.keys(expected)) {
         if (
+          color != "colorScheme" &&
           color.toLowerCase().includes("color") &&
           !expected[color].startsWith("rgb")
         ) {
@@ -381,11 +391,7 @@ async function testSelectColors(selectID, itemCount, options) {
   }
   if (!options.skipSelectColorTest.color) {
     is(
-      rgbaToString(
-        InspectorUtils.colorToRGBA(
-          getComputedStyle(selectPopup).getPropertyValue("--panel-color")
-        )
-      ),
+      getComputedStyle(arrowSB).color,
       options.selectColor,
       selectID + " popup has expected foreground color"
     );
@@ -719,7 +725,6 @@ add_task(
       '#ContentSelectDropdown .ContentSelectDropdown-item-1:not([_moz-menuactive="true"])',
       "#ContentSelectDropdown .ContentSelectDropdown-item-2",
       '#ContentSelectDropdown .ContentSelectDropdown-item-2:not([_moz-menuactive="true"])',
-      "#ContentSelectDropdown > menupopup",
       '#ContentSelectDropdown > menupopup > :is(menuitem, menucaption):not([_moz-menuactive="true"])',
       '#ContentSelectDropdown > menupopup > :is(menuitem, menucaption)[_moz-menuactive="true"]',
     ].sort();
@@ -789,6 +794,13 @@ add_task(async function test_scrollbar_props() {
 
 if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
   add_task(async function test_darkmode() {
+    let lightSelectColor = rgbaToString(
+      InspectorUtils.colorToRGBA("MenuText", document)
+    );
+    let lightSelectBgColor = rgbaToString(
+      InspectorUtils.colorToRGBA("Menu", document)
+    );
+
     // Force dark mode:
     let darkModeQuery = matchMedia("(prefers-color-scheme: dark)");
     let darkModeChange = BrowserTestUtils.waitForEvent(darkModeQuery, "change");
@@ -796,20 +808,28 @@ if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
     await darkModeChange;
 
     // Determine colours from the main context menu:
-    let cs = getComputedStyle(document.documentElement);
-    let selectColor = rgbaToString(
-      InspectorUtils.colorToRGBA(cs.getPropertyValue("--menu-color"))
+    let darkSelectColor = rgbaToString(
+      InspectorUtils.colorToRGBA("MenuText", document)
     );
-    let selectBgColor = rgbaToString(
-      InspectorUtils.colorToRGBA(cs.getPropertyValue("--menu-background-color"))
+    let darkSelectBgColor = rgbaToString(
+      InspectorUtils.colorToRGBA("Menu", document)
     );
 
-    // Check that by default, we use the dark mode styles:
+    isnot(lightSelectColor, darkSelectColor);
+    isnot(lightSelectBgColor, darkSelectBgColor);
+
     let { tab } = await openSelectPopup(gSelects.DEFAULT_DARKMODE);
 
     await testSelectColors("DEFAULT_DARKMODE", 3, {
-      selectColor,
-      selectBgColor,
+      selectColor: lightSelectColor,
+      selectBgColor: lightSelectBgColor,
+    });
+
+    await hideSelectPopup("escape");
+
+    await testSelectColors("DEFAULT_DARKMODE_DARK", 3, {
+      selectColor: darkSelectColor,
+      selectBgColor: darkSelectBgColor,
     });
 
     await hideSelectPopup("escape");

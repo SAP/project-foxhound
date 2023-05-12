@@ -1943,6 +1943,9 @@ bool CacheIRCompiler::emitGuardClass(ObjOperandId objId, GuardClassKind kind) {
     case GuardClassKind::Array:
       clasp = &ArrayObject::class_;
       break;
+    case GuardClassKind::PlainObject:
+      clasp = &PlainObject::class_;
+      break;
     case GuardClassKind::ArrayBuffer:
       clasp = &ArrayBufferObject::class_;
       break;
@@ -1967,8 +1970,8 @@ bool CacheIRCompiler::emitGuardClass(ObjOperandId objId, GuardClassKind kind) {
     case GuardClassKind::Map:
       clasp = &MapObject::class_;
       break;
-    default:
-      MOZ_ASSERT_UNREACHABLE();
+    case GuardClassKind::JSFunction:
+      MOZ_CRASH("JSFunction handled before switch");
   }
   MOZ_ASSERT(clasp);
 
@@ -3442,7 +3445,8 @@ bool CacheIRCompiler::emitLoadStringCharCodeResult(StringOperandId strId,
   Register str = allocator.useRegister(masm, strId);
   Register index = allocator.useRegister(masm, indexId);
   AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
-  AutoScratchRegister scratch2(allocator, masm);
+  AutoScratchRegisterMaybeOutputType scratch2(allocator, masm, output);
+  AutoScratchRegister scratch3(allocator, masm);
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
@@ -3460,7 +3464,8 @@ bool CacheIRCompiler::emitLoadStringCharCodeResult(StringOperandId strId,
   // Bounds check, load string char.
   masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                             scratch1, failure->label());
-  masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
+  masm.loadStringChar(str, index, scratch1, scratch2, scratch3,
+                      failure->label());
 
   masm.tagValue(JSVAL_TYPE_INT32, scratch1, output.valueReg());
   return true;
@@ -3479,6 +3484,60 @@ bool CacheIRCompiler::emitNewStringObjectResult(uint32_t templateObjectOffset,
 
   using Fn = JSObject* (*)(JSContext*, HandleString);
   callvm.call<Fn, NewStringObject>();
+  return true;
+}
+
+bool CacheIRCompiler::emitStringIndexOfResult(StringOperandId strId,
+                                              StringOperandId searchStrId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register str = allocator.useRegister(masm, strId);
+  Register searchStr = allocator.useRegister(masm, searchStrId);
+
+  callvm.prepare();
+  masm.Push(searchStr);
+  masm.Push(str);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, int32_t*);
+  callvm.call<Fn, js::StringIndexOf>();
+  return true;
+}
+
+bool CacheIRCompiler::emitStringStartsWithResult(StringOperandId strId,
+                                                 StringOperandId searchStrId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register str = allocator.useRegister(masm, strId);
+  Register searchStr = allocator.useRegister(masm, searchStrId);
+
+  callvm.prepare();
+  masm.Push(searchStr);
+  masm.Push(str);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  callvm.call<Fn, js::StringStartsWith>();
+  return true;
+}
+
+bool CacheIRCompiler::emitStringEndsWithResult(StringOperandId strId,
+                                               StringOperandId searchStrId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register str = allocator.useRegister(masm, strId);
+  Register searchStr = allocator.useRegister(masm, searchStrId);
+
+  callvm.prepare();
+  masm.Push(searchStr);
+  masm.Push(str);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  callvm.call<Fn, js::StringEndsWith>();
   return true;
 }
 
@@ -3609,8 +3668,8 @@ bool CacheIRCompiler::emitGuardInt32IsNonNegative(Int32OperandId indexId) {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIndexGreaterThanDenseInitLength(
-    ObjOperandId objId, Int32OperandId indexId) {
+bool CacheIRCompiler::emitGuardIndexIsNotDenseElement(ObjOperandId objId,
+                                                      Int32OperandId indexId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, objId);
   Register index = allocator.useRegister(masm, indexId);
@@ -3625,13 +3684,17 @@ bool CacheIRCompiler::emitGuardIndexGreaterThanDenseInitLength(
   // Load obj->elements.
   masm.loadPtr(Address(obj, NativeObject::offsetOfElements()), scratch);
 
-  // Ensure index >= initLength.
-  Label outOfBounds;
+  // Ensure index >= initLength or the element is a hole.
+  Label notDense;
   Address capacity(scratch, ObjectElements::offsetOfInitializedLength());
-  masm.spectreBoundsCheck32(index, capacity, spectreScratch, &outOfBounds);
-  masm.jump(failure->label());
-  masm.bind(&outOfBounds);
+  masm.spectreBoundsCheck32(index, capacity, spectreScratch, &notDense);
 
+  BaseValueIndex element(scratch, index);
+  masm.branchTestMagic(Assembler::Equal, element, &notDense);
+
+  masm.jump(failure->label());
+
+  masm.bind(&notDense);
   return true;
 }
 
@@ -7621,7 +7684,7 @@ bool CacheIRCompiler::emitCallGetSparseElementResult(ObjOperandId objId,
   masm.Push(id);
   masm.Push(obj);
 
-  using Fn = bool (*)(JSContext * cx, Handle<ArrayObject*> obj, int32_t int_id,
+  using Fn = bool (*)(JSContext * cx, Handle<NativeObject*> obj, int32_t int_id,
                       MutableHandleValue result);
   callvm.call<Fn, GetSparseElementHelper>();
   return true;

@@ -416,7 +416,11 @@ const MESSAGES = () => [
             title: {
               string_id: "mr1-onboarding-pin-header",
             },
-            logo: {},
+            logo: {
+              darkModeImageURL:
+                "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/ms-images/a3c640c8-7594-4bb2-bc18-8b4744f3aaf2.gif",
+              alt: "sample alt text",
+            },
             hero_text: {
               string_id: "mr1-welcome-screen-hero-text",
             },
@@ -662,7 +666,7 @@ const MESSAGES = () => [
     frequency: { lifetime: 3 },
   },
   {
-    id: "PB_NEWTAB_PIN_PROMO",
+    id: "PB_PIN_PROMO",
     template: "pb_newtab",
     groups: ["pbNewtab"],
     content: {
@@ -704,7 +708,7 @@ const MESSAGES = () => [
               {
                 type: "BLOCK_MESSAGE",
                 data: {
-                  id: "PB_NEWTAB_PIN_PROMO",
+                  id: "PB_PIN_PROMO",
                 },
               },
               {

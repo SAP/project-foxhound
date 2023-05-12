@@ -6,6 +6,13 @@ const { OnboardingMessageProvider } = ChromeUtils.import(
 );
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
+function getOnboardingScreenById(screens, screenId) {
+  return screens.find(screen => {
+    console.log(screen?.id);
+    return screen?.id === screenId;
+  });
+}
+
 add_task(
   async function test_OnboardingMessageProvider_getUpgradeMessage_no_pin() {
     let sandbox = sinon.createSandbox();
@@ -66,6 +73,97 @@ add_task(
     ok(
       !message.content.screens[0].content.primary_button.action.type,
       "Primary button has no action type"
+    );
+    sandbox.restore();
+  }
+);
+
+add_task(async function test_OnboardingMessageProvider_getNoImport_default() {
+  let sandbox = sinon.createSandbox();
+  sandbox
+    .stub(OnboardingMessageProvider, "_doesAppNeedDefault")
+    .resolves(false);
+  const message = await OnboardingMessageProvider.getUpgradeMessage();
+
+  // No import screen is shown when user has Firefox both pinned and default
+  Assert.notEqual(
+    message.content.screens[1]?.id,
+    "UPGRADE_IMPORT_SETTINGS",
+    "Screen has no import screen id"
+  );
+  sandbox.restore();
+});
+
+add_task(async function test_OnboardingMessageProvider_getImport_nodefault() {
+  Services.prefs.setBoolPref("browser.shell.checkDefaultBrowser", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("browser.shell.checkDefaultBrowser");
+  });
+
+  let sandbox = sinon.createSandbox();
+  sandbox.stub(OnboardingMessageProvider, "_doesAppNeedDefault").resolves(true);
+  sandbox.stub(OnboardingMessageProvider, "_doesAppNeedPin").resolves(false);
+  const message = await OnboardingMessageProvider.getUpgradeMessage();
+
+  // Import screen is shown when user doesn't have Firefox pinned and default
+  Assert.equal(
+    message.content.screens[1]?.id,
+    "UPGRADE_IMPORT_SETTINGS",
+    "Screen has import screen id"
+  );
+  sandbox.restore();
+});
+
+add_task(
+  async function test_OnboardingMessageProvider_getPinPrivateWindow_noPrivatePin() {
+    Services.prefs.setBoolPref("browser.shell.checkDefaultBrowser", true);
+    registerCleanupFunction(() => {
+      Services.prefs.clearUserPref("browser.shell.checkDefaultBrowser");
+    });
+    let sandbox = sinon.createSandbox();
+    // User needs default to ensure Pin Private window shows as third screen after import
+    sandbox
+      .stub(OnboardingMessageProvider, "_doesAppNeedDefault")
+      .resolves(true);
+
+    let pinStub = sandbox.stub(OnboardingMessageProvider, "_doesAppNeedPin");
+    pinStub.resolves(false);
+    pinStub.withArgs(true).resolves(true);
+    const message = await OnboardingMessageProvider.getUpgradeMessage();
+
+    // Pin Private screen is shown when user doesn't have Firefox private pinned but has Firefox pinned
+    Assert.ok(
+      getOnboardingScreenById(
+        message.content.screens,
+        "UPGRADE_PIN_PRIVATE_WINDOW"
+      )
+    );
+    sandbox.restore();
+  }
+);
+
+add_task(
+  async function test_OnboardingMessageProvider_getNoPinPrivateWindow_noPin() {
+    Services.prefs.setBoolPref("browser.shell.checkDefaultBrowser", true);
+    registerCleanupFunction(() => {
+      Services.prefs.clearUserPref("browser.shell.checkDefaultBrowser");
+    });
+    let sandbox = sinon.createSandbox();
+    // User needs default to ensure Pin Private window shows as third screen after import
+    sandbox
+      .stub(OnboardingMessageProvider, "_doesAppNeedDefault")
+      .resolves(true);
+
+    let pinStub = sandbox.stub(OnboardingMessageProvider, "_doesAppNeedPin");
+    pinStub.resolves(true);
+    const message = await OnboardingMessageProvider.getUpgradeMessage();
+
+    // Pin Private screen is not shown when user doesn't have Firefox pinned
+    Assert.ok(
+      !getOnboardingScreenById(
+        message.content.screens,
+        "UPGRADE_PIN_PRIVATE_WINDOW"
+      )
     );
     sandbox.restore();
   }

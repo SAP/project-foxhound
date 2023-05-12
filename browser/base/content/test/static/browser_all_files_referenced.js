@@ -65,6 +65,9 @@ var gExceptionPaths = [
 
   // Activity stream schemas are referenced programmatically.
   "resource://activity-stream/schemas",
+
+  // Localization file added programatically in featureCallout.jsm
+  "resource://app/localization/en-US/browser/featureCallout.ftl",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -277,6 +280,10 @@ var whitelist = [
 
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },
+
+  // References to esm generated from jsm programatically
+  { file: "resource://gre/modules/LangPackMatcher.sys.mjs" },
+  { file: "resource://gre/modules/PluralForm.sys.mjs" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {

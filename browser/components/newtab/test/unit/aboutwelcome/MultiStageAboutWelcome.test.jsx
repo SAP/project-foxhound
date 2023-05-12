@@ -20,6 +20,7 @@ describe("MultiStageAboutWelcome module", () => {
     metricsFlowUri: "http://localhost/",
     message_id: "DEFAULT_ABOUTWELCOME",
     utm_term: "default",
+    startScreen: 0,
   };
 
   beforeEach(async () => {
@@ -133,6 +134,7 @@ describe("MultiStageAboutWelcome module", () => {
         metricsFlowUri: "http://localhost/",
         message_id: "DEFAULT_ABOUTWELCOME",
         utm_term: "default",
+        startScreen: 0,
       };
       const wrapper = mount(<MultiStageAboutWelcome {...AUTO_ADVANCE_PROPS} />);
       wrapper.update();
@@ -167,6 +169,7 @@ describe("MultiStageAboutWelcome module", () => {
         messageId: `${DEFAULT_PROPS.message_id}_${startScreen.id}`,
         UTMTerm: DEFAULT_PROPS.utm_term,
         flowParams: null,
+        startScreen: 0,
       };
 
       it("should render GetStarted Screen", () => {
@@ -198,6 +201,20 @@ describe("MultiStageAboutWelcome module", () => {
         <StepsIndicator {...SCREEN_PROPS} />;
         const wrapper = mount(<StepsIndicator {...SCREEN_PROPS} />);
         assert.ok(wrapper.find("div.indicator"));
+      });
+
+      it("should assign the total number of screens and current screen to the aria-valuemax and aria-valuenow labels", () => {
+        const SCREEN_PROPS = {
+          totalNumberOfScreens: 3,
+          currentScreen: 1,
+        };
+        <StepsIndicator {...SCREEN_PROPS} />;
+        const wrapper = mount(<StepsIndicator {...SCREEN_PROPS} />);
+        assert.ok(
+          wrapper.find(
+            `div.steps[aria-valuemax=${SCREEN_PROPS.totalNumberOfScreens}][aria-valuenow=${SCREEN_PROPS.currentScreen}][aria-valuemin="1"]`
+          )
+        );
       });
 
       it("should have a primary, secondary and secondary.top button in the rendered input", () => {

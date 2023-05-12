@@ -26,7 +26,7 @@ add_task(async () => {
     await startProfiler({
       // Only instrument the main thread.
       threads: ["GeckoMain"],
-      features: ["leaf", "nativeallocations"],
+      features: ["js", "nativeallocations"],
     });
 
     info(
@@ -36,7 +36,7 @@ add_task(async () => {
     doWork();
 
     info("Get the profile data and analyze it.");
-    const profile = await stopAndGetProfile();
+    const profile = await waitSamplingAndStopAndGetProfile();
 
     const {
       allocationPayloads,
@@ -71,13 +71,11 @@ add_task(async () => {
 
   info("Restart the profiler, to ensure that we get no more allocations.");
   {
-    await startProfiler({ features: ["leaf"] });
+    await startProfiler({ features: ["js"] });
     info("Do some work again.");
     doWork();
     info("Wait for the periodic sampling.");
-    await Services.profiler.waitOnePeriodicSampling();
-
-    const profile = await stopAndGetProfile();
+    const profile = await waitSamplingAndStopAndGetProfile();
     const allocationPayloads = getPayloadsOfType(
       profile.threads[0],
       "Native allocation"

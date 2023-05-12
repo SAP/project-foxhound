@@ -9,7 +9,7 @@
 #include "ChromiumCDMProxy.h"
 #include "GMPCrashHelper.h"
 #include "mozilla/EMEUtils.h"
-#include "mozilla/JSONWriter.h"
+#include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Document.h"
@@ -42,7 +42,7 @@ namespace mozilla::dom {
 // We don't use NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE because we need to
 // disconnect our MediaKeys instances from the inner window (mparent) before
 // we unlink it.
-NS_IMPL_CYCLE_COLLECTION_CLASS(MediaKeys)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaKeys)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaKeys)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
@@ -50,7 +50,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaKeys)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPromises)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingSessions)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(MediaKeys)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(MediaKeys)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mElement)
@@ -716,14 +715,6 @@ void MediaKeys::Unbind() {
   mElement = nullptr;
 }
 
-struct StringWriteFunc : public JSONWriteFunc {
-  nsString& mString;
-  explicit StringWriteFunc(nsString& aString) : mString(aString) {}
-  void Write(const Span<const char>& aStr) override {
-    mString.Append(NS_ConvertUTF8toUTF16(aStr.data(), aStr.size()));
-  }
-};
-
 void MediaKeys::CheckIsElementCapturePossible() {
   MOZ_ASSERT(NS_IsMainThread());
   EME_LOG("MediaKeys[%p]::IsElementCapturePossible()", this);
@@ -761,11 +752,13 @@ void MediaKeys::CheckIsElementCapturePossible() {
 
   if (mCaptureCheckRequestJson.IsEmpty()) {
     // Lazily populate the JSON the first time we need it.
-    JSONWriter jw{MakeUnique<StringWriteFunc>(mCaptureCheckRequestJson)};
+    JSONStringWriteFunc<nsAutoCString> json;
+    JSONWriter jw{json};
     jw.Start();
     jw.StringProperty("status", "is-capture-possible");
     jw.StringProperty("keySystem", NS_ConvertUTF16toUTF8(mKeySystem));
     jw.End();
+    mCaptureCheckRequestJson = NS_ConvertUTF8toUTF16(json.StringCRef());
   }
 
   MOZ_DIAGNOSTIC_ASSERT(!mCaptureCheckRequestJson.IsEmpty());

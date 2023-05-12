@@ -1088,7 +1088,7 @@
   operands:
     str: WordSized
     index: WordSized
-  num_temps: 1
+  num_temps: 2
 
 # Convert uint16 character code to a string.
 - name: FromCharCode
@@ -1102,6 +1102,48 @@
   operands:
     codePoint: WordSized
   num_temps: 2
+
+# Search for the first index of the search string.
+- name: StringIndexOf
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string starts with the search string
+- name: StringStartsWith
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string starts with the constant search string
+- name: StringStartsWithInline
+  result_type: WordSized
+  operands:
+    string: WordSized
+  arguments:
+    searchString: JSLinearString*
+  num_temps: 1
+
+# Test if a string ends with the search string
+- name: StringEndsWith
+  result_type: WordSized
+  operands:
+    string: WordSized
+    searchString: WordSized
+  call_instruction: true
+
+# Test if a string ends with the constant search string
+- name: StringEndsWithInline
+  result_type: WordSized
+  operands:
+    string: WordSized
+  arguments:
+    searchString: JSLinearString*
+  num_temps: 1
 
 # Calls the ToLowerCase or ToUpperCase case conversion function.
 - name: StringConvertCase
@@ -3106,7 +3148,7 @@
   operands:
     index: WordSized
 
-- name: GuardIndexGreaterThanDenseInitLength
+- name: GuardIndexIsNotDenseElement
   operands:
     object: WordSized
     index: WordSized

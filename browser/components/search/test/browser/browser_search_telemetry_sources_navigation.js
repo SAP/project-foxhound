@@ -13,8 +13,8 @@ const { BrowserSearchTelemetry } = ChromeUtils.importESModule(
 const { SearchSERPTelemetry } = ChromeUtils.importESModule(
   "resource:///modules/SearchSERPTelemetry.sys.mjs"
 );
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
@@ -95,7 +95,10 @@ add_setup(async function() {
   });
   let engine1 = Services.search.getEngineByName("Example");
 
-  await Services.search.setDefault(engine1);
+  await Services.search.setDefault(
+    engine1,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
@@ -106,7 +109,8 @@ add_setup(async function() {
     Services.telemetry.canRecordExtended = oldCanRecord;
     Services.telemetry.clearScalars();
     await Services.search.setDefault(
-      Services.search.getEngineByName(currentEngineName)
+      Services.search.getEngineByName(currentEngineName),
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
     );
   });
 });

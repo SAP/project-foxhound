@@ -99,10 +99,17 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   // set the drag icon during drag-begin
   void SetDragIcon(GdkDragContext* aContext);
 
-  // Reply to drag_motion event according to recent DragService state.
-  // We need that on Wayland to reply immediately as it's requested
-  // there (see Bug 1730203).
-  void ReplyToDragMotion();
+  class AutoEventLoop {
+    RefPtr<nsDragService> mService;
+
+   public:
+    explicit AutoEventLoop(RefPtr<nsDragService> aService)
+        : mService(std::move(aService)) {
+      mService->mEventLoopDepth++;
+    }
+    ~AutoEventLoop() { mService->mEventLoopDepth--; }
+  };
+  int GetLoopDepth() const { return mEventLoopDepth; };
 
  protected:
   virtual ~nsDragService();
@@ -210,9 +217,12 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   // Callback for g_idle_add_full() to run mScheduledTask.
   MOZ_CAN_RUN_SCRIPT static gboolean TaskDispatchCallback(gpointer data);
   MOZ_CAN_RUN_SCRIPT gboolean RunScheduledTask();
-  void UpdateDragAction();
   MOZ_CAN_RUN_SCRIPT void DispatchMotionEvents();
-  void ReplyToDragMotion(GdkDragContext* aDragContext);
+  void ReplyToDragMotion(GdkDragContext* aDragContext, guint aTime);
+  void ReplyToDragMotion();
+  void UpdateDragAction(GdkDragContext* aDragContext);
+  void UpdateDragAction();
+
 #ifdef MOZ_LOGGING
   const char* GetDragServiceTaskName(nsDragService::DragTask aTask);
 #endif
@@ -232,6 +242,8 @@ class nsDragService final : public nsBaseDragService, public nsIObserver {
   nsCOMArray<nsIFile> mTemporaryFiles;
   // timer to trigger deletion of temporary files
   guint mTempFileTimerID;
+  // How deep we're nested in event loops
+  int mEventLoopDepth;
 };
 
 #endif  // nsDragService_h__

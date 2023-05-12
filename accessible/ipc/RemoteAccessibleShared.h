@@ -48,16 +48,7 @@ void Description(nsString& aDesc) const override;
  */
 virtual already_AddRefed<AccAttributes> Attributes() override;
 
-/**
- * Return set of targets of given relation type.
- */
-nsTArray<RemoteAccessible*> RelationByType(RelationType aType) const;
-
-/**
- * Get all relations for this accessible.
- */
-void Relations(nsTArray<RelationType>* aTypes,
-               nsTArray<nsTArray<RemoteAccessible*>>* aTargetSets) const;
+virtual Relation RelationByType(RelationType aType) const override;
 
 bool IsSearchbox() const;
 
@@ -196,7 +187,6 @@ double MaxValue() const override;
 double Step() const override;
 bool SetCurValue(double aValue);
 
-RemoteAccessible* FocusedChild();
 Accessible* ChildAtPoint(
     int32_t aX, int32_t aY,
     LocalAccessible::EWhichChildAtPoint aWhichChild) override;

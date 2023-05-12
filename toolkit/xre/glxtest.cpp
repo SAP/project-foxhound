@@ -94,6 +94,7 @@ typedef void* EGLConfig;
 typedef void* EGLContext;
 typedef void* EGLDeviceEXT;
 typedef void* EGLDisplay;
+typedef unsigned int EGLenum;
 typedef int EGLint;
 typedef void* EGLNativeDisplayType;
 typedef void* EGLSurface;
@@ -103,13 +104,16 @@ typedef void* (*PFNEGLGETPROCADDRESS)(const char*);
 #define EGL_NO_SURFACE nullptr
 #define EGL_FALSE 0
 #define EGL_TRUE 1
+#define EGL_OPENGL_ES2_BIT 0x0004
 #define EGL_BLUE_SIZE 0x3022
 #define EGL_GREEN_SIZE 0x3023
 #define EGL_RED_SIZE 0x3024
 #define EGL_NONE 0x3038
+#define EGL_RENDERABLE_TYPE 0x3040
 #define EGL_VENDOR 0x3053
 #define EGL_EXTENSIONS 0x3055
-#define EGL_CONTEXT_CLIENT_VERSION 0x3098
+#define EGL_CONTEXT_MAJOR_VERSION 0x3098
+#define EGL_OPENGL_ES_API 0x30A0
 #define EGL_OPENGL_API 0x30A2
 #define EGL_DEVICE_EXT 0x322C
 #define EGL_DRM_DEVICE_FILE_EXT 0x3233
@@ -262,6 +266,12 @@ static void close_logging() {
 #define PCI_BASE_CLASS_DISPLAY 0x03
 
 static int get_pci_status() {
+  if (access("/sys/bus/pci/", F_OK) != 0 &&
+      access("/sys/bus/pci_express/", F_OK) != 0) {
+    record_warning("cannot access /sys/bus/pci");
+    return 0;
+  }
+
   void* libpci = dlopen("libpci.so.3", RTLD_LAZY);
   if (!libpci) {
     libpci = dlopen("libpci.so", RTLD_LAZY);
@@ -411,11 +421,33 @@ static bool get_render_name(const char* name) {
     }
   }
 
+  // Fallback path for split kms/render devices - if only one drm render node
+  // exists it's most likely the one we're looking for.
+  if (match && !(match->available_nodes & (1 << DRM_NODE_RENDER))) {
+    match = nullptr;
+    for (int i = 0; i < devices_len; i++) {
+      if (devices[i]->available_nodes & (1 << DRM_NODE_RENDER)) {
+        if (!match) {
+          match = devices[i];
+        } else {
+          // more than one candidate found, stop trying.
+          match = nullptr;
+          break;
+        }
+      }
+    }
+    if (match) {
+      record_warning(
+          "DRM render node not clearly detectable. Falling back to using the "
+          "only one that was found.");
+    } else {
+      record_warning("DRM device has no render node");
+    }
+  }
+
   bool result = false;
   if (!match) {
     record_warning("Cannot find DRM device");
-  } else if (!(match->available_nodes & (1 << DRM_NODE_RENDER))) {
-    record_warning("DRM device has no render node");
   } else {
     set_render_device_path(match->nodes[DRM_NODE_RENDER]);
     record_value(
@@ -480,27 +512,48 @@ static bool get_gles_status(EGLDisplay dpy,
   PFNGLGETSTRING glGetString =
       cast<PFNGLGETSTRING>(eglGetProcAddress("glGetString"));
 
-  EGLint config_attrs[] = {EGL_RED_SIZE,  8, EGL_GREEN_SIZE, 8,
-                           EGL_BLUE_SIZE, 8, EGL_NONE};
+#if defined(__aarch64__)
+  bool useGles = true;
+#else
+  bool useGles = false;
+#endif
+
+  std::vector<EGLint> attribs;
+  attribs.push_back(EGL_RED_SIZE);
+  attribs.push_back(8);
+  attribs.push_back(EGL_GREEN_SIZE);
+  attribs.push_back(8);
+  attribs.push_back(EGL_BLUE_SIZE);
+  attribs.push_back(8);
+  if (useGles) {
+    attribs.push_back(EGL_RENDERABLE_TYPE);
+    attribs.push_back(EGL_OPENGL_ES2_BIT);
+  }
+  attribs.push_back(EGL_NONE);
 
   EGLConfig config;
   EGLint num_config;
-  if (eglChooseConfig(dpy, config_attrs, &config, 1, &num_config) ==
+  if (eglChooseConfig(dpy, attribs.data(), &config, 1, &num_config) ==
       EGL_FALSE) {
     record_warning("eglChooseConfig returned an error");
     return false;
   }
 
-  if (eglBindAPI(EGL_OPENGL_API) == EGL_FALSE) {
+  EGLenum api = useGles ? EGL_OPENGL_ES_API : EGL_OPENGL_API;
+  if (eglBindAPI(api) == EGL_FALSE) {
     record_warning("eglBindAPI returned an error");
     return false;
   }
 
-  EGLint ctx_attrs[] = {EGL_NONE};
+  EGLint ctx_attrs[] = {EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE};
   EGLContext ectx = eglCreateContext(dpy, config, EGL_NO_CONTEXT, ctx_attrs);
   if (!ectx) {
-    record_warning("eglCreateContext returned an error");
-    return false;
+    EGLint ctx_attrs_fallback[] = {EGL_CONTEXT_MAJOR_VERSION, 2, EGL_NONE};
+    ectx = eglCreateContext(dpy, config, EGL_NO_CONTEXT, ctx_attrs_fallback);
+    if (!ectx) {
+      record_warning("eglCreateContext returned an error");
+      return false;
+    }
   }
 
   if (eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, ectx) == EGL_FALSE) {

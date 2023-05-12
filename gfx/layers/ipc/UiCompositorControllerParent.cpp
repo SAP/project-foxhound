@@ -7,6 +7,7 @@
 
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "apz/src/APZCTreeManager.h"
+#  include "mozilla/widget/AndroidCompositorWidget.h"
 #endif
 #include <utility>
 
@@ -69,6 +70,8 @@ mozilla::ipc::IPCResult UiCompositorControllerParent::RecvResume() {
       CompositorBridgeParent::GetCompositorBridgeParentFromLayersId(
           mRootLayerTreeId);
   if (parent) {
+    // Front-end expects a first paint callback upon resume.
+    parent->ForceIsFirstPaint();
     parent->ResumeComposition();
   }
   return IPC_OK();
@@ -83,6 +86,10 @@ mozilla::ipc::IPCResult UiCompositorControllerParent::RecvResumeAndResize(
   if (parent) {
     // Front-end expects a first paint callback upon resume/resize.
     parent->ForceIsFirstPaint();
+#if defined(MOZ_WIDGET_ANDROID)
+    parent->GetWidget()->AsAndroid()->NotifyClientSizeChanged(
+        LayoutDeviceIntSize(aWidth, aHeight));
+#endif
     parent->ResumeCompositionAndResize(aX, aY, aWidth, aHeight);
   }
   return IPC_OK();
@@ -94,7 +101,6 @@ UiCompositorControllerParent::RecvInvalidateAndRender() {
       CompositorBridgeParent::GetCompositorBridgeParentFromLayersId(
           mRootLayerTreeId);
   if (parent) {
-    parent->Invalidate();
     parent->ScheduleComposition(wr::RenderReasons::OTHER);
   }
   return IPC_OK();

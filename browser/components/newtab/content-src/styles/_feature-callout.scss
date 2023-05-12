@@ -1,0 +1,208 @@
+$max-z-index: 2147483647;
+
+.onboardingContainer.featureCallout {
+  position: absolute;
+  transition: opacity 0.5s ease;
+
+  &.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &,
+  & .outer-wrapper {
+    // auto height to allow for arrow positioning based on height
+    height: auto;
+  }
+
+  // sass-lint:disable no-color-literals
+  .screen {
+    // override transform in about:welcome
+    &:dir(rtl) {
+      transform: none;
+    }
+
+    &[pos='callout'] {
+      // Max value for z-index
+      z-index: $max-z-index - 1;
+      height: fit-content;
+      min-height: unset;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+
+      .logo-container {
+        display: flex;
+        justify-content: center;
+
+        .brand-logo {
+          margin: 30px 45px 0;
+
+          // This may not work for all future messages, 
+          // so we may want to make flipping the logo 
+          // image in RTL mode configurable
+          &:dir(rtl) {
+            transform: rotateY(180deg);
+          }
+        }
+      }
+
+      .welcome-text {
+        align-items: baseline;
+        text-align: start;
+        margin-inline: 30px;
+        padding: 20px 0 0;
+
+        h1,
+        h2 {
+          font-size: 0.8em;
+          margin: 0;
+        }
+
+        h1 {
+          font-weight: bold;
+        }
+
+        h2 {
+          margin-block: 10px;
+        }
+      }
+
+      // Secondary section is not included in callouts
+      .section-secondary {
+        display: none;
+      }
+
+      .section-main {
+        height: fit-content;
+        width: fit-content;
+
+        .main-content {
+          overflow: hidden;
+          border: 1px solid #CFCFD8;
+          box-shadow: 0 2px 14px rgba(58, 57, 68, 0.2);
+          border-radius: 4px;
+          padding-block: 0 40px;
+          width: 25em;
+
+          .steps {
+            align-self: baseline;
+            margin: -38px 30px -30px;
+          }
+
+          .dismiss-button {
+            margin-block: 25px -45px;
+            z-index: 1;
+          }
+        }
+      }
+
+      .action-buttons {
+        .primary,
+        .secondary-cta .secondary {
+          padding: 4px 16px;
+          font-size: 0.8em;
+          height: 2em;
+        }
+
+        .primary {
+          font-weight: bold;
+          float: inline-end;
+          margin-inline: 10px 30px;
+          background-color: var(--in-content-button-background);
+          color: var(--in-content-button-text-color);
+
+          &:hover {
+            background-color: var(--in-content-button-background-hover);
+          }
+        }
+
+        .secondary-cta {
+          float: inline-end;
+        }
+      }
+    }
+  }
+
+  $arrow-size: 24px;
+  $arrow-inset-size: math.div($arrow-size, 2);
+  $arrow-border: 1px solid #CFCFD8;
+
+  // applied to all callout arrow foreground and background
+  &.callout-arrow::before,
+  &.callout-arrow::after {
+    content: '';
+    position: absolute;
+    width: $arrow-size;
+    height: $arrow-size;
+    transform: rotate(45deg);
+  }
+
+  &.callout-arrow:dir(rtl)::before,
+  &.callout-arrow:dir(rtl)::after {
+    transform: rotate(315deg);
+  }
+
+  // color for all arrow foreground
+  &.callout-arrow::before {
+    background-color: var(--in-content-page-background);
+    z-index: $max-z-index;
+  }
+
+  // styles for all arrow backgrounds
+  &.callout-arrow::after {
+    background: transparent;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    z-index: -1;
+  }
+
+  // up arrow positioning
+  &.arrow-top::before,
+  &.arrow-top::after {
+    top: -$arrow-inset-size;
+    inset-inline-start: calc(50% - $arrow-inset-size);
+  }
+
+  // up arrow foreground
+  &.arrow-top::before {
+    border-top: $arrow-border;
+    border-inline-start: $arrow-border;
+  }
+
+  // down arrow positioning
+  &.arrow-bottom::before,
+  &.arrow-bottom::after {
+    top: calc(100% - $arrow-inset-size);
+    inset-inline-start: calc(50% - $arrow-inset-size);
+  }
+
+  // down arrow foreground
+  &.arrow-bottom::before {
+    border-inline-end: $arrow-border;
+    border-bottom: $arrow-border;
+  }
+
+  // end arrow positioning
+  &.arrow-inline-end::before,
+  &.arrow-inline-end::after {
+    top: calc(50% - $arrow-inset-size);
+    inset-inline-start: calc(100% - $arrow-inset-size);
+  }
+
+  // end arrow foreground
+  &.arrow-inline-end::before {
+    border-top: $arrow-border;
+    border-inline-end: $arrow-border;
+  }
+
+  // start arrow positioning
+  &.arrow-inline-start::before,
+  &.arrow-inline-start::after {
+    top: calc(50% - $arrow-inset-size);
+    inset-inline-start: -$arrow-inset-size;
+  }
+
+  // start arrow foreground
+  &.arrow-inline-start::before {
+    border-bottom: $arrow-border;
+    border-inline-start: $arrow-border;
+  }
+}

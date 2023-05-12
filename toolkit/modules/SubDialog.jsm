@@ -348,9 +348,17 @@ SubDialog.prototype = {
     }
 
     let { contentDocument } = this._frame;
-    // Provide the ability for the dialog to know that it is being loaded "in-content".
+    // Provide the ability for the dialog to know that it is loaded in a frame
+    // rather than as a top-level window.
     for (let dialog of contentDocument.querySelectorAll("dialog")) {
       dialog.setAttribute("subdialog", "true");
+    }
+    // Sub-dialogs loaded in a chrome window should use the system font size so
+    // that the user has a way to increase or decrease it via system settings.
+    // Sub-dialogs loaded in the content area, on the other hand, can be zoomed
+    // like web content.
+    if (this._window.isChromeWindow) {
+      contentDocument.documentElement.classList.add("system-font-size");
     }
     // Used by CSS to give the appropriate background colour in dark mode.
     contentDocument.documentElement.setAttribute("dialogroot", "true");
@@ -364,13 +372,12 @@ SubDialog.prototype = {
         "--inner-height"
       );
       if (frameHeight) {
-        frameHeight = parseFloat(frameHeight, 10);
+        frameHeight = parseFloat(frameHeight);
       } else {
         frameHeight = this._frame.clientHeight;
       }
       let boxMinHeight = parseFloat(
-        this._window.getComputedStyle(this._box).minHeight,
-        10
+        this._window.getComputedStyle(this._box).minHeight
       );
 
       this._box.style.minHeight = boxMinHeight + resizeByHeight + "px";
@@ -463,7 +470,9 @@ SubDialog.prototype = {
 
     // Then determine and set a bunch of width stuff:
     let { scrollWidth } = docEl.ownerDocument.body || docEl;
-    let frameMinWidth = docEl.style.width || scrollWidth + "px";
+    // We need to convert em to px because an em value from the dialog window could
+    // translate to something else in the host window, as font sizes may vary.
+    let frameMinWidth = this._emToPx(docEl.style.width) || scrollWidth + "px";
     let frameWidth = docEl.getAttribute("width")
       ? docEl.getAttribute("width") + "px"
       : frameMinWidth;
@@ -509,10 +518,12 @@ SubDialog.prototype = {
 
   resizeVertically() {
     let docEl = this._frame.contentDocument.documentElement;
-    function getDocHeight() {
+    let getDocHeight = () => {
       let { scrollHeight } = docEl.ownerDocument.body || docEl;
-      return docEl.style.height || scrollHeight + "px";
-    }
+      // We need to convert em to px because an em value from the dialog window could
+      // translate to something else in the host window, as font sizes may vary.
+      return this._emToPx(docEl.style.height) || scrollHeight + "px";
+    };
 
     // If the title bar is disabled (not in the template),
     // set its height to 0 for the calculation.
@@ -567,13 +578,8 @@ SubDialog.prototype = {
     let maxHeight = this._window.innerHeight - frameOverhead;
     // Do this with a frame height in pixels...
     let comparisonFrameHeight;
-    if (frameHeight.endsWith("em")) {
-      let fontSize = parseFloat(
-        this._window.getComputedStyle(this._frame).fontSize
-      );
-      comparisonFrameHeight = parseFloat(frameHeight, 10) * fontSize;
-    } else if (frameHeight.endsWith("px")) {
-      comparisonFrameHeight = parseFloat(frameHeight, 10);
+    if (frameHeight.endsWith("px")) {
+      comparisonFrameHeight = parseFloat(frameHeight);
     } else {
       Cu.reportError(
         "This dialog (" +
@@ -613,6 +619,25 @@ SubDialog.prototype = {
       ${boxVerticalBorder + titleBarHeight + frameVerticalMargin}px +
       ${frameMinHeight}
     )`;
+  },
+
+  /**
+   * Helper for convertting em to px because an em value from the dialog window could
+   * translate to something else in the host window, as font sizes may vary.
+   *
+   * @param {String} val
+   *                 A CSS length value.
+   * @return {String} The converted CSS length value, or the original value if
+   *                  no conversion took place.
+   */
+  _emToPx(val) {
+    if (val && val.endsWith("em")) {
+      let { fontSize } = this.frameContentWindow.getComputedStyle(
+        this._frame.contentDocument.documentElement
+      );
+      return parseFloat(val) * parseFloat(fontSize) + "px";
+    }
+    return val;
   },
 
   _onResize(mutations) {

@@ -266,7 +266,7 @@ function addMessage(newMessage, state, filtersState, prefsState, uiState) {
   const addedMessage = Object.freeze(newMessage);
 
   // If the new message isn't the "oldest" one, then we need to insert it at the right
-  // position in the message map.
+  // position in the message map.
   if (isUnsorted) {
     let newMessageIndex = 0;
     // This is can be on a hot path, so we're not using `findIndex`, which could be slow.
@@ -462,6 +462,31 @@ function messages(
       // If there's no private messages, there's no need to change the state.
       if (removedIds.length === 0) {
         return state;
+      }
+
+      return removeMessagesFromState(
+        {
+          ...state,
+        },
+        removedIds
+      );
+    }
+
+    case constants.TARGET_MESSAGES_REMOVE: {
+      const removedIds = [];
+      for (const [id, message] of mutableMessagesById) {
+        // Remove message from the target but not evaluations and their results, so
+        // 1. we're consistent with the filtering behavior, i.e. we never hide those
+        // 2. when switching mode from multiprocess to parent process and back to multi,
+        //    if we'd clear evaluations we wouldn't have a way to get them back, unlike
+        //    log messages and errors, which are still available in the server caches).
+        if (
+          message.targetFront == action.targetFront &&
+          message.type !== MESSAGE_TYPE.COMMAND &&
+          message.type !== MESSAGE_TYPE.RESULT
+        ) {
+          removedIds.push(id);
+        }
       }
 
       return removeMessagesFromState(
@@ -747,7 +772,7 @@ function setVisibleMessages({
       // we track the message's ancestors and their state
       while (ancestorId) {
         ancestors.push({
-          ancestorId: ancestorId,
+          ancestorId,
           matchedFilters: matchedGroups.has(ancestorId),
           isOpen: messagesUiById.includes(ancestorId),
           isCurrentlyVisible: visibleMessages.includes(ancestorId),

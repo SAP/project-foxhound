@@ -15,19 +15,29 @@ let engine;
 
 add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.suggest.searches", true]],
+    set: [
+      ["browser.urlbar.suggest.searches", true],
+      ["browser.urlbar.suggest.quickactions", false],
+      ["browser.urlbar.shortcuts.quickactions", false],
+    ],
   });
   engine = await SearchTestUtils.promiseNewSearchEngine(
     getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME
   );
   let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   await Services.search.moveEngine(engine, 0);
 
   await PlacesUtils.history.clear();
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldDefaultEngine);
+    await Services.search.setDefault(
+      oldDefaultEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
     await PlacesUtils.history.clear();
   });
 });

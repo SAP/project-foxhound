@@ -256,6 +256,10 @@ class ExternalEngineStateMachine final
 
   void SetBlankVideoToVideoContainer();
 
+  media::TimeUnit GetVideoThreshold();
+
+  bool ShouldRunEngineUpdateForRequest();
+
   UniquePtr<ExternalPlaybackEngine> mEngine;
 
   bool mHasEnoughAudio = false;
@@ -263,8 +267,6 @@ class ExternalEngineStateMachine final
   bool mSentPlaybackEndedEvent = false;
 
   const RefPtr<VideoFrameContainer> mVideoFrameContainer;
-  // TODO : before implementing a video output, we use this for our image.
-  RefPtr<layers::Image> mBlankImage;
 };
 
 class ExternalPlaybackEngine {

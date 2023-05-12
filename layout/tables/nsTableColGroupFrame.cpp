@@ -6,6 +6,7 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsTableColFrame.h"
 #include "nsTableFrame.h"
 #include "nsStyleConsts.h"
@@ -347,7 +348,6 @@ void nsTableColGroupFrame::Reflow(nsPresContext* aPresContext,
   }
 
   aDesiredSize.ClearSize();
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
 }
 
 void nsTableColGroupFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,

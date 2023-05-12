@@ -407,11 +407,11 @@ nsIntSize nsHTMLCanvasFrame::GetCanvasSize() const {
 nscoord nsHTMLCanvasFrame::GetMinISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the height,
   // min-height, and max-height properties.
-  bool vertical = GetWritingMode().IsVertical();
   nscoord result;
-  if (StyleDisplay()->GetContainSizeAxes().mIContained) {
-    result = 0;
+  if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
+    result = *containISize;
   } else {
+    bool vertical = GetWritingMode().IsVertical();
     result = nsPresContext::CSSPixelsToAppUnits(
         vertical ? GetCanvasSize().height : GetCanvasSize().width);
   }
@@ -423,11 +423,11 @@ nscoord nsHTMLCanvasFrame::GetMinISize(gfxContext* aRenderingContext) {
 nscoord nsHTMLCanvasFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the height,
   // min-height, and max-height properties.
-  bool vertical = GetWritingMode().IsVertical();
   nscoord result;
-  if (StyleDisplay()->GetContainSizeAxes().mIContained) {
-    result = 0;
+  if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
+    result = *containISize;
   } else {
+    bool vertical = GetWritingMode().IsVertical();
     result = nsPresContext::CSSPixelsToAppUnits(
         vertical ? GetCanvasSize().height : GetCanvasSize().width);
   }
@@ -438,11 +438,10 @@ nscoord nsHTMLCanvasFrame::GetPrefISize(gfxContext* aRenderingContext) {
 /* virtual */
 IntrinsicSize nsHTMLCanvasFrame::GetIntrinsicSize() {
   const auto containAxes = StyleDisplay()->GetContainSizeAxes();
-  if (containAxes.IsBoth()) {
-    return IntrinsicSize(0, 0);
-  }
-  return containAxes.ContainIntrinsicSize(
-      IntrinsicSizeFromCanvasSize(GetCanvasSize()), *this);
+  IntrinsicSize size = containAxes.IsBoth()
+                           ? IntrinsicSize(0, 0)
+                           : IntrinsicSizeFromCanvasSize(GetCanvasSize());
+  return containAxes.ContainIntrinsicSize(size, *this);
 }
 
 /* virtual */
@@ -506,7 +505,6 @@ void nsHTMLCanvasFrame::Reflow(nsPresContext* aPresContext,
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS,
                  ("exit nsHTMLCanvasFrame::Reflow: size=%d,%d",
                   aMetrics.ISize(wm), aMetrics.BSize(wm)));
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aMetrics);
 }
 
 bool nsHTMLCanvasFrame::UpdateWebRenderCanvasData(

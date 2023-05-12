@@ -164,9 +164,15 @@
 
     set currentEngine(val) {
       if (PrivateBrowsingUtils.isWindowPrivate(window)) {
-        Services.search.defaultPrivateEngine = val;
+        Services.search.setDefaultPrivate(
+          val,
+          Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR
+        );
       } else {
-        Services.search.defaultEngine = val;
+        Services.search.setDefault(
+          val,
+          Ci.nsISearchService.CHANGE_REASON_USER_SEARCHBAR
+        );
       }
     }
 
@@ -425,6 +431,9 @@
       // null parameter below specifies HTML response for search
       let params = {
         postData: submission.postData,
+        globalHistoryOptions: {
+          triggeringSearchEngine: engine.name,
+        },
       };
       if (aParams) {
         for (let key in aParams) {

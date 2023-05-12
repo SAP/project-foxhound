@@ -3369,7 +3369,8 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::IndexedGetterOuter(
   BrowsingContext* bc = GetBrowsingContext();
   NS_ENSURE_TRUE(bc, nullptr);
 
-  Span<RefPtr<BrowsingContext>> children = bc->Children();
+  Span<RefPtr<BrowsingContext>> children = bc->NonSyntheticChildren();
+
   if (aIndex < children.Length()) {
     return WindowProxyHolder(children[aIndex]);
   }
@@ -4000,7 +4001,7 @@ double nsGlobalWindowOuter::GetScrollYOuter() { return GetScrollXY(false).y; }
 
 uint32_t nsGlobalWindowOuter::Length() {
   BrowsingContext* bc = GetBrowsingContext();
-  return bc ? bc->Children().Length() : 0;
+  return bc ? bc->NonSyntheticChildren().Length() : 0;
 }
 
 Nullable<WindowProxyHolder> nsGlobalWindowOuter::GetTopOuter() {
@@ -5257,8 +5258,7 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
       }
     }
 
-    // TODO(emilio): Should dispatch this to OOP iframes too.
-    AutoPrintEventDispatcher dispatcher(*docToPrint);
+    AutoPrintEventDispatcher dispatcher(*docToPrint, ps, /* aIsTop = */ true);
 
     nsAutoScriptBlocker blockScripts;
     RefPtr<Document> clone = docToPrint->CreateStaticClone(
@@ -5878,7 +5878,7 @@ bool nsGlobalWindowOuter::GetPrincipalForPostMessage(
                 R"(origin "%s" from a system principal scope with mismatched )"
                 R"(origin "%s".)",
                 targetURL.get(), targetOrigin.get(), sourceOrigin.get())),
-            "DOM", !!principal->PrivateBrowsingId(),
+            "DOM"_ns, !!principal->PrivateBrowsingId(),
             principal->IsSystemPrincipal());
 
         attrs = principal->OriginAttributesRef();
@@ -7485,8 +7485,7 @@ void nsGlobalWindowOuter::MaybeResetWindowName(Document* aNewDocument) {
     // is the same. But, it won't be the case for non-Fission mode that the
     // first about:blank will be loaded with a null principal and the
     // window.name will be reset when loading the test page.
-    if (mDoc && mDoc->NodePrincipal()->EqualsConsideringDomain(
-                    aNewDocument->NodePrincipal())) {
+    if (mDoc && mDoc->NodePrincipal()->Equals(aNewDocument->NodePrincipal())) {
       return;
     }
 

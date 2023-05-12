@@ -27,6 +27,7 @@
 #include "nsISpeculativeConnect.h"
 #include "nsTHashMap.h"
 #include "nsTHashSet.h"
+
 #ifdef DEBUG
 #  include "nsIOService.h"
 #endif
@@ -35,6 +36,7 @@
 // method implementations to the cpp file
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
+#include "nsSocketTransportService2.h"
 
 class nsIHttpActivityDistributor;
 class nsIHttpUpgradeListener;
@@ -47,8 +49,6 @@ class nsISiteSecurityService;
 class nsIStreamConverterService;
 
 namespace mozilla::net {
-
-bool OnSocketThread();
 
 class ATokenBucketEvent;
 class EventTokenBucket;
@@ -366,6 +366,11 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_TOPIC);
   }
 
+  // Same as OnModifyRequest but before cookie headers are written.
+  void OnModifyRequestBeforeCookies(nsIHttpChannel* chan) {
+    NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_BEFORE_COOKIES_TOPIC);
+  }
+
   void OnModifyDocumentRequest(nsIIdentChannel* chan) {
     NotifyObservers(chan, NS_DOCUMENT_ON_MODIFY_REQUEST_TOPIC);
   }
@@ -520,7 +525,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   friend class SocketProcessChild;
   void SetHttpHandlerInitArgs(const HttpHandlerInitArgs& aArgs);
-  void SetDeviceModelId(const nsCString& aModelId);
+  void SetDeviceModelId(const nsACString& aModelId);
 
   // Checks if there are any user certs or active smart cards on a different
   // thread. Updates mSpeculativeConnectEnabled when done.

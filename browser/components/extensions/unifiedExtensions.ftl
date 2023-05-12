@@ -14,5 +14,22 @@ unified-extensions-manage-extensions =
 
 ## An extension in the main list
 
-unified-extensions-item-open-submenu =
-    .tooltiptext = Open menu for this extension
+# Each extension in the unified extensions panel (list) has a secondary button
+# to open a context menu. This string is used for each of these buttons.
+# Variables:
+#   $extensionName (String) - Name of the extension
+unified-extensions-item-open-menu =
+    .aria-label = Open menu for { $extensionName }
+
+unified-extensions-item-message-manage = Manage extension
+
+## Extension's context menu
+
+unified-extensions-context-menu-manage-extension =
+    .label = Manage extension
+
+unified-extensions-context-menu-remove-extension =
+    .label = Remove extension
+
+unified-extensions-context-menu-report-extension =
+    .label = Report extension

@@ -497,7 +497,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   // Check whether format is supported on a platform (if unclear, returns true).
   // Default implementation checks for "common" formats that we support across
   // all platforms, but individual platform implementations may override.
-  virtual bool IsFontFormatSupported(uint32_t aFormatFlags);
+  virtual bool IsFontFormatSupported(
+      mozilla::StyleFontFaceSourceFormatKeyword aFormatHint,
+      mozilla::StyleFontFaceSourceTechFlags aTechFlags);
 
   virtual bool DidRenderingDeviceReset(
       DeviceResetReason* aResetReason = nullptr) {
@@ -778,9 +780,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
     mOverlayInfo = mozilla::Some(aInfo);
   }
 
-  bool HasVariationFontSupport() const { return mHasVariationFontSupport; }
-
-  bool HasNativeColrFontSupport() const { return mHasNativeColrFontSupport; }
+  static bool HasVariationFontSupport();
 
   // you probably want to use gfxVars::UseWebRender() instead of this
   static bool WebRenderPrefEnabled();
@@ -918,16 +918,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   virtual bool CanUseHardwareVideoDecoding();
 
-  virtual bool CheckVariationFontSupport() = 0;
-
   int8_t mAllowDownloadableFonts;
 
   // Whether the platform supports rendering OpenType font variations
-  bool mHasVariationFontSupport;
-
-  // Whether the platform font APIs have native support for COLR fonts.
-  // Set to true during initialization on platforms that implement this.
-  bool mHasNativeColrFontSupport = false;
+  static std::atomic<int8_t> sHasVariationFontSupport;
 
   // The global vsync dispatcher. Only non-null in the parent process.
   // Its underlying VsyncSource is either mGlobalHardwareVsyncSource

@@ -243,6 +243,8 @@ class nsContextMenu {
     this.inSyntheticDoc = context.inSyntheticDoc;
     this.inAboutDevtoolsToolbox = context.inAboutDevtoolsToolbox;
 
+    this.isSponsoredLink = context.isSponsoredLink;
+
     // Everything after this isn't sent directly from ContextMenu
     if (this.target) {
       this.ownerDoc = this.target.ownerDocument;
@@ -643,7 +645,9 @@ class nsContextMenu {
     // Performing text recognition only works on images, and if the feature is enabled.
     this.showItem(
       "context-imagetext",
-      this.onImage && TEXT_RECOGNITION_ENABLED
+      this.onImage &&
+        Services.appinfo.isTextRecognitionSupported &&
+        TEXT_RECOGNITION_ENABLED
     );
 
     // Send media URL (but not for canvas, since it's a big data: URL)
@@ -752,7 +756,7 @@ class nsContextMenu {
   }
 
   initMiscItems() {
-    // Use "Bookmark This Link" if on a link.
+    // Use "Bookmark Link…" if on a link.
     let bookmarkPage = document.getElementById("context-bookmarkpage");
     this.showItem(
       bookmarkPage,
@@ -934,6 +938,7 @@ class nsContextMenu {
     this.showItem("context-cut", this.onTextInput);
     this.showItem("context-copy", this.isContentSelected || this.onTextInput);
     this.showItem("context-paste", this.onTextInput);
+    this.showItem("context-paste-no-formatting", this.isDesignMode);
     this.showItem("context-delete", this.onTextInput);
     this.showItem(
       "context-selectall",
@@ -1387,9 +1392,31 @@ class nsContextMenu {
     return params;
   }
 
+  _getGlobalHistoryOptions() {
+    if (this.isSponsoredLink) {
+      return {
+        globalHistoryOptions: { triggeringSponsoredURL: this.linkURL },
+      };
+    } else if (this.browser.hasAttribute("triggeringSponsoredURL")) {
+      return {
+        globalHistoryOptions: {
+          triggeringSponsoredURL: this.browser.getAttribute(
+            "triggeringSponsoredURL"
+          ),
+          triggeringSponsoredURLVisitTimeMS: this.browser.getAttribute(
+            "triggeringSponsoredURLVisitTimeMS"
+          ),
+        },
+      };
+    }
+    return {};
+  }
+
   // Open linked-to URL in a new window.
   openLink() {
-    openLinkIn(this.linkURL, "window", this._openLinkInParameters());
+    const params = this._getGlobalHistoryOptions();
+
+    openLinkIn(this.linkURL, "window", this._openLinkInParameters(params));
   }
 
   // Open linked-to URL in a new private window.
@@ -1405,6 +1432,7 @@ class nsContextMenu {
   openLinkInTab(event) {
     let params = {
       userContextId: parseInt(event.target.getAttribute("data-usercontextid")),
+      ...this._getGlobalHistoryOptions(),
     };
 
     openLinkIn(this.linkURL, "tab", this._openLinkInParameters(params));
@@ -2292,7 +2320,18 @@ class nsContextMenu {
   }
 
   getImageText() {
-    this.actor.getImageText(this.targetIdentifier);
+    let dialogBox = gBrowser.getTabDialogBox(this.browser);
+    const imageTextResult = this.actor.getImageText(this.targetIdentifier);
+    const { dialog } = dialogBox.open(
+      "chrome://browser/content/textrecognition/textrecognition.html",
+      {
+        features: "resizable=no",
+        modalType: Services.prompt.MODAL_TYPE_CONTENT,
+      },
+      imageTextResult,
+      () => dialog.resizeVertically(),
+      openLinkIn
+    );
   }
 
   drmLearnMore(aEvent) {

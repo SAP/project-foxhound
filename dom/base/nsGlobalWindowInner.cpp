@@ -345,7 +345,7 @@ using mozilla::dom::cache::CacheStorage;
 
 #define FORWARD_TO_OUTER(method, args, err_rval)                     \
   PR_BEGIN_MACRO                                                     \
-  nsGlobalWindowOuter* outer = GetOuterWindowInternal();             \
+  RefPtr<nsGlobalWindowOuter> outer = GetOuterWindowInternal();      \
   if (!HasActiveDocument()) {                                        \
     NS_WARNING(outer ? "Inner window does not have active document." \
                      : "No outer window available!");                \
@@ -369,18 +369,18 @@ static nsGlobalWindowOuter* GetOuterWindowForForwarding(
   return nullptr;
 }
 
-#define FORWARD_TO_OUTER_OR_THROW(method, args, errorresult, err_rval)         \
-  PR_BEGIN_MACRO                                                               \
-  nsGlobalWindowOuter* outer = GetOuterWindowForForwarding(this, errorresult); \
-  if (MOZ_LIKELY(outer)) {                                                     \
-    return outer->method args;                                                 \
-  }                                                                            \
-  return err_rval;                                                             \
+#define FORWARD_TO_OUTER_OR_THROW(method, args, rv, err_rval)                \
+  PR_BEGIN_MACRO                                                             \
+  RefPtr<nsGlobalWindowOuter> outer = GetOuterWindowForForwarding(this, rv); \
+  if (MOZ_LIKELY(outer)) {                                                   \
+    return outer->method args;                                               \
+  }                                                                          \
+  return err_rval;                                                           \
   PR_END_MACRO
 
 #define FORWARD_TO_OUTER_VOID(method, args)                          \
   PR_BEGIN_MACRO                                                     \
-  nsGlobalWindowOuter* outer = GetOuterWindowInternal();             \
+  RefPtr<nsGlobalWindowOuter> outer = GetOuterWindowInternal();      \
   if (!HasActiveDocument()) {                                        \
     NS_WARNING(outer ? "Inner window does not have active document." \
                      : "No outer window available!");                \
@@ -4803,7 +4803,13 @@ already_AddRefed<nsICSSDeclaration> nsGlobalWindowInner::GetComputedStyleHelper(
 
 Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
   nsIPrincipal* principal = GetPrincipal();
-  nsIPrincipal* storagePrincipal = GetEffectiveStoragePrincipal();
+  nsIPrincipal* storagePrincipal;
+  if (StaticPrefs::
+          privacy_partition_always_partition_third_party_non_cookie_storage_exempt_sessionstorage()) {
+    storagePrincipal = GetEffectiveCookiePrincipal();
+  } else {
+    storagePrincipal = GetEffectiveStoragePrincipal();
+  }
   BrowsingContext* browsingContext = GetBrowsingContext();
 
   if (!principal || !storagePrincipal || !browsingContext ||

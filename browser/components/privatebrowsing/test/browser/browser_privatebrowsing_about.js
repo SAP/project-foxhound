@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
-  const { UrlbarTestUtils: module } = ChromeUtils.import(
-    "resource://testing-common/UrlbarTestUtils.jsm"
+  const { UrlbarTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/UrlbarTestUtils.sys.mjs"
   );
   module.init(this);
   return module;
@@ -50,12 +50,18 @@ add_setup(async function() {
   const originalPrivateDefault = await Services.search.getDefaultPrivate();
   // We have to use a built-in engine as we are currently hard-coding the aliases.
   const privateEngine = await Services.search.getEngineByName("DuckDuckGo");
-  await Services.search.setDefaultPrivate(privateEngine);
+  await Services.search.setDefaultPrivate(
+    privateEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
   expectedEngineAlias = privateEngine.aliases[0];
   expectedIconURL = privateEngine.iconURI.spec;
 
   registerCleanupFunction(async () => {
-    await Services.search.setDefaultPrivate(originalPrivateDefault);
+    await Services.search.setDefaultPrivate(
+      originalPrivateDefault,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   });
 });
 

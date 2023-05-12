@@ -658,6 +658,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // These functions return accumulated time, which are used for the telemetry
   // usage. Return -1 for error.
   double TotalVideoPlayTime() const;
+  double TotalVideoHDRPlayTime() const;
   double VisiblePlayTime() const;
   double InvisiblePlayTime() const;
   double VideoDecodeSuspendedTime() const;
@@ -790,16 +791,17 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   AbstractThread* AbstractMainThread() const final;
 
-  // Telemetry: to record the usage of a {visible / invisible} video element as
+  // Log the usage of a {visible / invisible} video element as
   // the source of {drawImage(), createPattern(), createImageBitmap() and
-  // captureStream()} APIs.
+  // captureStream()} APIs. This function can be used to collect telemetries for
+  // bug 1352007.
   enum class CallerAPI {
     DRAW_IMAGE,
     CREATE_PATTERN,
     CREATE_IMAGEBITMAP,
     CAPTURE_STREAM,
   };
-  void MarkAsContentSource(CallerAPI aAPI);
+  void LogVisibility(CallerAPI aAPI);
 
   Document* GetDocument() const override;
 

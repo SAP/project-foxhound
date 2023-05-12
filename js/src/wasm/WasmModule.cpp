@@ -20,7 +20,8 @@
 
 #include <chrono>
 
-#include "js/BuildId.h"                 // JS::BuildIdCharVector
+#include "jit/FlushICache.h"  // for FlushExecutionContextForAllThreads
+#include "js/BuildId.h"       // JS::BuildIdCharVector
 #include "js/experimental/TypedData.h"  // JS_NewUint8Array
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/Printf.h"                  // JS_smprintf
@@ -208,9 +209,18 @@ bool Module::finishTier2(const LinkData& linkData2,
     }
 
     Maybe<size_t> stub2Index;
-    if (!stubs2->createTier2(funcExportIndices, *borrowedTier2, &stub2Index)) {
+    if (!stubs2->createTier2(funcExportIndices, metadata(), *borrowedTier2,
+                             &stub2Index)) {
       return false;
     }
+
+    // Initializing the code above will have flushed the icache for all cores.
+    // However, there could still be stale data in the execution pipeline of
+    // other cores on some platforms. Force an execution context flush on all
+    // threads to fix this before we commit the code.
+    //
+    // This is safe due to the check in `PlatformCanTier` in WasmCompile.cpp
+    jit::FlushExecutionContextForAllThreads();
 
     // Now that we can't fail or otherwise abort tier2, make it live.
 
@@ -538,10 +548,12 @@ bool Module::instantiateFunctions(JSContext* cx,
     Instance& instance = ExportedFunctionToInstance(f);
     Tier otherTier = instance.code().stableTier();
 
-    const FuncExport& funcExport =
-        instance.metadata(otherTier).lookupFuncExport(funcIndex);
+    const FuncType& exportFuncType = instance.metadata().getFuncExportType(
+        instance.metadata(otherTier).lookupFuncExport(funcIndex));
+    const FuncType& importFuncType =
+        metadata().getFuncImportType(metadata(tier).funcImports[i]);
 
-    if (funcExport.funcType() != metadata(tier).funcImports[i].funcType()) {
+    if (exportFuncType != importFuncType) {
       const Import& import = FindImportFunction(imports_, i);
       UniqueChars importModuleName = import.module.toQuotedString(cx);
       UniqueChars importFieldName = import.field.toQuotedString(cx);

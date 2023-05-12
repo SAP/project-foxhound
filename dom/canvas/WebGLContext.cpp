@@ -106,22 +106,6 @@ WebGLContextOptions::WebGLContextOptions() {
   antialias = StaticPrefs::webgl_default_antialias();
 }
 
-bool WebGLContextOptions::operator==(const WebGLContextOptions& r) const {
-  bool eq = true;
-  eq &= (alpha == r.alpha);
-  eq &= (depth == r.depth);
-  eq &= (stencil == r.stencil);
-  eq &= (premultipliedAlpha == r.premultipliedAlpha);
-  eq &= (antialias == r.antialias);
-  eq &= (preserveDrawingBuffer == r.preserveDrawingBuffer);
-  eq &= (failIfMajorPerformanceCaveat == r.failIfMajorPerformanceCaveat);
-  eq &= (xrCompatible == r.xrCompatible);
-  eq &= (powerPreference == r.powerPreference);
-  eq &= (colorSpace == r.colorSpace);
-  eq &= (ignoreColorSpace == r.ignoreColorSpace);
-  return eq;
-}
-
 StaticMutex WebGLContext::sLruMutex;
 std::list<WebGLContext*> WebGLContext::sLru;
 
@@ -135,16 +119,12 @@ WebGLContext::LruPosition::LruPosition(WebGLContext& context) {
   mItr = sLru.insert(sLru.end(), &context);
 }
 
-void WebGLContext::LruPosition::AssignLocked(
-    WebGLContext& aContext, const StaticMutexAutoLock& aProofOfLock) {
-  sLruMutex.AssertCurrentThreadOwns();
-  ResetLocked(aProofOfLock);
+void WebGLContext::LruPosition::AssignLocked(WebGLContext& aContext) {
+  ResetLocked();
   mItr = sLru.insert(sLru.end(), &aContext);
 }
 
-void WebGLContext::LruPosition::ResetLocked(
-    const StaticMutexAutoLock& aProofOfLock) {
-  sLruMutex.AssertCurrentThreadOwns();
+void WebGLContext::LruPosition::ResetLocked() {
   const auto end = sLru.end();
   if (mItr != end) {
     sLru.erase(mItr);
@@ -154,7 +134,11 @@ void WebGLContext::LruPosition::ResetLocked(
 
 void WebGLContext::LruPosition::Reset() {
   StaticMutexAutoLock lock(sLruMutex);
-  ResetLocked(lock);
+  ResetLocked();
+}
+
+bool WebGLContext::LruPosition::IsInsertedLocked() const {
+  return mItr != sLru.end();
 }
 
 WebGLContext::WebGLContext(HostWebGLContext& host,
@@ -164,6 +148,7 @@ WebGLContext::WebGLContext(HostWebGLContext& host,
       mResistFingerprinting(desc.resistFingerprinting),
       mOptions(desc.options),
       mPrincipalKey(desc.principalKey),
+      mPendingContextLoss(false),
       mMaxPerfWarnings(StaticPrefs::webgl_perf_max_warnings()),
       mMaxAcceptableFBStatusInvals(
           StaticPrefs::webgl_perf_max_acceptable_fb_status_invals()),
@@ -707,14 +692,17 @@ void WebGLContext::SetCompositableHost(
   mCompositableHost = aCompositableHost;
 }
 
-void WebGLContext::BumpLruLocked(const StaticMutexAutoLock& aProofOfLock) {
-  sLruMutex.AssertCurrentThreadOwns();
-  mLruPosition.AssignLocked(*this, aProofOfLock);
+void WebGLContext::BumpLruLocked() {
+  if (!mIsContextLost && !mPendingContextLoss) {
+    mLruPosition.AssignLocked(*this);
+  } else {
+    MOZ_ASSERT(!mLruPosition.IsInsertedLocked());
+  }
 }
 
 void WebGLContext::BumpLru() {
   StaticMutexAutoLock lock(sLruMutex);
-  BumpLruLocked(lock);
+  BumpLruLocked();
 }
 
 void WebGLContext::LoseLruContextIfLimitExceeded() {
@@ -727,7 +715,7 @@ void WebGLContext::LoseLruContextIfLimitExceeded() {
   // it's important to update the index on a new context before losing old
   // contexts, otherwise new unused contexts would all have index 0 and we
   // couldn't distinguish older ones when choosing which one to lose first.
-  BumpLruLocked(lock);
+  BumpLruLocked();
 
   {
     size_t forPrincipal = 0;
@@ -747,7 +735,7 @@ void WebGLContext::LoseLruContextIfLimitExceeded() {
       for (const auto& context : sLru) {
         if (context->mPrincipalKey == mPrincipalKey) {
           MOZ_ASSERT(context != this);
-          context->LoseContextLruLocked(webgl::ContextLossReason::None, lock);
+          context->LoseContextLruLocked(webgl::ContextLossReason::None);
           forPrincipal -= 1;
           break;
         }
@@ -765,7 +753,7 @@ void WebGLContext::LoseLruContextIfLimitExceeded() {
 
     const auto& context = sLru.front();
     MOZ_ASSERT(context != this);
-    context->LoseContextLruLocked(webgl::ContextLossReason::None, lock);
+    context->LoseContextLruLocked(webgl::ContextLossReason::None);
     total -= 1;
   }
 }
@@ -1159,18 +1147,16 @@ bool WebGLContext::PushRemoteTexture(WebGLFramebuffer* fb,
       return onFailure();
     }
 
-    const auto stride = CheckedInt<size_t>(mappedData.size.width) * 4;
-    const auto byteSize = stride * mappedData.size.height;
-    MOZ_RELEASE_ASSERT(byteSize.isValid());
-    MOZ_RELEASE_ASSERT(mappedData.stride ==
-                       static_cast<int64_t>(stride.value()));
-    Range<uint8_t> range = {mappedData.data, byteSize.value()};
+    Range<uint8_t> range = {mappedData.data,
+                            data->AsBufferTextureData()->GetBufferSize()};
 
     // If we have a surface representing the front buffer, then try to snapshot
     // that. Otherwise, when there is no surface, we read back directly from the
     // WebGL framebuffer.
-    auto valid = surf ? FrontBufferSnapshotInto(surf, Some(range))
-                      : SnapshotInto(fb->mGLName, size, range);
+    auto valid =
+        surf ? FrontBufferSnapshotInto(surf, Some(range),
+                                       Some(mappedData.stride))
+             : SnapshotInto(fb->mGLName, size, range, Some(mappedData.stride));
     if (!valid) {
       return onFailure();
     }
@@ -1242,15 +1228,15 @@ Maybe<layers::SurfaceDescriptor> WebGLContext::GetFrontBuffer(
 }
 
 Maybe<uvec2> WebGLContext::FrontBufferSnapshotInto(
-    const Maybe<Range<uint8_t>> maybeDest) {
+    const Maybe<Range<uint8_t>> maybeDest, const Maybe<size_t> destStride) {
   const auto& front = mSwapChain.FrontBuffer();
   if (!front) return {};
-  return FrontBufferSnapshotInto(front, maybeDest);
+  return FrontBufferSnapshotInto(front, maybeDest, destStride);
 }
 
 Maybe<uvec2> WebGLContext::FrontBufferSnapshotInto(
     const std::shared_ptr<gl::SharedSurface>& front,
-    const Maybe<Range<uint8_t>> maybeDest) {
+    const Maybe<Range<uint8_t>> maybeDest, const Maybe<size_t> destStride) {
   const auto& size = front->mDesc.size;
   if (!maybeDest) return Some(*uvec2::FromSize(size));
 
@@ -1266,14 +1252,29 @@ Maybe<uvec2> WebGLContext::FrontBufferSnapshotInto(
 
   // -
 
-  return SnapshotInto(front->mFb ? front->mFb->mFB : 0, size, *maybeDest);
+  return SnapshotInto(front->mFb ? front->mFb->mFB : 0, size, *maybeDest,
+                      destStride);
 }
 
 Maybe<uvec2> WebGLContext::SnapshotInto(GLuint srcFb, const gfx::IntSize& size,
-                                        const Range<uint8_t>& dest) {
+                                        const Range<uint8_t>& dest,
+                                        const Maybe<size_t> destStride) {
+  const auto minStride = CheckedInt<size_t>(size.width) * 4;
+  if (!minStride.isValid()) {
+    gfxCriticalError() << "SnapshotInto: invalid stride, width:" << size.width;
+    return {};
+  }
+  size_t stride = destStride.valueOr(minStride.value());
+  if (stride < minStride.value() || (stride % 4) != 0) {
+    gfxCriticalError() << "SnapshotInto: invalid stride, width:" << size.width
+                       << ", stride:" << stride;
+    return {};
+  }
+
   gl->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   if (IsWebGL2()) {
-    gl->fPixelStorei(LOCAL_GL_PACK_ROW_LENGTH, 0);
+    gl->fPixelStorei(LOCAL_GL_PACK_ROW_LENGTH,
+                     stride > minStride.value() ? stride / 4 : 0);
     gl->fPixelStorei(LOCAL_GL_PACK_SKIP_PIXELS, 0);
     gl->fPixelStorei(LOCAL_GL_PACK_SKIP_ROWS, 0);
   }
@@ -1301,21 +1302,36 @@ Maybe<uvec2> WebGLContext::SnapshotInto(GLuint srcFb, const gfx::IntSize& size,
 
   // -
 
-  const auto stride = CheckedInt<size_t>(size.width) * 4;
-  const auto srcByteCount = stride * size.height;
+  const auto srcByteCount = CheckedInt<size_t>(stride) * size.height;
   if (!srcByteCount.isValid()) {
     gfxCriticalError() << "SnapshotInto: invalid srcByteCount, width:"
                        << size.width << ", height:" << size.height;
     return {};
   }
   const auto dstByteCount = dest.length();
-  if (srcByteCount.value() != dstByteCount) {
+  if (srcByteCount.value() > dstByteCount) {
     gfxCriticalError() << "SnapshotInto: srcByteCount:" << srcByteCount.value()
-                       << " != dstByteCount:" << dstByteCount;
+                       << " > dstByteCount:" << dstByteCount;
     return {};
   }
+  uint8_t* dstPtr = dest.begin().get();
   gl->fReadPixels(0, 0, size.width, size.height, LOCAL_GL_RGBA,
-                  LOCAL_GL_UNSIGNED_BYTE, dest.begin().get());
+                  LOCAL_GL_UNSIGNED_BYTE, dstPtr);
+
+  if (!IsWebGL2() && stride > minStride.value() && size.height > 1) {
+    // WebGL 1 doesn't support PACK_ROW_LENGTH. Instead, we read the data tight
+    // into the front of the buffer, and use memmove (since the source and dest
+    // may overlap) starting from the back to move it to the correct stride
+    // offsets. We don't move the first row as it is already in the right place.
+    uint8_t* destRow = dstPtr + stride * (size.height - 1);
+    const uint8_t* srcRow = dstPtr + minStride.value() * (size.height - 1);
+    while (destRow > dstPtr) {
+      memmove(destRow, srcRow, minStride.value());
+      destRow -= stride;
+      srcRow -= minStride.value();
+    }
+  }
+
   return Some(*uvec2::FromSize(size));
 }
 
@@ -1423,20 +1439,23 @@ void WebGLContext::CheckForContextLoss() {
   LoseContext(reason);
 }
 
-void WebGLContext::LoseContextLruLocked(
-    const webgl::ContextLossReason reason,
-    const StaticMutexAutoLock& aProofOfLock) {
+void WebGLContext::HandlePendingContextLoss() {
+  mIsContextLost = true;
+  mHost->OnContextLoss(mPendingContextLossReason);
+}
+
+void WebGLContext::LoseContextLruLocked(const webgl::ContextLossReason reason) {
   printf_stderr("WebGL(%p)::LoseContext(%u)\n", this,
                 static_cast<uint32_t>(reason));
-  sLruMutex.AssertCurrentThreadOwns();
-  mIsContextLost = true;
-  mLruPosition.ResetLocked(aProofOfLock);
-  mHost->OnContextLoss(reason);
+  mLruPosition.ResetLocked();
+  mPendingContextLossReason = reason;
+  mPendingContextLoss = true;
 }
 
 void WebGLContext::LoseContext(const webgl::ContextLossReason reason) {
   StaticMutexAutoLock lock(sLruMutex);
-  LoseContextLruLocked(reason, lock);
+  LoseContextLruLocked(reason);
+  HandlePendingContextLoss();
 }
 
 void WebGLContext::DidRefresh() {

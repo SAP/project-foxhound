@@ -171,8 +171,13 @@ In this document, we try to list these all tools.
      -
      - :ref:`Codespell`
      - https://github.com/codespell-project/codespell
+   * - Fluent Lint
+     - No
+     -
+     - :ref:`Fluent Lint`
+     -
    * - YAML linter
+     - No
      -
-     -
-     -
+     - :ref:`yamllint`
      - https://github.com/adrienverge/yamllint

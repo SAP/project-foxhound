@@ -6,46 +6,6 @@ from .. import any_stack_trace
 
 
 @pytest.mark.asyncio
-async def test_exception(bidi_session, top_context):
-    with pytest.raises(ScriptEvaluateResultException) as exception:
-        await bidi_session.script.call_function(
-            function_declaration='()=>{throw 1}',
-            await_promise=False,
-            target=ContextTarget(top_context["context"]))
-
-    recursive_compare({
-        'realm': any_string,
-        'exceptionDetails': {
-            'columnNumber': any_int,
-            'exception': {
-                'value': 1,
-                'type': 'number'},
-            'lineNumber': any_int,
-            'stackTrace': any_stack_trace,
-            'text': any_string}},
-        exception.value.result)
-
-
-@pytest.mark.asyncio
-async def test_invalid_function(bidi_session, top_context):
-    with pytest.raises(ScriptEvaluateResultException) as exception:
-        await bidi_session.script.call_function(
-            function_declaration='))) !!@@## some invalid JS script (((',
-            await_promise=False,
-            target=ContextTarget(top_context["context"]))
-    recursive_compare({
-        'realm': any_string,
-        'exceptionDetails': {
-            'columnNumber': any_int,
-            'exception': {
-                'type': 'error'},
-            'lineNumber': any_int,
-            'stackTrace': any_stack_trace,
-            'text': any_string}},
-        exception.value.result)
-
-
-@pytest.mark.asyncio
 async def test_arrow_function(bidi_session, top_context):
     result = await bidi_session.script.call_function(
         function_declaration="()=>{return 1+2;}",
@@ -147,39 +107,3 @@ async def test_remote_value_argument(bidi_session, top_context):
     assert result == {
         "type": "string",
         "value": "SOME_VALUE"}
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("await_promise", [True, False])
-async def test_async_arrow_await_promise(bidi_session, top_context, await_promise):
-    result = await bidi_session.script.call_function(
-        function_declaration="async ()=>{return 'SOME_VALUE'}",
-        await_promise=await_promise,
-        target=ContextTarget(top_context["context"]))
-
-    if await_promise:
-        assert result == {
-            "type": "string",
-            "value": "SOME_VALUE"}
-    else:
-        recursive_compare({
-            "type": "promise"},
-            result)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("await_promise", [True, False])
-async def test_async_classic_await_promise(bidi_session, top_context, await_promise):
-    result = await bidi_session.script.call_function(
-        function_declaration="async function(){return 'SOME_VALUE'}",
-        await_promise=await_promise,
-        target=ContextTarget(top_context["context"]))
-
-    if await_promise:
-        assert result == {
-            "type": "string",
-            "value": "SOME_VALUE"}
-    else:
-        recursive_compare({
-            "type": "promise"},
-            result)

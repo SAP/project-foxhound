@@ -883,11 +883,11 @@ mozilla::ipc::IPCResult BrowserParent::RecvEvent(const RemoteDOMEvent& aEvent) {
   return IPC_OK();
 }
 
-bool BrowserParent::SendLoadRemoteScript(const nsString& aURL,
+bool BrowserParent::SendLoadRemoteScript(const nsAString& aURL,
                                          const bool& aRunInGlobalScope) {
   if (mCreatingWindow) {
     mDelayedFrameScripts.AppendElement(
-        FrameScriptInfo(aURL, aRunInGlobalScope));
+        FrameScriptInfo(nsString(aURL), aRunInGlobalScope));
     return true;
   }
 
@@ -3120,6 +3120,18 @@ mozilla::ipc::IPCResult BrowserParent::RecvIntrinsicSizeOrRatioChanged(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BrowserParent::RecvImageLoadComplete(
+    const nsresult& aResult) {
+  BrowserBridgeParent* bridge = GetBrowserBridgeParent();
+  if (!bridge || !bridge->CanSend()) {
+    return IPC_OK();
+  }
+
+  Unused << bridge->SendImageLoadComplete(aResult);
+
+  return IPC_OK();
+}
+
 bool BrowserParent::HandleQueryContentEvent(WidgetQueryContentEvent& aEvent) {
   nsCOMPtr<nsIWidget> textInputHandlingWidget = GetTextInputHandlingWidget();
   if (!textInputHandlingWidget) {
@@ -3799,8 +3811,9 @@ mozilla::ipc::IPCResult BrowserParent::RecvInvokeDragSession(
     const MaybeDiscarded<WindowContext>& aSourceWindowContext) {
   PresShell* presShell = mFrameElement->OwnerDoc()->GetPresShell();
   if (!presShell) {
-    Unused << Manager()->SendEndDragSession(true, true, LayoutDeviceIntPoint(),
-                                            0);
+    Unused << Manager()->SendEndDragSession(
+        true, true, LayoutDeviceIntPoint(), 0,
+        nsIDragService::DRAGDROP_ACTION_NONE);
     // Continue sending input events with input priority when stopping the dnd
     // session.
     Manager()->SetInputPriorityEventEnabled(true);
@@ -3894,9 +3907,9 @@ mozilla::ipc::IPCResult BrowserParent::RecvShowCanvasPermissionPrompt(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(nsIURI* aURI,
-                                                    nsIURI* aLastVisitedURI,
-                                                    const uint32_t& aFlags) {
+mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(
+    nsIURI* aURI, nsIURI* aLastVisitedURI, const uint32_t& aFlags,
+    const uint64_t& aBrowserId) {
   if (!aURI) {
     return IPC_FAIL_NO_REASON(this);
   }
@@ -3906,7 +3919,8 @@ mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(nsIURI* aURI,
   }
   nsCOMPtr<IHistory> history = components::History::Service();
   if (history) {
-    Unused << history->VisitURI(widget, aURI, aLastVisitedURI, aFlags);
+    Unused << history->VisitURI(widget, aURI, aLastVisitedURI, aFlags,
+                                aBrowserId);
   }
   return IPC_OK();
 }
@@ -4010,6 +4024,9 @@ mozilla::ipc::IPCResult BrowserParent::RecvIsWindowSupportingProtectedMedia(
       FxRWindowManager::GetInstance()->IsFxRWindow(aOuterWindowID);
   aResolve(!isFxrWindow);
 #else
+#  ifdef FUZZING_SNAPSHOT
+  return IPC_FAIL(this, "Should only be called on Windows");
+#  endif
   MOZ_CRASH("Should only be called on Windows");
 #endif
 

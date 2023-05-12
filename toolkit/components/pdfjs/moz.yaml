@@ -20,8 +20,8 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: bf000687313b08924186f9f35a604f8cce27bd1d (2022-07-13T16:44:23Z).
-  revision: bf000687313b08924186f9f35a604f8cce27bd1d
+  release: 518115fddc6db2c28752b8e9369c79377f521592 (2022-08-15T17:33:41Z).
+  revision: 518115fddc6db2c28752b8e9369c79377f521592
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -45,6 +45,7 @@ vendoring:
     - action: run-script
       script: 'update.sh'
       cwd: '{yaml_dir}'
+      args: ['{revision}']
 
 updatebot:
     maintainer-phab: "pdfjs-reviewers"

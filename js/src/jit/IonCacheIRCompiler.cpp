@@ -42,11 +42,11 @@ namespace js {
 namespace jit {
 
 // IonCacheIRCompiler compiles CacheIR to IonIC native code.
-IonCacheIRCompiler::IonCacheIRCompiler(JSContext* cx,
+IonCacheIRCompiler::IonCacheIRCompiler(JSContext* cx, TempAllocator& alloc,
                                        const CacheIRWriter& writer, IonIC* ic,
                                        IonScript* ionScript,
                                        uint32_t stubDataOffset)
-    : CacheIRCompiler(cx, writer, stubDataOffset, Mode::Ion,
+    : CacheIRCompiler(cx, alloc, writer, stubDataOffset, Mode::Ion,
                       StubFieldPolicy::Constant),
       writer_(writer),
       ic_(ic),
@@ -1364,7 +1364,8 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
   Register str = allocator.useRegister(masm, strId);
   Register index = allocator.useRegister(masm, indexId);
   AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
-  AutoScratchRegister scratch2(allocator, masm);
+  AutoScratchRegisterMaybeOutputType scratch2(allocator, masm, output);
+  AutoScratchRegister scratch3(allocator, masm);
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
@@ -1381,7 +1382,8 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
                  ImmPtr(nullptr),
                  failure->label());
 
-  masm.loadStringChar(str, index, scratch1, scratch2, failure->label());
+  masm.loadStringChar(str, index, scratch1, scratch2, scratch3,
+                      failure->label());
 
   // Load StaticString for this char. For larger code units perform a VM call.
   Label vmCall;
@@ -1405,6 +1407,7 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
                                  liveVolatileFloatRegs());
     volatileRegs.takeUnchecked(scratch1);
     volatileRegs.takeUnchecked(scratch2);
+    volatileRegs.takeUnchecked(scratch3);
     volatileRegs.takeUnchecked(output);
     masm.PushRegsInMask(volatileRegs);
 
@@ -1660,7 +1663,7 @@ bool IonCacheIRCompiler::emitCallAddOrUpdateSparseElementHelper(
   masm.Push(id);
   masm.Push(obj);
 
-  using Fn = bool (*)(JSContext * cx, Handle<ArrayObject*> obj, int32_t int_id,
+  using Fn = bool (*)(JSContext * cx, Handle<NativeObject*> obj, int32_t int_id,
                       HandleValue v, bool strict);
   callVM<Fn, AddOrUpdateSparseElementHelper>(masm);
   return true;
@@ -1886,8 +1889,10 @@ void IonIC::attachCacheIRStub(JSContext* cx, const CacheIRWriter& writer,
       new (newStubMem) IonICStub(fallbackAddr(ionScript), stubInfo);
   writer.copyStubData(newStub->stubDataStart());
 
-  JitContext jctx(cx, nullptr);
-  IonCacheIRCompiler compiler(cx, writer, this, ionScript, stubDataOffset);
+  TempAllocator temp(&cx->tempLifoAlloc());
+  JitContext jctx(cx);
+  IonCacheIRCompiler compiler(cx, temp, writer, this, ionScript,
+                              stubDataOffset);
   if (!compiler.init()) {
     return;
   }

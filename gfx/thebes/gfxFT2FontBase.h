@@ -36,7 +36,7 @@ class gfxFT2FontEntryBase : public gfxFontEntry {
     uint32_t mGlyphIndex;
   };
 
-  mozilla::UniquePtr<CmapCacheSlot[]> mCmapCache GUARDED_BY(mLock);
+  mozilla::UniquePtr<CmapCacheSlot[]> mCmapCache MOZ_GUARDED_BY(mLock);
 };
 
 class gfxFT2FontBase : public gfxFont {
@@ -45,7 +45,6 @@ class gfxFT2FontBase : public gfxFont {
       const RefPtr<mozilla::gfx::UnscaledFontFreeType>& aUnscaledFont,
       RefPtr<mozilla::gfx::SharedFTFace>&& aFTFace, gfxFontEntry* aFontEntry,
       const gfxFontStyle* aFontStyle, int aLoadFlags, bool aEmbolden);
-  virtual ~gfxFT2FontBase();
 
   uint32_t GetGlyph(uint32_t aCharCode) {
     auto* entry = static_cast<gfxFT2FontEntryBase*>(mFontEntry.get());
@@ -85,6 +84,7 @@ class gfxFT2FontBase : public gfxFont {
                          mozilla::gfx::IntRect* aBounds = nullptr) const;
 
  protected:
+  ~gfxFT2FontBase() override;
   void InitMetrics();
   const Metrics& GetHorizontalMetrics() const override { return mMetrics; }
   FT_Vector GetEmboldenStrength(FT_Face aFace) const;
@@ -147,7 +147,7 @@ class gfxFT2FontBase : public gfxFont {
       uint16_t aGID, mozilla::gfx::IntRect* aBounds = nullptr) const;
 
   mutable mozilla::UniquePtr<nsTHashMap<nsUint32HashKey, GlyphMetrics>>
-      mGlyphMetrics GUARDED_BY(mLock);
+      mGlyphMetrics MOZ_GUARDED_BY(mLock);
 };
 
 // Helper classes used for clearing out user font data when FT font

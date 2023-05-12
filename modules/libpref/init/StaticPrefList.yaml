@@ -45,10 +45,11 @@
 #   and JS code).
 #
 # - `type` is one of `bool`, `int32_t`, `uint32_t`, `float`, an atomic version
-#   of one of those, or `String`. Note that float prefs are stored internally
-#   as strings. The C++ preprocessor doesn't like template syntax in a macro
-#   argument, so use the typedefs defined in StaticPrefsBase.h; for example,
-#   use `RelaxedAtomicBool` instead of `Atomic<bool, Relaxed>`.
+#   of one of those, `String` or `DataMutexString`. Note that float prefs are
+#   stored internally as strings. The C++ preprocessor doesn't like template
+#   syntax in a macro argument, so use the typedefs defined in
+#   StaticPrefsBase.h; for example, use `RelaxedAtomicBool` instead of
+#   `Atomic<bool, Relaxed>`.
 #
 # - `value` is the default value. Its type should be appropriate for
 #   <cpp-type>, otherwise the generated code will fail to compile. A complex
@@ -321,6 +322,16 @@
   value: true
   mirror: always
 
+- name: apz.max_zoom
+  type: AtomicFloat
+  value: 10.0f
+  mirror: always
+
+- name: apz.min_zoom
+  type: AtomicFloat
+  value: 0.25f
+  mirror: always
+
 - name: apz.allow_zooming_out
   type: RelaxedAtomicBool
   value: false
@@ -348,11 +359,7 @@
 
 - name: apz.axis_lock.breakout_angle
   type: AtomicFloat
-#if defined(XP_MACOSX) && defined(NIGHTLY_BUILD)
-  value: float(M_PI / 4.0)    # 45 degrees
-#else
   value: float(M_PI / 8.0)    # 22.5 degrees
-#endif
   mirror: always
   include: <cmath>
 
@@ -369,21 +376,25 @@
 
 - name: apz.axis_lock.lock_angle
   type: AtomicFloat
-#if defined(XP_MACOSX) && defined(NIGHTLY_BUILD)
-  value: float(M_PI / 4.0)    # 45 degrees
-#else
   value: float(M_PI / 6.0)    # 30 degrees
-#endif
   mirror: always
   include: <cmath>
 
-# Whether to lock touch scrolling to one axis at a time.
+# Whether to lock touch scrolling to one axis at a time. When a new
+# axis lock mode is added, the APZCAxisLockCompatTester GTest shoud
+# be updated to include the lock mode value.
 # 0 = FREE (No locking at all)
 # 1 = STANDARD (Once locked, remain locked until scrolling ends)
 # 2 = STICKY (Allow lock to be broken, with hysteresis)
+# 3 = DOMINANT_AXIS (Only allow movement on one axis at a time, only
+#     applies to touchpad scrolling)
 - name: apz.axis_lock.mode
   type: RelaxedAtomicInt32
+#if defined(XP_MACOSX)
+  value: 3
+#else
   value: 2
+#endif
   mirror: always
 
 - name: apz.content_response_timeout
@@ -541,7 +552,12 @@
     value: true
     mirror: always
 
-# Mode to use when receiving kinetic scroll input.
+-   name: apz.gtk.pangesture.enabled
+    type: RelaxedAtomicBool
+    value: true
+    mirror: always
+
+# Mode to use when receiving pan gesture input.
 #
 #  * 0: Auto mode (uses the default behavior, subject to change).
 #  * 1: Page mode: Uses gtk deltas as a percentage of the page size to scroll. This mode matches:
@@ -552,17 +568,17 @@
 #
 #    https://webkit-search.igalia.com/webkit/rev/215039ef09d6bfd6e088175bfe30788d95b9705d/Source/WebKit/Shared/gtk/WebEventFactory.cpp#265-296
 #    (multiplied then by pixelsPerLineStep which in GNOME-web is 40).
--   name: apz.gtk.kinetic_scroll.delta_mode
+-   name: apz.gtk.pangesture.delta_mode
     type: uint32_t
     value: 0
     mirror: always
 
--   name: apz.gtk.kinetic_scroll.page_delta_mode_multiplier
+-   name: apz.gtk.pangesture.page_delta_mode_multiplier
     type: float
     value: 1.0f
     mirror: always
 
--   name: apz.gtk.kinetic_scroll.pixel_delta_mode_multiplier
+-   name: apz.gtk.pangesture.pixel_delta_mode_multiplier
     type: float
     value: 40.0f
     mirror: always
@@ -668,12 +684,12 @@
 # Fetch displayport updates early from the message queue.
 - name: apz.pinch_lock.mode
   type: RelaxedAtomicInt32
-  value: 1
+  value: 2
   mirror: always
 
 - name: apz.pinch_lock.scroll_lock_threshold
   type: AtomicFloat
-  value: 1.0f / 32.0f   # 1/32 inches
+  value: 1.0f / 16.0f   # 1/16 inches
   mirror: always
 
 - name: apz.pinch_lock.span_breakout_threshold
@@ -688,7 +704,7 @@
 
 - name: apz.pinch_lock.buffer_max_age
   type: int32_t
-  value: 50   # milliseconds
+  value: 80   # milliseconds
   mirror: once
 
 - name: apz.popups.enabled
@@ -1370,6 +1386,12 @@
   value: 5000
   mirror: always
 
+# Number of seconds till the sponsored session is timeout.
+- name: browser.places.sponsoredSession.timeoutSecs
+  type: RelaxedAtomicUint32
+  value: 3600
+  mirror: always
+
 # Force usage of in-memory (rather than file on disk) media cache for video streaming when private browsing
 - name: browser.privatebrowsing.forceMediaMemoryCache
   type: bool
@@ -1461,7 +1483,11 @@
 # Platform collection of data for session store
 - name: browser.sessionstore.platform_collection
   type: bool
-  value: @IS_NOT_ANDROID@
+#if defined(ANDROID) || defined(MOZ_THUNDERBIRD)
+  value: false
+#else
+  value: true
+#endif
   mirror: once
 
 # Platform collection of session storage data for session store
@@ -1482,6 +1508,16 @@
 - name: browser.sessionstore.debug.no_auto_updates
   type: RelaxedAtomicBool
   value: false
+  mirror: always
+
+#
+- name: browser.swipe.navigation-icon-move-distance
+  type: uint32_t
+#ifdef XP_WIN
+  value: 100
+#else
+  value: 0
+#endif
   mirror: always
 
 # Whether we should draw the tabs on top of the titlebar.
@@ -1589,6 +1625,23 @@
   type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
   mirror: always
+
+# When this pref is enabled, <object> and <embed> elements will create
+# synthetic documents when the resource type they're loading is an image.
+- name: browser.opaqueResponseBlocking.syntheticBrowsingContext
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: once
+
+# When this pref is enabled, <object> and <embed> elements will filter the
+# browsing contexts created for the synthetic browsing contexts for the
+# synthetic documents when browser.opaqueResponseBlocking.syntheticBrowsingContext
+# is enabled from `Window.frames`, `Window.length` and named targeting.
+- name: browser.opaqueResponseBlocking.syntheticBrowsingContext.filter
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: once
+  do_not_use_directly: true
 
 # When true, zooming will be enabled on all sites, even ones that declare
 # user-scalable=no.
@@ -1819,6 +1872,33 @@
 - name: converter.html2txt.always_include_ruby
   type: bool
   value: false
+  mirror: always
+
+#---------------------------------------------------------------------------
+# Prefs starting with "cookiebanners."
+#---------------------------------------------------------------------------
+
+# Controls the cookie banner handling mode.
+# 0: Disables all cookie banner handling.
+# 1: Reject-all if possible, otherwise do nothing.
+# 2: Reject-all if possible, otherwise accept-all.
+- name: cookiebanners.service.mode
+  type: uint32_t
+  value: 0
+  mirror: always
+
+# Enables the cookie banner cookie injector.
+- name: cookiebanners.cookieInjector.enabled
+  type: bool
+  value: true
+  mirror: always
+
+# By default, how many seconds in the future cookies should expire after they
+# have been injected. Defaults to 12 months. Individual cookie rules may
+# override this.
+- name: cookiebanners.cookieInjector.defaultExpiryRelative
+  type: uint32_t
+  value: 31536000
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -2139,37 +2219,12 @@
 # Enable/disable Gecko specific edit commands
 - name: dom.document.edit_command.contentReadOnly.enabled
   type: bool
-  value: @IS_NOT_NIGHTLY_BUILD@
-  mirror: always
-
-- name: dom.document.edit_command.decreasefontsize.enabled
-  type: bool
-  value: false
-  mirror: always
-
-- name: dom.document.edit_command.gethtml.enabled
-  type: bool
-  value: false
-  mirror: always
-
-- name: dom.document.edit_command.heading.enabled
-  type: bool
-  value: false
-  mirror: always
-
-- name: dom.document.edit_command.increasefontsize.enabled
-  type: bool
-  value: false
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
   mirror: always
 
 - name: dom.document.edit_command.insertBrOnReturn.enabled
   type: bool
-  value: @IS_NOT_NIGHTLY_BUILD@
-  mirror: always
-
-- name: dom.document.edit_command.readonly.enabled
-  type: bool
-  value: false
+  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
   mirror: always
 
 # If set this to true, `Document.execCommand` may be performed nestedly.
@@ -3559,7 +3614,22 @@
   mirror: always
 
 # pref controls `Sanitizer` API being exposed
+# https://wicg.github.io/sanitizer-api/
 - name: dom.security.sanitizer.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# The Sanitizer implementation is currently being rewritten and
+# is known to be incomplete. Fuzzing and testing and this point
+# would be premature.
+- name: dom.security.sanitizer.rewrite_no_bounty
+  type: bool
+  value: false
+  mirror: always
+
+# Logs elements and attributes removed by the Sanitizer API to the console.
+- name: dom.security.sanitizer.logging
   type: bool
   value: false
   mirror: always
@@ -3572,7 +3642,7 @@
 
 - name: dom.select_events.textcontrols.selectstart.enabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: false
   mirror: always
 
 - name: dom.separate_event_queue_for_post_message.enabled
@@ -4517,6 +4587,12 @@
 #endif
   mirror: always
 
+# Controls if a content script will be aborted on child process shutdown.
+- name: dom.abort_script_on_child_shutdown
+  type: bool
+  value: false
+  mirror: always
+
 - name: dom.max_chrome_script_run_time
   type: int32_t
   value: 0
@@ -4671,6 +4747,13 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "extensions."
 #---------------------------------------------------------------------------
+
+# Pref that enforces the use of web_accessible_resources for content loads.
+# This behavior is default for MV3.  The pref controls this for MV2.
+- name: extensions.content_web_accessible.enabled
+  type: bool
+  value: false
+  mirror: always
 
 # Whether the InstallTrigger implementation should be enabled (or hidden and
 # none of its methods available).
@@ -5277,10 +5360,17 @@
   value: 0
   mirror: once
 
+#if defined(XP_MACOSX)
+- name: gfx.cairo_quartz_cg_layer.enabled
+  type: bool
+  value: false
+  mirror: always
+#endif
+
 - name: gfx.canvas.accelerated
   type: RelaxedAtomicBool
-#if defined(XP_LINUX) && !defined(ANDROID) && defined(NIGHTLY_BUILD)
-  value: true
+#if defined(XP_MACOSX) || defined(XP_LINUX) && !defined(ANDROID)
+  value: @IS_NIGHTLY_BUILD@
 #else
   value: false
 #endif
@@ -5417,11 +5507,16 @@
   mirror: always
 
 #ifdef XP_MACOSX
-  # Create specialized video-only layers for video content, and
-  # attempt to isolate video layers in fullscreen windows.
+  # Create specialized video-only layers for video content in
+  # fullscreen windows. Consistently works well on Apple Silicon,
+  # some issues remain on Intel hardware.
 -   name: gfx.core-animation.specialize-video
     type: RelaxedAtomicBool
-    value: @IS_EARLY_BETA_OR_EARLIER@
+#if defined(MOZ_AARCH64)
+    value: true
+#else
+    value: false
+#endif
     mirror: always
 #endif
 
@@ -5606,7 +5701,11 @@
 #if !defined(MOZ_WIDGET_ANDROID)
 - name: gfx.egl.prefer-gles.enabled
   type: bool
+#if defined(MOZ_WIDGET_GTK) && defined(MOZ_AARCH64)
+  value: true
+#else
   value: false
+#endif
   mirror: once
 #endif
 
@@ -5662,6 +5761,11 @@
     mirror: always
 #endif
 
+- name: gfx.font_rendering.colr_v1.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 - name: gfx.font_rendering.opentype_svg.enabled
   type: RelaxedAtomicBool
   value: true
@@ -5678,6 +5782,13 @@
   type: RelaxedAtomicBool
   value: false
   mirror: always
+
+#ifdef MOZ_WIDGET_GTK
+-   name: gfx.font_rendering.fontconfig.max_generic_substitutions
+    type: RelaxedAtomicUint32
+    value: 3
+    mirror: always
+#endif
 
 #if defined(XP_WIN)
 # Whether the DirectWrite bold simulation should be used when a bold font-weight
@@ -5762,7 +5873,7 @@
 # Enable OffscreenCanvas everywhere.
 - name: gfx.offscreencanvas.enabled
   type: RelaxedAtomicBool
-  value: @IS_EARLY_BETA_OR_EARLIER@
+  value: true
   mirror: always
 
 # Enable OffscreenCanvas based on the domain allowlist.
@@ -5773,9 +5884,9 @@
 
 # Domains included in the allowlist.
 - name: gfx.offscreencanvas.domain-allowlist
-  type: String
+  type: DataMutexString
   value: "*.zoom.us,zoom.us"
-  mirror: never
+  mirror: always
 
 - name: gfx.omta.background-color
   type: bool
@@ -6096,7 +6207,7 @@
   # Whether to use a yuv video overlay layers with DirectComposition
 -   name: gfx.webrender.dcomp-video-yuv-overlay-win
     type: bool
-    value: true
+    value: false
     mirror: once
 -   name: gfx.webrender.dcomp-video-vp-scaling-win
     type: bool
@@ -7035,17 +7146,6 @@
     mirror: always
 #endif // defined(ENABLE_WASM_GC)
 
-#if defined(ENABLE_WASM_SIMD_WORMHOLE) && defined(EARLY_BETA_OR_EARLIER)
-  # This is x64-only and it would break unified macOS builds if
-  # it were in all.js.  The feature rides the trains but not the
-  # pref to control it; in late beta and release, it is only
-  # available to privileged content.
--   name: javascript.options.wasm_simd_wormhole
-    type: bool
-    value: false
-    mirror: always
-#endif
-
 #if defined(ENABLE_WASM_SIMD)
 #if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
   # Enables AVX instructions support on X86/X64 platforms.
@@ -7114,6 +7214,13 @@
     mirror: always  # LoadStartupJSPrefs
     do_not_use_directly: true
 #endif  // !defined(JS_CODEGEN_MIPSXX)
+
+# Separate pref to override the values of the Spectre-related prefs above for
+# isolated web content processes, where we don't need these mitigations.
+- name: javascript.options.spectre.disable_for_isolated_content
+  type: bool
+  value: false
+  mirror: always
 
 # Whether to use the XPCOM thread pool for JS helper tasks.
 - name: javascript.options.external_thread_pool
@@ -7536,7 +7643,14 @@
 # Whether trigonometric constants and functions are enabled in calc().
 - name: layout.css.trig.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
+# Whether infinity / nan constants are enabled in calc().
+- name: layout.css.nan-inf.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -7612,15 +7726,8 @@
 # Whether the `animation-composition` in css-animations-2 is enabled.
 - name: layout.css.animation-composition.enabled
   type: bool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
-
-# Whether the `aspect-ratio` in css-sizing-4 is enabled.
-- name: layout.css.aspect-ratio.enabled
-  type: bool
-  value: true
-  mirror: always
-  rust: true
 
 # Is the codepath for using cached scrollbar styles enabled?
 - name: layout.css.cached-scrollbar-styles.enabled
@@ -7657,7 +7764,7 @@
 # Whether we should avoid exposing styles of elements outside the flat tree in getComputedStyle().
 - name: layout.css.computed-style.styles-outside-flat-tree
   type: bool
-  value: @IS_NOT_NIGHTLY_BUILD@
+  value: false
   mirror: always
 
 # Are implicit tracks in computed grid templates serialized?
@@ -7741,7 +7848,7 @@
 
 - name: layout.css.linear-easing-function.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -7763,12 +7870,6 @@
 - name: layout.css.d-property.enabled
   type: bool
   value: true
-  mirror: always
-
-# Are we emulating -moz-{inline}-box layout using CSS flexbox?
-- name: layout.css.emulate-moz-box-with-flex
-  type: bool
-  value: false
   mirror: always
 
 # Is support for fit-content() enabled?
@@ -7794,7 +7895,7 @@
 # Is support for workerGlobalScope.fonts enabled?
 - name: layout.css.font-loading-api.workers.enabled
   type: RelaxedAtomicBool
-  value: @IS_EARLY_BETA_OR_EARLIER@
+  value: true
   mirror: always
 
 # Is support for the @font-face metrics override descriptors enabled?
@@ -7822,6 +7923,13 @@
 - name: layout.css.font-size-adjust.basis.enabled
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+  rust: true
+
+# Is support for the tech() function in the @font-face src descriptor enabled?
+- name: layout.css.font-tech.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -8156,20 +8264,6 @@
   value: true
   mirror: always
 
-- name: layout.css.xul-display-values.content.enabled
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-  rust: true
-
-# Pref to control whether display: -moz-box and display: -moz-inline-box are
-# parsed in content pages.
-- name: layout.css.xul-box-display-values.content.enabled
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-  rust: true
-
 # Whether to block large cursors intersecting UI.
 - name: layout.cursor.block.enabled
   type: bool
@@ -8404,6 +8498,13 @@
   value: true
   mirror: always
 
+# Pref to control whether we emulate all -moz-box with modern flexbox.
+- name: layout.css.moz-box-flexbox-emulation.enabled
+  type: bool
+  value: false
+  mirror: always
+  rust: true
+
 # Pref to control how many consecutive scroll-anchoring adjustments (since the
 # most recent user scroll) we'll average, before we consider whether to
 # automatically turn off scroll anchoring. When we hit this threshold, the
@@ -8591,26 +8692,6 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "mathml."
 #---------------------------------------------------------------------------
-
-# Whether to disable deprecated style attributes background, color, fontfamily,
-# fontsize, fontstyle and fontweight.
-- name: mathml.deprecated_style_attributes.disabled
-  type: bool
-  value: true
-  mirror: always
-
-# Whether to disable deprecated "radical" notation for the menclose element.
-- name: mathml.deprecated_menclose_notation_radical.disabled
-  type: bool
-  value: true
-  mirror: always
-
-# Whether to disable legacy names "small", "normal" and "big" for the
-# mathsize attribute.
-- name: mathml.mathsize_names.disabled
-  type: bool
-  value: true
-  mirror: always
 
 # Whether to disable legacy names "thickmathspace", "mediummathspace",
 # "thickmathspace" etc for length attributes.
@@ -10815,7 +10896,7 @@
 # If true, don't fallback to native DNS upon network errors.
 - name: network.trr.strict_native_fallback
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: false
   mirror: always
 
 # If true, we'll fallback to native if the retry also times out.
@@ -11368,7 +11449,25 @@
   value: false
   mirror: always
 
-#  This is used for a temporary workaround for a web-compat issue. If pref is
+# When true we will dispatch a background task (separate process) to
+# delete the cache folder at shutdown in order to avoid shutdown hangs.
+- name: network.cache.shutdown_purge_in_background_task
+  type: RelaxedAtomicBool
+#if defined(NIGHTLY_BUILD) && defined(XP_WIN)
+  value: true
+#else
+  value: false
+#endif
+  mirror: always
+
+# Number of seconds to wait for the cache folder to be renamed before
+# the background task forcefully exists.
+- name: network.cache.shutdown_purge_folder_wait_seconds
+  type: RelaxedAtomicUint32
+  value: 10
+  mirror: always
+
+# This is used for a temporary workaround for a web-compat issue. If pref is
 # true CORS preflight requests are allowed to send client certificates.
 - name: network.cors_preflight.allow_client_cert
   type: RelaxedAtomicBool
@@ -12035,6 +12134,12 @@
   value: @IS_NIGHTLY_BUILD@
   mirror: always
 
+# Always partition web storage APIs except cookies.
+- name: privacy.partition.always_partition_third_party_non_cookie_storage.exempt_sessionstorage
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 - name: privacy.partition.bloburl_per_agent_cluster
   type: RelaxedAtomicBool
   value: false
@@ -12061,7 +12166,7 @@
 # Partition the service workers unconditionally when dFPI is enabled.
 - name: privacy.partition.serviceWorkers
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Enables / disables the URL query string stripping in normal browsing mode
@@ -12345,6 +12450,18 @@
   value: true
   mirror: always
 
+# The script-src-attr and script-src-elem directive
+- name: security.csp.script-src-attr-elem.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
+# The style-src-attr and style-src-elem directive
+- name: security.csp.style-src-attr-elem.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 # No way to enable on Android, Bug 1552602
 - name: security.webauth.u2f
   type: bool
@@ -12583,7 +12700,7 @@
 # 0 means never GREASE, 100 means always GREASE
 - name: security.tls.ech.grease_probability
   type: RelaxedAtomicUint32
-#ifdef IS_NIGHTLY_BUILD
+#ifdef NIGHTLY_BUILD
   value: 50
 #else
   value: 0
@@ -12807,7 +12924,7 @@
 # reacts to the embedder `color-scheme` in content.
 - name: svg.embedder-prefers-color-scheme.content.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 # Enables the 'context-fill' and 'context-stroke' keywords for particular
@@ -13454,6 +13571,11 @@
   value: true
   mirror: always
 
+- name: webgl.fake-verts.max
+  type: RelaxedAtomicUint32
+  value: 10*1000*1000  # 10M as vec4 is count*4*4 = 160MB
+  mirror: always
+
 - name: webgl.force-enabled
   type: RelaxedAtomicBool
   value: false
@@ -13570,14 +13692,14 @@
   mirror: once
 
 - name: webgl.override-unmasked-renderer
-  type: String
+  type: DataMutexString
   value: ""
-  mirror: never
+  mirror: always
 
 - name: webgl.override-unmasked-vendor
-  type: String
+  type: DataMutexString
   value: ""
-  mirror: never
+  mirror: always
 
 - name: webgl.power-preference-override
   type: RelaxedAtomicInt32
@@ -14022,7 +14144,7 @@
 
 - name: widget.windows.hide_cursor_when_typing
   type: bool
-  value: true
+  value: false
   mirror: always
 
 # Whether to apply logic intended to improve taskbar behavior involving
@@ -14049,7 +14171,7 @@
 # Whether to disable SwipeTracker (e.g. swipe-to-nav).
 - name: widget.disable-swipe-tracker
   type: bool
-#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+#if defined(MOZ_WIDGET_GTK)
   value: @IS_NOT_EARLY_BETA_OR_EARLIER@
 #else
   value: false

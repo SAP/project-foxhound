@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { UrlbarTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlbarTestUtils.jsm"
+const { UrlbarTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/UrlbarTestUtils.sys.mjs"
 );
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
@@ -35,7 +35,8 @@ add_setup(async function() {
     search_url_get_params: "search={searchTerms}",
   });
   await Services.search.setDefault(
-    Services.search.getEngineByName(kSearchEngineID)
+    Services.search.getEngineByName(kSearchEngineID),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
 
   await SearchTestUtils.installSearchExtension({
@@ -44,13 +45,20 @@ add_setup(async function() {
     search_url_get_params: "private={searchTerms}",
   });
   await Services.search.setDefaultPrivate(
-    Services.search.getEngineByName(kPrivateSearchEngineID)
+    Services.search.getEngineByName(kPrivateSearchEngineID),
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
 
   // Remove the fake engines when done.
   registerCleanupFunction(async () => {
-    await Services.search.setDefault(oldCurrentEngine);
-    await Services.search.setDefault(oldPrivateEngine);
+    await Services.search.setDefault(
+      oldCurrentEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
+    await Services.search.setDefaultPrivate(
+      oldPrivateEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
   });
 });
 

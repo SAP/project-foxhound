@@ -49,7 +49,7 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(DataTransfer)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DataTransfer)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DataTransfer)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
@@ -64,7 +64,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DataTransfer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDragTarget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDragImage)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(DataTransfer)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DataTransfer)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DataTransfer)
@@ -1489,29 +1488,6 @@ void DataTransfer::SetMode(DataTransfer::Mode aMode) {
     mMode = Mode::ReadOnly;
   } else {
     mMode = aMode;
-  }
-}
-
-/* static */
-void DataTransfer::IPCDataTransferTextItemsToDataTransfer(
-    const IPCDataTransfer& aIpcDataTransfer, const bool aHidden,
-    DataTransfer& aDataTransfer) {
-  MOZ_ASSERT(XRE_IsContentProcess());
-  MOZ_ASSERT(aDataTransfer.Items()->Length() == 0);
-
-  uint32_t i = 0;
-  for (const IPCDataTransferItem& item : aIpcDataTransfer.items()) {
-    MOZ_ASSERT(item.data().type() == IPCDataTransferData::TnsString);
-    RefPtr<nsVariantCC> variant = new nsVariantCC();
-    nsresult rv = nsContentUtils::IPCTransferableItemToVariant(
-        item, variant, ContentChild::GetSingleton());
-    if (NS_FAILED(rv)) {
-      continue;
-    }
-
-    aDataTransfer.SetDataWithPrincipalFromOtherProcess(
-        NS_ConvertUTF8toUTF16(item.flavor()), variant, i,
-        nsContentUtils::GetSystemPrincipal(), aHidden);
   }
 }
 

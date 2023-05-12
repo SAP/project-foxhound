@@ -389,7 +389,6 @@ class MOZ_RAII AutoConstructionStackEntry final {
 
 }  // namespace
 
-// Only needed for refcounted objects.
 NS_IMPL_CYCLE_COLLECTION_CLASS(CustomElementRegistry)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CustomElementRegistry)

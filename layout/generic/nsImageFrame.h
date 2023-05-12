@@ -102,6 +102,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   void SetupForContentURLRequest();
   bool ShouldShowBrokenImageIcon() const;
 
+  bool IsForElement() const { return mKind == Kind::ImageElement; }
+
   const mozilla::StyleImage* GetImageFromStyle() const;
 
 #ifdef ACCESSIBILITY
@@ -296,6 +298,13 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   /// Always sync decode our image when painting if @aForce is true.
   void SetForceSyncDecoding(bool aForce) { mForceSyncDecoding = aForce; }
 
+  void AssertSyncDecodingHintIsInSync() const
+#ifndef DEBUG
+      {}
+#else
+      ;
+#endif
+
   /**
    * Computes the predicted dest rect that we'll draw into, in app units, based
    * upon the provided frame content box. (The content box is what
@@ -368,6 +377,10 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   void InvalidateSelf(const nsIntRect* aLayerInvalidRect,
                       const nsRect* aFrameInvalidRect);
 
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder();
+  void MaybeSendIntrinsicSizeAndRatioToEmbedder(Maybe<mozilla::IntrinsicSize>,
+                                                Maybe<mozilla::AspectRatio>);
+
   RefPtr<nsImageMap> mImageMap;
 
   RefPtr<nsImageListener> mListener;
@@ -394,6 +407,8 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool mFirstFrameComplete;
   bool mReflowCallbackPosted;
   bool mForceSyncDecoding;
+
+  bool mIsInObjectOrEmbed = false;
 
   /* loading / broken image icon support */
 

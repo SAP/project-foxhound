@@ -16,10 +16,7 @@ const SUGGEST_URLBAR_PREF = "browser.urlbar.suggest.searches";
 
 ChromeUtils.defineESModuleGetters(this, {
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 function searchInAwesomebar(value, win = window) {
@@ -79,12 +76,18 @@ async function withNewSearchEngine(taskFn) {
     getRootDirectory(gTestPath) + "urlbarTelemetrySearchSuggestions.xml"
   );
   let previousEngine = await Services.search.getDefault();
-  await Services.search.setDefault(suggestionEngine);
+  await Services.search.setDefault(
+    suggestionEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   try {
     await taskFn(suggestionEngine);
   } finally {
-    await Services.search.setDefault(previousEngine);
+    await Services.search.setDefault(
+      previousEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
     await Services.search.removeEngine(suggestionEngine);
   }
 }
@@ -102,7 +105,10 @@ add_setup(async function() {
   // Make it the default search engine.
   let engine = Services.search.getEngineByName("MozSearch");
   let originalEngine = await Services.search.getDefault();
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   // And the first one-off engine.
   await Services.search.moveEngine(engine, 0);
@@ -139,7 +145,10 @@ add_setup(async function() {
   // Make sure to restore the engine once we're done.
   registerCleanupFunction(async function() {
     Services.telemetry.canRecordExtended = oldCanRecord;
-    await Services.search.setDefault(originalEngine);
+    await Services.search.setDefault(
+      originalEngine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
     Services.prefs.setBoolPref(SUGGEST_URLBAR_PREF, suggestionsEnabled);
     await PlacesUtils.history.clear();
     await UrlbarTestUtils.formHistory.clear();

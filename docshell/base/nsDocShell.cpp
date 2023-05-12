@@ -390,7 +390,6 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
       mTitleValidForCurrentURI(false),
       mWillChangeProcess(false),
       mIsNavigating(false),
-      mSuspendMediaWhenInactive(false),
       mForcedAutodetection(false),
       mCheckingSessionHistory(false),
       mNeedToReportActiveAfterLoadingBecomesActive(false) {
@@ -4102,6 +4101,7 @@ nsDocShell::Reload(uint32_t aReloadFlags) {
     if (!XRE_IsParentProcess()) {
       RefPtr<nsDocShell> docShell(this);
       nsCOMPtr<nsIContentViewer> cv(mContentViewer);
+      NS_ENSURE_STATE(cv);
 
       bool okToUnload = true;
       MOZ_TRY(cv->PermitUnload(&okToUnload));
@@ -6757,6 +6757,8 @@ nsresult nsDocShell::CreateAboutBlankContentViewer(
       // Copy our sandbox flags to the document. These are immutable
       // after being set here.
       blankDoc->SetSandboxFlags(sandboxFlags);
+
+      blankDoc->InitFeaturePolicy();
 
       // create a content viewer for us and the new document
       docFactory->CreateInstanceForDocument(
@@ -12375,7 +12377,8 @@ void nsDocShell::SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
     }
 
     mozilla::Unused << history->VisitURI(aWidget, aURI, aPreviousURI,
-                                         visitURIFlags);
+                                         visitURIFlags,
+                                         aBrowsingContext->BrowserId());
   }
 }
 

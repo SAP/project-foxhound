@@ -15,6 +15,7 @@
 #include "xpcAccEvents.h"
 #include "nsAccUtils.h"
 #include "TextRange.h"
+#include "RootAccessible.h"
 
 #if defined(XP_WIN)
 #  include "AccessibleWrap.h"
@@ -22,7 +23,6 @@
 #  include "mozilla/mscom/PassthruProxy.h"
 #  include "mozilla/mscom/Ptr.h"
 #  include "nsWinUtils.h"
-#  include "RootAccessible.h"
 #else
 #  include "mozilla/a11y/DocAccessiblePlatformExtParent.h"
 #endif
@@ -233,10 +233,15 @@ void DocAccessibleParent::ShutdownOrPrepareForMove(RemoteAccessible* aAcc) {
   }
   // This is a move. Moves are sent as a hide and then a show, but for a move,
   // we want to keep the Accessible alive for reuse later.
-  aAcc->SetParent(nullptr);
   if (aAcc->IsTable() || aAcc->IsTableCell()) {
+    // For table cells, it's important that we do this before the parent is
+    // cleared because CachedTableAccessible::Invalidate needs the ancestry.
     CachedTableAccessible::Invalidate(aAcc);
   }
+  if (aAcc->IsHyperText()) {
+    aAcc->InvalidateCachedHyperTextOffsets();
+  }
+  aAcc->SetParent(nullptr);
   mMovingIDs.EnsureRemoved(id);
   if (aAcc->IsOuterDoc()) {
     // Leave child documents alone. They are added and removed differently to
@@ -444,7 +449,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCaretMoveEvent(
 }
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvTextChangeEvent(
-    const uint64_t& aID, const nsString& aStr, const int32_t& aStart,
+    const uint64_t& aID, const nsAString& aStr, const int32_t& aStart,
     const uint32_t& aLen, const bool& aIsInsert, const bool& aFromUser) {
   ACQUIRE_ANDROID_LOCK
   if (mShutdown) {
@@ -478,7 +483,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvTextChangeEvent(
 #if defined(XP_WIN)
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvSyncTextChangeEvent(
-    const uint64_t& aID, const nsString& aStr, const int32_t& aStart,
+    const uint64_t& aID, const nsAString& aStr, const int32_t& aStart,
     const uint32_t& aLen, const bool& aIsInsert, const bool& aFromUser) {
   return RecvTextChangeEvent(aID, aStr, aStart, aLen, aIsInsert, aFromUser);
 }
@@ -611,6 +616,20 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCache(
     remote->ApplyCache(aUpdateType, entry.Fields());
   }
 
+  if (aUpdateType == CacheUpdateType::Initial && !aData.IsEmpty()) {
+    RemoteAccessible* target = GetAccessible(aData.ElementAt(0).ID());
+    ProxyShowHideEvent(target, target->RemoteParent(), true, false);
+
+    if (nsCoreUtils::AccEventObserversExist()) {
+      xpcAccessibleGeneric* xpcAcc = GetXPCAccessible(target);
+      xpcAccessibleDocument* doc = GetAccService()->GetXPCDocument(this);
+      nsINode* node = nullptr;
+      RefPtr<xpcAccEvent> event = new xpcAccEvent(
+          nsIAccessibleEvent::EVENT_SHOW, xpcAcc, doc, node, false);
+      nsCoreUtils::DispatchAccEvent(std::move(event));
+    }
+  }
+
   if (nsCOMPtr<nsIObserverService> obsService =
           services::GetObserverService()) {
     obsService->NotifyObservers(nullptr, NS_ACCESSIBLE_CACHE_TOPIC, nullptr);
@@ -664,7 +683,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvAccessiblesWillMove(
 
 #if !defined(XP_WIN)
 mozilla::ipc::IPCResult DocAccessibleParent::RecvAnnouncementEvent(
-    const uint64_t& aID, const nsString& aAnnouncement,
+    const uint64_t& aID, const nsAString& aAnnouncement,
     const uint16_t& aPriority) {
   ACQUIRE_ANDROID_LOCK
   if (mShutdown) {
@@ -788,7 +807,12 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
   // document it self.
   ProxyEntry* e = mAccessibles.GetEntry(aParentID);
   if (!e) {
+#ifndef FUZZING_SNAPSHOT
+    // This diagnostic assert and the one down below expect a well-behaved
+    // child process. In IPC fuzzing, we directly fuzz parameters of each
+    // method over IPDL and the asserts are not valid under these conditions.
     MOZ_DIAGNOSTIC_ASSERT(false, "Binding to nonexistent proxy!");
+#endif
     return IPC_FAIL(this, "binding to nonexistant proxy!");
   }
 
@@ -800,8 +824,10 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
   // here.
   if (!outerDoc->IsOuterDoc() || outerDoc->ChildCount() > 1 ||
       (outerDoc->ChildCount() == 1 && !outerDoc->RemoteChildAt(0)->IsDoc())) {
+#ifndef FUZZING_SNAPSHOT
     MOZ_DIAGNOSTIC_ASSERT(false,
                           "Binding to parent that isn't a valid OuterDoc!");
+#endif
     return IPC_FAIL(this, "Binding to parent that isn't a valid OuterDoc!");
   }
 
@@ -1249,6 +1275,16 @@ void DocAccessibleParent::SelectionRanges(nsTArray<TextRange>* aRanges) const {
   }
 }
 
+Accessible* DocAccessibleParent::FocusedChild() {
+  LocalAccessible* outerDoc = OuterDocOfRemoteBrowser();
+  if (!outerDoc) {
+    return nullptr;
+  }
+
+  RootAccessible* rootDocument = outerDoc->RootAccessible();
+  return rootDocument->FocusedChild();
+}
+
 void DocAccessibleParent::URL(nsAString& aURL) const {
   if (!mBrowsingContext) {
     return;
@@ -1260,6 +1296,32 @@ void DocAccessibleParent::URL(nsAString& aURL) const {
   }
   uri->GetSpec(url);
   CopyUTF8toUTF16(url, aURL);
+}
+
+DocAccessibleParent* DocAccessibleParent::GetFrom(
+    dom::BrowsingContext* aBrowsingContext) {
+  if (!aBrowsingContext) {
+    return nullptr;
+  }
+
+  dom::BrowserParent* bp = aBrowsingContext->Canonical()->GetBrowserParent();
+  if (!bp) {
+    return nullptr;
+  }
+
+  const ManagedContainer<PDocAccessibleParent>& docs =
+      bp->ManagedPDocAccessibleParent();
+  for (auto* key : docs) {
+    // Iterate over our docs until we find one with a browsing
+    // context that matches the one we passed in. Return that
+    // document.
+    auto* doc = static_cast<a11y::DocAccessibleParent*>(key);
+    if (doc->GetBrowsingContext() == aBrowsingContext) {
+      return doc;
+    }
+  }
+
+  return nullptr;
 }
 
 }  // namespace a11y

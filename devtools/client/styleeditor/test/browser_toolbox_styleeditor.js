@@ -23,7 +23,10 @@ Services.scriptloader.loadSubScript(
 );
 
 add_task(async function() {
+  await pushPref("devtools.browsertoolbox.scope", "everything");
+  await pushPref("devtools.styleeditor.transitions", false);
   await addTab(TEST_URI);
+  await pushPref("devtools.browsertoolbox.scope", "everything");
   const ToolboxTask = await initBrowserToolboxTask({
     enableBrowserToolboxFission: true,
   });

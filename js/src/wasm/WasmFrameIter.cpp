@@ -971,6 +971,7 @@ static inline void AssertMatchesCallSite(void* callerPC, uint8_t* callerFP) {
 void ProfilingFrameIterator::initFromExitFP(const Frame* fp) {
   MOZ_ASSERT(fp);
   stackAddress_ = (void*)fp;
+  endStackAddress_ = stackAddress_;
   code_ = LookupCode(fp->returnAddress(), &codeRange_);
 
   if (!code_) {
@@ -1371,6 +1372,7 @@ ProfilingFrameIterator::ProfilingFrameIterator(const JitActivation& activation,
   code_ = unwindState.code;
   codeRange_ = unwindState.codeRange;
   stackAddress_ = state.sp;
+  endStackAddress_ = state.sp;
   MOZ_ASSERT(!done());
 }
 
@@ -1620,8 +1622,6 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native array.new (in wasm)";
     case SymbolicAddress::RefTest:
       return "call to native ref.test (in wasm)";
-    case SymbolicAddress::RttSub:
-      return "call to native rtt.sub (in wasm)";
     case SymbolicAddress::InlineTypedObjectClass:
       MOZ_CRASH();
 #define OP(op, export, sa_name, abitype, entry, idx) \

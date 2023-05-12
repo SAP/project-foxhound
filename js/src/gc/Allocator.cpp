@@ -349,7 +349,8 @@ template <typename T, AllowGC allowGC>
 T* GCRuntime::tryNewTenuredThing(JSContext* cx, AllocKind kind,
                                  size_t thingSize) {
   // Bump allocate in the arena's current free-list span.
-  auto* t = reinterpret_cast<T*>(cx->freeLists().allocate(kind));
+  Zone* zone = cx->zone();
+  auto* t = reinterpret_cast<T*>(zone->arenas.freeLists().allocate(kind));
   if (MOZ_UNLIKELY(!t)) {
     // Get the next available free list and allocate out of it. This may
     // acquire a new arena, which will lock the chunk list. If there are no
@@ -375,7 +376,7 @@ T* GCRuntime::tryNewTenuredThing(JSContext* cx, AllocKind kind,
   // We count this regardless of the profiler's state, assuming that it costs
   // just as much to count it, as to check the profiler's state and decide not
   // to count it.
-  cx->noteTenuredAlloc();
+  zone->noteTenuredAlloc();
   return t;
 }
 
@@ -490,7 +491,7 @@ void GCRuntime::startBackgroundAllocTaskIfIdle() {
 
 /* static */
 TenuredCell* GCRuntime::refillFreeList(JSContext* cx, AllocKind thingKind) {
-  MOZ_ASSERT(cx->freeLists().isEmpty(thingKind));
+  MOZ_ASSERT(cx->zone()->arenas.freeLists().isEmpty(thingKind));
   MOZ_ASSERT(!cx->isHelperThreadContext());
 
   // It should not be possible to allocate on the main thread while we are
@@ -498,7 +499,7 @@ TenuredCell* GCRuntime::refillFreeList(JSContext* cx, AllocKind thingKind) {
   MOZ_ASSERT(!JS::RuntimeHeapIsBusy(), "allocating while under GC");
 
   return cx->zone()->arenas.refillFreeListAndAllocate(
-      cx->freeLists(), thingKind, ShouldCheckThresholds::CheckThresholds);
+      thingKind, ShouldCheckThresholds::CheckThresholds);
 }
 
 /* static */
@@ -509,14 +510,12 @@ TenuredCell* GCRuntime::refillFreeListInGC(Zone* zone, AllocKind thingKind) {
                 !zone->runtimeFromMainThread()->gc.isBackgroundSweeping());
 
   return zone->arenas.refillFreeListAndAllocate(
-      zone->arenas.freeLists(), thingKind,
-      ShouldCheckThresholds::DontCheckThresholds);
+      thingKind, ShouldCheckThresholds::DontCheckThresholds);
 }
 
 TenuredCell* ArenaLists::refillFreeListAndAllocate(
-    FreeLists& freeLists, AllocKind thingKind,
-    ShouldCheckThresholds checkThresholds) {
-  MOZ_ASSERT(freeLists.isEmpty(thingKind));
+    AllocKind thingKind, ShouldCheckThresholds checkThresholds) {
+  MOZ_ASSERT(freeLists().isEmpty(thingKind));
 
   JSRuntime* rt = runtimeFromAnyThread();
 
@@ -532,7 +531,7 @@ TenuredCell* ArenaLists::refillFreeListAndAllocate(
     // Empty arenas should be immediately freed.
     MOZ_ASSERT(!arena->isEmpty());
 
-    return freeLists.setArenaAndAllocate(arena, thingKind);
+    return freeLists().setArenaAndAllocate(arena, thingKind);
   }
 
   // Parallel threads have their own ArenaLists, but chunks are shared;
@@ -558,7 +557,7 @@ TenuredCell* ArenaLists::refillFreeListAndAllocate(
   MOZ_ASSERT(al.isCursorAtEnd());
   al.insertBeforeCursor(arena);
 
-  return freeLists.setArenaAndAllocate(arena, thingKind);
+  return freeLists().setArenaAndAllocate(arena, thingKind);
 }
 
 inline TenuredCell* FreeLists::setArenaAndAllocate(Arena* arena,

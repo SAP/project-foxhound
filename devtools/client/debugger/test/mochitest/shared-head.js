@@ -29,9 +29,9 @@ function createDebuggerContext(toolbox) {
   return {
     ...win.dbg,
     commands: toolbox.commands,
-    toolbox: toolbox,
-    win: win,
-    panel: panel,
+    toolbox,
+    win,
+    panel,
   };
 }
 
@@ -555,6 +555,28 @@ function isSelectedFrameSelected(dbg, state) {
   }
 
   return source.id == sourceId;
+}
+
+/**
+ * Checks to see if the frame is selected and the title is correct.
+ *
+ * @param {Object} dbg
+ * @param {Integer} index
+ * @param {String} title
+ */
+function isFrameSelected(dbg, index, title) {
+  const $frame = findElement(dbg, "frame", index);
+
+  const {
+    selectors: { getSelectedFrame, getCurrentThread },
+  } = dbg;
+
+  const frame = getSelectedFrame(getCurrentThread());
+
+  const elSelected = $frame.classList.contains("selected");
+  const titleSelected = frame.displayName == title;
+
+  return elSelected && titleSelected;
 }
 
 /**
@@ -1095,6 +1117,18 @@ function assertSourceIcon(dbg, sourceName, icon) {
     `img source-icon ${icon}`,
     `The icon for ${sourceName} is correct`
   );
+}
+
+async function expandSourceTree(dbg) {
+  // Click on expand all context menu for all top level "expandable items".
+  // If there is no project root, it will be thread items.
+  // But when there is a project root, it can be directory or group items.
+  // Select only expandable in order to ignore source items.
+  for (const rootNode of dbg.win.document.querySelectorAll(
+    ".sources-list > .managed-tree > .tree > .tree-node[data-expandable=true]"
+  )) {
+    await expandAllSourceNodes(dbg, rootNode);
+  }
 }
 
 async function expandAllSourceNodes(dbg, treeNode) {
@@ -2018,15 +2052,6 @@ async function waitForBreakableLine(dbg, source, lineNumber) {
     },
     `waiting for breakable line ${lineNumber}`
   );
-}
-
-async function expandSourceTree(dbg) {
-  const rootNodes = dbg.win.document.querySelectorAll(
-    selectors.sourceTreeThreadsNodes
-  );
-  for (const rootNode of rootNodes) {
-    await expandAllSourceNodes(dbg, rootNode);
-  }
 }
 
 async function waitForSourceTreeThreadsCount(dbg, i) {

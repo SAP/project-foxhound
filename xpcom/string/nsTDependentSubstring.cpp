@@ -7,6 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
+// FIXME: Due to an include cycle, we need to include `nsTSubstring` first.
+#include "nsTSubstring.h"
 #include "nsTDependentSubstring.h"
 
 template <typename T>
@@ -106,3 +108,6 @@ const nsTDependentSubstring<char16_t> Substring(char16ptr_t aStart,
                    static_cast<const char16_t*>(aEnd));
 }
 #endif
+
+template class nsTDependentSubstring<char>;
+template class nsTDependentSubstring<char16_t>;

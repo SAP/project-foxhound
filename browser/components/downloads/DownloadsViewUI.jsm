@@ -17,13 +17,16 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   Downloads: "resource://gre/modules/Downloads.jsm",
   DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
   DownloadsCommon: "resource:///modules/DownloadsCommon.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -323,14 +326,21 @@ var DownloadsViewUI = {
      * the context menu on a previously downloaded item via download history).
      * Using mimeInfo ensures that content type exists and prevents intermittence.
      */
+    //
+    let filename = PathUtils.filename(download.target.path);
+
+    let isExemptExecutableExtension = Services.policies.isExemptExecutableExtension(
+      download.source.originalUrl || download.source.url,
+      filename?.split(".").at(-1)
+    );
+
     let shouldNotRememberChoice =
       !mimeInfo?.type ||
       mimeInfo.type === "application/octet-stream" ||
       mimeInfo.type === "application/x-msdownload" ||
       mimeInfo.type === "application/x-msdos-program" ||
-      lazy.gReputationService.isExecutable(
-        PathUtils.filename(download.target.path)
-      ) ||
+      (lazy.gReputationService.isExecutable(filename) &&
+        !isExemptExecutableExtension) ||
       (mimeInfo.type === "text/plain" &&
         lazy.gReputationService.isBinary(download.target.path));
 

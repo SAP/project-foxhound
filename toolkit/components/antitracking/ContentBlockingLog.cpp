@@ -7,9 +7,12 @@
 #include "AntiTrackingLog.h"
 #include "ContentBlockingLog.h"
 
+#include "nsIEffectiveTLDService.h"
 #include "nsITrackingDBService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
@@ -17,6 +20,7 @@
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_telemetry.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
@@ -33,6 +37,22 @@ static constexpr double kRatioReportUser = 0.01;
 
 // randomly choose 0.14% documents when the page is unload.
 static constexpr double kRatioReportDocument = 0.0014;
+
+namespace {
+
+StaticAutoPtr<nsCString> gEmailWebAppDomainsPref;
+static constexpr char kEmailWebAppDomainPrefName[] =
+    "privacy.trackingprotection.emailtracking.webapp.domains";
+
+void EmailWebAppDomainPrefChangeCallback(const char* aPrefName, void*) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!strcmp(aPrefName, kEmailWebAppDomainPrefName));
+  MOZ_ASSERT(gEmailWebAppDomainsPref);
+
+  Preferences::GetCString(kEmailWebAppDomainPrefName, *gEmailWebAppDomainsPref);
+}
+
+}  // namespace
 
 static bool IsReportingPerUserEnabled() {
   MOZ_ASSERT(NS_IsMainThread());
@@ -146,6 +166,9 @@ Maybe<uint32_t> ContentBlockingLog::RecordLogParent(
     case nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION:
     case nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL:
     case nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN:
+    case nsIWebProgressListener::STATE_BLOCKED_EMAILTRACKING_CONTENT:
+    case nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_1_CONTENT:
+    case nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_2_CONTENT:
       RecordLogInternal(aOrigin, aType, blockedValue);
       break;
 
@@ -291,6 +314,108 @@ void ContentBlockingLog::ReportOrigins() {
       break;
     }
   }
+}
+
+void ContentBlockingLog::ReportEmailTrackingLog(
+    nsIPrincipal* aFirstPartyPrincipal) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aFirstPartyPrincipal);
+
+  // We don't need to report if the first party is not a content.
+  if (!BasePrincipal::Cast(aFirstPartyPrincipal)->IsContentPrincipal()) {
+    return;
+  }
+
+  nsCOMPtr<nsIEffectiveTLDService> tldService =
+      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
+
+  if (!tldService) {
+    return;
+  }
+
+  nsTHashtable<nsCStringHashKey> level1SiteSet;
+  nsTHashtable<nsCStringHashKey> level2SiteSet;
+
+  for (const auto& originEntry : mLog) {
+    if (!originEntry.mData) {
+      continue;
+    }
+
+    bool isLevel1EmailTracker = false;
+    bool isLevel2EmailTracker = false;
+
+    for (const auto& logEntry : Reversed(originEntry.mData->mLogs)) {
+      // Check if the email tracking related event had been filed for the given
+      // origin entry. Note that we currently only block level 1 email trackers,
+      // so blocking event represents the page has embedded a level 1 tracker.
+      if (logEntry.mType ==
+          nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_2_CONTENT) {
+        isLevel2EmailTracker = true;
+        break;
+      }
+
+      if (logEntry.mType ==
+              nsIWebProgressListener::STATE_BLOCKED_EMAILTRACKING_CONTENT ||
+          logEntry.mType == nsIWebProgressListener::
+                                STATE_LOADED_EMAILTRACKING_LEVEL_1_CONTENT) {
+        isLevel1EmailTracker = true;
+        break;
+      }
+    }
+
+    if (isLevel1EmailTracker || isLevel2EmailTracker) {
+      nsCOMPtr<nsIURI> uri;
+      nsresult rv = NS_NewURI(getter_AddRefs(uri), originEntry.mOrigin);
+
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+
+      nsAutoCString baseDomain;
+      rv = tldService->GetBaseDomain(uri, 0, baseDomain);
+
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+
+      if (isLevel1EmailTracker) {
+        Unused << level1SiteSet.EnsureInserted(baseDomain);
+      } else {
+        Unused << level2SiteSet.EnsureInserted(baseDomain);
+      }
+    }
+  }
+
+  // Cache the email webapp domains pref value and register the callback
+  // function to update the cached value when the pref changes.
+  if (!gEmailWebAppDomainsPref) {
+    gEmailWebAppDomainsPref = new nsCString();
+
+    Preferences::RegisterCallbackAndCall(EmailWebAppDomainPrefChangeCallback,
+                                         kEmailWebAppDomainPrefName);
+    RunOnShutdown([]() {
+      Preferences::UnregisterCallback(EmailWebAppDomainPrefChangeCallback,
+                                      kEmailWebAppDomainPrefName);
+      gEmailWebAppDomainsPref = nullptr;
+    });
+  }
+
+  bool isTopEmailWebApp =
+      aFirstPartyPrincipal->IsURIInList(*gEmailWebAppDomainsPref);
+  uint32_t level1Count = level1SiteSet.Count();
+  uint32_t level2Count = level2SiteSet.Count();
+
+  Telemetry::Accumulate(
+      Telemetry::EMAIL_TRACKER_EMBEDDED_PER_TAB,
+      isTopEmailWebApp ? "base_emailapp"_ns : "base_normal"_ns, level1Count);
+  Telemetry::Accumulate(
+      Telemetry::EMAIL_TRACKER_EMBEDDED_PER_TAB,
+      isTopEmailWebApp ? "content_emailapp"_ns : "content_normal"_ns,
+      level2Count);
+  Telemetry::Accumulate(Telemetry::EMAIL_TRACKER_EMBEDDED_PER_TAB,
+                        isTopEmailWebApp ? "all_emailapp"_ns : "all_normal"_ns,
+                        level1Count + level2Count);
 }
 
 }  // namespace mozilla

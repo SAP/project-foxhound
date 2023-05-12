@@ -693,11 +693,26 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   basePrin->GetURI(getter_AddRefs(sourceURI));
   if (!sourceURI) {
     if (basePrin->Is<ExpandedPrincipal>()) {
+      // If the target addon is MV3 or the pref is on we require extension
+      // resources loaded from content to be listed in web_accessible_resources.
+      auto* targetPolicy =
+          ExtensionPolicyService::GetSingleton().GetByURL(aTargetURI);
+      bool contentAccessRequired =
+          targetPolicy &&
+          (targetPolicy->ManifestVersion() > 2 ||
+           StaticPrefs::extensions_content_web_accessible_enabled());
       auto expanded = basePrin->As<ExpandedPrincipal>();
       const auto& allowList = expanded->AllowList();
       // Only report errors when all principals fail.
+      // With expanded principals, which are used by extension content scripts,
+      // we check only against non-extension principals for access to extension
+      // resource to enforce making those resources explicitly web accessible.
       uint32_t flags = aFlags | nsIScriptSecurityManager::DONT_REPORT_ERRORS;
       for (size_t i = 0; i < allowList.Length() - 1; i++) {
+        if (contentAccessRequired &&
+            BasePrincipal::Cast(allowList[i])->AddonPolicy()) {
+          continue;
+        }
         nsresult rv = CheckLoadURIWithPrincipal(allowList[i], aTargetURI, flags,
                                                 aInnerWindowID);
         if (NS_SUCCEEDED(rv)) {
@@ -706,6 +721,19 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
         }
       }
 
+      if (contentAccessRequired &&
+          BasePrincipal::Cast(allowList.LastElement())->AddonPolicy()) {
+        bool reportErrors =
+            !(aFlags & nsIScriptSecurityManager::DONT_REPORT_ERRORS);
+        if (reportErrors) {
+          ReportError("CheckLoadURI", sourceURI, aTargetURI,
+                      allowList.LastElement()
+                              ->OriginAttributesRef()
+                              .mPrivateBrowsingId > 0,
+                      aInnerWindowID);
+        }
+        return NS_ERROR_DOM_BAD_URI;
+      }
       // Report errors (if requested) for the last principal.
       return CheckLoadURIWithPrincipal(allowList.LastElement(), aTargetURI,
                                        aFlags, aInnerWindowID);
@@ -739,21 +767,6 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   if ((aFlags & nsIScriptSecurityManager::DISALLOW_SCRIPT) &&
       targetScheme.EqualsLiteral("javascript")) {
     return NS_ERROR_DOM_BAD_URI;
-  }
-
-  // Extensions may allow access to a web accessible resource.
-  bool maybeWebAccessible = false;
-  NS_URIChainHasFlags(targetBaseURI,
-                      nsIProtocolHandler::WEBEXT_URI_WEB_ACCESSIBLE,
-                      &maybeWebAccessible);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (maybeWebAccessible) {
-    bool isWebAccessible = false;
-    rv = ExtensionPolicyService::GetSingleton().SourceMayLoadExtensionURI(
-        sourceURI, targetBaseURI, &isWebAccessible);
-    if (!(NS_SUCCEEDED(rv) && isWebAccessible)) {
-      return NS_ERROR_DOM_BAD_URI;
-    }
   }
 
   // Check for uris that are only loadable by principals that subsume them
@@ -829,6 +842,7 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
     bool schemesMatch =
         scheme.Equals(otherScheme, nsCaseInsensitiveCStringComparator);
     bool isSamePage = false;
+    bool isExtensionMismatch = false;
     // about: URIs are special snowflakes.
     if (scheme.EqualsLiteral("about") && schemesMatch) {
       nsAutoCString moduleName, otherModuleName;
@@ -876,6 +890,13 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
           }
         }
       }
+    } else if (schemesMatch && scheme.EqualsLiteral("moz-extension")) {
+      // If it is not the same exension, we want to ensure we end up
+      // calling CheckLoadURIFlags
+      nsAutoCString host, otherHost;
+      currentURI->GetHost(host);
+      currentOtherURI->GetHost(otherHost);
+      isExtensionMismatch = !host.Equals(otherHost);
     } else {
       bool equalExceptRef = false;
       rv = currentURI->EqualsExceptRef(currentOtherURI, &equalExceptRef);
@@ -884,10 +905,12 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
 
     // If schemes are not equal, or they're equal but the target URI
     // is different from the source URI and doesn't always allow linking
-    // from the same scheme, check if the URI flags of the current target
-    // URI allow the current source URI to link to it.
+    // from the same scheme, or this is two different extensions, check
+    // if the URI flags of the current target URI allow the current
+    // source URI to link to it.
     // The policy is specified by the protocol flags on both URIs.
-    if (!schemesMatch || (denySameSchemeLinks && !isSamePage)) {
+    if (!schemesMatch || (denySameSchemeLinks && !isSamePage) ||
+        isExtensionMismatch) {
       return CheckLoadURIFlags(
           currentURI, currentOtherURI, sourceBaseURI, targetBaseURI, aFlags,
           aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0,
@@ -936,7 +959,8 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
   nsresult rv = aTargetBaseURI->GetScheme(targetScheme);
   if (NS_FAILED(rv)) return rv;
 
-  // Check for system target URI
+  // Check for system target URI.  Regular (non web accessible) extension
+  // URIs will also have URI_DANGEROUS_TO_LOAD.
   rv = DenyAccessIfURIHasFlags(aTargetURI,
                                nsIProtocolHandler::URI_DANGEROUS_TO_LOAD);
   if (NS_FAILED(rv)) {
@@ -960,6 +984,26 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
       }
       return rv;
     }
+  }
+
+  // If MV3 Extension uris are web accessible they have
+  // WEBEXT_URI_WEB_ACCESSIBLE.
+  bool maybeWebAccessible = false;
+  NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::WEBEXT_URI_WEB_ACCESSIBLE,
+                      &maybeWebAccessible);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (maybeWebAccessible) {
+    bool isWebAccessible = false;
+    rv = ExtensionPolicyService::GetSingleton().SourceMayLoadExtensionURI(
+        aSourceURI, aTargetURI, &isWebAccessible);
+    if (NS_SUCCEEDED(rv) && isWebAccessible) {
+      return NS_OK;
+    }
+    if (reportErrors) {
+      ReportError(errorTag, aSourceURI, aTargetURI, aFromPrivateWindow,
+                  aInnerWindowID);
+    }
+    return NS_ERROR_DOM_BAD_URI;
   }
 
   // Check for chrome target URI
@@ -1123,7 +1167,8 @@ nsresult nsScriptSecurityManager::ReportError(const char* aMessageTag,
         aInnerWindowID, true /* From chrome context */);
   } else {
     rv = error->Init(message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag,
-                     "SOP", aFromPrivateWindow, true /* From chrome context */);
+                     "SOP"_ns, aFromPrivateWindow,
+                     true /* From chrome context */);
   }
   NS_ENSURE_SUCCESS(rv, rv);
   console->LogMessage(error);

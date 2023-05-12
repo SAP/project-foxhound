@@ -78,6 +78,7 @@ if CONFIG["CC_TYPE"] == "clang-cl":
 if CONFIG["OS_ARCH"] == "WINNT":
     RCINCLUDE = "splash.rc"
     DIRS += [
+        "pbproxy",
         "winlauncher",
     ]
     USE_LIBS += [

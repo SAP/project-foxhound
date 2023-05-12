@@ -78,7 +78,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   // Whether or not Skia layering over the WebGL context is enabled
   bool mSkiaLayer = false;
   // Whether or not the WebGL context has valid contents and is being drawn to
-  bool mWebglValid = false;
+  bool mWebglValid = true;
   // Whether or not the clip state has changed since last used by SharedContext.
   bool mClipDirty = true;
   // The framebuffer has been modified and should be copied to the swap chain.
@@ -230,6 +230,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
     bool SupportsPattern(const Pattern& aPattern);
 
+    void SetTexFilter(WebGLTextureJS* aTex, bool aFilter);
     void InitTexParameters(WebGLTextureJS* aTex);
 
     bool ReadInto(uint8_t* aDstData, int32_t aDstStride, SurfaceFormat aFormat,
@@ -304,6 +305,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   BackendType GetBackendType() const override { return BackendType::WEBGL; }
   IntSize GetSize() const override { return mSize; }
 
+  already_AddRefed<SourceSurface> GetDataSnapshot();
   already_AddRefed<SourceSurface> Snapshot() override;
   already_AddRefed<SourceSurface> GetBackingSurface() override;
   void DetachAllSnapshots() override;

@@ -9,12 +9,10 @@
 #include "builtin/intl/DateTimeFormat.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/EnumSet.h"
 #include "mozilla/intl/Calendar.h"
 #include "mozilla/intl/DateIntervalFormat.h"
 #include "mozilla/intl/DateTimeFormat.h"
 #include "mozilla/intl/DateTimePart.h"
-#include "mozilla/intl/DateTimePatternGenerator.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/TimeZone.h"
 #include "mozilla/Range.h"
@@ -25,9 +23,7 @@
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/SharedIntlData.h"
-#include "builtin/intl/TimeZoneDataGenerated.h"
 #include "gc/GCContext.h"
-#include "js/CharacterEncoding.h"
 #include "js/Date.h"
 #include "js/experimental/Intl.h"     // JS::AddMozDateTimeFormatConstructor
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -1407,7 +1403,6 @@ static bool PartitionDateTimeRangePattern(
     ClippedTime y, bool* equal) {
   MOZ_ASSERT(x.isValid());
   MOZ_ASSERT(y.isValid());
-  MOZ_ASSERT(x.toDouble() <= y.toDouble());
 
   // We can't access the calendar used by UDateIntervalFormat to change it to a
   // proleptic Gregorian calendar. Instead we need to call a different formatter
@@ -1424,7 +1419,8 @@ static bool PartitionDateTimeRangePattern(
       GregorianChangeDate + msPerDay;
 
   mozilla::intl::ICUResult result = Ok();
-  if (x.toDouble() < GregorianChangeDatePlusOneDay) {
+  if (x.toDouble() < GregorianChangeDatePlusOneDay ||
+      y.toDouble() < GregorianChangeDatePlusOneDay) {
     // Create calendar objects for the start and end date by cloning the date
     // formatter calendar. The date formatter calendar already has the correct
     // time zone set and was changed to use a proleptic Gregorian calendar.
@@ -1564,10 +1560,6 @@ bool js::intl_FormatDateTimeRange(JSContext* cx, unsigned argc, Value* vp) {
         formatToParts ? "formatRangeToParts" : "formatRange");
     return false;
   }
-
-  // Self-hosted code should have checked this condition.
-  MOZ_ASSERT(x.toDouble() <= y.toDouble(),
-             "start date mustn't be after the end date");
 
   mozilla::intl::DateTimeFormat* df =
       GetOrCreateDateTimeFormat(cx, dateTimeFormat);

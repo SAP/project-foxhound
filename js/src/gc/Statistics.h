@@ -283,11 +283,22 @@ struct Statistics {
 
   const SliceDataVector& slices() const { return slices_; }
 
+  const SliceData* lastSlice() const {
+    if (slices_.length() == 0) {
+      return nullptr;
+    }
+
+    return &slices_.back();
+  }
+
   TimeStamp start() const { return slices_[0].start; }
 
   TimeStamp end() const { return slices_.back().end; }
 
   TimeStamp creationTime() const { return creationTime_; }
+
+  TimeDuration totalGCTime() const { return totalGCTime_; }
+  size_t initialCollectedBytes() const { return preCollectedHeapBytes; }
 
   // File to write profiling information to, either stderr or file specified
   // with JS_GC_PROFILE_FILE.
@@ -355,11 +366,11 @@ struct Statistics {
   TimeStamp timedGCStart;
   TimeDuration timedGCTime;
 
-  /* Total time in a given phase for this GC. */
+  /* Total main thread time in a given phase for this GC. */
   PhaseTimes phaseTimes;
 
-  /* Total parallel time for a given phase kind for this GC. */
-  PhaseKindTimes parallelTimes;
+  /* Total main thread time for this GC. */
+  TimeDuration totalGCTime_;
 
   /* Number of events of this type for this GC. */
   EnumeratedArray<Count, COUNT_LIMIT,

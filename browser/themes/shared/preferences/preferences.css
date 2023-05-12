@@ -9,22 +9,6 @@
   user-select: text;
 }
 
-body {
-  font-size: 1.25em;
-}
-
-@media (-moz-platform: macos) {
-  body {
-    font-size: 1.36em;
-  }
-}
-
-@media (-moz-platform: linux) {
-  body {
-    font-size: 1.11em;
-  }
-}
-
 #preferences-root {
   text-rendering: optimizeLegibility;
 }
@@ -361,6 +345,12 @@ checkbox {
   visibility: hidden;
 }
 
+/* Work around bug 560067 - animated images in visibility: hidden
+ * still eat CPU. */
+#updateDeck > *:not(.selected) > .update-throbber {
+  display: none;
+}
+
 #updateDeck > hbox > button {
   margin-block: 0;
   margin-inline-end: 0;
@@ -634,13 +624,11 @@ richlistitem[selected] .actionsMenu:focus-visible {
 }
 
 .dialogTitleBar {
-  margin-top: 0;
-  padding: 6px 4px;
+  padding: .4em .2em;
   border-bottom: 1px solid var(--in-content-border-color);
 }
 
 .dialogTitle {
-  font-size: .9em;
   font-weight: 600;
   text-align: center;
   user-select: none;
@@ -658,7 +646,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
 
 .fxaPairDeviceIcon .close-icon {
   margin-top: 10px;
-  }
+}
 
 .close-icon {
   border: none;

@@ -23,6 +23,7 @@
 #include "util/StringBuffer.h"
 #include "util/Unicode.h"
 #include "vm/JSContext.h"
+#include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/SelfHosting.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
@@ -354,9 +355,11 @@ bool js::ExecuteRegExpLegacy(JSContext* cx, RegExpStatics* res,
 static bool CheckPatternSyntaxSlow(JSContext* cx, Handle<JSAtom*> pattern,
                                    RegExpFlags flags) {
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  MainThreadErrorContext ec(cx);
   CompileOptions options(cx);
-  frontend::DummyTokenStream dummyTokenStream(cx, options);
-  return irregexp::CheckPatternSyntax(cx, dummyTokenStream, pattern, flags);
+  frontend::DummyTokenStream dummyTokenStream(cx, &ec, options);
+  return irregexp::CheckPatternSyntax(cx, cx->stackLimitForCurrentPrincipal(),
+                                      dummyTokenStream, pattern, flags);
 }
 
 static RegExpShared* CheckPatternSyntax(JSContext* cx, Handle<JSAtom*> pattern,

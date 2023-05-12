@@ -31,6 +31,7 @@
 #include "ds/IdValuePair.h"  // js::IdValuePair
 #include "gc/GCContext.h"
 #include "jit/AtomicOperations.h"
+#include "jit/FlushICache.h"
 #include "jit/JitContext.h"
 #include "jit/JitOptions.h"
 #include "jit/Simulator.h"
@@ -57,7 +58,6 @@
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCompile.h"
-#include "wasm/WasmCraneliftCompile.h"
 #include "wasm/WasmDebug.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmIntrinsic.h"
@@ -103,22 +103,11 @@ using mozilla::Span;
 
 static inline bool IsFuzzingIon(JSContext* cx) {
   return IsFuzzing() && !cx->options().wasmBaseline() &&
-         cx->options().wasmIon() && !cx->options().wasmCranelift();
-}
-
-static inline bool IsFuzzingCranelift(JSContext* cx) {
-  return IsFuzzing() && !cx->options().wasmBaseline() &&
-         !cx->options().wasmIon() && cx->options().wasmCranelift();
+         cx->options().wasmIon();
 }
 
 // These functions read flags and apply fuzzing intercession policies.  Never go
 // directly to the flags in code below, always go via these accessors.
-
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-static inline bool WasmSimdWormholeFlag(JSContext* cx) {
-  return cx->options().wasmSimdWormhole();
-}
-#endif
 
 static inline bool WasmThreadsFlag(JSContext* cx) {
   return cx->realm() &&
@@ -134,7 +123,7 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
 #undef WASM_FEATURE
 
 static inline bool WasmDebuggerActive(JSContext* cx) {
-  if (IsFuzzingIon(cx) || IsFuzzingCranelift(cx)) {
+  if (IsFuzzingIon(cx)) {
     return false;
   }
   return cx->realm() && cx->realm()->debuggerObservesWasm();
@@ -164,7 +153,7 @@ static inline bool WasmDebuggerActive(JSContext* cx) {
  *     implementations have additional baseline translators, eg from wasm
  *     bytecode to an internal code processed by an interpreter.
  *
- * [**] Currently we have two, "ion" aka "Baldr", and "Cranelift".
+ * [**] Currently we have only one, "ion" aka "Baldr".
  *
  *
  * Compiler availability:
@@ -188,25 +177,9 @@ static inline bool WasmDebuggerActive(JSContext* cx) {
  * default on the platform.  We MUST by-default disable features on a platform
  * that are not supported by all the compilers on the platform.
  *
- * As an example:
- *
- *   On ARM64 the default compilers are Baseline and Cranelift.  Say Cranelift
- *   does not support feature X.  Thus X cannot be enabled by default on ARM64.
- *   However, X support can be compiled-in to SpiderMonkey, and the user can opt
- *   to enable X.  Doing so will disable Cranelift.
- *
- *   In contrast, X can be enabled by default on x64, where the default
- *   compilers are Baseline and Ion, both of which support X.
- *
- *   A subtlety is worth noting: on x64, enabling Cranelift (thus disabling Ion)
- *   will not disable X.  Instead, the presence of X in the selected feature set
- *   will disable Cranelift, leaving only Baseline.  This follows from the logic
- *   described above.
- *
  * In a shell build, the testing functions wasmCompilersPresent,
- * wasmCompileMode, wasmCraneliftDisabledByFeatures, and
- * wasmIonDisabledByFeatures can be used to probe compiler availability and the
- * reasons for a compiler being unavailable.
+ * wasmCompileMode, and wasmIonDisabledByFeatures can be used to probe compiler
+ * availability and the reasons for a compiler being unavailable.
  *
  *
  * Feature availability:
@@ -228,15 +201,6 @@ static inline bool WasmDebuggerActive(JSContext* cx) {
 // back to these predicates.  So there will be a small amount of duplicated
 // logic here, but as compilers reach feature parity that duplication will go
 // away.
-//
-// There's a static precedence order between the optimizing compilers.  This
-// order currently ranks Cranelift over Ion on all platforms because Cranelift
-// is disabled by default on all platforms: anyone who has enabled Cranelift
-// will wish to use it instead of Ion.
-//
-// The precedence order is implemented by guards in IonAvailable() and
-// CraneliftAvailable().  We expect that it will become more complex as the
-// default settings change.  But it should remain static.
 
 bool wasm::BaselineAvailable(JSContext* cx) {
   if (!cx->options().wasmBaseline() || !BaselinePlatformSupport()) {
@@ -253,11 +217,10 @@ bool wasm::IonAvailable(JSContext* cx) {
   }
   bool isDisabled = false;
   MOZ_ALWAYS_TRUE(IonDisabledByFeatures(cx, &isDisabled));
-  return !isDisabled && !CraneliftAvailable(cx);
+  return !isDisabled;
 }
 
 bool wasm::WasmCompilerForAsmJSAvailable(JSContext* cx) {
-  // For now, restrict this to Ion - we have not tested Cranelift properly.
   return IonAvailable(cx);
 }
 
@@ -289,77 +252,22 @@ bool wasm::IonDisabledByFeatures(JSContext* cx, bool* isDisabled,
                                  JSStringBuilder* reason) {
   // Ion has no debugging support, no gc support.
   bool debug = WasmDebuggerActive(cx);
-  bool functionReferences = WasmFunctionReferencesFlag(cx);
   bool gc = WasmGcFlag(cx);
   if (reason) {
     char sep = 0;
     if (debug && !Append(reason, "debug", &sep)) {
       return false;
     }
-    if (functionReferences && !Append(reason, "function-references", &sep)) {
-      return false;
-    }
     if (gc && !Append(reason, "gc", &sep)) {
       return false;
     }
   }
-  *isDisabled = debug || functionReferences || gc;
-  return true;
-}
-
-bool wasm::CraneliftAvailable(JSContext* cx) {
-  if (!cx->options().wasmCranelift() || !CraneliftPlatformSupport()) {
-    return false;
-  }
-  bool isDisabled = false;
-  MOZ_ALWAYS_TRUE(CraneliftDisabledByFeatures(cx, &isDisabled));
-  return !isDisabled;
-}
-
-bool wasm::CraneliftDisabledByFeatures(JSContext* cx, bool* isDisabled,
-                                       JSStringBuilder* reason) {
-  // Cranelift has no debugging support, no serialization support, no gc
-  // support, no simd, and no exceptions support.
-  bool debug = WasmDebuggerActive(cx);
-  bool testSerialization = WasmTestSerializationFlag(cx);
-  bool functionReferences = WasmFunctionReferencesFlag(cx);
-  bool gc = WasmGcFlag(cx);
-  // Cranelift aarch64 has full SIMD support.
-#if !defined(ENABLE_WASM_SIMD) || defined(JS_CODEGEN_ARM64)
-  bool simdOnNonAarch64 = false;
-#else
-  bool simdOnNonAarch64 = true;
-#endif
-  bool exn = WasmExceptionsFlag(cx);
-  if (reason) {
-    char sep = 0;
-    if (debug && !Append(reason, "debug", &sep)) {
-      return false;
-    }
-    if (testSerialization && !Append(reason, "testSerialization", &sep)) {
-      return false;
-    }
-    if (functionReferences && !Append(reason, "function-references", &sep)) {
-      return false;
-    }
-    if (gc && !Append(reason, "gc", &sep)) {
-      return false;
-    }
-    if (simdOnNonAarch64 && !Append(reason, "simd", &sep)) {
-      return false;
-    }
-    if (exn && !Append(reason, "exceptions", &sep)) {
-      return false;
-    }
-  }
-  *isDisabled = debug || testSerialization || functionReferences || gc ||
-                simdOnNonAarch64 || exn;
+  *isDisabled = debug || gc;
   return true;
 }
 
 bool wasm::AnyCompilerAvailable(JSContext* cx) {
-  return wasm::BaselineAvailable(cx) || wasm::IonAvailable(cx) ||
-         wasm::CraneliftAvailable(cx);
+  return wasm::BaselineAvailable(cx) || wasm::IonAvailable(cx);
 }
 
 // Feature predicates.  These must be kept in sync with the predicates in the
@@ -387,18 +295,6 @@ bool wasm::IsSimdPrivilegedContext(JSContext* cx) {
 
 bool wasm::SimdAvailable(JSContext* cx) {
   return js::jit::JitSupportsWasmSimd();
-}
-
-bool wasm::SimdWormholeAvailable(JSContext* cx) {
-#ifdef ENABLE_WASM_SIMD_WORMHOLE
-  // The #ifdef ensures that we only enable the wormhole on hardware that
-  // supports it and if SIMD support is compiled in.
-  return js::jit::JitSupportsWasmSimd() &&
-         (WasmSimdWormholeFlag(cx) || IsSimdPrivilegedContext(cx)) &&
-         (IonAvailable(cx) || BaselineAvailable(cx)) && !CraneliftAvailable(cx);
-#else
-  return false;
-#endif
 }
 
 bool wasm::ThreadsAvailable(JSContext* cx) {
@@ -440,8 +336,7 @@ bool wasm::HasPlatformSupport(JSContext* cx) {
 
   // Test only whether the compilers are supported on the hardware, not whether
   // they are enabled.
-  return BaselinePlatformSupport() || IonPlatformSupport() ||
-         CraneliftPlatformSupport();
+  return BaselinePlatformSupport() || IonPlatformSupport();
 #endif
 }
 
@@ -692,29 +587,7 @@ static bool DescribeScriptedCaller(JSContext* cx, ScriptedCaller* caller,
   return true;
 }
 
-// Parse the options bag that is optionally passed to functions that compile
-// wasm.  This is for internal experimentation purposes.  See comments about the
-// SIMD wormhole in WasmConstants.h.
-
-static bool ParseCompileOptions(JSContext* cx, HandleValue maybeOptions,
-                                FeatureOptions* options) {
-  if (SimdWormholeAvailable(cx)) {
-    if (maybeOptions.isObject()) {
-      RootedValue wormholeVal(cx);
-      RootedObject obj(cx, &maybeOptions.toObject());
-      if (!JS_GetProperty(cx, obj, "simdWormhole", &wormholeVal)) {
-        return false;
-      }
-      if (wormholeVal.isBoolean()) {
-        options->simdWormhole = wormholeVal.toBoolean();
-      }
-    }
-  }
-  return true;
-}
-
 static SharedCompileArgs InitCompileArgs(JSContext* cx,
-                                         HandleValue maybeOptions,
                                          const char* introducer) {
   ScriptedCaller scriptedCaller;
   if (!DescribeScriptedCaller(cx, &scriptedCaller, introducer)) {
@@ -722,9 +595,6 @@ static SharedCompileArgs InitCompileArgs(JSContext* cx,
   }
 
   FeatureOptions options;
-  if (!ParseCompileOptions(cx, maybeOptions, &options)) {
-    return nullptr;
-  }
   return CompileArgs::buildAndReport(cx, std::move(scriptedCaller), options);
 }
 
@@ -732,7 +602,7 @@ static SharedCompileArgs InitCompileArgs(JSContext* cx,
 // Testing / Fuzzing support
 
 bool wasm::Eval(JSContext* cx, Handle<TypedArrayObject*> code,
-                HandleObject importObj, HandleValue maybeOptions,
+                HandleObject importObj,
                 MutableHandle<WasmInstanceObject*> instanceObj) {
   if (!GlobalObject::ensureConstructor(cx, cx->global(), JSProto_WebAssembly)) {
     return false;
@@ -749,8 +619,7 @@ bool wasm::Eval(JSContext* cx, Handle<TypedArrayObject*> code,
     return false;
   }
 
-  SharedCompileArgs compileArgs =
-      InitCompileArgs(cx, maybeOptions, "wasm_eval");
+  SharedCompileArgs compileArgs = InitCompileArgs(cx, "wasm_eval");
   if (!compileArgs) {
     return false;
   }
@@ -1491,8 +1360,9 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
     switch (import.kind) {
       case DefinitionKind::Function: {
         size_t funcIndex = numFuncImport++;
-        typeObj = FuncTypeToObject(
-            cx, metadataTier.funcImports[funcIndex].funcType());
+        const FuncType& funcType =
+            metadata.getFuncImportType(metadataTier.funcImports[funcIndex]);
+        typeObj = FuncTypeToObject(cx, funcType);
         break;
       }
       case DefinitionKind::Table: {
@@ -1600,7 +1470,8 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
     switch (exp.kind()) {
       case DefinitionKind::Function: {
         const FuncExport& fe = metadataTier.lookupFuncExport(exp.funcIndex());
-        typeObj = FuncTypeToObject(cx, fe.funcType());
+        const FuncType& funcType = metadata.getFuncExportType(fe);
+        typeObj = FuncTypeToObject(cx, funcType);
         break;
       }
       case DefinitionKind::Table: {
@@ -1723,6 +1594,16 @@ WasmModuleObject* WasmModuleObject::create(JSContext* cx, const Module& module,
     return nullptr;
   }
 
+  // The pipeline state on some architectures may retain stale instructions
+  // even after we invalidate the instruction cache. There is no generally
+  // available method to broadcast this pipeline flush to all threads after
+  // we've compiled new code, so conservatively perform one here when we're
+  // receiving a module that may have been compiled from another thread.
+  //
+  // The cost of this flush is expected to minimal enough to not be worth
+  // optimizing away in the case the module was compiled on this thread.
+  jit::FlushExecutionContext();
+
   // This accounts for module allocation size (excluding code which is handled
   // separately - see below). This assumes that the size of associated data
   // doesn't change for the life of the WasmModuleObject. The size is counted
@@ -1814,8 +1695,7 @@ bool WasmModuleObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  SharedCompileArgs compileArgs =
-      InitCompileArgs(cx, callArgs.get(1), "WebAssembly.Module");
+  SharedCompileArgs compileArgs = InitCompileArgs(cx, "WebAssembly.Module");
   if (!compileArgs) {
     return false;
   }
@@ -2430,7 +2310,8 @@ bool WasmInstanceObject::getExportedFunction(
   const Instance& instance = instanceObj->instance();
   const FuncExport& funcExport =
       instance.metadata(instance.code().bestTier()).lookupFuncExport(funcIndex);
-  unsigned numArgs = funcExport.funcType().args().length();
+  const FuncType& funcType = instance.metadata().getFuncExportType(funcExport);
+  unsigned numArgs = funcType.args().length();
 
   if (instance.isAsmJS()) {
     // asm.js needs to act like a normal JS function which means having the
@@ -2472,7 +2353,7 @@ bool WasmInstanceObject::getExportedFunction(
     // separate 4kb code page. Most eagerly-accessed functions are not called,
     // so use a shared, provisional (and slow) lazy stub as JitEntry and wait
     // until Instance::callExport() to create the fast entry stubs.
-    if (funcExport.canHaveJitEntry()) {
+    if (funcType.canHaveJitEntry()) {
       if (!funcExport.hasEagerStubs()) {
         if (!EnsureBuiltinThunksInitialized()) {
           return false;
@@ -2897,11 +2778,11 @@ size_t WasmMemoryObject::boundsCheckLimit() const {
     return buffer().byteLength();
   }
   size_t mappedSize = buffer().wasmMappedSize();
-#if !defined(JS_64BIT) || defined(ENABLE_WASM_CRANELIFT)
+#if !defined(JS_64BIT)
   // See clamping performed in CreateSpecificWasmBuffer().  On 32-bit systems
-  // and on 64-bit with Cranelift, we do not want to overflow a uint32_t.  For
-  // the other 64-bit compilers, all constraints are implied by the largest
-  // accepted value for a memory's max field.
+  // we do not want to overflow a uint32_t.  For the other 64-bit compilers,
+  // all constraints are implied by the largest accepted value for a memory's
+  // max field.
   MOZ_ASSERT(mappedSize < UINT32_MAX);
 #endif
   MOZ_ASSERT(mappedSize % wasm::PageSize == 0);
@@ -2959,9 +2840,8 @@ uint64_t WasmMemoryObject::grow(Handle<WasmMemoryObject*> memory,
 
   RootedArrayBufferObject oldBuf(cx, &memory->buffer().as<ArrayBufferObject>());
 
-#if !defined(JS_64BIT) || defined(ENABLE_WASM_CRANELIFT)
-  // TODO (large ArrayBuffer): For Cranelift, limit the memory size to something
-  // that fits in a uint32_t.  See more information at the definition of
+#if !defined(JS_64BIT)
+  // TODO (large ArrayBuffer): See more information at the definition of
   // MaxMemoryBytes().
   MOZ_ASSERT(MaxMemoryBytes(memory->indexType()) <= UINT32_MAX,
              "Avoid 32-bit overflows");
@@ -4266,10 +4146,10 @@ bool WasmFunctionTypeImpl(JSContext* cx, const CallArgs& args) {
       cx, ExportedFunctionToInstanceObject(function));
   uint32_t funcIndex = ExportedFunctionToFuncIndex(function);
   Instance& instance = instanceObj->instance();
-  const FuncType& ft = instance.metadata(instance.code().bestTier())
-                           .lookupFuncExport(funcIndex)
-                           .funcType();
-  RootedObject typeObj(cx, FuncTypeToObject(cx, ft));
+  const FuncExport& fe =
+      instance.metadata(instance.code().bestTier()).lookupFuncExport(funcIndex);
+  const FuncType& funcType = instance.metadata().getFuncExportType(fe);
+  RootedObject typeObj(cx, FuncTypeToObject(cx, funcType));
   if (!typeObj) {
     return false;
   }
@@ -4663,8 +4543,8 @@ struct CompileBufferTask : PromiseHelperTask {
   CompileBufferTask(JSContext* cx, Handle<PromiseObject*> promise)
       : PromiseHelperTask(cx, promise), instantiate(false) {}
 
-  bool init(JSContext* cx, HandleValue maybeOptions, const char* introducer) {
-    compileArgs = InitCompileArgs(cx, maybeOptions, introducer);
+  bool init(JSContext* cx, const char* introducer) {
+    compileArgs = InitCompileArgs(cx, introducer);
     if (!compileArgs) {
       return false;
     }
@@ -4746,7 +4626,7 @@ static bool WebAssembly_compile(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   auto task = cx->make_unique<CompileBufferTask>(cx, promise);
-  if (!task || !task->init(cx, callArgs.get(1), "WebAssembly.compile")) {
+  if (!task || !task->init(cx, "WebAssembly.compile")) {
     return false;
   }
 
@@ -4814,7 +4694,7 @@ static bool WebAssembly_instantiate(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     auto task = cx->make_unique<CompileBufferTask>(cx, promise, importObj);
-    if (!task || !task->init(cx, callArgs.get(2), "WebAssembly.instantiate")) {
+    if (!task || !task->init(cx, "WebAssembly.instantiate")) {
       return false;
     }
 
@@ -4841,7 +4721,6 @@ static bool WebAssembly_validate(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   FeatureOptions options;
-  ParseCompileOptions(cx, callArgs.get(1), &options);
   UniqueChars error;
   bool validated = Validate(cx, *bytecode, options, &error);
 
@@ -5330,8 +5209,7 @@ static bool ResolveResponse(JSContext* cx, CallArgs callArgs,
   const char* introducer = instantiate ? "WebAssembly.instantiateStreaming"
                                        : "WebAssembly.compileStreaming";
 
-  SharedCompileArgs compileArgs =
-      InitCompileArgs(cx, callArgs.get(instantiate ? 2 : 1), introducer);
+  SharedCompileArgs compileArgs = InitCompileArgs(cx, introducer);
   if (!compileArgs) {
     return false;
   }

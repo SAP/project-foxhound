@@ -42,6 +42,7 @@ loader.lazyRequireGetter(
 const ZoomKeys = require("devtools/client/shared/zoom-keys");
 
 const PREF_SIDEBAR_ENABLED = "devtools.webconsole.sidebarToggle";
+const PREF_BROWSERTOOLBOX_SCOPE = "devtools.browsertoolbox.scope";
 
 /**
  * A WebConsoleUI instance is an interactive console initialized *per target*
@@ -78,6 +79,14 @@ class WebConsoleUI {
     this._onResourceAvailable = this._onResourceAvailable.bind(this);
     this._onNetworkResourceUpdated = this._onNetworkResourceUpdated.bind(this);
     this.clearPrivateMessages = this.clearPrivateMessages.bind(this);
+    this._onScopePrefChanged = this._onScopePrefChanged.bind(this);
+
+    if (this.isBrowserConsole) {
+      Services.prefs.addObserver(
+        PREF_BROWSERTOOLBOX_SCOPE,
+        this._onScopePrefChanged
+      );
+    }
 
     EventEmitter.decorate(this);
   }
@@ -135,20 +144,17 @@ class WebConsoleUI {
   }
 
   destroy() {
-    if (!this.hud) {
+    if (this._destroyed) {
       return;
     }
+
+    this._destroyed = true;
 
     this.React = this.ReactDOM = this.FrameView = null;
 
     if (this.wrapper) {
       this.wrapper.getStore().dispatch(START_IGNORE_ACTION);
-    }
-
-    if (this.outputNode) {
-      // We do this because it's much faster than letting React handle the ConsoleOutput
-      // unmounting.
-      this.outputNode.innerHTML = "";
+      this.wrapper.destroy();
     }
 
     if (this.jsterm) {
@@ -161,6 +167,13 @@ class WebConsoleUI {
       toolbox.off("webconsole-selected", this._onPanelSelected);
       toolbox.off("split-console", this._onChangeSplitConsoleState);
       toolbox.off("select", this._onChangeSplitConsoleState);
+    }
+
+    if (this.isBrowserConsole) {
+      Services.prefs.removeObserver(
+        PREF_BROWSERTOOLBOX_SCOPE,
+        this._onScopePrefChanged
+      );
     }
 
     // Stop listening for targets
@@ -221,7 +234,7 @@ class WebConsoleUI {
   }
 
   async clearMessagesCache() {
-    if (!this.hud) {
+    if (this._destroyed) {
       return;
     }
 
@@ -257,10 +270,12 @@ class WebConsoleUI {
    * This method emits the "private-messages-cleared" notification.
    */
   clearPrivateMessages() {
-    if (this.wrapper) {
-      this.wrapper.dispatchPrivateMessagesClear();
-      this.emitForTests("private-messages-cleared");
+    if (this._destroyed) {
+      return;
     }
+
+    this.wrapper.dispatchPrivateMessagesClear();
+    this.emitForTests("private-messages-cleared");
   }
 
   inspectObjectActor(objectActor) {
@@ -281,9 +296,10 @@ class WebConsoleUI {
   }
 
   disableAllNetworkMessages() {
-    if (this.wrapper) {
-      this.wrapper.dispatchNetworkMessagesDisable();
+    if (this._destroyed) {
+      return;
     }
+    this.wrapper.dispatchNetworkMessagesDisable();
   }
 
   getPanelWindow() {
@@ -387,7 +403,7 @@ class WebConsoleUI {
   }
 
   async stopWatchingNetworkResources() {
-    if (!this.hud) {
+    if (this._destroyed) {
       return;
     }
 
@@ -456,9 +472,10 @@ class WebConsoleUI {
   }
 
   _onResourceAvailable(resources) {
-    if (!this.hud) {
+    if (this._destroyed) {
       return;
     }
+
     const messages = [];
     for (const resource of resources) {
       const { TYPES } = this.hud.resourceCommand;
@@ -503,6 +520,10 @@ class WebConsoleUI {
   }
 
   _onNetworkResourceUpdated(updates) {
+    if (this._destroyed) {
+      return;
+    }
+
     const messageUpdates = [];
     for (const { resource } of updates) {
       if (
@@ -526,6 +547,10 @@ class WebConsoleUI {
    *        composed of a WindowGlobalTargetFront or ContentProcessTargetFront.
    */
   async _onTargetAvailable({ targetFront }) {
+    if (this._destroyed) {
+      return;
+    }
+
     // Once we support only server watcher for NETWORK_EVENT, we will be able to drop this.
     // We have to wait for the fully enabling of NETWORK_EVENT watchers, especially on the Browser Toolbox.
     const { targetCommand, resourceCommand } = this.hud.commands;
@@ -561,14 +586,19 @@ class WebConsoleUI {
     }
   }
 
-  /**
-   * Called any time a target has been destroyed.
-   *
-   * @private
-   * See _onTargetAvailable for param's description.
-   */
-  _onTargetDestroyed({ targetFront }) {
-    // XXX keeping this as it's going to be used again in a patch in this queue
+  _onTargetDestroyed({ targetFront, isModeSwitching }) {
+    // Don't try to do anything if the WebConsole is being destroyed
+    if (this._destroyed) {
+      return;
+    }
+
+    // We only want to remove messages from a target destroyed when we're switching mode
+    // in the Browser Console/Browser Toolbox Console.
+    // For regular cases, we want to keep the message history (the output will still be
+    // cleared when the top level target navigates, if "Persist Logs" isn't true, via handleWillNavigate)
+    if (isModeSwitching) {
+      this.wrapper.dispatchTargetMessagesRemove(targetFront);
+    }
   }
 
   _initUI() {
@@ -675,7 +705,14 @@ class WebConsoleUI {
       );
 
       ZoomKeys.register(this.window, shortcuts);
-      shortcuts.on("CmdOrCtrl+Alt+R", quickRestart);
+
+      /* This is the same as DevelopmentHelpers.quickRestart, but it runs in all
+       * builds (even official). This allows a user to do a restart + session restore
+       * with Ctrl+Shift+J (open Browser Console) and then Ctrl+Alt+R (restart).
+       */
+      shortcuts.on("CmdOrCtrl+Alt+R", () => {
+        this.hud.commands.targetCommand.reloadTopLevelTarget();
+      });
     } else if (Services.prefs.getBoolPref(PREF_SIDEBAR_ENABLED)) {
       shortcuts.on("Esc", event => {
         this.wrapper.dispatchSidebarClose();
@@ -703,6 +740,12 @@ class WebConsoleUI {
     this.wrapper.dispatchSplitConsoleCloseButtonToggle();
   }
 
+  _onScopePrefChanged() {
+    if (this.isBrowserConsole) {
+      this.hud.updateWindowTitle();
+    }
+  }
+
   getInputCursor() {
     return this.jsterm && this.jsterm.getSelectionStart();
   }
@@ -719,22 +762,6 @@ class WebConsoleUI {
     const inspectorSelection = this.hud.getInspectorSelection();
     return inspectorSelection?.nodeFront?.actorID;
   }
-}
-
-/* This is the same as DevelopmentHelpers.quickRestart, but it runs in all
- * builds (even official). This allows a user to do a restart + session restore
- * with Ctrl+Shift+J (open Browser Console) and then Ctrl+Shift+R (restart).
- */
-function quickRestart() {
-  const { Cc, Ci } = require("chrome");
-  Services.obs.notifyObservers(null, "startupcache-invalidate");
-  const env = Cc["@mozilla.org/process/environment;1"].getService(
-    Ci.nsIEnvironment
-  );
-  env.set("MOZ_DISABLE_SAFE_MODE_KEY", "1");
-  Services.startup.quit(
-    Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart
-  );
 }
 
 exports.WebConsoleUI = WebConsoleUI;

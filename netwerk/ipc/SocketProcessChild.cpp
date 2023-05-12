@@ -105,13 +105,12 @@ void CGSShutdownServerConnections();
 };
 #endif
 
-bool SocketProcessChild::Init(base::ProcessId aParentPid,
-                              const char* aParentBuildID,
-                              mozilla::ipc::ScopedPort aPort) {
+bool SocketProcessChild::Init(mozilla::ipc::UntypedEndpoint&& aEndpoint,
+                              const char* aParentBuildID) {
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
     return false;
   }
-  if (NS_WARN_IF(!Open(std::move(aPort), aParentPid))) {
+  if (NS_WARN_IF(!aEndpoint.Bind(this))) {
     return false;
   }
   // This must be sent before any IPDL message, which may hit sentinel
@@ -364,7 +363,7 @@ SocketProcessChild::AllocPHttpConnectionMgrChild(
 }
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvUpdateDeviceModelId(
-    const nsCString& aModelId) {
+    const nsACString& aModelId) {
   MOZ_ASSERT(gHttpHandler);
   gHttpHandler->SetDeviceModelId(aModelId);
   return IPC_OK();
@@ -422,7 +421,7 @@ SocketProcessChild::AllocPAltSvcTransactionChild(
 }
 
 already_AddRefed<PDNSRequestChild> SocketProcessChild::AllocPDNSRequestChild(
-    const nsCString& aHost, const nsCString& aTrrServer, const int32_t& aPort,
+    const nsACString& aHost, const nsACString& aTrrServer, const int32_t& aPort,
     const uint16_t& aType, const OriginAttributes& aOriginAttributes,
     const uint32_t& aFlags) {
   RefPtr<DNSRequestHandler> handler = new DNSRequestHandler();
@@ -431,8 +430,8 @@ already_AddRefed<PDNSRequestChild> SocketProcessChild::AllocPDNSRequestChild(
 }
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvPDNSRequestConstructor(
-    PDNSRequestChild* aActor, const nsCString& aHost,
-    const nsCString& aTrrServer, const int32_t& aPort, const uint16_t& aType,
+    PDNSRequestChild* aActor, const nsACString& aHost,
+    const nsACString& aTrrServer, const int32_t& aPort, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
   RefPtr<DNSRequestChild> actor = static_cast<DNSRequestChild*>(aActor);
   RefPtr<DNSRequestHandler> handler =
@@ -495,10 +494,11 @@ SocketProcessChild::RecvPNativeDNSResolverOverrideConstructor(
 }
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvNotifyObserver(
-    const nsCString& aTopic, const nsString& aData) {
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    obs->NotifyObservers(nullptr, aTopic.get(), aData.get());
+    const nsACString& aTopic, const nsAString& aData) {
+  if (nsCOMPtr<nsIObserverService> obs =
+          mozilla::services::GetObserverService()) {
+    obs->NotifyObservers(nullptr, PromiseFlatCString(aTopic).get(),
+                         PromiseFlatString(aData).get());
   }
   return IPC_OK();
 }

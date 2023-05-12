@@ -239,12 +239,12 @@ class MOZ_STACK_CLASS RangeUpdater final {
    *                                in aRemovedContent.  And this points where
    *                                the joined position.
    * @param aRemovedContent         The removed content.
-   * @param aOffsetOfRemovedContent The offset which aRemovedContent was in
-   *                                its ex-parent.
+   * @param aOffsetOfJoinedContent  The offset which the container of
+   *                                aStartOfRightContent was in its parent.
    */
   nsresult SelAdjJoinNodes(const EditorRawDOMPoint& aStartOfRightContent,
                            const nsIContent& aRemovedContent,
-                           uint32_t aOffsetOfRemovedContent,
+                           uint32_t aOffsetOfJoinedContent,
                            JoinNodesDirection aJoinNodesDirection);
   void SelAdjInsertText(const dom::Text& aTextNode, uint32_t aOffset,
                         uint32_t aInsertedLength);
@@ -318,6 +318,7 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
         mPoint(Some(aPoint->IsSet() ? aPoint : nullptr)),
         mRangeItem(do_AddRef(new RangeItem())) {
     if (!aPoint->IsSet()) {
+      mIsTracking = false;
       return;  // Nothing should be tracked.
     }
     mRangeItem->mStartContainer = aPoint->GetContainer();
@@ -327,11 +328,14 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
     mRangeUpdater.RegisterRangeItem(mRangeItem);
   }
 
-  ~AutoTrackDOMPoint() {
+  ~AutoTrackDOMPoint() { FlushAndStopTracking(); }
+
+  void FlushAndStopTracking() {
+    if (!mIsTracking) {
+      return;
+    }
+    mIsTracking = false;
     if (mPoint.isSome()) {
-      if (!mPoint.ref()) {
-        return;  // We don't track anything.
-      }
       mRangeUpdater.DropRangeItem(mRangeItem);
       // Setting `mPoint` with invalid DOM point causes hitting `NS_ASSERTION()`
       // and the number of times may be too many.  (E.g., 1533913.html hits
@@ -360,6 +364,7 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
   uint32_t* mOffset;
   Maybe<EditorDOMPoint*> mPoint;
   OwningNonNull<RangeItem> mRangeItem;
+  bool mIsTracking = true;
 };
 
 class MOZ_STACK_CLASS AutoTrackDOMRange final {
@@ -394,14 +399,21 @@ class MOZ_STACK_CLASS AutoTrackDOMRange final {
     mStartPointTracker.emplace(aRangeUpdater, &mStartPoint);
     mEndPointTracker.emplace(aRangeUpdater, &mEndPoint);
   }
-  ~AutoTrackDOMRange() {
-    if (!mRangeRefPtr && !mRangeOwningNonNull) {
-      // The destructor of the trackers will update automatically.
+  ~AutoTrackDOMRange() { FlushAndStopTracking(); }
+
+  void FlushAndStopTracking() {
+    if (!mStartPointTracker || !mEndPointTracker) {
       return;
     }
-    // Otherwise, destroy them now.
     mStartPointTracker.reset();
     mEndPointTracker.reset();
+    if (!mRangeRefPtr && !mRangeOwningNonNull) {
+      // This must be created with EditorDOMRange or EditorDOMPoints.  In the
+      // cases, destroying mStartPointTracker and mEndPointTracker has done
+      // everything which we need to do.
+      return;
+    }
+    // Otherwise, update the DOM ranges by ourselves.
     if (mRangeRefPtr) {
       (*mRangeRefPtr)
           ->SetStartAndEnd(mStartPoint.ToRawRangeBoundary(),

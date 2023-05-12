@@ -56,7 +56,7 @@ namespace mozilla::dom {
 
 // Promise
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Promise)
+NS_IMPL_CYCLE_COLLECTION_SINGLE_ZONE_SCRIPT_HOLDER_CLASS(Promise)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Promise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
@@ -69,6 +69,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Promise)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Promise)
+  // If you add new JS member variables, you may need to stop using
+  // NS_IMPL_CYCLE_COLLECTION_SINGLE_ZONE_SCRIPT_HOLDER_CLASS.
   NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mPromiseObj);
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
@@ -955,6 +957,37 @@ already_AddRefed<Promise> Promise::CreateResolvedWithUndefined(
     return nullptr;
   }
   returnPromise->MaybeResolveWithUndefined();
+  return returnPromise.forget();
+}
+
+already_AddRefed<Promise> Promise::CreateRejected(
+    nsIGlobalObject* aGlobal, JS::Handle<JS::Value> aRejectionError,
+    ErrorResult& aRv) {
+  RefPtr<Promise> promise = Promise::Create(aGlobal, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  promise->MaybeReject(aRejectionError);
+  return promise.forget();
+}
+
+already_AddRefed<Promise> Promise::CreateRejectedWithTypeError(
+    nsIGlobalObject* aGlobal, const nsACString& aMessage, ErrorResult& aRv) {
+  RefPtr<Promise> returnPromise = Promise::Create(aGlobal, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+  returnPromise->MaybeRejectWithTypeError(aMessage);
+  return returnPromise.forget();
+}
+
+already_AddRefed<Promise> Promise::CreateRejectedWithErrorResult(
+    nsIGlobalObject* aGlobal, ErrorResult& aRejectionError) {
+  RefPtr<Promise> returnPromise = Promise::Create(aGlobal, IgnoreErrors());
+  if (!returnPromise) {
+    return nullptr;
+  }
+  returnPromise->MaybeReject(std::move(aRejectionError));
   return returnPromise.forget();
 }
 

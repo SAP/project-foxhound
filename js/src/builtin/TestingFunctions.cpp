@@ -12,6 +12,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Casting.h"
 #include "mozilla/FloatingPoint.h"
+#include "vm/ErrorContext.h"
 #ifdef JS_HAS_INTL_API
 #  include "mozilla/intl/ICU4CLibrary.h"
 #  include "mozilla/intl/Locale.h"
@@ -46,7 +47,6 @@
 #include "fdlibm.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "jsmath.h"
 
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/CommonFunctions.h"
@@ -54,7 +54,6 @@
 #  include "builtin/intl/SharedIntlData.h"
 #endif
 #include "builtin/Promise.h"
-#include "builtin/SelfHostingDefines.h"
 #include "builtin/TestingUtility.h"  // js::ParseCompileOptions, js::ParseDebugMetadata
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScriptToExtensibleStencil, frontend::DelazifyCanonicalScriptedFunction
 #include "frontend/BytecodeCompiler.h"  // frontend::ParseModuleToExtensibleStencil
@@ -77,7 +76,6 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/Date.h"
-#include "js/Debug.h"
 #include "js/experimental/CodeCoverage.h"      // js::GetCodeCoverageSummary
 #include "js/experimental/JSStencil.h"         // JS::Stencil
 #include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
@@ -92,7 +90,6 @@
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperties, JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetElement, JS_SetProperty
 #include "js/PropertySpec.h"
-#include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "js/Stack.h"
@@ -108,14 +105,11 @@
 #include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
-#include "vm/AsyncFunction.h"
-#include "vm/AsyncIteration.h"
 #include "vm/ErrorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/HelperThreads.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Interpreter.h"
-#include "vm/Iteration.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"    // js::PlainObject
@@ -128,13 +122,11 @@
 #include "vm/StringType.h"
 #include "wasm/AsmJS.h"
 #include "wasm/WasmBaselineCompile.h"
-#include "wasm/WasmCraneliftCompile.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmIntrinsic.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
-#include "wasm/WasmSignalHandlers.h"
 #include "wasm/WasmValType.h"
 #include "wasm/WasmValue.h"
 
@@ -159,8 +151,6 @@ using mozilla::Tuple;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
-using JS::RegExpFlag;
-using JS::RegExpFlags;
 using JS::SourceOwnership;
 using JS::SourceText;
 
@@ -202,7 +192,7 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   }
 
 #ifdef NIGHTLY_BUILD
-  bool arrayGrouping = cx->options().arrayGrouping();
+  bool arrayGrouping = cx->realm()->creationOptions().getArrayGroupingEnabled();
   if (!JS_SetProperty(cx, info, "enableArrayGrouping",
                       arrayGrouping ? TrueHandleValue : FalseHandleValue)) {
     return false;
@@ -210,7 +200,8 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
 #endif
 
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  bool changeArrayByCopy = cx->options().changeArrayByCopy();
+  bool changeArrayByCopy =
+      cx->realm()->creationOptions().getChangeArrayByCopyEnabled();
   if (!JS_SetProperty(cx, info, "enableChangeArrayByCopy",
                       changeArrayByCopy ? TrueHandleValue : FalseHandleValue)) {
     return false;
@@ -572,6 +563,15 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+#ifdef ENABLE_DECORATORS
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "decorators", value)) {
+    return false;
+  }
+
 #ifdef FUZZING
   value = BooleanValue(true);
 #else
@@ -912,12 +912,6 @@ static bool WasmSimdEnabled(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool WasmSimdWormholeEnabled(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setBoolean(wasm::SimdWormholeAvailable(cx));
-  return true;
-}
-
 static bool WasmCompilersPresent(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -926,21 +920,12 @@ static bool WasmCompilersPresent(JSContext* cx, unsigned argc, Value* vp) {
   if (wasm::BaselinePlatformSupport()) {
     strcat(buf, "baseline");
   }
-#ifdef ENABLE_WASM_CRANELIFT
-  if (wasm::CraneliftPlatformSupport()) {
-    if (*buf) {
-      strcat(buf, ",");
-    }
-    strcat(buf, "cranelift");
-  }
-#else
   if (wasm::IonPlatformSupport()) {
     if (*buf) {
       strcat(buf, ",");
     }
     strcat(buf, "ion");
   }
-#endif
 
   JSString* result = JS_NewStringCopyZ(cx, buf);
   if (!result) {
@@ -958,11 +943,8 @@ static bool WasmCompileMode(JSContext* cx, unsigned argc, Value* vp) {
   // zero or one optimizing compiler.
   bool baseline = wasm::BaselineAvailable(cx);
   bool ion = wasm::IonAvailable(cx);
-  bool cranelift = wasm::CraneliftAvailable(cx);
-  bool none = !baseline && !ion && !cranelift;
-  bool tiered = baseline && (ion || cranelift);
-
-  MOZ_ASSERT(!(ion && cranelift));
+  bool none = !baseline && !ion;
+  bool tiered = baseline && ion;
 
   JSStringBuilder result(cx);
   if (none && !result.append("none")) {
@@ -975,9 +957,6 @@ static bool WasmCompileMode(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
   if (ion && !result.append("ion")) {
-    return false;
-  }
-  if (cranelift && !result.append("cranelift")) {
     return false;
   }
   if (JSString* str = result.finishString()) {
@@ -993,26 +972,6 @@ static bool WasmBaselineDisabledByFeatures(JSContext* cx, unsigned argc,
   bool isDisabled = false;
   JSStringBuilder reason(cx);
   if (!wasm::BaselineDisabledByFeatures(cx, &isDisabled, &reason)) {
-    return false;
-  }
-  if (isDisabled) {
-    JSString* result = reason.finishString();
-    if (!result) {
-      return false;
-    }
-    args.rval().setString(result);
-  } else {
-    args.rval().setBoolean(false);
-  }
-  return true;
-}
-
-static bool WasmCraneliftDisabledByFeatures(JSContext* cx, unsigned argc,
-                                            Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  bool isDisabled = false;
-  JSStringBuilder reason(cx);
-  if (!wasm::CraneliftDisabledByFeatures(cx, &isDisabled, &reason)) {
     return false;
   }
   if (isDisabled) {
@@ -3005,6 +2964,54 @@ static bool NewObjectWithAddPropertyHook(JSContext* cx, unsigned argc,
   }
 
   args.rval().setObject(*obj);
+  return true;
+}
+
+static constexpr JSClass ObjectWithManyReservedSlotsClass = {
+    "ObjectWithManyReservedSlots", JSCLASS_HAS_RESERVED_SLOTS(40)};
+
+static bool NewObjectWithManyReservedSlots(JSContext* cx, unsigned argc,
+                                           Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  static constexpr size_t NumReservedSlots =
+      JSCLASS_RESERVED_SLOTS(&ObjectWithManyReservedSlotsClass);
+  static_assert(NumReservedSlots > NativeObject::MAX_FIXED_SLOTS);
+
+  RootedObject obj(cx, JS_NewObject(cx, &ObjectWithManyReservedSlotsClass));
+  if (!obj) {
+    return false;
+  }
+
+  for (size_t i = 0; i < NumReservedSlots; i++) {
+    JS_SetReservedSlot(obj, i, Int32Value(i));
+  }
+
+  args.rval().setObject(*obj);
+  return true;
+}
+
+static bool CheckObjectWithManyReservedSlots(JSContext* cx, unsigned argc,
+                                             Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (args.length() != 1 || !args[0].isObject() ||
+      args[0].toObject().getClass() != &ObjectWithManyReservedSlotsClass) {
+    JS_ReportErrorASCII(cx,
+                        "Expected object from newObjectWithManyReservedSlots");
+    return false;
+  }
+
+  JSObject* obj = &args[0].toObject();
+
+  static constexpr size_t NumReservedSlots =
+      JSCLASS_RESERVED_SLOTS(&ObjectWithManyReservedSlotsClass);
+
+  for (size_t i = 0; i < NumReservedSlots; i++) {
+    MOZ_RELEASE_ASSERT(JS::GetReservedSlot(obj, i).toInt32() == int32_t(i));
+  }
+
+  args.rval().setUndefined();
   return true;
 }
 
@@ -6305,7 +6312,8 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, stencil->source, displayURL, sourceMapURL)) {
+  MainThreadErrorContext ec(cx);
+  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6441,20 +6449,23 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Compile the script text to stencil. */
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (isModule) {
-    stencil = frontend::ParseModuleToExtensibleStencil(cx, input.get(), srcBuf);
+    stencil = frontend::ParseModuleToExtensibleStencil(
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf);
   } else {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-        cx, input.get(), srcBuf, ScopeKind::Global);
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf,
+        ScopeKind::Global);
   }
   if (!stencil) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, stencil->source, displayURL, sourceMapURL)) {
+  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6517,9 +6528,10 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Prepare the CompilationStencil for decoding. */
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx)) {
+  if (!input.get().initForGlobal(cx, &ec)) {
     return false;
   }
   frontend::CompilationStencil stencil(nullptr);
@@ -8070,6 +8082,17 @@ static const JSFunctionSpecWithHelp TestingFunctions[] = {
 "  increments the value of the _propertiesAdded data property on the object\n"
 "  when a new property is added."),
 
+    JS_FN_HELP("newObjectWithManyReservedSlots", NewObjectWithManyReservedSlots, 0, 0,
+"newObjectWithManyReservedSlots()",
+"  Returns a new object with many reserved slots. The slots are initialized to int32\n"
+"  values. checkObjectWithManyReservedSlots can be used to check the slots still\n"
+"  hold these values."),
+
+    JS_FN_HELP("checkObjectWithManyReservedSlots", CheckObjectWithManyReservedSlots, 1, 0,
+"checkObjectWithManyReservedSlots(obj)",
+"  Checks the reserved slots set by newObjectWithManyReservedSlots still hold the expected\n"
+"  values."),
+
     JS_FN_HELP("setWatchtowerCallback", SetWatchtowerCallback, 1, 0,
 "setWatchtowerCallback(function)",
 "  Use the given function as callback for objects added to Watchtower by\n"
@@ -8417,11 +8440,6 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 "  Returns a boolean indicating whether WebAssembly SIMD proposal is\n"
 "  supported by the current device."),
 
-    JS_FN_HELP("wasmSimdWormholeEnabled", WasmSimdWormholeEnabled, 0, 0,
-"wasmSimdWormholeEnabled()",
-"  Returns a boolean indicating whether WebAssembly SIMD wormhole instructions\n"
-"  are supported by the compilers and runtime."),
-
 #if defined(ENABLE_WASM_SIMD) && defined(DEBUG)
     JS_FN_HELP("wasmSimdAnalysis", WasmSimdAnalysis, 1, 0,
 "wasmSimdAnalysis(...)",
@@ -8461,26 +8479,19 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
     JS_FN_HELP("wasmCompilersPresent", WasmCompilersPresent, 0, 0,
 "wasmCompilersPresent()",
 "  Returns a string indicating the present wasm compilers: a comma-separated list\n"
-"  of 'baseline', 'ion', and 'cranelift'.  A compiler is present in the executable\n"
-"  if it is compiled in and can generate code for the current architecture."),
+"  of 'baseline', 'ion'.  A compiler is present in the executable if it is compiled\n"
+"  in and can generate code for the current architecture."),
 
     JS_FN_HELP("wasmCompileMode", WasmCompileMode, 0, 0,
 "wasmCompileMode()",
 "  Returns a string indicating the available wasm compilers: 'baseline', 'ion',\n"
-"  'cranelift', 'baseline+ion', 'baseline+cranelift', or 'none'.  A compiler is\n"
-"  available if it is present in the executable and not disabled by switches\n"
-"  or runtime conditions.  At most one baseline and one optimizing compiler can\n"
-"  be available."),
+"  'baseline+ion', or 'none'.  A compiler is available if it is present in the\n"
+"  executable and not disabled by switches or runtime conditions.  At most one\n"
+"  baseline and one optimizing compiler can be available."),
 
     JS_FN_HELP("wasmBaselineDisabledByFeatures", WasmBaselineDisabledByFeatures, 0, 0,
 "wasmBaselineDisabledByFeatures()",
 "  If some feature is enabled at compile-time or run-time that prevents baseline\n"
-"  from being used then this returns a truthy string describing the features that\n."
-"  are disabling it.  Otherwise it returns false."),
-
-    JS_FN_HELP("wasmCraneliftDisabledByFeatures", WasmCraneliftDisabledByFeatures, 0, 0,
-"wasmCraneliftDisabledByFeatures()",
-"  If some feature is enabled at compile-time or run-time that prevents Cranelift\n"
 "  from being used then this returns a truthy string describing the features that\n."
 "  are disabling it.  Otherwise it returns false."),
 

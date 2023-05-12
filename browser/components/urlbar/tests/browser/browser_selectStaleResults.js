@@ -7,11 +7,15 @@
 
 "use strict";
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarView: "resource:///modules/UrlbarView.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
 });
 
 add_task(async function init() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+
   // Increase the timeout of the remove-stale-rows timer so that it doesn't
   // interfere with the tests.
   let originalRemoveStaleRowsTimeout = UrlbarView.removeStaleRowsTimeout;
@@ -166,7 +170,10 @@ add_task(async function staleReplacedWithFresh() {
   );
   let oldDefaultEngine = await Services.search.getDefault();
   await Services.search.moveEngine(engine, 0);
-  await Services.search.setDefault(engine);
+  await Services.search.setDefault(
+    engine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 
   let maxResults = UrlbarPrefs.get("maxRichResults");
 
@@ -297,5 +304,8 @@ add_task(async function staleReplacedWithFresh() {
     EventUtils.synthesizeKey("KEY_Escape")
   );
   await SpecialPowers.popPrefEnv();
-  await Services.search.setDefault(oldDefaultEngine);
+  await Services.search.setDefault(
+    oldDefaultEngine,
+    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  );
 });

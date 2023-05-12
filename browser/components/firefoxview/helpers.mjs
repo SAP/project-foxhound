@@ -55,5 +55,25 @@ export function createFaviconElement(image) {
 export function toggleContainer(collapsibleButton, collapsibleContainer) {
   const arrowDown = "arrow-down";
   collapsibleButton.classList.toggle(arrowDown);
-  collapsibleContainer.hidden = collapsibleButton.classList.contains(arrowDown);
+  let isHidden = collapsibleButton.classList.contains(arrowDown);
+
+  const newFluentString = `${
+    !isHidden
+      ? "firefoxview-collapse-button-hide"
+      : "firefoxview-collapse-button-show"
+  }`;
+  collapsibleButton.setAttribute("data-l10n-id", newFluentString);
+
+  collapsibleButton.setAttribute("aria-expanded", !isHidden);
+  collapsibleButton.setAttribute("data-l10n-id", newFluentString);
+  collapsibleContainer.hidden = isHidden;
+
+  Services.telemetry.recordEvent(
+    "firefoxview",
+    collapsibleButton.id === "collapsible-synced-tabs-button"
+      ? "tab_pickup_open"
+      : "closed_tabs_open",
+    "tabs",
+    (!isHidden).toString()
+  );
 }

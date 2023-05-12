@@ -24,7 +24,9 @@
 #include "mozilla/Poison.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Printf.h"
+#include "mozilla/ProcessType.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/RuntimeExceptionModule.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_fission.h"
@@ -35,6 +37,7 @@
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/JSONWriter.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/widget/TextRecognition.h"
 #include "BaseProfiler.h"
 
 #include "nsAppRunner.h"
@@ -1615,6 +1618,12 @@ nsXULAppInfo::GetIs64Bit(bool* aResult) {
 }
 
 NS_IMETHODIMP
+nsXULAppInfo::GetIsTextRecognitionSupported(bool* aResult) {
+  *aResult = widget::TextRecognition::IsSupported();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsXULAppInfo::EnsureContentProcess() {
   if (!XRE_IsParentProcess()) return NS_ERROR_NOT_AVAILABLE;
 
@@ -2915,11 +2924,17 @@ static ReturnAbortOnError ShowProfileManager(
       nsCOMPtr<nsIAppStartup> appStartup(components::AppStartup::Service());
       NS_ENSURE_TRUE(appStartup, NS_ERROR_FAILURE);
 
+      nsAutoCString features("centerscreen,chrome,modal,titlebar");
+      // If we're launching a private browsing window make sure to set that
+      // feature for the Profile Manager window as well, so it groups correctly
+      // on the Windows taskbar.
+      if (CheckArgExists("private-window") == ARG_FOUND) {
+        features.AppendLiteral(",private");
+      }
       nsCOMPtr<mozIDOMWindowProxy> newWindow;
       rv = windowWatcher->OpenWindow(
           nullptr, nsDependentCString(kProfileManagerURL), "_blank"_ns,
-          "centerscreen,chrome,modal,titlebar"_ns, ioParamBlock,
-          getter_AddRefs(newWindow));
+          features, ioParamBlock, getter_AddRefs(newWindow));
 
       NS_ENSURE_SUCCESS_LOG(rv, rv);
 
@@ -3095,11 +3110,11 @@ static nsresult SelectProfile(nsToolkitProfileService* aProfileSvc,
 }
 
 #ifdef MOZ_BLOCK_PROFILE_DOWNGRADE
-struct FileWriteFunc : public JSONWriteFunc {
+struct FileWriteFunc final : public JSONWriteFunc {
   FILE* mFile;
   explicit FileWriteFunc(FILE* aFile) : mFile(aFile) {}
 
-  void Write(const Span<const char>& aStr) override {
+  void Write(const Span<const char>& aStr) final {
     fprintf(mFile, "%.*s", int(aStr.size()), aStr.data());
   }
 };
@@ -3338,11 +3353,17 @@ static ReturnAbortOnError CheckDowngrade(nsIFile* aProfileDir,
 
       paramBlock->SetInt(0, flags);
 
+      nsAutoCString features("centerscreen,chrome,modal,titlebar");
+      // If we're launching a private browsing window make sure to set that
+      // feature for the Profile Manager window as well, so it groups correctly
+      // on the Windows taskbar.
+      if (CheckArgExists("private-window") == ARG_FOUND) {
+        features.AppendLiteral(",private");
+      }
       nsCOMPtr<mozIDOMWindowProxy> newWindow;
       rv = windowWatcher->OpenWindow(
           nullptr, nsDependentCString(kProfileDowngradeURL), "_blank"_ns,
-          "centerscreen,chrome,modal,titlebar"_ns, paramBlock,
-          getter_AddRefs(newWindow));
+          features, paramBlock, getter_AddRefs(newWindow));
       NS_ENSURE_SUCCESS(rv, rv);
 
       paramBlock->GetInt(1, &result);
@@ -4204,6 +4225,11 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
         SaveWordToEnv("MOZ_CRASHREPORTER_STRINGS_OVERRIDE", overridePath);
       }
     }
+  } else {
+    // We might have registered a runtime exception module very early in process
+    // startup to catch early crashes. This is before we have access to ini file
+    // data, so unregister here if it turns out the crash reporter is disabled.
+    CrashReporter::UnregisterRuntimeExceptionModule();
   }
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
@@ -6019,9 +6045,7 @@ nsresult XRE_DeinitCommandLine() {
   return rv;
 }
 
-GeckoProcessType XRE_GetProcessType() {
-  return mozilla::startup::sChildProcessType;
-}
+GeckoProcessType XRE_GetProcessType() { return GetGeckoProcessType(); }
 
 const char* XRE_GetProcessTypeString() {
   return XRE_GeckoProcessTypeToString(XRE_GetProcessType());
