@@ -216,7 +216,10 @@ function prepareConsoleMessageForRemote(targetActor, message) {
     filename: message.filename,
     level: message.level,
     lineNumber: message.lineNumber,
-    timeStamp: message.timeStamp,
+    // messages emitted from Console.jsm don't have a microSecondTimeStamp property
+    timeStamp: message.microSecondTimeStamp
+      ? message.microSecondTimeStamp / 1000
+      : message.timeStamp,
     sourceId: getActorIdForInternalSourceId(targetActor, message.sourceId),
     innerWindowID: message.innerID,
   };
@@ -247,7 +250,7 @@ function prepareConsoleMessageForRemote(targetActor, message) {
     });
   }
 
-  if (message.styles && message.styles.length > 0) {
+  if (message.styles && message.styles.length) {
     result.styles = message.styles.map(string => {
       return createValueGripForTarget(targetActor, string);
     });

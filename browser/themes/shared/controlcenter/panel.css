@@ -35,63 +35,6 @@
   -moz-window-shadow: none;
 }
 
-/* Fine-tune panel margins */
-:is(
-  #identity-popup,
-  #notification-popup
-)[type="arrow"]:is([side="top"], [side="bottom"]) {
-  margin-inline: -16px;
-}
-
-:is(
-  #identity-popup,
-  #notification-popup
-)[type="arrow"]:is([side="left"], [side="right"]) {
-  margin-block: -16px;
-}
-
-#permission-popup[type="arrow"]:is([side="top"], [side="bottom"]) {
-  margin-inline: calc(-24px - 2 * var(--urlbar-container-padding));
-}
-
-#permission-popup[type="arrow"]:is([side="left"], [side="right"]) {
-  margin-block: calc(-24px - 2 * var(--urlbar-container-padding));
-}
-
-#protections-popup[type="arrow"]:is([side="top"], [side="bottom"]) {
-  margin-inline: calc(-20px + 2 * var(--urlbar-container-padding));
-}
-
-#protections-popup[type="arrow"]:is([side="left"],[side="right"]) {
-  margin-block: calc(-20px + 2 * var(--urlbar-container-padding));
-}
-
-@media (-moz-platform: macos) {
-  :is(
-    #identity-popup,
-    #notification-popup,
-    #permission-popup
-  )[type="arrow"]:is([side="top"],[side="bottom"]) {
-    margin-inline: calc(-12px - 2 * var(--urlbar-container-padding));
-  }
-
-  :is(
-    #identity-popup,
-    #notification-popup,
-    #permission-popup
-  )[type="arrow"]:is([side="left"],[side="right"]) {
-    margin-block: calc(-12px - 2 * var(--urlbar-container-padding));
-  }
-
-  #protections-popup[type="arrow"]:is([side="top"], [side="bottom"]) {
-    margin-inline: calc(-16px + 2 * var(--urlbar-container-padding));
-  }
-
-  #protections-popup[type="arrow"]:is([side="left"],[side="right"]) {
-    margin-block: calc(-16px + 2 * var(--urlbar-container-padding));
-  }
-}
-
 /* Show the right elements for the right connection states. */
 #identity-popup[customroot=true] [when-customroot=true],
 #identity-popup[connection=not-secure] [when-connection~=not-secure],
@@ -387,7 +330,9 @@
 }
 
 #identity-popup-security-button[footerHidden=true] {
-  margin-bottom: 6px;
+  /* Set the footer's bottom margin according to menuitems inline margin
+     to make sure the footer's margin is even from all sides. */
+  margin-bottom: var(--arrowpanel-menuitem-margin-inline);
 }
 
 .identity-popup-security-connection {
@@ -666,14 +611,6 @@ description#identity-popup-content-verifier,
 }
 
 /* PERMISSIONS */
-
-@media (-moz-box-flexbox-emulation) {
-  /* The extra padding-bottom is there to work around XUL flex (Bug 1368281).
-     This rule and the 1.5em above can both be removed once we are only using CSS flex. */
-  #permission-popup-permissions-content {
-    padding-bottom: 1em;
-  }
-}
 
 .protections-popup-footer-button,
 .protections-popup-category,

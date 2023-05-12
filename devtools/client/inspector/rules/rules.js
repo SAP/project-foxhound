@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const flags = require("devtools/shared/flags");
 const { l10n } = require("devtools/shared/inspector/css-logic");
 const {
@@ -694,7 +693,7 @@ CssRuleView.prototype = {
   get isEditing() {
     return (
       this.tooltips.isEditing ||
-      this.element.querySelectorAll(".styleinspector-propertyeditor").length > 0
+      !!this.element.querySelectorAll(".styleinspector-propertyeditor").length
     );
   },
 
@@ -741,8 +740,7 @@ CssRuleView.prototype = {
       clearTimeout(this._filterChangedTimeout);
     }
 
-    const filterTimeout =
-      this.searchValue.length > 0 ? FILTER_CHANGED_TIMEOUT : 0;
+    const filterTimeout = this.searchValue.length ? FILTER_CHANGED_TIMEOUT : 0;
     this.searchClearButton.hidden = this.searchValue.length === 0;
 
     this._filterChangedTimeout = setTimeout(() => {

@@ -12,6 +12,8 @@
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PUtilityAudioDecoderParent.h"
 
+#include "mozilla/ipc/UtilityProcessSandboxing.h"
+
 #include "nsThreadManager.h"
 
 namespace mozilla::ipc {
@@ -24,12 +26,24 @@ class UtilityAudioDecoderParent final : public PUtilityAudioDecoderParent {
 
   UtilityAudioDecoderParent();
 
-  static void PreloadForSandbox();
+  static void GenericPreloadForSandbox();
+  static void WMFPreloadForSandbox();
 
   void Start(Endpoint<PUtilityAudioDecoderParent>&& aEndpoint);
 
   mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
       Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
+
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  mozilla::ipc::IPCResult RecvInitVideoBridge(
+      Endpoint<PVideoBridgeChild>&& aEndpoint,
+      nsTArray<mozilla::gfx::GfxVarUpdate>&& aUpdates,
+      const ContentDeviceData& aContentDeviceData);
+
+  IPCResult RecvUpdateVar(const mozilla::gfx::GfxVarUpdate& aUpdate);
+#endif
+
+  static SandboxingKind GetSandboxingKind();
 
  private:
   ~UtilityAudioDecoderParent() = default;

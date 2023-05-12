@@ -14,10 +14,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"  // mozilla::ConvertUtf16ToUtf8
 
-#include <stdarg.h>
 #include <string.h>
 #ifdef ANDROID
 #  include <android/log.h>
@@ -30,14 +28,10 @@
 
 #include "jsapi.h"  // JS_SetNativeStackQuota
 #include "jsexn.h"
-#include "jspubtd.h"
 #include "jstypes.h"
 
-#include "gc/GCContext.h"
-#include "gc/Marking.h"
-#include "gc/PublicIterators.h"
+#include "gc/GC.h"
 #include "irregexp/RegExpAPI.h"
-#include "jit/PcScriptCache.h"
 #include "jit/Simulator.h"
 #include "js/CallAndConstruct.h"  // JS::Call
 #include "js/CharacterEncoding.h"
@@ -59,28 +53,18 @@
 #include "vm/ErrorContext.h"
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
-#include "vm/HelperThreadState.h"
-#include "vm/Iteration.h"
-#include "vm/JSAtom.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
-#include "vm/JSScript.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Realm.h"
-#include "vm/Shape.h"
 #include "vm/StringType.h"     // StringToNewUTF8CharsZ
 #include "vm/ToSource.h"       // js::ValueToSource
 #include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/Compartment-inl.h"
-#include "vm/JSObject-inl.h"
-#include "vm/JSScript-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace js;
-
-using mozilla::DebugOnly;
-using mozilla::PodArrayZero;
 
 #ifdef DEBUG
 JSContext* js::MaybeGetJSContext() {
@@ -303,9 +287,7 @@ void JSContext::onOutOfMemory() {
   MOZ_ASSERT(status == JS::ExceptionStatus::Throwing);
   status = JS::ExceptionStatus::OutOfMemory;
 
-#ifdef DEBUG
-  hadNondeterministicException_ = true;
-#endif
+  reportResourceExhaustion();
 }
 
 JS_PUBLIC_API void js::ReportOutOfMemory(JSContext* cx) {
@@ -354,9 +336,7 @@ void JSContext::onOverRecursed() {
     }
   }
 
-#ifdef DEBUG
-  hadNondeterministicException_ = true;
-#endif
+  reportResourceExhaustion();
 }
 
 JS_PUBLIC_API void js::ReportOverRecursed(JSContext* maybecx) {
@@ -389,9 +369,7 @@ void js::ReportOversizedAllocation(JSContext* cx, const unsigned errorNumber) {
   gc::AutoSuppressGC suppressGC(cx);
   JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, errorNumber);
 
-#ifdef DEBUG
-  cx->hadNondeterministicException_ = true;
-#endif
+  cx->reportResourceExhaustion();
 }
 
 void js::ReportAllocationOverflow(JSContext* cx) {
@@ -1040,7 +1018,7 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       unwrappedException_(this),
       unwrappedExceptionStack_(this),
 #ifdef DEBUG
-      hadNondeterministicException_(this, false),
+      hadResourceExhaustion_(this, false),
 #endif
       reportGranularity(this, JS_DEFAULT_JITREPORT_GRANULARITY),
       resolvingList(this, nullptr),

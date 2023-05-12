@@ -52,12 +52,19 @@ with only_when(target_is_osx):
         "--enable-macos-target",
         env="MACOSX_DEPLOYMENT_TARGET",
         nargs=1,
-        default=depends(target)(lambda t: "11.0" if t.cpu == "aarch64" else "10.12"),
+        default=depends(target, developer_options)
+        # We continue to target 10.12 on Intel, but can target 11.0 for
+        # aarch64 since the earliest hardware was released alongside 11.0.
+        # For local builds, we want to target 10.12 regardless of the
+        # underlying platform to catch any errors or warnings that wouldn't
+        # show up when targeting 11.0, since these would later show up on
+        # CI for Intel builds.
+        (lambda t, d: "11.0" if (t.cpu == "aarch64" and not d) else "10.12"),
         help="Set the minimum MacOS version needed at runtime{|}",
     )
 
-    @depends_if("--enable-macos-target")
-    def macos_target(value):
+    @depends_if("--enable-macos-target", developer_options)
+    def macos_target(value, _):
         return value[0]
 
 
@@ -102,7 +109,7 @@ with only_when(host_is_osx | target_is_osx):
         # When we change the SDK we build with, please update the manual SDK
         # installation docs:
         # https://firefox-source-docs.mozilla.org/setup/macos_build.html#macos-sdk-is-unsupported
-        sdk_min_version = Version("11.0")
+        sdk_min_version = Version("11.3")
 
         if sdk:
             sdk = sdk[0]
@@ -1506,7 +1513,7 @@ def enable_linker_default(target, developer_options):
 option(
     "--enable-linker",
     nargs=1,
-    help="Select the linker {bfd, gold, ld64, lld, lld-*}{|}",
+    help="Select the linker {bfd, gold, ld64, lld, lld-*, mold}{|}",
     default=enable_linker_default,
     when=is_linker_option_enabled,
 )
@@ -1541,7 +1548,7 @@ def select_linker(linker, c_compiler, developer_options, toolchain_flags, target
         if target.kernel == "Darwin":
             valid_linkers = ("ld64", "lld")
         else:
-            valid_linkers = ("bfd", "gold", "lld")
+            valid_linkers = ("bfd", "gold", "lld", "mold")
         if linker in valid_linkers:
             return True
         if "lld" in valid_linkers and linker.startswith("lld-"):
@@ -1585,6 +1592,9 @@ def select_linker(linker, c_compiler, developer_options, toolchain_flags, target
 
         elif retcode != 0:
             return None
+
+        elif "mold" in stdout:
+            kind = "mold"
 
         elif "GNU ld" in stdout:
             # We are using the normal linker
@@ -1692,7 +1702,7 @@ add_old_configure_assignment("LINKER_LDFLAGS", linker_ldflags)
 @depends(select_linker, target, c_compiler)
 def gcc_use_gnu_ld(select_linker, target, c_compiler):
     if select_linker is not None and target.kernel != "Darwin":
-        return select_linker.KIND in ("bfd", "gold", "lld")
+        return select_linker.KIND in ("bfd", "gold", "lld", "mold")
     if target.kernel == "WINNT" and c_compiler.type == "clang":
         return True
     return None
@@ -1717,34 +1727,6 @@ set_config("MSVS_VERSION", msvs_version)
 
 include("compile-checks.configure")
 include("arm.configure", when=depends(target.cpu)(lambda cpu: cpu == "arm"))
-
-
-@depends(host, host_os_kernel_major_version, target)
-def needs_macos_sdk_headers_check(host, version, target):
-    # Only an issue on Mac OS X 10.14 (and probably above).
-    if host.kernel != "Darwin" or target.kernel != "Darwin" or version < "18":
-        return
-
-    return True
-
-
-@depends(
-    cxx_compiler.try_run(
-        header="#include_next <inttypes.h>",
-        check_msg="for macOS SDK headers",
-        when=needs_macos_sdk_headers_check,
-    ),
-    when=needs_macos_sdk_headers_check,
-)
-def check_have_mac_10_14_sdk(value):
-    if value:
-        return
-
-    die(
-        "System inttypes.h not found. Please try running "
-        "`open /Library/Developer/CommandLineTools/Packages/macOS_SDK_headers_for_macOS_10.14.pkg` "
-        "and following the instructions to install the necessary headers"
-    )
 
 
 @depends(

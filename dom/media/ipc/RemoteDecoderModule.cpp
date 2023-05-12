@@ -17,6 +17,7 @@
 #include "VorbisDecoder.h"
 #include "WAVDecoder.h"
 #include "gfxConfig.h"
+#include "mozilla/RemoteDecodeUtils.h"
 
 namespace mozilla {
 
@@ -48,12 +49,15 @@ media::DecodeSupportSet RemoteDecoderModule::Supports(
     DecoderDoctorDiagnostics* aDiagnostics) const {
   bool supports =
       RemoteDecoderManagerChild::Supports(mLocation, aParams, aDiagnostics);
+  // This should only be supported by mf media engine cdm process.
+  if (aParams.mMediaEngineId &&
+      mLocation != RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM) {
+    supports = false;
+  }
   MOZ_LOG(sPDMLog, LogLevel::Debug,
           ("Sandbox %s decoder %s requested type %s",
-           mLocation == RemoteDecodeIn::GpuProcess
-               ? "GPU"
-               : (mLocation == RemoteDecodeIn::RddProcess ? "RDD" : "Utility"),
-           supports ? "supports" : "rejects", aParams.MimeType().get()));
+           RemoteDecodeInToStr(mLocation), supports ? "supports" : "rejects",
+           aParams.MimeType().get()));
   if (supports) {
     // TODO: Note that we do not yet distinguish between SW/HW decode support.
     //       Will be done in bug 1754239.

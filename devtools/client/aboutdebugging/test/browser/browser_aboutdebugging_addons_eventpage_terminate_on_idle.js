@@ -86,7 +86,7 @@ add_task(
     });
 
     info("Open a DevTools toolbox on the target extension");
-    const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+    const { devtoolsWindow } = await openAboutDevtoolsToolbox(
       document,
       tab,
       window,
@@ -168,7 +168,7 @@ add_task(
     let consoleElements;
     await waitUntil(() => {
       consoleElements = findMessagesByType(hud, expectedWarning, ".warn");
-      return consoleElements.length > 0;
+      return !!consoleElements.length;
     });
 
     const locationElement = consoleElements[0].querySelector(
@@ -183,7 +183,7 @@ add_task(
       "Verify event page is terminated on idle after closing the DevTools toolbox"
     );
 
-    await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+    await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
     await triggerExtensionEventPageIdleTimeout(EXTENSION_ID);
     await waitForBGStatusUpdate;
     await assertBackgroundStatus(EXTENSION_NAME, {

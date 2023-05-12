@@ -5,12 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileSystemFileHandle.h"
-#include "fs/FileSystemRequestHandler.h"
 
+#include "fs/FileSystemRequestHandler.h"
+#include "js/StructuredClone.h"
+#include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemFileHandleBinding.h"
 #include "mozilla/dom/FileSystemHandleBinding.h"
-#include "mozilla/dom/POriginPrivateFileSystem.h"
+#include "mozilla/dom/FileSystemManager.h"
+#include "mozilla/dom/PFileSystemManager.h"
 #include "mozilla/dom/Promise.h"
 
 namespace mozilla::dom {
@@ -20,15 +23,15 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(FileSystemFileHandle,
 NS_IMPL_CYCLE_COLLECTION_INHERITED(FileSystemFileHandle, FileSystemHandle)
 
 FileSystemFileHandle::FileSystemFileHandle(
-    nsIGlobalObject* aGlobal, RefPtr<FileSystemActorHolder>& aActor,
+    nsIGlobalObject* aGlobal, RefPtr<FileSystemManager>& aManager,
     const fs::FileSystemEntryMetadata& aMetadata,
     fs::FileSystemRequestHandler* aRequestHandler)
-    : FileSystemHandle(aGlobal, aActor, aMetadata, aRequestHandler) {}
+    : FileSystemHandle(aGlobal, aManager, aMetadata, aRequestHandler) {}
 
 FileSystemFileHandle::FileSystemFileHandle(
-    nsIGlobalObject* aGlobal, RefPtr<FileSystemActorHolder>& aActor,
+    nsIGlobalObject* aGlobal, RefPtr<FileSystemManager>& aManager,
     const fs::FileSystemEntryMetadata& aMetadata)
-    : FileSystemFileHandle(aGlobal, aActor, aMetadata,
+    : FileSystemFileHandle(aGlobal, aManager, aMetadata,
                            new fs::FileSystemRequestHandler()) {}
 
 // WebIDL Boilerplate
@@ -50,7 +53,7 @@ already_AddRefed<Promise> FileSystemFileHandle::GetFile(ErrorResult& aError) {
     return nullptr;
   }
 
-  promise->MaybeReject(NS_ERROR_NOT_IMPLEMENTED);
+  mRequestHandler->GetFile(mManager, mMetadata, promise);
 
   return promise.forget();
 }
@@ -74,9 +77,36 @@ already_AddRefed<Promise> FileSystemFileHandle::CreateSyncAccessHandle(
     return nullptr;
   }
 
-  promise->MaybeReject(NS_ERROR_NOT_IMPLEMENTED);
+  mRequestHandler->GetAccessHandle(mManager, mMetadata, promise);
 
   return promise.forget();
+}
+
+// [Serializable] implementation
+
+// static
+already_AddRefed<FileSystemFileHandle>
+FileSystemFileHandle::ReadStructuredClone(JSContext* aCx,
+                                          nsIGlobalObject* aGlobal,
+                                          JSStructuredCloneReader* aReader) {
+  uint32_t kind = static_cast<uint32_t>(FileSystemHandleKind::EndGuard_);
+
+  if (!JS_ReadBytes(aReader, reinterpret_cast<void*>(&kind),
+                    sizeof(uint32_t))) {
+    return nullptr;
+  }
+
+  if (kind != static_cast<uint32_t>(FileSystemHandleKind::File)) {
+    return nullptr;
+  }
+
+  RefPtr<FileSystemFileHandle> result =
+      FileSystemHandle::ConstructFileHandle(aCx, aGlobal, aReader);
+  if (!result) {
+    return nullptr;
+  }
+
+  return result.forget();
 }
 
 }  // namespace mozilla::dom

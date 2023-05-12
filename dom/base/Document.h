@@ -3357,7 +3357,11 @@ class Document : public nsINode,
                mozilla::ErrorResult& rv);
   Nullable<WindowProxyHolder> GetDefaultView() const;
   Element* GetActiveElement();
-  nsIContent* GetUnretargetedFocusedContent() const;
+  enum class IncludeChromeOnly : bool { No, Yes };
+  // TODO(emilio): Audit callers and remove the default argument, some seem like
+  // they could want the IncludeChromeOnly::Yes version.
+  nsIContent* GetUnretargetedFocusedContent(
+      IncludeChromeOnly = IncludeChromeOnly::No) const;
   bool HasFocus(ErrorResult& rv) const;
   void GetDesignMode(nsAString& aDesignMode);
   void SetDesignMode(const nsAString& aDesignMode,
@@ -3678,10 +3682,11 @@ class Document : public nsINode,
   DOMHighResTimeStamp LastUserGestureTimeStamp();
 
   // Return true if there is transient user gesture activation and it hasn't yet
-  // timed out.
+  // timed out or hasn't been consumed.
   bool HasValidTransientUserGestureActivation() const;
 
-  // Return true.
+  // Return true if HasValidTransientUserGestureActivation() would return true,
+  // and consume the activation.
   bool ConsumeTransientUserGestureActivation();
 
   BrowsingContext* GetBrowsingContext() const;
@@ -3747,14 +3752,6 @@ class Document : public nsINode,
     return mLazyLoadImageObserverViewport;
   }
   DOMIntersectionObserver& EnsureLazyLoadImageObserver();
-  DOMIntersectionObserver& EnsureLazyLoadImageObserverViewport();
-  void IncLazyLoadImageCount();
-  void DecLazyLoadImageCount() {
-    MOZ_DIAGNOSTIC_ASSERT(mLazyLoadImageCount > 0);
-    --mLazyLoadImageCount;
-  }
-  void IncLazyLoadImageStarted() { ++mLazyLoadImageStarted; }
-  void IncLazyLoadImageReachViewport(bool aLoading);
 
   ResizeObserver* GetLastRememberedSizeObserver() {
     return mLastRememberedSizeObserver;
@@ -3811,7 +3808,7 @@ class Document : public nsINode,
    * Localization
    *
    * For more information on DocumentL10n see
-   * intl/l10n/docs/fluent_tutorial.rst
+   * intl/l10n/docs/fluent/tutorial.rst
    */
 
  public:
@@ -4832,19 +4829,6 @@ class Document : public nsINode,
   // would block the parser, then mWriteLevel will be incorrect until the parser
   // finishes processing that script.
   uint32_t mWriteLevel;
-
-  // The amount of images that have `loading="lazy"` on the page or have loaded
-  // lazily already.
-  uint32_t mLazyLoadImageCount;
-  // Number of lazy-loaded images that we've started loading as a result of
-  // triggering the lazy-load observer threshold.
-  uint32_t mLazyLoadImageStarted;
-  // Number of lazy-loaded images that reached the viewport which were not done
-  // loading when they did so.
-  uint32_t mLazyLoadImageReachViewportLoading;
-  // Number of lazy-loaded images that reached the viewport and were done
-  // loading when they did so.
-  uint32_t mLazyLoadImageReachViewportLoaded;
 
   uint32_t mContentEditableCount;
   EditingState mEditingState;

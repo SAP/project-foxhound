@@ -906,8 +906,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Is this presentation in a chrome docshell?
   bool IsChrome() const;
 
-  bool SuppressingResizeReflow() const { return mSuppressResizeReflow; }
-
   gfxUserFontSet* GetUserFontSet();
 
   // Should be called whenever the set of fonts available in the user
@@ -1069,14 +1067,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   }
 
   bool IsDeviceSizePageSize();
-
-  bool HasWarnedAboutPositionedTableParts() const {
-    return mHasWarnedAboutPositionedTableParts;
-  }
-
-  void SetHasWarnedAboutPositionedTableParts() {
-    mHasWarnedAboutPositionedTableParts = true;
-  }
 
   bool HasWarnedAboutTooLargeDashedOrDottedRadius() const {
     return mHasWarnedAboutTooLargeDashedOrDottedRadius;
@@ -1354,8 +1344,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   // Does the associated document use ex or ch units?
   //
-  // TODO(emilio): It's a bit weird that this lives here but all the other
-  // relevant bits live in Device on the rust side.
+  // TODO(emilio, bug 1791281): It's a bit weird that this lives here but all
+  // the other relevant bits live in Device on the rust side.
   unsigned mUsesFontMetricDependentFontUnits : 1;
 
   // Is the current mCounterStyleManager valid?
@@ -1364,13 +1354,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Is the current mFontFeatureValuesLookup valid?
   unsigned mFontFeatureValuesDirty : 1;
 
-  // resize reflow is suppressed when the only change has been to zoom
-  // the document rather than to change the document's dimensions
-  unsigned mSuppressResizeReflow : 1;
-
   unsigned mIsVisual : 1;
 
-  unsigned mHasWarnedAboutPositionedTableParts : 1;
+  // FIXME(emilio, bug 1791281): Remove this and
+  // mUsesFontMetricDependentFontUnits, which can be written to from multiple
+  // threads (synchronized, but other code reads from other bits
+  // unsynchronized).
+  unsigned mUnused : 1;
 
   unsigned mHasWarnedAboutTooLargeDashedOrDottedRadius : 1;
 

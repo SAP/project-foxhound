@@ -18,7 +18,6 @@
 #include "jit/Ion.h"
 #include "js/HeapAPI.h"
 #include "util/Text.h"
-#include "vm/ArrayObject.h"
 #include "vm/BigIntType.h"
 #include "vm/HelperThreadState.h"
 #include "vm/JSObject.h"
@@ -28,8 +27,6 @@
 #include "vm/Runtime.h"
 #include "vm/Shape.h"
 #include "vm/StringType.h"
-#include "vm/SymbolType.h"
-#include "vm/WrapperObject.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
@@ -646,7 +643,7 @@ static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
     return false;
   }
 
-  size_t totalZones = rt->gc.zones().length() + 1;  // + 1 for the atoms zone.
+  size_t totalZones = rt->gc.zones().length();
   if (!rtStats->zoneStatsVector.reserve(totalZones)) {
     return false;
   }

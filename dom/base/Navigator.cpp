@@ -173,7 +173,10 @@ void Navigator::Invalidate() {
 
   mPermissions = nullptr;
 
-  mStorageManager = nullptr;
+  if (mStorageManager) {
+    mStorageManager->Shutdown();
+    mStorageManager = nullptr;
+  }
 
   // If there is a page transition, make sure delete the geolocation object.
   if (mGeolocation) {
@@ -1825,6 +1828,16 @@ already_AddRefed<ServiceWorkerContainer> Navigator::ServiceWorker() {
 
   RefPtr<ServiceWorkerContainer> ref = mServiceWorkerContainer;
   return ref.forget();
+}
+
+already_AddRefed<ServiceWorkerContainer> Navigator::ServiceWorkerJS() {
+  if (mWindow->AsGlobal()->GetStorageAccess() ==
+      StorageAccess::ePrivateBrowsing) {
+    SetUseCounter(mWindow->AsGlobal()->GetGlobalJSObject(),
+                  eUseCounter_custom_PrivateBrowsingNavigatorServiceWorker);
+  }
+
+  return ServiceWorker();
 }
 
 size_t Navigator::SizeOfIncludingThis(

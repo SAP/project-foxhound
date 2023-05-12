@@ -39,9 +39,7 @@ namespace mozilla {
 namespace psm {
 
 TransportSecurityInfo::TransportSecurityInfo()
-    : mIsDomainMismatch(false),
-      mIsNotValidAtThisTime(false),
-      mIsUntrusted(false),
+    : mOverridableErrorCategory(OverridableErrorCategory::ERROR_UNSET),
       mIsEV(false),
       mHasIsEVStatus(false),
       mHaveCipherSuiteAndProtocol(false),
@@ -56,6 +54,8 @@ TransportSecurityInfo::TransportSecurityInfo()
       mSignatureSchemeName(),
       mIsAcceptedEch(false),
       mIsDelegatedCredential(false),
+      mMadeOCSPRequests(false),
+      mUsedPrivateDNS(false),
       mNPNCompleted(false),
       mResumed(false),
       mIsBuiltCertChainRootBuiltInRoot(false),
@@ -207,7 +207,7 @@ TransportSecurityInfo::Write(nsIObjectOutputStream* aStream) {
   // Re-purpose mErrorMessageCached to represent serialization version
   // If string doesn't match exact version it will be treated as older
   // serialization.
-  rv = aStream->WriteWStringZ(NS_ConvertUTF8toUTF16("7").get());
+  rv = aStream->WriteWStringZ(NS_ConvertUTF8toUTF16("9").get());
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -223,11 +223,7 @@ TransportSecurityInfo::Write(nsIObjectOutputStream* aStream) {
   rv = aStream->Write16(mProtocolVersion);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = aStream->WriteBoolean(mIsDomainMismatch);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = aStream->WriteBoolean(mIsNotValidAtThisTime);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = aStream->WriteBoolean(mIsUntrusted);
+  rv = aStream->Write32(mOverridableErrorCategory);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = aStream->WriteBoolean(mIsEV);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -298,6 +294,16 @@ TransportSecurityInfo::Write(nsIObjectOutputStream* aStream) {
     return rv;
   }
 
+  rv = aStream->WriteBoolean(mMadeOCSPRequests);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  rv = aStream->WriteBoolean(mUsedPrivateDNS);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
   return NS_OK;
 }
 
@@ -305,6 +311,39 @@ TransportSecurityInfo::Write(nsIObjectOutputStream* aStream) {
   if (XRE_GetProcessType() == GeckoProcessType_Content) { \
     MOZ_DIAGNOSTIC_ASSERT(condition, message);            \
   }
+
+nsresult TransportSecurityInfo::ReadOldOverridableErrorBits(
+    nsIObjectInputStream* aStream, MutexAutoLock& aProofOfLock) {
+  mMutex.AssertCurrentThreadOwns();
+
+  bool isDomainMismatch;
+  nsresult rv = aStream->ReadBoolean(&isDomainMismatch);
+  CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
+  NS_ENSURE_SUCCESS(rv, rv);
+  bool isNotValidAtThisTime;
+  rv = aStream->ReadBoolean(&isNotValidAtThisTime);
+  CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
+  NS_ENSURE_SUCCESS(rv, rv);
+  bool isUntrusted;
+  rv = aStream->ReadBoolean(&isUntrusted);
+  CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (isUntrusted) {
+    mOverridableErrorCategory =
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TRUST;
+  } else if (isDomainMismatch) {
+    mOverridableErrorCategory =
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_DOMAIN;
+  } else if (isNotValidAtThisTime) {
+    mOverridableErrorCategory =
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TIME;
+  } else {
+    mOverridableErrorCategory =
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
+  }
+
+  return NS_OK;
+}
 
 // This is for backward compatibility to be able to read nsISSLStatus
 // serialized object.
@@ -371,14 +410,7 @@ nsresult TransportSecurityInfo::ReadSSLStatus(nsIObjectInputStream* aStream,
   const uint8_t streamFormatVersion =
       (protocolVersionAndStreamFormatVersion >> 8) & 0xFF;
 
-  rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsDomainMismatch);
-  CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsNotValidAtThisTime);
-  CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsUntrusted);
-  CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
+  rv = ReadOldOverridableErrorBits(aStream, aProofOfLock);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsEV);
   CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv), "Deserialization should not fail");
@@ -500,6 +532,24 @@ nsresult TransportSecurityInfo::ReadCertificatesFromStream(
   return NS_OK;
 }
 
+static nsITransportSecurityInfo::OverridableErrorCategory
+IntToOverridableErrorCategory(uint32_t intVal) {
+  switch (intVal) {
+    case static_cast<uint32_t>(
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TRUST):
+      return nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TRUST;
+    case static_cast<uint32_t>(
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_DOMAIN):
+      return nsITransportSecurityInfo::OverridableErrorCategory::ERROR_DOMAIN;
+    case static_cast<uint32_t>(
+        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TIME):
+      return nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TIME;
+    default:
+      break;
+  }
+  return nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
+}
+
 // NB: Any updates (except disk-only fields) must be kept in sync with
 //     |DeserializeFromIPC|.
 NS_IMETHODIMP
@@ -607,18 +657,18 @@ TransportSecurityInfo::Read(nsIObjectInputStream* aStream) {
                             "Deserialization should not fail");
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsDomainMismatch);
-    CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
-                            "Deserialization should not fail");
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsNotValidAtThisTime);
-    CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
-                            "Deserialization should not fail");
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsUntrusted);
-    CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
-                            "Deserialization should not fail");
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (serVersionParsedToInt < 8) {
+      rv = ReadOldOverridableErrorBits(aStream, lock);
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else {
+      uint32_t overridableErrorCategory;
+      rv = aStream->Read32(&overridableErrorCategory);
+      CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
+                              "Deserialization should not fail");
+      NS_ENSURE_SUCCESS(rv, rv);
+      mOverridableErrorCategory =
+          IntToOverridableErrorCategory(overridableErrorCategory);
+    }
     rv = ReadBoolAndSetAtomicFieldHelper(aStream, mIsEV);
     CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
                             "Deserialization should not fail");
@@ -752,6 +802,22 @@ TransportSecurityInfo::Read(nsIObjectInputStream* aStream) {
     }
   }
 
+  if (serVersionParsedToInt >= 9) {
+    rv = aStream->ReadBoolean(&mMadeOCSPRequests);
+    CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
+                            "Deserialization should not fail");
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    rv = aStream->ReadBoolean(&mUsedPrivateDNS);
+    CHILD_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
+                            "Deserialization should not fail");
+    if (NS_FAILED(rv)) {
+      return rv;
+    };
+  }
+
   return NS_OK;
 }
 
@@ -767,9 +833,7 @@ void TransportSecurityInfo::SerializeToIPC(IPC::MessageWriter* aWriter) {
   WriteParam(aWriter, mServerCert);
   WriteParam(aWriter, mCipherSuite);
   WriteParam(aWriter, mProtocolVersion);
-  WriteParam(aWriter, static_cast<bool>(mIsDomainMismatch));
-  WriteParam(aWriter, static_cast<bool>(mIsNotValidAtThisTime));
-  WriteParam(aWriter, static_cast<bool>(mIsUntrusted));
+  WriteParam(aWriter, static_cast<uint32_t>(mOverridableErrorCategory));
   WriteParam(aWriter, static_cast<bool>(mIsEV));
   WriteParam(aWriter, static_cast<bool>(mHasIsEVStatus));
   WriteParam(aWriter, static_cast<bool>(mHaveCipherSuiteAndProtocol));
@@ -786,20 +850,21 @@ void TransportSecurityInfo::SerializeToIPC(IPC::MessageWriter* aWriter) {
   WriteParam(aWriter, mIsBuiltCertChainRootBuiltInRoot);
   WriteParam(aWriter, mIsAcceptedEch);
   WriteParam(aWriter, mPeerId);
+  WriteParam(aWriter, mMadeOCSPRequests);
+  WriteParam(aWriter, mUsedPrivateDNS);
 }
 
 bool TransportSecurityInfo::DeserializeFromIPC(IPC::MessageReader* aReader) {
   MutexAutoLock guard(mMutex);
 
   int32_t errorCode = 0;
+  uint32_t overridableErrorCategory;
 
   if (!ReadParamAtomicHelper(aReader, mSecurityState) ||
       !ReadParam(aReader, &errorCode) || !ReadParam(aReader, &mServerCert) ||
       !ReadParam(aReader, &mCipherSuite) ||
       !ReadParam(aReader, &mProtocolVersion) ||
-      !ReadParamAtomicHelper(aReader, mIsDomainMismatch) ||
-      !ReadParamAtomicHelper(aReader, mIsNotValidAtThisTime) ||
-      !ReadParamAtomicHelper(aReader, mIsUntrusted) ||
+      !ReadParam(aReader, &overridableErrorCategory) ||
       !ReadParamAtomicHelper(aReader, mIsEV) ||
       !ReadParamAtomicHelper(aReader, mHasIsEVStatus) ||
       !ReadParamAtomicHelper(aReader, mHaveCipherSuiteAndProtocol) ||
@@ -813,7 +878,9 @@ bool TransportSecurityInfo::DeserializeFromIPC(IPC::MessageReader* aReader) {
       !ReadParam(aReader, &mNPNCompleted) ||
       !ReadParam(aReader, &mNegotiatedNPN) || !ReadParam(aReader, &mResumed) ||
       !ReadParam(aReader, &mIsBuiltCertChainRootBuiltInRoot) ||
-      !ReadParam(aReader, &mIsAcceptedEch) || !ReadParam(aReader, &mPeerId)) {
+      !ReadParam(aReader, &mIsAcceptedEch) || !ReadParam(aReader, &mPeerId) ||
+      !ReadParam(aReader, &mMadeOCSPRequests) ||
+      !ReadParam(aReader, &mUsedPrivateDNS)) {
     return false;
   }
 
@@ -821,6 +888,8 @@ bool TransportSecurityInfo::DeserializeFromIPC(IPC::MessageReader* aReader) {
   if (mErrorCode != 0) {
     mCanceled = true;
   }
+  mOverridableErrorCategory =
+      IntToOverridableErrorCategory(overridableErrorCategory);
 
   return true;
 }
@@ -908,13 +977,9 @@ void RememberCertErrorsTable::RememberCertHasError(
       return;
     }
 
-    CertStateBits bits;
-    bits.mIsDomainMismatch = infoObject->mIsDomainMismatch;
-    bits.mIsNotValidAtThisTime = infoObject->mIsNotValidAtThisTime;
-    bits.mIsUntrusted = infoObject->mIsUntrusted;
-
     MutexAutoLock lock(mMutex);
-    mErrorHosts.InsertOrUpdate(hostPortKey, bits);
+    mErrorHosts.InsertOrUpdate(hostPortKey,
+                               infoObject->mOverridableErrorCategory);
   } else {
     MutexAutoLock lock(mMutex);
     mErrorHosts.Remove(hostPortKey);
@@ -938,10 +1003,10 @@ void RememberCertErrorsTable::LookupCertErrorBits(
     return;
   }
 
-  CertStateBits bits;
+  nsITransportSecurityInfo::OverridableErrorCategory overridableErrorCategory;
   {
     MutexAutoLock lock(mMutex);
-    if (!mErrorHosts.Get(hostPortKey, &bits)) {
+    if (!mErrorHosts.Get(hostPortKey, &overridableErrorCategory)) {
       // No record was found, this host had no cert errors
       return;
     }
@@ -949,19 +1014,16 @@ void RememberCertErrorsTable::LookupCertErrorBits(
 
   // This host had cert errors, update the bits correctly
   infoObject->mHaveCertErrorBits = true;
-  infoObject->mIsDomainMismatch = bits.mIsDomainMismatch;
-  infoObject->mIsNotValidAtThisTime = bits.mIsNotValidAtThisTime;
-  infoObject->mIsUntrusted = bits.mIsUntrusted;
+  infoObject->mOverridableErrorCategory = overridableErrorCategory;
 }
 
 void TransportSecurityInfo::SetStatusErrorBits(
-    const nsCOMPtr<nsIX509Cert>& cert, uint32_t collected_errors) {
+    const nsCOMPtr<nsIX509Cert>& cert,
+    OverridableErrorCategory overridableErrorCategory) {
   SetServerCert(cert, EVStatus::NotEV);
 
   mHaveCertErrorBits = true;
-  mIsDomainMismatch = collected_errors & nsICertOverrideService::ERROR_MISMATCH;
-  mIsNotValidAtThisTime = collected_errors & nsICertOverrideService::ERROR_TIME;
-  mIsUntrusted = collected_errors & nsICertOverrideService::ERROR_UNTRUSTED;
+  mOverridableErrorCategory = overridableErrorCategory;
 
   RememberCertErrorsTable::GetInstance().RememberCertHasError(this, SECFailure);
 }
@@ -1149,6 +1211,21 @@ TransportSecurityInfo::GetCertificateTransparencyStatus(
   return NS_OK;
 }
 
+NS_IMETHODIMP
+TransportSecurityInfo::GetMadeOCSPRequests(bool* aMadeOCSPRequests) {
+  MutexAutoLock lock(mMutex);
+
+  *aMadeOCSPRequests = mMadeOCSPRequests;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+TransportSecurityInfo::GetUsedPrivateDNS(bool* aUsedPrivateDNS) {
+  MutexAutoLock lock(mMutex);
+  *aUsedPrivateDNS = mUsedPrivateDNS;
+  return NS_OK;
+}
+
 // static
 uint16_t TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
     const mozilla::psm::CertificateTransparencyInfo& info) {
@@ -1178,23 +1255,14 @@ uint16_t TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
 }
 
 NS_IMETHODIMP
-TransportSecurityInfo::GetIsDomainMismatch(bool* aIsDomainMismatch) {
-  NS_ENSURE_ARG_POINTER(aIsDomainMismatch);
-  *aIsDomainMismatch = mHaveCertErrorBits && mIsDomainMismatch;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TransportSecurityInfo::GetIsNotValidAtThisTime(bool* aIsNotValidAtThisTime) {
-  NS_ENSURE_ARG_POINTER(aIsNotValidAtThisTime);
-  *aIsNotValidAtThisTime = mHaveCertErrorBits && mIsNotValidAtThisTime;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TransportSecurityInfo::GetIsUntrusted(bool* aIsUntrusted) {
-  NS_ENSURE_ARG_POINTER(aIsUntrusted);
-  *aIsUntrusted = mHaveCertErrorBits && mIsUntrusted;
+TransportSecurityInfo::GetOverridableErrorCategory(
+    OverridableErrorCategory* aOverridableErrorCategory) {
+  NS_ENSURE_ARG_POINTER(aOverridableErrorCategory);
+  if (mHaveCertErrorBits) {
+    *aOverridableErrorCategory = mOverridableErrorCategory;
+  } else {
+    *aOverridableErrorCategory = OverridableErrorCategory::ERROR_UNSET;
+  }
   return NS_OK;
 }
 

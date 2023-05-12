@@ -7,24 +7,26 @@
 #ifndef DOM_FS_TEST_GTEST_TESTHELPERS_H_
 #define DOM_FS_TEST_GTEST_TESTHELPERS_H_
 
-#include "gtest/gtest.h"
-
 #include "ErrorList.h"
-#include "mozilla/dom/quota/QuotaCommon.h"
+#include "gtest/gtest.h"
 #include "mozilla/ErrorNames.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 
 #define ASSERT_NSEQ(lhs, rhs) \
   ASSERT_STREQ(GetStaticErrorName((lhs)), GetStaticErrorName((rhs)))
 
-#define TEST_TRY_UNWRAP_META(tempVar, target, expr) \
-  auto MOZ_REMOVE_PAREN(tempVar) = (expr);          \
-  ASSERT_TRUE(MOZ_REMOVE_PAREN(tempVar).isOk());    \
+#define TEST_TRY_UNWRAP_META(tempVar, target, expr)                \
+  auto MOZ_REMOVE_PAREN(tempVar) = (expr);                         \
+  ASSERT_TRUE(MOZ_REMOVE_PAREN(tempVar).isOk())                    \
+  << GetStaticErrorName(                                           \
+      mozilla::ToNSResult(MOZ_REMOVE_PAREN(tempVar).unwrapErr())); \
   MOZ_REMOVE_PAREN(target) = MOZ_REMOVE_PAREN(tempVar).unwrap();
 
 #define TEST_TRY_UNWRAP_ERR_META(tempVar, target, expr) \
   auto MOZ_REMOVE_PAREN(tempVar) = (expr);              \
   ASSERT_TRUE(MOZ_REMOVE_PAREN(tempVar).isErr());       \
-  MOZ_REMOVE_PAREN(target) = MOZ_REMOVE_PAREN(tempVar).unwrapErr().NSResult();
+  MOZ_REMOVE_PAREN(target) =                            \
+      mozilla::ToNSResult(MOZ_REMOVE_PAREN(tempVar).unwrapErr());
 
 #define TEST_TRY_UNWRAP(target, expr) \
   TEST_TRY_UNWRAP_META(MOZ_UNIQUE_VAR(testVar), target, expr)

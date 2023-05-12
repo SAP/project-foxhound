@@ -159,6 +159,8 @@ menulist > menupopup > menuitem:is([checked="true"], [selected="true"])::before 
   vertical-align: middle;
   line-height: 0;
   width: 15px;
+  max-width: 15px;
+  min-width: 15px;
   margin-inline-start: -15px;
 }
 

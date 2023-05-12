@@ -38,12 +38,13 @@ browser/components/sessionstore/test/unit/data/sessionstore_invalid.js
 # for documentation purposes (policies.json) but to be accessed by the
 # code as a .jsm (schema.jsm)
 browser/components/enterprisepolicies/schemas/schema.jsm
-# generated & special files in cld2
-browser/components/translation/cld2/
 # generated or library files in pocket
 browser/components/pocket/content/panels/js/tmpl.js
 browser/components/pocket/content/panels/js/vendor.bundle.js
 browser/components/pocket/content/panels/js/main.bundle.js
+# Include the Storybook config files.
+!browser/components/storybook/.storybook/
+!browser/components/storybook/.storybook/*.js
 
 # Ignore newtab files
 browser/components/newtab/aboutwelcome/content/aboutwelcome.bundle.js
@@ -213,9 +214,15 @@ toolkit/components/reader/JSDOMParser.js
 # Uses preprocessing
 toolkit/components/reader/Readerable.jsm
 
+# Generated & special files in cld2
+toolkit/components/translation/cld2/
+
 # Uses preprocessing
 toolkit/mozapps/update/tests/data/xpcshellConstantsPP.js
 toolkit/modules/AppConstants.jsm
+
+# Tests of ESLint command.
+tools/lint/test/files
 
 # Uses special template formatting.
 tools/tryselect/selectors/chooser/templates/chooser.html

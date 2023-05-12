@@ -278,9 +278,8 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mUsesFontMetricDependentFontUnits(false),
       mCounterStylesDirty(true),
       mFontFeatureValuesDirty(true),
-      mSuppressResizeReflow(false),
       mIsVisual(false),
-      mHasWarnedAboutPositionedTableParts(false),
+      mUnused(false),
       mHasWarnedAboutTooLargeDashedOrDottedRadius(false),
       mQuirkSheetAdded(false),
       mHadNonBlankPaint(false),
@@ -553,7 +552,7 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
       float oldWidthDevPixels = oldWidthAppUnits / oldAppUnitsPerDevPixel;
       float oldHeightDevPixels = oldHeightAppUnits / oldAppUnitsPerDevPixel;
 
-      AppUnitsPerDevPixelChanged();
+      UIResolutionChangedInternal();
 
       nscoord width = NSToCoordRound(oldWidthDevPixels * AppUnitsPerDevPixel());
       nscoord height =
@@ -931,10 +930,11 @@ void nsPresContext::RecomputeBrowsingContextDependentData() {
     if (overriden != PrefersColorSchemeOverride::None) {
       return overriden;
     }
-    // We only use the top embedder color-scheme for now, see
-    // https://github.com/w3c/csswg-drafts/issues/7213 for a more general
-    // proposal.
-    return top->GetEmbedderColorScheme();
+    if (!StaticPrefs::
+            layout_css_iframe_embedder_prefers_color_scheme_content_enabled()) {
+      return top->GetEmbedderColorSchemes().mPreferred;
+    }
+    return browsingContext->GetEmbedderColorSchemes().mPreferred;
   }());
 
   if (doc == mDocument) {
@@ -1284,15 +1284,6 @@ void nsPresContext::SetFullZoom(float aZoom) {
   float oldHeightDevPixels = oldHeightAppUnits / float(mCurAppUnitsPerDevPixel);
   mDeviceContext->SetFullZoom(aZoom);
 
-  NS_ASSERTION(!mSuppressResizeReflow,
-               "two zooms happening at the same time? Impossible!");
-
-  // We can't suppress the resize reflow if we support APZ zooming, as MVM
-  // relies on ResizeReflowIgnoreOverride() actually updating layout to update
-  // the viewport based on that.
-  RefPtr<MobileViewportManager> mvm = mPresShell->GetMobileViewportManager();
-  mSuppressResizeReflow = !mvm;
-
   mFullZoom = aZoom;
 
   AppUnitsPerDevPixelChanged();
@@ -1300,8 +1291,6 @@ void nsPresContext::SetFullZoom(float aZoom) {
   mPresShell->GetViewManager()->SetWindowDimensions(
       NSToCoordRound(oldWidthDevPixels * AppUnitsPerDevPixel()),
       NSToCoordRound(oldHeightDevPixels * AppUnitsPerDevPixel()));
-
-  mSuppressResizeReflow = false;
 }
 
 void nsPresContext::SetOverrideDPPX(float aDPPX) {
@@ -1656,9 +1645,7 @@ bool nsPresContext::UseOverlayScrollbars() const {
 }
 
 void nsPresContext::ThemeChanged(widget::ThemeChangeKind aKind) {
-  // NOTE(emilio): This ideally wouldn't need to be a _TEXT() marker, but
-  // otherwise the stack is not captured, see bug 1670046.
-  PROFILER_MARKER_TEXT("ThemeChanged", LAYOUT, MarkerStack::Capture(), ""_ns);
+  PROFILER_MARKER_UNTYPED("ThemeChanged", LAYOUT, MarkerStack::Capture());
 
   mPendingThemeChangeKind |= unsigned(aKind);
 
@@ -1894,6 +1881,11 @@ void nsPresContext::MediaFeatureValuesChanged(
     };
     mDocument->EnumerateSubDocuments(recurse);
   }
+
+  // We notify the media feature values changed for the responsive content of
+  // HTMLImageElements synchronously, so their image sources are always
+  // up-to-date when running the image load tasks in the microtasks.
+  mDocument->NotifyMediaFeatureValuesChanged();
 }
 
 bool nsPresContext::FlushPendingMediaFeatureValuesChanged() {
@@ -1919,8 +1911,6 @@ bool nsPresContext::FlushPendingMediaFeatureValuesChanged() {
     MOZ_ASSERT(mDocument->MediaQueryLists().isEmpty());
     return changedStyle;
   }
-
-  mDocument->NotifyMediaFeatureValuesChanged();
 
   // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
   //
@@ -2659,6 +2649,11 @@ bool nsPresContext::IsRootContentDocumentCrossProcess() const {
     return false;
   }
 
+  if (BrowsingContext* browsingContext = mDocument->GetBrowsingContext()) {
+    if (browsingContext->GetEmbeddedInContentDocument()) {
+      return false;
+    }
+  }
   return mDocument->IsTopLevelContentDocument();
 }
 
@@ -2835,8 +2830,7 @@ void nsPresContext::SetDynamicToolbarMaxHeight(ScreenIntCoord aHeight) {
     nscoord currentWidth, currentHeight;
     presShell->GetViewManager()->GetWindowDimensions(&currentWidth,
                                                      &currentHeight);
-    presShell->ResizeReflow(currentWidth, currentHeight,
-                            ResizeReflowOptions::NoOption);
+    presShell->ResizeReflow(currentWidth, currentHeight);
   }
 }
 

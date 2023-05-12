@@ -3609,8 +3609,7 @@ void nsLayoutUtils::AddBoxesForFrame(nsIFrame* aFrame,
       }
     }
   } else if (pseudoType == PseudoStyleType::mozBlockInsideInlineWrapper ||
-             pseudoType == PseudoStyleType::mozMathMLAnonymousBlock ||
-             pseudoType == PseudoStyleType::mozXULAnonymousBlock) {
+             pseudoType == PseudoStyleType::mozMathMLAnonymousBlock) {
     for (nsIFrame* kid : aFrame->PrincipalChildList()) {
       AddBoxesForFrame(kid, aCallback);
     }
@@ -3647,8 +3646,7 @@ nsIFrame* nsLayoutUtils::GetFirstNonAnonymousFrame(nsIFrame* aFrame) {
         }
       }
     } else if (pseudoType == PseudoStyleType::mozBlockInsideInlineWrapper ||
-               pseudoType == PseudoStyleType::mozMathMLAnonymousBlock ||
-               pseudoType == PseudoStyleType::mozXULAnonymousBlock) {
+               pseudoType == PseudoStyleType::mozMathMLAnonymousBlock) {
       for (nsIFrame* kid : aFrame->PrincipalChildList()) {
         nsIFrame* f = GetFirstNonAnonymousFrame(kid);
         if (f) {

@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* exported testVisibility */
+
 const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
@@ -58,6 +60,12 @@ const syncedTabsData1 = [
   },
 ];
 
+function promiseSyncReady() {
+  let service = Cc["@mozilla.org/weave/service;1"].getService(Ci.nsISupports)
+    .wrappedJSObject;
+  return service.whenLoaded();
+}
+
 async function clearAllParentTelemetryEvents() {
   // Clear everything.
   await TestUtils.waitForCondition(() => {
@@ -70,7 +78,6 @@ async function clearAllParentTelemetryEvents() {
   });
 }
 
-/* eslint-disable no-unused-vars */
 function testVisibility(browser, expected) {
   const { document } = browser.contentWindow;
   for (let [selector, shouldBeVisible] of Object.entries(
@@ -109,14 +116,41 @@ async function waitForElementVisible(browser, selector, isVisible = true) {
   );
 }
 
-function assertFirefoxViewTab(w = window) {
+async function waitForVisibleSetupStep(browser, expected) {
+  const { document } = browser.contentWindow;
+
+  const deck = document.querySelector(".sync-setup-container");
+  const nextStepElem = deck.querySelector(expected.expectedVisible);
+  const stepElems = deck.querySelectorAll(".setup-step");
+
+  await BrowserTestUtils.waitForMutationCondition(
+    deck,
+    {
+      attributeFilter: ["selected-view"],
+    },
+    () => {
+      return BrowserTestUtils.is_visible(nextStepElem);
+    }
+  );
+
+  for (let elem of stepElems) {
+    if (elem == nextStepElem) {
+      ok(
+        BrowserTestUtils.is_visible(elem),
+        `Expected ${elem.id || elem.className} to be visible`
+      );
+    } else {
+      ok(
+        BrowserTestUtils.is_hidden(elem),
+        `Expected ${elem.id || elem.className} to be hidden`
+      );
+    }
+  }
+}
+
+function assertFirefoxViewTab(w) {
   ok(w.FirefoxViewHandler.tab, "Firefox View tab exists");
   ok(w.FirefoxViewHandler.tab?.hidden, "Firefox View tab is hidden");
-  is(
-    w.gBrowser.tabs.indexOf(w.FirefoxViewHandler.tab),
-    0,
-    "Firefox View tab is the first tab"
-  );
   is(
     w.gBrowser.visibleTabs.indexOf(w.FirefoxViewHandler.tab),
     -1,
@@ -124,7 +158,7 @@ function assertFirefoxViewTab(w = window) {
   );
 }
 
-async function openFirefoxViewTab(w = window) {
+async function openFirefoxViewTab(w) {
   ok(
     !w.FirefoxViewHandler.tab,
     "Firefox View tab doesn't exist prior to clicking the button"
@@ -136,12 +170,12 @@ async function openFirefoxViewTab(w = window) {
     w
   );
   assertFirefoxViewTab(w);
-  is(w.gBrowser.tabContainer.selectedIndex, 0, "Firefox View tab is selected");
+  ok(w.FirefoxViewHandler.tab.selected, "Firefox View tab is selected");
   await BrowserTestUtils.browserLoaded(w.FirefoxViewHandler.tab.linkedBrowser);
   return w.FirefoxViewHandler.tab;
 }
 
-function closeFirefoxViewTab(w = window) {
+function closeFirefoxViewTab(w) {
   w.gBrowser.removeTab(w.FirefoxViewHandler.tab);
   ok(
     !w.FirefoxViewHandler.tab,
@@ -150,9 +184,14 @@ function closeFirefoxViewTab(w = window) {
 }
 
 async function withFirefoxView(
-  { resetFlowManager = true, win = window },
+  { resetFlowManager = true, win = null },
   taskFn
 ) {
+  let shouldCloseWin = false;
+  if (!win) {
+    win = await BrowserTestUtils.openNewBrowserWindow();
+    shouldCloseWin = true;
+  }
   if (resetFlowManager) {
     const { TabsSetupFlowManager } = ChromeUtils.importESModule(
       "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
@@ -176,23 +215,38 @@ async function withFirefoxView(
         "removeTab would have been called"
     );
   }
-  return Promise.resolve(result);
+  if (shouldCloseWin) {
+    await BrowserTestUtils.closeWindow(win);
+  }
+  return result;
 }
 
-async function addFirefoxViewButtonToToolbar() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.tabs.firefox-view", true]],
+var gMockFxaDevices = null;
+var gUIStateStatus;
+var gSandbox;
+function setupSyncFxAMocks({ fxaDevices = null, state, syncEnabled = true }) {
+  gUIStateStatus = state || UIState.STATUS_SIGNED_IN;
+  if (gSandbox) {
+    gSandbox.restore();
+  }
+  const sandbox = (gSandbox = sinon.createSandbox());
+  gMockFxaDevices = fxaDevices;
+  sandbox.stub(fxAccounts.device, "recentDeviceList").get(() => fxaDevices);
+  sandbox.stub(UIState, "get").callsFake(() => {
+    return {
+      status: gUIStateStatus,
+      syncEnabled,
+    };
   });
-  info(Services.prefs.getBoolPref("browser.tabs.firefox-view", false));
-  CustomizableUI.addWidgetToArea(
-    "firefox-view-button",
-    CustomizableUI.AREA_TABSTRIP,
-    0
-  );
-}
+  sandbox
+    .stub(Weave.Service.clientsEngine, "getClientByFxaDeviceId")
+    .callsFake(fxaDeviceId => {
+      let target = gMockFxaDevices.find(c => c.id == fxaDeviceId);
+      return target ? target.clientRecord : null;
+    });
+  sandbox.stub(Weave.Service.clientsEngine, "getClientType").returns("desktop");
 
-function removeFirefoxViewButtonFromToolbar() {
-  CustomizableUI.removeWidgetFromArea("firefox-view-button");
+  return sandbox;
 }
 
 function setupRecentDeviceListMocks() {
@@ -240,10 +294,11 @@ async function setupListState(browser) {
     set: [["services.sync.engine.tabs", true]],
   });
 
-  Services.obs.notifyObservers(null, UIState.ON_UPDATE);
   const recentFetchTime = Math.floor(Date.now() / 1000);
   info("updating lastFetch:" + recentFetchTime);
   Services.prefs.setIntPref("services.sync.lastTabFetch", recentFetchTime);
+
+  Services.obs.notifyObservers(null, UIState.ON_UPDATE);
 
   await waitForElementVisible(browser, "#tabpickup-steps", false);
   await waitForElementVisible(browser, "#tabpickup-tabs-container", true);
@@ -251,6 +306,10 @@ async function setupListState(browser) {
   const tabsContainer = browser.contentWindow.document.querySelector(
     "#tabpickup-tabs-container"
   );
+  // fake a sync completion, as UIState.UI_UPDATE with a signed-in status will have
+  // triggered a sync when we have 0 tabs
+  Services.obs.notifyObservers(null, "weave:service:sync:finish");
+
   await BrowserTestUtils.waitForMutationCondition(
     tabsContainer,
     { attributeFilter: ["class"], attributes: true },
@@ -258,4 +317,44 @@ async function setupListState(browser) {
       return !tabsContainer.classList.contains("loading");
     }
   );
+}
+
+function checkMobilePromo(browser, expected = {}) {
+  const { document } = browser.contentWindow;
+  const promoElem = document.querySelector(
+    "#tab-pickup-container > .promo-box"
+  );
+  const successElem = document.querySelector(
+    "#tab-pickup-container > .confirmation-message-box"
+  );
+
+  info("checkMobilePromo: " + JSON.stringify(expected));
+  if (expected.mobilePromo) {
+    ok(BrowserTestUtils.is_visible(promoElem), "Mobile promo is visible");
+  } else {
+    ok(
+      !promoElem || BrowserTestUtils.is_hidden(promoElem),
+      "Mobile promo is hidden"
+    );
+  }
+  if (expected.mobileConfirmation) {
+    ok(
+      BrowserTestUtils.is_visible(successElem),
+      "Success confirmation is visible"
+    );
+  } else {
+    ok(
+      !successElem || BrowserTestUtils.is_hidden(successElem),
+      "Success confirmation is hidden"
+    );
+  }
+}
+
+async function touchLastTabFetch() {
+  // lastTabFetch stores a timestamp in *seconds*.
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  info("updating lastFetch:" + nowSeconds);
+  Services.prefs.setIntPref("services.sync.lastTabFetch", nowSeconds);
+  // wait so all pref observers can complete
+  await TestUtils.waitForTick();
 }

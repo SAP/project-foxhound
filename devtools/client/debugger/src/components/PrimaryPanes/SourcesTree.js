@@ -78,6 +78,8 @@ function getDirectoryForSource(source, rootItems) {
         return match;
       }
     }
+
+    return null;
   }
   for (const rootItem of rootItems) {
     // Note that when we are setting a project root, rootItem
@@ -162,7 +164,7 @@ class SourcesTree extends Component {
   };
 
   isEmpty() {
-    return this.getRoots().length == 0;
+    return !this.getRoots().length;
   }
 
   renderEmptyElement(message) {

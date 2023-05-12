@@ -36,7 +36,6 @@
 "use strict";
 
 const { Cu, Cc, Ci } = require("chrome");
-const ChromeUtils = require("ChromeUtils");
 
 const MemoryReporter = Cc["@mozilla.org/memory-reporter-manager;1"].getService(
   Ci.nsIMemoryReporterManager
@@ -200,7 +199,7 @@ exports.allocationTracker = function({
       // If means that the test we are recording is having pending operation which aren't properly recorded.
       if (!watchAllGlobals) {
         const allocations = dbg.memory.drainAllocationsLog();
-        if (allocations.length > 0) {
+        if (allocations.length) {
           this.logAllocationLog(
             allocations,
             "Allocation that happened during the GC"

@@ -2158,7 +2158,7 @@ nsresult AppWindow::GetPrimaryContentShellSize(int32_t* aWidth,
   CSSIntSize size = RoundedToInt(
       shellWindow->GetSize() / shellWindow->UnscaledDevicePixelsPerCSSPixel());
   *aWidth = size.width;
-  *aHeight = size.width;
+  *aHeight = size.height;
   return NS_OK;
 }
 
@@ -3330,7 +3330,8 @@ PresShell* AppWindow::WidgetListenerDelegate::GetPresShell() {
 }
 
 bool AppWindow::WidgetListenerDelegate::WindowMoved(nsIWidget* aWidget,
-                                                    int32_t aX, int32_t aY) {
+                                                    int32_t aX, int32_t aY,
+                                                    ByMoveToRect) {
   RefPtr<AppWindow> holder = mAppWindow;
   return holder->WindowMoved(aWidget, aX, aY);
 }

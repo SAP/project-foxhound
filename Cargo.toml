@@ -91,9 +91,6 @@ vcpkg = { path = "build/rust/vcpkg" }
 # Helper crate for integration in the gecko build system.
 mozbuild = { path = "build/rust/mozbuild" }
 
-# Patch bindgen 0.56 to 0.59.
-bindgen = { path = "build/rust/bindgen" }
-
 # Patch cfg-if 0.1 to 1.0
 cfg-if = { path = "build/rust/cfg-if" }
 
@@ -112,9 +109,6 @@ tokio-util = { path = "build/rust/tokio-util" }
 # Patch env_logger 0.8 to 0.9
 env_logger = { path = "build/rust/env_logger" }
 
-# Patch toml 0.4 to 0.5
-toml = { path = "build/rust/toml" }
-
 # Patch parking_lot 0.12 down to 0.11, which is compatible for most crates that use it, to avoid
 # dependencies on windows-sys.
 parking_lot = { path = "build/rust/parking_lot" }
@@ -124,6 +118,9 @@ tinyvec = { path = "build/rust/tinyvec" }
 
 # Patch wasi 0.10 to 0.11
 wasi = { path = "build/rust/wasi" }
+
+# Patch goblin 0.1 to 0.5
+goblin = { path = "build/rust/goblin" }
 
 # Patch hashbrown 0.11 to 0.12
 hashbrown = { path = "build/rust/hashbrown" }
@@ -153,21 +150,16 @@ midir = { git = "https://github.com/mozilla/midir.git", rev = "e1b4dcb767f9e69af
 minidump_writer_linux = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "75ada456c92a429704691a85e1cb42fef8cafc0d" }
 
 # application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "2689788cecf24c385e6b7440e3aa1a89c511f14a" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "2689788cecf24c385e6b7440e3aa1a89c511f14a" }
-sync15-traits = { git = "https://github.com/mozilla/application-services", rev = "2689788cecf24c385e6b7440e3aa1a89c511f14a" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "2689788cecf24c385e6b7440e3aa1a89c511f14a" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "2689788cecf24c385e6b7440e3aa1a89c511f14a" }
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
+sync15-traits = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.
 [patch.crates-io.mio]
 path = "third_party/rust/mio-0.6.23"
-
-# Patch neqo 0.5.7 to be compatible with newer versions of the log crate.
-# https://github.com/mozilla/neqo/pull/1350
-[patch."https://github.com/mozilla/neqo"]
-neqo-common = { path = "third_party/rust/neqo-common" }
 
 # These are used to test UniFFI functionality.  We haven't figured out how we
 # want to publish these yet, so they are only accessible via git.  This works
@@ -176,8 +168,8 @@ neqo-common = { path = "third_party/rust/neqo-common" }
 # duplicate crates.
 
 [patch."https://github.com/mozilla/uniffi-rs.git"]
-uniffi = "0.19.3"
-uniffi_bindgen = "0.19.3"
-uniffi_build = "0.19.3"
-uniffi_macros = "0.19.3"
-weedle2 = "3.0.0"
+uniffi = "=0.19.6"
+uniffi_bindgen = "=0.19.6"
+uniffi_build = "=0.19.6"
+uniffi_macros = "=0.19.6"
+weedle2 = "=4.0.0"

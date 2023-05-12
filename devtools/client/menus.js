@@ -27,7 +27,12 @@
 
 const { Cu } = require("chrome");
 
-loader.lazyRequireGetter(this, "Services", "Services");
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserToolboxLauncher:
+    "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs",
+});
+
 loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
 
 loader.lazyRequireGetter(
@@ -54,11 +59,6 @@ loader.lazyRequireGetter(
   true
 );
 
-loader.lazyImporter(
-  this,
-  "BrowserToolboxLauncher",
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
-);
 loader.lazyRequireGetter(
   this,
   "PICKER_TYPES",
@@ -92,7 +92,7 @@ exports.menuitems = [
     id: "menu_browserToolbox",
     l10nKey: "browserToolboxMenu",
     oncommand() {
-      BrowserToolboxLauncher.init();
+      lazy.BrowserToolboxLauncher.init();
     },
     keyId: "browserToolbox",
   },

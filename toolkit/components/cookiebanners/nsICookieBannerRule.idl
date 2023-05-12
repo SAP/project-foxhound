@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIClickRule.idl"
 #include "nsICookieRule.idl"
 
 /**
@@ -14,6 +15,9 @@
 
 [builtinclass, scriptable, uuid(eb1904db-e0d1-4760-a721-db76b1ca3e94)]
 interface nsICookieBannerRule : nsISupports {
+    // Unique identifier for the rule. This is usually a UUID.
+    attribute ACString id;
+
     // Domain of the site to handle the cookie banner for.
     attribute ACString domain;
 
@@ -36,18 +40,38 @@ interface nsICookieBannerRule : nsISupports {
      * For a description of the other fields see nsICookieManager#addNative.
      */
     void addCookie(in boolean     aIsOptOut,
-                   in AUTF8String aHost,
                    in ACString    aName,
                    in AUTF8String aValue,
-                   [optional] in AUTF8String aPath,
-                   [optional] in int64_t     aExpiryRelative,
-                   [optional] in AUTF8String aUnsetValue,
-                   [optional] in boolean     aIsSecure,
-                   [optional] in boolean     aIsHttpOnly,
-                   [optional] in boolean     aIsSession,
-                   [optional] in int32_t     aSameSite,
-                   [optional] in nsICookie_schemeType aSchemeMap);
+                   in AUTF8String aHost,
+                   in AUTF8String aPath,
+                   in int64_t     aExpiryRelative,
+                   in AUTF8String aUnsetValue,
+                   in boolean     aIsSecure,
+                   in boolean     aIsHttpOnly,
+                   in boolean     aIsSession,
+                   in int32_t     aSameSite,
+                   in nsICookie_schemeType aSchemeMap);
 
-    // TODO: additional rule types here e.g. for clicking.
+    // The clicking rule that associates with this rule. The banner auto
+    // clicking will use this rule to detect and click the banner.
+    readonly attribute nsIClickRule clickRule;
+
+    /**
+     * Add a click rule to the rule.
+     *
+     * aPresence - The CSS selector for detecting the presence of the cookie banner
+     * aHide - The CSS selector for hiding the cookie banner
+     * aOptOut - The CSS selector for selecting the opt-out banner button
+     * aOptIn - The CSS selector for selecting the opt-in banner button
+     */
+    void addClickRule(in ACString aPresence,
+                      [optional] in ACString aHide,
+                      [optional] in ACString aOptOut,
+                      [optional] in ACString aOptIn);
+
+    /**
+     * Clear the click rule.
+     */
+    void clearClickRule();
 };
 

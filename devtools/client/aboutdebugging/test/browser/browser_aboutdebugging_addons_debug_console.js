@@ -134,7 +134,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
     document
   );
 
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     window,
@@ -146,16 +146,15 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
 
   info("Trigger some code in the background page logging some stuff");
   const onMessage = waitUntil(() => {
-    return (
-      findMessagesByType(hud, "Background page exception", ".error").length > 0
-    );
+    return !!findMessagesByType(hud, "Background page exception", ".error")
+      .length;
   });
   hud.ui.wrapper.dispatchEvaluateExpression("myWebExtensionAddonFunction()");
   await onMessage;
 
   info("Open the two add-ons popups to cover popups messages");
   const onPopupMessage = waitUntil(() => {
-    return findMessagesByType(hud, "Popup exception", ".error").length > 0;
+    return !!findMessagesByType(hud, "Popup exception", ".error").length;
   });
   clickOnAddonWidget(OTHER_ADDON_ID);
   clickOnAddonWidget(ADDON_ID);
@@ -251,7 +250,7 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   // And we received the evaluation result
   await onEvaluationResultAfterReload;
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
 
   // Note that it seems to be important to remove the addons in the reverse order
   // from which they were installed...
@@ -302,7 +301,7 @@ add_task(async function testWebExtensionNoBgScript() {
     document
   );
 
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     window,
@@ -314,7 +313,7 @@ add_task(async function testWebExtensionNoBgScript() {
 
   info("Open the add-on popup");
   const onPopupMessage = waitUntil(() => {
-    return findMessagesByType(hud, "Popup-only exception", ".error").length > 0;
+    return !!findMessagesByType(hud, "Popup-only exception", ".error").length;
   });
   clickOnAddonWidget(POPUPONLY_ADDON_ID);
   await onPopupMessage;
@@ -341,7 +340,7 @@ add_task(async function testWebExtensionNoBgScript() {
     "We get the addon's popup CSS error message"
   );
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
   await removeTemporaryExtension(POPUPONLY_ADDON_NAME, document);
   await removeTab(tab);
 });
@@ -384,7 +383,7 @@ add_task(async function testWebExtensionTwoReloads() {
   // instead.
   const addonTarget = findDebugTargetByText(BACKGROUND_ADDON_NAME, document);
 
-  const { devtoolsTab, devtoolsWindow } = await openAboutDevtoolsToolbox(
+  const { devtoolsWindow } = await openAboutDevtoolsToolbox(
     document,
     tab,
     window,
@@ -432,7 +431,7 @@ add_task(async function testWebExtensionTwoReloads() {
   hud.ui.wrapper.dispatchEvaluateExpression("40+2");
   await waitUntil(() => findMessageByType(hud, "42", ".result"));
 
-  await closeAboutDevtoolsToolbox(document, devtoolsTab, window);
+  await closeWebExtAboutDevtoolsToolbox(devtoolsWindow, window);
   await removeTemporaryExtension(BACKGROUND_ADDON_NAME, document);
   await removeTab(tab);
 });

@@ -22,14 +22,14 @@
 #include "js/GCAPI.h"
 #include "vm/HelperThreads.h"
 #include "vm/Realm.h"
-#include "wasm/TypedObject.h"
+#include "wasm/WasmGcObject.h"
 
 #include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/PrivateIterators-inl.h"
+#include "gc/TraceMethods-inl.h"
 #include "gc/Zone-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/JSContext-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -441,12 +441,11 @@ MovingTracer::MovingTracer(JSRuntime* rt)
                         JS::WeakMapTraceAction::TraceKeysAndValues) {}
 
 template <typename T>
-inline T* MovingTracer::onEdge(T* thing) {
+inline void MovingTracer::onEdge(T** thingp, const char* name) {
+  T* thing = *thingp;
   if (thing->runtimeFromAnyThread() == runtime() && IsForwarded(thing)) {
-    thing = Forwarded(thing);
+    *thingp = Forwarded(thing);
   }
-
-  return thing;
 }
 
 void Zone::prepareForCompacting() {

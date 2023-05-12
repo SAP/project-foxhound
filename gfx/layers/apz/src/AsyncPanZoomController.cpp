@@ -3144,7 +3144,7 @@ bool AsyncPanZoomController::Contains(const ScreenIntPoint& aPoint) const {
 
 bool AsyncPanZoomController::IsInOverscrollGutter(
     const ScreenPoint& aHitTestPoint) const {
-  if (!IsOverscrolled()) {
+  if (!IsPhysicallyOverscrolled()) {
     return false;
   }
 
@@ -3179,6 +3179,10 @@ bool AsyncPanZoomController::IsInOverscrollGutter(
 }
 
 bool AsyncPanZoomController::IsOverscrolled() const {
+  return mOverscrollEffect->IsOverscrolled();
+}
+
+bool AsyncPanZoomController::IsPhysicallyOverscrolled() const {
   // As an optimization, avoid calling Apply/UnapplyAsyncTestAttributes
   // unless we're in a test environment where we need it.
   if (StaticPrefs::apz_overscroll_test_async_scroll_offset_enabled()) {
@@ -3827,8 +3831,8 @@ void AsyncPanZoomController::HandleFlingOverscroll(
       }
 
       if (!IsZero(residualVelocity)) {
-        mOverscrollEffect->HandleFlingOverscroll(residualVelocity,
-                                                 aOverscrollSideBits);
+        mOverscrollEffect->RelieveOverscroll(residualVelocity,
+                                             aOverscrollSideBits);
       }
     }
   }
@@ -4082,6 +4086,10 @@ void AsyncPanZoomController::CancelAnimation(CancelAnimationFlags aFlags) {
 }
 
 void AsyncPanZoomController::ClearOverscroll() {
+  mOverscrollEffect->ClearOverscroll();
+}
+
+void AsyncPanZoomController::ClearPhysicalOverscroll() {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   mX.ClearOverscroll();
   mY.ClearOverscroll();
@@ -4370,7 +4378,7 @@ bool AsyncPanZoomController::SnapBackIfOverscrolledForMomentum(
   // animation - if so, don't start a new one.
   if (IsOverscrolled() && mState != OVERSCROLL_ANIMATION) {
     APZC_LOG("%p is overscrolled, starting snap-back\n", this);
-    StartOverscrollAnimation(aVelocity, GetOverscrollSideBits());
+    mOverscrollEffect->RelieveOverscroll(aVelocity, GetOverscrollSideBits());
     return true;
   }
   return false;
@@ -4613,7 +4621,7 @@ AsyncTransformComponentMatrix AsyncPanZoomController::GetOverscrollTransform(
     return AsyncTransformComponentMatrix();
   }
 
-  if (!IsOverscrolled()) {
+  if (!IsPhysicallyOverscrolled()) {
     return AsyncTransformComponentMatrix();
   }
 

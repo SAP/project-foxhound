@@ -14,6 +14,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/Maybe.h"
 
 #include "CrashAnnotations.h"
 
@@ -42,6 +43,9 @@
 class nsIFile;
 
 namespace CrashReporter {
+
+using mozilla::Maybe;
+using mozilla::Nothing;
 
 /**
  * Returns true if the crash reporter is using the dummy implementation.
@@ -95,6 +99,7 @@ nsresult AnnotateCrashReport(Annotation key, bool data);
 nsresult AnnotateCrashReport(Annotation key, int data);
 nsresult AnnotateCrashReport(Annotation key, unsigned int data);
 nsresult AnnotateCrashReport(Annotation key, const nsACString& data);
+nsresult AppendToCrashReportAnnotation(Annotation key, const nsACString& data);
 nsresult RemoveCrashReportAnnotation(Annotation key);
 nsresult AppendAppNotesToCrashReport(const nsACString& data);
 
@@ -140,8 +145,11 @@ void GetAnnotation(uint32_t childPid, Annotation annotation,
 // Functions for working with minidumps and .extras
 typedef mozilla::EnumeratedArray<Annotation, Annotation::Count, nsCString>
     AnnotationTable;
-void DeleteMinidumpFilesForID(const nsAString& id);
-bool GetMinidumpForID(const nsAString& id, nsIFile** minidump);
+void DeleteMinidumpFilesForID(
+    const nsAString& aId,
+    const Maybe<nsString>& aAdditionalMinidump = Nothing());
+bool GetMinidumpForID(const nsAString& id, nsIFile** minidump,
+                      const Maybe<nsString>& aAdditionalMinidump = Nothing());
 bool GetIDFromMinidump(nsIFile* minidump, nsAString& id);
 bool GetExtraFileForID(const nsAString& id, nsIFile** extraFile);
 bool GetExtraFileForMinidump(nsIFile* minidump, nsIFile** extraFile);

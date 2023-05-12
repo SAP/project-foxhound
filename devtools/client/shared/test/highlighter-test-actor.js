@@ -9,7 +9,6 @@
 // ⚠️ This should only be used for getting data for objects using CanvasFrameAnonymousContentHelper,
 // that we can't get directly from tests.
 const { Ci, Cc } = require("chrome");
-const Services = require("Services");
 const { getRect, getAdjustedQuads } = require("devtools/shared/layout/utils");
 
 // Set up a dummy environment so that EventUtils works. We need to be careful to
@@ -27,7 +26,6 @@ Services.scriptloader.loadSubScript(
   EventUtils
 );
 
-var ChromeUtils = require("ChromeUtils");
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
@@ -62,7 +60,7 @@ function getHighlighterCanvasFrameHelper(conn, actorID) {
   if (
     highlighter._highlighters &&
     Array.isArray(highlighter._highlighters) &&
-    highlighter._highlighters.length > 0
+    highlighter._highlighters.length
   ) {
     highlighter = highlighter._highlighters[0];
   }

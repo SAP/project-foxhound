@@ -46,6 +46,11 @@ class TextRecognitionModal {
         if (results.length === 0) {
           // Update the UI to indicate that there were no results.
           this.showHeaderByID("text-recognition-header-no-results");
+          // It's still worth recording telemetry times, as the API was still invoked.
+          TelemetryStopwatch.finish(
+            "TEXT_RECOGNITION_API_PERFORMANCE",
+            resultsPromise
+          );
           return;
         }
 
@@ -53,14 +58,69 @@ class TextRecognitionModal {
         // the results to the UI.
         this.runClusteringAndUpdateUI(results, direction);
         this.showHeaderByID("text-recognition-header-results");
+        TelemetryStopwatch.finish(
+          "TEXT_RECOGNITION_API_PERFORMANCE",
+          resultsPromise
+        );
+
+        TextRecognitionModal.recordInteractionTime();
       },
       error => {
         // There was an error in the text recognition call. Treat this as the same
-        // as if there were no results, but report the error to the console.
-        console.error(error);
+        // as if there were no results, but report the error to the console and telemetry.
         this.showHeaderByID("text-recognition-header-no-results");
+
+        console.error(
+          "There was an error recognizing the text from an image.",
+          error
+        );
+        Services.telemetry.scalarAdd(
+          "browser.ui.interaction.textrecognition_error",
+          1
+        );
+        TelemetryStopwatch.cancel(
+          "TEXT_RECOGNITION_API_PERFORMANCE",
+          resultsPromise
+        );
       }
     );
+  }
+
+  /**
+   * After the results are shown, measure how long a user interacts with the modal.
+   */
+  static recordInteractionTime() {
+    TelemetryStopwatch.start(
+      "TEXT_RECOGNITION_INTERACTION_TIMING",
+      // Pass the instance of the window in case multiple tabs are doing text recognition
+      // and there is a race condition.
+      window
+    );
+
+    const finish = () => {
+      TelemetryStopwatch.finish("TEXT_RECOGNITION_INTERACTION_TIMING", window);
+      window.removeEventListener("blur", finish);
+      window.removeEventListener("unload", finish);
+    };
+
+    // The user's focus went away, record this as the total interaction, even if they
+    // go back and interact with it more. This can be triggered by doing actions like
+    // clicking the URL bar, or by switching tabs.
+    window.addEventListener("blur", finish);
+
+    // The modal is closed.
+    window.addEventListener("unload", finish);
+  }
+
+  /**
+   * After the results are shown, measure how long a user interacts with the modal.
+   * @param {number} length
+   */
+  static recordTextLengthTelemetry(length) {
+    const histogram = Services.telemetry.getHistogramById(
+      "TEXT_RECOGNITION_TEXT_LENGTH"
+    );
+    histogram.add(length);
   }
 
   setupCloseHandler() {
@@ -152,20 +212,28 @@ class TextRecognitionModal {
 
       for (let i = 0; i < cluster.length; i++) {
         const index = cluster[i];
-        // Each cluster could be a paragraph, so add a newline to the end
-        // for better copying.
-        const ending = i + 1 === cluster.length ? "\n" : " ";
-
-        const result = results[index];
-        text += result.string + ending;
-        pCluster.innerText += result.string + ending;
+        const { string } = results[index];
+        if (i + 1 === cluster.length) {
+          // Each cluster could be a paragraph, so add newlines to the end
+          // for better copying.
+          text += string + "\n\n";
+          // The paragraph tag automatically uses two newlines.
+          pCluster.innerText += string;
+        } else {
+          // This text is assumed to be a newlines in a paragraph, so only needs
+          // to be separated by a space.
+          text += string + " ";
+          pCluster.innerText += string + " ";
+        }
       }
       this.textEl.appendChild(pCluster);
     }
 
     this.textEl.style.display = "block";
 
+    text = text.trim();
     TextRecognitionModal.copy(text);
+    TextRecognitionModal.recordTextLengthTelemetry(text.length);
   }
 }
 

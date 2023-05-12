@@ -181,9 +181,9 @@ const SpecialMessageActions = {
   setPref(pref) {
     // Array of prefs that are allowed to be edited by SET_PREF
     const allowedPrefs = [
-      "browser.privacySegmentation.enabled",
+      "browser.dataFeatureRecommendations.enabled",
       "browser.startup.homepage",
-      "browser.privacySegmentation.windowSeparation.enabled",
+      "browser.privateWindowSeparation.enabled",
       "browser.firefox-view.feature-tour",
     ];
 
@@ -226,10 +226,12 @@ const SpecialMessageActions = {
     const window = browser.ownerGlobal;
     switch (action.type) {
       case "SHOW_MIGRATION_WIZARD":
-        lazy.MigrationUtils.showMigrationWizard(window, [
-          lazy.MigrationUtils.MIGRATION_ENTRYPOINT_NEWTAB,
-          action.data?.source,
-        ]);
+        Services.tm.dispatchToMainThread(() =>
+          lazy.MigrationUtils.showMigrationWizard(window, [
+            lazy.MigrationUtils.MIGRATION_ENTRYPOINT_NEWTAB,
+            action.data?.source,
+          ])
+        );
         break;
       case "OPEN_PRIVATE_BROWSER_WINDOW":
         // Forcefully open about:privatebrowsing
@@ -352,10 +354,6 @@ const SpecialMessageActions = {
         break;
       case "CONFIGURE_HOMEPAGE":
         this.configureHomepage(action.data);
-        const topWindow = browser.ownerGlobal.window.BrowserWindowTracker.getTopWindow();
-        if (topWindow) {
-          topWindow.BrowserHome();
-        }
         break;
       case "ENABLE_TOTAL_COOKIE_PROTECTION":
         Services.prefs.setBoolPref(
@@ -397,6 +395,12 @@ const SpecialMessageActions = {
         throw new Error(
           `Special message action with type ${action.type} is unsupported.`
         );
+      case "CLICK_ELEMENT":
+        const clickElement = window.document.querySelector(
+          action.data.selector
+        );
+        clickElement?.click();
+        break;
     }
   },
 };

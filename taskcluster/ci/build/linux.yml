@@ -401,7 +401,6 @@ linux64/codeql-cpp:
     shipping-phase: ship
     shipping-product: firefox
     worker-type: b-linux-xlarge
-    expires-after: 4 days
     worker:
         env:
             PERFHERDER_EXTRA_OPTIONS: cpp
@@ -1648,6 +1647,7 @@ linux64-add-on-devel/opt:
 
 linux64-aarch64/opt:
     description: "Linux64 aarch64 Opt"
+    use-pgo: linux64-shippable/opt
     index:
         product: firefox
         job-name: linux64-aarch64-opt
@@ -1673,7 +1673,6 @@ linux64-aarch64/opt:
         tooltool-downloads: public
         need-xvfb: true
     run-on-projects: ['integration']
-    use-sccache: true
     fetches:
         toolchain:
             - linux64-binutils
@@ -1682,7 +1681,6 @@ linux64-aarch64/opt:
             - linux64-rust-size
             - linux64-cbindgen
             - linux64-dump_syms
-            - linux64-sccache
             - linux64-node
             - sysroot-aarch64-linux-gnu
             - sysroot-x86_64-linux-gnu

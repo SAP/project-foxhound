@@ -17,7 +17,6 @@
 #include "util/StringBuffer.h"  // StringBuffer
 #include "util/Text.h"          // AsciiDigitToNumber
 #include "util/Unicode.h"
-#include "vm/ErrorContext.h"
 #include "vm/JSContext.h"
 #include "vm/Printer.h"  // Sprinter, QuoteString
 #include "vm/Runtime.h"
@@ -77,6 +76,32 @@ void TaggedParserAtomIndex::validateRaw() {
   }
 }
 #endif
+
+HashNumber TaggedParserAtomIndex::staticOrWellKnownHash() const {
+  MOZ_ASSERT(!isParserAtomIndex());
+
+  if (isWellKnownAtomId()) {
+    const auto& info = GetWellKnownAtomInfo(toWellKnownAtomId());
+    return info.hash;
+  }
+
+  if (isLength1StaticParserString()) {
+    Latin1Char content[1];
+    ParserAtomsTable::getLength1Content(toLength1StaticParserString(), content);
+    return mozilla::HashString(content, 1);
+  }
+
+  if (isLength2StaticParserString()) {
+    char content[2];
+    ParserAtomsTable::getLength2Content(toLength2StaticParserString(), content);
+    return mozilla::HashString(reinterpret_cast<const Latin1Char*>(content), 2);
+  }
+
+  MOZ_ASSERT(isLength3StaticParserString());
+  char content[3];
+  ParserAtomsTable::getLength3Content(toLength3StaticParserString(), content);
+  return mozilla::HashString(reinterpret_cast<const Latin1Char*>(content), 3);
+}
 
 template <typename CharT, typename SeqCharT>
 /* static */ ParserAtom* ParserAtom::allocate(
@@ -479,16 +504,16 @@ bool ParserAtomsTable::isEqualToExternalParserAtomIndex(
   return externalAtom->equalsSeq(hash, seq);
 }
 
-bool ParserAtomSpanBuilder::allocate(JSContext* cx, LifoAlloc& alloc,
+bool ParserAtomSpanBuilder::allocate(ErrorContext* ec, LifoAlloc& alloc,
                                      size_t count) {
   if (count >= TaggedParserAtomIndex::IndexLimit) {
-    ReportAllocationOverflow(cx);
+    ReportAllocationOverflow(ec);
     return false;
   }
 
   auto* p = alloc.newArrayUninitialized<ParserAtom*>(count);
   if (!p) {
-    js::ReportOutOfMemory(cx);
+    js::ReportOutOfMemory(ec);
     return false;
   }
   std::uninitialized_fill_n(p, count, nullptr);
@@ -867,6 +892,14 @@ uint32_t ParserAtomsTable::length(TaggedParserAtomIndex index) const {
 
   MOZ_ASSERT(index.isLength3StaticParserString());
   return 3;
+}
+
+HashNumber ParserAtomsTable::hash(TaggedParserAtomIndex index) const {
+  if (index.isParserAtomIndex()) {
+    return getParserAtom(index.toParserAtomIndex())->hash();
+  }
+
+  return index.staticOrWellKnownHash();
 }
 
 double ParserAtomsTable::toNumber(TaggedParserAtomIndex index) const {

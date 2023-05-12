@@ -1,39 +1,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-html {
-  box-sizing: border-box;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: inherit;
-}
-
-*::-moz-focus-inner {
-  border: 0;
-}
-
-body {
-  margin: 0;
-}
-
-button,
-input {
-  background-color: inherit;
-  color: inherit;
-  font-family: inherit;
-  font-size: inherit;
-}
-
-[hidden] {
-  display: none !important;
-}
-
 .onboardingContainer.featureCallout {
   position: absolute;
   transition: opacity 0.5s ease;
+  z-index: 2147483645;
 }
 .onboardingContainer.featureCallout.hidden {
   opacity: 0;
@@ -90,7 +61,7 @@ input {
   border: 1px solid #CFCFD8;
   box-shadow: 0 2px 14px rgba(58, 57, 68, 0.2);
   border-radius: 4px;
-  padding-block: 0 40px;
+  padding-block: 0 24px;
   width: 25em;
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .steps {
@@ -100,6 +71,18 @@ input {
 .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .dismiss-button {
   margin-block: 25px -45px;
   z-index: 1;
+}
+@media (prefers-contrast) {
+  .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .dismiss-button {
+    background-color: var(--in-content-button-background);
+  }
+  .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .dismiss-button:hover {
+    background-color: var(--in-content-primary-button-background);
+    color: var(--in-content-primary-button-text-color);
+  }
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons {
+  margin-block: 0 16px;
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary,
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta .secondary {
@@ -116,6 +99,16 @@ input {
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:hover {
   background-color: var(--in-content-button-background-hover);
+}
+@media (prefers-contrast) {
+  .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary {
+    color: var(--in-content-button-text-color);
+    border: 1px solid var(--in-content-button-border-color);
+  }
+  .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:hover {
+    background-color: var(--in-content-primary-button-background);
+    color: var(--in-content-primary-button-text-color);
+  }
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta {
   float: inline-end;
@@ -176,24 +169,8 @@ html {
   height: 100%;
 }
 
-body {
-  --grey-subtitle-1: #696977;
-  --newtab-button-secondary-color: #0060DF;
-  --mr-welcome-background-color: #F8F6F4;
-  --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.2) 0%, rgba(2, 144, 238, 0.2) 100%);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", "Helvetica Neue", sans-serif;
-  font-size: 16px;
-  position: relative;
-}
-body[lwt-newtab-brighttext] {
-  --grey-subtitle-1: #FFF;
-  --newtab-button-secondary-color: #FFF;
-  --mr-welcome-background-color: #333336;
-  --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.3) 0%, rgba(2, 144, 238, 0.3) 100%);
-}
-
 .dummy {
-  background: var(--mr-welcome-background-color) var(--mr-welcome-background-gradient) var(--mr-secondary-position);
+  background: var(--mr-welcome-background-color) var(--mr-welcome-background-gradient) var(--mr-secondary-position) var(--mr-screen-background-color);
 }
 
 :root[dialogroot] {
@@ -201,6 +178,10 @@ body[lwt-newtab-brighttext] {
 }
 :root[dialogroot] body {
   padding: 0;
+}
+:root[dialogroot] .onboardingContainer {
+  height: 100%;
+  background-color: transparent;
 }
 :root[dialogroot] .onboardingContainer:dir(rtl) {
   transform: unset;
@@ -211,19 +192,6 @@ body[lwt-newtab-brighttext] {
 :root[dialogroot] .onboardingContainer .screen:dir(rtl) {
   transform: unset;
 }
-:root[dialogroot] .onboardingContainer .screen:not([pos=split]) .section-main {
-  margin-block: 106px auto;
-}
-:root[dialogroot] .onboardingContainer .screen.with-noodles .section-main,
-:root[dialogroot] .onboardingContainer .screen.with-noodles .section-secondary {
-  margin-block: 156px auto;
-}
-@media only screen and (min-width: 800px) {
-  :root[dialogroot] .onboardingContainer .screen[pos=split] .section-main,
-:root[dialogroot] .onboardingContainer .screen[pos=split] .section-secondary {
-    margin-block: 156px auto;
-  }
-}
 
 .welcome-container .onboardingContainer {
   min-height: 610px;
@@ -231,9 +199,26 @@ body[lwt-newtab-brighttext] {
 }
 
 .onboardingContainer {
+  --grey-subtitle-1: #696977;
+  --newtab-button-secondary-color: #0060DF;
+  --mr-welcome-background-color: #F8F6F4;
+  --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.2) 0%, rgba(2, 144, 238, 0.2) 100%);
+  --mr-screen-background-color: #F8F6F4;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", "Helvetica Neue", sans-serif;
+  font-size: 16px;
+  position: relative;
   text-align: center;
   height: 100vh;
   --transition: 0.6s opacity, 0.6s scale, 0.6s rotate, 0.6s translate;
+}
+@media (prefers-color-scheme: dark) {
+  .onboardingContainer {
+    --grey-subtitle-1: #FFF;
+    --newtab-button-secondary-color: #FFF;
+    --mr-welcome-background-color: #333336;
+    --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.3) 0%, rgba(2, 144, 238, 0.3) 100%);
+    --mr-screen-background-color: #62697A;
+  }
 }
 @media (prefers-contrast: more) {
   .onboardingContainer {
@@ -280,6 +265,7 @@ body[lwt-newtab-brighttext] {
   padding: 0;
   transition: var(--transition);
   z-index: 1;
+  box-sizing: border-box;
 }
 .onboardingContainer .main-content.no-steps {
   padding-bottom: 48px;
@@ -352,8 +338,16 @@ body[lwt-newtab-brighttext] {
 .onboardingContainer .screen[pos=center].with-noodles .section-main {
   height: 504px;
 }
+.onboardingContainer .screen:not([pos=split]) .secondary-cta .secondary {
+  background: none;
+  color: var(--in-content-link-color);
+  font-size: 14px;
+  font-weight: normal;
+  line-height: 20px;
+}
 .onboardingContainer .screen[pos=split] {
   margin: auto;
+  min-height: 550px;
 }
 .onboardingContainer .screen[pos=split] .section-secondary,
 .onboardingContainer .screen[pos=split] .section-main {
@@ -384,6 +378,7 @@ body[lwt-newtab-brighttext] {
   overflow: hidden;
   padding-inline: 35px 20px;
   padding-block: 120px 0;
+  box-shadow: none;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content:dir(rtl) {
   border-radius: 8px 0 0 8px;
@@ -391,19 +386,35 @@ body[lwt-newtab-brighttext] {
 .onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner {
   min-height: 330px;
 }
-.onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .language-switcher-container .secondary {
-  margin-inline-start: 0;
-  margin: 5px 0;
-  color: var(--in-content-primary-button-text-color);
-  background-color: var(--in-content-primary-button-background);
-}
-.onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .language-switcher-container .secondary:hover {
-  background-color: var(--in-content-primary-button-background-hover);
+.onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .language-switcher-container .primary {
+  margin-bottom: 5px;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons {
   position: relative;
   text-align: initial;
   height: 100%;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .checkbox-container {
+  font-size: 13px;
+  margin-block: 1em;
+  transition: var(--transition);
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .checkbox-container input,
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .checkbox-container label {
+  vertical-align: middle;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons.dual-action-buttons button {
+  padding: 8px 16px;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons.dual-action-buttons .secondary-cta {
+  display: block;
+  position: relative;
+  bottom: unset;
+  margin-block: 5px 0;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons.dual-action-buttons .secondary-cta .secondary {
+  margin-inline: 0;
+  font-size: 13px;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta {
   position: absolute;
@@ -412,15 +423,27 @@ body[lwt-newtab-brighttext] {
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .secondary {
   background-color: var(--in-content-button-background) !important;
-  color: var(--in-content-button-text-color);
+  border: 1px solid var(--in-content-button-border-color);
   line-height: 12px;
-  font-size: 10px;
+  font-size: 0.72em;
   font-weight: 600;
   padding: 8px 16px;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .secondary:hover {
   text-decoration: none;
   background-color: var(--in-content-button-background-hover) !important;
+  color: var(--in-content-button-text-color-hover);
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon {
+  background: url("chrome://browser/skin/forward.svg") no-repeat right 8px center;
+  background-size: 12px;
+  padding-inline-end: 24px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon:dir(rtl) {
+  background-image: url("chrome://browser/skin/back.svg");
+  background-position-x: left 8px;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container {
   text-align: start;
@@ -464,7 +487,7 @@ body[lwt-newtab-brighttext] {
   margin-inline: 0;
 }
 .onboardingContainer .screen[pos=split] .section-secondary {
-  --mr-secondary-position: center center / contain;
+  --mr-secondary-position: center center / auto 350px;
   border-radius: 8px 0 0 8px;
   box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);
   margin: auto 0 auto auto;
@@ -495,8 +518,14 @@ body[lwt-newtab-brighttext] {
 }
 .onboardingContainer .screen[pos=split] .section-secondary .hero-image img {
   width: 100%;
-  max-width: 150px;
+  max-width: 180px;
   margin: 25px 0;
+  padding-bottom: 30px;
+}
+@media only screen and (max-width: 800px) {
+  .onboardingContainer .screen[pos=split] .section-secondary .hero-image img {
+    padding-bottom: unset;
+  }
 }
 .onboardingContainer .screen[pos=split] .tiles-theme-container {
   margin-block: -20px auto;
@@ -528,6 +557,7 @@ body[lwt-newtab-brighttext] {
 @media only screen and (max-width: 800px) {
   .onboardingContainer .screen[pos=split] {
     flex-direction: column;
+    min-height: 550px;
   }
   .onboardingContainer .screen[pos=split] .section-secondary,
 .onboardingContainer .screen[pos=split] .section-main {
@@ -535,10 +565,13 @@ body[lwt-newtab-brighttext] {
   }
   .onboardingContainer .screen[pos=split] .section-secondary {
     --mr-secondary-background-position-y: top;
-    --mr-secondary-position: center var(--mr-secondary-background-position-y) / cover;
+    --mr-secondary-position: center var(--mr-secondary-background-position-y) / 75%;
     border-radius: 8px 8px 0 0;
     margin: auto auto 0;
-    height: 150px;
+    height: 100px;
+  }
+  .onboardingContainer .screen[pos=split] .section-secondary .hero-image img {
+    margin: 6px 0;
   }
   .onboardingContainer .screen[pos=split] .section-secondary h1 {
     font-size: 35px;
@@ -551,7 +584,7 @@ body[lwt-newtab-brighttext] {
   }
   .onboardingContainer .screen[pos=split] .section-main {
     margin: 0 auto auto;
-    height: 400px;
+    height: 450px;
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content {
     border-radius: 0 0 8px 8px;
@@ -581,6 +614,9 @@ body[lwt-newtab-brighttext] {
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons {
     text-align: center;
+  }
+  .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .checkbox-container {
+    display: none;
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta {
     position: relative;
@@ -1124,13 +1160,6 @@ body[lwt-newtab-brighttext] {
   font-size: 14px;
   transition: var(--transition);
 }
-.onboardingContainer .secondary-cta .secondary {
-  background: none;
-  color: var(--in-content-link-color);
-  font-size: 14px;
-  font-weight: normal;
-  line-height: 20px;
-}
 .onboardingContainer .secondary-cta.top {
   justify-content: end;
   padding-inline-end: min(150px, 500px - 70vh);
@@ -1189,6 +1218,7 @@ body[lwt-newtab-brighttext] {
   transition: var(--transition);
   z-index: -1;
   height: 48px;
+  box-sizing: border-box;
 }
 .onboardingContainer .steps.has-helptext {
   padding-bottom: 0;
@@ -1202,6 +1232,7 @@ body[lwt-newtab-brighttext] {
   border-radius: 5px;
   border: 3px solid var(--in-content-button-text-color);
   opacity: 0.25;
+  box-sizing: inherit;
 }
 .onboardingContainer .steps .indicator.current {
   opacity: 1;
@@ -1463,6 +1494,7 @@ body[lwt-newtab-brighttext] {
 .onboardingContainer.transition-in [pos=corner] .brand-logo,
 .onboardingContainer.transition-in [pos=corner] .welcome-text,
 .onboardingContainer.transition-in [pos=corner] .primary,
+.onboardingContainer.transition-in [pos=corner] .checkbox-container,
 .onboardingContainer.transition-in [pos=corner] .secondary,
 .onboardingContainer.transition-in [pos=corner] .secondary-cta:not(.top),
 .onboardingContainer.transition-in [pos=corner] .message-text {
@@ -1489,6 +1521,7 @@ body[lwt-newtab-brighttext] {
 .onboardingContainer.transition-in .screen:not([pos=corner]) .tiles-theme-section,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .colorway-text,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .primary,
+.onboardingContainer.transition-in .screen:not([pos=corner]) .checkbox-container,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .secondary,
 .onboardingContainer.transition-in .screen:not([pos=corner]) .secondary-cta:not(.top) {
   opacity: 0;
@@ -1533,6 +1566,7 @@ body[lwt-newtab-brighttext] {
   transition-delay: 0.2s;
 }
 .onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .primary,
+.onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .checkbox-container,
 .onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .secondary,
 .onboardingContainer.transition-out .screen:not(.dialog-last):not([pos=corner]) .secondary-cta:not(.top) {
   opacity: 0;

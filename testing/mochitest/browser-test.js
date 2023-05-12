@@ -406,11 +406,28 @@ Tester.prototype = {
       AppConstants.MOZ_APP_NAME != "thunderbird" &&
       gBrowser.tabs.length > 1
     ) {
+      let lastURI = "";
+      let lastURIcount = 0;
       while (gBrowser.tabs.length > 1) {
         let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
         if (!lastTab.closing) {
           // Report the stale tab as an error only when they're not closing.
           // Tests can finish without waiting for the closing tabs.
+          if (lastURI != lastTab.linkedBrowser.currentURI.spec) {
+            lastURI = lastTab.linkedBrowser.currentURI.spec;
+          } else {
+            lastURIcount++;
+            if (lastURIcount >= 3) {
+              this.currentTest.addResult(
+                new testResult({
+                  name:
+                    "terminating browser early - unable to close tabs; skipping remaining tests in folder",
+                  allowFailure: this.currentTest.allowFailure,
+                })
+              );
+              this.finish();
+            }
+          }
           this.currentTest.addResult(
             new testResult({
               name:
@@ -593,7 +610,7 @@ Tester.prototype = {
       // Run cleanup functions for the current test before moving on to the
       // next one.
       let testScope = this.currentTest.scope;
-      while (testScope.__cleanupFunctions.length > 0) {
+      while (testScope.__cleanupFunctions.length) {
         let func = testScope.__cleanupFunctions.shift();
         try {
           let result = await func.apply(testScope);

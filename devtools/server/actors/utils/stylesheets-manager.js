@@ -582,16 +582,35 @@ class StyleSheetsManager extends EventEmitter {
     this._mqlList = [];
 
     const styleSheetRules = await this._getCSSRules(styleSheet);
-    const mediaRules = Array.from(styleSheetRules).filter(
-      rule => rule.type === CSSRule.MEDIA_RULE
-    );
+    const document = styleSheet.associatedDocument;
+    const win = document?.ownerGlobal;
+    const CSSGroupingRule = win?.CSSGroupingRule;
 
-    return mediaRules.map((rule, index) => {
+    // We need to go through nested rules to extract all the rules we're interested in
+    const rules = [];
+    const traverseRules = ruleList => {
+      for (const rule of ruleList) {
+        // Don't go further if the rule can't hold other rules (e.g. not a @media, @supports, …)
+        if (!CSSGroupingRule || !CSSGroupingRule.isInstance(rule)) {
+          continue;
+        }
+
+        if (rule.type === CSSRule.MEDIA_RULE) {
+          rules.push(rule);
+        }
+
+        if (rule.cssRules) {
+          traverseRules(rule.cssRules);
+        }
+      }
+    };
+    traverseRules(styleSheetRules);
+
+    return rules.map((rule, index) => {
       let matches = false;
 
       try {
-        const window = styleSheet.ownerNode.ownerGlobal;
-        const mql = window.matchMedia(rule.media.mediaText);
+        const mql = win.matchMedia(rule.media.mediaText);
         matches = mql.matches;
         mql.onchange = this._onMatchesChange.bind(this, resourceId, index);
         this._mqlList.push(mql);

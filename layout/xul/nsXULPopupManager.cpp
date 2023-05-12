@@ -344,36 +344,39 @@ bool nsXULPopupManager::Rollup(uint32_t aCount, bool aFlush,
          noRollupOnAnchor) &&
         pos) {
       nsMenuPopupFrame* popupFrame = item->Frame();
-      CSSIntRect anchorRect;
-      if (popupFrame->IsAnchored()) {
-        // Check if the popup has a screen anchor rectangle. If not, get the
-        // rectangle from the anchor element.
-        anchorRect = popupFrame->GetScreenAnchorRect();
-        if (anchorRect.x == -1 || anchorRect.y == -1) {
-          nsCOMPtr<nsIContent> anchor = popupFrame->GetAnchor();
-
-          // Check if the anchor has indicated another node to use for checking
-          // for roll-up. That way, we can anchor a popup on anonymous content
-          // or an individual icon, while clicking elsewhere within a button or
-          // other container doesn't result in us re-opening the popup.
-          if (anchor && anchor->IsElement()) {
-            nsAutoString consumeAnchor;
-            anchor->AsElement()->GetAttr(
-                kNameSpaceID_None, nsGkAtoms::consumeanchor, consumeAnchor);
-            if (!consumeAnchor.IsEmpty()) {
-              Document* doc = anchor->GetOwnerDocument();
-              nsIContent* newAnchor = doc->GetElementById(consumeAnchor);
-              if (newAnchor) {
-                anchor = newAnchor;
-              }
-            }
-          }
-
-          if (anchor && anchor->GetPrimaryFrame()) {
-            anchorRect = anchor->GetPrimaryFrame()->GetScreenRect();
+      CSSIntRect anchorRect = [&] {
+        if (popupFrame->IsAnchored()) {
+          // Check if the popup has a screen anchor rectangle. If not, get the
+          // rectangle from the anchor element.
+          auto r = popupFrame->GetScreenAnchorRect();
+          if (r.x != -1 && r.y != -1) {
+            return r;
           }
         }
-      }
+        auto* anchor = Element::FromNodeOrNull(popupFrame->GetAnchor());
+        if (!anchor) {
+          return CSSIntRect();
+        }
+
+        // Check if the anchor has indicated another node to use for checking
+        // for roll-up. That way, we can anchor a popup on anonymous content
+        // or an individual icon, while clicking elsewhere within a button or
+        // other container doesn't result in us re-opening the popup.
+        nsAutoString consumeAnchor;
+        anchor->GetAttr(nsGkAtoms::consumeanchor, consumeAnchor);
+        if (!consumeAnchor.IsEmpty()) {
+          if (Element* newAnchor =
+                  anchor->OwnerDoc()->GetElementById(consumeAnchor)) {
+            anchor = newAnchor;
+          }
+        }
+
+        nsIFrame* f = anchor->GetPrimaryFrame();
+        if (!f) {
+          return CSSIntRect();
+        }
+        return f->GetScreenRect();
+      }();
 
       // It's possible that some other element is above the anchor at the same
       // position, but the only thing that would happen is that the mouse
@@ -558,7 +561,8 @@ static nsMenuPopupFrame* GetPopupToMoveOrResize(nsIFrame* aFrame) {
   return menuPopupFrame;
 }
 
-void nsXULPopupManager::PopupMoved(nsIFrame* aFrame, nsIntPoint aPnt) {
+void nsXULPopupManager::PopupMoved(nsIFrame* aFrame, nsIntPoint aPnt,
+                                   bool aByMoveToRect) {
   nsMenuPopupFrame* menuPopupFrame = GetPopupToMoveOrResize(aFrame);
   if (!menuPopupFrame) {
     return;
@@ -591,7 +595,7 @@ void nsXULPopupManager::PopupMoved(nsIFrame* aFrame, nsIntPoint aPnt) {
   } else {
     CSSPoint cssPos = LayoutDeviceIntPoint::FromUnknownPoint(aPnt) /
                       menuPopupFrame->PresContext()->CSSToDevPixelScale();
-    menuPopupFrame->MoveTo(cssPos, false);
+    menuPopupFrame->MoveTo(cssPos, false, aByMoveToRect);
   }
 }
 
@@ -1403,25 +1407,6 @@ void nsXULPopupManager::HidePopupsInList(
   }
 
   SetCaptureState(nullptr);
-}
-
-void nsXULPopupManager::EnableRollup(nsIContent* aPopup, bool aShouldRollup) {
-#ifndef MOZ_GTK
-  nsMenuChainItem* item = mPopups;
-  while (item) {
-    if (item->Content() == aPopup) {
-      nsIContent* oldmenu = nullptr;
-      if (mPopups) {
-        oldmenu = mPopups->Content();
-      }
-
-      item->SetNoAutoHide(!aShouldRollup);
-      SetCaptureState(oldmenu);
-      return;
-    }
-    item = item->GetParent();
-  }
-#endif
 }
 
 bool nsXULPopupManager::IsChildOfDocShell(Document* aDoc,

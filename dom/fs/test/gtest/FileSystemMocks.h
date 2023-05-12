@@ -7,71 +7,108 @@
 #ifndef DOM_FS_TEST_GTEST_FILESYSTEMMOCKS_H_
 #define DOM_FS_TEST_GTEST_FILESYSTEMMOCKS_H_
 
-#include "gtest/gtest.h"
-#include "gmock/gmock.h"
+#include <memory>  // We don't have a mozilla shared pointer for pod types
 
 #include "TestHelpers.h"
-
-#include "fs/FileSystemRequestHandler.h"
 #include "fs/FileSystemChildFactory.h"
-
+#include "fs/FileSystemRequestHandler.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "js/Promise.h"
+#include "js/RootingAPI.h"
+#include "jsapi.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
-#include "mozilla/dom/OriginPrivateFileSystemChild.h"
+#include "mozilla/dom/FileSystemManagerChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"
 #include "nsITimer.h"
 
-#include "jsapi.h"
-#include "js/Promise.h"
-#include "js/RootingAPI.h"
+namespace testing::internal {
 
-#include <memory>  // We don't have a mozilla shared pointer for pod types
+GTEST_API_ ::testing::AssertionResult CmpHelperSTREQ(const char* s1_expression,
+                                                     const char* s2_expression,
+                                                     const nsAString& s1,
+                                                     const nsAString& s2);
 
-namespace mozilla::dom::fs::test {
+}  // namespace testing::internal
+
+namespace mozilla::dom::fs {
+
+inline std::ostream& operator<<(std::ostream& aOut,
+                                const FileSystemEntryMetadata& aMetadata) {
+  return aOut;
+}
+
+namespace test {
 
 nsIGlobalObject* GetGlobal();
 
+nsresult GetAsString(const RefPtr<Promise>& aPromise, nsAString& aString);
+
+mozilla::ipc::PrincipalInfo GetPrincipalInfo();
+
 class MockFileSystemRequestHandler : public FileSystemRequestHandler {
  public:
-  MOCK_METHOD(void, GetRoot, (RefPtr<Promise> aPromise), (override));
+  MOCK_METHOD(void, GetRootHandle,
+              (RefPtr<FileSystemManager> aManager, RefPtr<Promise> aPromise),
+              (override));
 
   MOCK_METHOD(void, GetDirectoryHandle,
-              (RefPtr<FileSystemActorHolder> & aActor,
+              (RefPtr<FileSystemManager> & aManager,
                const FileSystemChildMetadata& aDirectory, bool aCreate,
                RefPtr<Promise> aPromise),
               (override));
 
   MOCK_METHOD(void, GetFileHandle,
-              (RefPtr<FileSystemActorHolder> & aActor,
+              (RefPtr<FileSystemManager> & aManager,
                const FileSystemChildMetadata& aFile, bool aCreate,
                RefPtr<Promise> aPromise),
               (override));
 
   MOCK_METHOD(void, GetFile,
-              (RefPtr<FileSystemActorHolder> & aActor,
+              (RefPtr<FileSystemManager> & aManager,
                const FileSystemEntryMetadata& aFile, RefPtr<Promise> aPromise),
               (override));
 
   MOCK_METHOD(void, GetEntries,
-              (RefPtr<FileSystemActorHolder> & aActor,
-               const EntryId& aDirectory, PageNumber aPage,
-               RefPtr<Promise> aPromise, ArrayAppendable& aSink),
+              (RefPtr<FileSystemManager> & aManager, const EntryId& aDirectory,
+               PageNumber aPage, RefPtr<Promise> aPromise,
+               RefPtr<FileSystemEntryMetadataArray>& aSink),
               (override));
 
   MOCK_METHOD(void, RemoveEntry,
-              (RefPtr<FileSystemActorHolder> & aActor,
+              (RefPtr<FileSystemManager> & aManager,
                const FileSystemChildMetadata& aEntry, bool aRecursive,
                RefPtr<Promise> aPromise),
+              (override));
+
+  MOCK_METHOD(void, MoveEntry,
+              (RefPtr<FileSystemManager> & aManager, FileSystemHandle* aHandle,
+               const FileSystemEntryMetadata& aEntry,
+               const FileSystemChildMetadata& aNewEntry,
+               RefPtr<Promise> aPromise),
+              (override));
+
+  MOCK_METHOD(void, RenameEntry,
+              (RefPtr<FileSystemManager> & aManager, FileSystemHandle* aHandle,
+               const FileSystemEntryMetadata& aEntry, const Name& aName,
+               RefPtr<Promise> aPromise),
+              (override));
+
+  MOCK_METHOD(void, Resolve,
+              (RefPtr<FileSystemManager> & aManager,
+               const FileSystemEntryPair& aEndpoints, RefPtr<Promise> aPromise),
               (override));
 };
 
@@ -187,9 +224,13 @@ class TestPromiseListener : public PromiseNativeHandler,
   ErrorHandler mOnError;
 };
 
-class TestOriginPrivateFileSystemChild : public OriginPrivateFileSystemChild {
+class TestFileSystemManagerChild : public FileSystemManagerChild {
  public:
-  NS_INLINE_DECL_REFCOUNTING(TestOriginPrivateFileSystemChild, override)
+  MOCK_METHOD(void, SendGetRootHandle,
+              (mozilla::ipc::ResolveCallback<FileSystemGetHandleResponse> &&
+                   aResolve,
+               mozilla::ipc::RejectCallback&& aReject),
+              (override));
 
   MOCK_METHOD(
       void, SendGetDirectoryHandle,
@@ -202,6 +243,14 @@ class TestOriginPrivateFileSystemChild : public OriginPrivateFileSystemChild {
       void, SendGetFileHandle,
       (const FileSystemGetHandleRequest& request,
        mozilla::ipc::ResolveCallback<FileSystemGetHandleResponse>&& aResolve,
+       mozilla::ipc::RejectCallback&& aReject),
+      (override));
+
+  MOCK_METHOD(
+      void, SendGetAccessHandle,
+      (const FileSystemGetAccessHandleRequest& request,
+       mozilla::ipc::ResolveCallback<FileSystemGetAccessHandleResponse>&&
+           aResolve,
        mozilla::ipc::RejectCallback&& aReject),
       (override));
 
@@ -233,27 +282,25 @@ class TestOriginPrivateFileSystemChild : public OriginPrivateFileSystemChild {
        mozilla::ipc::RejectCallback&& aReject),
       (override));
 
-  MOCK_METHOD(void, Close, (), (override));
-
-  MOCK_METHOD(POriginPrivateFileSystemChild*, AsBindable, (), (override));
+  MOCK_METHOD(void, Shutdown, (), (override));
 
  protected:
-  virtual ~TestOriginPrivateFileSystemChild() = default;
+  virtual ~TestFileSystemManagerChild() = default;
 };
 
 class TestFileSystemChildFactory final : public FileSystemChildFactory {
  public:
-  explicit TestFileSystemChildFactory(TestOriginPrivateFileSystemChild* aChild)
+  explicit TestFileSystemChildFactory(TestFileSystemManagerChild* aChild)
       : mChild(aChild) {}
 
-  already_AddRefed<OriginPrivateFileSystemChild> Create() const override {
-    return RefPtr<TestOriginPrivateFileSystemChild>(mChild).forget();
+  already_AddRefed<FileSystemManagerChild> Create() const override {
+    return RefPtr<TestFileSystemManagerChild>(mChild).forget();
   }
 
   ~TestFileSystemChildFactory() = default;
 
  private:
-  TestOriginPrivateFileSystemChild* mChild;
+  TestFileSystemManagerChild* mChild;
 };
 
 struct MockExpectMe {
@@ -277,7 +324,8 @@ struct FailOnCall {
   }
 };
 
-}  // namespace mozilla::dom::fs::test
+}  // namespace test
+}  // namespace mozilla::dom::fs
 
 #define MOCK_PROMISE_LISTENER(name, ...) \
   using name = mozilla::dom::fs::test::TestPromiseListener<__VA_ARGS__>;

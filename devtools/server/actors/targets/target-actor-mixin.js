@@ -6,12 +6,10 @@
 
 const { ActorClassWithSpec } = require("devtools/shared/protocol");
 
-const Resources = require("devtools/server/actors/resources/index");
-
 loader.lazyRequireGetter(
   this,
-  "SessionData",
-  "devtools/server/actors/targets/session-data/index",
+  "SessionDataProcessors",
+  "devtools/server/actors/targets/session-data-processors/index",
   true
 );
 loader.lazyRequireGetter(
@@ -41,7 +39,7 @@ module.exports = function(targetType, targetActorSpec, implementation) {
      *        associated target) is created.
      */
     async addSessionDataEntry(type, entries, isDocumentCreation = false) {
-      const processor = SessionData[type];
+      const processor = SessionDataProcessors[type];
       if (processor) {
         await processor.addSessionDataEntry(this, entries, isDocumentCreation);
       }
@@ -53,54 +51,33 @@ module.exports = function(targetType, targetActorSpec, implementation) {
      * See addSessionDataEntry for argument description.
      */
     removeSessionDataEntry(type, entries) {
-      const processor = SessionData[type];
+      const processor = SessionDataProcessors[type];
       if (processor) {
         processor.removeSessionDataEntry(this, entries);
       }
     },
 
     /**
-     * These two methods will create and destroy resource watchers
-     * for each resource type. This will end up calling `notifyResourceAvailable`
-     * whenever new resources are observed.
+     * Called by Resource Watchers, when new resources are available, updated or destroyed.
      *
-     * We have these shortcut methods in this module, because this is called from DevToolsFrameChild
-     * which is a JSM and doesn't have a reference to a DevTools Loader.
-     */
-    _watchTargetResources(resourceTypes) {
-      return Resources.watchResources(this, resourceTypes);
-    },
-
-    _unwatchTargetResources(resourceTypes) {
-      return Resources.unwatchResources(this, resourceTypes);
-    },
-
-    /**
-     * Called by Watchers, when new resources are available.
-     *
+     * @param String updateType
+     *        Can be "available", "updated" or "destroyed"
      * @param Array<json> resources
-     *        List of all available resources. A resource is a JSON object piped over to the client.
-     *        It may contain actor IDs, actor forms, to be manually marshalled by the client.
+     *        List of all resource's form. A resource is a JSON object piped over to the client.
+     *        It can contain actor IDs, actor forms, to be manually marshalled by the client.
      */
-    notifyResourceAvailable(resources) {
-      if (this.devtoolsSpawnedBrowsingContextForWebExtension) {
-        this.overrideResourceBrowsingContextForWebExtension(resources);
+    notifyResources(updateType, resources) {
+      if (resources.length === 0 || this.isDestroyed()) {
+        // Don't try to emit if the resources array is empty or the actor was
+        // destroyed.
+        return;
       }
-      this._emitResourcesForm("resource-available-form", resources);
-    },
 
-    notifyResourceDestroyed(resources) {
       if (this.devtoolsSpawnedBrowsingContextForWebExtension) {
         this.overrideResourceBrowsingContextForWebExtension(resources);
       }
-      this._emitResourcesForm("resource-destroyed-form", resources);
-    },
 
-    notifyResourceUpdated(resources) {
-      if (this.devtoolsSpawnedBrowsingContextForWebExtension) {
-        this.overrideResourceBrowsingContextForWebExtension(resources);
-      }
-      this._emitResourcesForm("resource-updated-form", resources);
+      this.emit(`resource-${updateType}-form`, resources);
     },
 
     /**
@@ -120,18 +97,6 @@ module.exports = function(targetType, targetActorSpec, implementation) {
       );
     },
 
-    /**
-     * Wrapper around emit for resource forms to bail early after destroy.
-     */
-    _emitResourcesForm(name, resources) {
-      if (resources.length === 0 || this.isDestroyed()) {
-        // Don't try to emit if the resources array is empty or the actor was
-        // destroyed.
-        return;
-      }
-      this.emit(name, resources);
-    },
-
     getStyleSheetManager() {
       if (!this._styleSheetManager) {
         this._styleSheetManager = new StyleSheetsManager(this);
@@ -145,10 +110,6 @@ module.exports = function(targetType, targetActorSpec, implementation) {
     Object.getOwnPropertyDescriptors(implementation)
   );
   proto.initialize = function() {
-    this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
-    this.notifyResourceDestroyed = this.notifyResourceDestroyed.bind(this);
-    this.notifyResourceUpdated = this.notifyResourceUpdated.bind(this);
-
     if (typeof implementation.initialize == "function") {
       implementation.initialize.apply(this, arguments);
     }

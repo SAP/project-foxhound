@@ -26,7 +26,6 @@
 #include "frontend/Stencil.h"
 #include "frontend/TaggedParserAtomIndexHasher.h"  // TaggedParserAtomIndexHasher
 #include "frontend/UsedNameTracker.h"
-#include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "js/GCVector.h"
 #include "js/HashTable.h"
 #include "js/RefCounted.h"  // AtomicRefCounted
@@ -34,7 +33,7 @@
 #include "js/UniquePtr.h"  // js::UniquePtr
 #include "js/Vector.h"
 #include "js/WasmModule.h"
-#include "vm/ErrorContext.h"
+#include "vm/ErrorContext.h"  // MainThreadErrorContext
 #include "vm/GlobalObject.h"  // GlobalObject
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"  // JSFunction
@@ -45,6 +44,10 @@
 
 class JSAtom;
 class JSString;
+
+namespace JS {
+class JS_PUBLIC_API ReadOnlyCompileOptions;
+}
 
 namespace js {
 
@@ -59,6 +62,7 @@ struct CompilationStencil;
 struct CompilationGCOutput;
 class ScriptStencilIterable;
 struct InputName;
+class ScopeBindingCache;
 
 // Reference to a Scope within a CompilationStencil.
 struct ScopeStencilRef {
@@ -382,6 +386,22 @@ struct InputName {
 // ScopeContext holds information derived from the scope and environment chains
 // to try to avoid the parser needing to traverse VM structures directly.
 struct ScopeContext {
+  // Cache: Scope -> (JSAtom/TaggedParserAtomIndex -> NameLocation)
+  //
+  // This cache maps the scope to a hash table which can lookup a name of the
+  // scope to the equivalent NameLocation.
+  ScopeBindingCache* scopeCache = nullptr;
+
+  // Generation number of the `scopeCache` collected before filling the cache
+  // with enclosing scope information.
+  //
+  // The generation number, obtained from `scopeCache->getCurrentGeneration()`
+  // is incremented each time the GC invalidate the content of the cache. The
+  // `scopeCache` can only be used when the generation number collected before
+  // filling the cache is identical to the generation number seen when querying
+  // the cached content.
+  size_t scopeCacheGen = 0;
+
   // Class field initializer info if we are nested within a class constructor.
   // We may be an combination of arrow and eval context within the constructor.
   mozilla::Maybe<MemberInitializers> memberInitializers = {};
@@ -467,8 +487,8 @@ struct ScopeContext {
 #endif
 
   bool init(JSContext* cx, ErrorContext* ec, CompilationInput& input,
-            ParserAtomsTable& parserAtoms, InheritThis inheritThis,
-            JSObject* enclosingEnv);
+            ParserAtomsTable& parserAtoms, ScopeBindingCache* scopeCache,
+            InheritThis inheritThis, JSObject* enclosingEnv);
 
   mozilla::Maybe<EnclosingLexicalBindingKind>
   lookupLexicalBindingInEnclosingScope(TaggedParserAtomIndex name);
@@ -476,7 +496,7 @@ struct ScopeContext {
   NameLocation searchInEnclosingScope(JSContext* cx, ErrorContext* ec,
                                       CompilationInput& input,
                                       ParserAtomsTable& parserAtoms,
-                                      TaggedParserAtomIndex name, uint8_t hops);
+                                      TaggedParserAtomIndex name);
 
   bool effectiveScopePrivateFieldCacheHas(TaggedParserAtomIndex name);
   mozilla::Maybe<NameLocation> getPrivateFieldLocation(
@@ -487,6 +507,14 @@ struct ScopeContext {
   void computeThisEnvironment(const InputScope& enclosingScope);
   void computeInScope(const InputScope& enclosingScope);
   void cacheEnclosingScope(const InputScope& enclosingScope);
+  NameLocation searchInEnclosingScopeWithCache(JSContext* cx, ErrorContext* ec,
+                                               CompilationInput& input,
+                                               ParserAtomsTable& parserAtoms,
+                                               TaggedParserAtomIndex name);
+  NameLocation searchInEnclosingScopeNoCache(JSContext* cx, ErrorContext* ec,
+                                             CompilationInput& input,
+                                             ParserAtomsTable& parserAtoms,
+                                             TaggedParserAtomIndex name);
 
   InputScope determineEffectiveScope(InputScope& scope, JSObject* environment);
 
@@ -1152,7 +1180,8 @@ struct CompilationStencil {
   [[nodiscard]] bool serializeStencils(JSContext* cx, CompilationInput& input,
                                        JS::TranscodeBuffer& buf,
                                        bool* succeededOut = nullptr) const;
-  [[nodiscard]] bool deserializeStencils(JSContext* cx, CompilationInput& input,
+  [[nodiscard]] bool deserializeStencils(JSContext* cx, ErrorContext* ec,
+                                         CompilationInput& input,
                                          const JS::TranscodeRange& range,
                                          bool* succeededOut = nullptr);
 
@@ -1385,10 +1414,10 @@ struct MOZ_RAII CompilationState : public ExtensibleCompilationStencil {
   CompilationState(JSContext* cx, LifoAllocScope& parserAllocScope,
                    CompilationInput& input);
 
-  bool init(JSContext* cx, ErrorContext* ec,
+  bool init(JSContext* cx, ErrorContext* ec, ScopeBindingCache* scopeCache,
             InheritThis inheritThis = InheritThis::No,
             JSObject* enclosingEnv = nullptr) {
-    if (!scopeContext.init(cx, ec, input, parserAtoms, inheritThis,
+    if (!scopeContext.init(cx, ec, input, parserAtoms, scopeCache, inheritThis,
                            enclosingEnv)) {
       return false;
     }

@@ -4,9 +4,7 @@
 
 "use strict";
 const { Ci } = require("chrome");
-const Services = require("Services");
 
-loader.lazyRequireGetter(this, "ChromeUtils");
 loader.lazyRequireGetter(
   this,
   "isRemoteBrowserElement",

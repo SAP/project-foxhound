@@ -57,7 +57,7 @@ const webconsoleSpecPrototype = {
       notes: Option(0, "nullable:string"),
       result: Option(0, "nullable:json"),
       startTime: Option(0, "number"),
-      timestamp: Option(0, "string"),
+      timestamp: Option(0, "number"),
       topLevelAwaitRejected: Option(0, "nullable:boolean"),
     },
     fileActivity: {
@@ -185,13 +185,6 @@ const webconsoleSpecPrototype = {
         expressionVars: Arg(5, "nullable:json"),
       },
       response: RetVal("console.autocomplete"),
-    },
-    /**
-     * Clear the cache of messages (page errors and console API calls) expects no response.
-     */
-    // @backward-compat { version 104 } This can be removed once older server have clearMessagesCacheAsync.
-    clearMessagesCache: {
-      oneway: true,
     },
 
     /**

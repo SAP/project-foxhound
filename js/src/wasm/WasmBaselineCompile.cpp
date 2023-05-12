@@ -1731,6 +1731,13 @@ void BaseCompiler::finishTryNote(size_t tryNoteIndex) {
     }
   }
 
+  // Don't set the end of the try note if we've OOM'ed, as the above nop's may
+  // not have been placed. This is okay as this compilation will be thrown
+  // away.
+  if (masm.oom()) {
+    return;
+  }
+
   // Mark the end of the try note
   tryNote.setTryBodyEnd(masm.currentOffset());
 }
@@ -6351,40 +6358,25 @@ void BaseCompiler::emitGcNullCheck(RegRef rp) {
 }
 
 RegPtr BaseCompiler::emitGcArrayGetData(RegRef rp) {
-  // `rp` points at an OutLineTypedObject.  Return a reg holding the value of
-  // its `data_` field.
+  // `rp` points at a WasmArrayObject.  Return a reg holding the value of its
+  // `data_` field.
   RegPtr rdata = needPtr();
-  // An array is always an outline typed object
-  masm.loadPtr(Address(rp, OutlineTypedObject::offsetOfData()), rdata);
+  masm.loadPtr(Address(rp, WasmArrayObject::offsetOfData()), rdata);
   return rdata;
 }
 
-void BaseCompiler::emitGcArrayAdjustDataPointer(RegPtr rdata) {
-  // `rdata` points at the start of an OutlineTypedObject's out of line array
-  // (iow it holds the value of a OutLineTypedObject::data_ field).  Move it
-  // forwards so it points at the first byte of the first array element stored
-  // there.
-  STATIC_ASSERT_NUMELEMENTS_IS_U32;
-  masm.addPtr(ImmWord(OutlineTypedObject::offsetOfNumElements() +
-                      sizeof(OutlineTypedObject::NumElements)),
-              rdata);
+RegI32 BaseCompiler::emitGcArrayGetNumElements(RegRef rp) {
+  // `rp` points at a WasmArrayObject.  Return a reg holding the value of its
+  // `numElements_` field.
+  STATIC_ASSERT_WASMARRAYELEMENTS_NUMELEMENTS_IS_U32;
+  RegI32 numElements = needI32();
+  masm.load32(Address(rp, WasmArrayObject::offsetOfNumElements()), numElements);
+  return numElements;
 }
 
-RegI32 BaseCompiler::emitGcArrayGetNumElements(RegPtr rdata,
-                                               bool adjustDataPointer) {
-  STATIC_ASSERT_NUMELEMENTS_IS_U32;
-  RegI32 length = needI32();
-  masm.load32(Address(rdata, OutlineTypedObject::offsetOfNumElements()),
-              length);
-  if (adjustDataPointer) {
-    emitGcArrayAdjustDataPointer(rdata);
-  }
-  return length;
-}
-
-void BaseCompiler::emitGcArrayBoundsCheck(RegI32 index, RegI32 length) {
+void BaseCompiler::emitGcArrayBoundsCheck(RegI32 index, RegI32 numElements) {
   Label inBounds;
-  masm.branch32(Assembler::Below, index, length, &inBounds);
+  masm.branch32(Assembler::Below, index, numElements, &inBounds);
   masm.wasmTrap(Trap::OutOfBounds, bytecodeOffset());
   masm.bind(&inBounds);
 }
@@ -6504,11 +6496,12 @@ void BaseCompiler::emitGcSetScalar(const T& dst, FieldType type, AnyReg value) {
   }
 }
 
-bool BaseCompiler::emitGcStructSet(RegRef object, RegPtr data,
-                                   const StructField& field, AnyReg value) {
+bool BaseCompiler::emitGcStructSet(RegRef object, RegPtr areaBase,
+                                   uint32_t areaOffset, FieldType fieldType,
+                                   AnyReg value) {
   // Easy path if the field is a scalar
-  if (!field.type.isRefRepr()) {
-    emitGcSetScalar(Address(data, field.offset), field.type, value);
+  if (!fieldType.isRefRepr()) {
+    emitGcSetScalar(Address(areaBase, areaOffset), fieldType, value);
     freeAny(value);
     return true;
   }
@@ -6517,10 +6510,7 @@ bool BaseCompiler::emitGcStructSet(RegRef object, RegPtr data,
   // and can be consumed by the barrier operation
   RegPtr valueAddr = RegPtr(PreBarrierReg);
   needPtr(valueAddr);
-  masm.computeEffectiveAddress(Address(data, field.offset), valueAddr);
-
-  // Save state for after barriered write
-  pushPtr(data);
+  masm.computeEffectiveAddress(Address(areaBase, areaOffset), valueAddr);
 
   // emitBarrieredStore preserves object and value
   if (!emitBarrieredStore(Some(object), valueAddr, value.ref(),
@@ -6528,9 +6518,6 @@ bool BaseCompiler::emitGcStructSet(RegRef object, RegPtr data,
     return false;
   }
   freeRef(value.ref());
-
-  // Restore state
-  popPtr(data);
 
   return true;
 }
@@ -6620,46 +6607,60 @@ bool BaseCompiler::emitStructNew() {
   needPtr(RegPtr(PreBarrierReg));
 
   RegRef rp = popRef();
-  RegPtr rdata = needPtr();
+  RegPtr rbase = needPtr();
 
   // Free the barrier reg after we've allocated all registers
   freePtr(RegPtr(PreBarrierReg));
-
-  // The struct allocated above is guaranteed to have the exact shape of
-  // structType, we don't need to branch on whether it's inline or not.
-  if (InlineTypedObject::canAccommodateSize(structType.size_)) {
-    masm.computeEffectiveAddress(
-        Address(rp, InlineTypedObject::offsetOfDataStart()), rdata);
-  } else {
-    masm.loadPtr(Address(rp, OutlineTypedObject::offsetOfData()), rdata);
-  }
 
   // Optimization opportunity: when the value being stored is a known
   // zero/null we need store nothing.  This case may be somewhat common
   // because struct.new forces a value to be specified for every field.
 
+  // Optimization opportunity: this loop reestablishes the area base pointer
+  // every iteration, which really isn't very clever.  It would be better to
+  // establish it once before we start, then re-set it if/when we transition
+  // from the out-of-line area back to the in-line area.  That would however
+  // require making ::emitGcStructSet preserve that register, which it
+  // currently doesn't.
+
   uint32_t fieldIndex = structType.fields_.length();
   while (fieldIndex-- > 0) {
-    const StructField& structField = structType.fields_[fieldIndex];
+    const StructField& field = structType.fields_[fieldIndex];
+    FieldType fieldType = field.type;
+    uint32_t fieldOffset = field.offset;
+
+    bool areaIsOutline;
+    uint32_t areaOffset;
+    WasmStructObject::fieldOffsetToAreaAndOffset(fieldType, fieldOffset,
+                                                 &areaIsOutline, &areaOffset);
+
+    // Make rbase point at the first byte of the relevant area
+    if (areaIsOutline) {
+      masm.loadPtr(Address(rp, WasmStructObject::offsetOfOutlineData()), rbase);
+    } else {
+      masm.computeEffectiveAddress(
+          Address(rp, WasmStructObject::offsetOfInlineData()), rbase);
+    }
+
     // Reserve the barrier reg if we might need it for this store
-    if (structField.type.isRefRepr()) {
+    if (fieldType.isRefRepr()) {
       needPtr(RegPtr(PreBarrierReg));
     }
 
     AnyReg value = popAny();
 
     // Free the barrier reg now that we've loaded the value
-    if (structField.type.isRefRepr()) {
+    if (fieldType.isRefRepr()) {
       freePtr(RegPtr(PreBarrierReg));
     }
 
-    // Consumes value. rp, and rdata are preserved
-    if (!emitGcStructSet(rp, rdata, structField, value)) {
+    // Consumes value. rp is unchanged by this call.
+    if (!emitGcStructSet(rp, rbase, areaOffset, fieldType, value)) {
       return false;
     }
   }
 
-  freePtr(rdata);
+  freePtr(rbase);
   pushRef(rp);
 
   return true;
@@ -6701,34 +6702,28 @@ bool BaseCompiler::emitStructGet(FieldExtension extension) {
   // Check for null
   emitGcNullCheck(rp);
 
-  // Acquire the data pointer from the object
-  RegPtr rdata = needPtr();
-  {
-    RegPtr scratch = needPtr();
-    RegPtr clasp = needPtr();
-    masm.movePtr(SymbolicAddress::InlineTypedObjectClass, clasp);
-    Label join;
-    Label isInline;
-    masm.branchTestObjClass(Assembler::Equal, rp, clasp, scratch, rp,
-                            &isInline);
-    freePtr(clasp);
-    freePtr(scratch);
+  // Decide whether we're accessing inline or outline, and at what offset
+  FieldType fieldType = structType.fields_[fieldIndex].type;
+  uint32_t fieldOffset = structType.fields_[fieldIndex].offset;
 
-    masm.loadPtr(Address(rp, OutlineTypedObject::offsetOfData()), rdata);
-    masm.jump(&join);
+  bool areaIsOutline;
+  uint32_t areaOffset;
+  WasmStructObject::fieldOffsetToAreaAndOffset(fieldType, fieldOffset,
+                                               &areaIsOutline, &areaOffset);
 
-    masm.bind(&isInline);
+  // Make rbase point at the first byte of the relevant area
+  RegPtr rbase = needPtr();
+  if (areaIsOutline) {
+    masm.loadPtr(Address(rp, WasmStructObject::offsetOfOutlineData()), rbase);
+  } else {
     masm.computeEffectiveAddress(
-        Address(rp, InlineTypedObject::offsetOfDataStart()), rdata);
-    masm.bind(&join);
+        Address(rp, WasmStructObject::offsetOfInlineData()), rbase);
   }
 
   // Load the value
-  FieldType type = structType.fields_[fieldIndex].type;
-  uint32_t offset = structType.fields_[fieldIndex].offset;
-  emitGcGet(type, extension, Address(rdata, offset));
+  emitGcGet(fieldType, extension, Address(rbase, areaOffset));
 
-  freePtr(rdata);
+  freePtr(rbase);
   freeRef(rp);
 
   return true;
@@ -6755,9 +6750,9 @@ bool BaseCompiler::emitStructSet() {
     needPtr(RegPtr(PreBarrierReg));
   }
 
+  RegPtr rbase = needPtr();
   AnyReg value = popAny();
   RegRef rp = popRef();
-  RegPtr rdata = needPtr();
 
   // Free the barrier reg after we've allocated all registers
   if (structField.type.isRefRepr()) {
@@ -6767,34 +6762,29 @@ bool BaseCompiler::emitStructSet() {
   // Check for null
   emitGcNullCheck(rp);
 
-  // Acquire the data pointer from the object.
-  {
-    // We don't have a register to spare at this point on x86, so carefully
-    // borrow the `rdata` as a scratch pointer during the instruction sequence
-    // that loads `rdata`.
-    RegPtr scratch = rdata;
-    RegPtr clasp = needPtr();
-    masm.movePtr(SymbolicAddress::InlineTypedObjectClass, clasp);
-    Label join;
-    Label isInline;
-    masm.branchTestObjClass(Assembler::Equal, rp, clasp, scratch, rp,
-                            &isInline);
-    freePtr(clasp);
-    masm.loadPtr(Address(rp, OutlineTypedObject::offsetOfData()), rdata);
-    masm.jump(&join);
+  // Decide whether we're accessing inline or outline, and at what offset
+  FieldType fieldType = structType.fields_[fieldIndex].type;
+  uint32_t fieldOffset = structType.fields_[fieldIndex].offset;
 
-    masm.bind(&isInline);
+  bool areaIsOutline;
+  uint32_t areaOffset;
+  WasmStructObject::fieldOffsetToAreaAndOffset(fieldType, fieldOffset,
+                                               &areaIsOutline, &areaOffset);
+
+  // Make rbase point at the first byte of the relevant area
+  if (areaIsOutline) {
+    masm.loadPtr(Address(rp, WasmStructObject::offsetOfOutlineData()), rbase);
+  } else {
     masm.computeEffectiveAddress(
-        Address(rp, InlineTypedObject::offsetOfDataStart()), rdata);
-    masm.bind(&join);
+        Address(rp, WasmStructObject::offsetOfInlineData()), rbase);
   }
 
-  // Consumes value. rp, and rdata are preserved
-  if (!emitGcStructSet(rp, rdata, structField, value)) {
+  // Consumes value. rp is unchanged by this call.
+  if (!emitGcStructSet(rp, rbase, areaOffset, fieldType, value)) {
     return false;
   }
 
-  freePtr(rdata);
+  freePtr(rbase);
   freeRef(rp);
 
   return true;
@@ -6831,12 +6821,11 @@ bool BaseCompiler::emitArrayNew() {
   RegRef rp = popRef();
   AnyReg value = popAny();
 
-  // Acquire the data pointers from the object
+  // Acquire the data pointer from the object
   RegPtr rdata = emitGcArrayGetData(rp);
 
-  // Acquire the number of elements and adjust the data pointer to be
-  // immediately after the number-of-elements header.
-  RegI32 numElements = emitGcArrayGetNumElements(rdata, true);
+  // Acquire the number of elements
+  RegI32 numElements = emitGcArrayGetNumElements(rp);
 
   // Free the barrier reg after we've allocated all registers
   if (arrayType.elementType_.isRefRepr()) {
@@ -6905,16 +6894,13 @@ bool BaseCompiler::emitArrayNewFixed() {
   // Get hold of the pointer to the array, as created by SASigArrayNew.
   RegRef rp = popRef();
 
-  // Acquire the data pointers from the object
+  // Acquire the data pointer from the object
   RegPtr rdata = emitGcArrayGetData(rp);
 
   // Free the barrier reg if we previously reserved it.
   if (avoidPreBarrierReg) {
     freePtr(RegPtr(PreBarrierReg));
   }
-
-  // Adjust the data pointer to be immediately after the array length header
-  emitGcArrayAdjustDataPointer(rdata);
 
   // Generate straight-line initialization code.  We could do better here if
   // there was a version of ::emitGcArraySet that took `index` as a `uint32_t`
@@ -6961,6 +6947,50 @@ bool BaseCompiler::emitArrayNewDefault() {
   return emitInstanceCall(lineOrBytecode, SASigArrayNew);
 }
 
+bool BaseCompiler::emitArrayNewData() {
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
+
+  uint32_t typeIndex, segIndex;
+  Nothing nothing;
+  if (!iter_.readArrayNewData(&typeIndex, &segIndex, &nothing, &nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  emitGcCanon(typeIndex);
+  pushI32(int32_t(segIndex));
+
+  // The call removes 4 items from the stack: the segment byte offset and
+  // number of elements (operands to array.new_data), and the type index and
+  // seg index as pushed above.
+  return emitInstanceCall(lineOrBytecode, SASigArrayNewData);
+}
+
+bool BaseCompiler::emitArrayNewElem() {
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
+
+  uint32_t typeIndex, segIndex;
+  Nothing nothing;
+  if (!iter_.readArrayNewElem(&typeIndex, &segIndex, &nothing, &nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  emitGcCanon(typeIndex);
+  pushI32(int32_t(segIndex));
+
+  // The call removes 4 items from the stack: the segment element offset and
+  // number of elements (operands to array.new_elem), and the type index and
+  // seg index as pushed above.
+  return emitInstanceCall(lineOrBytecode, SASigArrayNewElem);
+}
+
 bool BaseCompiler::emitArrayGet(FieldExtension extension) {
   uint32_t typeIndex;
   Nothing nothing;
@@ -6980,16 +7010,15 @@ bool BaseCompiler::emitArrayGet(FieldExtension extension) {
   // Check for null
   emitGcNullCheck(rp);
 
-  // Acquire the data pointer from the object
-  RegPtr rdata = emitGcArrayGetData(rp);
-
-  // Acquire the number of elements and adjust the data pointer to be
-  // immediately after the number-of-elements header
-  RegI32 numElements = emitGcArrayGetNumElements(rdata, true);
+  // Acquire the number of elements
+  RegI32 numElements = emitGcArrayGetNumElements(rp);
 
   // Bounds check the index
   emitGcArrayBoundsCheck(index, numElements);
   freeI32(numElements);
+
+  // Acquire the data pointer from the object
+  RegPtr rdata = emitGcArrayGetData(rp);
 
   // Load the value
   uint32_t shift = arrayType.elementType_.indexingShift();
@@ -7032,31 +7061,23 @@ bool BaseCompiler::emitArraySet() {
   RegI32 index = popI32();
   RegRef rp = popRef();
 
-  // We run out of registers on x86 with this instruction, so stash `value` on
-  // the stack until it is needed later.
-  pushAny(value);
-
   // Check for null
   emitGcNullCheck(rp);
 
-  // Acquire the data pointer from the object
-  RegPtr rdata = emitGcArrayGetData(rp);
-
-  // Acquire the number of elements and adjust the data pointer to be
-  // immediately after the number-of-elements header
-  RegI32 numElements = emitGcArrayGetNumElements(rdata, true);
-
-  // Free the barrier reg after we've allocated all registers
-  if (arrayType.elementType_.isRefRepr()) {
-    freePtr(RegPtr(PreBarrierReg));
-  }
+  // Acquire the number of elements
+  RegI32 numElements = emitGcArrayGetNumElements(rp);
 
   // Bounds check the index
   emitGcArrayBoundsCheck(index, numElements);
   freeI32(numElements);
 
-  // Pull the value out of the stack now that we need it.
-  popAny(value);
+  // Acquire the data pointer from the object
+  RegPtr rdata = emitGcArrayGetData(rp);
+
+  // Free the barrier reg after we've allocated all registers
+  if (arrayType.elementType_.isRefRepr()) {
+    freePtr(RegPtr(PreBarrierReg));
+  }
 
   // All registers are preserved. This isn't strictly necessary, as we'll just
   // be freeing them all after this is done. But this is needed for repeated
@@ -7089,15 +7110,65 @@ bool BaseCompiler::emitArrayLen() {
   // Check for null
   emitGcNullCheck(rp);
 
-  // Acquire the data pointer from the object
-  RegPtr rdata = emitGcArrayGetData(rp);
+  // Acquire the number of elements
+  RegI32 numElements = emitGcArrayGetNumElements(rp);
+  pushI32(numElements);
+
   freeRef(rp);
 
-  // Acquire the number of elements from the array
-  pushI32(emitGcArrayGetNumElements(rdata, false));
-  freePtr(rdata);
-
   return true;
+}
+
+bool BaseCompiler::emitArrayCopy() {
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
+
+  int32_t elemSize;
+  bool elemsAreRefTyped;
+  Nothing nothing;
+  if (!iter_.readArrayCopy(&elemSize, &elemsAreRefTyped, &nothing, &nothing,
+                           &nothing, &nothing, &nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  // readArrayCopy writes the element size in bytes to `elemSize`.  Code
+  // generated here needs to hand it onwards to the instance fn, but also
+  // indicate whether the element type is reftyped, which it does by negating
+  // the size.
+  //
+  // The value stack currently looks like this:
+  //
+  //   (top) [numElements, srcIndex, srcArray, dstIndex, dstArray, ..]
+  //
+  // So push `(possibly negated) elemSize` on it, giving
+  //
+  //   (top) [elemSize, numElements, srcIndex, srcArray, dstIndex, dstArray, ..]
+  //
+  // and generate a call to the helper.
+
+  MOZ_ASSERT_IF(elemsAreRefTyped, elemSize == sizeof(void*));
+  MOZ_ASSERT_IF(!elemsAreRefTyped, elemSize == 1 || elemSize == 2 ||
+                                       elemSize == 4 || elemSize == 8 ||
+                                       elemSize == 16);
+  bool avoidPreBarrierReg = elemsAreRefTyped;
+
+  // Reserve this register early if we will need it so that it is not taken by
+  // any register used in this function.
+  if (avoidPreBarrierReg) {
+    needPtr(RegPtr(PreBarrierReg));
+  }
+
+  // The helper needs to know the element size.
+  pushI32(elemsAreRefTyped ? -elemSize : elemSize);
+
+  if (avoidPreBarrierReg) {
+    freePtr(RegPtr(PreBarrierReg));
+  }
+
+  return emitInstanceCall(lineOrBytecode, SASigArrayCopy);
 }
 
 bool BaseCompiler::emitRefTest() {
@@ -9316,6 +9387,10 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitArrayNewFixed());
           case uint32_t(GcOp::ArrayNewDefault):
             CHECK_NEXT(emitArrayNewDefault());
+          case uint32_t(GcOp::ArrayNewData):
+            CHECK_NEXT(emitArrayNewData());
+          case uint32_t(GcOp::ArrayNewElem):
+            CHECK_NEXT(emitArrayNewElem());
           case uint32_t(GcOp::ArrayGet):
             CHECK_NEXT(emitArrayGet(FieldExtension::None));
           case uint32_t(GcOp::ArrayGetS):
@@ -9326,6 +9401,8 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitArraySet());
           case uint32_t(GcOp::ArrayLen):
             CHECK_NEXT(emitArrayLen());
+          case uint32_t(GcOp::ArrayCopy):
+            CHECK_NEXT(emitArrayCopy());
           case uint32_t(GcOp::RefTest):
             CHECK_NEXT(emitRefTest());
           case uint32_t(GcOp::RefCast):

@@ -215,13 +215,14 @@
 #include "js/UniquePtr.h"
 #include "js/Vector.h"
 #include "util/Unicode.h"
-#include "vm/ErrorContext.h"
 #include "vm/ErrorReporting.h"
 
 struct JS_PUBLIC_API JSContext;
 struct KeywordInfo;
 
 namespace js {
+
+class ErrorContext;
 
 namespace frontend {
 
@@ -908,7 +909,7 @@ class TokenStreamAnyChars : public TokenStreamShared {
    * 2) line-of-context-related fields and return true.  The caller *must*
    * fill in the line/column number; filling the line of context is optional.
    */
-  bool fillExceptingContext(ErrorMetadata* err, uint32_t offset);
+  bool fillExceptingContext(ErrorMetadata* err, uint32_t offset) const;
 
   MOZ_ALWAYS_INLINE void updateFlagsForEOL() { flags.isDirtyLine = false; }
 
@@ -1015,15 +1016,15 @@ class TokenStreamAnyChars : public TokenStreamShared {
   }
 
   // Compute error metadata for an error at no offset.
-  void computeErrorMetadataNoOffset(ErrorMetadata* err);
+  void computeErrorMetadataNoOffset(ErrorMetadata* err) const;
 
   // ErrorReporter API Helpers
 
   // Provide minimal set of error reporting API given we cannot use
   // ErrorReportMixin here. "report" prefix is added to avoid conflict with
   // ErrorReportMixin methods in TokenStream class.
-  void reportErrorNoOffset(unsigned errorNumber, ...);
-  void reportErrorNoOffsetVA(unsigned errorNumber, va_list* args);
+  void reportErrorNoOffset(unsigned errorNumber, ...) const;
+  void reportErrorNoOffsetVA(unsigned errorNumber, va_list* args) const;
 
   const JS::ReadOnlyCompileOptions& options() const { return options_; }
 
@@ -1506,7 +1507,7 @@ class SourceUnits {
                                            size_t encodingSpecificTokenOffset,
                                            size_t* utf16TokenOffset,
                                            size_t encodingSpecificWindowLength,
-                                           size_t* utf16WindowLength);
+                                           size_t* utf16WindowLength) const;
 };
 
 template <>
@@ -1712,7 +1713,8 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
    * This function is quite internal, and you probably should be calling one
    * of its existing callers instead.
    */
-  [[nodiscard]] bool addLineOfContext(ErrorMetadata* err, uint32_t offset);
+  [[nodiscard]] bool addLineOfContext(ErrorMetadata* err,
+                                      uint32_t offset) const;
 };
 
 template <>
@@ -2003,7 +2005,8 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * Return true if the caller can compute a line of context from the token
    * stream.  Otherwise return false.
    */
-  [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err, uint32_t offset) {
+  [[nodiscard]] bool fillExceptingContext(ErrorMetadata* err,
+                                          uint32_t offset) const {
     if (anyCharsAccess().fillExceptingContext(err, offset)) {
       computeLineAndColumn(offset, &err->lineNumber, &err->columnNumber);
       return true;
@@ -2137,7 +2140,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
    * more readable.
    */
   [[nodiscard]] bool internalComputeLineOfContext(ErrorMetadata* err,
-                                                  uint32_t offset) {
+                                                  uint32_t offset) const {
     // We only have line-start information for the current line.  If the error
     // is on a different line, we can't easily provide context.  (This means
     // any error in a multi-line token, e.g. an unterminated multiline string
@@ -2532,16 +2535,6 @@ class MOZ_STACK_CLASS TokenStreamSpecific
  public:
   // Implement ErrorReporter.
 
-  void lineAndColumnAt(size_t offset, uint32_t* line,
-                       uint32_t* column) const final {
-    computeLineAndColumn(offset, line, column);
-  }
-
-  void currentLineAndColumn(uint32_t* line, uint32_t* column) const final {
-    computeLineAndColumn(anyCharsAccess().currentToken().pos.begin, line,
-                         column);
-  }
-
   bool isOnThisLine(size_t offset, uint32_t lineNum,
                     bool* onThisLine) const final {
     return anyCharsAccess().srcCoords.isOnThisLine(offset, lineNum, onThisLine);
@@ -2555,12 +2548,6 @@ class MOZ_STACK_CLASS TokenStreamSpecific
 
   uint32_t columnAt(size_t offset) const final {
     return computeColumn(anyCharsAccess().lineToken(offset), offset);
-  }
-
-  bool hasTokenizationStarted() const final;
-
-  const char* getFilename() const final {
-    return anyCharsAccess().getFilename();
   }
 
  private:
@@ -2582,7 +2569,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   }
 
   [[nodiscard]] bool computeErrorMetadata(
-      ErrorMetadata* err, const ErrorOffset& errorOffset) override;
+      ErrorMetadata* err, const ErrorOffset& errorOffset) const override;
 
  private:
   void reportInvalidEscapeError(uint32_t offset, InvalidEscapeType type) {

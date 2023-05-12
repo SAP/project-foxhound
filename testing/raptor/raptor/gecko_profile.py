@@ -109,7 +109,9 @@ class GeckoProfile(object):
             raise
         except Exception:
             LOG.critical("Encountered an exception during profile symbolication")
-            raise
+            # Do not raise an exception and return the profile so we won't block
+            # the profile capturing pipeline if symbolication fails.
+            return profile
 
     def collect_profiles(self):
         """Returns all profiles files."""
@@ -136,23 +138,36 @@ class GeckoProfile(object):
             # Get the browsertime.json file along with the cold/warm splits
             # if they exist from a chimera test
             results = {"main": None, "cold": None, "warm": None}
-            for filename in os.listdir(topdir):
+            profiling_dir = os.path.join(topdir, "profiling")
+            is_extra_profiler_run = self.raptor_config.get(
+                "extra_profiler_run", False
+            ) and os.path.isdir(profiling_dir)
+            result_dir = profiling_dir if is_extra_profiler_run else topdir
+
+            for filename in os.listdir(result_dir):
                 if filename == "browsertime.json":
-                    results["main"] = os.path.join(topdir, filename)
+                    results["main"] = os.path.join(result_dir, filename)
                 elif filename == "cold-browsertime.json":
-                    results["cold"] = os.path.join(topdir, filename)
+                    results["cold"] = os.path.join(result_dir, filename)
                 elif filename == "warm-browsertime.json":
-                    results["warm"] = os.path.join(topdir, filename)
+                    results["warm"] = os.path.join(result_dir, filename)
                 if all(results.values()):
                     break
 
             if not any(results.values()):
-                raise Exception(
-                    "Could not find any browsertime result JSONs in the artifacts"
-                )
+                if is_extra_profiler_run:
+                    LOG.info(
+                        "Could not find any browsertime result JSONs in the artifacts "
+                        " for the extra profiler run"
+                    )
+                    return []
+                else:
+                    raise Exception(
+                        "Could not find any browsertime result JSONs in the artifacts"
+                    )
 
             profile_locations = []
-            if self.raptor_config.get("chimera", False):
+            if self.raptor_config.get("chimera", False) and not is_extra_profiler_run:
                 if results["warm"] is None or results["cold"] is None:
                     raise Exception(
                         "The test ran in chimera mode but we found no cold "
@@ -163,8 +178,8 @@ class GeckoProfile(object):
                 )
             else:
                 # When we don't run in chimera mode, it means that we
-                # either ran a benchmark, scenario test, or separate
-                # warm/cold pageload tests
+                # either ran a benchmark, scenario test, separate
+                # warm/cold pageload tests or extra profiling run.
                 profile_locations.append(
                     (
                         __get_test_type(),
@@ -173,13 +188,14 @@ class GeckoProfile(object):
                 )
 
             for testtype, results_json in profile_locations:
-                with open(results_json) as f:
+                with open(results_json, encoding="utf-8") as f:
                     data = json.load(f)
+                results_dir = os.path.dirname(results_json)
                 for entry in data:
                     for rel_profile_path in entry["files"]["geckoProfiles"]:
                         res.append(
                             {
-                                "path": os.path.join(topdir, rel_profile_path),
+                                "path": os.path.join(results_dir, rel_profile_path),
                                 "type": testtype,
                             }
                         )

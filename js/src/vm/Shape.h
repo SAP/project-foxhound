@@ -10,35 +10,22 @@
 #include "js/shadow/Shape.h"  // JS::shadow::Shape, JS::shadow::BaseShape
 
 #include "mozilla/Attributes.h"
-#include "mozilla/HashFunctions.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/TemplateLib.h"
-
-#include <algorithm>
 
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
 #include "gc/Barrier.h"
-#include "gc/GCContext.h"
 #include "gc/MaybeRooted.h"
-#include "gc/Policy.h"
 #include "js/HashTable.h"
 #include "js/Id.h"  // JS::PropertyKey
 #include "js/MemoryMetrics.h"
 #include "js/RootingAPI.h"
 #include "js/UbiNode.h"
 #include "util/EnumFlags.h"
-#include "vm/JSAtom.h"
 #include "vm/ObjectFlags.h"
-#include "vm/Printer.h"
 #include "vm/PropertyInfo.h"
-#include "vm/PropertyKey.h"
 #include "vm/PropMap.h"
-#include "vm/StringType.h"
-#include "vm/SymbolType.h"
 #include "vm/TaggedProto.h"
 
 // [SMDOC] Shapes
@@ -263,6 +250,7 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   friend class TenuringTracer;
   friend class JS::ubi::Concrete<Shape>;
   friend class js::gc::RelocationOverlay;
+  friend class js::gc::CellAllocator;
 
  public:
   // Base shape, stored in the cell header.
@@ -562,6 +550,7 @@ class SharedShape : public js::Shape {
 };
 
 class DictionaryShape : public js::Shape {
+  friend class js::gc::CellAllocator;
   DictionaryShape(BaseShape* base, ObjectFlags objectFlags, uint32_t nfixed,
                   PropMap* map, uint32_t mapLength)
       : Shape(base, objectFlags, nfixed, map, mapLength,

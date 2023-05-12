@@ -20,7 +20,7 @@
 #include "mozilla/ProfileBufferEntryKinds.h"
 #include "mozilla/ProfileJSONWriter.h"
 #include "mozilla/ProfilerUtils.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
 #include "nsString.h"
@@ -141,8 +141,16 @@ struct JITFrameInfoForBufferRange final {
 
 // Contains JITFrameInfoForBufferRange objects for multiple profiler buffer
 // ranges.
-struct JITFrameInfo final {
-  JITFrameInfo() : mUniqueStrings(mozilla::MakeUnique<UniqueJSONStrings>()) {}
+class JITFrameInfo final {
+ public:
+  JITFrameInfo()
+      : mUniqueStrings(mozilla::MakeUniqueFallible<UniqueJSONStrings>(
+            mLocalFailureLatchSource)) {
+    if (!mUniqueStrings) {
+      mLocalFailureLatchSource.SetFailure(
+          "OOM in JITFrameInfo allocating mUniqueStrings");
+    }
+  }
 
   MOZ_IMPLICIT JITFrameInfo(const JITFrameInfo& aOther,
                             mozilla::ProgressLogger aProgressLogger);
@@ -171,6 +179,23 @@ struct JITFrameInfo final {
     return mRanges.back().mRangeEnd <= aCurrentBufferRangeStart;
   }
 
+  mozilla::FailureLatch& LocalFailureLatchSource() {
+    return mLocalFailureLatchSource;
+  }
+
+  // The encapsulated data points at the local FailureLatch, so on the way out
+  // they must be given a new external FailureLatch to start using instead.
+  mozilla::Vector<JITFrameInfoForBufferRange>&& MoveRangesWithNewFailureLatch(
+      mozilla::FailureLatch& aFailureLatch) &&;
+  mozilla::UniquePtr<UniqueJSONStrings>&& MoveUniqueStringsWithNewFailureLatch(
+      mozilla::FailureLatch& aFailureLatch) &&;
+
+ private:
+  // JITFrameInfo's may exist during profiling, so it carries its own fallible
+  // FailureLatch. If&when the data below is finally extracted, any error is
+  // forwarded to the caller.
+  mozilla::FailureLatchSource mLocalFailureLatchSource;
+
   // The array of ranges of JIT frame information, sorted by buffer position.
   // Ranges are non-overlapping.
   // The JSON of the cached frames can contain string indexes, which refer
@@ -182,7 +207,7 @@ struct JITFrameInfo final {
   mozilla::UniquePtr<UniqueJSONStrings> mUniqueStrings;
 };
 
-class UniqueStacks {
+class UniqueStacks final : public mozilla::FailureLatch {
  public:
   struct FrameKey {
     explicit FrameKey(const char* aLocation)
@@ -312,16 +337,16 @@ class UniqueStacks {
     }
   };
 
-  explicit UniqueStacks(
-      JITFrameInfo&& aJITFrameInfo,
-      ProfilerCodeAddressService* aCodeAddressService = nullptr);
+  UniqueStacks(mozilla::FailureLatch& aFailureLatch,
+               JITFrameInfo&& aJITFrameInfo,
+               ProfilerCodeAddressService* aCodeAddressService = nullptr);
 
   // Return a StackKey for aFrame as the stack's root frame (no prefix).
-  [[nodiscard]] StackKey BeginStack(const FrameKey& aFrame);
+  [[nodiscard]] mozilla::Maybe<StackKey> BeginStack(const FrameKey& aFrame);
 
   // Return a new StackKey that is obtained by appending aFrame to aStack.
-  [[nodiscard]] StackKey AppendFrame(const StackKey& aStack,
-                                     const FrameKey& aFrame);
+  [[nodiscard]] mozilla::Maybe<StackKey> AppendFrame(const StackKey& aStack,
+                                                     const FrameKey& aFrame);
 
   // Look up frame keys for the given JIT address, and ensure that our frame
   // table has entries for the returned frame keys. The JSON for these frames
@@ -332,22 +357,33 @@ class UniqueStacks {
   LookupFramesForJITAddressFromBufferPos(void* aJITAddress,
                                          uint64_t aBufferPosition);
 
-  [[nodiscard]] uint32_t GetOrAddFrameIndex(const FrameKey& aFrame);
-  [[nodiscard]] uint32_t GetOrAddStackIndex(const StackKey& aStack);
+  [[nodiscard]] mozilla::Maybe<uint32_t> GetOrAddFrameIndex(
+      const FrameKey& aFrame);
+  [[nodiscard]] mozilla::Maybe<uint32_t> GetOrAddStackIndex(
+      const StackKey& aStack);
 
   void SpliceFrameTableElements(SpliceableJSONWriter& aWriter);
   void SpliceStackTableElements(SpliceableJSONWriter& aWriter);
+
+  [[nodiscard]] UniqueJSONStrings& UniqueStrings() {
+    MOZ_RELEASE_ASSERT(mUniqueStrings.get());
+    return *mUniqueStrings;
+  }
+
+  // Find the function name at the given PC (if a ProfilerCodeAddressService was
+  // provided), otherwise just stringify that PC.
+  [[nodiscard]] nsAutoCString FunctionNameOrAddress(void* aPC);
+
+  FAILURELATCH_IMPL_PROXY(mFrameTableWriter)
 
  private:
   void StreamNonJITFrame(const FrameKey& aFrame);
   void StreamStack(const StackKey& aStack);
 
- public:
   mozilla::UniquePtr<UniqueJSONStrings> mUniqueStrings;
 
   ProfilerCodeAddressService* mCodeAddressService = nullptr;
 
- private:
   SpliceableChunkedJSONWriter mFrameTableWriter;
   mozilla::HashMap<FrameKey, uint32_t, FrameKeyHasher> mFrameToIndexMap;
 

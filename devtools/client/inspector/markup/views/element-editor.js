@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const TextEditor = require("devtools/client/inspector/markup/views/text-editor");
 const { truncateString } = require("devtools/shared/inspector/utils");
 const {
@@ -960,7 +959,7 @@ ElementEditor.prototype = {
         el => el.style.display != "none"
       );
       let activeEditor;
-      if (visibleAttrs.length > 0) {
+      if (visibleAttrs.length) {
         if (!direction) {
           // No direction was given; stay on current attribute.
           activeEditor = visibleAttrs[attributeIndex];

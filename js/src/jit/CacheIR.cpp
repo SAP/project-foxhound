@@ -39,6 +39,7 @@
 #include "util/Unicode.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/Compartment.h"
 #include "vm/Iteration.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/ProxyObject.h"
@@ -430,7 +431,8 @@ AttachDecision GetPropIRGenerator::tryAttachStub() {
       TRY_ATTACH(tryAttachSparseElement(obj, objId, index, indexId));
       TRY_ATTACH(tryAttachArgumentsObjectArg(obj, objId, index, indexId));
       TRY_ATTACH(tryAttachArgumentsObjectArgHole(obj, objId, index, indexId));
-      TRY_ATTACH(tryAttachGenericElement(obj, objId, index, indexId));
+      TRY_ATTACH(
+          tryAttachGenericElement(obj, objId, index, indexId, receiverId));
 
       trackAttached(IRGenerator::NotAttached);
       return AttachDecision::NoAction;
@@ -2564,6 +2566,12 @@ AttachDecision GetPropIRGenerator::tryAttachSparseElement(
     return AttachDecision::NoAction;
   }
 
+  // GetSparseElementHelper assumes that the target and the receiver
+  // are the same.
+  if (isSuper()) {
+    return AttachDecision::NoAction;
+  }
+
   // Here, we ensure that the prototype chain does not define any sparse
   // indexed properties on the shape lineage. This allows us to guard on
   // the shapes up the prototype chain to ensure that no indexed properties
@@ -2666,10 +2674,17 @@ AttachDecision GetPropIRGenerator::tryAttachTypedArrayElement(
 
 AttachDecision GetPropIRGenerator::tryAttachGenericElement(
     HandleObject obj, ObjOperandId objId, uint32_t index,
-    Int32OperandId indexId) {
+    Int32OperandId indexId, ValOperandId receiverId) {
   if (!obj->is<NativeObject>()) {
     return AttachDecision::NoAction;
   }
+
+#ifdef JS_CODEGEN_X86
+  if (isSuper()) {
+    // There aren't enough registers available on x86.
+    return AttachDecision::NoAction;
+  }
+#endif
 
   // To allow other types to attach in the non-megamorphic case we test the
   // specific matching native receiver; however, once megamorphic we can attach
@@ -2681,7 +2696,11 @@ AttachDecision GetPropIRGenerator::tryAttachGenericElement(
     TestMatchingNativeReceiver(writer, nobj, objId);
   }
   writer.guardIndexIsNotDenseElement(objId, indexId);
-  writer.callNativeGetElementResult(objId, indexId);
+  if (isSuper()) {
+    writer.callNativeGetElementSuperResult(objId, indexId, receiverId);
+  } else {
+    writer.callNativeGetElementResult(objId, indexId);
+  }
   writer.returnFromIC();
 
   trackAttached(mode_ == ICState::Mode::Megamorphic
@@ -2975,6 +2994,18 @@ static bool NeedEnvironmentShapeGuard(JSObject* envObj) {
   return false;
 }
 
+static ValOperandId EmitLoadEnvironmentSlot(CacheIRWriter& writer,
+                                            NativeObject* holder,
+                                            ObjOperandId holderId,
+                                            uint32_t slot) {
+  if (holder->isFixedSlot(slot)) {
+    return writer.loadFixedSlot(holderId,
+                                NativeObject::getFixedSlotOffset(slot));
+  }
+  size_t dynamicSlotIndex = holder->dynamicSlotIndex(slot);
+  return writer.loadDynamicSlot(holderId, dynamicSlotIndex);
+}
+
 AttachDecision GetNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
                                                             HandleId id) {
   if (IsGlobalOp(JSOp(*pc_)) || script_->hasNonSyntacticScope()) {
@@ -3014,6 +3045,7 @@ AttachDecision GetNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
     return AttachDecision::NoAction;
   }
   if (holder->getSlot(prop->slot()).isMagic()) {
+    MOZ_ASSERT(holder->is<EnvironmentObject>());
     return AttachDecision::NoAction;
   }
 
@@ -3032,14 +3064,12 @@ AttachDecision GetNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
     env = env->enclosingEnvironment();
   }
 
-  if (holder->isFixedSlot(prop->slot())) {
-    writer.loadEnvironmentFixedSlotResult(
-        lastObjId, NativeObject::getFixedSlotOffset(prop->slot()));
-  } else {
-    size_t dynamicSlotOffset =
-        holder->dynamicSlotIndex(prop->slot()) * sizeof(Value);
-    writer.loadEnvironmentDynamicSlotResult(lastObjId, dynamicSlotOffset);
+  ValOperandId resId =
+      EmitLoadEnvironmentSlot(writer, holder, lastObjId, prop->slot());
+  if (holder->is<EnvironmentObject>()) {
+    writer.guardIsNotUninitializedLexical(resId);
   }
+  writer.loadOperandResult(resId);
   writer.returnFromIC();
 
   trackAttached("EnvironmentName");
@@ -3180,6 +3210,13 @@ AttachDecision BindNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
     lastObjId = writer.loadEnclosingEnvironment(lastObjId);
     env = env->enclosingEnvironment();
   }
+
+  if (prop.isSome() && holder->is<EnvironmentObject>()) {
+    ValOperandId valId =
+        EmitLoadEnvironmentSlot(writer, holder, lastObjId, prop->slot());
+    writer.guardIsNotUninitializedLexical(valId);
+  }
+
   writer.loadObjectResult(lastObjId);
   writer.returnFromIC();
 
@@ -4204,6 +4241,8 @@ AttachDecision SetPropIRGenerator::tryAttachSetDenseElementHole(
   // In the case where index > initLength, we need noteHasDenseAdd to be called
   // to ensure Ion is aware that writes have occurred to-out-of-bound indexes
   // before.
+  //
+  // TODO(post-Warp): noteHasDenseAdd (nee: noteArrayWriteHole) no longer exists
   bool isAdd = index == initLength;
   bool isHoleInBounds =
       index < initLength && !nobj->containsDenseElement(index);

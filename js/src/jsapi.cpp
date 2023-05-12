@@ -39,12 +39,14 @@
 #include "builtin/Promise.h"
 #include "builtin/Symbol.h"
 #include "frontend/BytecodeCompiler.h"
+#include "gc/GC.h"
 #include "gc/GCContext.h"
 #include "gc/Marking.h"
 #include "gc/PublicIterators.h"
 #include "jit/JitSpewer.h"
 #include "js/CallAndConstruct.h"  // JS::IsCallable
 #include "js/CharacterEncoding.h"
+#include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions{,Ref}
 #include "js/Conversions.h"
@@ -91,6 +93,7 @@
 #include "vm/Runtime.h"
 #include "vm/SavedStacks.h"
 #include "vm/StringType.h"
+#include "vm/Time.h"
 #include "vm/ToSource.h"
 #include "vm/WrapperObject.h"
 #include "wasm/WasmModule.h"

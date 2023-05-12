@@ -95,6 +95,23 @@ class RootMessageHandler extends MessageHandler {
   }
 
   /**
+   * Emit a public protocol event. This event will be sent over to the client.
+   *
+   * @param {String} name
+   *     Name of the event. Protocol level events should be of the
+   *     form [module name].[event name].
+   * @param {Object} data
+   *     The event's data.
+   */
+  emitProtocolEvent(name, data) {
+    this.emit("message-handler-protocol-event", {
+      name,
+      data,
+      sessionId: this.sessionId,
+    });
+  }
+
+  /**
    * Forward the provided command to WINDOW_GLOBAL MessageHandlers via the
    * FrameTransport.
    *
@@ -126,7 +143,7 @@ class RootMessageHandler extends MessageHandler {
     return this._updateSessionData(sessionData, { mode: "remove" });
   }
 
-  _updateSessionData(sessionData, options = {}) {
+  async _updateSessionData(sessionData, options = {}) {
     const { mode } = options;
 
     // TODO: We currently only support adding or removing items separately.
@@ -146,30 +163,34 @@ class RootMessageHandler extends MessageHandler {
       values
     );
 
-    if (updatedValues.length == 0) {
+    if (!updatedValues.length) {
       // Avoid unnecessary broadcast if no value was removed.
-      return [];
+      return;
     }
 
-    const destination = {
+    const windowGlobalDestination = {
       type: lazy.WindowGlobalMessageHandler.type,
       contextDescriptor,
     };
 
-    // Don't apply session data if the module is not present
-    // for the destination.
-    if (!this.moduleCache.hasModule(moduleName, destination)) {
-      return Promise.resolve();
-    }
+    const rootDestination = {
+      type: RootMessageHandler.type,
+    };
 
-    return this.handleCommand({
-      moduleName,
-      commandName: "_applySessionData",
-      params: {
-        [isAdding ? "added" : "removed"]: updatedValues,
-        category,
-      },
-      destination,
-    });
+    for (const destination of [windowGlobalDestination, rootDestination]) {
+      // Only apply session data if the module is present for the destination.
+      if (this.supportsCommand(moduleName, "_applySessionData", destination)) {
+        await this.handleCommand({
+          moduleName,
+          commandName: "_applySessionData",
+          params: {
+            [isAdding ? "added" : "removed"]: updatedValues,
+            category,
+            contextDescriptor,
+          },
+          destination,
+        });
+      }
+    }
   }
 }

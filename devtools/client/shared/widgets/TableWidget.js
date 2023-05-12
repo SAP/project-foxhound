@@ -1444,7 +1444,7 @@ Column.prototype = {
    *        true if the column is visible
    */
   toggleColumn(id, checked) {
-    if (arguments.length == 0) {
+    if (!arguments.length) {
       // Act like a toggling method when called with no params
       id = this.id;
       checked = this.wrapper.hidden;
@@ -1528,18 +1528,22 @@ Column.prototype = {
     // Only sort the array if we are sorting based on this column
     if (this.sorted == 1) {
       items.sort((a, b) => {
-        const val1 =
-          a[this.id] instanceof Node ? a[this.id].textContent : a[this.id];
-        const val2 =
-          b[this.id] instanceof Node ? b[this.id].textContent : b[this.id];
+        const val1 = Node.isInstance(a[this.id])
+          ? a[this.id].textContent
+          : a[this.id];
+        const val2 = Node.isInstance(b[this.id])
+          ? b[this.id].textContent
+          : b[this.id];
         return naturalSortCaseInsensitive(val1, val2);
       });
     } else if (this.sorted > 1) {
       items.sort((a, b) => {
-        const val1 =
-          a[this.id] instanceof Node ? a[this.id].textContent : a[this.id];
-        const val2 =
-          b[this.id] instanceof Node ? b[this.id].textContent : b[this.id];
+        const val1 = Node.isInstance(a[this.id])
+          ? a[this.id].textContent
+          : a[this.id];
+        const val2 = Node.isInstance(b[this.id])
+          ? b[this.id].textContent
+          : b[this.id];
         return naturalSortCaseInsensitive(val2, val1);
       });
     }
@@ -1690,13 +1694,13 @@ Cell.prototype = {
       return;
     }
 
-    if (this.wrapTextInElements && !(value instanceof Node)) {
+    if (this.wrapTextInElements && !Node.isInstance(value)) {
       const span = this.label.ownerDocument.createElementNS(HTML_NS, "span");
       span.textContent = value;
       value = span;
     }
 
-    if (value instanceof Node) {
+    if (Node.isInstance(value)) {
       this.label.removeAttribute("value");
 
       while (this.label.firstChild) {

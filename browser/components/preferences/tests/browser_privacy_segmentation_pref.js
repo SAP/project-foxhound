@@ -9,12 +9,8 @@ const { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
 );
 
-const PREF = "browser.privacySegmentation.enabled";
-const SCALAR_KEY = "browser.privacySegmentation.enabled";
-
+const PREF = "browser.dataFeatureRecommendations.enabled";
 const PREF_VISIBILITY = "browser.privacySegmentation.preferences.show";
-const PREF_LEARN_MORE_SUFFIX =
-  "browser.privacySegmentation.preferences.learnMoreURLSuffix";
 
 add_task(async function test_telemetry() {
   ok(
@@ -107,8 +103,17 @@ add_task(async function test_preferences_section() {
 
   let doc = gBrowser.selectedBrowser.contentDocument;
   let section = doc.getElementById("privacySegmentationSection");
-  let checkbox = doc.getElementById("privacySegmentationCheck");
-  let learnMore = doc.getElementById("privacy-segmentation-learn-more-link");
+  let sectionHeader = section.querySelector("h2");
+  let sectionDescription = section.querySelector("label");
+  let radioGroup = section.querySelector(
+    "#privacyDataFeatureRecommendationRadioGroup"
+  );
+  let radioEnabled = radioGroup.querySelector(
+    "#privacyDataFeatureRecommendationEnabled"
+  );
+  let radioDisabled = radioGroup.querySelector(
+    "#privacyDataFeatureRecommendationDisabled"
+  );
 
   for (let show of [false, true]) {
     Services.prefs.setBoolPref(PREF_VISIBILITY, show);
@@ -120,22 +125,33 @@ add_task(async function test_preferences_section() {
       `Privacy Segmentation section should be ${showStr}.`
     );
     is(
-      BrowserTestUtils.is_visible(checkbox),
+      BrowserTestUtils.is_visible(sectionHeader),
       show,
-      `Privacy Segmentation checkbox should be ${showStr}.`
+      `Privacy Segmentation section header should be ${showStr}.`
     );
     is(
-      BrowserTestUtils.is_visible(learnMore),
+      BrowserTestUtils.is_visible(sectionDescription),
       show,
-      `Privacy Segmentation learn more label should be ${showStr}.`
+      `Privacy Segmentation section description should be ${showStr}.`
+    );
+    is(
+      BrowserTestUtils.is_visible(radioGroup),
+      show,
+      `Privacy Segmentation radio group should be ${showStr}.`
     );
 
-    // The section is visible, test checkbox and learn more label.
+    // The section is visible, test radio buttons.
     if (show) {
       Services.prefs.setBoolPref(PREF, false);
 
-      info("Checking checkbox");
-      checkbox.click();
+      is(
+        radioGroup.value,
+        "false",
+        "Radio group should reflect initial pref state of false."
+      );
+
+      info("Selecting radio on.");
+      radioEnabled.click();
       is(
         Services.prefs.getBoolPref(PREF),
         true,
@@ -152,8 +168,8 @@ add_task(async function test_preferences_section() {
         }
       );
 
-      info("Unchecking checkbox");
-      checkbox.click();
+      info("Selecting radio off.");
+      radioDisabled.click();
       is(
         Services.prefs.getBoolPref(PREF),
         false,
@@ -174,16 +190,21 @@ add_task(async function test_preferences_section() {
       );
 
       info("Updating pref externally");
-      ok(!checkbox.checked, "Checkbox unchecked initially.");
+      is(
+        radioGroup.value,
+        "false",
+        "Radio group should reflect initial pref state of false."
+      );
       Services.prefs.setBoolPref(PREF, true);
       await BrowserTestUtils.waitForMutationCondition(
-        checkbox,
-        { attributeFilter: ["checked"] },
-        () => checkbox.checked
+        radioGroup,
+        { attributeFilter: ["value"] },
+        () => radioGroup.value == "true"
       );
-      ok(
-        checkbox.checked,
-        "Updating Privacy Segmentation pref also updates checkbox."
+      is(
+        radioGroup.value,
+        "true",
+        "Updating Privacy Segmentation pref also updates radio group."
       );
       TelemetryTestUtils.assertEvents(
         [
@@ -198,13 +219,6 @@ add_task(async function test_preferences_section() {
         {
           clear: true,
         }
-      );
-
-      ok(
-        learnMore.href.endsWith(
-          Services.prefs.getStringPref(PREF_LEARN_MORE_SUFFIX)
-        ),
-        "learnMore label has href with suffix from pref."
       );
     }
   }

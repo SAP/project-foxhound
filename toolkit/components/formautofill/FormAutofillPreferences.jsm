@@ -40,10 +40,10 @@ const {
   ENABLED_AUTOFILL_CREDITCARDS_REAUTH_PREF,
 } = FormAutofill;
 const {
-  MANAGE_ADDRESSES_KEYWORDS,
-  EDIT_ADDRESS_KEYWORDS,
-  MANAGE_CREDITCARDS_KEYWORDS,
-  EDIT_CREDITCARD_KEYWORDS,
+  MANAGE_ADDRESSES_L10N_IDS,
+  EDIT_ADDRESS_L10N_IDS,
+  MANAGE_CREDITCARDS_L10N_IDS,
+  EDIT_CREDITCARD_L10N_IDS,
 } = FormAutofillUtils;
 // Add credit card enabled flag in telemetry environment for recording the number of
 // users who disable/enable the credit card autofill feature.
@@ -105,7 +105,21 @@ FormAutofillPreferences.prototype = {
     formAutofillGroupBoxLabel.appendChild(formAutofillGroupBoxLabelHeading);
     formAutofillFragment.appendChild(formAutofillGroupBoxLabel);
     formAutofillFragment.appendChild(formAutofillGroup);
-    if (FormAutofill.isAutofillAddressesAvailable) {
+
+    let showAddressUI = FormAutofill.isAutofillAddressesAvailable;
+    let showCreditCardUI =
+      FormAutofill.isAutofillCreditCardsAvailable &&
+      !FormAutofill.isAutofillCreditCardsHideUI;
+
+    if (!showAddressUI && !showCreditCardUI) {
+      return;
+    }
+
+    formAutofillGroupBoxLabelHeading.textContent = this.bundle.GetStringFromName(
+      "autofillHeader"
+    );
+
+    if (showAddressUI) {
       let savedAddressesBtnWrapper = document.createXULElement("hbox");
       let addressAutofill = document.createXULElement("hbox");
       let addressAutofillCheckboxGroup = document.createXULElement("hbox");
@@ -123,10 +137,6 @@ FormAutofillPreferences.prototype = {
       formAutofillGroup.id = "formAutofillGroup";
       addressAutofill.id = "addressAutofill";
       addressAutofillLearnMore.id = "addressAutofillLearnMore";
-
-      formAutofillGroupBoxLabelHeading.textContent = this.bundle.GetStringFromName(
-        "autofillHeader"
-      );
 
       addressAutofill.setAttribute("data-subcategory", "address-autofill");
       addressAutofillCheckbox.setAttribute(
@@ -148,10 +158,8 @@ FormAutofillPreferences.prototype = {
 
       // Add preferences search support
       savedAddressesBtn.setAttribute(
-        "searchkeywords",
-        MANAGE_ADDRESSES_KEYWORDS.concat(EDIT_ADDRESS_KEYWORDS)
-          .map(key => this.bundle.GetStringFromName(key))
-          .join("\n")
+        "search-l10n-ids",
+        MANAGE_ADDRESSES_L10N_IDS.concat(EDIT_ADDRESS_L10N_IDS).join(",")
       );
 
       // Manually set the checked state
@@ -174,10 +182,7 @@ FormAutofillPreferences.prototype = {
       this.refs.savedAddressesBtn = savedAddressesBtn;
     }
 
-    if (
-      FormAutofill.isAutofillCreditCardsAvailable &&
-      !FormAutofill.isAutofillCreditCardsHideUI
-    ) {
+    if (showCreditCardUI) {
       let savedCreditCardsBtnWrapper = document.createXULElement("hbox");
       let creditCardAutofill = document.createXULElement("hbox");
       let creditCardAutofillCheckboxGroup = document.createXULElement("hbox");
@@ -218,10 +223,8 @@ FormAutofillPreferences.prototype = {
 
       // Add preferences search support
       savedCreditCardsBtn.setAttribute(
-        "searchkeywords",
-        MANAGE_CREDITCARDS_KEYWORDS.concat(EDIT_CREDITCARD_KEYWORDS)
-          .map(key => this.bundle.GetStringFromName(key))
-          .join("\n")
+        "search-l10n-ids",
+        MANAGE_CREDITCARDS_L10N_IDS.concat(EDIT_CREDITCARD_L10N_IDS).join(",")
       );
 
       // Manually set the checked state

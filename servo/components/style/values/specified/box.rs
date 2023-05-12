@@ -8,11 +8,10 @@ use crate::custom_properties::Name as CustomPropertyName;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::{LonghandId, PropertyDeclarationId};
 use crate::properties::{PropertyId, ShorthandId};
-use crate::values::generics::box_::AnimationIterationCount as GenericAnimationIterationCount;
-use crate::values::generics::box_::Perspective as GenericPerspective;
+use crate::values::generics::box_::{GenericAnimationIterationCount, GenericPerspective, GenericLineClamp};
 use crate::values::generics::box_::{GenericContainIntrinsicSize, GenericVerticalAlign, VerticalAlignKeyword};
 use crate::values::specified::length::{LengthPercentage, NonNegativeLength};
-use crate::values::specified::{AllowQuirks, Number};
+use crate::values::specified::{AllowQuirks, Number, Integer};
 use crate::values::{CustomIdent, KeyframesName, TimelineName};
 use crate::Atom;
 use cssparser::Parser;
@@ -325,6 +324,8 @@ impl Display {
             DisplayInside::Flex => true,
             #[cfg(feature = "gecko")]
             DisplayInside::Grid => true,
+            #[cfg(feature = "gecko")]
+            DisplayInside::MozBox => true,
             _ => false,
         }
     }
@@ -363,7 +364,7 @@ impl Display {
                 };
                 Display::from3(DisplayOutside::Block, inside, self.is_list_item())
             },
-            DisplayOutside::Block | DisplayOutside::None => *self,
+            DisplayOutside::Block | DisplayOutside::XUL | DisplayOutside::None => *self,
             #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
             _ => Display::Block,
         }
@@ -645,6 +646,9 @@ impl SpecifiedValueInfo for Display {
 
 /// A specified value for the `contain-intrinsic-size` property.
 pub type ContainIntrinsicSize = GenericContainIntrinsicSize<NonNegativeLength>;
+
+/// A specified value for the `line-clamp` property.
+pub type LineClamp = GenericLineClamp<Integer>;
 
 /// A specified value for the `vertical-align` property.
 pub type VerticalAlign = GenericVerticalAlign<LengthPercentage>;
@@ -1471,6 +1475,21 @@ impl Parse for ContainIntrinsicSize {
     }
 }
 
+impl Parse for LineClamp {
+    /// none | <positive-integer>
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        if let Ok(i) = input.try_parse(|i| crate::values::specified::PositiveInteger::parse(context, i))
+        {
+            return Ok(Self(i.0))
+        }
+        input.expect_ident_matching("none")?;
+        Ok(Self::none())
+    }
+}
+
 /// https://drafts.csswg.org/css-contain-2/#content-visibility
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[derive(
@@ -1503,21 +1522,19 @@ bitflags! {
     #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToCss, Parse, ToResolvedValue, ToShmem)]
     #[repr(C)]
     #[allow(missing_docs)]
-    #[css(bitflags(single="none", mixed="style,size,inline-size", overlapping_bits))]
+    #[css(bitflags(single="normal", mixed="size,inline-size", overlapping_bits))]
     /// https://drafts.csswg.org/css-contain-3/#container-type
     ///
     /// TODO: block-size is on the spec but it seems it was removed? WPTs don't
     /// support it, see https://github.com/w3c/csswg-drafts/issues/7179.
     pub struct ContainerType: u8 {
         /// The `none` variant.
-        const NONE = 0;
-        /// The `style` variant.
-        const STYLE = 1 << 0;
+        const NORMAL = 0;
         /// The `inline-size` variant.
-        const INLINE_SIZE = 1 << 1;
+        const INLINE_SIZE = 1 << 0;
         /// The `size` variant, exclusive with `inline-size` (they sharing bits
         /// guarantees this).
-        const SIZE = 1 << 2 | Self::INLINE_SIZE.bits;
+        const SIZE = 1 << 1 | Self::INLINE_SIZE.bits;
     }
 }
 
@@ -1546,9 +1563,10 @@ impl Parse for ContainerName {
         if first.eq_ignore_ascii_case("none") {
             return Ok(Self::none())
         }
-        idents.push(CustomIdent::from_ident(location, first, &["none"])?);
+        const DISALLOWED_CONTAINER_NAMES: &'static [&'static str] = &["none", "not", "or", "and", "auto", "normal"];
+        idents.push(CustomIdent::from_ident(location, first, DISALLOWED_CONTAINER_NAMES)?);
         while let Ok(ident) = input.try_parse(|input| input.expect_ident_cloned()) {
-            idents.push(CustomIdent::from_ident(location, &ident, &["none"])?);
+            idents.push(CustomIdent::from_ident(location, &ident, DISALLOWED_CONTAINER_NAMES)?);
         }
         Ok(ContainerName(idents.into()))
     }

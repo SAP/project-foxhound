@@ -86,7 +86,12 @@ add_task(async function test_csp_validator() {
     equal(result, expectedResult);
   };
 
+  checkPolicy("script-src 'self';", null);
+
+  // In the past, object-src was required to be secure and defaulted to 'self'.
+  // But that is no longer required (see bug 1766881).
   checkPolicy("script-src 'self'; object-src 'self';", null);
+  checkPolicy("script-src 'self'; object-src https:;", null);
 
   let hash =
     "'sha256-NjZhMDQ1YjQ1MjEwMmM1OWQ4NDBlYzA5N2Q1OWQ5NDY3ZTEzYTNmMzRmNjQ5NGU1MzlmZmQzMmMxYmIzNWYxOCAgLQo='";
@@ -108,21 +113,27 @@ add_task(async function test_csp_validator() {
   );
 
   checkPolicy(
+    "default-src 'self' http:",
+    "Policy is missing a required \u2018script-src\u2019 directive",
+    "A strict default-src is required as a fallback if script-src is missing"
+  );
+
+  checkPolicy(
+    "default-src 'self' http:; script-src 'self'",
+    null,
+    "A valid script-src removes the need for a strict default-src fallback"
+  );
+
+  checkPolicy(
     "default-src 'self'",
     null,
-    "A valid default-src should count as a valid script-src or object-src"
+    "A valid default-src should count as a valid script-src"
   );
 
   checkPolicy(
     "default-src 'self'; script-src 'self'",
     null,
-    "A valid default-src should count as a valid script-src or object-src"
-  );
-
-  checkPolicy(
-    "default-src 'self'; object-src 'self'",
-    null,
-    "A valid default-src should count as a valid script-src or object-src"
+    "A valid default-src should count as a valid script-src"
   );
 
   checkPolicy(
@@ -132,25 +143,12 @@ add_task(async function test_csp_validator() {
   );
 
   checkPolicy(
-    "default-src 'self'; object-src http://example.com",
-    "\u2018object-src\u2019 directive contains a forbidden http: protocol source",
-    "A valid default-src should not allow an invalid object-src directive"
-  );
-
-  checkPolicy(
-    "script-src 'self';",
-    "Policy is missing a required \u2018object-src\u2019 directive"
-  );
-
-  checkPolicy(
-    "script-src 'none'; object-src 'none'",
+    "script-src 'none'",
     "\u2018script-src\u2019 must include the source 'self'"
   );
 
-  checkPolicy("script-src 'self'; object-src 'none';", null);
-
   checkPolicy(
-    "script-src 'self' 'unsafe-inline'; object-src 'self';",
+    "script-src 'self' 'unsafe-inline'",
     "\u2018script-src\u2019 directive contains a forbidden 'unsafe-inline' keyword"
   );
 
@@ -161,10 +159,10 @@ add_task(async function test_csp_validator() {
     "http://127.0.0.1",
     "https://127.0.0.1",
   ]) {
-    checkPolicy(`script-src 'self' ${src}; object-src 'none';`, null);
+    checkPolicy(`script-src 'self' ${src};`, null);
   }
 
-  let directives = ["script-src", "object-src"];
+  let directives = ["script-src", "worker-src"];
 
   for (let [directive, other] of [directives, directives.slice().reverse()]) {
     for (let src of ["https://*", "https://*.blogspot.com", "https://*"]) {
@@ -204,27 +202,31 @@ add_task(async function test_csp_validator_extension_pages() {
   let checkPolicy = (policy, expectedResult, message = null) => {
     info(`Checking policy: ${policy}`);
 
-    let result = cps.validateAddonCSP(
-      policy,
-      Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST
-    );
+    // While Schemas.jsm uses Ci.nsIAddonContentPolicy.CSP_ALLOW_WASM, we don't
+    // pass that here because we are only verifying that remote scripts are
+    // blocked here.
+    let result = cps.validateAddonCSP(policy, 0);
     equal(result, expectedResult);
   };
 
+  checkPolicy("script-src 'self';", null);
+  checkPolicy("script-src 'self'; worker-src 'none'", null);
+  checkPolicy("script-src 'self'; worker-src 'self'", null);
+
+  // In the past, object-src was required to be secure and defaulted to 'self'.
+  // But that is no longer required (see bug 1766881).
   checkPolicy("script-src 'self'; object-src 'self';", null);
-  checkPolicy("script-src 'self'; object-src 'self'; worker-src 'none'", null);
-  checkPolicy("script-src 'self'; object-src 'none'; worker-src 'self'", null);
+  checkPolicy("script-src 'self'; object-src https:;", null);
 
   let hash =
     "'sha256-NjZhMDQ1YjQ1MjEwMmM1OWQ4NDBlYzA5N2Q1OWQ5NDY3ZTEzYTNmMzRmNjQ5NGU1MzlmZmQzMmMxYmIzNWYxOCAgLQo='";
 
   checkPolicy(
-    `script-src 'self' moz-extension://09abcdef blob: filesystem: ${hash}; ` +
-      `object-src 'self' moz-extension://09abcdef blob: filesystem: ${hash}`,
+    `script-src 'self' moz-extension://09abcdef blob: filesystem: ${hash}; `,
     null
   );
 
-  for (let policy of ["", "object-src 'none';", "worker-src 'none';"]) {
+  for (let policy of ["", "script-src-elem 'none';", "worker-src 'none';"]) {
     checkPolicy(
       policy,
       "Policy is missing a required \u2018script-src\u2019 directive"
@@ -232,12 +234,18 @@ add_task(async function test_csp_validator_extension_pages() {
   }
 
   checkPolicy(
-    "default-src 'self'",
+    "default-src 'self' http:; script-src 'self'",
     null,
-    "A valid default-src should count as a valid script-src or object-src"
+    "A valid script-src removes the need for a strict default-src fallback"
   );
 
-  for (let directive of ["script-src", "object-src", "worker-src"]) {
+  checkPolicy(
+    "default-src 'self'",
+    null,
+    "A valid default-src should count as a valid script-src"
+  );
+
+  for (let directive of ["script-src", "worker-src"]) {
     checkPolicy(
       `default-src 'self'; ${directive} 'self'`,
       null,
@@ -251,38 +259,35 @@ add_task(async function test_csp_validator_extension_pages() {
   }
 
   checkPolicy(
-    "script-src 'self';",
-    "Policy is missing a required \u2018object-src\u2019 directive"
-  );
-
-  checkPolicy(
-    "script-src 'none'; object-src 'none'",
+    "script-src 'none'",
     "\u2018script-src\u2019 must include the source 'self'"
   );
 
-  checkPolicy("script-src 'self'; object-src 'none';", null);
-
   checkPolicy(
-    "script-src 'self' 'unsafe-inline'; object-src 'self';",
+    "script-src 'self' 'unsafe-inline';",
     "\u2018script-src\u2019 directive contains a forbidden 'unsafe-inline' keyword"
   );
 
   checkPolicy(
-    "script-src 'self' 'unsafe-eval'; object-src 'self';",
+    "script-src 'self' 'unsafe-eval';",
     "\u2018script-src\u2019 directive contains a forbidden 'unsafe-eval' keyword"
   );
 
-  // Localhost is always valid
+  // Localhost is invalid
   for (let src of [
     "http://localhost",
     "https://localhost",
     "http://127.0.0.1",
     "https://127.0.0.1",
   ]) {
-    checkPolicy(`script-src 'self' ${src}; object-src 'none';`, null);
+    const protocol = src.split(":")[0];
+    checkPolicy(
+      `script-src 'self' ${src};`,
+      `\u2018script-src\u2019 directive contains a forbidden ${protocol}: protocol source`
+    );
   }
 
-  let directives = ["script-src", "object-src"];
+  let directives = ["script-src", "worker-src"];
 
   for (let [directive, other] of [directives, directives.slice().reverse()]) {
     for (let protocol of ["http", "https"]) {

@@ -16,7 +16,6 @@
 #include "mozilla/HTMLEditHelpers.h"
 #include "mozilla/ManualNAC.h"
 #include "mozilla/Result.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/File.h"
@@ -360,10 +359,7 @@ class HTMLEditor final : public EditorBase,
    * with "font style elements" like <b>, <i>, etc, and <blockquote> to indent,
    * align attribute to align contents, returns false.
    */
-  bool IsCSSEnabled() const {
-    return !IsMailEditor() && mCSSEditUtils &&
-           mCSSEditUtils->IsCSSPrefChecked();
-  }
+  bool IsCSSEnabled() const { return mIsCSSPrefChecked; }
 
   /**
    * Enable/disable object resizers for <img> elements, <table> elements,
@@ -513,11 +509,11 @@ class HTMLEditor final : public EditorBase,
    *                              selection have the property
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult GetInlineProperty(
-      nsAtom* aHTMLProperty, nsAtom* aAttribute, const nsAString& aValue,
+      nsStaticAtom& aHTMLProperty, nsAtom* aAttribute, const nsAString& aValue,
       bool* aFirst, bool* aAny, bool* aAll) const;
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult GetInlinePropertyWithAttrValue(
-      nsAtom* aHTMLProperty, nsAtom* aAttribute, const nsAString& aValue,
+      nsStaticAtom& aHTMLProperty, nsAtom* aAttribute, const nsAString& aValue,
       bool* aFirst, bool* aAny, bool* aAll, nsAString& outValue);
 
   /**
@@ -920,7 +916,7 @@ class HTMLEditor final : public EditorBase,
                                       nsAtom* aProperty, nsAtom* aAttribute);
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult GetInlinePropertyBase(
-      nsAtom& aHTMLProperty, nsAtom* aAttribute, const nsAString* aValue,
+      nsStaticAtom& aHTMLProperty, nsAtom* aAttribute, const nsAString* aValue,
       bool* aFirst, bool* aAny, bool* aAll, nsAString* outValue) const;
 
   /**
@@ -1052,8 +1048,8 @@ class HTMLEditor final : public EditorBase,
 
   /**
    * PrepareInlineStylesForCaret() consider inline styles from top level edit
-   * sub-action and setting it to `mTypeInState` and clear inline style cache
-   * if necessary.
+   * sub-action and setting it to `mPendingStylesToApplyToNewContent` and clear
+   * inline style cache if necessary.
    * NOTE: This method should be called only when `Selection` is collapsed.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult PrepareInlineStylesForCaret();
@@ -1069,14 +1065,15 @@ class HTMLEditor final : public EditorBase,
 
   /**
    * GetInlineStyles() retrieves the style of aNode and modifies each item of
-   * aStyleCacheArray.  This might cause flushing layout at retrieving computed
-   * values of CSS properties.
+   * aPendingStyleCacheArray.  This might cause flushing layout at retrieving
+   * computed values of CSS properties.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  GetInlineStyles(nsIContent& aContent, AutoStyleCacheArray& aStyleCacheArray);
+  GetInlineStyles(nsIContent& aContent,
+                  AutoPendingStyleCacheArray& aPendingStyleCacheArray);
 
   /**
-   * CacheInlineStyles() caches style of aContent into mCachedInlineStyles of
+   * CacheInlineStyles() caches style of aContent into mCachedPendingStyles of
    * TopLevelEditSubAction.  This may cause flushing layout at retrieving
    * computed value of CSS properties.
    */
@@ -1092,7 +1089,7 @@ class HTMLEditor final : public EditorBase,
 
   /**
    * CreateStyleForInsertText() sets CSS properties which are stored in
-   * TypeInState to proper element node.
+   * PendingStyles to proper element node.
    *
    * @param aPointToInsertText  The point to insert text.
    * @return                    A suggest point to put caret or unset point.
@@ -3298,9 +3295,9 @@ class HTMLEditor final : public EditorBase,
       Document& aDocument, const nsACString& aCharacterSet);
 
   /**
-   * SetInlinePropertiesAsSubAction() stores new styles with mTypeInState if
-   * `Selection` is collapsed.  Otherwise, applying the styles to all selected
-   * contents.
+   * SetInlinePropertiesAsSubAction() stores new styles with
+   * mPendingStylesToApplyToNewContent if `Selection` is collapsed.  Otherwise,
+   * applying the styles to all selected contents.
    *
    * @param aStylesToSet        The styles which should be applied to the
    *                            selected content.
@@ -3311,7 +3308,8 @@ class HTMLEditor final : public EditorBase,
 
   /**
    * RemoveInlinePropertiesAsSubAction() removes specified styles from
-   * mTypeInState if `Selection` is collapsed.  Otherwise, removing the style.
+   * mPendingStylesToApplyToNewContent if `Selection` is collapsed.  Otherwise,
+   * removing the style.
    *
    * @param aStylesToRemove     Styles to remove from the selected contents.
    */
@@ -4432,7 +4430,7 @@ class HTMLEditor final : public EditorBase,
     const char* const mRequesterFuncName;
   };
 
-  RefPtr<TypeInState> mTypeInState;
+  RefPtr<PendingStyles> mPendingStylesToApplyToNewContent;
   RefPtr<ComposerCommandsUpdater> mComposerCommandsUpdater;
 
   // Used by TopLevelEditSubActionData::mSelectedRange.
@@ -4453,8 +4451,6 @@ class HTMLEditor final : public EditorBase,
   // direction or Gecko's traditional direction.
   bool mUseGeckoTraditionalJoinSplitBehavior = true;
 
-  UniquePtr<CSSEditUtils> mCSSEditUtils;
-
   // resizing
   bool mIsObjectResizingEnabled;
   bool mIsResizing;
@@ -4471,6 +4467,8 @@ class HTMLEditor final : public EditorBase,
 
   // inline table editing
   bool mIsInlineTableEditingEnabled;
+
+  bool mIsCSSPrefChecked;
 
   // resizing
   ManualNACPtr mTopLeftHandle;

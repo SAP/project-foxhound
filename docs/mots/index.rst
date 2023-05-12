@@ -1,15 +1,24 @@
 ..
     This file was automatically generated using `mots export`.
-.. note::
-    To add, remove, or update module information, see the `mots documentation <https://mots.readthedocs.io/en/latest/#adding-a-module>`_.
 
-=======
-Modules
-=======
+==========
+Governance
+==========
+
+--------
+Overview
+--------
+To add, remove, or update module information, see the `mots documentation <https://mots.readthedocs.io/en/latest/#adding-a-module>`_.
 
 Mozilla operates under a `module ownership governance system <https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
 
 The system is overseen by the owner and peers of the Module Ownership module. For the modules that make up Firefox, oversight is provided by the Firefox Technical Leadership module. Owners may add and remove peers from their modules as they wish, without reference to anyone else.
+
+
+
+-------
+Modules
+-------
 
 Mots config
 ~~~~~~~~~~~
@@ -25,6 +34,23 @@ Mots config
     * - Includes
       -
         | `mots.yaml <https://searchfox.org/mozilla-central/search?q=&path=mots.yaml>`__
+
+mozilla-toplevel
+~~~~~~~~~~~~~~~~
+The top level directory for the mozilla tree.
+
+.. warning::
+    This module does not have any owners specified.
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s) Emeritus
+      - Brendan Eich
+    * - Includes
+      -
+        | `README <https://searchfox.org/mozilla-central/search?q=&path=README>`__
 
 Code Coverage
 ~~~~~~~~~~~~~
@@ -694,6 +720,30 @@ DOM Events and Event Handling
       - http://developer.mozilla.org/en/docs/DOM
     * - Bugzilla Components
       - Core::DOM: Events, Core::DOM: UI Events & Focus Handling
+
+Core: Firefox Source Documentation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The infrastructure platform used to generate Firefox's source documentation, excluding editorial control over the content.
+
+
+.. list-table::
+    :stub-columns: 1
+    :widths: 30 70
+
+    * - Owner(s)
+      -
+        | `Andrew Halberstadt (ahal) <https://people.mozilla.org/s?query=ahal>`__
+    * - Peer(s)
+      -
+        | `Sylvestre Ledru (Sylvestre) <https://people.mozilla.org/s?query=Sylvestre>`__
+    * - Includes
+      -
+        | `docs/ <https://searchfox.org/mozilla-central/search?q=&path=docs/>`__
+        | `tools/moztreedocs/ <https://searchfox.org/mozilla-central/search?q=&path=tools/moztreedocs/>`__
+    * - URL
+      - https://firefox-source-docs.mozilla.org/
+    * - Bugzilla Components
+      - Developer Infrastructure::Source Documentation
 
 Core: Gecko Profiler
 ~~~~~~~~~~~~~~~~~~~~
@@ -1394,23 +1444,6 @@ Glue library containing various low-level functionality, including a dynamic lin
       - dev-platform
     * - Bugzilla Components
       - Core::mozglue
-
-Core: mozilla-toplevel
-~~~~~~~~~~~~~~~~~~~~~~
-The top level directory for the mozilla tree.
-
-.. warning::
-    This module does not have any owners specified.
-
-.. list-table::
-    :stub-columns: 1
-    :widths: 30 70
-
-    * - Owner(s) Emeritus
-      - Brendan Eich
-    * - Includes
-      -
-        | `README <https://searchfox.org/mozilla-central/search?q=&path=README>`__
 
 Core: MSCOM
 ~~~~~~~~~~~
@@ -2279,7 +2312,7 @@ Submodule of WebRTC responsible for access to media input devices (microphones, 
         | `Randell Jesup (jesup) <https://people.mozilla.org/s?query=jesup>`__
     * - Peer(s)
       -
-        | `Jan-Ivar Bruaroey (jib) <https://people.mozilla.org/s?query=jib>`__
+        | `On PTO back Aug 29 (jib) <https://people.mozilla.org/s?query=jib>`__
         | `Dan Minor (dminor) <https://people.mozilla.org/s?query=dminor>`__
         | `Andreas Pehrson (pehrsons) <https://people.mozilla.org/s?query=pehrsons>`__
     * - Peer(s) Emeritus
@@ -2664,7 +2697,7 @@ Standalone Web Browser.
     * - Peer(s)
       -
         | `Dão Gottwald (dao) <https://people.mozilla.org/s?query=dao>`__
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Peer(s) Emeritus
@@ -2811,7 +2844,7 @@ The main browser UI except where covered by more specific submodules.
 
     * - Owner(s)
       -
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
     * - Peer(s)
       -
         | `Mike Conley (mconley) <https://people.mozilla.org/s?query=mconley>`__
@@ -2858,7 +2891,7 @@ System policies for controlling Firefox.
     * - Peer(s)
       -
         | `Dão Gottwald (dao) <https://people.mozilla.org/s?query=dao>`__
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -3049,7 +3082,7 @@ Managing, saving and filling logins.
         | `Sergey Galich (serg) <https://people.mozilla.org/s?query=serg>`__
     * - Peer(s)
       -
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Tim Giles (tgiles) <https://people.mozilla.org/s?query=tgiles>`__
         | `Dimi Lee (dimi) <https://people.mozilla.org/s?query=dimi>`__
         | `Sam Foster (sfoster) <https://people.mozilla.org/s?query=sfoster>`__
@@ -3078,7 +3111,7 @@ The front-end preferences system.
 
     * - Owner(s)
       -
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
     * - Peer(s)
       -
         | `Mark Striemer (mstriemer) <https://people.mozilla.org/s?query=mstriemer>`__
@@ -3240,7 +3273,7 @@ The UI component controlling browser tabs.
     * - Peer(s)
       -
         | `Dão Gottwald (dao) <https://people.mozilla.org/s?query=dao>`__
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -3550,7 +3583,7 @@ Components shared between desktop and mobile browsers.
         | `Gijs <https://people.mozilla.org/s?query=Gijs>`__
     * - Peer(s)
       -
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Includes
@@ -3596,7 +3629,7 @@ The core infrastructure in the Firefox client to send back Telemetry and FHR dat
 
     * - Owner(s)
       -
-        | `Chris H-C (chutten|PTO) <https://people.mozilla.org/s?query=chutten|PTO>`__
+        | `Chris H-C (chutten) <https://people.mozilla.org/s?query=chutten>`__
     * - Peer(s)
       -
         | `aplacitelli <https://people.mozilla.org/s?query=aplacitelli>`__
@@ -3627,7 +3660,7 @@ The base widgets used throughout the UI.
         | `Neil Deakin (enndeakin) <https://people.mozilla.org/s?query=enndeakin>`__
     * - Peer(s)
       -
-        | `Jared Wein (jaws) <https://people.mozilla.org/s?query=jaws>`__
+        | `jaws <https://people.mozilla.org/s?query=jaws>`__
         | `Marco Bonardo (mak) <https://people.mozilla.org/s?query=mak>`__
         | `Matthew N (MattN) <https://people.mozilla.org/s?query=MattN>`__
     * - Peer(s) Emeritus

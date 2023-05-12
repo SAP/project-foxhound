@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const isWindows = Services.appinfo.OS === "WINNT";
 
 // DAMP is split in sub-suites to run the tests faster on continuous integration.
@@ -87,6 +86,10 @@ module.exports = {
     {
       name: "custom.inspector",
       path: "inspector/custom.js",
+    },
+    {
+      name: "custom.styleeditor",
+      path: "styleeditor/custom.js",
     },
     // Run individual tests covering a very precise tool feature.
     {

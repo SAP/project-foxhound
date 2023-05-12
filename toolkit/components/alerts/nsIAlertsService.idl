@@ -55,6 +55,21 @@ interface nsIAlertAction : nsISupports
    * Returns a string containing the URL of an icon to display with the action.
    */
   readonly attribute AString iconURL;
+
+  /**
+   * On Windows, chrome-privileged notifications -- i.e., those with a
+   * non-actionable principal -- can have actions that are activated by Windows
+   * and not processed by Firefox.  When `windowsSystemActivationType` is true,
+   * we request Windows to process `action`.  At the time of writing, Windows
+   * recognizes the following actions:
+   *
+   * - `action="dismiss"` dismisses the alert entirely.
+   * - `action="snooze"` snoozes the alert, generally making it disappear before
+   *   reappearing a Windows-determined amount of time later.
+   *
+   * On non-Windows, this field is ignored.
+   */
+  readonly attribute boolean windowsSystemActivationType;
 };
 
 [scriptable, uuid(cf2e4cb6-4b8f-4eca-aea9-d51a8f9f7a50)]
@@ -76,13 +91,10 @@ interface nsIAlertNotification : nsISupports
             [optional] in boolean aSilent,
             [optional] in Array<uint32_t> aVibrate);
 
-  /** Initializes an alert notification with actions. */
-  void initActions([optional] in Array<nsIAlertAction> aActions);
-
   /**
-   * The name of the notification. On Android, the name is hashed and used as
-   * a notification ID. Notifications will replace previous notifications with
-   * the same name.
+   * The name of the notification. On Windows and Android, the name is hashed
+   * and used as a notification ID. Notifications will replace previous
+   * notifications with the same name.
    */
   readonly attribute AString name;
 
@@ -175,7 +187,7 @@ interface nsIAlertNotification : nsISupports
    *
    * Implemented only for the system backend on Windows.
    */
-  readonly attribute Array<nsIAlertAction> actions;
+  attribute Array<nsIAlertAction> actions;
 
   /**
    * Indicates whether this alert should show the source string and action
@@ -189,6 +201,12 @@ interface nsIAlertNotification : nsISupports
    * is not actionable.
    */
   readonly attribute AString source;
+
+  /**
+   * A URL to navigate to if the application is relaunched in to complete
+   * interaction with this alert.
+   */
+  attribute AString launchURL;
 
   /**
    * Loads the image associated with this alert.

@@ -226,11 +226,23 @@
 - name: accessibility.cache.enabled
   type: bool
 #ifdef ANDROID
-  value: @IS_NOT_RELEASE_OR_BETA@
+  value: true
 #else
   value: false
 #endif
   mirror: once
+
+# Whether to avoid accessibility activation on Windows shortly after clipboard
+# copy.
+#
+# Possible values are:
+#  * 0: never
+#  * 1: always
+#  * 2 (or others): when needed
+- name: accessibility.windows.suppress-after-clipboard-copy
+  type: uint32_t
+  value: 2
+  mirror: always
 
 #---------------------------------------------------------------------------
 # Prefs starting with "alerts."
@@ -637,6 +649,8 @@
 - name: apz.overscroll.enabled
   type: RelaxedAtomicBool
 #if defined(XP_MACOSX)
+  value: true
+#elif defined(XP_WIN) && defined(NIGHTLY_BUILD)
   value: true
 #else
   value: false
@@ -1513,7 +1527,7 @@
 #
 - name: browser.swipe.navigation-icon-move-distance
   type: uint32_t
-#ifdef XP_WIN
+#if defined(XP_LINUX) || defined(XP_WIN)
   value: 100
 #else
   value: 0
@@ -1887,11 +1901,25 @@
   value: 0
   mirror: always
 
-# Enables the cookie banner cookie injector.
+# Enables use of global CookieBannerRules, which apply to all sites. This is
+# used for click rules that can handle common Consent Management Providers
+# (CMP).
+# Enabling this (when the cookie handling feature is enabled) may negatively
+# impact site performance since it requires us to run rule-defined query
+# selectors for every page.
+- name: cookiebanners.service.enableGlobalRules
+  type: bool
+  value: false
+  mirror: always
+
+# Enables the cookie banner cookie injector. The cookie banner cookie injector
+# depends on the above `cookiebanners.service.mode` pref: it would be disabled
+# if the servcie mode is disabled.
 - name: cookiebanners.cookieInjector.enabled
   type: bool
   value: true
   mirror: always
+
 
 # By default, how many seconds in the future cookies should expire after they
 # have been injected. Defaults to 12 months. Individual cookie rules may
@@ -1899,6 +1927,27 @@
 - name: cookiebanners.cookieInjector.defaultExpiryRelative
   type: uint32_t
   value: 31536000
+  mirror: always
+
+# Enables the cookie banner auto clicking. The cookie banner auto clicking
+# depends on the above `cookiebanners.service.mode` pref: it would be disabled
+# if the servcie mode is disabled.
+- name: cookiebanners.bannerClicking.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# The maximum time in ms for detecting banner and button elements for cookie
+# banner auto clicking.
+- name: cookiebanners.bannerClicking.timeout
+  type: uint32_t
+  value: 3000
+  mirror: always
+
+# Whether or not banner auto clicking test mode is enabled.
+- name: cookiebanners.bannerClicking.testing
+  type: bool
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -2004,7 +2053,7 @@
 # Whether CanvasRenderingContext2D.mozCurrentTransform is enabled.
 - name: dom.mozCurrentTransform.enabled
   type: bool
-  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
+  value: false
   mirror: always
 
 # Allow cut/copy
@@ -2142,12 +2191,6 @@
   value: false
   mirror: always
 
-# Disable CacheStorage in private browsing mode.
-- name: dom.caches.hide_in_pbmode.enabled
-  type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
-  mirror: always
-
 # Disable capture attribute for input elements; only supported on GeckoView.
 - name: dom.capture.enabled
   type: bool
@@ -2248,6 +2291,13 @@
 - name: dom.element.transform-getters.enabled
   type: bool
   value: false
+  mirror: always
+
+# Controls whether the "focus fixup rule" is enabled. Nightly-only pending
+# resolution + edits in https://github.com/whatwg/html/issues/8225
+- name: dom.focus.fixup
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 - name: dom.mouse_capture.enabled
@@ -2531,86 +2581,48 @@
 # pairs.
 - name: dom.image-lazy-loading.root-margin.top
   type: float
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: 100 # 100%
-#else
-  value: 300
-#endif
+  value: 600
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.top.percentage
   type: bool
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: true
-#else
   value: false
-#endif
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.bottom
   type: float
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: 100 # 100%
-#else
-  value: 300
-#endif
+  value: 600
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.bottom.percentage
   type: bool
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: true
-#else
   value: false
-#endif
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.left
   type: float
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: 100 # 100%
-#else
-  value: 300
-#endif
+  value: 600
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.left.percentage
   type: bool
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: true
-#else
   value: false
-#endif
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.right
   type: float
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: 100 # 100%
-#else
-  value: 300
-#endif
+  value: 600
   mirror: always
 
 - name: dom.image-lazy-loading.root-margin.right.percentage
   type: bool
-#if defined(EARLY_BETA_OR_EARLIER)
-  value: true
-#else
   value: false
-#endif
   mirror: always
 
 # Enable indexedDB in private browsing mode with encryption
 - name: dom.indexedDB.privateBrowsing.enabled
   type: RelaxedAtomicBool
   value: false
-  mirror: always
-
-# Disable IndexedDB in private browsing mode.
-- name: dom.indexedDB.hide_in_pbmode.enabled
-  type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Whether or not indexedDB test mode is enabled.
@@ -3135,6 +3147,13 @@
   value: false
   mirror: always
 
+# This enables width and height attributes and map these attributes to img
+# element's style.
+- name: dom.picture_source_dimension_attributes.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 # Is support for Element.requestPointerLock enabled?
 # This is added for accessibility purpose. When user has no way to exit
 # pointer lock (e.g. no keyboard available), they can use this pref to
@@ -3634,6 +3653,18 @@
   value: false
   mirror: always
 
+# pref controls `identity` credentials being exposed
+- name: dom.security.credentialmanagement.identity.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# pref controls `identity` credentials being exposed
+- name: dom.security.credentialmanagement.identity.wait_for_timeout
+  type: bool
+  value: true
+  mirror: always
+
 # Whether or not selection events on text controls are enabled.
 - name: dom.select_events.textcontrols.selectionchange.enabled
   type: bool
@@ -3707,12 +3738,6 @@
   value: false
   mirror: always
 
-# Disable ServiceWorker in private browsing mode.
-- name: dom.serviceWorkers.hide_in_pbmode.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
 - name: dom.workers.requestAnimationFrame
   type: RelaxedAtomicBool
   value: true
@@ -3720,6 +3745,11 @@
 
 - name: dom.workers.serialized-sab-access
   type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+- name: dom.sitepermsaddon-provider.enabled
+  type: bool
   value: false
   mirror: always
 
@@ -4590,7 +4620,7 @@
 # Controls if a content script will be aborted on child process shutdown.
 - name: dom.abort_script_on_child_shutdown
   type: bool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 - name: dom.max_chrome_script_run_time
@@ -4601,6 +4631,13 @@
 - name: dom.max_ext_content_script_run_time
   type: int32_t
   value: 5
+  mirror: always
+
+# Initialize Resize Observer's last reported size to -1x-1, and not 0x0,
+# as per CSSWG resolution: https://github.com/w3c/csswg-drafts/issues/3664
+- name: dom.resize_observer.last_reported_size_invalid
+  type: bool
+  value: true
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -5353,6 +5390,37 @@
   type: bool
   value: false
   mirror: once
+
+- name: gfx.blithelper.precision
+  type: RelaxedAtomicUint32
+  value: 2 # { 0: lowp, 1: mediump, 2: highp }
+  mirror: always
+
+- name: gfx.blithelper.lut-size.rgb.b
+  type: RelaxedAtomicUint32
+  value: 15
+  mirror: always
+- name: gfx.blithelper.lut-size.rgb.g
+  type: RelaxedAtomicUint32
+  value: 31
+  mirror: always
+- name: gfx.blithelper.lut-size.rgb.r
+  type: RelaxedAtomicUint32
+  value: 31
+  mirror: always
+
+- name: gfx.blithelper.lut-size.ycbcr.cb
+  type: RelaxedAtomicUint32
+  value: 15
+  mirror: always
+- name: gfx.blithelper.lut-size.ycbcr.cr
+  type: RelaxedAtomicUint32
+  value: 31
+  mirror: always
+- name: gfx.blithelper.lut-size.ycbcr.y
+  type: RelaxedAtomicUint32
+  value: 31
+  mirror: always
 
 # Nb: we ignore this pref on release and beta.
 - name: gfx.blocklist.all
@@ -7703,6 +7771,13 @@
   mirror: always
   rust: true
 
+# This pref controls whether the `prefers-color-scheme` value of iframes images
+# reacts to the embedder `color-scheme` in content.
+- name: layout.css.iframe-embedder-prefers-color-scheme.content.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 # The minimum contrast ratio between the accent color foreground and background
 # colors.
 #
@@ -8126,11 +8201,12 @@
   rust: true
 
 # An override for prefers-color-scheme for content documents.
-#
-# Dark (0), light (1), system (2) or browser (3).
+#   0: Dark
+#   1: Light
+#   2: Auto (system color scheme unless overridden by browser theme)
 - name: layout.css.prefers-color-scheme.content-override
   type: RelaxedAtomicInt32
-  value: 3
+  value: 2
   mirror: always
 
 # Dictates whether or not the forced-colors media query is enabled.
@@ -8192,12 +8268,6 @@
   type: AtomicFloat
   value: 1.0f
   mirror: always
-
-- name: layout.css.supports-selector.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
 
 # Tuning of the smooth scroll motion used by CSSOM-View scroll-behavior.
 # Spring-constant controls the strength of the simulated MSD
@@ -8505,6 +8575,13 @@
   mirror: always
   rust: true
 
+# Pref to control whether to suspend also RefreshDriver::Tick when the page
+# itself is suspended because of some synchronous operation, like sync XHR.
+- name: layout.skip_ticks_while_page_suspended
+  type: bool
+  value: true
+  mirror: always
+
 # Pref to control how many consecutive scroll-anchoring adjustments (since the
 # most recent user scroll) we'll average, before we consider whether to
 # automatically turn off scroll anchoring. When we hit this threshold, the
@@ -8559,10 +8636,10 @@
   value: true
   mirror: always
 
-# Is support for -webkit-line-clamp enabled?
-- name: layout.css.webkit-line-clamp.enabled
+# Is support for -webkit-line-clamp on regular blocks enabled?
+- name: layout.css.webkit-line-clamp.block.enabled
   type: bool
-  value: true
+  value: false
   mirror: always
 
 # Is 'content:none' supported on (non-pseudo) elements?
@@ -8693,36 +8770,24 @@
 # Prefs starting with "mathml."
 #---------------------------------------------------------------------------
 
+# Whether to disable layout of invalid markup as an error message.
+- name: mathml.error_message_layout_for_invalid_markup.disabled
+  type: bool
+  value: true
+  mirror: always
+
+# Whether to disable MathML3 implementations for maction and semantics.
+- name: mathml.legacy_maction_and_semantics_implementations.disabled
+  type: bool
+  value: true
+  mirror: always
+  rust: true
+
 # Whether to disable legacy names "thickmathspace", "mediummathspace",
 # "thickmathspace" etc for length attributes.
 - name: mathml.mathspace_names.disabled
   type: bool
   value: @IS_NIGHTLY_BUILD@
-  mirror: always
-
-# Whether to disable the mfrac bevelled  attribute.
-- name: mathml.mfrac_bevelled_attribute.disabled
-  type: bool
-  value: true
-  mirror: always
-
-# Whether to disable legacy names "thin", "thick" and "medium" for the
-# linethickness attribute of the mfrac element.
-- name: mathml.mfrac_linethickness_names.disabled
-  type: bool
-  value: true
-  mirror: always
-
-# Whether to disable deprecated numalign/denomalign/align attributes
-- name: mathml.deprecated_alignment_attributes.disabled
-  type: bool
-  value: true
-  mirror: always
-
-# Whether to disable subscriptshift and superscriptshift attributes.
-- name: mathml.script_shift_attributes.disabled
-  type: bool
-  value: true
   mirror: always
 
 # Whether to disable the scriptminsize attribute.
@@ -8745,6 +8810,18 @@
   type: bool
 #if defined(XP_MACOSX)
   value: @IS_NIGHTLY_BUILD@
+#else
+  value: true
+#endif
+  mirror: always
+
+# Whether to disable fallback for mathvariant=italic/bold/bold-italic via
+# styling when lacking proper fonts for Mathematical Alphanumeric Symbols.
+# We expect all OSes to have relevant fonts, except Android, see bug 1789083.
+- name: mathml.mathvariant_styling_fallback.disabled
+  type: bool
+#if defined(ANDROID)
+  value: false
 #else
   value: true
 #endif
@@ -9477,12 +9554,6 @@
     value: false
     mirror: always
 
-# Testing purpose, enable video stream for the media engine.
--   name: media.wmf.media-engine.video-output.enabled
-    type: RelaxedAtomicBool
-    value: false
-    mirror: always
-
 # Testing purpose, enable media engine on channel decoder as well.
 -   name: media.wmf.media-engine.channel-decoder.enabled
     type: RelaxedAtomicBool
@@ -9900,7 +9971,7 @@
   # acceleration for decoding.
 -   name: media.navigator.mediadatadecoder_vpx_enabled
     type: RelaxedAtomicBool
-#if defined(NIGHTLY_BUILD)
+#if defined(NIGHTLY_BUILD) || defined(MOZ_WIDGET_GTK)
     value: true
 #else
     value: false
@@ -10023,6 +10094,11 @@
 - name: media.webrtc.platformencoder.sw_mft
   type: RelaxedAtomicBool
   value: @IS_EARLY_BETA_OR_EARLIER@
+  mirror: always
+
+- name: media.webrtc.capture.allow-iosurface
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 - name: media.block-autoplay-until-in-foreground
@@ -13606,6 +13682,11 @@
   value: 300
   mirror: always
 
+- name: webgl.max-size-per-texture-mib
+  type: RelaxedAtomicUint32
+  value: 1024
+  mirror: always
+
 - name: webgl.max-warnings-per-context
   type: RelaxedAtomicUint32
   value: 32
@@ -14168,14 +14249,20 @@
   mirror: always
 #endif
 
+# Whether to flush the Ole clipboard synchronously.
+# Possible values are:
+#  * 0: never
+#  * 1: always
+#  * 2 (or others): when needed
+- name: widget.windows.sync-clipboard-flush
+  type: uint32_t
+  value: 2
+  mirror: always
+
 # Whether to disable SwipeTracker (e.g. swipe-to-nav).
 - name: widget.disable-swipe-tracker
   type: bool
-#if defined(MOZ_WIDGET_GTK)
-  value: @IS_NOT_EARLY_BETA_OR_EARLIER@
-#else
   value: false
-#endif
   mirror: always
 
 # Various metrics to control SwipeTracker.

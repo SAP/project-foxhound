@@ -9,7 +9,6 @@
 
 #include "vm/NativeObject.h"
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
 #include <type_traits>
@@ -18,17 +17,17 @@
 #include "gc/GCProbes.h"
 #include "gc/MaybeRooted.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "js/Result.h"
-#include "proxy/Proxy.h"
+#include "vm/Iteration.h"
 #include "vm/JSContext.h"
+#include "vm/PlainObject.h"
 #include "vm/PropertyResult.h"
-#include "vm/ProxyObject.h"
 #include "vm/TypedArrayObject.h"
 
 #include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/ObjectKind-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/Realm-inl.h"
 #include "vm/Shape-inl.h"
 
 #ifdef ENABLE_RECORD_TUPLE
@@ -441,13 +440,12 @@ inline NativeObject* NativeObject::create(
   const uint32_t slotSpan = shape->slotSpan();
   const size_t nDynamicSlots = calculateDynamicSlots(nfixed, slotSpan, clasp);
 
-  JSObject* obj =
-      js::AllocateObject(cx, kind, nDynamicSlots, heap, clasp, site);
-  if (!obj) {
+  NativeObject* nobj =
+      cx->newCell<NativeObject>(kind, nDynamicSlots, heap, clasp, site);
+  if (!nobj) {
     return nullptr;
   }
 
-  NativeObject* nobj = static_cast<NativeObject*>(obj);
   nobj->initShape(shape);
   // NOTE: Dynamic slots are created internally by Allocate<JSObject>.
   if (!nDynamicSlots) {
@@ -468,46 +466,6 @@ inline NativeObject* NativeObject::create(
   js::gc::gcprobes::CreateObject(nobj);
 
   return nobj;
-}
-
-MOZ_ALWAYS_INLINE bool NativeObject::updateSlotsForSpan(JSContext* cx,
-                                                        size_t oldSpan,
-                                                        size_t newSpan) {
-  MOZ_ASSERT(oldSpan != newSpan);
-
-  size_t oldCapacity = numDynamicSlots();
-  size_t newCapacity =
-      calculateDynamicSlots(numFixedSlots(), newSpan, getClass());
-
-  if (oldSpan < newSpan) {
-    if (oldCapacity < newCapacity && !growSlots(cx, oldCapacity, newCapacity)) {
-      return false;
-    }
-
-    if (newSpan == oldSpan + 1) {
-      initSlotUnchecked(oldSpan, UndefinedValue());
-    } else {
-      // Initialize slots [oldSpan, newSpan). Use the *Unchecked version because
-      // the shape's slot span does not reflect the allocated slots at this
-      // point.
-      auto initRange = [](HeapSlot* start, HeapSlot* end) {
-        for (HeapSlot* slot = start; slot < end; slot++) {
-          slot->initAsUndefined();
-        }
-      };
-      forEachSlotRangeUnchecked(oldSpan, newSpan, initRange);
-    }
-  } else {
-    /* Trigger write barriers on the old slots before reallocating. */
-    prepareSlotRangeForOverwrite(newSpan, oldSpan);
-    invalidateSlotRange(newSpan, oldSpan);
-
-    if (oldCapacity > newCapacity) {
-      shrinkSlots(cx, oldCapacity, newCapacity);
-    }
-  }
-
-  return true;
 }
 
 MOZ_ALWAYS_INLINE void NativeObject::initEmptyDynamicSlots() {
@@ -534,32 +492,51 @@ MOZ_ALWAYS_INLINE void NativeObject::setEmptyDynamicSlots(
   MOZ_ASSERT(getSlotsHeader()->dictionarySlotSpan() == dictionarySlotSpan);
 }
 
-MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndUpdateSlots(JSContext* cx,
-                                                            Shape* newShape) {
+MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndAddNewSlots(JSContext* cx,
+                                                            Shape* newShape,
+                                                            uint32_t oldSpan,
+                                                            uint32_t newSpan) {
   MOZ_ASSERT(!inDictionaryMode());
   MOZ_ASSERT(!newShape->isDictionary());
   MOZ_ASSERT(newShape->zone() == zone());
   MOZ_ASSERT(newShape->numFixedSlots() == numFixedSlots());
   MOZ_ASSERT(newShape->getObjectClass() == getClass());
 
-  size_t oldSpan = shape()->slotSpan();
-  size_t newSpan = newShape->slotSpan();
+  MOZ_ASSERT(oldSpan < newSpan);
+  MOZ_ASSERT(shape()->slotSpan() == oldSpan);
+  MOZ_ASSERT(newShape->slotSpan() == newSpan);
 
-  if (oldSpan == newSpan) {
-    setShape(newShape);
-    return true;
+  uint32_t numFixed = newShape->numFixedSlots();
+  if (newSpan > numFixed) {
+    uint32_t oldCapacity = numDynamicSlots();
+    uint32_t newCapacity =
+        calculateDynamicSlots(numFixed, newSpan, newShape->getObjectClass());
+    MOZ_ASSERT(oldCapacity <= newCapacity);
+
+    if (oldCapacity < newCapacity) {
+      if (MOZ_UNLIKELY(!growSlots(cx, oldCapacity, newCapacity))) {
+        return false;
+      }
+    }
   }
 
-  if (MOZ_UNLIKELY(!updateSlotsForSpan(cx, oldSpan, newSpan))) {
-    return false;
-  }
+  // Initialize slots [oldSpan, newSpan). Use the *Unchecked version because
+  // the shape's slot span does not reflect the allocated slots at this
+  // point.
+  auto initRange = [](HeapSlot* start, HeapSlot* end) {
+    for (HeapSlot* slot = start; slot < end; slot++) {
+      slot->initAsUndefined();
+    }
+  };
+  forEachSlotRangeUnchecked(oldSpan, newSpan, initRange);
 
   setShape(newShape);
   return true;
 }
 
-MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndUpdateSlotsForNewSlot(
-    JSContext* cx, Shape* newShape, uint32_t slot) {
+MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndAddNewSlot(JSContext* cx,
+                                                           Shape* newShape,
+                                                           uint32_t slot) {
   MOZ_ASSERT(!inDictionaryMode());
   MOZ_ASSERT(!newShape->isDictionary());
   MOZ_ASSERT(newShape->zone() == zone());
@@ -569,8 +546,17 @@ MOZ_ALWAYS_INLINE bool NativeObject::setShapeAndUpdateSlotsForNewSlot(
   MOZ_ASSERT(newShape->slotSpan() == shape()->slotSpan() + 1);
   MOZ_ASSERT(newShape->slotSpan() == slot + 1);
 
-  if (MOZ_UNLIKELY(!updateSlotsForSpan(cx, slot, slot + 1))) {
-    return false;
+  uint32_t numFixed = newShape->numFixedSlots();
+  if (slot < numFixed) {
+    initFixedSlot(slot, UndefinedValue());
+  } else {
+    uint32_t dynamicSlotIndex = slot - numFixed;
+    if (dynamicSlotIndex >= numDynamicSlots()) {
+      if (MOZ_UNLIKELY(!growSlotsForNewSlot(cx, numFixed, slot))) {
+        return false;
+      }
+    }
+    initDynamicSlot(numFixed, slot, UndefinedValue());
   }
 
   setShape(newShape);

@@ -5003,7 +5003,7 @@ static nscoord MeasuringReflow(nsIFrame* aChild,
                       true);
 #endif
   auto wm = aChild->GetWritingMode();
-  ComputeSizeFlags csFlags = ComputeSizeFlag::UseAutoBSize;
+  ComputeSizeFlags csFlags = ComputeSizeFlag::IsGridMeasuringReflow;
   if (aAvailableSize.ISize(wm) == INFINITE_ISIZE_COORD) {
     csFlags += ComputeSizeFlag::ShrinkWrap;
   }
@@ -5020,13 +5020,9 @@ static nscoord MeasuringReflow(nsIFrame* aChild,
   ReflowInput childRI(pc, *rs, aChild, aAvailableSize, Some(aCBSize), {}, {},
                       csFlags);
 
-  // Because we pass ComputeSizeFlag::UseAutoBSize, and the
-  // previous reflow of the child might not have, set the child's
-  // block-resize flag to true.
-  // FIXME (perf): It would be faster to do this only if the previous
-  // reflow of the child was not a measuring reflow, and only if the
-  // child does some of the things that are affected by
-  // ComputeSizeFlag::UseAutoBSize.
+  // FIXME (perf): It would be faster to do this only if the previous reflow of
+  // the child was not a measuring reflow, and only if the child does some of
+  // the things that are affected by ComputeSizeFlag::IsGridMeasuringReflow.
   childRI.SetBResize(true);
   // Not 100% sure this is needed, but be conservative for now:
   childRI.mFlags.mIsBResizeForPercentages = true;
@@ -5800,8 +5796,8 @@ void nsGridContainerFrame::Tracks::InitializeItemBaselines(
       // XXX What if the true baseline after line-breaking differs from this
       // XXX hypothetical baseline based on an infinite inline size?
       // XXX Maybe we should just call ::ContentContribution here instead?
-      // XXX For now we just pass a zero-sized CB:
-      LogicalSize cbSize(childWM, 0, 0);
+      // XXX For now we just pass an unconstrined-bsize CB:
+      LogicalSize cbSize(childWM, 0, NS_UNCONSTRAINEDSIZE);
       ::MeasuringReflow(child, aState.mReflowInput, rc, avail, cbSize);
       nscoord baseline;
       nsGridContainerFrame* grid = do_QueryFrame(child);
@@ -7334,13 +7330,9 @@ void nsGridContainerFrame::ReflowInFlowChild(
   childRI.mFlags.mIsTopOfPage =
       aFragmentainer ? aFragmentainer->mIsTopOfPage : false;
 
-  // Because we pass ComputeSizeFlag::UseAutoBSize, and the
-  // previous reflow of the child might not have, set the child's
-  // block-resize flag to true.
-  // FIXME (perf): It would be faster to do this only if the previous
-  // reflow of the child was a measuring reflow, and only if the child
-  // does some of the things that are affected by
-  // ComputeSizeFlag::UseAutoBSize.
+  // FIXME (perf): It would be faster to do this only if the previous reflow of
+  // the child was a measuring reflow, and only if the child does some of the
+  // things that are affected by ComputeSizeFlag::IsGridMeasuringReflow.
   childRI.SetBResize(true);
   childRI.mFlags.mIsBResizeForPercentages = true;
 
@@ -8434,8 +8426,13 @@ nscoord nsGridContainerFrame::ReflowChildren(GridReflowInput& aState,
                                              const nsSize& aContainerSize,
                                              ReflowOutput& aDesiredSize,
                                              nsReflowStatus& aStatus) {
+  WritingMode wm = aState.mReflowInput->GetWritingMode();
+  nscoord bSize = aContentArea.BSize(wm);
   MOZ_ASSERT(aState.mReflowInput);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+  if (HidesContentForLayout()) {
+    return bSize;
+  }
 
   OverflowAreas ocBounds;
   nsReflowStatus ocStatus;
@@ -8445,8 +8442,6 @@ nscoord nsGridContainerFrame::ReflowChildren(GridReflowInput& aState,
                                     ocStatus, MergeSortedFrameListsFor);
   }
 
-  WritingMode wm = aState.mReflowInput->GetWritingMode();
-  nscoord bSize = aContentArea.BSize(wm);
   Maybe<Fragmentainer> fragmentainer = GetNearestFragmentainer(aState);
   // MasonryLayout() can only handle fragmentation in the masonry-axis,
   // so we let ReflowInFragmentainer() deal with grid-axis fragmentation
@@ -8540,6 +8535,10 @@ void nsGridContainerFrame::Reflow(nsPresContext* aPresContext,
                                   ReflowOutput& aDesiredSize,
                                   const ReflowInput& aReflowInput,
                                   nsReflowStatus& aStatus) {
+  if (IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
+    return;
+  }
+
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsGridContainerFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);

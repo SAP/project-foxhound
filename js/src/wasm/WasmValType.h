@@ -306,6 +306,41 @@ class FieldTypeTraits {
         return false;
     }
   }
+
+  static bool isNumberTypeCode(TypeCode tc) {
+    switch (tc) {
+      case TypeCode::I32:
+      case TypeCode::I64:
+      case TypeCode::F32:
+      case TypeCode::F64:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool isPackedTypeCode(TypeCode tc) {
+    switch (tc) {
+#ifdef ENABLE_WASM_GC
+      case TypeCode::I8:
+      case TypeCode::I16:
+        return true;
+#endif
+      default:
+        return false;
+    }
+  }
+
+  static bool isVectorTypeCode(TypeCode tc) {
+    switch (tc) {
+#ifdef ENABLE_WASM_SIMD
+      case TypeCode::V128:
+        return true;
+#endif
+      default:
+        return false;
+    }
+  }
 };
 
 class ValTypeTraits {
@@ -337,6 +372,31 @@ class ValTypeTraits {
       case AbstractReferenceTypeIndexCode:
 #endif
         return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool isNumberTypeCode(TypeCode tc) {
+    switch (tc) {
+      case TypeCode::I32:
+      case TypeCode::I64:
+      case TypeCode::F32:
+      case TypeCode::F64:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool isPackedTypeCode(TypeCode tc) { return false; }
+
+  static bool isVectorTypeCode(TypeCode tc) {
+    switch (tc) {
+#ifdef ENABLE_WASM_SIMD
+      case TypeCode::V128:
+        return true;
+#endif
       default:
         return false;
     }
@@ -448,6 +508,27 @@ class PackedType : public T {
   uint64_t bitsUnsafe() const {
     MOZ_ASSERT(isValid());
     return tc_.bits();
+  }
+
+  bool isNumber() const {
+    if (!tc_.isValid()) {
+      return false;
+    }
+    return T::isNumberTypeCode(tc_.typeCode());
+  }
+
+  bool isPacked() const {
+    if (!tc_.isValid()) {
+      return false;
+    }
+    return T::isPackedTypeCode(tc_.typeCode());
+  }
+
+  bool isVector() const {
+    if (!tc_.isValid()) {
+      return false;
+    }
+    return T::isVectorTypeCode(tc_.typeCode());
   }
 
   bool isRefType() const {
@@ -594,6 +675,11 @@ class PackedType : public T {
     }
   }
 
+  PackedType<FieldTypeTraits> fieldType() const {
+    MOZ_ASSERT(isValid());
+    return PackedType<FieldTypeTraits>(tc_);
+  }
+
   bool operator==(const PackedType& that) const {
     MOZ_ASSERT(isValid() && that.isValid());
     return tc_ == that.tc_;
@@ -676,8 +762,8 @@ extern bool ToRefType(JSContext* cx, JSLinearString* typeLinearStr,
                       RefType* out);
 
 extern UniqueChars ToString(RefType type);
-
 extern UniqueChars ToString(ValType type);
+extern UniqueChars ToString(FieldType type);
 
 extern UniqueChars ToString(const Maybe<ValType>& type);
 

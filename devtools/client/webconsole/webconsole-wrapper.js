@@ -12,7 +12,6 @@ const {
   Provider,
   createProvider,
 } = require("devtools/client/shared/vendor/react-redux");
-const Services = require("Services");
 
 const actions = require("devtools/client/webconsole/actions/index");
 const { configureStore } = require("devtools/client/webconsole/store");
@@ -318,7 +317,7 @@ class WebConsoleWrapper {
   }
 
   batchedMessagesUpdates(messages) {
-    if (messages.length > 0) {
+    if (messages.length) {
       this.queuedMessageUpdates.push(...messages);
       this.setTimeoutIfNeeded();
     }
@@ -330,7 +329,7 @@ class WebConsoleWrapper {
   }
 
   batchedMessagesAdd(messages) {
-    if (messages.length > 0) {
+    if (messages.length) {
       this.queuedMessageAdds.push(...messages);
       this.setTimeoutIfNeeded();
     }
@@ -396,14 +395,14 @@ class WebConsoleWrapper {
 
         this.queuedMessageAdds = [];
 
-        if (this.queuedMessageUpdates.length > 0) {
+        if (this.queuedMessageUpdates.length) {
           await store.dispatch(
             actions.networkMessageUpdates(this.queuedMessageUpdates, null)
           );
           this.webConsoleUI.emitForTests("network-messages-updated");
           this.queuedMessageUpdates = [];
         }
-        if (this.queuedRequestUpdates.length > 0) {
+        if (this.queuedRequestUpdates.length) {
           await store.dispatch(
             actions.networkUpdateRequests(this.queuedRequestUpdates)
           );

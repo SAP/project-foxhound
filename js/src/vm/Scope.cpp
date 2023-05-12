@@ -6,13 +6,10 @@
 
 #include "vm/Scope.h"
 
-#include "mozilla/OperatorNewExtensions.h"  // mozilla::KnownNotNull
-#include "mozilla/ScopeExit.h"
-
-#include <memory>
 #include <new>
 
-#include "builtin/ModuleObject.h"
+#include "jsnum.h"
+
 #include "frontend/CompilationStencil.h"  // ScopeStencilRef, CompilationStencil, CompilationState, CompilationAtomCache
 #include "frontend/ParserAtom.h"  // frontend::ParserAtomsTable, frontend::ParserAtom
 #include "frontend/ScriptIndex.h"  // ScriptIndex
@@ -27,7 +24,7 @@
 
 #include "gc/GCContext-inl.h"
 #include "gc/ObjectKind-inl.h"
-#include "vm/Shape-inl.h"
+#include "gc/TraceMethods-inl.h"
 #include "wasm/WasmInstance-inl.h"
 
 using namespace js;
@@ -270,11 +267,7 @@ static UniquePtr<typename ConcreteScope::RuntimeData> LiftParserScopeData(
 /* static */
 Scope* Scope::create(JSContext* cx, ScopeKind kind, Handle<Scope*> enclosing,
                      Handle<Shape*> envShape) {
-  Scope* scope = Allocate<Scope>(cx);
-  if (scope) {
-    new (scope) Scope(kind, enclosing, envShape);
-  }
-  return scope;
+  return cx->newCell<Scope>(kind, enclosing, envShape);
 }
 
 template <typename ConcreteScope>

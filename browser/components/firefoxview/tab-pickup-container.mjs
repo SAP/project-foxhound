@@ -4,15 +4,16 @@
 
 /* eslint-env mozilla/remote-page */
 
-import { toggleContainer } from "./helpers.mjs";
+import { onToggleContainer } from "./helpers.mjs";
 
 const { TabsSetupFlowManager } = ChromeUtils.importESModule(
   "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
 );
 
 const TOPIC_SETUPSTATE_CHANGED = "firefox-view.setupstate.changed";
+const UI_OPEN_STATE = "browser.tabs.firefox-view.ui-state.tab-pickup.open";
 
-class TabPickupContainer extends HTMLElement {
+class TabPickupContainer extends HTMLDetailsElement {
   constructor() {
     super();
     this.boundObserve = (...args) => this.observe(...args);
@@ -27,10 +28,6 @@ class TabPickupContainer extends HTMLElement {
     return this.querySelector(".synced-tabs-container");
   }
 
-  get collapsibleButton() {
-    return this.querySelector("#collapsible-synced-tabs-button");
-  }
-
   getWindow() {
     return this.ownerGlobal.browsingContext.embedderWindowGlobal.browsingContext
       .window;
@@ -38,6 +35,7 @@ class TabPickupContainer extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener("click", this);
+    this.addEventListener("toggle", this);
     this.addEventListener("visibilitychange", this);
     Services.obs.addObserver(this.boundObserve, TOPIC_SETUPSTATE_CHANGED);
     this.update();
@@ -52,15 +50,15 @@ class TabPickupContainer extends HTMLElement {
   }
 
   handleEvent(event) {
-    if (event.type == "click" && event.target == this.collapsibleButton) {
-      toggleContainer(this.collapsibleButton, this.tabsContainerElem);
+    if (event.type == "toggle") {
+      onToggleContainer(this);
       return;
     }
     if (event.type == "click" && event.target.dataset.action) {
       switch (event.target.dataset.action) {
         case "view0-sync-error-action":
         case "view0-network-offline-action": {
-          this.getWindow().gBrowser.reload();
+          TabsSetupFlowManager.tryToClearError();
           break;
         }
         case "view1-primary-action": {
@@ -84,9 +82,18 @@ class TabPickupContainer extends HTMLElement {
           TabsSetupFlowManager.dismissMobileConfirmation(event.target);
           break;
         }
-        case "view0-sync-disconnected-action":
-          TabsSetupFlowManager.openSyncPreferences(event.target.ownerGlobal);
+        case "view0-sync-disconnected-action": {
+          const window = event.target.ownerGlobal;
+          const {
+            switchToTabHavingURI,
+          } = window.docShell.chromeEventHandler.ownerGlobal;
+          switchToTabHavingURI(
+            "about:preferences?action=choose-what-to-sync#sync",
+            true,
+            {}
+          );
           break;
+        }
       }
     }
     // Returning to fxview seems like a likely time for a device check
@@ -145,8 +152,14 @@ class TabPickupContainer extends HTMLElement {
     showMobilePromo = TabsSetupFlowManager.shouldShowMobilePromo,
     showMobilePairSuccess = TabsSetupFlowManager.shouldShowMobileConnectedSuccess,
     errorState = TabsSetupFlowManager.getErrorType(),
+    waitingForTabs = TabsSetupFlowManager.waitingForTabs,
   } = {}) {
     let needsRender = false;
+    if (waitingForTabs !== this._waitingForTabs) {
+      this._waitingForTabs = waitingForTabs;
+      needsRender = true;
+    }
+
     if (showMobilePromo !== this._showMobilePromo) {
       this._showMobilePromo = showMobilePromo;
       needsRender = true;
@@ -164,9 +177,34 @@ class TabPickupContainer extends HTMLElement {
   }
 
   generateErrorMessage() {
-    // this sync-error fluent string needed a correction, which required a new string ID
-    const errorStateDescriptions = {
-      "sync-error": "generic-sync-error",
+    // We map the error state strings to Fluent string IDs so that it's easier
+    // to change strings in the future without having to update all of the
+    // error state strings.
+    const errorStateStringMappings = {
+      "sync-error": {
+        header: "firefoxview-tabpickup-sync-error-header",
+        description: "firefoxview-tabpickup-generic-sync-error-description",
+        buttonLabel: "firefoxview-tabpickup-sync-error-primarybutton",
+      },
+
+      "fxa-admin-disabled": {
+        header: "firefoxview-tabpickup-fxa-admin-disabled-header",
+        description: "firefoxview-tabpickup-fxa-admin-disabled-description",
+        // The button is hidden for this errorState, so we don't include the
+        // buttonLabel property.
+      },
+
+      "network-offline": {
+        header: "firefoxview-tabpickup-network-offline-header",
+        description: "firefoxview-tabpickup-network-offline-description",
+        buttonLabel: "firefoxview-tabpickup-network-offline-primarybutton",
+      },
+
+      "sync-disconnected": {
+        header: "firefoxview-tabpickup-sync-disconnected-header",
+        description: "firefoxview-tabpickup-sync-disconnected-description",
+        buttonLabel: "firefoxview-tabpickup-sync-disconnected-primarybutton",
+      },
     };
 
     const errorStateHeader = this.querySelector(
@@ -179,12 +217,11 @@ class TabPickupContainer extends HTMLElement {
 
     document.l10n.setAttributes(
       errorStateHeader,
-      `firefoxview-tabpickup-${this.errorState}-header`
+      errorStateStringMappings[this.errorState].header
     );
     document.l10n.setAttributes(
       errorStateDescription,
-      `firefoxview-tabpickup-${errorStateDescriptions[this.errorState] ||
-        this.errorState}-description`
+      errorStateStringMappings[this.errorState].description
     );
 
     errorStateButton.hidden = this.errorState == "fxa-admin-disabled";
@@ -192,7 +229,7 @@ class TabPickupContainer extends HTMLElement {
     if (this.errorState != "fxa-admin-disabled") {
       document.l10n.setAttributes(
         errorStateButton,
-        `firefoxview-tabpickup-${this.errorState}-primarybutton`
+        errorStateStringMappings[this.errorState].buttonLabel
       );
       errorStateButton.setAttribute(
         "data-action",
@@ -212,7 +249,14 @@ class TabPickupContainer extends HTMLElement {
     let mobileSuccessElem = this.mobileSuccessElem;
 
     const stateIndex = this._currentSetupStateIndex;
-    const isLoading = stateIndex == 4;
+    const isLoading = this._waitingForTabs;
+
+    mobilePromoElem.hidden = !this._showMobilePromo;
+    mobileSuccessElem.hidden = !this._showMobilePairSuccess;
+
+    this.open =
+      !TabsSetupFlowManager.isTabSyncSetupComplete ||
+      Services.prefs.getBoolPref(UI_OPEN_STATE, true);
 
     // show/hide either the setup or tab list containers, creating each as necessary
     if (stateIndex < 4) {
@@ -249,14 +293,14 @@ class TabPickupContainer extends HTMLElement {
     }
     tabsElem.hidden = false;
     tabsElem.classList.toggle("loading", isLoading);
+  }
 
-    if (stateIndex == 5) {
-      this.collapsibleButton.hidden = false;
-    }
-    mobilePromoElem.hidden = !this._showMobilePromo;
-    mobileSuccessElem.hidden = !this._showMobilePairSuccess;
+  async onReload() {
+    await TabsSetupFlowManager.syncOnPageReload();
   }
 }
-customElements.define("tab-pickup-container", TabPickupContainer);
+customElements.define("tab-pickup-container", TabPickupContainer, {
+  extends: "details",
+});
 
 export { TabPickupContainer };

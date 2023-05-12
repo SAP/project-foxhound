@@ -114,7 +114,7 @@ void SVGOuterSVGFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // prevent them from painting by [ab]use NS_FRAME_IS_NONDISPLAY. The
   // frame will be recreated via an nsChangeHint_ReconstructFrame restyle if
   // the value returned by PassesConditionalProcessingTests changes.
-  SVGSVGElement* svg = static_cast<SVGSVGElement*>(aContent);
+  auto* svg = static_cast<SVGSVGElement*>(aContent);
   if (!svg->PassesConditionalProcessingTests()) {
     AddStateBits(NS_FRAME_IS_NONDISPLAY);
   }
@@ -178,24 +178,16 @@ nscoord SVGOuterSVGFrame::GetPrefISize(gfxContext* aRenderingContext) {
           ContainSizeAxesIfApplicable(this).ContainIntrinsicISize(*this)) {
     result = *containISize;
   } else if (isize.IsPercentage()) {
-    // It looks like our containing block's isize may depend on our isize. In
-    // that case our behavior is undefined according to CSS 2.1 section 10.3.2.
-    // As a last resort, we'll fall back to returning zero.
-    result = nscoord(0);
-
-    // Returning zero may be unhelpful, however, as it leads to unexpected
-    // disappearance of %-sized SVGs in orthogonal contexts, where our
-    // containing block wants to shrink-wrap. So let's look for an ancestor
-    // with non-zero size in this dimension, and use that as a (somewhat
-    // arbitrary) result instead.
-    nsIFrame* parent = GetParent();
-    while (parent) {
-      nscoord parentISize = parent->GetLogicalSize(wm).ISize(wm);
-      if (parentISize > 0 && parentISize != NS_UNCONSTRAINEDSIZE) {
-        result = parentISize;
-        break;
-      }
-      parent = parent->GetParent();
+    if (isize.IsExplicitlySet() || StylePosition()->ISize(wm).HasPercent()) {
+      // Our containing block's inline-size depends on our inline-size. In this
+      // case, return the fallback intrinsic size per
+      // https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
+      result = wm.IsVertical() ? kFallbackIntrinsicSize.height
+                               : kFallbackIntrinsicSize.width;
+    } else {
+      // If the width/height attribute in the inline axis is not set, return
+      // size 0 to match blink and webkit's behavior.
+      result = nscoord(0);
     }
   } else {
     result = nsPresContext::CSSPixelsToAppUnits(isize.GetAnimValue(svg));
@@ -251,11 +243,8 @@ AspectRatio SVGOuterSVGFrame::GetIntrinsicRatio() const {
   // We only have an intrinsic size/ratio if our width and height attributes
   // are both specified and set to non-percentage values, or we have a viewBox
   // rect: https://svgwg.org/svg2-draft/coords.html#SizingSVGInCSS
-  // Unfortunately we have to return the ratio as two nscoords whereas what
-  // we have are two floats. Using app units allows for some floating point
-  // values to work but really small or large numbers will fail.
 
-  SVGSVGElement* content = static_cast<SVGSVGElement*>(GetContent());
+  auto* content = static_cast<SVGSVGElement*>(GetContent());
   const SVGAnimatedLength& width =
       content->mLengthAttributes[SVGSVGElement::ATTR_WIDTH];
   const SVGAnimatedLength& height =
@@ -273,18 +262,10 @@ AspectRatio SVGOuterSVGFrame::GetIntrinsicRatio() const {
     }
   }
 
-  SVGViewElement* viewElement = content->GetCurrentViewElement();
-  const SVGViewBox* viewbox = nullptr;
-
-  // The logic here should match HasViewBox().
-  if (viewElement && viewElement->mViewBox.HasRect()) {
-    viewbox = &viewElement->mViewBox.GetAnimValue();
-  } else if (content->mViewBox.HasRect()) {
-    viewbox = &content->mViewBox.GetAnimValue();
-  }
-
-  if (viewbox) {
-    return AspectRatio::FromSize(viewbox->width, viewbox->height);
+  const auto& viewBox = content->GetViewBoxInternal();
+  if (viewBox.HasRect()) {
+    const auto& anim = viewBox.GetAnimValue();
+    return AspectRatio::FromSize(anim.width, anim.height);
   }
 
   return SVGDisplayContainerFrame::GetIntrinsicRatio();

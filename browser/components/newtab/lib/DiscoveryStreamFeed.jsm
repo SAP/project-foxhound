@@ -245,6 +245,24 @@ class DiscoveryStreamFeed {
     const pocketButtonEnabled = Services.prefs.getBoolPref(PREF_POCKET_BUTTON);
 
     const nimbusConfig = this.store.getState().Prefs.values?.pocketConfig || {};
+    const { region } = this.store.getState().Prefs.values;
+
+    this.setupSpocsCacheUpdateTime();
+    const saveToPocketCardRegions = nimbusConfig.saveToPocketCardRegions
+      ?.split(",")
+      .map(s => s.trim());
+    const saveToPocketCard =
+      pocketButtonEnabled &&
+      (nimbusConfig.saveToPocketCard ||
+        saveToPocketCardRegions?.includes(region));
+
+    const hideDescriptionsRegions = nimbusConfig.hideDescriptionsRegions
+      ?.split(",")
+      .map(s => s.trim());
+    const hideDescriptions =
+      nimbusConfig.hideDescriptions ||
+      hideDescriptionsRegions?.includes(region);
+
     // We don't BroadcastToContent for this, as the changes may
     // shift around elements on an open newtab the user is currently reading.
     // So instead we AlsoToPreloaded so the next tab is updated.
@@ -255,9 +273,8 @@ class DiscoveryStreamFeed {
         data: {
           recentSavesEnabled: nimbusConfig.recentSavesEnabled,
           pocketButtonEnabled,
-          saveToPocketCard:
-            pocketButtonEnabled && nimbusConfig.saveToPocketCard,
-          hideDescriptions: nimbusConfig.hideDescriptions,
+          saveToPocketCard,
+          hideDescriptions,
           compactImages: nimbusConfig.compactImages,
           imageGradient: nimbusConfig.imageGradient,
           newSponsoredLabel: nimbusConfig.newSponsoredLabel,
@@ -381,6 +398,34 @@ class DiscoveryStreamFeed {
     return null;
   }
 
+  get spocsCacheUpdateTime() {
+    if (this._spocsCacheUpdateTime) {
+      return this._spocsCacheUpdateTime;
+    }
+    this.setupSpocsCacheUpdateTime();
+    return this._spocsCacheUpdateTime;
+  }
+
+  setupSpocsCacheUpdateTime() {
+    const nimbusConfig = this.store.getState().Prefs.values?.pocketConfig || {};
+    const { spocsCacheTimeout } = nimbusConfig;
+    const MAX_TIMEOUT = 30;
+    const MIN_TIMEOUT = 5;
+    // We do a bit of min max checking the the configured value is between
+    // 5 and 30 minutes, to protect against unreasonable values.
+    if (
+      spocsCacheTimeout &&
+      spocsCacheTimeout <= MAX_TIMEOUT &&
+      spocsCacheTimeout >= MIN_TIMEOUT
+    ) {
+      // This value is in minutes, but we want ms.
+      this._spocsCacheUpdateTime = spocsCacheTimeout * 60 * 1000;
+    } else {
+      // The const is already in ms.
+      this._spocsCacheUpdateTime = SPOCS_FEEDS_UPDATE_TIME;
+    }
+  }
+
   /**
    * Returns true if data in the cache for a particular key has expired or is missing.
    * @param {object} cachedData data returned from cache.get()
@@ -392,7 +437,7 @@ class DiscoveryStreamFeed {
     const { layout, spocs, feeds } = cachedData;
     const updateTimePerComponent = {
       layout: LAYOUT_UPDATE_TIME,
-      spocs: SPOCS_FEEDS_UPDATE_TIME,
+      spocs: this.spocsCacheUpdateTime,
       feed: COMPONENT_FEEDS_UPDATE_TIME,
     };
     const EXPIRATION_TIME = isStartup
@@ -562,11 +607,27 @@ class DiscoveryStreamFeed {
         items = isBasicLayout ? 4 : 24;
       }
 
+      const spocAdTypes = pocketConfig.spocAdTypes
+        ?.split(",")
+        .map(item => parseInt(item, 10));
+      const spocZoneIds = pocketConfig.spocZoneIds
+        ?.split(",")
+        .map(item => parseInt(item, 10));
+      let spocPlacementData;
+
+      if (spocAdTypes?.length && spocZoneIds?.length) {
+        spocPlacementData = {
+          ad_types: spocAdTypes,
+          zone_ids: spocZoneIds,
+        };
+      }
+
       // Set a hardcoded layout if one is needed.
       // Changing values in this layout in memory object is unnecessary.
       layoutResp = getHardcodedLayout({
         items,
         sponsoredCollectionsEnabled,
+        spocPlacementData,
         spocPositions: this.parseGridPositions(
           pocketConfig.spocPositions?.split(`,`)
         ),
@@ -623,8 +684,8 @@ class DiscoveryStreamFeed {
             isStartup,
           },
         });
-        this.updatePlacements(sendUpdate, layoutResp.layout, isStartup);
       }
+      this.updatePlacements(sendUpdate, layoutResp.layout, isStartup);
     }
   }
 
@@ -1969,6 +2030,7 @@ class DiscoveryStreamFeed {
    NOTE: There is some branching logic in the template.
      `items` How many items to include in the primary card grid.
      `spocPositions` Changes the position of spoc cards.
+     `spocPlacementData` Used to set the spoc content.
      `sponsoredCollectionsEnabled` Tuns on and off the sponsored collection section.
      `hybridLayout` Changes cards to smaller more compact cards only for specific breakpoints.
      `hideCardBackground` Removes Pocket card background and borders.
@@ -1981,6 +2043,7 @@ class DiscoveryStreamFeed {
 getHardcodedLayout = ({
   items = 21,
   spocPositions = [1, 5, 7, 11, 18, 20],
+  spocPlacementData = { ad_types: [3617], zone_ids: [217758, 217995] },
   widgetPositions = [],
   widgetData = [],
   sponsoredCollectionsEnabled = false,
@@ -2085,8 +2148,8 @@ getHardcodedLayout = ({
           },
           placement: {
             name: "spocs",
-            ad_types: [3617],
-            zone_ids: [217758, 217995],
+            ad_types: spocPlacementData.ad_types,
+            zone_ids: spocPlacementData.zone_ids,
           },
           feed: {
             embed_reference: null,

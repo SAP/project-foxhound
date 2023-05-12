@@ -269,6 +269,9 @@ def write_test_settings_json(args, test_details, oskey):
         if features:
             test_settings["raptor-options"]["gecko_profile_features"] = features
 
+    if test_details.get("extra_profiler_run", False):
+        test_settings["raptor-options"]["extra_profiler_run"] = True
+
     if test_details.get("newtab_per_cycle", None) is not None:
         test_settings["raptor-options"]["newtab_per_cycle"] = bool(
             test_details["newtab_per_cycle"]
@@ -340,8 +343,9 @@ def get_raptor_test_list(args, oskey):
                 # subtest comes from matching test ini file name, so add it
                 tests_to_run.append(next_test)
 
-    if args.collect_perfstats:
-        next_test["perfstats"] = "true"
+    if args.collect_perfstats and "chrom" not in args.app.lower():
+        for next_test in tests_to_run:
+            next_test["perfstats"] = "true"
 
     # enable live sites if requested with --live-sites
     if args.live_sites:
@@ -420,6 +424,18 @@ def get_raptor_test_list(args, oskey):
             next_test.pop("gecko_profile_interval", None)
             next_test.pop("gecko_profile_threads", None)
             next_test.pop("gecko_profile_features", None)
+
+        if args.extra_profiler_run is True and args.app == "firefox":
+            next_test["extra_profiler_run"] = True
+            LOG.info("extra-profiler-run enabled")
+            next_test["extra_profiler_run_browser_cycles"] = 1
+            if args.chimera:
+                next_test["extra_profiler_run_page_cycles"] = 2
+            else:
+                next_test["extra_profiler_run_page_cycles"] = 1
+        else:
+            args.extra_profiler_run = False
+            LOG.info("extra-profiler-run disabled")
 
         if args.debug_mode is True:
             next_test["debug_mode"] = True

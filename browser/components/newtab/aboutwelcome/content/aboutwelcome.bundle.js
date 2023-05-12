@@ -41,7 +41,9 @@ const AboutWelcomeUtils = {
   },
 
   sendImpressionTelemetry(messageId, context) {
-    window.AWSendEventTelemetry({
+    var _window$AWSendEventTe, _window;
+
+    (_window$AWSendEventTe = (_window = window).AWSendEventTelemetry) === null || _window$AWSendEventTe === void 0 ? void 0 : _window$AWSendEventTe.call(_window, {
       event: "IMPRESSION",
       event_context: { ...context,
         page
@@ -51,6 +53,8 @@ const AboutWelcomeUtils = {
   },
 
   sendActionTelemetry(messageId, elementId, eventName = "CLICK_BUTTON") {
+    var _window$AWSendEventTe2, _window2;
+
     const ping = {
       event: eventName,
       event_context: {
@@ -59,7 +63,7 @@ const AboutWelcomeUtils = {
       },
       message_id: messageId
     };
-    window.AWSendEventTelemetry(ping);
+    (_window$AWSendEventTe2 = (_window2 = window).AWSendEventTelemetry) === null || _window$AWSendEventTe2 === void 0 ? void 0 : _window$AWSendEventTe2.call(_window2, ping);
   },
 
   async fetchFlowParams(metricsFlowUri) {
@@ -191,10 +195,17 @@ const MultiStageAboutWelcome = props => {
   } = props;
   const [index, setScreenIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    // Send impression ping when respective screen first renders
+    const screenInitials = screens.map(({
+      id
+    }) => {
+      var _id$split$;
+
+      return id === null || id === void 0 ? void 0 : (_id$split$ = id.split("_")[1]) === null || _id$split$ === void 0 ? void 0 : _id$split$[0];
+    }).join(""); // Send impression ping when respective screen first renders
+
     screens.forEach((screen, order) => {
       if (index === order) {
-        _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendImpressionTelemetry(`${props.message_id}_${order}_${screen.id}`);
+        _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendImpressionTelemetry(`${props.message_id}_${order}_${screen.id}_${screenInitials}`);
       }
     }); // Remember that a new screen has loaded for browser navigation
 
@@ -283,8 +294,10 @@ const MultiStageAboutWelcome = props => {
   const [topSites, setTopSites] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
     (async () => {
-      let DEFAULT_SITES = await window.AWGetDefaultSites();
-      const importable = JSON.parse(await window.AWGetImportableSites());
+      var _window$AWGetDefaultS, _window, _window$AWGetImportab, _window2;
+
+      let DEFAULT_SITES = await ((_window$AWGetDefaultS = (_window = window).AWGetDefaultSites) === null || _window$AWGetDefaultS === void 0 ? void 0 : _window$AWGetDefaultS.call(_window));
+      const importable = JSON.parse((await ((_window$AWGetImportab = (_window2 = window).AWGetImportableSites) === null || _window$AWGetImportab === void 0 ? void 0 : _window$AWGetImportab.call(_window2))) || "[]");
       const showImportable = useImportable && importable.length >= 5;
 
       if (!importTelemetrySent.current) {
@@ -342,6 +355,7 @@ const MultiStageAboutWelcome = props => {
       activeTheme: activeTheme,
       initialTheme: initialTheme,
       setActiveTheme: setActiveTheme,
+      setInitialTheme: setInitialTheme,
       autoAdvance: screen.auto_advance,
       negotiatedLanguage: negotiatedLanguage,
       langPackInstallPhase: langPackInstallPhase
@@ -349,7 +363,10 @@ const MultiStageAboutWelcome = props => {
   })));
 };
 const SecondaryCTA = props => {
+  var _props$content$second;
+
   let targetElement = props.position ? `secondary_button_${props.position}` : `secondary_button`;
+  const buttonStyling = (_props$content$second = props.content.secondary_button) !== null && _props$content$second !== void 0 && _props$content$second.has_arrow_icon ? `secondary text-link arrow-icon` : `secondary text-link`;
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: props.position ? `secondary-cta ${props.position}` : "secondary-cta"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -357,7 +374,7 @@ const SecondaryCTA = props => {
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: props.content[targetElement].label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    className: "secondary text-link",
+    className: buttonStyling,
     value: targetElement,
     onClick: props.handleAction
   })));
@@ -456,6 +473,12 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       let themeToUse = action.theme === "<event>" ? event.currentTarget.value : this.props.initialTheme || action.theme;
       this.props.setActiveTheme(themeToUse);
       window.AWSelectTheme(themeToUse);
+    } // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme
+    // so that it can be reverted to in the event that the user navigates away from the screen
+
+
+    if (action.persistActiveTheme) {
+      this.props.setInitialTheme(this.props.activeTheme);
     }
 
     if (action.navigate) {
@@ -588,6 +611,7 @@ const Localized = ({
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "MultiStageProtonScreen": () => (/* binding */ MultiStageProtonScreen),
+/* harmony export */   "ProtonScreenActionButtons": () => (/* binding */ ProtonScreenActionButtons),
 /* harmony export */   "ProtonScreen": () => (/* binding */ ProtonScreen)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
@@ -653,6 +677,50 @@ const MultiStageProtonScreen = props => {
     langPackInstallPhase: props.langPackInstallPhase
   });
 };
+const ProtonScreenActionButtons = props => {
+  var _content$checkbox, _content$primary_butt, _content$primary_butt2;
+
+  const {
+    content
+  } = props;
+  const defaultValue = (_content$checkbox = content.checkbox) === null || _content$checkbox === void 0 ? void 0 : _content$checkbox.defaultValue;
+  const [isChecked, setIsChecked] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultValue || false);
+
+  if (!content.primary_button && !content.secondary_button) {
+    return null;
+  }
+
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: `action-buttons ${content.dual_action_buttons ? "dual-action-buttons" : ""}`
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: (_content$primary_butt = content.primary_button) === null || _content$primary_butt === void 0 ? void 0 : _content$primary_butt.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+    className: "primary" // Whether or not the checkbox is checked determines which action
+    // should be handled. By setting value here, we indicate to
+    // this.handleAction() where in the content tree it should take
+    // the action to execute from.
+    ,
+    value: isChecked ? "checkbox" : "primary_button",
+    disabled: ((_content$primary_butt2 = content.primary_button) === null || _content$primary_butt2 === void 0 ? void 0 : _content$primary_butt2.disabled) === true,
+    onClick: props.handleAction
+  })), content.checkbox ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "checkbox-container"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
+    type: "checkbox",
+    id: "action-checkbox",
+    checked: isChecked,
+    onChange: () => {
+      setIsChecked(!isChecked);
+    }
+  }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: content.checkbox.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
+    htmlFor: "action-checkbox"
+  }))) : null, content.secondary_button ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.SecondaryCTA, {
+    content: content,
+    handleAction: props.handleAction
+  }) : null);
+};
 class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureComponent) {
   componentDidMount() {
     this.mainContentHeader.focus();
@@ -665,16 +733,24 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
 
   renderLogo({
     imageURL = "chrome://branding/content/about-logo.svg",
-    alt = "",
     darkModeImageURL,
+    reducedMotionImageURL,
+    darkModeReducedMotionImageURL,
+    alt = "",
     height
   }) {
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("picture", {
       className: "logo-container"
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+    }, darkModeReducedMotionImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+      srcSet: darkModeReducedMotionImageURL,
+      media: "(prefers-color-scheme: dark) and (prefers-reduced-motion: reduce)"
+    }) : null, darkModeImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
       srcSet: darkModeImageURL,
       media: "(prefers-color-scheme: dark)"
-    }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
+    }) : null, reducedMotionImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
+      srcSet: reducedMotionImageURL,
+      media: "(prefers-reduced-motion: reduce)"
+    }) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
       className: "brand-logo",
       style: {
         height
@@ -761,7 +837,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
   }
 
   render() {
-    var _this$props$appAndSys, _content$primary_butt, _content$primary_butt2;
+    var _this$props$appAndSys;
 
     const {
       autoAdvance,
@@ -780,6 +856,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     // by checking if screen order is even or odd.
 
     const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles) : "";
+    const currentStep = this.props.order + 1;
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
       className: `screen ${this.props.id || ""} ${screenClassName} ${textColorClass}`,
       role: "dialog",
@@ -825,28 +902,19 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     })), content.cta_paragraph ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_CTAParagraph__WEBPACK_IMPORTED_MODULE_7__.CTAParagraph, {
       content: content.cta_paragraph,
       handleAction: this.props.handleAction
-    }) : null), this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: "action-buttons"
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-      text: (_content$primary_butt = content.primary_button) === null || _content$primary_butt === void 0 ? void 0 : _content$primary_butt.label
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-      className: "primary",
-      value: "primary_button",
-      disabled: ((_content$primary_butt2 = content.primary_button) === null || _content$primary_butt2 === void 0 ? void 0 : _content$primary_butt2.disabled) === true,
-      onClick: this.props.handleAction
-    })), content.secondary_button ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.SecondaryCTA, {
+    }) : null), this.renderContentTiles(), this.renderLanguageSwitcher(), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
       content: content,
       handleAction: this.props.handleAction
-    }) : null)), hideStepsIndicator ? null : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    })), hideStepsIndicator ? null : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `steps ${content.progress_bar ? "progress-bar" : ""}`,
       "data-l10n-id": "onboarding-welcome-steps-indicator2",
       "data-l10n-args": JSON.stringify({
-        current: this.props.order,
+        current: currentStep,
         total
       }),
       "data-l10n-attrs": "aria-valuetext",
       role: "meter",
-      "aria-valuenow": this.props.order,
+      "aria-valuenow": currentStep,
       "aria-valuemin": 1,
       "aria-valuemax": total
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_5__.StepsIndicator, {
@@ -927,19 +995,66 @@ function computeVariationIndex(themeName, systemVariations, variations, defaultV
 function Colorways(props) {
   let {
     colorways,
+    darkVariation,
     defaultVariationIndex,
     systemVariations,
     variations
-  } = props.content.tiles; // Active theme id from JSON e.g. "expressionist"
+  } = props.content.tiles;
+  let hasReverted = false; // Active theme id from JSON e.g. "expressionist"
 
   const activeId = computeColorWay(props.activeTheme, systemVariations);
   const [colorwayId, setState] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(activeId);
-  const [variationIndex, setVariationIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultVariationIndex); // Update state any time activeTheme changes.
+  const [variationIndex, setVariationIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultVariationIndex);
+
+  function revertToDefaultTheme() {
+    if (hasReverted) return; // Spoofing an event with current target value of "navigate_away"
+    // helps the handleAction method to read the colorways theme as "revert"
+    // which causes the initial theme to be activated.
+    // The "navigate_away" action is set in content in the colorways screen JSON config.
+    // Any value in the JSON for theme will work, provided it is not `<event>`.
+
+    const event = {
+      currentTarget: {
+        value: "navigate_away"
+      }
+    };
+    props.handleAction(event);
+    hasReverted = true;
+  } // Revert to default theme if the user navigates away from the page or spotlight modal
+  // before clicking on the primary button to officially set theme.
+
+
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    addEventListener("beforeunload", revertToDefaultTheme);
+    addEventListener("pagehide", revertToDefaultTheme);
+    return () => {
+      removeEventListener("beforeunload", revertToDefaultTheme);
+      removeEventListener("pagehide", revertToDefaultTheme);
+    };
+  }); // Update state any time activeTheme changes.
 
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
     setState(computeColorWay(props.activeTheme, systemVariations));
     setVariationIndex(computeVariationIndex(props.activeTheme, systemVariations, variations, defaultVariationIndex)); // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.activeTheme]);
+  }, [props.activeTheme]); //select a random colorway
+
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    //We don't want the default theme to be selected
+    const randomIndex = Math.floor(Math.random() * (colorways.length - 1)) + 1;
+    const randomColorwayId = colorways[randomIndex].id; // Change the variation to be the dark variation if configured and dark.
+    // Additional colorway changes will remain dark while system is unchanged.
+
+    if (darkVariation !== undefined && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      variations[variationIndex] = variations[darkVariation];
+    }
+
+    const value = `${randomColorwayId}-${variations[variationIndex]}`;
+    props.handleAction({
+      currentTarget: {
+        value
+      }
+    }); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: "tiles-theme-container"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("fieldset", {
@@ -1025,8 +1140,6 @@ const MarketplaceButtons = props => {
   })) : null);
 };
 const MobileDownloads = props => {
-  var _QRCode$image_overrid;
-
   const {
     QR_code: QRCode
   } = props.data;
@@ -1037,7 +1150,7 @@ const MobileDownloads = props => {
     "data-l10n-id": QRCode.alt_text.string_id ? QRCode.alt_text.string_id : null,
     className: "qr-code-image",
     alt: typeof QRCode.alt_text === "string" ? QRCode.alt_text : "",
-    src: ((_QRCode$image_overrid = QRCode.image_overrides) === null || _QRCode$image_overrid === void 0 ? void 0 : _QRCode$image_overrid[document.documentElement.lang]) ?? QRCode.image_url
+    src: QRCode.image_url
   }) : null, showEmailLink ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: props.data.email.link_text
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
@@ -1286,7 +1399,7 @@ function LanguageSwitcher(props) {
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     value: "decline_waiting",
     type: "button",
-    className: "secondary text-link",
+    className: "secondary text-link arrow-icon",
     onClick: handleAction
   })))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
@@ -1334,7 +1447,7 @@ function LanguageSwitcher(props) {
   }) : // This is the localized name from the Intl.DisplayNames API.
   negotiatedLanguage === null || negotiatedLanguage === void 0 ? void 0 : negotiatedLanguage.langPackDisplayName)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     type: "button",
-    className: "secondary",
+    className: "primary",
     value: "decline",
     onClick: event => {
       window.AWSetRequestedLocales(negotiatedLanguage.originalAppLocales);
@@ -1698,8 +1811,10 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
   }
 
   async fetchFxAFlowUri() {
+    var _window$AWGetFxAMetri, _window;
+
     this.setState({
-      metricsFlowUri: await window.AWGetFxAMetricsFlowURI()
+      metricsFlowUri: await ((_window$AWGetFxAMetri = (_window = window).AWGetFxAMetricsFlowURI) === null || _window$AWGetFxAMetri === void 0 ? void 0 : _window$AWGetFxAMetri.call(_window))
     });
   }
 

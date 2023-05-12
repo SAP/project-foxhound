@@ -22,6 +22,7 @@
 #include "prthread.h"
 
 #include "gtest/gtest.h"
+#include "mozilla/gtest/MozAssertions.h"
 
 #include <thread>
 
@@ -1908,7 +1909,7 @@ TEST(GeckoProfiler, DifferentThreads)
 
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread("GeckoProfGTest", getter_AddRefs(thread));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   // Control the profiler on a background thread and verify flags on the
   // main thread.
@@ -2745,10 +2746,12 @@ TEST(GeckoProfiler, Markers)
       "MediaSample", geckoprofiler::category::OTHER, {},
       geckoprofiler::markers::MediaSampleMarker{}, 123, 456));
 
-  SpliceableChunkedJSONWriter w;
+  SpliceableChunkedJSONWriter w{FailureLatchInfallibleSource::Singleton()};
   w.Start();
   EXPECT_TRUE(::profiler_stream_json_for_this_process(w));
   w.End();
+
+  EXPECT_FALSE(w.Failed());
 
   UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
   ASSERT_TRUE(!!profile.get());
@@ -3520,11 +3523,12 @@ TEST(GeckoProfiler, Markers)
                  filters, MOZ_ARRAY_LENGTH(filters), 0);
 
   // This last marker shouldn't get streamed.
-  SpliceableChunkedJSONWriter w2;
+  SpliceableChunkedJSONWriter w2{FailureLatchInfallibleSource::Singleton()};
   w2.Start();
   EXPECT_TRUE(::profiler_stream_json_for_this_process(w2));
   w2.End();
-  UniquePtr<char[]> profile2 = w.ChunkedWriteFunc().CopyData();
+  EXPECT_FALSE(w2.Failed());
+  UniquePtr<char[]> profile2 = w2.ChunkedWriteFunc().CopyData();
   ASSERT_TRUE(!!profile2.get());
   EXPECT_TRUE(
       std::string_view(profile2.get()).find("marker after profiler_stop") ==
@@ -3743,8 +3747,28 @@ TEST(GeckoProfiler, StreamJSONForThisProcess)
   uint32_t features = ProfilerFeature::StackWalk;
   const char* filters[] = {"GeckoMain"};
 
-  SpliceableChunkedJSONWriter w;
+  SpliceableChunkedJSONWriter w{FailureLatchInfallibleSource::Singleton()};
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Fallible());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(&w.ChunkedWriteFunc().SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(
+      &std::as_const(w.ChunkedWriteFunc()).SourceFailureLatch() ==
+      &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(!w.Fallible());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
+  MOZ_RELEASE_ASSERT(&w.SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(&std::as_const(w).SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+
   ASSERT_TRUE(!::profiler_stream_json_for_this_process(w));
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
                  filters, MOZ_ARRAY_LENGTH(filters), 0);
@@ -3752,6 +3776,11 @@ TEST(GeckoProfiler, StreamJSONForThisProcess)
   w.Start();
   ASSERT_TRUE(::profiler_stream_json_for_this_process(w));
   w.End();
+
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
 
@@ -3775,13 +3804,33 @@ TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
   // Same as the previous test, but calling some things on background threads.
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread("GeckoProfGTest", getter_AddRefs(thread));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   uint32_t features = ProfilerFeature::StackWalk;
   const char* filters[] = {"GeckoMain"};
 
-  SpliceableChunkedJSONWriter w;
+  SpliceableChunkedJSONWriter w{FailureLatchInfallibleSource::Singleton()};
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Fallible());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(&w.ChunkedWriteFunc().SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(
+      &std::as_const(w.ChunkedWriteFunc()).SourceFailureLatch() ==
+      &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(!w.Fallible());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
+  MOZ_RELEASE_ASSERT(&w.SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+  MOZ_RELEASE_ASSERT(&std::as_const(w).SourceFailureLatch() ==
+                     &mozilla::FailureLatchInfallibleSource::Singleton());
+
   ASSERT_TRUE(!::profiler_stream_json_for_this_process(w));
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   // Start the profiler on the main thread.
   profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
@@ -3801,6 +3850,11 @@ TEST(GeckoProfiler, StreamJSONForThisProcessThreaded)
             w.End();
           }),
       NS_DISPATCH_SYNC);
+
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().Failed());
+  MOZ_RELEASE_ASSERT(!w.ChunkedWriteFunc().GetFailure());
+  MOZ_RELEASE_ASSERT(!w.Failed());
+  MOZ_RELEASE_ASSERT(!w.GetFailure());
 
   UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
 
@@ -3917,7 +3971,7 @@ TEST(GeckoProfiler, SuspendAndSample)
 {
   nsCOMPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread("GeckoProfGTest", getter_AddRefs(thread));
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_NS_SUCCEEDED(rv);
 
   ProfilerThreadId tid = profiler_current_thread_id();
 
@@ -4827,6 +4881,72 @@ TEST(GeckoProfiler, AllThreads)
       }
     });
   }
+}
+
+TEST(GeckoProfiler, FailureHandling)
+{
+  profiler_init_main_thread_id();
+  ASSERT_TRUE(profiler_is_main_thread())
+  << "This test assumes it runs on the main thread";
+
+  uint32_t features = ProfilerFeature::StackWalk;
+  const char* filters[] = {"GeckoMain"};
+  profiler_start(PROFILER_DEFAULT_ENTRIES, PROFILER_DEFAULT_INTERVAL, features,
+                 filters, MOZ_ARRAY_LENGTH(filters), 0);
+
+  ASSERT_EQ(WaitForSamplingState(), SamplingState::SamplingCompleted);
+
+  // User-defined marker type that generates a failure when streaming JSON.
+  struct GtestFailingMarker {
+    static constexpr Span<const char> MarkerTypeName() {
+      return MakeStringSpan("markers-gtest-failing");
+    }
+    static void StreamJSONMarkerData(
+        mozilla::baseprofiler::SpliceableJSONWriter& aWriter) {
+      aWriter.SetFailure("boom!");
+    }
+    static mozilla::MarkerSchema MarkerTypeDisplay() {
+      return mozilla::MarkerSchema::SpecialFrontendLocation{};
+    }
+  };
+  EXPECT_TRUE(profiler_add_marker("Gtest failing marker",
+                                  geckoprofiler::category::OTHER, {},
+                                  GtestFailingMarker{}));
+
+  ASSERT_EQ(WaitForSamplingState(), SamplingState::SamplingCompleted);
+  profiler_pause();
+
+  FailureLatchSource failureLatch;
+  SpliceableChunkedJSONWriter w{failureLatch};
+  EXPECT_FALSE(w.Failed());
+  ASSERT_FALSE(w.GetFailure());
+
+  w.Start();
+  EXPECT_FALSE(w.Failed());
+  ASSERT_FALSE(w.GetFailure());
+
+  // The marker will cause a failure during this function call.
+  EXPECT_FALSE(::profiler_stream_json_for_this_process(w));
+  EXPECT_TRUE(w.Failed());
+  ASSERT_TRUE(w.GetFailure());
+  EXPECT_EQ(strcmp(w.GetFailure(), "boom!"), 0);
+
+  // Already failed, check that we don't crash or reset the failure.
+  EXPECT_FALSE(::profiler_stream_json_for_this_process(w));
+  EXPECT_TRUE(w.Failed());
+  ASSERT_TRUE(w.GetFailure());
+  EXPECT_EQ(strcmp(w.GetFailure(), "boom!"), 0);
+
+  w.End();
+
+  profiler_stop();
+
+  EXPECT_TRUE(w.Failed());
+  ASSERT_TRUE(w.GetFailure());
+  EXPECT_EQ(strcmp(w.GetFailure(), "boom!"), 0);
+
+  UniquePtr<char[]> profile = w.ChunkedWriteFunc().CopyData();
+  ASSERT_EQ(profile.get(), nullptr);
 }
 
 #endif  // MOZ_GECKO_PROFILER

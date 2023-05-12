@@ -7,7 +7,6 @@
 #ifndef frontend_ParserAtom_h
 #define frontend_ParserAtom_h
 
-#include "mozilla/HashFunctions.h"    // mozilla::HashString
 #include "mozilla/MemoryReporting.h"  // mozilla::MallocSizeOf
 #include "mozilla/Range.h"            // mozilla::Range
 #include "mozilla/Span.h"             // mozilla::Span
@@ -275,6 +274,7 @@ class TaggedParserAtomIndex {
     MOZ_ASSERT_IF(result, (data_ & TagMask) == NullTag);
     return result;
   }
+  HashNumber staticOrWellKnownHash() const;
 
   ParserAtomIndex toParserAtomIndex() const {
     MOZ_ASSERT(isParserAtomIndex());
@@ -760,6 +760,7 @@ class ParserAtomsTable {
   bool isIndex(TaggedParserAtomIndex index, uint32_t* indexp) const;
   bool isInstantiatedAsJSAtom(TaggedParserAtomIndex index) const;
   uint32_t length(TaggedParserAtomIndex index) const;
+  HashNumber hash(TaggedParserAtomIndex index) const;
 
   // Methods for atom.
   void markUsedByStencil(TaggedParserAtomIndex index,
@@ -821,7 +822,7 @@ class ParserAtomSpanBuilder {
  public:
   explicit ParserAtomSpanBuilder(ParserAtomSpan& entries) : entries_(entries) {}
 
-  bool allocate(JSContext* cx, LifoAlloc& alloc, size_t count);
+  bool allocate(ErrorContext* ec, LifoAlloc& alloc, size_t count);
 
   void set(ParserAtomIndex index, const ParserAtom* atom) {
     entries_[index] = const_cast<ParserAtom*>(atom);

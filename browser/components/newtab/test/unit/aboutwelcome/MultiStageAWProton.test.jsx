@@ -103,6 +103,25 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.equal(wrapper.find(".welcome-text h1").text(), "test title");
       assert.equal(wrapper.find("main").prop("pos"), "center");
     });
+
+    it("should render action buttons container with dual-action-buttons class", () => {
+      const SCREEN_PROPS = {
+        content: {
+          position: "split",
+          title: "test title",
+          dual_action_buttons: true,
+          primary_button: {
+            label: "test primary button",
+          },
+          secondary_button: {
+            label: "test secondary button",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.ok(wrapper.find(".dual-action-buttons").text());
+    });
   });
 
   describe("AboutWelcomeDefaults for proton", () => {
@@ -221,6 +240,50 @@ describe("MultiStageAboutWelcomeProton module", () => {
     });
   });
 
+  describe("AboutWelcomeDefaults prepareMobileDownload", () => {
+    const TEST_CONTENT = {
+      templateMR: true,
+      screens: [
+        {
+          id: "AW_MOBILE_DOWNLOAD",
+          content: {
+            title: "test",
+            hero_image: {
+              url: "https://example.com/test.svg",
+            },
+            cta_paragraph: {
+              text: {},
+              action: {},
+            },
+          },
+        },
+      ],
+    };
+    it("should not set url for default qrcode svg", async () => {
+      sandbox.stub(AppConstants, "isChinaRepack").returns(false);
+      const data = await AboutWelcomeDefaults.prepareContentForReact(
+        TEST_CONTENT
+      );
+      assert.propertyVal(
+        data.screens[0].content.hero_image,
+        "url",
+        "https://example.com/test.svg"
+      );
+    });
+    it("should set url for cn qrcode svg", async () => {
+      sandbox.stub(AppConstants, "isChinaRepack").returns(true);
+      const data = await AboutWelcomeDefaults.prepareContentForReact(
+        TEST_CONTENT
+      );
+      assert.propertyVal(data, "templateMR", true);
+      assert.propertyVal(
+        data.screens[0].content.hero_image,
+        "url",
+        "https://example.com/test-cn.svg"
+      );
+    });
+  });
+
   describe("AboutWelcomeDefaults prepareContentForReact", () => {
     it("should not set action without screens", async () => {
       const data = await AboutWelcomeDefaults.prepareContentForReact({
@@ -334,6 +397,18 @@ describe("MultiStageAboutWelcomeProton module", () => {
         { id: "hello" },
         { id: "world" },
       ]);
+    });
+
+    it("should not render action buttons if a primary and secondary button does not exist", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          subtitle: "test subtitle",
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".action-buttons").exists(), false);
     });
   });
 });

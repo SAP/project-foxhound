@@ -40,7 +40,7 @@ add_task(async function() {
   }
 
   {
-    // test for bug 445369
+    info("test for bug 445369");
     let tabs = gBrowser.tabs.length;
     await pressCtrlTab();
     await synthesizeCtrlW();
@@ -49,7 +49,7 @@ add_task(async function() {
   }
 
   {
-    // test for bug 667314
+    info("test for bug 667314");
     let tabs = gBrowser.tabs.length;
     await pressCtrlTab();
     await pressCtrlTab(true);
@@ -67,7 +67,7 @@ add_task(async function() {
   await ctrlTabTest([2, 1, 0], 7, 1);
 
   {
-    // test for bug 1292049
+    info("test for bug 1292049");
     let tabToClose = await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
       "about:buildconfig"
@@ -91,7 +91,7 @@ add_task(async function() {
   }
 
   {
-    // test for bug 445369
+    info("test for bug 445369");
     checkTabs(4);
     selectTabs([1, 2, 0]);
 
@@ -123,7 +123,7 @@ add_task(async function() {
   checkTabs(1);
 
   {
-    // test for bug 445768
+    info("test for bug 445768");
     let focusedWindow = document.commandDispatcher.focusedWindow;
     let eventConsumed = true;
     let detectKeyEvent = function(event) {
@@ -145,19 +145,22 @@ add_task(async function() {
 
   // eslint-disable-next-line no-lone-blocks
   {
-    // Bug 1731050: test hidden tabs
-    info("Starting hidden tabs test");
+    info("Bug 1731050: test hidden tabs");
     checkTabs(1);
     await BrowserTestUtils.addTab(gBrowser);
     await BrowserTestUtils.addTab(gBrowser);
     await BrowserTestUtils.addTab(gBrowser);
     await BrowserTestUtils.addTab(gBrowser);
+    FirefoxViewHandler.tab = await BrowserTestUtils.addTab(gBrowser);
 
+    gBrowser.hideTab(FirefoxViewHandler.tab);
+    FirefoxViewHandler.openTab();
     selectTabs([1, 2, 3, 4, 3]);
     gBrowser.hideTab(gBrowser.tabs[4]);
     selectTabs([2]);
     gBrowser.hideTab(gBrowser.tabs[3]);
 
+    is(gBrowser.tabs[5].hidden, true, "Tab at index 5 is hidden");
     is(gBrowser.tabs[4].hidden, true, "Tab at index 4 is hidden");
     is(gBrowser.tabs[3].hidden, true, "Tab at index 3 is hidden");
     is(gBrowser.tabs[2].hidden, false, "Tab at index 2 is still shown");
@@ -168,35 +171,56 @@ add_task(async function() {
     await ctrlTabTest([], 2, 0);
     gBrowser.showTab(gBrowser.tabs[4]);
     await ctrlTabTest([2], 3, 4);
-    await ctrlTabTest([], 5, 4);
+    await ctrlTabTest([], 4, 4);
     gBrowser.showTab(gBrowser.tabs[3]);
     await ctrlTabTest([], 4, 3);
     await ctrlTabTest([], 6, 4);
+    FirefoxViewHandler.openTab();
+    // Fx View tab should be visible in the panel while selected.
+    await ctrlTabTest([], 5, 1);
+    // Fx View tab should no longer be visible.
+    await ctrlTabTest([], 1, 4);
 
-    await BrowserTestUtils.removeTab(gBrowser.tabs[4]);
-    await BrowserTestUtils.removeTab(gBrowser.tabs[3]);
-    await BrowserTestUtils.removeTab(gBrowser.tabs[2]);
-    await BrowserTestUtils.removeTab(gBrowser.tabs[1]);
+    for (let i = 5; i > 0; i--) {
+      await BrowserTestUtils.removeTab(gBrowser.tabs[i]);
+    }
+    FirefoxViewHandler.tab = null;
     info("End hidden tabs test");
   }
 
   /* private utility functions */
 
-  function pressCtrlTab(aShiftKey) {
+  /**
+   * @return the number of times (Shift+)Ctrl+Tab was pressed
+   */
+  async function pressCtrlTab(aShiftKey = false) {
     let promise;
     if (!isOpen() && canOpen()) {
+      ok(
+        !aShiftKey,
+        "Shouldn't attempt to open the panel by pressing Shift+Ctrl+Tab"
+      );
+      info("Pressing Ctrl+Tab to open the panel");
       promise = BrowserTestUtils.waitForEvent(ctrlTab.panel, "popupshown");
     } else {
+      info(
+        `Pressing ${aShiftKey ? "Shift+" : ""}Ctrl+Tab while the panel is open`
+      );
       promise = BrowserTestUtils.waitForEvent(document, "keyup");
     }
     EventUtils.synthesizeKey("VK_TAB", {
       ctrlKey: true,
       shiftKey: !!aShiftKey,
     });
-    return promise;
+    await promise;
+    if (document.activeElement == ctrlTab.showAllButton) {
+      info("Repeating keypress to skip over the 'List all tabs' button");
+      return 1 + (await pressCtrlTab(aShiftKey));
+    }
+    return 1;
   }
 
-  function releaseCtrl() {
+  async function releaseCtrl() {
     let promise;
     if (isOpen()) {
       promise = BrowserTestUtils.waitForEvent(ctrlTab.panel, "popuphidden");
@@ -204,16 +228,16 @@ add_task(async function() {
       promise = BrowserTestUtils.waitForEvent(document, "keyup");
     }
     EventUtils.synthesizeKey("VK_CONTROL", { type: "keyup" });
-    return promise;
+    await promise;
   }
 
-  function synthesizeCtrlW() {
+  async function synthesizeCtrlW() {
     let promise = BrowserTestUtils.waitForEvent(
       gBrowser.tabContainer,
       "TabClose"
     );
     EventUtils.synthesizeKey("w", { ctrlKey: true });
-    return promise;
+    await promise;
   }
 
   function isOpen() {
@@ -241,7 +265,7 @@ add_task(async function() {
     selectTabs(tabsToSelect);
 
     var indexStart = gBrowser.tabContainer.selectedIndex;
-    var tabCount = gBrowser.tabs.length;
+    var tabCount = gBrowser.visibleTabs.length;
     var normalized = tabTimes % tabCount;
     var where =
       normalized == 1
@@ -252,15 +276,18 @@ add_task(async function() {
     await Promise.all(
       gBrowser.tabs.map(tab =>
         SpecialPowers.spawn(tab.linkedBrowser, [], () => {
-          content.window.addEventListener("keyup", () => {
-            content.window._ctrlTabTestKeyupHappend = true;
-          });
+          if (!content.windowGlobalChild?.isInProcess) {
+            content.window.addEventListener("keyup", () => {
+              content.window._ctrlTabTestKeyupHappend = true;
+            });
+          }
         })
       )
     );
 
+    let numTimesPressed = 0;
     for (let i = 0; i < tabTimes; i++) {
-      await pressCtrlTab();
+      numTimesPressed += await pressCtrlTab();
 
       if (tabCount > 2) {
         is(
@@ -274,7 +301,7 @@ add_task(async function() {
     if (tabCount > 2) {
       ok(
         isOpen(),
-        "With " + tabCount + " tabs open, Ctrl+Tab opens the preview panel"
+        "With " + tabCount + " visible tabs, Ctrl+Tab opens the preview panel"
       );
 
       await releaseCtrl();
@@ -285,7 +312,7 @@ add_task(async function() {
         !isOpen(),
         "With " +
           tabCount +
-          " tabs open, Ctrl+Tab doesn't open the preview panel"
+          " visible tabs, Ctrl+Tab doesn't open the preview panel"
       );
     }
 
@@ -294,10 +321,10 @@ add_task(async function() {
       expectedIndex,
       "With " +
         tabCount +
-        " tabs open and tab " +
+        " visible tabs and tab " +
         indexStart +
         " selected, Ctrl+Tab*" +
-        tabTimes +
+        numTimesPressed +
         " goes " +
         where
     );

@@ -7,12 +7,20 @@
 #ifndef DOM_FS_FILESYSTEMHANDLE_H_
 #define DOM_FS_FILESYSTEMHANDLE_H_
 
-#include "mozilla/dom/FileSystemActorHolder.h"
-#include "mozilla/dom/POriginPrivateFileSystem.h"
 #include "mozilla/Logging.h"
+#include "mozilla/dom/PFileSystemManager.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
+
+namespace mozilla {
+extern LazyLogModule gOPFSLog;
+}
+
+#define LOG(args) MOZ_LOG(mozilla::gOPFSLog, mozilla::LogLevel::Verbose, args)
+
+#define LOG_DEBUG(args) \
+  MOZ_LOG(mozilla::gOPFSLog, mozilla::LogLevel::Debug, args)
 
 class nsIGlobalObject;
 
@@ -29,9 +37,11 @@ class ErrorResult;
 
 namespace dom {
 
-class DOMString;
+class FileSystemDirectoryHandle;
+class FileSystemFileHandle;
 enum class FileSystemHandleKind : uint8_t;
-class OriginPrivateFileSystemChild;
+class FileSystemManager;
+class FileSystemManagerChild;
 class Promise;
 
 namespace fs {
@@ -41,12 +51,14 @@ class FileSystemRequestHandler;
 class FileSystemHandle : public nsISupports, public nsWrapperCache {
  public:
   FileSystemHandle(nsIGlobalObject* aGlobal,
-                   RefPtr<FileSystemActorHolder>& aActor,
+                   RefPtr<FileSystemManager>& aManager,
                    const fs::FileSystemEntryMetadata& aMetadata,
                    fs::FileSystemRequestHandler* aRequestHandler);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FileSystemHandle)
+
+  const fs::EntryId& GetId() const { return mMetadata.entryId(); }
 
   // WebIDL Boilerplate
   nsIGlobalObject* GetParentObject() const;
@@ -62,16 +74,46 @@ class FileSystemHandle : public nsISupports, public nsWrapperCache {
   already_AddRefed<Promise> IsSameEntry(FileSystemHandle& aOther,
                                         ErrorResult& aError) const;
 
-  OriginPrivateFileSystemChild* Actor() const;
+  // [Serializable] implementation
+  static already_AddRefed<FileSystemHandle> ReadStructuredClone(
+      JSContext* aCx, nsIGlobalObject* aGlobal,
+      JSStructuredCloneReader* aReader);
+
+  virtual bool WriteStructuredClone(JSContext* aCx,
+                                    JSStructuredCloneWriter* aWriter) const;
+
+  already_AddRefed<Promise> Move(const nsAString& aName, ErrorResult& aError);
+
+  already_AddRefed<Promise> Move(FileSystemDirectoryHandle& aParent,
+                                 ErrorResult& aError);
+
+  already_AddRefed<Promise> Move(FileSystemDirectoryHandle& aParent,
+                                 const nsAString& aName, ErrorResult& aError);
+
+  already_AddRefed<Promise> Move(const fs::EntryId& aParentId,
+                                 const nsAString& aName, ErrorResult& aError);
+
+  void UpdateMetadata(const fs::FileSystemEntryMetadata& aMetadata) {
+    mMetadata = aMetadata;
+  }
 
  protected:
   virtual ~FileSystemHandle() = default;
 
+  static already_AddRefed<FileSystemFileHandle> ConstructFileHandle(
+      JSContext* aCx, nsIGlobalObject* aGlobal,
+      JSStructuredCloneReader* aReader);
+
+  static already_AddRefed<FileSystemDirectoryHandle> ConstructDirectoryHandle(
+      JSContext* aCx, nsIGlobalObject* aGlobal,
+      JSStructuredCloneReader* aReader);
+
   nsCOMPtr<nsIGlobalObject> mGlobal;
 
-  RefPtr<FileSystemActorHolder> mActor;
+  RefPtr<FileSystemManager> mManager;
 
-  const fs::FileSystemEntryMetadata mMetadata;
+  // move() can change names/directories
+  fs::FileSystemEntryMetadata mMetadata;
 
   const UniquePtr<fs::FileSystemRequestHandler> mRequestHandler;
 };

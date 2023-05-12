@@ -20,7 +20,7 @@ rev = "bb2039f077a29dba0879372a67e764e6ace8e33f"
 [source."https://github.com/mozilla/neqo"]
 git = "https://github.com/mozilla/neqo"
 replace-with = "vendored-sources"
-tag = "v0.5.7"
+tag = "v0.6.1"
 
 [source."https://github.com/mozilla/mp4parse-rust"]
 git = "https://github.com/mozilla/mp4parse-rust"
@@ -35,12 +35,12 @@ rev = "e1b4dcb767f9e69afe95a860374aaa9635d81e3d"
 [source."https://github.com/mozilla/cubeb-pulse-rs"]
 git = "https://github.com/mozilla/cubeb-pulse-rs"
 replace-with = "vendored-sources"
-rev = "1f1fe1e08e01a9a534ec7f079702a583a0899ce7"
+rev = "f32b3ef708c0bfb2c414c08971d638527353d376"
 
 [source."https://github.com/mozilla/cubeb-coreaudio-rs"]
 git = "https://github.com/mozilla/cubeb-coreaudio-rs"
 replace-with = "vendored-sources"
-rev = "44eca95823bb57e964cf7b6d9791ed2ccb4b2108"
+rev = "ab933e7cbd569f79b37b540412a7990a5352dd66"
 
 [source."https://github.com/mozilla/audioipc"]
 git = "https://github.com/mozilla/audioipc"
@@ -50,7 +50,7 @@ rev = "fb7a2b12ced3b43e6a268621989c6191d1ed7e39"
 [source."https://github.com/mozilla/application-services"]
 git = "https://github.com/mozilla/application-services"
 replace-with = "vendored-sources"
-rev = "2689788cecf24c385e6b7440e3aa1a89c511f14a"
+rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61"
 
 [source."https://github.com/mozilla-spidermonkey/jsparagus"]
 git = "https://github.com/mozilla-spidermonkey/jsparagus"
@@ -65,7 +65,7 @@ rev = "21c26326f5f45f415c49eac4ba5bc41a2f961321"
 [source."https://github.com/kinetiknz/audioipc-2"]
 git = "https://github.com/kinetiknz/audioipc-2"
 replace-with = "vendored-sources"
-rev = "499b95580c8b276e52bd9757d735249504202e5c"
+rev = "ea7cabf8c9dc051a52ffb6cd7d2564b29b7428eb"
 
 [source."https://github.com/jfkthame/mapped_hyph.git"]
 git = "https://github.com/jfkthame/mapped_hyph.git"

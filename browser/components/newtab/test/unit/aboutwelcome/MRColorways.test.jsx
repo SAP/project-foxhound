@@ -10,15 +10,10 @@ import { WelcomeScreen } from "content-src/aboutwelcome/components/MultiStageAbo
 
 describe("Multistage AboutWelcome module", () => {
   let sandbox;
+  let COLORWAY_SCREEN_PROPS;
   beforeEach(() => {
     sandbox = sinon.createSandbox();
-  });
-  afterEach(() => {
-    sandbox.restore();
-  });
-
-  describe("MRColorway component", () => {
-    const COLORWAY_SCREEN_PROPS = {
+    COLORWAY_SCREEN_PROPS = {
       id: "test-colorway-screen",
       totalNumberofScreens: 1,
       content: {
@@ -51,7 +46,12 @@ describe("Multistage AboutWelcome module", () => {
       messageId: "test-mr-colorway-screen",
       activeTheme: "automatic",
     };
+  });
+  afterEach(() => {
+    sandbox.restore();
+  });
 
+  describe("MRColorway component", () => {
     it("should render WelcomeScreen", () => {
       const wrapper = shallow(<WelcomeScreen {...COLORWAY_SCREEN_PROPS} />);
 
@@ -171,7 +171,9 @@ describe("Multistage AboutWelcome module", () => {
 
     it("should handle colorway clicks", () => {
       sandbox.stub(React, "useEffect").callsFake((fn, vals) => {
-        if (vals[0] === "in") {
+        if (vals === undefined) {
+          fn();
+        } else if (vals[0] === "in") {
           fn();
         }
       });
@@ -291,6 +293,55 @@ describe("Multistage AboutWelcome module", () => {
         TEST_COLORWAY_PROPS.content.tiles.defaultVariationIndex
       );
       assert.strictEqual(variationIndex, 1);
+    });
+
+    describe("random colorways", () => {
+      let test;
+      beforeEach(() => {
+        COLORWAY_SCREEN_PROPS.handleAction = sandbox.stub();
+        sandbox.stub(window, "matchMedia");
+        // eslint-disable-next-line max-nested-callbacks
+        sandbox.stub(React, "useEffect").callsFake((fn, vals) => {
+          if (vals?.length === 0) {
+            fn();
+          }
+        });
+        test = () => {
+          shallow(<Colorways {...COLORWAY_SCREEN_PROPS} />);
+          return COLORWAY_SCREEN_PROPS.handleAction.firstCall.firstArg
+            .currentTarget;
+        };
+      });
+
+      it("should select a random colorway", () => {
+        const { value } = test();
+
+        assert.strictEqual(value, "abstract-soft");
+        assert.calledThrice(React.useEffect);
+        assert.notCalled(window.matchMedia);
+      });
+
+      it("should select a random soft colorway when not dark", () => {
+        window.matchMedia.returns({ matches: false });
+        COLORWAY_SCREEN_PROPS.content.tiles.darkVariation = 1;
+
+        const { value } = test();
+
+        assert.strictEqual(value, "abstract-soft");
+        assert.calledThrice(React.useEffect);
+        assert.calledOnce(window.matchMedia);
+      });
+
+      it("should select a random bold colorway when dark", () => {
+        window.matchMedia.returns({ matches: true });
+        COLORWAY_SCREEN_PROPS.content.tiles.darkVariation = 1;
+
+        const { value } = test();
+
+        assert.strictEqual(value, "abstract-bold");
+        assert.calledThrice(React.useEffect);
+        assert.calledOnce(window.matchMedia);
+      });
     });
   });
 });

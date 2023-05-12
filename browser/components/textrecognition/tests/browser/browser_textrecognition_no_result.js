@@ -10,6 +10,8 @@ add_task(async function() {
     set: [["dom.text-recognition.enabled", true]],
   });
 
+  clearTelemetry();
+
   await BrowserTestUtils.withNewTab(url, async function(browser) {
     setClipboardText("");
     is(getTextFromClipboard(), "", "The copied text is empty.");
@@ -51,8 +53,34 @@ add_task(async function() {
       return noResultsHeader.style.display !== "none";
     });
 
+    {
+      info("Check the scalar telemetry.");
+      const scalars = await BrowserTestUtils.waitForCondition(() =>
+        getTelemetryScalars()
+      );
+      const contentContext = scalars["browser.ui.interaction.content_context"];
+      ok(contentContext, "Opening the context menu was recorded.");
+
+      is(contentContext["context-imagetext"], 1, "Telemetry has been recorded");
+    }
+
     const text = contentDocument.querySelector(".textRecognitionText");
     is(text.children.length, 0, "No results are listed.");
+
+    ok(
+      Services.telemetry
+        .getHistogramById("TEXT_RECOGNITION_API_PERFORMANCE")
+        .snapshot().sum > 0,
+      "Histogram timing was recorded even though there were no results."
+    );
+
+    is(
+      Services.telemetry
+        .getHistogramById("TEXT_RECOGNITION_INTERACTION_TIMING")
+        .snapshot().sum,
+      0,
+      "No interaction timing has been measured yet."
+    );
 
     info("Close the dialog box.");
     const close = contentDocument.querySelector("#text-recognition-close");
@@ -65,4 +93,6 @@ add_task(async function() {
 
     is(getTextFromClipboard(), "", "The copied text is still empty.");
   });
+
+  clearTelemetry();
 });

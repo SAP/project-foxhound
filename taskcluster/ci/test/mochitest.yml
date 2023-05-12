@@ -227,7 +227,7 @@ mochitest-browser-chrome:
             linux.*64-tsan-qr/opt: 32
             macosx.*64/debug: 16
             windows10-64-2004-ccov.*/.*: 14
-            windows10.*-asan-qr/opt: 9
+            windows10.*-asan-qr/opt: 12
             windows10-32-qr/debug: 12
             default: 7
     max-run-time:
@@ -509,6 +509,10 @@ mochitest-media:
     description: "Mochitest media run"
     treeherder-symbol: M(mda)
     schedules-component: mochitest-plain
+    worker-type:
+        by-test-platform:
+            linux.*/.*: t-linux-kvm-aws  # Not moving to GCP yet as this suite breaks -> Bug 1789714
+            default: default
     max-run-time:
         by-test-platform:
             windows10-64-2004-ccov.*/.*: 7200

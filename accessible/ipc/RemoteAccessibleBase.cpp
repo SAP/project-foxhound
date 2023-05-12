@@ -264,17 +264,22 @@ void RemoteAccessibleBase<Derived>::Value(nsString& aValue) const {
     }
 
     if (IsCombobox()) {
-      Pivot p = Pivot(const_cast<RemoteAccessibleBase<Derived>*>(this));
-      PivotStateRule rule(states::ACTIVE);
-      Accessible* option = p.First(rule);
-      if (!option) {
-        option =
-            const_cast<RemoteAccessibleBase<Derived>*>(this)->GetSelectedItem(
-                0);
-      }
-
+      // For combo boxes, rely on selection state to determine the value.
+      const Accessible* option =
+          const_cast<RemoteAccessibleBase<Derived>*>(this)->GetSelectedItem(0);
       if (option) {
         option->Name(aValue);
+      }
+      return;
+    }
+
+    if (IsTextLeaf() || IsImage()) {
+      if (const Accessible* actionAcc = ActionAncestor()) {
+        if (const_cast<Accessible*>(actionAcc)->State() & states::LINKED) {
+          // Text and image descendants of links expose the link URL as the
+          // value.
+          return actionAcc->Value(aValue);
+        }
       }
     }
   }
@@ -603,7 +608,10 @@ LayoutDeviceIntRect RemoteAccessibleBase<Derived>::BoundsWithOffset(
     // This block is not thread safe because it queries a LocalAccessible.
     // It is also not needed in Android since the only local accessible is
     // the outer doc browser that has an offset of 0.
-    if (LocalAccessible* localAcc = const_cast<Accessible*>(acc)->AsLocal()) {
+    // acc could be null if the OuterDocAccessible died before the top level
+    // DocAccessibleParent.
+    if (LocalAccessible* localAcc =
+            acc ? const_cast<Accessible*>(acc)->AsLocal() : nullptr) {
       // LocalAccessible::Bounds returns screen-relative bounds in
       // dev pixels.
       LayoutDeviceIntRect localBounds = localAcc->Bounds();
@@ -735,6 +743,11 @@ nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
       }
     }
 
+    if (!data.mReverseType) {
+      updateTracker.AppendElement(false);
+      continue;
+    }
+
     nsStaticAtom* const relAtom = data.mAtom;
     auto newRelationTargets =
         aFields->GetAttribute<nsTArray<uint64_t>>(relAtom);
@@ -745,7 +758,7 @@ nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
     // if we've recieved a DeleteEntry(). Only do this if mCachedFields is
     // initialized. If mCachedFields is not initialized, we still need to
     // construct the update array so we correctly handle reverse rels in
-    // PostProcessRelations
+    // PostProcessRelations.
     if ((shouldAddNewImplicitRels ||
          aFields->GetAttribute<DeleteEntry>(relAtom)) &&
         mCachedFields) {
@@ -757,7 +770,7 @@ nsTArray<bool> RemoteAccessibleBase<Derived>::PreProcessRelations(
               Document()->mReverseRelations.LookupOrInsert(id);
           // Then fetch its reverse relation's ID list
           nsTArray<uint64_t>& reverseRelIDs = reverseRels.LookupOrInsert(
-              static_cast<uint64_t>(data.mReverseType));
+              static_cast<uint64_t>(*data.mReverseType));
           //  There might be other reverse relations stored for this acc, so
           //  remove our ID instead of deleting the array entirely.
           DebugOnly<bool> removed = reverseRelIDs.RemoveElement(ID());
@@ -790,8 +803,10 @@ void RemoteAccessibleBase<Derived>::PostProcessRelations(
       for (uint64_t id : newIDs) {
         nsTHashMap<nsUint64HashKey, nsTArray<uint64_t>>& relations =
             Document()->mReverseRelations.LookupOrInsert(id);
+        MOZ_ASSERT(data.mReverseType,
+                   "Updating implicit rels, but no implicit rel exists?");
         nsTArray<uint64_t>& ids =
-            relations.LookupOrInsert(static_cast<uint64_t>(data.mReverseType));
+            relations.LookupOrInsert(static_cast<uint64_t>(*data.mReverseType));
         ids.AppendElement(ID());
       }
     }
@@ -916,6 +931,11 @@ uint64_t RemoteAccessibleBase<Derived>::State() {
       // It's possible this bit was set in the cached `rawState` vector, but
       // we've since been notified of a style change invalidating that state.
       state &= ~states::OPAQUE1;
+    }
+
+    auto* cbc = mDoc->GetBrowsingContext();
+    if (cbc && !cbc->IsActive()) {
+      state |= states::OFFSCREEN;
     }
   }
   auto* browser = static_cast<dom::BrowserParent*>(Document()->Manager());

@@ -7,6 +7,7 @@
 from __future__ import absolute_import, division
 
 from abc import ABCMeta, abstractmethod
+from copy import deepcopy
 
 import os
 import json
@@ -183,7 +184,7 @@ class Browsertime(Perftest):
     def clean_up(self):
         super(Browsertime, self).clean_up()
 
-    def _compose_cmd(self, test, timeout):
+    def _compose_cmd(self, test, timeout, extra_profiler_run=False):
         """Browsertime has the following overwrite priorities(in order of highest-lowest)
         (1) User - input commandline flag.
         (2) Browsertime args mentioned for a test
@@ -248,6 +249,17 @@ class Browsertime(Perftest):
             # Wait a bit longer when we run live site tests
             page_cycle_delay = "5000"
 
+        page_cycles = (
+            test.get("page_cycles", 1)
+            if not extra_profiler_run
+            else test.get("extra_profiler_run_page_cycles", 1)
+        )
+        browser_cycles = (
+            test.get("browser_cycles", 1)
+            if not extra_profiler_run
+            else test.get("extra_profiler_run_browser_cycles", 1)
+        )
+
         # All the configurations in the browsertime_options variable initialization
         # and the secondary_url are priority 3, since none overlap they are grouped together
         browsertime_options = [
@@ -271,9 +283,9 @@ class Browsertime(Perftest):
             "--timeouts.pageLoad",
             str(timeout),
             "--timeouts.script",
-            str(timeout * int(test.get("page_cycles", 1))),
+            str(timeout * int(page_cycles)),
             "--browsertime.page_cycles",
-            str(test.get("page_cycles", 1)),
+            str(page_cycles),
             # a delay was added by default to browsertime from 5s -> 8s for iphones, not needed
             "--pageCompleteWaitTime",
             str(test.get("page_complete_wait_time", "5000")),
@@ -281,9 +293,12 @@ class Browsertime(Perftest):
             test["test_url"],
             # Raptor's `post startup delay` is settle time after the browser has started
             "--browsertime.post_startup_delay",
-            str(self.post_startup_delay),
+            # If we are on the extra profiler run, limit the startup delay to 1 second.
+            str(min(self.post_startup_delay, 1000))
+            if extra_profiler_run
+            else str(self.post_startup_delay),
             "--iterations",
-            str(test.get("browser_cycles", 1)),
+            str(browser_cycles),
             "--videoParams.androidVideoWaitTime",
             "10000",
             # running browsertime test in chimera mode
@@ -343,13 +358,21 @@ class Browsertime(Perftest):
         if self.debug_mode:
             browsertime_options.extend(["-vv", "--debug", "true"])
 
-        # must happen before --firefox.profileTemplate and --resultDir
-        self.results_handler.remove_result_dir_for_test(test)
+        if not extra_profiler_run:
+            # must happen before --firefox.profileTemplate and --resultDir
+            self.results_handler.remove_result_dir_for_test(test)
+            priority1_options.extend(
+                ["--resultDir", self.results_handler.result_dir_for_test(test)]
+            )
+        else:
+            priority1_options.extend(
+                [
+                    "--resultDir",
+                    self.results_handler.result_dir_for_test_profiling(test),
+                ]
+            )
         priority1_options.extend(
             ["--firefox.profileTemplate", str(self.profile.profile)]
-        )
-        priority1_options.extend(
-            ["--resultDir", self.results_handler.result_dir_for_test(test)]
         )
 
         # This argument can have duplicates of the value "--firefox.env" so we do not need
@@ -410,11 +433,7 @@ class Browsertime(Perftest):
         else:
             priority1_options.extend(["--video", "false", "--visualMetrics", "false"])
 
-        # have browsertime use our newly-created conditioned-profile path
-        if self.config.get("conditioned_profile"):
-            self.profile.profile = self.conditioned_profile_dir
-
-        if self.config["gecko_profile"]:
+        if self.config["gecko_profile"] or extra_profiler_run:
             self.config[
                 "browsertime_result_dir"
             ] = self.results_handler.result_dir_for_test(test)
@@ -429,7 +448,7 @@ class Browsertime(Perftest):
                 (
                     "gecko_profile_threads",
                     "--firefox.geckoProfilerParams.threads",
-                    "GeckoMain,Compositor",
+                    "GeckoMain,Compositor,Renderer",
                 ),
                 (
                     "gecko_profile_interval",
@@ -619,6 +638,43 @@ class Browsertime(Perftest):
 
         return True
 
+    def run_extra_profiler_run(
+        self, test, timeout, proc_timeout, output_timeout, line_handler, env
+    ):
+        try:
+            LOG.info(
+                "Running browsertime with the profiler enabled after the main run."
+            )
+            profiler_test = deepcopy(test)
+            cmd = self._compose_cmd(profiler_test, timeout, True)
+            LOG.info(
+                "browsertime profiling cmd: {}".format(" ".join([str(c) for c in cmd]))
+            )
+            proc = self.process_handler(cmd, processOutputLine=line_handler, env=env)
+            proc.run(timeout=proc_timeout, outputTimeout=output_timeout)
+            proc.wait()
+
+            # Do not raise exception for the browsertime failure or timeout for this case.
+            # Second profiler browsertime run is fallible.
+            if proc.outputTimedOut:
+                LOG.info(
+                    "Browsertime process for extra profiler run timed out after "
+                    f"waiting {output_timeout} seconds for output"
+                )
+            if proc.timedOut:
+                LOG.info(
+                    "Browsertime process for extra profiler run timed out after "
+                    f"{proc_timeout} seconds"
+                )
+
+            if self.browsertime_failure:
+                LOG.info(
+                    f"Browsertime for extra profiler run failure: {self.browsertime_failure}"
+                )
+
+        except Exception as e:
+            LOG.info("Failed during the extra profiler run: " + str(e))
+
     def run_test(self, test, timeout):
         global BROWSERTIME_PAGELOAD_OUTPUT_TIMEOUT
 
@@ -662,42 +718,55 @@ class Browsertime(Perftest):
         try:
             line_matcher = re.compile(r".*(\[.*\])\s+([a-zA-Z]+):\s+(.*)")
 
-            def _line_handler(line):
-                """This function acts as a bridge between browsertime
-                and raptor. It reforms the lines to get rid of information
-                that is not needed, and outputs them appropriately based
-                on the level that is found. (Debug and info all go to info).
+            def _create_line_handler(extra_profiler_run=False):
+                def _line_handler(line):
+                    """This function acts as a bridge between browsertime
+                    and raptor. It reforms the lines to get rid of information
+                    that is not needed, and outputs them appropriately based
+                    on the level that is found. (Debug and info all go to info).
 
-                For errors, we set an attribute (self.browsertime_failure) to
-                it, then raise a generic exception. When we return, we check
-                if self.browsertime_failure, and raise an Exception if necessary
-                to stop Raptor execution (preventing the results processing).
-                """
+                    For errors, we set an attribute (self.browsertime_failure) to
+                    it, then raise a generic exception. When we return, we check
+                    if self.browsertime_failure, and raise an Exception if necessary
+                    to stop Raptor execution (preventing the results processing).
+                    """
 
-                # NOTE: this hack is to workaround encoding issues on windows
-                # a newer version of browsertime adds a `σ` character to output
-                line = line.replace(b"\xcf\x83", b"")
+                    # NOTE: this hack is to workaround encoding issues on windows
+                    # a newer version of browsertime adds a `σ` character to output
+                    line = line.replace(b"\xcf\x83", b"")
 
-                line = line.decode("utf-8")
-                match = line_matcher.match(line)
-                if not match:
-                    LOG.info(line)
-                    return
+                    line = line.decode("utf-8")
+                    match = line_matcher.match(line)
+                    if not match:
+                        LOG.info(line)
+                        return
 
-                date, level, msg = match.groups()
-                level = level.lower()
-                if "error" in level and not self.debug_mode:
-                    if self._kill_browsertime_process(msg):
-                        self.browsertime_failure = msg
-                        LOG.error("Browsertime failed to run")
-                        proc.kill()
-                elif "warning" in level:
-                    LOG.warning(msg)
-                elif "metrics" in level:
-                    vals = msg.split(":")[-1].strip()
-                    self.page_count = vals.split(",")
-                else:
-                    LOG.info(msg)
+                    date, level, msg = match.groups()
+                    level = level.lower()
+                    if "error" in level and not self.debug_mode:
+                        if self._kill_browsertime_process(msg):
+                            self.browsertime_failure = msg
+                            if extra_profiler_run:
+                                # Do not trigger the log parser for extra profiler run.
+                                LOG.info(
+                                    "Browsertime failed to run on extra profiler run"
+                                )
+                            else:
+                                LOG.error("Browsertime failed to run")
+                            proc.kill()
+                    elif "warning" in level:
+                        if extra_profiler_run:
+                            # Do not trigger the log parser for extra profiler run.
+                            LOG.info(msg)
+                        else:
+                            LOG.warning(msg)
+                    elif "metrics" in level:
+                        vals = msg.split(":")[-1].strip()
+                        self.page_count = vals.split(",")
+                    else:
+                        LOG.info(msg)
+
+                return _line_handler
 
             proc_timeout = self._compute_process_timeout(test, timeout)
             output_timeout = BROWSERTIME_PAGELOAD_OUTPUT_TIMEOUT
@@ -712,7 +781,9 @@ class Browsertime(Perftest):
                     output_timeout *= 2
                 proc_timeout *= 2
 
-            proc = self.process_handler(cmd, processOutputLine=_line_handler, env=env)
+            proc = self.process_handler(
+                cmd, processOutputLine=_create_line_handler(), env=env
+            )
             proc.run(timeout=proc_timeout, outputTimeout=output_timeout)
             proc.wait()
 
@@ -728,6 +799,22 @@ class Browsertime(Perftest):
 
             if self.browsertime_failure:
                 raise Exception(self.browsertime_failure)
+
+            # We've run the main browsertime process, now we need to run the
+            # browsertime one more time if the profiler wasn't enabled already
+            # in the previous run and user wants this extra run.
+            if (
+                self.config.get("extra_profiler_run")
+                and not self.config["gecko_profile"]
+            ):
+                self.run_extra_profiler_run(
+                    test,
+                    timeout,
+                    proc_timeout,
+                    output_timeout,
+                    _create_line_handler(extra_profiler_run=True),
+                    env,
+                )
 
         except Exception as e:
             LOG.critical(str(e))

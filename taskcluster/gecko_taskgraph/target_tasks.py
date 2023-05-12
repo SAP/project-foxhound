@@ -246,7 +246,7 @@ def accept_raptor_android_build(platform):
     if "p2" in platform and "aarch64" in platform:
         return True
     if "g5" in platform:
-        return True
+        return False
     if "a51" in platform:
         return True
 
@@ -819,10 +819,7 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 if power_task and cpu_n_memory_task:
                     return False
                 if cpu_n_memory_task:
-                    if "-speedometer-" in try_name:
-                        return True
-                    if "-scn" in try_name and "-idle" in try_name:
-                        return True
+                    return False
                 if power_task:
                     return "browsertime" in try_name
             # Select browsertime-specific tests
@@ -1162,6 +1159,18 @@ def target_tasks_daily_beta_perf(full_task_graph, parameters, graph_config):
     """
     Select performance tests on the beta branch to be run daily
     """
+    index_path = (
+        f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
+        f"{parameters['head_rev']}.taskgraph.decision-daily-beta-perf"
+    )
+    if os.environ.get("MOZ_AUTOMATION") and retry(
+        index_exists,
+        args=(index_path,),
+        kwargs={
+            "reason": "to avoid triggering multiple daily beta perftests off of the same revision",
+        },
+    ):
+        return []
 
     def filter(task):
         platform = task.attributes.get("test_platform")

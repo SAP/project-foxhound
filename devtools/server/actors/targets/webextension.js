@@ -14,7 +14,6 @@
 
 const { extend } = require("devtools/shared/extend");
 const { Ci, Cu } = require("chrome");
-const Services = require("Services");
 
 const {
   ParentProcessTargetActor,
@@ -41,7 +40,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "getAddonIdForWindowGlobal",
-  "devtools/server/actors/watcher/browsing-context-helpers.jsm",
+  "devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
   true
 );
 

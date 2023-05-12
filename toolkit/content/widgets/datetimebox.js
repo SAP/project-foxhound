@@ -17,6 +17,13 @@ this.DateTimeBoxWidget = class {
     this.element = shadowRoot.host;
     this.document = this.element.ownerDocument;
     this.window = this.document.defaultView;
+    // The DOMLocalization instance needs to allow for sync methods so that
+    // the placeholder value may be determined and set during the
+    // createEditFieldAndAppend() call.
+    this.l10n = new this.window.DOMLocalization(
+      ["toolkit/global/datetimebox.ftl"],
+      /* aSync = */ true
+    );
   }
 
   /*
@@ -66,6 +73,8 @@ this.DateTimeBoxWidget = class {
     this.CONTROL_EVENTS.forEach(eventName => {
       this.mDateTimeBoxElement.removeEventListener(eventName, this);
     });
+
+    this.l10n.disconnectRoot(this.shadowRoot);
 
     this.removeEditFields();
 
@@ -119,6 +128,8 @@ this.DateTimeBoxWidget = class {
 
   setup() {
     this.DEBUG = false;
+
+    this.l10n.connectRoot(this.shadowRoot);
 
     this.generateContent();
 
@@ -223,13 +234,8 @@ this.DateTimeBoxWidget = class {
      * Remove it when migrate to Fluent (bug 1504363).
      */
     const parser = new this.window.DOMParser();
-    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
-      `<!DOCTYPE bindings [
-      <!ENTITY % datetimeboxDTD SYSTEM "chrome://global/locale/datetimebox.dtd">
-      %datetimeboxDTD;
-      ]>
-      <div class="datetimebox" xmlns="http://www.w3.org/1999/xhtml" role="none">
+      `<div class="datetimebox" xmlns="http://www.w3.org/1999/xhtml" role="none">
         <link rel="stylesheet" type="text/css" href="chrome://global/content/bindings/datetimebox.css" />
         <div class="datetime-input-box-wrapper" id="input-box-wrapper" role="presentation">
           <span class="datetime-input-edit-wrapper"
@@ -238,52 +244,22 @@ this.DateTimeBoxWidget = class {
                - elements here -->
           </span>
 
-          <button class="datetime-reset-button" id="reset-button" tabindex="-1" aria-label="&datetime.reset.label;">
+          <button class="datetime-reset-button" id="reset-button" tabindex="-1" data-l10n-id="datetime-reset">
             <svg xmlns="http://www.w3.org/2000/svg" class="datetime-reset-button-svg" width="12" height="12" viewBox="0 0 12 12">
               <path d="M 3.9,3 3,3.9 5.1,6 3,8.1 3.9,9 6,6.9 8.1,9 9,8.1 6.9,6 9,3.9 8.1,3 6,5.1 Z M 12,6 A 6,6 0 0 1 6,12 6,6 0 0 1 0,6 6,6 0 0 1 6,0 6,6 0 0 1 12,6 Z"/>
             </svg>
           </button>
         </div>
-        <div id="strings"
-          data-m-year-place-holder="&date.year.placeholder;"
-          data-m-year-label="&date.year.label;"
-          data-m-month-place-holder="&date.month.placeholder;"
-          data-m-month-label="&date.month.label;"
-          data-m-day-place-holder="&date.day.placeholder;"
-          data-m-day-label="&date.day.label;"
-
-          data-m-hour-place-holder="&time.hour.placeholder;"
-          data-m-hour-label="&time.hour.label;"
-          data-m-minute-place-holder="&time.minute.placeholder;"
-          data-m-minute-label="&time.minute.label;"
-          data-m-second-place-holder="&time.second.placeholder;"
-          data-m-second-label="&time.second.label;"
-          data-m-millisecond-place-holder="&time.millisecond.placeholder;"
-          data-m-millisecond-label="&time.millisecond.label;"
-          data-m-day-period-place-holder="&time.dayperiod.placeholder;"
-          data-m-day-period-label="&time.dayperiod.label;"
-        ></div>
       </div>`,
       "application/xml"
     );
-
-    /*
-     * The <div id="strings"> is also parsed in the document so that there is no
-     * need to create another XML document just to get the strings.
-     */
-    let stringsElement = parserDoc.getElementById("strings");
-    stringsElement.remove();
-    for (let key in stringsElement.dataset) {
-      // key will be camelCase version of the attribute key above,
-      // like mYearPlaceHolder.
-      this[key] = stringsElement.dataset[key];
-    }
 
     this.shadowRoot.importNodeAndAppendChildAt(
       this.shadowRoot,
       parserDoc.documentElement,
       true
     );
+    this.l10n.translateRoots();
   }
 
   get FIELD_EVENTS() {
@@ -331,8 +307,8 @@ this.DateTimeBoxWidget = class {
   }
 
   createEditFieldAndAppend(
-    aPlaceHolder,
-    aLabel,
+    aL10nId,
+    aPlaceholderId,
     aIsNumeric,
     aMinDigits,
     aMaxLength,
@@ -343,17 +319,19 @@ this.DateTimeBoxWidget = class {
     let root = this.shadowRoot.getElementById("edit-wrapper");
     let field = this.shadowRoot.createElementAndAppendChildAt(root, "span");
     field.classList.add("datetime-edit-field");
-    field.textContent = aPlaceHolder;
-    field.placeholder = aPlaceHolder;
     field.setAttribute("aria-valuetext", "");
     this.setFieldTabIndexAttribute(field);
+
+    const placeholder = this.l10n.formatValueSync(aPlaceholderId);
+    field.placeholder = placeholder;
+    field.textContent = placeholder;
+    this.l10n.setAttributes(field, aL10nId);
 
     field.setAttribute("readonly", this.mInputElement.readOnly);
     field.setAttribute("disabled", this.mInputElement.disabled);
     // Set property as well for convenience.
     field.disabled = this.mInputElement.disabled;
     field.readOnly = this.mInputElement.readOnly;
-    field.setAttribute("aria-label", aLabel);
 
     // Used to store the non-formatted value, cleared when value is
     // cleared.
@@ -776,8 +754,8 @@ this.DateTimeBoxWidget = class {
       switch (part.type) {
         case "year":
           this.mYearField = this.createEditFieldAndAppend(
-            this.mYearPlaceHolder,
-            this.mYearLabel,
+            "datetime-year",
+            "datetime-year-placeholder",
             true,
             this.mYearLength,
             this.mMaxYear.toString().length,
@@ -789,8 +767,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "month":
           this.mMonthField = this.createEditFieldAndAppend(
-            this.mMonthPlaceHolder,
-            this.mMonthLabel,
+            "datetime-month",
+            "datetime-month-placeholder",
             true,
             this.mMonthDayLength,
             this.mMonthDayLength,
@@ -802,8 +780,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "day":
           this.mDayField = this.createEditFieldAndAppend(
-            this.mDayPlaceHolder,
-            this.mDayLabel,
+            "datetime-day",
+            "datetime-day-placeholder",
             true,
             this.mMonthDayLength,
             this.mMonthDayLength,
@@ -815,8 +793,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "hour":
           this.mHourField = this.createEditFieldAndAppend(
-            this.mHourPlaceHolder,
-            this.mHourLabel,
+            "datetime-hour",
+            "datetime-time-placeholder",
             true,
             this.mMaxLength,
             this.mMaxLength,
@@ -828,8 +806,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "minute":
           this.mMinuteField = this.createEditFieldAndAppend(
-            this.mMinutePlaceHolder,
-            this.mMinuteLabel,
+            "datetime-minute",
+            "datetime-time-placeholder",
             true,
             this.mMaxLength,
             this.mMaxLength,
@@ -841,8 +819,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "second":
           this.mSecondField = this.createEditFieldAndAppend(
-            this.mSecondPlaceHolder,
-            this.mSecondLabel,
+            "datetime-second",
+            "datetime-time-placeholder",
             true,
             this.mMaxLength,
             this.mMaxLength,
@@ -860,8 +838,8 @@ this.DateTimeBoxWidget = class {
             );
             span.textContent = this.mMillisecSeparatorText;
             this.mMillisecField = this.createEditFieldAndAppend(
-              this.mMillisecPlaceHolder,
-              this.mMillisecLabel,
+              "datetime-millisecond",
+              "datetime-time-placeholder",
               true,
               this.mMillisecMaxLength,
               this.mMillisecMaxLength,
@@ -874,8 +852,8 @@ this.DateTimeBoxWidget = class {
           break;
         case "dayPeriod":
           this.mDayPeriodField = this.createEditFieldAndAppend(
-            this.mDayPeriodPlaceHolder,
-            this.mDayPeriodLabel,
+            "datetime-dayperiod",
+            "datetime-time-placeholder",
             false
           );
           this.addEventListenersToField(this.mDayPeriodField);
@@ -1135,7 +1113,12 @@ this.DateTimeBoxWidget = class {
       let n = Number(buffer);
       let max = targetField.getAttribute("max");
       let maxLength = targetField.getAttribute("maxlength");
-      if (buffer.length >= maxLength || n * 10 > max) {
+      if (targetField == this.mHourField) {
+        if (n * 10 > 23 || buffer.length === 2) {
+          buffer = "";
+          this.advanceToNextField();
+        }
+      } else if (buffer.length >= maxLength || n * 10 > max) {
         buffer = "";
         this.advanceToNextField();
       }
@@ -1192,11 +1175,28 @@ this.DateTimeBoxWidget = class {
       if (this.mHour12) {
         // Try to change to 12hr format if user input is 0 or greater
         // than 12.
-        let maxLength = aField.getAttribute("maxlength");
-        if (value == 0 && aValue.length == maxLength) {
-          value = this.mMaxHour;
-        } else {
-          value = value > this.mMaxHour ? value % this.mMaxHour : value;
+        switch (true) {
+          case value == 0 && aValue.length == 2:
+            value = this.mMaxHour;
+            this.setDayPeriodValue(this.mAMIndicator);
+            break;
+
+          case value == this.mMaxHour:
+            this.setDayPeriodValue(this.mPMIndicator);
+            break;
+
+          case value < 12:
+            this.setDayPeriodValue(this.mAMIndicator);
+            break;
+
+          case value > 12 && value < 24:
+            value = value % this.mMaxHour;
+            this.setDayPeriodValue(this.mPMIndicator);
+            break;
+
+          default:
+            value = Math.floor(value / 10);
+            break;
         }
       } else if (value > this.mMaxHour) {
         value = this.mMaxHour;

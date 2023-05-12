@@ -21,6 +21,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/BrowserHost.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/IdentityCredential.h"
 #include "mozilla/dom/MediaController.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/ChromeUtils.h"
@@ -987,19 +988,9 @@ already_AddRefed<Promise> WindowGlobalParent::GetSecurityInfo(
   }
 
   SendGetSecurityInfo(
-      [promise](Maybe<nsCString>&& aResult) {
-        if (aResult) {
-          nsCOMPtr<nsISupports> infoObj;
-          nsresult rv =
-              NS_DeserializeObject(aResult.value(), getter_AddRefs(infoObj));
-          if (NS_WARN_IF(NS_FAILED(rv))) {
-            promise->MaybeReject(NS_ERROR_FAILURE);
-          }
-          nsCOMPtr<nsITransportSecurityInfo> info = do_QueryInterface(infoObj);
-          if (!info) {
-            promise->MaybeReject(NS_ERROR_FAILURE);
-          }
-          promise->MaybeResolve(info);
+      [promise](const nsCOMPtr<nsITransportSecurityInfo>& aSecurityInfo) {
+        if (aSecurityInfo) {
+          promise->MaybeResolve(aSecurityInfo);
         } else {
           promise->MaybeResolveWithUndefined();
         }
@@ -1384,6 +1375,20 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvReloadWithHttpsOnlyException() {
 
   BrowsingContext()->Top()->LoadURI(loadState, /* setNavigating */ true);
 
+  return IPC_OK();
+}
+
+IPCResult WindowGlobalParent::RecvDiscoverIdentityCredentialFromExternalSource(
+    const IdentityCredentialRequestOptions& aOptions,
+    const DiscoverIdentityCredentialFromExternalSourceResolver& aResolver) {
+  IdentityCredential::DiscoverFromExternalSourceInMainProcess(
+      DocumentPrincipal(), aOptions)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [aResolver](const IPCIdentityCredential& aResult) {
+            return aResolver(Some(aResult));
+          },
+          [aResolver](nsresult aErr) { aResolver(Nothing()); });
   return IPC_OK();
 }
 

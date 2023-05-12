@@ -250,21 +250,6 @@ bool nsTableFrame::PageBreakAfter(nsIFrame* aSourceFrame,
 
 /* static */
 void nsTableFrame::RegisterPositionedTablePart(nsIFrame* aFrame) {
-  // Supporting relative positioning for table parts other than table cells has
-  // the potential to break sites that apply 'position: relative' to those
-  // parts, expecting nothing to happen. We warn at the console to make tracking
-  // down the issue easy.
-  if (!aFrame->IsTableCellFrame()) {
-    nsIContent* content = aFrame->GetContent();
-    nsPresContext* presContext = aFrame->PresContext();
-    if (content && !presContext->HasWarnedAboutPositionedTableParts()) {
-      presContext->SetHasWarnedAboutPositionedTableParts();
-      nsContentUtils::ReportToConsole(
-          nsIScriptError::warningFlag, "Layout: Tables"_ns, content->OwnerDoc(),
-          nsContentUtils::eLAYOUT_PROPERTIES, "TablePartRelPosWarning");
-    }
-  }
-
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(aFrame);
   MOZ_ASSERT(tableFrame, "Should have a table frame here");
   tableFrame = static_cast<nsTableFrame*>(tableFrame->FirstContinuation());
@@ -1466,7 +1451,7 @@ nscoord nsTableFrame::TableShrinkISizeToFit(gfxContext* aRenderingContext,
     // Tables shrink inline-size to fit with a slightly different algorithm
     // from the one they use for their intrinsic isize (the difference
     // relates to handling of percentage isizes on columns).  So this
-    // function differs from nsIFrame::ShrinkWidthToFit by only the
+    // function differs from nsIFrame::ShrinkISizeToFit by only the
     // following line.
     // Since we've already called GetMinISize, we don't need to do any
     // of the other stuff GetPrefISize does.

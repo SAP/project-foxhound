@@ -15,10 +15,11 @@ module.exports = {
     "^devtools/shared/DevToolsUtils": `${fixturesDir}/devtools-utils`,
     // This is needed for the Debugger, for some reason
     "shared/DevToolsUtils$": `${fixturesDir}/devtools-utils`,
-    "^ChromeUtils": `${fixturesDir}/ChromeUtils`,
-    "^Services": `${fixturesDir}/Services`,
-    // Alias for Services, used by the debugger.
-    "devtools-services": `${fixturesDir}/Services`,
+
+    // Mocks only used by node tests.
+    "Services-mock": `${fixturesDir}/Services`,
+    "ChromeUtils-mock": `${fixturesDir}/ChromeUtils`,
+
     "^promise": `${fixturesDir}/promise`,
     "^chrome": `${fixturesDir}/Chrome`,
     "^devtools/client/shared/fluent-l10n/fluent-l10n$": `${fixturesDir}/fluent-l10n`,

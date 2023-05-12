@@ -10,6 +10,9 @@ const { BuiltInThemes } = ChromeUtils.import(
 const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
+const { NimbusFeatures } = ChromeUtils.import(
+  "resource://nimbus/ExperimentAPI.jsm"
+);
 
 class ColorwaysCard extends HTMLElement {
   constructor() {
@@ -41,7 +44,9 @@ class ColorwaysCard extends HTMLElement {
     this.noCollectionTemplate = this.querySelector(
       "#colorways-no-collection-template"
     );
-    const colorwaysCollection = BuiltInThemes.findActiveColorwayCollection();
+    const colorwaysCollection =
+      NimbusFeatures.majorRelease2022.getVariable("colorwayCloset") &&
+      BuiltInThemes.findActiveColorwayCollection();
     this.container.classList.toggle("no-collection", !colorwaysCollection);
     this.container.classList.toggle("content-container", colorwaysCollection);
     const template = colorwaysCollection
@@ -54,17 +59,16 @@ class ColorwaysCard extends HTMLElement {
     this.button = this.querySelector("#colorways-button");
     this.collection_title = this.querySelector("#colorways-collection-title");
     this.description = this.querySelector("#colorways-collection-description");
-    this.expiry = this.querySelector(
-      "#colorways-collection-expiry-date > span"
-    );
+    this.expiry = this.querySelector("#colorways-collection-expiry-date");
     this.figure = this.querySelector("#colorways-collection-figure");
     if (colorwaysCollection) {
       this.button.addEventListener("click", () => {
         const { ColorwayClosetOpener } = ChromeUtils.import(
           "resource:///modules/ColorwayClosetOpener.jsm"
         );
-        ColorwayClosetOpener.openModal();
-        this.sendTelemetry();
+        ColorwayClosetOpener.openModal({
+          source: "firefoxview",
+        });
       });
       this._initPromise.then(() => this._render());
       AddonManager.addAddonListener(this);
@@ -139,14 +143,8 @@ class ColorwaysCard extends HTMLElement {
   }
 
   _showData({ collection, colorway, figureUrl }) {
-    document.l10n.setAttributes(
-      this.expiry,
-      "colorway-collection-expiry-label",
-      {
-        expiryDate: collection.expiry.getTime(),
-      }
-    );
     if (colorway) {
+      this.expiry.hidden = true;
       this.collection_title.removeAttribute("data-l10n-id");
       this.collection_title.textContent = colorway.name;
       if (colorway.intensity) {
@@ -166,6 +164,14 @@ class ColorwaysCard extends HTMLElement {
         "firefoxview-change-colorway-button"
       );
     } else {
+      this.expiry.hidden = false;
+      document.l10n.setAttributes(
+        this.expiry.firstElementChild,
+        "colorway-collection-expiry-label",
+        {
+          expiryDate: collection.expiry.getTime(),
+        }
+      );
       if (collection.l10nId.description) {
         document.l10n.setAttributes(
           this.description,
@@ -182,16 +188,6 @@ class ColorwaysCard extends HTMLElement {
       );
     }
     this.figure.src = figureUrl || "";
-  }
-
-  sendTelemetry() {
-    let { colorway } = this._getData();
-    Services.telemetry.recordEvent(
-      "colorways",
-      colorway ? "change_colorway" : "try_colorways",
-      "firefoxview",
-      null
-    );
   }
 }
 

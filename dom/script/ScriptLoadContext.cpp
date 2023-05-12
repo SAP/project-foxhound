@@ -105,15 +105,7 @@ void ScriptLoadContext::MaybeCancelOffThreadScript() {
   }
 
   JSContext* cx = danger::GetJSContext();
-  // Follow the same conditions as ScriptLoader::AttemptAsyncScriptCompile
-  if (mRequest->IsModuleRequest()) {
-    JS::CancelCompileModuleToStencilOffThread(cx, mOffThreadToken);
-  } else if (mRequest->IsSource()) {
-    JS::CancelCompileToStencilOffThread(cx, mOffThreadToken);
-  } else {
-    MOZ_ASSERT(mRequest->IsBytecode());
-    JS::CancelDecodeStencilOffThread(cx, mOffThreadToken);
-  }
+  JS::CancelOffThreadToken(cx, mOffThreadToken);
 
   // Cancellation request above should guarantee removal of the parse task, so
   // releasing the runnable should be safe to do here.

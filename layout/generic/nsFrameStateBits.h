@@ -323,9 +323,8 @@ FRAME_STATE_BIT(Box, 23, NS_STATE_AUTO_STRETCH)
 FRAME_STATE_BIT(Box, 24, NS_STATE_IS_ROOT)
 /* Bits 25, 26, and 27 were used for xul debug flags but are now unused */
 FRAME_STATE_BIT(Box, 28, NS_STATE_MENU_HAS_POPUP_LIST)
-FRAME_STATE_BIT(Box, 29, NS_STATE_BOX_WRAPS_KIDS_IN_BLOCK)
-FRAME_STATE_BIT(Box, 30, NS_STATE_EQUAL_SIZE)
-FRAME_STATE_BIT(Box, 31, NS_STATE_IS_DIRECTION_NORMAL)
+FRAME_STATE_BIT(Box, 29, NS_STATE_EQUAL_SIZE)
+FRAME_STATE_BIT(Box, 30, NS_STATE_IS_DIRECTION_NORMAL)
 
 // == Frame state bits that apply to flex container frames ====================
 
@@ -337,15 +336,15 @@ FRAME_STATE_BIT(FlexContainer, 20,
                 NS_STATE_FLEX_NORMAL_FLOW_CHILDREN_IN_CSS_ORDER)
 
 // Set for a flex container that is emulating a legacy
-// 'display:-webkit-{inline-}box' or 'display:-moz-{inline-}box' container.
-FRAME_STATE_BIT(FlexContainer, 21, NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX)
+// 'display:-moz-{inline-}box' container.
+FRAME_STATE_BIT(FlexContainer, 21, NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX)
+
+// Set for a flex container that is emulating a legacy
+// 'display:-webkit-{inline-}box'.
+FRAME_STATE_BIT(FlexContainer, 22, NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX)
 
 // True if the container has no flex items; may lie if there is a pending reflow
-FRAME_STATE_BIT(FlexContainer, 22, NS_STATE_FLEX_SYNTHESIZE_BASELINE)
-
-// True if any flex item in the container has a line with a
-// -webkit-line-ellipsis marker.
-FRAME_STATE_BIT(FlexContainer, 23, NS_STATE_FLEX_HAS_LINE_CLAMP_ELLIPSIS)
+FRAME_STATE_BIT(FlexContainer, 23, NS_STATE_FLEX_SYNTHESIZE_BASELINE)
 
 // True iff some first-in-flow in-flow children were pushed.
 // Note that those child frames may have been removed without this bit

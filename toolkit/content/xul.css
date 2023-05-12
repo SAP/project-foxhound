@@ -88,10 +88,23 @@ button,
 checkbox,
 menulist,
 radiogroup,
+richlistbox,
 tree,
 browser,
 editor,
-iframe {
+iframe,
+label:is(.text-link, [onclick]),
+tab[selected="true"]:not([ignorefocus="true"]) {
+  -moz-user-focus: normal;
+}
+
+/* Avoid losing focus on tabs by keeping them focusable, since some browser
+ * tests rely on this.
+ *
+ * TODO(emilio): Remove this and fix the tests / front-end code:
+ *  * browser/base/content/test/general/browser_tabfocus.js
+ */
+tab:focus {
   -moz-user-focus: normal;
 }
 
@@ -116,10 +129,6 @@ label {
 
 description {
   display: flow-root;
-}
-
-label.text-link, label[onclick] {
-  -moz-user-focus: normal;
 }
 
 label html|span.accesskey {
@@ -154,11 +163,13 @@ iframe {
   *|*:root {
     -moz-box-layout: flex;
   }
+}
 
-  browser,
-  editor,
-  iframe {
-    display: block;
+@media not (-moz-box-flexbox-emulation) {
+  /* These elements create nsButtonBoxFrame, so force legacy layout in
+   * descendants for now. Bug 1790920 is the real fix. */
+  thumb, radio, checkbox, button, scrollbarbutton, treecolpicker {
+    -moz-box-layout: legacy;
   }
 }
 
@@ -169,6 +180,7 @@ browser {
   justify-self: stretch;
   min-height: 0;
   min-width: 0;
+  contain: size;
 }
 
 /*********** popup notification ************/
@@ -410,8 +422,6 @@ treechildren {
 
 tree {
   -moz-box-orient: vertical;
-  width: 10px;
-  height: 10px;
 }
 
 tree[hidecolumnpicker="true"] treecolpicker {
@@ -477,10 +487,6 @@ tab {
   -moz-box-pack: center;
 }
 
-tab[selected="true"]:not([ignorefocus="true"]) {
-  -moz-user-focus: normal;
-}
-
 tabpanels {
   display: -moz-deck;
 }
@@ -512,14 +518,6 @@ search-textbox {
 /* Prefix with (xul|*):root to workaround HTML tests loading xul.css */
 :root html|textarea:not([resizable="true"]) {
   resize: none;
-}
-
-@media (-moz-box-flexbox-emulation) {
-  html|*.textbox-input {
-    /* Be block-level, so that -moz-box-flex can take effect, when we are an item
-       in a -moz-box being emulated by modified modern flex. */
-    display: block;
-  }
 }
 
 /********** autocomplete textbox **********/
@@ -627,7 +625,6 @@ wizardpage {
 /********** Rich Listbox ********/
 
 richlistbox {
-  -moz-user-focus: normal;
   -moz-box-orient: vertical;
 }
 

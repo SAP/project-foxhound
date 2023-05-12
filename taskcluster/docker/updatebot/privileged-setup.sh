@@ -27,7 +27,6 @@ apt-get install -y --no-install-recommends \
     libc6-dev \
     python-requests \
     python-requests-unixsocket \
-    python3.5 \
     python3-minimal \
     python3-wheel \
     python3-pip \
@@ -35,8 +34,6 @@ apt-get install -y --no-install-recommends \
     python3-requests \
     python3-requests-unixsocket \
     python3-setuptools \
-    nodejs \
-    npm \
     openssh-client \
     rsync \
     wget
@@ -44,6 +41,9 @@ apt-get install -y --no-install-recommends \
 mkdir -p /builds/worker/.mozbuild
 chown -R worker:worker /builds/worker/
 export GOPATH=/builds/worker/go
+
+# nodejs 16 for pdfjs
+. install-node.sh
 
 # pdf.js setup
 # We want to aviod downloading a ton of packages all the time, so
@@ -54,7 +54,8 @@ npm install -g gulp-cli
 cd /builds/worker/
 git clone https://github.com/mozilla/pdf.js.git
 cd /builds/worker/pdf.js
-npm ci
+npm ci --legacy-peer-deps
+
 
 # Build Google's Cloud SQL Proxy from source
 cd /builds/worker/
@@ -75,7 +76,6 @@ chown -R worker:worker .
 chown -R worker:worker .*
 
 python3 -m pip install -U pip
-python3 -m pip install -U zstandard # Needed by ./mach artifact toolchain
 python3 -m pip install poetry
 
 rm -rf /setup

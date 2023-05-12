@@ -10,6 +10,7 @@
 #include "ScopedNSSTypes.h"
 #include "mozilla/Maybe.h"
 #include "mozpkix/pkix.h"
+#include "nsITransportSecurityInfo.h"
 #include "nsIX509Cert.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
@@ -47,9 +48,11 @@ class BaseSSLServerCertVerificationResult {
                         nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
                         uint16_t aCertificateTransparencyStatus,
                         EVStatus aEVStatus, bool aSucceeded,
-                        PRErrorCode aFinalError, uint32_t aCollectedErrors,
+                        PRErrorCode aFinalError,
+                        nsITransportSecurityInfo::OverridableErrorCategory
+                            aOverridableErrorCategory,
                         bool aIsBuiltCertChainRootBuiltInRoot,
-                        uint32_t aProviderFlags) = 0;
+                        uint32_t aProviderFlags, bool aMadeOCSPRequests) = 0;
 };
 
 // Dispatched to the STS thread to notify the infoObject of the verification
@@ -71,9 +74,10 @@ class SSLServerCertVerificationResult final
                 nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
                 uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
                 bool aSucceeded, PRErrorCode aFinalError,
-                uint32_t aCollectedErrors,
-                bool aIsBuiltCertChainRootBuiltInRoot,
-                uint32_t aProviderFlags) override;
+                nsITransportSecurityInfo::OverridableErrorCategory
+                    aOverridableErrorCategory,
+                bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+                bool aMadeOCSPRequests) override;
 
  private:
   ~SSLServerCertVerificationResult() = default;
@@ -85,9 +89,10 @@ class SSLServerCertVerificationResult final
   EVStatus mEVStatus;
   bool mSucceeded;
   PRErrorCode mFinalError;
-  uint32_t mCollectedErrors;
+  nsITransportSecurityInfo::OverridableErrorCategory mOverridableErrorCategory;
   bool mIsBuiltCertChainRootBuiltInRoot;
   uint32_t mProviderFlags;
+  bool mMadeOCSPRequests;
 };
 
 class SSLServerCertVerificationJob : public Runnable {

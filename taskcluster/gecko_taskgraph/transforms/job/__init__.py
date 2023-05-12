@@ -52,6 +52,7 @@ job_description_schema = Schema(
         Optional("if-dependencies"): task_description_schema["if-dependencies"],
         Optional("requires"): task_description_schema["requires"],
         Optional("expires-after"): task_description_schema["expires-after"],
+        Optional("expiration-policy"): task_description_schema["expiration-policy"],
         Optional("routes"): task_description_schema["routes"],
         Optional("scopes"): task_description_schema["scopes"],
         Optional("tags"): task_description_schema["tags"],
@@ -133,7 +134,9 @@ def rewrite_when_to_optimization(config, jobs):
 @transforms.add
 def set_implementation(config, jobs):
     for job in jobs:
-        impl, os = worker_type_implementation(config.graph_config, job["worker-type"])
+        impl, os = worker_type_implementation(
+            config.graph_config, config.params, job["worker-type"]
+        )
         if os:
             job.setdefault("tags", {})["os"] = os
         if impl:
@@ -163,7 +166,7 @@ def add_resource_monitor(config, jobs):
     for job in jobs:
         if job.get("attributes", {}).get("resource-monitor"):
             worker_implementation, worker_os = worker_type_implementation(
-                config.graph_config, job["worker-type"]
+                config.graph_config, config.params, job["worker-type"]
             )
             # Normalise worker os so that linux-bitbar and similar use linux tools.
             worker_os = worker_os.split("-")[0]

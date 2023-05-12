@@ -20,6 +20,7 @@ metrics_yamls = [
     "dom/media/metrics.yaml",
     "dom/metrics.yaml",
     "gfx/metrics.yaml",
+    "netwerk/metrics.yaml",
     "netwerk/protocol/http/metrics.yaml",
     "toolkit/components/extensions/metrics.yaml",
     "toolkit/components/glean/metrics.yaml",
@@ -39,6 +40,7 @@ pings_yamls = [
     "browser/components/newtab/pings.yaml",
     "toolkit/components/glean/pings.yaml",
     "toolkit/components/glean/tests/test_pings.yaml",
+    "toolkit/components/telemetry/pings.yaml",
     "toolkit/mozapps/update/pings.yaml",
 ]
 

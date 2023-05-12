@@ -72,7 +72,10 @@ The plugin implements the following rules:
    eslint-plugin-mozilla/use-ownerGlobal
    eslint-plugin-mozilla/use-returnValue
    eslint-plugin-mozilla/use-services
+   eslint-plugin-mozilla/valid-ci-uses
    eslint-plugin-mozilla/valid-lazy
+   eslint-plugin-mozilla/valid-services
+   eslint-plugin-mozilla/valid-services-property
    eslint-plugin-mozilla/var-only-at-top-level
 
 Tests

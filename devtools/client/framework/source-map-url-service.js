@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Services = require("Services");
 const SOURCE_MAP_PREF = "devtools.source-map.client-service.enabled";
 
 /**
@@ -411,11 +410,8 @@ class SourceMapURLService {
   }
 
   _ensureAllSourcesPopulated() {
-    if (!this._prefValue) {
+    if (!this._prefValue || this._commands.descriptorFront.isWorkerDescriptor) {
       return null;
-    }
-    if (this._commands.descriptorFront.isWorkerDescriptor) {
-      return;
     }
 
     if (!this._sourcesLoading) {

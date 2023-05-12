@@ -200,6 +200,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether to show search suggestions before general results.
   ["showSearchSuggestionsFirst", true],
 
+  // Whether to show search term in the URL bar for the users default engine.
+  ["showSearchTerms", false],
+
   // Whether speculative connections should be enabled.
   ["speculativeConnect.enabled", true],
 
@@ -234,6 +237,12 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Whether we will match QuickActions within a phrase and not only a prefix.
   ["quickactions.matchInPhrase", true],
+
+  // Whether we show QuickActions when in zero-prefix.
+  ["quickactions.showInZeroPrefix", false],
+
+  // Show multiple actions in a random order.
+  ["quickactions.randomOrderActions", false],
 
   // Whether results will include non-sponsored quick suggest suggestions.
   ["suggest.quicksuggest.nonsponsored", false],
@@ -368,6 +377,7 @@ const PREF_OTHER_DEFAULTS = new Map([
   ["browser.fixup.dns_first_for_single_words", false],
   ["browser.search.suggest.enabled", true],
   ["browser.search.suggest.enabled.private", false],
+  ["browser.search.widget.inNavBar", false],
   ["keyword.enabled", true],
   ["ui.popup.disable_autohide", false],
 ]);

@@ -150,9 +150,22 @@ let SyncedTabsInternal = {
 
     // If Sync isn't configured don't try and sync, else we will get reports
     // of a login failure.
-    if (Weave.Status.checkSetup() == Weave.CLIENT_NOT_CONFIGURED) {
+    if (Weave.Status.checkSetup() === Weave.CLIENT_NOT_CONFIGURED) {
       lazy.log.info(
         "Sync client is not configured, so not attempting a tab sync"
+      );
+      return false;
+    }
+    // If Sync can't log in we also don't try.
+    if (
+      !(
+        Weave.Status.login === Weave.STATUS_OK ||
+        Weave.Status.login === Weave.LOGIN_SUCCEEDED
+      )
+    ) {
+      lazy.log.info(
+        "Can't sync tabs due to the login status",
+        Weave.Status.login
       );
       return false;
     }
@@ -272,10 +285,10 @@ var SyncedTabs = {
     // most recent tab for that client (ie, it is important the tabs for
     // each client are already sorted.)
     clients.sort((a, b) => {
-      if (a.tabs.length == 0) {
+      if (!a.tabs.length) {
         return 1; // b comes first.
       }
-      if (b.tabs.length == 0) {
+      if (!b.tabs.length) {
         return -1; // a comes first.
       }
       return b.tabs[0].lastUsed - a.tabs[0].lastUsed;

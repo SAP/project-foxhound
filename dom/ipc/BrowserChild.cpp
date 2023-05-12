@@ -166,8 +166,6 @@ using namespace mozilla::layout;
 using namespace mozilla::widget;
 using mozilla::layers::GeckoContentController;
 
-NS_IMPL_ISUPPORTS(ContentListener, nsIDOMEventListener)
-
 static const char BEFORE_FIRST_PAINT[] = "before-first-paint";
 
 static uint32_t sConsecutiveTouchMoveCount = 0;
@@ -208,15 +206,6 @@ bool BrowserChild::UpdateFrame(const RepaintRequest& aRequest) {
     return true;
   }
   return true;
-}
-
-NS_IMETHODIMP
-ContentListener::HandleEvent(Event* aEvent) {
-  RemoteDOMEvent remoteEvent;
-  remoteEvent.mEvent = aEvent;
-  NS_ENSURE_STATE(remoteEvent.mEvent);
-  mBrowserChild->SendEvent(remoteEvent);
-  return NS_OK;
 }
 
 class BrowserChild::DelayedDeleteRunnable final : public Runnable,
@@ -2253,7 +2242,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvPasteTransferable(
 
   rv = nsContentUtils::IPCTransferableToTransferable(
       aDataTransfer, aIsPrivateData, aRequestingPrincipal, aContentPolicyType,
-      true /* aAddDataFlavor */, trans, this);
+      true /* aAddDataFlavor */, trans);
   NS_ENSURE_SUCCESS(rv, IPC_OK());
 
   nsCOMPtr<nsIDocShell> ourDocShell = do_GetInterface(WebNavigation());
@@ -2321,17 +2310,6 @@ RefPtr<VsyncMainChild> BrowserChild::GetVsyncChild() {
   }
 #endif
   return mVsyncChild;
-}
-
-mozilla::ipc::IPCResult BrowserChild::RecvActivateFrameEvent(
-    const nsAString& aType, const bool& capture) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(WebNavigation());
-  NS_ENSURE_TRUE(window, IPC_OK());
-  nsCOMPtr<EventTarget> chromeHandler = window->GetChromeEventHandler();
-  NS_ENSURE_TRUE(chromeHandler, IPC_OK());
-  RefPtr<ContentListener> listener = new ContentListener(this);
-  chromeHandler->AddEventListener(aType, listener, capture);
-  return IPC_OK();
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvLoadRemoteScript(
@@ -2842,7 +2820,7 @@ void BrowserChild::InitRenderingState(
       lm->SetLayersObserverEpoch(mLayersObserverEpoch);
     }
   } else {
-    NS_WARNING("Fallback to BasicLayerManager");
+    NS_WARNING("Fallback to FallbackRenderer");
     mLayersConnected = Some(false);
   }
 
@@ -3144,8 +3122,6 @@ void BrowserChild::ClearCachedResources() {
   }
 }
 
-void BrowserChild::InvalidateLayers() { MOZ_ASSERT(mPuppetWidget); }
-
 void BrowserChild::SchedulePaint() {
   nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
   if (!docShell) {
@@ -3220,8 +3196,6 @@ void BrowserChild::ReinitRendering() {
 }
 
 void BrowserChild::ReinitRenderingForDeviceReset() {
-  InvalidateLayers();
-
   RefPtr<WebRenderLayerManager> lm =
       mPuppetWidget->GetWindowRenderer()->AsWebRender();
   if (lm) {

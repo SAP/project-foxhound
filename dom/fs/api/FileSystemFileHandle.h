@@ -20,12 +20,12 @@ struct FileSystemCreateWritableOptions;
 class FileSystemFileHandle final : public FileSystemHandle {
  public:
   FileSystemFileHandle(nsIGlobalObject* aGlobal,
-                       RefPtr<FileSystemActorHolder>& aActor,
+                       RefPtr<FileSystemManager>& aManager,
                        const fs::FileSystemEntryMetadata& aMetadata,
                        fs::FileSystemRequestHandler* aRequestHandler);
 
   FileSystemFileHandle(nsIGlobalObject* aGlobal,
-                       RefPtr<FileSystemActorHolder>& aActor,
+                       RefPtr<FileSystemManager>& aManager,
                        const fs::FileSystemEntryMetadata& aMetadata);
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -45,6 +45,11 @@ class FileSystemFileHandle final : public FileSystemHandle {
       const FileSystemCreateWritableOptions& aOptions, ErrorResult& aError);
 
   already_AddRefed<Promise> CreateSyncAccessHandle(ErrorResult& aError);
+
+  // [Serializable]
+  static already_AddRefed<FileSystemFileHandle> ReadStructuredClone(
+      JSContext* aCx, nsIGlobalObject* aGlobal,
+      JSStructuredCloneReader* aReader);
 
  private:
   ~FileSystemFileHandle() = default;

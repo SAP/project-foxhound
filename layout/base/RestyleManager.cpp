@@ -489,9 +489,15 @@ static bool StateChangeMayAffectFrame(const Element& aElement,
   }
 
   if (aElement.IsHTMLElement(nsGkAtoms::img)) {
-    // Loading state doesn't affect <img>, see
-    // `nsImageFrame::ShouldCreateImageFrameFor`.
-    return brokenChanged;
+    if (!brokenChanged) {
+      // Loading state doesn't affect <img>, see
+      // `nsImageFrame::ImageFrameTypeForElement`.
+      return false;
+    }
+    const bool needsImageFrame =
+        nsImageFrame::ImageFrameTypeFor(aElement, *aFrame.Style()) !=
+        nsImageFrame::ImageFrameType::None;
+    return needsImageFrame != aFrame.IsImageFrameOrSubclass();
   }
 
   if (aElement.IsSVGElement(nsGkAtoms::image)) {
@@ -1395,6 +1401,13 @@ static inline void TryToDealWithScrollbarChange(nsChangeHint& aHint,
       aHint |= nsChangeHint_ReflowHintsForScrollbarChange;
       return;
     }
+  } else if (aFrame->IsTextInputFrame()) {
+    // input / textarea for the most part don't honor overflow themselves, the
+    // editor root will deal with the change if needed.
+    // However the textarea intrinsic size relies on GetDesiredScrollbarSizes(),
+    // so we need to reflow the textarea itself, not just the inner control.
+    aHint |= nsChangeHint_ReflowHintsForScrollbarChange;
+    return;
   } else if (!scrollable) {
     // Something changed, but we don't have nor will have a scroll frame,
     // there's nothing to do here.
@@ -2701,7 +2714,7 @@ bool RestyleManager::ProcessPostTraversal(Element* aElement,
   // We should really fix the weird primary frame mapping for image maps
   // (bug 135040)...
   if (styleFrame && styleFrame->GetContent() != aElement) {
-    MOZ_ASSERT(static_cast<nsImageFrame*>(do_QueryFrame(styleFrame)));
+    MOZ_ASSERT(styleFrame->IsImageFrameOrSubclass());
     styleFrame = nullptr;
   }
 

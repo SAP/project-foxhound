@@ -34,32 +34,14 @@
             <xsl:value-of select="@rspace"/>
             </xsl:attribute> 
           </xsl:if>
-          <xsl:if test="@minsize">
-            <xsl:attribute name="minsize">
-              <xsl:value-of select="@minsize"/>
-            </xsl:attribute> 
-          </xsl:if>
           <xsl:if test="@*[.='true']">
             <xsl:attribute name="properties">
-              <!-- largeop, movablelimits, stretchy, separator, accent, fence,
+              <!-- largeop, movablelimits, stretchy, separator, fence,
                    symmetric -->
               <xsl:for-each select="@*[.='true']">
                 <xsl:value-of select="name()"/>
                 <xsl:text> </xsl:text>
               </xsl:for-each>
-              <xsl:if test="../unicodedata/@mirror = 'Y'">
-                <xsl:text>mirrorable </xsl:text>
-              </xsl:if>
-            </xsl:attribute> 
-          </xsl:if>
-          <xsl:if test="@priority">
-            <xsl:attribute name="priority">
-              <xsl:value-of select="@priority"/>
-            </xsl:attribute> 
-          </xsl:if>
-          <xsl:if test="@linebreakstyle">
-            <xsl:attribute name="linebreakstyle">
-              <xsl:value-of select="@linebreakstyle"/>
             </xsl:attribute> 
           </xsl:if>
           <!-- end operator-dictionary -->

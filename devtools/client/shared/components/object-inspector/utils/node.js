@@ -8,7 +8,7 @@ const {
 const ArrayRep = require("devtools/client/shared/components/reps/reps/array");
 const GripArrayRep = require("devtools/client/shared/components/reps/reps/grip-array");
 const GripMap = require("devtools/client/shared/components/reps/reps/grip-map");
-const GripMapEntryRep = require("devtools/client/shared/components/reps/reps/grip-map-entry");
+const GripEntryRep = require("devtools/client/shared/components/reps/reps/grip-entry");
 const ErrorRep = require("devtools/client/shared/components/reps/reps/error");
 const BigIntRep = require("devtools/client/shared/components/reps/reps/big-int");
 const {
@@ -94,7 +94,7 @@ function nodeIsEntries(item) {
 }
 
 function nodeIsMapEntry(item) {
-  return GripMapEntryRep.supportsObject(getValue(item));
+  return GripEntryRep.supportsObject(getValue(item));
 }
 
 function nodeHasChildren(item) {
@@ -285,14 +285,15 @@ function nodeHasEntries(item) {
     className === "WeakMap" ||
     className === "WeakSet" ||
     className === "Storage" ||
-    // @backward-compat { version 104 } Support for enumerate URLSearchParams entries was
-    // added in 104. When connecting to older server, we don't want to show the <entries>
-    // node for them. The extra check can be removed once 104 hits release.
-    (className === "URLSearchParams" && Array.isArray(value.preview?.entries)) ||
+    className === "URLSearchParams" ||
     // @backward-compat { version 105 } Support for enumerate Headers entries was
     // added in 105. When connecting to older server, we don't want to show the <entries>
     // node for them. The extra check can be removed once 105 hits release.
-    (className === "Headers" && Array.isArray(value.preview?.entries))
+    (className === "Headers" && Array.isArray(value.preview?.entries)) ||
+    // @backward-compat { version 106 } Support for enumerate FormData entries was
+    // added in 105. When connecting to older server, we don't want to show the <entries>
+    // node for them. The extra check can be removed once 105 hits release.
+    (className === "FormData" && Array.isArray(value.preview?.entries))
   );
 }
 

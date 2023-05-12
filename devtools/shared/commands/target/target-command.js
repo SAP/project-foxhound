@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 
 const BROWSERTOOLBOX_FISSION_ENABLED = "devtools.browsertoolbox.fission";
@@ -760,7 +759,7 @@ class TargetCommand extends EventEmitter {
     const unsupportedKeys = Object.keys(options).filter(
       key => !availableOptions.includes(key)
     );
-    if (unsupportedKeys.length > 0) {
+    if (unsupportedKeys.length) {
       throw new Error(
         `TargetCommand.watchTargets does not expect the following options: ${unsupportedKeys.join(
           ", "
@@ -861,7 +860,7 @@ class TargetCommand extends EventEmitter {
     const unsupportedKeys = Object.keys(options).filter(
       key => !availableOptions.includes(key)
     );
-    if (unsupportedKeys.length > 0) {
+    if (unsupportedKeys.length) {
       throw new Error(
         `TargetCommand.unwatchTargets does not expect the following options: ${unsupportedKeys.join(
           ", "

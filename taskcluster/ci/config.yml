@@ -555,7 +555,10 @@ workers:
             worker-type:
                 by-release-level:
                     production: '{trust-domain}-3-tree'
-                    staging: '{trust-domain}-1-tree'
+                    staging:
+                        by-project:
+                            autoland: '{trust-domain}-3-tree'
+                            default: '{trust-domain}-1-tree'
         tree-dev:
             provisioner: scriptworker-k8s
             implementation: treescript
@@ -571,11 +574,16 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: '{alias}-gcp'
-        t-linux-metal:
+        t-linux-kvm:
             provisioner: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: '{alias}'
+            worker-type: 't-linux-kvm-gcp'
+        t-linux-kvm-aws:
+            provisioner: '{trust-domain}-t'
+            implementation: docker-worker
+            os: linux
+            worker-type: 't-linux-metal'
         t-linux-talos:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -678,3 +686,19 @@ mac-notarization:
         by-platform:
             macosx64.*: build/package/mac_osx/requirements.plist
             default: ''
+
+expiration-policy:
+    by-project:
+        try:
+            default: 1 month
+            medium: 1 month
+            long: 1 month
+        autoland:
+            default: 1 year
+            medium: 1 year
+            # To avoid keeping shippable builds for over a year
+            long: 1 year
+        default:
+            default: 3 months
+            medium: 1 year
+            long: 1 year

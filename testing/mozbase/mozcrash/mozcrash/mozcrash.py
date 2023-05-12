@@ -194,6 +194,8 @@ ABORT_SIGNATURES = (
     "static void Abort(const char *)",
     "std::sys_common::backtrace::__rust_end_short_backtrace",
     "rust_begin_unwind",
+    # This started showing up when we enabled dumping inlined functions
+    "MOZ_Crash",
 )
 
 # Similar to above, but matches if the substring appears anywhere in the
@@ -400,7 +402,7 @@ class CrashInfo(object):
             # Either `_` or `-` may be used in the name, so be careful of that
             # (newer versions should use `-`). Otherwise the actual version number
             # is the usual `<major>.<minor>.<patch>` that can be parsed with
-            # `distutils.version.LooseVersion`.
+            # `looseversion.LooseVersion`.
             rust_minidump = stackwalk_version_check.returncode == 0
 
             # Now build up the actual command

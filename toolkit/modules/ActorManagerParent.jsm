@@ -203,6 +203,21 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
+  CookieBanner: {
+    parent: {
+      moduleURI: "resource://gre/actors/CookieBannerParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/CookieBannerChild.jsm",
+      events: {
+        DOMContentLoaded: {},
+      },
+    },
+
+    allFrames: true,
+    enablePreference: "cookiebanners.bannerClicking.enabled",
+  },
+
   DateTimePicker: {
     parent: {
       moduleURI: "resource://gre/actors/DateTimePickerParent.jsm",
@@ -404,7 +419,7 @@ let JSWINDOWACTORS = {
   // 'ViewSource:LoadSource' or 'ViewSource:LoadSourceWithSelection'.
   ViewSource: {
     child: {
-      moduleURI: "resource://gre/actors/ViewSourceChild.jsm",
+      esModuleURI: "resource://gre/actors/ViewSourceChild.sys.mjs",
     },
 
     allFrames: true,
@@ -413,10 +428,10 @@ let JSWINDOWACTORS = {
   // This actor is for the view-source page itself.
   ViewSourcePage: {
     parent: {
-      moduleURI: "resource://gre/actors/ViewSourcePageParent.jsm",
+      esModuleURI: "resource://gre/actors/ViewSourcePageParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource://gre/actors/ViewSourcePageChild.jsm",
+      esModuleURI: "resource://gre/actors/ViewSourcePageChild.sys.mjs",
       events: {
         pageshow: { capture: true },
         click: {},
@@ -499,15 +514,15 @@ if (!Services.prefs.getBoolPref("browser.pagedata.enabled", false)) {
 
 if (AppConstants.platform != "android") {
   // For GeckoView support see bug 1776829.
-  JSWINDOWACTORS.ClipboardReadTextPaste = {
+  JSWINDOWACTORS.ClipboardReadPaste = {
     parent: {
-      moduleURI: "resource://gre/actors/ClipboardReadTextPasteParent.jsm",
+      moduleURI: "resource://gre/actors/ClipboardReadPasteParent.jsm",
     },
 
     child: {
-      moduleURI: "resource://gre/actors/ClipboardReadTextPasteChild.jsm",
+      moduleURI: "resource://gre/actors/ClipboardReadPasteChild.jsm",
       events: {
-        MozClipboardReadTextPaste: {},
+        MozClipboardReadPaste: {},
       },
     },
 

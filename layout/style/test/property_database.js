@@ -11466,6 +11466,14 @@ var gCSSProperties = {
     alias_for: "flex-flow",
     subproperties: ["flex-direction", "flex-wrap"],
   },
+  "-webkit-line-clamp": {
+    domProp: "webkitLineClamp",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: ["1", "2"],
+    invalid_values: ["auto", "0", "-1"],
+  },
   "-webkit-order": {
     domProp: "webkitOrder",
     inherited: false,
@@ -12883,17 +12891,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.overscroll-behavior.enabled")) {
 
 gCSSProperties["display"].other_values.push("flow-root");
 
-if (IsCSSPropertyPrefEnabled("layout.css.webkit-line-clamp.enabled")) {
-  gCSSProperties["-webkit-line-clamp"] = {
-    domProp: "webkitLineClamp",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: ["1", "2"],
-    invalid_values: ["auto", "0", "-1"],
-  };
-}
-
 if (IsCSSPropertyPrefEnabled("layout.css.hyphenate-character.enabled")) {
   gCSSProperties["hyphenate-character"] = {
     domProp: "hyphenateCharacter",
@@ -12971,16 +12968,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.container-queries.enabled")) {
     domProp: "containerType",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: [
-      "style",
-      "inline-size",
-      "block-size",
-      "size",
-      "style inline-size",
-      "block-size style",
-      "size style",
-    ],
+    initial_values: ["normal"],
+    other_values: ["inline-size", "size"],
     invalid_values: [
       "none style",
       "none inline-size",
@@ -12989,6 +12978,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.container-queries.enabled")) {
       "style style",
       "inline-size style inline-size",
       "inline-size block-size",
+      "block-size",
+      "block-size style",
       "size inline-size",
       "size block-size",
     ],
@@ -13007,8 +12998,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.container-queries.enabled")) {
     type: CSS_TYPE_TRUE_SHORTHAND,
     subproperties: ["container-type", "container-name"],
     initial_values: ["none"],
-    other_values: ["size", "size / foo bar", "inline-size style / foo"],
-    invalid_values: ["foo / size", "foo bar / size"],
+    other_values: ["foo / size", "foo bar / size", "foo / inline-size", "foo"],
+    invalid_values: ["size / foo", "size / foo bar"],
   };
 }
 

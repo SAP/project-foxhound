@@ -105,8 +105,6 @@ class ResizeObservation final : public LinkedListElement<ResizeObservation> {
   // The latest recorded of observed target.
   // This will be CSS pixels for border-box/content-box, or device pixels for
   // device-pixel-content-box.
-  // Note: We use default constructor for this because we want to start with a
-  // (0, 0) size, per the spec.
   LogicalPixelSize mLastReportedSize;
 };
 
@@ -169,6 +167,11 @@ class ResizeObserver final : public nsISupports, public nsWrapperCache {
    * since last GatherActiveObservations().
    */
   bool HasSkippedObservations() const { return mHasSkippedTargets; }
+
+  /**
+   * Returns whether this is an internal ResizeObserver with a native callback.
+   */
+  bool HasNativeCallback() { return mCallback.is<NativeCallback>(); }
 
   /**
    * Invoke the callback function in JavaScript for all active observations

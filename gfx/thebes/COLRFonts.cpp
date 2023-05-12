@@ -302,7 +302,7 @@ struct DeltaSetIndexMap {
                   sizeof(v1.mapCount);
         break;
       default:
-        MOZ_ASSERT_UNREACHABLE("unknown DeltaSetIndexMap format");
+        // unknown DeltaSetIndexMap format
         return aIndex;
     }
     if (!mapCount) {
@@ -379,7 +379,9 @@ static int32_t ApplyVariation(const PaintState& aState, int32_t aValue,
   uint16_t outerIndex = mappedIndex >> 16;
   uint16_t innerIndex = mappedIndex & 0xffff;
   const auto* itemVariationDataOffsets = store->itemVariationDataOffsets();
-  if (mappedIndex == 0xffffffff || !itemVariationDataOffsets[outerIndex]) {
+  if (mappedIndex == 0xffffffff ||
+      outerIndex >= uint16_t(store->itemVariationDataCount) ||
+      !itemVariationDataOffsets[outerIndex]) {
     return aValue;
   }
   const auto* regionList = store->variationRegionList();
@@ -517,7 +519,7 @@ struct Clip {
       case 2:
         return reinterpret_cast<const ClipBoxFormat2*>(box)->GetRect(aState);
       default:
-        MOZ_ASSERT_UNREACHABLE("unknown ClipBoxFormat");
+        // unknown ClipBoxFormat
         break;
     }
     return Rect();
@@ -709,7 +711,7 @@ struct PaintColrLayers {
     if (!layerList) {
       return false;
     }
-    if (firstLayerIndex + numLayers > layerList->numLayers) {
+    if (uint64_t(firstLayerIndex) + numLayers > layerList->numLayers) {
       return false;
     }
     const auto* paintOffsets = layerList->paintOffsets() + firstLayerIndex;
@@ -729,7 +731,7 @@ struct PaintColrLayers {
     if (!layerList) {
       return Rect();
     }
-    if (firstLayerIndex + numLayers > layerList->numLayers) {
+    if (uint64_t(firstLayerIndex) + numLayers > layerList->numLayers) {
       return Rect();
     }
     Rect result;
@@ -826,13 +828,19 @@ struct PaintLinearGradient : public PaintPatternBase {
       return nullptr;
     }
     if (firstStop != 0.0 || lastStop != 1.0) {
-      // Normalize the gradient stops range to 0.0 - 1.0, and adjust positions
-      // of the endpoints accordingly.
-      Point v = p1 - p0;
-      p0 += v * firstStop;
-      p1 -= v * (1.0f - lastStop);
-      // Move the rotation vector to maintain the same direction from p0.
-      p2 += v * firstStop;
+      if (firstStop == lastStop) {
+        if (aColorLine->extend != T::EXTEND_PAD) {
+          return MakeUnique<ColorPattern>(DeviceColor());
+        }
+      } else {
+        // Normalize the gradient stops range to 0.0 - 1.0, and adjust positions
+        // of the endpoints accordingly.
+        Point v = p1 - p0;
+        p0 += v * firstStop;
+        p1 -= v * (1.0f - lastStop);
+        // Move the rotation vector to maintain the same direction from p0.
+        p2 += v * firstStop;
+      }
     }
     Point p3;
     if (FuzzyEqualsMultiplicative(p2.y, p0.y)) {
@@ -904,19 +912,46 @@ struct PaintRadialGradient : public PaintPatternBase {
     }
     const auto* colorLine =
         reinterpret_cast<const ColorLine*>(aState.COLRv1BaseAddr() + clOffset);
-    UniquePtr<Pattern> solidColor = colorLine->AsSolidColor(aState);
-    if (solidColor) {
-      return solidColor;
-    }
-    RefPtr stops = colorLine->MakeGradientStops(aState);
-    if (!stops) {
-      return nullptr;
-    }
     Point c1(aState.F2P(int16_t(x0)), aState.F2P(int16_t(y0)));
     Point c2(aState.F2P(int16_t(x1)), aState.F2P(int16_t(y1)));
     float r1 = aState.F2P(uint16_t(radius0));
     float r2 = aState.F2P(uint16_t(radius1));
-    return MakeUnique<RadialGradientPattern>(c1, c2, r1, r2, std::move(stops),
+    return NormalizeAndMakeGradient(aState, colorLine, c1, c2, r1, r2);
+  }
+
+  template <typename T>
+  UniquePtr<Pattern> NormalizeAndMakeGradient(const PaintState& aState,
+                                              const T* aColorLine, Point c1,
+                                              Point c2, float r1,
+                                              float r2) const {
+    if ((c1 == c2 && r1 == r2) || (r1 == 0.0 && r2 == 0.0)) {
+      return MakeUnique<ColorPattern>(DeviceColor());
+    }
+    UniquePtr<Pattern> solidColor = aColorLine->AsSolidColor(aState);
+    if (solidColor) {
+      return solidColor;
+    }
+    float firstStop, lastStop;
+    RefPtr stops = aColorLine->MakeGradientStops(aState, &firstStop, &lastStop);
+    if (!stops) {
+      return nullptr;
+    }
+    if (firstStop != 0.0 || lastStop != 1.0) {
+      if (firstStop == lastStop) {
+        if (aColorLine->extend != T::EXTEND_PAD) {
+          return MakeUnique<ColorPattern>(DeviceColor());
+        }
+      } else {
+        Point v = c2 - c1;
+        c1 += v * firstStop;
+        c2 -= v * (1.0f - lastStop);
+        float deltaR = r2 - r1;
+        r1 = r1 + deltaR * firstStop;
+        r2 = r2 - deltaR * (1.0f - lastStop);
+      }
+    }
+    return MakeUnique<RadialGradientPattern>(c1, c2, fabsf(r1), fabsf(r2),
+                                             std::move(stops),
                                              Matrix::Scaling(1.0, -1.0));
   }
 };
@@ -935,14 +970,6 @@ struct PaintVarRadialGradient : public PaintRadialGradient {
     }
     const auto* colorLine = reinterpret_cast<const VarColorLine*>(
         aState.COLRv1BaseAddr() + clOffset);
-    UniquePtr<Pattern> solidColor = colorLine->AsSolidColor(aState);
-    if (solidColor) {
-      return solidColor;
-    }
-    RefPtr stops = colorLine->MakeGradientStops(aState);
-    if (!stops) {
-      return nullptr;
-    }
     Point c1(aState.F2P(ApplyVariation(aState, int16_t(x0), varIndexBase)),
              aState.F2P(
                  ApplyVariation(aState, int16_t(y0), SatAdd(varIndexBase, 1))));
@@ -954,8 +981,7 @@ struct PaintVarRadialGradient : public PaintRadialGradient {
                  ApplyVariation(aState, int16_t(y1), SatAdd(varIndexBase, 4))));
     float r2 = aState.F2P(
         ApplyVariation(aState, uint16_t(radius1), SatAdd(varIndexBase, 5)));
-    return MakeUnique<RadialGradientPattern>(c1, c2, r1, r2, std::move(stops),
-                                             Matrix::Scaling(1.0, -1.0));
+    return NormalizeAndMakeGradient(aState, colorLine, c1, c2, r1, r2);
   }
 };
 
@@ -988,7 +1014,7 @@ struct PaintSweepGradient : public PaintPatternBase {
                                               const T* aColorLine,
                                               Point aCenter, float aStart,
                                               float aEnd) const {
-    if (aStart == aEnd && aColorLine->extend != ColorLine::EXTEND_PAD) {
+    if (aStart == aEnd && aColorLine->extend != T::EXTEND_PAD) {
       return MakeUnique<ColorPattern>(DeviceColor());
     }
     UniquePtr<Pattern> solidColor = aColorLine->AsSolidColor(aState);
@@ -1006,9 +1032,15 @@ struct PaintSweepGradient : public PaintPatternBase {
       return nullptr;
     }
     if (firstStop != 0.0 || lastStop != 1.0) {
-      float sweep = aEnd - aStart;
-      aStart = aStart + sweep * firstStop;
-      aEnd = aStart + sweep * (lastStop - firstStop);
+      if (firstStop == lastStop) {
+        if (aColorLine->extend != T::EXTEND_PAD) {
+          return MakeUnique<ColorPattern>(DeviceColor());
+        }
+      } else {
+        float sweep = aEnd - aStart;
+        aStart = aStart + sweep * firstStop;
+        aEnd = aStart + sweep * (lastStop - firstStop);
+      }
     }
     return MakeUnique<ConicGradientPattern>(aCenter, M_PI / 2.0, aStart / 2.0,
                                             aEnd / 2.0, std::move(stops),
@@ -1050,6 +1082,9 @@ struct PaintGlyph {
 
   bool Paint(const PaintState& aState, uint32_t aOffset) const {
     MOZ_ASSERT(format == kFormat);
+    if (!paintOffset) {
+      return true;
+    }
     Glyph g{uint16_t(glyphID), Point()};
     GlyphBuffer buffer{&g, 1};
     // If the paint is a simple fill (rather than a sub-graph of further paint
@@ -1169,12 +1204,18 @@ struct PaintTransformBase {
   Offset24 paintOffset;
 
   bool Paint(const PaintState& aState, uint32_t aOffset) const {
+    if (!paintOffset) {
+      return true;
+    }
     AutoRestoreTransform saveTransform(aState.mDrawTarget);
     aState.mDrawTarget->ConcatTransform(DispatchGetMatrix(aState, aOffset));
     return DispatchPaint(aState, aOffset + paintOffset);
   }
 
   Rect GetBoundingRect(const PaintState& aState, uint32_t aOffset) const {
+    if (!paintOffset) {
+      return Rect();
+    }
     Rect bounds = DispatchGetBounds(aState, aOffset + paintOffset);
     bounds = DispatchGetMatrix(aState, aOffset).TransformBounds(bounds);
     return bounds;
@@ -1500,10 +1541,12 @@ struct PaintComposite {
 
   bool Paint(const PaintState& aState, uint32_t aOffset) const {
     MOZ_ASSERT(format == kFormat);
+    if (!backdropPaintOffset || !sourcePaintOffset) {
+      return true;
+    }
     auto mapCompositionMode = [](uint8_t aMode) -> CompositionOp {
       switch (aMode) {
         default:
-          MOZ_ASSERT_UNREACHABLE("bad composition mode");
           return CompositionOp::OP_SOURCE;
         case COMPOSITE_CLEAR:
         case COMPOSITE_SRC:
@@ -1586,6 +1629,9 @@ struct PaintComposite {
   }
 
   Rect GetBoundingRect(const PaintState& aState, uint32_t aOffset) const {
+    if (!backdropPaintOffset || !sourcePaintOffset) {
+      return Rect();
+    }
     // For now, just return the maximal bounds that could result; this could be
     // smarter, returning just one of the rects or their intersection when
     // appropriate for the composite mode in effect.
@@ -1624,6 +1670,10 @@ const BaseGlyphPaintRecord* COLRv1Header::GetBaseGlyphPaint(
 
 // Process paint table at aOffset from start of COLRv1 table.
 static bool DispatchPaint(const PaintState& aState, uint32_t aOffset) {
+  if (aOffset >= aState.mCOLRLength) {
+    return false;
+  }
+
   const char* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
   uint8_t format = uint8_t(*paint);
@@ -1654,7 +1704,7 @@ static bool DispatchPaint(const PaintState& aState, uint32_t aOffset) {
     DO_CASE_VAR(SkewAroundCenter);
     DO_CASE(PaintComposite);
     default:
-      MOZ_ASSERT_UNREACHABLE("Bad COLRv1 table");
+      break;
   }
 
 #undef DO_CASE
@@ -1666,6 +1716,10 @@ static bool DispatchPaint(const PaintState& aState, uint32_t aOffset) {
 // simple format that can be used as a fill (not a sub-graph).
 static UniquePtr<Pattern> DispatchMakePattern(const PaintState& aState,
                                               uint32_t aOffset) {
+  if (aOffset >= aState.mCOLRLength) {
+    return nullptr;
+  }
+
   const char* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
   uint8_t format = uint8_t(*paint);
@@ -1692,6 +1746,10 @@ static UniquePtr<Pattern> DispatchMakePattern(const PaintState& aState,
 }
 
 static Matrix DispatchGetMatrix(const PaintState& aState, uint32_t aOffset) {
+  if (aOffset >= aState.mCOLRLength) {
+    return Matrix();
+  }
+
   const char* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
   uint8_t format = uint8_t(*paint);
@@ -1714,7 +1772,7 @@ static Matrix DispatchGetMatrix(const PaintState& aState, uint32_t aOffset) {
     DO_CASE_VAR(Skew);
     DO_CASE_VAR(SkewAroundCenter);
     default:
-      MOZ_ASSERT_UNREACHABLE("Bad COLRv1 table");
+      break;
   }
 
 #undef DO_CASE
@@ -1723,6 +1781,10 @@ static Matrix DispatchGetMatrix(const PaintState& aState, uint32_t aOffset) {
 }
 
 static Rect DispatchGetBounds(const PaintState& aState, uint32_t aOffset) {
+  if (aOffset >= aState.mCOLRLength) {
+    return Rect();
+  }
+
   const char* paint = aState.COLRv1BaseAddr() + aOffset;
   // All paint table formats start with an 8-bit 'format' field.
   uint8_t format = uint8_t(*paint);
@@ -1754,7 +1816,7 @@ static Rect DispatchGetBounds(const PaintState& aState, uint32_t aOffset) {
     DO_CASE_VAR(SkewAroundCenter);
     DO_CASE(PaintComposite);
     default:
-      MOZ_ASSERT_UNREACHABLE("Bad COLRv1 table");
+      break;
   }
 
 #undef DO_CASE
@@ -1887,7 +1949,7 @@ bool Clip::Validate(const COLRv1Header* aHeader, uint64_t aLength) const {
       }
       break;
     default:
-      MOZ_ASSERT_UNREACHABLE("unknown ClipBoxFormat");
+      // unknown ClipBoxFormat
       break;
   }
   return false;

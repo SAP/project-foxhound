@@ -18,13 +18,28 @@ const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
+  ContextDescriptorType:
+    "chrome://remote/content/shared/messagehandler/MessageHandler.jsm",
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
   RootMessageHandler:
     "chrome://remote/content/shared/messagehandler/RootMessageHandler.jsm",
 });
 
 class SessionModule extends Module {
-  destroy() {}
+  #globalEventSet;
+
+  constructor(messageHandler) {
+    super(messageHandler);
+
+    // Set of event names which are strings of the form [moduleName].[eventName]
+    // We should only add an actual event listener on the MessageHandler the
+    // first time an event is subscribed to.
+    this.#globalEventSet = new Set();
+  }
+
+  destroy() {
+    this.#globalEventSet = null;
+  }
 
   /**
    * Commands
@@ -67,16 +82,18 @@ class SessionModule extends Module {
         const [moduleName] = event.split(".");
         this.#assertModuleSupportsEvent(moduleName, event);
 
-        return this.messageHandler.handleCommand({
-          moduleName,
-          commandName: "_subscribeEvent",
-          params: {
-            event,
+        if (this.#globalEventSet.has(event)) {
+          return Promise.resolve();
+        }
+        this.#globalEventSet.add(event);
+
+        return this.messageHandler.eventsDispatcher.on(
+          event,
+          {
+            type: lazy.ContextDescriptorType.All,
           },
-          destination: {
-            type: lazy.RootMessageHandler.type,
-          },
-        });
+          this.#onMessageHandlerEvent
+        );
       })
     );
   }
@@ -118,23 +135,25 @@ class SessionModule extends Module {
         const [moduleName] = event.split(".");
         this.#assertModuleSupportsEvent(moduleName, event);
 
-        return this.messageHandler.handleCommand({
-          moduleName,
-          commandName: "_unsubscribeEvent",
-          params: {
-            event,
+        if (!this.#globalEventSet.has(event)) {
+          return Promise.resolve();
+        }
+        this.#globalEventSet.delete(event);
+
+        return this.messageHandler.eventsDispatcher.off(
+          event,
+          {
+            type: lazy.ContextDescriptorType.All,
           },
-          destination: {
-            type: lazy.RootMessageHandler.type,
-          },
-        });
+          this.#onMessageHandlerEvent
+        );
       })
     );
   }
 
   #assertModuleSupportsEventSubscription(moduleName) {
     const rootModuleClass = this.#getRootModuleClass(moduleName);
-    const supportsEvents = rootModuleClass?.supportsCommand("_subscribeEvent");
+    const supportsEvents = rootModuleClass?.supportedEvents().length > 0;
     if (!supportsEvents) {
       throw new lazy.error.InvalidArgumentError(
         `Module ${moduleName} does not support event subscriptions`
@@ -196,6 +215,16 @@ class SessionModule extends Module {
 
     return events;
   }
+
+  #onMessageHandlerEvent = (name, event) => {
+    // TODO: As long as we only support subscribing to all available top-level
+    // browsing contexts, it is fine to always emit an event captured here as
+    // protocol event.
+    // However when we start supporting subscribing per context, the event
+    // should only be emitted if the origin of the event matches a context
+    // descriptor passed to session.subscribe for this event.
+    this.messageHandler.emitProtocolEvent(name, event);
+  };
 }
 
 // To export the class as lower-case

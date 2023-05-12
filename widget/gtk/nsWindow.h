@@ -280,6 +280,7 @@ class nsWindow final : public nsBaseWidget {
   GdkWindow* GetToplevelGdkWindow() const;
   GtkWidget* GetGtkWidget() const { return mShell; }
   nsIFrame* GetFrame() const;
+  nsWindow* GetEffectiveParent();
   bool IsDestroyed() const { return mIsDestroyed; }
   bool IsPopup() const;
   bool IsWaylandPopup() const;
@@ -453,6 +454,8 @@ class nsWindow final : public nsBaseWidget {
   // Force hide this window, remove compositor etc. to avoid
   // rendering queue blocking (see Bug 1782948).
   void ClearRenderingQueue();
+
+  bool ApplyEnterLeaveMutterWorkaround();
 
  protected:
   virtual ~nsWindow();
@@ -838,6 +841,7 @@ class nsWindow final : public nsBaseWidget {
   void CloseAllPopupsBeforeRemotePopup();
   void WaylandPopupHideClosedPopups();
   void WaylandPopupMove();
+  void WaylandPopupPrepareForMove();
   bool WaylandPopupRemoveNegativePosition(int* aX = nullptr, int* aY = nullptr);
   bool WaylandPopupCheckAndGetAnchor(GdkRectangle* aPopupAnchor);
   bool WaylandPopupAnchorAdjustForParentPopup(GdkRectangle* aPopupAnchor);

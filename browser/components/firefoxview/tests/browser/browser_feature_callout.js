@@ -1,19 +1,43 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
+
+const { ASRouter } = ChromeUtils.import(
+  "resource://activity-stream/lib/ASRouter.jsm"
+);
+
+const { BuiltInThemes } = ChromeUtils.import(
+  "resource:///modules/BuiltInThemes.jsm"
+);
+
 const calloutId = "root";
 const calloutSelector = `#${calloutId}.featureCallout`;
 const primaryButtonSelector = `#${calloutId} .primary`;
 const featureTourPref = "browser.firefox-view.feature-tour";
-const defaultPrefValue = JSON.stringify({
-  message: "FIREFOX_VIEW_FEATURE_TOUR",
-  screen: "FEATURE_CALLOUT_1",
-  complete: false,
-});
-
-const waitForCalloutScreen = async (doc, screenId) => {
-  await BrowserTestUtils.waitForCondition(() => {
-    return doc.querySelector(`${calloutSelector}:not(.hidden) ${screenId}`);
+const getPrefValueByScreen = screen => {
+  return JSON.stringify({
+    message: "FIREFOX_VIEW_FEATURE_TOUR",
+    screen: `FEATURE_CALLOUT_${screen}`,
+    complete: false,
   });
+};
+const defaultPrefValue = getPrefValueByScreen(1);
+
+/**
+ * wait for a feature callout screen of given parameters to be shown
+ * @param {Document} doc the document in which the callout appears
+ * @param {String|Number} screenPostfix Number: the screen number to wait for.
+ *                                      String: the full ID of the screen.
+ */
+const waitForCalloutScreen = async (doc, screenPostfix) => {
+  await BrowserTestUtils.waitForCondition(() =>
+    doc.querySelector(
+      `${calloutSelector}:not(.hidden) .${
+        typeof screenPostfix === "number" ? "FEATURE_CALLOUT_" : ""
+      }${screenPostfix}`
+    )
+  );
 };
 
 const waitForCalloutRemoved = async doc => {
@@ -38,7 +62,7 @@ add_task(async function feature_callout_renders_in_firefox_view() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
+      await waitForCalloutScreen(document, 1);
 
       ok(
         document.querySelector(calloutSelector),
@@ -87,7 +111,7 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
     "about:firefoxview"
   );
   let tab1Doc = tab1.linkedBrowser.contentWindow.document;
-  await waitForCalloutScreen(tab1Doc, ".FEATURE_CALLOUT_2");
+  await waitForCalloutScreen(tab1Doc, 2);
 
   ok(
     tab1Doc.querySelector(".FEATURE_CALLOUT_2"),
@@ -100,7 +124,7 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
     "about:firefoxview"
   );
   let tab2Doc = tab2.linkedBrowser.contentWindow.document;
-  await waitForCalloutScreen(tab2Doc, ".FEATURE_CALLOUT_2");
+  await waitForCalloutScreen(tab2Doc, 2);
 
   ok(
     tab2Doc.querySelector(".FEATURE_CALLOUT_2"),
@@ -108,9 +132,10 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
   );
 
   await clickPrimaryButton(tab2Doc);
-  gBrowser.selectedTab = tab1;
-  await waitForCalloutScreen(tab1Doc, ".FEATURE_CALLOUT_3");
 
+  gBrowser.selectedTab = tab1;
+  tab1.focus();
+  await waitForCalloutScreen(tab1Doc, 3);
   ok(
     tab1Doc.querySelector(".FEATURE_CALLOUT_3"),
     "First tab's Feature Callout advances to the next screen when the tour is advanced in second tab"
@@ -126,6 +151,7 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
   );
 
   gBrowser.selectedTab = tab2;
+  tab2.focus();
   await waitForCalloutRemoved(tab2Doc);
 
   ok(
@@ -150,7 +176,8 @@ add_task(async function feature_callout_closes_on_dismiss() {
     async browser => {
       const { document } = browser.contentWindow;
 
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
+      await waitForCalloutScreen(document, 1);
+
       document.querySelector(".dismiss-button").click();
       await waitForCalloutRemoved(document);
 
@@ -170,155 +197,15 @@ add_task(async function feature_callout_closes_on_dismiss() {
   );
 });
 
-add_task(
-  async function feature_callout_first_screen_positioned_below_element() {
-    await SpecialPowers.pushPrefEnv({
-      set: [[featureTourPref, defaultPrefValue]],
-    });
-
-    await BrowserTestUtils.withNewTab(
-      {
-        gBrowser,
-        url: "about:firefoxview",
-      },
-      async browser => {
-        const { document } = browser.contentWindow;
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
-        let parentTop = document
-          .querySelector("#tabpickup-steps")
-          .getBoundingClientRect().top;
-        let containerTop = document
-          .querySelector(calloutSelector)
-          .getBoundingClientRect().top;
-        ok(
-          parentTop < containerTop,
-          "Feature Callout is positioned below parent element when callout is configured to point from the top"
-        );
-      }
-    );
-  }
-);
-
-add_task(
-  async function feature_callout_second_screen_positioned_above_element() {
-    await SpecialPowers.pushPrefEnv({
-      set: [[featureTourPref, defaultPrefValue]],
-    });
-
-    await BrowserTestUtils.withNewTab(
-      {
-        gBrowser,
-        url: "about:firefoxview",
-      },
-      async browser => {
-        const { document } = browser.contentWindow;
-
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
-        // Advance to second screen
-        await clickPrimaryButton(document);
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_2");
-        let parentTop = document
-          .querySelector("#recently-closed-tabs-container")
-          .getBoundingClientRect().top;
-        let containerTop = document
-          .querySelector(calloutSelector)
-          .getBoundingClientRect().top;
-
-        ok(
-          parentTop > containerTop,
-          "Feature Callout is positioned above parent element when callout is configured to point from the bottom"
-        );
-      }
-    );
-  }
-);
-
-add_task(
-  async function feature_callout_third_screen_positioned_left_of_element() {
-    await SpecialPowers.pushPrefEnv({
-      set: [[featureTourPref, defaultPrefValue]],
-    });
-
-    await BrowserTestUtils.withNewTab(
-      {
-        gBrowser,
-        url: "about:firefoxview",
-      },
-      async browser => {
-        const { document } = browser.contentWindow;
-
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
-        // Advance to third screen
-        await clickPrimaryButton(document);
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_2");
-        await clickPrimaryButton(document);
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_3");
-        let parentLeft = document
-          .querySelector("#colorways")
-          .getBoundingClientRect().left;
-        let containerLeft = document
-          .querySelector(calloutSelector)
-          .getBoundingClientRect().left;
-
-        ok(
-          parentLeft > containerLeft,
-          "Feature Callout is positioned left of parent element when callout is configured at end of callout"
-        );
-      }
-    );
-  }
-);
-
-add_task(
-  async function feature_callout_third_screen_position_respects_RTL_layouts() {
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        [featureTourPref, defaultPrefValue],
-        // Set layout direction to right to left
-        ["intl.l10n.pseudo", "bidi"],
-      ],
-    });
-
-    await BrowserTestUtils.withNewTab(
-      {
-        gBrowser,
-        url: "about:firefoxview",
-      },
-      async browser => {
-        const { document } = browser.contentWindow;
-
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
-        // Advance to third screen
-        await clickPrimaryButton(document);
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_2");
-        await clickPrimaryButton(document);
-        await waitForCalloutScreen(document, ".FEATURE_CALLOUT_3");
-        let parentLeft = document
-          .querySelector("#colorways")
-          .getBoundingClientRect().left;
-        let containerLeft = document
-          .querySelector(calloutSelector)
-          .getBoundingClientRect().left;
-
-        ok(
-          parentLeft < containerLeft,
-          "Feature Callout is positioned right of parent element when callout is configured at end of callout in right to left layouts"
-        );
-      }
-    );
-  }
-);
-
 add_task(async function feature_callout_only_highlights_existing_elements() {
   // Third comma-separated value of the pref is set to a string value once a user completes the tour
   await SpecialPowers.pushPrefEnv({
-    set: [
-      [
-        "browser.firefox-view.feature-tour",
-        '{"message":"FIREFOX_VIEW_FEATURE_TOUR","screen":"FEATURE_CALLOUT_1","complete":false}',
-      ],
-    ],
+    set: [["browser.firefox-view.feature-tour", getPrefValueByScreen(2)]],
   });
+
+  const sandbox = sinon.createSandbox();
+  // Return no active colorways
+  sandbox.stub(BuiltInThemes, "findActiveColorwayCollection").returns(false);
 
   await BrowserTestUtils.withNewTab(
     {
@@ -327,13 +214,7 @@ add_task(async function feature_callout_only_highlights_existing_elements() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
-
-      // Remove parent element for third screen in tour
-      document.querySelector("#colorways.content-container").remove();
-      // Advance to second screen
-      await clickPrimaryButton(document);
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_2");
+      await waitForCalloutScreen(document, 2);
 
       ok(
         document
@@ -350,16 +231,15 @@ add_task(async function feature_callout_only_highlights_existing_elements() {
         !document.querySelector(`${calloutSelector}:not(.hidden)`),
         "Feature Callout screen does not render if its parent element does not exist"
       );
+
+      sandbox.restore();
     }
   );
 });
 
 add_task(async function feature_callout_arrow_class_exists() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.firefox-view.feature-tour", defaultPrefValue],
-      ["intl.l10n.pseudo", ""],
-    ],
+    set: [["browser.firefox-view.feature-tour", defaultPrefValue]],
   });
 
   await BrowserTestUtils.withNewTab(
@@ -369,7 +249,7 @@ add_task(async function feature_callout_arrow_class_exists() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
+      await waitForCalloutScreen(document, 1);
 
       const arrowParent = document.querySelector(".callout-arrow.arrow-top");
       ok(arrowParent, "Arrow class exists on parent container");
@@ -379,12 +259,8 @@ add_task(async function feature_callout_arrow_class_exists() {
 
 add_task(async function feature_callout_arrow_is_not_flipped_on_ltr() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.firefox-view.feature-tour", defaultPrefValue],
-      ["intl.l10n.pseudo", ""],
-    ],
+    set: [["browser.firefox-view.feature-tour", getPrefValueByScreen(3)]],
   });
-
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -392,31 +268,147 @@ add_task(async function feature_callout_arrow_is_not_flipped_on_ltr() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
-      // Advance to third screen
-      clickPrimaryButton(document);
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_2");
-      clickPrimaryButton(document);
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_3");
-      let arrowParent = document.querySelector(
-        ".callout-arrow.arrow-inline-end"
-      );
+      await BrowserTestUtils.waitForCondition(() => {
+        return document.querySelector(
+          `${calloutSelector}.arrow-inline-end:not(.hidden)`
+        );
+      });
       ok(
-        arrowParent,
+        true,
         "Feature Callout arrow parent has arrow-end class when arrow direction is set to 'end'"
       );
     }
   );
 });
 
-// Tour is accessible using a screen reader and keyboard navigation
-add_task(async function feature_callout_is_accessible() {
+add_task(async function feature_callout_respects_cfr_features_pref() {
+  async function toggleCFRFeaturesPref(value, extraPrefs = []) {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
+          value,
+        ],
+        ...extraPrefs,
+      ],
+    });
+  }
+
+  await toggleCFRFeaturesPref(true, [[featureTourPref, defaultPrefValue]]);
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      await waitForCalloutScreen(document, 1);
+      ok(
+        document.querySelector(calloutSelector),
+        "Feature Callout element exists"
+      );
+
+      await toggleCFRFeaturesPref(false);
+      await waitForCalloutRemoved(document);
+      ok(
+        !document.querySelector(calloutSelector),
+        "Feature Callout element was removed because CFR pref was disabled"
+      );
+    }
+  );
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      ok(
+        !document.querySelector(calloutSelector),
+        "Feature Callout element was not created because CFR pref was disabled"
+      );
+
+      await toggleCFRFeaturesPref(true);
+      await waitForCalloutScreen(document, 1);
+      ok(
+        document.querySelector(calloutSelector),
+        "Feature Callout element was created because CFR pref was enabled"
+      );
+    }
+  );
+});
+
+add_task(
+  async function feature_callout_tab_pickup_reminder_primary_click_elm() {
+    await SpecialPowers.pushPrefEnv({
+      set: [[featureTourPref, `{"message":"","screen":"","complete":true}`]],
+    });
+    Services.prefs.setIntPref("browser.firefox-view.view-count", 3);
+    Services.prefs.setBoolPref("identity.fxaccounts.enabled", false);
+    ASRouter.resetMessageState();
+    registerCleanupFunction(() => {
+      Services.prefs.clearUserPref("browser.firefox-view.view-count");
+      Services.prefs.clearUserPref("identity.fxaccounts.enabled");
+      ASRouter.resetMessageState();
+    });
+
+    const expectedUrl = await fxAccounts.constructor.config.promiseConnectAccountURI(
+      "fx-view"
+    );
+    info(`Expected FxA URL: ${expectedUrl}`);
+
+    await BrowserTestUtils.withNewTab(
+      {
+        gBrowser,
+        url: "about:firefoxview",
+      },
+      async browser => {
+        const { document } = browser.contentWindow;
+        let tabOpened = new Promise(resolve => {
+          gBrowser.tabContainer.addEventListener(
+            "TabOpen",
+            event => {
+              let newTab = event.target;
+              let newBrowser = newTab.linkedBrowser;
+              let result = newTab;
+              BrowserTestUtils.waitForDocLoadAndStopIt(
+                expectedUrl,
+                newBrowser
+              ).then(() => resolve(result));
+            },
+            { once: true }
+          );
+        });
+
+        info("Waiting for callout to render");
+        await waitForCalloutScreen(
+          document,
+          "FIREFOX_VIEW_TAB_PICKUP_REMINDER"
+        );
+
+        info("Clicking primary button");
+        let calloutRemoved = waitForCalloutRemoved(document);
+        await clickPrimaryButton(document);
+        let openedTab = await tabOpened;
+        ok(openedTab, "FxA sign in page opened");
+        // The callout should be removed when primary CTA is clicked
+        await calloutRemoved;
+        BrowserTestUtils.removeTab(openedTab);
+      }
+    );
+    Services.prefs.clearUserPref("browser.firefox-view.view-count");
+    Services.prefs.clearUserPref("identity.fxaccounts.enabled");
+    ASRouter.resetMessageState();
+  }
+);
+
+add_task(async function feature_callout_returns_default_fxview_focus_to_top() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.firefox-view.feature-tour", defaultPrefValue],
-      ["intl.l10n.pseudo", ""],
-    ],
+    set: [[featureTourPref, defaultPrefValue]],
   });
 
   await BrowserTestUtils.withNewTab(
@@ -426,35 +418,55 @@ add_task(async function feature_callout_is_accessible() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_1");
+      await waitForCalloutScreen(document, 1);
 
       ok(
-        (document.activeElement.id = calloutId),
-        "Feature Callout is focused on page load"
-      );
-      ok(
-        document.querySelector(`${calloutSelector}[role="alert"]`),
-        "The callout container has role of alert"
-      );
-      ok(
-        document.querySelector(
-          `${calloutSelector}[aria-describedby="#${calloutId} .welcome-text"]`
-        ),
-        "The callout container has an aria-describedby value equal to the screen welcome text"
+        document.querySelector(calloutSelector),
+        "Feature Callout element exists"
       );
 
-      // Advance to second screen
-      clickPrimaryButton(document);
-      await waitForCalloutScreen(document, ".FEATURE_CALLOUT_2");
+      document.querySelector(".dismiss-button").click();
+      await waitForCalloutRemoved(document);
 
       ok(
-        (document.activeElement.id = calloutId),
-        "Feature Callout is focused after advancing screens"
-      );
-      ok(
-        document.querySelector(`${calloutSelector}[role="alert"]`),
-        "The callout container has role of alert after advancing screens"
+        document.activeElement.localName === "body",
+        "by default focus returns to the document body after callout closes"
       );
     }
   );
 });
+
+add_task(
+  async function feature_callout_returns_moved_fxview_focus_to_previous() {
+    await SpecialPowers.pushPrefEnv({
+      set: [[featureTourPref, defaultPrefValue]],
+    });
+
+    await BrowserTestUtils.withNewTab(
+      {
+        gBrowser,
+        url: "about:firefoxview",
+      },
+      async browser => {
+        const { document } = browser.contentWindow;
+        await waitForCalloutScreen(document, 1);
+
+        // change focus to recently-closed-tabs-container
+        let recentlyClosedHeaderSection = document.querySelector(
+          "#recently-closed-tabs-header-section"
+        );
+        recentlyClosedHeaderSection.focus();
+
+        // close the callout dialog
+        document.querySelector(".dismiss-button").click();
+        await waitForCalloutRemoved(document);
+
+        // verify that the focus landed in the right place
+        ok(
+          document.activeElement.id === "recently-closed-tabs-header-section",
+          "when focus changes away from callout it reverts after callout closes"
+        );
+      }
+    );
+  }
+);

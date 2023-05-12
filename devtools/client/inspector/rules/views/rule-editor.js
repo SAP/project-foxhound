@@ -28,7 +28,6 @@ const {
   SELECTOR_ELEMENT,
   SELECTOR_PSEUDO_CLASS,
 } = require("devtools/shared/css/parsing-utils");
-const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 const CssLogic = require("devtools/shared/inspector/css-logic");
 
@@ -135,16 +134,29 @@ RuleEditor.prototype = {
 
     this.updateSourceLink();
 
-    if (this.rule.domRule.ancestorData.length > 0) {
+    if (this.rule.domRule.ancestorData.length) {
       const parts = this.rule.domRule.ancestorData.map(ancestorData => {
+        if (ancestorData.type == "container") {
+          const containerQueryParts = [
+            "@container",
+            ancestorData.containerName,
+            ancestorData.containerQuery,
+          ].filter(p => !!p);
+          return containerQueryParts.join(" ");
+        }
         if (ancestorData.type == "layer") {
           return `@layer${ancestorData.value ? " " + ancestorData.value : ""}`;
         }
         if (ancestorData.type == "media") {
           return `@media ${ancestorData.value}`;
         }
-        // We shouldn't get here as `type` can only be set to "layer" or "media", but just
-        // in case, let's return an empty string.
+
+        if (ancestorData.type == "supports") {
+          return `@supports ${ancestorData.conditionText}`;
+        }
+        // We shouldn't get here as `type` can only be set to "container", "layer", "media"
+        // or "supports" (see devtools/server/actors/style-rule form()),
+        // but just in case, let's return an empty string.
         console.warn("Unknown ancestor data type:", ancestorData.type);
         return ``;
       });
@@ -760,7 +772,7 @@ RuleEditor.prototype = {
       return;
     }
 
-    if (this.rule.textProps.length > 0) {
+    if (this.rule.textProps.length) {
       this.rule.textProps[0].editor.nameSpan.click();
     } else {
       this.propertyList.click();

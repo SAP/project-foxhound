@@ -429,7 +429,7 @@ const PanelUI = {
     this.ensurePanicViewInitialized(viewNode);
 
     let container = aAnchor.closest("panelmultiview");
-    if (container) {
+    if (container && !viewNode.hasAttribute("disallowSubView")) {
       container.showSubView(aViewId, aAnchor);
     } else if (!aAnchor.open) {
       aAnchor.open = true;
@@ -489,7 +489,7 @@ const PanelUI = {
 
       try {
         viewShown = await PanelMultiView.openPopup(tempPanel, anchor, {
-          position: "bottomcenter topright",
+          position: "bottomright topright",
           triggerEvent: aEvent,
         });
       } catch (ex) {
@@ -855,7 +855,7 @@ const PanelUI = {
         el.removeAttribute("data-lazy-l10n-id");
       });
 
-    this.notificationPanel.openPopup(anchor, "bottomcenter topright");
+    this.notificationPanel.openPopup(anchor, "bottomright topright");
   },
 
   _clearNotificationPanel() {

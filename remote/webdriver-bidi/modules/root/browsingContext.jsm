@@ -17,7 +17,7 @@ const { Module } = ChromeUtils.import(
 const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AppInfo: "chrome://remote/content/marionette/appinfo.js",
+  AppInfo: "chrome://remote/content/shared/AppInfo.jsm",
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
   BrowsingContextListener:
     "chrome://remote/content/shared/listeners/BrowsingContextListener.jsm",
@@ -513,34 +513,58 @@ class BrowsingContextModule extends Module {
       return;
     }
 
-    const contextInfo = this.#getBrowsingContextInfo(browsingContext, {
+    const browsingContextInfo = this.#getBrowsingContextInfo(browsingContext, {
       maxDepth: 0,
     });
-    this.emitProtocolEvent("browsingContext.contextCreated", contextInfo);
+
+    // This event is emitted from the parent process but for a given browsing
+    // context. Set the event's contextInfo to the message handler corresponding
+    // to this browsing context.
+    const contextInfo = {
+      contextId: browsingContext.id,
+      type: lazy.WindowGlobalMessageHandler.type,
+    };
+    this.emitEvent(
+      "browsingContext.contextCreated",
+      browsingContextInfo,
+      contextInfo
+    );
   };
+
+  #subscribeEvent(event) {
+    if (event === "browsingContext.contextCreated") {
+      this.#contextListener.startListening();
+    }
+  }
+
+  #unsubscribeEvent(event) {
+    if (event === "browsingContext.contextCreated") {
+      this.#contextListener.stopListening();
+    }
+  }
 
   /**
    * Internal commands
    */
 
-  _subscribeEvent(params) {
-    switch (params.event) {
-      case "browsingContext.contextCreated":
-        this.#contextListener.startListening();
-    }
-    return this.addEventSessionData("browsingContext", params.event);
-  }
+  _applySessionData(params) {
+    // Note: for now events from this module are only subscribed globally,
+    // but once it will be possible to subscribe to a specific eg. tab, the
+    // contextListener will need to read the contextDescriptor from the params.
+    const { category, added = [], removed = [] } = params;
+    if (category === "event") {
+      for (const event of added) {
+        this.#subscribeEvent(event);
+      }
 
-  _unsubscribeEvent(params) {
-    switch (params.event) {
-      case "browsingContext.contextCreated":
-        this.#contextListener.stopListening();
+      for (const event of removed) {
+        this.#unsubscribeEvent(event);
+      }
     }
-    return this.removeEventSessionData("browsingContext", params.event);
   }
 
   static get supportedEvents() {
-    return ["browsingContext.contextCreated"];
+    return ["browsingContext.contextCreated", "browsingContext.load"];
   }
 }
 

@@ -21,14 +21,12 @@
  * * @typedef {import("./@types/perf").ProfilerViewMode} ProfilerViewMode
  */
 
-const ChromeUtils = require("ChromeUtils");
 const { createLazyLoaders } = ChromeUtils.import(
   "resource://devtools/client/performance-new/typescript-lazy-load.jsm.js"
 );
 
 const lazy = createLazyLoaders({
   Chrome: () => require("chrome"),
-  Services: () => require("Services"),
 });
 
 /** @type {PerformancePref["UIBaseUrl"]} */
@@ -60,8 +58,6 @@ const UI_BASE_URL_PATH_DEFAULT = "/from-browser";
  * @returns {Promise<MockedExports.Browser>} The browser for the opened tab.
  */
 async function openProfilerTab(profilerViewMode) {
-  const Services = lazy.Services();
-
   // Allow the user to point to something other than profiler.firefox.com.
   const baseUrl = Services.prefs.getStringPref(
     UI_BASE_URL_PREF,
@@ -149,7 +145,6 @@ function sharedLibrariesFromProfile(profile) {
  * @type {RestartBrowserWithEnvironmentVariable}
  */
 function restartBrowserWithEnvironmentVariable(envName, value) {
-  const Services = lazy.Services();
   const { Cc, Ci } = lazy.Chrome();
   const env = Cc["@mozilla.org/process/environment;1"].getService(
     Ci.nsIEnvironment

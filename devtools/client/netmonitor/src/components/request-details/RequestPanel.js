@@ -10,7 +10,6 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const Services = require("Services");
 const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
@@ -205,7 +204,7 @@ class RequestPanel extends Component {
     let error;
 
     // Form Data section
-    if (formDataSections && formDataSections.length > 0) {
+    if (formDataSections && formDataSections.length) {
       const sections = formDataSections.filter(str => /\S/.test(str)).join("&");
       component = PropertiesView;
       componentProps = {

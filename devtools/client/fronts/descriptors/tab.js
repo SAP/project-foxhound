@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const Services = require("Services");
 const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
+const DESCRIPTOR_TYPES = require("devtools/client/fronts/descriptors/descriptor-types");
 
 loader.lazyRequireGetter(
   this,
@@ -65,6 +65,8 @@ class TabDescriptorFront extends DescriptorMixin(
       );
     }
   }
+
+  descriptorType = DESCRIPTOR_TYPES.TAB;
 
   form(json) {
     this.actorID = json.actor;

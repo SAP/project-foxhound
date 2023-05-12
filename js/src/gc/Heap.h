@@ -9,10 +9,7 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "ds/BitArray.h"
 #include "gc/AllocKind.h"
-#include "gc/GCEnum.h"
-#include "gc/Memory.h"
 #include "gc/Pretenuring.h"
 #include "js/HeapAPI.h"
 #include "js/TypeDecls.h"
@@ -23,7 +20,6 @@ namespace js {
 class AutoLockGC;
 class AutoLockGCBgAlloc;
 class Nursery;
-class NurseryDecommitTask;
 
 namespace gc {
 
@@ -33,7 +29,6 @@ class ArenaList;
 class GCRuntime;
 class MarkingValidator;
 class SortedArenaList;
-class StoreBuffer;
 class TenuredCell;
 
 // Cells are aligned to CellAlignShift, so the largest tagged null pointer is:
@@ -652,8 +647,9 @@ class TenuredChunk : public TenuredChunkBase {
   // system call for each arena but is only used during OOM.
   void decommitFreeArenasWithoutUnlocking(const AutoLockGC& lock);
 
-  static TenuredChunk* allocate(GCRuntime* gc);
-  void init(GCRuntime* gc, bool allMemoryCommitted);
+  static void* allocate(GCRuntime* gc);
+  static TenuredChunk* emplace(void* ptr, GCRuntime* gc,
+                               bool allMemoryCommitted);
 
   /* Unlink and return the freeArenasHead. */
   Arena* fetchNextFreeArena(GCRuntime* gc);

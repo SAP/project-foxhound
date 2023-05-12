@@ -12,8 +12,13 @@ const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
+  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
 });
 
+// When expanding the use of Feature Callout
+// to new about: pages, make `progressPref` a
+// configurable field on callout messages and
+// use it to determine which pref to observe
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "featureTourProgress",
@@ -23,20 +28,35 @@ XPCOMUtils.defineLazyPreferenceGetter(
   val => JSON.parse(val)
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "cfrFeaturesUserPref",
+  "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
+  true,
+  _handlePrefChange
+);
+
+/* Work around the pref callback being run after the document has been unlinked.
+   See bug 1543537. */
+const docWeak = Cu.getWeakReference(document);
 async function _handlePrefChange() {
-  if (document.visibilityState === "hidden") {
+  const doc = docWeak.get();
+  if (!doc || doc.visibilityState === "hidden") {
     return;
   }
   let prefVal = lazy.featureTourProgress;
-  if (prefVal.complete) {
+  // End the tour according to the tour progress pref or if the user disabled
+  // contextual feature recommendations.
+  if (prefVal.complete || !lazy.cfrFeaturesUserPref) {
     _endTour();
+    CURRENT_SCREEN = null;
   } else if (prefVal.screen !== CURRENT_SCREEN?.id) {
     READY = false;
-    let container = document.getElementById(CONTAINER_ID);
+    const container = doc.getElementById(CONTAINER_ID);
     container?.classList.add("hidden");
     // wait for fade out transition
     setTimeout(async () => {
-      _loadConfig(lazy.featureTourProgress.message);
+      await _loadConfig();
       container?.remove();
       await _renderCallout();
     }, TRANSITION_MS);
@@ -75,182 +95,32 @@ let CURRENT_SCREEN;
 let CONFIG;
 let RENDER_OBSERVER;
 let READY = false;
+let SAVED_ACTIVE_ELEMENT;
 
 const TRANSITION_MS = 500;
 const CONTAINER_ID = "root";
-const MESSAGES = [
-  {
-    id: "FIREFOX_VIEW_FEATURE_TOUR",
-    template: "multistage",
-    backdrop: "transparent",
-    transitions: false,
-    disableHistoryUpdates: true,
-    screens: [
-      {
-        id: "FEATURE_CALLOUT_1",
-        parent_selector: "#tabpickup-steps",
-        content: {
-          position: "callout",
-          arrow_position: "top",
-          title: {
-            string_id: "callout-firefox-view-tab-pickup-title",
-          },
-          subtitle: {
-            string_id: "callout-firefox-view-tab-pickup-subtitle",
-          },
-          logo: {
-            imageURL: "chrome://browser/content/callout-tab-pickup.svg",
-            darkModeImageURL:
-              "chrome://browser/content/callout-tab-pickup-dark.svg",
-            height: "128px",
-          },
-          primary_button: {
-            label: {
-              string_id: "callout-primary-advance-button-label",
-            },
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: {
-                  name: "browser.firefox-view.feature-tour",
-                  value: JSON.stringify({
-                    message: "FIREFOX_VIEW_FEATURE_TOUR",
-                    screen: "FEATURE_CALLOUT_2",
-                    complete: false,
-                  }),
-                },
-              },
-            },
-          },
-          dismiss_button: {
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: {
-                  name: "browser.firefox-view.feature-tour",
-                  value: JSON.stringify({
-                    message: "FIREFOX_VIEW_FEATURE_TOUR",
-                    screen: "FEATURE_CALLOUT_1",
-                    complete: true,
-                  }),
-                },
-              },
-            },
-          },
-        },
-      },
-      {
-        id: "FEATURE_CALLOUT_2",
-        parent_selector: "#recently-closed-tabs-container",
-        content: {
-          position: "callout",
-          arrow_position: "bottom",
-          title: {
-            string_id: "callout-firefox-view-recently-closed-title",
-          },
-          subtitle: {
-            string_id: "callout-firefox-view-recently-closed-subtitle",
-          },
-          primary_button: {
-            label: {
-              string_id: "callout-primary-advance-button-label",
-            },
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: {
-                  name: "browser.firefox-view.feature-tour",
-                  value: JSON.stringify({
-                    message: "FIREFOX_VIEW_FEATURE_TOUR",
-                    screen: "FEATURE_CALLOUT_3",
-                    complete: false,
-                  }),
-                },
-              },
-            },
-          },
-          dismiss_button: {
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: {
-                  name: "browser.firefox-view.feature-tour",
-                  value: JSON.stringify({
-                    message: "FIREFOX_VIEW_FEATURE_TOUR",
-                    screen: "FEATURE_CALLOUT_2",
-                    complete: true,
-                  }),
-                },
-              },
-            },
-          },
-        },
-      },
-      {
-        id: "FEATURE_CALLOUT_3",
-        parent_selector: "#colorways.content-container",
-        content: {
-          position: "callout",
-          arrow_position: "end",
-          title: {
-            string_id: "callout-firefox-view-colorways-title",
-          },
-          subtitle: {
-            string_id: "callout-firefox-view-colorways-subtitle",
-          },
-          logo: {
-            imageURL: "chrome://browser/content/callout-colorways.svg",
-            darkModeImageURL:
-              "chrome://browser/content/callout-colorways-dark.svg",
-            height: "128px",
-          },
-          primary_button: {
-            label: {
-              string_id: "callout-primary-complete-button-label",
-            },
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: {
-                  name: "browser.firefox-view.feature-tour",
-                  value: JSON.stringify({
-                    message: "FIREFOX_VIEW_FEATURE_TOUR",
-                    screen: "",
-                    complete: true,
-                  }),
-                },
-              },
-            },
-          },
-          dismiss_button: {
-            action: {
-              type: "SET_PREF",
-              data: {
-                pref: {
-                  name: "browser.firefox-view.feature-tour",
-                  value: JSON.stringify({
-                    message: "FIREFOX_VIEW_FEATURE_TOUR",
-                    screen: "FEATURE_CALLOUT_3",
-                    complete: true,
-                  }),
-                },
-              },
-            },
-          },
-        },
-      },
-    ],
-  },
-];
 
 function _createContainer() {
-  let container = document.createElement("div");
-  container.classList.add("onboardingContainer", "featureCallout", "hidden");
-  container.id = CONTAINER_ID;
   let parent = document.querySelector(CURRENT_SCREEN?.parent_selector);
+  // Don't render the callout if the parent element is not present.
+  // This means the message was misconfigured, mistargeted, or the
+  // content of the parent page is not as expected.
+  if (!parent) {
+    return false;
+  }
+
+  let container = document.createElement("div");
+  container.classList.add(
+    "onboardingContainer",
+    "featureCallout",
+    "callout-arrow",
+    "hidden"
+  );
+  container.id = CONTAINER_ID;
   container.setAttribute("aria-describedby", `#${CONTAINER_ID} .welcome-text`);
   container.tabIndex = 0;
-  parent.insertAdjacentElement("afterend", container);
+  parent.setAttribute("aria-owns", `${CONTAINER_ID}`);
+  document.body.appendChild(container);
   return container;
 }
 
@@ -258,11 +128,19 @@ function _createContainer() {
  * Set callout's position relative to parent element
  */
 function _positionCallout() {
-  const positions = ["top", "bottom", "left", "right"];
   const container = document.getElementById(CONTAINER_ID);
   const parentEl = document.querySelector(CURRENT_SCREEN?.parent_selector);
+  // All possible arrow positions
+  const arrowPositions = ["top", "bottom", "end", "start"];
   const arrowPosition = CURRENT_SCREEN?.content?.arrow_position || "top";
-  const margin = 15;
+  // Callout should overlap the parent element by 17px (so the box, not
+  // including the arrow, will overlap by 5px)
+  const arrowWidth = 12;
+  let overlap = 17;
+  // If we have no overlap, we send the callout the same number of pixels
+  // in the opposite direction
+  overlap = CURRENT_SCREEN?.content?.noCalloutOverlap ? overlap * -1 : overlap;
+  overlap -= arrowWidth;
   // Is the document layout right to left?
   const RTL = document.dir === "rtl";
 
@@ -281,8 +159,10 @@ function _positionCallout() {
   }
 
   function clearPosition() {
-    positions.forEach(position => {
+    Object.keys(positioners).forEach(position => {
       container.style[position] = "unset";
+    });
+    arrowPositions.forEach(position => {
       if (container.classList.contains(`arrow-${position}`)) {
         container.classList.remove(`arrow-${position}`);
       }
@@ -292,70 +172,123 @@ function _positionCallout() {
     });
   }
 
+  const positioners = {
+    // availableSpace should be the space between the edge of the page in the assumed direction
+    // and the edge of the parent (with the callout being intended to fit between those two edges)
+    // while needed space should be the space necessary to fit the callout container
+    top: {
+      availableSpace:
+        document.body.offsetHeight -
+        getOffset(parentEl).top -
+        parentEl.offsetHeight +
+        overlap,
+      neededSpace: container.offsetHeight - overlap,
+      position() {
+        // Point to an element above the callout
+        let containerTop =
+          getOffset(parentEl).top + parentEl.offsetHeight - overlap;
+        container.style.top = `${Math.max(
+          container.offsetHeight - overlap,
+          containerTop
+        )}px`;
+        centerHorizontally(container, parentEl);
+        container.classList.add("arrow-top");
+      },
+    },
+    bottom: {
+      availableSpace: getOffset(parentEl).top + overlap,
+      neededSpace: container.offsetHeight - overlap,
+      position() {
+        // Point to an element below the callout
+        let containerTop =
+          getOffset(parentEl).top - container.offsetHeight + overlap;
+        container.style.top = `${Math.max(0, containerTop)}px`;
+        centerHorizontally(container, parentEl);
+        container.classList.add("arrow-bottom");
+      },
+    },
+    right: {
+      availableSpace: getOffset(parentEl).left + overlap,
+      neededSpace: container.offsetWidth - overlap,
+      position() {
+        // Point to an element to the right of the callout
+        let containerLeft =
+          getOffset(parentEl).left - container.offsetWidth + overlap;
+        if (RTL) {
+          // Account for cases where the document body may be narrow than the window
+          containerLeft -= window.innerWidth - document.body.offsetWidth;
+        }
+        container.style.left = `${Math.max(0, containerLeft)}px`;
+        container.style.top = `${getOffset(parentEl).top}px`;
+        container.classList.add("arrow-inline-end");
+      },
+    },
+    left: {
+      availableSpace:
+        document.body.offsetWidth - getOffset(parentEl).right + overlap,
+      neededSpace: container.offsetWidth - overlap,
+      position() {
+        // Point to an element to the left of the callout
+        let containerLeft =
+          getOffset(parentEl).left + parentEl.offsetWidth - overlap;
+        if (RTL) {
+          // Account for cases where the document body may be narrow than the window
+          containerLeft -= window.innerWidth - document.body.offsetWidth;
+        }
+        container.style.left = `${(container.offsetWidth - overlap,
+        containerLeft)}px`;
+        container.style.top = `${getOffset(parentEl).top}px`;
+        container.classList.add("arrow-inline-start");
+      },
+    },
+  };
+
+  function calloutFits(position) {
+    // Does callout element fit in this position relative
+    // to the parent element without going off screen?
+    return (
+      positioners[position].availableSpace > positioners[position].neededSpace
+    );
+  }
+
+  function choosePosition() {
+    let position = arrowPosition;
+    if (!arrowPositions.includes(position)) {
+      // Configured arrow position is not valid
+      return false;
+    }
+    if (["start", "end"].includes(position)) {
+      // position here is referencing the direction that the callout container
+      // is pointing to, and therefore should be the _opposite_ side of the arrow
+      // eg. if arrow is at the "end" in LTR layouts, the container is pointing
+      // at an element to the right of itself, while in RTL layouts it is pointing to the left of itself
+      position = RTL ^ (position === "start") ? "left" : "right";
+    }
+    if (calloutFits(position)) {
+      return position;
+    }
+    let newPosition = Object.keys(positioners)
+      .filter(p => p !== position)
+      .find(p => calloutFits(p));
+    // If the callout doesn't fit in any position, use the configured one.
+    // The callout will be adjusted to overlap the parent element so that
+    // the former doesn't go off screen.
+    return newPosition || position;
+  }
+
   function centerHorizontally() {
     let sideOffset = (parentEl.offsetWidth - container.offsetWidth) / 2;
     let containerSide = RTL
       ? window.innerWidth - getOffset(parentEl).right + sideOffset
       : getOffset(parentEl).left + sideOffset;
-    container.style[RTL ? "right" : "left"] = `${Math.max(
-      containerSide,
-      margin
-    )}px`;
+    container.style[RTL ? "right" : "left"] = `${Math.max(containerSide, 0)}px`;
   }
-
-  // Position callout relative to a parent element
-  const positioners = {
-    top() {
-      let containerTop = getOffset(parentEl).bottom - margin;
-      container.style.top = `${Math.min(
-        window.innerHeight - container.offsetHeight - margin,
-        containerTop
-      )}px`;
-      centerHorizontally(container, parentEl);
-      container.classList.add("arrow-top");
-    },
-    // Point to an element below the callout
-    bottom() {
-      let containerTop =
-        getOffset(parentEl).top - container.clientHeight + margin;
-      container.style.top = `${Math.max(containerTop, 0)}px`;
-      centerHorizontally(container, parentEl);
-      container.classList.add("arrow-bottom");
-    },
-    // Point to an element to the right of the callout
-    left() {
-      let containerLeft = getOffset(parentEl).right - margin;
-      container.style.left = `${Math.min(
-        window.innerWidth - container.offsetWidth - margin,
-        containerLeft
-      )}px`;
-      container.style.top = `${getOffset(parentEl).top}px`;
-      container.classList.add("arrow-inline-start");
-    },
-    // Point to an element to the left of the callout
-    right() {
-      let containerLeft =
-        getOffset(parentEl).left - container.offsetWidth + margin;
-      container.style.left = `${Math.max(containerLeft, margin)}px`;
-      container.style.top = `${getOffset(parentEl).top}px`;
-      container.classList.add("arrow-inline-end");
-    },
-  };
 
   clearPosition(container);
 
-  if (!container.classList.contains("callout-arrow")) {
-    container.classList.add("callout-arrow");
-  }
-
-  if (["start", "end"].includes(arrowPosition)) {
-    if (RTL) {
-      positioners[arrowPosition === "start" ? "right" : "left"]();
-    } else {
-      positioners[arrowPosition === "start" ? "left" : "right"]();
-    }
-  } else {
-    positioners[arrowPosition]();
+  let finalPosition = choosePosition();
+  if (finalPosition) {
+    positioners[finalPosition].position();
   }
 
   container.classList.remove("hidden");
@@ -373,18 +306,19 @@ function _removePositionListeners() {
 
 function _setupWindowFunctions() {
   const AWParent = new lazy.AboutWelcomeParent();
+  addEventListener("unload", () => {
+    AWParent.didDestroy();
+  });
   const receive = name => data =>
     AWParent.onContentMessage(`AWPage:${name}`, data, document);
   // Expose top level functions expected by the bundle.
-  window.AWGetDefaultSites = () => {};
   window.AWGetFeatureConfig = () => CONFIG;
-  window.AWGetFxAMetricsFlowURI = () => {};
-  window.AWGetImportableSites = () => "[]";
   window.AWGetRegion = receive("GET_REGION");
   window.AWGetSelectedTheme = receive("GET_SELECTED_THEME");
   // Do not send telemetry if message config sets metrics as 'block'.
-  window.AWSendEventTelemetry =
-    CONFIG?.metrics === "block" ? () => {} : receive("TELEMETRY_EVENT");
+  if (CONFIG?.metrics !== "block") {
+    window.AWSendEventTelemetry = receive("TELEMETRY_EVENT");
+  }
   window.AWSendToDeviceEmailsSupported = receive(
     "SEND_TO_DEVICE_EMAILS_SUPPORTED"
   );
@@ -393,6 +327,10 @@ function _setupWindowFunctions() {
 }
 
 function _endTour() {
+  // We don't want focus events that happen during teardown to effect
+  // SAVED_ACTIVE_ELEMENT
+  window.removeEventListener("focus", focusHandler, { capture: true });
+
   // wait for fade out transition
   let container = document.getElementById(CONTAINER_ID);
   container?.classList.add("hidden");
@@ -400,6 +338,12 @@ function _endTour() {
     container?.remove();
     _removePositionListeners();
     RENDER_OBSERVER?.disconnect();
+
+    // Put the focus back to the last place the user focused outside of the
+    // featureCallout windows.
+    if (SAVED_ACTIVE_ELEMENT) {
+      SAVED_ACTIVE_ELEMENT.focus({ focusVisible: true });
+    }
   }, TRANSITION_MS);
 }
 
@@ -436,61 +380,61 @@ function _observeRender(container) {
   RENDER_OBSERVER?.observe(container, { childList: true });
 }
 
-function _loadConfig(messageId) {
-  // If the parent element a screen describes doesn't exist, remove screen
-  // and ensure last screen displays the final primary CTA
-  // (for example, when there are no active colorways in about:firefoxview)
-  function _getRelevantScreens(screens) {
-    const finalCTA = screens[screens.length - 1].content.primary_button;
-    screens = screens.filter((s, i) => {
-      return document.querySelector(s.parent_selector);
-    });
-    screens[screens.length - 1].content.primary_button = finalCTA;
-    return screens;
+async function _loadConfig() {
+  await lazy.ASRouter.waitForInitialized;
+  let result = await lazy.ASRouter.sendTriggerMessage({
+    browser: window.docShell.chromeEventHandler,
+    // triggerId and triggerContext
+    id: "featureCalloutCheck",
+    context: { source: document.location.pathname.toLowerCase() },
+  });
+  CONFIG = result.message.content;
+
+  // Only add an impression if we actually have a message to impress
+  if (Object.keys(result.message).length) {
+    lazy.ASRouter.addImpression(result.message);
   }
 
-  let content = MESSAGES.find(m => m.id === messageId);
-  const screenId = lazy.featureTourProgress.screen;
-  let screenIndex;
-  if (content?.screens && screenId) {
-    content.screens = _getRelevantScreens(content.screens);
-    screenIndex = content.screens.findIndex(s => s.id === screenId);
-    content.startScreen = screenIndex;
-  }
-  CURRENT_SCREEN = content?.screens?.[screenIndex || 0];
-  CONFIG = content;
+  CURRENT_SCREEN = CONFIG?.screens?.[CONFIG?.startScreen || 0];
 }
 
 async function _renderCallout() {
   let container = _createContainer();
-  // This results in rendering the Feature Callout
-  await _addScriptsAndRender(container);
-  _observeRender(container);
+  if (container) {
+    // This results in rendering the Feature Callout
+    await _addScriptsAndRender(container);
+    _observeRender(container);
+  }
 }
 /**
  * Render content based on about:welcome multistage template.
  */
 async function showFeatureCallout(messageId) {
-  // Don't show the feature tour if user has already completed it.
-  if (lazy.featureTourProgress.complete) {
-    return;
-  }
+  await _loadConfig();
 
-  _loadConfig(messageId);
-
-  if (!CONFIG) {
+  if (!CONFIG?.screens?.length) {
     return;
   }
 
   RENDER_OBSERVER = new MutationObserver(function() {
     // Check if the Feature Callout screen has loaded for the first time
     if (!READY && document.querySelector(`#${CONTAINER_ID} .screen`)) {
-      READY = true;
-      _positionCallout();
-      let container = document.getElementById(CONTAINER_ID);
-      container.focus();
-      // Alert screen readers to the presence of the callout
-      container.setAttribute("role", "alert");
+      // Once the screen element is added to the DOM, wait for the
+      // animation frame after next to ensure that _positionCallout
+      // has access to the rendered screen with the correct height
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          READY = true;
+          _positionCallout();
+          let container = document.getElementById(CONTAINER_ID);
+          container.focus();
+          window.addEventListener("focus", focusHandler, {
+            capture: true, // get the event before retargeting
+          });
+          // Alert screen readers to the presence of the callout
+          container.setAttribute("role", "alert");
+        });
+      });
     }
   });
 
@@ -498,7 +442,40 @@ async function showFeatureCallout(messageId) {
   // Add handlers for repositioning callout
   _addPositionListeners();
   _setupWindowFunctions();
+
+  // If user has disabled CFR, don't show any callouts. But make sure we load
+  // the necessary stylesheets first, since re-enabling CFR should allow
+  // callouts to be shown without needing to reload. In the future this could
+  // allow adding a CTA to disable recommendations with a label like "Don't show
+  // these again" (or potentially a toggle to re-enable them).
+  if (!lazy.cfrFeaturesUserPref) {
+    CURRENT_SCREEN = null;
+    return;
+  }
+
   await _renderCallout();
+}
+
+function focusHandler(e) {
+  let container = document.getElementById(CONTAINER_ID);
+  if (!container) {
+    return;
+  }
+
+  // If focus has fired on the feature callout window itself, or on something
+  // contained in that window, ignore it, as we can't possibly place the focus
+  // on it after the callout is closd.
+  if (
+    e.target.id === CONTAINER_ID ||
+    (Node.isInstance(e.target) && container.contains(e.target))
+  ) {
+    return;
+  }
+
+  // Save this so that if the next focus event is re-entering the popup,
+  // then we'll put the focus back here where the user left it once we exit
+  // the feature callout series.
+  SAVED_ACTIVE_ELEMENT = document.activeElement;
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -512,5 +489,12 @@ window.addEventListener("DOMContentLoaded", () => {
 // When the window is focused, ensure tour is synced with tours in
 // any other instances of the parent page
 window.addEventListener("visibilitychange", () => {
-  _handlePrefChange();
+  // If we have more than one screen, it means that we're
+  // displaying a feature tour, in which transitions are handled
+  // by the pref change observer.
+  if (CONFIG?.screens.length > 1) {
+    _handlePrefChange();
+  } else {
+    showFeatureCallout();
+  }
 });

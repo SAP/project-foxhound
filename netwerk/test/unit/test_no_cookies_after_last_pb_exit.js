@@ -1,4 +1,3 @@
-/* globals ChromeUtils, Assert, add_task */
 "use strict";
 
 do_get_profile();
@@ -114,7 +113,7 @@ const steps = [
 ];
 
 function next() {
-  if (steps.length == 0) {
+  if (!steps.length) {
     do_test_finished();
     return;
   }

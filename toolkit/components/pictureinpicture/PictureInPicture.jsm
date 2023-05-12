@@ -23,6 +23,10 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
   WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
 });
 
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+});
+
 const { Rect, Point } = ChromeUtils.import(
   "resource://gre/modules/Geometry.jsm"
 );
@@ -469,6 +473,11 @@ var PictureInPicture = {
     let features =
       `${PLAYER_FEATURES},top=${top},left=${left},outerWidth=${width},` +
       `outerHeight=${height}`;
+    let isPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(parentWin);
+
+    if (isPrivate) {
+      features += ",private";
+    }
 
     let pipWindow = Services.ww.openWindow(
       parentWin,
@@ -488,7 +497,9 @@ var PictureInPicture = {
 
     pipWindow.windowUtils.setResizeMargin(RESIZE_MARGIN_PX);
 
-    if (Services.appinfo.OS == "WINNT") {
+    // If the window is Private the icon will have already been set when
+    // it was opened.
+    if (Services.appinfo.OS == "WINNT" && !isPrivate) {
       lazy.WindowsUIUtils.setWindowIconNoData(pipWindow);
     }
 

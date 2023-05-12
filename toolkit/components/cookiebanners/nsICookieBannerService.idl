@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "nsIClickRule.idl"
 #include "nsICookieBannerRule.idl"
 #include "nsICookieRule.idl"
 #include "nsIURI.idl"
@@ -51,14 +52,18 @@ interface nsICookieBannerService : nsISupports {
   Array<nsICookieRule> getCookiesForURI(in nsIURI aURI);
 
   /**
+   * Look up the click rules for a given domain.
+   */
+  Array<nsIClickRule> getClickRulesForDomain(in ACString aDomain);
+
+  /**
    * Insert a cookie banner rule for a domain. If there was previously a rule
    * stored with the same domain it will be overwritten.
    */
   void insertRule(in nsICookieBannerRule aRule);
 
   /**
-  * Remove a cookie banner rule by domain. This is a no-op if there is no rule
-  * stored for aDomain.
-  */
-  void removeRuleForDomain(in ACString aDomain);
+   * Remove a cookie banner rule.
+   */
+  void removeRule(in nsICookieBannerRule aRule);
 };

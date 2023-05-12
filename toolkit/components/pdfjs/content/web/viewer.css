@@ -700,11 +700,13 @@
 
 
 :root {
-  --focus-outline: solid 2px red;
+  --focus-outline: solid 2px blue;
   --hover-outline: dashed 2px blue;
   --freetext-line-height: 1.35;
   --freetext-padding: 2px;
-  --editorInk-editing-cursor: url(images/toolbarButton-editorInk.svg) 0 16;
+  --editorInk-editing-cursor: url(images/cursor-editorInk.svg) 0 16;
+  --editorFreeText-editing-cursor: url(images/toolbarButton-editorFreeText.svg)
+    8 16;
 }
 
 @media (forced-colors: active) {
@@ -731,6 +733,15 @@
   left: 0;
   font-size: calc(100px * var(--scale-factor));
   transform-origin: 0 0;
+  cursor: auto;
+}
+
+.annotationEditorLayer.freeTextEditing {
+  cursor: var(--editorFreeText-editing-cursor), text;
+}
+
+.annotationEditorLayer.inkEditing {
+  cursor: var(--editorInk-editing-cursor), pointer;
 }
 
 .annotationEditorLayer .selectedEditor {
@@ -749,6 +760,7 @@
   z-index: 1;
   transform-origin: 0 0;
   touch-action: none;
+  cursor: auto;
 }
 
 .annotationEditorLayer .freeTextEditor .internal {
@@ -813,7 +825,7 @@
 
 .annotationEditorLayer .inkEditor.editing {
   resize: none;
-  cursor: var(--editorInk-editing-cursor), pointer;
+  cursor: inherit;
 }
 
 .annotationEditorLayer .inkEditor .inkEditorCanvas {
@@ -1033,7 +1045,6 @@
   --loading-icon: url(images/loading.svg);
   --treeitem-expanded-icon: url(images/treeitem-expanded.svg);
   --treeitem-collapsed-icon: url(images/treeitem-collapsed.svg);
-  --toolbarButton-editorNone-icon: url(images/toolbarButton-editorNone.svg);
   --toolbarButton-editorFreeText-icon: url(images/toolbarButton-editorFreeText.svg);
   --toolbarButton-editorInk-icon: url(images/toolbarButton-editorInk.svg);
   --toolbarButton-menuArrow-icon: url(images/toolbarButton-menuArrow.svg);
@@ -1828,13 +1839,8 @@ select {
   mask-image: var(--toolbarButton-zoomIn-icon);
 }
 
-#presentationMode::before,
-#secondaryPresentationMode::before {
+#presentationMode::before {
   mask-image: var(--toolbarButton-presentationMode-icon);
-}
-
-#editorNone::before {
-  mask-image: var(--toolbarButton-editorNone-icon);
 }
 
 #editorFreeText::before {
@@ -1865,8 +1871,7 @@ a.secondaryToolbarButton[href="#"] {
   pointer-events: none;
 }
 
-#viewBookmark::before,
-#secondaryViewBookmark::before {
+#viewBookmark::before {
   mask-image: var(--toolbarButton-bookmark-icon);
 }
 
@@ -1922,6 +1927,7 @@ a.secondaryToolbarButton[href="#"] {
   white-space: normal;
   border-radius: 0;
   box-sizing: border-box;
+  display: inline-block;
 }
 .secondaryToolbarButton > span {
   padding-inline-end: 4px;
@@ -2363,8 +2369,7 @@ dialog :link {
 }
 
 .visibleLargeView,
-.visibleMediumView,
-.visibleSmallView {
+.visibleMediumView {
   display: none;
 }
 
@@ -2409,9 +2414,6 @@ dialog :link {
   .hiddenSmallView,
   .hiddenSmallView * {
     display: none;
-  }
-  .visibleSmallView {
-    display: inherit;
   }
   .toolbarButtonSpacer {
     width: 0;

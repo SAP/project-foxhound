@@ -3,6 +3,8 @@
 
 "use strict";
 
+const asyncStorage = require("devtools/shared/async-storage");
+
 /**
  * Test if the New Request Panel shows up as a expected
  * when opened from an existing request
@@ -11,8 +13,8 @@
 add_task(async function() {
   // Turn true the pref
   await pushPref("devtools.netmonitor.features.newEditAndResend", true);
-  // Resetting the pref
-  await pushPref("devtools.netmonitor.customRequest", "");
+  // Reset the storage for the persisted custom request
+  await asyncStorage.removeItem("devtools.netmonitor.customRequest");
 
   const { tab, monitor } = await initNetMonitor(POST_DATA_URL, {
     requestCount: 1,
@@ -25,7 +27,7 @@ add_task(async function() {
   const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
   store.dispatch(Actions.batchEnable(false));
 
-  await performRequests(monitor, tab, 1);
+  await performRequests(monitor, tab, 2);
 
   const { getSelectedRequest } = windowRequire(
     "devtools/client/netmonitor/src/selectors/index"
@@ -49,29 +51,20 @@ add_task(async function() {
   await waitForHeaders;
   EventUtils.sendMouseEvent({ type: "contextmenu" }, firstRequestItem);
 
-  info("if the item 'Resend' is hidden");
-  is(
-    !!getContextMenuItem(monitor, "request-list-context-resend-only"),
-    false,
-    "The 'Resend' item should be hidden when the pref is true."
+  ok(
+    getContextMenuItem(monitor, "request-list-context-resend-only"),
+    "The 'Resend' item is visible when there is a clicked request"
   );
 
   info("Opening the new request panel");
-  const waitForPanels = waitForDOM(
-    document,
-    ".monitor-panel .network-action-bar"
+  const waitForPanels = waitUntil(
+    () =>
+      document.querySelector(".http-custom-request-panel") &&
+      document.querySelector("#http-custom-request-send-button").disabled ===
+        false
   );
-  const menuItem = getContextMenuItem(monitor, "request-list-context-resend");
-  const menuPopup = menuItem.parentNode;
 
-  const onHidden = new Promise(resolve => {
-    menuPopup.addEventListener("popuphidden", resolve, { once: true });
-  });
-
-  menuItem.click();
-  menuPopup.hidePopup();
-
-  await onHidden;
+  await selectContextMenuItem(monitor, "request-list-context-edit-resend");
   await waitForPanels;
 
   is(

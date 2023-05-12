@@ -2425,13 +2425,23 @@ class _ParamTraits:
         writeswitch.addcase(
             DefaultLabel(),
             StmtBlock(
-                [cls.fatalError(cls.writervar, "unknown union type"), StmtReturn()]
+                [
+                    cls.fatalError(
+                        cls.writervar, "unknown variant of union " + uniontype.name()
+                    ),
+                    StmtReturn(),
+                ]
             ),
         )
         readswitch.addcase(
             DefaultLabel(),
             StmtBlock(
-                [cls.fatalError(cls.readervar, "unknown union type"), StmtReturn.FALSE]
+                [
+                    cls.fatalError(
+                        cls.readervar, "unknown variant of union " + uniontype.name()
+                    ),
+                    StmtReturn.FALSE,
+                ]
             ),
         )
 
@@ -4321,30 +4331,18 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         methods = []
 
         if p.decl.type.isToplevel():
-
-            # "private" message that passes shmem mappings from one process
-            # to the other
-            if p.subtreeUsesShmem():
-                self.asyncSwitch.addcase(
-                    CaseLabel("SHMEM_CREATED_MESSAGE_TYPE"),
-                    self.genShmemCreatedHandler(),
-                )
-                self.asyncSwitch.addcase(
-                    CaseLabel("SHMEM_DESTROYED_MESSAGE_TYPE"),
-                    self.genShmemDestroyedHandler(),
-                )
-            else:
-                abort = StmtBlock()
-                abort.addstmts(
-                    [
-                        _fatalError("this protocol tree does not use shmem"),
-                        StmtReturn(_Result.NotKnown),
-                    ]
-                )
-                self.asyncSwitch.addcase(CaseLabel("SHMEM_CREATED_MESSAGE_TYPE"), abort)
-                self.asyncSwitch.addcase(
-                    CaseLabel("SHMEM_DESTROYED_MESSAGE_TYPE"), abort
-                )
+            # FIXME: This used to be declared conditionally based on whether
+            # shmem appeared somewhere in the protocol hierarchy, however that
+            # caused issues due to Shmem instances hidden within custom C++
+            # types.
+            self.asyncSwitch.addcase(
+                CaseLabel("SHMEM_CREATED_MESSAGE_TYPE"),
+                self.genShmemCreatedHandler(),
+            )
+            self.asyncSwitch.addcase(
+                CaseLabel("SHMEM_DESTROYED_MESSAGE_TYPE"),
+                self.genShmemDestroyedHandler(),
+            )
 
         # Keep track of types created with an INOUT ctor. We need to call
         # Register() or RegisterID() for them depending on the side the managee
@@ -4892,7 +4890,10 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         return (lbl, case)
 
     def genAsyncSendMethod(self, md):
-        method = MethodDefn(self.makeSendMethodDecl(md))
+        decl = self.makeSendMethodDecl(md)
+        if "VirtualSendImpl" in md.attributes:
+            decl.methodspec = MethodSpec.VIRTUAL
+        method = MethodDefn(decl)
         msgvar, stmts = self.makeMessage(md, errfnSend)
         retvar, sendstmts = self.sendAsync(md, msgvar)
 
@@ -4902,7 +4903,10 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
         # Add the promise overload if we need one.
         if md.returns:
-            promisemethod = MethodDefn(self.makeSendMethodDecl(md, promise=True))
+            decl = self.makeSendMethodDecl(md, promise=True)
+            if "VirtualSendImpl" in md.attributes:
+                decl.methodspec = MethodSpec.VIRTUAL
+            promisemethod = MethodDefn(decl)
             stmts = self.sendAsyncWithPromise(md)
             promisemethod.addstmts(stmts)
 

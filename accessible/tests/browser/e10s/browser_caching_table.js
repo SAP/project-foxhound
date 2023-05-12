@@ -208,11 +208,9 @@ addAccessibleTask(
 <table id="mutate"><tr><td>a</td><td>b</td></tr></table>
   `,
   async function(browser, docAcc) {
-    const layout = findAccessibleChildByID(docAcc, "layout", [
-      nsIAccessibleTable,
-    ]);
+    const layout = findAccessibleChildByID(docAcc, "layout");
     testAttrs(layout, { "layout-guess": "true" }, true);
-    const data = findAccessibleChildByID(docAcc, "data", [nsIAccessibleTable]);
+    const data = findAccessibleChildByID(docAcc, "data");
     testAbsentAttrs(data, { "layout-guess": "true" });
     const mutate = findAccessibleChildByID(docAcc, "mutate");
     testAttrs(mutate, { "layout-guess": "true" }, true);
@@ -232,9 +230,36 @@ addAccessibleTask(
   },
   {
     chrome: true,
-    topLevel: isCacheEnabled,
-    iframe: isCacheEnabled,
-    remoteIframe: isCacheEnabled,
+    topLevel: true,
+    iframe: true,
+    remoteIframe: true,
+  }
+);
+
+/**
+ * Test table layout guess with border styling changes.
+ */
+addAccessibleTask(
+  `
+  <table id="layout"><tr><td id="cell">a</td><td>b</td></tr>
+  <tr><td>c</td><td>d</td></tr><tr><td>c</td><td>d</td></tr></table>
+  `,
+  async function(browser, docAcc) {
+    const layout = findAccessibleChildByID(docAcc, "layout");
+    testAttrs(layout, { "layout-guess": "true" }, true);
+    info("changing border style on table cell");
+    let styleChanged = waitForEvent(EVENT_TABLE_STYLING_CHANGED, layout);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("cell").style.border = "1px solid black";
+    });
+    await styleChanged;
+    testAbsentAttrs(layout, { "layout-guess": "true" });
+  },
+  {
+    chrome: true,
+    topLevel: true,
+    iframe: true,
+    remoteIframe: true,
   }
 );
 
@@ -351,6 +376,69 @@ addAccessibleTask(
         "CachedTableAccessible disabled, so counts broken when cell moved with aria-owns"
       );
     }
+  },
+  {
+    chrome: true,
+    topLevel: isCacheEnabled,
+    iframe: isCacheEnabled,
+    remoteIframe: isCacheEnabled,
+  }
+);
+
+/**
+ * Test the handling of ARIA tables with display: contents.
+ */
+addAccessibleTask(
+  `
+<div id="table" role="table" style="display: contents;">
+  <div role="row"><div role="cell">a</div></div>
+</div>
+  `,
+  async function(browser, docAcc) {
+    // XXX We don't create a TableAccessible in this case (bug 1494196). For
+    // now, just ensure we don't crash (bug 1793073).
+    const table = findAccessibleChildByID(docAcc, "table");
+    let queryOk = false;
+    try {
+      table.QueryInterface(nsIAccessibleTable);
+      queryOk = true;
+    } catch (e) {}
+    todo(queryOk, "Got nsIAccessibleTable");
+  },
+  {
+    chrome: true,
+    topLevel: isCacheEnabled,
+    iframe: isCacheEnabled,
+    remoteIframe: isCacheEnabled,
+  }
+);
+
+/**
+ * Test a broken ARIA table with an invalid cell.
+ */
+addAccessibleTask(
+  `
+<div id="table" role="table">
+  <div role="main">
+    <div role="row">
+      <div id="cell" role="cell">a</div>
+    </div>
+  </div>
+</div>
+  `,
+  async function(browser, docAcc) {
+    const table = findAccessibleChildByID(docAcc, "table", [
+      nsIAccessibleTable,
+    ]);
+    is(table.rowCount, 0, "table rowCount correct");
+    is(table.columnCount, 0, "table columnCount correct");
+    const cell = findAccessibleChildByID(docAcc, "cell");
+    let queryOk = false;
+    try {
+      cell.QueryInterface(nsIAccessibleTableCell);
+      queryOk = true;
+    } catch (e) {}
+    ok(!queryOk, "Got nsIAccessibleTableCell on an invalid cell");
   },
   {
     chrome: true,

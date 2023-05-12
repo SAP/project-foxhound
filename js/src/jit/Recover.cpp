@@ -8,6 +8,7 @@
 
 #include "jsmath.h"
 
+#include "builtin/Object.h"
 #include "builtin/RegExp.h"
 #include "builtin/String.h"
 #include "jit/Bailouts.h"
@@ -18,6 +19,7 @@
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "jit/VMFunctions.h"
+#include "util/DifferentialTesting.h"
 #include "vm/BigIntType.h"
 #include "vm/EqualityOperations.h"
 #include "vm/Interpreter.h"
@@ -1403,7 +1405,7 @@ RNaNToZero::RNaNToZero(CompactBufferReader& reader) {}
 
 bool RNaNToZero::recover(JSContext* cx, SnapshotIterator& iter) const {
   double v = iter.read().toNumber();
-  if (mozilla::IsNaN(v)) {
+  if (mozilla::IsNaN(v) || mozilla::IsNegativeZero(v)) {
     v = 0.0;
   }
 
@@ -1801,7 +1803,7 @@ bool RNewCallObject::recover(JSContext* cx, SnapshotIterator& iter) const {
 
   Rooted<Shape*> shape(cx, templateObj->shape());
 
-  JSObject* resultObject = NewCallObject(cx, shape);
+  JSObject* resultObject = CallObject::createWithShape(cx, shape);
   if (!resultObject) {
     return false;
   }

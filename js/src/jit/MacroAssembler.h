@@ -1407,6 +1407,13 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void branch8(Condition cond, const Address& lhs, Imm32 rhs,
                       Label* label) PER_SHARED_ARCH;
 
+  // Compares the byte in |lhs| against |rhs| using a 8-bit comparison on
+  // x86/x64 or a 32-bit comparison (all other platforms). The caller should
+  // ensure |rhs| is a zero- resp. sign-extended byte value for cross-platform
+  // compatible code.
+  inline void branch8(Condition cond, const BaseIndex& lhs, Register rhs,
+                      Label* label) PER_SHARED_ARCH;
+
   inline void branch16(Condition cond, const Address& lhs, Imm32 rhs,
                        Label* label) PER_SHARED_ARCH;
 
@@ -2129,7 +2136,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   template <typename T>
   void storeUnboxedValue(const ConstantOrRegister& value, MIRType valueType,
-                         const T& dest, MIRType slotType) PER_ARCH;
+                         const T& dest) PER_ARCH;
 
   inline void memoryBarrier(MemoryBarrierBits barrier) PER_SHARED_ARCH;
 
@@ -4934,7 +4941,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                   uint32_t end);
 
   void initGCSlots(Register obj, Register temp,
-                   const TemplateNativeObject& templateObj, bool initContents);
+                   const TemplateNativeObject& templateObj);
 
  public:
   void callFreeStub(Register slots);
@@ -4947,7 +4954,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
                            Register temp2, uint32_t numFixedSlots,
                            uint32_t numDynamicSlots, gc::AllocKind allocKind,
                            gc::InitialHeap initialHeap, Label* fail,
-                           const AllocSiteInput& allocSite = AllocSiteInput());
+                           const AllocSiteInput& allocSite,
+                           bool initContents = true);
 
   void createArrayWithFixedElements(
       Register result, Register shape, Register temp, uint32_t arrayLength,

@@ -13,14 +13,15 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/RDDProcessManager.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
+#include "mozilla/RemoteDecodeUtils.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/dom/BackgroundFileSystemParent.h"
 #include "mozilla/dom/BackgroundSessionStorageServiceParent.h"
 #include "mozilla/dom/ClientManagerActors.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/EndpointForReportParent.h"
 #include "mozilla/dom/FileCreatorParent.h"
+#include "mozilla/dom/FileSystemManagerParentFactory.h"
 #include "mozilla/dom/FileSystemRequestParent.h"
 #include "mozilla/dom/GamepadEventChannelParent.h"
 #include "mozilla/dom/GamepadTestChannelParent.h"
@@ -183,16 +184,6 @@ auto BackgroundParentImpl::AllocPBackgroundIDBFactoryParent(
   AssertIsOnBackgroundThread();
 
   return AllocPBackgroundIDBFactoryParent(aLoggingInfo);
-}
-
-auto BackgroundParentImpl::AllocPBackgroundFileSystemParent(
-    const PrincipalInfo& aPrincipalInfo)
-    -> already_AddRefed<PBackgroundFileSystemParent> {
-  AssertIsInMainProcess();
-  AssertIsOnBackgroundThread();
-
-  return MakeAndAddRef<mozilla::dom::BackgroundFileSystemParent>(
-      aPrincipalInfo);
 }
 
 mozilla::ipc::IPCResult
@@ -497,6 +488,17 @@ BackgroundParentImpl::AllocPBackgroundSessionStorageServiceParent() {
   AssertIsOnBackgroundThread();
 
   return MakeAndAddRef<mozilla::dom::BackgroundSessionStorageServiceParent>();
+}
+
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateFileSystemManagerParent(
+    const PrincipalInfo& aPrincipalInfo,
+    Endpoint<PFileSystemManagerParent>&& aParentEndpoint,
+    CreateFileSystemManagerParentResolver&& aResolver) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  return mozilla::dom::CreateFileSystemManagerParent(
+      aPrincipalInfo, std::move(aParentEndpoint), std::move(aResolver));
 }
 
 already_AddRefed<PIdleSchedulerParent>
@@ -1371,6 +1373,7 @@ BackgroundParentImpl::RecvEnsureRDDProcessAndCreateBridge(
 
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
+    const RemoteDecodeIn& aLocation,
     EnsureUtilityProcessAndCreateBridgeResolver&& aResolver) {
   base::ProcessId otherPid = OtherPid();
   nsCOMPtr<nsISerialEventTarget> managerThread = GetCurrentSerialEventTarget();
@@ -1379,7 +1382,7 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
   }
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge()",
-      [aResolver, managerThread, otherPid]() {
+      [aResolver, managerThread, otherPid, aLocation]() {
         RefPtr<UtilityProcessManager> upm =
             UtilityProcessManager::GetSingleton();
         using Type = Tuple<const nsresult&,
@@ -1388,18 +1391,20 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
           aResolver(Type(NS_ERROR_NOT_AVAILABLE,
                          Endpoint<PRemoteDecoderManagerChild>()));
         } else {
-          upm->StartAudioDecoding(otherPid)->Then(
-              managerThread, __func__,
-              [resolver = std::move(aResolver)](
-                  mozilla::ipc::UtilityProcessManager::AudioDecodingPromise::
-                      ResolveOrRejectValue&& aValue) mutable {
-                if (aValue.IsReject()) {
-                  resolver(Type(aValue.RejectValue(),
-                                Endpoint<PRemoteDecoderManagerChild>()));
-                  return;
-                }
-                resolver(Type(NS_OK, std::move(aValue.ResolveValue())));
-              });
+          SandboxingKind sbKind = GetSandboxingKindFromLocation(aLocation);
+          upm->StartProcessForRemoteMediaDecoding(otherPid, sbKind)
+              ->Then(managerThread, __func__,
+                     [resolver = aResolver](
+                         mozilla::ipc::UtilityProcessManager::
+                             StartRemoteDecodingUtilityPromise::
+                                 ResolveOrRejectValue&& aValue) mutable {
+                       if (aValue.IsReject()) {
+                         resolver(Type(aValue.RejectValue(),
+                                       Endpoint<PRemoteDecoderManagerChild>()));
+                         return;
+                       }
+                       resolver(Type(NS_OK, std::move(aValue.ResolveValue())));
+                     });
         }
       }));
   return IPC_OK();

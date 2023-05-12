@@ -3,12 +3,13 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <!DOCTYPE html>
-<html style="width: 70em; height: 40em;">
+<html style="max-width: 67em; max-height: 40em;">
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
         content="default-src chrome:; object-src 'none'">
   <meta name="color-scheme" content="light dark">
+  <title data-l10n-id="colorways-modal-title"></title>
   <link rel="stylesheet" type="text/css"
         href="chrome://global/skin/in-content/common.css">
   <link rel="stylesheet" type="text/css"
@@ -54,11 +55,11 @@
     </fieldset>
   </main>
   <footer id="homepage-reset-container" hidden>
-    <div class="reset-prompt">
+    <div id="homepage-reset-prompt">
       <span data-l10n-id="colorway-homepage-reset-prompt"></span>
       <button data-l10n-id="colorway-homepage-reset-apply-button"></button>
     </div>
-    <div class="success-prompt">
+    <div id="homepage-reset-success">
       <span data-l10n-id="colorway-homepage-reset-success-message"></span>
       <button data-l10n-id="colorway-homepage-reset-undo-button"></button>
     </div>

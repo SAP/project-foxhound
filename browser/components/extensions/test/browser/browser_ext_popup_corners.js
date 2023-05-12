@@ -2,6 +2,20 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
+function promisePanelElementShown(win, panel) {
+  return new Promise((resolve, reject) => {
+    let timeoutId = win.setTimeout(() => {
+      reject("Panel did not show within 20 seconds.");
+    }, 20000);
+    function onPanelOpen(e) {
+      panel.removeEventListener("popupshown", onPanelOpen);
+      win.clearTimeout(timeoutId);
+      resolve();
+    }
+    panel.addEventListener("popupshown", onPanelOpen);
+  });
+}
+
 add_task(async function testPopupBorderRadius() {
   let extension = ExtensionTestUtils.loadExtension({
     background() {
@@ -32,6 +46,12 @@ add_task(async function testPopupBorderRadius() {
   });
 
   await extension.startup();
+
+  let widget = getBrowserActionWidget(extension);
+  // If the panel doesn't allows embedding in subview then
+  // radius will be 0, otherwise 8.  In practice we always
+  // disallow subview.
+  let expectedRadius = widget.disallowSubView ? "8px" : "0px";
 
   async function testPanel(browser, standAlone = true) {
     let panel = getPanelForNode(browser);
@@ -76,8 +96,12 @@ add_task(async function testPopupBorderRadius() {
           `Panel and body ${prop} should be the same`
         );
       } else {
-        is(viewStyle[prop], "0px", `View node ${prop} should be 0px`);
-        is(bodyStyle.get(prop), "0px", `Body node ${prop} should be 0px`);
+        is(viewStyle[prop], expectedRadius, `View node ${prop} should be 0px`);
+        is(
+          bodyStyle.get(prop),
+          expectedRadius,
+          `Body node ${prop} should be 0px`
+        );
       }
     }
   }
@@ -92,9 +116,52 @@ add_task(async function testPopupBorderRadius() {
   }
 
   {
+    info("Test overflowed browserAction popup");
+    const kForceOverflowWidthPx = 450;
+    let overflowPanel = document.getElementById("widget-overflow");
+
+    let originalWindowWidth = window.outerWidth;
+    let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
+    ok(
+      !navbar.hasAttribute("overflowing"),
+      "Should start with a non-overflowing toolbar."
+    );
+    window.resizeTo(kForceOverflowWidthPx, window.outerHeight);
+
+    await TestUtils.waitForCondition(() => navbar.hasAttribute("overflowing"));
+    ok(
+      navbar.hasAttribute("overflowing"),
+      "Should have an overflowing toolbar."
+    );
+
+    let chevron = document.getElementById("nav-bar-overflow-button");
+    let shownPanelPromise = promisePanelElementShown(window, overflowPanel);
+    chevron.click();
+    await shownPanelPromise;
+
+    clickBrowserAction(extension);
+    let browser = await awaitExtensionPanel(extension);
+
+    is(
+      overflowPanel.state,
+      "closed",
+      "The widget overflow panel should not be open."
+    );
+
+    await testPanel(browser, false);
+    await closeBrowserAction(extension);
+
+    window.resizeTo(originalWindowWidth, window.outerHeight);
+    await TestUtils.waitForCondition(() => !navbar.hasAttribute("overflowing"));
+    ok(
+      !navbar.hasAttribute("overflowing"),
+      "Should not have an overflowing toolbar."
+    );
+  }
+
+  {
     info("Test menu panel browserAction popup");
 
-    let widget = getBrowserActionWidget(extension);
     CustomizableUI.addWidgetToArea(widget.id, getCustomizableUIPanelID());
 
     clickBrowserAction(extension);

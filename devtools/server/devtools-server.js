@@ -5,7 +5,6 @@
 "use strict";
 
 var { Ci } = require("chrome");
-var Services = require("Services");
 var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { dumpn } = DevToolsUtils;
@@ -142,7 +141,7 @@ var DevToolsServer = {
   },
 
   hasConnection() {
-    return this._connections && Object.keys(this._connections).length > 0;
+    return this._connections && !!Object.keys(this._connections).length;
   },
 
   hasConnectionForPrefix(prefix) {

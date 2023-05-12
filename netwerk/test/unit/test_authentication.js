@@ -293,8 +293,6 @@ function makeChan(url, loadingUrl) {
   });
 }
 
-var current_test = 0;
-
 var httpserv = null;
 
 function setup() {
@@ -856,7 +854,7 @@ let buildLargePayload = (function() {
   let ret = "";
   return function() {
     // Return cached value.
-    if (ret.length > 0) {
+    if (ret.length) {
       return ret;
     }
     for (let i = 0; i < size; i++) {

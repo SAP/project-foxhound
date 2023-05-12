@@ -16,6 +16,7 @@
 #include "RemoteDecoderManagerParent.h"
 #include "WMF.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/RemoteDecodeUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -68,7 +69,9 @@ MFMediaEngineParent::MFMediaEngineParent(RemoteDecoderManagerParent* aManager,
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(aManagerThread);
   MOZ_ASSERT(mMediaEngineId != 0);
-  MOZ_ASSERT(XRE_IsRDDProcess());
+  MOZ_ASSERT(XRE_IsUtilityProcess());
+  MOZ_ASSERT(GetCurrentSandboxingKind() ==
+             ipc::SandboxingKind::MF_MEDIA_ENGINE_CDM);
   LOG("Created MFMediaEngineParent");
   RegisterMediaEngine(this);
   mIPDLSelfRef = this;
@@ -117,10 +120,8 @@ void MFMediaEngineParent::CreateMediaEngine() {
     return;
   }
 
-  if (StaticPrefs::media_wmf_media_engine_video_output_enabled()) {
-    InitializeDXGIDeviceManager();
-    InitializeVirtualVideoWindow();
-  }
+  InitializeDXGIDeviceManager();
+  InitializeVirtualVideoWindow();
 
   // Create an attribute and set mandatory information that are required for
   // a media engine creation.
@@ -309,16 +310,10 @@ MFMediaEngineStreamWrapper* MFMediaEngineParent::GetMediaEngineStream(
                                           aParam);
   }
   MOZ_ASSERT(aType == TrackType::kVideoTrack);
-  // TODO : This is for testing. Remove this pref after finishing the video
-  // output implementation. Our first step is to make audio playback work.
-  if (StaticPrefs::media_wmf_media_engine_video_output_enabled()) {
-    auto* stream = mMediaSource->GetVideoStream();
-    stream->AsVideoStream()->SetKnowsCompositor(aParam.mKnowsCompositor);
-    stream->AsVideoStream()->SetConfig(aParam.mConfig);
-    return new MFMediaEngineStreamWrapper(stream, stream->GetTaskQueue(),
-                                          aParam);
-  }
-  return nullptr;
+  auto* stream = mMediaSource->GetVideoStream();
+  stream->AsVideoStream()->SetKnowsCompositor(aParam.mKnowsCompositor);
+  stream->AsVideoStream()->SetConfig(aParam.mConfig);
+  return new MFMediaEngineStreamWrapper(stream, stream->GetTaskQueue(), aParam);
 }
 
 mozilla::ipc::IPCResult MFMediaEngineParent::RecvInitMediaEngine(
@@ -525,6 +520,12 @@ void MFMediaEngineParent::EnsureDcompSurfaceHandle() {
 
 void MFMediaEngineParent::UpdateStatisticsData() {
   AssertOnManagerThread();
+
+  // Statistic data is only for video.
+  if (!mMediaEngine->HasVideo()) {
+    return;
+  }
+
   ComPtr<IMFMediaEngineEx> mediaEngineEx;
   RETURN_VOID_IF_FAILED(mMediaEngine.As(&mediaEngineEx));
 

@@ -4,8 +4,6 @@
 
 "use strict";
 
-const ChromeUtils = require("ChromeUtils");
-const Services = require("Services");
 const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.sys.mjs");
 const protocol = require("devtools/shared/protocol");
 const {

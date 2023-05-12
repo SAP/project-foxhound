@@ -169,6 +169,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   virtual mozilla::ipc::IPCResult RecvResume() override;
   virtual mozilla::ipc::IPCResult RecvCancel(
       const nsresult& status, const uint32_t& requestBlockingReason,
+      const nsACString& reason,
       const mozilla::Maybe<nsCString>& logString) override;
   virtual mozilla::ipc::IPCResult RecvRedirect2Verify(
       const nsresult& result, const RequestHeaderTuples& changedHeaders,
@@ -204,7 +205,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   virtual mozilla::ipc::IPCResult RecvDeletingChannel() override;
 
  private:
-  void UpdateAndSerializeSecurityInfo(nsACString& aSerializedSecurityInfoOut);
+  already_AddRefed<nsITransportSecurityInfo> SecurityInfo();
 
   // final step for Redirect2Verify procedure, will be invoked while both
   // redirecting and redirected channel are ready or any error happened.

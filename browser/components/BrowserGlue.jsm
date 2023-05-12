@@ -28,6 +28,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SnapshotMonitor: "resource:///modules/SnapshotMonitor.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
@@ -44,7 +45,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ASRouterNewTabHook: "resource://activity-stream/lib/ASRouterNewTabHook.jsm",
   ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
   Blocklist: "resource://gre/modules/Blocklist.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
@@ -88,7 +88,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
@@ -100,10 +99,20 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.jsm",
   TRRRacer: "resource:///modules/TRRPerformance.jsm",
   UIState: "resource://services-sync/UIState.jsm",
-  UpdateListener: "resource://gre/modules/UpdateListener.jsm",
   WebChannel: "resource://gre/modules/WebChannel.jsm",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.jsm",
 });
+
+if (AppConstants.MOZ_UPDATER) {
+  XPCOMUtils.defineLazyModuleGetters(lazy, {
+    UpdateListener: "resource://gre/modules/UpdateListener.jsm",
+  });
+}
+if (AppConstants.MOZ_UPDATE_AGENT) {
+  XPCOMUtils.defineLazyModuleGetters(lazy, {
+    BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
+  });
+}
 
 // PluginManager is used in the listeners object below.
 // eslint-disable-next-line mozilla/valid-lazy
@@ -143,8 +152,6 @@ const PRIVATE_BROWSING_BINARY = "private_browsing.exe";
 // Index of Private Browsing icon in private_browsing.exe
 // Must line up with IDI_PBICON_PB_PB_EXE in nsNativeAppSupportWin.h.
 const PRIVATE_BROWSING_EXE_ICON_INDEX = 1;
-const PREF_PRIVATE_WINDOW_SEPARATION =
-  "browser.privacySegmentation.windowSeparation.enabled";
 const PREF_PRIVATE_BROWSING_SHORTCUT_CREATED =
   "browser.privacySegmentation.createdShortcut";
 
@@ -158,7 +165,7 @@ let JSPROCESSACTORS = {
   // Miscellaneous stuff that needs to be initialized per process.
   BrowserProcess: {
     child: {
-      moduleURI: "resource:///actors/BrowserProcessChild.jsm",
+      esModuleURI: "resource:///actors/BrowserProcessChild.sys.mjs",
       observers: [
         // WebRTC related notifications. They are here to avoid loading WebRTC
         // components when not needed.
@@ -241,10 +248,10 @@ let JSWINDOWACTORS = {
 
   AboutNewTab: {
     parent: {
-      moduleURI: "resource:///actors/AboutNewTabParent.jsm",
+      esModuleURI: "resource:///actors/AboutNewTabParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/AboutNewTabChild.jsm",
+      esModuleURI: "resource:///actors/AboutNewTabChild.sys.mjs",
       events: {
         DOMContentLoaded: {},
         pageshow: {},
@@ -263,10 +270,10 @@ let JSWINDOWACTORS = {
 
   AboutPlugins: {
     parent: {
-      moduleURI: "resource:///actors/AboutPluginsParent.jsm",
+      esModuleURI: "resource:///actors/AboutPluginsParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/AboutPluginsChild.jsm",
+      esModuleURI: "resource:///actors/AboutPluginsChild.sys.mjs",
 
       events: {
         DOMDocElementInserted: { capture: true },
@@ -345,11 +352,10 @@ let JSWINDOWACTORS = {
 
   AboutTabCrashed: {
     parent: {
-      moduleURI: "resource:///actors/AboutTabCrashedParent.jsm",
+      esModuleURI: "resource:///actors/AboutTabCrashedParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/AboutTabCrashedChild.jsm",
-
+      esModuleURI: "resource:///actors/AboutTabCrashedChild.sys.mjs",
       events: {
         DOMDocElementInserted: { capture: true },
       },
@@ -691,10 +697,10 @@ let JSWINDOWACTORS = {
 
   ScreenshotsComponent: {
     parent: {
-      moduleURI: "resource:///modules/ScreenshotsUtils.jsm",
+      esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/ScreenshotsComponentChild.jsm",
+      esModuleURI: "resource:///actors/ScreenshotsComponentChild.sys.mjs",
     },
     enablePreference: "screenshots.browser.component.enabled",
   },
@@ -832,12 +838,6 @@ XPCOMUtils.defineLazyGetter(lazy, "gTabbrowserBundle", function() {
 
 const listeners = {
   observers: {
-    "update-downloading": ["UpdateListener"],
-    "update-staged": ["UpdateListener"],
-    "update-downloaded": ["UpdateListener"],
-    "update-available": ["UpdateListener"],
-    "update-error": ["UpdateListener"],
-    "update-swap": ["UpdateListener"],
     "gmp-plugin-crash": ["PluginManager"],
     "plugin-crashed": ["PluginManager"],
   },
@@ -858,6 +858,14 @@ const listeners = {
     }
   },
 };
+if (AppConstants.MOZ_UPDATER) {
+  listeners.observers["update-downloading"] = ["UpdateListener"];
+  listeners.observers["update-staged"] = ["UpdateListener"];
+  listeners.observers["update-downloaded"] = ["UpdateListener"];
+  listeners.observers["update-available"] = ["UpdateListener"];
+  listeners.observers["update-error"] = ["UpdateListener"];
+  listeners.observers["update-swap"] = ["UpdateListener"];
+}
 
 // Seconds of idle before trying to create a bookmarks backup.
 const BOOKMARKS_BACKUP_IDLE_TIME_SEC = 8 * 60;
@@ -2006,7 +2014,11 @@ BrowserGlue.prototype = {
       () => lazy.Normandy.uninit(),
       () => lazy.RFPHelper.uninit(),
       () => lazy.ASRouterNewTabHook.destroy(),
-      () => lazy.UpdateListener.reset(),
+      () => {
+        if (AppConstants.MOZ_UPDATER) {
+          lazy.UpdateListener.reset();
+        }
+      },
     ];
 
     for (let task of tasks) {
@@ -2256,7 +2268,7 @@ BrowserGlue.prototype = {
   },
 
   _monitorPrivacySegmentationPref() {
-    const PREF_ENABLED = "browser.privacySegmentation.enabled";
+    const PREF_ENABLED = "browser.dataFeatureRecommendations.enabled";
     const EVENT_CATEGORY = "privacy_segmentation";
 
     let checkPrivacySegmentationPref = () => {
@@ -2536,7 +2548,9 @@ BrowserGlue.prototype = {
           // Pref'ed off until Private Browsing window separation is enabled by default
           // to avoid a situation where a user pins the Private Browsing shortcut to
           // the Taskbar, which will end up launching into a different Taskbar icon.
-          Services.prefs.getBoolPref(PREF_PRIVATE_WINDOW_SEPARATION, false) &&
+          lazy.NimbusFeatures.majorRelease2022.getVariable(
+            "feltPrivacyWindowSeparation"
+          ) &&
           // Private Browsing shortcuts for packaged builds come with the package,
           // if they exist at all. We shouldn't try to create our own.
           !Services.sysinfo.getProperty("hasWinPackageId") &&
@@ -2556,10 +2570,10 @@ BrowserGlue.prototype = {
           );
 
           if (
-            !shellService.hasMatchingShortcut(
+            !(await shellService.hasMatchingShortcut(
               winTaskbar.defaultPrivateGroupId,
               true
-            )
+            ))
           ) {
             let appdir = Services.dirsvc.get("GreD", Ci.nsIFile);
             let exe = appdir.clone();
@@ -2569,9 +2583,9 @@ BrowserGlue.prototype = {
               true
             );
             let [desc] = await strings.formatValues([
-              "private-browsing-shortcut-text",
+              "private-browsing-shortcut-text-2",
             ]);
-            shellService.createShortcut(
+            await shellService.createShortcut(
               exe,
               [],
               desc,
@@ -2583,6 +2597,7 @@ BrowserGlue.prototype = {
               desc + ".lnk",
               appdir
             );
+            // Once we've successfully created this, set this so we never do it again.
             Services.prefs.setBoolPref(
               PREF_PRIVATE_BROWSING_SHORTCUT_CREATED,
               true
@@ -2853,6 +2868,7 @@ BrowserGlue.prototype = {
       },
 
       {
+        condition: AppConstants.MOZ_UPDATER,
         task: () => {
           lazy.UpdateListener.maybeShowUnsupportedNotification();
         },
@@ -4286,19 +4302,50 @@ BrowserGlue.prototype = {
 
   async _showUpgradeDialog() {
     const data = await lazy.OnboardingMessageProvider.getUpgradeMessage();
-    const win = lazy.BrowserWindowTracker.getTopWindow();
-    const browser = win.gBrowser.selectedBrowser;
-    const config = {
-      type: "SHOW_SPOTLIGHT",
-      data,
+    const { gBrowser } = lazy.BrowserWindowTracker.getTopWindow();
+
+    // We'll be adding a new tab open the tab-modal dialog in.
+    let tab;
+
+    const upgradeTabsProgressListener = {
+      onLocationChange(
+        aBrowser,
+        aWebProgress,
+        aRequest,
+        aLocationURI,
+        aFlags,
+        aIsSimulated
+      ) {
+        if (aBrowser === tab.linkedBrowser) {
+          // We're now far enough along in the load that we no longer have to
+          // worry about a call to onLocationChange triggering SubDialog.abort,
+          // so display the dialog
+          const config = {
+            type: "SHOW_SPOTLIGHT",
+            data,
+          };
+          lazy.SpecialMessageActions.handleAction(config, tab.linkedBrowser);
+
+          gBrowser.removeTabsProgressListener(upgradeTabsProgressListener);
+        }
+      },
     };
-    lazy.SpecialMessageActions.handleAction(config, browser);
+
+    // Make sure we're ready to show the dialog once onLocationChange gets
+    // called.
+    gBrowser.addTabsProgressListener(upgradeTabsProgressListener);
+
+    tab = gBrowser.addTrustedTab("about:home", {
+      relatedToCurrent: true,
+    });
+
+    gBrowser.selectedTab = tab;
   },
 
   async _maybeShowDefaultBrowserPrompt() {
     // Highest priority is the upgrade dialog, which can include a "primary
     // browser" request and is limited in various ways, e.g., major upgrades.
-    const dialogVersion = 100;
+    const dialogVersion = 106;
     const dialogVersionPref = "browser.startup.upgradeDialog.version";
     const dialogReason = await (async () => {
       if (!lazy.BrowserHandler.majorUpgrade) {
@@ -4329,9 +4376,14 @@ BrowserGlue.prototype = {
         return "disallow-postUpdate";
       }
 
-      return lazy.NimbusFeatures.upgradeDialog.getVariable("enabled")
-        ? ""
-        : "disabled";
+      const useMROnboarding = lazy.NimbusFeatures.majorRelease2022.getVariable(
+        "onboarding"
+      );
+      const showUpgradeDialog =
+        useMROnboarding ??
+        lazy.NimbusFeatures.upgradeDialog.getVariable("enabled");
+
+      return showUpgradeDialog ? "" : "disabled";
     })();
 
     // Record why the dialog is showing or not.

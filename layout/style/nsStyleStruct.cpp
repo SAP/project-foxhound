@@ -2203,7 +2203,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mOriginalDisplay(StyleDisplay::Inline),
       mContain(StyleContain::NONE),
       mContentVisibility(StyleContentVisibility::Visible),
-      mContainerType(StyleContainerType::NONE),
+      mContainerType(StyleContainerType::NORMAL),
       mAppearance(StyleAppearance::None),
       mDefaultAppearance(StyleAppearance::None),
       mPosition(StylePositionProperty::Static),
@@ -2248,7 +2248,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mPerspectiveOrigin(Position::FromPercentage(0.5f)),
       mVerticalAlign(
           StyleVerticalAlign::Keyword(StyleVerticalAlignKeyword::Baseline)),
-      mLineClamp(0),
+      mWebkitLineClamp(0),
       mShapeMargin(LengthPercentage::Zero()),
       mShapeOutside(StyleShapeOutside::None()) {
   MOZ_COUNT_CTOR(nsStyleDisplay);
@@ -2301,7 +2301,7 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mChildPerspective(aSource.mChildPerspective),
       mPerspectiveOrigin(aSource.mPerspectiveOrigin),
       mVerticalAlign(aSource.mVerticalAlign),
-      mLineClamp(aSource.mLineClamp),
+      mWebkitLineClamp(aSource.mWebkitLineClamp),
       mShapeImageThreshold(aSource.mShapeImageThreshold),
       mShapeMargin(aSource.mShapeMargin),
       mShapeOutside(aSource.mShapeOutside) {
@@ -2527,11 +2527,8 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     }
   }
 
-  if (mLineClamp != aNewData.mLineClamp) {
-    hint |= NS_STYLE_HINT_REFLOW;
-  }
-
-  if (mVerticalAlign != aNewData.mVerticalAlign) {
+  if (mWebkitLineClamp != aNewData.mWebkitLineClamp ||
+      mVerticalAlign != aNewData.mVerticalAlign) {
     // XXX Can this just be AllReflowHints + RepaintFrame, and be included in
     // the block below?
     hint |= NS_STYLE_HINT_REFLOW;
@@ -3594,21 +3591,6 @@ nscoord StyleCalcNode::Resolve(nscoord aBasis,
   return ResolveInternal(aBasis, aRounder);
 }
 
-static bool CanUseLastRememberedSize(const nsIFrame& aFrame) {
-  switch (aFrame.StyleDisplay()->mContentVisibility) {
-    case StyleContentVisibility::Visible:
-      return false;
-    case StyleContentVisibility::Auto:
-      // TODO: return true if the element skips its contents, i.e. if it's not
-      // relevant to the user.
-      return false;
-    case StyleContentVisibility::Hidden:
-      return true;
-  }
-  MOZ_ASSERT_UNREACHABLE("Unknown content-visibility value");
-  return false;
-}
-
 static nscoord Resolve(const StyleContainIntrinsicSize& aSize,
                        nscoord aNoneValue, const nsIFrame& aFrame,
                        LogicalAxis aAxis) {
@@ -3623,7 +3605,7 @@ static nscoord Resolve(const StyleContainIntrinsicSize& aSize,
     Maybe<float> lastSize = aAxis == eLogicalAxisBlock
                                 ? element->GetLastRememberedBSize()
                                 : element->GetLastRememberedISize();
-    if (lastSize && CanUseLastRememberedSize(aFrame)) {
+    if (lastSize && aFrame.HidesContent()) {
       return CSSPixel::ToAppUnits(*lastSize);
     }
   }

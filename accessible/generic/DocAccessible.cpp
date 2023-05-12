@@ -1318,21 +1318,13 @@ bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
 
     // If the accessible is a table, or table part, its layout table
     // status may have changed. We need to invalidate the associated
-    // cache, which listens for the following event.
+    // table cache, which listens for the following event.
     if (acc->IsTable() || acc->IsTableRow() || acc->IsTableCell()) {
-      FireDelayedEvent(nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED, acc);
-      LocalAccessible* table;
-      if (acc->IsTable()) {
-        table = acc;
-      } else {
-        for (table = acc->LocalParent(); table; table = table->LocalParent()) {
-          if (table->IsTable()) {
-            break;
-          }
-        }
-      }
+      LocalAccessible* table = nsAccUtils::TableFor(acc);
       if (table && table->IsTable()) {
-        QueueCacheUpdate(acc, CacheDomain::Table);
+        FireDelayedEvent(nsIAccessibleEvent::EVENT_TABLE_STYLING_CHANGED,
+                         table);
+        QueueCacheUpdate(table, CacheDomain::Table);
       }
     }
 
@@ -1450,7 +1442,7 @@ void DocAccessible::ProcessQueuedCacheUpdates() {
   for (auto iter = mQueuedCacheUpdates.Iter(); !iter.Done(); iter.Next()) {
     LocalAccessible* acc = iter.Key();
     uint64_t domain = iter.UserData();
-    if (acc->IsInDocument() && !acc->IsDefunct()) {
+    if (acc && acc->IsInDocument() && !acc->IsDefunct()) {
       RefPtr<AccAttributes> fields =
           acc->BundleFieldsForCache(domain, CacheUpdateType::Update);
 

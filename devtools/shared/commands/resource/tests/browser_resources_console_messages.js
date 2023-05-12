@@ -53,7 +53,7 @@ async function testTabConsoleMessagesResources(executeInIframe) {
         "Received a message"
       );
       ok(resource.message, "message is wrapped into a message attribute");
-      const isCachedMessage = expectedExistingCalls.length > 0;
+      const isCachedMessage = !!expectedExistingCalls.length;
       const expected = (isCachedMessage
         ? expectedExistingCalls
         : expectedRuntimeCalls
@@ -65,7 +65,7 @@ async function testTabConsoleMessagesResources(executeInIframe) {
         "isAlreadyExistingResource has the expected value"
       );
 
-      if (expectedRuntimeCalls.length == 0) {
+      if (!expectedRuntimeCalls.length) {
         runtimeDoneResolve();
       }
     }
@@ -214,13 +214,17 @@ function evalInBrowsingContext(browsingContext, script) {
 const EXPECTED_FUNCTION_NAME = "pageScript";
 
 const NUMBER_REGEX = /^\d+$/;
+// timeStamp are the result of a number in microsecond divided by 1000.
+// so we can't expect a precise number of decimals, or even if there would
+// be decimals at all.
+const FRACTIONAL_NUMBER_REGEX = /^\d+(\.\d{1,3})?$/;
 
 function getExpectedExistingConsoleCalls(documentFilename) {
   const defaultProperties = {
     filename: documentFilename,
     columnNumber: NUMBER_REGEX,
     lineNumber: NUMBER_REGEX,
-    timeStamp: NUMBER_REGEX,
+    timeStamp: FRACTIONAL_NUMBER_REGEX,
     innerWindowID: NUMBER_REGEX,
     chromeContext: undefined,
     counter: undefined,
@@ -265,7 +269,7 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
     filename: documentFilename,
     columnNumber: NUMBER_REGEX,
     lineNumber: NUMBER_REGEX,
-    timeStamp: NUMBER_REGEX,
+    timeStamp: FRACTIONAL_NUMBER_REGEX,
     innerWindowID: NUMBER_REGEX,
     chromeContext: undefined,
     counter: undefined,

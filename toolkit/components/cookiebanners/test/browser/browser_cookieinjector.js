@@ -37,15 +37,31 @@ function insertTestRules() {
   Services.cookieBanners.insertRule(ruleA);
   ruleA.addCookie(
     true,
-    "." + DOMAIN_A,
     `cookieConsent_${DOMAIN_A}_1`,
-    "optOut1"
+    "optOut1",
+    "." + DOMAIN_A,
+    "/",
+    3600,
+    "",
+    false,
+    false,
+    false,
+    0,
+    0
   );
   ruleA.addCookie(
     true,
-    "." + DOMAIN_A,
     `cookieConsent_${DOMAIN_A}_2`,
-    "optOut2"
+    "optOut2",
+    DOMAIN_A,
+    "/",
+    3600,
+    "",
+    false,
+    false,
+    false,
+    0,
+    0
   );
 
   // An opt-in cookie rule for DOMAIN_B.
@@ -57,12 +73,17 @@ function insertTestRules() {
   Services.cookieBanners.insertRule(ruleB);
   ruleB.addCookie(
     false,
-    null, // This should result in .<domain>
     `cookieConsent_${DOMAIN_B}_1`,
     "optIn1",
+    DOMAIN_B,
     "/",
+    3600,
+    "UNSET",
+    false,
+    false,
+    true,
     0,
-    "UNSET"
+    0
   );
 }
 /**
@@ -428,7 +449,10 @@ add_task(async function test_container_tab() {
 add_task(async function test_no_overwrite() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+      [
+        "cookiebanners.service.mode",
+        Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+      ],
       ["cookiebanners.cookieInjector.enabled", true],
     ],
   });
@@ -468,7 +492,7 @@ add_task(async function test_no_overwrite() {
     ]),
     "Should retain pre-set opt-in cookies for ORIGIN_A, but write new secondary cookie from rules."
   );
-  todo(
+  ok(
     SiteDataTestUtils.hasCookies(ORIGIN_B, [
       {
         key: `cookieConsent_${DOMAIN_B}_1`,

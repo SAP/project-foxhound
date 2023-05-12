@@ -4,6 +4,9 @@ const { ASRouterTargeting, QueryCache } = ChromeUtils.import(
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
+const { BuiltInThemes } = ChromeUtils.import(
+  "resource:///modules/BuiltInThemes.jsm"
+);
 const { CFRMessageProvider } = ChromeUtils.import(
   "resource://activity-stream/lib/CFRMessageProvider.jsm"
 );
@@ -52,6 +55,16 @@ ChromeUtils.defineModuleGetter(
   this,
   "AboutNewTab",
   "resource:///modules/AboutNewTab.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ExperimentAPI",
+  "resource://nimbus/ExperimentAPI.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ExperimentFakes",
+  "resource://testing-common/NimbusTestUtils.jsm"
 );
 
 // ASRouterTargeting.findMatchingMessage
@@ -352,7 +365,7 @@ add_task(async function checksearchEngines() {
 
 add_task(async function checkisDefaultBrowser() {
   const expected = ShellService.isDefaultBrowser();
-  const result = ASRouterTargeting.Environment.isDefaultBrowser;
+  const result = await ASRouterTargeting.Environment.isDefaultBrowser;
   is(typeof result, "boolean", "isDefaultBrowser should be a boolean value");
   is(
     result,
@@ -1167,5 +1180,120 @@ add_task(async function check_userPrefersReducedMotion() {
     typeof (await ASRouterTargeting.Environment.userPrefersReducedMotion),
     "boolean",
     "Should return a boolean"
+  );
+});
+
+add_task(async function check_colorwaysActive() {
+  is(
+    typeof (await ASRouterTargeting.Environment.colorwaysActive),
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  let stub = sandbox
+    .stub(BuiltInThemes, "findActiveColorwayCollection")
+    .returns(true);
+
+  ok(
+    await ASRouterTargeting.Environment.colorwaysActive,
+    "returns true when an colorways are active"
+  );
+
+  stub.returns(false);
+
+  ok(
+    !(await ASRouterTargeting.Environment.colorwaysActive),
+    "returns false when an colorways are inactive"
+  );
+});
+
+add_task(async function check_userEnabledActiveColorway() {
+  is(
+    typeof (await ASRouterTargeting.Environment.userEnabledActiveColorway),
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  let currentCollectionStub = sandbox
+    .stub(BuiltInThemes, "isColorwayFromCurrentCollection")
+    .returns(false);
+
+  ok(
+    !(await ASRouterTargeting.Environment.userEnabledActiveColorway),
+    "returns false when an active colorway is not enabled"
+  );
+
+  currentCollectionStub.returns(true);
+
+  ok(
+    await ASRouterTargeting.Environment.userEnabledActiveColorway,
+    "returns true when an active colorway is enabled"
+  );
+});
+
+add_task(async function test_mr2022Holdback() {
+  await ExperimentAPI.ready();
+
+  ok(
+    !ASRouterTargeting.Environment.inMr2022Holdback,
+    "Should not be in holdback (no experiment)"
+  );
+
+  {
+    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      featureId: "majorRelease2022",
+      value: {
+        onboarding: true,
+      },
+    });
+
+    ok(
+      !ASRouterTargeting.Environment.inMr2022Holdback,
+      "Should not be in holdback (onboarding = true)"
+    );
+
+    await doExperimentCleanup();
+  }
+
+  {
+    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      featureId: "majorRelease2022",
+      value: {
+        onboarding: false,
+      },
+    });
+
+    ok(
+      ASRouterTargeting.Environment.inMr2022Holdback,
+      "Should be in holdback (onboarding = false)"
+    );
+
+    await doExperimentCleanup();
+  }
+});
+
+add_task(async function test_distributionId() {
+  is(
+    ASRouterTargeting.Environment.distributionId,
+    "",
+    "Should return an empty distribution Id"
+  );
+
+  Services.prefs.getDefaultBranch(null).setCharPref("distribution.id", "test");
+
+  is(
+    ASRouterTargeting.Environment.distributionId,
+    "test",
+    "Should return the correct distribution Id"
   );
 });

@@ -1033,14 +1033,18 @@ static WebIDLUtilityActorName UtilityActorNameToWebIDL(
     mozilla::UtilityActorName aType) {
   // Max is the value of the last enum, not the length, so add one.
   static_assert(WebIDLUtilityActorNameValues::Count ==
-                    static_cast<size_t>(UtilityActorName::AudioDecoder) + 1,
+                    static_cast<size_t>(UtilityActorName::MfMediaEngineCDM) + 1,
                 "In order for this static cast to be okay, "
                 "UtilityActorName must match UtilityActorName exactly");
 
   // These must match the similar ones in ProcInfo.h and ChromeUtils.webidl
   switch (aType) {
     UTILITYACTORNAME_TO_WEBIDL_CASE(Unknown, Unknown);
-    UTILITYACTORNAME_TO_WEBIDL_CASE(AudioDecoder, AudioDecoder);
+    UTILITYACTORNAME_TO_WEBIDL_CASE(AudioDecoder_Generic, AudioDecoder_Generic);
+    UTILITYACTORNAME_TO_WEBIDL_CASE(AudioDecoder_AppleMedia,
+                                    AudioDecoder_AppleMedia);
+    UTILITYACTORNAME_TO_WEBIDL_CASE(AudioDecoder_WMF, AudioDecoder_WMF);
+    UTILITYACTORNAME_TO_WEBIDL_CASE(MfMediaEngineCDM, MfMediaEngineCDM);
   }
 
   MOZ_ASSERT(false, "Unhandled case in WebIDLUtilityActorName");
@@ -1716,5 +1720,7 @@ bool ChromeUtils::IsDarkBackground(GlobalObject&, Element& aElement) {
   }
   return nsNativeTheme::IsDarkBackground(f);
 }
+
+double ChromeUtils::DateNow(GlobalObject&) { return JS_Now() / 1000.0; }
 
 }  // namespace mozilla::dom

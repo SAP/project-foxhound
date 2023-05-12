@@ -15,9 +15,12 @@ ChromeUtils.import("resource://gre/modules/NotificationDB.jsm");
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  FirefoxViewNotificationManager:
+    "resource:///modules/firefox-view-notification-manager.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   UrlbarInput: "resource:///modules/UrlbarInput.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderSearchTips:
@@ -25,6 +28,7 @@ ChromeUtils.defineESModuleGetters(this, {
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter: "resource:///modules/UrlbarValueFormatter.sys.mjs",
+  WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -77,7 +81,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
@@ -94,7 +97,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Weave: "resource://services-sync/main.js",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
   webrtcUI: "resource:///modules/webrtcUI.jsm",
-  WebsiteFilter: "resource:///modules/policies/WebsiteFilter.jsm",
   ZoomUI: "resource:///modules/ZoomUI.jsm",
 });
 
@@ -545,13 +547,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   true
 );
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "gPrivateBrowsingNewIndicatorEnabled",
-  "browser.privatebrowsing.enable-new-indicator",
-  false
-);
-
 customElements.setElementCreationCallback("translation-notification", () => {
   Services.scriptloader.loadSubScript(
     "chrome://browser/content/translation-notification.js",
@@ -648,7 +643,7 @@ var gPageIcons = {
 var gInitialPages = [
   "about:blank",
   "about:home",
-  ...(AppConstants.NIGHTLY_BUILD ? ["about:firefoxview"] : []),
+  "about:firefoxview",
   "about:newtab",
   "about:privatebrowsing",
   "about:sessionrestore",
@@ -1701,6 +1696,7 @@ var gBrowserInit = {
 
     BrowserWindowTracker.track(window);
 
+    FirefoxViewHandler.init();
     gNavToolbox.palette = document.getElementById(
       "BrowserToolbarPalette"
     ).content;
@@ -1983,8 +1979,6 @@ var gBrowserInit = {
 
     ctrlTab.readPref();
     Services.prefs.addObserver(ctrlTab.prefName, ctrlTab);
-
-    FirefoxViewHandler.init();
 
     // The object handling the downloads indicator is initialized here in the
     // delayed startup function, but the actual indicator element is not loaded
@@ -2534,8 +2528,6 @@ var gBrowserInit = {
 
     DownloadsButton.uninit();
 
-    FirefoxViewHandler.uninit();
-
     if (gToolbarKeyNavEnabled) {
       ToolbarKeyboardNavigator.uninit();
     }
@@ -2543,6 +2535,8 @@ var gBrowserInit = {
     BrowserSearch.uninit();
 
     NewTabPagePreloading.removePreloadedBrowser(window);
+
+    FirefoxViewHandler.uninit();
 
     // Now either cancel delayedStartup, or clean up the services initialized from
     // it.
@@ -2806,8 +2800,11 @@ function BrowserHome(aEvent) {
   var urls;
   var notifyObservers;
 
-  // Home page should open in a new tab when current tab is an app tab
-  if (where == "current" && gBrowser && gBrowser.selectedTab.pinned) {
+  // Don't load the home page in pinned or hidden tabs (e.g. Firefox View).
+  if (
+    where == "current" &&
+    (gBrowser?.selectedTab.pinned || gBrowser?.selectedTab.hidden)
+  ) {
     where = "tab";
   }
 
@@ -4011,7 +4008,7 @@ const BrowserSearch = {
     );
   },
 
-  addEngine(browser, engine, uri) {
+  addEngine(browser, engine) {
     if (!this._searchInitComplete) {
       // We haven't finished initialising search yet. This means we can't
       // call getEngineByName here. Since this is only on start-up and unlikely
@@ -4029,8 +4026,6 @@ const BrowserSearch = {
     var hidden = false;
     // If this engine (identified by title) is already in the list, add it
     // to the list of hidden engines rather than to the main list.
-    // XXX This will need to be changed when engines are identified by URL;
-    // see bug 335102.
     if (Services.search.getEngineByName(engine.title)) {
       hidden = true;
     }
@@ -4336,18 +4331,6 @@ const BrowserSearch = {
    */
   get searchBar() {
     return document.getElementById("searchbar");
-  },
-
-  get searchEnginesURL() {
-    return formatURL("browser.search.searchEnginesURL", true);
-  },
-
-  loadAddEngines: function BrowserSearch_loadAddEngines() {
-    var newWindowPref = Services.prefs.getIntPref(
-      "browser.link.open_newwindow"
-    );
-    var where = newWindowPref == 3 ? "tab" : "window";
-    openTrustedLinkIn(this.searchEnginesURL, where);
   },
 
   /**
@@ -5420,7 +5403,12 @@ var XULBrowserWindow = {
     // via simulated locationchange events such as switching between tabs, however
     // if this is a document navigation then PopupNotifications will be updated
     // via TabsProgressListener.onLocationChange and we do not want it called twice
-    gURLBar.setURI(aLocationURI, aIsSimulated, isSessionRestore);
+    gURLBar.setURI(
+      aLocationURI,
+      aIsSimulated,
+      isSessionRestore,
+      aRequest instanceof Ci.nsIChannel ? aRequest.originalURI : null
+    );
 
     BookmarkingUI.onLocationChange();
     // If we've actually changed document, update the toolbar visibility.
@@ -6070,15 +6058,6 @@ var TabsProgressListener = {
           stopwatchRunning /* we won't see STATE_START events for pre-rendered tabs */
         ) {
           if (recordLoadTelemetry) {
-            if (aBrowser.browsingContext?.topWindowContext?.hadLazyLoadImage) {
-              let timeElapsed = TelemetryStopwatch.timeElapsed(
-                histogram,
-                aBrowser
-              );
-              Services.telemetry
-                .getHistogramById("FX_LAZYLOAD_IMAGE_PAGE_LOAD_MS")
-                .add(timeElapsed);
-            }
             TelemetryStopwatch.finish(histogram, aBrowser);
             BrowserTelemetryUtils.recordSiteOriginTelemetry(browserWindows());
           }
@@ -8343,20 +8322,6 @@ function ReportSiteIssue() {
 }
 
 /**
- * Format a URL
- * eg:
- * echo formatURL("https://addons.mozilla.org/%LOCALE%/%APP%/%VERSION%/");
- * > https://addons.mozilla.org/en-US/firefox/3.0a1/
- *
- * Currently supported built-ins are LOCALE, APP, and any value from nsIXULAppInfo, uppercased.
- */
-function formatURL(aFormat, aIsPref) {
-  return aIsPref
-    ? Services.urlFormatter.formatURLPref(aFormat)
-    : Services.urlFormatter.formatURL(aFormat);
-}
-
-/**
  * When the browser is being controlled from out-of-process,
  * e.g. when Marionette or the remote debugging protocol is used,
  * we add a visual hint to the browser UI to indicate to the user
@@ -8397,7 +8362,13 @@ const gRemoteControl = {
   },
 
   getRemoteControlComponent() {
-    if (DevToolsSocketStatus.opened) {
+    // For DevTools sockets, only show the remote control cue if the socket is
+    // not coming from a regular Browser Toolbox debugging session.
+    if (
+      DevToolsSocketStatus.hasSocketOpened({
+        excludeBrowserToolboxSockets: true,
+      })
+    ) {
       return "DevTools";
     }
 
@@ -8440,7 +8411,7 @@ var gPrivateBrowsingUI = {
     // This will hide the old indicator.
     docElement.toggleAttribute(
       "privatebrowsingnewindicator",
-      gPrivateBrowsingNewIndicatorEnabled
+      NimbusFeatures.majorRelease2022.getVariable("feltPrivacyPBMNewIndicator")
     );
 
     gBrowser.updateTitlebar();
@@ -9109,7 +9080,8 @@ class TabDialogBox {
    * showing multiple dialogs with aURL at the same time. If false calls for
    * duplicate dialogs will be dropped.
    * @param {String} [aOptions.sizeTo] - Pass "available" to stretch dialog to
-   * roughly content size.
+   * roughly content size. Any max-width or max-height style values on the document root
+   * will also be applied to the dialog box.
    * @param {Boolean} [aOptions.keepOpenSameOriginNav] - By default dialogs are
    * aborted on any navigation.
    * Set to true to keep the dialog open for same origin navigation.
@@ -9896,38 +9868,72 @@ var ConfirmationHint = {
 
 var FirefoxViewHandler = {
   tab: null,
+  BUTTON_ID: "firefox-view-button",
+  _enabled: false,
   get button() {
-    return document.getElementById("firefox-view-button");
+    return document.getElementById(this.BUTTON_ID);
   },
   init() {
-    if (!AppConstants.NIGHTLY_BUILD) {
-      return;
+    CustomizableUI.addListener(this);
+
+    this._updateEnabledState = this._updateEnabledState.bind(this);
+    this._updateEnabledState();
+    NimbusFeatures.majorRelease2022.onUpdate(this._updateEnabledState);
+
+    if (this._enabled) {
+      this._toggleNotificationDot(
+        FirefoxViewNotificationManager.shouldNotificationDotBeShowing()
+      );
     }
-    const { FirefoxViewNotificationManager } = ChromeUtils.importESModule(
-      "resource:///modules/firefox-view-notification-manager.sys.mjs"
-    );
-    if (!Services.prefs.getBoolPref("browser.tabs.firefox-view")) {
-      document.getElementById("menu_openFirefoxView").hidden = true;
-    } else {
-      let shouldShow = FirefoxViewNotificationManager.shouldNotificationDotBeShowing();
-      this._toggleNotificationDot(shouldShow);
-    }
+    XPCOMUtils.defineLazyModuleGetters(this, {
+      SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
+    });
     Services.obs.addObserver(this, "firefoxview-notification-dot-update");
-    this.observerAdded = true;
   },
   uninit() {
-    if (this.observerAdded) {
-      Services.obs.removeObserver(this, "firefoxview-notification-dot-update");
+    CustomizableUI.removeListener(this);
+    Services.obs.removeObserver(this, "firefoxview-notification-dot-update");
+    NimbusFeatures.majorRelease2022.off(this._updateEnabledState);
+  },
+  _updateEnabledState() {
+    this._enabled = NimbusFeatures.majorRelease2022.getVariable("firefoxView");
+    // We use a root attribute because there's no guarantee the button is in the
+    // DOM, and visibility changes need to take effect even if it isn't in the DOM
+    // right now.
+    document.documentElement.toggleAttribute(
+      "firefoxviewhidden",
+      !this._enabled
+    );
+    document.getElementById("menu_openFirefoxView").hidden = !this._enabled;
+  },
+  onWidgetRemoved(aWidgetId) {
+    if (aWidgetId == this.BUTTON_ID && this.tab) {
+      gBrowser.removeTab(this.tab);
     }
   },
-  openTab() {
+  onWidgetAdded(aWidgetId) {
+    if (aWidgetId === this.BUTTON_ID) {
+      this.button.removeAttribute("open");
+    }
+  },
+  openTab(event) {
+    if (event?.type == "mousedown" && event?.button != 0) {
+      return;
+    }
+    if (!CustomizableUI.getPlacementOfWidget(this.BUTTON_ID)) {
+      CustomizableUI.addWidgetToArea(
+        this.BUTTON_ID,
+        CustomizableUI.AREA_TABSTRIP,
+        CustomizableUI.getPlacementOfWidget("tabbrowser-tabs").position
+      );
+    }
     if (!this.tab) {
-      this.tab = gBrowser.addTrustedTab("about:firefoxview", { index: 0 });
+      this.tab = gBrowser.addTrustedTab("about:firefoxview");
       this.tab.addEventListener("TabClose", this, { once: true });
       gBrowser.tabContainer.addEventListener("TabSelect", this);
       window.addEventListener("activate", this);
       gBrowser.hideTab(this.tab);
-      this.button?.setAttribute("aria-controls", this.tab.linkedPanel);
+      this.button.setAttribute("aria-controls", this.tab.linkedPanel);
     }
     gBrowser.selectedTab = this.tab;
   },
@@ -9936,7 +9942,8 @@ var FirefoxViewHandler = {
       case "TabSelect":
         this.button?.toggleAttribute("open", e.target == this.tab);
         this.button?.setAttribute("aria-selected", e.target == this.tab);
-        this._removeNotificationDotIfTabSelected();
+        this._recordViewIfTabSelected();
+        this._onTabForegrounded();
         break;
       case "TabClose":
         this.tab = null;
@@ -9944,23 +9951,36 @@ var FirefoxViewHandler = {
         this.button?.removeAttribute("aria-controls");
         break;
       case "activate":
-        this._removeNotificationDotIfTabSelected();
+        this._onTabForegrounded();
         break;
     }
   },
   observe(sub, topic, data) {
-    if (topic === "firefoxview-notification-dot-update") {
-      let shouldShow = data === "true";
-      this._toggleNotificationDot(shouldShow);
+    switch (topic) {
+      case "firefoxview-notification-dot-update":
+        let shouldShow = data === "true";
+        this._toggleNotificationDot(shouldShow);
+        break;
     }
   },
-  _removeNotificationDotIfTabSelected() {
+  _onTabForegrounded() {
     if (this.tab?.selected) {
+      this.SyncedTabs.syncTabs();
       Services.obs.notifyObservers(
         null,
         "firefoxview-notification-dot-update",
         "false"
       );
+    }
+  },
+  _recordViewIfTabSelected() {
+    if (this.tab?.selected) {
+      const PREF_NAME = "browser.firefox-view.view-count";
+      const MAX_VIEW_COUNT = 10;
+      let viewCount = Services.prefs.getIntPref(PREF_NAME, 0);
+      if (viewCount < MAX_VIEW_COUNT) {
+        Services.prefs.setIntPref(PREF_NAME, viewCount + 1);
+      }
     }
   },
   _toggleNotificationDot(shouldShow) {

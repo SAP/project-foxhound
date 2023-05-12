@@ -496,6 +496,7 @@ static constexpr struct {
     {"browser.theme.toolbar-theme"_ns, widget::ThemeChangeKind::AllBits},
     {"browser.theme.content-theme"_ns},
     {"layout.css.moz-box-flexbox-emulation.enabled"_ns},
+    {"mathml.legacy_maction_and_semantics_implementations.disabled"_ns},
 };
 
 // Read values from the user's preferences.
@@ -1298,8 +1299,6 @@ void LookAndFeel::RecomputeColorSchemes() {
         return ColorScheme::Dark;
       case 1:
         return ColorScheme::Light;
-      case 2:
-        return SystemColorScheme();
       default:
         return ThemeDerivedColorSchemeForContent();
     }

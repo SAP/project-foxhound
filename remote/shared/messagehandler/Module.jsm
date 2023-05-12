@@ -73,26 +73,11 @@ class Module {
    *     form [module name].[event name].
    * @param {Object} data
    *     The event's data.
+   * @param {ContextInfo=} contextInfo
+   *     The event's context info, see MessageHandler:emitEvent. Optional.
    */
-  emitEvent(name, data) {
-    this.messageHandler.emitEvent(name, data, { isProtocolEvent: false });
-  }
-
-  /**
-   * Emit a protocol specific message handler event.
-   *
-   * Such events should bubble up to the root of a MessageHandler network.
-   *
-   * @param {String} name
-   *     Name of the event. Protocol level events should be of the
-   *     form [module name].[event name].
-   * @param {Object} data
-   *     The event's data.
-   */
-  emitProtocolEvent(name, data) {
-    this.messageHandler.emitEvent(name, data, {
-      isProtocolEvent: true,
-    });
+  emitEvent(name, data, contextInfo) {
+    this.messageHandler.emitEvent(name, data, contextInfo);
   }
 
   /**
@@ -186,10 +171,7 @@ class Module {
   }
 
   static supportsEvent(event) {
-    return (
-      this.supportsMethod("_subscribeEvent") &&
-      this.supportedEvents.includes(event)
-    );
+    return this.supportedEvents.includes(event);
   }
 
   static supportsMethod(methodName) {

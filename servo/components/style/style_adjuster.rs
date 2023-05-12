@@ -150,6 +150,35 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         }
     }
 
+    /// -webkit-box with line-clamp and vertical orientation gets turned into
+    /// flow-root at computed-value time.
+    ///
+    /// This makes the element not be a flex container, with all that it
+    /// implies, but it should be safe. It matches blink, see
+    /// https://bugzilla.mozilla.org/show_bug.cgi?id=1786147#c10
+    fn adjust_for_webkit_line_clamp(&mut self) {
+        use crate::properties::longhands::_moz_box_orient::computed_value::T as BoxOrient;
+        use crate::values::specified::box_::{DisplayOutside, DisplayInside};
+        let box_style= self.style.get_box();
+        if box_style.clone__webkit_line_clamp().is_none() {
+            return;
+        }
+        let disp = box_style.clone_display();
+        if disp.inside() != DisplayInside::WebkitBox {
+            return;
+        }
+        if self.style.get_xul().clone__moz_box_orient() != BoxOrient::Vertical {
+            return;
+        }
+        let new_display = if disp.outside() == DisplayOutside::Block {
+            Display::FlowRoot
+        } else {
+            debug_assert_eq!(disp.outside(), DisplayOutside::Inline);
+            Display::InlineBlock
+        };
+        self.style.mutate_box().set_adjusted_display(new_display, false);
+    }
+
     /// CSS 2.1 section 9.7:
     ///
     ///    If 'position' has the value 'absolute' or 'fixed', [...] the computed
@@ -360,19 +389,6 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             } else {
                 self.style.mutate_box().set_display(Display::InlineBlock);
             }
-        }
-    }
-
-    /// When mathvariant is not "none", font-weight and font-style are
-    /// both forced to "normal".
-    #[cfg(feature = "gecko")]
-    fn adjust_for_mathvariant(&mut self) {
-        use crate::properties::longhands::_moz_math_variant::computed_value::T as MozMathVariant;
-        use crate::values::computed::font::{FontWeight, FontStyle};
-        if self.style.get_font().clone__moz_math_variant() != MozMathVariant::None {
-            let font_style = self.style.mutate_font();
-            font_style.set_font_weight(FontWeight::NORMAL);
-            font_style.set_font_style(FontStyle::NORMAL);
         }
     }
 
@@ -870,12 +886,12 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         }
         self.adjust_for_top_layer();
         self.blockify_if_necessary(layout_parent_style, element);
+        self.adjust_for_webkit_line_clamp();
         self.adjust_for_position();
         self.adjust_for_overflow();
         #[cfg(feature = "gecko")]
         {
             self.adjust_for_table_text_align();
-            self.adjust_for_mathvariant();
             self.adjust_for_justify_items();
         }
         #[cfg(feature = "servo")]

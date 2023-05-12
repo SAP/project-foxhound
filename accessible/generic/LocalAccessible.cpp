@@ -1367,6 +1367,11 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
     SendCache(CacheDomain::Actions, CacheUpdateType::Update);
   }
 
+  if (aAttribute == nsGkAtoms::href) {
+    mDoc->QueueCacheUpdate(this, CacheDomain::Value);
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
+  }
+
   if (aAttribute == nsGkAtoms::aria_controls ||
       aAttribute == nsGkAtoms::aria_flowto) {
     mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
@@ -2493,11 +2498,23 @@ void LocalAccessible::BindToParent(LocalAccessible* aParent,
              StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     // This table might have previously been treated as a layout table. Now that
     // a row has been added, it might have sufficient rows to be considered a
-    // data table. We do this here rather than when handling the reorder event
-    // because queuing a cache update once we start firing events means waiting
-    // for the next tick before the cache update is sent.
+    // data table.
     mDoc->QueueCacheUpdate(aParent, CacheDomain::Table);
   }
+
+#if defined(XP_WIN)
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
+      aParent->HasOwnContent() && aParent->mContent->IsMathMLElement()) {
+    // For any change in a MathML subtree, update the innerHTML cache on the
+    // root math element.
+    for (LocalAccessible* acc = aParent; acc; acc = acc->LocalParent()) {
+      if (acc->HasOwnContent() &&
+          acc->mContent->IsMathMLElement(nsGkAtoms::math)) {
+        mDoc->QueueCacheUpdate(acc, CacheDomain::InnerHTML);
+      }
+    }
+  }
+#endif  // defined(XP_WIN)
 }
 
 // LocalAccessible protected
@@ -3149,6 +3166,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
     // 1. Accessible is an HTML input type that holds a number.
     // 2. Accessible has a numeric value and an aria-valuetext.
     // 3. Accessible is an HTML input type that holds text.
+    // 4. Accessible is a link, in which case value is the target URL.
     // ... for all other cases we divine the value remotely.
     bool cacheValueText = false;
     if (HasNumericValue()) {
@@ -3161,7 +3179,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
                         mContent->AsElement()->HasAttr(
                             kNameSpaceID_None, nsGkAtoms::aria_valuetext));
     } else {
-      cacheValueText = IsTextField();
+      cacheValueText = IsTextField() || IsHTMLLink();
     }
 
     if (cacheValueText) {
@@ -3499,8 +3517,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
   }
 
   if (aCacheDomain & CacheDomain::Table) {
-    if (IsTable()) {
-      TableAccessible* table = AsTable();
+    if (TableAccessible* table = AsTable()) {
       if (table->IsProbablyLayoutTable()) {
         fields->SetAttribute(nsGkAtoms::layout_guess, true);
       } else if (aUpdateType == CacheUpdateType::Update) {
@@ -3574,6 +3591,10 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
                 dom::HTMLLabelElement::FromNode(mContent)) {
           rel.AppendTarget(mDoc, labelEl->GetControl());
         }
+      } else if (data.mType == RelationType::LINKS_TO) {
+        // This has no implicit relation, so it's safe to call RelationByType
+        // directly.
+        rel = RelationByType(RelationType::LINKS_TO);
       } else {
         // We use an IDRefsIterator here instead of calling RelationByType
         // directly because we only want to cache explicit relations. Implicit
@@ -3592,6 +3613,15 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
       }
     }
   }
+
+#if defined(XP_WIN)
+  if (aCacheDomain & CacheDomain::InnerHTML && HasOwnContent() &&
+      mContent->IsMathMLElement(nsGkAtoms::math)) {
+    nsString innerHTML;
+    mContent->AsElement()->GetInnerHTML(innerHTML, IgnoreErrors());
+    fields->SetAttribute(nsGkAtoms::html, std::move(innerHTML));
+  }
+#endif  // defined(XP_WIN)
 
   if (aUpdateType == CacheUpdateType::Initial) {
     // Add fields which never change and thus only need to be included in the

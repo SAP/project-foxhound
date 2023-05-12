@@ -1607,13 +1607,6 @@ mozilla::ipc::IPCResult ContentChild::RecvReinitRendering(
   MOZ_ASSERT(namespaces.Length() == 3);
   nsTArray<RefPtr<BrowserChild>> tabs = BrowserChild::GetAll();
 
-  // Zap all the old layer managers we have lying around.
-  for (const auto& browserChild : tabs) {
-    if (browserChild->GetLayersId().IsValid()) {
-      browserChild->InvalidateLayers();
-    }
-  }
-
   // Re-establish singleton bridges to the compositor.
   if (!CompositorManagerChild::Init(std::move(aCompositor), namespaces[0])) {
     return GetResultForRenderingInitFailure(aCompositor.OtherPid());
@@ -2940,7 +2933,7 @@ void ContentChild::ForceKillTimerCallback(nsITimer* aTimer, void* aClosure) {
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvShutdownConfirmedHP() {
-  CrashReporter::AnnotateCrashReport(
+  CrashReporter::AppendToCrashReportAnnotation(
       CrashReporter::Annotation::IPCShutdownState,
       "RecvShutdownConfirmedHP entry"_ns);
 
@@ -2952,7 +2945,7 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdownConfirmedHP() {
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvShutdown() {
-  CrashReporter::AnnotateCrashReport(
+  CrashReporter::AppendToCrashReportAnnotation(
       CrashReporter::Annotation::IPCShutdownState, "RecvShutdown entry"_ns);
 
   // Signal the ongoing shutdown to AppShutdown, this
@@ -2962,7 +2955,7 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdown() {
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (os) {
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::AppendToCrashReportAnnotation(
         CrashReporter::Annotation::IPCShutdownState,
         "content-child-will-shutdown started"_ns);
 
@@ -2975,7 +2968,7 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdown() {
 }
 
 void ContentChild::ShutdownInternal() {
-  CrashReporter::AnnotateCrashReport(
+  CrashReporter::AppendToCrashReportAnnotation(
       CrashReporter::Annotation::IPCShutdownState, "ShutdownInternal entry"_ns);
 
   // If we receive the shutdown message from within a nested event loop, we want
@@ -3014,7 +3007,7 @@ void ContentChild::ShutdownInternal() {
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (os) {
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::AppendToCrashReportAnnotation(
         CrashReporter::Annotation::IPCShutdownState,
         "content-child-shutdown started"_ns);
     os->NotifyObservers(ToSupports(this), "content-child-shutdown", nullptr);
@@ -3062,18 +3055,27 @@ void ContentChild::ShutdownInternal() {
     SendShutdownPerfStats(PerfStats::CollectLocalPerfStatsJSON());
   }
 
-  // Start a timer that will insure we quickly exit after a reasonable
-  // period of time. Prevents shutdown hangs after our connection to the
-  // parent closes.
-  CrashReporter::AnnotateCrashReport(
+  // Start a timer that will ensure we quickly exit after a reasonable period
+  // of time. Prevents shutdown hangs after our connection to the parent
+  // closes or when the parent is too busy to ever kill us.
+  CrashReporter::AppendToCrashReportAnnotation(
       CrashReporter::Annotation::IPCShutdownState, "StartForceKillTimer"_ns);
   StartForceKillTimer();
 
-  CrashReporter::AnnotateCrashReport(
+  CrashReporter::AppendToCrashReportAnnotation(
       CrashReporter::Annotation::IPCShutdownState,
       "SendFinishShutdown (sending)"_ns);
+
+  // Notify the parent that we are done with shutdown. This is sent with high
+  // priority and will just flag we are done.
+  Unused << SendNotifyShutdownSuccess();
+
+  // Now tell the parent to actually destroy our channel which will make end
+  // our process. This is expected to be the last event the parent will
+  // ever process for this ContentChild.
   bool sent = SendFinishShutdown();
-  CrashReporter::AnnotateCrashReport(
+
+  CrashReporter::AppendToCrashReportAnnotation(
       CrashReporter::Annotation::IPCShutdownState,
       sent ? "SendFinishShutdown (sent)"_ns : "SendFinishShutdown (failed)"_ns);
 }
@@ -3155,7 +3157,8 @@ mozilla::ipc::IPCResult ContentChild::RecvInvokeDragSession(
       for (uint32_t i = 0; i < aTransfers.Length() && !hasFiles; ++i) {
         auto& items = aTransfers[i].items();
         for (uint32_t j = 0; j < items.Length() && !hasFiles; ++j) {
-          if (items[j].data().type() == IPCDataTransferData::TIPCBlob) {
+          if (items[j].data().type() ==
+              IPCDataTransferData::TIPCDataTransferBlob) {
             hasFiles = true;
           }
         }
@@ -3178,7 +3181,8 @@ mozilla::ipc::IPCResult ContentChild::RecvInvokeDragSession(
           // We should hide this data from content if we have a file, and we
           // aren't a file.
           bool hidden =
-              hasFiles && item.data().type() != IPCDataTransferData::TIPCBlob;
+              hasFiles &&
+              item.data().type() != IPCDataTransferData::TIPCDataTransferBlob;
           dataTransfer->SetDataWithPrincipalFromOtherProcess(
               NS_ConvertUTF8toUTF16(item.flavor()), variant, i,
               nsContentUtils::GetSystemPrincipal(), hidden);
@@ -4254,24 +4258,30 @@ mozilla::ipc::IPCResult ContentChild::RecvScriptError(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvReportFrameTimingData(
-    uint64_t innerWindowId, const nsString& entryName,
+    const mozilla::Maybe<LoadInfoArgs>& loadInfoArgs, const nsString& entryName,
     const nsString& initiatorType, UniquePtr<PerformanceTimingData>&& aData) {
   if (!aData) {
     return IPC_FAIL(this, "aData should not be null");
   }
 
-  auto* innerWindow = nsGlobalWindowInner::GetInnerWindowWithId(innerWindowId);
-  if (!innerWindow) {
+  if (loadInfoArgs.isNothing()) {
+    return IPC_FAIL(this, "loadInfoArgs should not be null");
+  }
+
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  nsresult rv = mozilla::ipc::LoadInfoArgsToLoadInfo(loadInfoArgs,
+                                                     getter_AddRefs(loadInfo));
+  if (NS_FAILED(rv)) {
+    MOZ_DIAGNOSTIC_ASSERT(false, "LoadInfoArgsToLoadInfo failed");
     return IPC_OK();
   }
 
-  mozilla::dom::Performance* performance = innerWindow->GetPerformance();
-  if (!performance) {
-    return IPC_OK();
+  // It is important to call LoadInfo::GetPerformanceStorage instead of simply
+  // getting the performance object via the innerWindowID in order to perform
+  // necessary cross origin checks.
+  if (PerformanceStorage* storage = loadInfo->GetPerformanceStorage()) {
+    storage->AddEntry(entryName, initiatorType, std::move(aData));
   }
-
-  performance->AsPerformanceStorage()->AddEntry(entryName, initiatorType,
-                                                std::move(aData));
   return IPC_OK();
 }
 
@@ -4911,7 +4921,7 @@ bool StartOpenBSDSandbox(GeckoProcessType type, ipc::SandboxingKind kind) {
       MOZ_RELEASE_ASSERT(kind <= SandboxingKind::COUNT,
                          "Should define a sandbox");
       switch (kind) {
-        case ipc::SandboxingKind::UTILITY_AUDIO_DECODING:
+        case ipc::SandboxingKind::UTILITY_AUDIO_DECODING_GENERIC:
           OpenBSDFindPledgeUnveilFilePath("pledge.utility-audioDecoder",
                                           pledgeFile);
           OpenBSDFindPledgeUnveilFilePath("unveil.utility-audioDecoder",

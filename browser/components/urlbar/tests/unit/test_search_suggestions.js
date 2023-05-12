@@ -1531,17 +1531,6 @@ add_task(async function avoid_remote_url_suggestions_2() {
     ],
   });
 
-  context = createContext("about:", { isPrivate: false });
-  await check_results({
-    context,
-    matches: [
-      makeSearchResult(context, {
-        engineName: SUGGESTIONS_ENGINE_NAME,
-        heuristic: true,
-      }),
-    ],
-  });
-
   await cleanUpSuggestions();
 });
 

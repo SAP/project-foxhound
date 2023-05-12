@@ -70,7 +70,7 @@ function defineCachedGetter(obj, prop, get) {
  * @param {Function} get - Function that will be used as a getter.
  */
 function defineGetter(obj, prop, get) {
-  Object.defineProperty(obj, prop, { get });
+  Object.defineProperty(obj, prop, { get, enumerable: true });
 }
 
 /**
@@ -122,10 +122,10 @@ function bestFit(absDiff) {
   switch (true) {
     case absDiff.years > 0 && absDiff.months > threshold.month:
       return "year";
-    case absDiff.months > 0 && absDiff.days > threshold.day:
+    case absDiff.months > 0 && absDiff.weeks > threshold.week:
       return "month";
-    // case absDiff.months > 0 && absDiff.weeks > threshold.week: return "month";
-    // case absDiff.weeks > 0 && absDiff.days > threshold.day: return "week";
+    case absDiff.weeks > 0 && absDiff.days > threshold.day:
+      return "week";
     case absDiff.days > 0 && absDiff.hours > threshold.hour:
       return "day";
     case absDiff.hours > 0 && absDiff.minutes > threshold.minute:
@@ -144,8 +144,8 @@ function bestFit(absDiff) {
  */
 const threshold = {
   month: 2, // at least 2 months before using year.
-  // week: 4, // at least 4 weeks before using month.
-  day: 6, // at least 6 days before using month.
+  week: 3, // at least 3 weeks before using month.
+  day: 6, // at least 6 days before using week.
   hour: 6, // at least 6 hours before using day.
   minute: 59, // at least 59 minutes before using hour.
   second: 59, // at least 59 seconds before using minute.
@@ -776,6 +776,9 @@ class MozRelativeTimeFormat extends Intl.RelativeTimeFormat {
     defineCachedGetter(diff, "months", function() {
       return this.years * 12 + date.getMonth() - now.getMonth();
     });
+    defineCachedGetter(diff, "weeks", function() {
+      return Math.trunc(this.days / 7);
+    });
     defineCachedGetter(diff, "days", function() {
       return Math.trunc((startOf(date, "day") - startOf(now, "day")) / day);
     });
@@ -797,25 +800,11 @@ class MozRelativeTimeFormat extends Intl.RelativeTimeFormat {
       _: {},
     };
 
-    defineGetter(absDiff, "years", function() {
-      return Math.abs(diff.years);
-    });
-    defineGetter(absDiff, "months", function() {
-      return Math.abs(diff.months);
-    });
-    defineGetter(absDiff, "days", function() {
-      return Math.abs(diff.days);
-    });
-    defineGetter(absDiff, "hours", function() {
-      return Math.abs(diff.hours);
-    });
-    defineGetter(absDiff, "minutes", function() {
-      return Math.abs(diff.minutes);
-    });
-    defineGetter(absDiff, "seconds", function() {
-      return Math.abs(diff.seconds);
-    });
-
+    for (let prop of Object.keys(diff)) {
+      defineGetter(absDiff, prop, function() {
+        return Math.abs(diff[prop]);
+      });
+    }
     const unit = bestFit(absDiff);
 
     switch (unit) {
@@ -823,6 +812,8 @@ class MozRelativeTimeFormat extends Intl.RelativeTimeFormat {
         return this.format(diff.years, unit);
       case "month":
         return this.format(diff.months, unit);
+      case "week":
+        return this.format(diff.weeks, unit);
       case "day":
         return this.format(diff.days, unit);
       case "hour":
@@ -941,7 +932,29 @@ export class MozIntl {
       }
       let lcRegionCode = regionCode.toLowerCase();
       if (availableLocaleDisplayNames.region.has(lcRegionCode)) {
-        const value = loc.formatValueSync(`region-name-${lcRegionCode}`);
+        let regionID;
+        // Allow changing names over time for specific regions
+        switch (lcRegionCode) {
+          case "bq":
+            regionID = "region-name-bq-2018";
+            break;
+          case "cv":
+            regionID = "region-name-cv-2020";
+            break;
+          case "cz":
+            regionID = "region-name-cz-2019";
+            break;
+          case "mk":
+            regionID = "region-name-mk-2019";
+            break;
+          case "sz":
+            regionID = "region-name-sz-2019";
+            break;
+          default:
+            regionID = `region-name-${lcRegionCode}`;
+        }
+
+        const value = loc.formatValueSync(regionID);
         if (value !== null) {
           return value;
         }

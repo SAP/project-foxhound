@@ -350,7 +350,6 @@ module.exports = EventEmitter;
 const isEventHandler = listener =>
   listener && handler in listener && typeof listener[handler] === "function";
 
-const Services = require("Services");
 const { getNthPathExcluding } = require("devtools/shared/platform/stack");
 let loggingEnabled = false;
 
@@ -461,7 +460,7 @@ function logEvent(type, args) {
 
   const path = getNthPathExcluding(0, "devtools/shared/event-emitter.js");
 
-  if (args.length > 0) {
+  if (args.length) {
     dump(`EMITTING: emit(${type}, ${argsOut}) from ${path}\n`);
   } else {
     dump(`EMITTING: emit(${type}) from ${path}\n`);

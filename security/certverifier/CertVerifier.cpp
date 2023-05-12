@@ -459,7 +459,8 @@ Result CertVerifier::VerifyCert(
     /*optional out*/ KeySizeStatus* keySizeStatus,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
-    /*optional out*/ bool* isBuiltChainRootBuiltInRoot) {
+    /*optional out*/ bool* isBuiltChainRootBuiltInRoot,
+    /*optional out*/ bool* madeOCSPRequests) {
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug, ("Top of VerifyCert\n"));
 
   MOZ_ASSERT(usage == certificateUsageSSLServer || !(flags & FLAG_MUST_BE_EV));
@@ -495,6 +496,10 @@ Result CertVerifier::VerifyCert(
 
   if (isBuiltChainRootBuiltInRoot) {
     *isBuiltChainRootBuiltInRoot = false;
+  }
+
+  if (madeOCSPRequests) {
+    *madeOCSPRequests = false;
   }
 
   Input certDER;
@@ -547,6 +552,10 @@ Result CertVerifier::VerifyCert(
           trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
           KeyUsage::digitalSignature, KeyPurposeId::id_kp_clientAuth,
           CertPolicyId::anyPolicy, stapledOCSPResponse);
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+      }
       break;
     }
 
@@ -579,6 +588,10 @@ Result CertVerifier::VerifyCert(
             KeyUsage::keyAgreement,      // (EC)DH
             KeyPurposeId::id_kp_serverAuth, evPolicy, stapledOCSPResponse,
             ocspStaplingStatus);
+        if (madeOCSPRequests) {
+          *madeOCSPRequests |=
+              trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+        }
         if (rv == Success) {
           rv = VerifyCertificateTransparencyPolicy(
               trustDomain, builtChain, sctsFromTLSInput, time, ctInfo);
@@ -634,6 +647,10 @@ Result CertVerifier::VerifyCert(
             KeyUsage::keyAgreement,      //(EC)DH
             KeyPurposeId::id_kp_serverAuth, CertPolicyId::anyPolicy,
             stapledOCSPResponse, ocspStaplingStatus);
+        if (madeOCSPRequests) {
+          *madeOCSPRequests |=
+              trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+        }
         if (rv != Success && !IsFatalError(rv) &&
             rv != Result::ERROR_REVOKED_CERTIFICATE &&
             trustDomain.GetIsErrorDueToDistrustedCAPolicy()) {
@@ -677,6 +694,10 @@ Result CertVerifier::VerifyCert(
       rv = BuildCertChain(trustDomain, certDER, time, EndEntityOrCA::MustBeCA,
                           KeyUsage::keyCertSign, KeyPurposeId::id_kp_serverAuth,
                           CertPolicyId::anyPolicy, stapledOCSPResponse);
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+      }
       break;
     }
 
@@ -697,6 +718,10 @@ Result CertVerifier::VerifyCert(
             trustDomain, certDER, time, EndEntityOrCA::MustBeEndEntity,
             KeyUsage::nonRepudiation, KeyPurposeId::id_kp_emailProtection,
             CertPolicyId::anyPolicy, stapledOCSPResponse);
+      }
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
       }
       break;
     }
@@ -723,6 +748,10 @@ Result CertVerifier::VerifyCert(
                             KeyUsage::keyAgreement,  // ECDH/DH
                             KeyPurposeId::id_kp_emailProtection,
                             CertPolicyId::anyPolicy, stapledOCSPResponse);
+      }
+      if (madeOCSPRequests) {
+        *madeOCSPRequests |=
+            trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
       }
       break;
     }
@@ -752,6 +781,24 @@ static bool CertIsSelfSigned(const BackCert& backCert, void* pinarg) {
   return rv == Success;
 }
 
+static Result CheckCertHostnameHelper(Input peerCertInput,
+                                      const nsACString& hostname) {
+  Input hostnameInput;
+  Result rv = hostnameInput.Init(
+      BitwiseCast<const uint8_t*, const char*>(hostname.BeginReading()),
+      hostname.Length());
+  if (rv != Success) {
+    return Result::FATAL_ERROR_INVALID_ARGS;
+  }
+
+  rv = CheckCertHostname(peerCertInput, hostnameInput);
+  // Treat malformed name information as a domain mismatch.
+  if (rv == Result::ERROR_BAD_DER) {
+    return Result::ERROR_BAD_CERT_DOMAIN;
+  }
+  return rv;
+}
+
 Result CertVerifier::VerifySSLServerCert(
     const nsTArray<uint8_t>& peerCertBytes, Time time,
     /*optional*/ void* pinarg, const nsACString& hostname,
@@ -767,7 +814,8 @@ Result CertVerifier::VerifySSLServerCert(
     /*optional out*/ KeySizeStatus* keySizeStatus,
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
-    /*optional out*/ bool* isBuiltChainRootBuiltInRoot) {
+    /*optional out*/ bool* isBuiltChainRootBuiltInRoot,
+    /*optional out*/ bool* madeOCSPRequests) {
   // XXX: MOZ_ASSERT(pinarg);
   MOZ_ASSERT(!hostname.IsEmpty());
 
@@ -797,7 +845,7 @@ Result CertVerifier::VerifySSLServerCert(
                   extraCertificates, stapledOCSPResponse, sctsFromTLS,
                   originAttributes, evStatus, ocspStaplingStatus, keySizeStatus,
                   pinningTelemetryInfo, ctInfo,
-                  &isBuiltChainRootBuiltInRootLocal);
+                  &isBuiltChainRootBuiltInRootLocal, madeOCSPRequests);
   if (rv != Success) {
     // we don't use the certificate for path building, so this parameter doesn't
     // matter
@@ -836,6 +884,17 @@ Result CertVerifier::VerifySSLServerCert(
         return Result::ERROR_MITM_DETECTED;
       }
     }
+    // If the certificate is expired or not yet valid, first check whether or
+    // not it is valid for the indicated hostname, because that would be a more
+    // serious error.
+    if (rv == Result::ERROR_EXPIRED_CERTIFICATE ||
+        rv == Result::ERROR_NOT_YET_VALID_CERTIFICATE ||
+        rv == Result::ERROR_INVALID_DER_TIME) {
+      Result hostnameResult = CheckCertHostnameHelper(peerCertInput, hostname);
+      if (hostnameResult != Success) {
+        return hostnameResult;
+      }
+    }
     return rv;
   }
 
@@ -865,21 +924,8 @@ Result CertVerifier::VerifySSLServerCert(
     }
   }
 
-  Input hostnameInput;
-  rv = hostnameInput.Init(
-      BitwiseCast<const uint8_t*, const char*>(hostname.BeginReading()),
-      hostname.Length());
+  rv = CheckCertHostnameHelper(peerCertInput, hostname);
   if (rv != Success) {
-    return Result::FATAL_ERROR_INVALID_ARGS;
-  }
-
-  rv = CheckCertHostname(peerCertInput, hostnameInput);
-  if (rv != Success) {
-    // Treat malformed name information as a domain mismatch.
-    if (rv == Result::ERROR_BAD_DER) {
-      return Result::ERROR_BAD_CERT_DOMAIN;
-    }
-
     return rv;
   }
 

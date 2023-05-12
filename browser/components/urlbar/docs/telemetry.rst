@@ -292,6 +292,8 @@ urlbar.picked.*
     A URL from history.
   - ``keyword``
     A bookmark keyword.
+  - ``quickaction``
+    A QuickAction.
   - ``quicksuggest``
     A Firefox Suggest (a.k.a. quick suggest) suggestion.
   - ``remotetab``
@@ -351,6 +353,16 @@ urlbar.tabtosearch.*
   .. note::
     Due to the potentially sensitive nature of these data, they are currently
     collected only on pre-release version of Firefox. See bug 1686330.
+
+places.*
+  This is places related telemetry.
+
+  Valid result types are:
+
+  - ``sponsored_visit_no_triggering_url``
+    Number of sponsored visits that could not find their triggering URL in
+    history. We expect this to be a small number just due to the navigation layer
+    manipulating URLs. A large or growing value may be a concern.
 
 Event Telemetry
 ---------------

@@ -10,6 +10,9 @@
  * Adds mocks for browser-environment global variables/methods to Node global.
  */
 function setMocksInGlobal() {
+  global.Services = require("Services-mock");
+  global.ChromeUtils = require("ChromeUtils-mock");
+
   global.isWorker = false;
 
   global.loader = {
@@ -92,6 +95,16 @@ function setMocksInGlobal() {
       },
     };
   };
+
+  if (typeof global.TextEncoder === "undefined") {
+    const { TextEncoder } = require("util");
+    global.TextEncoder = TextEncoder;
+  }
+
+  if (typeof global.TextDecoder === "undefined") {
+    const { TextDecoder } = require("util");
+    global.TextDecoder = TextDecoder;
+  }
 }
 
 module.exports = {

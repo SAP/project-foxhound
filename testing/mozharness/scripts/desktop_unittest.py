@@ -41,7 +41,6 @@ from mozharness.mozilla.testing.codecoverage import (
 )
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
 
-PY2 = sys.version_info.major == 2
 SUITE_CATEGORIES = [
     "gtest",
     "cppunittest",
@@ -314,6 +313,16 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                     "help": "run tests with a conditioned profile",
                 },
             ],
+            [
+                ["--tag"],
+                {
+                    "action": "append",
+                    "default": [],
+                    "dest": "test_tags",
+                    "help": "Filter out tests that don't have the given tag. Can be used multiple "
+                    "times in which case the test must contain at least one of the given tags.",
+                },
+            ],
         ]
         + copy.deepcopy(testing_config_options)
         + copy.deepcopy(code_coverage_config_options)
@@ -492,15 +501,11 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
 
         if self._query_specified_suites("mochitest") is not None:
             # mochitest is the only thing that needs this
-            if PY2:
-                wspb_requirements = "websocketprocessbridge_requirements.txt"
-            else:
-                wspb_requirements = "websocketprocessbridge_requirements_3.txt"
             requirements_files.append(
                 os.path.join(
                     dirs["abs_mochitest_dir"],
                     "websocketprocessbridge",
-                    wspb_requirements,
+                    "websocketprocessbridge_requirements_3.txt",
                 )
             )
 
@@ -656,6 +661,10 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
 
             if c["conditioned_profile"]:
                 base_cmd.append("--conditioned-profile")
+
+            # Ensure the --tag flag and its params get passed along
+            if c["test_tags"]:
+                base_cmd.extend(["--tag={}".format(t) for t in c["test_tags"]])
 
             # set pluginsPath
             abs_res_plugins_dir = os.path.join(abs_res_dir, "plugins")

@@ -11,6 +11,7 @@
 #include "ChildIterator.h"
 #include "ErrorReporter.h"
 #include "gfxFontFeatures.h"
+#include "gfxMathTable.h"
 #include "gfxTextRun.h"
 #include "imgLoader.h"
 #include "nsAnimationManager.h"
@@ -65,6 +66,7 @@
 #include "mozilla/RWLock.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLTableCellElement.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/HTMLSelectElement.h"
@@ -368,14 +370,15 @@ Gecko_GetHTMLPresentationAttrDeclarationBlock(const Element* aElement) {
 
 const StyleStrong<RawServoDeclarationBlock>*
 Gecko_GetExtraContentStyleDeclarations(const Element* aElement) {
-  if (!aElement->IsAnyOfHTMLElements(nsGkAtoms::td, nsGkAtoms::th)) {
-    return nullptr;
-  }
-  const HTMLTableCellElement* cell =
-      static_cast<const HTMLTableCellElement*>(aElement);
-  if (nsMappedAttributes* attrs =
-          cell->GetMappedAttributesInheritedFromTable()) {
-    return AsRefRawStrong(attrs->GetServoStyle());
+  if (const auto* cell = HTMLTableCellElement::FromNode(aElement)) {
+    if (nsMappedAttributes* attrs =
+            cell->GetMappedAttributesInheritedFromTable()) {
+      return AsRefRawStrong(attrs->GetServoStyle());
+    }
+  } else if (const auto* img = HTMLImageElement::FromNode(aElement)) {
+    if (const auto* attrs = img->GetMappedAttributesFromSource()) {
+      return AsRefRawStrong(attrs->GetServoStyle());
+    }
   }
   return nullptr;
 }
@@ -1366,7 +1369,8 @@ void AssertIsMainThreadOrServoFontMetricsLocked() {
 GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext* aPresContext,
                                       bool aIsVertical,
                                       const nsStyleFont* aFont,
-                                      Length aFontSize, bool aUseUserFontSet) {
+                                      Length aFontSize, bool aUseUserFontSet,
+                                      bool aRetrieveMathScales) {
   AutoWriteLock guard(*sServoFFILock);
 
   // Getting font metrics can require some main thread only work to be
@@ -1388,6 +1392,16 @@ GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext* aPresContext,
   RefPtr<gfxFont> font = fm->GetThebesFontGroup()->GetFirstValidFont();
   const auto& metrics = font->GetMetrics(fm->Orientation());
 
+  float scriptPercentScaleDown = 0;
+  float scriptScriptPercentScaleDown = 0;
+  if (aRetrieveMathScales && font->TryGetMathTable()) {
+    scriptPercentScaleDown = static_cast<float>(
+        font->MathTable()->Constant(gfxMathTable::ScriptPercentScaleDown));
+    scriptScriptPercentScaleDown =
+        static_cast<float>(font->MathTable()->Constant(
+            gfxMathTable::ScriptScriptPercentScaleDown));
+  }
+
   int32_t d2a = aPresContext->AppUnitsPerDevPixel();
   auto ToLength = [](nscoord aLen) {
     return Length::FromPixels(CSSPixel::FromAppUnits(aLen));
@@ -1396,7 +1410,9 @@ GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext* aPresContext,
           ToLength(NS_round(metrics.zeroWidth * d2a)),
           ToLength(NS_round(metrics.capHeight * d2a)),
           ToLength(NS_round(metrics.ideographicWidth * d2a)),
-          ToLength(NS_round(metrics.maxAscent * d2a))};
+          ToLength(NS_round(metrics.maxAscent * d2a)),
+          scriptPercentScaleDown,
+          scriptScriptPercentScaleDown};
 }
 
 NS_IMPL_THREADSAFE_FFI_REFCOUNTING(SheetLoadDataHolder, SheetLoadDataHolder);
@@ -1628,6 +1644,16 @@ const nsTArray<Element*>* Gecko_ShadowRoot_GetElementsWithId(
 bool Gecko_GetBoolPrefValue(const char* aPrefName) {
   MOZ_ASSERT(NS_IsMainThread());
   return Preferences::GetBool(aPrefName);
+}
+
+bool Gecko_IsFontFormatSupported(StyleFontFaceSourceFormatKeyword aFormat) {
+  return gfxPlatform::GetPlatform()->IsFontFormatSupported(
+      aFormat, StyleFontFaceSourceTechFlags::Empty());
+}
+
+bool Gecko_IsFontTechSupported(StyleFontFaceSourceTechFlags aFlag) {
+  return gfxPlatform::GetPlatform()->IsFontFormatSupported(
+      StyleFontFaceSourceFormatKeyword::None, aFlag);
 }
 
 bool Gecko_IsInServoTraversal() { return ServoStyleSet::IsInServoTraversal(); }

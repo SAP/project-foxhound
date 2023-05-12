@@ -1588,7 +1588,7 @@ nsresult Http2Session::ResponseHeadersComplete() {
          this));
     // This means the stream found connection-oriented auth. Treat this like we
     // got a reset with HTTP_1_1_REQUIRED.
-    mInputFrameDataStream->Transaction()->DisableSpdy();
+    mInputFrameDataStream->DisableSpdy();
     CleanupStream(mInputFrameDataStream, NS_ERROR_NET_RESET, CANCEL_ERROR);
     ResetDownstreamState();
     return NS_OK;
@@ -2220,7 +2220,7 @@ nsresult Http2Session::RecvGoAway(Http2Session* self) {
         static_cast<Http2StreamBase*>(self->mGoAwayStreamsToRestart.PopFront());
 
     if (self->mPeerGoAwayReason == HTTP_1_1_REQUIRED) {
-      stream->Transaction()->DisableSpdy();
+      stream->DisableSpdy();
     }
     self->CloseStream(stream, NS_ERROR_NET_RESET);
     if (stream->HasRegisteredID()) {
@@ -2236,7 +2236,7 @@ nsresult Http2Session::RecvGoAway(Http2Session* self) {
     MOZ_ASSERT(stream->Queued());
     stream->SetQueued(false);
     if (self->mPeerGoAwayReason == HTTP_1_1_REQUIRED) {
-      stream->Transaction()->DisableSpdy();
+      stream->DisableSpdy();
     }
     self->CloseStream(stream, NS_ERROR_NET_RESET);
     self->mStreamTransactionHash.Remove(stream->Transaction());
@@ -2558,9 +2558,8 @@ nsresult Http2Session::RecvAltSvc(Http2Session* self) {
 
   if (!impliedOrigin) {
     bool okToReroute = true;
-    nsCOMPtr<nsISupports> securityInfo;
-    self->mConnection->GetSecurityInfo(getter_AddRefs(securityInfo));
-    nsCOMPtr<nsISSLSocketControl> ssl = do_QueryInterface(securityInfo);
+    nsCOMPtr<nsISSLSocketControl> ssl;
+    self->mConnection->GetTLSSocketControl(getter_AddRefs(ssl));
     if (!ssl) {
       okToReroute = false;
     }
@@ -2595,12 +2594,15 @@ nsresult Http2Session::RecvAltSvc(Http2Session* self) {
     }
   }
 
-  nsCOMPtr<nsISupports> callbacks;
-  self->mConnection->GetSecurityInfo(getter_AddRefs(callbacks));
-  nsCOMPtr<nsIInterfaceRequestor> irCallbacks = do_QueryInterface(callbacks);
+  nsCOMPtr<nsISSLSocketControl> tlsSocketControl;
+  self->mConnection->GetTLSSocketControl(getter_AddRefs(tlsSocketControl));
+  nsCOMPtr<nsIInterfaceRequestor> callbacks;
+  if (tlsSocketControl) {
+    tlsSocketControl->GetNotificationCallbacks(getter_AddRefs(callbacks));
+  }
 
   RefPtr<UpdateAltSvcEvent> event =
-      new UpdateAltSvcEvent(altSvcFieldValue, origin, ci, irCallbacks);
+      new UpdateAltSvcEvent(altSvcFieldValue, origin, ci, callbacks);
   NS_DispatchToMainThread(event);
   self->ResetDownstreamState();
   return NS_OK;
@@ -3207,7 +3209,7 @@ nsresult Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter* writer,
 
       // Go through and re-start all of our transactions with h2 disabled.
       for (const auto& stream : mStreamTransactionHash.Values()) {
-        stream->Transaction()->DisableSpdy();
+        stream->DisableSpdy();
         CloseStream(stream, NS_ERROR_NET_RESET);
       }
       mStreamTransactionHash.Clear();
@@ -3305,13 +3307,13 @@ nsresult Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter* writer,
     // equivalent to cancel.
     if (mDownstreamRstReason == REFUSED_STREAM_ERROR) {
       streamCleanupCode = NS_ERROR_NET_RESET;  // can retry this 100% safely
-      mInputFrameDataStream->Transaction()->ReuseConnectionOnRestartOK(true);
+      mInputFrameDataStream->ReuseConnectionOnRestartOK(true);
     } else if (mDownstreamRstReason == HTTP_1_1_REQUIRED) {
       streamCleanupCode = NS_ERROR_NET_RESET;
-      mInputFrameDataStream->Transaction()->ReuseConnectionOnRestartOK(true);
-      mInputFrameDataStream->Transaction()->DisableSpdy();
-      mInputFrameDataStream->Transaction()
-          ->MakeNonSticky();  // actully allow restart by unsticking
+      mInputFrameDataStream->ReuseConnectionOnRestartOK(true);
+      mInputFrameDataStream->DisableSpdy();
+      // actually allow restart by unsticking
+      mInputFrameDataStream->MakeNonSticky();
     } else {
       streamCleanupCode = mInputFrameDataStream->RecvdData()
                               ? NS_ERROR_NET_PARTIAL_TRANSFER
@@ -4138,9 +4140,8 @@ nsresult Http2Session::ConfirmTLSProfile() {
 
   if (!mConnection) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsISupports> securityInfo;
-  mConnection->GetSecurityInfo(getter_AddRefs(securityInfo));
-  nsCOMPtr<nsISSLSocketControl> ssl = do_QueryInterface(securityInfo);
+  nsCOMPtr<nsISSLSocketControl> ssl;
+  mConnection->GetTLSSocketControl(getter_AddRefs(ssl));
   LOG3(("Http2Session::ConfirmTLSProfile %p sslsocketcontrol=%p\n", this,
         ssl.get()));
   if (!ssl) return NS_ERROR_FAILURE;
@@ -4463,12 +4464,9 @@ bool Http2Session::RealJoinConnection(const nsACString& hostname, int32_t port,
   nsresult rv;
   bool isJoined = false;
 
-  nsCOMPtr<nsISupports> securityInfo;
   nsCOMPtr<nsISSLSocketControl> sslSocketControl;
-
-  mConnection->GetSecurityInfo(getter_AddRefs(securityInfo));
-  sslSocketControl = do_QueryInterface(securityInfo, &rv);
-  if (NS_FAILED(rv) || !sslSocketControl) {
+  mConnection->GetTLSSocketControl(getter_AddRefs(sslSocketControl));
+  if (!sslSocketControl) {
     return false;
   }
 

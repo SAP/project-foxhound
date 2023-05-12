@@ -8,6 +8,8 @@
 
 "use strict";
 
+const fs = require("fs");
+
 const { maybeGetMemberPropertyName } = require("../helpers");
 
 const privilegedGlobals = Object.keys(
@@ -87,9 +89,23 @@ function isChromeContext(context) {
     return true;
   }
 
-  // Treat scripts using ChromeUtils as chrome scripts, but not SpecialPowers.ChromeUtils
+  if (filename.endsWith(".xhtml")) {
+    // Treat scripts in XUL files as chrome scripts
+    // Note: readFile is needed as getSourceCode() only gives JS blocks
+    return fs.readFileSync(filename).includes("there.is.only.xul");
+  }
+
+  // Treat scripts as chrome privileged when using:
+  // 1. ChromeUtils, but not SpecialPowers.ChromeUtils
+  // 2. BrowserTestUtils, PlacesUtils
+  // 3. document.createXULElement
+  // 4. loader.lazyRequireGetter
+  // 5. Services.foo, but not SpecialPowers.Services.foo
+  // 6. evalInSandbox
   const source = context.getSourceCode().text;
-  return !!source.match(/(^|\s)ChromeUtils/);
+  return !!source.match(
+    /(^|\s)ChromeUtils|BrowserTestUtils|PlacesUtils|createXULElement|lazyRequireGetter|(^|\s)Services\.|evalInSandbox/
+  );
 }
 
 module.exports = {

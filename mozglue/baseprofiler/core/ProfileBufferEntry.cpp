@@ -231,7 +231,11 @@ bool UniqueStacks::FrameKey::NormalFrameData::operator==(
          mColumn == aOther.mColumn && mCategoryPair == aOther.mCategoryPair;
 }
 
-UniqueStacks::UniqueStacks() : mUniqueStrings(MakeUnique<UniqueJSONStrings>()) {
+UniqueStacks::UniqueStacks()
+    : mUniqueStrings(MakeUnique<UniqueJSONStrings>(
+          FailureLatchInfallibleSource::Singleton())),
+      mFrameTableWriter(FailureLatchInfallibleSource::Singleton()),
+      mStackTableWriter(FailureLatchInfallibleSource::Singleton()) {
   mFrameTableWriter.StartBareList();
   mStackTableWriter.StartBareList();
 }

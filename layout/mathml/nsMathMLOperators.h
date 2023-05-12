@@ -47,14 +47,12 @@ enum {
   NS_MATHML_OPERATOR_SEPARATOR = 1 << 8,
   NS_MATHML_OPERATOR_MOVABLELIMITS = 1 << 9,
   NS_MATHML_OPERATOR_SYMMETRIC = 1 << 10,
-  NS_MATHML_OPERATOR_INTEGRAL = 1 << 11,
-  NS_MATHML_OPERATOR_MIRRORABLE = 1 << 12,
 
   // Additional bits not stored in the dictionary
-  NS_MATHML_OPERATOR_MINSIZE_ABSOLUTE = 1 << 13,
-  NS_MATHML_OPERATOR_MAXSIZE_ABSOLUTE = 1 << 14,
-  NS_MATHML_OPERATOR_LSPACE_ATTR = 1 << 15,
-  NS_MATHML_OPERATOR_RSPACE_ATTR = 1 << 16
+  NS_MATHML_OPERATOR_MINSIZE_ABSOLUTE = 1 << 11,
+  NS_MATHML_OPERATOR_MAXSIZE_ABSOLUTE = 1 << 12,
+  NS_MATHML_OPERATOR_LSPACE_ATTR = 1 << 13,
+  NS_MATHML_OPERATOR_RSPACE_ATTR = 1 << 14
 };
 
 #define NS_MATHML_OPERATOR_SIZE_INFINITY (mozilla::PositiveInfinity<float>())
@@ -67,14 +65,12 @@ class nsMathMLOperators {
 
   // LookupOperator:
   // Given the string value of an operator and its form (last two bits of
-  // flags), this method returns true if the operator is found in the Operator
-  // Dictionary. Attributes of the operator are returned in the output
-  // parameters. If the operator is not found under the supplied form but is
-  // found under a different form, the method returns true as well. The caller
-  // can test the output parameter aFlags to know exactly under which form the
-  // operator was found in the Operator Dictionary.
-  static bool LookupOperator(const nsString& aOperator,
-                             const nsOperatorFlags aForm,
+  // flags), this method returns attributes of the operator in the output
+  // parameters. If the operator is not found under the supplied form, then the
+  // other forms are tried in the following order: infix, postfix, prefix. The
+  // caller can test the output parameter aFlags to know exactly under which
+  // form the operator was found in the Operator Dictionary.
+  static void LookupOperator(const nsString& aOperator, const uint8_t aForm,
                              nsOperatorFlags* aFlags, float* aLeadingSpace,
                              float* aTrailingSpace);
 
@@ -91,6 +87,10 @@ class nsMathMLOperators {
 
   // Helper functions used by the nsMathMLChar class.
   static bool IsMirrorableOperator(const nsString& aOperator);
+
+  // Helper functions used by the nsMathMLChar class to determine whether
+  // aOperator corresponds to an integral operator.
+  static bool IsIntegralOperator(const nsString& aOperator);
 
   // Helper function used by the nsMathMLChar class.
   static nsStretchDirection GetStretchyDirection(const nsString& aOperator);
@@ -159,12 +159,6 @@ class nsMathMLOperators {
 
 #define NS_MATHML_OPERATOR_IS_SYMMETRIC(_flags) \
   (NS_MATHML_OPERATOR_SYMMETRIC == ((_flags)&NS_MATHML_OPERATOR_SYMMETRIC))
-
-#define NS_MATHML_OPERATOR_IS_INTEGRAL(_flags) \
-  (NS_MATHML_OPERATOR_INTEGRAL == ((_flags)&NS_MATHML_OPERATOR_INTEGRAL))
-
-#define NS_MATHML_OPERATOR_IS_MIRRORABLE(_flags) \
-  (NS_MATHML_OPERATOR_MIRRORABLE == ((_flags)&NS_MATHML_OPERATOR_MIRRORABLE))
 
 #define NS_MATHML_OPERATOR_MINSIZE_IS_ABSOLUTE(_flags) \
   (NS_MATHML_OPERATOR_MINSIZE_ABSOLUTE ==              \

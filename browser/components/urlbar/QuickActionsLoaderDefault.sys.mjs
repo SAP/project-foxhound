@@ -9,25 +9,49 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderQuickActions:
     "resource:///modules/UrlbarProviderQuickActions.sys.mjs",
 });
 
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AppUpdater: "resource:///modules/AppUpdater.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
+  ResetProfile: "resource://gre/modules/ResetProfile.jsm",
 });
 
-const BASE_URL = "https://support.mozilla.org/kb/";
+XPCOMUtils.defineLazyGetter(lazy, "BrowserUpdater", () => {
+  return AppConstants.MOZ_UPDATER ? new lazy.AppUpdater() : null;
+});
 
 let openUrlFun = url => () => openUrl(url);
 let openUrl = url => {
   let window = lazy.BrowserWindowTracker.getTopWindow();
-  window.gBrowser.loadOneTab(url, {
-    inBackground: false,
-    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-  });
+
+  if (url.startsWith("about:")) {
+    window.switchToTabHavingURI(Services.io.newURI(url), true, {
+      ignoreFragment: "whenComparing",
+    });
+  } else {
+    window.gBrowser.loadOneTab(url, {
+      inBackground: false,
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+  }
   return { focusContent: true };
+};
+
+let openAddonsUrl = url => {
+  return () => {
+    let window = lazy.BrowserWindowTracker.getTopWindow();
+    window.BrowserOpenAddonsMgr(url);
+  };
 };
 
 // There are various actions that will either fail or do not
@@ -39,20 +63,22 @@ let currentPageIsWebContentFilter = () =>
   !currentBrowser()?.currentURI.spec.startsWith("about:");
 let currentBrowser = () =>
   lazy.BrowserWindowTracker.getTopWindow()?.gBrowser.selectedBrowser;
+let currentTab = () =>
+  lazy.BrowserWindowTracker.getTopWindow()?.gBrowser.selectedTab;
 
 XPCOMUtils.defineLazyGetter(lazy, "gFluentStrings", function() {
-  return new Localization(["browser/browser.ftl"], true);
+  return new Localization(["branding/brand.ftl", "browser/browser.ftl"], true);
 });
 
 const DEFAULT_ACTIONS = {
   addons: {
-    l10nCommands: "quickactions-cmd-addons",
+    l10nCommands: ["quickactions-cmd-addons2", "quickactions-addons"],
     icon: "chrome://mozapps/skin/extensions/category-extensions.svg",
     label: "quickactions-addons",
-    onPick: openUrlFun("about:addons"),
+    onPick: () => openUrl("about:addons"),
   },
   bookmarks: {
-    l10nCommands: "quickactions-cmd-bookmarks",
+    l10nCommands: ["quickactions-cmd-bookmarks", "quickactions-bookmarks"],
     icon: "chrome://browser/skin/bookmark.svg",
     label: "quickactions-bookmarks",
     onPick: () => {
@@ -62,34 +88,66 @@ const DEFAULT_ACTIONS = {
     },
   },
   clear: {
-    l10nCommands: "quickactions-cmd-clearhistory",
+    l10nCommands: [
+      "quickactions-cmd-clearhistory",
+      "quickactions-clearhistory",
+    ],
     label: "quickactions-clearhistory",
-    onPick: openUrlFun(
-      `${BASE_URL}delete-browsing-search-download-history-firefox`
-    ),
+    onPick: () => {
+      lazy.BrowserWindowTracker.getTopWindow()
+        .document.getElementById("Tools:Sanitize")
+        .doCommand();
+    },
   },
   downloads: {
-    l10nCommands: "quickactions-cmd-downloads",
+    l10nCommands: ["quickactions-cmd-downloads", "quickactions-downloads"],
     icon: "chrome://browser/skin/downloads/downloads.svg",
     label: "quickactions-downloads",
     onPick: openUrlFun("about:downloads"),
   },
+  extensions: {
+    l10nCommands: ["quickactions-cmd-extensions", "quickactions-extensions"],
+    icon: "chrome://mozapps/skin/extensions/category-extensions.svg",
+    label: "quickactions-extensions",
+    onPick: openAddonsUrl("addons://list/extension"),
+  },
   inspect: {
-    l10nCommands: "quickactions-cmd-inspector",
+    l10nCommands: ["quickactions-cmd-inspector", "quickactions-inspector"],
     icon: "chrome://devtools/skin/images/tool-inspector.svg",
     label: "quickactions-inspector",
-    isActive: currentPageIsWebContentFilter,
+    isVisible: () =>
+      lazy.DevToolsShim.isEnabled() || lazy.DevToolsShim.isDevToolsUser(),
+    isActive: () => {
+      // The inspect action is available if:
+      // 1. DevTools is enabled.
+      // 2. The user can be considered as a DevTools user.
+      // 3. The url is not about:devtools-toolbox.
+      // 4. The inspector is not opened yet on the page.
+      return (
+        lazy.DevToolsShim.isEnabled() &&
+        lazy.DevToolsShim.isDevToolsUser() &&
+        !currentBrowser()?.currentURI.spec.startsWith(
+          "about:devtools-toolbox"
+        ) &&
+        !lazy.DevToolsShim.hasToolboxForTab(currentTab())
+      );
+    },
     onPick: openInspector,
   },
   logins: {
-    l10nCommands: "quickactions-cmd-logins",
+    l10nCommands: ["quickactions-cmd-logins", "quickactions-logins"],
     label: "quickactions-logins",
     onPick: openUrlFun("about:logins"),
   },
+  plugins: {
+    l10nCommands: ["quickactions-cmd-plugins", "quickactions-plugins"],
+    icon: "chrome://mozapps/skin/extensions/category-extensions.svg",
+    label: "quickactions-plugins",
+    onPick: openAddonsUrl("addons://list/plugin"),
+  },
   print: {
-    l10nCommands: "quickactions-cmd-print",
+    l10nCommands: ["quickactions-cmd-print", "quickactions-print"],
     label: "quickactions-print",
-    isActive: currentPageIsWebContentFilter,
     onPick: () => {
       lazy.BrowserWindowTracker.getTopWindow()
         .document.getElementById("cmd_print")
@@ -97,7 +155,7 @@ const DEFAULT_ACTIONS = {
     },
   },
   private: {
-    l10nCommands: "quickactions-cmd-private",
+    l10nCommands: ["quickactions-cmd-private", "quickactions-private"],
     label: "quickactions-private",
     icon: "chrome://global/skin/icons/indicator-private-browsing.svg",
     onPick: () => {
@@ -107,17 +165,21 @@ const DEFAULT_ACTIONS = {
     },
   },
   refresh: {
-    l10nCommands: "quickactions-cmd-refresh",
+    l10nCommands: ["quickactions-cmd-refresh", "quickactions-refresh"],
     label: "quickactions-refresh",
-    onPick: openUrlFun(`${BASE_URL}refresh-firefox-reset-add-ons-and-settings`),
+    onPick: () => {
+      lazy.ResetProfile.openConfirmationDialog(
+        lazy.BrowserWindowTracker.getTopWindow()
+      );
+    },
   },
   restart: {
-    l10nCommands: "quickactions-cmd-restart",
+    l10nCommands: ["quickactions-cmd-restart", "quickactions-restart"],
     label: "quickactions-restart",
     onPick: restartBrowser,
   },
   screenshot: {
-    l10nCommands: "quickactions-cmd-screenshot",
+    l10nCommands: ["quickactions-cmd-screenshot", "quickactions-screenshot2"],
     label: "quickactions-screenshot2",
     isActive: currentPageIsWebContentFilter,
     onPick: () => {
@@ -128,28 +190,35 @@ const DEFAULT_ACTIONS = {
     },
   },
   settings: {
-    l10nCommands: "quickactions-cmd-settings",
+    l10nCommands: ["quickactions-cmd-settings", "quickactions-settings"],
     label: "quickactions-settings",
     onPick: openUrlFun("about:preferences"),
   },
+  themes: {
+    l10nCommands: ["quickactions-cmd-themes", "quickactions-themes"],
+    icon: "chrome://mozapps/skin/extensions/category-extensions.svg",
+    label: "quickactions-themes",
+    onPick: openAddonsUrl("addons://list/theme"),
+  },
   update: {
-    l10nCommands: "quickactions-cmd-update",
+    l10nCommands: ["quickactions-cmd-update", "quickactions-update"],
     label: "quickactions-update",
-    onPick: openUrlFun(`${BASE_URL}update-firefox-latest-release`),
+    isActive: () => !!lazy.BrowserUpdater?.isReadyForRestart,
+    onPick: restartBrowser,
   },
   viewsource: {
-    l10nCommands: "quickactions-cmd-viewsource",
+    l10nCommands: ["quickactions-cmd-viewsource", "quickactions-viewsource"],
     icon: "chrome://global/skin/icons/settings.svg",
     label: "quickactions-viewsource",
-    isActive: currentPageIsWebContentFilter,
+    isActive: () => currentBrowser()?.currentURI.scheme !== "view-source",
     onPick: () => openUrl("view-source:" + currentBrowser().currentURI.spec),
   },
 };
 
 function openInspector() {
-  // TODO: This is supposed to be called with an element to start inspecting.
-  lazy.DevToolsShim.inspectNode(
-    lazy.BrowserWindowTracker.getTopWindow().gBrowser.selectedTab
+  lazy.DevToolsShim.showToolboxForTab(
+    lazy.BrowserWindowTracker.getTopWindow().gBrowser.selectedTab,
+    { toolId: "inspector" }
   );
 }
 
@@ -179,17 +248,44 @@ function restartBrowser() {
   }
 }
 
+function random(seed) {
+  let x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+function shuffle(array, seed) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(random(seed) * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
 /**
  * Loads the default QuickActions.
  */
 export class QuickActionsLoaderDefault {
   static async load() {
-    for (const key in DEFAULT_ACTIONS) {
+    let keys = Object.keys(DEFAULT_ACTIONS);
+    if (lazy.UrlbarPrefs.get("quickactions.randomOrderActions")) {
+      // We insert the actions in a random order which means they will be returned
+      // in a random but consistent order (the order of results for "view" and "views"
+      // should be the same).
+      // We use the Nimbus randomizationId as the seed as the order should not change
+      // for the user between restarts, it should be random between users but a user should
+      // see actions the same order.
+      let seed = [...lazy.ClientEnvironment.randomizationId]
+        .map(x => x.charCodeAt(0))
+        .reduce((sum, a) => sum + a, 0);
+      shuffle(keys, seed);
+    }
+    for (const key of keys) {
       let actionData = DEFAULT_ACTIONS[key];
-      let messages = await lazy.gFluentStrings.formatMessages([
-        { id: actionData.l10nCommands },
-      ]);
-      actionData.commands = messages[0].value.split(",").map(x => x.trim());
+      let messages = await lazy.gFluentStrings.formatMessages(
+        actionData.l10nCommands.map(id => ({ id }))
+      );
+      actionData.commands = messages
+        .map(({ value }) => value.split(",").map(x => x.trim().toLowerCase()))
+        .flat();
       lazy.UrlbarProviderQuickActions.addAction(key, actionData);
     }
   }

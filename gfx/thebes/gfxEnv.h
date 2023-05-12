@@ -90,6 +90,9 @@ class gfxEnv final {
   // (conditioned on DebugDumpPainting()) is a good replacement.
   DECL_GFX_ENV(MOZ_DUMP_COMPOSITOR_TEXTURES)
 
+  // Dump GLBlitHelper shader source text.
+  DECL_GFX_ENV(MOZ_DUMP_GLBLITHELPER)
+
   // Paint dumping, only when MOZ_DUMP_PAINTING is defined.
   DECL_GFX_ENV(MOZ_DUMP_PAINT)
   DECL_GFX_ENV(MOZ_DUMP_PAINT_ITEMS)
@@ -121,6 +124,9 @@ class gfxEnv final {
 
   // Offscreen GL context for main layer manager
   DECL_GFX_ENV(MOZ_LAYERS_PREFER_OFFSCREEN)
+
+  // WebGL workarounds
+  DECL_GFX_ENV(MOZ_WEBGL_WORKAROUND_FIRST_AFFECTS_INSTANCE_ID)
 
   // WARNING:
   // For readability reasons, please make sure that you've added your new envvar

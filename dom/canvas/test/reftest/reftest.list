@@ -1,5 +1,6 @@
 # Canvas Filter Reftests
 include filters/reftest.list
+include color_quads.list
 
 # WebGL Reftests!
 defaults pref(webgl.force-enabled,true) skip-if(Android)
@@ -216,7 +217,10 @@ fuzzy(0-9,0-40000) skip pref(webgl.prefer-16bpp,true) pref(webgl.force-layers-re
 # Force native GL (Windows):
 skip pref(webgl.disable-angle,true) == webgl-color-test.html?native-gl wrapper.html?colors-no-alpha.png
 
+
+# ----------------------------------------------------------------------
 # Non-WebGL Reftests!
+
 
 # Do we correctly handle multiple clip paths?
 != clip-multiple-paths.html clip-multiple-paths-badref.html
@@ -234,7 +238,7 @@ pref(canvas.focusring.enabled,true) fuzzy(0-1,0-2) skip-if(cocoaWidget||winWidge
 # Check that captureStream() displays in a local video element
 == capturestream.html wrapper.html?green.png
 
-fuzzy-if(azureSkia,0-16,0-2) fuzzy-if(Android,0-3,0-40) fuzzy-if(/^Windows\x20NT\x2010\.0/.test(http.oscpu),0-1,0-1) == 1177726-text-stroke-bounds.html 1177726-text-stroke-bounds-ref.html
+fuzzy-if(azureSkia,0-16,0-20) fuzzy-if(Android,0-3,0-40) fuzzy-if(/^Windows\x20NT\x2010\.0/.test(http.oscpu),0-1,0-1) == 1177726-text-stroke-bounds.html 1177726-text-stroke-bounds-ref.html
 
 # Bug 1366027
 == clipped-dash-stroke-rect.html clipped-dash-stroke-rect-ref.html

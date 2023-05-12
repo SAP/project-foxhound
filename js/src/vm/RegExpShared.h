@@ -17,7 +17,7 @@
 #include "mozilla/MemoryReporting.h"
 
 #include "gc/Barrier.h"
-#include "gc/Marking.h"
+#include "gc/Policy.h"
 #include "gc/ZoneAllocator.h"
 #include "irregexp/RegExpTypes.h"
 #include "jit/JitCode.h"
@@ -27,7 +27,6 @@
 #include "js/UbiNode.h"
 #include "js/Vector.h"
 #include "vm/ArrayObject.h"
-#include "vm/JSAtom.h"
 
 namespace js {
 
@@ -70,6 +69,8 @@ inline bool IsNativeRegExpEnabled() {
  */
 class RegExpShared
     : public gc::CellWithTenuredGCPointer<gc::TenuredCell, JSAtom> {
+  friend class js::gc::CellAllocator;
+
  public:
   enum class Kind { Unparsed, Atom, RegExp };
   enum class CodeKind { Bytecode, Jitcode, Any };

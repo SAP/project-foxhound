@@ -22,6 +22,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ConsoleListener:
     "chrome://remote/content/shared/listeners/ConsoleListener.jsm",
   isChromeFrame: "chrome://remote/content/shared/Stack.jsm",
+  OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
   serialize: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
 });
 
@@ -142,7 +143,12 @@ class LogModule extends Module {
     // Serialize each arg as remote value.
     const serializedArgs = [];
     for (const arg of args) {
-      serializedArgs.push(lazy.serialize(arg /*, null, true, new Set() */));
+      // Note that we can pass a `null` realm for now since realms are only
+      // involved when creating object references, which will not happen with
+      // OwnershipModel.None. This will be revisited in Bug 1731589.
+      serializedArgs.push(
+        lazy.serialize(arg, 1, lazy.OwnershipModel.None, new Map(), null)
+      );
     }
 
     // Set source to an object which contains realm and browsing context.
@@ -174,7 +180,7 @@ class LogModule extends Module {
     //   only react to events if there is a session & if the session subscribed
     //   to those events.
 
-    this.emitProtocolEvent("log.entryAdded", entry);
+    this.emitEvent("log.entryAdded", entry);
   };
 
   #onJavaScriptError = (eventName, data = {}) => {
@@ -190,7 +196,7 @@ class LogModule extends Module {
       stackTrace: this.#buildStackTrace(stacktrace),
     };
 
-    this.emitProtocolEvent("log.entryAdded", entry);
+    this.emitEvent("log.entryAdded", entry);
   };
 
   #subscribeEvent(event) {

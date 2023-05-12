@@ -291,7 +291,7 @@
          hidden="true"
          flip="slide"
          orient="vertical"
-         position="bottomcenter topleft">
+         position="bottomleft topleft">
     <toolbarbutton id="sidebar-switcher-bookmarks"
                    data-l10n-id="sidebar-menu-bookmarks"
                    class="subviewbutton"
@@ -458,7 +458,7 @@
            type="arrow"
            hidden="true"
            flip="slide"
-           position="bottomcenter topright"
+           position="bottomright topright"
            tabspecific="true"
            noautofocus="true">
       <panelmultiview id="pageActionPanelMultiView"
@@ -478,7 +478,7 @@
            role="alert"
            type="arrow"
            flip="slide"
-           position="bottomcenter topright"
+           position="bottomright topright"
            tabspecific="true"
            noautofocus="true">
       <hbox id="confirmation-hint-checkmark-animation-container">
@@ -589,14 +589,12 @@
               id="syncedTabsRefreshFilter"/>
   </menupopup>
 
-  <hbox id="statuspanel" inactive="true">
-    <hbox id="statuspanel-inner">
-      <label id="statuspanel-label"
-             role="status"
-             aria-live="off"
-             flex="1"
-             crop="end"/>
-    </hbox>
+  <hbox id="statuspanel" inactive="true" hidden="true">
+    <label id="statuspanel-label"
+            role="status"
+            aria-live="off"
+            flex="1"
+            crop="end"/>
   </hbox>
 
   <html:template id="sharing-tabs-warning-panel-template">

@@ -239,7 +239,6 @@
 #    include "mozilla/SandboxInfo.h"
 #  elif defined(XP_WIN)
 #    include "sandboxBroker.h"
-#    include "sandboxPermissions.h"
 #  endif
 #endif
 
@@ -4248,10 +4247,6 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
         "Failed to initialize broker services, sandboxed processes will "
         "fail to start.");
   }
-  if (mAppData->sandboxPermissionsService) {
-    SandboxPermissions::Initialize(mAppData->sandboxPermissionsService,
-                                   nullptr);
-  }
 #endif
 
 #ifdef XP_MACOSX
@@ -4573,7 +4568,7 @@ Maybe<ShouldNotProcessUpdatesReason> ShouldNotProcessUpdates(
   // "--chrome ..." with the browser toolbox chrome document URL.
 
   // Keep this synchronized with the value of the same name in
-  // devtools/client/framework/browser-toolbox/Launcher.jsm.  Or, for bonus
+  // devtools/client/framework/browser-toolbox/Launcher.sys.mjs.  Or, for bonus
   // points, lift this value to nsIXulRuntime or similar, so that it can be
   // accessed in both locations.  (The prefs service isn't available at this
   // point so the simplest manner of sharing the value is not available to us.)
@@ -5876,7 +5871,6 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   mAppData->sandboxBrokerServices = aConfig.sandboxBrokerServices;
-  mAppData->sandboxPermissionsService = aConfig.sandboxPermissionsService;
 #endif
 
   // Once we unset the exception handler, we lose the ability to properly

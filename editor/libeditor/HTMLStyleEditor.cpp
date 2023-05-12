@@ -11,8 +11,8 @@
 #include "EditorUtils.h"
 #include "HTMLEditHelpers.h"
 #include "HTMLEditUtils.h"
+#include "PendingStyles.h"
 #include "SelectionState.h"
-#include "TypeInState.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentIterator.h"
@@ -205,10 +205,7 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
   if (SelectionRef().IsCollapsed()) {
     // Manipulating text attributes on a collapsed selection only sets state
     // for the next text insertion
-    for (const EditorInlineStyleAndValue& styleToSet : aStylesToSet) {
-      mTypeInState->SetProp(styleToSet.mHTMLProperty, styleToSet.mAttribute,
-                            styleToSet.mAttributeValue);
-    }
+    mPendingStylesToApplyToNewContent->PreserveStyles(aStylesToSet);
     return NS_OK;
   }
 
@@ -274,7 +271,7 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
             SetInlinePropertyOnTextNode(
                 MOZ_KnownLive(*range.StartRef().ContainerAs<Text>()),
                 range.StartRef().Offset(), range.EndRef().Offset(),
-                MOZ_KnownLive(*styleToSet.mHTMLProperty),
+                MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                 MOZ_KnownLive(styleToSet.mAttribute),
                 styleToSet.mAttributeValue);
         if (wrapTextInStyledElementResult.isErr()) {
@@ -322,7 +319,7 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
                 MOZ_KnownLive(*range.StartRef().ContainerAs<Text>()),
                 range.StartRef().Offset(),
                 range.StartRef().ContainerAs<Text>()->TextDataLength(),
-                MOZ_KnownLive(*styleToSet.mHTMLProperty),
+                MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                 MOZ_KnownLive(styleToSet.mAttribute),
                 styleToSet.mAttributeValue);
         if (wrapTextInStyledElementResult.isErr()) {
@@ -339,7 +336,7 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
         // MOZ_KnownLive due to bug 1622253.
         Result<EditorDOMPoint, nsresult> setStyleResult =
             SetInlinePropertyOnNode(MOZ_KnownLive(*content),
-                                    MOZ_KnownLive(*styleToSet.mHTMLProperty),
+                                    MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                                     MOZ_KnownLive(styleToSet.mAttribute),
                                     styleToSet.mAttributeValue);
         if (MOZ_UNLIKELY(setStyleResult.isErr())) {
@@ -360,7 +357,7 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
             SetInlinePropertyOnTextNode(
                 MOZ_KnownLive(*range.EndRef().ContainerAs<Text>()), 0,
                 range.EndRef().Offset(),
-                MOZ_KnownLive(*styleToSet.mHTMLProperty),
+                MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                 MOZ_KnownLive(styleToSet.mAttribute),
                 styleToSet.mAttributeValue);
         if (wrapTextInStyledElementResult.isErr()) {
@@ -449,8 +446,9 @@ Result<bool, nsresult> HTMLEditor::ElementIsGoodContainerForTheStyle(
   // MOZ_KnownLive(*styledNewSpanElement): It's newSpanElement whose type is
   // RefPtr.
   Result<int32_t, nsresult> result =
-      mCSSEditUtils->SetCSSEquivalentToHTMLStyleWithoutTransaction(
-          MOZ_KnownLive(*styledNewSpanElement), aProperty, aAttribute, aValue);
+      CSSEditUtils::SetCSSEquivalentToHTMLStyleWithoutTransaction(
+          *this, MOZ_KnownLive(*styledNewSpanElement), aProperty, aAttribute,
+          aValue);
   if (result.isErr()) {
     // The call shouldn't return destroyed error because it must be
     // impossible to run script with modifying the new orphan node.
@@ -487,8 +485,8 @@ SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
     // for node; let's check if it carries those CSS styles
     nsAutoString value(aValue);
     Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
-        mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-            aText, &aProperty, aAttribute, value);
+        CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+            *this, aText, &aProperty, aAttribute, value);
     if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
       NS_WARNING(
           "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() failed");
@@ -762,8 +760,8 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
   if (CSSEditUtils::IsCSSEditableProperty(&aContent, &aProperty, aAttribute)) {
     nsAutoString value(aValue);
     Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
-        mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-            aContent, &aProperty, aAttribute, value);
+        CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+            *this, aContent, &aProperty, aAttribute, value);
     if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
       NS_WARNING(
           "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() failed");
@@ -816,8 +814,8 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
       // MOZ_KnownLive(*spanStyledElement): It's spanElement whose type is
       // RefPtr.
       Result<int32_t, nsresult> result =
-          mCSSEditUtils->SetCSSEquivalentToHTMLStyleWithTransaction(
-              MOZ_KnownLive(*spanStyledElement), &aProperty, aAttribute,
+          CSSEditUtils::SetCSSEquivalentToHTMLStyleWithTransaction(
+              *this, MOZ_KnownLive(*spanStyledElement), &aProperty, aAttribute,
               &aValue);
       if (result.isErr()) {
         if (result.inspectErr() == NS_ERROR_EDITOR_DESTROYED) {
@@ -1046,8 +1044,8 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
       // CSS styles
       nsAutoString firstValue;
       Result<bool, nsresult> isSpecifiedByCSSOrError =
-          mCSSEditUtils->IsSpecifiedCSSEquivalentToHTMLInlineStyleSet(
-              *content, aProperty, aAttribute, firstValue);
+          CSSEditUtils::IsSpecifiedCSSEquivalentToHTMLInlineStyleSet(
+              *this, *content, aProperty, aAttribute, firstValue);
       if (isSpecifiedByCSSOrError.isErr()) {
         result.IgnoreCaretPointSuggestion();
         NS_WARNING(
@@ -1511,8 +1509,8 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveStyleInside(
   //     do we keep handling aElement here??
   if (CSSEditUtils::IsCSSEditableProperty(&aElement, aProperty, aAttribute)) {
     Result<bool, nsresult> elementHasSpecifiedCSSEquivalentStylesOrError =
-        mCSSEditUtils->HaveSpecifiedCSSEquivalentStyles(aElement, aProperty,
-                                                        aAttribute);
+        CSSEditUtils::HaveSpecifiedCSSEquivalentStyles(*this, aElement,
+                                                       aProperty, aAttribute);
     if (elementHasSpecifiedCSSEquivalentStylesOrError.isErr()) {
       NS_WARNING("CSSEditUtils::HaveSpecifiedCSSEquivalentStyles() failed");
       return elementHasSpecifiedCSSEquivalentStylesOrError.propagateErr();
@@ -1524,8 +1522,9 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveStyleInside(
         // MOZ_KnownLive(*styledElement): It's aElement and its lifetime must be
         // guaranteed by the caller because of MOZ_CAN_RUN_SCRIPT method.
         nsresult rv =
-            mCSSEditUtils->RemoveCSSEquivalentToHTMLStyleWithTransaction(
-                MOZ_KnownLive(*styledElement), aProperty, aAttribute, nullptr);
+            CSSEditUtils::RemoveCSSEquivalentToHTMLStyleWithTransaction(
+                *this, MOZ_KnownLive(*styledElement), aProperty, aAttribute,
+                nullptr);
         if (rv == NS_ERROR_EDITOR_DESTROYED) {
           NS_WARNING(
               "CSSEditUtils::RemoveCSSEquivalentToHTMLStyleWithTransaction() "
@@ -1747,7 +1746,7 @@ bool HTMLEditor::IsEndOfContainerOrEqualsOrAfterLastEditableChild(
   return EditorRawDOMPoint(lastEditableChild).Offset() < aPoint.Offset();
 }
 
-nsresult HTMLEditor::GetInlinePropertyBase(nsAtom& aHTMLProperty,
+nsresult HTMLEditor::GetInlinePropertyBase(nsStaticAtom& aHTMLProperty,
                                            nsAtom* aAttribute,
                                            const nsAString* aValue,
                                            bool* aFirst, bool* aAny, bool* aAll,
@@ -1772,19 +1771,21 @@ nsresult HTMLEditor::GetInlinePropertyBase(nsAtom& aHTMLProperty,
       if (NS_WARN_IF(!collapsedNode)) {
         return NS_ERROR_FAILURE;
       }
-      bool isSet, theSetting;
       nsString tOutString;
-      if (aAttribute) {
-        mTypeInState->GetTypingState(isSet, theSetting, &aHTMLProperty,
-                                     aAttribute, &tOutString);
-        if (outValue) {
-          outValue->Assign(tOutString);
+      const PendingStyleState styleState = [&]() {
+        if (aAttribute) {
+          auto state = mPendingStylesToApplyToNewContent->GetStyleState(
+              aHTMLProperty, aAttribute, &tOutString);
+          if (outValue) {
+            outValue->Assign(tOutString);
+          }
+          return state;
         }
-      } else {
-        mTypeInState->GetTypingState(isSet, theSetting, &aHTMLProperty);
-      }
-      if (isSet) {
-        *aFirst = *aAny = *aAll = theSetting;
+        return mPendingStylesToApplyToNewContent->GetStyleState(aHTMLProperty);
+      }();
+      if (styleState != PendingStyleState::NotUpdated) {
+        *aFirst = *aAny = *aAll =
+            (styleState == PendingStyleState::BeingPreserved);
         return NS_OK;
       }
 
@@ -1795,9 +1796,9 @@ nsresult HTMLEditor::GetInlinePropertyBase(nsAtom& aHTMLProperty,
           tOutString.Assign(*aValue);
         }
         Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
-            mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-                MOZ_KnownLive(*collapsedNode->AsContent()), &aHTMLProperty,
-                aAttribute, tOutString);
+            CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+                *this, MOZ_KnownLive(*collapsedNode->AsContent()),
+                &aHTMLProperty, aAttribute, tOutString);
         if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
           NS_WARNING(
               "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() "
@@ -1875,8 +1876,8 @@ nsresult HTMLEditor::GetInlinePropertyBase(nsAtom& aHTMLProperty,
           }
           Result<bool, nsresult>
               isComputedCSSEquivalentToHTMLInlineStyleOrError =
-                  mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-                      *content, &aHTMLProperty, aAttribute, firstValue);
+                  CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+                      *this, *content, &aHTMLProperty, aAttribute, firstValue);
           if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
             NS_WARNING(
                 "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() "
@@ -1904,8 +1905,8 @@ nsresult HTMLEditor::GetInlinePropertyBase(nsAtom& aHTMLProperty,
           }
           Result<bool, nsresult>
               isComputedCSSEquivalentToHTMLInlineStyleOrError =
-                  mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-                      *content, &aHTMLProperty, aAttribute, theValue);
+                  CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+                      *this, *content, &aHTMLProperty, aAttribute, theValue);
           if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
             NS_WARNING(
                 "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() "
@@ -1954,12 +1955,11 @@ nsresult HTMLEditor::GetInlinePropertyBase(nsAtom& aHTMLProperty,
   return NS_OK;
 }
 
-nsresult HTMLEditor::GetInlineProperty(nsAtom* aHTMLProperty,
+nsresult HTMLEditor::GetInlineProperty(nsStaticAtom& aHTMLProperty,
                                        nsAtom* aAttribute,
                                        const nsAString& aValue, bool* aFirst,
                                        bool* aAny, bool* aAll) const {
-  if (NS_WARN_IF(!aHTMLProperty) || NS_WARN_IF(!aFirst) || NS_WARN_IF(!aAny) ||
-      NS_WARN_IF(!aAll)) {
+  if (NS_WARN_IF(!aFirst) || NS_WARN_IF(!aAny) || NS_WARN_IF(!aAll)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -1969,7 +1969,7 @@ nsresult HTMLEditor::GetInlineProperty(nsAtom* aHTMLProperty,
   }
 
   const nsAString* val = !aValue.IsEmpty() ? &aValue : nullptr;
-  nsresult rv = GetInlinePropertyBase(*aHTMLProperty, aAttribute, val, aFirst,
+  nsresult rv = GetInlinePropertyBase(aHTMLProperty, aAttribute, val, aFirst,
                                       aAny, aAll, nullptr);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::GetInlinePropertyBase() failed");
@@ -1980,20 +1980,24 @@ NS_IMETHODIMP HTMLEditor::GetInlinePropertyWithAttrValue(
     const nsAString& aHTMLProperty, const nsAString& aAttribute,
     const nsAString& aValue, bool* aFirst, bool* aAny, bool* aAll,
     nsAString& outValue) {
-  RefPtr<nsAtom> property = NS_Atomize(aHTMLProperty);
+  nsStaticAtom* property = NS_GetStaticAtom(aHTMLProperty);
+  if (NS_WARN_IF(!property)) {
+    return NS_ERROR_INVALID_ARG;
+  }
   nsStaticAtom* attribute = EditorUtils::GetAttributeAtom(aAttribute);
-  nsresult rv = GetInlinePropertyWithAttrValue(
-      property, MOZ_KnownLive(attribute), aValue, aFirst, aAny, aAll, outValue);
+  // MOZ_KnownLive because nsStaticAtom is available until shutting down.
+  nsresult rv = GetInlinePropertyWithAttrValue(MOZ_KnownLive(*property),
+                                               MOZ_KnownLive(attribute), aValue,
+                                               aFirst, aAny, aAll, outValue);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::GetInlinePropertyWithAttrValue() failed");
   return rv;
 }
 
 nsresult HTMLEditor::GetInlinePropertyWithAttrValue(
-    nsAtom* aHTMLProperty, nsAtom* aAttribute, const nsAString& aValue,
+    nsStaticAtom& aHTMLProperty, nsAtom* aAttribute, const nsAString& aValue,
     bool* aFirst, bool* aAny, bool* aAll, nsAString& outValue) {
-  if (NS_WARN_IF(!aHTMLProperty) || NS_WARN_IF(!aFirst) || NS_WARN_IF(!aAny) ||
-      NS_WARN_IF(!aAll)) {
+  if (NS_WARN_IF(!aFirst) || NS_WARN_IF(!aAny) || NS_WARN_IF(!aAll)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -2003,7 +2007,7 @@ nsresult HTMLEditor::GetInlinePropertyWithAttrValue(
   }
 
   const nsAString* val = !aValue.IsEmpty() ? &aValue : nullptr;
-  nsresult rv = GetInlinePropertyBase(*aHTMLProperty, aAttribute, val, aFirst,
+  nsresult rv = GetInlinePropertyBase(aHTMLProperty, aAttribute, val, aFirst,
                                       aAny, aAll, &outValue);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::GetInlinePropertyBase() failed");
@@ -2175,19 +2179,7 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
   if (SelectionRef().IsCollapsed()) {
     // Manipulating text attributes on a collapsed selection only sets state
     // for the next text insertion
-    if (aStylesToRemove[0].mHTMLProperty) {
-      for (const EditorInlineStyle& styleToRemove : aStylesToRemove) {
-        if (styleToRemove.mHTMLProperty == nsGkAtoms::href ||
-            styleToRemove.mHTMLProperty == nsGkAtoms::name) {
-          mTypeInState->ClearProp(nsGkAtoms::a, nullptr);
-        } else {
-          mTypeInState->ClearProp(styleToRemove.mHTMLProperty,
-                                  styleToRemove.mAttribute);
-        }
-      }
-    } else {
-      mTypeInState->ClearAllProps();
-    }
+    mPendingStylesToApplyToNewContent->ClearStyles(aStylesToRemove);
     return NS_OK;
   }
 
@@ -2554,8 +2546,8 @@ Result<bool, nsresult> HTMLEditor::IsRemovableParentStyleWithNewSpanElement(
   // "inverting" the style
   nsAutoString emptyString;
   Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
-      mCSSEditUtils->IsComputedCSSEquivalentToHTMLInlineStyleSet(
-          aContent, aHTMLProperty, aAttribute, emptyString);
+      CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
+          *this, aContent, aHTMLProperty, aAttribute, emptyString);
   NS_WARNING_ASSERTION(
       isComputedCSSEquivalentToHTMLInlineStyleOrError.isOk(),
       "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() "
@@ -2649,7 +2641,8 @@ nsresult HTMLEditor::IncrementOrDecrementFontSizeAsSubAction(
 
     // Manipulating text attributes on a collapsed selection only sets state
     // for the next text insertion
-    mTypeInState->SetProp(&bigOrSmallTagName, nullptr, u""_ns);
+    mPendingStylesToApplyToNewContent->PreserveStyle(bigOrSmallTagName, nullptr,
+                                                     u""_ns);
     return NS_OK;
   }
 
@@ -3183,9 +3176,8 @@ nsresult HTMLEditor::GetFontColorState(bool* aMixed, nsAString& aOutColor) {
   return NS_OK;
 }
 
-// the return value is true only if the instance of the HTML editor we created
-// can handle CSS styles (for instance, Composer can, Messenger can't) and if
-// the CSS preference is checked
+// The return value is true only if the instance of the HTML editor we created
+// can handle CSS styles and if the CSS preference is checked.
 NS_IMETHODIMP HTMLEditor::GetIsCSSEnabled(bool* aIsCSSEnabled) {
   *aIsCSSEnabled = IsCSSEnabled();
   return NS_OK;

@@ -8,12 +8,13 @@
 
 #include "gc/Allocator.h"
 #include "gc/GCProbes.h"
+#include "gc/Marking.h"
+#include "gc/Zone.h"
 #include "proxy/DeadObjectProxy.h"
+#include "vm/Compartment.h"
 #include "vm/Realm.h"
 
 #include "gc/ObjectKind-inl.h"
-#include "gc/WeakMap-inl.h"
-#include "vm/JSObject-inl.h"
 
 using namespace js;
 
@@ -118,13 +119,12 @@ ProxyObject* ProxyObject::New(JSContext* cx, const BaseProxyHandler* handler,
 
   debugCheckNewObject(shape, allocKind, heap);
 
-  JSObject* obj =
-      AllocateObject(cx, allocKind, /* nDynamicSlots = */ 0, heap, clasp);
-  if (!obj) {
+  ProxyObject* proxy =
+      cx->newCell<ProxyObject>(allocKind, /* nDynamicSlots = */ 0, heap, clasp);
+  if (!proxy) {
     return nullptr;
   }
 
-  ProxyObject* proxy = static_cast<ProxyObject*>(obj);
   proxy->initShape(shape);
 
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());

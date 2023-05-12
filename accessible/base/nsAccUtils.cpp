@@ -185,27 +185,19 @@ bool nsAccUtils::IsDOMAttrTrue(const LocalAccessible* aAccessible,
                                eCaseMatters);
 }
 
-Accessible* nsAccUtils::TableFor(Accessible* aRow) {
-  if (aRow) {
-    Accessible* table = aRow->Parent();
-    if (table) {
-      roles::Role tableRole = table->Role();
-      const nsRoleMapEntry* roleMapEntry = table->ARIARoleMap();
-      if (tableRole == roles::GROUPING ||  // if there's a rowgroup.
-          (table->IsGenericHyperText() && !roleMapEntry &&
-           !table->IsTable())) {  // or there is a wrapping text container
-        table = table->Parent();
-        if (table) tableRole = table->Role();
-      }
-
-      return (tableRole == roles::TABLE || tableRole == roles::TREE_TABLE ||
-              tableRole == roles::MATHML_TABLE)
-                 ? table
-                 : nullptr;
-    }
+Accessible* nsAccUtils::TableFor(Accessible* aAcc) {
+  if (!aAcc ||
+      (!aAcc->IsTable() && !aAcc->IsTableRow() && !aAcc->IsTableCell())) {
+    return nullptr;
   }
-
-  return nullptr;
+  Accessible* table = aAcc;
+  for (; table && !table->IsTable(); table = table->Parent()) {
+  }
+  // We don't assert (table && table->IsTable()) here because
+  // it's possible for this tree walk to yield no table at all
+  // ex. because a table part has been moved in the tree
+  // using aria-owns.
+  return table;
 }
 
 LocalAccessible* nsAccUtils::TableFor(LocalAccessible* aRow) {
@@ -392,9 +384,10 @@ bool nsAccUtils::MustPrune(Accessible* aAccessible) {
   MOZ_ASSERT(aAccessible);
   roles::Role role = aAccessible->Role();
 
-  if (role == roles::SLIDER) {
-    // Always prune the tree for sliders, as it doesn't make sense for a
-    // slider to have descendants and this confuses NVDA.
+  if (role == roles::SLIDER || role == roles::PROGRESSBAR) {
+    // Always prune the tree for sliders and progressbars, as it doesn't make
+    // sense for either to have descendants. Per the ARIA spec, children of
+    // these elements are presentational. They also confuse NVDA.
     return true;
   }
 
@@ -402,8 +395,7 @@ bool nsAccUtils::MustPrune(Accessible* aAccessible) {
       role != roles::OPTION && role != roles::ENTRY &&
       role != roles::FLAT_EQUATION && role != roles::PASSWORD_TEXT &&
       role != roles::PUSHBUTTON && role != roles::TOGGLE_BUTTON &&
-      role != roles::GRAPHIC && role != roles::PROGRESSBAR &&
-      role != roles::SEPARATOR) {
+      role != roles::GRAPHIC && role != roles::SEPARATOR) {
     // If it doesn't match any of these roles, don't prune its children.
     return false;
   }

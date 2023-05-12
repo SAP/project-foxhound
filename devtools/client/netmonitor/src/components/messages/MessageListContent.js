@@ -9,7 +9,6 @@ const {
   createFactory,
 } = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const Services = require("Services");
 const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
@@ -107,6 +106,11 @@ class MessageListContent extends Component {
     // When messages are cleared, the previous scrollAnchor would be destroyed, so we need to reset this boolean.
     if (!scrollAnchor) {
       this.initIntersectionObserver = false;
+    }
+
+    // In addition to that, we need to reset currentTruncatedNum
+    if (prevProps.messages.length && this.props.messages.length === 0) {
+      this.currentTruncatedNum = 0;
     }
 
     // If a new connection is selected, scroll to anchor.
@@ -269,7 +273,7 @@ class MessageListContent extends Component {
     let MESSAGES_TRUNCATED;
     const shouldTruncate = messages.length > this.messagesLimit;
     if (shouldTruncate) {
-      // If the checkbox is checked, we display all messages after the currentedTruncatedNum limit.
+      // If the checkbox is checked, we display all messages after the currentTruncatedNum limit.
       // If the checkbox is unchecked, we display all messages after the messagesLimit.
       this.currentTruncatedNum = this.state.checked
         ? this.currentTruncatedNum

@@ -35,8 +35,6 @@ loader.lazyRequireGetter(
   "devtools/shared/DevToolsUtils"
 );
 
-loader.lazyRequireGetter(this, "Services");
-
 const windowsDrive = /^([a-zA-Z]:)/;
 
 function resolveSourceURL(sourceURL, targetActor) {
@@ -728,7 +726,7 @@ const SourceActor = ActorClassWithSpec(sourceSpec, {
       }
       lineMatches.sort((a, b) => a.columnNumber - b.columnNumber);
 
-      if (lineMatches.length > 0) {
+      if (lineMatches.length) {
         // A single Debugger.Source may have _multiple_ Debugger.Scripts
         // at the same position from multiple evaluations of the source,
         // so we explicitly want to take all of the matches for the matched

@@ -303,6 +303,8 @@ struct GatherProfileThreadParameters
 
   RefPtr<ProfilerChild> profilerChild;
 
+  FailureLatchSource failureLatchSource;
+
   // Separate RefPtr used when working on separate thread. This way, if the
   // "ProfilerChild" thread decides to overwrite its mGatherProfileProgress with
   // a new one, the work done here will still only use the old one.
@@ -327,7 +329,8 @@ void ProfilerChild::GatherProfileThreadFunction(
       parameters->progress, "Gather-profile thread started", "Profile sent");
   using namespace mozilla::literals::ProportionValue_literals;  // For `1_pc`.
 
-  auto writer = MakeUnique<SpliceableChunkedJSONWriter>();
+  auto writer =
+      MakeUnique<SpliceableChunkedJSONWriter>(parameters->failureLatchSource);
   if (!profiler_get_profile_json(
           *writer,
           /* aSinceTime */ 0,
@@ -335,8 +338,8 @@ void ProfilerChild::GatherProfileThreadFunction(
           progressLogger.CreateSubLoggerFromTo(
               1_pc, "profiler_get_profile_json started", 99_pc,
               "profiler_get_profile_json done"))) {
-    // Failed to get a profile (profiler not running?), reset the writer
-    // pointer, so that we'll send an empty string.
+    // Failed to get a profile, reset the writer pointer, so that we'll send a
+    // failure message.
     writer.reset();
   }
 
@@ -365,22 +368,25 @@ void ProfilerChild::GatherProfileThreadFunction(
                 if (writer) {
                   if (const size_t len = writer->ChunkedWriteFunc().Length();
                       len < UINT32_MAX) {
-                    bool success = false;
-                    writer->ChunkedWriteFunc()
-                        .CopyDataIntoLazilyAllocatedBuffer(
-                            [&](size_t allocationSize) -> char* {
-                              MOZ_ASSERT(allocationSize == len + 1);
-                              if (parameters->profilerChild->AllocShmem(
-                                      allocationSize, &shmem)) {
-                                success = true;
-                                return shmem.get<char>();
-                              }
-                              return nullptr;
-                            });
-                    if (!success) {
+                    bool shmemSuccess = true;
+                    const bool copySuccess =
+                        writer->ChunkedWriteFunc()
+                            .CopyDataIntoLazilyAllocatedBuffer(
+                                [&](size_t allocationSize) -> char* {
+                                  MOZ_ASSERT(allocationSize == len + 1);
+                                  if (parameters->profilerChild->AllocShmem(
+                                          allocationSize, &shmem)) {
+                                    return shmem.get<char>();
+                                  }
+                                  shmemSuccess = false;
+                                  return nullptr;
+                                });
+                    if (!shmemSuccess || !copySuccess) {
                       const nsPrintfCString message(
-                          "*Could not create shmem for profile from pid %u "
-                          "(%zu B)",
+                          (!shmemSuccess)
+                              ? "*Could not create shmem for profile from pid "
+                                "%u (%zu B)"
+                              : "*Could not write profile from pid %u (%zu B)",
                           unsigned(profiler_current_process_id().ToNumber()),
                           len);
                       if (parameters->profilerChild->AllocShmem(
@@ -401,9 +407,16 @@ void ProfilerChild::GatherProfileThreadFunction(
                   }
                   writer = nullptr;
                 } else {
-                  // No profile, send an empty string.
-                  if (parameters->profilerChild->AllocShmem(1, &shmem)) {
-                    shmem.get<char>()[0] = '\0';
+                  // No profile.
+                  const char* failure =
+                      parameters->failureLatchSource.GetFailure();
+                  const nsPrintfCString message(
+                      "*Could not generate profile from pid %u%s%s",
+                      unsigned(profiler_current_process_id().ToNumber()),
+                      failure ? ", failure: " : "", failure ? failure : "");
+                  if (parameters->profilerChild->AllocShmem(
+                          message.Length() + 1, &shmem)) {
+                    strcpy(shmem.get<char>(), message.Data());
                   }
                 }
 
@@ -477,13 +490,17 @@ nsCString ProfilerChild::GrabShutdownProfile() {
 
   UniquePtr<ProfilerCodeAddressService> service =
       profiler_code_address_service_for_presymbolication();
-  SpliceableChunkedJSONWriter writer;
+  FailureLatchSource failureLatch;
+  SpliceableChunkedJSONWriter writer{failureLatch};
   writer.Start();
   if (!profiler_stream_json_for_this_process(writer, /* aSinceTime */ 0,
                                              /* aIsShuttingDown */ true,
                                              service.get(), ProgressLogger{})) {
-    return nsPrintfCString("*Profile unavailable for pid %u",
-                           unsigned(profiler_current_process_id().ToNumber()));
+    const char* failure = writer.GetFailure();
+    return nsPrintfCString("*Profile unavailable for pid %u%s%s",
+                           unsigned(profiler_current_process_id().ToNumber()),
+                           failure ? ", failure: " : "",
+                           failure ? failure : "");
   }
   writer.StartArrayProperty("processes");
   writer.EndArray();
@@ -519,11 +536,14 @@ nsCString ProfilerChild::GrabShutdownProfile() {
 
   // Here, we have enough space reserved in `profileCString`, starting at
   // `profileBeginWriting`, copy the JSON profile there.
-  writer.ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
-      [&](size_t aBufferLen) -> char* {
-        MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
-        return profileBeginWriting;
-      });
+  if (!writer.ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
+          [&](size_t aBufferLen) -> char* {
+            MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
+            return profileBeginWriting;
+          })) {
+    return nsPrintfCString("*Could not copy profile from pid %u",
+                           unsigned(profiler_current_process_id().ToNumber()));
+  }
   MOZ_ASSERT(*(profileCString.Data() + len) == '\0',
              "We still expected a null at the end of the string buffer");
 

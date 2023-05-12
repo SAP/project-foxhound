@@ -60,16 +60,46 @@ export function computeVariationIndex(
 export function Colorways(props) {
   let {
     colorways,
+    darkVariation,
     defaultVariationIndex,
     systemVariations,
     variations,
   } = props.content.tiles;
+  let hasReverted = false;
 
   // Active theme id from JSON e.g. "expressionist"
   const activeId = computeColorWay(props.activeTheme, systemVariations);
   const [colorwayId, setState] = useState(activeId);
   const [variationIndex, setVariationIndex] = useState(defaultVariationIndex);
 
+  function revertToDefaultTheme() {
+    if (hasReverted) return;
+
+    // Spoofing an event with current target value of "navigate_away"
+    // helps the handleAction method to read the colorways theme as "revert"
+    // which causes the initial theme to be activated.
+    // The "navigate_away" action is set in content in the colorways screen JSON config.
+    // Any value in the JSON for theme will work, provided it is not `<event>`.
+    const event = {
+      currentTarget: {
+        value: "navigate_away",
+      },
+    };
+    props.handleAction(event);
+    hasReverted = true;
+  }
+
+  // Revert to default theme if the user navigates away from the page or spotlight modal
+  // before clicking on the primary button to officially set theme.
+  useEffect(() => {
+    addEventListener("beforeunload", revertToDefaultTheme);
+    addEventListener("pagehide", revertToDefaultTheme);
+
+    return () => {
+      removeEventListener("beforeunload", revertToDefaultTheme);
+      removeEventListener("pagehide", revertToDefaultTheme);
+    };
+  });
   // Update state any time activeTheme changes.
   useEffect(() => {
     setState(computeColorWay(props.activeTheme, systemVariations));
@@ -83,6 +113,25 @@ export function Colorways(props) {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.activeTheme]);
+
+  //select a random colorway
+  useEffect(() => {
+    //We don't want the default theme to be selected
+    const randomIndex = Math.floor(Math.random() * (colorways.length - 1)) + 1;
+    const randomColorwayId = colorways[randomIndex].id;
+
+    // Change the variation to be the dark variation if configured and dark.
+    // Additional colorway changes will remain dark while system is unchanged.
+    if (
+      darkVariation !== undefined &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    ) {
+      variations[variationIndex] = variations[darkVariation];
+    }
+    const value = `${randomColorwayId}-${variations[variationIndex]}`;
+    props.handleAction({ currentTarget: { value } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="tiles-theme-container">

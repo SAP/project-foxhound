@@ -8,7 +8,6 @@ const { KeyCodes } = require("devtools/client/shared/keycodes");
 
 const EventEmitter = require("devtools/shared/event-emitter");
 const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
-const Services = require("Services");
 
 // Maximum number of selector suggestions shown in the panel.
 const MAX_SUGGESTIONS = 15;
@@ -71,7 +70,7 @@ InspectorSearch.prototype = {
 
     if (query.length === 0) {
       searchContainer.classList.remove("devtools-searchbox-no-match");
-      if (!lastSearched || lastSearched.length > 0) {
+      if (!lastSearched || lastSearched.length) {
         this.emit("search-cleared");
       }
       return;

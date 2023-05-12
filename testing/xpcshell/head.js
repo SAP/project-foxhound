@@ -651,7 +651,7 @@ function _execute_test() {
     });
   };
 
-  let complete = _cleanupFunctions.length == 0;
+  let complete = !_cleanupFunctions.length;
   let cleanupStartTime = complete ? 0 : Cu.now();
   (async () => {
     for (let func of _cleanupFunctions.reverse()) {
@@ -689,6 +689,13 @@ function _execute_test() {
 
   // Restore idle service to avoid leaks.
   _fakeIdleService.deactivate();
+
+  if (
+    globalThis.hasOwnProperty("storage") &&
+    StorageManager.isInstance(globalThis.storage)
+  ) {
+    globalThis.storage.shutdown();
+  }
 
   if (_profileInitialized) {
     // Since we have a profile, we will notify profile shutdown topics at

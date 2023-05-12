@@ -42,6 +42,8 @@ body {
  */
 .browserContainer {
   -moz-box-flex: 10000;
+  /* To contain the status panel */
+  position: relative;
 }
 
 .browserStack {
@@ -118,6 +120,7 @@ body {
 #toolbar-menubar[autohide="true"][inactive="true"]:not([customizing="true"]) {
   min-height: 0 !important;
   height: 0 !important;
+  padding: 0 !important;
   appearance: none !important;
 }
 
@@ -164,17 +167,6 @@ panelview[mainview] > .panel-header {
 .panel-viewstack {
   overflow: visible;
   transition: height var(--panelui-subview-transition-duration);
-}
-
-@media (-moz-box-flexbox-emulation) {
-  #tabbrowser-tabs {
-    /* Without this, the tabs container width extends beyond the window width */
-    width: 0;
-  }
-  .tab-stack {
-    /* Without this, pinned tabs get a bit too tall when the tabstrip overflows. */
-    vertical-align: top;
-  }
 }
 
 @supports not -moz-bool-pref("browser.tabs.tabmanager.enabled") {
@@ -511,6 +503,27 @@ toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-b
   position: absolute;
 }
 
+#allTabsMenu-dropIndicatorHolder {
+  display: block;
+  position: relative;
+}
+
+#allTabsMenu-dropIndicator {
+  background: url(chrome://browser/skin/tabbrowser/tab-drag-indicator.svg) no-repeat center;
+  display: block;
+  position: absolute;
+  transform: rotate(-90deg);
+  width: 12px;
+  height: 29px;
+  inset-inline-start: 8px;
+  top: 0;
+  pointer-events: none;
+}
+
+#allTabsMenu-dropIndicator:-moz-locale-dir(rtl) {
+  transform: rotate(90deg);
+}
+
 #nav-bar-customization-target > #personal-bookmarks,
 toolbar:not(#TabsToolbar) > #wrapper-personal-bookmarks,
 toolbar:not(#TabsToolbar) > #personal-bookmarks {
@@ -729,22 +742,31 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   -moz-user-focus: normal;
 }
 
-/* We leave 350px plus whatever space the download button will need when it
- * appears. Normally this should be 16px for the icon, plus 2 * 2px padding
- * plus the toolbarbutton-inner-padding. We're adding 4px to ensure things
- * like rounding on hidpi don't accidentally result in the button going
- * into overflow.
+/* We leave 310px plus whatever space the download and unified extensions
+ * buttons will need when they *both* appear. Normally, for each button, this
+ * should be 16px for the icon, plus 2 * 2px padding plus the
+ * toolbarbutton-inner-padding. We're adding 4px to ensure things like rounding
+ * on hidpi don't accidentally result in the buttons going into overflow.
  */
- #urlbar-container {
-  min-width: calc(350px + 24px + 2 * var(--toolbarbutton-inner-padding));
+#urlbar-container {
+  min-width: calc(310px + 2 * (24px + 2 * var(--toolbarbutton-inner-padding)));
 }
 
-#nav-bar[downloadsbuttonshown] #urlbar-container {
-  min-width: 350px;
+/* When the download button OR the unified extensions button is shown, we leave
+ * 310px plus the space needed for a single button as described above. */
+#nav-bar[downloadsbuttonshown] #urlbar-container,
+#nav-bar[unifiedextensionsbuttonshown] #urlbar-container {
+  min-width: calc(310px + 24px + 2 * var(--toolbarbutton-inner-padding));
+}
+
+/* When both the download and unified extensions buttons are visible, we use
+ * the base min-width value. */
+#nav-bar[downloadsbuttonshown][unifiedextensionsbuttonshown] #urlbar-container {
+  min-width: 310px;
 }
 
 /* Customize mode is difficult to use at moderate window width if the Urlbar
-   remains 350px wide. */
+   remains 310px wide. */
 :root[customizing] #urlbar-container {
   min-width: 280px;
 }
@@ -755,10 +777,14 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 @media (max-width: 770px) {
   #urlbar-container {
-    min-width: calc(280px + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(240px + 2 * (24px + 2 * var(--toolbarbutton-inner-padding)));
   }
-  #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 280px;
+  #nav-bar[downloadsbuttonshown] #urlbar-container,
+  #nav-bar[unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: calc(240px + 24px + 2 * var(--toolbarbutton-inner-padding));
+  }
+  #nav-bar[downloadsbuttonshown][unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: 240px;
   }
   :root[customizing] #urlbar-container {
     min-width: 245px;
@@ -795,10 +821,14 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 }
 @media (max-width: 550px) {
   #urlbar-container {
-    min-width: calc(216px + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(176px + 2 * (24px + 2 * var(--toolbarbutton-inner-padding)));
   }
-  #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 216px;
+  #nav-bar[downloadsbuttonshown] #urlbar-container,
+  #nav-bar[unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: calc(176px + 24px + 2 * var(--toolbarbutton-inner-padding));
+  }
+  #nav-bar[downloadsbuttonshown][unifiedextensionsbuttonshown] #urlbar-container {
+    min-width: 176px;
   }
   #identity-icon-box {
     max-width: 70px;
@@ -967,17 +997,25 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 
 /* Status panel */
 
-#statuspanel {
+#statuspanel:not([hidden]) {
   display: block;
-  position: fixed;
-  margin-top: -3em;
+
   max-width: calc(100% - 5px);
   pointer-events: none;
+
+  /* Take a bit more space vertically for the mouse tracker to hit us more
+   * easily */
+  padding-top: 2em;
+
+  position: absolute;
+  bottom: 0;
+  left: 0;
 }
 
-#statuspanel[mirror] {
-  inset-inline-start: auto;
-  inset-inline-end: 0;
+#statuspanel:not([mirror]):-moz-locale-dir(rtl),
+#statuspanel[mirror]:-moz-locale-dir(ltr) {
+  left: auto;
+  right: 0;
 }
 
 #statuspanel[sizelimit] {
@@ -985,20 +1023,14 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 }
 
 #statuspanel[type=status] {
-  min-width: 23em;
-}
-
-@media all and (max-width: 800px) {
-  #statuspanel[type=status] {
-    min-width: 33%;
-  }
+  min-width: min(23em, 33%);
 }
 
 #statuspanel[type=overLink] {
   transition: opacity 120ms ease-out, visibility 120ms;
 }
 
-#statuspanel:is([type=overLink], [inactive][previoustype=overLink]) > #statuspanel-inner {
+#statuspanel:is([type=overLink], [inactive][previoustype=overLink]) {
   direction: ltr;
 }
 
@@ -1010,12 +1042,6 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 
 #statuspanel[inactive][previoustype=overLink] {
   transition: opacity 200ms ease-out, visibility 200ms;
-}
-
-#statuspanel-inner {
-  height: 3em;
-  width: 100%;
-  -moz-box-align: end;
 }
 
 /*** Visibility of downloads indicator controls ***/
@@ -1256,6 +1282,12 @@ toolbarpaletteitem:not([place="palette"]) > #stop-reload-button {
 
 :root[customizing=true] .addon-banner-item,
 :root[customizing=true] .panel-banner-item {
+  display: none;
+}
+
+/* Firefox View */
+:root[firefoxviewhidden] #wrapper-firefox-view-button,
+:root[firefoxviewhidden] #firefox-view-button {
   display: none;
 }
 
@@ -1503,37 +1535,24 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
 
 .dialogBox {
   background-clip: content-box;
-  border-radius: 8px;
   display: -moz-box;
-  margin: 0;
+  margin: 0 3vw;
   padding: 0;
   overflow-x: auto;
 }
 
-.dialogBox:not(.noShadow) {
+.dialogBox:not(.spotlightBox) {
   box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);
-}
-
-.dialogBox.fullScreen {
-  height: 100vh;
-  width: 100vw;
+  border-radius: 8px;
 }
 
 /*
  * In High Contrast Mode, this prevents a dialog from visually bleeding into
  * the window behind it, which looks jarring.
- *
- * In some ideal world, we would also put a transparent border in the general
- * case for .dialogBox, so that everything would layout the same either way,
- * which would presumably make it easier for prefers-contrast renderings to
- * Just Work. Doing that _would_ change the layout for any existing subdialog
- * in the tree which doesn't already have a border of some sort, but we could
- * choose to bite the bullet at some point, as it may turn out to not cause
- * any real problems.
  */
 @media (prefers-contrast) {
 .dialogBox {
-  border: 1px solid WindowText;
+  outline: 1px solid WindowText;
 }
 }
 
@@ -1552,10 +1571,17 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   --box-max-height-margin: calc(100vh - var(--box-top-px) - var(--box-block-margin));
   --box-max-width-ratio: 70vw;
   --box-max-height-ratio: calc(var(--box-ideal-height) / var(--box-ideal-width) * var(--box-max-width-ratio));
-  max-width: min(max(var(--box-ideal-width) * 1px, var(--box-max-width-ratio)), var(--box-max-width-margin));
-  max-height: min(max(var(--box-ideal-height) * 1px, var(--box-max-height-ratio)), var(--box-max-height-margin));
+  --box-max-height-requested: 100vh;
+  --box-max-width-requested: 100vw;
+  --box-max-height-remaining: calc(100vh - var(--box-top-px));
   width: 100vw;
   height: 100vh;
+  margin: 0;
+}
+
+.dialogBox:not(.spotlightBox)[sizeto="available"] {
+  max-width: min(max(var(--box-ideal-width) * 1px, var(--box-max-width-ratio)), var(--box-max-width-margin), var(--box-max-width-requested));
+  max-height: min(max(var(--box-ideal-height) * 1px, var(--box-max-height-ratio)), var(--box-max-height-margin), var(--box-max-height-requested), var(--box-max-height-remaining));
 }
 
 @media (min-width: 550px) {
@@ -1582,6 +1608,11 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   }
 }
 
+.dialogStack .dialogBox.spotlightBox[sizeto="available"] {
+  /* Tab modal: subtract the navigator toolbox height from the dialog height. */
+  height: calc(100vh - var(--box-top-px, 0px));
+}
+
 .content-prompt-dialog > .dialogOverlay {
   display: grid;
   place-content: center;
@@ -1590,8 +1621,9 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   grid-auto-rows: min(90%, var(--doc-height-px));
 }
 
-:not(.content-prompt-dialog) > .dialogOverlay > .dialogBox {
-  /* Make dialogs overlap with upper chrome UI. */
+:not(.content-prompt-dialog) > .dialogOverlay > .dialogBox:not(.spotlightBox) {
+  /* Make dialogs overlap with upper chrome UI. Not necessary for Spotlight
+  dialogs that are intended to be centered above the window or content area. */
   margin-top: -5px;
 }
 
@@ -1614,14 +1646,18 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   );
 }
 
+#window-modal-dialog.spotlight {
+  /* Spotlight window modal dialogs should be equal in size to the window. */
+  margin: revert;
+  max-height: 100%;
+  max-width: 100%;
+}
+
 .dialogFrame {
   margin: 0;
   -moz-box-flex: 1;
   /* Default dialog dimensions */
   width: 34em;
-  /* will get overridden, but need to change the default so small
-   * dialogs don't end up being 150px tall */
-  height: 80px;
 }
 
 /* Override default <html:dialog> styles */

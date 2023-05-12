@@ -16,15 +16,9 @@ case "$TARGET" in
 *windows-msvc)
   EXE=.exe
   COMPRESS_EXT=zip
-  if [[ $TARGET == "i686-pc-windows-msvc" ]]; then
-    . $GECKO_PATH/taskcluster/scripts/misc/vs-setup32.sh
-    export CARGO_TARGET_I686_PC_WINDOWS_MSVC_LINKER=$MOZ_FETCHES_DIR/clang/bin/lld-link
-  else
-    . $GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh
-    export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$MOZ_FETCHES_DIR/clang/bin/lld-link
-  fi
+  . $GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh
   # Bug 1584530: don't require the Microsoft MSVC runtime to be installed.
-  export RUSTFLAGS="-Ctarget-feature=+crt-static"
+  export RUSTFLAGS="-Ctarget-feature=+crt-static -C linker=$MOZ_FETCHES_DIR/clang/bin/lld-link"
   export LD_PRELOAD=$MOZ_FETCHES_DIR/liblowercase/liblowercase.so
   export LOWERCASE_DIRS=$MOZ_FETCHES_DIR/vs
   ;;
@@ -38,6 +32,9 @@ case "$TARGET" in
   else
       export MACOSX_DEPLOYMENT_TARGET=10.12
   fi
+  ;;
+aarch64-unknown-linux-musl)
+  export RUSTFLAGS="-C linker=$MOZ_FETCHES_DIR/clang/bin/clang -C link-arg=--target=$TARGET -C link-arg=-fuse-ld=lld"
   ;;
 esac
 

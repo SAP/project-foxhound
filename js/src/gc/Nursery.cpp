@@ -17,9 +17,9 @@
 
 #include "builtin/MapObject.h"
 #include "debugger/DebugAPI.h"
-#include "gc/GCContext.h"
 #include "gc/GCInternals.h"
 #include "gc/GCLock.h"
+#include "gc/GCProbes.h"
 #include "gc/Memory.h"
 #include "gc/PublicIterators.h"
 #include "gc/Tenuring.h"
@@ -28,16 +28,14 @@
 #include "util/DifferentialTesting.h"
 #include "util/GetPidProvider.h"  // getpid()
 #include "util/Poison.h"
-#include "vm/ArrayObject.h"
 #include "vm/JSONPrinter.h"
 #include "vm/Realm.h"
 #include "vm/Time.h"
-#include "vm/TypedArrayObject.h"
 
+#include "gc/Heap-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/Zone-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/NativeObject-inl.h"
 
 using namespace js;
 using namespace gc;
@@ -174,8 +172,9 @@ void js::NurseryDecommitTask::run(AutoLockHelperThreadState& lock) {
   while (!chunksToDecommit().empty()) {
     NurseryChunk* nurseryChunk = chunksToDecommit().popCopy();
     AutoUnlockHelperThreadState unlock(lock);
-    auto* tenuredChunk = reinterpret_cast<TenuredChunk*>(nurseryChunk);
-    tenuredChunk->init(gc, /* allMemoryCommitted = */ false);
+    nurseryChunk->~NurseryChunk();
+    TenuredChunk* tenuredChunk = TenuredChunk::emplace(
+        nurseryChunk, gc, /* allMemoryCommitted = */ false);
     AutoLockGC lock(gc);
     gc->recycleChunk(tenuredChunk, lock);
   }

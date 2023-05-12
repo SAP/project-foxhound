@@ -59,7 +59,7 @@ function startServer(cert) {
   let listener = {
     onSocketAccepted(socket, transport) {
       info("Accepted TLS client connection");
-      let connectionInfo = transport.securityInfo.QueryInterface(
+      let connectionInfo = transport.securityCallbacks.getInterface(
         Ci.nsITLSServerConnectionInfo
       );
       connectionInfo.setSecurityObserver(listener);
@@ -160,15 +160,11 @@ add_setup(async function() {
     },
   ]);
 
-  let overrideBits =
-    Ci.nsICertOverrideService.ERROR_UNTRUSTED |
-    Ci.nsICertOverrideService.ERROR_MISMATCH;
   certOverrideService.rememberValidityOverride(
     "localhost",
     server.port,
     {},
     cert,
-    overrideBits,
     true
   );
 

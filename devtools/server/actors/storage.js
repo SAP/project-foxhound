@@ -8,7 +8,6 @@ const { Cc, Ci, Cu, CC } = require("chrome");
 const protocol = require("devtools/shared/protocol");
 const { LongStringActor } = require("devtools/server/actors/string");
 const { DevToolsServer } = require("devtools/server/devtools-server");
-const Services = require("Services");
 const { isWindowIncluded } = require("devtools/shared/layout/utils");
 const specs = require("devtools/shared/specs/storage");
 const { parseItemValue } = require("devtools/shared/storage/utils");
@@ -23,7 +22,7 @@ loader.lazyGetter(this, "ExtensionStorageIDB", () => {
 loader.lazyRequireGetter(
   this,
   "getAddonIdForWindowGlobal",
-  "devtools/server/actors/watcher/browsing-context-helpers.jsm",
+  "devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
   true
 );
 
@@ -3082,7 +3081,7 @@ var indexedDBHelpers = {
       });
     }
 
-    if (files.length > 0) {
+    if (files.length) {
       for (const { file, storage } of files) {
         const name = await this.getNameFromDatabaseFile(file);
         if (name) {
@@ -3823,7 +3822,7 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
 
       for (const host in data) {
         if (
-          data[host].length == 0 &&
+          !data[host].length &&
           this.boundUpdate.added &&
           this.boundUpdate.added[storeType] &&
           this.boundUpdate.added[storeType][host]
@@ -3831,7 +3830,7 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
           delete this.boundUpdate.added[storeType][host];
         }
         if (
-          data[host].length == 0 &&
+          !data[host].length &&
           this.boundUpdate.changed &&
           this.boundUpdate.changed[storeType] &&
           this.boundUpdate.changed[storeType][host]

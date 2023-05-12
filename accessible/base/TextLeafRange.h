@@ -95,10 +95,13 @@ class TextLeafPoint final {
    * (depending on the direction).
    * If aIncludeorigin is true and this is at a boundary, this will be
    * returned unchanged.
+   * If aStopInEditable is true the boundary returned will be within the
+   * current editable (if this point is in an editable).
    */
   TextLeafPoint FindBoundary(AccessibleTextBoundary aBoundaryType,
                              nsDirection aDirection,
-                             bool aIncludeOrigin = false) const;
+                             bool aIncludeOrigin = false,
+                             bool aStopInEditable = false) const;
 
   /**
    * These two functions find a line start boundary within the same
@@ -181,6 +184,10 @@ class TextLeafPoint final {
 
   bool IsSpace() const;
 
+  bool IsParagraphStart() const {
+    return mOffset == 0 && FindParagraphSameAcc(eDirPrevious, true);
+  }
+
  private:
   bool IsEmptyLastLine() const;
 
@@ -196,8 +203,10 @@ class TextLeafPoint final {
   TextLeafPoint FindLineStartSameAcc(nsDirection aDirection,
                                      bool aIncludeOrigin) const;
 
-  TextLeafPoint FindLineEnd(nsDirection aDirection, bool aIncludeOrigin) const;
-  TextLeafPoint FindWordEnd(nsDirection aDirection, bool aIncludeOrigin) const;
+  TextLeafPoint FindLineEnd(nsDirection aDirection, bool aIncludeOrigin,
+                            bool aStopInEditable) const;
+  TextLeafPoint FindWordEnd(nsDirection aDirection, bool aIncludeOrigin,
+                            bool aStopInEditable) const;
 
   TextLeafPoint FindParagraphSameAcc(nsDirection aDirection,
                                      bool aIncludeOrigin) const;
@@ -223,15 +232,70 @@ class TextLeafRange final {
       : mStart(aStart), mEnd(aEnd) {}
   explicit TextLeafRange(const TextLeafPoint& aStart)
       : mStart(aStart), mEnd(aStart) {}
+  explicit TextLeafRange() {}
 
-  TextLeafPoint Start() { return mStart; }
+  /**
+   * A valid TextLeafRange evaluates to true. An invalid TextLeafRange
+   * evaluates to false.
+   */
+  explicit operator bool() const { return !!mStart && !!mEnd; }
+
+  bool operator!=(const TextLeafRange& aOther) const {
+    return mEnd != aOther.mEnd || mStart != aOther.mStart;
+  }
+
+  TextLeafPoint Start() const { return mStart; }
   void SetStart(const TextLeafPoint& aStart) { mStart = aStart; }
-  TextLeafPoint End() { return mEnd; }
+  TextLeafPoint End() const { return mEnd; }
   void SetEnd(const TextLeafPoint& aEnd) { mEnd = aEnd; }
 
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;
+
+ public:
+  /**
+   * A TextLeafRange iterator will iterate through single leaf segments of the
+   * given range.
+   */
+
+  class Iterator {
+   public:
+    Iterator(Iterator&& aOther)
+        : mRange(aOther.mRange),
+          mSegmentStart(aOther.mSegmentStart),
+          mSegmentEnd(aOther.mSegmentEnd) {}
+
+    static Iterator BeginIterator(const TextLeafRange& aRange);
+
+    static Iterator EndIterator(const TextLeafRange& aRange);
+
+    Iterator& operator++();
+
+    bool operator!=(const Iterator& aOther) const {
+      return mRange != aOther.mRange || mSegmentStart != aOther.mSegmentStart ||
+             mSegmentEnd != aOther.mSegmentEnd;
+    }
+
+    TextLeafRange operator*() {
+      return TextLeafRange(mSegmentStart, mSegmentEnd);
+    }
+
+   private:
+    explicit Iterator(const TextLeafRange& aRange) : mRange(aRange) {}
+
+    Iterator() = delete;
+    Iterator(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&) = delete;
+    Iterator& operator=(const Iterator&&) = delete;
+
+    const TextLeafRange& mRange;
+    TextLeafPoint mSegmentStart;
+    TextLeafPoint mSegmentEnd;
+  };
+
+  Iterator begin() const { return Iterator::BeginIterator(*this); }
+  Iterator end() const { return Iterator::EndIterator(*this); }
 };
 
 }  // namespace a11y

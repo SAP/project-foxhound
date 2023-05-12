@@ -270,6 +270,11 @@ static inline bool ProcessOwnsCompositor() {
 #endif
 
 bool DeviceManagerDx::CreateCompositorDevices() {
+  MutexAutoLock lock(mDeviceLock);
+  return CreateCompositorDevicesLocked();
+}
+
+bool DeviceManagerDx::CreateCompositorDevicesLocked() {
   MOZ_ASSERT(ProcessOwnsCompositor());
 
   FeatureState& d3d11 = gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
@@ -332,7 +337,7 @@ bool DeviceManagerDx::CreateVRDevice() {
     return false;
   }
 
-  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
+  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapterLocked();
   if (!adapter) {
     NS_WARNING("Failed to acquire a DXGI adapter for VR");
     return false;
@@ -355,6 +360,11 @@ bool DeviceManagerDx::CreateVRDevice() {
 }
 
 bool DeviceManagerDx::CreateCanvasDevice() {
+  MutexAutoLock lock(mDeviceLock);
+  return CreateCanvasDeviceLocked();
+}
+
+bool DeviceManagerDx::CreateCanvasDeviceLocked() {
   MOZ_ASSERT(ProcessOwnsCompositor());
 
   if (mCanvasDevice) {
@@ -365,7 +375,7 @@ bool DeviceManagerDx::CreateCanvasDevice() {
     return false;
   }
 
-  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
+  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapterLocked();
   if (!adapter) {
     NS_WARNING("Failed to acquire a DXGI adapter for Canvas");
     return false;
@@ -398,6 +408,11 @@ bool DeviceManagerDx::CreateCanvasDevice() {
 }
 
 void DeviceManagerDx::CreateDirectCompositionDevice() {
+  MutexAutoLock lock(mDeviceLock);
+  CreateDirectCompositionDeviceLocked();
+}
+
+void DeviceManagerDx::CreateDirectCompositionDeviceLocked() {
   if (!gfxVars::UseWebRenderDCompWin()) {
     return;
   }
@@ -458,10 +473,12 @@ HANDLE DeviceManagerDx::CreateDCompSurfaceHandle() {
 void DeviceManagerDx::ImportDeviceInfo(const D3D11DeviceStatus& aDeviceStatus) {
   MOZ_ASSERT(!ProcessOwnsCompositor());
 
+  MutexAutoLock lock(mDeviceLock);
   mDeviceStatus = Some(aDeviceStatus);
 }
 
 bool DeviceManagerDx::ExportDeviceInfo(D3D11DeviceStatus* aOut) {
+  MutexAutoLock lock(mDeviceLock);
   if (mDeviceStatus) {
     *aOut = mDeviceStatus.value();
     return true;
@@ -471,6 +488,11 @@ bool DeviceManagerDx::ExportDeviceInfo(D3D11DeviceStatus* aOut) {
 }
 
 void DeviceManagerDx::CreateContentDevices() {
+  MutexAutoLock lock(mDeviceLock);
+  CreateContentDevicesLocked();
+}
+
+void DeviceManagerDx::CreateContentDevicesLocked() {
   MOZ_ASSERT(gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING));
 
   if (!LoadD3D11()) {
@@ -486,7 +508,12 @@ void DeviceManagerDx::CreateContentDevices() {
   }
 }
 
-IDXGIAdapter1* DeviceManagerDx::GetDXGIAdapter() {
+already_AddRefed<IDXGIAdapter1> DeviceManagerDx::GetDXGIAdapter() {
+  MutexAutoLock lock(mDeviceLock);
+  return do_AddRef(GetDXGIAdapterLocked());
+}
+
+IDXGIAdapter1* DeviceManagerDx::GetDXGIAdapterLocked() {
   if (mAdapter) {
     return mAdapter;
   }
@@ -650,7 +677,7 @@ void DeviceManagerDx::CreateCompositorDevice(FeatureState& d3d11) {
     return;
   }
 
-  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
+  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapterLocked();
   if (!adapter) {
     d3d11.SetFailed(FeatureStatus::Unavailable,
                     "Failed to acquire a DXGI adapter",
@@ -701,15 +728,12 @@ void DeviceManagerDx::CreateCompositorDevice(FeatureState& d3d11) {
 
   uint32_t featureLevel = device->GetFeatureLevel();
   auto formatOptions = D3D11Checks::FormatOptions(device);
-  {
-    MutexAutoLock lock(mDeviceLock);
-    mCompositorDevice = device;
+  mCompositorDevice = device;
 
-    int32_t sequenceNumber = GetNextDeviceCounter();
-    mDeviceStatus = Some(D3D11DeviceStatus(
-        false, textureSharingWorks, featureLevel, DxgiAdapterDesc::From(desc),
-        sequenceNumber, formatOptions));
-  }
+  int32_t sequenceNumber = GetNextDeviceCounter();
+  mDeviceStatus = Some(D3D11DeviceStatus(
+      false, textureSharingWorks, featureLevel, DxgiAdapterDesc::From(desc),
+      sequenceNumber, formatOptions));
   mCompositorDevice->SetExceptionMode(0);
 }
 
@@ -805,15 +829,12 @@ void DeviceManagerDx::CreateWARPCompositorDevice() {
   int featureLevel = device->GetFeatureLevel();
 
   auto formatOptions = D3D11Checks::FormatOptions(device);
-  {
-    MutexAutoLock lock(mDeviceLock);
-    mCompositorDevice = device;
+  mCompositorDevice = device;
 
-    int32_t sequenceNumber = GetNextDeviceCounter();
-    mDeviceStatus = Some(D3D11DeviceStatus(
-        true, textureSharingWorks, featureLevel, DxgiAdapterDesc::From(desc),
-        sequenceNumber, formatOptions));
-  }
+  int32_t sequenceNumber = GetNextDeviceCounter();
+  mDeviceStatus = Some(D3D11DeviceStatus(
+      true, textureSharingWorks, featureLevel, DxgiAdapterDesc::From(desc),
+      sequenceNumber, formatOptions));
   mCompositorDevice->SetExceptionMode(0);
 
   reporterWARP.SetSuccessful();
@@ -822,7 +843,7 @@ void DeviceManagerDx::CreateWARPCompositorDevice() {
 FeatureStatus DeviceManagerDx::CreateContentDevice() {
   RefPtr<IDXGIAdapter1> adapter;
   if (!mDeviceStatus->isWARP()) {
-    adapter = GetDXGIAdapter();
+    adapter = GetDXGIAdapterLocked();
     if (!adapter) {
       gfxCriticalNote << "Could not get a DXGI adapter";
       return FeatureStatus::Unavailable;
@@ -865,10 +886,7 @@ FeatureStatus DeviceManagerDx::CreateContentDevice() {
     MOZ_ASSERT(ok);
   }
 
-  {
-    MutexAutoLock lock(mDeviceLock);
-    mContentDevice = device;
-  }
+  mContentDevice = device;
   mContentDevice->SetExceptionMode(0);
 
   RefPtr<ID3D10Multithread> multi;
@@ -882,15 +900,13 @@ FeatureStatus DeviceManagerDx::CreateContentDevice() {
 
 RefPtr<ID3D11Device> DeviceManagerDx::CreateDecoderDevice(
     bool aHardwareWebRender) {
-  bool isAMD = false;
-  {
-    MutexAutoLock lock(mDeviceLock);
-    if (!mDeviceStatus) {
-      return nullptr;
-    }
-    isAMD = mDeviceStatus->adapter().VendorId == 0x1002;
+  MutexAutoLock lock(mDeviceLock);
+
+  if (!mDeviceStatus) {
+    return nullptr;
   }
 
+  bool isAMD = mDeviceStatus->adapter().VendorId == 0x1002;
   bool reuseDevice = false;
   if (gfxVars::ReuseDecoderDevice()) {
     reuseDevice = true;
@@ -924,7 +940,7 @@ RefPtr<ID3D11Device> DeviceManagerDx::CreateDecoderDevice(
     return nullptr;
   }
 
-  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
+  RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapterLocked();
   if (!adapter) {
     return nullptr;
   }
@@ -961,8 +977,8 @@ static HRESULT SetDebugName(T* d3d11Object, const char* debugString) {
 }
 
 RefPtr<ID3D11Device> DeviceManagerDx::CreateMediaEngineDevice() {
-  if (!sD3D11CreateDeviceFn) {
-    // We should just be on Windows Vista or XP in this case.
+  MutexAutoLock lock(mDeviceLock);
+  if (!LoadD3D11()) {
     return nullptr;
   }
 
@@ -989,13 +1005,18 @@ RefPtr<ID3D11Device> DeviceManagerDx::CreateMediaEngineDevice() {
 
 void DeviceManagerDx::ResetDevices() {
   MutexAutoLock lock(mDeviceLock);
+  ResetDevicesLocked();
+}
 
+void DeviceManagerDx::ResetDevicesLocked() {
   mAdapter = nullptr;
   mCompositorAttachments = nullptr;
   mCompositorDevice = nullptr;
   mContentDevice = nullptr;
   mCanvasDevice = nullptr;
   mImageDevice = nullptr;
+  mVRDevice = nullptr;
+  mDecoderDevice = nullptr;
   mDirectCompositionDevice = nullptr;
   mDeviceStatus = Nothing();
   mDeviceResetReason = Nothing();
@@ -1003,8 +1024,10 @@ void DeviceManagerDx::ResetDevices() {
 }
 
 bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
+  MutexAutoLock lock(mDeviceLock);
+
   DeviceResetReason resetReason;
-  if (!HasDeviceReset(&resetReason)) {
+  if (!HasDeviceResetLocked(&resetReason)) {
     return false;
   }
 
@@ -1015,20 +1038,20 @@ bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
   bool createCanvasDevice = !!mCanvasDevice;
   bool createDirectCompositionDevice = !!mDirectCompositionDevice;
 
-  ResetDevices();
+  ResetDevicesLocked();
 
-  if (createCompositorDevice && !CreateCompositorDevices()) {
+  if (createCompositorDevice && !CreateCompositorDevicesLocked()) {
     // Just stop, don't try anything more
     return true;
   }
   if (createContentDevice) {
-    CreateContentDevices();
+    CreateContentDevicesLocked();
   }
   if (createCanvasDevice) {
-    CreateCanvasDevice();
+    CreateCanvasDeviceLocked();
   }
   if (createDirectCompositionDevice) {
-    CreateDirectCompositionDevice();
+    CreateDirectCompositionDeviceLocked();
   }
 
   return true;
@@ -1078,7 +1101,10 @@ static DeviceResetReason HResultToResetReason(HRESULT hr) {
 
 bool DeviceManagerDx::HasDeviceReset(DeviceResetReason* aOutReason) {
   MutexAutoLock lock(mDeviceLock);
+  return HasDeviceResetLocked(aOutReason);
+}
 
+bool DeviceManagerDx::HasDeviceResetLocked(DeviceResetReason* aOutReason) {
   if (mDeviceResetReason) {
     if (aOutReason) {
       *aOutReason = mDeviceResetReason.value();
@@ -1113,10 +1139,6 @@ static inline bool DidDeviceReset(const RefPtr<ID3D11Device>& aDevice,
 }
 
 bool DeviceManagerDx::GetAnyDeviceRemovedReason(DeviceResetReason* aOutReason) {
-  // Caller must own the lock, since we access devices directly, and can be
-  // called from any thread.
-  mDeviceLock.AssertCurrentThreadOwns();
-
   if (DidDeviceReset(mCompositorDevice, aOutReason) ||
       DidDeviceReset(mContentDevice, aOutReason) ||
       DidDeviceReset(mCanvasDevice, aOutReason)) {
@@ -1213,6 +1235,7 @@ RefPtr<IDCompositionDevice2> DeviceManagerDx::GetDirectCompositionDevice() {
 }
 
 unsigned DeviceManagerDx::GetCompositorFeatureLevel() const {
+  MutexAutoLock lock(mDeviceLock);
   if (!mDeviceStatus) {
     return 0;
   }

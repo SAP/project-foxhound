@@ -22,11 +22,12 @@
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/Printf.h"
 #include "js/Value.h"
+#include "vm/BigIntType.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
-#include "wasm/TypedObject.h"
+#include "wasm/WasmGcObject.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmLog.h"
 
@@ -65,12 +66,21 @@ void Val::readFromRootedLocation(const void* loc) {
   memcpy(&cell_, loc, type_.size());
 }
 
+void Val::initFromRootedLocation(ValType type, const void* loc) {
+  MOZ_ASSERT(!type_.isValid());
+  type_ = type;
+  memset(&cell_, 0, sizeof(Cell));
+  memcpy(&cell_, loc, type_.size());
+}
+
 void Val::writeToRootedLocation(void* loc, bool mustWrite64) const {
   memcpy(loc, &cell_, type_.size());
   if (mustWrite64 && type_.size() == 4) {
     memset((uint8_t*)(loc) + 4, 0, 4);
   }
 }
+
+void Val::readFromHeapLocation(void* loc) { memcpy(&cell_, loc, type_.size()); }
 
 void Val::writeToHeapLocation(void* loc) const {
   if (type_.isRefRepr()) {
@@ -165,8 +175,8 @@ bool wasm::CheckEqRefValue(JSContext* cx, HandleValue v,
 
   if (v.isObject()) {
     JSObject& obj = v.toObject();
-    if (obj.is<TypedObject>()) {
-      vp.set(AnyRef::fromJSObject(&obj.as<TypedObject>()));
+    if (obj.is<WasmGcObject>()) {
+      vp.set(AnyRef::fromJSObject(&obj.as<WasmGcObject>()));
       return true;
     }
   }
@@ -465,8 +475,8 @@ bool ToJSValue_anyref(JSContext* cx, void* src, MutableHandleValue dst) {
 template <typename Debug = NoDebug>
 bool ToJSValue_lossless(JSContext* cx, const void* src, MutableHandleValue dst,
                         ValType type) {
-  RootedVal srcVal(cx, type);
-  srcVal.get().readFromRootedLocation(src);
+  RootedVal srcVal(cx);
+  srcVal.get().initFromRootedLocation(type, src);
   RootedObject prototype(
       cx, GlobalObject::getOrCreatePrototype(cx, JSProto_WasmGlobal));
   Rooted<WasmGlobalObject*> srcGlobal(

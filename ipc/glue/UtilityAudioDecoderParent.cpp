@@ -25,22 +25,44 @@
 #  include "AndroidDecoderModule.h"
 #endif
 
+#include "mozilla/ipc/UtilityProcessChild.h"
+#include "mozilla/RemoteDecodeUtils.h"
+
+#ifdef MOZ_WMF_MEDIA_ENGINE
+#  include "mozilla/gfx/DeviceManagerDx.h"
+#  include "mozilla/gfx/gfxVars.h"
+#  include "gfxConfig.h"
+#endif
+
 namespace mozilla::ipc {
 
 UtilityAudioDecoderParent::UtilityAudioDecoderParent() {
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  if (GetCurrentSandboxingKind() == SandboxingKind::MF_MEDIA_ENGINE_CDM) {
+    nsDebugImpl::SetMultiprocessMode("MF Media Engine CDM");
+    profiler_set_process_name(nsCString("MF Media Engine CDM"));
+    gfx::gfxConfig::Init();
+    gfx::DeviceManagerDx::Init();
+    return;
+  }
+#endif
   nsDebugImpl::SetMultiprocessMode("Utility AudioDecoder");
   profiler_set_process_name(nsCString("Utility AudioDecoder"));
 }
 
 /* static */
-void UtilityAudioDecoderParent::PreloadForSandbox() {
+void UtilityAudioDecoderParent::GenericPreloadForSandbox() {
 #if defined(MOZ_SANDBOX) && defined(OS_WIN)
   // Preload AV dlls so we can enable Binary Signature Policy
   // to restrict further dll loads.
   ::LoadLibraryW(L"mozavcodec.dll");
   ::LoadLibraryW(L"mozavutil.dll");
+#endif  // defined(MOZ_SANDBOX) && defined(OS_WIN)
+}
 
-  // WMF
+/* static */
+void UtilityAudioDecoderParent::WMFPreloadForSandbox() {
+#if defined(MOZ_SANDBOX) && defined(OS_WIN)
   ::LoadLibraryW(L"mfplat.dll");
   ::LoadLibraryW(L"mf.dll");
 
@@ -54,6 +76,15 @@ void UtilityAudioDecoderParent::PreloadForSandbox() {
     NS_WARNING("Failed to init Media Foundation in the Utility process");
   }
 #endif  // defined(MOZ_SANDBOX) && defined(OS_WIN)
+}
+
+/* static */
+SandboxingKind UtilityAudioDecoderParent::GetSandboxingKind() {
+  RefPtr<UtilityProcessChild> me = UtilityProcessChild::GetSingleton();
+  if (!me) {
+    MOZ_CRASH("I cant find myself");
+  }
+  return me->mSandbox;
 }
 
 void UtilityAudioDecoderParent::Start(
@@ -71,7 +102,8 @@ void UtilityAudioDecoderParent::Start(
 #endif
 
   auto supported = PDMFactory::Supported();
-  Unused << SendUpdateMediaCodecsSupported(std::move(supported));
+  Unused << SendUpdateMediaCodecsSupported(
+      GetRemoteDecodeInFromKind(GetSandboxingKind()), supported);
 }
 
 mozilla::ipc::IPCResult
@@ -83,5 +115,47 @@ UtilityAudioDecoderParent::RecvNewContentRemoteDecoderManager(
   }
   return IPC_OK();
 }
+
+#ifdef MOZ_WMF_MEDIA_ENGINE
+mozilla::ipc::IPCResult UtilityAudioDecoderParent::RecvInitVideoBridge(
+    Endpoint<PVideoBridgeChild>&& aEndpoint,
+    nsTArray<gfx::GfxVarUpdate>&& aUpdates,
+    const ContentDeviceData& aContentDeviceData) {
+  MOZ_ASSERT(GetCurrentSandboxingKind() == SandboxingKind::MF_MEDIA_ENGINE_CDM);
+  if (!RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
+          std::move(aEndpoint))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  for (const auto& update : aUpdates) {
+    gfx::gfxVars::ApplyUpdate(update);
+  }
+
+  gfx::gfxConfig::Inherit(
+      {
+          gfx::Feature::HW_COMPOSITING,
+          gfx::Feature::D3D11_COMPOSITING,
+          gfx::Feature::OPENGL_COMPOSITING,
+          gfx::Feature::DIRECT2D,
+      },
+      aContentDeviceData.prefs());
+
+  if (gfx::gfxConfig::IsEnabled(gfx::Feature::D3D11_COMPOSITING)) {
+    if (auto* devmgr = gfx::DeviceManagerDx::Get()) {
+      devmgr->ImportDeviceInfo(aContentDeviceData.d3d11());
+    }
+  }
+
+  Unused << SendCompleteCreatedVideoBridge();
+  return IPC_OK();
+}
+
+IPCResult UtilityAudioDecoderParent::RecvUpdateVar(
+    const GfxVarUpdate& aUpdate) {
+  MOZ_ASSERT(GetCurrentSandboxingKind() == SandboxingKind::MF_MEDIA_ENGINE_CDM);
+  gfx::gfxVars::ApplyUpdate(aUpdate);
+  return IPC_OK();
+}
+#endif
 
 }  // namespace mozilla::ipc

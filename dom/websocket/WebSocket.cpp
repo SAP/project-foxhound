@@ -152,9 +152,9 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
   bool IsTargetThread() const;
 
-  nsresult Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
-                nsIPrincipal* aPrincipal, bool aIsServerSide,
-                const nsAString& aURL, nsTArray<nsString>& aProtocolArray,
+  nsresult Init(JSContext* aCx, bool aIsSecure, nsIPrincipal* aPrincipal,
+                bool aIsServerSide, const nsAString& aURL,
+                nsTArray<nsString>& aProtocolArray,
                 const nsACString& aScriptFile, uint32_t aScriptLine,
                 uint32_t aScriptColumn);
 
@@ -197,7 +197,7 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
   nsresult CancelInternal();
 
-  nsresult GetLoadingPrincipal(nsIPrincipal** aPrincipal);
+  nsresult IsSecure(bool* aValue);
 
   RefPtr<WebSocket> mWebSocket;
 
@@ -1119,10 +1119,10 @@ class InitRunnable final : public WebSocketMainThreadRunnable {
       return true;
     }
 
-    mErrorCode =
-        mImpl->Init(jsapi.cx(), mWorkerPrivate->GetPrincipal(),
-                    doc->NodePrincipal(), mIsServerSide, mURL, mProtocolArray,
-                    mScriptFile, mScriptLine, mScriptColumn);
+    mErrorCode = mImpl->Init(
+        jsapi.cx(), mWorkerPrivate->GetPrincipal()->SchemeIs("https"),
+        doc->NodePrincipal(), mIsServerSide, mURL, mProtocolArray, mScriptFile,
+        mScriptLine, mScriptColumn);
     return true;
   }
 
@@ -1131,7 +1131,7 @@ class InitRunnable final : public WebSocketMainThreadRunnable {
     MOZ_ASSERT(aTopLevelWorkerPrivate && !aTopLevelWorkerPrivate->GetWindow());
 
     mErrorCode =
-        mImpl->Init(nullptr, mWorkerPrivate->GetPrincipal(),
+        mImpl->Init(nullptr, mWorkerPrivate->GetPrincipal()->SchemeIs("https"),
                     aTopLevelWorkerPrivate->GetPrincipal(), mIsServerSide, mURL,
                     mProtocolArray, mScriptFile, mScriptLine, mScriptColumn);
     return true;
@@ -1319,13 +1319,13 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
       webSocket->GetOwner()->UpdateWebSocketCount(1);
     }
 
-    nsCOMPtr<nsIPrincipal> loadingPrincipal;
-    aRv = webSocketImpl->GetLoadingPrincipal(getter_AddRefs(loadingPrincipal));
+    bool isSecure = principal->SchemeIs("https");
+    aRv = webSocketImpl->IsSecure(&isSecure);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
 
-    aRv = webSocketImpl->Init(aGlobal.Context(), loadingPrincipal, principal,
+    aRv = webSocketImpl->Init(aGlobal.Context(), isSecure, principal,
                               !!aTransportProvider, aUrl, protocolArray, ""_ns,
                               0, 0);
 
@@ -1535,7 +1535,7 @@ void WebSocket::DisconnectFromOwner() {
 // WebSocketImpl:: initialization
 //-----------------------------------------------------------------------------
 
-nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
+nsresult WebSocketImpl::Init(JSContext* aCx, bool aIsSecure,
                              nsIPrincipal* aPrincipal, bool aIsServerSide,
                              const nsAString& aURL,
                              nsTArray<nsString>& aProtocolArray,
@@ -1704,7 +1704,7 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
                             false) &&
       !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
           mAsciiHost)) {
-    if (aLoadingPrincipal->SchemeIs("https")) {
+    if (aIsSecure) {
       return NS_ERROR_DOM_SECURITY_ERR;
     }
   }
@@ -2566,6 +2566,19 @@ class CancelRunnable final : public MainThreadWorkerRunnable {
 
 }  // namespace
 
+NS_IMETHODIMP WebSocketImpl::SetCanceledReason(const nsACString& aReason) {
+  return SetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP WebSocketImpl::GetCanceledReason(nsACString& aReason) {
+  return GetCanceledReasonImpl(aReason);
+}
+
+NS_IMETHODIMP WebSocketImpl::CancelWithReason(nsresult aStatus,
+                                              const nsACString& aReason) {
+  return CancelWithReasonImpl(aStatus, aReason);
+}
+
 // Window closed, stop/reload button pressed, user navigated away from page,
 // etc.
 NS_IMETHODIMP
@@ -2800,7 +2813,7 @@ void WebSocket::AssertIsOnTargetThread() const {
   MOZ_ASSERT(NS_IsMainThread() == mIsMainThread);
 }
 
-nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
+nsresult WebSocketImpl::IsSecure(bool* aValue) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mIsMainThread);
 
@@ -2817,32 +2830,26 @@ nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
     // If we are in a XPConnect sandbox or in a JS component,
     // innerWindow will be null. There is nothing on top of this to be
     // considered.
-    principal.forget(aPrincipal);
+    if (NS_WARN_IF(!principal)) {
+      return NS_OK;
+    }
+    *aValue = principal->SchemeIs("https");
     return NS_OK;
   }
 
   RefPtr<WindowContext> windowContext = innerWindow->GetWindowContext();
+  if (NS_WARN_IF(!windowContext)) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
 
   while (true) {
-    if (principal && !principal->GetIsNullPrincipal()) {
-      break;
-    }
-
-    if (NS_WARN_IF(!windowContext)) {
-      return NS_ERROR_DOM_SECURITY_ERR;
+    if (windowContext->GetIsSecure()) {
+      *aValue = true;
+      return NS_OK;
     }
 
     if (windowContext->IsTop()) {
-      if (!windowContext->GetBrowsingContext()->HadOriginalOpener()) {
-        break;
-      }
-      // We are at the top. Let's see if we have an opener window.
-      RefPtr<BrowsingContext> opener =
-          windowContext->GetBrowsingContext()->GetOpener();
-      if (!opener) {
-        break;
-      }
-      windowContext = opener->GetCurrentWindowContext();
+      break;
     } else {
       // If we're not a top window get the parent window context instead.
       windowContext = windowContext->GetParentWindowContext();
@@ -2851,16 +2858,9 @@ nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
     if (NS_WARN_IF(!windowContext)) {
       return NS_ERROR_DOM_SECURITY_ERR;
     }
-
-    nsCOMPtr<Document> document = windowContext->GetExtantDoc();
-    if (NS_WARN_IF(!document)) {
-      return NS_ERROR_DOM_SECURITY_ERR;
-    }
-
-    principal = document->NodePrincipal();
   }
 
-  principal.forget(aPrincipal);
+  *aValue = windowContext->GetIsSecure();
   return NS_OK;
 }
 

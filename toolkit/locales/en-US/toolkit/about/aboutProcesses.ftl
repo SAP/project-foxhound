@@ -122,9 +122,13 @@ about-processes-frame-name-one = Subframe: { $url }
 #   $shortUrl (String) The shared prefix for the subframes in the group.
 about-processes-frame-name-many = Subframes ({ $number }): { $shortUrl }
 
-# Utility process actor names
+## Utility process actor names
+
 about-processes-utility-actor-unknown = Unknown actor
-about-processes-utility-actor-audio-decoder = Audio Decoder
+about-processes-utility-actor-audio-decoder-generic = Generic Audio Decoder
+about-processes-utility-actor-audio-decoder-applemedia = Apple Media Audio Decoder
+about-processes-utility-actor-audio-decoder-wmf = Windows Media Framework Audio Decoder
+about-processes-utility-actor-mf-media-engine = Windows Media Foundation Media Engine CDM
 
 ## Displaying CPU (percentage and total)
 ## Variables:

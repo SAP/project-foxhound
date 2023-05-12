@@ -20,11 +20,14 @@
 #include "jit/ScriptFromCalleeToken.h"
 #include "jit/TrialInlining.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/Compartment.h"
 #include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
+#include "vm/JitActivation.h"
 #include "vm/JSScript.h"
 
 #include "gc/GCContext-inl.h"
 #include "jit/JSJitFrameIter-inl.h"
+#include "vm/JSContext-inl.h"
 #include "vm/JSScript-inl.h"
 
 using namespace js;
@@ -433,16 +436,14 @@ bool JitScript::ensureHasCachedIonData(JSContext* cx, HandleScript script) {
     RootedFunction fun(cx, script->function());
 
     if (fun->needsNamedLambdaEnvironment()) {
-      templateEnv =
-          NamedLambdaObject::createTemplateObject(cx, fun, gc::TenuredHeap);
+      templateEnv = NamedLambdaObject::createTemplateObject(cx, fun);
       if (!templateEnv) {
         return false;
       }
     }
 
     if (fun->needsCallObject()) {
-      templateEnv = CallObject::createTemplateObject(cx, script, templateEnv,
-                                                     gc::TenuredHeap);
+      templateEnv = CallObject::createTemplateObject(cx, script, templateEnv);
       if (!templateEnv) {
         return false;
       }

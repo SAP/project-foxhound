@@ -19,19 +19,17 @@
 #include "ds/Sort.h"
 #include "frontend/BytecodeCompiler.h"  // js::frontend::CompileModule
 #include "js/Context.h"                 // js::AssertHeapIsIdle
-#include "js/PropertyAndElement.h"
-#include "js/RootingAPI.h"         // JS::MutableHandle
-#include "js/Value.h"              // JS::Value
-#include "vm/EnvironmentObject.h"  // js::ModuleEnvironmentObject
-#include "vm/ErrorContext.h"       // js::MainThreadErrorContext
-#include "vm/JSContext.h"          // CHECK_THREAD, JSContext
-#include "vm/JSObject.h"           // JSObject
-#include "vm/List.h"               // ListObject
-#include "vm/Runtime.h"            // JSRuntime
+#include "js/RootingAPI.h"              // JS::MutableHandle
+#include "js/Value.h"                   // JS::Value
+#include "vm/EnvironmentObject.h"       // js::ModuleEnvironmentObject
+#include "vm/ErrorContext.h"            // js::MainThreadErrorContext
+#include "vm/JSContext.h"               // CHECK_THREAD, JSContext
+#include "vm/JSObject.h"                // JSObject
+#include "vm/List.h"                    // ListObject
+#include "vm/Runtime.h"                 // JSRuntime
 
-#include "builtin/Array-inl.h"
+#include "vm/JSAtom-inl.h"
 #include "vm/JSContext-inl.h"  // JSContext::{c,releaseC}heck
-#include "vm/JSObject-inl.h"
 
 using namespace js;
 
@@ -333,6 +331,25 @@ static bool GatherAvailableModuleAncestors(
     JSContext* cx, Handle<ModuleObject*> module,
     MutableHandle<ModuleVector> execList);
 
+static const char* ModuleStatusName(ModuleStatus status) {
+  switch (status) {
+    case ModuleStatus::Unlinked:
+      return "Unlinked";
+    case ModuleStatus::Linking:
+      return "Linking";
+    case ModuleStatus::Linked:
+      return "Linked";
+    case ModuleStatus::Evaluating:
+      return "Evaluating";
+    case ModuleStatus::EvaluatingAsync:
+      return "EvaluatingAsync";
+    case ModuleStatus::Evaluated:
+      return "Evaluated";
+    default:
+      MOZ_CRASH("Unexpected ModuleStatus");
+  }
+}
+
 static ArrayObject* NewList(JSContext* cx) {
   // Note that this creates an ArrayObject, not a ListObject (see vm/List.h).
   // Self hosted code currently depends on the length property being present.
@@ -486,7 +503,8 @@ static ModuleObject* HostResolveImportedModule(
 
   if (requestedModule->status() < expectedMinimumStatus) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_BAD_MODULE_STATUS);
+                              JSMSG_BAD_MODULE_STATUS,
+                              ModuleStatusName(requestedModule->status()));
     return nullptr;
   }
 
@@ -1049,8 +1067,13 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
 // ES2023 16.2.1.5.1 Link
 bool js::ModuleLink(JSContext* cx, Handle<ModuleObject*> module) {
   // Step 1. Assert: module.[[Status]] is not linking or evaluating.
-  MOZ_ASSERT(module->status() != ModuleStatus::Linking &&
-             module->status() != ModuleStatus::Evaluating);
+  ModuleStatus status = module->status();
+  if (status == ModuleStatus::Linking || status == ModuleStatus::Evaluating) {
+    JS_ReportErrorNumberLatin1(cx, GetErrorMessage, nullptr,
+                               JSMSG_BAD_MODULE_STATUS,
+                               ModuleStatusName(status));
+    return false;
+  }
 
   // Step 2. Let stack be a new empty List.
   Rooted<ModuleVector> stack(cx);
@@ -1108,8 +1131,9 @@ static bool InnerModuleLinking(JSContext* cx, Handle<ModuleObject*> module,
 
   // Step 3. Assert: module.[[Status]] is unlinked.
   if (module->status() != ModuleStatus::Unlinked) {
-    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_BAD_MODULE_STATUS);
+    JS_ReportErrorNumberLatin1(cx, GetErrorMessage, nullptr,
+                               JSMSG_BAD_MODULE_STATUS,
+                               ModuleStatusName(module->status()));
     return false;
   }
 
@@ -1224,11 +1248,12 @@ bool js::ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
 
   // Step 2. Assert: module.[[Status]] is linked, evaluating-async, or
   //         evaluated.
-  if (module->status() != ModuleStatus::Linked &&
-      module->status() != ModuleStatus::EvaluatingAsync &&
-      module->status() != ModuleStatus::Evaluated) {
+  ModuleStatus status = module->status();
+  if (status != ModuleStatus::Linked &&
+      status != ModuleStatus::EvaluatingAsync &&
+      status != ModuleStatus::Evaluated) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_BAD_MODULE_STATUS);
+                             JSMSG_BAD_MODULE_STATUS, ModuleStatusName(status));
     return false;
   }
 
@@ -1305,7 +1330,7 @@ bool js::ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
     }
 
     // Handle OOM when appending to the stack or over-recursion errors.
-    if (stack.empty()) {
+    if (stack.empty() && !module->hadEvaluationError()) {
       module->setEvaluationError(error);
     }
 

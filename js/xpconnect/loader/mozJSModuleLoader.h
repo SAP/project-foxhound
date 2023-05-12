@@ -18,6 +18,7 @@
 #include "nsClassHashtable.h"
 #include "jsapi.h"
 #include "js/experimental/JSStencil.h"
+#include "SkipCheckForBrokenURLOrZeroSized.h"
 
 #include "xpcpublic.h"
 
@@ -27,6 +28,10 @@ class ModuleLoaderInfo;
 namespace mozilla {
 class ScriptPreloader;
 }  // namespace mozilla
+
+namespace JS::loader {
+class ModuleLoadRequest;
+}  // namespace JS::loader
 
 #if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION) || defined(DEBUG)
 #  define STARTUP_RECORDER_ENABLED
@@ -71,8 +76,11 @@ class mozJSModuleLoader final : public nsIMemoryReporter {
                   bool aIgnoreExports = false);
 
   // Load an ES6 module and all its dependencies.
-  nsresult ImportESModule(JSContext* aCx, const nsACString& aResourceURI,
-                          JS::MutableHandleObject aModuleNamespace);
+  nsresult ImportESModule(
+      JSContext* aCx, const nsACString& aResourceURI,
+      JS::MutableHandleObject aModuleNamespace,
+      mozilla::loader::SkipCheckForBrokenURLOrZeroSized aSkipCheck =
+          mozilla::loader::SkipCheckForBrokenURLOrZeroSized::No);
 
   // Fallback from Import to ImportESModule.
   nsresult TryFallbackToImportESModule(JSContext* aCx,
@@ -103,8 +111,9 @@ class mozJSModuleLoader final : public nsIMemoryReporter {
 
   // Public methods for use from ComponentModuleLoader.
   static bool IsTrustedScheme(nsIURI* aURI);
-  static nsresult LoadSingleModuleScript(JSContext* aCx, nsIURI* aURI,
-                                         JS::MutableHandleScript aScriptOut);
+  static nsresult LoadSingleModuleScript(
+      JSContext* aCx, JS::loader::ModuleLoadRequest* aRequest,
+      JS::MutableHandleScript aScriptOut);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 

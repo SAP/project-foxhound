@@ -41,6 +41,12 @@
 #include "shared-libraries.h"
 #include "zlib.h"
 
+#ifndef ANDROID
+#  include <cstdio>
+#else
+#  include <android/log.h>
+#endif
+
 using namespace mozilla;
 
 using dom::AutoJSAPI;
@@ -1129,7 +1135,8 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
     return GatheringPromise::CreateAndReject(NS_ERROR_OUT_OF_MEMORY, __func__);
   }
 
-  mWriter.emplace();
+  mFailureLatchSource.emplace();
+  mWriter.emplace(*mFailureLatchSource);
 
   UniquePtr<ProfilerCodeAddressService> service =
       profiler_code_address_service_for_presymbolication();
@@ -1364,6 +1371,18 @@ void nsProfiler::FinishGathering() {
   // Close the root object of the generated JSON.
   mWriter->End();
 
+  if (const char* failure = mWriter->GetFailure(); failure) {
+#ifndef ANDROID
+    fprintf(stderr, "JSON generation failure: %s", failure);
+#else
+    __android_log_print(ANDROID_LOG_INFO, "GeckoProfiler",
+                        "JSON generation failure: %s", failure);
+#endif
+    NS_WARNING("Error during JSON generation, probably OOM.");
+    ResetGathering(NS_ERROR_OUT_OF_MEMORY);
+    return;
+  }
+
   // And try to resolve the promise with the profile JSON.
   const size_t len = mWriter->ChunkedWriteFunc().Length();
   if (len >= scLengthMax) {
@@ -1391,11 +1410,15 @@ void nsProfiler::FinishGathering() {
 
   // Here, we have enough space reserved in `result`, starting at
   // `resultBeginWriting`, copy the JSON profile there.
-  mWriter->ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
-      [&](size_t aBufferLen) -> char* {
-        MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
-        return resultBeginWriting;
-      });
+  if (!mWriter->ChunkedWriteFunc().CopyDataIntoLazilyAllocatedBuffer(
+          [&](size_t aBufferLen) -> char* {
+            MOZ_RELEASE_ASSERT(aBufferLen == len + 1);
+            return resultBeginWriting;
+          })) {
+    NS_WARNING("Could not copy profile JSON, probably OOM.");
+    ResetGathering(NS_ERROR_FILE_TOO_BIG);
+    return;
+  }
   MOZ_ASSERT(*(result.Data() + len) == '\0',
              "We still expected a null at the end of the string buffer");
 
@@ -1419,4 +1442,5 @@ void nsProfiler::ResetGathering(nsresult aPromiseRejectionIfPending) {
     mGatheringTimer = nullptr;
   }
   mWriter.reset();
+  mFailureLatchSource.reset();
 }

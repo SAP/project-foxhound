@@ -16,10 +16,8 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Range.h"
-#include "mozilla/Utf8.h"
 
 #include <algorithm>
-#include <iterator>
 #include <string.h>
 
 #include "jsapi.h"
@@ -27,31 +25,25 @@
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
-#include "builtin/Eval.h"
 #include "builtin/Object.h"
-#include "builtin/SelfHostingDefines.h"
 #include "builtin/Symbol.h"
 #include "frontend/BytecodeCompilation.h"
 #include "frontend/BytecodeCompiler.h"
-#include "gc/Marking.h"
-#include "gc/Policy.h"
 #include "jit/Ion.h"
-#include "js/CallAndConstruct.h"  // JS::IsCallable
 #include "js/CallNonGenericMethod.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/PropertySpec.h"
-#include "js/Proxy.h"
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "js/Wrapper.h"
+#include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
-#include "vm/AsyncFunction.h"
-#include "vm/AsyncIteration.h"
 #include "vm/BooleanObject.h"
+#include "vm/Compartment.h"
 #include "vm/ErrorContext.h"           // MainThreadErrorContext
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
@@ -65,28 +57,22 @@
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SelfHosting.h"
 #include "vm/Shape.h"
-#include "vm/SharedImmutableStringsCache.h"
 #include "vm/StringObject.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
-#include "vm/WrapperObject.h"
 #include "wasm/AsmJS.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
 #  include "vm/TupleType.h"
 #endif
 
-#include "debugger/DebugAPI-inl.h"
-#include "vm/FrameIter-inl.h"  // js::FrameIter::unaliasedForEachActual
 #include "vm/Interpreter-inl.h"
 #include "vm/JSScript-inl.h"
-#include "vm/Stack-inl.h"
 
 using namespace js;
 
 using mozilla::CheckedInt;
 using mozilla::Maybe;
 using mozilla::Some;
-using mozilla::Utf8Unit;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
@@ -99,7 +85,7 @@ static bool fun_enumerate(JSContext* cx, HandleObject obj) {
   RootedId id(cx);
   bool found;
 
-  if (!obj->isBoundFunction() && !obj->as<JSFunction>().isArrow()) {
+  if (obj->as<JSFunction>().needsPrototypeProperty()) {
     id = NameToId(cx->names().prototype);
     if (!HasOwnProperty(cx, obj, id, &found)) {
       return false;
@@ -607,7 +593,7 @@ bool JS::OrdinaryHasInstance(JSContext* cx, HandleObject objArg, HandleValue v,
   }
 
   /* Step 2. */
-  if (obj->is<JSFunction>() && obj->isBoundFunction()) {
+  if (obj->is<JSFunction>() && obj->as<JSFunction>().isBoundFunction()) {
     /* Steps 2a-b. */
     AutoCheckRecursionLimit recursion(cx);
     if (!recursion.check(cx)) {
@@ -1949,8 +1935,9 @@ bool js::GetFunctionPrototype(JSContext* cx, js::GeneratorKind generatorKind,
   return !!proto;
 }
 
-bool js::CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
-                                HandleObject newEnclosingEnv) {
+#ifdef DEBUG
+static bool CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
+                                   HandleObject newEnclosingEnv) {
   MOZ_ASSERT(fun->isInterpreted());
 
   if (realm != fun->realm()) {
@@ -1977,6 +1964,7 @@ bool js::CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
   return script->hasNonSyntacticScope() ||
          script->enclosingScope()->hasOnChain(ScopeKind::NonSyntactic);
 }
+#endif
 
 static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
                                            HandleObject proto) {

@@ -197,6 +197,7 @@ export class _DSCard extends React.PureComponent {
               ...(this.props.shim && this.props.shim.click
                 ? { shim: this.props.shim.click }
                 : {}),
+              type: this.props.flightId ? "spoc" : "organic",
             },
           ],
         })
@@ -218,6 +219,7 @@ export class _DSCard extends React.PureComponent {
           event: "SAVE_TO_POCKET",
           source: "CARDGRID_HOVER",
           action_position: this.props.pos,
+          value: { card_type: this.props.flightId ? "spoc" : "organic" },
         })
       );
 
@@ -362,6 +364,9 @@ export class _DSCard extends React.PureComponent {
               source={this.props.image_src}
               rawSource={this.props.raw_image_src}
               sizes={this.dsImageSizes}
+              url={this.props.url}
+              title={this.props.title}
+              isRecentSave={isRecentSave}
             />
           </div>
           <DefaultMeta
@@ -398,12 +403,12 @@ export class _DSCard extends React.PureComponent {
                 {this.props.context_type === "pocket" ? (
                   <>
                     <span className="story-badge-icon icon icon-pocket" />
-                    <span data-l10n-id="newtab-pocket-saved-to-pocket" />
+                    <span data-l10n-id="newtab-pocket-saved" />
                   </>
                 ) : (
                   <>
                     <span className="story-badge-icon icon icon-pocket-save" />
-                    <span data-l10n-id="newtab-pocket-save-to-pocket" />
+                    <span data-l10n-id="newtab-pocket-save" />
                   </>
                 )}
               </button>

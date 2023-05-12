@@ -50,6 +50,18 @@ function notifyBackgroundScriptStatus(addonId, isRunning) {
   Services.obs.notifyObservers(subject, "extension:background-script-status");
 }
 
+// Same as nsITelemetry msSinceProcessStartExcludingSuspend but returns
+// undefined instead of throwing an extension.
+function msSinceProcessStartExcludingSuspend() {
+  let now;
+  try {
+    now = Services.telemetry.msSinceProcessStartExcludingSuspend();
+  } catch (err) {
+    Cu.reportError(err);
+  }
+  return now;
+}
+
 /**
  * Background Page state transitions:
  *
@@ -85,6 +97,11 @@ class BackgroundPage extends HiddenExtensionPage {
     this.page = options.page || null;
     this.isGenerated = !!options.scripts;
 
+    // Last background/event page created time (retrieved using
+    // Services.telemetry.msSinceProcessStartExcludingSuspend when the
+    // parent process proxy context has been created).
+    this.msSinceCreated = null;
+
     if (this.page) {
       this.url = this.extension.baseURI.resolve(this.page);
     } else if (this.isGenerated) {
@@ -116,6 +133,9 @@ class BackgroundPage extends HiddenExtensionPage {
       });
 
       context = await contextPromise;
+
+      this.msSinceCreated = msSinceProcessStartExcludingSuspend();
+
       ExtensionTelemetry.backgroundPageLoad.stopwatchFinish(extension, this);
     } catch (e) {
       // Extension was down before the background page has loaded.
@@ -250,9 +270,9 @@ this.backgroundPage = class extends ExtensionAPI {
     let { manifest } = extension;
     extension.backgroundState = BACKGROUND_STATE.STARTING;
 
-    let BackgroundClass = manifest.background.service_worker
-      ? BackgroundWorker
-      : BackgroundPage;
+    this.isWorker = Boolean(manifest.background.service_worker);
+
+    let BackgroundClass = this.isWorker ? BackgroundWorker : BackgroundPage;
 
     this.bgInstance = new BackgroundClass(extension, manifest.background);
     let context;
@@ -376,7 +396,7 @@ this.backgroundPage = class extends ExtensionAPI {
       return bgStartupPromise;
     };
 
-    let resetBackgroundIdle = () => {
+    let resetBackgroundIdle = (eventName, resetIdleDetails) => {
       this.clearIdleTimer();
       if (!this.extension || extension.persistentBackground) {
         // Extension was already shut down or is persistent and
@@ -399,6 +419,41 @@ this.backgroundPage = class extends ExtensionAPI {
         extension.emit("background-script-suspend-canceled");
       }
       this.resetIdleTimer();
+
+      if (
+        eventName === "background-script-reset-idle" &&
+        // TODO(Bug 1790087): record similar telemetry for background service worker.
+        !this.isWorker
+      ) {
+        // Record the reason for resetting the event page idle timeout
+        // in a idle result histogram, with the category set based
+        // on the reason for resetting (defaults to 'reset_other'
+        // if resetIdleDetails.reason is missing or not mapped into the
+        // telemetry histogram categories).
+        //
+        // Keep this in sync with the categories listed in Histograms.json
+        // for "WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT".
+        let category = "reset_other";
+        switch (resetIdleDetails?.reason) {
+          case "event":
+            category = "reset_event";
+            break;
+          case "hasActiveNativeAppPorts":
+            category = "reset_nativeapp";
+            break;
+          case "hasActiveStreamFilter":
+            category = "reset_streamfilter";
+            break;
+          case "pendingListeners":
+            category = "reset_listeners";
+            break;
+        }
+
+        ExtensionTelemetry.eventPageIdleResult.histogramAdd({
+          extension,
+          category,
+        });
+      }
     };
 
     // Listen for events from the EventManager
@@ -408,6 +463,7 @@ this.backgroundPage = class extends ExtensionAPI {
 
     extension.terminateBackground = async ({
       ignoreDevToolsAttached = false,
+      disableResetIdleForTest = false, // Disable all reset idle checks for testing purpose.
     } = {}) => {
       await bgStartupPromise;
       if (!this.extension || this.extension.hasShutdown) {
@@ -433,8 +489,29 @@ this.backgroundPage = class extends ExtensionAPI {
       // the native messaging API have already an higher barrier due to having to specify a native messaging
       // host app in their manifest and the user also have to install the native app separately as a native
       // application).
-      if (extension.backgroundContext?.hasActiveNativeAppPorts) {
-        extension.emit("background-script-reset-idle");
+      if (
+        !disableResetIdleForTest &&
+        extension.backgroundContext?.hasActiveNativeAppPorts
+      ) {
+        extension.emit("background-script-reset-idle", {
+          reason: "hasActiveNativeAppPorts",
+        });
+        return;
+      }
+
+      if (
+        !disableResetIdleForTest &&
+        extension.backgroundContext?.pendingRunListenerPromisesCount
+      ) {
+        extension.emit("background-script-reset-idle", {
+          reason: "pendingListeners",
+          pendingListeners:
+            extension.backgroundContext.pendingRunListenerPromisesCount,
+        });
+        // Clear the pending promises being tracked when we have reset the idle
+        // once because some where still pending, so that the pending listeners
+        // calls can reset the idle timer only once.
+        extension.backgroundContext.clearPendingRunListenerPromises();
         return;
       }
 
@@ -463,8 +540,10 @@ this.backgroundPage = class extends ExtensionAPI {
           Cu.reportError(err);
           return false;
         });
-        if (hasActiveStreamFilter) {
-          extension.emit("background-script-reset-idle");
+        if (!disableResetIdleForTest && hasActiveStreamFilter) {
+          extension.emit("background-script-reset-idle", {
+            reason: "hasActiveStreamFilter",
+          });
           return;
         }
 
@@ -488,9 +567,18 @@ this.backgroundPage = class extends ExtensionAPI {
       }
       extension.off("background-script-reset-idle", resetBackgroundIdle);
       this.onShutdown(false);
+
+      // TODO(Bug 1790087): record similar telemetry for background service worker.
+      if (!this.isWorker) {
+        ExtensionTelemetry.eventPageIdleResult.histogramAdd({
+          extension,
+          category: "suspend",
+        });
+      }
+
       EventManager.clearPrimedListeners(this.extension, false);
       // Setup background startup listeners for next primed event.
-      return this.primeBackground(false);
+      await this.primeBackground(false);
     };
 
     // Persistent backgrounds are started immediately except during APP_STARTUP.
@@ -536,10 +624,27 @@ this.backgroundPage = class extends ExtensionAPI {
     this.clearIdleTimer();
 
     if (this.bgInstance) {
+      const { msSinceCreated } = this.bgInstance;
       this.bgInstance.shutdown(isAppShutdown);
       this.bgInstance = null;
+
+      const { extension } = this;
+
       // Emit an event for tests.
-      this.extension.emit("shutdown-background-script");
+      extension.emit("shutdown-background-script");
+
+      const now = msSinceProcessStartExcludingSuspend();
+      if (
+        msSinceCreated &&
+        now &&
+        // TODO(Bug 1790087): record similar telemetry for background service worker.
+        !(this.isWorker || extension.persistentBackground)
+      ) {
+        ExtensionTelemetry.eventPageRunningTime.histogramAdd({
+          extension,
+          value: now - msSinceCreated,
+        });
+      }
     } else {
       EventManager.clearPrimedListeners(this.extension, false);
     }

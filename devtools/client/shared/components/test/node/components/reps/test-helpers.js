@@ -62,8 +62,9 @@ function isGripSelectableInInspector(grip) {
 function getFlattenedGrips(grips) {
   return grips.reduce((res, grip) => {
     const previewItems = getGripPreviewItems(grip);
-    const flatPreviewItems =
-      previewItems.length > 0 ? getFlattenedGrips(previewItems) : [];
+    const flatPreviewItems = previewItems.length
+      ? getFlattenedGrips(previewItems)
+      : [];
 
     return [...res, grip, ...flatPreviewItems];
   }, []);
@@ -96,7 +97,18 @@ function getMapLengthBubbleText(object, props) {
   });
 }
 
+function createGripMapEntry(key, value) {
+  return {
+    type: "mapEntry",
+    preview: {
+      key,
+      value,
+    },
+  };
+}
+
 module.exports = {
+  createGripMapEntry,
   expectActorAttribute,
   getSelectableInInspectorGrips,
   getGripLengthBubbleText,

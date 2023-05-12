@@ -99,47 +99,6 @@ nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
   nscoord supScriptShift = 0;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
 
-  if (!StaticPrefs::mathml_script_shift_attributes_disabled()) {
-    // subscriptshift
-    //
-    // "Specifies the minimum amount to shift the baseline of subscript down;
-    // the default is for the rendering agent to use its own positioning rules."
-    //
-    // values: length
-    // default: automatic
-    //
-    // We use 0 as the default value so unitless values can be ignored.
-    // As a minimum, negative values can be ignored.
-    //
-    nsAutoString value;
-    if (!mContent->IsMathMLElement(nsGkAtoms::msup_) &&
-        mContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::subscriptshift_, value)) {
-      mContent->OwnerDoc()->WarnOnceAbout(
-          dom::DeprecatedOperations::eMathML_DeprecatedScriptShiftAttributes);
-      ParseNumericValue(value, &subScriptShift, 0, PresContext(),
-                        mComputedStyle, fontSizeInflation);
-    }
-    // superscriptshift
-    //
-    // "Specifies the minimum amount to shift the baseline of superscript up;
-    // the default is for the rendering agent to use its own positioning rules."
-    //
-    // values: length
-    // default: automatic
-    //
-    // We use 0 as the default value so unitless values can be ignored.
-    // As a minimum, negative values can be ignored.
-    //
-    if (!mContent->IsMathMLElement(nsGkAtoms::msub_) &&
-        mContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::superscriptshift_, value)) {
-      mContent->OwnerDoc()->WarnOnceAbout(
-          dom::DeprecatedOperations::eMathML_DeprecatedScriptShiftAttributes);
-      ParseNumericValue(value, &supScriptShift, 0, PresContext(),
-                        mComputedStyle, fontSizeInflation);
-    }
-  }
   return PlaceMultiScript(PresContext(), aDrawTarget, aPlaceOrigin,
                           aDesiredSize, this, subScriptShift, supScriptShift,
                           fontSizeInflation);
@@ -180,7 +139,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
       aFrame->ReportErrorToConsole("NoBase");
     else
       aFrame->ReportChildCountError();
-    return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+    return aFrame->PlaceForError(aDrawTarget, aPlaceOrigin, aDesiredSize);
   }
 
   // get x-height (an ex)
@@ -336,7 +295,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         if (aPlaceOrigin) {
           aFrame->ReportInvalidChildError(nsGkAtoms::mprescripts_);
         }
-        return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+        return aFrame->PlaceForError(aDrawTarget, aPlaceOrigin, aDesiredSize);
       }
       if (prescriptsFrame) {
         // duplicate <mprescripts/> found
@@ -344,13 +303,13 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         if (aPlaceOrigin) {
           aFrame->ReportErrorToConsole("DuplicateMprescripts");
         }
-        return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+        return aFrame->PlaceForError(aDrawTarget, aPlaceOrigin, aDesiredSize);
       }
       if (!isSubScript) {
         if (aPlaceOrigin) {
           aFrame->ReportErrorToConsole("SubSupMismatch");
         }
-        return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+        return aFrame->PlaceForError(aDrawTarget, aPlaceOrigin, aDesiredSize);
       }
 
       prescriptsFrame = childFrame;
@@ -363,7 +322,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
           if (aPlaceOrigin) {
             aFrame->ReportErrorToConsole("NoBase");
           }
-          return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+          return aFrame->PlaceForError(aDrawTarget, aPlaceOrigin, aDesiredSize);
         } else {
           // A different error message is triggered later for the other tags
           foundNoneTag = true;
@@ -554,7 +513,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         aFrame->ReportErrorToConsole("SubSupMismatch");
       }
     }
-    return aFrame->ReflowError(aDrawTarget, aDesiredSize);
+    return aFrame->PlaceForError(aDrawTarget, aPlaceOrigin, aDesiredSize);
   }
 
   // we left out the width of prescripts, so ...

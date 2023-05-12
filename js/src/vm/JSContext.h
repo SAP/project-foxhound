@@ -14,11 +14,12 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
+#include "builtin/AtomicsObject.h"
 #include "ds/TraceableFifo.h"
 #include "frontend/NameCollections.h"
 #include "gc/Memory.h"
 #include "irregexp/RegExpTypes.h"
-#include "js/CharacterEncoding.h"
+#include "jit/PcScriptCache.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions
 #include "js/Exception.h"
 #include "js/GCVector.h"
@@ -31,7 +32,6 @@
 #include "threading/ProtectedData.h"
 #include "util/StructuredSpewer.h"
 #include "vm/Activation.h"  // js::Activation
-#include "vm/ErrorReporting.h"
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
 #include "vm/SharedStencil.h"  // js::SharedImmutableScriptDataTable
@@ -46,10 +46,6 @@ namespace js {
 class AutoAllocInAtomsZone;
 class AutoMaybeLeaveAtomsZone;
 class AutoRealm;
-
-namespace frontend {
-class WellKnownParserAtoms;
-}  // namespace frontend
 
 namespace jit {
 class ICScript;
@@ -265,6 +261,13 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   void onOverRecursed();
 
+  // Allocate a GC thing.
+  template <typename T, js::AllowGC allowGC = js::CanGC, typename... Args>
+  T* newCell(Args&&... args) {
+    return js::gc::CellAllocator::template NewCell<T, allowGC>(
+        this, std::forward<Args>(args)...);
+  }
+
   /* Clear the pending exception (if any) due to OOM. */
   void recoverFromOutOfMemory();
 
@@ -365,8 +368,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   inline js::Handle<js::GlobalObject*> global() const;
 
   js::AtomsTable& atoms() { return runtime_->atoms(); }
-
-  const JS::Zone* atomsZone() { return runtime_->atomsZone(); }
 
   js::SymbolRegistry& symbolRegistry() { return runtime_->symbolRegistry(); }
 
@@ -640,18 +641,26 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   }
 
 #ifdef DEBUG
-  // True if this context has ever called ReportOverRecursed,
-  // ReportOutOfMemory, or ReportOversizedAllocation.
-  js::ContextData<bool> hadNondeterministicException_;
+  // True if this context has ever thrown an exception because of an exceeded
+  // limit: stack space (ReportOverRecursed), memory (ReportOutOfMemory), or
+  // some other self-imposed limit (eg ReportOversizedAllocation). Used when
+  // detecting bailout loops in WarpOracle: bailout loops involving resource
+  // exhaustion are generally not interesting.
+  js::ContextData<bool> hadResourceExhaustion_;
 
  public:
-  bool hadNondeterministicException() const {
-    return hadNondeterministicException_ ||
-           js::oom::simulator.isThreadSimulatingAny();
+  bool hadResourceExhaustion() const {
+    return hadResourceExhaustion_ || js::oom::simulator.isThreadSimulatingAny();
   }
 #endif
 
  public:
+  void reportResourceExhaustion() {
+#ifdef DEBUG
+    hadResourceExhaustion_ = true;
+#endif
+  }
+
   js::ContextData<int32_t> reportGranularity; /* see vm/Probes.h */
 
   js::ContextData<js::AutoResolving*> resolvingList;

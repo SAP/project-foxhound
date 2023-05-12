@@ -974,6 +974,14 @@ already_AddRefed<VideoData> ChromiumCDMParent::CreateVideoFrame(
       media::TimeUnit::FromMicroseconds(aFrame.mDuration()), b, false,
       media::TimeUnit::FromMicroseconds(-1), pictureRegion, mKnowsCompositor);
 
+  if (!v || !v->mImage) {
+    NS_WARNING("Failed to decode video frame.");
+    return v.forget();
+  }
+
+  // This is a DRM image.
+  v->mImage->SetIsDRM(true);
+
   return v.forget();
 }
 

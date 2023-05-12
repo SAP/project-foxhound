@@ -17,11 +17,6 @@
 
 namespace mozilla::dom {
 
-enum ClipboardReadType {
-  eRead,
-  eReadText,
-};
-
 class Promise;
 class ClipboardItem;
 
@@ -62,6 +57,11 @@ class Clipboard : public DOMEventTargetHelper {
                                JS::Handle<JSObject*> aGivenProto) override;
 
  private:
+  enum class ReadRequestType {
+    eRead,
+    eReadText,
+  };
+
   // Checks if dom.events.testing.asyncClipboard pref is enabled.
   // The aforementioned pref allows automated tests to bypass the security
   // checks when writing to
@@ -71,36 +71,38 @@ class Clipboard : public DOMEventTargetHelper {
   static bool IsTestingPrefEnabledOrHasReadPermission(
       nsIPrincipal& aSubjectPrincipal);
 
-  // @return the remaining work to fill aPromise.
-  already_AddRefed<nsIRunnable> CheckReadTextPermissionAndHandleRequest(
-      Promise& aPromise, nsIPrincipal& aSubjectPrincipal);
+  void CheckReadPermissionAndHandleRequest(Promise& aPromise,
+                                           nsIPrincipal& aSubjectPrincipal,
+                                           ReadRequestType aType);
 
-  // @return the remaining work to fill aPromise.
-  already_AddRefed<nsIRunnable> HandleReadTextRequestWhichRequiresPasteButton(
-      Promise& aPromise);
+  void HandleReadRequestWhichRequiresPasteButton(Promise& aPromise,
+                                                 ReadRequestType aType);
 
   already_AddRefed<Promise> ReadHelper(nsIPrincipal& aSubjectPrincipal,
-                                       ClipboardReadType aClipboardReadType,
-                                       ErrorResult& aRv);
+                                       ReadRequestType aType, ErrorResult& aRv);
 
   ~Clipboard();
 
-  class ReadTextRequest final {
+  class ReadRequest final {
    public:
-    explicit ReadTextRequest(Promise& aPromise) : mPromise{&aPromise} {}
+    ReadRequest(Promise& aPromise, ReadRequestType aType,
+                nsPIDOMWindowInner& aOwner)
+        : mType(aType), mPromise(&aPromise), mOwner(&aOwner) {}
 
     // Clears the request too.
-    already_AddRefed<nsIRunnable> Answer();
+    void Answer();
 
     void MaybeRejectWithNotAllowedError(const nsACString& aMessage);
 
    private:
+    ReadRequestType mType;
     // Not cycle-collected, because it's nulled when the request is answered or
     // destructed.
     RefPtr<Promise> mPromise;
+    RefPtr<nsPIDOMWindowInner> mOwner;
   };
 
-  AutoTArray<UniquePtr<ReadTextRequest>, 1> mReadTextRequests;
+  AutoTArray<UniquePtr<ReadRequest>, 1> mReadRequests;
 
   class TransientUserPasteState final {
    public:

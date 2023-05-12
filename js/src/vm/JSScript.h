@@ -34,21 +34,14 @@
 #include "js/UbiNode.h"
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
-#include "util/StructuredSpewer.h"
 #include "util/TrailingArray.h"
-#include "vm/BigIntType.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"
-#include "vm/ErrorContext.h"
-#include "vm/JSAtom.h"
 #include "vm/NativeObject.h"
-#include "vm/ScopeKind.h"  // ScopeKind
-#include "vm/Shape.h"
 #include "vm/SharedImmutableStringsCache.h"
 #include "vm/SharedStencil.h"  // js::GCThingIndex, js::SourceExtent, js::SharedImmutableScriptData, MemberInitializers
 #include "vm/StencilEnums.h"   // SourceRetrievable
-#include "vm/Time.h"
 
 namespace JS {
 struct ScriptSourceInfo;
@@ -58,12 +51,12 @@ class SourceText;
 
 namespace js {
 
+class ErrorContext;
 class ScriptSource;
 
 class VarScope;
 class LexicalScope;
 
-class GenericPrinter;
 class Sprinter;
 
 namespace coverage {
@@ -1424,6 +1417,8 @@ class alignas(uintptr_t) PrivateScriptData final : public TrailingArray {
 // NOTE: Scripts may be directly created with bytecode and skip the lazy script
 //       form. This is always the case for top-level scripts.
 class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
+  friend class js::gc::CellAllocator;
+
  public:
   // Pointer to baseline->method()->raw(), ion->method()->raw(), a wasm jit
   // entry, the JIT's EnterInterpreter stub, or the lazy link stub. Must be

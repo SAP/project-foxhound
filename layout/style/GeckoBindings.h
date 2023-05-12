@@ -472,12 +472,15 @@ struct GeckoFontMetrics {
   mozilla::Length mCapHeight;  // negatives indicate not found.
   mozilla::Length mIcWidth;    // negatives indicate not found.
   mozilla::Length mAscent;
+  float mScriptPercentScaleDown;        // zero is invalid or means not found.
+  float mScriptScriptPercentScaleDown;  // zero is invalid or means not found.
 };
 
 GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext*, bool is_vertical,
                                       const nsStyleFont* font,
                                       mozilla::Length font_size,
-                                      bool use_user_font_set);
+                                      bool use_user_font_set,
+                                      bool retrieve_math_scales);
 
 mozilla::StyleSheet* Gecko_StyleSheet_Clone(
     const mozilla::StyleSheet* aSheet,
@@ -549,6 +552,11 @@ const nsTArray<mozilla::dom::Element*>* Gecko_ShadowRoot_GetElementsWithId(
 // Check the value of the given bool preference. The pref name needs to
 // be null-terminated.
 bool Gecko_GetBoolPrefValue(const char* pref_name);
+
+// Check whether font format/tech is supported.
+bool Gecko_IsFontFormatSupported(
+    mozilla::StyleFontFaceSourceFormatKeyword aFormat);
+bool Gecko_IsFontTechSupported(mozilla::StyleFontFaceSourceTechFlags aFlag);
 
 // Returns true if we're currently performing the servo traversal.
 bool Gecko_IsInServoTraversal();

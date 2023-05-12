@@ -2602,22 +2602,6 @@ nsDOMWindowUtils::IsInModalState(bool* retval) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetDesktopModeViewport(bool* retval) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  *retval = window && window->IsDesktopModeViewport();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SetDesktopModeViewport(bool aDesktopMode) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  NS_ENSURE_STATE(window);
-
-  window->SetDesktopModeViewport(aDesktopMode);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsDOMWindowUtils::SuspendTimeouts() {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
@@ -2819,7 +2803,7 @@ nsDOMWindowUtils::AdvanceTimeAndRefresh(int64_t aMilliseconds) {
 
   nsPresContext* presContext = GetPresContext();
   if (presContext) {
-    nsRefreshDriver* driver = presContext->RefreshDriver();
+    RefPtr<nsRefreshDriver> driver = presContext->RefreshDriver();
     driver->AdvanceTimeAndRefresh(aMilliseconds);
 
     if (WebRenderBridgeChild* wrbc = GetWebRenderBridge()) {
@@ -4042,13 +4026,13 @@ class HandlingUserInputHelper final : public nsIJSRAIIHelper {
   ~HandlingUserInputHelper();
 
   bool mHandlingUserInput;
-  bool mDestructCalled;
+  bool mDestructCalled = false;
 };
 
 NS_IMPL_ISUPPORTS(HandlingUserInputHelper, nsIJSRAIIHelper)
 
 HandlingUserInputHelper::HandlingUserInputHelper(bool aHandlingUserInput)
-    : mHandlingUserInput(aHandlingUserInput), mDestructCalled(false) {
+    : mHandlingUserInput(aHandlingUserInput) {
   if (aHandlingUserInput) {
     UserActivation::StartHandlingUserInput(eVoidEvent);
   }
@@ -4081,8 +4065,12 @@ HandlingUserInputHelper::Destruct() {
 NS_IMETHODIMP
 nsDOMWindowUtils::SetHandlingUserInput(bool aHandlingUserInput,
                                        nsIJSRAIIHelper** aHelper) {
-  RefPtr<HandlingUserInputHelper> helper(
-      new HandlingUserInputHelper(aHandlingUserInput));
+  if (aHandlingUserInput) {
+    if (Document* doc = GetDocument()) {
+      doc->NotifyUserGestureActivation();
+    }
+  }
+  auto helper = MakeRefPtr<HandlingUserInputHelper>(aHandlingUserInput);
   helper.forget(aHelper);
   return NS_OK;
 }
@@ -4713,7 +4701,7 @@ nsDOMWindowUtils::IsCoepCredentialless(bool* aResult) {
     return NS_ERROR_FAILURE;
   }
 
-  *aResult = IsCoepCredentiallessEnabled(
+  *aResult = net::IsCoepCredentiallessEnabled(
       doc->Trials().IsEnabled(OriginTrial::CoepCredentialless));
   return NS_OK;
 }
@@ -4824,4 +4812,28 @@ nsDOMWindowUtils::GetOrientationLock(uint32_t* aOrientationLock) {
 
   *aOrientationLock = static_cast<uint32_t>(bc->GetOrientationLock());
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SetHiDPIMode(bool aHiDPI) {
+#ifdef DEBUG
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget) return NS_ERROR_FAILURE;
+
+  return widget->SetHiDPIMode(aHiDPI);
+#else
+  return NS_ERROR_NOT_AVAILABLE;
+#endif
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::RestoreHiDPIMode() {
+#ifdef DEBUG
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget) return NS_ERROR_FAILURE;
+
+  return widget->RestoreHiDPIMode();
+#else
+  return NS_ERROR_NOT_AVAILABLE;
+#endif
 }

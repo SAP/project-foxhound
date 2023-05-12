@@ -218,15 +218,15 @@ menuitem.bookmark-item {
   }
 }
 
-#statuspanel:not([mirror]) > #statuspanel-inner > #statuspanel-label:-moz-locale-dir(ltr),
-#statuspanel[mirror] > #statuspanel-inner > #statuspanel-label:-moz-locale-dir(rtl) {
+#statuspanel:not([mirror]) > #statuspanel-label:-moz-locale-dir(ltr),
+#statuspanel[mirror] > #statuspanel-label:-moz-locale-dir(rtl) {
   border-right-style: solid;
   border-top-right-radius: .3em;
   margin-right: 1em;
 }
 
-#statuspanel:not([mirror]) > #statuspanel-inner > #statuspanel-label:-moz-locale-dir(rtl),
-#statuspanel[mirror] > #statuspanel-inner > #statuspanel-label:-moz-locale-dir(ltr) {
+#statuspanel:not([mirror]) > #statuspanel-label:-moz-locale-dir(rtl),
+#statuspanel[mirror] > #statuspanel-label:-moz-locale-dir(ltr) {
   border-left-style: solid;
   border-top-left-radius: .3em;
   margin-left: 1em;
@@ -457,16 +457,18 @@ menuitem.bookmark-item {
 
 #historySwipeAnimationPreviousArrow {
   background: url("chrome://browser/skin/history-swipe-arrow.svg")
-              center left / 64px 128px no-repeat transparent;
+              center left / 192px 192px no-repeat transparent;
   will-change: transform;
+  -moz-context-properties: fill;
 }
 #historySwipeAnimationPreviousArrow:-moz-locale-dir(rtl) {
   transform: scaleX(-1);
 }
 #historySwipeAnimationNextArrow {
   background: url("chrome://browser/skin/history-swipe-arrow.svg")
-              center left / 64px 128px no-repeat transparent;
+              center left / 192px 192px no-repeat transparent;
   will-change: transform;
+  -moz-context-properties: fill;
 }
 #historySwipeAnimationNextArrow:-moz-locale-dir(ltr) {
   transform: scaleX(-1);

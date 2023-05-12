@@ -545,7 +545,7 @@ class FullParseHandler {
       Node name, FunctionNodeType initializer, bool isStatic
 #ifdef ENABLE_DECORATORS
       ,
-      ListNodeType decorators
+      ListNodeType decorators, bool hasAccessor
 #endif
   ) {
     MOZ_ASSERT(isUsableAsObjectPropertyName(name));
@@ -553,7 +553,7 @@ class FullParseHandler {
     return new_<ClassField>(name, initializer, isStatic
 #if ENABLE_DECORATORS
                             ,
-                            decorators
+                            decorators, hasAccessor
 #endif
     );
   }
@@ -918,6 +918,10 @@ class FullParseHandler {
     }
   }
 
+  ParamsBodyNodeType newParamsBody(const TokenPos& pos) {
+    return new_<ParamsBodyNode>(pos);
+  }
+
   FunctionNodeType newFunction(FunctionSyntaxKind syntaxKind,
                                const TokenPos& pos) {
     return new_<FunctionNode>(syntaxKind, pos);
@@ -931,8 +935,7 @@ class FullParseHandler {
   }
 
   void setFunctionFormalParametersAndBody(FunctionNodeType funNode,
-                                          ListNodeType paramsBody) {
-    MOZ_ASSERT_IF(paramsBody, paramsBody->isKind(ParseNodeKind::ParamsBody));
+                                          ParamsBodyNodeType paramsBody) {
     funNode->setBody(paramsBody);
   }
   void setFunctionBox(FunctionNodeType funNode, FunctionBox* funbox) {
@@ -943,7 +946,6 @@ class FullParseHandler {
     addList(/* list = */ funNode->body(), /* kid = */ argpn);
   }
   void setFunctionBody(FunctionNodeType funNode, LexicalScopeNodeType body) {
-    MOZ_ASSERT(funNode->body()->isKind(ParseNodeKind::ParamsBody));
     addList(/* list = */ funNode->body(), /* kid = */ body);
   }
 
@@ -973,13 +975,17 @@ class FullParseHandler {
     if ((kind == ParseNodeKind::AssignExpr ||
          kind == ParseNodeKind::CoalesceAssignExpr ||
          kind == ParseNodeKind::OrAssignExpr ||
-         kind == ParseNodeKind::AndAssignExpr ||
-         kind == ParseNodeKind::InitExpr) &&
+         kind == ParseNodeKind::AndAssignExpr) &&
         lhs->isKind(ParseNodeKind::Name) && !lhs->isInParens()) {
       checkAndSetIsDirectRHSAnonFunction(rhs);
     }
 
     return new_<AssignmentNode>(kind, lhs, rhs);
+  }
+
+  BinaryNodeType newInitExpr(Node lhs, Node rhs) {
+    TokenPos pos(lhs->pn_pos.begin, rhs->pn_pos.end);
+    return new_<BinaryNode>(ParseNodeKind::InitExpr, pos, lhs, rhs);
   }
 
   bool isUnparenthesizedAssignment(Node node) {
@@ -1055,35 +1061,23 @@ class FullParseHandler {
     return func->pn_pos.begin;
   }
 
-  bool isDeclarationKind(ParseNodeKind kind) {
-    return kind == ParseNodeKind::VarStmt || kind == ParseNodeKind::LetDecl ||
-           kind == ParseNodeKind::ConstDecl;
-  }
-
   ListNodeType newList(ParseNodeKind kind, const TokenPos& pos) {
-    MOZ_ASSERT(!isDeclarationKind(kind));
-    return new_<ListNode>(kind, pos);
+    auto* list = new_<ListNode>(kind, pos);
+    MOZ_ASSERT_IF(list, !list->is<DeclarationListNode>());
+    MOZ_ASSERT_IF(list, !list->is<ParamsBodyNode>());
+    return list;
   }
 
- public:
   ListNodeType newList(ParseNodeKind kind, Node kid) {
-    MOZ_ASSERT(!isDeclarationKind(kind));
-    return new_<ListNode>(kind, kid);
+    auto* list = new_<ListNode>(kind, kid);
+    MOZ_ASSERT_IF(list, !list->is<DeclarationListNode>());
+    MOZ_ASSERT_IF(list, !list->is<ParamsBodyNode>());
+    return list;
   }
 
-  ListNodeType newDeclarationList(ParseNodeKind kind, const TokenPos& pos) {
-    MOZ_ASSERT(isDeclarationKind(kind));
-    return new_<ListNode>(kind, pos);
-  }
-
-  bool isDeclarationList(Node node) {
-    return isDeclarationKind(node->getKind());
-  }
-
-  Node singleBindingFromDeclaration(ListNodeType decl) {
-    MOZ_ASSERT(isDeclarationList(decl));
-    MOZ_ASSERT(decl->count() == 1);
-    return decl->head();
+  DeclarationListNodeType newDeclarationList(ParseNodeKind kind,
+                                             const TokenPos& pos) {
+    return new_<DeclarationListNode>(kind, pos);
   }
 
   ListNodeType newCommaExpressionList(Node kid) {
@@ -1186,7 +1180,7 @@ class FullParseHandler {
 
 inline bool FullParseHandler::setLastFunctionFormalParameterDefault(
     FunctionNodeType funNode, Node defaultValue) {
-  ListNode* body = funNode->body();
+  ParamsBodyNode* body = funNode->body();
   ParseNode* arg = body->last();
   ParseNode* pn = newAssignment(ParseNodeKind::AssignExpr, arg, defaultValue);
   if (!pn) {

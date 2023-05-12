@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const { LocalizationHelper } = require("devtools/shared/l10n");
 
@@ -54,7 +53,7 @@ class MarkupContextMenu {
 
   show(event) {
     if (
-      !(event.originalTarget instanceof Element) ||
+      !Element.isInstance(event.originalTarget) ||
       event.originalTarget.closest("input[type=text]") ||
       event.originalTarget.closest("input:not([type])") ||
       event.originalTarget.closest("textarea")
@@ -437,7 +436,7 @@ class MarkupContextMenu {
    */
   _getClipboardContentForPaste() {
     const content = clipboardHelper.getText();
-    if (content && content.trim().length > 0) {
+    if (content && content.trim().length) {
       return content;
     }
     return null;
@@ -928,7 +927,7 @@ class MarkupContextMenu {
     );
 
     const nodeLinkMenuItems = this._getNodeLinkMenuItems();
-    if (nodeLinkMenuItems.filter(item => item.visible).length > 0) {
+    if (nodeLinkMenuItems.filter(item => item.visible).length) {
       menu.append(
         new MenuItem({
           id: "node-menu-link-separator",

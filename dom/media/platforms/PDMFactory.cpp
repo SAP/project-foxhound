@@ -36,6 +36,8 @@
 #include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 #include "nsPrintfCString.h"
 
+#include "mozilla/ipc/UtilityAudioDecoderParent.h"
+
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
 #  include "mozilla/WindowsVersion.h"
@@ -97,11 +99,6 @@ class PDMInitializer final {
     if (!IsWin7AndPre2000Compatible()) {
       WMFDecoderModule::Init();
     }
-#  ifdef MOZ_WMF_MEDIA_ENGINE
-    if (IsWin8OrLater() && StaticPrefs::media_wmf_media_engine_enabled()) {
-      MFMediaEngineDecoderModule::Init();
-    }
-#  endif
 #endif
 #ifdef MOZ_APPLEMEDIA
     AppleDecoderModule::Init();
@@ -121,6 +118,11 @@ class PDMInitializer final {
     if (!IsWin7AndPre2000Compatible()) {
       WMFDecoderModule::Init();
     }
+#  ifdef MOZ_WMF_MEDIA_ENGINE
+    if (IsWin8OrLater() && StaticPrefs::media_wmf_media_engine_enabled()) {
+      MFMediaEngineDecoderModule::Init();
+    }
+#  endif
 #endif
 #ifdef MOZ_APPLEMEDIA
     AppleDecoderModule::Init();
@@ -529,11 +531,6 @@ static DecoderDoctorDiagnostics::Flags GetFailureFlagBasedOnFFmpegStatus(
 
 void PDMFactory::CreateRddPDMs() {
 #ifdef XP_WIN
-#  ifdef MOZ_WMF_MEDIA_ENGINE
-  if (IsWin8OrLater() && StaticPrefs::media_wmf_media_engine_enabled()) {
-    CreateAndStartupPDM<MFMediaEngineDecoderModule>();
-  }
-#  endif
   if (StaticPrefs::media_wmf_enabled() &&
       StaticPrefs::media_rdd_wmf_enabled()) {
     CreateAndStartupPDM<WMFDecoderModule>();
@@ -562,38 +559,51 @@ void PDMFactory::CreateRddPDMs() {
 }
 
 void PDMFactory::CreateUtilityPDMs() {
+  const ipc::SandboxingKind aKind =
+      ipc::UtilityAudioDecoderParent::GetSandboxingKind();
 #ifdef XP_WIN
   if (StaticPrefs::media_wmf_enabled() &&
-      StaticPrefs::media_utility_wmf_enabled()) {
+      StaticPrefs::media_utility_wmf_enabled() &&
+      aKind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF) {
     CreateAndStartupPDM<WMFDecoderModule>();
   }
 #endif
 #ifdef MOZ_APPLEMEDIA
-  if (StaticPrefs::media_utility_applemedia_enabled()) {
+  if (StaticPrefs::media_utility_applemedia_enabled() &&
+      aKind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_APPLE_MEDIA) {
     CreateAndStartupPDM<AppleDecoderModule>();
   }
 #endif
+  if (aKind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_GENERIC) {
 #ifdef MOZ_FFVPX
-  if (StaticPrefs::media_ffvpx_enabled() &&
-      StaticPrefs::media_utility_ffvpx_enabled()) {
-    CreateAndStartupPDM<FFVPXRuntimeLinker>();
-  }
+    if (StaticPrefs::media_ffvpx_enabled() &&
+        StaticPrefs::media_utility_ffvpx_enabled()) {
+      CreateAndStartupPDM<FFVPXRuntimeLinker>();
+    }
 #endif
 #ifdef MOZ_FFMPEG
-  if (StaticPrefs::media_ffmpeg_enabled() &&
-      StaticPrefs::media_utility_ffmpeg_enabled() &&
-      !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
-    mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
-        FFmpegRuntimeLinker::LinkStatusCode());
-  }
+    if (StaticPrefs::media_ffmpeg_enabled() &&
+        StaticPrefs::media_utility_ffmpeg_enabled() &&
+        !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
+      mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
+          FFmpegRuntimeLinker::LinkStatusCode());
+    }
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_utility_android_media_codec_enabled()) {
-    StartupPDM(AndroidDecoderModule::Create(),
-               StaticPrefs::media_android_media_codec_preferred());
+    if (StaticPrefs::media_utility_android_media_codec_enabled()) {
+      StartupPDM(AndroidDecoderModule::Create(),
+                 StaticPrefs::media_android_media_codec_preferred());
+    }
+#endif
+    CreateAndStartupPDM<AgnosticDecoderModule>();
+  }
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  if (aKind == ipc::SandboxingKind::MF_MEDIA_ENGINE_CDM) {
+    if (IsWin8OrLater() && StaticPrefs::media_wmf_media_engine_enabled()) {
+      CreateAndStartupPDM<MFMediaEngineDecoderModule>();
+    }
   }
 #endif
-  CreateAndStartupPDM<AgnosticDecoderModule>();
 }
 
 void PDMFactory::CreateContentPDMs() {
@@ -606,8 +616,25 @@ void PDMFactory::CreateContentPDMs() {
   }
 
   if (StaticPrefs::media_utility_process_enabled()) {
-    CreateAndStartupPDM<RemoteDecoderModule>(RemoteDecodeIn::UtilityProcess);
+#ifdef MOZ_APPLEMEDIA
+    CreateAndStartupPDM<RemoteDecoderModule>(
+        RemoteDecodeIn::UtilityProcess_AppleMedia);
+#endif
+#ifdef XP_WIN
+    CreateAndStartupPDM<RemoteDecoderModule>(
+        RemoteDecodeIn::UtilityProcess_WMF);
+#endif
+    // WMF and AppleMedia should be created before Generic because the order
+    // affects what decoder module would be chose first.
+    CreateAndStartupPDM<RemoteDecoderModule>(
+        RemoteDecodeIn::UtilityProcess_Generic);
   }
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  if (StaticPrefs::media_wmf_media_engine_enabled()) {
+    CreateAndStartupPDM<RemoteDecoderModule>(
+        RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM);
+  }
+#endif
 
 #ifdef XP_WIN
   if (StaticPrefs::media_wmf_enabled() && !IsWin7AndPre2000Compatible()) {

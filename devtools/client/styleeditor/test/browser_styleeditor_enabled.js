@@ -12,8 +12,8 @@ add_task(async function() {
   const editor = await ui.editors[0].getSourceEditor();
 
   const summary = editor.summary;
-  const enabledToggle = summary.querySelector(".stylesheet-enabled");
-  ok(enabledToggle, "enabled toggle button exists");
+  const stylesheetToggle = summary.querySelector(".stylesheet-toggle");
+  ok(stylesheetToggle, "stylesheet toggle button exists");
 
   is(
     editor.styleSheet.disabled,
@@ -28,7 +28,7 @@ add_task(async function() {
   );
 
   info("Disabling the first stylesheet.");
-  await toggleEnabled(editor, enabledToggle, panel.panelWindow);
+  await toggleEnabled(editor, stylesheetToggle, panel.panelWindow);
 
   is(editor.styleSheet.disabled, true, "first stylesheet is now disabled");
   is(
@@ -38,7 +38,7 @@ add_task(async function() {
   );
 
   info("Enabling the first stylesheet again.");
-  await toggleEnabled(editor, enabledToggle, panel.panelWindow);
+  await toggleEnabled(editor, stylesheetToggle, panel.panelWindow);
 
   is(
     editor.styleSheet.disabled,
@@ -52,14 +52,44 @@ add_task(async function() {
   );
 });
 
-async function toggleEnabled(editor, enabledToggle, panelWindow) {
+add_task(async function testSystemStylesheet() {
+  const { ui } = await openStyleEditorForURL("about:support");
+
+  const aboutSupportEditor = ui.editors.find(
+    editor => editor.friendlyName === "aboutSupport.css"
+  );
+  ok(!!aboutSupportEditor, "Found the editor for aboutSupport.css");
+  const aboutSupportToggle = aboutSupportEditor.summary.querySelector(
+    ".stylesheet-toggle"
+  );
+  ok(aboutSupportToggle, "enabled toggle button exists");
+  ok(!aboutSupportToggle.disabled, "enabled toggle button is not disabled");
+  is(
+    aboutSupportToggle.getAttribute("tooltiptext"),
+    "Toggle style sheet visibility"
+  );
+
+  const formsEditor = ui.editors.find(
+    editor => editor.friendlyName === "forms.css"
+  );
+  ok(!!formsEditor, "Found the editor for forms.css");
+  const formsToggle = formsEditor.summary.querySelector(".stylesheet-toggle");
+  ok(formsToggle, "enabled toggle button exists");
+  ok(formsToggle.disabled, "enabled toggle button is disabled");
+  is(
+    formsToggle.getAttribute("tooltiptext"),
+    "System style sheets can’t be disabled"
+  );
+});
+
+async function toggleEnabled(editor, stylesheetToggle, panelWindow) {
   const changed = editor.once("property-change");
 
   info("Waiting for focus.");
   await SimpleTest.promiseFocus(panelWindow);
 
   info("Clicking on the toggle.");
-  EventUtils.synthesizeMouseAtCenter(enabledToggle, {}, panelWindow);
+  EventUtils.synthesizeMouseAtCenter(stylesheetToggle, {}, panelWindow);
 
   info("Waiting for stylesheet to be disabled.");
   let property = await changed;

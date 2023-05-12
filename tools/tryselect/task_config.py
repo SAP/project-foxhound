@@ -472,8 +472,8 @@ class WorkerOverrides(TryConfig):
     ]
 
     def try_config(self, worker_overrides, worker_suffixes, **kwargs):
-        from gecko_taskgraph.config import load_graph_config
         from gecko_taskgraph.util.workertypes import get_worker_type
+        from taskgraph.config import load_graph_config
 
         overrides = {}
         if worker_overrides:
@@ -505,10 +505,7 @@ class WorkerOverrides(TryConfig):
                     )
                     sys.exit(1)
                 provisioner, worker_type = get_worker_type(
-                    graph_config,
-                    alias,
-                    level="1",
-                    release_level="staging",
+                    graph_config, worker_type=alias, parameters={"level": "1"}
                 )
                 overrides[alias] = "{provisioner}/{worker_type}{suffix}".format(
                     provisioner=provisioner, worker_type=worker_type, suffix=suffix

@@ -9,6 +9,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src resource: chrome:; object-src 'none'; img-src data: chrome:;">
     <meta name="color-scheme" content="light dark">
     <title data-l10n-id="firefoxview-page-title"></title>
+    <link rel="icon" type="image/png" id="favicon" href="chrome://branding/content/icon32.png"/>
     <link rel="localization" href="branding/brand.ftl">
     <link rel="localization" href="browser/branding/brandings.ftl"/>
     <link rel="localization" href="browser/firefoxView.ftl"/>
@@ -26,15 +27,15 @@
   </head>
 
   <body>
-    <nav class="content-container">
+    <div id="logo-container" class="content-container">
       <div class="brand-logo">
         <span class="brand-icon"></span>
         <span class="brand-feature-name" data-l10n-id="firefoxview-page-title"></span>
       </div>
-    </nav>
+    </div>
     <main>
       <template id="sync-setup-template">
-        <named-deck class="sync-setup-container" data-prefix="id:">
+        <named-deck class="sync-setup-container" role="region" aria-labelledby="collapsible-synced-tabs-header" data-prefix="id:">
           <div name="sync-setup-view0" data-prefix="id:-view0" class="card card-no-hover error-state" data-prefix="aria-labelledby:-view0-header">
             <icon class="icon info primary"></icon><h3 data-prefix="id:-view0-header" class="card-header"></h3>
             <section>
@@ -48,7 +49,7 @@
             <h2 data-prefix="id:-view1-header" data-l10n-id="firefoxview-tabpickup-step-signin-header" class="card-header"></h2>
             <section class="card-body">
               <p class="step-content" data-l10n-id="firefoxview-tabpickup-step-signin-description"></p>
-              <button class="primary" data-action="view1-primary-action" data-l10n-id="firefoxview-tabpickup-step-signin-primarybutton"></button>
+              <button id="firefoxview-tabpickup-step-signin-primarybutton" class="primary" data-action="view1-primary-action" data-l10n-id="firefoxview-tabpickup-step-signin-primarybutton"></button>
             </section>
             <footer>
               <progress data-prefix="id:-view1-progress" class="step-progress" max="100" value="11"></progress>
@@ -112,12 +113,12 @@
         </div>
       </template>
 
-      <section class="content-container" is="tab-pickup-container" id="tab-pickup-container">
-        <header class="page-section-header">
+      <details class="content-container" is="tab-pickup-container" id="tab-pickup-container" open>
+        <summary class="page-section-header">
           <h1 id="collapsible-synced-tabs-header" data-l10n-id="firefoxview-tabpickup-header"></h1>
-          <button aria-expanded=true aria-controls="synced-tabs" id="collapsible-synced-tabs-button" class="ghost-button twisty icon arrow-up" data-l10n-id="firefoxview-collapse-button-hide" hidden></button>
+          <span class="twisty icon" data-l10n-id="firefoxview-collapse-button-hide" aria-role="presentation"></span>
           <p class="section-description" data-l10n-id="firefoxview-tabpickup-description"></p>
-        </header>
+        </summary>
 
         <div class="confirmation-message-box message-box card card-no-hover" hidden>
           <div class="message-content">
@@ -138,8 +139,7 @@
           </div>
           <button data-action="mobile-promo-dismiss" class="close icon-button ghost-button" data-l10n-id="firefoxview-close-button"></button>
         </div>
-
-      </section>
+      </details>
 
       <aside class="content-container" is="colorways-card">
         <template id="colorways-no-collection-template">
@@ -161,12 +161,12 @@
         <section id="colorways"></section>
       </aside>
 
-      <section class="content-container" is="recently-closed-tabs-container" id="recently-closed-tabs-container">
-        <header class="page-section-header">
+      <details class="content-container" is="recently-closed-tabs-container" id="recently-closed-tabs-container" open>
+        <summary id="recently-closed-tabs-header-section" class="page-section-header" data-l10n-id="firefoxview-collapse-button-hide">
           <h1 id="recently-closed-tabs-header" data-l10n-id="firefoxview-closed-tabs-title"></h1>
-          <button aria-expanded="true" aria-controls="recently-closed-tabs" data-l10n-id="firefoxview-collapse-button-hide" id="collapsible-tabs-button" class="ghost-button twisty icon arrow-up"></button>
-          <p class="section-description" data-l10n-id="firefoxview-closed-tabs-description"></p>
-        </header>
+          <span class="twisty icon" aria-role="presentation"></span>
+          <p class="section-description" data-l10n-id="firefoxview-closed-tabs-description2"></p>
+        </summary>
         <div id="collapsible-tabs-container" id="recently-closed-tabs" role="region" aria-labelledby="recently-closed-tabs-header">
           <recently-closed-tabs-list>
             <ol hidden="true" class="closed-tabs-list"></ol>
@@ -176,7 +176,7 @@
             <p data-l10n-id="firefoxview-closed-tabs-placeholder" class="placeholder-text"></p>
           </div>
         </div>
-      </section>
+      </details>
     </main>
   </body>
 </html>

@@ -46,7 +46,7 @@ add_task(async function() {
 
   // Open context menu and execute "Edit & Resend".
   EventUtils.sendMouseEvent({ type: "contextmenu" }, xhrRequestItem);
-  getContextMenuItem(monitor, "request-list-context-resend").click();
+  await selectContextMenuItem(monitor, "request-list-context-edit-resend");
 
   // Wait for "Edit & Resend" panel to appear
   await waitUntil(() => document.querySelector("#custom-request-send-button"));
@@ -121,23 +121,14 @@ add_task(async function() {
     EventUtils.sendMouseEvent({ type: "contextmenu" }, xhrRequestItem);
 
     info("Opening the new request panel");
-    const waitForPanels = waitForDOM(
-      document,
-      ".monitor-panel .network-action-bar"
+    const waitForPanels = waitUntil(
+      () =>
+        document.querySelector(".http-custom-request-panel") &&
+        document.querySelector("#http-custom-request-send-button").disabled ===
+          false
     );
-    const menuItem = getContextMenuItem(monitor, "request-list-context-resend");
-    getContextMenuItem(monitor, "request-list-context-resend").click();
 
-    const menuPopup = menuItem.parentNode;
-
-    const onHidden = new Promise(resolve => {
-      menuPopup.addEventListener("popuphidden", resolve, { once: true });
-    });
-
-    menuItem.click();
-    menuPopup.hidePopup();
-
-    await onHidden;
+    await selectContextMenuItem(monitor, "request-list-context-edit-resend");
     await waitForPanels;
 
     // Click the "Send" button and wait till the new request appears in the list

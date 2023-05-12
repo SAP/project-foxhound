@@ -232,9 +232,11 @@ static inline ColorEncoding ColorEncodingFromDescriptor(
     const ColorEncodingDescriptor& desc) {
   ColorEncoding c;
   c.SetColorSpace(desc.color_space);
-  c.white_point = desc.white_point;
-  c.primaries = desc.primaries;
-  c.tf.SetTransferFunction(desc.tf);
+  if (desc.color_space != ColorSpace::kXYB) {
+    c.white_point = desc.white_point;
+    c.primaries = desc.primaries;
+    c.tf.SetTransferFunction(desc.tf);
+  }
   c.rendering_intent = desc.rendering_intent;
   JXL_CHECK(c.CreateICC());
   return c;
@@ -307,7 +309,7 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
       jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels < 3), num_channels,
       /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, /*pool=*/nullptr,
+      /*pool=*/nullptr,
       /*ib=*/&io.Main(), /*float_in=*/false, 0));
   return io;
 }

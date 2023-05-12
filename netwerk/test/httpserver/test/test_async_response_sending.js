@@ -654,7 +654,7 @@ function CustomPipe(name) {
 
       Assert.ok(this._waiter !== null, "must be waiting now");
 
-      if (self._data.length > 0) {
+      if (self._data.length) {
         dumpn(
           "*** data still pending, normal notifications will signal " +
             "completion"
@@ -701,11 +701,6 @@ function CustomPipe(name) {
         waiter.eventTarget.dispatch(event, Ci.nsIThread.DISPATCH_NORMAL);
       }
     },
-
-    QueryInterface: ChromeUtils.generateQI([
-      "nsIAsyncInputStream",
-      "nsIInputStream",
-    ]),
   });
 
   /** The output end of this pipe. */
@@ -1050,11 +1045,6 @@ function CustomPipe(name) {
         waiter.eventTarget.dispatch(event, Ci.nsIThread.DISPATCH_NORMAL);
       }
     },
-
-    QueryInterface: ChromeUtils.generateQI([
-      "nsIAsyncOutputStream",
-      "nsIOutputStream",
-    ]),
   });
 }
 

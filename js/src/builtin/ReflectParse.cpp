@@ -1772,8 +1772,8 @@ class ASTSerializer {
   bool expressions(ListNode* exprList, NodeVector& elts);
   bool leftAssociate(ListNode* node, MutableHandleValue dst);
   bool rightAssociate(ListNode* node, MutableHandleValue dst);
-  bool functionArgs(ParseNode* pn, ListNode* argsList, NodeVector& args,
-                    NodeVector& defaults, MutableHandleValue rest);
+  bool functionArgs(ParamsBodyNode* pn, NodeVector& args, NodeVector& defaults,
+                    MutableHandleValue rest);
 
   bool sourceElement(ParseNode* pn, MutableHandleValue dst);
 
@@ -1855,7 +1855,7 @@ class ASTSerializer {
   bool objectPattern(ListNode* obj, MutableHandleValue dst);
 
   bool function(FunctionNode* funNode, ASTType type, MutableHandleValue dst);
-  bool functionArgsAndBody(ParseNode* pn, NodeVector& args,
+  bool functionArgsAndBody(ParamsBodyNode* pn, NodeVector& args,
                            NodeVector& defaults, bool isAsync,
                            bool isExpression, MutableHandleValue body,
                            MutableHandleValue rest);
@@ -2833,9 +2833,8 @@ bool ASTSerializer::classField(ClassField* classField, MutableHandleValue dst) {
   // Dig through the lambda and get to the actual expression
   ParseNode* value = classField->initializer()
                          ->body()
-                         ->head()
-                         ->as<LexicalScopeNode>()
-                         .scopeBody()
+                         ->body()
+                         ->scopeBody()
                          ->as<ListNode>()
                          .head()
                          ->as<UnaryNode>()
@@ -3849,36 +3848,28 @@ bool ASTSerializer::function(FunctionNode* funNode, ASTType type,
                           rest, generatorStyle, isAsync, isExpression, dst);
 }
 
-bool ASTSerializer::functionArgsAndBody(ParseNode* pn, NodeVector& args,
+bool ASTSerializer::functionArgsAndBody(ParamsBodyNode* pn, NodeVector& args,
                                         NodeVector& defaults, bool isAsync,
                                         bool isExpression,
                                         MutableHandleValue body,
                                         MutableHandleValue rest) {
-  ListNode* argsList;
-  ParseNode* bodyNode;
-
-  /* Extract the args and body separately. */
-  if (pn->isKind(ParseNodeKind::ParamsBody)) {
-    argsList = &pn->as<ListNode>();
-    bodyNode = argsList->last();
-  } else {
-    argsList = nullptr;
-    bodyNode = pn;
+  // Serialize the arguments.
+  if (!functionArgs(pn, args, defaults, rest)) {
+    return false;
   }
 
-  if (bodyNode->is<LexicalScopeNode>()) {
-    bodyNode = bodyNode->as<LexicalScopeNode>().scopeBody();
-  }
+  // Skip the enclosing lexical scope.
+  ParseNode* bodyNode = pn->body()->scopeBody();
 
-  /* Serialize the arguments and body. */
+  // Serialize the body.
   switch (bodyNode->getKind()) {
-    case ParseNodeKind::ReturnStmt: /* expression closure, no destructured args
-                                     */
-      return functionArgs(pn, argsList, args, defaults, rest) &&
-             expression(bodyNode->as<UnaryNode>().kid(), body);
+    // Arrow function with expression body.
+    case ParseNodeKind::ReturnStmt:
+      MOZ_ASSERT(isExpression);
+      return expression(bodyNode->as<UnaryNode>().kid(), body);
 
-    case ParseNodeKind::StatementList: /* statement closure */
-    {
+    // Function with statement body.
+    case ParseNodeKind::StatementList: {
       ParseNode* firstNode = bodyNode->as<ListNode>().head();
 
       // Skip over initial yield in generator.
@@ -3890,12 +3881,10 @@ bool ASTSerializer::functionArgsAndBody(ParseNode* pn, NodeVector& args,
       // to insert initial yield.
       if (isAsync && isExpression) {
         MOZ_ASSERT(firstNode->getKind() == ParseNodeKind::ReturnStmt);
-        return functionArgs(pn, argsList, args, defaults, rest) &&
-               expression(firstNode->as<UnaryNode>().kid(), body);
+        return expression(firstNode->as<UnaryNode>().kid(), body);
       }
 
-      return functionArgs(pn, argsList, args, defaults, rest) &&
-             functionBody(firstNode, &bodyNode->pn_pos, body);
+      return functionBody(firstNode, &bodyNode->pn_pos, body);
     }
 
     default:
@@ -3903,20 +3892,20 @@ bool ASTSerializer::functionArgsAndBody(ParseNode* pn, NodeVector& args,
   }
 }
 
-bool ASTSerializer::functionArgs(ParseNode* pn, ListNode* argsList,
-                                 NodeVector& args, NodeVector& defaults,
+bool ASTSerializer::functionArgs(ParamsBodyNode* pn, NodeVector& args,
+                                 NodeVector& defaults,
                                  MutableHandleValue rest) {
-  if (!argsList) {
-    return true;
-  }
-
   RootedValue node(cx);
   bool defaultsNull = true;
   MOZ_ASSERT(defaults.empty(),
              "must be initially empty for it to be proper to clear this "
              "when there are no defaults");
 
-  for (ParseNode* arg : argsList->contentsTo(argsList->last())) {
+  MOZ_ASSERT(rest.isNullOrUndefined(),
+             "rest is set to |undefined| when a rest argument is present, "
+             "otherwise rest is set to |null|");
+
+  for (ParseNode* arg : pn->parameters()) {
     ParseNode* pat;
     ParseNode* defNode;
     if (arg->isKind(ParseNodeKind::Name) ||
@@ -3938,7 +3927,7 @@ bool ASTSerializer::functionArgs(ParseNode* pn, ListNode* argsList,
     if (!pattern(pat, &node)) {
       return false;
     }
-    if (rest.isUndefined() && arg->pn_next == argsList->last()) {
+    if (rest.isUndefined() && arg->pn_next == *std::end(pn->parameters())) {
       rest.setObject(node.toObject());
     } else {
       if (!args.append(node)) {
@@ -4142,8 +4131,9 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  frontend::NoScopeBindingCache scopeCache;
   frontend::CompilationState compilationState(cx, allocScope, input.get());
-  if (!compilationState.init(cx, &ec)) {
+  if (!compilationState.init(cx, &ec, &scopeCache)) {
     return false;
   }
 

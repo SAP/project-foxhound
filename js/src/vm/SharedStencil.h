@@ -22,12 +22,11 @@
 #include "frontend/SourceNotes.h"  // js::SrcNote
 #include "frontend/TypedIndex.h"   // js::frontend::TypedIndex
 
-#include "js/AllocPolicy.h"      // js::SystemAllocPolicy
-#include "js/TypeDecls.h"        // JSContext,jsbytecode
-#include "js/UniquePtr.h"        // js::UniquePtr
-#include "util/EnumFlags.h"      // js::EnumFlags
-#include "util/TrailingArray.h"  // js::TrailingArray
-#include "vm/ErrorContext.h"
+#include "js/AllocPolicy.h"            // js::SystemAllocPolicy
+#include "js/TypeDecls.h"              // JSContext,jsbytecode
+#include "js/UniquePtr.h"              // js::UniquePtr
+#include "util/EnumFlags.h"            // js::EnumFlags
+#include "util/TrailingArray.h"        // js::TrailingArray
 #include "vm/GeneratorAndAsyncKind.h"  // GeneratorKind, FunctionAsyncKind
 #include "vm/StencilEnums.h"  // js::{TryNoteKind,ImmutableScriptFlagsEnum,MutableScriptFlagsEnum}
 
@@ -36,6 +35,8 @@
 //
 
 namespace js {
+
+class ErrorContext;
 
 namespace frontend {
 class StencilXDR;
@@ -693,11 +694,11 @@ class SharedImmutableScriptData {
   }
 
  private:
-  static SharedImmutableScriptData* create(JSContext* cx);
+  static SharedImmutableScriptData* create(ErrorContext* ec);
 
  public:
   static SharedImmutableScriptData* createWith(
-      JSContext* cx, js::UniquePtr<ImmutableScriptData>&& isd);
+      ErrorContext* ec, js::UniquePtr<ImmutableScriptData>&& isd);
 
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
     size_t isdSize = isExternal ? 0 : mallocSizeOf(isd_);

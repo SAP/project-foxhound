@@ -2524,6 +2524,7 @@ pub extern "C" fn Servo_StyleRule_SetSelectorText(
             stylesheet_origin: contents.origin,
             namespaces: &namespaces,
             url_data: &url_data,
+            for_supports_rule: false,
         };
 
         let mut parser_input = ParserInput::new(&value_str);
@@ -2968,7 +2969,40 @@ pub extern "C" fn Servo_ContainerRule_GetConditionText(
     result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &ContainerRule| {
+        rule.condition.to_css(&mut CssWriter::new(result)).unwrap();
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ContainerRule_GetContainerQuery(
+    rule: &RawServoContainerRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &ContainerRule| {
         rule.query_condition().to_css(&mut CssWriter::new(result)).unwrap();
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ContainerRule_QueryContainerFor(
+    rule: &RawServoContainerRule,
+    element: &RawGeckoElement,
+) -> *const RawGeckoElement {
+    read_locked_arc(rule, |rule: &ContainerRule| {
+        rule.condition.find_container(GeckoElement(element)).map_or(ptr::null(), |result| result.element.0)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ContainerRule_GetContainerName(
+    rule: &RawServoContainerRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &ContainerRule| {
+        let name = rule.container_name();
+        if !name.is_none() {
+            name.to_css(&mut CssWriter::new(result)).unwrap();
+        }
     })
 }
 
@@ -5471,6 +5505,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetAutoValue(
         MarginRight => auto,
         MarginBottom => auto,
         MarginLeft => auto,
+        AspectRatio => specified::AspectRatio::auto(),
     };
     write_locked_arc(declarations, |decls: &mut PropertyDeclarationBlock| {
         decls.push(prop, Importance::Normal);
@@ -5686,6 +5721,9 @@ pub extern "C" fn Servo_CSSSupports(
 }
 
 #[no_mangle]
+// Work around miscompilation when cross-LTO somehow inlines this function.
+// (bug 1789779)
+#[inline(never)]
 pub unsafe extern "C" fn Servo_NoteExplicitHints(
     element: &RawGeckoElement,
     restyle_hint: RestyleHint,

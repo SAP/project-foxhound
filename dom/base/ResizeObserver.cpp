@@ -168,7 +168,13 @@ ResizeObservation::ResizeObservation(Element& aTarget,
                                      ResizeObserver& aObserver,
                                      ResizeObserverBoxOptions aBox,
                                      WritingMode aWm)
-    : mTarget(&aTarget), mObserver(&aObserver), mObservedBox(aBox) {
+    : mTarget(&aTarget),
+      mObserver(&aObserver),
+      mObservedBox(aBox),
+      mLastReportedSize(
+          aWm, StaticPrefs::dom_resize_observer_last_reported_size_invalid()
+                   ? gfx::Size(-1, -1)
+                   : gfx::Size()) {
   aTarget.BindObject(mObserver);
 }
 
@@ -185,6 +191,13 @@ void ResizeObservation::Unlink(RemoveFromObserver aRemoveFromObserver) {
 
 bool ResizeObservation::IsActive() const {
   nsIFrame* frame = mTarget->GetPrimaryFrame();
+
+  // As detailed in the css-contain specification, if the target is hidden by
+  // `content-visibility` it should not call its ResizeObservation callbacks.
+  if (frame && frame->IsHiddenByContentVisibilityOnAnyAncestor()) {
+    return false;
+  }
+
   const WritingMode wm = frame ? frame->GetWritingMode() : WritingMode();
   const LogicalPixelSize size(wm, CalculateBoxSize(mTarget, mObservedBox));
   return mLastReportedSize != size;
@@ -293,7 +306,8 @@ void ResizeObserver::Observe(Element& aTarget,
   observation =
       new ResizeObservation(aTarget, *this, aOptions.mBox,
                             frame ? frame->GetWritingMode() : WritingMode());
-  if (this == mDocument->GetLastRememberedSizeObserver()) {
+  if (!StaticPrefs::dom_resize_observer_last_reported_size_invalid() &&
+      this == mDocument->GetLastRememberedSizeObserver()) {
     // Resize observations are initialized with a (0, 0) mLastReportedSize,
     // this means that the callback won't be called if the element is 0x0.
     // But we need it called for handling the last remembered size, so set
@@ -517,6 +531,9 @@ static void LastRememberedSizeCallback(
       aObserver.Unobserve(*target);
       continue;
     }
+    MOZ_ASSERT(!frame->IsFrameOfType(nsIFrame::eLineParticipant) ||
+                   frame->IsFrameOfType(nsIFrame::eReplaced),
+               "Should have unobserved non-replaced inline.");
     const nsStylePosition* stylePos = frame->StylePosition();
     const WritingMode wm = frame->GetWritingMode();
     bool canRememberBSize = stylePos->ContainIntrinsicBSize(wm).IsAutoLength();

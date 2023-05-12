@@ -13,7 +13,7 @@ registerCleanupFunction(async () => {
   trr_clear_prefs();
 });
 
-const { updateAppInfo, getAppInfo } = ChromeUtils.import(
+const { updateAppInfo } = ChromeUtils.import(
   "resource://testing-common/AppInfo.jsm"
 );
 
@@ -24,8 +24,8 @@ updateAppInfo({
   platformVersion: "48",
 });
 
-const { EnterprisePolicyTesting } = ChromeUtils.import(
-  "resource://testing-common/EnterprisePolicyTesting.jsm"
+const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
+  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
 
 // This initializes the policy engine for xpcshell tests

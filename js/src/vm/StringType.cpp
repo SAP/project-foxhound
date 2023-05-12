@@ -25,6 +25,7 @@
 #include <type_traits>  // std::is_same, std::is_unsigned
 
 #include "jsfriendapi.h"
+#include "jsnum.h"
 
 #include "builtin/Boolean.h"
 #ifdef ENABLE_RECORD_TUPLE
@@ -37,9 +38,7 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertyAndElement.h"    // JS_DefineElement
 #include "js/StableStringChars.h"
-#include "js/Symbol.h"
 #include "js/UbiNode.h"
-#include "util/StringBuffer.h"
 #include "util/Unicode.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/StaticStrings.h"
@@ -47,9 +46,6 @@
 
 #include "gc/Marking-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/JSContext-inl.h"
-#include "vm/JSObject-inl.h"
-#include "vm/Realm-inl.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
 #  include "vm/TupleType.h"
@@ -1582,10 +1578,12 @@ static JSLinearString* NewStringDeflated(JSContext* cx, const char16_t* s,
   return JSLinearString::new_<allowGC>(cx, std::move(news), n, heap);
 }
 
-static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringForAtomDeflated(
-    JSContext* cx, const char16_t* chars, size_t length) {
+static MOZ_ALWAYS_INLINE JSAtom* NewInlineAtomDeflated(JSContext* cx,
+                                                       const char16_t* chars,
+                                                       size_t length,
+                                                       js::HashNumber hash) {
   Latin1Char* storage;
-  JSInlineString* str = AllocateInlineStringForAtom(cx, length, &storage);
+  JSAtom* str = AllocateInlineAtom(cx, length, &storage, hash);
   if (!str) {
     return nullptr;
   }
@@ -1595,11 +1593,10 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringForAtomDeflated(
   return str;
 }
 
-static JSLinearString* NewStringForAtomDeflatedValidLength(JSContext* cx,
-                                                           const char16_t* s,
-                                                           size_t n) {
+static JSAtom* NewAtomDeflatedValidLength(JSContext* cx, const char16_t* s,
+                                          size_t n, js::HashNumber hash) {
   if (JSInlineString::lengthFits<Latin1Char>(n)) {
-    return NewInlineStringForAtomDeflated(cx, s, n);
+    return NewInlineAtomDeflated(cx, s, n, hash);
   }
 
   auto news = cx->make_pod_arena_array<Latin1Char>(js::StringBufferArena, n);
@@ -1611,7 +1608,7 @@ static JSLinearString* NewStringForAtomDeflatedValidLength(JSContext* cx,
   MOZ_ASSERT(CanStoreCharsAsLatin1(s, n));
   FillFromCompatible(news.get(), s, n);
 
-  return JSLinearString::newForAtomValidLength(cx, std::move(news), n);
+  return JSAtom::newValidLength(cx, std::move(news), n, hash);
 }
 
 template <AllowGC allowGC, typename CharT>
@@ -1784,15 +1781,14 @@ template JSLinearString* NewStringCopyN<NoGC>(JSContext* cx,
                                               gc::InitialHeap heap);
 
 template <typename CharT>
-JSLinearString* NewStringForAtomCopyNDontDeflateValidLength(JSContext* cx,
-                                                            const CharT* s,
-                                                            size_t n) {
+JSAtom* NewAtomCopyNDontDeflateValidLength(JSContext* cx, const CharT* s,
+                                           size_t n, js::HashNumber hash) {
   if constexpr (std::is_same_v<CharT, char16_t>) {
     MOZ_ASSERT(!CanStoreCharsAsLatin1(s, n));
   }
 
   if (JSInlineString::lengthFits<CharT>(n)) {
-    return NewInlineStringForAtom(cx, s, n);
+    return NewInlineAtom(cx, s, n, hash);
   }
 
   auto news = cx->make_pod_arena_array<CharT>(js::StringBufferArena, n);
@@ -1803,33 +1799,39 @@ JSLinearString* NewStringForAtomCopyNDontDeflateValidLength(JSContext* cx,
 
   FillChars(news.get(), s, n);
 
-  return JSLinearString::newForAtomValidLength(cx, std::move(news), n);
+  return JSAtom::newValidLength(cx, std::move(news), n, hash);
 }
 
-template JSLinearString* NewStringForAtomCopyNDontDeflateValidLength(
-    JSContext* cx, const char16_t* s, size_t n);
+template JSAtom* NewAtomCopyNDontDeflateValidLength(JSContext* cx,
+                                                    const char16_t* s, size_t n,
+                                                    js::HashNumber hash);
 
-template JSLinearString* NewStringForAtomCopyNDontDeflateValidLength(
-    JSContext* cx, const Latin1Char* s, size_t n);
+template JSAtom* NewAtomCopyNDontDeflateValidLength(JSContext* cx,
+                                                    const Latin1Char* s,
+                                                    size_t n,
+                                                    js::HashNumber hash);
 
 template <typename CharT>
-JSLinearString* NewStringForAtomCopyNMaybeDeflateValidLength(JSContext* cx,
-                                                             const CharT* s,
-                                                             size_t n) {
+JSAtom* NewAtomCopyNMaybeDeflateValidLength(JSContext* cx, const CharT* s,
+                                            size_t n, js::HashNumber hash) {
   if constexpr (std::is_same_v<CharT, char16_t>) {
     if (CanStoreCharsAsLatin1(s, n)) {
-      return NewStringForAtomDeflatedValidLength(cx, s, n);
+      return NewAtomDeflatedValidLength(cx, s, n, hash);
     }
   }
 
-  return NewStringForAtomCopyNDontDeflateValidLength(cx, s, n);
+  return NewAtomCopyNDontDeflateValidLength(cx, s, n, hash);
 }
 
-template JSLinearString* NewStringForAtomCopyNMaybeDeflateValidLength(
-    JSContext* cx, const char16_t* s, size_t n);
+template JSAtom* NewAtomCopyNMaybeDeflateValidLength(JSContext* cx,
+                                                     const char16_t* s,
+                                                     size_t n,
+                                                     js::HashNumber hash);
 
-template JSLinearString* NewStringForAtomCopyNMaybeDeflateValidLength(
-    JSContext* cx, const Latin1Char* s, size_t n);
+template JSAtom* NewAtomCopyNMaybeDeflateValidLength(JSContext* cx,
+                                                     const Latin1Char* s,
+                                                     size_t n,
+                                                     js::HashNumber hash);
 
 JSLinearString* NewStringCopyUTF8N(JSContext* cx, const JS::UTF8Chars utf8,
                                    gc::InitialHeap heap) {

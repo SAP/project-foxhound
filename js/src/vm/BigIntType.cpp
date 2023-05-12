@@ -91,23 +91,18 @@
 
 #include <functional>
 #include <limits>
-#include <math.h>
 #include <memory>
 #include <type_traits>  // std::is_same_v
 
 #include "jsnum.h"
 
-#include "builtin/BigInt.h"
 #include "gc/Allocator.h"
 #include "js/BigInt.h"
-#include "js/Conversions.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "js/Initialization.h"
 #include "js/StableStringChars.h"
 #include "js/Utility.h"
 #include "util/CheckedArithmetic.h"
 #include "vm/JSContext.h"
-#include "vm/SelfHosting.h"
 #include "vm/StaticStrings.h"
 
 #include "gc/GCContext-inl.h"
@@ -148,7 +143,7 @@ BigInt* BigInt::createUninitialized(JSContext* cx, size_t digitLength,
     return nullptr;
   }
 
-  BigInt* x = AllocateBigInt(cx, heap);
+  BigInt* x = cx->newCell<BigInt>(heap);
   if (!x) {
     return nullptr;
   }
@@ -1649,24 +1644,6 @@ BigInt* BigInt::parseLiteral(JSContext* cx, const Range<const CharT> chars,
                             haveParseError, heap);
 }
 
-template <typename CharT>
-bool BigInt::literalIsZeroNoRadix(const Range<const CharT> chars) {
-  MOZ_ASSERT(chars.length());
-
-  RangedPtr<const CharT> start = chars.begin();
-  RangedPtr<const CharT> end = chars.end();
-
-  // Skipping leading zeroes.
-  while (start[0] == '0') {
-    start++;
-    if (start == end) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 // trim and remove radix selection prefix.
 template <typename CharT>
 bool BigInt::literalIsZero(const Range<const CharT> chars) {
@@ -1679,11 +1656,19 @@ bool BigInt::literalIsZero(const Range<const CharT> chars) {
   if (end - start > 2 && start[0] == '0') {
     if (start[1] == 'b' || start[1] == 'B' || start[1] == 'x' ||
         start[1] == 'X' || start[1] == 'o' || start[1] == 'O') {
-      return literalIsZeroNoRadix(Range<const CharT>(start + 2, end));
+      start += 2;
     }
   }
 
-  return literalIsZeroNoRadix(Range<const CharT>(start, end));
+  // Skipping leading zeroes.
+  while (start[0] == '0') {
+    start++;
+    if (start == end) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 template bool BigInt::literalIsZero(const Range<const char16_t> chars);

@@ -36,7 +36,6 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/RangedPtr.h"
 #include "mozilla/ScopeExit.h"
 
 #include <algorithm>
@@ -67,7 +66,6 @@
 #include "vm/SavedFrame.h"
 #include "vm/SharedArrayObject.h"
 #include "vm/TypedArrayObject.h"
-#include "vm/WrapperObject.h"
 #include "wasm/WasmJS.h"
 
 #include "vm/Compartment-inl.h"
@@ -75,6 +73,8 @@
 #include "vm/InlineCharBuffer-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/ObjectOperations-inl.h"
+#include "vm/Realm-inl.h"
 
 using namespace js;
 
@@ -88,7 +88,6 @@ using mozilla::BitwiseCast;
 using mozilla::Maybe;
 using mozilla::NativeEndian;
 using mozilla::NumbersAreIdentical;
-using mozilla::RangedPtr;
 
 // When you make updates here, make sure you consider whether you need to bump
 // the value of JS_STRUCTURED_CLONE_VERSION in js/public/StructuredClone.h.  You
@@ -1930,7 +1929,16 @@ bool JSStructuredCloneWriter::traverseError(HandleObject obj) {
 
   // Non-standard: Serialize |cause|. Because this property
   // might be missing we also write "hasCause" later.
-  Rooted<Maybe<Value>> cause(cx, unwrapped->getCause());
+  RootedId causeId(cx, NameToId(cx->names().cause));
+  Rooted<Maybe<PropertyDescriptor>> causeDesc(cx);
+  if (!GetOwnPropertyDescriptor(cx, obj, causeId, &causeDesc)) {
+    return false;
+  }
+
+  Rooted<Maybe<Value>> cause(cx);
+  if (causeDesc.isSome() && causeDesc->isDataDescriptor()) {
+    cause = mozilla::Some(causeDesc->value());
+  }
   if (!cx->compartment()->wrap(cx, &cause)) {
     return false;
   }

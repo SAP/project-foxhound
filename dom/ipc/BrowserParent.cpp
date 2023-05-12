@@ -868,21 +868,6 @@ mozilla::ipc::IPCResult BrowserParent::RecvDropLinks(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult BrowserParent::RecvEvent(const RemoteDOMEvent& aEvent) {
-  NS_ENSURE_TRUE(xpc::IsInAutomation(), IPC_FAIL(this, "Unexpected event"));
-
-  RefPtr<Event> event = aEvent.mEvent;
-  NS_ENSURE_TRUE(event, IPC_OK());
-
-  RefPtr<EventTarget> target = mFrameElement;
-  NS_ENSURE_TRUE(target, IPC_OK());
-
-  event->SetOwner(target);
-
-  target->DispatchEvent(*event);
-  return IPC_OK();
-}
-
 bool BrowserParent::SendLoadRemoteScript(const nsAString& aURL,
                                          const bool& aRunInGlobalScope) {
   if (mCreatingWindow) {
@@ -1127,17 +1112,13 @@ void BrowserParent::UpdateDimensions(const nsIntRect& rect,
 }
 
 DimensionInfo BrowserParent::GetDimensionInfo() {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
-  MOZ_ASSERT(widget);
-  CSSToLayoutDeviceScale widgetScale = widget->GetDefaultScale();
-
   LayoutDeviceIntRect devicePixelRect = ViewAs<LayoutDevicePixel>(
       mRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
   LayoutDeviceIntSize devicePixelSize = ViewAs<LayoutDevicePixel>(
       mDimensions, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
 
-  CSSRect unscaledRect = devicePixelRect / widgetScale;
-  CSSSize unscaledSize = devicePixelSize / widgetScale;
+  CSSRect unscaledRect = devicePixelRect / mDefaultScale;
+  CSSSize unscaledSize = devicePixelSize / mDefaultScale;
   DimensionInfo di(unscaledRect, unscaledSize, mClientOffset, mChromeOffset);
   return di;
 }
@@ -1329,6 +1310,13 @@ mozilla::ipc::IPCResult BrowserParent::RecvPDocAccessibleConstructor(
       return IPC_FAIL_NO_REASON(this);
     }
 
+    if (auto* prevTopLevel = GetTopLevelDocAccessible()) {
+      // Sometimes, we can get a new top level DocAccessibleParent before the
+      // old one gets destroyed. The old one will die pretty shortly anyway,
+      // so just destroy it now. If we don't do this, GetTopLevelDocAccessible()
+      // might return the wrong document for a short while.
+      prevTopLevel->Destroy();
+    }
     doc->SetTopLevel();
     a11y::DocManager::RemoteDocAdded(doc);
 #  ifdef XP_WIN
@@ -2311,7 +2299,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvAsyncMessage(
 
 mozilla::ipc::IPCResult BrowserParent::RecvSetCursor(
     const nsCursor& aCursor, const bool& aHasCustomCursor,
-    const nsCString& aCursorData, const uint32_t& aWidth,
+    Maybe<BigBuffer>&& aCursorData, const uint32_t& aWidth,
     const uint32_t& aHeight, const float& aResolutionX,
     const float& aResolutionY, const uint32_t& aStride,
     const gfx::SurfaceFormat& aFormat, const uint32_t& aHotspotX,
@@ -2327,16 +2315,14 @@ mozilla::ipc::IPCResult BrowserParent::RecvSetCursor(
 
   nsCOMPtr<imgIContainer> cursorImage;
   if (aHasCustomCursor) {
-    if (aHeight * aStride != aCursorData.Length() ||
+    if (!aCursorData || aHeight * aStride != aCursorData->Size() ||
         aStride < aWidth * gfx::BytesPerPixel(aFormat)) {
       return IPC_FAIL(this, "Invalid custom cursor data");
     }
     const gfx::IntSize size(aWidth, aHeight);
     RefPtr<gfx::DataSourceSurface> customCursor =
-        gfx::CreateDataSourceSurfaceFromData(
-            size, aFormat,
-            reinterpret_cast<const uint8_t*>(aCursorData.BeginReading()),
-            aStride);
+        gfx::CreateDataSourceSurfaceFromData(size, aFormat, aCursorData->Data(),
+                                             aStride);
 
     RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(customCursor, size);
     cursorImage = image::ImageOps::CreateFromDrawable(drawable);
@@ -3208,11 +3194,12 @@ bool BrowserParent::SendInsertText(const nsString& aStringToInsert) {
 }
 
 bool BrowserParent::SendPasteTransferable(
-    const IPCDataTransfer& aDataTransfer, const bool& aIsPrivateData,
+    IPCDataTransfer&& aDataTransfer, const bool& aIsPrivateData,
     nsIPrincipal* aRequestingPrincipal,
     const nsContentPolicyType& aContentPolicyType) {
   return PBrowserParent::SendPasteTransferable(
-      aDataTransfer, aIsPrivateData, aRequestingPrincipal, aContentPolicyType);
+      std::move(aDataTransfer), aIsPrivateData, aRequestingPrincipal,
+      aContentPolicyType);
 }
 
 /* static */
@@ -3439,6 +3426,11 @@ void BrowserParent::TryCacheDPIAndScale() {
   if (widget) {
     mDPI = widget->GetDPI();
     mRounding = widget->RoundsWidgetCoordinatesTo();
+    if (mDefaultScale != widget->GetDefaultScale()) {
+      // The change of the default scale factor will affect the child dimensions
+      // so we need to invalidate it.
+      mUpdatedDimensions = false;
+    }
     mDefaultScale = widget->GetDefaultScale();
   }
 }
@@ -3804,7 +3796,7 @@ nsresult BrowserParent::HandleEvent(Event* aEvent) {
 
 mozilla::ipc::IPCResult BrowserParent::RecvInvokeDragSession(
     nsTArray<IPCDataTransfer>&& aTransfers, const uint32_t& aAction,
-    Maybe<Shmem>&& aVisualDnDData, const uint32_t& aStride,
+    Maybe<BigBuffer>&& aVisualDnDData, const uint32_t& aStride,
     const gfx::SurfaceFormat& aFormat, const LayoutDeviceIntRect& aDragRect,
     nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
     const CookieJarSettingsArgs& aCookieJarSettingsArgs,
@@ -3828,11 +3820,10 @@ mozilla::ipc::IPCResult BrowserParent::RecvInvokeDragSession(
       this, std::move(aTransfers), aDragRect, aPrincipal, aCsp,
       cookieJarSettings, aSourceWindowContext.GetMaybeDiscarded());
 
-  if (!aVisualDnDData.isNothing() && aVisualDnDData.ref().IsReadable() &&
-      aVisualDnDData.ref().Size<char>() >= aDragRect.height * aStride) {
+  if (aVisualDnDData && aVisualDnDData->Size() >= aDragRect.height * aStride) {
     dragStartData->SetVisualization(gfx::CreateDataSourceSurfaceFromData(
         gfx::IntSize(aDragRect.width, aDragRect.height), aFormat,
-        aVisualDnDData.ref().get<uint8_t>(), aStride));
+        aVisualDnDData->Data(), aStride));
   }
 
   nsCOMPtr<nsIDragService> dragService =
@@ -3844,10 +3835,6 @@ mozilla::ipc::IPCResult BrowserParent::RecvInvokeDragSession(
   presShell->GetPresContext()
       ->EventStateManager()
       ->BeginTrackingRemoteDragGesture(mFrameElement, dragStartData);
-
-  if (aVisualDnDData.isSome()) {
-    Unused << DeallocShmem(aVisualDnDData.ref());
-  }
 
   return IPC_OK();
 }

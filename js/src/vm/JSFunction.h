@@ -11,15 +11,16 @@
  * JS function definitions.
  */
 
-#include <iterator>
 #include <string_view>
 
 #include "jstypes.h"
 
+#include "gc/Policy.h"
 #include "js/shadow/Function.h"        // JS::shadow::Function
 #include "vm/FunctionFlags.h"          // FunctionFlags
 #include "vm/FunctionPrefixKind.h"     // FunctionPrefixKind
 #include "vm/GeneratorAndAsyncKind.h"  // GeneratorKind, FunctionAsyncKind
+#include "vm/JSAtom.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 
@@ -845,9 +846,6 @@ class FunctionExtended : public JSFunction {
  private:
   friend class JSFunction;
 };
-
-extern bool CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
-                                   HandleObject newEnclosingEnv);
 
 extern JSFunction* CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
                                             HandleObject enclosingEnv,

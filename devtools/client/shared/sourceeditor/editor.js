@@ -40,7 +40,6 @@ const MAX_VERTICAL_OFFSET = 3;
 const RE_JUMP_TO_LINE = /^(\d+):?(\d+)?/;
 const AUTOCOMPLETE_MARK_CLASSNAME = "cm-auto-complete-shadow-text";
 
-const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { PrefObserver } = require("devtools/client/shared/prefs");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
@@ -564,10 +563,13 @@ Editor.prototype = {
 
   /**
    * Creates a CodeMirror Document
+   *
+   * @param {String} text: Initial text of the document
+   * @param {Object|String} mode: Mode of the document. See https://codemirror.net/5/doc/manual.html#option_mode
    * @returns CodeMirror.Doc
    */
-  createDocument() {
-    return new this.Doc("");
+  createDocument(text = "", mode) {
+    return new this.Doc(text, mode);
   },
 
   /**

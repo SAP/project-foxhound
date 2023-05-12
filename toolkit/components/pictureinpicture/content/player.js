@@ -112,11 +112,8 @@ let Player = {
    */
   resizeDebouncer: null,
   /**
-   * Used for window movement Telemetry to determine if the player window has
-   * moved since the last time we checked.
+   * Used for Telemetry to identify the window.
    */
-  lastScreenX: -1,
-  lastScreenY: -1,
   id: -1,
 
   /**
@@ -228,6 +225,14 @@ let Player = {
       const fullscreenButton = document.getElementById("fullscreen");
       fullscreenButton.hidden = false;
       fullscreenButton.previousElementSibling.hidden = false;
+
+      const seekBackwardButton = document.getElementById("seekBackward");
+      seekBackwardButton.hidden = false;
+      seekBackwardButton.nextElementSibling.hidden = false;
+
+      const seekForwardButton = document.getElementById("seekForward");
+      seekForwardButton.hidden = false;
+      seekForwardButton.previousElementSibling.hidden = false;
     }
 
     this.resizeDebouncer = new DeferredTask(() => {
@@ -236,9 +241,6 @@ let Player = {
         height: window.outerHeight.toString(),
       });
     }, RESIZE_DEBOUNCE_RATE_MS);
-
-    this.lastScreenX = window.screenX;
-    this.lastScreenY = window.screenY;
 
     this.computeAndSetMinimumSize(window.outerWidth, window.outerHeight);
 
@@ -454,6 +456,16 @@ let Player = {
         break;
       }
 
+      case "seekBackward": {
+        this.actor.sendAsyncMessage("PictureInPicture:SeekBackward");
+        break;
+      }
+
+      case "seekForward": {
+        this.actor.sendAsyncMessage("PictureInPicture:SeekForward");
+        break;
+      }
+
       case "unpip": {
         PictureInPicture.focusTabAndClosePip(window, this.actor);
         break;
@@ -638,9 +650,6 @@ let Player = {
    *  Event context details
    */
   onMouseUp(event) {
-    this.lastScreenX = window.screenX;
-    this.lastScreenY = window.screenY;
-
     // Corner snapping changes start here.
     // Check if metakey pressed and macOS
     let quadrant = this.determineCurrentQuadrant();

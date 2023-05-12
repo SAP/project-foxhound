@@ -16,6 +16,9 @@ const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 const MOCK_COLLECTION_TEST_CARD_IMAGE_PATH = "mockCollectionPreview.avif";
 const MOCK_THEME_NAME = "Mock Theme";
+const MOCK_THEME_NAME_2 = "Mock Theme 2";
+const MOCK_THEME_DESCRIPTION = "Mock Theme Description";
+const MOCK_THEME_DESCRIPTION_2 = "Mock Theme 2 Description";
 const MOCK_THEME_FIGURE_URL = "https://www.example.com/figure.avif";
 
 // fluent string ids
@@ -29,8 +32,15 @@ const MOCK_COLLECTION_L10N_SHORT_DESCRIPTION =
 const SOFT_COLORWAY_THEME_ID = "mocktheme-soft-colorway@mozilla.org";
 const BALANCED_COLORWAY_THEME_ID = "mocktheme-balanced-colorway@mozilla.org";
 const BOLD_COLORWAY_THEME_ID = "mocktheme-bold-colorway@mozilla.org";
-const NO_INTENSITY_THEME_ID = "mocktheme-colorway@mozilla.org";
-const NO_INTENSITY_EXPIRED_THEME_ID = "expiredmocktheme-colorway@mozilla.org";
+const SOFT_COLORWAY_THEME_ID_2 = "mocktheme2-soft-colorway@mozilla.org";
+const BALANCED_COLORWAY_THEME_ID_2 = "mocktheme2-balanced-colorway@mozilla.org";
+const BOLD_COLORWAY_THEME_ID_2 = "mocktheme2-bold-colorway@mozilla.org";
+const NO_INTENSITY_COLORWAY_THEME_ID = "mocktheme-colorway@mozilla.org";
+const NO_INTENSITY_EXPIRED_COLORWAY_THEME_ID =
+  "expiredmocktheme-colorway@mozilla.org";
+
+// non-colorway theme ids
+const MOCK_DARK_THEME_ID = "mocktheme-dark@mozilla.org";
 
 // collections
 const MOCK_COLLECTION_ID = "mock-collection";
@@ -45,11 +55,29 @@ const TEST_COLORWAY_COLLECTION = {
 };
 
 function installTestTheme(id) {
+  let name, description;
+  if (
+    [
+      SOFT_COLORWAY_THEME_ID_2,
+      BALANCED_COLORWAY_THEME_ID_2,
+      BOLD_COLORWAY_THEME_ID_2,
+    ].includes(id)
+  ) {
+    name = MOCK_THEME_NAME_2;
+    description = MOCK_THEME_DESCRIPTION_2;
+  } else {
+    name = MOCK_THEME_NAME;
+    description = MOCK_THEME_DESCRIPTION;
+  }
   let xpi = AddonTestUtils.createTempWebExtensionFile({
     manifest: {
-      name: MOCK_THEME_NAME,
+      name,
+      description,
       applications: { gecko: { id } },
-      theme: {},
+      theme:
+        id === MOCK_DARK_THEME_ID
+          ? { properties: { color_scheme: "dark" } }
+          : {},
     },
   });
   return AddonTestUtils.promiseInstallFile(xpi);
@@ -62,19 +90,46 @@ function installTestTheme(id) {
  * @see BuiltInThemes
  */
 function initBuiltInThemesStubs(hasActiveCollection = true) {
+  info("Creating BuiltInThemes stubs");
   const sandbox = sinon.createSandbox();
   registerCleanupFunction(() => {
+    info("Restoring BuiltInThemes sandbox for cleanup");
     sandbox.restore();
   });
+  sandbox.stub(BuiltInThemes, "getLocalizedColorwayGroupName").callsFake(id => {
+    if (
+      [
+        SOFT_COLORWAY_THEME_ID_2,
+        BALANCED_COLORWAY_THEME_ID_2,
+        BOLD_COLORWAY_THEME_ID_2,
+      ].includes(id)
+    ) {
+      return MOCK_THEME_NAME_2;
+    }
+
+    return MOCK_THEME_NAME;
+  });
   sandbox
-    .stub(BuiltInThemes, "getLocalizedColorwayGroupName")
-    .returns(MOCK_THEME_NAME);
+    .stub(BuiltInThemes, "getLocalizedColorwayDescription")
+    .callsFake(id => {
+      if (
+        [
+          SOFT_COLORWAY_THEME_ID_2,
+          BALANCED_COLORWAY_THEME_ID_2,
+          BOLD_COLORWAY_THEME_ID_2,
+        ].includes(id)
+      ) {
+        return MOCK_THEME_DESCRIPTION_2;
+      }
+
+      return MOCK_THEME_DESCRIPTION;
+    });
   sandbox.stub(BuiltInThemes.builtInThemeMap, "get").callsFake(id => {
     let mockThemeProperties = {
       collection: MOCK_COLLECTION_ID,
       figureUrl: MOCK_THEME_FIGURE_URL,
     };
-    if (id === NO_INTENSITY_EXPIRED_THEME_ID) {
+    if (id === NO_INTENSITY_EXPIRED_COLORWAY_THEME_ID) {
       mockThemeProperties.expiry = new Date("1970-01-01");
     }
     return mockThemeProperties;
@@ -90,13 +145,16 @@ function initBuiltInThemesStubs(hasActiveCollection = true) {
 
   sandbox
     .stub(BuiltInThemes, "isColorwayFromCurrentCollection")
-    .callsFake(
-      id =>
-        id === SOFT_COLORWAY_THEME_ID ||
-        id === BALANCED_COLORWAY_THEME_ID ||
-        BOLD_COLORWAY_THEME_ID ||
-        NO_INTENSITY_THEME_ID ||
-        NO_INTENSITY_EXPIRED_THEME_ID
+    .callsFake(id =>
+      [
+        SOFT_COLORWAY_THEME_ID,
+        BALANCED_COLORWAY_THEME_ID,
+        BOLD_COLORWAY_THEME_ID,
+        NO_INTENSITY_COLORWAY_THEME_ID,
+        SOFT_COLORWAY_THEME_ID_2,
+        BALANCED_COLORWAY_THEME_ID_2,
+        BOLD_COLORWAY_THEME_ID_2,
+      ].includes(id)
     );
   return sandbox.restore.bind(sandbox);
 }
@@ -107,8 +165,10 @@ function initBuiltInThemesStubs(hasActiveCollection = true) {
  * @see ColorwayClosetOpener
  */
 function initColorwayClosetOpenerStubs() {
+  info("Creating ColorwayClosetOpener stubs");
   const sandbox = sinon.createSandbox();
   registerCleanupFunction(() => {
+    info("Restoring ColorwayClosetOpener sandbox for cleanup");
     sandbox.restore();
   });
   sandbox.stub(ColorwayClosetOpener, "openModal").resolves({});
@@ -120,18 +180,24 @@ function getColorwayClosetTestElements(document) {
     colorwayFigure: document.getElementById("colorway-figure"),
     collectionTitle: document.getElementById("collection-title"),
     expiryDateSpan: document.querySelector("#collection-expiry-date > span"),
+    colorwaySelector: document.querySelector("#colorway-selector"),
+    colorwayIntensities: document.querySelector("#colorway-intensity-radios"),
+    setColorwayButton: document.getElementById("set-colorway"),
+    cancelButton: document.getElementById("cancel"),
+    colorwayName: document.querySelector("#colorway-name"),
+    colorwayDescription: document.querySelector("#colorway-description"),
     homepageResetContainer: document.getElementById("homepage-reset-container"),
     homepageResetSuccessMessage: document.querySelector(
-      "#homepage-reset-container > .success-prompt > span"
+      "#homepage-reset-success > span"
     ),
     homepageResetUndoButton: document.querySelector(
-      "#homepage-reset-container > .success-prompt > button"
+      "#homepage-reset-success > button"
     ),
     homepageResetMessage: document.querySelector(
-      "#homepage-reset-container > .reset-prompt > span"
+      "#homepage-reset-prompt > span"
     ),
     homepageResetApplyButton: document.querySelector(
-      "#homepage-reset-container > .reset-prompt > button"
+      "#homepage-reset-prompt > button"
     ),
   };
 }
@@ -149,15 +215,57 @@ function getColorwayClosetElementVisibility(document) {
   return v;
 }
 
-async function testInColorwayClosetModal(testMethod) {
+async function testInColorwayClosetModal(
+  testMethod,
+  themesToInstall = [
+    SOFT_COLORWAY_THEME_ID,
+    BALANCED_COLORWAY_THEME_ID,
+    BOLD_COLORWAY_THEME_ID,
+  ],
+  themeToEnable = undefined
+) {
+  const clearBuiltInThemesStubs = initBuiltInThemesStubs();
+  let themesToUninstall = [];
+  for (let theme of themesToInstall) {
+    info(`Installing ${theme}`);
+    const { addon } = await installTestTheme(theme);
+    // For some tests, we might want a colorway theme already enabled
+    // before opening the modal. If there is such a theme, be sure
+    // to enable it after installing all mock themes.
+    if (themeToEnable && themeToEnable === theme) {
+      info(`Enabling ${addon.id}`);
+      await addon.enable();
+    } else {
+      info(`Disabling ${addon.id}`);
+      await addon.disable();
+    }
+    themesToUninstall.push(addon);
+  }
+
   const { closedPromise, dialog } = ColorwayClosetOpener.openModal();
   await dialog._dialogReady;
   const document = dialog._frame.contentDocument;
+  let contentWindow = dialog._frame.contentWindow;
   try {
-    await testMethod(document);
+    await testMethod(document, contentWindow);
   } finally {
-    document.getElementById("cancel").click();
+    // If the window is still open after the test, close it.
+    contentWindow = dialog._frame.contentWindow;
+    if (contentWindow && !contentWindow.closed) {
+      info("Modal is still open. Closing modal before ending test.");
+      document.getElementById("cancel").click();
+    } else {
+      info("Modal is already closed");
+    }
     await closedPromise;
+    for (let addon of themesToUninstall) {
+      info(`Uninstalling theme ${addon.id}`);
+      await addon.disable();
+      await addon.uninstall();
+    }
+    clearBuiltInThemesStubs();
+    // Clear any telemetry events recorded after closing the modal
+    Services.telemetry.clearEvents();
   }
 }
 
@@ -217,4 +325,40 @@ async function registerMockCollectionL10nIds() {
     bundle0.hasMessage(MOCK_COLLECTION_L10N_TITLE),
     "Got the expected l10n id in the mock L10nFileSource"
   );
+}
+
+/**
+ * Waits for an addon to be enabled.
+ * @param {String} addonId the string id of an addon
+ * @returns {Promise} resolved promise when the the specified addon is enabled
+ */
+function waitForAddonEnabled(addonId) {
+  return new Promise(resolve => {
+    let listener = {
+      onEnabled(enabledAddon) {
+        if (enabledAddon.id == addonId) {
+          AddonManager.removeAddonListener(listener);
+          info(`Addon ${addonId} enabled. Removing listener and resolving.`);
+          resolve();
+        }
+      },
+    };
+    info(`Adding onEnabled listener for "${addonId}`);
+    AddonManager.addAddonListener(listener);
+  });
+}
+
+/**
+ * Waits for a Colorways telemetry event to trigger.
+ * @returns {Promise} promise from BrowserTestUtils.waitForCondition
+ */
+async function waitForColorwaysTelemetryPromise() {
+  return BrowserTestUtils.waitForCondition(() => {
+    let events = Services.telemetry.snapshotEvents(
+      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+      false
+    ).parent;
+    let colorwayEvents = events.filter(e => e[1] === "colorways_modal");
+    return colorwayEvents && colorwayEvents.length;
+  }, "Waiting for Colorways events ping");
 }

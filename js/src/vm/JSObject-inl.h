@@ -22,10 +22,8 @@
 #endif
 
 #include "gc/GCContext-inl.h"
-#include "gc/Marking-inl.h"
 #include "gc/ObjectKind-inl.h"
 #include "vm/ObjectOperations-inl.h"  // js::MaybeHasInterestingSymbolProperty
-#include "vm/Realm-inl.h"
 
 namespace js {
 
@@ -227,10 +225,6 @@ inline bool JSObject::nonProxyIsExtensible() const {
 #endif
   // [[Extensible]] for ordinary non-proxy objects is an object flag.
   return !hasFlag(js::ObjectFlag::NotExtensible);
-}
-
-inline bool JSObject::isBoundFunction() const {
-  return is<JSFunction>() && as<JSFunction>().isBoundFunction();
 }
 
 inline bool JSObject::hasInvalidatedTeleporting() const {

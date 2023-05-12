@@ -165,7 +165,7 @@ template <class T>
 class StaticRefPtr;
 
 namespace dom {
-class ShmemImage;
+class IPCImage;
 struct AutocompleteInfo;
 class BrowserChild;
 class BrowserParent;
@@ -185,6 +185,7 @@ class Event;
 class EventTarget;
 class HTMLInputElement;
 class IPCDataTransfer;
+class IPCDataTransferImageContainer;
 class IPCDataTransferItem;
 struct LifecycleCallbackArgs;
 class MessageBroadcaster;
@@ -197,9 +198,8 @@ enum class ReferrerPolicy : uint8_t;
 }  // namespace dom
 
 namespace ipc {
+class BigBuffer;
 class IProtocol;
-class IShmemAllocator;
-class Shmem;
 }  // namespace ipc
 
 namespace gfx {
@@ -2491,16 +2491,6 @@ class nsContentUtils {
   static void GetModifierSeparatorText(nsAString& text);
 
   /**
-   * Returns if aContent has a tabbable subdocument.
-   * A sub document isn't tabbable when it's a zombie document.
-   *
-   * @param aElement element to test.
-   *
-   * @return Whether the subdocument is tabbable.
-   */
-  static bool IsSubDocumentTabbable(nsIContent* aContent);
-
-  /**
    * Returns if aContent has the 'scrollgrab' property.
    * aContent may be null (in this case false is returned).
    */
@@ -2877,13 +2867,11 @@ class nsContentUtils {
   static bool IsFileImage(nsIFile* aFile, nsACString& aType);
 
   /**
-   * Given an IPCDataTransferItem that has a flavor for which IsFlavorImage
-   * returns true and whose IPCDataTransferData is of type nsCString (raw image
-   * data), construct an imgIContainer for the image encoded by the transfer
-   * item.
+   * Given an IPCDataTransferImageContainer construct an imgIContainer for the
+   * image encoded by the transfer item.
    */
-  static nsresult DataTransferItemToImage(
-      const mozilla::dom::IPCDataTransferItem& aItem,
+  static nsresult DeserializeDataTransferImageContainer(
+      const mozilla::dom::IPCDataTransferImageContainer& aData,
       imgIContainer** aContainer);
 
   /**
@@ -2894,15 +2882,13 @@ class nsContentUtils {
 
   static nsresult IPCTransferableToTransferable(
       const mozilla::dom::IPCDataTransfer& aDataTransfer, bool aAddDataFlavor,
-      nsITransferable* aTransferable,
-      mozilla::ipc::IShmemAllocator* aAllocator);
+      nsITransferable* aTransferable);
 
   static nsresult IPCTransferableToTransferable(
       const mozilla::dom::IPCDataTransfer& aDataTransfer,
       const bool& aIsPrivateData, nsIPrincipal* aRequestingPrincipal,
       const nsContentPolicyType& aContentPolicyType, bool aAddDataFlavor,
-      nsITransferable* aTransferable,
-      mozilla::ipc::IShmemAllocator* aAllocator);
+      nsITransferable* aTransferable);
 
   static nsresult IPCTransferableItemToVariant(
       const mozilla::dom::IPCDataTransferItem& aDataTransferItem,
@@ -2919,24 +2905,16 @@ class nsContentUtils {
       mozilla::dom::ContentChild* aChild, mozilla::dom::ContentParent* aParent);
 
   /*
-   * Get the pixel data from the given source surface and return it as a buffer.
-   * The length and stride will be assigned from the surface.
+   * Get the pixel data from the given source surface and return it as a
+   * BigBuffer. The length and stride will be assigned from the surface.
    */
-  static mozilla::UniquePtr<char[]> GetSurfaceData(
+  static mozilla::Maybe<mozilla::ipc::BigBuffer> GetSurfaceData(
       mozilla::gfx::DataSourceSurface&, size_t* aLength, int32_t* aStride);
 
-  /*
-   * Get the pixel data from the given source surface and fill it in Shmem.
-   * The length and stride will be assigned from the surface.
-   */
-  static mozilla::Maybe<mozilla::ipc::Shmem> GetSurfaceData(
-      mozilla::gfx::DataSourceSurface& aSurface, size_t* aLength,
-      int32_t* aStride, mozilla::ipc::IShmemAllocator* aAlloc);
-
-  static mozilla::Maybe<mozilla::dom::ShmemImage> SurfaceToIPCImage(
-      mozilla::gfx::DataSourceSurface&, mozilla::ipc::IShmemAllocator*);
+  static mozilla::Maybe<mozilla::dom::IPCImage> SurfaceToIPCImage(
+      mozilla::gfx::DataSourceSurface&);
   static already_AddRefed<mozilla::gfx::DataSourceSurface> IPCImageToSurface(
-      mozilla::dom::ShmemImage&&, mozilla::ipc::IShmemAllocator*);
+      mozilla::dom::IPCImage&&);
 
   // Helpers shared by the implementations of nsContentUtils methods and
   // nsIDOMWindowUtils methods.

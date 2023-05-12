@@ -3502,9 +3502,8 @@ nsresult nsGlobalWindowOuter::GetInnerSize(CSSSize& aSize) {
 
   // Whether or not the css viewport has been overridden, we can get the
   // correct value by looking at the visible area of the presContext.
-  RefPtr<nsViewManager> viewManager = presShell->GetViewManager();
-  if (viewManager) {
-    viewManager->FlushDelayedResize(false);
+  if (RefPtr<nsViewManager> viewManager = presShell->GetViewManager()) {
+    viewManager->FlushDelayedResize();
   }
 
   // FIXME: Bug 1598487 - Return the layout viewport instead of the ICB.
@@ -5098,14 +5097,17 @@ void nsGlobalWindowOuter::PrintOuter(ErrorResult& aError) {
 #ifdef NS_PRINTING
   RefPtr<BrowsingContext> top =
       mBrowsingContext ? mBrowsingContext->Top() : nullptr;
-  bool oldIsPrinting = top && top->GetIsPrinting();
+  if (NS_WARN_IF(top && top->GetIsPrinting())) {
+    return;
+  }
+
   if (top) {
     Unused << top->SetIsPrinting(true);
   }
 
   auto unset = MakeScopeExit([&] {
     if (top) {
-      Unused << top->SetIsPrinting(oldIsPrinting);
+      Unused << top->SetIsPrinting(false);
     }
   });
 
@@ -7591,7 +7593,6 @@ nsPIDOMWindowOuter::nsPIDOMWindowOuter(uint64_t aWindowID)
       mModalStateDepth(0),
       mSuppressEventHandlingDepth(0),
       mIsBackground(false),
-      mDesktopModeViewport(false),
       mIsRootOuterWindow(false),
       mInnerWindow(nullptr),
       mWindowID(aWindowID),

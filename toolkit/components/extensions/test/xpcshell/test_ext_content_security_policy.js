@@ -19,7 +19,6 @@ server.registerPathHandler("/worker.js", (request, response) => {
 const baseCSP = [];
 // Keep in sync with extensions.webextensions.base-content-security-policy
 baseCSP[2] = {
-  "object-src": ["blob:", "filesystem:", "moz-extension:", "'self'"],
   "script-src": [
     "'unsafe-eval'",
     "'wasm-unsafe-eval'",
@@ -35,19 +34,7 @@ baseCSP[2] = {
 };
 // Keep in sync with extensions.webextensions.base-content-security-policy.v3
 baseCSP[3] = {
-  "object-src": ["'self'"],
-  "script-src": [
-    "http://localhost:*",
-    "http://127.0.0.1:*",
-    "'self'",
-    "'wasm-unsafe-eval'",
-  ],
-  "worker-src": [
-    "http://localhost:*",
-    "http://127.0.0.1:*",
-    "'self'",
-    "'wasm-unsafe-eval'",
-  ],
+  "script-src": ["'self'", "'wasm-unsafe-eval'"],
 };
 
 /**
@@ -78,7 +65,6 @@ async function testPolicy({
   let baseURL;
 
   let addonCSP = {
-    "object-src": ["'self'"],
     "script-src": ["'self'"],
   };
 
@@ -308,7 +294,6 @@ add_task(async function testCSP() {
   await testPolicy({
     manifest_version: 2,
     customCSP: {
-      "object-src": "'self' https://*.example.com",
       "script-src": `'self' https://*.example.com 'unsafe-eval' ${hash}`,
     },
     expects: {
@@ -321,7 +306,6 @@ add_task(async function testCSP() {
   await testPolicy({
     manifest_version: 2,
     customCSP: {
-      "object-src": "'none'",
       "script-src": `'self'`,
     },
     expects: {
@@ -334,9 +318,8 @@ add_task(async function testCSP() {
   await testPolicy({
     manifest_version: 3,
     customCSP: {
-      "object-src": "'self' http://localhost",
-      "script-src": `'self' http://localhost:123 ${hash}`,
-      "worker-src": `'self' http://127.0.0.1:*`,
+      "script-src": `'self' ${hash}`,
+      "worker-src": `'self'`,
     },
     expects: {
       workerEvalAllowed: false,
@@ -348,7 +331,6 @@ add_task(async function testCSP() {
   await testPolicy({
     manifest_version: 3,
     customCSP: {
-      "object-src": "'none'",
       "script-src": `'self'`,
       "worker-src": `'self'`,
     },
@@ -362,7 +344,6 @@ add_task(async function testCSP() {
   await testPolicy({
     manifest_version: 3,
     customCSP: {
-      "object-src": "'none'",
       "script-src": `'self' 'wasm-unsafe-eval'`,
       "worker-src": `'self' 'wasm-unsafe-eval'`,
     },

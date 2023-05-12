@@ -991,6 +991,30 @@ normandy:
       branch: If reason == invalid-branch, the branch that failed validation.
       feature: If reason == invalid-feature, the invalid feature ID.
 
+browser.launched_to_handle:
+  system_notification:
+    objects: ["toast"]
+    description: >
+      Recorded when Firefox launches to complete a native notification popped by
+      a system (chrome privileged) alert.  Windows-only at the time of writing.
+    bug_numbers:
+      - 1788960
+    notification_emails:
+      - nalexander@mozilla.com
+      - rtestard@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      name: >
+        The `name` of the system (chrome privileged) alert that Firefox was
+        launched to complete.
+      action: >
+        The `action` of the system (chrome privileged) alert that Firefox was
+        launched to complete.
+
 pwmgr:
   open_management:
     objects: ["aboutprotections", "autocomplete", "capturedoorhanger", "contextmenu", "direct", "fxamenu", "mainmenu", "pageinfo", "preferences", "snippet"]
@@ -2100,9 +2124,10 @@ security.ui.protections:
       - 1661756
       - 1678201
       - 1739287
+      - 1787249
     description: >
       User arrived on the protection report. This also includes a 'value' attribute which defaults to 'direct' or will be the value that a referring website addds to the url. This also indicates if the vpn banner has been seen.
-    expiry_version: "107"
+    expiry_version: never
     record_in_processes: ["content"]
     release_channel_collection: opt-out
     notification_emails:
@@ -2123,9 +2148,10 @@ security.ui.protections:
       - 1643428
       - 1678201
       - 1739287
+      - 1787249
     description: >
       User closed on the protection report.
-    expiry_version: "107"
+    expiry_version: never
     record_in_processes: ["content"]
     release_channel_collection: opt-out
     notification_emails:
@@ -2147,6 +2173,7 @@ security.ui.protections:
       - 1661756
       - 1678201
       - 1739287
+      - 1787249
     description: >
       User interaction by click events on the protection report.
     objects: [
@@ -2165,7 +2192,7 @@ security.ui.protections:
       "vpn_app_link_android",
       "vpn_app_link_ios",
     ]
-    expiry_version: "107"
+    expiry_version: never
     record_in_processes: ["content"]
     release_channel_collection: opt-out
     notification_emails:
@@ -2184,12 +2211,13 @@ security.ui.app_menu:
       - 1643428
       - 1678201
       - 1739287
+      - 1787249
     description: >
       Privacy and Security click events on app menu.
     objects: [
       "open_full_report",
     ]
-    expiry_version: "107"
+    expiry_version: never
     record_in_processes:
       - main
     release_channel_collection: opt-out
@@ -2208,9 +2236,10 @@ security.ui.protectionspopup:
       - 1643428
       - 1678201
       - 1739287
+      - 1787249
     description: >
       How many times the protections panel was opened.
-    expiry_version: "107"
+    expiry_version: never
     notification_emails:
       - pbz@mozilla.com
       - seceng-telemetry@mozilla.com
@@ -2243,9 +2272,10 @@ security.ui.protectionspopup:
       - 1643428
       - 1678201
       - 1739287
+      - 1787249
     description: >
       User interaction by click events in the protections panel.
-    expiry_version: "107"
+    expiry_version: never
     notification_emails:
       - pbz@mozilla.com
       - seceng-telemetry@mozilla.com
@@ -2419,6 +2449,23 @@ networking.captive_portal:
     expiry_version: "112"
 
 security:
+  prefUsage:
+    objects: ["contentProcess"]
+    bug_numbers:
+      - 1782544
+      - 1708798
+    description: >
+      We block certain preferences from being sent to the content process because they contain sensitive
+      user data. Some preferences are blocked by name, others by heuristic. If one of the preferences so
+      blocked is accidently accessed we want to know about it so we can allowlist it or refactor the access.
+    notification_emails:
+      - tom@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    expiry_version: "never"
+    record_in_processes:
+      - all_children
   fissionPrincipals:
     objects: ["contentParent"]
     bug_numbers:
@@ -3302,7 +3349,7 @@ service_request:
 privacy_segmentation:
   status:
     description: >
-      Records value changes of the browser.privacySegmentation.enabled pref.
+      Records value changes of the browser.dataFeatureRecommendations.enabled pref.
       Does not record an event for the initial pref state at startup.
     objects: ["pref"]
     methods: ["enable", "disable"]
@@ -3335,11 +3382,11 @@ synced_tabs:
       tab_pos: position of the tab clicked
       filter: was there a filter enabled
 
-colorways:
+colorways_modal:
   try_colorways:
-    objects: ["firefoxview"]
+    objects: ["firefoxview", "aboutaddons", "unknown"]
     description: >
-      Recorded when the Try Colorways button is clicked in about:addons or the Firefox View tab
+      Recorded when the Colorway Closet modal opens when no colorway from the current collection was selected. The object is the source from where the user opened the modal.
     notification_emails:
       - firefoxview@mozilla.com
     products:
@@ -3348,12 +3395,13 @@ colorways:
       - main
     bug_numbers:
       - 1779642
+      - 1747229
     expiry_version: "never"
     release_channel_collection: opt-out
   change_colorway:
-    objects: ["firefoxview"]
+    objects: ["firefoxview", "aboutaddons", "unknown"]
     description: >
-      Recorded when the Change Colorway button is clicked in about:addons or the Firefox View tab
+      Recorded when the Colorway Closet modal opens when a colorway from the current collection was already selected. The object is the source from where the user opened the modal.
     notification_emails:
       - firefoxview@mozilla.com
     products:
@@ -3362,8 +3410,59 @@ colorways:
       - main
     bug_numbers:
       - 1779642
+      - 1747229
     expiry_version: "never"
     release_channel_collection: opt-out
+  cancel:
+    description: >
+      Recorded when colorway selection is canceled and the colorway closet modal is closed. This may be done by pressing the Cancel button or ESC key, or by closing the browser tab or window.
+    objects: ["modal"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - "main"
+    bug_numbers: [1747229]
+    notification_emails:
+      - firefoxview@mozilla.com
+    expiry_version: "never"
+    products: ["firefox"]
+  set_colorway:
+    description: >
+      Recorded when a colorway and intensity are set in the colorway closet modal
+    objects: ["modal"]
+    extra_keys:
+      colorway_id: The id of the selected colorway
+    release_channel_collection: opt-out
+    record_in_processes:
+      - "main"
+    bug_numbers: [1747229]
+    notification_emails:
+      - firefoxview@mozilla.com
+    expiry_version: "never"
+    products: ["firefox"]
+  homepage_reset:
+    description: >
+      Recorded when the apply button is selected in the colorway modal. This will set the user’s home page default to Firefox Home
+    objects: ["modal"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - "main"
+    bug_numbers: [1747229]
+    notification_emails:
+      - firefoxview@mozilla.com
+    expiry_version: "never"
+    products: ["firefox"]
+  homepage_reset_undo:
+    description: >
+      Recorded when the undo button is selected in the colorway modal. This will undo the apply button selection for setting Firefox Home to default
+    objects: ["modal"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - "main"
+    bug_numbers: [1747229]
+    notification_emails:
+      - firefoxview@mozilla.com
+    expiry_version: "never"
+    products: ["firefox"]
 
 firefoxview:
   entered:
@@ -3416,6 +3515,7 @@ firefoxview:
       Recorded when a tab pickup tab is clicked
     extra_keys:
       position: The position of the tab in the tab pickup list (starting at 1.)
+      deviceType: The type of device the tab came from. Will be "desktop", "phone", or "tablet"
     notification_emails:
       - firefoxview@mozilla.com
     products:
@@ -3424,6 +3524,7 @@ firefoxview:
       - main
     bug_numbers:
       - 1779642
+      - 1789641
     expiry_version: "never"
     release_channel_collection: opt-out
   closed_tabs_open:

@@ -260,7 +260,17 @@ nsIFrame* nsIContent::GetPrimaryFrame(mozilla::FlushType aType) {
     doc->FlushPendingNotifications(aType);
   }
 
-  return GetPrimaryFrame();
+  auto* frame = GetPrimaryFrame();
+  if (!frame) {
+    return nullptr;
+  }
+
+  if (aType == mozilla::FlushType::Layout) {
+    frame->PresShell()->EnsureReflowIfFrameHasHiddenContent(frame);
+    frame = GetPrimaryFrame();
+  }
+
+  return frame;
 }
 
 namespace mozilla::dom {
@@ -713,6 +723,37 @@ nsIScrollableFrame* Element::GetScrollFrame(nsIFrame** aFrame,
   return nullptr;
 }
 
+bool Element::CheckVisibility(const CheckVisibilityOptions& aOptions) {
+  nsIFrame* f =
+      GetPrimaryFrame(aOptions.mFlush ? FlushType::Frames : FlushType::None);
+  if (!f) {
+    // 1. If this does not have an associated box, return false.
+    return false;
+  }
+
+  if (f->IsHiddenByContentVisibilityOnAnyAncestor()) {
+    // 2. If a shadow-including ancestor of this has content-visibility: hidden,
+    // return false.
+    return false;
+  }
+
+  if (aOptions.mCheckOpacity && f->Style()->IsInOpacityZeroSubtree()) {
+    // 3. If the checkOpacity dictionary member of options is true, and this, or
+    // a shadow-including ancestor of this, has a computed opacity value of 0,
+    // return false.
+    return false;
+  }
+
+  if (aOptions.mCheckVisibilityCSS && !f->StyleVisibility()->IsVisible()) {
+    // 4. If the checkVisibilityCSS dictionary member of options is true, and
+    // this is invisible, return false.
+    return false;
+  }
+
+  // 5. Return true
+  return true;
+}
+
 void Element::ScrollIntoView(const BooleanOrScrollIntoViewOptions& aObject) {
   if (aObject.IsScrollIntoViewOptions()) {
     return ScrollIntoView(aObject.GetAsScrollIntoViewOptions());
@@ -1007,9 +1048,8 @@ nsRect Element::GetClientAreaRect() {
       doc->IsScrollingElement(this)) {
     if (PresShell* presShell = doc->GetPresShell()) {
       // Ensure up to date dimensions, but don't reflow
-      RefPtr<nsViewManager> viewManager = presShell->GetViewManager();
-      if (viewManager) {
-        viewManager->FlushDelayedResize(false);
+      if (RefPtr<nsViewManager> viewManager = presShell->GetViewManager()) {
+        viewManager->FlushDelayedResize();
       }
       return nsRect(nsPoint(), presContext->GetVisibleArea().Size());
     }
@@ -3489,6 +3529,11 @@ static const char* GetFullscreenError(CallerType aCallerType,
 
   // Privileged callers can always request fullscreen
   if (aCallerType == CallerType::System) {
+    return nullptr;
+  }
+
+  if (nsContentUtils::IsPDFJS(aDocument->GetPrincipal())) {
+    // The built-in pdf viewer can always request fullscreen
     return nullptr;
   }
 

@@ -13,7 +13,6 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
-#include <algorithm>
 #include <type_traits>
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -374,7 +373,6 @@ static void CopyAndInflateUTF8IntoBuffer(JSContext* cx, const UTF8Chars src,
     MOZ_ALWAYS_TRUE((InflateUTF8ToUTF16<ErrorAction>(cx, src, push)));
     MOZ_ASSERT(j == outlen);
   }
-  dst[outlen] = CharT('\0');  // NUL char
 }
 
 template <OnUTF8Error ErrorAction, typename CharsT>
@@ -412,6 +410,7 @@ static CharsT InflateUTF8StringHelper(JSContext* cx, const UTF8Chars src,
           ? OnUTF8Error::InsertQuestionMark
           : OnUTF8Error::InsertReplacementCharacter;
   CopyAndInflateUTF8IntoBuffer<errorMode>(cx, src, dst, *outlen, allASCII);
+  dst[*outlen] = CharT('\0');
 
   return CharsT(dst, *outlen);
 }
@@ -556,20 +555,19 @@ template bool UTF8EqualsChars(const JS::UTF8Chars, const char16_t*);
 template bool UTF8EqualsChars(const JS::UTF8Chars, const JS::Latin1Char*);
 
 template <typename CharT>
-void InflateUTF8CharsToBufferAndTerminate(const JS::UTF8Chars src, CharT* dst,
-                                          size_t dstLen,
-                                          JS::SmallestEncoding encoding) {
+void InflateUTF8CharsToBuffer(const JS::UTF8Chars src, CharT* dst,
+                              size_t dstLen, JS::SmallestEncoding encoding) {
   CopyAndInflateUTF8IntoBuffer<OnUTF8Error::Crash>(
       /* cx = */ nullptr, src, dst, dstLen,
       encoding == JS::SmallestEncoding::ASCII);
 }
 
-template void InflateUTF8CharsToBufferAndTerminate(
-    const UTF8Chars src, char16_t* dst, size_t dstLen,
-    JS::SmallestEncoding encoding);
-template void InflateUTF8CharsToBufferAndTerminate(
-    const UTF8Chars src, JS::Latin1Char* dst, size_t dstLen,
-    JS::SmallestEncoding encoding);
+template void InflateUTF8CharsToBuffer(const UTF8Chars src, char16_t* dst,
+                                       size_t dstLen,
+                                       JS::SmallestEncoding encoding);
+template void InflateUTF8CharsToBuffer(const UTF8Chars src, JS::Latin1Char* dst,
+                                       size_t dstLen,
+                                       JS::SmallestEncoding encoding);
 
 #ifdef DEBUG
 void JS::ConstUTF8CharsZ::validate(size_t aLength) {

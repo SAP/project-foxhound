@@ -18,26 +18,15 @@ const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.jsm",
+  ContextDescriptorType:
+    "chrome://remote/content/shared/messagehandler/MessageHandler.jsm",
   error: "chrome://remote/content/shared/webdriver/Errors.jsm",
+  OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.jsm",
+  RealmType: "chrome://remote/content/webdriver-bidi/Realm.jsm",
   TabManager: "chrome://remote/content/shared/TabManager.jsm",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.jsm",
 });
-
-/**
- * @typedef {Object} OwnershipModel
- **/
-
-/**
- * Enum of ownership models supported by the script module.
- *
- * @readonly
- * @enum {OwnershipModel}
- **/
-const OwnershipModel = {
-  None: "none",
-  Root: "root",
-};
 
 class ScriptModule extends Module {
   destroy() {}
@@ -112,8 +101,9 @@ class ScriptModule extends Module {
    *     expression to resolve, if this return value is a Promise.
    * @param {string} functionDeclaration
    *     The expression to evaluate.
-   * @param {OwnershipModel=} resultOwnership [unsupported]
-   *     The ownership model to use for the results of this evaluation.
+   * @param {OwnershipModel=} resultOwnership
+   *     The ownership model to use for the results of this evaluation. Defaults
+   *     to `OwnershipModel.None`.
    * @param {Object} target
    *     The target for the evaluation, which either matches the definition for
    *     a RealmTarget or for ContextTarget.
@@ -123,19 +113,16 @@ class ScriptModule extends Module {
    * @returns {ScriptEvaluateResult}
    *
    * @throws {InvalidArgumentError}
-   *     If any of the arguments has not the expected type.
+   *     If any of the arguments does not have the expected type.
    * @throws {NoSuchFrameError}
    *     If the target cannot be found.
    */
   async callFunction(options = {}) {
-    // TODO: Bug 1778976. Remove once command is fully supported.
-    this.assertExperimentalCommandsEnabled("script.callFunction");
-
     const {
       arguments: commandArguments = null,
       awaitPromise,
       functionDeclaration,
-      resultOwnership = OwnershipModel.None,
+      resultOwnership = lazy.OwnershipModel.None,
       target = {},
       this: thisParameter = null,
     } = options;
@@ -160,7 +147,7 @@ class ScriptModule extends Module {
     }
 
     const { contextId, realmId, sandbox } = this.#assertTarget(target);
-    const context = this.#getContextFromTarget({ contextId, realmId, sandbox });
+    const context = await this.#getContextFromTarget({ contextId, realmId });
     const evaluationResult = await this.messageHandler.forwardCommand({
       moduleName: "script",
       commandName: "callFunctionDeclaration",
@@ -173,12 +160,56 @@ class ScriptModule extends Module {
         commandArguments,
         functionDeclaration,
         realmId,
+        resultOwnership,
         sandbox,
         thisParameter,
       },
     });
 
     return this.#buildReturnValue(evaluationResult);
+  }
+
+  /**
+   * The script.disown command disowns the given handles. This does not
+   * guarantee the handled object will be garbage collected, as there can be
+   * other handles or strong ECMAScript references.
+   *
+   * @param {Object=} options
+   * @param {Array<string>} handles
+   *     Array of handle ids to disown.
+   * @param {Object} target
+   *     The target owning the handles, which either matches the definition for
+   *     a RealmTarget or for ContextTarget.
+   */
+  async disown(options = {}) {
+    const { handles, target = {} } = options;
+
+    lazy.assert.array(
+      handles,
+      `Expected "handles" to be an array, got ${handles}`
+    );
+    handles.forEach(handle => {
+      lazy.assert.string(
+        handle,
+        `Expected "handles" to be an array of strings, got ${handle}`
+      );
+    });
+
+    const { contextId, realmId, sandbox } = this.#assertTarget(target);
+    const context = await this.#getContextFromTarget({ contextId, realmId });
+    await this.messageHandler.forwardCommand({
+      moduleName: "script",
+      commandName: "disownHandles",
+      destination: {
+        type: lazy.WindowGlobalMessageHandler.type,
+        id: context.id,
+      },
+      params: {
+        handles,
+        realmId,
+        sandbox,
+      },
+    });
   }
 
   /**
@@ -191,8 +222,9 @@ class ScriptModule extends Module {
    *     expression to resolve, if this return value is a Promise.
    * @param {string} expression
    *     The expression to evaluate.
-   * @param {OwnershipModel=} resultOwnership [unsupported]
-   *     The ownership model to use for the results of this evaluation.
+   * @param {OwnershipModel=} resultOwnership
+   *     The ownership model to use for the results of this evaluation. Defaults
+   *     to `OwnershipModel.None`.
    * @param {Object} target
    *     The target for the evaluation, which either matches the definition for
    *     a RealmTarget or for ContextTarget.
@@ -200,18 +232,15 @@ class ScriptModule extends Module {
    * @returns {ScriptEvaluateResult}
    *
    * @throws {InvalidArgumentError}
-   *     If any of the arguments has not the expected type.
+   *     If any of the arguments does not have the expected type.
    * @throws {NoSuchFrameError}
    *     If the target cannot be found.
    */
   async evaluate(options = {}) {
-    // TODO: Bug 1778976. Remove once command is fully supported.
-    this.assertExperimentalCommandsEnabled("script.evaluate");
-
     const {
       awaitPromise,
       expression: source,
-      resultOwnership = OwnershipModel.None,
+      resultOwnership = lazy.OwnershipModel.None,
       target = {},
     } = options;
 
@@ -228,7 +257,7 @@ class ScriptModule extends Module {
     this.#assertResultOwnership(resultOwnership);
 
     const { contextId, realmId, sandbox } = this.#assertTarget(target);
-    const context = this.#getContextFromTarget({ contextId, realmId, sandbox });
+    const context = await this.#getContextFromTarget({ contextId, realmId });
     const evaluationResult = await this.messageHandler.forwardCommand({
       moduleName: "script",
       commandName: "evaluateExpression",
@@ -240,6 +269,7 @@ class ScriptModule extends Module {
         awaitPromise,
         expression: source,
         realmId,
+        resultOwnership,
         sandbox,
       },
     });
@@ -247,11 +277,115 @@ class ScriptModule extends Module {
     return this.#buildReturnValue(evaluationResult);
   }
 
+  /**
+   * An object that holds basic information about a realm.
+   *
+   * @typedef BaseRealmInfo
+   *
+   * @property {string} id
+   *     The realm unique identifier.
+   * @property {string} origin
+   *     The serialization of an origin.
+   */
+
+  /**
+   *
+   * @typedef WindowRealmInfoProperties
+   *
+   * @property {string} context
+   *     The browsing context id, associated with the realm.
+   * @property {string=} sandbox
+   *     The name of the sandbox.
+   * @property {RealmType.Window} type
+   *     The window realm type.
+   */
+
+  /**
+   * An object that holds information about a window realm.
+   *
+   * @typedef {BaseRealmInfo & WindowRealmInfoProperties} WindowRealmInfo
+   */
+
+  /**
+   * An object that holds information about a realm.
+   *
+   * @typedef {WindowRealmInfo} RealmInfo
+   */
+
+  /**
+   * An object that holds a list of realms.
+   *
+   * @typedef ScriptGetRealmsResult
+   *
+   * @property {Array<RealmInfo>} realms
+   *     List of realms.
+   */
+
+  /**
+   * Returns a list of all realms, optionally filtered to realms
+   * of a specific type, or to the realms associated with
+   * a specified browsing context.
+   *
+   * @param {Object=} options
+   * @param {string=} context
+   *     The id of the browsing context to filter
+   *     only realms associated with it. If not provided, return realms
+   *     associated with all browsing contexts.
+   * @param {RealmType=} type
+   *     Type of realm to filter.
+   *     If not provided, return realms of all types.
+   *
+   * @returns {ScriptGetRealmsResult}
+   *
+   * @throws {InvalidArgumentError}
+   *     If any of the arguments does not have the expected type.
+   * @throws {NoSuchFrameError}
+   *     If the context cannot be found.
+   */
+  async getRealms(options = {}) {
+    const { context: contextId = null, type = null } = options;
+    const destination = {};
+
+    if (contextId !== null) {
+      lazy.assert.string(
+        contextId,
+        `Expected "context" to be a string, got ${contextId}`
+      );
+      destination.id = this.#getBrowsingContext(contextId).id;
+    } else {
+      destination.contextDescriptor = {
+        type: lazy.ContextDescriptorType.All,
+      };
+    }
+
+    if (type !== null) {
+      const supportedRealmTypes = Object.values(lazy.RealmType);
+      if (!supportedRealmTypes.includes(type)) {
+        throw new lazy.error.InvalidArgumentError(
+          `Expected "type" to be one of ${supportedRealmTypes}, got ${type}`
+        );
+      }
+
+      // Remove this check when other realm types are supported
+      if (type !== lazy.RealmType.Window) {
+        throw new lazy.error.UnsupportedOperationError(
+          `Unsupported "type": ${type}. Only "type" ${lazy.RealmType.Window} is currently supported.`
+        );
+      }
+    }
+
+    return { realms: await this.#getRealmInfos(destination) };
+  }
+
   #assertResultOwnership(resultOwnership) {
-    if (![OwnershipModel.None, OwnershipModel.Root].includes(resultOwnership)) {
+    if (
+      ![lazy.OwnershipModel.None, lazy.OwnershipModel.Root].includes(
+        resultOwnership
+      )
+    ) {
       throw new lazy.error.InvalidArgumentError(
         `Expected "resultOwnership" to be one of ${Object.values(
-          OwnershipModel
+          lazy.OwnershipModel
         )}, got ${resultOwnership}`
       );
     }
@@ -269,6 +403,12 @@ class ScriptModule extends Module {
       sandbox = null,
     } = target;
 
+    if (realmId != null && (contextId != null || sandbox != null)) {
+      throw new lazy.error.InvalidArgumentError(
+        `A context and a realm reference are mutually exclusive`
+      );
+    }
+
     if (contextId != null) {
       lazy.assert.string(
         contextId,
@@ -285,9 +425,6 @@ class ScriptModule extends Module {
       lazy.assert.string(
         realmId,
         `Expected "realm" to be a string, got ${realmId}`
-      );
-      throw new lazy.error.UnsupportedOperationError(
-        `realm is not supported yet`
       );
     } else {
       throw new lazy.error.InvalidArgumentError(`No context or realm provided`);
@@ -315,9 +452,7 @@ class ScriptModule extends Module {
     return rv;
   }
 
-  // realmId is going to be used when the full Realm support is implemented
-  // See Bug 1779231.
-  #getContextFromTarget({ contextId /*, realmId, sandbox*/ }) {
+  #getBrowsingContext(contextId) {
     const context = lazy.TabManager.getBrowsingContextById(contextId);
     if (context === null) {
       throw new lazy.error.NoSuchFrameError(
@@ -332,6 +467,51 @@ class ScriptModule extends Module {
     }
 
     return context;
+  }
+
+  async #getContextFromTarget({ contextId, realmId }) {
+    if (contextId !== null) {
+      return this.#getBrowsingContext(contextId);
+    }
+
+    const destination = {
+      contextDescriptor: {
+        type: lazy.ContextDescriptorType.All,
+      },
+    };
+    const realms = await this.#getRealmInfos(destination);
+    const realm = realms.find(realm => realm.realm == realmId);
+
+    if (realm && realm.context !== null) {
+      return this.#getBrowsingContext(realm.context);
+    }
+
+    throw new lazy.error.NoSuchFrameError(`Realm with id ${realmId} not found`);
+  }
+
+  async #getRealmInfos(destination) {
+    let realms = await this.messageHandler.forwardCommand({
+      moduleName: "script",
+      commandName: "getWindowRealms",
+      destination: {
+        type: lazy.WindowGlobalMessageHandler.type,
+        ...destination,
+      },
+    });
+
+    const isBroadcast = !!destination.contextDescriptor;
+    if (!isBroadcast) {
+      realms = [realms];
+    }
+
+    return realms
+      .flat()
+      .map(realm => {
+        // Resolve browsing context to a TabManager id.
+        realm.context = lazy.TabManager.getIdForBrowsingContext(realm.context);
+        return realm;
+      })
+      .filter(realm => realm.context !== null);
   }
 
   static get supportedEvents() {

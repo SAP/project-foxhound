@@ -12,7 +12,12 @@
  * browser window is ready (i.e. fired browser-delayed-startup-finished event)
  **/
 
-const Services = require("Services");
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserToolboxLauncher:
+    "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs",
+});
+
 const { gDevTools } = require("devtools/client/framework/devtools");
 const {
   getTheme,
@@ -60,11 +65,6 @@ loader.lazyRequireGetter(
   "toggleEnableDevToolsPopup",
   "devtools/client/framework/enable-devtools-popup",
   true
-);
-loader.lazyImporter(
-  this,
-  "BrowserToolboxLauncher",
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
 );
 
 const { LocalizationHelper } = require("devtools/shared/l10n");
@@ -321,7 +321,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         }
         break;
       case "browserToolbox":
-        BrowserToolboxLauncher.init();
+        lazy.BrowserToolboxLauncher.init();
         break;
       case "browserConsole":
         const {
@@ -410,6 +410,8 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
       Services.prompt.alert(null, "", msg);
       throw new Error(msg);
     }
+
+    return null;
   },
 
   /**

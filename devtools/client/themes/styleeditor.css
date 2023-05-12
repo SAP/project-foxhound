@@ -152,12 +152,12 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   overflow: hidden;
 }
 
-.stylesheet-enabled {
+.stylesheet-toggle {
   display: -moz-box;
   cursor: pointer;
   padding: 8px 0;
   margin: 0 8px;
-  background-image: url(images/item-toggle.svg);
+  background-image: url(images/eye-opened.svg);
   background-repeat: no-repeat;
   background-clip: content-box;
   background-position: center;
@@ -166,11 +166,19 @@ li.error > .stylesheet-info > .stylesheet-more  > .stylesheet-error-message {
   height: 40px;
 
   /* The icon color should always match the text color. */
-  -moz-context-properties: fill;
+  -moz-context-properties: fill, stroke;
   fill: currentColor;
+  stroke: currentColor;
 }
 
-.disabled > .stylesheet-enabled {
+.disabled > .stylesheet-toggle {
+  background-image: url(images/eye-closed.svg);
+}
+
+.stylesheet-system > .stylesheet-toggle {
+  /* Override the default "color: grayText" from [disabled] browser style */
+  color: currentColor;
+  cursor: auto;
   opacity: 0.3;
 }
 
@@ -239,7 +247,7 @@ h3 {
     background-size: 0 0, 0 0, auto;
   }
 
-  .stylesheet-enabled {
+  .stylesheet-toggle {
     padding: 0;
     height: 24px;
   }

@@ -20,11 +20,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
 // These prefs are relative to the `browser.urlbar` branch.
 const ENABLED_PREF = "suggest.quickactions";
 const MATCH_IN_PHRASE_PREF = "quickactions.matchInPhrase";
+const SHOW_IN_ZERO_PREFIX_PREF = "quickactions.showInZeroPrefix";
 const DYNAMIC_TYPE_NAME = "quickactions";
 
 // When the urlbar is first focused and no search term has been
 // entered we show a limited number of results.
-const ACTIONS_SHOWN_FOCUS = 5;
+const ACTIONS_SHOWN_FOCUS = 4;
 
 // Default icon shown for actions if no custom one is provided.
 const DEFAULT_ICON = "chrome://global/skin/icons/settings.svg";
@@ -99,6 +100,11 @@ class ProviderQuickActions extends UrlbarProvider {
    */
   async startQuery(queryContext, addCallback) {
     let input = queryContext.trimmedSearchString.toLowerCase();
+
+    if (!lazy.UrlbarPrefs.get(SHOW_IN_ZERO_PREFIX_PREF) && !input) {
+      return;
+    }
+
     let results = [...(this.#prefixes.get(input) ?? [])];
 
     if (lazy.UrlbarPrefs.get(MATCH_IN_PHRASE_PREF)) {
@@ -108,6 +114,15 @@ class ProviderQuickActions extends UrlbarProvider {
         }
       }
     }
+    // Ensure results are unique.
+    results = [...new Set(results)];
+
+    // Remove invisible actions.
+    results = results.filter(key => {
+      const action = this.#actions.get(key);
+      return !action.isVisible || action.isVisible();
+    });
+
     if (!results?.length) {
       return;
     }
@@ -116,7 +131,7 @@ class ProviderQuickActions extends UrlbarProvider {
     // but not when we are in the normal url mode on first focus.
     if (
       results.length > ACTIONS_SHOWN_FOCUS &&
-      !queryContext.searchString &&
+      !input &&
       !queryContext.searchMode
     ) {
       results.length = ACTIONS_SHOWN_FOCUS;
@@ -129,6 +144,7 @@ class ProviderQuickActions extends UrlbarProvider {
         results: results.map(key => ({ key })),
         dynamicType: DYNAMIC_TYPE_NAME,
         helpUrl: this.helpUrl,
+        inputLength: input.length,
       }
     );
     result.suggestedIndex = SUGGESTED_INDEX;
@@ -152,6 +168,7 @@ class ProviderQuickActions extends UrlbarProvider {
               tag: "span",
               attributes: {
                 "data-key": key,
+                "data-input-length": result.payload.inputLength,
                 class: "urlbarView-quickaction-row",
                 role: inActive ? "" : "button",
               },
@@ -197,6 +214,7 @@ class ProviderQuickActions extends UrlbarProvider {
             "data-key": "onboarding-button",
             role: "button",
             class: "urlbarView-button urlbarView-button-help",
+            "data-l10n-id": "quickactions-learn-more",
           },
         },
       ],
@@ -215,6 +233,15 @@ class ProviderQuickActions extends UrlbarProvider {
   }
 
   pickResult(result, itemPicked) {
+    let { key, inputLength } = itemPicked.dataset;
+    // We clamp the input length to limit the number of keys to
+    // the number of actions * 10.
+    inputLength = Math.min(inputLength, 10);
+    Services.telemetry.keyedScalarAdd(
+      `quickaction.picked`,
+      `${key}-${inputLength}`,
+      1
+    );
     let options = this.#actions.get(itemPicked.dataset.key).onPick() ?? {};
     if (options.focusContent) {
       itemPicked.ownerGlobal.gBrowser.selectedBrowser.focus();
@@ -253,7 +280,7 @@ class ProviderQuickActions extends UrlbarProvider {
     this.#loopOverPrefixes(definition.commands, prefix => {
       let result = this.#prefixes.get(prefix);
       if (result) {
-        result = result.filter(val => val == key);
+        result = result.filter(val => val != key);
       }
       this.#prefixes.set(prefix, result);
     });

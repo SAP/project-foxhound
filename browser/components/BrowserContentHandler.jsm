@@ -22,6 +22,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   HomePage: "resource:///modules/HomePage.jsm",
   FirstStartup: "resource://gre/modules/FirstStartup.jsm",
   LaterRun: "resource:///modules/LaterRun.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
@@ -37,6 +38,16 @@ XPCOMUtils.defineLazyGetter(lazy, "gSystemPrincipal", () =>
   Services.scriptSecurityManager.getSystemPrincipal()
 );
 
+XPCOMUtils.defineLazyGetter(lazy, "gWindowsAlertsService", () => {
+  // We might not have the Windows alerts service: e.g., on Windows 7 and Windows 8.
+  if (!("nsIWindowsAlertsService" in Ci)) {
+    return null;
+  }
+  return Cc["@mozilla.org/system-alerts-service;1"]
+    ?.getService(Ci.nsIAlertsService)
+    ?.QueryInterface(Ci.nsIWindowsAlertsService);
+});
+
 // One-time startup homepage override configurations
 const ONCE_DOMAINS = ["mozilla.org", "firefox.com"];
 const ONCE_PREF = "browser.startup.homepage_override.once";
@@ -44,8 +55,6 @@ const ONCE_PREF = "browser.startup.homepage_override.once";
 // Index of Private Browsing icon in firefox.exe
 // Must line up with the one in nsNativeAppSupportWin.h.
 const PRIVATE_BROWSING_ICON_INDEX = 5;
-const PRIVATE_WINDOW_SEPARATION_PREF =
-  "browser.privacySegmentation.windowSeparation.enabled";
 
 function shouldLoadURI(aURI) {
   if (aURI && !aURI.schemeIs("chrome")) {
@@ -283,11 +292,13 @@ function openBrowserWindow(
         win.docShell.QueryInterface(
           Ci.nsILoadContext
         ).usePrivateBrowsing = true;
-        if (Services.prefs.getBoolPref(PRIVATE_WINDOW_SEPARATION_PREF)) {
-          // TODO: Changing this after the Window has been painted causes it to
-          // change Taskbar icons if the original one had a different AUMID.
-          // This must stay pref'ed off until this is resolved.
-          // https://bugzilla.mozilla.org/show_bug.cgi?id=1751010
+
+        if (
+          AppConstants.platform == "win" &&
+          lazy.NimbusFeatures.majorRelease2022.getVariable(
+            "feltPrivacyWindowSeparation"
+          )
+        ) {
           lazy.WinTaskbar.setGroupIdForWindow(
             win,
             lazy.WinTaskbar.defaultPrivateGroupId
@@ -1015,6 +1026,55 @@ nsDefaultCommandLineHandler.prototype = {
   /* nsICommandLineHandler */
   handle: function dch_handle(cmdLine) {
     var urilist = [];
+
+    if (AppConstants.platform == "win") {
+      // Windows itself does disk I/O when the notification service is
+      // initialized, so make sure that is lazy.
+      var tag;
+      while (
+        (tag = cmdLine.handleFlagWithParam("notification-windowsTag", false))
+      ) {
+        let onUnknownWindowsTag = (unknownTag, launchUrl, privilegedName) => {
+          console.info(
+            `Completing Windows notification (tag=${JSON.stringify(
+              unknownTag
+            )}, launchUrl=${JSON.stringify(
+              launchUrl
+            )}, privilegedName=${JSON.stringify(privilegedName)}))`
+          );
+          if (privilegedName) {
+            Services.telemetry.setEventRecordingEnabled(
+              "browser.launched_to_handle",
+              true
+            );
+            Glean.browserLaunchedToHandle.systemNotification.record({
+              name: privilegedName,
+            });
+          }
+          if (!launchUrl) {
+            return;
+          }
+          let uri = resolveURIInternal(cmdLine, launchUrl);
+          urilist.push(uri);
+        };
+
+        try {
+          if (
+            lazy.gWindowsAlertsService?.handleWindowsTag(
+              tag,
+              onUnknownWindowsTag
+            )
+          ) {
+            // Don't pop open a new window.
+            cmdLine.preventDefault = true;
+          }
+        } catch (e) {
+          Cu.reportError(
+            `Error handling Windows notification with tag '${tag}': ${e}`
+          );
+        }
+      }
+    }
 
     if (
       cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH &&

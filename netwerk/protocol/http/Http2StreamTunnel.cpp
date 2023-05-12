@@ -206,7 +206,7 @@ FWD_TS_T_PTR(GetPeerAddr, mozilla::net::NetAddr);
 FWD_TS_T_PTR(GetSelfAddr, mozilla::net::NetAddr);
 FWD_TS_T_ADDREF(GetScriptablePeerAddr, nsINetAddr);
 FWD_TS_T_ADDREF(GetScriptableSelfAddr, nsINetAddr);
-FWD_TS_T_ADDREF(GetSecurityInfo, nsISupports);
+FWD_TS_T_ADDREF(GetTlsSocketControl, nsISSLSocketControl);
 FWD_TS_T_PTR(GetConnectionFlags, uint32_t);
 FWD_TS_T(SetConnectionFlags, uint32_t);
 FWD_TS_T(SetIsPrivate, bool);
@@ -298,7 +298,7 @@ already_AddRefed<nsHttpConnection> Http2StreamTunnel::CreateHttpConnection(
                  gHttpHandler->ConnMgr()->MaxRequestDelay(), this, mInput,
                  mOutput, true, NS_OK, aCallbacks, aRtt, false);
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-
+  mTransaction = httpTransaction;
   return conn.forget();
 }
 

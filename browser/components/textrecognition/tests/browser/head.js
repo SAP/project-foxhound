@@ -26,3 +26,30 @@ function getTextFromClipboard() {
   transferable.getTransferData("text/unicode", results);
   return results.value.QueryInterface(Ci.nsISupportsString)?.data ?? "";
 }
+
+/**
+ * Returns events specifically for text recognition.
+ */
+function getTelemetryScalars() {
+  const snapshot = Services.telemetry.getSnapshotForKeyedScalars(
+    "main",
+    true /* clear events */
+  );
+
+  if (!snapshot.parent) {
+    return {};
+  }
+
+  return snapshot.parent;
+}
+
+function clearTelemetry() {
+  Services.telemetry.clearScalars();
+  Services.telemetry
+    .getHistogramById("TEXT_RECOGNITION_API_PERFORMANCE")
+    .clear();
+  Services.telemetry
+    .getHistogramById("TEXT_RECOGNITION_INTERACTION_TIMING")
+    .clear();
+  Services.telemetry.getHistogramById("TEXT_RECOGNITION_TEXT_LENGTH").clear();
+}

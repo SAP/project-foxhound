@@ -182,12 +182,12 @@ AbortReasonOr<WarpSnapshot*> WarpOracle::createSnapshot() {
   //
   // Note: this assertion catches potential performance issues.
   // Failing this assertion is not a correctness/security problem.
-  // We therefore ignore cases involving OOM, stack overflow, or
-  // stubs purged by GC.
+  // We therefore ignore cases involving resource exhaustion (OOM,
+  // stack overflow, etc), or stubs purged by GC.
   HashNumber hash = icScript->hash();
   if (outerScript_->jitScript()->hasFailedICHash()) {
     HashNumber oldHash = outerScript_->jitScript()->getFailedICHash();
-    MOZ_ASSERT_IF(hash == oldHash, cx_->hadNondeterministicException());
+    MOZ_ASSERT_IF(hash == oldHash, cx_->hadResourceExhaustion());
   }
   snapshot->setICHash(hash);
 #endif
@@ -451,6 +451,61 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
         break;
       }
 
+      case JSOp::PushVarEnv: {
+        Rooted<VarScope*> scope(cx_, &loc.getScope(script_)->as<VarScope>());
+
+        auto* templateObj =
+            VarEnvironmentObject::createTemplateObject(cx_, scope);
+        if (!templateObj) {
+          return abort(AbortReason::Alloc);
+        }
+        MOZ_ASSERT(templateObj->isTenured());
+
+        if (!AddOpSnapshot<WarpVarEnvironment>(alloc_, opSnapshots, offset,
+                                               templateObj)) {
+          return abort(AbortReason::Alloc);
+        }
+        break;
+      }
+
+      case JSOp::PushLexicalEnv:
+      case JSOp::FreshenLexicalEnv:
+      case JSOp::RecreateLexicalEnv: {
+        Rooted<LexicalScope*> scope(cx_,
+                                    &loc.getScope(script_)->as<LexicalScope>());
+
+        auto* templateObj =
+            BlockLexicalEnvironmentObject::createTemplateObject(cx_, scope);
+        if (!templateObj) {
+          return abort(AbortReason::Alloc);
+        }
+        MOZ_ASSERT(templateObj->isTenured());
+
+        if (!AddOpSnapshot<WarpLexicalEnvironment>(alloc_, opSnapshots, offset,
+                                                   templateObj)) {
+          return abort(AbortReason::Alloc);
+        }
+        break;
+      }
+
+      case JSOp::PushClassBodyEnv: {
+        Rooted<ClassBodyScope*> scope(
+            cx_, &loc.getScope(script_)->as<ClassBodyScope>());
+
+        auto* templateObj =
+            ClassBodyLexicalEnvironmentObject::createTemplateObject(cx_, scope);
+        if (!templateObj) {
+          return abort(AbortReason::Alloc);
+        }
+        MOZ_ASSERT(templateObj->isTenured());
+
+        if (!AddOpSnapshot<WarpClassBodyEnvironment>(alloc_, opSnapshots,
+                                                     offset, templateObj)) {
+          return abort(AbortReason::Alloc);
+        }
+        break;
+      }
+
       case JSOp::GetName:
       case JSOp::GetGName:
       case JSOp::GetProp:
@@ -595,12 +650,7 @@ AbortReasonOr<WarpScriptSnapshot*> WarpScriptOracle::createScriptSnapshot() {
       case JSOp::DelElem:
       case JSOp::StrictDelElem:
       case JSOp::SetFunName:
-      case JSOp::PushLexicalEnv:
       case JSOp::PopLexicalEnv:
-      case JSOp::FreshenLexicalEnv:
-      case JSOp::RecreateLexicalEnv:
-      case JSOp::PushVarEnv:
-      case JSOp::PushClassBodyEnv:
       case JSOp::ImplicitThis:
       case JSOp::CheckClassHeritage:
       case JSOp::CheckThis:

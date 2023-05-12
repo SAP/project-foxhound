@@ -21,12 +21,15 @@
                      oncommand="PanelUI.showSubView('allTabsMenu-hiddenTabsView', this);"
                      data-l10n-id="all-tabs-menu-hidden-tabs"/>
       <toolbarseparator id="allTabsMenu-tabsSeparator"/>
-      <vbox id="allTabsMenu-allTabsViewTabs" class="panel-subview-body"/>
+      <vbox id="allTabsMenu-dropIndicatorHolder">
+        <vbox id="allTabsMenu-dropIndicator" collapsed="true"/>
+      </vbox>
+      <vbox id="allTabsMenu-allTabsView-tabs" class="panel-subview-body"/>
     </vbox>
   </panelview>
 
   <panelview id="allTabsMenu-hiddenTabsView" class="PanelUI-subView">
-    <vbox class="panel-subview-body"/>
+    <vbox id="allTabsMenu-hiddenTabsView-tabs" class="panel-subview-body"/>
   </panelview>
 
   <panelview id="allTabsMenu-containerTabsView" class="PanelUI-subView">

@@ -18,8 +18,6 @@ const {
   DocumentWalker: _documentWalker,
 } = require("devtools/server/actors/inspector/document-walker");
 
-const Services = require("Services");
-
 // Always log packets when running tests.
 Services.prefs.setBoolPref("devtools.debugger.log", true);
 SimpleTest.registerCleanupFunction(function() {
@@ -115,7 +113,7 @@ function addAsyncTest(generator) {
 }
 
 function runNextTest() {
-  if (_tests.length == 0) {
+  if (!_tests.length) {
     SimpleTest.finish();
     return;
   }

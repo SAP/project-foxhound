@@ -32,12 +32,14 @@
 
 #include "jsmath.h"
 
+#include "frontend/BytecodeCompiler.h"    // CompileStandaloneFunction
 #include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
 #include "frontend/ParserAtom.h"     // ParserAtomsTable, TaggedParserAtomIndex
 #include "frontend/SharedContext.h"  // TopLevelFunction
 #include "frontend/TaggedParserAtomIndexHasher.h"  // TaggedParserAtomIndexHasher
+#include "gc/GC.h"
 #include "gc/Policy.h"
 #include "jit/InlinableNatives.h"
 #include "js/BuildId.h"  // JS::BuildIdCharVector
@@ -57,6 +59,7 @@
 #include "vm/ErrorReporting.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
+#include "vm/Interpreter.h"
 #include "vm/SelfHosting.h"
 #include "vm/Time.h"
 #include "vm/TypedArrayObject.h"
@@ -601,10 +604,29 @@ static inline TaggedParserAtomIndex FunctionName(FunctionNode* funNode) {
   return TaggedParserAtomIndex::null();
 }
 
+static inline ParseNode* FunctionFormalParametersList(FunctionNode* fn,
+                                                      unsigned* numFormals) {
+  ParamsBodyNode* argsBody = fn->body();
+
+  // The number of formals is equal to the number of parameters (excluding the
+  // trailing lexical scope). There are no destructuring or rest parameters for
+  // asm.js functions.
+  *numFormals = argsBody->count();
+
+  // If the function has been fully parsed, the trailing function body node is a
+  // lexical scope. If we've only parsed the function parameters, the last node
+  // is the last parameter.
+  if (*numFormals > 0 && argsBody->last()->is<LexicalScopeNode>()) {
+    MOZ_ASSERT(argsBody->last()->as<LexicalScopeNode>().scopeBody()->isKind(
+        ParseNodeKind::StatementList));
+    (*numFormals)--;
+  }
+
+  return argsBody->head();
+}
+
 static inline ParseNode* FunctionStatementList(FunctionNode* funNode) {
-  MOZ_ASSERT(funNode->body()->isKind(ParseNodeKind::ParamsBody));
-  LexicalScopeNode* last =
-      &funNode->body()->as<ListNode>().last()->as<LexicalScopeNode>();
+  LexicalScopeNode* last = funNode->body()->body();
   MOZ_ASSERT(last->isEmptyScope());
   ParseNode* body = last->scopeBody();
   MOZ_ASSERT(body->isKind(ParseNodeKind::StatementList));
@@ -2396,7 +2418,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   // This is also a ModuleValidator<Unit>& after the appropriate static_cast<>.
   ModuleValidatorShared& m_;
 
-  ParseNode* fn_;
+  FunctionNode* fn_;
   Bytes bytes_;
   Encoder encoder_;
   Uint32Vector callSiteLineNums_;
@@ -2413,7 +2435,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   Maybe<ValType> ret_;
 
  private:
-  FunctionValidatorShared(ModuleValidatorShared& m, ParseNode* fn,
+  FunctionValidatorShared(ModuleValidatorShared& m, FunctionNode* fn,
                           JSContext* cx)
       : m_(m),
         fn_(fn),
@@ -2426,7 +2448,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
  protected:
   template <typename Unit>
-  FunctionValidatorShared(ModuleValidator<Unit>& m, ParseNode* fn,
+  FunctionValidatorShared(ModuleValidator<Unit>& m, FunctionNode* fn,
                           JSContext* cx)
       : FunctionValidatorShared(static_cast<ModuleValidatorShared&>(m), fn,
                                 cx) {}
@@ -2437,7 +2459,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   JSContext* cx() const { return m_.cx(); }
   ErrorContext* ec() const { return m_.ec(); }
   JS::NativeStackLimit stackLimit() const { return m_.stackLimit(); }
-  ParseNode* fn() const { return fn_; }
+  FunctionNode* fn() const { return fn_; }
 
   void define(ModuleValidatorShared::Func* func, unsigned line) {
     MOZ_ASSERT(!blockDepth_);
@@ -2666,7 +2688,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 template <typename Unit>
 class MOZ_STACK_CLASS FunctionValidator : public FunctionValidatorShared {
  public:
-  FunctionValidator(ModuleValidator<Unit>& m, ParseNode* fn)
+  FunctionValidator(ModuleValidator<Unit>& m, FunctionNode* fn)
       : FunctionValidatorShared(m, fn, m.cx()) {}
 
  public:

@@ -99,7 +99,7 @@ uint32_t sCubebMTGLatencyInFrames = 512;
 // If sCubebForcedSampleRate is zero, PreferredSampleRate will return the
 // preferred sample-rate for the audio backend in use. Otherwise, it will be
 // used as the preferred sample-rate.
-uint32_t sCubebForcedSampleRate = 0;
+Atomic<uint32_t> sCubebForcedSampleRate{0};
 bool sCubebPlaybackLatencyPrefSet = false;
 bool sCubebMTGLatencyPrefSet = false;
 bool sAudioStreamInitEverSucceeded = false;
@@ -154,7 +154,7 @@ std::unordered_map<std::string, LABELS_MEDIA_AUDIO_BACKEND>
 // given thread before fetching the value, it's guaranteed (via the mutex) that
 // sufficient memory barriers have occurred to ensure the correct value is
 // visible on the querying thread/CPU.
-uint32_t sPreferredSampleRate;
+static Atomic<uint32_t> sPreferredSampleRate{0};
 
 #ifdef MOZ_CUBEB_REMOTING
 // AudioIPC server handle
@@ -363,16 +363,24 @@ bool InitPreferredSampleRate() {
     return true;
   }
 #ifdef MOZ_WIDGET_ANDROID
-  sPreferredSampleRate = AndroidGetAudioOutputSampleRate();
+  int rate = AndroidGetAudioOutputSampleRate();
+  if (rate > 0) {
+    sPreferredSampleRate = rate;
+    return true;
+  } else {
+    return false;
+  }
 #else
   cubeb* context = GetCubebContextUnlocked();
   if (!context) {
     return false;
   }
-  if (cubeb_get_preferred_sample_rate(context, &sPreferredSampleRate) !=
+  uint32_t rate;
+  if (cubeb_get_preferred_sample_rate(context, &rate) !=
       CUBEB_OK) {
     return false;
   }
+  sPreferredSampleRate = rate;
 #endif
   MOZ_ASSERT(sPreferredSampleRate);
   return true;
@@ -653,7 +661,12 @@ uint32_t GetCubebMTGLatencyInFrames(cubeb_stream_params* params) {
   }
 
 #ifdef MOZ_WIDGET_ANDROID
-  return AndroidGetAudioOutputFramesPerBuffer();
+  int frames = AndroidGetAudioOutputFramesPerBuffer();
+  if (frames > 0) {
+    return frames;
+  } else {
+    return 512;
+  }
 #else
   cubeb* context = GetCubebContextUnlocked();
   if (!context) {
@@ -889,14 +902,12 @@ bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
 }
 
 #ifdef MOZ_WIDGET_ANDROID
-uint32_t AndroidGetAudioOutputSampleRate() {
+int32_t AndroidGetAudioOutputSampleRate() {
   int32_t sample_rate = java::GeckoAppShell::GetAudioOutputSampleRate();
-  MOZ_ASSERT(sample_rate > 0);
   return sample_rate;
 }
-uint32_t AndroidGetAudioOutputFramesPerBuffer() {
+int32_t AndroidGetAudioOutputFramesPerBuffer() {
   int32_t frames = java::GeckoAppShell::GetAudioOutputFramesPerBuffer();
-  MOZ_ASSERT(frames > 0);
   return frames;
 }
 #endif

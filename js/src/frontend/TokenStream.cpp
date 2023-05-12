@@ -600,7 +600,7 @@ bool TokenStreamAnyChars::checkOptions() {
   return true;
 }
 
-void TokenStreamAnyChars::reportErrorNoOffset(unsigned errorNumber, ...) {
+void TokenStreamAnyChars::reportErrorNoOffset(unsigned errorNumber, ...) const {
   va_list args;
   va_start(args, errorNumber);
 
@@ -610,7 +610,7 @@ void TokenStreamAnyChars::reportErrorNoOffset(unsigned errorNumber, ...) {
 }
 
 void TokenStreamAnyChars::reportErrorNoOffsetVA(unsigned errorNumber,
-                                                va_list* args) {
+                                                va_list* args) const {
   ErrorMetadata metadata;
   computeErrorMetadataNoOffset(&metadata);
 
@@ -1592,7 +1592,8 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::seekTo(
   return true;
 }
 
-void TokenStreamAnyChars::computeErrorMetadataNoOffset(ErrorMetadata* err) {
+void TokenStreamAnyChars::computeErrorMetadataNoOffset(
+    ErrorMetadata* err) const {
   err->isMuted = mutedErrors;
   err->filename = filename_;
   err->lineNumber = 0;
@@ -1602,7 +1603,7 @@ void TokenStreamAnyChars::computeErrorMetadataNoOffset(ErrorMetadata* err) {
 }
 
 bool TokenStreamAnyChars::fillExceptingContext(ErrorMetadata* err,
-                                               uint32_t offset) {
+                                               uint32_t offset) const {
   err->isMuted = mutedErrors;
 
   // If this TokenStreamAnyChars doesn't have location information, try to
@@ -1622,17 +1623,11 @@ bool TokenStreamAnyChars::fillExceptingContext(ErrorMetadata* err,
   return true;
 }
 
-template <typename Unit, class AnyCharsAccess>
-bool TokenStreamSpecific<Unit, AnyCharsAccess>::hasTokenizationStarted() const {
-  const TokenStreamAnyChars& anyChars = anyCharsAccess();
-  return anyChars.isCurrentTokenType(TokenKind::Eof) && !anyChars.isEOF();
-}
-
 template <>
 inline void SourceUnits<char16_t>::computeWindowOffsetAndLength(
     const char16_t* encodedWindow, size_t encodedTokenOffset,
     size_t* utf16TokenOffset, size_t encodedWindowLength,
-    size_t* utf16WindowLength) {
+    size_t* utf16WindowLength) const {
   MOZ_ASSERT_UNREACHABLE("shouldn't need to recompute for UTF-16");
 }
 
@@ -1640,7 +1635,7 @@ template <>
 inline void SourceUnits<Utf8Unit>::computeWindowOffsetAndLength(
     const Utf8Unit* encodedWindow, size_t encodedTokenOffset,
     size_t* utf16TokenOffset, size_t encodedWindowLength,
-    size_t* utf16WindowLength) {
+    size_t* utf16WindowLength) const {
   MOZ_ASSERT(encodedTokenOffset <= encodedWindowLength,
              "token offset must be within the window, and the two lambda "
              "calls below presume this ordering of values");
@@ -1679,7 +1674,7 @@ inline void SourceUnits<Utf8Unit>::computeWindowOffsetAndLength(
 
 template <typename Unit>
 bool TokenStreamCharsBase<Unit>::addLineOfContext(ErrorMetadata* err,
-                                                  uint32_t offset) {
+                                                  uint32_t offset) const {
   // Rename the variable to make meaning clearer: an offset into source units
   // in Unit encoding.
   size_t encodedOffset = offset;
@@ -1766,7 +1761,7 @@ bool TokenStreamCharsBase<Unit>::addLineOfContext(ErrorMetadata* err,
 
 template <typename Unit, class AnyCharsAccess>
 bool TokenStreamSpecific<Unit, AnyCharsAccess>::computeErrorMetadata(
-    ErrorMetadata* err, const ErrorOffset& errorOffset) {
+    ErrorMetadata* err, const ErrorOffset& errorOffset) const {
   if (errorOffset.is<NoOffset>()) {
     anyCharsAccess().computeErrorMetadataNoOffset(err);
     return true;

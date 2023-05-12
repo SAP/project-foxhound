@@ -5,7 +5,6 @@
 #ifndef nsAHttpTransaction_h__
 #define nsAHttpTransaction_h__
 
-#include "nsISupports.h"
 #include "nsTArray.h"
 #include "nsWeakReference.h"
 
@@ -19,9 +18,10 @@ typedef __StatusTmp Status;
 
 class nsIDNSHTTPSSVCRecord;
 class nsIInterfaceRequestor;
+class nsIRequestContext;
+class nsISSLSocketControl;
 class nsISVCBRecord;
 class nsITransport;
-class nsIRequestContext;
 
 namespace mozilla {
 namespace net {
@@ -167,17 +167,20 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual bool ResponseTimeoutEnabled() const;
   virtual PRIntervalTime ResponseTimeout();
 
-  // conceptually the security info is part of the connection, but sometimes
+  // conceptually the socket control is part of the connection, but sometimes
   // in the case of TLS tunneled within TLS the transaction might present
-  // a more specific security info that cannot be represented as a layer in
+  // a more specific socket control that cannot be represented as a layer in
   // the connection due to multiplexing. This interface represents such an
   // overload. If it returns NS_FAILURE the connection should be considered
   // authoritative.
-  [[nodiscard]] virtual nsresult GetTransactionSecurityInfo(nsISupports**) {
+  [[nodiscard]] virtual nsresult GetTransactionTLSSocketControl(
+      nsISSLSocketControl**) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
   virtual void DisableSpdy() {}
+  // When called, we disallow to connect through a Http/2 proxy.
+  virtual void DisableHttp2ForProxy() {}
   virtual void DisableHttp3(bool aAllowRetryHTTPSRR) {}
   virtual void MakeNonSticky() {}
   virtual void ReuseConnectionOnRestartOK(bool) {}

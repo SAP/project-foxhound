@@ -37,14 +37,16 @@ add_task(async function() {
   await waitForHeaders;
 
   info("Open the first request in the request panel to resend");
-  const waitForPanels = waitForDOM(
-    document,
-    ".monitor-panel .http-custom-request-panel"
+  const waitForPanels = waitUntil(
+    () =>
+      document.querySelector(".http-custom-request-panel") &&
+      document.querySelector("#http-custom-request-send-button").disabled ===
+        false
   );
 
   // Open the context menu and select resend menu item
   EventUtils.sendMouseEvent({ type: "contextmenu" }, firstRequest);
-  await selectContextMenuItem(monitor, "request-list-context-resend");
+  await selectContextMenuItem(monitor, "request-list-context-edit-resend");
 
   await waitForPanels;
 

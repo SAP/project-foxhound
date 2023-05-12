@@ -7,16 +7,16 @@ const protocol = require("devtools/shared/protocol");
 const { watcherSpec } = require("devtools/shared/specs/watcher");
 
 const Resources = require("devtools/server/actors/resources/index");
-const {
-  TargetActorRegistry,
-} = require("devtools/server/actors/targets/target-actor-registry.jsm");
-const {
-  WatcherRegistry,
-} = require("devtools/server/actors/watcher/WatcherRegistry.jsm");
+const { TargetActorRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs"
+);
+const { WatcherRegistry } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs"
+);
 const Targets = require("devtools/server/actors/targets/index");
-const {
-  getAllBrowsingContextsForContext,
-} = require("devtools/server/actors/watcher/browsing-context-helpers.jsm");
+const { getAllBrowsingContextsForContext } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
+);
 
 const TARGET_HELPERS = {};
 loader.lazyRequireGetter(
@@ -124,10 +124,6 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
     // but there are certain cases when a new target is available before the
     // old target is destroyed.
     this._currentWindowGlobalTargets = new Map();
-
-    this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
-    this.notifyResourceDestroyed = this.notifyResourceDestroyed.bind(this);
-    this.notifyResourceUpdated = this.notifyResourceUpdated.bind(this);
   },
 
   get sessionContext() {
@@ -394,42 +390,25 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
   },
 
   /**
-   * Called by Resource Watchers, when new resources are available.
+   * Called by Resource Watchers, when new resources are available, updated or destroyed.
    *
+   * @param String updateType
+   *        Can be "available", "updated" or "destroyed"
    * @param Array<json> resources
-   *        List of all available resources. A resource is a JSON object piped over to the client.
-   *        It may contain actor IDs, actor forms, to be manually marshalled by the client.
+   *        List of all resource's form. A resource is a JSON object piped over to the client.
+   *        It can contain actor IDs, actor forms, to be manually marshalled by the client.
    */
-  notifyResourceAvailable(resources) {
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-    this._emitResourcesForm("resource-available-form", resources);
-  },
-
-  notifyResourceDestroyed(resources) {
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-    this._emitResourcesForm("resource-destroyed-form", resources);
-  },
-
-  notifyResourceUpdated(resources) {
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-    this._emitResourcesForm("resource-updated-form", resources);
-  },
-
-  /**
-   * Wrapper around emit for resource forms.
-   */
-  _emitResourcesForm(name, resources) {
+  notifyResources(updateType, resources) {
     if (resources.length === 0) {
       // Don't try to emit if the resources array is empty.
       return;
     }
-    this.emit(name, resources);
+
+    if (this.sessionContext.type == "webextension") {
+      this._overrideResourceBrowsingContextForWebExtension(resources);
+    }
+
+    this.emit(`resource-${updateType}-form`, resources);
   },
 
   /**
@@ -506,7 +485,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
         resourceTypes,
         targetType
       );
-      if (targetResourceTypes.length == 0) {
+      if (!targetResourceTypes.length) {
         continue;
       }
       const targetHelperModule = TARGET_HELPERS[targetType];
@@ -538,7 +517,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       resourceTypes,
       Targets.TYPES.FRAME
     );
-    if (frameResourceTypes.length > 0) {
+    if (frameResourceTypes.length) {
       const targetActor = this._getTargetActorInParentProcess();
       if (targetActor) {
         await targetActor.addSessionDataEntry("resources", frameResourceTypes);
@@ -591,7 +570,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
           resourceTypes,
           targetType
         );
-        if (targetResourceTypes.length == 0) {
+        if (!targetResourceTypes.length) {
           continue;
         }
         const targetHelperModule = TARGET_HELPERS[targetType];
@@ -608,7 +587,7 @@ exports.WatcherActor = protocol.ActorClassWithSpec(watcherSpec, {
       resourceTypes,
       Targets.TYPES.FRAME
     );
-    if (frameResourceTypes.length > 0) {
+    if (frameResourceTypes.length) {
       const targetActor = this._getTargetActorInParentProcess();
       if (targetActor) {
         targetActor.removeSessionDataEntry("resources", frameResourceTypes);

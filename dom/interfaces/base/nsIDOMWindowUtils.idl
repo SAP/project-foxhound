@@ -1503,11 +1503,6 @@ interface nsIDOMWindowUtils : nsISupports {
   boolean isInModalState();
 
   /**
-   * Internal desktopMode flag.
-   */
-  attribute boolean desktopModeViewport;
-
-  /**
    * Suspend/resume timeouts on this window and its descendant windows.
    */
   void suspendTimeouts();
@@ -1937,8 +1932,8 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * If aHandlingInput is true, this informs the event state manager that
-   * we're handling user input. Otherwise, this is a no-op (as by default
-   * we're not handling user input).
+   * we're handling user input, and provides transient user activation.
+   * Otherwise, this is a no-op (as by default we're not handling user input).
    * Remember to call destruct() on the return value!
    * See also nsIDOMWindowUtils::isHandlingUserInput.
    */
@@ -2212,6 +2207,22 @@ interface nsIDOMWindowUtils : nsISupports {
   void resetMobileViewportManager();
 
   bool isCoepCredentialless();
+
+  /**
+   * Change the DPI setting for the primary monitor.
+   * This setHiDPIMode and restoreHiDPIMode below are only available on debug
+   * builds since these APIs are supposed to be used in tests.
+   *
+   * Note that on Mac, this API doesn't change the system DPI setting, rather it
+   * changes our internal state of DPI settings, thus it will not invoke the
+   * exact same stuff when the system DPI setting is changed.
+   *
+   */
+  void setHiDPIMode(in boolean aHiDPI);
+  /**
+   * Restore the modified HiDPI mode.
+   */
+  void restoreHiDPIMode();
 
   /**
    * NOTE: Currently works only on GTK+.

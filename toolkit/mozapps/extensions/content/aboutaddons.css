@@ -3,7 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :root {
+  -moz-box-layout: flex;
   --addon-icon-size: 32px;
+  --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
   --main-margin-start: 28px;
   --section-width: 664px;
   --sidebar-width: var(--in-content-sidebar-width);
@@ -76,7 +78,7 @@ body {
   display: inline-block;
   min-width: 20px;
   background-color: var(--in-content-accent-color);
-  color: #fff;
+  color: var(--in-content-primary-button-text-color);
   font-weight: bold;
   /* Use a large border-radius to get semi-circles on the sides. */
   border-radius: 1000px;
@@ -614,7 +616,7 @@ button.addon-detail-description-toggle {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--in-content-accent-color);;
+  background-color: var(--in-content-accent-color);;
 }
 
 panel-item {
@@ -854,10 +856,10 @@ section:not(:empty) ~ #empty-addons-message {
 
 #colorways-expiry-date {
   display: inline-block;
-  background: linear-gradient(to right, purple, pink, orange);
+  background-image: var(--card-border-zap-gradient);
   background-origin: border-box;
+  border: 1px solid transparent;
   border-radius: 1.5em;
-  padding: 1px;
 }
 
 #colorways-expiry-date > span {
@@ -903,10 +905,4 @@ section:not(:empty) ~ #empty-addons-message {
 
 #colorways-preview-text-container + .card-heading-image {
   background-color: var(--in-content-box-background-odd);
-}
-
-@media (prefers-color-scheme: dark) {
-  #colorways-preview-text-container + .card-heading-image {
-    background-color: var(--in-content-page-background);
-  }
 }

@@ -107,6 +107,7 @@ using mozilla::IntrinsicSize from "nsIFrame.h";
 using mozilla::AspectRatio from "mozilla/AspectRatio.h";
 using mozilla::NativeKeyBindingsType from "mozilla/NativeKeyBindingsType.h";
 using mozilla::StyleImageRendering from "mozilla/ServoStyleConsts.h";
+[MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
 
 namespace mozilla {
 namespace dom {
@@ -264,8 +265,6 @@ parent:
      */
     async DropLinks(nsString[] aLinks);
 
-    async Event(RemoteDOMEvent aEvent);
-
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
 
@@ -415,7 +414,7 @@ parent:
      */
     async SetCursor(nsCursor value,
                     bool hasCustomCursor,
-                    nsCString customCursorData,
+                    BigBuffer? customCursorData,
                     uint32_t width, uint32_t height,
                     float resolutionX, float resolutionY,
                     uint32_t stride, SurfaceFormat format,
@@ -635,7 +634,7 @@ parent:
     [Nested=inside_sync] sync DispatchTouchEvent(WidgetTouchEvent event);
 
     async InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
-                            Shmem? visualData,
+                            BigBuffer? visualData,
                             uint32_t stride, SurfaceFormat format,
                             LayoutDeviceIntRect dragRect,
                             nsIPrincipal principal, nsIContentSecurityPolicy csp,
@@ -874,11 +873,6 @@ child:
                             bool aIsPrivateData,
                             nsIPrincipal aRequestingPrincipal,
                             nsContentPolicyType aContentPolicyType);
-
-    /**
-     * Activate event forwarding from client to parent.
-     */
-    async ActivateFrameEvent(nsString aType, bool capture);
 
     async LoadRemoteScript(nsString aURL, bool aRunInGlobalScope);
 

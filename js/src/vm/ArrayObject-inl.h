@@ -11,10 +11,9 @@
 
 #include "gc/Allocator.h"
 #include "gc/GCProbes.h"
-#include "vm/StringType.h"
 
 #include "vm/JSObject-inl.h"
-#include "vm/ObjectOperations-inl.h"  // js::GetElement
+#include "vm/NativeObject-inl.h"
 
 namespace js {
 
@@ -39,13 +38,12 @@ namespace js {
   MOZ_ASSERT(shape->numFixedSlots() == 0);
 
   size_t nDynamicSlots = calculateDynamicSlots(0, slotSpan, clasp);
-  JSObject* obj =
-      js::AllocateObject(cx, kind, nDynamicSlots, heap, clasp, site);
-  if (!obj) {
+  ArrayObject* aobj =
+      cx->newCell<ArrayObject>(kind, nDynamicSlots, heap, clasp, site);
+  if (!aobj) {
     return nullptr;
   }
 
-  ArrayObject* aobj = static_cast<ArrayObject*>(obj);
   aobj->initShape(shape);
   // NOTE: Dynamic slots are created internally by Allocate<JSObject>.
   if (!nDynamicSlots) {

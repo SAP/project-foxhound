@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const { throttle } = require("devtools/shared/throttle");
 
 const BROWSERTOOLBOX_FISSION_ENABLED = "devtools.browsertoolbox.fission";
@@ -294,7 +293,7 @@ class ResourceCommand {
     }
     this._watchers = this._watchers.filter(entry => {
       // Remove entries entirely if it isn't watching for any resource type
-      return entry.resources.length > 0;
+      return !!entry.resources.length;
     });
 
     // Stop listening to all resources for which we removed the last watcher
@@ -836,7 +835,7 @@ class ResourceCommand {
         continue;
       }
       // If we receive a new event of the same type, accumulate the new update in the last event
-      if (pendingEvents.length > 0) {
+      if (pendingEvents.length) {
         const lastEvent = pendingEvents[pendingEvents.length - 1];
         if (lastEvent.callbackType == callbackType) {
           lastEvent.updates.push(update);
@@ -1047,7 +1046,7 @@ class ResourceCommand {
         existingResources.push(resource);
       }
     }
-    if (existingResources.length > 0) {
+    if (existingResources.length) {
       await onAvailable(existingResources, { areExistingResources: true });
     }
   }

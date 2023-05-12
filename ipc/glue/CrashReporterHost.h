@@ -46,7 +46,10 @@ class CrashReporterHost {
   // If a minidump was already captured (e.g. via the hang reporter), this
   // finalizes the existing report by attaching metadata, writing out the
   // .extra file and notifying the crash service.
-  bool FinalizeCrashReport();
+  void FinalizeCrashReport();
+
+  // Delete any crash report we might have generated.
+  void DeleteCrashReport();
 
   // Generate a paired minidump. This does not take the crash report, as
   // GenerateCrashReport does. After this, FinalizeCrashReport may be called.
@@ -89,14 +92,6 @@ class CrashReporterHost {
   const nsCString& AdditionalMinidumps() const {
     return mExtraAnnotations[CrashReporter::Annotation::additional_minidumps];
   }
-
-  // Return `true` if this crash reporter has been identified as a likely OOM.
-  //
-  // At the time of this writing, OOMs detection is considered reliable under
-  // Windows but other platforms quite often return false negatives.
-  //
-  // `CrashReporterHost::FinalizeCrashReport()` MUST have been called already.
-  bool IsLikelyOOM();
 
   // This is a static helper function to notify the crash service that a
   // crash has occurred and record the crash with telemetry. This can be called

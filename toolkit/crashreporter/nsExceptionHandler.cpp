@@ -2400,6 +2400,18 @@ nsresult AnnotateCrashReport(Annotation key, const nsACString& data) {
   return NS_OK;
 }
 
+nsresult AppendToCrashReportAnnotation(Annotation key, const nsACString& data) {
+  if (!GetEnabled()) return NS_ERROR_NOT_INITIALIZED;
+
+  MutexAutoLock lock(*crashReporterAPILock);
+  nsAutoCString newString(crashReporterAPIData_Table[key]);
+  newString.Append(" - "_ns);
+  newString.Append(data);
+  crashReporterAPIData_Table[key] = newString;
+
+  return NS_OK;
+}
+
 nsresult RemoveCrashReportAnnotation(Annotation key) {
   return AnnotateCrashReport(key, ""_ns);
 }
@@ -3030,24 +3042,39 @@ static bool GetMinidumpLimboDir(nsIFile** dir) {
   }
 }
 
-void DeleteMinidumpFilesForID(const nsAString& id) {
+void DeleteMinidumpFilesForID(const nsAString& aId,
+                              const Maybe<nsString>& aAdditionalMinidump) {
   nsCOMPtr<nsIFile> minidumpFile;
-  if (GetMinidumpForID(id, getter_AddRefs(minidumpFile))) {
+  if (GetMinidumpForID(aId, getter_AddRefs(minidumpFile))) {
     minidumpFile->Remove(false);
   }
 
   nsCOMPtr<nsIFile> extraFile;
-  if (GetExtraFileForID(id, getter_AddRefs(extraFile))) {
+  if (GetExtraFileForID(aId, getter_AddRefs(extraFile))) {
     extraFile->Remove(false);
+  }
+
+  if (aAdditionalMinidump && GetMinidumpForID(aId, getter_AddRefs(minidumpFile),
+                                              aAdditionalMinidump)) {
+    minidumpFile->Remove(false);
   }
 }
 
-bool GetMinidumpForID(const nsAString& id, nsIFile** minidump) {
+bool GetMinidumpForID(const nsAString& id, nsIFile** minidump,
+                      const Maybe<nsString>& aAdditionalMinidump) {
   if (!GetMinidumpLimboDir(minidump)) {
     return false;
   }
 
-  (*minidump)->Append(id + u".dmp"_ns);
+  nsAutoString fileName(id);
+
+  if (aAdditionalMinidump) {
+    fileName.Append('-');
+    fileName.Append(*aAdditionalMinidump);
+  }
+
+  fileName.Append(u".dmp"_ns);
+  (*minidump)->Append(fileName);
 
   bool exists;
   if (NS_FAILED((*minidump)->Exists(&exists)) || !exists) {
@@ -3562,8 +3589,8 @@ bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
   if (!pd) return false;
 
   NS_IF_ADDREF(*dump = pd->minidump);
-  // Only Flash process minidumps don't have annotations. Once we get rid of
-  // the Flash processes this check will become redundant.
+  // Only plugin process minidumps taken using the injector don't have
+  // annotations.
   if (!pd->minidumpOnly) {
     aAnnotations = *(pd->annotations);
   }

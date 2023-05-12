@@ -8,23 +8,18 @@
 
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
 #include <algorithm>
 #include <iterator>
 
-#include "debugger/DebugAPI.h"
-#include "gc/Marking.h"
 #include "gc/MaybeRooted.h"
-#include "js/CharacterEncoding.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
-#include "js/Result.h"
 #include "js/Value.h"
-#include "util/Memory.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/GetterSetter.h"        // js::GetterSetter
+#include "vm/Interpreter.h"         // js::CallGetter, js::CallSetter
 #include "vm/PlainObject.h"         // js::PlainObject
 #include "vm/TypedArrayObject.h"
 
@@ -35,18 +30,13 @@
 #endif
 
 #include "gc/Nursery-inl.h"
-#include "vm/ArrayObject-inl.h"
-#include "vm/BytecodeLocation-inl.h"
-#include "vm/EnvironmentObject-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/JSScript-inl.h"
 #include "vm/Shape-inl.h"
 
 using namespace js;
 
 using JS::AutoCheckCannotGC;
 using mozilla::CheckedInt;
-using mozilla::DebugOnly;
 using mozilla::PodCopy;
 using mozilla::RoundUpPow2;
 
@@ -236,23 +226,6 @@ mozilla::Maybe<PropertyInfo> js::NativeObject::lookupPure(jsid id) {
   return mozilla::Nothing();
 }
 
-bool NativeObject::ensureSlotsForDictionaryObject(JSContext* cx,
-                                                  uint32_t span) {
-  MOZ_ASSERT(inDictionaryMode());
-
-  size_t oldSpan = dictionaryModeSlotSpan();
-  if (oldSpan == span) {
-    return true;
-  }
-
-  if (!updateSlotsForSpan(cx, oldSpan, span)) {
-    return false;
-  }
-
-  setDictionaryModeSlotSpan(span);
-  return true;
-}
-
 bool NativeObject::growSlots(JSContext* cx, uint32_t oldCapacity,
                              uint32_t newCapacity) {
   MOZ_ASSERT(newCapacity > oldCapacity);
@@ -300,6 +273,20 @@ bool NativeObject::growSlots(JSContext* cx, uint32_t oldCapacity,
 
   MOZ_ASSERT(hasDynamicSlots());
   return true;
+}
+
+bool NativeObject::growSlotsForNewSlot(JSContext* cx, uint32_t numFixed,
+                                       uint32_t slot) {
+  MOZ_ASSERT(slotSpan() == slot);
+  MOZ_ASSERT(shape()->numFixedSlots() == numFixed);
+  MOZ_ASSERT(slot >= numFixed);
+
+  uint32_t newCapacity = calculateDynamicSlots(numFixed, slot + 1, getClass());
+
+  uint32_t oldCapacity = numDynamicSlots();
+  MOZ_ASSERT(oldCapacity < newCapacity);
+
+  return growSlots(cx, oldCapacity, newCapacity);
 }
 
 bool NativeObject::allocateSlots(JSContext* cx, uint32_t newCapacity) {
@@ -794,6 +781,8 @@ bool NativeObject::growElements(JSContext* cx, uint32_t reqCapacity) {
     if (getDenseCapacity() >= reqCapacity) {
       return true;
     }
+    // moveShiftedElements() may have changed the number of shifted elements;
+    // update `numShifted` accordingly.
     numShifted = getElementsHeader()->numShiftedElements();
 
     // If |reqCapacity + numShifted| overflows, we just move all shifted
@@ -811,13 +800,20 @@ bool NativeObject::growElements(JSContext* cx, uint32_t reqCapacity) {
 
   uint32_t newAllocated = 0;
   if (is<ArrayObject>() && !as<ArrayObject>().lengthIsWritable()) {
-    MOZ_ASSERT(reqCapacity <= as<ArrayObject>().length());
-    MOZ_ASSERT(reqCapacity <= MAX_DENSE_ELEMENTS_COUNT);
     // Preserve the |capacity <= length| invariant for arrays with
     // non-writable length.  See also js::ArraySetLength which initially
     // enforces this requirement.
+    MOZ_ASSERT(reqCapacity <= as<ArrayObject>().length());
+    // Adding to reqCapacity must not overflow uint32_t.
+    MOZ_ASSERT(reqCapacity <= MAX_DENSE_ELEMENTS_COUNT);
+
+    // Then, add the header and shifted elements sizes to the new capacity
+    // to get the overall amount to allocate.
     newAllocated = reqCapacity + numShifted + ObjectElements::VALUES_PER_HEADER;
   } else {
+    // For arrays with writable length, and all non-Array objects, call
+    // `NativeObject::goodElementsAllocationAmount()` to determine the
+    // amount to allocate from the the requested capacity and existing length.
     if (!goodElementsAllocationAmount(cx, reqCapacity + numShifted,
                                       getElementsHeader()->length,
                                       &newAllocated)) {
@@ -825,8 +821,14 @@ bool NativeObject::growElements(JSContext* cx, uint32_t reqCapacity) {
     }
   }
 
+  // newAllocated now contains the size of the buffer we need to allocate;
+  // subtract off the header and shifted elements size to get the new capacity
   uint32_t newCapacity =
       newAllocated - ObjectElements::VALUES_PER_HEADER - numShifted;
+  // If the new capacity isn't strictly greater than the old capacity, then this
+  // method shouldn't have been called; if the new capacity doesn't satisfy
+  // what was requested, then one of the calculations above must have been
+  // wrong.
   MOZ_ASSERT(newCapacity > oldCapacity && newCapacity >= reqCapacity);
 
   // If newCapacity exceeds MAX_DENSE_ELEMENTS_COUNT, the array should become
@@ -840,35 +842,56 @@ bool NativeObject::growElements(JSContext* cx, uint32_t reqCapacity) {
   HeapSlot* newHeaderSlots;
   uint32_t oldAllocated = 0;
   if (hasDynamicElements()) {
+    // If the object has dynamic elements, then we might be able to resize the
+    // buffer in-place.
+
+    // First, check that adding to oldCapacity won't overflow uint32_t
     MOZ_ASSERT(oldCapacity <= MAX_DENSE_ELEMENTS_COUNT);
+    // Then, add the header and shifted elements sizes to get the overall size
+    // of the existing buffer
     oldAllocated = oldCapacity + ObjectElements::VALUES_PER_HEADER + numShifted;
 
+    // Finally, try to resize the buffer.
     newHeaderSlots = ReallocateObjectBuffer<HeapSlot>(
         cx, this, oldHeaderSlots, oldAllocated, newAllocated);
     if (!newHeaderSlots) {
-      return false;  // Leave elements at its old size.
+      return false;  // If the resizing failed, then we leave elements at its
+                     // old size.
     }
   } else {
+    // If the object has fixed elements, then we always need to allocate a new
+    // buffer, because if we've reached this code, then the requested capacity
+    // is greater than the existing inline space available within the object
     newHeaderSlots = AllocateObjectBuffer<HeapSlot>(cx, this, newAllocated);
     if (!newHeaderSlots) {
       return false;  // Leave elements at its old size.
     }
+
+    // Copy the initialized elements into the new buffer,
     PodCopy(newHeaderSlots, oldHeaderSlots,
             ObjectElements::VALUES_PER_HEADER + initlen + numShifted);
   }
 
+  // If the object already had dynamic elements, then we have to account
+  // for freeing the old elements buffer.
   if (oldAllocated) {
     RemoveCellMemory(this, oldAllocated * sizeof(HeapSlot),
                      MemoryUse::ObjectElements);
   }
 
   ObjectElements* newheader = reinterpret_cast<ObjectElements*>(newHeaderSlots);
+  // Update the elements pointer to point to the new elements buffer.
   elements_ = newheader->elements() + numShifted;
+
+  // Clear the "fixed elements" flag, because if this code has been reached,
+  // this object now has dynamic elements.
   getElementsHeader()->flags &= ~ObjectElements::FIXED;
   getElementsHeader()->capacity = newCapacity;
 
+  // Poison the uninitialized portion of the new elements buffer.
   Debug_SetSlotRangeToCrashOnTouch(elements_ + initlen, newCapacity - initlen);
 
+  // Account for allocating the new elements buffer.
   AddCellMemory(this, newAllocated * sizeof(HeapSlot),
                 MemoryUse::ObjectElements);
 
@@ -997,7 +1020,22 @@ bool NativeObject::allocDictionarySlot(JSContext* cx, Handle<NativeObject*> obj,
 
   *slotp = slotSpan;
 
-  return obj->ensureSlotsForDictionaryObject(cx, slotSpan + 1);
+  uint32_t numFixed = obj->numFixedSlots();
+  if (slotSpan < numFixed) {
+    obj->initFixedSlot(slotSpan, UndefinedValue());
+    obj->setDictionaryModeSlotSpan(slotSpan + 1);
+    return true;
+  }
+
+  uint32_t dynamicSlotIndex = slotSpan - numFixed;
+  if (dynamicSlotIndex >= obj->numDynamicSlots()) {
+    if (MOZ_UNLIKELY(!obj->growSlotsForNewSlot(cx, numFixed, slotSpan))) {
+      return false;
+    }
+  }
+  obj->initDynamicSlot(numFixed, slotSpan, UndefinedValue());
+  obj->setDictionaryModeSlotSpan(slotSpan + 1);
+  return true;
 }
 
 void NativeObject::freeDictionarySlot(uint32_t slot) {
@@ -1306,7 +1344,7 @@ bool js::AddSlotAndCallAddPropHook(JSContext* cx, Handle<NativeObject*> obj,
   MOZ_ASSERT(!id.isInt());
 
   uint32_t slot = newShape->lastProperty().slot();
-  if (!obj->setShapeAndUpdateSlotsForNewSlot(cx, newShape, slot)) {
+  if (!obj->setShapeAndAddNewSlot(cx, newShape, slot)) {
     return false;
   }
   obj->initSlot(slot, v);

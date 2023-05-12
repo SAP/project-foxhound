@@ -126,7 +126,8 @@ class Scopes extends PureComponent {
       };
 
       const menuItems = [removeWatchpointItem];
-      return showMenu(event, menuItems);
+      showMenu(event, menuItems);
+      return;
     }
 
     const addSetWatchpointLabel = L10N.getStr("watchpoints.setWatchpoint");
@@ -219,7 +220,7 @@ class Scopes extends PureComponent {
       return expandedScopes.some(path => path == getScopeItemPath(item));
     }
 
-    if (scopes && scopes.length > 0 && !isLoading) {
+    if (scopes && !!scopes.length && !isLoading) {
       return (
         <div className="pane scopes-list">
           <ObjectInspector

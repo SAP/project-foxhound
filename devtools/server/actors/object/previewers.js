@@ -5,7 +5,6 @@
 "use strict";
 
 const { Cu, Ci } = require("chrome");
-const Services = require("Services");
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 loader.lazyRequireGetter(
@@ -367,6 +366,31 @@ const previewers = {
   URLSearchParams: [
     function(objectActor, grip) {
       const enumEntries = PropertyIterators.enumURLSearchParamsEntries(objectActor);
+
+      grip.preview = {
+        kind: "MapLike",
+        size: enumEntries.size,
+      };
+
+      if (objectActor.hooks.getGripDepth() > 1) {
+        return true;
+      }
+
+      const entries = (grip.preview.entries = []);
+      for (const entry of enumEntries) {
+        entries.push(entry);
+        if (entries.length == OBJECT_PREVIEW_MAX_ITEMS) {
+          break;
+        }
+      }
+
+      return true;
+    },
+  ],
+
+  FormData: [
+    function(objectActor, grip) {
+      const enumEntries = PropertyIterators.enumFormDataEntries(objectActor);
 
       grip.preview = {
         kind: "MapLike",

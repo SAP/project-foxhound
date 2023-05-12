@@ -456,9 +456,7 @@ var ExtensionsUI = {
 
       if (browser.ownerGlobal.gUnifiedExtensions.isEnabled) {
         options.popupOptions = {
-          position: "bottomcenter topright",
-          x: 2,
-          y: 0,
+          position: "bottomright topright",
         };
       }
 
@@ -515,22 +513,11 @@ var ExtensionsUI = {
 
       let { browser, window } = getTabBrowser(target);
 
-      if (browser.ownerGlobal.gUnifiedExtensions.isEnabled) {
-        options.popupOptions = {
-          position: "bottomcenter topright",
-          x: 2,
-          y: 0,
-        };
-      }
-
       window.PopupNotifications.show(
         browser,
         "addon-webext-defaultsearch",
         strings.text,
-        browser.ownerGlobal.gUnifiedExtensions.getPopupAnchorID(
-          browser,
-          window
-        ),
+        "addons-notification-icon",
         action,
         secondaryActions,
         options

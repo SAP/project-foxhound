@@ -14,6 +14,7 @@
 #include "mozilla/Casting.h"
 
 #include "frontend/TokenStream.h"
+#include "gc/GC.h"
 #include "gc/Zone.h"
 #include "irregexp/imported/regexp-ast.h"
 #include "irregexp/imported/regexp-bytecode-generator.h"
@@ -30,6 +31,7 @@
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "util/StringBuffer.h"
+#include "vm/ErrorContext.h"
 #include "vm/MatchPairs.h"
 #include "vm/PlainObject.h"
 #include "vm/RegExpShared.h"
@@ -689,6 +691,7 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
   RegExpDepthCheck depthCheck(cx);
   if (!depthCheck.check(data.tree)) {
     JS_ReportErrorASCII(cx, "regexp too big");
+    cx->reportResourceExhaustion();
     return false;
   }
 
@@ -750,6 +753,7 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
                    isLatin1)) {
     case AssembleResult::TooLarge:
       JS_ReportErrorASCII(cx, "regexp too big");
+      cx->reportResourceExhaustion();
       return false;
     case AssembleResult::OutOfMemory:
       MOZ_ASSERT(cx->isThrowingOutOfMemory());

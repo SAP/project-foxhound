@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PBackgroundDataBridge;
-include protocol PBackgroundFileSystem;
 include protocol PBackgroundIDBFactory;
 include protocol PBackgroundIndexedDBUtils;
 include protocol PBackgroundSDBConnection;
@@ -22,6 +21,7 @@ include protocol PCacheStorage;
 include protocol PCacheStreamControl;
 include protocol PClientManager;
 include protocol PEndpointForReport;
+include protocol PFileSystemManager;
 include protocol PFileSystemRequest;
 include protocol PGamepadEventChannel;
 include protocol PGamepadTestChannel;
@@ -76,6 +76,8 @@ using mozilla::dom::cache::Namespace
 
 using class mozilla::dom::SSCacheCopy from "mozilla/dom/PBackgroundSessionStorageCache.h";
 
+using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
+
 namespace mozilla {
 namespace ipc {
 
@@ -83,7 +85,6 @@ namespace ipc {
 sync protocol PBackground
 {
   manages PBackgroundDataBridge;
-  manages PBackgroundFileSystem;
   manages PBackgroundIDBFactory;
   manages PBackgroundIndexedDBUtils;
   manages PBackgroundSDBConnection;
@@ -136,8 +137,6 @@ parent:
   // Only called at startup during mochitests to check the basic infrastructure.
   async PBackgroundTest(nsCString testArg);
 
-  async PBackgroundFileSystem(PrincipalInfo principalInfo);
-
   async PBackgroundDataBridge(uint64_t channelID);
 
   async PBackgroundIDBFactory(LoggingInfo loggingInfo);
@@ -189,6 +188,14 @@ parent:
   async PBackgroundSessionStorageService();
 
   async PBackgroundStorage(nsString profilePath, uint32_t privateBrowsingId);
+
+  /**
+   * Finish the setup of a new PFileSystemManager top level protocol.
+   */
+  async CreateFileSystemManagerParent(
+      PrincipalInfo principalInfo,
+      Endpoint<PFileSystemManagerParent> aParentEndpoint)
+      returns(nsresult rv);
 
   async PVsync();
 
@@ -292,7 +299,7 @@ parent:
   async EnsureRDDProcessAndCreateBridge()
       returns (nsresult rv, Endpoint<PRemoteDecoderManagerChild> aEndpoint);
 
-  async EnsureUtilityProcessAndCreateBridge()
+  async EnsureUtilityProcessAndCreateBridge(RemoteDecodeIn aLocation)
       returns (nsresult rv, Endpoint<PRemoteDecoderManagerChild> aEndpoint);
 
   async PWebSocketConnection(uint32_t aListenerId);

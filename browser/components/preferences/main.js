@@ -27,7 +27,6 @@ const PREF_USE_SYSTEM_COLORS = "browser.display.use_system_colors";
 const PREF_CONTENT_APPEARANCE =
   "layout.css.prefers-color-scheme.content-override";
 const FORCED_COLORS_QUERY = matchMedia("(forced-colors)");
-const SYSTEM_DARK_MODE_QUERY = matchMedia("(-moz-system-dark-theme)");
 
 const AUTO_UPDATE_CHANGED_TOPIC =
   UpdateUtils.PER_INSTALLATION_PREFS["app.update.auto"].observerTopic;
@@ -1926,7 +1925,6 @@ var gMainPane = {
 
   isBackgroundUpdateUIAvailable() {
     return (
-      AppConstants.MOZ_UPDATER &&
       AppConstants.MOZ_UPDATE_AGENT &&
       // This UI controls a per-installation pref. It won't necessarily work
       // properly if per-installation prefs aren't supported.
@@ -2114,7 +2112,7 @@ var gMainPane = {
       document.getElementById("updateRadioGroup").value = aData;
       this.maybeDisableBackgroundUpdateControls();
     } else if (aTopic == BACKGROUND_UPDATE_CHANGED_TOPIC) {
-      if (!AppConstants.MOZ_UPDATER || !AppConstants.MOZ_UPDATE_AGENT) {
+      if (!AppConstants.MOZ_UPDATE_AGENT) {
         return;
       }
       if (aData != "true" && aData != "false") {
@@ -3672,7 +3670,7 @@ const AppearanceChooser = {
   // NOTE: This order must match the values of the
   // layout.css.prefers-color-scheme.content-override
   // preference.
-  choices: ["dark", "light", "system", "browser"],
+  choices: ["dark", "light", "auto"],
   chooser: null,
   radios: null,
   warning: null,
@@ -3713,7 +3711,6 @@ const AppearanceChooser = {
     this.warning = document.getElementById("web-appearance-override-warning");
 
     FORCED_COLORS_QUERY.addEventListener("change", this);
-    SYSTEM_DARK_MODE_QUERY.addEventListener("change", this);
     Services.prefs.addObserver(PREF_USE_SYSTEM_COLORS, this);
     Services.obs.addObserver(this, "look-and-feel-changed");
     this._update();
@@ -3736,7 +3733,6 @@ const AppearanceChooser = {
     Services.prefs.removeObserver(PREF_USE_SYSTEM_COLORS, this);
     Services.obs.removeObserver(this, "look-and-feel-changed");
     FORCED_COLORS_QUERY.removeEventListener("change", this);
-    SYSTEM_DARK_MODE_QUERY.removeEventListener("change", this);
   },
 
   _isValueDark(value) {
@@ -3745,10 +3741,8 @@ const AppearanceChooser = {
         return false;
       case "dark":
         return true;
-      case "browser":
+      case "auto":
         return Services.appinfo.contentThemeDerivedColorSchemeIsDark;
-      case "system":
-        return SYSTEM_DARK_MODE_QUERY.matches;
     }
     throw new Error("Unknown value");
   },

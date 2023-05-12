@@ -64,7 +64,7 @@ const kSubviewEvents = ["ViewShowing", "ViewHiding"];
  * The current version. We can use this to auto-add new default widgets as necessary.
  * (would be const but isn't because of testing purposes)
  */
-var kVersion = 17;
+var kVersion = 18;
 
 /**
  * Buttons removed from built-ins by version they were removed. kVersion must be
@@ -273,16 +273,12 @@ var CustomizableUIInternal = {
       CustomizableUI.AREA_TABSTRIP,
       {
         type: CustomizableUI.TYPE_TOOLBAR,
-        defaultPlacements: Services.prefs.getBoolPref(
-          "browser.tabs.firefox-view"
-        )
-          ? [
-              "firefox-view-button",
-              "tabbrowser-tabs",
-              "new-tab-button",
-              "alltabs-button",
-            ]
-          : ["tabbrowser-tabs", "new-tab-button", "alltabs-button"],
+        defaultPlacements: [
+          "firefox-view-button",
+          "tabbrowser-tabs",
+          "new-tab-button",
+          "alltabs-button",
+        ],
         defaultCollapsed: null,
       },
       true
@@ -380,9 +376,13 @@ var CustomizableUIInternal = {
       }
     }
 
+    // Nothing to migrate now if we don't have placements.
+    if (!gSavedState.placements) {
+      return;
+    }
+
     if (
       currentVersion < 7 &&
-      gSavedState.placements &&
       gSavedState.placements[CustomizableUI.AREA_NAVBAR]
     ) {
       let placements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
@@ -405,11 +405,7 @@ var CustomizableUIInternal = {
       gSavedState.placements[CustomizableUI.AREA_NAVBAR] = newPlacements;
     }
 
-    if (
-      currentVersion < 8 &&
-      gSavedState.placements &&
-      gSavedState.placements["PanelUI-contents"]
-    ) {
+    if (currentVersion < 8 && gSavedState.placements["PanelUI-contents"]) {
       let savedPanelPlacements = gSavedState.placements["PanelUI-contents"];
       delete gSavedState.placements["PanelUI-contents"];
       let defaultPlacements = [
@@ -450,11 +446,7 @@ var CustomizableUIInternal = {
       }
     }
 
-    if (
-      currentVersion < 9 &&
-      gSavedState.placements &&
-      gSavedState.placements["nav-bar"]
-    ) {
+    if (currentVersion < 9 && gSavedState.placements["nav-bar"]) {
       let placements = gSavedState.placements["nav-bar"];
       if (placements.includes("urlbar-container")) {
         let urlbarIndex = placements.indexOf("urlbar-container");
@@ -496,7 +488,7 @@ var CustomizableUIInternal = {
       }
     }
 
-    if (currentVersion < 10 && gSavedState.placements) {
+    if (currentVersion < 10) {
       for (let placements of Object.values(gSavedState.placements)) {
         if (placements.includes("webcompat-reporter-button")) {
           placements.splice(placements.indexOf("webcompat-reporter-button"), 1);
@@ -507,7 +499,7 @@ var CustomizableUIInternal = {
 
     // Move the downloads button to the default position in the navbar if it's
     // not there already.
-    if (currentVersion < 11 && gSavedState.placements) {
+    if (currentVersion < 11) {
       let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
       // First remove from wherever it currently lives, if anywhere:
       for (let placements of Object.values(gSavedState.placements)) {
@@ -539,7 +531,7 @@ var CustomizableUIInternal = {
       }
     }
 
-    if (currentVersion < 12 && gSavedState.placements) {
+    if (currentVersion < 12) {
       const removedButtons = [
         "loop-call-button",
         "loop-button-throttled",
@@ -557,7 +549,7 @@ var CustomizableUIInternal = {
 
     // Remove the old placements from the now-gone Nightly-only
     // "New non-e10s window" button.
-    if (currentVersion < 13 && gSavedState.placements) {
+    if (currentVersion < 13) {
       for (let placements of Object.values(gSavedState.placements)) {
         let buttonIndex = placements.indexOf("e10s-button");
         if (buttonIndex != -1) {
@@ -567,7 +559,7 @@ var CustomizableUIInternal = {
     }
 
     // Remove unsupported custom toolbar saved placements
-    if (currentVersion < 14 && gSavedState.placements) {
+    if (currentVersion < 14) {
       for (let area in gSavedState.placements) {
         if (!this._builtinAreas.has(area)) {
           delete gSavedState.placements[area];
@@ -576,7 +568,7 @@ var CustomizableUIInternal = {
     }
 
     // Add the FxA toolbar menu as the right most button item
-    if (currentVersion < 16 && gSavedState.placements) {
+    if (currentVersion < 16) {
       let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
       // Place the menu item as the first item to the left of the hamburger menu
       if (navbarPlacements) {
@@ -585,7 +577,7 @@ var CustomizableUIInternal = {
     }
 
     // Add the save to Pocket button left of downloads button.
-    if (currentVersion < 17 && gSavedState.placements) {
+    if (currentVersion < 17) {
       let navbarPlacements = gSavedState.placements[CustomizableUI.AREA_NAVBAR];
       let persistedPageActionsPref = Services.prefs.getCharPref(
         "browser.pageActions.persistedActions",
@@ -608,6 +600,18 @@ var CustomizableUIInternal = {
           navbarPlacements.length;
 
         navbarPlacements.splice(newPosition, 0, "save-to-pocket-button");
+      }
+    }
+
+    // Add firefox-view if not present
+    if (currentVersion < 18) {
+      let tabstripPlacements =
+        gSavedState.placements[CustomizableUI.AREA_TABSTRIP];
+      if (
+        tabstripPlacements &&
+        !tabstripPlacements.includes("firefox-view-button")
+      ) {
+        tabstripPlacements.unshift("firefox-view-button");
       }
     }
   },
@@ -984,7 +988,13 @@ var CustomizableUIInternal = {
       //
       // This notion of being "dirty" is stored in a cache which is persisted
       // in the saved state.
-      if (gDirtyAreaCache.has(area)) {
+      //
+      // Secondly, if the list of placements contains an API-provided widget,
+      // we need to call `buildArea` or it won't be built and put in the toolbar.
+      if (
+        gDirtyAreaCache.has(area) ||
+        placements.some(id => gPalette.has(id))
+      ) {
         this.buildArea(area, placements, aToolbar);
       } else {
         // We must have a builtin toolbar that's in the default state. We need
@@ -2054,16 +2064,27 @@ var CustomizableUIInternal = {
     let area = this.getPlacementOfWidget(aNode.id).area;
     let areaType = CustomizableUI.getAreaType(area);
     let anchor = aNode;
-    if (areaType != CustomizableUI.TYPE_MENU_PANEL) {
+
+    if (
+      aWidget.disallowSubView &&
+      (areaType == CustomizableUI.TYPE_MENU_PANEL ||
+        aNode.hasAttribute("overflowedItem"))
+    ) {
+      // Close the containing panel (e.g. overflow), PanelUI will reopen.
+      let wrapper = this.wrapWidget(aWidget.id).forWindow(ownerWindow);
+      if (wrapper?.anchor) {
+        this.hidePanelForNode(aNode);
+        anchor = wrapper.anchor;
+      }
+    } else if (areaType != CustomizableUI.TYPE_MENU_PANEL) {
       let wrapper = this.wrapWidget(aWidget.id).forWindow(ownerWindow);
 
       let hasMultiView = !!aNode.closest("panelmultiview");
-      if (wrapper && !hasMultiView && wrapper.anchor) {
+      if (!hasMultiView && wrapper?.anchor) {
         this.hidePanelForNode(aNode);
         anchor = wrapper.anchor;
       }
     }
-
     ownerWindow.PanelUI.showSubView(aWidget.viewId, anchor, aEvent);
   },
 
@@ -2867,6 +2888,7 @@ var CustomizableUIInternal = {
       showInPrivateBrowsing: true,
       _introducedInVersion: -1,
       keepBroadcastAttributesWhenCustomizing: false,
+      disallowSubView: false,
     };
 
     if (typeof aData.id != "string" || !/^[a-z0-9-_]{1,}$/i.test(aData.id)) {
@@ -2909,6 +2931,7 @@ var CustomizableUIInternal = {
       "locationSpecific",
       "localized",
       "keepBroadcastAttributesWhenCustomizing",
+      "disallowSubView",
     ];
     for (let prop of kOptBoolProps) {
       if (typeof aData[prop] == "boolean") {
@@ -4696,6 +4719,7 @@ function WidgetGroupWrapper(aWidget) {
     "tooltiptext",
     "showInPrivateBrowsing",
     "viewId",
+    "disallowSubView",
   ];
   for (let prop of kBareProps) {
     let propertyName = prop;
@@ -5143,10 +5167,10 @@ OverflowableToolbar.prototype = {
   },
 
   /**
-   * Exposes whether _onOverflow is currently running.
+   * Exposes whether _checkOverflow is currently running.
    */
   isHandlingOverflow() {
-    return !!this._onOverflowHandle;
+    return !!this._checkOverflowHandle;
   },
 
   _onClickChevron(aEvent) {
@@ -5231,14 +5255,13 @@ OverflowableToolbar.prototype = {
     }
 
     let win = this._target.ownerGlobal;
-    let onOverflowHandle = {};
-    this._onOverflowHandle = onOverflowHandle;
+    let checkOverflowHandle = this._checkOverflowHandle;
 
     let [isOverflowing] = await this._getOverflowInfo();
 
     // Stop if the window has closed or if we re-enter while waiting for
     // layout.
-    if (win.closed || this._onOverflowHandle != onOverflowHandle) {
+    if (win.closed || this._checkOverflowHandle != checkOverflowHandle) {
       lazy.log.debug("Window closed or another overflow handler started.");
       return;
     }
@@ -5271,15 +5294,13 @@ OverflowableToolbar.prototype = {
       [isOverflowing] = await this._getOverflowInfo();
       // Stop if the window has closed or if we re-enter while waiting for
       // layout.
-      if (win.closed || this._onOverflowHandle != onOverflowHandle) {
+      if (win.closed || this._checkOverflowHandle != checkOverflowHandle) {
         lazy.log.debug("Window closed or another overflow handler started.");
         return;
       }
     }
 
     win.UpdateUrlbarSearchSplitterState();
-
-    this._onOverflowHandle = null;
   },
 
   _onResize(aEvent) {
@@ -5308,8 +5329,7 @@ OverflowableToolbar.prototype = {
     );
     let placements = gPlacements.get(this._toolbar.id);
     let win = this._target.ownerGlobal;
-    let moveItemsBackToTheirOriginHandle = {};
-    this._moveItemsBackToTheirOriginHandle = moveItemsBackToTheirOriginHandle;
+    let checkOverflowHandle = this._checkOverflowHandle;
 
     while (this._list.firstElementChild) {
       let child = this._list.firstElementChild;
@@ -5324,14 +5344,8 @@ OverflowableToolbar.prototype = {
 
           // If the window has closed or if we re-enter because we were waiting
           // for layout, stop.
-          if (
-            win.closed ||
-            this._moveItemsBackToTheirOriginHandle !=
-              moveItemsBackToTheirOriginHandle
-          ) {
-            lazy.log.debug(
-              "Window closed or _moveItemsBackToTheirOrigin called again."
-            );
+          if (win.closed || this._checkOverflowHandle != checkOverflowHandle) {
+            lazy.log.debug("Window closed or _checkOverflow called again.");
             return;
           }
         }
@@ -5386,8 +5400,6 @@ OverflowableToolbar.prototype = {
     if (collapsedWidgetIds.every(w => CustomizableUI.isSpecialWidget(w))) {
       this._toolbar.removeAttribute("overflowing");
     }
-
-    this._moveItemsBackToTheirOriginHandle = null;
   },
 
   async _checkOverflow() {
@@ -5402,20 +5414,29 @@ OverflowableToolbar.prototype = {
       return;
     }
 
+    let checkOverflowHandle = (this._checkOverflowHandle = {});
+
     lazy.log.debug("Checking overflow");
     let [isOverflowing, totalAvailWidth] = await this._getOverflowInfo();
-    if (win.closed) {
+    if (win.closed || this._checkOverflowHandle != checkOverflowHandle) {
       return;
     }
 
     if (isOverflowing) {
-      this._onOverflow();
+      await this._onOverflow();
     } else {
-      this._moveItemsBackToTheirOrigin(false, totalAvailWidth);
+      await this._moveItemsBackToTheirOrigin(false, totalAvailWidth);
+    }
+
+    if (checkOverflowHandle == this._checkOverflowHandle) {
+      this._checkOverflowHandle = null;
     }
   },
 
   _disable() {
+    // Abort any ongoing overflow check. _enable() will _checkOverflow()
+    // anyways, so this is enough.
+    this._checkOverflowHandle = {};
     this._moveItemsBackToTheirOrigin(true);
     this._enabled = false;
   },

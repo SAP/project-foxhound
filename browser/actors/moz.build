@@ -25,17 +25,17 @@ with Files("PageStyleChild.jsm"):
 with Files("PluginChild.jsm"):
     BUG_COMPONENT = ("Core", "Audio/Video: GMP")
 
-with Files("ScreenshotsComponentChild.jsm"):
+with Files("ScreenshotsComponentChild.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Screenshots")
 
 with Files("WebRTCChild.jsm"):
     BUG_COMPONENT = ("Firefox", "Site Permissions")
 
 FINAL_TARGET_FILES.actors += [
-    "AboutNewTabChild.jsm",
-    "AboutNewTabParent.jsm",
-    "AboutPluginsChild.jsm",
-    "AboutPluginsParent.jsm",
+    "AboutNewTabChild.sys.mjs",
+    "AboutNewTabParent.sys.mjs",
+    "AboutPluginsChild.sys.mjs",
+    "AboutPluginsParent.sys.mjs",
     "AboutPocketChild.jsm",
     "AboutPocketParent.jsm",
     "AboutPrivateBrowsingChild.jsm",
@@ -44,11 +44,11 @@ FINAL_TARGET_FILES.actors += [
     "AboutProtectionsParent.jsm",
     "AboutReaderChild.jsm",
     "AboutReaderParent.jsm",
-    "AboutTabCrashedChild.jsm",
-    "AboutTabCrashedParent.jsm",
+    "AboutTabCrashedChild.sys.mjs",
+    "AboutTabCrashedParent.sys.mjs",
     "BlockedSiteChild.jsm",
     "BlockedSiteParent.jsm",
-    "BrowserProcessChild.jsm",
+    "BrowserProcessChild.sys.mjs",
     "BrowserTabChild.jsm",
     "BrowserTabParent.jsm",
     "ClickHandlerChild.jsm",
@@ -82,7 +82,7 @@ FINAL_TARGET_FILES.actors += [
     "RefreshBlockerParent.jsm",
     "RFPHelperChild.jsm",
     "RFPHelperParent.jsm",
-    "ScreenshotsComponentChild.jsm",
+    "ScreenshotsComponentChild.sys.mjs",
     "SearchSERPTelemetryChild.jsm",
     "SearchSERPTelemetryParent.jsm",
     "SwitchDocumentDirectionChild.jsm",

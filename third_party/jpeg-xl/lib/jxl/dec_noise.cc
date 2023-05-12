@@ -29,6 +29,7 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Or;
 using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Vec;
 
@@ -46,7 +47,7 @@ void BitsToFloat(const uint32_t* JXL_RESTRICT random_bits,
 
   const auto bits = Load(du, random_bits);
   // 1.0 + 23 random mantissa bits = [1, 2)
-  const auto rand12 = BitCast(df, ShiftRight<9>(bits) | Set(du, 0x3F800000));
+  const auto rand12 = BitCast(df, Or(ShiftRight<9>(bits), Set(du, 0x3F800000)));
   Store(rand12, df, floats);
 }
 
@@ -58,7 +59,7 @@ void RandomImage(Xorshift128Plus* rng, const Rect& rect,
   // May exceed the vector size, hence we have two loops over x below.
   constexpr size_t kFloatsPerBatch =
       Xorshift128Plus::N * sizeof(uint64_t) / sizeof(float);
-  HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
+  HWY_ALIGN uint64_t batch[Xorshift128Plus::N] = {};
 
   const HWY_FULL(float) df;
   const size_t N = Lanes(df);

@@ -495,15 +495,7 @@ class ScriptRequestProcessor : public Runnable {
       : Runnable("dom::ScriptRequestProcessor"),
         mLoader(aLoader),
         mRequest(aRequest) {}
-  NS_IMETHOD Run() override {
-    if (mRequest->IsModuleRequest() &&
-        mRequest->AsModuleRequest()->IsDynamicImport()) {
-      mRequest->AsModuleRequest()->ProcessDynamicImport();
-      return NS_OK;
-    }
-
-    return mLoader->ProcessRequest(mRequest);
-  }
+  NS_IMETHOD Run() override { return mLoader->ProcessRequest(mRequest); }
 };
 
 void ScriptLoader::RunScriptWhenSafe(ScriptLoadRequest* aRequest) {
@@ -1646,6 +1638,7 @@ nsresult ScriptLoader::AttemptAsyncScriptCompile(ScriptLoadRequest* aRequest,
   auto signalOOM = mozilla::MakeScopeExit(
       [&aRequest]() { aRequest->GetScriptLoadContext()->mRunnable = nullptr; });
 
+  // The conditions should match ScriptLoadContext::MaybeCancelOffThreadScript.
   if (aRequest->IsBytecode()) {
     JS::DecodeOptions decodeOptions(options);
     aRequest->GetScriptLoadContext()->mOffThreadToken =
@@ -1791,6 +1784,11 @@ nsresult ScriptLoader::ProcessRequest(ScriptLoadRequest* aRequest) {
 
   if (aRequest->IsModuleRequest()) {
     ModuleLoadRequest* request = aRequest->AsModuleRequest();
+    if (request->IsDynamicImport()) {
+      request->ProcessDynamicImport();
+      return NS_OK;
+    }
+
     if (request->mModuleScript) {
       if (!request->InstantiateModuleGraph()) {
         request->mModuleScript = nullptr;
@@ -2217,7 +2215,8 @@ nsresult ScriptLoader::CompileOrDecodeClassicScript(
     if (aRequest->GetScriptLoadContext()->mOffThreadToken) {
       LOG(("ScriptLoadRequest (%p): Decode Bytecode & Join and Execute",
            aRequest));
-      rv = aExec.JoinDecode(&aRequest->GetScriptLoadContext()->mOffThreadToken);
+      rv = aExec.JoinOffThread(
+          &aRequest->GetScriptLoadContext()->mOffThreadToken);
     } else {
       LOG(("ScriptLoadRequest (%p): Decode Bytecode and Execute", aRequest));
       AUTO_PROFILER_MARKER_TEXT("BytecodeDecodeMainThread", JS,
@@ -2244,7 +2243,8 @@ nsresult ScriptLoader::CompileOrDecodeClassicScript(
          "Execute",
          aRequest));
     MOZ_ASSERT(aRequest->IsTextSource());
-    rv = aExec.JoinCompile(&aRequest->GetScriptLoadContext()->mOffThreadToken);
+    rv =
+        aExec.JoinOffThread(&aRequest->GetScriptLoadContext()->mOffThreadToken);
   } else {
     // Main thread parsing (inline and small scripts)
     LOG(("ScriptLoadRequest (%p): Compile And Exec", aRequest));
@@ -3626,6 +3626,7 @@ void ScriptLoader::AddAsyncRequest(ScriptLoadRequest* aRequest) {
 
 void ScriptLoader::MaybeMoveToLoadedList(ScriptLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->IsReadyToRun());
+  MOZ_ASSERT(aRequest->IsTopLevel());
 
   // If it's async, move it to the loaded list.
   // aRequest->GetScriptLoadContext()->mInAsyncList really _should_ be in a
@@ -3637,6 +3638,11 @@ void ScriptLoader::MaybeMoveToLoadedList(ScriptLoadRequest* aRequest) {
       RefPtr<ScriptLoadRequest> req = mLoadingAsyncRequests.Steal(aRequest);
       mLoadedAsyncRequests.AppendElement(req);
     }
+  } else if (aRequest->IsModuleRequest() &&
+             aRequest->AsModuleRequest()->IsDynamicImport()) {
+    // Process dynamic imports with async scripts.
+    MOZ_ASSERT(!aRequest->isInList());
+    mLoadedAsyncRequests.AppendElement(aRequest);
   }
 }
 

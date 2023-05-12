@@ -1,89 +1,93 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-add_setup(async function() {
-  if (!Services.prefs.getBoolPref("browser.tabs.firefox-view")) {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.tabs.firefox-view", true]],
-    });
-    CustomizableUI.addWidgetToArea(
-      "firefox-view-button",
-      CustomizableUI.AREA_TABSTRIP,
-      0
-    );
-    registerCleanupFunction(() => {
-      CustomizableUI.removeWidgetFromArea("firefox-view-button");
-    });
-  }
-});
-
 add_task(async function aria_attributes() {
+  let win = await BrowserTestUtils.openNewBrowserWindow();
   is(
-    FirefoxViewHandler.button.getAttribute("role"),
+    win.FirefoxViewHandler.button.getAttribute("role"),
     "tab",
     "Firefox View button should have the 'tab' ARIA role"
   );
-  await openFirefoxViewTab();
+  await openFirefoxViewTab(win);
   isnot(
-    FirefoxViewHandler.button.getAttribute("aria-controls"),
+    win.FirefoxViewHandler.button.getAttribute("aria-controls"),
     "",
     "Firefox View button should have non-empty `aria-controls` attribute"
   );
   is(
-    FirefoxViewHandler.button.getAttribute("aria-controls"),
-    FirefoxViewHandler.tab.linkedPanel,
+    win.FirefoxViewHandler.button.getAttribute("aria-controls"),
+    win.FirefoxViewHandler.tab.linkedPanel,
     "Firefox View button should refence the hidden tab's linked panel via `aria-controls`"
   );
   is(
-    FirefoxViewHandler.button.getAttribute("aria-selected"),
+    win.FirefoxViewHandler.button.getAttribute("aria-selected"),
     "true",
     'Firefox View button should have `aria-selected="true"` upon selecting it'
   );
-  BrowserOpenTab();
+  win.BrowserOpenTab();
   is(
-    FirefoxViewHandler.button.getAttribute("aria-selected"),
+    win.FirefoxViewHandler.button.getAttribute("aria-selected"),
     "false",
     'Firefox View button should have `aria-selected="false"` upon selecting a different tab'
   );
-  gBrowser.removeCurrentTab();
-  closeFirefoxViewTab();
+  await BrowserTestUtils.closeWindow(win);
 });
 
 add_task(async function load_opens_new_tab() {
-  await openFirefoxViewTab();
-  gURLBar.focus();
-  gURLBar.value = "https://example.com";
-  let newTabOpened = BrowserTestUtils.waitForEvent(
-    gBrowser.tabContainer,
-    "TabOpen"
-  );
-  EventUtils.synthesizeKey("KEY_Enter");
-  info(
-    "Waiting for new tab to open from the address bar in the Firefox View tab"
-  );
-  await newTabOpened;
-  assertFirefoxViewTab();
-  isnot(
-    gBrowser.tabContainer.selectedIndex,
-    0,
-    "Firefox View tab is not selected anymore (new tab opened in the foreground)"
-  );
-  gBrowser.removeCurrentTab();
-  closeFirefoxViewTab();
+  await withFirefoxView({}, async browser => {
+    let win = browser.ownerGlobal;
+    ok(win.FirefoxViewHandler.tab.selected, "Firefox View tab is selected");
+    win.gURLBar.focus();
+    win.gURLBar.value = "https://example.com";
+    let newTabOpened = BrowserTestUtils.waitForEvent(
+      win.gBrowser.tabContainer,
+      "TabOpen"
+    );
+    EventUtils.synthesizeKey("KEY_Enter", {}, win);
+    info(
+      "Waiting for new tab to open from the address bar in the Firefox View tab"
+    );
+    await newTabOpened;
+    assertFirefoxViewTab(win);
+    ok(
+      !win.FirefoxViewHandler.tab.selected,
+      "Firefox View tab is not selected anymore (new tab opened in the foreground)"
+    );
+  });
+});
+
+add_task(async function homepage_new_tab() {
+  await withFirefoxView({}, async browser => {
+    let win = browser.ownerGlobal;
+    ok(win.FirefoxViewHandler.tab.selected, "Firefox View tab is selected");
+    let newTabOpened = BrowserTestUtils.waitForEvent(
+      win.gBrowser.tabContainer,
+      "TabOpen"
+    );
+    win.BrowserHome();
+    info("Waiting for BrowserHome() to open a new tab");
+    await newTabOpened;
+    assertFirefoxViewTab(win);
+    ok(
+      !win.FirefoxViewHandler.tab.selected,
+      "Firefox View tab is not selected anymore (home page opened in the foreground)"
+    );
+  });
 });
 
 add_task(async function number_tab_select_shortcut() {
-  await openFirefoxViewTab();
-  EventUtils.synthesizeKey(
-    "1",
-    AppConstants.MOZ_WIDGET_GTK ? { altKey: true } : { accelKey: true }
-  );
-  is(
-    gBrowser.tabContainer.selectedIndex,
-    1,
-    "Number shortcut to select the first tab skipped the Firefox View tab"
-  );
-  closeFirefoxViewTab();
+  await withFirefoxView({}, async browser => {
+    let win = browser.ownerGlobal;
+    EventUtils.synthesizeKey(
+      "1",
+      AppConstants.MOZ_WIDGET_GTK ? { altKey: true } : { accelKey: true },
+      win
+    );
+    ok(
+      !win.FirefoxViewHandler.tab.selected,
+      "Number shortcut to select the first tab skipped the Firefox View tab"
+    );
+  });
 });
 
 add_task(async function accel_w_behavior() {
@@ -102,36 +106,55 @@ add_task(async function accel_w_behavior() {
 });
 
 add_task(async function undo_close_tab() {
+  let win = await BrowserTestUtils.openNewBrowserWindow();
   Services.obs.notifyObservers(null, "browser:purge-session-history");
   is(
-    SessionStore.getClosedTabCount(window),
+    SessionStore.getClosedTabCount(win),
     0,
     "Closed tab count after purging session history"
   );
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
+    win.gBrowser,
     "about:about"
   );
   await TestUtils.waitForTick();
 
   let sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
-  gBrowser.removeTab(tab);
+  win.gBrowser.removeTab(tab);
   await sessionUpdatePromise;
   is(
-    SessionStore.getClosedTabCount(window),
+    SessionStore.getClosedTabCount(win),
     1,
     "Closing about:about added to the closed tab count"
   );
 
-  let viewTab = await openFirefoxViewTab();
+  let viewTab = await openFirefoxViewTab(win);
   await TestUtils.waitForTick();
   sessionUpdatePromise = BrowserTestUtils.waitForSessionStoreUpdate(viewTab);
-  closeFirefoxViewTab();
+  closeFirefoxViewTab(win);
   await sessionUpdatePromise;
   is(
-    SessionStore.getClosedTabCount(window),
+    SessionStore.getClosedTabCount(win),
     1,
     "Closing the Firefox View tab did not add to the closed tab count"
   );
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_firefoxview_view_count() {
+  const startViews = 2;
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.firefox-view.view-count", startViews]],
+  });
+
+  let tab = await openFirefoxViewTab(window);
+
+  ok(
+    SpecialPowers.getIntPref("browser.firefox-view.view-count") ===
+      startViews + 1,
+    "View count pref value is incremented when tab is selected"
+  );
+
+  BrowserTestUtils.removeTab(tab);
 });

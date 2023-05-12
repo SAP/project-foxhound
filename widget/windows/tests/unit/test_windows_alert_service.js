@@ -50,24 +50,44 @@ function makeAlert(options) {
     options.silent,
     options.vibrate || []
   );
-  alert.initActions(options.actions || []);
+  if (options.actions) {
+    alert.actions = options.actions;
+  }
   return alert;
 }
 
-function testAlert(serverEnabled) {
-  let argumentString = argument => {
+function testAlert(when, { serverEnabled, profD, isBackgroundTaskMode } = {}) {
+  let argumentString = (argument, launchUrl, privilegedName) => {
     // &#xA; is "\n".
     let s = ``;
     if (serverEnabled) {
-      s += `program&#xA;${AppConstants.MOZ_APP_NAME}&#xA;profile&#xA;${gProfD.path}`;
+      s += `program&#xA;${AppConstants.MOZ_APP_NAME}`;
     } else {
       s += `invalid key&#xA;invalid value`;
+    }
+    if (serverEnabled && profD) {
+      s += `&#xA;profile&#xA;${profD.path}`;
+    }
+    if (serverEnabled && launchUrl) {
+      s += `&#xA;launchUrl&#xA;${launchUrl}`;
+    }
+    if (serverEnabled && privilegedName) {
+      s += `&#xA;privilegedName&#xA;${privilegedName}`;
+    }
+    if (serverEnabled) {
+      s += "&#xA;windowsTag&#xA;";
     }
     if (argument) {
       s += `&#xA;action&#xA;${argument}`;
     }
     return s;
   };
+
+  let settingsAction = isBackgroundTaskMode
+    ? ""
+    : `<action content="Notification settings" arguments="${argumentString(
+        "settings"
+      )}" placement="contextmenu"/>`;
 
   let alertsService = Cc["@mozilla.org/system-alerts-service;1"]
     .getService(Ci.nsIAlertsService)
@@ -83,49 +103,201 @@ function testAlert(serverEnabled) {
   ];
 
   let alert = makeAlert({ name, title, text });
-  let expected = `<toast launch="${argumentString()}"><visual><binding template="ToastText03"><text id="1">title</text><text id="2">text</text></binding></visual><actions><action content="Notification settings" arguments="${argumentString(
-    "settings"
-  )}" placement="contextmenu"/></actions></toast>`;
-  Assert.equal(expected, alertsService.getXmlStringForWindowsAlert(alert));
+  let expected = `<toast launch="${argumentString()}"><visual><binding template="ToastText03"><text id="1">title</text><text id="2">text</text></binding></visual><actions>${settingsAction}</actions></toast>`;
+  Assert.equal(
+    expected.replace("<actions></actions>", "<actions/>"),
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
 
   alert = makeAlert({ name, title, text, imageURL });
-  expected = `<toast launch="${argumentString()}"><visual><binding template="ToastImageAndText03"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions><action content="Notification settings" arguments="${argumentString(
-    "settings"
-  )}" placement="contextmenu"/></actions></toast>`;
-  Assert.equal(expected, alertsService.getXmlStringForWindowsAlert(alert));
+  expected = `<toast launch="${argumentString()}"><visual><binding template="ToastImageAndText03"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions>${settingsAction}</actions></toast>`;
+  Assert.equal(
+    expected.replace("<actions></actions>", "<actions/>"),
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
 
   alert = makeAlert({ name, title, text, imageURL, requireInteraction: true });
-  expected = `<toast scenario="reminder" launch="${argumentString()}"><visual><binding template="ToastImageAndText03"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions><action content="Notification settings" arguments="${argumentString(
-    "settings"
-  )}" placement="contextmenu"/></actions></toast>`;
-  Assert.equal(expected, alertsService.getXmlStringForWindowsAlert(alert));
+  expected = `<toast scenario="reminder" launch="${argumentString()}"><visual><binding template="ToastImageAndText03"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions>${settingsAction}</actions></toast>`;
+  Assert.equal(
+    expected.replace("<actions></actions>", "<actions/>"),
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
 
   alert = makeAlert({ name, title, text, imageURL, actions });
-  expected = `<toast launch="${argumentString()}"><visual><binding template="ToastImageAndText03"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions><action content="Notification settings" arguments="${argumentString(
-    "settings"
-  )}" placement="contextmenu"/><action content="title1" arguments="${argumentString(
+  expected = `<toast launch="${argumentString()}"><visual><binding template="ToastImageAndText03"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions>${settingsAction}<action content="title1" arguments="${argumentString(
     "action1"
   )}"/><action content="title2" arguments="${argumentString(
     "action2"
   )}"/></actions></toast>`;
-  Assert.equal(expected, alertsService.getXmlStringForWindowsAlert(alert));
+  Assert.equal(
+    expected.replace("<actions></actions>", "<actions/>"),
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
+
+  // Chrome privileged alerts can use `windowsSystemActivationType`.
+  let systemActions = [
+    {
+      action: "dismiss",
+      title: "dismissTitle",
+      windowsSystemActivationType: true,
+    },
+    {
+      action: "snooze",
+      title: "snoozeTitle",
+      windowsSystemActivationType: true,
+    },
+  ];
+  let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+  alert = makeAlert({
+    name,
+    title,
+    text,
+    imageURL,
+    principal: systemPrincipal,
+    actions: systemActions,
+  });
+  let settingsActionWithPrivilegedName = isBackgroundTaskMode
+    ? ""
+    : `<action content="Notification settings" arguments="${argumentString(
+        "settings",
+        null,
+        name
+      )}" placement="contextmenu"/>`;
+  expected = `<toast launch="${argumentString(
+    null,
+    null,
+    name
+  )}"><visual><binding template="ToastGeneric"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions>${settingsActionWithPrivilegedName}<action content="dismissTitle" arguments="dismiss" activationType="system"/><action content="snoozeTitle" arguments="snooze" activationType="system"/></actions></toast>`;
+  Assert.equal(
+    expected,
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
+
+  // But content unprivileged alerts can't use `windowsSystemActivationType`.
+  let launchUrl = "https://example.com/foo/bar.html";
+  const principaluri = Services.io.newURI(launchUrl);
+  const principal = Services.scriptSecurityManager.createContentPrincipal(
+    principaluri,
+    {}
+  );
+
+  alert = makeAlert({
+    name,
+    title,
+    text,
+    imageURL,
+    actions: systemActions,
+    principal,
+  });
+  expected = `<toast launch="${argumentString()}"><visual><binding template="ToastImageAndText04"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text><text id="3" placement="attribution">via example.com</text></binding></visual><actions><action content="Disable notifications from example.com" arguments="${argumentString(
+    "snooze"
+  )}" placement="contextmenu"/>${settingsAction}<action content="dismissTitle" arguments="${argumentString(
+    "dismiss"
+  )}"/><action content="snoozeTitle" arguments="${argumentString(
+    "snooze"
+  )}"/></actions></toast>`;
+  Assert.equal(
+    expected,
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
+
+  // Chrome privileged alerts can set a launch URL.
+  alert = makeAlert({
+    name,
+    title,
+    text,
+    imageURL,
+    principal: systemPrincipal,
+  });
+  alert.launchURL = launchUrl;
+  let settingsActionWithLaunchUrl = isBackgroundTaskMode
+    ? ""
+    : `<action content="Notification settings" arguments="${argumentString(
+        "settings",
+        launchUrl,
+        name
+      )}" placement="contextmenu"/>`;
+  expected = `<toast launch="${argumentString(
+    null,
+    launchUrl,
+    name
+  )}"><visual><binding template="ToastGeneric"><image id="1" src="file:///image.png"/><text id="1">title</text><text id="2">text</text></binding></visual><actions>${settingsActionWithLaunchUrl}</actions></toast>`;
+  Assert.equal(
+    expected.replace("<actions></actions>", "<actions/>"),
+    alertsService.getXmlStringForWindowsAlert(alert),
+    when
+  );
 }
 
 add_task(async () => {
   Services.prefs.clearUserPref(
     "alerts.useSystemBackend.windows.notificationserver.enabled"
   );
-  testAlert(false);
+  testAlert("when notification server pref is unset (i.e., default)", {
+    profD: gProfD,
+  });
 
   Services.prefs.setBoolPref(
     "alerts.useSystemBackend.windows.notificationserver.enabled",
     false
   );
-  testAlert(false);
+  testAlert("when notification server pref is false", { profD: gProfD });
 
   Services.prefs.setBoolPref(
     "alerts.useSystemBackend.windows.notificationserver.enabled",
     true
   );
-  testAlert(true);
+  testAlert("when notification server pref is true", {
+    serverEnabled: true,
+    profD: gProfD,
+  });
+});
+
+let condition = {
+  skip_if: () => !AppConstants.MOZ_BACKGROUNDTASKS,
+};
+
+add_task(condition, async () => {
+  const bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
+    Ci.nsIBackgroundTasks
+  );
+
+  // Pretend that this is a background task.
+  bts.overrideBackgroundTaskNameForTesting("taskname");
+
+  Services.prefs.setBoolPref(
+    "alerts.useSystemBackend.windows.notificationserver.enabled",
+    true
+  );
+  testAlert(
+    "when notification server pref is true in background task, no default profile",
+    { serverEnabled: true, isBackgroundTaskMode: true }
+  );
+
+  let profileService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
+    Ci.nsIToolkitProfileService
+  );
+
+  let profilePath = do_get_profile();
+  profilePath.append(`test_windows_alert_service`);
+  let profile = profileService.createUniqueProfile(
+    profilePath,
+    "test_windows_alert_service"
+  );
+
+  profileService.defaultProfile = profile;
+
+  testAlert(
+    "when notification server pref is true in background task, default profile",
+    { serverEnabled: true, isBackgroundTaskMode: true, profD: profilePath }
+  );
+
+  // No longer a background task,
+  bts.overrideBackgroundTaskNameForTesting("");
 });

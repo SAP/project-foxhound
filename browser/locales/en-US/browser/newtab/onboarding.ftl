@@ -341,7 +341,7 @@ mr2022-onboarding-import-primary-button-label-no-attribution = Import from previ
 
 mr2022-onboarding-colorway-title = Choose the color that inspires you
 mr2022-onboarding-colorway-subtitle = Independent voices can change culture.
-mr2022-onboarding-colorway-primary-button-label = Set colorway
+mr2022-onboarding-colorway-primary-button-label-continue = Set and continue
 mr2022-onboarding-existing-colorway-checkbox-label = Make { -firefox-home-brand-name } your colorful homepage
 
 mr2022-onboarding-colorway-label-default = Default
@@ -406,7 +406,7 @@ mr2022-onboarding-privacy-segmentation-button-secondary-label = Show detailed in
 
 ## MR2022 Multistage Gratitude screen strings
 
-mr2022-onboarding-gratitude-title = You’re helping us build a better web.
+mr2022-onboarding-gratitude-title = You’re helping us build a better web
 mr2022-onboarding-gratitude-subtitle = Thank you for using { -brand-short-name }, backed by the Mozilla Foundation. With your support, we’re working to make the internet more open, accessible, and better for everyone.
 mr2022-onboarding-gratitude-primary-button-label = See what’s new
 mr2022-onboarding-gratitude-secondary-button-label = Start browsing

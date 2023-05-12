@@ -141,6 +141,10 @@ nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
     controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
   }
 
+  if (mResolvedByTRR) {
+    controlFlags |= nsISocketProvider::USED_PRIVATE_DNS;
+  }
+
   mPeerAddr = new nsNetAddr(&peerAddr);
   mHttp3Session = new Http3Session();
   rv = mHttp3Session->Init(mConnInfo, mSelfAddr, mPeerAddr, this, controlFlags,
@@ -346,13 +350,13 @@ nsresult HttpConnectionUDP::TakeTransport(
   return NS_ERROR_FAILURE;
 }
 
-void HttpConnectionUDP::GetSecurityInfo(nsISupports** secinfo) {
+void HttpConnectionUDP::GetTLSSocketControl(nsISSLSocketControl** secinfo) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("HttpConnectionUDP::GetSecurityInfo http3Session=%p\n",
+  LOG(("HttpConnectionUDP::GetTLSSocketControl http3Session=%p\n",
        mHttp3Session.get()));
 
   if (mHttp3Session &&
-      NS_SUCCEEDED(mHttp3Session->GetTransactionSecurityInfo(secinfo))) {
+      NS_SUCCEEDED(mHttp3Session->GetTransactionTLSSocketControl(secinfo))) {
     return;
   }
 

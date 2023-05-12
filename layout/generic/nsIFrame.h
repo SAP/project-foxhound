@@ -2748,7 +2748,7 @@ class nsIFrame : public nsQueryFrame {
    * Utility function for ComputeAutoSize implementations.  Return
    * max(GetMinISize(), min(aISizeInCB, GetPrefISize()))
    */
-  nscoord ShrinkWidthToFit(gfxContext* aRenderingContext, nscoord aISizeInCB,
+  nscoord ShrinkISizeToFit(gfxContext* aRenderingContext, nscoord aISizeInCB,
                            mozilla::ComputeSizeFlags aFlags);
 
  public:
@@ -3146,15 +3146,30 @@ class nsIFrame : public nsQueryFrame {
   bool IsContentDisabled() const;
 
   /**
-   * Whether the content is hidden via the `content-visibilty` property.
+   * Whether this frame hides its contents via the `content-visibility`
+   * property.
    */
-  bool IsContentHidden() const;
+  bool HidesContent() const;
+
+  /**
+   * Whether this frame hides its contents via the `content-visibility`
+   * property, while doing layout. This might be true when `HidesContent()` is
+   * true in the case that hidden content is being forced to lay out by position
+   * or size queries from script.
+   */
+  bool HidesContentForLayout() const;
 
   /**
    * Returns true if this frame is entirely hidden due the `content-visibility`
    * property on an ancestor.
    */
-  bool AncestorHidesContent() const;
+  bool IsHiddenByContentVisibilityOnAnyAncestor() const;
+
+  /**
+   * Returns true is this frame is hidden by its first unskipped in flow
+   * ancestor due to `content-visibility`.
+   */
+  bool IsHiddenByContentVisibilityOfInFlowParentForLayout() const;
 
   /**
    * Get the "type" of the frame.
@@ -3317,6 +3332,12 @@ class nsIFrame : public nsQueryFrame {
    * subclasses.
    */
   bool IsBlockFrameOrSubclass() const;
+
+  /**
+   * Returns true if the frame is an instance of nsImageFrame or one of its
+   * subclasses.
+   */
+  bool IsImageFrameOrSubclass() const;
 
   /**
    * Returns true if the frame is an instance of SVGGeometryFrame or one

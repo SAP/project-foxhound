@@ -117,7 +117,7 @@ class WorkerMessageHandler {
     const WorkerTasks = [];
     const verbosity = (0, _util.getVerbosityLevel)();
     const apiVersion = docParams.apiVersion;
-    const workerVersion = '2.16.71';
+    const workerVersion = '3.0.60';
 
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
@@ -4082,7 +4082,11 @@ class Page {
         if (intentAny || intentDisplay && annotation.mustBeViewed(annotationStorage) || intentPrint && annotation.mustBePrinted(annotationStorage)) {
           opListPromises.push(annotation.getOperatorList(partialEvaluator, task, intent, renderForms, annotationStorage).catch(function (reason) {
             (0, _util.warn)("getOperatorList - ignoring annotation data during " + `"${task.name}" task: "${reason}".`);
-            return null;
+            return {
+              opList: null,
+              separateForm: false,
+              separateCanvas: false,
+            };
           }));
         }
       }
@@ -7026,12 +7030,12 @@ class TextWidgetAnnotation extends WidgetAnnotation {
     });
 
     if (!Number.isInteger(maximumLength) || maximumLength < 0) {
-      maximumLength = null;
+      maximumLength = 0;
     }
 
     this.data.maxLen = maximumLength;
     this.data.multiLine = this.hasFieldFlag(_util.AnnotationFieldFlag.MULTILINE);
-    this.data.comb = this.hasFieldFlag(_util.AnnotationFieldFlag.COMB) && !this.hasFieldFlag(_util.AnnotationFieldFlag.MULTILINE) && !this.hasFieldFlag(_util.AnnotationFieldFlag.PASSWORD) && !this.hasFieldFlag(_util.AnnotationFieldFlag.FILESELECT) && this.data.maxLen !== null;
+    this.data.comb = this.hasFieldFlag(_util.AnnotationFieldFlag.COMB) && !this.hasFieldFlag(_util.AnnotationFieldFlag.MULTILINE) && !this.hasFieldFlag(_util.AnnotationFieldFlag.PASSWORD) && !this.hasFieldFlag(_util.AnnotationFieldFlag.FILESELECT) && this.data.maxLen !== 0;
     this.data.doNotScroll = this.hasFieldFlag(_util.AnnotationFieldFlag.DONOTSCROLL);
   }
 
@@ -25048,6 +25052,10 @@ function adjustToUnicode(properties, builtInEncoding) {
     return;
   }
 
+  if (properties.hasIncludedToUnicodeMap) {
+    return;
+  }
+
   if (builtInEncoding === properties.defaultEncoding) {
     return;
   }
@@ -25060,11 +25068,7 @@ function adjustToUnicode(properties, builtInEncoding) {
         glyphsUnicodeMap = (0, _glyphlist.getGlyphsUnicode)();
 
   for (const charCode in builtInEncoding) {
-    if (properties.hasIncludedToUnicodeMap) {
-      if (properties.toUnicode.has(charCode)) {
-        continue;
-      }
-    } else if (properties.hasEncoding) {
+    if (properties.hasEncoding) {
       if (properties.differences.length === 0 || properties.differences[charCode] !== undefined) {
         continue;
       }
@@ -36467,6 +36471,8 @@ exports.Type1Font = void 0;
 
 var _cff_parser = __w_pdfjs_require__(35);
 
+var _util = __w_pdfjs_require__(2);
+
 var _fonts_utils = __w_pdfjs_require__(38);
 
 var _core_utils = __w_pdfjs_require__(6);
@@ -36474,8 +36480,6 @@ var _core_utils = __w_pdfjs_require__(6);
 var _stream = __w_pdfjs_require__(10);
 
 var _type1_parser = __w_pdfjs_require__(49);
-
-var _util = __w_pdfjs_require__(2);
 
 function findBlock(streamBytes, signature, startIndex) {
   const streamBytesLength = streamBytes.length;
@@ -36571,6 +36575,11 @@ function getHeaderBlock(stream, suggestedLength) {
 
 function getEexecBlock(stream, suggestedLength) {
   const eexecBytes = stream.getBytes();
+
+  if (eexecBytes.length === 0) {
+    throw new _util.FormatError("getEexecBlock - no font program found.");
+  }
+
   return {
     stream: new _stream.Stream(eexecBytes),
     length: eexecBytes.length
@@ -45552,7 +45561,8 @@ class Catalog {
 
       const data = {
         url: null,
-        dest: null
+        dest: null,
+        action: null
       };
       Catalog.parseDestDictionary({
         destDict: outlineDict,
@@ -45570,10 +45580,12 @@ class Catalog {
       }
 
       const outlineItem = {
+        action: data.action,
         dest: data.dest,
         url: data.url,
         unsafeUrl: data.unsafeUrl,
         newWindow: data.newWindow,
+        setOCGState: data.setOCGState,
         title: (0, _util.stringToPDFString)(title),
         color: rgbColor,
         count: Number.isInteger(count) ? count : undefined,
@@ -46851,6 +46863,40 @@ class Catalog {
             resultObj.action = namedAction.name;
           }
 
+          break;
+
+        case "SetOCGState":
+          const state = action.get("State");
+          const preserveRB = action.get("PreserveRB");
+
+          if (!Array.isArray(state) || state.length === 0) {
+            break;
+          }
+
+          const stateArr = [];
+
+          for (const elem of state) {
+            if (elem instanceof _primitives.Name) {
+              switch (elem.name) {
+                case "ON":
+                case "OFF":
+                case "Toggle":
+                  stateArr.push(elem.name);
+                  break;
+              }
+            } else if (elem instanceof _primitives.Ref) {
+              stateArr.push(elem.toString());
+            }
+          }
+
+          if (stateArr.length !== state.length) {
+            break;
+          }
+
+          resultObj.setOCGState = {
+            state: stateArr,
+            preserveRB: typeof preserveRB === "boolean" ? preserveRB : true
+          };
           break;
 
         case "JavaScript":
@@ -63435,8 +63481,8 @@ Object.defineProperty(exports, "WorkerMessageHandler", ({
 
 var _worker = __w_pdfjs_require__(1);
 
-const pdfjsVersion = '2.16.71';
-const pdfjsBuild = '518115fdd';
+const pdfjsVersion = '3.0.60';
+const pdfjsBuild = '493bb6500';
 })();
 
 /******/ 	return __webpack_exports__;

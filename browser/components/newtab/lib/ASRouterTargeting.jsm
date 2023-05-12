@@ -34,6 +34,8 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   HomePage: "resource:///modules/HomePage.jsm",
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
@@ -276,6 +278,18 @@ const QueryCache = {
       FRECENT_SITES_UPDATE_INTERVAL,
       ShellService
     ),
+    isDefaultBrowser: new CachedTargetingGetter(
+      "isDefaultBrowser",
+      null,
+      FRECENT_SITES_UPDATE_INTERVAL,
+      ShellService
+    ),
+    currentThemes: new CachedTargetingGetter(
+      "getAddonsByTypes",
+      ["theme"],
+      FRECENT_SITES_UPDATE_INTERVAL,
+      lazy.AddonManager // eslint-disable-line mozilla/valid-lazy
+    ),
   },
 };
 
@@ -499,10 +513,7 @@ const TargetingGetters = {
     });
   },
   get isDefaultBrowser() {
-    try {
-      return ShellService.isDefaultBrowser();
-    } catch (e) {}
-    return null;
+    return QueryCache.getters.isDefaultBrowser.get().catch(() => null);
   },
   get devToolsOpenedCount() {
     return lazy.devtoolsSelfXSSCount;
@@ -745,6 +756,40 @@ const TargetingGetters = {
   get userPrefersReducedMotion() {
     let window = lazy.BrowserWindowTracker.getTopWindow();
     return window?.matchMedia("(prefers-reduced-motion: reduce)")?.matches;
+  },
+  /**
+   * Is there an active Colorway collection?
+   * @return {boolean} `true` if an active collection exists.
+   */
+  get colorwaysActive() {
+    return !!lazy.BuiltInThemes.findActiveColorwayCollection();
+  },
+  /**
+   * Has the user enabled an active Colorway as their theme?
+   * @return {boolean} `true` if an active theme from the current
+   * collection is enabled.
+   */
+  get userEnabledActiveColorway() {
+    let bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
+      Ci.nsIBackgroundTasks
+    );
+    if (bts?.isBackgroundTaskMode) {
+      return Promise.resolve(false);
+    }
+    return QueryCache.getters.currentThemes.get().then(themes => {
+      let themeId = themes.find(theme => theme.isActive)?.id;
+      return !!(
+        themeId && lazy.BuiltInThemes.isColorwayFromCurrentCollection(themeId)
+      );
+    });
+  },
+  /**
+   * Whether or not the user is in the Major Release 2022 holdback study.
+   */
+  get inMr2022Holdback() {
+    return (
+      lazy.NimbusFeatures.majorRelease2022.getVariable("onboarding") === false
+    );
   },
   /**
    * The distribution id, if any.

@@ -60,6 +60,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Locale;
 import java.util.StringTokenizer;
+import org.jetbrains.annotations.NotNull;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.util.HardwareCodecCapabilityUtils;
@@ -139,7 +140,7 @@ public class GeckoAppShell {
       }
       return false;
     }
-  };
+  }
 
   private static String sAppNotes;
   private static CrashHandler sCrashHandler;
@@ -282,9 +283,23 @@ public class GeckoAppShell {
     return (location.hasAccuracy() && radius > 0) ? radius : 1001;
   }
 
+  private static Location determineReliableLocation(
+      @NotNull final Location locA, @NotNull final Location locB) {
+    // The 6 seconds were chosen arbitrarily
+    final long closeTime = 6000000000L;
+    final boolean isNearSameTime =
+        Math.abs((locA.getElapsedRealtimeNanos() - locB.getElapsedRealtimeNanos())) <= closeTime;
+    final boolean isAMoreAccurate = getLocationAccuracy(locA) < getLocationAccuracy(locB);
+    final boolean isAMoreRecent = locA.getElapsedRealtimeNanos() > locB.getElapsedRealtimeNanos();
+    if (isNearSameTime) {
+      return isAMoreAccurate ? locA : locB;
+    }
+    return isAMoreRecent ? locA : locB;
+  }
+
   // Permissions are explicitly checked when requesting content permission.
   @SuppressLint("MissingPermission")
-  private static Location getLastKnownLocation(final LocationManager lm) {
+  private static @Nullable Location getLastKnownLocation(final LocationManager lm) {
     Location lastKnownLocation = null;
     final List<String> providers = lm.getAllProviders();
 
@@ -298,15 +313,8 @@ public class GeckoAppShell {
         lastKnownLocation = location;
         continue;
       }
-
-      final long timeDiff = location.getTime() - lastKnownLocation.getTime();
-      if (timeDiff > 0
-          || (timeDiff == 0
-              && getLocationAccuracy(location) < getLocationAccuracy(lastKnownLocation))) {
-        lastKnownLocation = location;
-      }
+      lastKnownLocation = determineReliableLocation(lastKnownLocation, location);
     }
-
     return lastKnownLocation;
   }
 
@@ -345,9 +353,11 @@ public class GeckoAppShell {
       return false;
     }
 
-    final Location lastKnownLocation = getLastKnownLocation(lm);
-    if (lastKnownLocation != null) {
-      sAndroidListeners.onLocationChanged(lastKnownLocation);
+    if (!locationHighAccuracyEnabled) {
+      final Location lastKnownLocation = getLastKnownLocation(lm);
+      if (lastKnownLocation != null) {
+        sAndroidListeners.onLocationChanged(lastKnownLocation);
+      }
     }
 
     final Criteria criteria = new Criteria();
@@ -356,12 +366,8 @@ public class GeckoAppShell {
     criteria.setAltitudeRequired(false);
     if (locationHighAccuracyEnabled) {
       criteria.setAccuracy(Criteria.ACCURACY_FINE);
-      criteria.setCostAllowed(true);
-      criteria.setPowerRequirement(Criteria.POWER_HIGH);
     } else {
       criteria.setAccuracy(Criteria.ACCURACY_COARSE);
-      criteria.setCostAllowed(false);
-      criteria.setPowerRequirement(Criteria.POWER_LOW);
     }
 
     final String provider = lm.getBestProvider(criteria, true);
@@ -1043,9 +1049,10 @@ public class GeckoAppShell {
     return lp.getDomains();
   }
 
+  @SuppressLint("ResourceType")
   @WrapForJNI(calledFrom = "gecko")
   private static int[] getSystemColors() {
-    // attrsAppearance[] must correspond to AndroidSystemColors structure in android/AndroidBridge.h
+    // attrsAppearance[] must correspond to AndroidSystemColors structure in android/nsLookAndFeel.h
     final int[] attrsAppearance = {
       android.R.attr.textColorPrimary,
       android.R.attr.textColorPrimaryInverse,
@@ -1066,8 +1073,7 @@ public class GeckoAppShell {
     final ContextThemeWrapper contextThemeWrapper =
         new ContextThemeWrapper(getApplicationContext(), android.R.style.TextAppearance);
 
-    final TypedArray appearance =
-        contextThemeWrapper.getTheme().obtainStyledAttributes(attrsAppearance);
+    final TypedArray appearance = contextThemeWrapper.obtainStyledAttributes(attrsAppearance);
 
     if (appearance != null) {
       for (int i = 0; i < appearance.getIndexCount(); i++) {

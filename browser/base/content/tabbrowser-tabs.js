@@ -87,8 +87,7 @@
         this._updateCloseButtons();
         this._handleTabSelect(true);
       };
-      this._resizeObserver = new ResizeObserver(handleResize);
-      this._resizeObserver.observe(document.documentElement);
+      window.addEventListener("resize", handleResize);
       this._fullscreenMutationObserver = new MutationObserver(handleResize);
       this._fullscreenMutationObserver.observe(document.documentElement, {
         attributeFilter: ["inFullscreen", "inDOMFullscreen"],
@@ -409,6 +408,10 @@
         return;
       }
 
+      this.startTabDrag(event, tab);
+    }
+
+    startTabDrag(event, tab, { fromTabList = false } = {}) {
       let selectedTabs = gBrowser.selectedTabs;
       let otherSelectedTabs = selectedTabs.filter(
         selectedTab => selectedTab != tab
@@ -529,13 +532,14 @@
         movingTabs: (tab.multiselected ? gBrowser.selectedTabs : [tab]).filter(
           t => t.pinned == tab.pinned
         ),
+        fromTabList,
       };
 
       event.stopPropagation();
     }
 
     on_dragover(event) {
-      var effects = this._getDropEffectForTabDrag(event);
+      var effects = this.getDropEffectForTabDrag(event);
 
       var ind = this._tabDropIndicator;
       if (effects == "" || effects == "none") {
@@ -571,7 +575,8 @@
       let draggedTab = event.dataTransfer.mozGetDataAt(TAB_DROP_TYPE, 0);
       if (
         (effects == "move" || effects == "copy") &&
-        this == draggedTab.container
+        this == draggedTab.container &&
+        !draggedTab._dragData.fromTabList
       ) {
         ind.hidden = true;
 
@@ -692,9 +697,14 @@
           newTranslateX -= tabWidth;
         }
 
-        let dropIndex =
-          "animDropIndex" in draggedTab._dragData &&
-          draggedTab._dragData.animDropIndex;
+        let dropIndex;
+        if (draggedTab._dragData.fromTabList) {
+          dropIndex = this._getDropIndex(event, false);
+        } else {
+          dropIndex =
+            "animDropIndex" in draggedTab._dragData &&
+            draggedTab._dragData.animDropIndex;
+        }
         let incrementDropIndex = true;
         if (dropIndex && dropIndex > movingTabs[0]._tPos) {
           dropIndex--;
@@ -1982,7 +1992,7 @@
       return tabs.length;
     }
 
-    _getDropEffectForTabDrag(event) {
+    getDropEffectForTabDrag(event) {
       var dt = event.dataTransfer;
 
       let isMovingTabs = dt.mozItemCount > 0;
@@ -1998,7 +2008,7 @@
       if (isMovingTabs) {
         let sourceNode = dt.mozGetDataAt(TAB_DROP_TYPE, 0);
         if (
-          sourceNode instanceof XULElement &&
+          XULElement.isInstance(sourceNode) &&
           sourceNode.localName == "tab" &&
           sourceNode.ownerGlobal.isChromeWindow &&
           sourceNode.ownerDocument.documentElement.getAttribute("windowtype") ==
@@ -2172,7 +2182,6 @@
           "intl:app-locales-changed"
         );
       }
-
       CustomizableUI.removeListener(this);
     }
 

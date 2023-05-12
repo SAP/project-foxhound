@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { BrowserToolboxLauncher } = ChromeUtils.import(
-  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
+const { BrowserToolboxLauncher } = ChromeUtils.importESModule(
+  "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs"
 );
 const { DevToolsClient } = require("devtools/client/devtools-client");
 
@@ -209,7 +209,7 @@ async function initBrowserToolboxTask({
   async function destroy() {
     // No need to do anything if `destroy` was already called.
     if (destroyed) {
-      return null;
+      return;
     }
 
     const closePromise = existingProcessClose

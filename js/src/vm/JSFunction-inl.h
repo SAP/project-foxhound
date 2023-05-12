@@ -11,8 +11,6 @@
 
 #include "gc/Allocator.h"
 #include "gc/GCProbes.h"
-#include "js/CharacterEncoding.h"
-#include "vm/EnvironmentObject.h"
 #include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSObject-inl.h"
@@ -52,12 +50,12 @@ inline JSFunction* JSFunction::create(JSContext* cx, js::gc::AllocKind kind,
   MOZ_ASSERT(calculateDynamicSlots(shape->numFixedSlots(), shape->slotSpan(),
                                    clasp) == NumDynamicSlots);
 
-  JSObject* obj = js::AllocateObject(cx, kind, NumDynamicSlots, heap, clasp);
-  if (!obj) {
+  NativeObject* nobj =
+      cx->newCell<NativeObject>(kind, NumDynamicSlots, heap, clasp);
+  if (!nobj) {
     return nullptr;
   }
 
-  NativeObject* nobj = static_cast<NativeObject*>(obj);
   nobj->initShape(shape);
 
   nobj->initEmptyDynamicSlots();

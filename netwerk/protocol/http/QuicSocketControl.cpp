@@ -33,6 +33,8 @@ QuicSocketControl::QuicSocketControl(uint32_t aProviderFlags,
 }
 
 void QuicSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
+  SetUsedPrivateDNS(GetProviderFlags() & nsISocketProvider::USED_PRIVATE_DNS);
+
   if (errorCode) {
     mFailedVerification = true;
     SetCanceled(errorCode);
@@ -73,9 +75,10 @@ void QuicSocketControl::HandshakeCompleted() {
 
   MutexAutoLock lock(mMutex);
 
-  // If we're here, the TLS handshake has succeeded. Thus if any of these
-  // booleans are true, the user has added an override for a certificate error.
-  if (mIsDomainMismatch || mIsUntrusted || mIsNotValidAtThisTime) {
+  // If we're here, the TLS handshake has succeeded. If the overridable error
+  // category is nonzero, the user has added an override for a certificate
+  // error.
+  if (mOverridableErrorCategory != OverridableErrorCategory::ERROR_UNSET) {
     state |= nsIWebProgressListener::STATE_CERT_USER_OVERRIDDEN;
   }
 

@@ -31,6 +31,10 @@ class CacheDomain {
   static constexpr uint64_t Viewport = ((uint64_t)0x1) << 14;
   static constexpr uint64_t ARIA = ((uint64_t)0x1) << 15;
   static constexpr uint64_t Relations = ((uint64_t)0x1) << 16;
+#ifdef XP_WIN
+  // Used for MathML.
+  static constexpr uint64_t InnerHTML = ((uint64_t)0x1) << 17;
+#endif
   static constexpr uint64_t All = ~((uint64_t)0x0);
 };
 
@@ -50,7 +54,7 @@ struct RelationData {
   nsStaticAtom* const mAtom;
   nsStaticAtom* const mValidTag;
   RelationType mType;
-  RelationType mReverseType;
+  Maybe<RelationType> mReverseType;
 };
 
 /**
@@ -66,17 +70,18 @@ struct RelationData {
  */
 static constexpr RelationData kRelationTypeAtoms[] = {
     {nsGkAtoms::aria_labelledby, nullptr, RelationType::LABELLED_BY,
-     RelationType::LABEL_FOR},
+     Some(RelationType::LABEL_FOR)},
     {nsGkAtoms::_for, nsGkAtoms::label, RelationType::LABEL_FOR,
-     RelationType::LABELLED_BY},
+     Some(RelationType::LABELLED_BY)},
     {nsGkAtoms::aria_controls, nullptr, RelationType::CONTROLLER_FOR,
-     RelationType::CONTROLLED_BY},
+     Some(RelationType::CONTROLLED_BY)},
     {nsGkAtoms::_for, nsGkAtoms::output, RelationType::CONTROLLED_BY,
-     RelationType::CONTROLLER_FOR},
+     Some(RelationType::CONTROLLER_FOR)},
     {nsGkAtoms::aria_describedby, nullptr, RelationType::DESCRIBED_BY,
-     RelationType::DESCRIPTION_FOR},
+     Some(RelationType::DESCRIPTION_FOR)},
     {nsGkAtoms::aria_flowto, nullptr, RelationType::FLOWS_TO,
-     RelationType::FLOWS_FROM},
+     Some(RelationType::FLOWS_FROM)},
+    {nsGkAtoms::link, nullptr, RelationType::LINKS_TO, Nothing()},
 };
 
 }  // namespace a11y

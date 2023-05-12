@@ -15,14 +15,12 @@
 #include <stdio.h>
 #include <type_traits>
 
-#include "debugger/DebugAPI.h"
 #include "gc/GC.h"
 #include "gc/GCInternals.h"
 #include "gc/Memory.h"
-#include "js/friend/UsageStatistics.h"  // JSMetric
 #include "util/GetPidProvider.h"
 #include "util/Text.h"
-#include "vm/HelperThreads.h"
+#include "vm/JSONPrinter.h"
 #include "vm/Runtime.h"
 #include "vm/Time.h"
 
@@ -1021,7 +1019,7 @@ void Statistics::sendGCTelemetry() {
                                phaseTimes[Phase::SWEEP_MARK_GRAY_WEAK];
   TimeDuration markGrayTotal = phaseTimes[Phase::SWEEP_MARK_GRAY] +
                                phaseTimes[Phase::SWEEP_MARK_GRAY_WEAK];
-  size_t markCount = gc->marker.getMarkCount();
+  size_t markCount = getCount(COUNT_CELLS_MARKED);
   runtime->metrics().GC_PREPARE_MS(prepareTotal);
   runtime->metrics().GC_MARK_MS(markTotal);
   if (markTotal >= TimeDuration::FromMilliseconds(1)) {
@@ -1253,19 +1251,20 @@ void Statistics::sendSliceTelemetry(const SliceData& slice) {
   if (slice.budget.isTimeBudget()) {
     TimeDuration budgetDuration = slice.budget.timeBudgetDuration();
     runtime->metrics().GC_BUDGET_MS_2(budgetDuration);
+
     if (IsCurrentlyAnimating(runtime->lastAnimationTime, slice.end)) {
       runtime->metrics().GC_ANIMATION_MS(sliceTime);
     }
 
+    bool wasLongSlice = false;
     if (sliceTime > budgetDuration) {
       // Record how long we went over budget.
       TimeDuration overrun = sliceTime - budgetDuration;
       runtime->metrics().GC_BUDGET_OVERRUN(overrun);
 
       // Long GC slices are those that go 50% or 5ms over their budget.
-      bool wasLongSlice = (overrun > TimeDuration::FromMilliseconds(5)) ||
-                          (overrun > (budgetDuration / int64_t(2)));
-      runtime->metrics().GC_SLICE_WAS_LONG(wasLongSlice);
+      wasLongSlice = (overrun > TimeDuration::FromMilliseconds(5)) ||
+                     (overrun > (budgetDuration / int64_t(2)));
 
       // Record the longest phase in any long slice.
       if (wasLongSlice) {
@@ -1285,6 +1284,9 @@ void Statistics::sendSliceTelemetry(const SliceData& slice) {
         }
       }
     }
+
+    // Record `wasLongSlice` for all TimeBudget slices.
+    runtime->metrics().GC_SLICE_WAS_LONG(wasLongSlice);
   }
 }
 

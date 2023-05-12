@@ -30,6 +30,8 @@ var gExceptionPaths = [
   "chrome://activity-stream/content/data/content/tippytop/favicons/",
   // These resources are referenced by messages delivered through Remote Settings
   "chrome://activity-stream/content/data/content/assets/remote/",
+  "chrome://activity-stream/content/data/content/assets/mobile-download-qr-new-user-cn.svg",
+  "chrome://activity-stream/content/data/content/assets/mobile-download-qr-existing-user-cn.svg",
   "chrome://browser/content/assets/moz-vpn.svg",
   "chrome://browser/content/assets/vpn-logo.svg",
   "chrome://browser/content/assets/focus-promo.png",
@@ -83,6 +85,7 @@ if (AppConstants.MOZ_BACKGROUNDTASKS) {
   gExceptionPaths.push("resource://app/defaults/backgroundtasks/");
   // `BackgroundTask_id.jsm` is loaded at runtime by `app --backgroundtask id ...`.
   gExceptionPaths.push("resource://gre/modules/backgroundtasks/");
+  gExceptionPaths.push("resource://app/modules/backgroundtasks/");
 }
 
 // Bug 1710546 https://bugzilla.mozilla.org/show_bug.cgi?id=1710546
@@ -231,8 +234,6 @@ var whitelist = [
   { file: "chrome://pippki/content/resetpassword.xhtml" },
   // Bug 1337345
   { file: "resource://gre/modules/Manifest.jsm" },
-  // Bug 1356045
-  { file: "chrome://global/content/test-ipc.xhtml" },
   // Bug 1494170
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
@@ -261,6 +262,9 @@ var whitelist = [
   // dom/media/mediacontrol/MediaControlService.cpp
   { file: "resource://gre/localization/en-US/dom/media.ftl" },
 
+  // dom/xml/nsXMLPrettyPrinter.cpp
+  { file: "resource://gre/localization/en-US/dom/XMLPrettyPrint.ftl" },
+
   // tookit/mozapps/update/BackgroundUpdate.jsm
   {
     file:
@@ -284,6 +288,11 @@ var whitelist = [
   // References to esm generated from jsm programatically
   { file: "resource://gre/modules/LangPackMatcher.sys.mjs" },
   { file: "resource://gre/modules/PluralForm.sys.mjs" },
+
+  // Bug 1788595 - used by Firefox Translations extension
+  // see also https://github.com/mozilla/firefox-translations/issues/496
+  { file: "chrome://browser/locale/translation.dtd" },
+  { file: "chrome://global/locale/notification.dtd" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
@@ -798,11 +807,7 @@ function findChromeUrlsFromArray(array, prefix) {
 }
 
 add_task(async function checkAllTheFiles() {
-  let libxulPath = OS.Constants.Path.libxul;
-  if (AppConstants.platform != "macosx") {
-    libxulPath = PathUtils.join(OS.Constants.Path.libDir, libxulPath);
-  }
-  let libxul = await IOUtils.read(libxulPath);
+  const libxul = await IOUtils.read(PathUtils.xulLibraryPath);
   findChromeUrlsFromArray(libxul, "chrome://");
   findChromeUrlsFromArray(libxul, "resource://");
   // Handle NS_LITERAL_STRING.

@@ -32,8 +32,8 @@ x86_64-unknown-linux-gnu)
     else
         export MACOSX_DEPLOYMENT_TARGET=10.12
     fi
-    export TARGET_CC="$CC -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk"
-    export TARGET_CXX="$CXX -isysroot $MOZ_FETCHES_DIR/MacOSX11.0.sdk"
+    export TARGET_CC="$CC -isysroot $MOZ_FETCHES_DIR/MacOSX11.3.sdk"
+    export TARGET_CXX="$CXX -isysroot $MOZ_FETCHES_DIR/MacOSX11.3.sdk"
     ;;
 *-pc-windows-msvc)
     # Cross-compiling for Windows on Linux.
@@ -50,14 +50,13 @@ x86_64-unknown-linux-gnu)
 
     case "$TARGET" in
         i686-pc-windows-msvc)
-            . $GECKO_PATH/taskcluster/scripts/misc/vs-setup32.sh
             export CARGO_TARGET_I686_PC_WINDOWS_MSVC_LINKER=$MOZ_FETCHES_DIR/clang/bin/lld-link
             ;;
         x86_64-pc-windows-msvc)
-            . $GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh
             export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$MOZ_FETCHES_DIR/clang/bin/lld-link
             ;;
     esac
+    . $GECKO_PATH/taskcluster/scripts/misc/vs-setup.sh
     ;;
 esac
 

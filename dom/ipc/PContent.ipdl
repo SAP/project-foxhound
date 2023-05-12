@@ -75,6 +75,7 @@ include "mozilla/dom/FeaturePolicyUtils.h";
 include "mozilla/dom/MediaSessionIPCUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/ipc/ByteBufUtils.h";
+include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 include "mozilla/PermissionDelegateIPCUtils.h";
 
@@ -153,6 +154,7 @@ using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h"
 [RefCounted] using mozilla::dom::FeaturePolicy from "mozilla/dom/FeaturePolicy.h";
 using Wireframe from "mozilla/dom/DocumentBinding.h";
 using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
+[RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
 
 union ChromeRegistryItem
 {
@@ -443,8 +445,8 @@ union TextRecognitionResultOrError {
     nsCString;
 };
 
-struct ShmemImage {
-    Shmem data;
+struct IPCImage {
+    BigBuffer data;
     uint32_t stride;
     SurfaceFormat format;
     ImageIntSize size;
@@ -1243,7 +1245,7 @@ parent:
 
     async CopyFavicon(nsIURI oldURI, nsIURI newURI, bool isPrivate);
 
-    async FindImageText(ShmemImage image, nsCString[] languages)
+    async FindImageText(IPCImage image, nsCString[] languages)
         returns (TextRecognitionResultOrError result);
 
     /**
@@ -1282,6 +1284,11 @@ parent:
     async BackUpXResources(FileDescriptor aXSocketFd);
 
     async RequestAnonymousTemporaryFile(uint64_t aID);
+
+    /**
+     * Notifies the parent that the child needs no more ForceKill dump.
+     */
+    [Priority=control] async NotifyShutdownSuccess();
 
     /**
      * Notifies the parent to continue shutting down after the child performs
@@ -1626,8 +1633,8 @@ parent:
     /*
      * Adds a certificate exception for the given hostname and port.
      */
-    async AddCertException(nsCString aSerializedCert, uint32_t aFlags,
-                           nsCString aHostName, int32_t aPort, OriginAttributes aOriginAttributes,
+    async AddCertException(nsIX509Cert aCert, nsCString aHostName,
+                           int32_t aPort, OriginAttributes aOriginAttributes,
                            bool aIsTemporary)
           returns (nsresult success);
 
@@ -1796,7 +1803,7 @@ parent:
 
     async HistoryGo(MaybeDiscardedBrowsingContext aContext, int32_t aOffset,
                     uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-                    bool aUserActivation) returns(int32_t requestedIndex);
+                    bool aUserActivation) returns(int32_t? requestedIndex);
 
     async BlobURLDataRequest(nsCString aBlobURL,
                              nsIPrincipal aTriggeringPrincipal,
@@ -1830,9 +1837,10 @@ both:
      * another process. Child frame will send data to its ContentParent which
      * will then identify the ContentParent for the innerWindowId and pass
      * the data to the correct process.
+     * loadInfo is passed in order to enforce same-origin security checks
      * aData must be non-null.
      */
-    async ReportFrameTimingData(uint64_t innerWindowId, nsString entryName,
+    async ReportFrameTimingData(LoadInfoArgs? loadInfo, nsString entryName,
                                 nsString initiatorType,
                                 UniquePtr<PerformanceTimingData> aData);
 

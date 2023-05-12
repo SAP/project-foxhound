@@ -24,6 +24,7 @@
 #include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/CanvasRenderThread.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/EnumTypeTraits.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_bidi.h"
@@ -1344,9 +1345,9 @@ void gfxPlatform::ShutdownLayersIPC() {
     layers::ImageBridgeChild::ShutDown();
     // This could be running on either the Compositor or the Renderer thread.
     gfx::CanvasManagerParent::Shutdown();
-    RemoteTextureMap::Shutdown();
     // This has to happen after shutting down the child protocols.
     layers::CompositorThreadHolder::Shutdown();
+    RemoteTextureMap::Shutdown();
     image::ImageMemoryReporter::ShutdownForWebRender();
     // There is a case that RenderThread exists when UseWebRender() is
     // false. This could happen when WebRender was fallbacked to compositor.
@@ -2067,6 +2068,14 @@ const mozilla::gfx::ContentDeviceData* gfxPlatform::GetInitContentDeviceData() {
   return gContentDeviceInitData;
 }
 
+CMSMode GfxColorManagementMode() {
+  const auto mode = StaticPrefs::gfx_color_management_mode();
+  if (mode >= 0 && mode < UnderlyingValue(CMSMode::AllCount)) {
+    return CMSMode(mode);
+  }
+  return CMSMode::Off;
+}
+
 void gfxPlatform::InitializeCMS() {
   if (gCMSInitialized) {
     return;
@@ -2085,12 +2094,7 @@ void gfxPlatform::InitializeCMS() {
     return;
   }
 
-  {
-    int32_t mode = StaticPrefs::gfx_color_management_mode();
-    if (mode >= 0 && mode < int32_t(CMSMode::AllCount)) {
-      gCMSMode = CMSMode(mode);
-    }
-  }
+  gCMSMode = GfxColorManagementMode();
 
   gCMSsRGBProfile = qcms_profile_sRGB();
 

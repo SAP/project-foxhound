@@ -1207,7 +1207,7 @@ fuzzy(0-1,0-34360) == 461512-1.html 461512-1-ref.html
 == 462844-3.html 462844-ref.html
 == 462844-4.html 462844-ref.html
 == 463204-1.html 463204-1-ref.html
-fuzzy-if(!useDrawSnapshot,16-16,3345-4020) == chrome://reftest/content/bugs/463217-1.xhtml chrome://reftest/content/bugs/463217-1-ref.xhtml
+fuzzy-if(!useDrawSnapshot,16-16,3345-4100) == chrome://reftest/content/bugs/463217-1.xhtml chrome://reftest/content/bugs/463217-1-ref.xhtml
 == 463952-1.html 463952-1-ref.html
 == 464811-1.html 464811-1-ref.html
 == 465574-1.html 465574-1-ref.html # bug 421436
@@ -2051,8 +2051,7 @@ fuzzy(0-2,0-625) == 1466638-1.html 1466638-1-ref.html
 == 1483946.html 1483946-ref.html
 test-pref(layout.css.visited_links_enabled,false) == 1488155.html 1488155-ref.html
 == 1492660-1.html 1492660-1-ref.html
-pref(layout.css.supports-selector.enabled,true) == 1499386.html 1499386-ref.html
-pref(layout.css.supports-selector.enabled,false) != 1499386.html 1499386-ref.html
+== 1499386.html 1499386-ref.html
 == 1509425-1.html 1509425-1-ref.html
 == 1511570.html 1511570-ref.html
 == 1513423-1.html 1513423-1-ref.html
@@ -2131,3 +2130,6 @@ skip-if(Android) test-pref(ui.textScaleFactor,150) test-pref(browser.display.os-
 skip-if(Android) test-pref(ui.textScaleFactor,50) test-pref(browser.display.os-zoom-behavior,1) != 1773633.html 1773633.html
 pref(widget.disable-dark-scrollbar,false) == 1777135.html 1777135-ref.html
 test-pref(widget.non-native-theme.use-theme-accent,false) == 1778834.html 1778834-ref.html
+pref(layout.css.prefers-color-scheme.content-override,0) == 1787127.html 1787127-ref.html
+pref(layout.css.prefers-color-scheme.content-override,1) == 1787127.html 1787127-ref.html
+pref(layout.css.prefers-color-scheme.content-override,2) == 1787127.html 1787127-ref.html

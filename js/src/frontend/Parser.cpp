@@ -23,6 +23,7 @@
 #include "frontend/Parser.h"
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Range.h"
 #include "mozilla/Sprintf.h"
@@ -809,6 +810,7 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredPrivateName(
   PrivateNameKind kind;
   switch (propType) {
     case PropertyType::Field:
+    case PropertyType::FieldWithAccessor:
       kind = PrivateNameKind::Field;
       break;
     case PropertyType::Method:
@@ -2337,7 +2339,7 @@ FunctionNode* Parser<FullParseHandler, Unit>::standaloneFunction(
     return null();
   }
 
-  ListNodeType argsbody = handler_.newList(ParseNodeKind::ParamsBody, pos());
+  ParamsBodyNodeType argsbody = handler_.newParamsBody(pos());
   if (!argsbody) {
     return null();
   }
@@ -2625,7 +2627,6 @@ bool GeneralParser<ParseHandler, Unit>::functionArguments(
     FunctionNodeType funNode) {
   FunctionBox* funbox = pc_->functionBox();
 
-  bool parenFreeArrow = false;
   // Modifier for the following tokens.
   // TokenStream::SlashIsDiv for the following cases:
   //   async a => 1
@@ -2643,76 +2644,66 @@ bool GeneralParser<ParseHandler, Unit>::functionArguments(
   // TokenStream::SlashIsRegExp for the following case:
   //   a => 1
   //   ^
-  Modifier firstTokenModifier = TokenStream::SlashIsDiv;
-
-  // Modifier for the the first token in each argument.
-  // can be changed to TokenStream::SlashIsDiv for the following case:
-  //   async a => 1
-  //         ^
-  Modifier argModifier = TokenStream::SlashIsRegExp;
-  if (kind == FunctionSyntaxKind::Arrow) {
-    TokenKind tt;
-    // In async function, the first token after `async` is already gotten
-    // with TokenStream::SlashIsDiv.
-    // In sync function, the first token is already gotten with
-    // TokenStream::SlashIsRegExp.
-    firstTokenModifier = funbox->isAsync() ? TokenStream::SlashIsDiv
-                                           : TokenStream::SlashIsRegExp;
-    if (!tokenStream.peekToken(&tt, firstTokenModifier)) {
-      return false;
-    }
-    if (TokenKindIsPossibleIdentifier(tt)) {
-      parenFreeArrow = true;
-      argModifier = firstTokenModifier;
-    }
+  Modifier firstTokenModifier =
+      kind != FunctionSyntaxKind::Arrow || funbox->isAsync()
+          ? TokenStream::SlashIsDiv
+          : TokenStream::SlashIsRegExp;
+  TokenKind tt;
+  if (!tokenStream.getToken(&tt, firstTokenModifier)) {
+    return false;
   }
 
-  TokenPos firstTokenPos;
-  if (!parenFreeArrow) {
-    TokenKind tt;
-    if (!tokenStream.getToken(&tt, firstTokenModifier)) {
-      return false;
-    }
-    if (tt != TokenKind::LeftParen) {
-      error(kind == FunctionSyntaxKind::Arrow ? JSMSG_BAD_ARROW_ARGS
-                                              : JSMSG_PAREN_BEFORE_FORMAL);
-      return false;
-    }
-
-    firstTokenPos = pos();
-
-    // Record the start of function source (for FunctionToString). If we
-    // are parenFreeArrow, we will set this below, after consuming the NAME.
+  if (kind == FunctionSyntaxKind::Arrow && TokenKindIsPossibleIdentifier(tt)) {
+    // Record the start of function source (for FunctionToString).
     setFunctionStartAtCurrentToken(funbox);
-  } else {
-    // When delazifying, we may not have a current token and pos() is
-    // garbage. In that case, substitute the first token's position.
-    if (!tokenStream.peekTokenPos(&firstTokenPos, firstTokenModifier)) {
+
+    ParamsBodyNodeType argsbody = handler_.newParamsBody(pos());
+    if (!argsbody) {
       return false;
     }
+    handler_.setFunctionFormalParametersAndBody(funNode, argsbody);
+
+    TaggedParserAtomIndex name = bindingIdentifier(yieldHandling);
+    if (!name) {
+      return false;
+    }
+
+    constexpr bool disallowDuplicateParams = true;
+    bool duplicatedParam = false;
+    if (!notePositionalFormalParameter(funNode, name, pos().begin,
+                                       disallowDuplicateParams,
+                                       &duplicatedParam)) {
+      return false;
+    }
+    MOZ_ASSERT(!duplicatedParam);
+    MOZ_ASSERT(pc_->positionalFormalParameterNames().length() == 1);
+
+    funbox->setLength(1);
+    funbox->setArgCount(1);
+    return true;
   }
 
-  ListNodeType argsbody =
-      handler_.newList(ParseNodeKind::ParamsBody, firstTokenPos);
+  if (tt != TokenKind::LeftParen) {
+    error(kind == FunctionSyntaxKind::Arrow ? JSMSG_BAD_ARROW_ARGS
+                                            : JSMSG_PAREN_BEFORE_FORMAL);
+    return false;
+  }
+
+  // Record the start of function source (for FunctionToString).
+  setFunctionStartAtCurrentToken(funbox);
+
+  ParamsBodyNodeType argsbody = handler_.newParamsBody(pos());
   if (!argsbody) {
     return false;
   }
   handler_.setFunctionFormalParametersAndBody(funNode, argsbody);
 
-  bool hasArguments = false;
-  if (parenFreeArrow) {
-    hasArguments = true;
-  } else {
-    bool matched;
-    if (!tokenStream.matchToken(&matched, TokenKind::RightParen,
-                                TokenStream::SlashIsRegExp)) {
-      return false;
-    }
-    if (!matched) {
-      hasArguments = true;
-    }
+  bool matched;
+  if (!tokenStream.matchToken(&matched, TokenKind::RightParen,
+                              TokenStream::SlashIsRegExp)) {
+    return false;
   }
-  if (hasArguments) {
+  if (!matched) {
     bool hasRest = false;
     bool hasDefault = false;
     bool duplicatedParam = false;
@@ -2735,11 +2726,9 @@ bool GeneralParser<ParseHandler, Unit>::functionArguments(
       }
 
       TokenKind tt;
-      if (!tokenStream.getToken(&tt, argModifier)) {
+      if (!tokenStream.getToken(&tt, TokenStream::SlashIsRegExp)) {
         return false;
       }
-      argModifier = TokenStream::SlashIsRegExp;
-      MOZ_ASSERT_IF(parenFreeArrow, TokenKindIsPossibleIdentifier(tt));
 
       if (tt == TokenKind::TripleDot) {
         if (kind == FunctionSyntaxKind::Setter) {
@@ -2799,10 +2788,6 @@ bool GeneralParser<ParseHandler, Unit>::functionArguments(
             return false;
           }
 
-          if (parenFreeArrow) {
-            setFunctionStartAtCurrentToken(funbox);
-          }
-
           TaggedParserAtomIndex name = bindingIdentifier(yieldHandling);
           if (!name) {
             return false;
@@ -2826,28 +2811,12 @@ bool GeneralParser<ParseHandler, Unit>::functionArguments(
         return false;
       }
 
-      // The next step is to detect arguments with default expressions,
-      // e.g. |function parseInt(str, radix = 10) {}|.  But if we have a
-      // parentheses-free arrow function, |a => ...|, the '=' necessary
-      // for a default expression would really be an assignment operator:
-      // that is, |a = b => 42;| would parse as |a = (b => 42);|.  So we
-      // should stop parsing arguments here.
-      if (parenFreeArrow) {
-        break;
-      }
-
       bool matched;
       if (!tokenStream.matchToken(&matched, TokenKind::Assign,
                                   TokenStream::SlashIsRegExp)) {
         return false;
       }
       if (matched) {
-        // A default argument without parentheses would look like:
-        // a = expr => body, but both operators are right-associative, so
-        // that would have been parsed as a = (expr => body) instead.
-        // Therefore it's impossible to get here with parenFreeArrow.
-        MOZ_ASSERT(!parenFreeArrow);
-
         if (hasRest) {
           error(JSMSG_REST_WITH_DEFAULT);
           return false;
@@ -2900,20 +2869,18 @@ bool GeneralParser<ParseHandler, Unit>::functionArguments(
       }
     }
 
-    if (!parenFreeArrow) {
-      TokenKind tt;
-      if (!tokenStream.getToken(&tt, TokenStream::SlashIsRegExp)) {
+    TokenKind tt;
+    if (!tokenStream.getToken(&tt, TokenStream::SlashIsRegExp)) {
+      return false;
+    }
+    if (tt != TokenKind::RightParen) {
+      if (kind == FunctionSyntaxKind::Setter) {
+        error(JSMSG_ACCESSOR_WRONG_ARGS, "setter", "one", "");
         return false;
       }
-      if (tt != TokenKind::RightParen) {
-        if (kind == FunctionSyntaxKind::Setter) {
-          error(JSMSG_ACCESSOR_WRONG_ARGS, "setter", "one", "");
-          return false;
-        }
 
-        error(JSMSG_PAREN_AFTER_FORMAL);
-        return false;
-      }
+      error(JSMSG_PAREN_AFTER_FORMAL);
+      return false;
     }
 
     if (!hasDefault) {
@@ -3144,8 +3111,7 @@ GeneralParser<ParseHandler, Unit>::functionDefinition(
     tokenStream.rewind(start);
     this->compilationState_.rewind(startObj);
 
-    // functionFormalParametersAndBody may have already set body before
-    // failing.
+    // functionFormalParametersAndBody may have already set body before failing.
     handler_.setFunctionFormalParametersAndBody(funNode, null());
   }
 
@@ -4900,7 +4866,7 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::declarationName(
 }
 
 template <class ParseHandler, typename Unit>
-typename ParseHandler::ListNodeType
+typename ParseHandler::DeclarationListNodeType
 GeneralParser<ParseHandler, Unit>::declarationList(
     YieldHandling yieldHandling, ParseNodeKind kind,
     ParseNodeKind* forHeadKind /* = nullptr */,
@@ -4923,7 +4889,7 @@ GeneralParser<ParseHandler, Unit>::declarationList(
       MOZ_CRASH("Unknown declaration kind");
   }
 
-  ListNodeType decl = handler_.newDeclarationList(kind, pos());
+  DeclarationListNodeType decl = handler_.newDeclarationList(kind, pos());
   if (!decl) {
     return null();
   }
@@ -4970,7 +4936,7 @@ GeneralParser<ParseHandler, Unit>::declarationList(
 }
 
 template <class ParseHandler, typename Unit>
-typename ParseHandler::ListNodeType
+typename ParseHandler::DeclarationListNodeType
 GeneralParser<ParseHandler, Unit>::lexicalDeclaration(
     YieldHandling yieldHandling, DeclarationKind kind) {
   MOZ_ASSERT(kind == DeclarationKind::Const || kind == DeclarationKind::Let);
@@ -4986,7 +4952,7 @@ GeneralParser<ParseHandler, Unit>::lexicalDeclaration(
    *
    * See 8.1.1.1.6 and the note in 13.2.1.
    */
-  ListNodeType decl = declarationList(
+  DeclarationListNodeType decl = declarationList(
       yieldHandling, kind == DeclarationKind::Const ? ParseNodeKind::ConstDecl
                                                     : ParseNodeKind::LetDecl);
   if (!decl || !matchOrInsertSemicolon()) {
@@ -5583,7 +5549,7 @@ inline bool GeneralParser<ParseHandler, Unit>::checkExportedNamesForDeclaration(
 
 template <typename Unit>
 bool Parser<FullParseHandler, Unit>::checkExportedNamesForDeclarationList(
-    ListNode* node) {
+    DeclarationListNodeType node) {
   for (ParseNode* binding : node->contents()) {
     if (binding->isKind(ParseNodeKind::AssignExpr)) {
       binding = binding->as<AssignmentNode>().left();
@@ -5602,7 +5568,7 @@ bool Parser<FullParseHandler, Unit>::checkExportedNamesForDeclarationList(
 template <typename Unit>
 inline bool
 Parser<SyntaxParseHandler, Unit>::checkExportedNamesForDeclarationList(
-    ListNodeType node) {
+    DeclarationListNodeType node) {
   MOZ_ALWAYS_FALSE(abortIfSyntaxParser());
   return false;
 }
@@ -5610,7 +5576,7 @@ Parser<SyntaxParseHandler, Unit>::checkExportedNamesForDeclarationList(
 template <class ParseHandler, typename Unit>
 inline bool
 GeneralParser<ParseHandler, Unit>::checkExportedNamesForDeclarationList(
-    ListNodeType node) {
+    DeclarationListNodeType node) {
   return asFinalParser()->checkExportedNamesForDeclarationList(node);
 }
 
@@ -6020,7 +5986,8 @@ GeneralParser<ParseHandler, Unit>::exportVariableStatement(uint32_t begin) {
 
   MOZ_ASSERT(anyChars.isCurrentTokenType(TokenKind::Var));
 
-  ListNodeType kid = declarationList(YieldIsName, ParseNodeKind::VarStmt);
+  DeclarationListNodeType kid =
+      declarationList(YieldIsName, ParseNodeKind::VarStmt);
   if (!kid) {
     return null();
   }
@@ -6123,7 +6090,7 @@ GeneralParser<ParseHandler, Unit>::exportLexicalDeclaration(
   MOZ_ASSERT_IF(kind == DeclarationKind::Let,
                 anyChars.isCurrentTokenType(TokenKind::Let));
 
-  ListNodeType kid = lexicalDeclaration(YieldIsName, kind);
+  DeclarationListNodeType kid = lexicalDeclaration(YieldIsName, kind);
   if (!kid) {
     return null();
   }
@@ -7825,7 +7792,8 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
     return false;
   }
 
-  if (propType == PropertyType::Field) {
+  if (propType == PropertyType::Field ||
+      propType == PropertyType::FieldWithAccessor) {
     if (isStatic) {
       if (propAtom == TaggedParserAtomIndex::WellKnown::prototype()) {
         errorAt(propNameOffset, JSMSG_BAD_METHOD_DEF);
@@ -7871,13 +7839,13 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
       return false;
     }
 
-    ClassFieldType field =
-        handler_.newClassFieldDefinition(propName, initializer, isStatic
+    ClassFieldType field = handler_.newClassFieldDefinition(
+        propName, initializer, isStatic
 #ifdef ENABLE_DECORATORS
-                                         ,
-                                         decorators
+        ,
+        decorators, propType == PropertyType::FieldWithAccessor
 #endif
-        );
+    );
     if (!field) {
       return false;
     }
@@ -8460,9 +8428,9 @@ GeneralParser<ParseHandler, Unit>::synthesizeConstructorBody(
     FunctionNodeType funNode, FunctionBox* funbox) {
   MOZ_ASSERT(funbox->isClassConstructor());
 
-  // Create a ListNode for the parameters + body (there are no parameters).
-  ListNodeType argsbody =
-      handler_.newList(ParseNodeKind::ParamsBody, synthesizedBodyPos);
+  // Create a ParamsBodyNode for the parameters + body (there are no
+  // parameters).
+  ParamsBodyNodeType argsbody = handler_.newParamsBody(synthesizedBodyPos);
   if (!argsbody) {
     return null();
   }
@@ -8623,8 +8591,7 @@ GeneralParser<ParseHandler, Unit>::privateMethodInitializer(
   pc_->functionScope().useAsVarScope(pc_);
 
   // Add empty parameter list.
-  ListNodeType argsbody =
-      handler_.newList(ParseNodeKind::ParamsBody, propNamePos);
+  ParamsBodyNodeType argsbody = handler_.newParamsBody(propNamePos);
   if (!argsbody) {
     return null();
   }
@@ -8766,9 +8733,9 @@ GeneralParser<ParseHandler, Unit>::staticClassBlock(
   handler_.setEndPosition(funNode, wholeBodyPos.end);
   setFunctionEndFromCurrentToken(funbox);
 
-  // Create a ListNode for the parameters + body (there are no parameters).
-  ListNodeType argsbody =
-      handler_.newList(ParseNodeKind::ParamsBody, wholeBodyPos);
+  // Create a ParamsBodyNode for the parameters + body (there are no
+  // parameters).
+  ParamsBodyNodeType argsbody = handler_.newParamsBody(wholeBodyPos);
   if (!argsbody) {
     return null();
   }
@@ -8874,9 +8841,9 @@ GeneralParser<ParseHandler, Unit>::fieldInitializerOpt(
   handler_.setEndPosition(funNode, wholeInitializerPos.end);
   setFunctionEndFromCurrentToken(funbox);
 
-  // Create a ListNode for the parameters + body (there are no parameters).
-  ListNodeType argsbody =
-      handler_.newList(ParseNodeKind::ParamsBody, wholeInitializerPos);
+  // Create a ParamsBodyNode for the parameters + body (there are no
+  // parameters).
+  ParamsBodyNodeType argsbody = handler_.newParamsBody(wholeInitializerPos);
   if (!argsbody) {
     return null();
   }
@@ -8976,8 +8943,8 @@ GeneralParser<ParseHandler, Unit>::fieldInitializerOpt(
   }
 
   // Synthesize an property init.
-  AssignmentNodeType initializerPropInit = handler_.newAssignment(
-      ParseNodeKind::InitExpr, propAssignFieldAccess, initializerExpr);
+  BinaryNodeType initializerPropInit =
+      handler_.newInitExpr(propAssignFieldAccess, initializerExpr);
   if (!initializerPropInit) {
     return null();
   }
@@ -9054,10 +9021,11 @@ bool ParserBase::nextTokenContinuesLetDeclaration(TokenKind next) {
 }
 
 template <class ParseHandler, typename Unit>
-typename ParseHandler::ListNodeType
+typename ParseHandler::DeclarationListNodeType
 GeneralParser<ParseHandler, Unit>::variableStatement(
     YieldHandling yieldHandling) {
-  ListNodeType vars = declarationList(yieldHandling, ParseNodeKind::VarStmt);
+  DeclarationListNodeType vars =
+      declarationList(yieldHandling, ParseNodeKind::VarStmt);
   if (!vars) {
     return null();
   }
@@ -10631,7 +10599,7 @@ bool ParserBase::checkAndMarkSuperScope() {
 
 template <class ParseHandler, typename Unit>
 bool GeneralParser<ParseHandler, Unit>::computeErrorMetadata(
-    ErrorMetadata* err, const ErrorReportMixin::ErrorOffset& offset) {
+    ErrorMetadata* err, const ErrorReportMixin::ErrorOffset& offset) const {
   if (offset.is<ErrorReportMixin::Current>()) {
     return tokenStream.computeErrorMetadata(err, AsVariant(pos().begin));
   }
@@ -11699,6 +11667,7 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
   //     * PropertyName         ==> PropertyType::GeneratorMethod
   //     get PropertyName       ==> PropertyType::Getter
   //     set PropertyName       ==> PropertyType::Setter
+  //     accessor PropertyName  ==> PropertyType::FieldWithAccessor
   //     PropertyName :         ==> PropertyType::Normal
   //     PropertyName           ==> see below
   //
@@ -11727,11 +11696,14 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
              "caller should have handled TokenKind::RightCurly");
 
   // Accept `async` and/or `*`, indicating an async or generator method;
-  // or `get` or `set`, indicating an accessor.
+  // or `get` or `set` or `accessor`, indicating an accessor.
   bool isGenerator = false;
   bool isAsync = false;
   bool isGetter = false;
   bool isSetter = false;
+#ifdef ENABLE_DECORATORS
+  bool hasAccessor = false;
+#endif
 
   if (ltok == TokenKind::Async) {
     // `async` is also a PropertyName by itself (it's a conditional keyword),
@@ -11769,6 +11741,24 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
     }
   }
 
+#ifdef ENABLE_DECORATORS
+  if (!isGenerator && !isAsync && propertyNameContext == PropertyNameInClass &&
+      ltok == TokenKind::Accessor) {
+    MOZ_ASSERT(!isGetter && !isSetter);
+    TokenKind tt;
+    if (!tokenStream.peekTokenSameLine(&tt)) {
+      return null();
+    }
+
+    // The target rule is `accessor [no LineTerminator here]
+    // ClassElementName[?Yield, ?Await] Initializer[+In, ?Yield, ?Await]opt`
+    if (TokenKindCanStartPropertyName(tt)) {
+      tokenStream.consumeKnownToken(tt);
+      hasAccessor = true;
+    }
+  }
+#endif
+
   Node propName = propertyName(yieldHandling, propertyNameContext, maybeDecl,
                                propList, propAtomOut);
   if (!propName) {
@@ -11783,7 +11773,11 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
   }
 
   if (tt == TokenKind::Colon) {
-    if (isGenerator || isAsync || isGetter || isSetter) {
+    if (isGenerator || isAsync || isGetter || isSetter
+#ifdef ENABLE_DECORATORS
+        || hasAccessor
+#endif
+    ) {
       error(JSMSG_BAD_PROP_ID);
       return null();
     }
@@ -11795,6 +11789,9 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
       TokenKindIsPossibleIdentifierName(ltok) &&
       (tt == TokenKind::Comma || tt == TokenKind::RightCurly ||
        tt == TokenKind::Assign)) {
+#ifdef ENABLE_DECORATORS
+    MOZ_ASSERT(!hasAccessor);
+#endif
     if (isGenerator || isAsync || isGetter || isSetter) {
       error(JSMSG_BAD_PROP_ID);
       return null();
@@ -11813,6 +11810,13 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
     if (propertyNameContext == PropertyNameInRecord) {
       // Record & Tuple proposal, section 7.1.1:
       // RecordPropertyDefinition doesn't cover methods
+      error(JSMSG_BAD_PROP_ID);
+      return null();
+    }
+#endif
+
+#ifdef ENABLE_DECORATORS
+    if (hasAccessor) {
       error(JSMSG_BAD_PROP_ID);
       return null();
     }
@@ -11840,7 +11844,15 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
       return null();
     }
     anyChars.ungetToken();
+#ifdef ENABLE_DECORATORS
+    if (!hasAccessor) {
+      *propType = PropertyType::Field;
+    } else {
+      *propType = PropertyType::FieldWithAccessor;
+    }
+#else
     *propType = PropertyType::Field;
+#endif
     return propName;
   }
 

@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
-    "session-data",
+    "session-data-processors",
 ]
 
 DevToolsModules(
@@ -13,7 +13,7 @@ DevToolsModules(
     "index.js",
     "parent-process.js",
     "target-actor-mixin.js",
-    "target-actor-registry.jsm",
+    "target-actor-registry.sys.mjs",
     "webextension.js",
     "window-global.js",
     "worker.js",

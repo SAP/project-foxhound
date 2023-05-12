@@ -411,6 +411,19 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(WorkerGlobalScope,
 
 WorkerGlobalScope::~WorkerGlobalScope() = default;
 
+void WorkerGlobalScope::NoteTerminating() {
+  if (IsDying()) {
+    return;
+  }
+
+  StartDying();
+
+  if (mNavigator) {
+    mNavigator->Invalidate();
+    mNavigator = nullptr;
+  }
+}
+
 Crypto* WorkerGlobalScope::GetCrypto(ErrorResult& aError) {
   AssertIsOnWorkerThread();
 
@@ -678,12 +691,6 @@ already_AddRefed<Promise> WorkerGlobalScope::Fetch(
 already_AddRefed<IDBFactory> WorkerGlobalScope::GetIndexedDB(
     JSContext* aCx, ErrorResult& aErrorResult) {
   AssertIsOnWorkerThread();
-
-  if (!IDBFactory::IsEnabled(aCx, GetGlobalJSObject())) {
-    // Let window.indexedDB be an attribute with a null value, to prevent
-    // undefined identifier error
-    return nullptr;
-  }
 
   RefPtr<IDBFactory> indexedDB = mIndexedDB;
 

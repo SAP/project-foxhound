@@ -1,0 +1,32 @@
+#ifndef MOZ_FFVPX_CONFIG_OVERRIDE_H
+#define MOZ_FFVPX_CONFIG_OVERRIDE_H
+
+// This file contains overrides for config.h, that can be platform-specific.
+
+#ifdef MOZ_LIBAV_FFT
+#undef CONFIG_FFT
+#undef CONFIG_RDFT
+#define CONFIG_FFT 1
+#define CONFIG_RDFT 1
+#endif
+
+#if defined(MOZ_WAYLAND) && !defined(MOZ_FFVPX_AUDIOONLY)
+#undef CONFIG_VAAPI
+#undef CONFIG_VAAPI_1
+#undef CONFIG_VP8_VAAPI_HWACCEL
+#undef CONFIG_VP9_VAAPI_HWACCEL
+#undef CONFIG_AV1_VAAPI_HWACCEL
+#define CONFIG_VAAPI 1
+#define CONFIG_VAAPI_1 1
+#define CONFIG_VP8_VAAPI_HWACCEL 1
+#define CONFIG_VP9_VAAPI_HWACCEL 1
+#define CONFIG_AV1_VAAPI_HWACCEL 1
+#else
+#define CONFIG_VAAPI 0
+#define CONFIG_VAAPI_1 0
+#define CONFIG_VP8_VAAPI_HWACCEL 0
+#define CONFIG_VP9_VAAPI_HWACCEL 0
+#define CONFIG_AV1_VAAPI_HWACCEL 0
+#endif
+
+#endif

@@ -8,28 +8,31 @@
 #define vm_BigIntType_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/Range.h"
 #include "mozilla/Span.h"
 
 #include "jstypes.h"
-#include "gc/Barrier.h"
-#include "gc/GC.h"
-#include "gc/Nursery.h"
-#include "js/AllocPolicy.h"
-#include "js/GCHashTable.h"
+
+#include "gc/Allocator.h"
+#include "gc/Cell.h"
+#include "gc/StoreBuffer.h"
 #include "js/Result.h"
 #include "js/RootingAPI.h"
 #include "js/TraceKind.h"
 #include "js/TypeDecls.h"
-#include "vm/StringType.h"
+
+namespace js {
+class TenuringTracer;
+
+namespace jit {
+class MacroAssembler;
+}
+}  // namespace js
 
 namespace JS {
 
 class JS_PUBLIC_API BigInt;
-
-}  // namespace JS
-
-namespace JS {
 
 class BigInt final : public js::gc::CellWithLengthAndFlags {
  public:
@@ -61,6 +64,10 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
  public:
   static const JS::TraceKind TraceKind = JS::TraceKind::BigInt;
+
+  static BigInt* emplace(js::gc::Cell* cell) {
+    return new (mozilla::KnownNotNull, cell) BigInt();
+  }
 
   void fixupAfterMovingGC() {}
 
@@ -211,11 +218,6 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
   template <typename CharT>
   static bool literalIsZero(const mozilla::Range<const CharT> chars);
-
-  // Check a literal for a non-zero character after the radix indicators
-  // have been removed
-  template <typename CharT>
-  static bool literalIsZeroNoRadix(const mozilla::Range<const CharT> chars);
 
   static int8_t compare(BigInt* lhs, BigInt* rhs);
   static bool equal(BigInt* lhs, BigInt* rhs);
@@ -409,7 +411,6 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
   friend struct ::JSStructuredCloneReader;
   friend struct ::JSStructuredCloneWriter;
 
-  BigInt() = delete;
   BigInt(const BigInt& other) = delete;
   void operator=(const BigInt& other) = delete;
 
@@ -434,6 +435,10 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
  private:
   friend class js::TenuringTracer;
+
+ protected:
+  // For calling by emplace().
+  BigInt() = default;
 };
 
 static_assert(

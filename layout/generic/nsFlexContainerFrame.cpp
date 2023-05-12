@@ -45,15 +45,6 @@ static mozilla::LazyLogModule gFlexContainerLog("FlexContainer");
 #define FLEX_LOGV(...) \
   MOZ_LOG(gFlexContainerLog, LogLevel::Verbose, (__VA_ARGS__));
 
-// Returns true iff the given nsStyleDisplay has display:-webkit-{inline-}box
-// or display:-moz-{inline-}box.
-static inline bool IsDisplayValueLegacyBox(const nsStyleDisplay* aStyleDisp) {
-  return aStyleDisp->mDisplay == mozilla::StyleDisplay::WebkitBox ||
-         aStyleDisp->mDisplay == mozilla::StyleDisplay::WebkitInlineBox ||
-         aStyleDisp->mDisplay == mozilla::StyleDisplay::MozBox ||
-         aStyleDisp->mDisplay == mozilla::StyleDisplay::MozInlineBox;
-}
-
 // Returns true if aFlexContainer is a frame for some element that has
 // display:-webkit-{inline-}box (or -moz-{inline-}box). aFlexContainer is
 // expected to be an instance of nsFlexContainerFrame (enforced with an assert);
@@ -61,7 +52,9 @@ static inline bool IsDisplayValueLegacyBox(const nsStyleDisplay* aStyleDisp) {
 static bool IsLegacyBox(const nsIFrame* aFlexContainer) {
   MOZ_ASSERT(aFlexContainer->IsFlexContainerFrame(),
              "only flex containers may be passed to this function");
-  return aFlexContainer->HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX);
+  return aFlexContainer->HasAnyStateBits(
+      NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX |
+      NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
 }
 
 // Returns the OrderState enum we should pass to CSSOrderAwareFrameIterator
@@ -1279,36 +1272,30 @@ StyleAlignFlags nsFlexContainerFrame::CSSAlignmentForAbsPosChild(
   StyleAlignFlags alignment{0};
   StyleAlignFlags alignmentFlags{0};
   if (isMainAxis) {
+    // We're aligning in the main axis: align according to 'justify-content'.
+    // (We don't care about justify-self; it has no effect on children of flex
+    // containers, unless https://github.com/w3c/csswg-drafts/issues/7644
+    // changes that.)
     alignment = SimplifyAlignOrJustifyContentForOneItem(
         containerStylePos->mJustifyContent,
         /*aIsAlign = */ false);
   } else {
-    const StyleAlignFlags alignContent =
-        SimplifyAlignOrJustifyContentForOneItem(
-            containerStylePos->mAlignContent,
-            /*aIsAlign = */ true);
-    if (StyleFlexWrap::Nowrap != containerStylePos->mFlexWrap &&
-        alignContent != StyleAlignFlags::STRETCH) {
-      // Multi-line, align-content isn't stretch --> align-content determines
-      // this child's alignment in the cross axis.
-      alignment = alignContent;
-    } else {
-      // Single-line, or multi-line but the (one) line stretches to fill
-      // container. Respect align-self.
-      alignment = aChildRI.mStylePosition->UsedAlignSelf(Style())._0;
-      // Extract and strip align flag bits
-      alignmentFlags = alignment & StyleAlignFlags::FLAG_BITS;
-      alignment &= ~StyleAlignFlags::FLAG_BITS;
+    // We're aligning in the cross axis: align according to 'align-self'.
+    // (We don't care about align-content; it has no effect on abspos flex
+    // children, per https://github.com/w3c/csswg-drafts/issues/7596 )
+    alignment = aChildRI.mStylePosition->UsedAlignSelf(Style())._0;
+    // Extract and strip align flag bits
+    alignmentFlags = alignment & StyleAlignFlags::FLAG_BITS;
+    alignment &= ~StyleAlignFlags::FLAG_BITS;
 
-      if (alignment == StyleAlignFlags::NORMAL) {
-        // "the 'normal' keyword behaves as 'start' on replaced
-        // absolutely-positioned boxes, and behaves as 'stretch' on all other
-        // absolutely-positioned boxes."
-        // https://drafts.csswg.org/css-align/#align-abspos
-        alignment = aChildRI.mFrame->IsFrameOfType(nsIFrame::eReplaced)
-                        ? StyleAlignFlags::START
-                        : StyleAlignFlags::STRETCH;
-      }
+    if (alignment == StyleAlignFlags::NORMAL) {
+      // "the 'normal' keyword behaves as 'start' on replaced
+      // absolutely-positioned boxes, and behaves as 'stretch' on all other
+      // absolutely-positioned boxes."
+      // https://drafts.csswg.org/css-align/#align-abspos
+      alignment = aChildRI.mFrame->IsFrameOfType(nsIFrame::eReplaced)
+                      ? StyleAlignFlags::START
+                      : StyleAlignFlags::STRETCH;
     }
   }
 
@@ -1346,7 +1333,7 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
     FlexLine& aLine, nsIFrame* aChildFrame,
     const ReflowInput& aParentReflowInput,
     const FlexboxAxisTracker& aAxisTracker,
-    const nscoord aTentativeContentBoxCrossSize, bool aHasLineClampEllipsis) {
+    const nscoord aTentativeContentBoxCrossSize) {
   const auto flexWM = aAxisTracker.GetWritingMode();
   const auto childWM = aChildFrame->GetWritingMode();
 
@@ -1375,10 +1362,15 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
       // If we get here, we're resolving the flex base size for a flex item, and
       // we fall into the flexbox spec section 9.2 step 3, substep C (if we have
       // a definite cross size) or E (if not).
-      if (aChildFrame->GetAspectRatio()) {
+      if (aChildFrame->GetAspectRatio() ||
+          aChildFrame->IsFrameOfType(eReplacedSizing)) {
         // FIXME: This is a workaround. Once bug 1670151 is fixed, aspect-ratio
         // will be considered when resolving flex item's flex base size with the
-        // value 'max-content'.
+        // value 'max-content'. Replaced elements without preferred
+        // aspect-ratio, e.g. <svg> without viewBox nor aspect-ratio property,
+        // need this workaround since we still want to use replaced elements'
+        // intrinsic sizing rules in
+        // https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
         styleFlexBaseSize.emplace(StyleSize::Auto());
       } else {
         styleFlexBaseSize.emplace(StyleSize::MaxContent());
@@ -1414,18 +1406,12 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
   ReflowInput childRI(PresContext(), aParentReflowInput, aChildFrame,
                       aParentReflowInput.ComputedSize(childWM), Nothing(), {},
                       sizeOverrides);
-  childRI.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
 
   // FLEX GROW & SHRINK WEIGHTS
   // --------------------------
   float flexGrow, flexShrink;
   if (IsLegacyBox(this)) {
-    if (GetLineClampValue() != 0) {
-      // Items affected by -webkit-line-clamp are always inflexible.
-      flexGrow = flexShrink = 0;
-    } else {
-      flexGrow = flexShrink = aChildFrame->StyleXUL()->mBoxFlex;
-    }
+    flexGrow = flexShrink = aChildFrame->StyleXUL()->mBoxFlex;
   } else {
     flexGrow = stylePos->mFlexGrow;
     flexShrink = stylePos->mFlexShrink;
@@ -1557,8 +1543,7 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
 
   // Resolve "flex-basis:auto" and/or "min-[width|height]:auto" (which might
   // require us to reflow the item to measure content height)
-  ResolveAutoFlexBasisAndMinSize(*item, childRI, aAxisTracker,
-                                 aHasLineClampEllipsis);
+  ResolveAutoFlexBasisAndMinSize(*item, childRI, aAxisTracker);
   return item;
 }
 
@@ -1660,7 +1645,7 @@ static nscoord PartiallyResolveAutoMinSize(
 // we may want to resolve that in this function, too.
 void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
     FlexItem& aFlexItem, const ReflowInput& aItemReflowInput,
-    const FlexboxAxisTracker& aAxisTracker, bool aHasLineClampEllipsis) {
+    const FlexboxAxisTracker& aAxisTracker) {
   // (Note: We can guarantee that the flex-basis will have already been
   // resolved if the main axis is the same as the item's inline
   // axis. Inline-axis values should always be resolvable without reflow.)
@@ -1744,9 +1729,8 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
                                             // 'min-block-size:auto'?
 
       const ReflowInput& flexContainerRI = *aItemReflowInput.mParentReflowInput;
-      nscoord contentBSize =
-          MeasureFlexItemContentBSize(aFlexItem, forceBResizeForMeasuringReflow,
-                                      aHasLineClampEllipsis, flexContainerRI);
+      nscoord contentBSize = MeasureFlexItemContentBSize(
+          aFlexItem, forceBResizeForMeasuringReflow, flexContainerRI);
       if (minSizeNeedsToMeasureContent) {
         contentSizeSuggestion = contentBSize;
       }
@@ -2084,7 +2068,7 @@ void nsFlexContainerFrame::MarkIntrinsicISizesDirty() {
 
 nscoord nsFlexContainerFrame::MeasureFlexItemContentBSize(
     FlexItem& aFlexItem, bool aForceBResizeForMeasuringReflow,
-    bool aHasLineClampEllipsis, const ReflowInput& aParentReflowInput) {
+    const ReflowInput& aParentReflowInput) {
   FLEX_LOG("Measuring flex item's content block-size");
 
   // Set up a reflow input for measuring the flex item's content block-size:
@@ -2107,9 +2091,6 @@ nscoord nsFlexContainerFrame::MeasureFlexItemContentBSize(
   ReflowInput childRIForMeasuringBSize(
       PresContext(), aParentReflowInput, aFlexItem.Frame(), availSize,
       Nothing(), ReflowInput::InitFlag::CallerWillInit, sizeOverrides);
-  childRIForMeasuringBSize.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
-  childRIForMeasuringBSize.mFlags.mApplyLineClamp =
-      childRIForMeasuringBSize.mFlags.mInsideLineClamp || aHasLineClampEllipsis;
   childRIForMeasuringBSize.Init(PresContext());
 
   // When measuring flex item's content block-size, disregard the item's
@@ -2874,30 +2855,30 @@ void nsFlexContainerFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     AddStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT);
   }
 
-  const nsStyleDisplay* styleDisp = Style()->StyleDisplay();
-
-  // Figure out if we should set a frame state bit to indicate that this frame
-  // represents a legacy -webkit-{inline-}box or -moz-{inline-}box container.
-  // First, the trivial case: just check "display" directly.
-  bool isLegacyBox = IsDisplayValueLegacyBox(styleDisp);
-
+  auto displayInside = StyleDisplay()->DisplayInside();
   // If this frame is for a scrollable element, then it will actually have
   // "display:block", and its *parent frame* will have the real
   // flex-flavored display value. So in that case, check the parent frame to
   // find out if we're legacy.
-  if (!isLegacyBox && styleDisp->mDisplay == mozilla::StyleDisplay::Block) {
-    ComputedStyle* parentComputedStyle = GetParent()->Style();
-    NS_ASSERTION(
-        Style()->GetPseudoType() == PseudoStyleType::buttonContent ||
-            Style()->GetPseudoType() == PseudoStyleType::scrolledContent,
-        "The only way a nsFlexContainerFrame can have 'display:block' "
-        "should be if it's the inner part of a scrollable or button "
-        "element");
-    isLegacyBox = IsDisplayValueLegacyBox(parentComputedStyle->StyleDisplay());
+  //
+  // TODO(emilio): Maybe ::-moz-scrolled-content and co should inherit `display`
+  // (or a blockified version thereof, to not hit bug 456484).
+  if (displayInside == StyleDisplayInside::Flow) {
+    MOZ_ASSERT(StyleDisplay()->mDisplay == StyleDisplay::Block);
+    MOZ_ASSERT(Style()->GetPseudoType() == PseudoStyleType::buttonContent ||
+                   Style()->GetPseudoType() == PseudoStyleType::scrolledContent,
+               "The only way a nsFlexContainerFrame can have 'display:block' "
+               "should be if it's the inner part of a scrollable or button "
+               "element");
+    displayInside = GetParent()->StyleDisplay()->DisplayInside();
   }
 
-  if (isLegacyBox) {
-    AddStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX);
+  // Figure out if we should set a frame state bit to indicate that this frame
+  // represents a legacy -moz-{inline-}box or -webkit-{inline-}box container.
+  if (displayInside == StyleDisplayInside::MozBox) {
+    AddStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
+  } else if (displayInside == StyleDisplayInside::WebkitBox) {
+    AddStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
   }
 }
 
@@ -4104,8 +4085,7 @@ void nsFlexContainerFrame::GenerateFlexLines(
     const ReflowInput& aReflowInput, const nscoord aTentativeContentBoxMainSize,
     const nscoord aTentativeContentBoxCrossSize,
     const nsTArray<StrutInfo>& aStruts, const FlexboxAxisTracker& aAxisTracker,
-    nscoord aMainGapSize, bool aHasLineClampEllipsis,
-    nsTArray<nsIFrame*>& aPlaceholders, /* out */
+    nscoord aMainGapSize, nsTArray<nsIFrame*>& aPlaceholders,
     nsTArray<FlexLine>& aLines /* out */) {
   MOZ_ASSERT(aLines.IsEmpty(), "Expecting outparam to start out empty");
 
@@ -4191,8 +4171,7 @@ void nsFlexContainerFrame::GenerateFlexLines(
       nextStrutIdx++;
     } else {
       GenerateFlexItemForChild(*curLine, childFrame, aReflowInput, aAxisTracker,
-                               aTentativeContentBoxCrossSize,
-                               aHasLineClampEllipsis);
+                               aTentativeContentBoxCrossSize);
     }
 
     // Check if we need to wrap the newly appended item to a new line, i.e. if
@@ -4547,6 +4526,10 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
                                   ReflowOutput& aReflowOutput,
                                   const ReflowInput& aReflowInput,
                                   nsReflowStatus& aStatus) {
+  if (IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
+    return;
+  }
+
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsFlexContainerFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aReflowOutput, aStatus);
@@ -4588,13 +4571,6 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
     AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
   }
 
-  // Check if there is a -webkit-line-clamp ellipsis somewhere inside at least
-  // one of the flex items, so we can clear the flag before the block frame
-  // re-sets it on the appropriate line during its bsize measuring reflow.
-  bool hasLineClampEllipsis =
-      HasAnyStateBits(NS_STATE_FLEX_HAS_LINE_CLAMP_ELLIPSIS);
-  RemoveStateBits(NS_STATE_FLEX_HAS_LINE_CLAMP_ELLIPSIS);
-
   const FlexboxAxisTracker axisTracker(this);
 
   // Check to see if we need to create a computed info structure, to
@@ -4630,10 +4606,9 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
     // column/page, but we do not implement it intentionally. This brings the
     // layout result closer to the one as if there's no fragmentation.
     AutoTArray<StrutInfo, 1> struts;
-    flr =
-        DoFlexLayout(aReflowInput, tentativeContentBoxMainSize,
-                     tentativeContentBoxCrossSize, axisTracker, mainGapSize,
-                     crossGapSize, hasLineClampEllipsis, struts, containerInfo);
+    flr = DoFlexLayout(aReflowInput, tentativeContentBoxMainSize,
+                       tentativeContentBoxCrossSize, axisTracker, mainGapSize,
+                       crossGapSize, struts, containerInfo);
 
     if (!struts.IsEmpty()) {
       // We're restarting flex layout, with new knowledge of collapsed items.
@@ -4641,8 +4616,7 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
       flr.mPlaceholders.Clear();
       flr = DoFlexLayout(aReflowInput, tentativeContentBoxMainSize,
                          tentativeContentBoxCrossSize, axisTracker, mainGapSize,
-                         crossGapSize, hasLineClampEllipsis, struts,
-                         containerInfo);
+                         crossGapSize, struts, containerInfo);
     }
   } else {
     flr = GenerateFlexLayoutResult();
@@ -4704,9 +4678,9 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
 
   const LogicalSize availableSizeForItems =
       ComputeAvailableSizeForItems(aReflowInput, borderPadding);
-  const auto [maxBlockEndEdgeOfChildren, areChildrenComplete] = ReflowChildren(
-      aReflowInput, containerSize, availableSizeForItems, borderPadding,
-      sumOfChildrenBlockSize, axisTracker, hasLineClampEllipsis, flr);
+  const auto [maxBlockEndEdgeOfChildren, areChildrenComplete] =
+      ReflowChildren(aReflowInput, containerSize, availableSizeForItems,
+                     borderPadding, sumOfChildrenBlockSize, axisTracker, flr);
 
   // maxBlockEndEdgeOfChildren is relative to border-box, so we need to subtract
   // block-start border and padding to make it relative to our content-box. Note
@@ -5117,15 +5091,13 @@ nsFlexContainerFrame::FlexLayoutResult nsFlexContainerFrame::DoFlexLayout(
     const ReflowInput& aReflowInput, const nscoord aTentativeContentBoxMainSize,
     const nscoord aTentativeContentBoxCrossSize,
     const FlexboxAxisTracker& aAxisTracker, nscoord aMainGapSize,
-    nscoord aCrossGapSize, bool aHasLineClampEllipsis,
-    nsTArray<StrutInfo>& aStruts,
+    nscoord aCrossGapSize, nsTArray<StrutInfo>& aStruts,
     ComputedFlexContainerInfo* const aContainerInfo) {
   FlexLayoutResult flr;
 
   GenerateFlexLines(aReflowInput, aTentativeContentBoxMainSize,
                     aTentativeContentBoxCrossSize, aStruts, aAxisTracker,
-                    aMainGapSize, aHasLineClampEllipsis, flr.mPlaceholders,
-                    flr.mLines);
+                    aMainGapSize, flr.mPlaceholders, flr.mLines);
 
   if ((flr.mLines.Length() == 1 && flr.mLines[0].IsEmpty()) ||
       aReflowInput.mStyleDisplay->IsContainLayout()) {
@@ -5196,7 +5168,6 @@ nsFlexContainerFrame::FlexLayoutResult nsFlexContainerFrame::DoFlexLayout(
         availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
         ReflowInput childReflowInput(PresContext(), aReflowInput, item.Frame(),
                                      availSize, Nothing(), {}, sizeOverrides);
-        childReflowInput.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
         if (item.IsBlockAxisMainAxis() && item.TreatBSizeAsIndefinite()) {
           childReflowInput.mFlags.mTreatBSizeAsIndefinite = true;
         }
@@ -5289,8 +5260,11 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
     const LogicalSize& aAvailableSizeForItems,
     const LogicalMargin& aBorderPadding,
     const nscoord aSumOfPrevInFlowsChildrenBlockSize,
-    const FlexboxAxisTracker& aAxisTracker, bool aHasLineClampEllipsis,
-    FlexLayoutResult& aFlr) {
+    const FlexboxAxisTracker& aAxisTracker, FlexLayoutResult& aFlr) {
+  if (HidesContentForLayout()) {
+    return {0, false};
+  }
+
   // Before giving each child a final reflow, calculate the origin of the
   // flex container's content box (with respect to its border-box), so that
   // we can compute our flex item's final positions.
@@ -5342,15 +5316,10 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
       // (i.e. its frame rect), instead of the container's content-box:
       framePos += containerContentBoxOrigin;
 
-      // (Intentionally snapshotting this before ApplyRelativePositioning, to
-      // maybe use for setting the flex container's baseline.)
-      const nscoord itemNormalBPos = framePos.B(flexWM);
-
       // Check if we actually need to reflow the item -- if the item's position
       // is below the available space's block-end, push it to our next-in-flow;
       // if it does need a reflow, and we already reflowed it with the right
-      // content-box size, and there is no need to do a reflow to clear out a
-      // -webkit-line-clamp ellipsis, we can just reposition it as-needed.
+      // content-box size.
       const bool childBPosExceedAvailableSpaceBEnd =
           availableBSizeForItem != NS_UNCONSTRAINEDSIZE &&
           availableBSizeForItem <= 0;
@@ -5375,9 +5344,9 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
                         availableBSizeForItem)
                 .ConvertTo(itemWM, flexWM);
 
-        const nsReflowStatus childReflowStatus = ReflowFlexItem(
-            aAxisTracker, aReflowInput, item, framePos, availableSize,
-            aContainerSize, aHasLineClampEllipsis);
+        const nsReflowStatus childReflowStatus =
+            ReflowFlexItem(aAxisTracker, aReflowInput, item, framePos,
+                           availableSize, aContainerSize);
 
         if (childReflowStatus.IsIncomplete()) {
           incompleteItems.Insert(item.Frame());
@@ -5386,17 +5355,6 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
         }
       } else {
         MoveFlexItemToFinalPosition(item, framePos, aContainerSize);
-        // We didn't perform a final reflow of the item. If we still have a
-        // -webkit-line-clamp ellipsis hanging around, but we shouldn't have
-        // one any more, we need to clear that now.  Technically, we only need
-        // to do this if we *didn't* do a bsize measuring reflow of the item
-        // earlier (since that is normally when we deal with -webkit-line-clamp
-        // ellipses) but not all flex items need such a reflow.
-        // XXXdholbert This comment implies that we could skip this if
-        // HadMeasuringReflow() is true.  Maybe we should try doing that?
-        if (aHasLineClampEllipsis && GetLineClampValue() == 0) {
-          item.BlockFrame()->ClearLineClampEllipsis();
-        }
       }
 
       if (!childBPosExceedAvailableSpaceBEnd) {
@@ -5405,7 +5363,7 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
         // edge.
         maxBlockEndEdgeOfChildren =
             std::max(maxBlockEndEdgeOfChildren,
-                     itemNormalBPos + item.Frame()->BSize(flexWM));
+                     framePos.B(flexWM) + item.Frame()->BSize(flexWM));
       }
 
       // If the item has auto margins, and we were tracking the UsedMargin
@@ -5423,7 +5381,7 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
       // children), then use this child's first baseline as the container's
       // baseline.
       if (&item == firstItem && aFlr.mAscent == nscoord_MIN) {
-        aFlr.mAscent = itemNormalBPos + item.ResolvedAscent(true);
+        aFlr.mAscent = framePos.B(flexWM) + item.ResolvedAscent(true);
       }
     }
   }
@@ -5509,11 +5467,11 @@ void nsFlexContainerFrame::PopulateReflowOutput(
 
   if (aFlexContainerAscent == nscoord_MIN) {
     // Still don't have our baseline set -- this happens if we have no
-    // children (or if our children are huge enough that they have nscoord_MIN
-    // as their baseline... in which case, we'll use the wrong baseline, but no
-    // big deal)
+    // children, if our children are huge enough that they have nscoord_MIN
+    // as their baseline, or our content is hidden in which case, we'll use the
+    // wrong baseline (but no big deal).
     NS_WARNING_ASSERTION(
-        aLines[0].IsEmpty(),
+        HidesContentForLayout() || aLines[0].IsEmpty(),
         "Have flex items but didn't get an ascent - that's odd (or there are "
         "just gigantic sizes involved)");
     // Per spec, synthesize baseline from the flex container's content box
@@ -5594,10 +5552,11 @@ void nsFlexContainerFrame::PopulateReflowOutput(
 }
 
 void nsFlexContainerFrame::MoveFlexItemToFinalPosition(
-    const FlexItem& aItem, LogicalPoint& aFramePos,
+    const FlexItem& aItem, const LogicalPoint& aFramePos,
     const nsSize& aContainerSize) {
   const WritingMode outerWM = aItem.ContainingBlockWM();
   const nsStyleDisplay* display = aItem.Frame()->StyleDisplay();
+  LogicalPoint pos(aFramePos);
   if (display->IsRelativelyOrStickyPositionedStyle()) {
     // If the item is relatively positioned, look up its offsets (cached from
     // previous reflow). A sticky positioned item can pass a dummy
@@ -5611,22 +5570,21 @@ void nsFlexContainerFrame::MoveFlexItemToFinalPosition(
           "relpos previously-reflowed frame should've cached its offsets");
       logicalOffsets = LogicalMargin(outerWM, *cachedOffsets);
     }
-    ReflowInput::ApplyRelativePositioning(
-        aItem.Frame(), outerWM, logicalOffsets, &aFramePos, aContainerSize);
+    ReflowInput::ApplyRelativePositioning(aItem.Frame(), outerWM,
+                                          logicalOffsets, &pos, aContainerSize);
   }
 
   FLEX_LOG("Moving flex item %p to its desired position %s", aItem.Frame(),
-           ToString(aFramePos).c_str());
-  aItem.Frame()->SetPosition(outerWM, aFramePos, aContainerSize);
+           ToString(pos).c_str());
+  aItem.Frame()->SetPosition(outerWM, pos, aContainerSize);
   PositionFrameView(aItem.Frame());
   PositionChildViews(aItem.Frame());
 }
 
 nsReflowStatus nsFlexContainerFrame::ReflowFlexItem(
     const FlexboxAxisTracker& aAxisTracker, const ReflowInput& aReflowInput,
-    const FlexItem& aItem, LogicalPoint& aFramePos,
-    const LogicalSize& aAvailableSize, const nsSize& aContainerSize,
-    bool aHasLineClampEllipsis) {
+    const FlexItem& aItem, const LogicalPoint& aFramePos,
+    const LogicalSize& aAvailableSize, const nsSize& aContainerSize) {
   FLEX_LOG("Doing final reflow for flex item %p", aItem.Frame());
 
   WritingMode outerWM = aReflowInput.GetWritingMode();
@@ -5661,13 +5619,6 @@ nsReflowStatus nsFlexContainerFrame::ReflowFlexItem(
 
   ReflowInput childReflowInput(PresContext(), aReflowInput, aItem.Frame(),
                                aAvailableSize, Nothing(), {}, sizeOverrides);
-  childReflowInput.mFlags.mInsideLineClamp = GetLineClampValue() != 0;
-  // This is the final reflow of this flex item; if we previously had a
-  // -webkit-line-clamp, and we missed our chance to clear the ellipsis
-  // because we didn't need to call MeasureFlexItemContentBSize, we set
-  // mApplyLineClamp to cause it to get cleared here.
-  childReflowInput.mFlags.mApplyLineClamp =
-      !childReflowInput.mFlags.mInsideLineClamp && aHasLineClampEllipsis;
 
   if (aItem.TreatBSizeAsIndefinite() && aItem.IsBlockAxisMainAxis()) {
     childReflowInput.mFlags.mTreatBSizeAsIndefinite = true;
@@ -5839,18 +5790,4 @@ nscoord nsFlexContainerFrame::GetPrefISize(gfxContext* aRenderingContext) {
   }
 
   return mCachedPrefISize;
-}
-
-uint32_t nsFlexContainerFrame::GetLineClampValue() const {
-  // -webkit-line-clamp should only work on items in flex containers that are
-  // display:-webkit-(inline-)box and -webkit-box-orient:vertical.
-  //
-  // This check makes -webkit-line-clamp work on display:-moz-box too, but
-  // that shouldn't be a big deal.
-  if (!HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_BOX) ||
-      StyleXUL()->mBoxOrient != StyleBoxOrient::Vertical) {
-    return 0;
-  }
-
-  return StyleDisplay()->mLineClamp;
 }

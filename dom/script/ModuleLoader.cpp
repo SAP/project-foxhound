@@ -130,10 +130,9 @@ void ModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->IsReadyToRun());
 
   if (aRequest->IsTopLevel()) {
-    if (aRequest->IsDynamicImport() ||
-        (aRequest->GetScriptLoadContext()->mIsInline &&
-         aRequest->GetScriptLoadContext()->GetParserCreated() ==
-             NOT_FROM_PARSER)) {
+    if (aRequest->GetScriptLoadContext()->mIsInline &&
+        aRequest->GetScriptLoadContext()->GetParserCreated() ==
+            NOT_FROM_PARSER) {
       GetScriptLoader()->RunScriptWhenSafe(aRequest);
     } else {
       GetScriptLoader()->MaybeMoveToLoadedList(aRequest);
@@ -149,18 +148,9 @@ nsresult ModuleLoader::CompileFetchedModule(
     ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleOut) {
   if (aRequest->GetScriptLoadContext()->mWasCompiledOMT) {
     JS::Rooted<JS::InstantiationStorage> storage(aCx);
-
-    RefPtr<JS::Stencil> stencil;
-    if (aRequest->IsTextSource()) {
-      stencil = JS::FinishCompileModuleToStencilOffThread(
-          aCx, aRequest->GetScriptLoadContext()->mOffThreadToken,
-          storage.address());
-    } else {
-      MOZ_ASSERT(aRequest->IsBytecode());
-      stencil = JS::FinishDecodeStencilOffThread(
-          aCx, aRequest->GetScriptLoadContext()->mOffThreadToken,
-          storage.address());
-    }
+    RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(
+        aCx, aRequest->GetScriptLoadContext()->mOffThreadToken,
+        storage.address());
 
     aRequest->GetScriptLoadContext()->mOffThreadToken = nullptr;
 

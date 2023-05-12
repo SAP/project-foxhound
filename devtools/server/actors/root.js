@@ -9,7 +9,6 @@
 /* eslint-disable no-throw-literal */
 
 const { Cu } = require("chrome");
-const Services = require("Services");
 const { Pool } = require("devtools/shared/protocol");
 const {
   LazyPool,
@@ -113,8 +112,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
       this
     );
     this._onProcessListChanged = this.onProcessListChanged.bind(this);
-    this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
-    this.notifyResourceDestroyed = this.notifyResourceDestroyed.bind(this);
 
     this._extraActors = {};
 
@@ -129,8 +126,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     }
 
     this.traits = {
-      // @backward-compat { version 104 } clearMessagesCacheAsync was added in 104
-      hasWebConsoleClearMessagesCacheAsync: true,
       networkMonitor: true,
       resources: supportedResources,
       // @backward-compat { version 105 } isSwitchingMode not supported by old servers
@@ -576,29 +571,35 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
   },
 
   /**
-   * Called by Resource Watchers, when new resources are available.
+   * Called by Resource Watchers, when new resources are available, updated or destroyed.
    *
+   * @param String updateType
+   *        Can be "available", "updated" or "destroyed"
    * @param Array<json> resources
-   *        List of all available resources. A resource is a JSON object piped over to the client.
-   *        It may contain actor IDs, actor forms, to be manually marshalled by the client.
+   *        List of all resources. A resource is a JSON object piped over to the client.
+   *        It can contain actor IDs.
+   *        It can also be or contain an actor form, to be manually marshalled by the client.
+   *        (i.e. the frontend would have to manually instantiate a Front for the given actor form)
    */
-  notifyResourceAvailable(resources) {
-    this._emitResourcesForm("resource-available-form", resources);
-  },
-
-  notifyResourceDestroyed(resources) {
-    this._emitResourcesForm("resource-destroyed-form", resources);
-  },
-
-  /**
-   * Wrapper around emit for resource forms.
-   */
-  _emitResourcesForm(name, resources) {
+  notifyResources(updateType, resources) {
     if (resources.length === 0) {
       // Don't try to emit if the resources array is empty.
       return;
     }
-    this.emit(name, resources);
+
+    switch (updateType) {
+      case "available":
+        this.emit(`resource-available-form`, resources);
+        break;
+      case "updated":
+        this.emit(`resource-updated-form`, resources);
+        break;
+      case "destroyed":
+        this.emit(`resource-destroyed-form`, resources);
+        break;
+      default:
+        throw new Error("Unsupported update type: " + updateType);
+    }
   },
 });
 

@@ -24,9 +24,8 @@ nsCookieBannerRule::ClearCookies() {
 }
 
 NS_IMETHODIMP
-nsCookieBannerRule::AddCookie(bool aIsOptOut, const nsACString& aHost,
-                              const nsACString& aName, const nsACString& aValue,
-                              // Optional
+nsCookieBannerRule::AddCookie(bool aIsOptOut, const nsACString& aName,
+                              const nsACString& aValue, const nsACString& aHost,
                               const nsACString& aPath, int64_t aExpiryRelative,
                               const nsACString& aUnsetValue, bool aIsSecure,
                               bool aIsHttpOnly, bool aIsSession,
@@ -37,19 +36,24 @@ nsCookieBannerRule::AddCookie(bool aIsOptOut, const nsACString& aHost,
            mDomain.get(), aIsOptOut, nsPromiseFlatCString(aHost).get(),
            nsPromiseFlatCString(aName).get()));
 
-  // Default cookie host to .<domain>
-  nsAutoCString host(aHost);
-  if (host.IsEmpty()) {
-    host.AppendLiteral(".");
-    host.Append(mDomain);
-  }
-
   // Create and insert cookie rule.
   nsCOMPtr<nsICookieRule> cookieRule = new nsCookieRule(
-      aIsOptOut, host, aName, aValue, aPath, aExpiryRelative, aUnsetValue,
+      aIsOptOut, aName, aValue, aHost, aPath, aExpiryRelative, aUnsetValue,
       aIsSecure, aIsHttpOnly, aIsSession, aSameSite, aSchemeMap);
   Cookies(aIsOptOut).AppendElement(cookieRule);
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerRule::GetId(nsACString& aId) {
+  aId.Assign(mId);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerRule::SetId(const nsACString& aId) {
+  mId.Assign(aId);
   return NS_OK;
 }
 
@@ -88,6 +92,28 @@ nsCookieBannerRule::GetCookiesOptIn(nsTArray<RefPtr<nsICookieRule>>& aCookies) {
   for (nsICookieRule* cookie : cookies) {
     aCookies.AppendElement(cookie);
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerRule::GetClickRule(nsIClickRule** aClickRule) {
+  NS_IF_ADDREF(*aClickRule = mClickRule);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerRule::AddClickRule(const nsACString& aPresence,
+                                 const nsACString& aHide,
+                                 const nsACString& aOptOut,
+                                 const nsACString& aOptIn) {
+  mClickRule = MakeRefPtr<nsClickRule>(aPresence, aHide, aOptOut, aOptIn);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCookieBannerRule::ClearClickRule() {
+  mClickRule = nullptr;
+
   return NS_OK;
 }
 

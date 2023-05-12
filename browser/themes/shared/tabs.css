@@ -18,7 +18,7 @@
   --tab-attention-icon-color: var(--lwt-tab-attention-icon-color, rgb(42,195,162));
 }
 
-#tabbrowser-tabpanels browser {
+#tabbrowser-tabpanels browser[type=content] {
   color-scheme: env(-moz-content-preferred-color-scheme);
 }
 
@@ -54,6 +54,9 @@
 }
 
 #tabbrowser-tabpanels {
+  appearance: none;
+  padding: 0;
+  color-scheme: unset;
   background-color: var(--tabpanel-background-color);
 }
 
@@ -75,18 +78,10 @@
   padding-inline: var(--tab-shadow-max-size);
 }
 
-@media (-moz-box-flexbox-emulation) {
-  .tab-stack {
-    /* Needed to allow tabs to shrink to be skinnier than their page-title: */
-    min-width: 0;
-  }
-
-  #tabbrowser-arrowscrollbox::part(scrollbox) {
-    /* Needed to prevent tabstrip from growing as wide as the sum of the tabs'
-       page-title widths (when we'd rather have it be as wide as the window and
-       compress the tabs to their minimum size): */
-    max-width: 100%;
-  }
+#tabbrowser-arrowscrollbox::part(scrollbox-clip) {
+  /* Needed to prevent tabstrip from growing as wide as the sum of the tabs'
+     page-title widths when emulating XUL with modern flexbox. */
+  min-width: 0;
 }
 
 .tabbrowser-tab {
@@ -125,6 +120,7 @@
 
 .tab-content {
   padding: 0 var(--inline-tab-padding);
+  min-width: 0;
 }
 
 :root:not([uidensity=compact]) .tab-content[pinned] {
@@ -572,7 +568,7 @@
 }
 
 @media (prefers-contrast) {
-  #TabsToolbar #firefox-view-button:is([open], :hover) > .toolbarbutton-icon,
+  #TabsToolbar #firefox-view-button:is([open], :hover):not(:focus-visible) > .toolbarbutton-icon,
   .tab-background[selected],
   .tabbrowser-tab:hover > .tab-stack > .tab-background {
     outline: 1px solid currentColor;
@@ -581,7 +577,7 @@
 }
 
 @media not (prefers-contrast) {
-  #TabsToolbar #firefox-view-button[open] > .toolbarbutton-icon:-moz-lwtheme,
+  #TabsToolbar #firefox-view-button[open]:not(:focus-visible) > .toolbarbutton-icon:-moz-lwtheme,
   .tab-background[selected]:not([multiselected=true]):-moz-lwtheme {
     outline: 1px solid var(--lwt-tab-line-color, var(--lwt-tabs-border-color, currentColor));
     outline-offset: -1px;
@@ -676,10 +672,10 @@ toolbar[brighttext] {
 
 /* Firefox View button and menu item */
 
-:root:not([privatebrowsingmode=temporary]) :is(#firefox-view-button, #wrapper-firefox-view-button) + #tabbrowser-tabs {
+:root:not([privatebrowsingmode=temporary]):not([firefoxviewhidden]) :is(#firefox-view-button, #wrapper-firefox-view-button) + #tabbrowser-tabs {
   border-inline-start: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-  padding-inline-start: calc(var(--tab-overflow-pinned-tabs-width) + 4px);
-  margin-inline-start: 4px;
+  padding-inline-start: calc(var(--tab-overflow-pinned-tabs-width) + 2px);
+  margin-inline-start: 2px;
 }
 
 :root[privatebrowsingmode=temporary] :is(#firefox-view-button, #menu_openFirefoxView) {
@@ -739,28 +735,20 @@ toolbar:not(#TabsToolbar) #firefox-view-button:-moz-locale-dir(rtl) {
   min-height: 12px;
 }
 
-#allTabsMenu-allTabsView {
-  --blue-40: #45a1ff;
-  max-width: 42em;
-}
-
 /* The list of tabs is in its own panel-subview-body which will scroll. We don't
-   want any padding above/below the scrollbars, so remove the padding/margin
-   from the separator and outer panel-subview-body. */
+   want any padding below the scrollbar, so remove the bottom padding
+   from the outer panel-subview-body. */
 #allTabsMenu-allTabsView > .panel-subview-body {
   padding-bottom: 0;
 }
 
-.all-tabs-item > .all-tabs-secondary-button {
-  padding: 0;
-  padding-inline-start: 6px;
-  opacity: .8;
-  -moz-context-properties: fill;
-  fill: currentColor;
+#allTabsMenu-allTabsView-tabs {
+  padding-top: 0;
 }
 
-.all-tabs-secondary-button:hover {
-  opacity: 1;
+.all-tabs-item {
+  margin-inline: var(--arrowpanel-menuitem-margin-inline);
+  border-radius: var(--arrowpanel-menuitem-border-radius);
 }
 
 .all-tabs-item:hover {
@@ -771,23 +759,24 @@ toolbar:not(#TabsToolbar) #firefox-view-button:-moz-locale-dir(rtl) {
   background-color: var(--panel-item-active-bgcolor);
 }
 
-.all-tabs-item:hover > .all-tabs-button,
-.all-tabs-item:hover > .all-tabs-secondary-button {
-  /* Since the background is set on the item, don't set it on the children. */
-  background-color: transparent !important;
-}
-
 .all-tabs-item[selected] {
   font-weight: bold;
+}
+
+.all-tabs-item > toolbarbutton {
+  margin: 0;
+  /* Since the background is set on the item, don't set it on the children. */
+  background-color: transparent !important;
 }
 
 .all-tabs-button {
   list-style-image: url("chrome://global/skin/icons/defaultFavicon.svg");
 }
 
-.all-tabs-secondary-button > label {
-  display: none;
-  margin: 0 5.5px;
+.all-tabs-secondary-button {
+  opacity: .8;
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 .all-tabs-secondary-button[soundplaying] {
@@ -798,15 +787,10 @@ toolbar:not(#TabsToolbar) #firefox-view-button:-moz-locale-dir(rtl) {
   list-style-image: url(chrome://global/skin/media/audio-muted.svg);
 }
 
-#allTabsMenu-allTabsViewTabs {
-  padding-bottom: 8px;
+.all-tabs-secondary-button:hover {
+  opacity: 1;
 }
 
-#allTabsMenu-allTabsViewTabs > .all-tabs-item {
-  margin-inline: 8px;
-  border-radius: 4px;
-}
-
-.all-tabs-item > toolbarbutton {
-  margin-inline-start: 0;
+.all-tabs-secondary-button > label {
+  display: none !important; /* override panelUI-shared.css */
 }

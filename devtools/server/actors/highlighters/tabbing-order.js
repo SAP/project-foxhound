@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 loader.lazyRequireGetter(
   this,
   "ContentDOMReference",
@@ -117,7 +116,7 @@ class TabbingOrderHighlighter {
 
     if (
       !endElm &&
-      focusableElements.length > 0 &&
+      !!focusableElements.length &&
       isFrameWithChildTarget(
         this.highlighterEnv.targetActor,
         focusableElements[focusableElements.length - 1]

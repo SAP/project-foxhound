@@ -436,7 +436,6 @@ class Field extends _pdf_object.PDFObject {
     this.buttonScaleHow = data.buttonScaleHow;
     this.ButtonScaleWhen = data.buttonScaleWhen;
     this.calcOrderIndex = data.calcOrderIndex;
-    this.charLimit = data.charLimit;
     this.comb = data.comb;
     this.commitOnSelChange = data.commitOnSelChange;
     this.currentValueIndices = data.currentValueIndices;
@@ -474,6 +473,7 @@ class Field extends _pdf_object.PDFObject {
     this._browseForFileToSubmit = data.browseForFileToSubmit || null;
     this._buttonCaption = null;
     this._buttonIcon = null;
+    this._charLimit = data.charLimit;
     this._children = null;
     this._currentValueIndices = data.currentValueIndices || 0;
     this._document = data.doc;
@@ -552,6 +552,18 @@ class Field extends _pdf_object.PDFObject {
 
   set bgColor(color) {
     this.fillColor = color;
+  }
+
+  get charLimit() {
+    return this._charLimit;
+  }
+
+  set charLimit(limit) {
+    if (typeof limit !== "number") {
+      throw new Error("Invalid argument value");
+    }
+
+    this._charLimit = Math.max(0, Math.floor(limit));
   }
 
   get numItems() {
@@ -2079,17 +2091,12 @@ class App extends _pdf_object.PDFObject {
 
     this._timeoutIds.set(timeout, id);
 
-    if (this._timeoutIdsRegistry) {
-      this._timeoutIdsRegistry.register(timeout, id);
-    }
-
+    this._timeoutIdsRegistry?.register(timeout, id);
     return timeout;
   }
 
   _unregisterTimeout(timeout) {
-    if (this._timeoutIdsRegistry) {
-      this._timeoutIdsRegistry.unregister(timeout);
-    }
+    this._timeoutIdsRegistry?.unregister(timeout);
 
     const data = this._timeoutIds.get(timeout);
 
@@ -2673,10 +2680,7 @@ class EventDispatcher {
       } else if (id === "app" && baseEvent.name === "ResetForm") {
         for (const fieldId of baseEvent.ids) {
           const obj = this._objects[fieldId];
-
-          if (obj) {
-            obj.obj._reset();
-          }
+          obj?.obj._reset();
         }
       }
 
@@ -3994,13 +3998,9 @@ class Doc extends _pdf_object.PDFObject {
   getPageTransition() {}
 
   getPrintParams() {
-    if (!this._printParams) {
-      this._printParams = new _print_params.PrintParams({
-        lastPage: this._numPages - 1
-      });
-    }
-
-    return this._printParams;
+    return this._printParams ||= new _print_params.PrintParams({
+      lastPage: this._numPages - 1
+    });
   }
 
   getSound() {}
@@ -5072,8 +5072,8 @@ Object.defineProperty(exports, "initSandbox", ({
 
 var _initialization = __w_pdfjs_require__(1);
 
-const pdfjsVersion = '2.16.71';
-const pdfjsBuild = '518115fdd';
+const pdfjsVersion = '3.0.60';
+const pdfjsBuild = '493bb6500';
 })();
 
 /******/ 	return __webpack_exports__;

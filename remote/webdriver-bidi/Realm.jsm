@@ -4,7 +4,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["WindowRealm"];
+var EXPORTED_SYMBOLS = ["Realm", "RealmType", "WindowRealm"];
 
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -42,17 +42,29 @@ const RealmType = {
   Worklet: "worklet",
 };
 
+function getUUID() {
+  return Services.uuid
+    .generateUUID()
+    .toString()
+    .slice(1, -1);
+}
+
 /**
  * Base class that wraps any kind of WebDriver BiDi realm.
  */
 class Realm {
+  #handleObjectMap;
   #id;
 
   constructor() {
-    this.#id = Services.uuid
-      .generateUUID()
-      .toString()
-      .slice(1, -1);
+    this.#id = getUUID();
+
+    // Map of unique handles (UUIDs) to objects belonging to this realm.
+    this.#handleObjectMap = new Map();
+  }
+
+  destroy() {
+    this.#handleObjectMap = null;
   }
 
   /**
@@ -63,6 +75,63 @@ class Realm {
   get id() {
     return this.#id;
   }
+
+  /**
+   * A getter to get a realm origin.
+   *
+   * It's required to be implemented in the sub class.
+   */
+  get origin() {
+    throw new Error("Not implemented");
+  }
+
+  /**
+   * Remove the reference corresponding to the provided unique handle.
+   *
+   * @param {string} handle
+   *     The unique handle of an object reference tracked in this realm.
+   */
+  removeObjectHandle(handle) {
+    this.#handleObjectMap.delete(handle);
+  }
+
+  /**
+   * Get a new unique handle for the provided object, creating a strong
+   * reference on the object.
+   *
+   * @param {Object} object
+   *     Any non-primitive object.
+   * @return {string} The unique handle created for this strong reference.
+   */
+  getHandleForObject(object) {
+    const handle = getUUID();
+    this.#handleObjectMap.set(handle, object);
+    return handle;
+  }
+
+  /**
+   * Get the basic realm information.
+   *
+   * @return {BaseRealmInfo}
+   */
+  getInfo() {
+    return {
+      realm: this.#id,
+      origin: this.origin,
+    };
+  }
+
+  /**
+   * Retrieve the object corresponding to the provided unique handle.
+   *
+   * @param {string} handle
+   *     The unique handle of an object reference tracked in this realm.
+   * @return {Object} object
+   *     Any non-primitive object.
+   */
+  getObjectForHandle(handle) {
+    return this.#handleObjectMap.get(handle);
+  }
 }
 
 /**
@@ -71,6 +140,7 @@ class Realm {
 class WindowRealm extends Realm {
   #globalObject;
   #globalObjectReference;
+  #sandboxName;
   #window;
 
   static type = RealmType.Window;
@@ -88,6 +158,7 @@ class WindowRealm extends Realm {
 
     super();
 
+    this.#sandboxName = sandboxName;
     this.#window = window;
     this.#globalObject =
       sandboxName === null ? this.#window : this.#createSandbox();
@@ -104,10 +175,16 @@ class WindowRealm extends Realm {
     this.#globalObjectReference = null;
     this.#globalObject = null;
     this.#window = null;
+
+    super.destroy();
   }
 
   get globalObjectReference() {
     return this.#globalObjectReference;
+  }
+
+  get origin() {
+    return this.#window.origin;
   }
 
   #cloneAsDebuggerObject(obj) {
@@ -187,5 +264,25 @@ class WindowRealm extends Realm {
         url: this.#window.document.baseURI,
       }
     );
+  }
+
+  /**
+   * Get the realm information.
+   *
+   * @return {Object}
+   *     - context {BrowsingContext} The browsing context, associated with the realm.
+   *     - id {string} The realm unique identifier.
+   *     - origin {string} The serialization of an origin.
+   *     - sandbox {string|null} The name of the sandbox.
+   *     - type {RealmType.Window} The window realm type.
+   */
+  getInfo() {
+    const baseInfo = super.getInfo();
+    return {
+      ...baseInfo,
+      context: this.#window.browsingContext,
+      sandbox: this.#sandboxName,
+      type: WindowRealm.type,
+    };
   }
 }

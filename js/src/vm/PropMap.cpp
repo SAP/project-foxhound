@@ -11,6 +11,8 @@
 #include "js/GCVector.h"
 #include "vm/JSObject.h"
 
+#include "gc/GCContext-inl.h"
+#include "gc/Marking-inl.h"
 #include "vm/ObjectFlags-inl.h"
 
 using namespace js;
@@ -36,20 +38,10 @@ SharedPropMap* SharedPropMap::create(JSContext* cx, Handle<SharedPropMap*> prev,
       CompactPropertyInfo::MaxSlotNumber - (PropMap::Capacity - 1);
 
   if (!prev && prop.maybeSlot() <= MaxFirstSlot) {
-    CompactPropMap* map = Allocate<CompactPropMap>(cx);
-    if (!map) {
-      return nullptr;
-    }
-    new (map) CompactPropMap(id, prop);
-    return map;
+    return cx->newCell<CompactPropMap>(id, prop);
   }
 
-  NormalPropMap* map = Allocate<NormalPropMap>(cx);
-  if (!map) {
-    return nullptr;
-  }
-  new (map) NormalPropMap(prev, id, prop);
-  return map;
+  return cx->newCell<NormalPropMap>(prev, id, prop);
 }
 
 // static
@@ -85,20 +77,12 @@ SharedPropMap* SharedPropMap::clone(JSContext* cx, Handle<SharedPropMap*> map,
   MOZ_ASSERT(length > 0);
 
   if (map->isCompact()) {
-    CompactPropMap* clone = Allocate<CompactPropMap>(cx);
-    if (!clone) {
-      return nullptr;
-    }
-    new (clone) CompactPropMap(map->asCompact(), length);
-    return clone;
+    Rooted<CompactPropMap*> prev(cx, map->asCompact());
+    return cx->newCell<CompactPropMap>(prev, length);
   }
 
-  NormalPropMap* clone = Allocate<NormalPropMap>(cx);
-  if (!clone) {
-    return nullptr;
-  }
-  new (clone) NormalPropMap(map->asNormal(), length);
-  return clone;
+  Rooted<NormalPropMap*> prev(cx, map->asNormal());
+  return cx->newCell<NormalPropMap>(prev, length);
 }
 
 // static
@@ -115,14 +99,16 @@ DictionaryPropMap* SharedPropMap::toDictionaryMap(JSContext* cx,
   while (true) {
     sharedMap->setHadDictionaryConversion();
 
-    DictionaryPropMap* dictMap = Allocate<DictionaryPropMap>(cx);
+    DictionaryPropMap* dictMap;
+    if (sharedMap->isCompact()) {
+      Rooted<CompactPropMap*> prev(cx, sharedMap->asCompact());
+      dictMap = cx->newCell<DictionaryPropMap>(prev, sharedLength);
+    } else {
+      Rooted<NormalPropMap*> prev(cx, sharedMap->asNormal());
+      dictMap = cx->newCell<DictionaryPropMap>(prev, sharedLength);
+    }
     if (!dictMap) {
       return nullptr;
-    }
-    if (sharedMap->isCompact()) {
-      new (dictMap) DictionaryPropMap(sharedMap->asCompact(), sharedLength);
-    } else {
-      new (dictMap) DictionaryPropMap(sharedMap->asNormal(), sharedLength);
     }
 
     if (!lastDictMap) {
@@ -579,11 +565,10 @@ bool DictionaryPropMap::addProperty(JSContext* cx, const JSClass* clasp,
     return true;
   }
 
-  DictionaryPropMap* newMap = Allocate<DictionaryPropMap>(cx);
+  DictionaryPropMap* newMap = cx->newCell<DictionaryPropMap>(map, id, prop);
   if (!newMap) {
     return false;
   }
-  new (newMap) DictionaryPropMap(map, id, prop);
 
   JS::AutoCheckCannotGC nogc;
   if (PropMapTable* table = map->asLinked()->maybeTable(nogc)) {
@@ -793,7 +778,7 @@ void DictionaryPropMap::maybeCompact(JSContext* cx,
         MOZ_ASSERT(p->map() == readMapCursor);
         MOZ_ASSERT(p->index() == readIndexCursor);
 
-        writeMapCursor->keys_[writeIndexCursor] = key;
+        writeMapCursor->setKey(writeIndexCursor, key);
         writeMapCursor->linkedData_.propInfos[writeIndexCursor] =
             readMapCursor->linkedData_.propInfos[readIndexCursor];
 

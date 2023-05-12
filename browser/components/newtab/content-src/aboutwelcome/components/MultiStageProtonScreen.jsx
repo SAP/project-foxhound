@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Localized } from "./MSLocalized";
 import { Colorways } from "./MRColorways";
 import { MobileDownloads } from "./MobileDownloads";
@@ -52,6 +52,56 @@ export const MultiStageProtonScreen = props => {
   );
 };
 
+export const ProtonScreenActionButtons = props => {
+  const { content } = props;
+  const defaultValue = content.checkbox?.defaultValue;
+
+  const [isChecked, setIsChecked] = useState(defaultValue || false);
+
+  if (!content.primary_button && !content.secondary_button) {
+    return null;
+  }
+
+  return (
+    <div
+      className={`action-buttons ${
+        content.dual_action_buttons ? "dual-action-buttons" : ""
+      }`}
+    >
+      <Localized text={content.primary_button?.label}>
+        <button
+          className="primary"
+          // Whether or not the checkbox is checked determines which action
+          // should be handled. By setting value here, we indicate to
+          // this.handleAction() where in the content tree it should take
+          // the action to execute from.
+          value={isChecked ? "checkbox" : "primary_button"}
+          disabled={content.primary_button?.disabled === true}
+          onClick={props.handleAction}
+        />
+      </Localized>
+      {content.checkbox ? (
+        <div className="checkbox-container">
+          <input
+            type="checkbox"
+            id="action-checkbox"
+            checked={isChecked}
+            onChange={() => {
+              setIsChecked(!isChecked);
+            }}
+          ></input>
+          <Localized text={content.checkbox.label}>
+            <label htmlFor="action-checkbox"></label>
+          </Localized>
+        </div>
+      ) : null}
+      {content.secondary_button ? (
+        <SecondaryCTA content={content} handleAction={props.handleAction} />
+      ) : null}
+    </div>
+  );
+};
+
 export class ProtonScreen extends React.PureComponent {
   componentDidMount() {
     this.mainContentHeader.focus();
@@ -70,16 +120,32 @@ export class ProtonScreen extends React.PureComponent {
 
   renderLogo({
     imageURL = "chrome://branding/content/about-logo.svg",
-    alt = "",
     darkModeImageURL,
+    reducedMotionImageURL,
+    darkModeReducedMotionImageURL,
+    alt = "",
     height,
   }) {
     return (
       <picture className="logo-container">
-        <source
-          srcSet={darkModeImageURL}
-          media="(prefers-color-scheme: dark)"
-        />
+        {darkModeReducedMotionImageURL ? (
+          <source
+            srcSet={darkModeReducedMotionImageURL}
+            media="(prefers-color-scheme: dark) and (prefers-reduced-motion: reduce)"
+          />
+        ) : null}
+        {darkModeImageURL ? (
+          <source
+            srcSet={darkModeImageURL}
+            media="(prefers-color-scheme: dark)"
+          />
+        ) : null}
+        {reducedMotionImageURL ? (
+          <source
+            srcSet={reducedMotionImageURL}
+            media="(prefers-reduced-motion: reduce)"
+          />
+        ) : null}
         <img
           className="brand-logo"
           style={{ height }}
@@ -222,6 +288,8 @@ export class ProtonScreen extends React.PureComponent {
         )
       : "";
 
+    const currentStep = this.props.order + 1;
+
     return (
       <main
         className={`screen ${this.props.id ||
@@ -286,22 +354,10 @@ export class ProtonScreen extends React.PureComponent {
               </div>
               {this.renderContentTiles()}
               {this.renderLanguageSwitcher()}
-              <div className="action-buttons">
-                <Localized text={content.primary_button?.label}>
-                  <button
-                    className="primary"
-                    value="primary_button"
-                    disabled={content.primary_button?.disabled === true}
-                    onClick={this.props.handleAction}
-                  />
-                </Localized>
-                {content.secondary_button ? (
-                  <SecondaryCTA
-                    content={content}
-                    handleAction={this.props.handleAction}
-                  />
-                ) : null}
-              </div>
+              <ProtonScreenActionButtons
+                content={content}
+                handleAction={this.props.handleAction}
+              />
             </div>
             {hideStepsIndicator ? null : (
               <div
@@ -310,12 +366,12 @@ export class ProtonScreen extends React.PureComponent {
                 }`}
                 data-l10n-id={"onboarding-welcome-steps-indicator2"}
                 data-l10n-args={JSON.stringify({
-                  current: this.props.order,
+                  current: currentStep,
                   total,
                 })}
                 data-l10n-attrs="aria-valuetext"
                 role="meter"
-                aria-valuenow={this.props.order}
+                aria-valuenow={currentStep}
                 aria-valuemin={1}
                 aria-valuemax={total}
               >

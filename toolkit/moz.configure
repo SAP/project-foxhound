@@ -172,7 +172,9 @@ imply_option("--enable-replace-malloc", dmd, when=compile_environment)
 # ==============================================================
 @depends(target)
 def midir_linux_support(target):
-    return target.kernel == "Linux" and target.os != "Android"
+    return (
+        target.kernel == "Linux" and target.os != "Android" and target.cpu != "riscv64"
+    )
 
 
 @depends(target, midir_linux_support)
@@ -1446,7 +1448,7 @@ with only_when("--enable-compile-environment"):
     @depends("--enable-release", enable_linker)
     def default_elfhack(release, linker):
         # Disable elfhack when explicitly building with --enable-linker=lld
-        if linker and linker.origin != "default" and linker[0] == "lld":
+        if linker and linker.origin != "default" and linker[0] in ("lld", "mold"):
             return False
         return bool(release)
 
@@ -2203,10 +2205,6 @@ with only_when(compile_environment | artifact_builds):
 
         if flac_only or not enable:
             use_nasm = False
-
-        if use_nasm:
-            # default disabled components
-            flags.append("-Pdefaults_disabled.asm")
 
         return namespace(
             enable=enable,

@@ -61,7 +61,11 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
 else()
   # Compile brotli from sources.
   set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
-  add_subdirectory(brotli EXCLUDE_FROM_ALL)
+  # Override default "no-install" policy.
+  if((NOT SANITIZER STREQUAL "asan") AND (NOT SANITIZER STREQUAL "msan"))
+    set(BROTLI_BUNDLED_MODE OFF CACHE INTERNAL "")
+  endif()
+  add_subdirectory(brotli)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brotli/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.brotli COPYONLY)
   if(BROTLI_EMSCRIPTEN)
@@ -96,7 +100,7 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
 endif()
 
 # libpng
-if (JPEGXL_EMSCRIPTEN)
+if (JPEGXL_BUNDLE_LIBPNG AND JPEGXL_EMSCRIPTEN)
   if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libpng/CMakeLists.txt")
   message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
           "build dependencies.")
