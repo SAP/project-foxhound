@@ -10491,6 +10491,9 @@ static void AllocateThinOrFatInlineString(MacroAssembler& masm, Register output,
 
   // Store length.
   masm.store32(length, Address(output, JSString::offsetOfLength()));
+
+  // TaintFox: initialize taint information.
+  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 }
 
 static void ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs,
@@ -10510,9 +10513,6 @@ static void ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs,
   // Allocate a JSThinInlineString or JSFatInlineString.
   AllocateThinOrFatInlineString(masm, output, temp2, temp1, initialStringHeap,
                                 failure, encoding);
-
-  // TaintFox: initialize taint information.
-  masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 
   // Load chars pointer in temp2.
   masm.loadInlineStringCharsForStore(output, temp2);
@@ -11253,6 +11253,12 @@ void CodeGenerator::visitStringToLowerCase(LStringToLowerCase* lir) {
   masm.load32(Address(string, JSString::offsetOfFlags()), flags);
   masm.and32(linearLatin1Bits, flags);
   masm.branch32(Assembler::NotEqual, flags, linearLatin1Bits, ool->entry());
+
+  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  masm.branchPtr(Assembler::NotEqual,
+                 Address(string, JSString::offsetOfTaint()),
+                 ImmPtr(nullptr),
+                 ool->entry());
 
   Register length = temp0;
   masm.loadStringLength(string, length);
