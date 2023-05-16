@@ -3,13 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const EventEmitter = require("devtools/shared/event-emitter");
-const { ELLIPSIS } = require("devtools/shared/l10n");
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-const { parseItemValue } = require("devtools/shared/storage/utils");
-const { KeyCodes } = require("devtools/client/shared/keycodes");
-const { getUnicodeHostname } = require("devtools/client/shared/unicode-url");
-const getStorageTypeURL = require("devtools/client/storage/utils/doc-utils");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { ELLIPSIS } = require("resource://devtools/shared/l10n.js");
+const KeyShortcuts = require("resource://devtools/client/shared/key-shortcuts.js");
+const {
+  parseItemValue,
+} = require("resource://devtools/shared/storage/utils.js");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
+const {
+  getUnicodeHostname,
+} = require("resource://devtools/client/shared/unicode-url.js");
+const getStorageTypeURL = require("resource://devtools/client/storage/utils/doc-utils.js");
 
 // GUID to be used as a separator in compound keys. This must match the same
 // constant in devtools/server/actors/storage.js,
@@ -20,18 +24,24 @@ const SEPARATOR_GUID = "{9d414cc5-8319-0a04-0586-c0a6ae01670a}";
 loader.lazyRequireGetter(
   this,
   "TreeWidget",
-  "devtools/client/shared/widgets/TreeWidget",
+  "resource://devtools/client/shared/widgets/TreeWidget.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "TableWidget",
-  "devtools/client/shared/widgets/TableWidget",
+  "resource://devtools/client/shared/widgets/TableWidget.js",
   true
 );
-loader.lazyRequireGetter(this, "debounce", "devtools/shared/debounce", true);
-loader.lazyImporter(
+loader.lazyRequireGetter(
   this,
+  "debounce",
+  "resource://devtools/shared/debounce.js",
+  true
+);
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "VariablesView",
   "resource://devtools/client/storage/VariablesView.jsm"
 );
@@ -155,7 +165,7 @@ class StorageUI {
 
     this.sidebar = this._panelDoc.getElementById("storage-sidebar");
     this.sidebar.style.width = "300px";
-    this.view = new VariablesView(this.sidebar.firstChild, {
+    this.view = new lazy.VariablesView(this.sidebar.firstChild, {
       lazyEmpty: true,
       // ms
       lazyEmptyDelay: 10,

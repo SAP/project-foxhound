@@ -208,6 +208,7 @@ nsStyleFont::nsStyleFont(const nsStyleFont& aSrc)
       mFontSizeFactor(aSrc.mFontSizeFactor),
       mFontSizeOffset(aSrc.mFontSizeOffset),
       mFontSizeKeyword(aSrc.mFontSizeKeyword),
+      mFontPalette(aSrc.mFontPalette),
       mMathDepth(aSrc.mMathDepth),
       mMathVariant(aSrc.mMathVariant),
       mMathStyle(aSrc.mMathStyle),
@@ -228,6 +229,7 @@ nsStyleFont::nsStyleFont(const Document& aDocument)
       mFontSizeFactor(1.0),
       mFontSizeOffset{0},
       mFontSizeKeyword(StyleFontSizeKeyword::Medium),
+      mFontPalette(StyleFontPalette::Normal()),
       mMathDepth(0),
       mMathVariant(StyleMathVariant::None),
       mMathStyle(NS_STYLE_MATH_STYLE_NORMAL),
@@ -272,6 +274,10 @@ nsChangeHint nsStyleFont::CalcDifference(const nsStyleFont& aNewData) const {
 
     case nsFont::MaxDifference::eNone:
       break;
+  }
+
+  if (mFontPalette != aNewData.mFontPalette) {
+    return NS_STYLE_HINT_VISUAL;
   }
 
   // XXX Should any of these cause a non-nsChangeHint_NeutralChange change?
@@ -2208,7 +2214,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mDefaultAppearance(StyleAppearance::None),
       mPosition(StylePositionProperty::Static),
       mFloat(StyleFloat::None),
-      mBreakType(StyleClear::None),
+      mClear(StyleClear::None),
       mBreakInside(StyleBreakWithin::Auto),
       mBreakBefore(StyleBreakBetween::Auto),
       mBreakAfter(StyleBreakBetween::Auto),
@@ -2264,7 +2270,7 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mDefaultAppearance(aSource.mDefaultAppearance),
       mPosition(aSource.mPosition),
       mFloat(aSource.mFloat),
-      mBreakType(aSource.mBreakType),
+      mClear(aSource.mClear),
       mBreakInside(aSource.mBreakInside),
       mBreakBefore(aSource.mBreakBefore),
       mBreakAfter(aSource.mBreakAfter),
@@ -2539,8 +2545,7 @@ nsChangeHint nsStyleDisplay::CalcDifference(
   //
   // FIXME(emilio): We definitely change the frame tree in nsCSSFrameConstructor
   // based on break-before / break-after... Shouldn't that reframe?
-  if (mBreakType != aNewData.mBreakType ||
-      mBreakInside != aNewData.mBreakInside ||
+  if (mClear != aNewData.mClear || mBreakInside != aNewData.mBreakInside ||
       mBreakBefore != aNewData.mBreakBefore ||
       mBreakAfter != aNewData.mBreakAfter ||
       mAppearance != aNewData.mAppearance ||
@@ -2702,8 +2707,7 @@ nsChangeHint nsStyleDisplay::CalcTransformPropertyDifference(
 //
 
 nsStyleVisibility::nsStyleVisibility(const Document& aDocument)
-    : mImageOrientation(StyleImageOrientation::FromImage),
-      mDirection(aDocument.GetBidiOptions() == IBMBIDI_TEXTDIRECTION_RTL
+    : mDirection(aDocument.GetBidiOptions() == IBMBIDI_TEXTDIRECTION_RTL
                      ? StyleDirection::Rtl
                      : StyleDirection::Ltr),
       mVisible(StyleVisibility::Visible),
@@ -2711,19 +2715,20 @@ nsStyleVisibility::nsStyleVisibility(const Document& aDocument)
       mWritingMode(StyleWritingModeProperty::HorizontalTb),
       mTextOrientation(StyleTextOrientation::Mixed),
       mMozBoxLayout(StyleMozBoxLayout::Legacy),
-      mPrintColorAdjust(StylePrintColorAdjust::Economy) {
+      mPrintColorAdjust(StylePrintColorAdjust::Economy),
+      mImageOrientation(StyleImageOrientation::FromImage) {
   MOZ_COUNT_CTOR(nsStyleVisibility);
 }
 
 nsStyleVisibility::nsStyleVisibility(const nsStyleVisibility& aSource)
-    : mImageOrientation(aSource.mImageOrientation),
-      mDirection(aSource.mDirection),
+    : mDirection(aSource.mDirection),
       mVisible(aSource.mVisible),
       mImageRendering(aSource.mImageRendering),
       mWritingMode(aSource.mWritingMode),
       mTextOrientation(aSource.mTextOrientation),
       mMozBoxLayout(aSource.mMozBoxLayout),
-      mPrintColorAdjust(aSource.mPrintColorAdjust) {
+      mPrintColorAdjust(aSource.mPrintColorAdjust),
+      mImageOrientation(aSource.mImageOrientation) {
   MOZ_COUNT_CTOR(nsStyleVisibility);
 }
 
@@ -2767,6 +2772,32 @@ nsChangeHint nsStyleVisibility::CalcDifference(
     hint |= nsChangeHint_NeutralChange;
   }
   return hint;
+}
+
+StyleImageOrientation nsStyleVisibility::UsedImageOrientation(
+    imgIRequest* aRequest, StyleImageOrientation aOrientation) {
+  if (aOrientation == StyleImageOrientation::FromImage || !aRequest) {
+    return aOrientation;
+  }
+
+  nsCOMPtr<nsIPrincipal> triggeringPrincipal =
+      aRequest->GetTriggeringPrincipal();
+  nsCOMPtr<nsIURI> uri = aRequest->GetURI();
+
+  // If the request was for a blob, the request may not have a triggering
+  // principal and we should use the input orientation.
+  if (!triggeringPrincipal) {
+    return aOrientation;
+  }
+
+  // If the image request is a cross-origin request, do not enforce the
+  // image orientation found in the style. Use the image orientation found
+  // in the exif data.
+  if (!triggeringPrincipal->IsSameOrigin(uri)) {
+    return StyleImageOrientation::FromImage;
+  }
+
+  return aOrientation;
 }
 
 //-----------------------
@@ -2934,8 +2965,8 @@ nsStyleText::nsStyleText(const Document& aDocument)
   RefPtr<nsAtom> language = aDocument.GetContentLanguageAsAtomForStyle();
   mTextEmphasisPosition =
       language && nsStyleUtil::MatchesLanguagePrefix(language, u"zh")
-          ? NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT_ZH
-          : NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT;
+          ? StyleTextEmphasisPosition::DEFAULT_ZH
+          : StyleTextEmphasisPosition::DEFAULT;
 }
 
 nsStyleText::nsStyleText(const nsStyleText& aSource)
@@ -3061,17 +3092,16 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
 }
 
 LogicalSide nsStyleText::TextEmphasisSide(WritingMode aWM) const {
-  MOZ_ASSERT(
-      (!(mTextEmphasisPosition & NS_STYLE_TEXT_EMPHASIS_POSITION_LEFT) !=
-       !(mTextEmphasisPosition & NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT)) &&
-      (!(mTextEmphasisPosition & NS_STYLE_TEXT_EMPHASIS_POSITION_OVER) !=
-       !(mTextEmphasisPosition & NS_STYLE_TEXT_EMPHASIS_POSITION_UNDER)));
+  MOZ_ASSERT((!(mTextEmphasisPosition & StyleTextEmphasisPosition::LEFT) !=
+              !(mTextEmphasisPosition & StyleTextEmphasisPosition::RIGHT)) &&
+             (!(mTextEmphasisPosition & StyleTextEmphasisPosition::OVER) !=
+              !(mTextEmphasisPosition & StyleTextEmphasisPosition::UNDER)));
   mozilla::Side side =
       aWM.IsVertical()
-          ? (mTextEmphasisPosition & NS_STYLE_TEXT_EMPHASIS_POSITION_LEFT
+          ? (mTextEmphasisPosition & StyleTextEmphasisPosition::LEFT
                  ? eSideLeft
                  : eSideRight)
-          : (mTextEmphasisPosition & NS_STYLE_TEXT_EMPHASIS_POSITION_OVER
+          : (mTextEmphasisPosition & StyleTextEmphasisPosition::OVER
                  ? eSideTop
                  : eSideBottom);
   LogicalSide result = aWM.LogicalSideForPhysicalSide(side);
@@ -3182,7 +3212,8 @@ nsChangeHint nsStyleUI::CalcDifference(const nsStyleUI& aNewData) const {
 nsStyleUIReset::nsStyleUIReset(const Document& aDocument)
     : mUserSelect(StyleUserSelect::Auto),
       mScrollbarWidth(StyleScrollbarWidth::Auto),
-      mMozForceBrokenImageIcon(0),
+      mMozForceBrokenImageIcon(false),
+      mMozSubtreeHiddenOnlyVisually(false),
       mIMEMode(StyleImeMode::Auto),
       mWindowDragging(StyleWindowDragging::Default),
       mWindowShadow(StyleWindowShadow::Default),
@@ -3219,6 +3250,7 @@ nsStyleUIReset::nsStyleUIReset(const nsStyleUIReset& aSource)
     : mUserSelect(aSource.mUserSelect),
       mScrollbarWidth(aSource.mScrollbarWidth),
       mMozForceBrokenImageIcon(aSource.mMozForceBrokenImageIcon),
+      mMozSubtreeHiddenOnlyVisually(aSource.mMozSubtreeHiddenOnlyVisually),
       mIMEMode(aSource.mIMEMode),
       mWindowDragging(aSource.mWindowDragging),
       mWindowShadow(aSource.mWindowShadow),
@@ -3255,6 +3287,9 @@ nsChangeHint nsStyleUIReset::CalcDifference(
 
   if (mMozForceBrokenImageIcon != aNewData.mMozForceBrokenImageIcon) {
     hint |= nsChangeHint_ReconstructFrame;
+  }
+  if (mMozSubtreeHiddenOnlyVisually != aNewData.mMozSubtreeHiddenOnlyVisually) {
+    hint |= nsChangeHint_RepaintFrame;
   }
   if (mScrollbarWidth != aNewData.mScrollbarWidth) {
     // For scrollbar-width change, we need some special handling similar

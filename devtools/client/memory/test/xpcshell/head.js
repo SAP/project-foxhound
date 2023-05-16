@@ -13,13 +13,15 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.debugger.log");
 });
 
-var { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
-var { expectState } = require("devtools/server/actors/common");
-var HeapSnapshotFileUtils = require("devtools/shared/heapsnapshot/HeapSnapshotFileUtils");
-var HeapAnalysesClient = require("devtools/shared/heapsnapshot/HeapAnalysesClient");
-var { addDebuggerToGlobal } = require("resource://gre/modules/jsdebugger.jsm");
-var Store = require("devtools/client/memory/store");
-var { L10N } = require("devtools/client/memory/utils");
+var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+var { expectState } = require("resource://devtools/server/actors/common.js");
+var HeapSnapshotFileUtils = require("resource://devtools/shared/heapsnapshot/HeapSnapshotFileUtils.js");
+var HeapAnalysesClient = require("resource://devtools/shared/heapsnapshot/HeapAnalysesClient.js");
+var { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
+);
+var Store = require("resource://devtools/client/memory/store.js");
+var { L10N } = require("resource://devtools/client/memory/utils.js");
 var SYSTEM_PRINCIPAL = Cc["@mozilla.org/systemprincipal;1"].createInstance(
   Ci.nsIPrincipal
 );

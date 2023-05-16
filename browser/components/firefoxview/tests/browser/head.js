@@ -39,7 +39,7 @@ const syncedTabsData1 = [
     id: 2,
     type: "client",
     name: "My iphone",
-    clientType: "mobile",
+    clientType: "phone",
     lastModified: 1655727832930,
     tabs: [
       {
@@ -294,6 +294,7 @@ async function setupListState(browser) {
     set: [["services.sync.engine.tabs", true]],
   });
 
+  UIState.refresh();
   const recentFetchTime = Math.floor(Date.now() / 1000);
   info("updating lastFetch:" + recentFetchTime);
   Services.prefs.setIntPref("services.sync.lastTabFetch", recentFetchTime);

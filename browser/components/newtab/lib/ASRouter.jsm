@@ -100,6 +100,7 @@ const USE_REMOTE_L10N_PREF =
 
 const MESSAGING_EXPERIMENTS_DEFAULT_FEATURES = [
   "cfr",
+  "fxms-message-1",
   "infobar",
   "moments-page",
   "pbNewtab",
@@ -335,17 +336,16 @@ const MessageLoaderUtils = {
   },
 
   /**
-   * Return messages from active Nimbus experiments.
+   * Return messages from active Nimbus experiments and rollouts.
    *
    * @param {object} provider A messaging experiments provider.
    * @param {string[]?} provider.featureIds
    *                    An optional array of Nimbus feature IDs to check for
-   *                    messaging experiments. If not provided, we will fall
-   *                    back to the set of default features. Otherwise, if
-   *                    provided and empty, we will not ingest messages from any
-   *                    features.
+   *                    enrollments. If not provided, we will fall back to the
+   *                    set of default features. Otherwise, if provided and
+   *                    empty, we will not ingest messages from any features.
    *
-   * @return {object[]} The list of messages from active experiments, as well as
+   * @return {object[]} The list of messages from active enrollments, as well as
    *                    the messages defined in unenrolled branches so that they
    *                    reach events can be recorded (if we record reach events
    *                    for that feature).
@@ -361,8 +361,13 @@ const MessageLoaderUtils = {
       let experimentData = lazy.ExperimentAPI.getExperimentMetaData({
         featureId,
       });
-      // Not enrolled in any experiment for this feature, we can skip
-      if (!experimentData) {
+
+      // We are not enrolled in any experiment or rollout for this feature, so
+      // we can skip the feature.
+      if (
+        !experimentData &&
+        !lazy.ExperimentAPI.getRolloutMetaData({ featureId })
+      ) {
         continue;
       }
 
@@ -379,24 +384,28 @@ const MessageLoaderUtils = {
       if (!REACH_EVENT_GROUPS.includes(featureId)) {
         continue;
       }
-      // Check other sibling branches for triggers, add them to the return
-      // array if found any. The `forReachEvent` label is used to identify
-      // those branches so that they would only used to record the Reach
-      // event.
-      const branches =
-        (await lazy.ExperimentAPI.getAllBranches(experimentData.slug)) || [];
-      for (const branch of branches) {
-        let branchValue = branch[featureId].value;
-        if (
-          branch.slug !== experimentData.branch.slug &&
-          branchValue?.trigger
-        ) {
-          experiments.push({
-            forReachEvent: { sent: false, group: featureId },
-            experimentSlug: experimentData.slug,
-            branchSlug: branch.slug,
-            ...branchValue,
-          });
+
+      // If we are in a rollout, we do not have sibling branches.
+      if (experimentData) {
+        // Check other sibling branches for triggers, add them to the return
+        // array if found any. The `forReachEvent` label is used to identify
+        // those branches so that they would only used to record the Reach
+        // event.
+        const branches =
+          (await lazy.ExperimentAPI.getAllBranches(experimentData.slug)) || [];
+        for (const branch of branches) {
+          let branchValue = branch[featureId].value;
+          if (
+            branch.slug !== experimentData.branch.slug &&
+            branchValue?.trigger
+          ) {
+            experiments.push({
+              forReachEvent: { sent: false, group: featureId },
+              experimentSlug: experimentData.slug,
+              branchSlug: branch.slug,
+              ...branchValue,
+            });
+          }
         }
       }
     }
@@ -1403,6 +1412,11 @@ class _ASRouter {
       const [item] = items.filter(x => x.id === id);
       // Don't keep impressions for items that no longer exist
       if (!item || !item.frequency || !Array.isArray(impressions[id])) {
+        lazy.ASRouterPreferences.console.debug(
+          "Cleaning up Impression ",
+          impressions[id]
+        );
+        lazy.ASRouterPreferences.console.trace();
         delete impressions[id];
         needsUpdate = true;
         return;
@@ -1750,14 +1764,16 @@ class _ASRouter {
       }));
     }
 
-    // Check and filter out messages of any disabled PromoType
+    // Remove from state pb_newtab messages with PromoType disabled
     await this.setState(state => ({
       messages: state.messages.filter(
         m =>
-          m.template === "pb_newtab" &&
-          Services.prefs.getBoolPref(
-            PromoInfo[m.content?.promoType]?.enabledPref,
-            true
+          !(
+            m.template === "pb_newtab" &&
+            !Services.prefs.getBoolPref(
+              PromoInfo[m.content?.promoType]?.enabledPref,
+              true
+            )
           )
       ),
     }));

@@ -4,18 +4,17 @@
 
 "use strict";
 
-const { Ci, Cc } = require("chrome");
-const nodeFilterConstants = require("devtools/shared/dom-node-filter-constants");
+const nodeFilterConstants = require("resource://devtools/shared/dom-node-filter-constants.js");
 loader.lazyRequireGetter(
   this,
   "DevToolsUtils",
-  "devtools/shared/DevToolsUtils"
+  "resource://devtools/shared/DevToolsUtils.js"
 );
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "NetUtil",
-  "resource://gre/modules/NetUtil.jsm",
-  true
+  "resource://gre/modules/NetUtil.jsm"
 );
 
 const SHEET_TYPE = {
@@ -28,7 +27,7 @@ const SHEET_TYPE = {
 loader.lazyRequireGetter(
   this,
   "setIgnoreLayoutChanges",
-  "devtools/server/actors/reflow",
+  "resource://devtools/server/actors/reflow.js",
   true
 );
 exports.setIgnoreLayoutChanges = (...args) =>
@@ -917,7 +916,7 @@ function isFrameBlockedByCSP(node) {
 
   let uri;
   try {
-    uri = NetUtil.newURI(node.src);
+    uri = lazy.NetUtil.newURI(node.src);
   } catch (e) {
     return false;
   }

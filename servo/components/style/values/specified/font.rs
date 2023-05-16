@@ -5,12 +5,11 @@
 //! Specified values for font properties
 
 use crate::context::QuirksMode;
-use crate::font_metrics::FontMetricsProvider;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::font::{FamilyName, FontFamilyList, SingleFontFamily};
 use crate::values::computed::FontSizeAdjust as ComputedFontSizeAdjust;
+use crate::values::computed::Percentage as ComputedPercentage;
 use crate::values::computed::{font as computed, Length, NonNegativeLength};
-use crate::values::computed::{Percentage as ComputedPercentage};
 use crate::values::computed::{CSSPixelLength, Context, ToComputedValue};
 use crate::values::generics::font::VariationValue;
 use crate::values::generics::font::{
@@ -20,7 +19,7 @@ use crate::values::generics::NonNegative;
 use crate::values::specified::length::{FontBaseSize, PX_PER_PT};
 use crate::values::specified::{AllowQuirks, Angle, Integer, LengthPercentage};
 use crate::values::specified::{NoCalcLength, NonNegativeNumber, NonNegativePercentage, Number};
-use crate::values::CustomIdent;
+use crate::values::{CustomIdent, SelectorParseErrorKind, serialize_atom_identifier};
 use crate::Atom;
 use cssparser::{Parser, Token};
 #[cfg(feature = "gecko")]
@@ -188,9 +187,7 @@ impl AbsoluteFontWeight {
     /// Returns the computed value for this absolute font weight.
     pub fn compute(&self) -> computed::FontWeight {
         match *self {
-            AbsoluteFontWeight::Weight(weight) => {
-                computed::FontWeight::from_float(weight.get())
-            },
+            AbsoluteFontWeight::Weight(weight) => computed::FontWeight::from_float(weight.get()),
             AbsoluteFontWeight::Normal => computed::FontWeight::NORMAL,
             AbsoluteFontWeight::Bold => computed::FontWeight::BOLD,
         }
@@ -439,7 +436,7 @@ impl ToComputedValue for FontStretch {
 
     fn from_computed_value(computed: &Self::ComputedValue) -> Self {
         FontStretch::Stretch(NonNegativePercentage::from_computed_value(&NonNegative(
-            computed.to_percentage()
+            computed.to_percentage(),
         )))
     }
 }
@@ -718,7 +715,7 @@ impl Parse for FontSizeAdjust {
                 "ic-height" if basis_enabled => GenericFontSizeAdjust::IcHeight,
                 // Unknown (or disabled) keyword.
                 _ => return Err(location.new_custom_error(
-                    ::selectors::parser::SelectorParseErrorKind::UnexpectedIdent(ident)
+                    SelectorParseErrorKind::UnexpectedIdent(ident)
                 )),
             };
             let value = NonNegativeNumber::parse(context, input)?;
@@ -778,16 +775,15 @@ impl FontSizeKeyword {
     fn to_length(&self, cx: &Context) -> NonNegativeLength {
         let gecko_font = cx.style().get_font().gecko();
         let family = &gecko_font.mFont.family.families;
-        unsafe {
+        let generic = family
+            .single_generic()
+            .unwrap_or(computed::GenericFontFamily::None);
+        let base_size = unsafe {
             Atom::with(gecko_font.mLanguage.mRawPtr, |language| {
-                self.to_length_without_context(
-                    cx.quirks_mode,
-                    cx.font_metrics_provider,
-                    language,
-                    family,
-                )
+                cx.device().base_size_for_generic(language, generic)
             })
-        }
+        };
+        self.to_length_without_context(cx.quirks_mode, base_size)
     }
 
     /// Resolve a keyword length without any context, with explicit arguments.
@@ -796,9 +792,7 @@ impl FontSizeKeyword {
     pub fn to_length_without_context(
         &self,
         quirks_mode: QuirksMode,
-        font_metrics_provider: &dyn FontMetricsProvider,
-        language: &Atom,
-        family: &FontFamilyList,
+        base_size: Length,
     ) -> NonNegativeLength {
         // The tables in this function are originally from
         // nsRuleNode::CalcFontPointSize in Gecko:
@@ -843,11 +837,6 @@ impl FontSizeKeyword {
         ];
 
         static FONT_SIZE_FACTORS: [i32; 8] = [60, 75, 89, 100, 120, 150, 200, 300];
-
-        let generic = family
-            .single_generic()
-            .unwrap_or(computed::GenericFontFamily::None);
-        let base_size = font_metrics_provider.get_size(language, generic);
         let base_size_px = base_size.px().round() as i32;
         let html_size = self.html_size() as usize;
         NonNegative(if base_size_px >= 9 && base_size_px <= 16 {
@@ -1966,7 +1955,6 @@ impl Parse for FontSynthesis {
         _: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<FontSynthesis, ParseError<'i>> {
-        use crate::values::SelectorParseErrorKind;
         let mut result = Self::none();
         while let Ok(ident) = input.try_parse(|i| i.expect_ident_cloned()) {
             match_ignore_ascii_case! { &ident,
@@ -2135,6 +2123,59 @@ impl Parse for FontLanguageOverride {
         Ok(FontLanguageOverride::Override(
             string.as_ref().to_owned().into_boxed_str(),
         ))
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+/// Allows authors to choose a palette from those supported by a color font
+/// (and potentially @font-palette-values overrides).
+pub struct FontPalette(Atom);
+
+#[allow(missing_docs)]
+impl FontPalette {
+    pub fn normal() -> Self { Self(atom!("normal")) }
+    pub fn light() -> Self { Self(atom!("light")) }
+    pub fn dark() -> Self { Self(atom!("dark")) }
+}
+
+impl Parse for FontPalette {
+    /// normal | light | dark | dashed-ident
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<FontPalette, ParseError<'i>> {
+        let location = input.current_source_location();
+        let ident = input.expect_ident()?;
+        match_ignore_ascii_case! { &ident,
+            "normal" => Ok(Self::normal()),
+            "light" => Ok(Self::light()),
+            "dark" => Ok(Self::dark()),
+            _ => if ident.starts_with("--") {
+                Ok(Self(Atom::from(ident.as_ref())))
+            } else {
+                Err(location.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())))
+            },
+        }
+    }
+}
+
+impl ToCss for FontPalette {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        serialize_atom_identifier(&self.0, dest)
     }
 }
 

@@ -4,8 +4,6 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-
 const CONSOLE_WORKER_IDS = (exports.CONSOLE_WORKER_IDS = new Set([
   "SharedWorker",
   "ServiceWorker",
@@ -105,6 +103,8 @@ var WebConsoleUtils = {
         }
       // Fall through.
       case "function":
+      case "record":
+      case "tuple":
         return objectWrapper(value);
       default:
         console.error(

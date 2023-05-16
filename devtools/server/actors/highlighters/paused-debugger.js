@@ -6,7 +6,7 @@
 
 const {
   CanvasFrameAnonymousContentHelper,
-} = require("devtools/server/actors/highlighters/utils/markup");
+} = require("resource://devtools/server/actors/highlighters/utils/markup.js");
 
 loader.lazyGetter(this, "PausedReasonsBundle", () => {
   return new Localization(
@@ -18,7 +18,7 @@ loader.lazyGetter(this, "PausedReasonsBundle", () => {
 loader.lazyRequireGetter(
   this,
   "DEBUGGER_PAUSED_REASONS_L10N_MAPPING",
-  "devtools/shared/constants",
+  "resource://devtools/shared/constants.js",
   true
 );
 

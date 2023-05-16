@@ -291,14 +291,10 @@ nscoord nsComboboxControlFrame::DropDownButtonISize() {
     return 0;
   }
 
-  LayoutDeviceIntSize dropdownButtonSize;
-  bool canOverride = true;
-  nsPresContext* presContext = PresContext();
-  presContext->Theme()->GetMinimumWidgetSize(
-      presContext, this, StyleAppearance::MozMenulistArrowButton,
-      &dropdownButtonSize, &canOverride);
-
-  return presContext->DevPixelsToAppUnits(dropdownButtonSize.width);
+  nsPresContext* pc = PresContext();
+  LayoutDeviceIntSize dropdownButtonSize = pc->Theme()->GetMinimumWidgetSize(
+      pc, this, StyleAppearance::MozMenulistArrowButton);
+  return pc->DevPixelsToAppUnits(dropdownButtonSize.width);
 }
 
 int32_t nsComboboxControlFrame::CharCountOfLargestOptionForInflation() const {
@@ -870,17 +866,12 @@ void nsComboboxControlFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
 
 void nsComboboxControlFrame::SetInitialChildList(ChildListID aListID,
                                                  nsFrameList& aChildList) {
-#ifdef DEBUG
   for (nsIFrame* f : aChildList) {
     MOZ_ASSERT(f->GetParent() == this, "Unexpected parent");
-  }
-#endif
-  for (nsFrameList::Enumerator e(aChildList); !e.AtEnd(); e.Next()) {
-    nsCOMPtr<nsIFormControl> formControl =
-        do_QueryInterface(e.get()->GetContent());
+    nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(f->GetContent());
     if (formControl &&
         formControl->ControlType() == FormControlType::ButtonButton) {
-      mButtonFrame = e.get();
+      mButtonFrame = f;
       break;
     }
   }

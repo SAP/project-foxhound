@@ -4,16 +4,20 @@
 
 "use strict";
 
-const { Utils: WebConsoleUtils } = require("devtools/client/webconsole/utils");
+const {
+  Utils: WebConsoleUtils,
+} = require("resource://devtools/client/webconsole/utils.js");
 const {
   EVALUATE_EXPRESSION,
   SET_TERMINAL_INPUT,
   SET_TERMINAL_EAGER_RESULT,
   EDITOR_PRETTY_PRINT,
-} = require("devtools/client/webconsole/constants");
-const { getAllPrefs } = require("devtools/client/webconsole/selectors/prefs");
-const ResourceCommand = require("devtools/shared/commands/resource/resource-command");
-const l10n = require("devtools/client/webconsole/utils/l10n");
+} = require("resource://devtools/client/webconsole/constants.js");
+const {
+  getAllPrefs,
+} = require("resource://devtools/client/webconsole/selectors/prefs.js");
+const ResourceCommand = require("resource://devtools/shared/commands/resource/resource-command.js");
+const l10n = require("resource://devtools/client/webconsole/utils/l10n.js");
 
 loader.lazyServiceGetter(
   this,
@@ -24,41 +28,41 @@ loader.lazyServiceGetter(
 loader.lazyRequireGetter(
   this,
   "messagesActions",
-  "devtools/client/webconsole/actions/messages"
+  "resource://devtools/client/webconsole/actions/messages.js"
 );
 loader.lazyRequireGetter(
   this,
   "historyActions",
-  "devtools/client/webconsole/actions/history"
+  "resource://devtools/client/webconsole/actions/history.js"
 );
 loader.lazyRequireGetter(
   this,
   "ConsoleCommand",
-  "devtools/client/webconsole/types",
+  "resource://devtools/client/webconsole/types.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "netmonitorBlockingActions",
-  "devtools/client/netmonitor/src/actions/request-blocking"
+  "resource://devtools/client/netmonitor/src/actions/request-blocking.js"
 );
 
 loader.lazyRequireGetter(
   this,
   ["saveScreenshot", "captureAndSaveScreenshot"],
-  "devtools/client/shared/screenshot",
+  "resource://devtools/client/shared/screenshot.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "createSimpleTableMessage",
-  "devtools/client/webconsole/utils/messages",
+  "resource://devtools/client/webconsole/utils/messages.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getSelectedTarget",
-  "devtools/shared/commands/target/selectors/targets",
+  "resource://devtools/shared/commands/target/selectors/targets.js",
   true
 );
 

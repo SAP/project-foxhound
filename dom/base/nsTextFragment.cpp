@@ -16,7 +16,6 @@
 #include "nsTextFragment.h"
 #include "nsCRT.h"
 #include "nsReadableUtils.h"
-#include "nsMemory.h"
 #include "nsBidiUtils.h"
 #include "nsUnicharUtils.h"
 #include "mozilla/CheckedInt.h"

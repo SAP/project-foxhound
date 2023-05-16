@@ -7,7 +7,9 @@
 const { BrowserToolboxLauncher } = ChromeUtils.importESModule(
   "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs"
 );
-const { DevToolsClient } = require("devtools/client/devtools-client");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
 
 /**
  * Open up a browser toolbox and return a ToolboxTask object for interacting
@@ -103,8 +105,8 @@ async function initBrowserToolboxTask({
   const client = new DevToolsClient(transport);
   await client.connect();
 
-  const descriptorFront = await client.mainRoot.getMainProcess();
-  const target = await descriptorFront.getTarget();
+  const commands = await CommandsFactory.forMainProcess({ client });
+  const target = await commands.descriptorFront.getTarget();
   const consoleFront = await target.getFront("console");
 
   ok(true, "Connected");
@@ -236,7 +238,7 @@ async function initBrowserToolboxTask({
       );
     }
 
-    await client.close();
+    await commands.destroy();
     destroyed = true;
   }
 

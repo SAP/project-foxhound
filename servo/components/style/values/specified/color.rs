@@ -7,7 +7,9 @@
 use super::AllowQuirks;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::{Color as ComputedColor, Context, ToComputedValue};
-use crate::values::generics::color::{ColorInterpolationMethod, GenericColorMix, GenericCaretColor, GenericColorOrAuto};
+use crate::values::generics::color::{
+    ColorInterpolationMethod, GenericCaretColor, GenericColorMix, GenericColorOrAuto,
+};
 use crate::values::specified::calc::CalcNode;
 use crate::values::specified::Percentage;
 use crate::values::CustomIdent;
@@ -514,8 +516,8 @@ impl Color {
     /// Returns whether this color is allowed in forced-colors mode.
     pub fn honored_in_forced_colors_mode(&self, allow_transparent: bool) -> bool {
         match *self {
-            Color::InheritFromBodyQuirk | Color::CurrentColor => false,
-            Color::System(..) => true,
+            Color::InheritFromBodyQuirk => false,
+            Color::CurrentColor | Color::System(..) => true,
             Color::Numeric { ref parsed, .. } => allow_transparent && parsed.alpha == 0,
             Color::ColorMix(ref mix) => {
                 mix.left.honored_in_forced_colors_mode(allow_transparent) &&
@@ -618,7 +620,9 @@ impl Color {
         let mut written = space_padding;
         let mut buf = itoa::Buffer::new();
         let s = buf.format(value);
-        (&mut serialization[written..]).write_all(s.as_bytes()).unwrap();
+        (&mut serialization[written..])
+            .write_all(s.as_bytes())
+            .unwrap();
         written += s.len();
         if let Some(unit) = unit {
             written += (&mut serialization[written..])

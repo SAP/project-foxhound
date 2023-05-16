@@ -397,6 +397,7 @@ pref("browser.urlbar.suggest.calculator",           false);
 
 #if defined(EARLY_BETA_OR_EARLIER)
   // Enable QuickActions and its urlbar search mode button.
+  pref("browser.urlbar.quickactions.enabled", true);
   pref("browser.urlbar.suggest.quickactions", true);
   pref("browser.urlbar.shortcuts.quickactions", true);
   pref("browser.urlbar.quickactions.showPrefs", true);
@@ -775,6 +776,7 @@ pref("browser.tabs.tooltipsShowPidAndActiveness", false);
 
 pref("browser.tabs.firefox-view", true);
 pref("browser.tabs.firefox-view.logLevel", "Warn");
+pref("browser.tabs.firefox-view.notify-for-tabs", false);
 
 // allow_eval_* is enabled on Firefox Desktop only at this
 // point in time
@@ -1396,6 +1398,7 @@ pref("services.sync.prefs.sync.browser.newtabpage.activity-stream.section.highli
 pref("services.sync.prefs.sync.browser.newtabpage.enabled", true);
 pref("services.sync.prefs.sync.browser.newtabpage.pinned", true);
 pref("services.sync.prefs.sync.browser.offline-apps.notify", true);
+pref("services.sync.prefs.sync.browser.pdfjs.feature-tour", true);
 pref("services.sync.prefs.sync.browser.safebrowsing.downloads.enabled", true);
 pref("services.sync.prefs.sync.browser.safebrowsing.downloads.remote.block_potentially_unwanted", true);
 pref("services.sync.prefs.sync.browser.safebrowsing.malware.enabled", true);
@@ -1582,6 +1585,11 @@ pref("browser.newtabpage.activity-stream.discoverystream.widget-positions", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocs-endpoint", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocs-endpoint-query", "");
 pref("browser.newtabpage.activity-stream.discoverystream.sponsored-collections.enabled", false);
+
+// Changes the spoc content.
+pref("browser.newtabpage.activity-stream.discoverystream.spocAdTypes", "");
+pref("browser.newtabpage.activity-stream.discoverystream.spocZoneIds", "");
+pref("browser.newtabpage.activity-stream.discoverystream.spocSiteId", "");
 
 pref("browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled", false);
 
@@ -2716,8 +2724,24 @@ pref("browser.places.snapshots.expiration.days", 210);
 // For user managed snapshots we use more than a year, to support yearly tasks.
 pref("browser.places.snapshots.expiration.userManaged.days", 420);
 
-// If the user has seen the Firefox View feature tour this value reflects the tour
-// message id, the id of the last screen they saw, and whether they completed the tour
-pref("browser.firefox-view.feature-tour", "{\"message\":\"FIREFOX_VIEW_FEATURE_TOUR\",\"screen\":\"FIREFOX_VIEW_SPOTLIGHT\",\"complete\":false}");
+// If the user has seen the Firefox View feature tour this value reflects
+// the id of the last screen they saw and whether they completed the tour
+pref("browser.firefox-view.feature-tour", "{\"screen\":\"FIREFOX_VIEW_SPOTLIGHT\",\"complete\":false}");
 // Number of times the user visited about:firefoxview
 pref("browser.firefox-view.view-count", 0);
+
+// If the user has seen the pdf.js feature tour this value reflects the tour
+// message id, the id of the last screen they saw, and whether they completed the tour
+pref("browser.pdfjs.feature-tour", "{\"message\":\"PDF_JS_FEATURE_TOUR\",\"screen\":\"\",\"complete\":false}");
+
+// Enables cookie banner handling in Nightly in Private Browsing Mode. See
+// StaticPrefList.yaml for a description of the prefs.
+#ifdef NIGHTLY_BUILD
+  pref("cookiebanners.service.mode.privateBrowsing", 1);
+  pref("cookiebanners.bannerClicking.enabled", true);
+#endif
+
+// We only want to enable this pref for Desktop nightlies.
+#ifdef NIGHTLY_BUILD
+  pref("dom.sitepermsaddon-provider.enabled", true);
+#endif

@@ -6,29 +6,34 @@
 const {
   PureComponent,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const { hr } = dom;
 
 loader.lazyGetter(this, "MenuItem", function() {
   return createFactory(
-    require("devtools/client/shared/components/menu/MenuItem")
+    require("resource://devtools/client/shared/components/menu/MenuItem.js")
   );
 });
 loader.lazyGetter(this, "MenuList", function() {
   return createFactory(
-    require("devtools/client/shared/components/menu/MenuList")
+    require("resource://devtools/client/shared/components/menu/MenuList.js")
   );
 });
 
 loader.lazyRequireGetter(
   this,
   "openDocLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
-loader.lazyRequireGetter(this, "assert", "devtools/shared/DevToolsUtils", true);
+loader.lazyRequireGetter(
+  this,
+  "assert",
+  "resource://devtools/shared/DevToolsUtils.js",
+  true
+);
 
 const openDevToolsDocsLink = () => {
   openDocLink("https://firefox-source-docs.mozilla.org/devtools-user/");

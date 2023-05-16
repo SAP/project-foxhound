@@ -4,19 +4,24 @@
 
 "use strict";
 
-const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
-const { networkMonitorSpec } = require("devtools/shared/specs/network-monitor");
+const {
+  Actor,
+  ActorClassWithSpec,
+} = require("resource://devtools/shared/protocol.js");
+const {
+  networkMonitorSpec,
+} = require("resource://devtools/shared/specs/network-monitor.js");
 
 loader.lazyRequireGetter(
   this,
   "NetworkObserver",
-  "devtools/server/actors/network-monitor/network-observer",
+  "resource://devtools/server/actors/network-monitor/network-observer.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "NetworkEventActor",
-  "devtools/server/actors/network-monitor/network-event",
+  "resource://devtools/server/actors/network-monitor/network-event.js",
   true
 );
 

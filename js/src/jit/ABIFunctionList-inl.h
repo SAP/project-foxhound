@@ -104,6 +104,7 @@ namespace jit {
   _(js::jit::AllocateBigIntNoGC)                                      \
   _(js::jit::AllocateFatInlineString)                                 \
   _(js::jit::AllocateDependentString)                                 \
+  _(js::jit::ArrayPushDensePure)                                      \
   _(js::jit::AssertMapObjectHash)                                     \
   _(js::jit::AssertSetObjectHash)                                     \
   _(js::jit::AssertValidBigIntPtr)                                    \
@@ -130,6 +131,7 @@ namespace jit {
   _(js::jit::GetInt32FromStringPure)                                  \
   _(js::jit::GetNativeDataPropertyByValuePure)                        \
   _(js::jit::GetNativeDataPropertyPure)                               \
+  _(js::jit::GetNativeDataPropertyPureFallback)                       \
   _(js::jit::GlobalHasLiveOnDebuggerStatement)                        \
   _(js::jit::HandleCodeCoverageAtPC)                                  \
   _(js::jit::HandleCodeCoverageAtPrologue)                            \
@@ -150,6 +152,7 @@ namespace jit {
   _(js::jit::PostWriteElementBarrier<IndexInBounds::Maybe>)           \
   _(js::jit::Printf0)                                                 \
   _(js::jit::Printf1)                                                 \
+  _(js::jit::SetDenseElementPure)                                     \
   _(js::jit::SetNativeDataPropertyPure)                               \
   _(js::jit::StringFromCharCodeNoGC)                                  \
   _(js::jit::TypeOfNameObject)                                        \

@@ -7077,9 +7077,7 @@ bool js::InstantiateAsmJS(JSContext* cx, unsigned argc, JS::Value* vp) {
 /*****************************************************************************/
 // Top-level js::CompileAsmJS
 
-static bool NoExceptionPending(JSContext* cx) {
-  return cx->isHelperThreadContext() || !cx->isExceptionPending();
-}
+static bool NoExceptionPending(ErrorContext* ec) { return !ec->hadErrors(); }
 
 static bool SuccessfulValidation(frontend::ParserBase& parser,
                                  unsigned compilationTime) {
@@ -7168,7 +7166,7 @@ static bool DoCompileAsmJS(JSContext* cx, ErrorContext* ec,
 
   // Various conditions disable asm.js optimizations.
   if (!EstablishPreconditions(cx, parser)) {
-    return NoExceptionPending(cx);
+    return NoExceptionPending(ec);
   }
 
   // "Checking" parses, validates and compiles, producing a fully compiled
@@ -7177,7 +7175,7 @@ static bool DoCompileAsmJS(JSContext* cx, ErrorContext* ec,
   SharedModule module =
       CheckModule(cx, ec, stackLimit, parserAtoms, parser, stmtList, &time);
   if (!module) {
-    return NoExceptionPending(cx);
+    return NoExceptionPending(ec);
   }
 
   // Finished! Save the ref-counted module on the FunctionBox. When JSFunctions
@@ -7185,14 +7183,14 @@ static bool DoCompileAsmJS(JSContext* cx, ErrorContext* ec,
   FunctionBox* funbox = parser.pc_->functionBox();
   MOZ_ASSERT(funbox->isInterpreted());
   if (!funbox->setAsmJSModule(module)) {
-    return NoExceptionPending(cx);
+    return NoExceptionPending(ec);
   }
 
   // Success! Write to the console with a "warning" message indicating
   // total compilation time.
   *validated = true;
   SuccessfulValidation(parser, time);
-  return NoExceptionPending(cx);
+  return NoExceptionPending(ec);
 }
 
 bool js::CompileAsmJS(JSContext* cx, ErrorContext* ec,

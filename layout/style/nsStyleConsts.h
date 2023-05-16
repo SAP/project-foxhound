@@ -91,8 +91,6 @@ enum class StyleDisplay : uint16_t {
       StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::MozBox),
   MozInlineBox =
       StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::MozBox),
-  MozDeck =
-      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozDeck),
   MozPopup =
       StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozPopup),
 };
@@ -151,21 +149,6 @@ enum class StyleBoxSizing : uint8_t { Content, Border };
 // box-shadow
 enum class StyleBoxShadowType : uint8_t {
   Inset,
-};
-
-// clear
-enum class StyleClear : uint8_t {
-  None = 0,
-  Left,
-  Right,
-  Both,
-  // StyleClear::Line can be added to one of the other values in layout
-  // so it needs to use a bit value that none of the other values can have.
-  //
-  // FIXME(emilio): Doesn't look like we do that anymore, so probably can be
-  // made a single value instead, and Max removed.
-  Line = 8,
-  Max = 13  // Max = (Both | Line)
 };
 
 enum class StyleColumnFill : uint8_t {
@@ -418,15 +401,6 @@ enum class StylePositionProperty : uint8_t {
   Fixed,
   Sticky,
 };
-
-// See nsStyleEffects.mClip, mClipFlags
-#define NS_STYLE_CLIP_AUTO 0x00
-#define NS_STYLE_CLIP_RECT 0x01
-#define NS_STYLE_CLIP_TYPE_MASK 0x0F
-#define NS_STYLE_CLIP_LEFT_AUTO 0x10
-#define NS_STYLE_CLIP_TOP_AUTO 0x20
-#define NS_STYLE_CLIP_RIGHT_AUTO 0x40
-#define NS_STYLE_CLIP_BOTTOM_AUTO 0x80
 
 // FRAME/FRAMESET/IFRAME specific values including backward compatibility.
 // Boolean values with the same meaning (e.g. 1 & yes) may need to be
@@ -689,17 +663,6 @@ enum class StyleTextAnchor : uint8_t {
   Middle,
   End,
 };
-
-// text-emphasis-position
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_OVER (1 << 0)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_UNDER (1 << 1)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_LEFT (1 << 2)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT (1 << 3)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT \
-  (NS_STYLE_TEXT_EMPHASIS_POSITION_OVER | NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT)
-#define NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT_ZH \
-  (NS_STYLE_TEXT_EMPHASIS_POSITION_UNDER |         \
-   NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT)
 
 // text-rendering
 enum class StyleTextRendering : uint8_t {

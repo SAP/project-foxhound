@@ -3,10 +3,12 @@
 
 "use strict";
 
-const { console, ConsoleAPI } = require("resource://gre/modules/Console.jsm");
+const { console, ConsoleAPI } = ChromeUtils.import(
+  "resource://gre/modules/Console.jsm"
+);
 const {
   ConsoleAPIListener,
-} = require("devtools/server/actors/webconsole/listeners/console-api");
+} = require("resource://devtools/server/actors/webconsole/listeners/console-api.js");
 
 var seenMessages = 0;
 var seenTypes = 0;

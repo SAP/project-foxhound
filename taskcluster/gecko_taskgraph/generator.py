@@ -10,6 +10,7 @@ import attr
 from taskgraph import filter_tasks
 from taskgraph.config import GraphConfig, load_graph_config
 from taskgraph.graph import Graph
+from taskgraph.morph import morph
 from taskgraph.optimize.base import optimize_task_graph
 from taskgraph.parameters import parameters_loader
 from taskgraph.task import Task
@@ -18,7 +19,6 @@ from taskgraph.transforms.base import TransformSequence, TransformConfig
 from taskgraph.util.python_path import find_object
 from taskgraph.util.yaml import load_yaml
 
-from .morph import morph
 from .util.verify import verifications
 
 logger = logging.getLogger(__name__)
@@ -358,20 +358,7 @@ class TaskGraphGenerator:
             for t in full_task_graph.tasks.values()
             if t.attributes["kind"] == "docker-image"
         }
-        # include all tasks with `always_target` set
-        if parameters["tasks_for"] == "hg-push":
-            always_target_tasks = {
-                t.label
-                for t in full_task_graph.tasks.values()
-                if t.attributes.get("always_target")
-            }
-        else:
-            always_target_tasks = set()
-        logger.info(
-            "Adding %d tasks with `always_target` attribute"
-            % (len(always_target_tasks) - len(always_target_tasks & target_tasks))
-        )
-        requested_tasks = target_tasks | docker_image_tasks | always_target_tasks
+        requested_tasks = target_tasks | docker_image_tasks
         target_graph = full_task_graph.graph.transitive_closure(requested_tasks)
         target_task_graph = TaskGraph(
             {l: all_tasks[l] for l in target_graph.nodes}, target_graph
@@ -408,11 +395,7 @@ class TaskGraphGenerator:
         )
 
         morphed_task_graph, label_to_taskid = morph(
-            optimized_task_graph,
-            label_to_taskid,
-            parameters,
-            graph_config,
-            self._decision_task_id,
+            optimized_task_graph, label_to_taskid, parameters, graph_config
         )
 
         yield "label_to_taskid", label_to_taskid

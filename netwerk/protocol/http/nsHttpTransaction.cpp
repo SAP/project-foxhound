@@ -19,6 +19,7 @@
 #include "Http2ConnectTransaction.h"
 #include "base/basictypes.h"
 #include "mozilla/Components.h"
+#include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -981,9 +982,11 @@ bool nsHttpTransaction::ProxyConnectFailed() { return mProxyConnectFailed; }
 
 bool nsHttpTransaction::DataSentToChildProcess() { return false; }
 
-already_AddRefed<nsISupports> nsHttpTransaction::SecurityInfo() {
+already_AddRefed<nsITransportSecurityInfo> nsHttpTransaction::SecurityInfo() {
   MutexAutoLock lock(mLock);
-  return do_AddRef(mTLSSocketControl);
+  nsCOMPtr<nsITransportSecurityInfo> securityInfo(
+      do_QueryInterface(mTLSSocketControl));
+  return securityInfo.forget();
 }
 
 bool nsHttpTransaction::HasStickyConnection() const {
@@ -1325,6 +1328,24 @@ bool nsHttpTransaction::ShouldRestartOn0RttError(nsresult reason) {
          mEarlyDataWasAvailable && SecurityErrorThatMayNeedRestart(reason);
 }
 
+static void MaybeRemoveSSLToken(nsISSLSocketControl* aSocketControl) {
+  if (!StaticPrefs::
+          network_http_remove_resumption_token_when_early_data_failed()) {
+    return;
+  }
+
+  nsCOMPtr<nsITransportSecurityInfo> info(do_QueryInterface(aSocketControl));
+  if (!info) {
+    return;
+  }
+
+  nsAutoCString key;
+  info->GetPeerId(key);
+  nsresult rv = SSLTokensCache::RemoveAll(key);
+  LOG(("RemoveSSLToken [key=%s, rv=%" PRIx32 "]", key.get(),
+       static_cast<uint32_t>(rv)));
+}
+
 void nsHttpTransaction::Close(nsresult reason) {
   LOG(("nsHttpTransaction::Close [this=%p reason=%" PRIx32 "]\n", this,
        static_cast<uint32_t>(reason)));
@@ -1458,6 +1479,7 @@ void nsHttpTransaction::Close(nsresult reason) {
     }
 
     mDoNotTryEarlyData = true;
+
     // reallySentData is meant to separate the instances where data has
     // been sent by this transaction but buffered at a higher level while
     // a TLS session (perhaps via a tunnel) is setup.
@@ -1752,6 +1774,10 @@ nsresult nsHttpTransaction::Restart() {
   nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mRequestStream);
   if (seekable) seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
 
+  if (mDoNotTryEarlyData) {
+    MaybeRemoveSSLToken(mTLSSocketControl);
+  }
+
   // clear old connection state...
   {
     MutexAutoLock lock(mLock);
@@ -1794,6 +1820,10 @@ nsresult nsHttpTransaction::Restart() {
 
   // Use TRANSACTION_RESTART_OTHERS as a catch-all.
   SetRestartReason(TRANSACTION_RESTART_OTHERS);
+
+  // Reset the IP family preferences, so the new connection can try to use
+  // another IPv4 or IPv6 address.
+  gHttpHandler->ConnMgr()->ResetIPFamilyPreference(mConnInfo);
 
   return gHttpHandler->InitiateTransaction(this, mPriority);
 }

@@ -6,12 +6,12 @@
  * Create instances of the JSON view converter.
  */
 export function Converter() {
-  const { require } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
+  const { require } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/Loader.sys.mjs"
   );
   const {
     JsonViewService,
-  } = require("devtools/client/jsonview/converter-child");
+  } = require("resource://devtools/client/jsonview/converter-child.js");
 
   return JsonViewService.createInstance();
 }

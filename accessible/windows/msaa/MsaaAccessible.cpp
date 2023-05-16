@@ -11,6 +11,7 @@
 #include "ia2AccessibleTable.h"
 #include "ia2AccessibleTableCell.h"
 #include "mozilla/a11y/AccessibleWrap.h"
+#include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
@@ -933,6 +934,15 @@ MsaaAccessible::get_accChildCount(long __RPC_FAR* pcountChildren) {
 
   if (!mAcc) return CO_E_OBJNOTCONNECTED;
 
+  if (Compatibility::IsA11ySuppressedForClipboardCopy() && mAcc->IsRoot()) {
+    // Bug 1798098: Windows Suggested Actions (introduced in Windows 11 22H2)
+    // might walk the entire a11y tree using UIA whenever anything is copied to
+    // the clipboard. This causes an unacceptable hang, particularly when the
+    // cache is disabled. We prevent this tree walk by returning a 0 child count
+    // for the root window, from which Windows might walk.
+    return S_OK;
+  }
+
   if (nsAccUtils::MustPrune(mAcc)) return S_OK;
 
   *pcountChildren = mAcc->ChildCount();
@@ -1119,10 +1129,29 @@ MsaaAccessible::get_accRole(
   // -- Try BSTR role
   // Could not map to known enumerated MSAA role like ROLE_BUTTON
   // Use BSTR role to expose role attribute or tag name + namespace
-  LocalAccessible* localAcc = mAcc->AsLocal();
-  if (!localAcc) {
-    return E_FAIL;
+  // XXX We should remove this hack and map to standard MSAA roles, even though
+  // they're lossy. See bug 798492.
+  if (mAcc->IsRemote()) {
+    // We don't support unknown or multiple ARIA roles for RemoteAccessible
+    // here, nor can we support namespaces. No one should be relying on this
+    // anyway, so this is fine. We just want to avoid returning a failure here.
+    nsAtom* val = nullptr;
+    const nsRoleMapEntry* roleMap = mAcc->ARIARoleMap();
+    if (roleMap && roleMap->roleAtom != nsGkAtoms::_empty) {
+      val = roleMap->roleAtom;
+    } else {
+      val = mAcc->TagName();
+    }
+    if (!val) {
+      return E_FAIL;
+    }
+    pvarRole->vt = VT_BSTR;
+    pvarRole->bstrVal = ::SysAllocString(val->GetUTF16String());
+    return S_OK;
   }
+
+  LocalAccessible* localAcc = mAcc->AsLocal();
+  MOZ_ASSERT(localAcc);
   nsIContent* content = localAcc->GetContent();
   if (!content) return E_FAIL;
 

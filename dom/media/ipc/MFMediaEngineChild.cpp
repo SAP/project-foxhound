@@ -60,7 +60,7 @@ RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
                     RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM);
             if (!manager || !manager->CanSend()) {
               CLOG("Manager not exists or can't send");
-              mInitPromiseHolder.Reject(NS_ERROR_FAILURE, __func__);
+              mInitPromiseHolder.RejectIfExists(NS_ERROR_FAILURE, __func__);
               return;
             }
 
@@ -75,12 +75,13 @@ RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
                       // Id 0 is used to indicate error.
                       if (aId == 0) {
                         CLOG("Failed to initialize MFMediaEngineChild");
-                        mInitPromiseHolder.Reject(NS_ERROR_FAILURE, __func__);
+                        mInitPromiseHolder.RejectIfExists(NS_ERROR_FAILURE,
+                                                          __func__);
                         return;
                       }
                       mMediaEngineId = aId;
                       CLOG("Initialized MFMediaEngineChild");
-                      mInitPromiseHolder.Resolve(true, __func__);
+                      mInitPromiseHolder.ResolveIfExists(true, __func__);
                     },
                     [self,
                      this](const mozilla::ipc::ResponseRejectReason& aReason) {
@@ -88,7 +89,8 @@ RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
                       CLOG(
                           "Failed to initialize MFMediaEngineChild due to "
                           "IPC failure");
-                      mInitPromiseHolder.Reject(NS_ERROR_FAILURE, __func__);
+                      mInitPromiseHolder.RejectIfExists(NS_ERROR_FAILURE,
+                                                        __func__);
                     })
                 ->Track(mInitEngineRequest);
           },
@@ -171,14 +173,19 @@ mozilla::ipc::IPCResult MFMediaEngineChild::RecvNotifyError(
 mozilla::ipc::IPCResult MFMediaEngineChild::RecvUpdateStatisticData(
     const StatisticData& aData) {
   AssertOnManagerThread();
-  uint64_t currentRenderedFrames = mFrameStats->GetPresentedFrames();
-  uint64_t currentDroppedFrames = mFrameStats->GetDroppedFrames();
+  const uint64_t currentRenderedFrames = mFrameStats->GetPresentedFrames();
+  // Media engine won't tell us that which stage those dropped frames happened,
+  // so we treat all of them as the frames dropped in the a/v sync stage (sink).
+  const uint64_t currentDroppedSinkFrames = mFrameStats->GetDroppedSinkFrames();
+  MOZ_ASSERT(aData.renderedFrames() >= currentRenderedFrames);
+  MOZ_ASSERT(aData.droppedFrames() >= currentDroppedSinkFrames);
   mFrameStats->Accumulate({0, 0, aData.renderedFrames() - currentRenderedFrames,
-                           0, aData.droppedFrames() - currentDroppedFrames, 0});
+                           0, aData.droppedFrames() - currentDroppedSinkFrames,
+                           0});
   CLOG("Update statictis data (rendered %" PRIu64 " -> %" PRIu64
        ", dropped %" PRIu64 " -> %" PRIu64 ")",
        currentRenderedFrames, mFrameStats->GetPresentedFrames(),
-       currentDroppedFrames, mFrameStats->GetDroppedFrames());
+       currentDroppedSinkFrames, mFrameStats->GetDroppedSinkFrames());
   return IPC_OK();
 }
 
@@ -201,6 +208,7 @@ void MFMediaEngineChild::IPDLActorDestroyed() {
 void MFMediaEngineChild::Shutdown() {
   AssertOnManagerThread();
   SendShutdown();
+  mInitPromiseHolder.RejectIfExists(NS_ERROR_FAILURE, __func__);
   mInitEngineRequest.DisconnectIfExists();
 }
 

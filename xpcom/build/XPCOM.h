@@ -27,7 +27,6 @@
 
 #include "nsError.h"
 #include "nsDebug.h"
-#include "nsMemory.h"
 
 #include "nsID.h"
 
@@ -68,7 +67,6 @@
 #include "nsIDebug2.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsIEnvironment.h"
-#include "nsIErrorService.h"
 #include "nsIEventTarget.h"
 #include "nsIException.h"
 #include "nsIFactory.h"
@@ -129,7 +127,6 @@
 
 #ifdef MOZ_WIDGET_COCOA
 #  include "nsILocalFileMac.h"
-#  include "nsIMacUtils.h"
 #endif
 
 // xpcom/glue utility headers

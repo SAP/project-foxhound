@@ -358,7 +358,7 @@ add_task(async function test_time_updates_correctly() {
   );
 });
 
-add_task(async function test_arrow_keys() {
+add_task(async function test_keyboard_navigation() {
   await SpecialPowers.clearUserPref(RECENTLY_CLOSED_STATE_PREF);
   Services.obs.notifyObservers(null, "browser:purge-session-history");
   is(
@@ -394,6 +394,25 @@ add_task(async function test_arrow_keys() {
         info("Arrow up");
         EventUtils.synthesizeKey("KEY_ArrowUp");
       };
+      const enter = () => {
+        info("Enter");
+        EventUtils.synthesizeKey("KEY_Enter");
+      };
+
+      let summary = document.getElementById(
+        "recently-closed-tabs-header-section"
+      );
+      let details = document.getElementById("recently-closed-tabs-container");
+      ok(
+        details.open,
+        "Recently closed details should be initially open on load"
+      );
+      summary.focus();
+      enter();
+      ok(!details.open, "Recently closed details should be closed");
+      enter();
+      ok(details.open, "Recently closed details should be opened");
+
       list[0].focus();
       ok(list[0].matches(":focus"), "The first link is focused");
       arrowDown();
@@ -423,13 +442,11 @@ add_task(async function test_switch_before_closing() {
       gBrowser,
       INITIAL_URL
     );
-
     // Switch back to FxView:
     await BrowserTestUtils.switchTab(
       gBrowser,
       gBrowser.getTabForBrowser(browser)
     );
-
     // Update the tab we opened to a different site:
     let loadPromise = BrowserTestUtils.browserLoaded(
       newTab.linkedBrowser,
@@ -462,4 +479,37 @@ add_task(async function test_switch_before_closing() {
       "Item should end up with the correct URL."
     );
   });
+});
+
+add_task(async function test_alt_click_no_launch() {
+  Services.obs.notifyObservers(null, "browser:purge-session-history");
+  is(
+    SessionStore.getClosedTabCount(window),
+    0,
+    "Closed tab count after purging session history"
+  );
+
+  await open_then_close(URLs[0]);
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      let gBrowser = browser.getTabBrowser();
+      let originalTabsLength = gBrowser.tabs.length;
+      await BrowserTestUtils.synthesizeMouseAtCenter(
+        ".closed-tab-li",
+        { altKey: true },
+        browser
+      );
+
+      is(
+        gBrowser.tabs.length,
+        originalTabsLength,
+        `Opened tabs length should still be ${originalTabsLength}`
+      );
+    }
+  );
 });

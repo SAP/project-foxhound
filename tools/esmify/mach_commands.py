@@ -32,15 +32,10 @@ excluded_from_convert_prefix = list(
         path_sep_to_native,
         [
             # Testcases for actors.
-            "docshell/test/unit/AllowJavascriptChild.jsm",
-            "docshell/test/unit/AllowJavascriptParent.jsm",
             "toolkit/actors/TestProcessActorChild.jsm",
             "toolkit/actors/TestProcessActorParent.jsm",
             "toolkit/actors/TestWindowChild.jsm",
             "toolkit/actors/TestWindowParent.jsm",
-            # Testcases for loader.
-            "docshell/test/browser/Bug1622420Child.jsm",
-            "docshell/test/browser/Bug422543Child.jsm",
             "js/xpconnect/tests/unit/",
             # Testcase for build system.
             "python/mozbuild/mozbuild/test/",
@@ -180,7 +175,7 @@ class HgUtils(VCSUtils):
     def find_jsms(self, path):
         jsms = []
 
-        cmd = ["hg", "files", f"set:glob:{path}/**/*.jsm"]
+        cmd = ["hg", "files", f'set:glob:"{path}/**/*.jsm"']
         for line in self.run(cmd):
             jsm = pathlib.Path(line)
             if is_excluded_from_convert(jsm):
@@ -190,7 +185,7 @@ class HgUtils(VCSUtils):
         cmd = [
             "hg",
             "files",
-            f"set:grep('EXPORTED_SYMBOLS = \[') and glob:{path}/**/*.js",
+            f"set:grep('EXPORTED_SYMBOLS = \[') and glob:\"{path}/**/*.js\"",
         ]
         for line in self.run(cmd):
             jsm = pathlib.Path(line)
@@ -203,21 +198,21 @@ class HgUtils(VCSUtils):
     def find_all_jss(self, path):
         jss = []
 
-        cmd = ["hg", "files", f"set:glob:{path}/**/*.jsm"]
+        cmd = ["hg", "files", f'set:glob:"{path}/**/*.jsm"']
         for line in self.run(cmd):
             js = pathlib.Path(line)
             if is_excluded_from_imports(js):
                 continue
             jss.append(js)
 
-        cmd = ["hg", "files", f"set:glob:{path}/**/*.js"]
+        cmd = ["hg", "files", f'set:glob:"{path}/**/*.js"']
         for line in self.run(cmd):
             js = pathlib.Path(line)
             if is_excluded_from_imports(js):
                 continue
             jss.append(js)
 
-        cmd = ["hg", "files", f"set:glob:{path}/**/*.sys.mjs"]
+        cmd = ["hg", "files", f'set:glob:"{path}/**/*.sys.mjs"']
         for line in self.run(cmd):
             js = pathlib.Path(line)
             if is_excluded_from_imports(js):
@@ -558,6 +553,7 @@ def rename_single_file(command_context, vcs_utils, jsm_path):
     esm_name = esm_path.name
 
     target_files = [
+        ".eslintignore",
         "moz.build",
         "jar.mn",
         "browser.ini",

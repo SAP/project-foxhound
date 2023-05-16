@@ -81,8 +81,9 @@ class MOZ_STACK_CLASS ServoCSSAnimationBuilder final {
     return aPresContext->StyleSet()->GetKeyframesForName(
         aElement, *mComputedStyle, aName, aTimingFunction, aKeyframes);
   }
-  void SetKeyframes(KeyframeEffect& aEffect, nsTArray<Keyframe>&& aKeyframes) {
-    aEffect.SetKeyframes(std::move(aKeyframes), mComputedStyle);
+  void SetKeyframes(KeyframeEffect& aEffect, nsTArray<Keyframe>&& aKeyframes,
+                    const dom::AnimationTimeline* aTimeline) {
+    aEffect.SetKeyframes(std::move(aKeyframes), mComputedStyle, aTimeline);
   }
 
   // Currently all the animation building code in this file is based on
@@ -163,7 +164,8 @@ static void UpdateOldAnimationPropertiesWithNew(
 
     if (KeyframeEffect* oldKeyframeEffect = oldEffect->AsKeyframeEffect()) {
       if (~aOverriddenProperties & CSSAnimationProperties::Keyframes) {
-        aBuilder.SetKeyframes(*oldKeyframeEffect, std::move(aNewKeyframes));
+        aBuilder.SetKeyframes(*oldKeyframeEffect, std::move(aNewKeyframes),
+                              aTimeline);
       }
 
       if (~aOverriddenProperties & CSSAnimationProperties::Composition) {
@@ -216,23 +218,12 @@ static already_AddRefed<dom::AnimationTimeline> GetTimeline(
     const NonOwningAnimationTarget& aTarget) {
   switch (aStyleTimeline.tag) {
     case StyleAnimationTimeline::Tag::Timeline: {
+      // Check scroll-timeline-name property.
       nsAtom* name = aStyleTimeline.AsTimeline().AsAtom();
-      if (name == nsGkAtoms::_empty) {
-        // That's how we represent `none`.
-        return nullptr;
-      }
-      // 1. Check @scroll-timeline rule.
-      if (const auto* rule =
-              aPresContext->StyleSet()->ScrollTimelineRuleForName(name)) {
-        // We do intentionally use the pres context's document for the owner of
-        // ScrollTimeline since it's consistent with what we do for
-        // KeyframeEffect instance.
-        return ScrollTimeline::FromRule(*rule, aPresContext->Document(),
-                                        aTarget);
-      }
-      // 2. Check scroll-timeline-name property.
-      return ScrollTimeline::FromNamedScroll(aPresContext->Document(), aTarget,
-                                             name);
+      return name != nsGkAtoms::_empty
+                 ? ScrollTimeline::FromNamedScroll(aPresContext->Document(),
+                                                   aTarget, name)
+                 : nullptr;
     }
     case StyleAnimationTimeline::Tag::Scroll: {
       const auto& scroll = aStyleTimeline.AsScroll();
@@ -304,7 +295,7 @@ static already_AddRefed<CSSAnimation> BuildAnimation(
       OwningAnimationTarget(aTarget.mElement, aTarget.mPseudoType),
       std::move(timing), effectOptions);
 
-  aBuilder.SetKeyframes(*effect, std::move(keyframes));
+  aBuilder.SetKeyframes(*effect, std::move(keyframes), timeline);
 
   RefPtr<CSSAnimation> animation = new CSSAnimation(
       aPresContext->Document()->GetScopeObject(), animationName);

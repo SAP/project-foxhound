@@ -77,6 +77,7 @@ treeherder:
         'M-swr-wayland': 'Mochitests with software webrender and Wayland backend enabled'
         'M-wayland': 'Mochitests with Wayland backend enabled'
         'M-wayland-1proc': 'Mochitests with Wayland backend enabled without e10s'
+        'M-wmfme': 'Mochitests with Windows Media Foundation media engine enabled'
         'M-f': 'Mochitest failures'
         'M-dt-no-eft-nofis': 'DevTools Mochitests with EFT without fission enabled'
         'MSI': 'Repack installers into MSIs'
@@ -389,19 +390,6 @@ merge-automation:
             end-tag: 'FIREFOX_NIGHTLY_{major_version}_END'
             to-repo: 'https://hg.mozilla.org/mozilla-central'
             to-branch: 'central'
-        bump-esr91:
-            fetch-version-from: "browser/config/version.txt"
-            version-files:
-                - filename: "config/milestone.txt"
-                  version-bump: "minor"
-                - filename: "browser/config/version.txt"
-                  version-bump: "minor"
-                - filename: "browser/config/version_display.txt"
-                  version-bump: "minor"
-            replacements: []
-            merge-old-head: false
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr91'
-            to-branch: 'esr91'
         bump-esr102:
             fetch-version-from: "browser/config/version.txt"
             version-files:

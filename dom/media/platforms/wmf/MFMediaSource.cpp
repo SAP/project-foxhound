@@ -25,14 +25,26 @@ namespace mozilla {
 
 using Microsoft::WRL::ComPtr;
 
-MFMediaSource::MFMediaSource() : mPresentationEnded(false) {}
+MFMediaSource::MFMediaSource()
+    : mPresentationEnded(false), mIsAudioEnded(false), mIsVideoEnded(false) {
+  MOZ_COUNT_CTOR(MFMediaSource);
+}
 
-HRESULT MFMediaSource::RuntimeClassInitialize(const Maybe<AudioInfo>& aAudio,
-                                              const Maybe<VideoInfo>& aVideo) {
+MFMediaSource::~MFMediaSource() { MOZ_COUNT_DTOR(MFMediaSource); }
+
+HRESULT MFMediaSource::RuntimeClassInitialize(
+    const Maybe<AudioInfo>& aAudio, const Maybe<VideoInfo>& aVideo,
+    nsISerialEventTarget* aManagerThread) {
+  // On manager thread.
+  MutexAutoLock lock(mMutex);
+
   static uint64_t streamId = 1;
 
   mTaskQueue = TaskQueue::Create(
       GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER), "MFMediaSource");
+  mManagerThread = aManagerThread;
+  MOZ_ASSERT(mManagerThread, "manager thread shouldn't be nullptr!");
+
   if (aAudio) {
     mAudioStream.Attach(
         MFMediaEngineAudioStream::Create(streamId++, *aAudio, this));
@@ -41,7 +53,9 @@ HRESULT MFMediaSource::RuntimeClassInitialize(const Maybe<AudioInfo>& aAudio,
       return E_FAIL;
     }
     mAudioStreamEndedListener = mAudioStream->EndedEvent().Connect(
-        mTaskQueue, this, &MFMediaSource::HandleStreamEnded);
+        mManagerThread, this, &MFMediaSource::HandleStreamEnded);
+  } else {
+    mIsAudioEnded = true;
   }
 
   if (aVideo) {
@@ -52,7 +66,9 @@ HRESULT MFMediaSource::RuntimeClassInitialize(const Maybe<AudioInfo>& aAudio,
       return E_FAIL;
     }
     mVideoStreamEndedListener = mVideoStream->EndedEvent().Connect(
-        mTaskQueue, this, &MFMediaSource::HandleStreamEnded);
+        mManagerThread, this, &MFMediaSource::HandleStreamEnded);
+  } else {
+    mIsVideoEnded = true;
   }
 
   RETURN_IF_FAILED(wmf::MFCreateEventQueue(&mMediaEventQueue));
@@ -62,9 +78,13 @@ HRESULT MFMediaSource::RuntimeClassInitialize(const Maybe<AudioInfo>& aAudio,
 }
 
 IFACEMETHODIMP MFMediaSource::GetCharacteristics(DWORD* aCharacteristics) {
-  AssertOnMFThreadPool();
-  if (mState == State::Shutdowned) {
-    return MF_E_SHUTDOWN;
+  // This could be run on both mf thread pool and manager thread.
+  MOZ_ASSERT(!mTaskQueue->IsCurrentThreadIn());
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState == State::Shutdowned) {
+      return MF_E_SHUTDOWN;
+    }
   }
 
   LOG("GetCharacteristics");
@@ -76,6 +96,7 @@ IFACEMETHODIMP MFMediaSource::GetCharacteristics(DWORD* aCharacteristics) {
 IFACEMETHODIMP MFMediaSource::CreatePresentationDescriptor(
     IMFPresentationDescriptor** aPresentationDescriptor) {
   AssertOnMFThreadPool();
+  MutexAutoLock lock(mMutex);
   if (mState == State::Shutdowned) {
     return MF_E_SHUTDOWN;
   }
@@ -133,6 +154,7 @@ IFACEMETHODIMP MFMediaSource::Start(
     IMFPresentationDescriptor* aPresentationDescriptor,
     const GUID* aGuidTimeFormat, const PROPVARIANT* aStartPosition) {
   AssertOnMFThreadPool();
+  MutexAutoLock lock(mMutex);
   if (mState == State::Shutdowned) {
     return MF_E_SHUTDOWN;
   }
@@ -169,7 +191,12 @@ IFACEMETHODIMP MFMediaSource::Start(
     DWORD streamId;
     RETURN_IF_FAILED(streamDescriptor->GetStreamIdentifier(&streamId));
 
-    ComPtr<MFMediaEngineStream> stream = GetStreamByDescriptorId(streamId);
+    ComPtr<MFMediaEngineStream> stream;
+    if (mAudioStream && mAudioStream->DescriptorId() == streamId) {
+      stream = mAudioStream;
+    } else if (mVideoStream && mVideoStream->DescriptorId() == streamId) {
+      stream = mVideoStream;
+    }
     NS_ENSURE_TRUE(stream, MF_E_INVALIDREQUEST);
 
     if (selected) {
@@ -193,12 +220,19 @@ IFACEMETHODIMP MFMediaSource::Start(
                               GUID_NULL, S_OK, aStartPosition));
   mState = State::Started;
   mPresentationEnded = false;
+  if (mAudioStream && mAudioStream->IsSelected()) {
+    mIsAudioEnded = false;
+  }
+  if (mVideoStream && mVideoStream->IsSelected()) {
+    mIsVideoEnded = false;
+  }
   LOG("Started media source");
   return S_OK;
 }
 
 IFACEMETHODIMP MFMediaSource::Stop() {
   AssertOnMFThreadPool();
+  MutexAutoLock lock(mMutex);
   if (mState == State::Shutdowned) {
     return MF_E_SHUTDOWN;
   }
@@ -219,6 +253,7 @@ IFACEMETHODIMP MFMediaSource::Stop() {
 
 IFACEMETHODIMP MFMediaSource::Pause() {
   AssertOnMFThreadPool();
+  MutexAutoLock lock(mMutex);
   if (mState == State::Shutdowned) {
     return MF_E_SHUTDOWN;
   }
@@ -241,7 +276,8 @@ IFACEMETHODIMP MFMediaSource::Pause() {
 }
 
 IFACEMETHODIMP MFMediaSource::Shutdown() {
-  AssertOnMFThreadPool();
+  AssertOnManagerThread();
+  MutexAutoLock lock(mMutex);
   if (mState == State::Shutdowned) {
     return MF_E_SHUTDOWN;
   }
@@ -302,19 +338,12 @@ bool MFMediaSource::IsSeekable() const {
   return true;
 }
 
-MFMediaEngineStream* MFMediaSource::GetStreamByDescriptorId(DWORD aId) const {
-  if (mAudioStream && mAudioStream->DescriptorId() == aId) {
-    return mAudioStream.Get();
+void MFMediaSource::NotifyEndOfStream(TrackInfo::TrackType aType) {
+  AssertOnManagerThread();
+  MutexAutoLock lock(mMutex);
+  if (mState == State::Shutdowned) {
+    return;
   }
-  if (mVideoStream && mVideoStream->DescriptorId() == aId) {
-    return mVideoStream.Get();
-  }
-  NS_WARNING("Invalid stream descriptor Id!");
-  return nullptr;
-}
-
-void MFMediaSource::NotifyEndOfStreamInternal(TrackInfo::TrackType aType) {
-  AssertOnTaskQueue();
   if (aType == TrackInfo::TrackType::kAudioTrack) {
     MOZ_ASSERT(mAudioStream);
     mAudioStream->NotifyEndOfStream();
@@ -325,7 +354,11 @@ void MFMediaSource::NotifyEndOfStreamInternal(TrackInfo::TrackType aType) {
 }
 
 void MFMediaSource::HandleStreamEnded(TrackInfo::TrackType aType) {
-  AssertOnTaskQueue();
+  AssertOnManagerThread();
+  MutexAutoLock lock(mMutex);
+  if (mState == State::Shutdowned) {
+    return;
+  }
   if (mPresentationEnded) {
     LOG("Presentation is ended already");
     RETURN_VOID_IF_FAILED(
@@ -334,11 +367,16 @@ void MFMediaSource::HandleStreamEnded(TrackInfo::TrackType aType) {
   }
 
   LOG("Handle %s stream ended", TrackTypeToStr(aType));
-  const bool audioEnded = !mAudioStream || mAudioStream->IsEnded();
-  const bool videoEnded = !mVideoStream || mVideoStream->IsEnded();
-  mPresentationEnded = audioEnded && videoEnded;
+  if (aType == TrackInfo::TrackType::kAudioTrack) {
+    mIsAudioEnded = true;
+  } else if (aType == TrackInfo::TrackType::kVideoTrack) {
+    mIsVideoEnded = true;
+  } else {
+    MOZ_ASSERT_UNREACHABLE("Incorrect track type!");
+  }
+  mPresentationEnded = mIsAudioEnded && mIsVideoEnded;
   LOG("PresentationEnded=%d, audioEnded=%d, videoEnded=%d",
-      !!mPresentationEnded, audioEnded, videoEnded);
+      !!mPresentationEnded, mIsAudioEnded, mIsVideoEnded);
   if (mPresentationEnded) {
     RETURN_VOID_IF_FAILED(
         QueueEvent(MEEndOfPresentation, GUID_NULL, S_OK, nullptr));
@@ -346,7 +384,8 @@ void MFMediaSource::HandleStreamEnded(TrackInfo::TrackType aType) {
 }
 
 void MFMediaSource::SetDCompSurfaceHandle(HANDLE aDCompSurfaceHandle) {
-  // On MediaEngineParent's manager thread.
+  AssertOnManagerThread();
+  MutexAutoLock lock(mMutex);
   if (mVideoStream) {
     mVideoStream->AsVideoStream()->SetDCompSurfaceHandle(aDCompSurfaceHandle);
   }
@@ -366,11 +405,17 @@ IFACEMETHODIMP MFMediaSource::GetSlowestRate(MFRATE_DIRECTION aDirection,
                                              float* aRate) {
   AssertOnMFThreadPool();
   MOZ_ASSERT(aRate);
+  *aRate = 0.0f;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState == State::Shutdowned) {
+      return MF_E_SHUTDOWN;
+    }
+  }
   if (aDirection == MFRATE_REVERSE) {
     return MF_E_REVERSE_UNSUPPORTED;
   }
-  *aRate = 0.0f;
-  return mState == State::Shutdowned ? MF_E_SHUTDOWN : S_OK;
+  return S_OK;
 }
 
 IFACEMETHODIMP MFMediaSource::GetFastestRate(MFRATE_DIRECTION aDirection,
@@ -378,9 +423,12 @@ IFACEMETHODIMP MFMediaSource::GetFastestRate(MFRATE_DIRECTION aDirection,
                                              float* aRate) {
   AssertOnMFThreadPool();
   MOZ_ASSERT(aRate);
-  if (mState == State::Shutdowned) {
-    *aRate = 0.0f;
-    return MF_E_SHUTDOWN;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState == State::Shutdowned) {
+      *aRate = 0.0f;
+      return MF_E_SHUTDOWN;
+    }
   }
   if (aDirection == MFRATE_REVERSE) {
     return MF_E_REVERSE_UNSUPPORTED;
@@ -393,8 +441,11 @@ IFACEMETHODIMP MFMediaSource::IsRateSupported(BOOL aSupportsThinning,
                                               float aNewRate,
                                               float* aSupportedRate) {
   AssertOnMFThreadPool();
-  if (mState == State::Shutdowned) {
-    return MF_E_SHUTDOWN;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState == State::Shutdowned) {
+      return MF_E_SHUTDOWN;
+    }
   }
 
   if (aSupportedRate) {
@@ -422,8 +473,11 @@ IFACEMETHODIMP MFMediaSource::IsRateSupported(BOOL aSupportsThinning,
 
 IFACEMETHODIMP MFMediaSource::SetRate(BOOL aSupportsThinning, float aRate) {
   AssertOnMFThreadPool();
-  if (mState == State::Shutdowned) {
-    return MF_E_SHUTDOWN;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState == State::Shutdowned) {
+      return MF_E_SHUTDOWN;
+    }
   }
 
   HRESULT hr = IsRateSupported(aSupportsThinning, aRate, &mPlaybackRate);
@@ -441,23 +495,42 @@ IFACEMETHODIMP MFMediaSource::SetRate(BOOL aSupportsThinning, float aRate) {
 
 IFACEMETHODIMP MFMediaSource::GetRate(BOOL* aSupportsThinning, float* aRate) {
   AssertOnMFThreadPool();
-  if (mState == State::Shutdowned) {
-    return MF_E_SHUTDOWN;
+  {
+    MutexAutoLock lock(mMutex);
+    if (mState == State::Shutdowned) {
+      return MF_E_SHUTDOWN;
+    }
   }
   *aSupportsThinning = FALSE;
   *aRate = mPlaybackRate;
   return S_OK;
 }
 
-void MFMediaSource::AssertOnTaskQueue() const {
-  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
+MFMediaSource::State MFMediaSource::GetState() const {
+  MutexAutoLock lock(mMutex);
+  return mState;
+}
+
+MFMediaEngineStream* MFMediaSource::GetAudioStream() {
+  MutexAutoLock lock(mMutex);
+  return mAudioStream.Get();
+}
+MFMediaEngineStream* MFMediaSource::GetVideoStream() {
+  MutexAutoLock lock(mMutex);
+  return mVideoStream.Get();
+}
+
+void MFMediaSource::AssertOnManagerThread() const {
+  MOZ_ASSERT(mManagerThread->IsOnCurrentThread());
 }
 
 void MFMediaSource::AssertOnMFThreadPool() const {
   // We can't really assert the thread id from thread pool, because it would
-  // change any time. So we just assert this is not the task queue, and use the
-  // explicit function name to indicate what thread we should run on.
-  MOZ_ASSERT(!mTaskQueue->IsCurrentThreadIn());
+  // change any time. So we just assert this is not the task queue and the
+  // manager thread, and use the explicit function name to indicate what thread
+  // we should run on.
+  MOZ_ASSERT(!mTaskQueue->IsCurrentThreadIn() &&
+             !mManagerThread->IsOnCurrentThread());
 }
 
 #undef LOG

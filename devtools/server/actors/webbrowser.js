@@ -4,49 +4,53 @@
 
 "use strict";
 
-var { Ci } = require("chrome");
-var { DevToolsServer } = require("devtools/server/devtools-server");
-var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+var {
+  ActorRegistry,
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 loader.lazyRequireGetter(
   this,
   "RootActor",
-  "devtools/server/actors/root",
+  "resource://devtools/server/actors/root.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "TabDescriptorActor",
-  "devtools/server/actors/descriptors/tab",
+  "resource://devtools/server/actors/descriptors/tab.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WebExtensionDescriptorActor",
-  "devtools/server/actors/descriptors/webextension",
+  "resource://devtools/server/actors/descriptors/webextension.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WorkerDescriptorActorList",
-  "devtools/server/actors/worker/worker-descriptor-actor-list",
+  "resource://devtools/server/actors/worker/worker-descriptor-actor-list.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ServiceWorkerRegistrationActorList",
-  "devtools/server/actors/worker/service-worker-registration-list",
+  "resource://devtools/server/actors/worker/service-worker-registration-list.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ProcessActorList",
-  "devtools/server/actors/process",
+  "resource://devtools/server/actors/process.js",
   true
 );
-loader.lazyImporter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
@@ -673,7 +677,7 @@ function BrowserAddonList(connection) {
 }
 
 BrowserAddonList.prototype.getList = async function() {
-  const addons = await AddonManager.getAllAddons();
+  const addons = await lazy.AddonManager.getAllAddons();
   for (const addon of addons) {
     let actor = this._actorByAddonId.get(addon.id);
     if (!actor) {
@@ -760,11 +764,11 @@ BrowserAddonList.prototype._adjustListener = function() {
   if (this._onListChanged) {
     // As long as the callback exists, we need to listen for changes
     // so we can notify about add-on changes.
-    AddonManager.addAddonListener(this);
+    lazy.AddonManager.addAddonListener(this);
   } else if (this._actorByAddonId.size === 0) {
     // When the callback does not exist, we only need to keep listening
     // if the actor cache will need adjusting when add-ons change.
-    AddonManager.removeAddonListener(this);
+    lazy.AddonManager.removeAddonListener(this);
   }
 };
 

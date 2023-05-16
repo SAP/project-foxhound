@@ -4,43 +4,51 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   getOrientation,
-} = require("devtools/client/responsive/utils/orientation");
-const Constants = require("devtools/client/responsive/constants");
+} = require("resource://devtools/client/responsive/utils/orientation.js");
+const Constants = require("resource://devtools/client/responsive/constants.js");
 const {
   CommandsFactory,
-} = require("devtools/shared/commands/commands-factory");
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
 loader.lazyRequireGetter(
   this,
   "throttlingProfiles",
-  "devtools/client/shared/components/throttling/profiles"
+  "resource://devtools/client/shared/components/throttling/profiles.js"
 );
 loader.lazyRequireGetter(
   this,
   "message",
-  "devtools/client/responsive/utils/message"
+  "resource://devtools/client/responsive/utils/message.js"
 );
 loader.lazyRequireGetter(
   this,
   "showNotification",
-  "devtools/client/responsive/utils/notification",
+  "resource://devtools/client/responsive/utils/notification.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PriorityLevels",
-  "devtools/client/shared/components/NotificationBox",
+  "resource://devtools/client/shared/components/NotificationBox.js",
   true
 );
-loader.lazyRequireGetter(this, "l10n", "devtools/client/responsive/utils/l10n");
-loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
+loader.lazyRequireGetter(
+  this,
+  "l10n",
+  "resource://devtools/client/responsive/utils/l10n.js"
+);
+loader.lazyRequireGetter(
+  this,
+  "asyncStorage",
+  "resource://devtools/shared/async-storage.js"
+);
 loader.lazyRequireGetter(
   this,
   "captureAndSaveScreenshot",
-  "devtools/client/shared/screenshot",
+  "resource://devtools/client/shared/screenshot.js",
   true
 );
 
@@ -189,8 +197,9 @@ class ResponsiveUI {
 
     this.browserContainerEl.classList.add("responsive-mode");
 
-    // Prepend the RDM iframe inside of the current tab's browser stack.
-    this.browserStackEl.prepend(rdmFrame);
+    // Prepend the RDM iframe inside of the current tab's browser container.
+    this.browserContainerEl.prepend(rdmFrame);
+
     this.browserStackEl.append(resizeHandle);
     this.browserStackEl.append(resizeHandleX);
     this.browserStackEl.append(resizeHandleY);
@@ -221,23 +230,20 @@ class ResponsiveUI {
     this.resizeHandleY = resizeHandleY;
     this.resizeHandleY.addEventListener("mousedown", this.onResizeStart);
 
-    // Setup a ResizeObserver that stores the width and height of the
-    // .browserStack size as properties. These set properties are then used
-    // to out-of-grid elements that are affected by RDM.
-    this.resizeToolbarObserver = new this.browserWindow.ResizeObserver(() => {
-      const style = this.browserWindow.getComputedStyle(this.browserStackEl);
-
-      this.browserStackEl.style.setProperty("--rdm-stack-width", style.width);
-      this.browserStackEl.style.setProperty("--rdm-stack-height", style.height);
-      // If the toolbar needs extra space for the UA input, then set a class that
-      // will accomodate its height. We should also make sure to keep the width
-      // value we're toggling against in sync with the media-query in
-      // devtools/client/responsive/index.css
-      this.rdmFrame.classList.toggle(
-        "accomodate-ua",
-        parseFloat(style.width) < 520
-      );
-    });
+    this.resizeToolbarObserver = new this.browserWindow.ResizeObserver(
+      entries => {
+        for (const entry of entries) {
+          // If the toolbar needs extra space for the UA input, then set a class
+          // that will accomodate its height. We should also make sure to keep
+          // the width value we're toggling against in sync with the media-query
+          // in devtools/client/responsive/index.css
+          this.rdmFrame.classList.toggle(
+            "accomodate-ua",
+            entry.contentBoxSize[0].inlineSize < 520
+          );
+        }
+      }
+    );
 
     this.resizeToolbarObserver.observe(this.browserStackEl);
   }
@@ -308,8 +314,6 @@ class ResponsiveUI {
     this.browserStackEl.style.removeProperty("--rdm-width");
     this.browserStackEl.style.removeProperty("--rdm-height");
     this.browserStackEl.style.removeProperty("--rdm-zoom");
-    this.browserStackEl.style.removeProperty("--rdm-stack-height");
-    this.browserStackEl.style.removeProperty("--rdm-stack-width");
 
     // Ensure the tab is reloaded if required when exiting RDM so that no emulated
     // settings are left in a customized state.
@@ -718,11 +722,7 @@ class ResponsiveUI {
   }
 
   onUpdateDeviceModal(event) {
-    if (event.data.isOpen) {
-      this.browserStackEl.classList.add("device-modal-opened");
-    } else {
-      this.browserStackEl.classList.remove("device-modal-opened");
-    }
+    this.rdmFrame.classList.toggle("device-modal-opened", event.data.isOpen);
   }
 
   async hasDeviceState() {

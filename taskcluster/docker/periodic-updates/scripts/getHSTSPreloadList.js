@@ -12,8 +12,8 @@ var gSSService = Cc["@mozilla.org/ssservice;1"].getService(
   Ci.nsISiteSecurityService
 );
 
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 
 const SOURCE =
@@ -117,11 +117,10 @@ function processStsHeader(host, header, status, securityInfo) {
   if (header != null && securityInfo != null) {
     try {
       let uri = Services.io.newURI("https://" + host.name);
-      let secInfo = securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
       gSSService.processHeader(
         uri,
         header,
-        secInfo,
+        securityInfo,
         {},
         maxAge,
         includeSubdomains
@@ -427,10 +426,6 @@ function filterForcedInclusions(inHosts, outNotForced, outForced) {
       host.forceInclude = true;
       host.error = ERROR_NONE;
       outForced.push(host);
-    } else if (host.name == "asus.com") {
-      dump(
-        "INFO: Excluding asus.com from HSTS preload list (https://bugzilla.mozilla.org/show_bug.cgi?id=1788684)"
-      );
     } else {
       outNotForced.push(host);
     }
@@ -440,10 +435,6 @@ function filterForcedInclusions(inHosts, outNotForced, outForced) {
 function output(statuses) {
   dump("INFO: Writing output to " + OUTPUT + "\n");
   try {
-    var { FileUtils } = ChromeUtils.import(
-      "resource://gre/modules/FileUtils.jsm"
-    );
-
     let file = new FileUtils.File(
       PathUtils.join(Services.dirsvc.get("CurWorkD", Ci.nsIFile).path, OUTPUT)
     );

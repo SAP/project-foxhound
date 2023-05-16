@@ -4,79 +4,90 @@
 
 "use strict";
 
-const { debounce } = require("devtools/shared/debounce");
+const { debounce } = require("resource://devtools/shared/debounce.js");
 const isMacOS = Services.appinfo.OS === "Darwin";
 
 loader.lazyRequireGetter(this, "Debugger", "Debugger");
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 loader.lazyRequireGetter(
   this,
   "AutocompletePopup",
-  "devtools/client/shared/autocomplete-popup"
+  "resource://devtools/client/shared/autocomplete-popup.js"
 );
 
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 loader.lazyRequireGetter(
   this,
   "KeyCodes",
-  "devtools/client/shared/keycodes",
+  "resource://devtools/client/shared/keycodes.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "Editor",
-  "devtools/client/shared/sourceeditor/editor"
+  "resource://devtools/client/shared/sourceeditor/editor.js"
 );
 loader.lazyRequireGetter(
   this,
   "getFocusableElements",
-  "devtools/client/shared/focus",
+  "resource://devtools/client/shared/focus.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "l10n",
-  "devtools/client/webconsole/utils/messages",
+  "resource://devtools/client/webconsole/utils/messages.js",
   true
 );
-loader.lazyRequireGetter(this, "saveAs", "devtools/shared/DevToolsUtils", true);
+loader.lazyRequireGetter(
+  this,
+  "saveAs",
+  "resource://devtools/shared/DevToolsUtils.js",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "beautify",
-  "devtools/shared/jsbeautify/beautify"
+  "resource://devtools/shared/jsbeautify/beautify.js"
 );
 
 // React & Redux
 const {
   Component,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { connect } = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 // History Modules
 const {
   getHistory,
   getHistoryValue,
-} = require("devtools/client/webconsole/selectors/history");
+} = require("resource://devtools/client/webconsole/selectors/history.js");
 const {
   getAutocompleteState,
-} = require("devtools/client/webconsole/selectors/autocomplete");
-const actions = require("devtools/client/webconsole/actions/index");
+} = require("resource://devtools/client/webconsole/selectors/autocomplete.js");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 
 const EvaluationContextSelector = createFactory(
-  require("devtools/client/webconsole/components/Input/EvaluationContextSelector")
+  require("resource://devtools/client/webconsole/components/Input/EvaluationContextSelector.js")
 );
 
 // Constants used for defining the direction of JSTerm input history navigation.
 const {
   HISTORY_BACK,
   HISTORY_FORWARD,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 
 const JSTERM_CODEMIRROR_ORIGIN = "jsterm";
 

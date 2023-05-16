@@ -4,8 +4,6 @@
 
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
-"use strict";
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -325,6 +323,30 @@ export var SearchUtils = {
     hasher.update(data, data.length);
 
     return hasher.finish(true);
+  },
+
+  /**
+   * Tests whether the given URI is a secure OpenSearch submission URI or a
+   * secure OpenSearch update URI.
+   *
+   * Note: We don't want to count something served via localhost as insecure.
+   * We also don't want to count sites with .onion as their top-level domain
+   * as insecure because .onion URLs actually can't use https and are secured
+   * in other ways.
+   *
+   * @param {nsIURI} uri
+   *  The URI to be tested.
+   * @returns {boolean}
+   *  Whether the URI is secure for OpenSearch purposes.
+   */
+  isSecureURIForOpenSearch(uri) {
+    const loopbackAddresses = ["127.0.0.1", "[::1]", "localhost"];
+
+    return (
+      uri.schemeIs("https") ||
+      loopbackAddresses.includes(uri.host) ||
+      uri.host.toLowerCase().endsWith(".onion")
+    );
   },
 };
 

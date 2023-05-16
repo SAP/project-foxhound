@@ -4,19 +4,21 @@
    runNextTest, _documentWalker */
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const {
   CommandsFactory,
-} = require("devtools/shared/commands/commands-factory");
-const { DevToolsServer } = require("devtools/server/devtools-server");
+} = require("resource://devtools/shared/commands/commands-factory.js");
 const {
-  BrowserTestUtils,
-} = require("resource://testing-common/BrowserTestUtils.jsm");
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const { BrowserTestUtils } = ChromeUtils.import(
+  "resource://testing-common/BrowserTestUtils.jsm"
+);
 const {
   DocumentWalker: _documentWalker,
-} = require("devtools/server/actors/inspector/document-walker");
+} = require("resource://devtools/server/actors/inspector/document-walker.js");
 
 // Always log packets when running tests.
 Services.prefs.setBoolPref("devtools.debugger.log", true);

@@ -25,6 +25,7 @@
 #include "nsINode.h"                  // for nsINode
 #include "nsITransferable.h"          // for nsITransferable
 #include "nsRange.h"                  // for nsRange
+#include "nsStyleConsts.h"            // for StyleWhiteSpace
 #include "nsStyleStruct.h"            // for nsStyleText, etc
 
 namespace mozilla {
@@ -38,28 +39,6 @@ using namespace dom;
 EditActionResult& EditActionResult::operator|=(
     const MoveNodeResult& aMoveNodeResult) {
   mHandled |= aMoveNodeResult.Handled();
-  // When both result are same, keep the result.
-  if (mRv == aMoveNodeResult.inspectErr()) {
-    return *this;
-  }
-  // If one of the result is NS_ERROR_EDITOR_DESTROYED, use it since it's
-  // the most important error code for editor.
-  if (EditorDestroyed() || aMoveNodeResult.EditorDestroyed()) {
-    mRv = NS_ERROR_EDITOR_DESTROYED;
-    return *this;
-  }
-  // If aMoveNodeResult hasn't been set explicit nsresult value, keep current
-  // result.
-  if (aMoveNodeResult.NotInitialized()) {
-    return *this;
-  }
-  // If one of the results is error, use NS_ERROR_FAILURE.
-  if (Failed() || aMoveNodeResult.isErr()) {
-    mRv = NS_ERROR_FAILURE;
-    return *this;
-  }
-  // Otherwise, use generic success code, NS_OK.
-  mRv = NS_OK;
   return *this;
 }
 
@@ -110,59 +89,19 @@ bool EditorUtils::IsDescendantOf(const nsINode& aNode, const nsINode& aParent,
 }
 
 // static
-void EditorUtils::MaskString(nsString& aString, const Text& aTextNode,
-                             uint32_t aStartOffsetInString,
-                             uint32_t aStartOffsetInText) {
-  MOZ_ASSERT(aTextNode.HasFlag(NS_MAYBE_MASKED));
-  MOZ_ASSERT(aStartOffsetInString == 0 || aStartOffsetInText == 0);
-
-  uint32_t unmaskStart = UINT32_MAX, unmaskLength = 0;
-  TextEditor* textEditor =
-      nsContentUtils::GetTextEditorFromAnonymousNodeWithoutCreation(&aTextNode);
-  if (textEditor && textEditor->UnmaskedLength() > 0) {
-    unmaskStart = textEditor->UnmaskedStart();
-    unmaskLength = textEditor->UnmaskedLength();
-    // If text is copied from after unmasked range, we can treat this case
-    // as mask all.
-    if (aStartOffsetInText >= unmaskStart + unmaskLength) {
-      unmaskLength = 0;
-      unmaskStart = UINT32_MAX;
-    } else {
-      // If text is copied from middle of unmasked range, reduce the length
-      // and adjust start offset.
-      if (aStartOffsetInText > unmaskStart) {
-        unmaskLength = unmaskStart + unmaskLength - aStartOffsetInText;
-        unmaskStart = 0;
-      }
-      // If text is copied from before start of unmasked range, just adjust
-      // the start offset.
-      else {
-        unmaskStart -= aStartOffsetInText;
-      }
-      // Make the range is in the string.
-      unmaskStart += aStartOffsetInString;
-    }
+Maybe<StyleWhiteSpace> EditorUtils::GetComputedWhiteSpaceStyle(
+    const nsIContent& aContent) {
+  if (MOZ_UNLIKELY(!aContent.IsElement() && !aContent.GetParentElement())) {
+    return Nothing();
   }
-
-  const char16_t kPasswordMask = TextEditor::PasswordMask();
-  for (uint32_t i = aStartOffsetInString; i < aString.Length(); ++i) {
-    bool isSurrogatePair = NS_IS_HIGH_SURROGATE(aString.CharAt(i)) &&
-                           i < aString.Length() - 1 &&
-                           NS_IS_LOW_SURROGATE(aString.CharAt(i + 1));
-    if (i < unmaskStart || i >= unmaskStart + unmaskLength) {
-      if (isSurrogatePair) {
-        aString.SetCharAt(kPasswordMask, i);
-        aString.SetCharAt(kPasswordMask, i + 1);
-      } else {
-        aString.SetCharAt(kPasswordMask, i);
-      }
-    }
-
-    // Skip the following low surrogate.
-    if (isSurrogatePair) {
-      ++i;
-    }
+  RefPtr<const ComputedStyle> elementStyle =
+      nsComputedDOMStyle::GetComputedStyleNoFlush(
+          aContent.IsElement() ? aContent.AsElement()
+                               : aContent.GetParentElement());
+  if (NS_WARN_IF(!elementStyle)) {
+    return Nothing();
   }
+  return Some(elementStyle->StyleText()->mWhiteSpace);
 }
 
 // static
@@ -453,15 +392,10 @@ bool EditorDOMPointBase<
 }
 
 /******************************************************************************
- * mozilla::CreateNodeResultBase
+ * mozilla::CaretPoint
  *****************************************************************************/
 
-NS_INSTANTIATE_CREATE_NODE_RESULT_CONST_METHOD(
-    nsresult, SuggestCaretPointTo, const EditorBase& aEditorBase,
-    const SuggestCaretOptions& aOptions)
-
-template <typename NodeType>
-nsresult CreateNodeResultBase<NodeType>::SuggestCaretPointTo(
+nsresult CaretPoint::SuggestCaretPointTo(
     const EditorBase& aEditorBase, const SuggestCaretOptions& aOptions) const {
   mHandledCaretPoint = true;
   if (!mCaretPoint.IsSet()) {
@@ -486,15 +420,26 @@ nsresult CreateNodeResultBase<NodeType>::SuggestCaretPointTo(
              : rv;
 }
 
-NS_INSTANTIATE_CREATE_NODE_RESULT_METHOD(bool, MoveCaretPointTo,
-                                         EditorDOMPoint& aPointToPutCaret,
-                                         const EditorBase& aEditorBase,
-                                         const SuggestCaretOptions& aOptions)
+bool CaretPoint::CopyCaretPointTo(EditorDOMPoint& aPointToPutCaret,
+                                  const EditorBase& aEditorBase,
+                                  const SuggestCaretOptions& aOptions) const {
+  MOZ_ASSERT(!aOptions.contains(SuggestCaret::AndIgnoreTrivialError));
+  mHandledCaretPoint = true;
+  if (aOptions.contains(SuggestCaret::OnlyIfHasSuggestion) &&
+      !mCaretPoint.IsSet()) {
+    return false;
+  }
+  if (aOptions.contains(SuggestCaret::OnlyIfTransactionsAllowedToDoIt) &&
+      !aEditorBase.AllowsTransactionsToChangeSelection()) {
+    return false;
+  }
+  aPointToPutCaret = mCaretPoint;
+  return true;
+}
 
-template <typename NodeType>
-bool CreateNodeResultBase<NodeType>::MoveCaretPointTo(
-    EditorDOMPoint& aPointToPutCaret, const EditorBase& aEditorBase,
-    const SuggestCaretOptions& aOptions) {
+bool CaretPoint::MoveCaretPointTo(EditorDOMPoint& aPointToPutCaret,
+                                  const EditorBase& aEditorBase,
+                                  const SuggestCaretOptions& aOptions) {
   MOZ_ASSERT(!aOptions.contains(SuggestCaret::AndIgnoreTrivialError));
   mHandledCaretPoint = true;
   if (aOptions.contains(SuggestCaret::OnlyIfHasSuggestion) &&

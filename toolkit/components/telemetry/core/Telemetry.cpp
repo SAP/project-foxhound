@@ -1132,7 +1132,7 @@ already_AddRefed<nsITelemetry> TelemetryImpl::CreateTelemetryInstance() {
   bool useTelemetry = false;
 #ifndef FUZZING
   if (XRE_IsParentProcess() || XRE_IsContentProcess() || XRE_IsGPUProcess() ||
-      XRE_IsSocketProcess()) {
+      XRE_IsSocketProcess() || XRE_IsUtilityProcess()) {
     useTelemetry = true;
   }
 #endif
@@ -1952,14 +1952,15 @@ void WriteFailedProfileLock(nsIFile* aProfileDir) {
   if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
     return;
   }
-  nsCOMPtr<nsIFileStream> fileStream;
-  rv = NS_NewLocalFileStream(getter_AddRefs(fileStream), file,
-                             PR_RDWR | PR_CREATE_FILE, 0640);
+  nsCOMPtr<nsIRandomAccessStream> fileRandomAccessStream;
+  rv = NS_NewLocalFileRandomAccessStream(getter_AddRefs(fileRandomAccessStream),
+                                         file, PR_RDWR | PR_CREATE_FILE, 0640);
   NS_ENSURE_SUCCESS_VOID(rv);
   NS_ENSURE_TRUE_VOID(fileSize <= kMaxFailedProfileLockFileSize);
   unsigned int failedLockCount = 0;
   if (fileSize > 0) {
-    nsCOMPtr<nsIInputStream> inStream = do_QueryInterface(fileStream);
+    nsCOMPtr<nsIInputStream> inStream =
+        do_QueryInterface(fileRandomAccessStream);
     NS_ENSURE_TRUE_VOID(inStream);
     if (!GetFailedLockCount(inStream, fileSize, failedLockCount)) {
       failedLockCount = 0;
@@ -1968,14 +1969,13 @@ void WriteFailedProfileLock(nsIFile* aProfileDir) {
   ++failedLockCount;
   nsAutoCString bufStr;
   bufStr.AppendInt(static_cast<int>(failedLockCount));
-  nsCOMPtr<nsISeekableStream> seekStream = do_QueryInterface(fileStream);
-  NS_ENSURE_TRUE_VOID(seekStream);
   // If we read in an existing failed lock count, we need to reset the file ptr
   if (fileSize > 0) {
-    rv = seekStream->Seek(nsISeekableStream::NS_SEEK_SET, 0);
+    rv = fileRandomAccessStream->Seek(nsISeekableStream::NS_SEEK_SET, 0);
     NS_ENSURE_SUCCESS_VOID(rv);
   }
-  nsCOMPtr<nsIOutputStream> outStream = do_QueryInterface(fileStream);
+  nsCOMPtr<nsIOutputStream> outStream =
+      do_QueryInterface(fileRandomAccessStream);
   uint32_t bytesLeft = bufStr.Length();
   const char* bytes = bufStr.get();
   do {
@@ -1987,7 +1987,7 @@ void WriteFailedProfileLock(nsIFile* aProfileDir) {
     bytes += written;
     bytesLeft -= written;
   } while (bytesLeft > 0);
-  seekStream->SetEOF();
+  fileRandomAccessStream->SetEOF();
 }
 
 void InitIOReporting(nsIFile* aXreDir) {

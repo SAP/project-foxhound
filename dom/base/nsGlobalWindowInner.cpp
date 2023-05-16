@@ -1627,7 +1627,7 @@ bool nsGlobalWindowInner::IsBlackForCC(bool aTracingNeeded) {
 
 bool nsGlobalWindowInner::ShouldResistFingerprinting() const {
   if (mDoc) {
-    return nsContentUtils::ShouldResistFingerprinting(mDoc);
+    return mDoc->ShouldResistFingerprinting();
   }
   return nsIScriptGlobalObject::ShouldResistFingerprinting();
 }
@@ -3402,12 +3402,11 @@ void nsGlobalWindowInner::SetOpener(JSContext* aCx,
   RedefineProperty(aCx, "opener", aOpener, aError);
 }
 
-void nsGlobalWindowInner::GetEvent(JSContext* aCx,
-                                   JS::MutableHandle<JS::Value> aRetval) {
+void nsGlobalWindowInner::GetEvent(OwningEventOrUndefined& aRetval) {
   if (mEvent) {
-    Unused << nsContentUtils::WrapNative(aCx, mEvent, aRetval);
+    aRetval.SetAsEvent() = mEvent;
   } else {
-    aRetval.setUndefined();
+    aRetval.SetUndefined();
   }
 }
 
@@ -3935,7 +3934,15 @@ void nsGlobalWindowInner::ResizeBy(int32_t aWidthDif, int32_t aHeightDif,
 
 void nsGlobalWindowInner::SizeToContent(CallerType aCallerType,
                                         ErrorResult& aError) {
-  FORWARD_TO_OUTER_OR_THROW(SizeToContentOuter, (aCallerType, aError),
+  FORWARD_TO_OUTER_OR_THROW(SizeToContentOuter, (aCallerType, 0, 0, aError),
+                            aError, );
+}
+
+void nsGlobalWindowInner::SizeToContentConstrained(int32_t aMaxWidth,
+                                                   int32_t aMaxHeight,
+                                                   ErrorResult& aError) {
+  FORWARD_TO_OUTER_OR_THROW(SizeToContentOuter,
+                            (CallerType::System, aMaxWidth, aMaxHeight, aError),
                             aError, );
 }
 
@@ -4979,10 +4986,8 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
   if (mDoc) {
     cookieJarSettings = mDoc->CookieJarSettings();
   } else {
-    bool shouldResistFingerprinting =
-        nsContentUtils::ShouldResistFingerprinting(this->GetExtantDoc());
     cookieJarSettings =
-        net::CookieJarSettings::GetBlockingAll(shouldResistFingerprinting);
+        net::CookieJarSettings::GetBlockingAll(ShouldResistFingerprinting());
   }
 
   // Note that this behavior is observable: if we grant storage permission to a
@@ -6584,7 +6589,7 @@ void nsGlobalWindowInner::DisableDeviceSensor(uint32_t aType) {
 
 #if defined(MOZ_WIDGET_ANDROID)
 void nsGlobalWindowInner::EnableOrientationChangeListener() {
-  if (!nsContentUtils::ShouldResistFingerprinting(GetDocShell())) {
+  if (!ShouldResistFingerprinting()) {
     mHasOrientationChangeListeners = true;
     mOrientationAngle = Orientation(CallerType::System);
   }
@@ -6911,7 +6916,7 @@ void nsGlobalWindowInner::GetGamepads(nsTArray<RefPtr<Gamepad>>& aGamepads) {
 
   // navigator.getGamepads() always returns an empty array when
   // privacy.resistFingerprinting is true.
-  if (nsContentUtils::ShouldResistFingerprinting(GetDocShell())) {
+  if (ShouldResistFingerprinting()) {
     return;
   }
 
@@ -7555,7 +7560,7 @@ void nsGlobalWindowInner::SetReplaceableWindowCoord(
     return;
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(GetDocShell())) {
+  if (ShouldResistFingerprinting()) {
     bool innerWidthSpecified = false;
     bool innerHeightSpecified = false;
     bool outerWidthSpecified = false;

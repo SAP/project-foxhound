@@ -2268,6 +2268,21 @@ class IDLDictionary(IDLObjectWithScope):
                     [member.location] + locations,
                 )
 
+            if member.type.isUndefined():
+                raise WebIDLError(
+                    "Dictionary %s has member with undefined as its type."
+                    % self.identifier.name,
+                    [member.location],
+                )
+            elif member.type.isUnion():
+                for unionMember in member.type.unroll().flatMemberTypes:
+                    if unionMember.isUndefined():
+                        raise WebIDLError(
+                            "Dictionary %s has member with a union containing "
+                            "undefined as a type." % self.identifier.name,
+                            [unionMember.location],
+                        )
+
     def getExtendedAttribute(self, name):
         return self._extendedAttrDict.get(name, None)
 
@@ -2368,13 +2383,13 @@ class IDLType(IDLObject):
         "double",
         # Other types
         "any",
+        "undefined",
         "domstring",
         "bytestring",
         "usvstring",
         "utf8string",
         "jsstring",
         "object",
-        "void",
         # Funny stuff
         "interface",
         "dictionary",
@@ -2465,8 +2480,8 @@ class IDLType(IDLObject):
     def isJSString(self):
         return False
 
-    def isVoid(self):
-        return self.name == "Void"
+    def isUndefined(self):
+        return False
 
     def isSequence(self):
         return False
@@ -2531,6 +2546,9 @@ class IDLType(IDLObject):
 
     def isObservableArray(self):
         return False
+
+    def isDictionaryLike(self):
+        return self.isDictionary() or self.isRecord() or self.isCallbackInterface()
 
     def hasClamp(self):
         return self._clamp
@@ -2599,8 +2617,6 @@ class IDLUnresolvedType(IDLType):
             raise WebIDLError("Unresolved type '%s'." % self.name, [self.location])
 
         assert obj
-        if obj.isType():
-            print(obj)
         assert not obj.isType()
         if obj.isTypedef():
             assert self.name.name == obj.identifier.name
@@ -2651,7 +2667,6 @@ class IDLParametrizedType(IDLType):
 
 class IDLNullableType(IDLParametrizedType):
     def __init__(self, location, innerType):
-        assert not innerType.isVoid()
         assert not innerType == BuiltinTypes[IDLBuiltinType.Types.any]
 
         IDLParametrizedType.__init__(self, location, None, innerType)
@@ -2710,8 +2725,8 @@ class IDLNullableType(IDLParametrizedType):
     def isInteger(self):
         return self.inner.isInteger()
 
-    def isVoid(self):
-        return False
+    def isUndefined(self):
+        return self.inner.isUndefined()
 
     def isSequence(self):
         return self.inner.isSequence()
@@ -2827,7 +2842,7 @@ class IDLNullableType(IDLParametrizedType):
 
 class IDLSequenceType(IDLParametrizedType):
     def __init__(self, location, parameterType):
-        assert not parameterType.isVoid()
+        assert not parameterType.isUndefined()
 
         IDLParametrizedType.__init__(self, location, parameterType.name, parameterType)
         # Need to set self.name up front if our inner type is already complete,
@@ -2846,9 +2861,6 @@ class IDLSequenceType(IDLParametrizedType):
 
     def prettyName(self):
         return "sequence<%s>" % self.inner.prettyName()
-
-    def isVoid(self):
-        return False
 
     def isSequence(self):
         return True
@@ -2877,7 +2889,8 @@ class IDLSequenceType(IDLParametrizedType):
             # Just forward to the union; it'll deal
             return other.isDistinguishableFrom(self)
         return (
-            other.isPrimitive()
+            other.isUndefined()
+            or other.isPrimitive()
             or other.isString()
             or other.isEnum()
             or other.isInterface()
@@ -2891,7 +2904,7 @@ class IDLRecordType(IDLParametrizedType):
     def __init__(self, location, keyType, valueType):
         assert keyType.isString()
         assert keyType.isComplete()
-        assert not valueType.isVoid()
+        assert not valueType.isUndefined()
 
         IDLParametrizedType.__init__(self, location, valueType.name, valueType)
         self.keyType = keyType
@@ -2959,7 +2972,7 @@ class IDLRecordType(IDLParametrizedType):
 
 class IDLObservableArrayType(IDLParametrizedType):
     def __init__(self, location, innerType):
-        assert not innerType.isVoid()
+        assert not innerType.isUndefined()
         IDLParametrizedType.__init__(self, location, None, innerType)
 
     def __hash__(self):
@@ -2973,9 +2986,6 @@ class IDLObservableArrayType(IDLParametrizedType):
 
     def prettyName(self):
         return "ObservableArray<%s>" % self.inner.prettyName()
-
-    def isVoid(self):
-        return False
 
     def isJSONType(self):
         return self.inner.isJSONType()
@@ -3045,9 +3055,6 @@ class IDLUnionType(IDLType):
     def prettyName(self):
         return "(" + " or ".join(m.prettyName() for m in self.memberTypes) + ")"
 
-    def isVoid(self):
-        return False
-
     def isUnion(self):
         return True
 
@@ -3116,6 +3123,7 @@ class IDLUnionType(IDLType):
                         [nullableType.location, self.flatMemberTypes[i].location],
                     )
                 self._dictionaryType = self.flatMemberTypes[i]
+                self.flatMemberTypes[i].inner.needsConversionFromJS = True
             elif self.flatMemberTypes[i].isUnion():
                 self.flatMemberTypes[i : i + 1] = self.flatMemberTypes[i].memberTypes
                 continue
@@ -3215,8 +3223,8 @@ class IDLTypedefType(IDLType):
     def isJSString(self):
         return self.inner.isJSString()
 
-    def isVoid(self):
-        return self.inner.isVoid()
+    def isUndefined(self):
+        return self.inner.isUndefined()
 
     def isJSONType(self):
         return self.inner.isJSONType()
@@ -3329,9 +3337,6 @@ class IDLWrapperType(IDLType):
     def __str__(self):
         return str(self.name) + " (Wrapper)"
 
-    def isVoid(self):
-        return False
-
     def isDictionary(self):
         return isinstance(self.inner, IDLDictionary)
 
@@ -3401,7 +3406,8 @@ class IDLWrapperType(IDLType):
         assert self.isInterface() or self.isEnum() or self.isDictionary()
         if self.isEnum():
             return (
-                other.isPrimitive()
+                other.isUndefined()
+                or other.isPrimitive()
                 or other.isInterface()
                 or other.isObject()
                 or other.isCallback()
@@ -3409,7 +3415,7 @@ class IDLWrapperType(IDLType):
                 or other.isSequence()
                 or other.isRecord()
             )
-        if self.isDictionary() and other.nullable():
+        if self.isDictionary() and (other.nullable() or other.isUndefined()):
             return False
         if (
             other.isPrimitive()
@@ -3433,7 +3439,12 @@ class IDLWrapperType(IDLType):
                 self.inner.interfacesBasedOnSelf
                 & other.unroll().inner.interfacesBasedOnSelf
             ) == 0 and (self.isNonCallbackInterface() or other.isNonCallbackInterface())
-        if other.isDictionary() or other.isCallback() or other.isRecord():
+        if (
+            other.isUndefined()
+            or other.isDictionary()
+            or other.isCallback()
+            or other.isRecord()
+        ):
             return self.isNonCallbackInterface()
 
         # Not much else |other| can be
@@ -3550,13 +3561,13 @@ class IDLBuiltinType(IDLType):
         "double",
         # Other types
         "any",
+        "undefined",
         "domstring",
         "bytestring",
         "usvstring",
         "utf8string",
         "jsstring",
         "object",
-        "void",
         # Funny stuff
         "ArrayBuffer",
         "ArrayBufferView",
@@ -3586,13 +3597,13 @@ class IDLBuiltinType(IDLType):
         Types.unrestricted_double: IDLType.Tags.unrestricted_double,
         Types.double: IDLType.Tags.double,
         Types.any: IDLType.Tags.any,
+        Types.undefined: IDLType.Tags.undefined,
         Types.domstring: IDLType.Tags.domstring,
         Types.bytestring: IDLType.Tags.bytestring,
         Types.usvstring: IDLType.Tags.usvstring,
         Types.utf8string: IDLType.Tags.utf8string,
         Types.jsstring: IDLType.Tags.jsstring,
         Types.object: IDLType.Tags.object,
-        Types.void: IDLType.Tags.void,
         Types.ArrayBuffer: IDLType.Tags.interface,
         Types.ArrayBufferView: IDLType.Tags.interface,
         Types.Int8Array: IDLType.Tags.interface,
@@ -3621,13 +3632,13 @@ class IDLBuiltinType(IDLType):
         Types.unrestricted_double: "unrestricted double",
         Types.double: "double",
         Types.any: "any",
+        Types.undefined: "undefined",
         Types.domstring: "DOMString",
         Types.bytestring: "ByteString",
         Types.usvstring: "USVString",
         Types.utf8string: "USVString",  # That's what it is in spec terms
         Types.jsstring: "USVString",  # Again, that's what it is in spec terms
         Types.object: "object",
-        Types.void: "void",
         Types.ArrayBuffer: "ArrayBuffer",
         Types.ArrayBufferView: "ArrayBufferView",
         Types.Int8Array: "Int8Array",
@@ -3757,6 +3768,9 @@ class IDLBuiltinType(IDLType):
     def isBoolean(self):
         return self._typeTag == IDLBuiltinType.Types.boolean
 
+    def isUndefined(self):
+        return self._typeTag == IDLBuiltinType.Types.undefined
+
     def isNumeric(self):
         return self.isPrimitive() and not self.isBoolean()
 
@@ -3839,9 +3853,11 @@ class IDLBuiltinType(IDLType):
         if other.isUnion():
             # Just forward to the union; it'll deal
             return other.isDistinguishableFrom(self)
-        if self.isBoolean():
-            return (
-                other.isNumeric()
+        if self.isUndefined():
+            return not (other.isUndefined() or other.isDictionaryLike())
+        if self.isPrimitive():
+            if (
+                other.isUndefined()
                 or other.isString()
                 or other.isEnum()
                 or other.isInterface()
@@ -3850,22 +3866,16 @@ class IDLBuiltinType(IDLType):
                 or other.isDictionary()
                 or other.isSequence()
                 or other.isRecord()
-            )
-        if self.isNumeric():
-            return (
-                other.isBoolean()
-                or other.isString()
-                or other.isEnum()
-                or other.isInterface()
-                or other.isObject()
-                or other.isCallback()
-                or other.isDictionary()
-                or other.isSequence()
-                or other.isRecord()
-            )
+            ):
+                return True
+            if self.isBoolean():
+                return other.isNumeric()
+            assert self.isNumeric()
+            return other.isBoolean()
         if self.isString():
             return (
-                other.isPrimitive()
+                other.isUndefined()
+                or other.isPrimitive()
                 or other.isInterface()
                 or other.isObject()
                 or other.isCallback()
@@ -3877,14 +3887,18 @@ class IDLBuiltinType(IDLType):
             # Can't tell "any" apart from anything
             return False
         if self.isObject():
-            return other.isPrimitive() or other.isString() or other.isEnum()
-        if self.isVoid():
-            return not other.isVoid()
+            return (
+                other.isUndefined()
+                or other.isPrimitive()
+                or other.isString()
+                or other.isEnum()
+            )
         # Not much else we could be!
         assert self.isSpiderMonkeyInterface()
         # Like interfaces, but we know we're not a callback
         return (
-            other.isPrimitive()
+            other.isUndefined()
+            or other.isPrimitive()
             or other.isString()
             or other.isEnum()
             or other.isCallback()
@@ -4013,6 +4027,9 @@ BuiltinTypes = {
         "UnsignedLongLong",
         IDLBuiltinType.Types.unsigned_long_long,
     ),
+    IDLBuiltinType.Types.undefined: IDLBuiltinType(
+        BuiltinLocation("<builtin type>"), "Undefined", IDLBuiltinType.Types.undefined
+    ),
     IDLBuiltinType.Types.boolean: IDLBuiltinType(
         BuiltinLocation("<builtin type>"), "Boolean", IDLBuiltinType.Types.boolean
     ),
@@ -4052,9 +4069,6 @@ BuiltinTypes = {
     ),
     IDLBuiltinType.Types.object: IDLBuiltinType(
         BuiltinLocation("<builtin type>"), "Object", IDLBuiltinType.Types.object
-    ),
-    IDLBuiltinType.Types.void: IDLBuiltinType(
-        BuiltinLocation("<builtin type>"), "Void", IDLBuiltinType.Types.void
     ),
     IDLBuiltinType.Types.ArrayBuffer: IDLBuiltinType(
         BuiltinLocation("<builtin type>"),
@@ -4782,12 +4796,12 @@ class IDLIterable(IDLMaplikeOrSetlikeOrIterableBase):
             newObject=True,
         )
 
-        # void forEach(callback(valueType, keyType), optional any thisArg)
+        # undefined forEach(callback(valueType, keyType), optional any thisArg)
         self.addMethod(
             "forEach",
             members,
             False,
-            BuiltinTypes[IDLBuiltinType.Types.void],
+            BuiltinTypes[IDLBuiltinType.Types.undefined],
             self.getForEachArguments(),
         )
 
@@ -4962,12 +4976,12 @@ class IDLMaplikeOrSetlike(IDLMaplikeOrSetlikeOrIterableBase):
             isIteratorAlias=self.isSetlike(),
         )
 
-        # void forEach(callback(valueType, keyType), thisVal)
+        # undefined forEach(callback(valueType, keyType), thisVal)
         self.addMethod(
             "forEach",
             members,
             False,
-            BuiltinTypes[IDLBuiltinType.Types.void],
+            BuiltinTypes[IDLBuiltinType.Types.undefined],
             self.getForEachArguments(),
         )
 
@@ -4989,9 +5003,9 @@ class IDLMaplikeOrSetlike(IDLMaplikeOrSetlikeOrIterableBase):
         )
 
         if not self.readonly:
-            # void clear()
+            # undefined clear()
             self.addMethod(
-                "clear", members, True, BuiltinTypes[IDLBuiltinType.Types.void], []
+                "clear", members, True, BuiltinTypes[IDLBuiltinType.Types.undefined], []
             )
             # boolean delete(keyType key)
             self.addMethod(
@@ -5808,6 +5822,12 @@ class IDLArgument(IDLObjectWithIdentifier):
             assert not isinstance(type.name, IDLUnresolvedIdentifier)
             self.type = type
 
+        if self.type.isUndefined():
+            raise WebIDLError(
+                "undefined must not be used as the type of an argument in any circumstance",
+                [self.location],
+            )
+
         if self.type.isAny():
             assert self.defaultValue is None or isinstance(
                 self.defaultValue, IDLNullValue
@@ -5899,7 +5919,12 @@ class IDLCallback(IDLObjectWithScope):
             argument.type = type
 
     def validate(self):
-        pass
+        for argument in self._arguments:
+            if argument.type.isUndefined():
+                raise WebIDLError(
+                    "undefined must not be used as the type of an argument in any circumstance",
+                    [self.location],
+                )
 
     def addExtendedAttributes(self, attrs):
         unhandledAttrs = []
@@ -5958,7 +5983,8 @@ class IDLCallbackType(IDLType):
             # Just forward to the union; it'll deal
             return other.isDistinguishableFrom(self)
         return (
-            other.isPrimitive()
+            other.isUndefined()
+            or other.isPrimitive()
             or other.isString()
             or other.isEnum()
             or other.isNonCallbackInterface()
@@ -6076,7 +6102,7 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
                 or arguments[0].type == BuiltinTypes[IDLBuiltinType.Types.unsigned_long]
             )
             assert not arguments[0].optional and not arguments[0].variadic
-            assert not self._getter or not overload.returnType.isVoid()
+            assert not self._getter or not overload.returnType.isUndefined()
 
         if self._setter:
             assert len(self._overloads) == 1
@@ -6524,9 +6550,9 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             # This is called before we've done overload resolution
             overloads = self._overloads
             assert len(overloads) == 1
-            if not overloads[0].returnType.isVoid():
+            if not overloads[0].returnType.isUndefined():
                 raise WebIDLError(
-                    "[LenientFloat] used on a non-void method",
+                    "[LenientFloat] used on a non-undefined method",
                     [attr.location, self.location],
                 )
             if not overloads[0].includesRestrictedFloatArgument():
@@ -6918,7 +6944,7 @@ class Tokenizer(object):
         "record": "RECORD",
         "short": "SHORT",
         "unsigned": "UNSIGNED",
-        "void": "VOID",
+        "undefined": "UNDEFINED",
         ":": "COLON",
         ";": "SEMICOLON",
         "{": "LBRACE",
@@ -7551,6 +7577,12 @@ class Parser(Tokenizer):
         """
         p[0] = IDLNullValue(self.getLocation(p, 1))
 
+    def p_DefaultValueUndefined(self, p):
+        """
+        DefaultValue : UNDEFINED
+        """
+        p[0] = IDLUndefinedValue(self.getLocation(p, 1))
+
     def p_Exception(self, p):
         """
         Exception : EXCEPTION IDENTIFIER Inheritance LBRACE ExceptionMembers RBRACE SEMICOLON
@@ -7602,7 +7634,7 @@ class Parser(Tokenizer):
 
     def p_CallbackRest(self, p):
         """
-        CallbackRest : IDENTIFIER EQUALS ReturnType LPAREN ArgumentList RPAREN SEMICOLON
+        CallbackRest : IDENTIFIER EQUALS Type LPAREN ArgumentList RPAREN SEMICOLON
         """
         identifier = IDLUnresolvedIdentifier(self.getLocation(p, 1), p[1])
         p[0] = IDLCallback(
@@ -7616,7 +7648,7 @@ class Parser(Tokenizer):
 
     def p_CallbackConstructorRest(self, p):
         """
-        CallbackConstructorRest : CONSTRUCTOR IDENTIFIER EQUALS ReturnType LPAREN ArgumentList RPAREN SEMICOLON
+        CallbackConstructorRest : CONSTRUCTOR IDENTIFIER EQUALS Type LPAREN ArgumentList RPAREN SEMICOLON
         """
         identifier = IDLUnresolvedIdentifier(self.getLocation(p, 2), p[2])
         p[0] = IDLCallback(
@@ -7925,9 +7957,9 @@ class Parser(Tokenizer):
                     [arguments[0].location],
                 )
         if getter:
-            if returnType.isVoid():
+            if returnType.isUndefined():
                 raise WebIDLError(
-                    "getter cannot have void return type", [self.getLocation(p, 2)]
+                    "getter cannot have undefined return type", [self.getLocation(p, 2)]
                 )
         if setter:
             if len(arguments) != 2:
@@ -8093,7 +8125,7 @@ class Parser(Tokenizer):
 
     def p_OperationRest(self, p):
         """
-        OperationRest : ReturnType OptionalIdentifier LPAREN ArgumentList RPAREN SEMICOLON
+        OperationRest : Type OptionalIdentifier LPAREN ArgumentList RPAREN SEMICOLON
         """
         p[0] = (p[1], p[2], p[4])
 
@@ -8357,7 +8389,7 @@ class Parser(Tokenizer):
               | SYMBOL
               | TRUE
               | UNSIGNED
-              | VOID
+              | UNDEFINED
               | ArgumentNameKeyword
         """
         pass
@@ -8399,11 +8431,9 @@ class Parser(Tokenizer):
         """
         p[0] = BuiltinTypes[IDLBuiltinType.Types.any]
 
-    # Note: Promise<void> is allowed, so we want to parametrize on ReturnType,
-    # not Type.  Promise types can't be null, hence no "Null" in there.
     def p_SingleTypePromiseType(self, p):
         """
-        SingleType : PROMISE LT ReturnType GT
+        SingleType : PROMISE LT Type GT
         """
         p[0] = IDLPromiseType(self.getLocation(p, 1), p[3])
 
@@ -8445,11 +8475,14 @@ class Parser(Tokenizer):
         DistinguishableType : PrimitiveType Null
                             | ARRAYBUFFER Null
                             | OBJECT Null
+                            | UNDEFINED Null
         """
         if p[1] == "object":
             type = BuiltinTypes[IDLBuiltinType.Types.object]
         elif p[1] == "ArrayBuffer":
             type = BuiltinTypes[IDLBuiltinType.Types.ArrayBuffer]
+        elif p[1] == "undefined":
+            type = BuiltinTypes[IDLBuiltinType.Types.undefined]
         else:
             type = BuiltinTypes[p[1]]
 
@@ -8668,18 +8701,6 @@ class Parser(Tokenizer):
         else:
             p[0] = None
 
-    def p_ReturnTypeType(self, p):
-        """
-        ReturnType : Type
-        """
-        p[0] = p[1]
-
-    def p_ReturnTypeVoid(self, p):
-        """
-        ReturnType : VOID
-        """
-        p[0] = BuiltinTypes[IDLBuiltinType.Types.void]
-
     def p_ScopedName(self, p):
         """
         ScopedName : AbsoluteScopedName
@@ -8866,7 +8887,6 @@ class Parser(Tokenizer):
             if isinstance(p, IDLInterface):
                 interfaceStatements.append(p)
 
-        iterableIteratorIface = None
         for iface in interfaceStatements:
             iterable = None
             # We haven't run finish() on the interface yet, so we don't know
@@ -8882,13 +8902,46 @@ class Parser(Tokenizer):
                 def simpleExtendedAttr(str):
                     return IDLExtendedAttribute(iface.location, (str,))
 
+                if isinstance(iterable, IDLAsyncIterable):
+                    nextReturnType = IDLPromiseType(
+                        iterable.location, BuiltinTypes[IDLBuiltinType.Types.any]
+                    )
+                else:
+                    nextReturnType = BuiltinTypes[IDLBuiltinType.Types.object]
                 nextMethod = IDLMethod(
-                    iface.location,
-                    IDLUnresolvedIdentifier(iface.location, "next"),
-                    BuiltinTypes[IDLBuiltinType.Types.object],
+                    iterable.location,
+                    IDLUnresolvedIdentifier(iterable.location, "next"),
+                    nextReturnType,
                     [],
                 )
                 nextMethod.addExtendedAttributes([simpleExtendedAttr("Throws")])
+
+                methods = [nextMethod]
+
+                if iterable.getExtendedAttribute("GenerateReturnMethod"):
+                    assert isinstance(iterable, IDLAsyncIterable)
+
+                    returnMethod = IDLMethod(
+                        iterable.location,
+                        IDLUnresolvedIdentifier(iterable.location, "return"),
+                        IDLPromiseType(
+                            iterable.location, BuiltinTypes[IDLBuiltinType.Types.any]
+                        ),
+                        [
+                            IDLArgument(
+                                iterable.location,
+                                IDLUnresolvedIdentifier(
+                                    BuiltinLocation("<auto-generated-identifier>"),
+                                    "value",
+                                ),
+                                BuiltinTypes[IDLBuiltinType.Types.any],
+                                optional=True,
+                            ),
+                        ],
+                    )
+                    returnMethod.addExtendedAttributes([simpleExtendedAttr("Throws")])
+                    methods.append(returnMethod)
+
                 if iterable.isIterable():
                     itr_suffix = "Iterator"
                 else:
@@ -8905,7 +8958,7 @@ class Parser(Tokenizer):
                     self.globalScope(),
                     itr_ident,
                     None,
-                    [nextMethod],
+                    methods,
                     isKnownNonPartial=True,
                     classNameOverride=classNameOverride,
                 )

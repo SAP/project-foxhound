@@ -12,26 +12,33 @@
  * See devtools/docs/backend/actor-hierarchy.md for more details.
  */
 
-const { Ci } = require("chrome");
 const {
   connectToFrame,
-} = require("devtools/server/connectors/frame-connector");
-loader.lazyImporter(
-  this,
+} = require("resource://devtools/server/connectors/frame-connector.js");
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm"
 );
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
-const { AppConstants } = require("resource://gre/modules/AppConstants.jsm");
+const {
+  ActorClassWithSpec,
+  Actor,
+} = require("resource://devtools/shared/protocol.js");
+const {
+  tabDescriptorSpec,
+} = require("resource://devtools/shared/specs/descriptors/tab.js");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 const {
   createBrowserElementSessionContext,
-} = require("devtools/server/actors/watcher/session-context");
+} = require("resource://devtools/server/actors/watcher/session-context.js");
 
 loader.lazyRequireGetter(
   this,
   "WatcherActor",
-  "devtools/server/actors/watcher",
+  "resource://devtools/server/actors/watcher.js",
   true
 );
 
@@ -210,7 +217,9 @@ const TabDescriptorActor = ActorClassWithSpec(tabDescriptorSpec, {
     }
 
     try {
-      const { data } = await PlacesUtils.promiseFaviconData(this._getUrl());
+      const { data } = await lazy.PlacesUtils.promiseFaviconData(
+        this._getUrl()
+      );
       return data;
     } catch (e) {
       // Favicon unavailable for this url.

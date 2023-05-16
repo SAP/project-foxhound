@@ -12,7 +12,6 @@
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemDirectoryHandleBinding.h"
-#include "mozilla/dom/FileSystemDirectoryIterator.h"
 #include "mozilla/dom/FileSystemHandleBinding.h"
 #include "mozilla/dom/FileSystemManager.h"
 #include "mozilla/dom/PFileSystemManager.h"
@@ -51,27 +50,15 @@ FileSystemHandleKind FileSystemDirectoryHandle::Kind() const {
   return FileSystemHandleKind::Directory;
 }
 
-void FileSystemDirectoryHandle::InitAsyncIterator(
+void FileSystemDirectoryHandle::InitAsyncIteratorData(
+    IteratorData& aData, iterator_t::IteratorType aType, ErrorResult& aError) {
+  aData.mImpl =
+      fs::FileSystemDirectoryIteratorFactory::Create(mMetadata, aType);
+}
+
+already_AddRefed<Promise> FileSystemDirectoryHandle::GetNextIterationResult(
     FileSystemDirectoryHandle::iterator_t* aIterator, ErrorResult& aError) {
-  aIterator->SetData(
-      static_cast<void*>(fs::FileSystemDirectoryIteratorFactory::Create(
-                             mMetadata, aIterator->GetIteratorType())
-                             .release()));
-}
-
-void FileSystemDirectoryHandle::DestroyAsyncIterator(
-    FileSystemDirectoryHandle::iterator_t* aIterator) {
-  auto* it =
-      static_cast<FileSystemDirectoryIterator::Impl*>(aIterator->GetData());
-  delete it;
-  aIterator->SetData(nullptr);
-}
-
-already_AddRefed<Promise> FileSystemDirectoryHandle::GetNextPromise(
-    JSContext* /* aCx */, FileSystemDirectoryHandle::iterator_t* aIterator,
-    ErrorResult& aError) {
-  return static_cast<FileSystemDirectoryIterator::Impl*>(aIterator->GetData())
-      ->Next(mGlobal, mManager, aError);
+  return aIterator->Data().mImpl->Next(mGlobal, mManager, aError);
 }
 
 already_AddRefed<Promise> FileSystemDirectoryHandle::GetFileHandle(
@@ -135,7 +122,9 @@ already_AddRefed<Promise> FileSystemDirectoryHandle::Resolve(
     return nullptr;
   }
 
-  promise->MaybeReject(NS_ERROR_NOT_IMPLEMENTED);
+  fs::FileSystemEntryPair pair(mMetadata.entryId(),
+                               aPossibleDescendant.GetId());
+  mRequestHandler->Resolve(mManager, pair, promise);
 
   return promise.forget();
 }

@@ -4,16 +4,16 @@
 
 "use strict";
 
-const { KeyCodes } = require("devtools/client/shared/keycodes");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
 const {
   flashElementOn,
   flashElementOff,
-} = require("devtools/client/inspector/markup/utils");
+} = require("resource://devtools/client/inspector/markup/utils.js");
 
 loader.lazyRequireGetter(
   this,
   "wrapMoveFocus",
-  "devtools/client/shared/focus",
+  "resource://devtools/client/shared/focus.js",
   true
 );
 

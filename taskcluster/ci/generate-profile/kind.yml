@@ -33,7 +33,7 @@ jobs:
             job-name: linux-profile
         treeherder:
             platform: linux32-shippable/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             chain-of-trust: true
             env:
@@ -64,7 +64,7 @@ jobs:
             job-name: linux64-profile
         treeherder:
             platform: linux64-shippable/opt
-        worker-type: b-linux
+        worker-type: b-linux-gcp
         worker:
             chain-of-trust: true
             env:
@@ -108,7 +108,6 @@ jobs:
                   path: /builds/worker/artifacts/
         run:
             using: mozharness
-            need-xvfb: true
             job-script: taskcluster/scripts/tester/test-linux.sh
             script: android_emulator_pgo.py
             tooltool-downloads: internal
@@ -148,7 +147,6 @@ jobs:
                   path: /builds/worker/artifacts/
         run:
             using: mozharness
-            need-xvfb: true
             job-script: taskcluster/scripts/tester/test-linux.sh
             script: android_emulator_pgo.py
             tooltool-downloads: internal

@@ -32,6 +32,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/DragEvent.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FrameLoaderBinding.h"
@@ -999,6 +1000,24 @@ void EventStateManager::NotifyTargetUserActivation(WidgetEvent* aEvent,
   if (aEvent->mMessage == eTouchEnd && aEvent->AsTouchEvent() &&
       IsEventOutsideDragThreshold(aEvent->AsTouchEvent())) {
     return;
+  }
+
+  // Do not treat the click on scrollbar as a user interaction with the web
+  // content.
+  if (StaticPrefs::dom_user_activation_ignore_scrollbars() &&
+      (aEvent->mMessage == eMouseDown || aEvent->mMessage == ePointerDown) &&
+      aTargetContent->IsInNativeAnonymousSubtree()) {
+    nsIContent* current = aTargetContent;
+    do {
+      nsIContent* root = current->GetClosestNativeAnonymousSubtreeRoot();
+      if (!root) {
+        break;
+      }
+      if (root->IsXULElement(nsGkAtoms::scrollbar)) {
+        return;
+      }
+      current = root->GetParent();
+    } while (current);
   }
 
   MOZ_ASSERT(aEvent->mMessage == eKeyDown || aEvent->mMessage == eMouseDown ||
@@ -3473,7 +3492,7 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
           if (ShadowRoot* root = newFocus->GetShadowRoot()) {
             if (root->DelegatesFocus()) {
               if (Element* firstFocusable =
-                      root->GetFirstFocusable(/* aWithMouse */ true)) {
+                      root->GetFocusDelegate(/* aWithMouse */ true)) {
                 newFocus = firstFocusable;
                 break;
               }
@@ -4042,23 +4061,19 @@ static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
     return false;
   }
 
-  // We don't want to deal with iframes, just let them do their thing unless
-  // they intersect UI.
-  //
-  // TODO(emilio, bug 1525561): In a fission world, we should have a better way
-  // to find the event coordinates relative to the content area.
-  nsPresContext* topLevel =
-      aPresContext->GetInProcessRootContentDocumentPresContext();
-  if (!topLevel) {
+  auto input = DOMIntersectionObserver::ComputeInput(*aPresContext->Document(),
+                                                     nullptr, nullptr);
+
+  if (!input.mRootFrame) {
     return false;
   }
 
   nsPoint point = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-      aEvent, RelativeTo{topLevel->PresShell()->GetRootFrame()});
+      aEvent, RelativeTo{input.mRootFrame});
 
   // The cursor size won't be affected by our full zoom in the parent process,
   // so undo that before checking the rect.
-  float zoom = topLevel->GetFullZoom();
+  float zoom = aPresContext->GetFullZoom();
 
   // Also adjust for accessibility cursor scaling factor.
   zoom /= LookAndFeel::GetFloat(LookAndFeel::FloatID::CursorScale, 1.0f);
@@ -4068,8 +4083,10 @@ static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
   nsPoint hotspot(CSSPixel::ToAppUnits(aCursor.mHotspot.x / zoom),
                   CSSPixel::ToAppUnits(aCursor.mHotspot.y / zoom));
 
-  nsRect cursorRect(point - hotspot, size);
-  return !topLevel->GetVisibleArea().Contains(cursorRect);
+  const nsRect cursorRect(point - hotspot, size);
+  auto output = DOMIntersectionObserver::Intersect(input, cursorRect);
+  return !output.mIntersectionRect ||
+         !(*output.mIntersectionRect == cursorRect);
 }
 
 static gfx::IntPoint ComputeHotspot(imgIContainer* aContainer,
@@ -4127,8 +4144,9 @@ static CursorImage ComputeCustomCursor(nsPresContext* aPresContext,
     if (!container) {
       continue;
     }
-    container = nsLayoutUtils::OrientImage(
-        container, aFrame.StyleVisibility()->mImageOrientation);
+    StyleImageOrientation orientation =
+        aFrame.StyleVisibility()->UsedImageOrientation(req);
+    container = nsLayoutUtils::OrientImage(container, orientation);
     Maybe<gfx::Point> specifiedHotspot =
         image.has_hotspot ? Some(gfx::Point{image.hotspot_x, image.hotspot_y})
                           : Nothing();

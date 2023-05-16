@@ -4,22 +4,22 @@
 
 "use strict";
 
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "ContentDOMReference",
-  "resource://gre/modules/ContentDOMReference.jsm",
-  true
+  "resource://gre/modules/ContentDOMReference.jsm"
 );
 loader.lazyRequireGetter(
   this,
   ["isFrameWithChildTarget", "isWindowIncluded"],
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "NodeTabbingOrderHighlighter",
-  "devtools/server/actors/highlighters/node-tabbing-order",
+  "resource://devtools/server/actors/highlighters/node-tabbing-order.js",
   true
 );
 
@@ -140,7 +140,7 @@ class TabbingOrderHighlighter {
     this._trackMutations();
 
     return {
-      contentDOMReference: endElm && ContentDOMReference.get(endElm),
+      contentDOMReference: endElm && lazy.ContentDOMReference.get(endElm),
       index,
     };
   }

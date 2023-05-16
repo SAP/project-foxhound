@@ -4,20 +4,24 @@
 
 "use strict";
 
-const { Cc, Ci, Cr, components: Components } = require("chrome");
-
 loader.lazyRequireGetter(
   this,
   "NetworkHelper",
-  "devtools/shared/webconsole/network-helper"
+  "resource://devtools/shared/webconsole/network-helper.js"
 );
 loader.lazyRequireGetter(
   this,
   "CacheEntry",
-  "devtools/shared/platform/cache-entry",
+  "resource://devtools/shared/platform/cache-entry.js",
   true
 );
-loader.lazyImporter(this, "NetUtil", "resource://gre/modules/NetUtil.jsm");
+
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
+);
 
 // Network logging
 
@@ -189,7 +193,7 @@ NetworkResponseListener.prototype = {
    */
   onDataAvailable(request, inputStream, offset, count) {
     this._findOpenResponse();
-    const data = NetUtil.readInputStreamToString(inputStream, count);
+    const data = lazy.NetUtil.readInputStreamToString(inputStream, count);
 
     this.bodySize += count;
 
@@ -328,9 +332,6 @@ NetworkResponseListener.prototype = {
     // was a redirect from http to https, the request object seems to contain
     // security info for the https request after redirect.
     const secinfo = this.httpActivity.channel.securityInfo;
-    if (secinfo) {
-      secinfo.QueryInterface(Ci.nsITransportSecurityInfo);
-    }
     const info = await NetworkHelper.parseSecurityInfo(
       secinfo,
       this.request.loadInfo.originAttributes,

@@ -3,10 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ErrorList.h"
 #include "HTMLEditor.h"
+#include "HTMLEditorInlines.h"
 
 #include "AutoRangeArray.h"
+#include "CSSEditUtils.h"
 #include "EditAction.h"
 #include "EditorUtils.h"
 #include "HTMLEditHelpers.h"
@@ -14,6 +15,7 @@
 #include "PendingStyles.h"
 #include "SelectionState.h"
 
+#include "ErrorList.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/EditorForwards.h"
@@ -214,11 +216,15 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
     return NS_OK;
   }
 
-  EditActionResult result = CanHandleHTMLEditSubAction();
-  if (result.Failed() || result.Canceled()) {
-    NS_WARNING_ASSERTION(result.Succeeded(),
-                         "HTMLEditor::CanHandleHTMLEditSubAction() failed");
-    return result.Rv();
+  {
+    Result<EditActionResult, nsresult> result = CanHandleHTMLEditSubAction();
+    if (MOZ_UNLIKELY(result.isErr())) {
+      NS_WARNING("HTMLEditor::CanHandleHTMLEditSubAction() failed");
+      return result.unwrapErr();
+    }
+    if (result.inspect().Canceled()) {
+      return NS_OK;
+    }
   }
 
   AutoPlaceholderBatch treatAsOneTransaction(
@@ -267,20 +273,20 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
       if (range.InSameContainer() && range.StartRef().IsInTextNode()) {
         // MOZ_KnownLive(...ContainerAs<Text>()) because of grabbed by `range`.
         // MOZ_KnownLive(styleToSet.*) due to bug 1622253.
-        SplitRangeOffFromNodeResult wrapTextInStyledElementResult =
-            SetInlinePropertyOnTextNode(
+        Result<SplitRangeOffFromNodeResult, nsresult>
+            wrapTextInStyledElementResult = SetInlinePropertyOnTextNode(
                 MOZ_KnownLive(*range.StartRef().ContainerAs<Text>()),
                 range.StartRef().Offset(), range.EndRef().Offset(),
                 MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                 MOZ_KnownLive(styleToSet.mAttribute),
                 styleToSet.mAttributeValue);
-        if (wrapTextInStyledElementResult.isErr()) {
+        if (MOZ_UNLIKELY(wrapTextInStyledElementResult.isErr())) {
           NS_WARNING("HTMLEditor::SetInlinePropertyOnTextNode() failed");
           return wrapTextInStyledElementResult.unwrapErr();
         }
         // There is AutoTransactionsConserveSelection, so we don't need to
         // update selection here.
-        wrapTextInStyledElementResult.IgnoreCaretPointSuggestion();
+        wrapTextInStyledElementResult.inspect().IgnoreCaretPointSuggestion();
         continue;
       }
 
@@ -314,21 +320,21 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
                                          EditorType::HTML)) {
         // MOZ_KnownLive(...ContainerAs<Text>()) because of grabbed by `range`.
         // MOZ_KnownLive(styleToSet.*) due to bug 1622253.
-        SplitRangeOffFromNodeResult wrapTextInStyledElementResult =
-            SetInlinePropertyOnTextNode(
+        Result<SplitRangeOffFromNodeResult, nsresult>
+            wrapTextInStyledElementResult = SetInlinePropertyOnTextNode(
                 MOZ_KnownLive(*range.StartRef().ContainerAs<Text>()),
                 range.StartRef().Offset(),
                 range.StartRef().ContainerAs<Text>()->TextDataLength(),
                 MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                 MOZ_KnownLive(styleToSet.mAttribute),
                 styleToSet.mAttributeValue);
-        if (wrapTextInStyledElementResult.isErr()) {
+        if (MOZ_UNLIKELY(wrapTextInStyledElementResult.isErr())) {
           NS_WARNING("HTMLEditor::SetInlinePropertyOnTextNode() failed");
           return wrapTextInStyledElementResult.unwrapErr();
         }
         // There is AutoTransactionsConserveSelection, so we don't need to
         // update selection here.
-        wrapTextInStyledElementResult.IgnoreCaretPointSuggestion();
+        wrapTextInStyledElementResult.inspect().IgnoreCaretPointSuggestion();
       }
 
       // Then, apply new style to all nodes in the range entirely.
@@ -353,20 +359,20 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
                                          EditorType::HTML)) {
         // MOZ_KnownLive(...ContainerAs<Text>()) because of grabbed by `range`.
         // MOZ_KnownLive(styleToSet.mAttribute) due to bug 1622253.
-        SplitRangeOffFromNodeResult wrapTextInStyledElementResult =
-            SetInlinePropertyOnTextNode(
+        Result<SplitRangeOffFromNodeResult, nsresult>
+            wrapTextInStyledElementResult = SetInlinePropertyOnTextNode(
                 MOZ_KnownLive(*range.EndRef().ContainerAs<Text>()), 0,
                 range.EndRef().Offset(),
                 MOZ_KnownLive(styleToSet.HTMLPropertyRef()),
                 MOZ_KnownLive(styleToSet.mAttribute),
                 styleToSet.mAttributeValue);
-        if (wrapTextInStyledElementResult.isErr()) {
+        if (MOZ_UNLIKELY(wrapTextInStyledElementResult.isErr())) {
           NS_WARNING("HTMLEditor::SetInlinePropertyOnTextNode() failed");
           return wrapTextInStyledElementResult.unwrapErr();
         }
         // There is AutoTransactionsConserveSelection, so we don't need to
         // update selection here.
-        wrapTextInStyledElementResult.IgnoreCaretPointSuggestion();
+        wrapTextInStyledElementResult.inspect().IgnoreCaretPointSuggestion();
       }
     }
     MOZ_ASSERT(selectionRanges.HasSavedRanges());
@@ -466,9 +472,11 @@ Result<bool, nsresult> HTMLEditor::ElementIsGoodContainerForTheStyle(
                                                      *styledElement);
 }
 
-SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
-    Text& aText, uint32_t aStartOffset, uint32_t aEndOffset, nsAtom& aProperty,
-    nsAtom* aAttribute, const nsAString& aValue) {
+Result<SplitRangeOffFromNodeResult, nsresult>
+HTMLEditor::SetInlinePropertyOnTextNode(Text& aText, uint32_t aStartOffset,
+                                        uint32_t aEndOffset, nsAtom& aProperty,
+                                        nsAtom* aAttribute,
+                                        const nsAString& aValue) {
   if (!aText.GetParentNode() ||
       !HTMLEditUtils::CanNodeContain(*aText.GetParentNode(), aProperty)) {
     return SplitRangeOffFromNodeResult(nullptr, &aText, nullptr);
@@ -487,11 +495,10 @@ SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
     Result<bool, nsresult> isComputedCSSEquivalentToHTMLInlineStyleOrError =
         CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet(
             *this, aText, &aProperty, aAttribute, value);
-    if (isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr()) {
+    if (MOZ_UNLIKELY(isComputedCSSEquivalentToHTMLInlineStyleOrError.isErr())) {
       NS_WARNING(
           "CSSEditUtils::IsComputedCSSEquivalentToHTMLInlineStyleSet() failed");
-      return SplitRangeOffFromNodeResult(
-          isComputedCSSEquivalentToHTMLInlineStyleOrError.unwrapErr());
+      return isComputedCSSEquivalentToHTMLInlineStyleOrError.propagateErr();
     }
     if (isComputedCSSEquivalentToHTMLInlineStyleOrError.unwrap()) {
       return SplitRangeOffFromNodeResult(nullptr, &aText, nullptr);
@@ -502,82 +509,88 @@ SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
   }
 
   // Make the range an independent node.
-  SplitNodeResult splitAtEndResult = [&]() MOZ_CAN_RUN_SCRIPT {
+  auto splitAtEndResult =
+      [&]() MOZ_CAN_RUN_SCRIPT -> Result<SplitNodeResult, nsresult> {
     EditorDOMPoint atEnd(&aText, aEndOffset);
     if (atEnd.IsEndOfContainer()) {
       return SplitNodeResult::NotHandled(atEnd, GetSplitNodeDirection());
     }
     // We need to split off back of text node
-    SplitNodeResult splitNodeResult = SplitNodeWithTransaction(atEnd);
+    Result<SplitNodeResult, nsresult> splitNodeResult =
+        SplitNodeWithTransaction(atEnd);
     if (splitNodeResult.isErr()) {
       NS_WARNING("HTMLEditor::SplitNodeWithTransaction() failed");
       return splitNodeResult;
     }
-    if (MOZ_UNLIKELY(!splitNodeResult.HasCaretPointSuggestion())) {
+    if (MOZ_UNLIKELY(!splitNodeResult.inspect().HasCaretPointSuggestion())) {
       NS_WARNING(
           "HTMLEditor::SplitNodeWithTransaction() didn't suggest caret "
           "point");
-      return SplitNodeResult(NS_ERROR_FAILURE);
+      return Err(NS_ERROR_FAILURE);
     }
     return splitNodeResult;
   }();
   if (MOZ_UNLIKELY(splitAtEndResult.isErr())) {
-    return SplitRangeOffFromNodeResult(splitAtEndResult.unwrapErr());
+    return splitAtEndResult.propagateErr();
   }
-  EditorDOMPoint pointToPutCaret = splitAtEndResult.UnwrapCaretPoint();
-  SplitNodeResult splitAtStartResult = [&]() MOZ_CAN_RUN_SCRIPT {
-    EditorDOMPoint atStart(splitAtEndResult.DidSplit()
-                               ? splitAtEndResult.GetPreviousContent()
+  SplitNodeResult unwrappedSplitAtEndResult = splitAtEndResult.unwrap();
+  EditorDOMPoint pointToPutCaret = unwrappedSplitAtEndResult.UnwrapCaretPoint();
+  auto splitAtStartResult =
+      [&]() MOZ_CAN_RUN_SCRIPT -> Result<SplitNodeResult, nsresult> {
+    EditorDOMPoint atStart(unwrappedSplitAtEndResult.DidSplit()
+                               ? unwrappedSplitAtEndResult.GetPreviousContent()
                                : &aText,
                            aStartOffset);
     if (atStart.IsStartOfContainer()) {
       return SplitNodeResult::NotHandled(atStart, GetSplitNodeDirection());
     }
     // We need to split off front of text node
-    SplitNodeResult splitNodeResult = SplitNodeWithTransaction(atStart);
-    if (splitNodeResult.isErr()) {
+    Result<SplitNodeResult, nsresult> splitNodeResult =
+        SplitNodeWithTransaction(atStart);
+    if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
       NS_WARNING("HTMLEditor::SplitNodeWithTransaction() failed");
       return splitNodeResult;
     }
-    if (MOZ_UNLIKELY(!splitNodeResult.HasCaretPointSuggestion())) {
+    if (MOZ_UNLIKELY(!splitNodeResult.inspect().HasCaretPointSuggestion())) {
       NS_WARNING(
           "HTMLEditor::SplitNodeWithTransaction() didn't suggest caret "
           "point");
-      return SplitNodeResult(NS_ERROR_FAILURE);
+      return Err(NS_ERROR_FAILURE);
     }
     return splitNodeResult;
   }();
   if (MOZ_UNLIKELY(splitAtStartResult.isErr())) {
-    return SplitRangeOffFromNodeResult(splitAtStartResult.unwrapErr());
+    return splitAtStartResult.propagateErr();
   }
-  if (splitAtStartResult.HasCaretPointSuggestion()) {
-    pointToPutCaret = splitAtStartResult.UnwrapCaretPoint();
+  SplitNodeResult unwrappedSplitAtStartResult = splitAtStartResult.unwrap();
+  if (unwrappedSplitAtStartResult.HasCaretPointSuggestion()) {
+    pointToPutCaret = unwrappedSplitAtStartResult.UnwrapCaretPoint();
   }
 
-  MOZ_ASSERT_IF(splitAtStartResult.DidSplit(),
-                splitAtStartResult.GetPreviousContent()->IsText());
-  MOZ_ASSERT_IF(splitAtStartResult.DidSplit(),
-                splitAtStartResult.GetNextContent()->IsText());
-  MOZ_ASSERT_IF(splitAtEndResult.DidSplit(),
-                splitAtEndResult.GetPreviousContent()->IsText());
-  MOZ_ASSERT_IF(splitAtEndResult.DidSplit(),
-                splitAtEndResult.GetNextContent()->IsText());
-  // Note that those text nodes are grabbed by splitAtStartResult,
-  // splitAtEndResult or the callers.  Therefore, we don't need to make them
-  // strong pointer.
+  MOZ_ASSERT_IF(unwrappedSplitAtStartResult.DidSplit(),
+                unwrappedSplitAtStartResult.GetPreviousContent()->IsText());
+  MOZ_ASSERT_IF(unwrappedSplitAtStartResult.DidSplit(),
+                unwrappedSplitAtStartResult.GetNextContent()->IsText());
+  MOZ_ASSERT_IF(unwrappedSplitAtEndResult.DidSplit(),
+                unwrappedSplitAtEndResult.GetPreviousContent()->IsText());
+  MOZ_ASSERT_IF(unwrappedSplitAtEndResult.DidSplit(),
+                unwrappedSplitAtEndResult.GetNextContent()->IsText());
+  // Note that those text nodes are grabbed by unwrappedSplitAtStartResult,
+  // unwrappedSplitAtEndResult or the callers.  Therefore, we don't need to make
+  // them strong pointer.
   Text* const leftTextNode =
-      splitAtStartResult.DidSplit()
-          ? Text::FromNode(splitAtStartResult.GetPreviousContent())
+      unwrappedSplitAtStartResult.DidSplit()
+          ? unwrappedSplitAtStartResult.GetPreviousContentAs<Text>()
           : nullptr;
   Text* const middleTextNode =
-      splitAtStartResult.DidSplit()
-          ? Text::FromNode(splitAtStartResult.GetNextContent())
-          : (splitAtEndResult.DidSplit()
-                 ? Text::FromNode(splitAtEndResult.GetPreviousContent())
+      unwrappedSplitAtStartResult.DidSplit()
+          ? unwrappedSplitAtStartResult.GetNextContentAs<Text>()
+          : (unwrappedSplitAtEndResult.DidSplit()
+                 ? unwrappedSplitAtEndResult.GetPreviousContentAs<Text>()
                  : &aText);
   Text* const rightTextNode =
-      splitAtEndResult.DidSplit()
-          ? Text::FromNode(splitAtEndResult.GetNextContent())
+      unwrappedSplitAtEndResult.DidSplit()
+          ? unwrappedSplitAtEndResult.GetNextContentAs<Text>()
           : nullptr;
   if (aAttribute) {
     // Look for siblings that are correct type of node
@@ -589,17 +602,20 @@ SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
           element, &aProperty, aAttribute, &aValue);
       if (MOZ_UNLIKELY(result.isErr())) {
         NS_WARNING("HTMLEditor::ElementIsGoodContainerForTheStyle() failed");
-        return SplitRangeOffFromNodeResult(result.unwrapErr());
+        return result.propagateErr();
       }
       if (result.inspect()) {
         // Previous sib is already right kind of inline node; slide this over
-        MoveNodeResult moveTextNodeResult = MoveNodeToEndWithTransaction(
-            MOZ_KnownLive(*middleTextNode), element);
-        if (moveTextNodeResult.isErr()) {
+        Result<MoveNodeResult, nsresult> moveTextNodeResult =
+            MoveNodeToEndWithTransaction(MOZ_KnownLive(*middleTextNode),
+                                         element);
+        if (MOZ_UNLIKELY(moveTextNodeResult.isErr())) {
           NS_WARNING("HTMLEditor::MoveNodeToEndWithTransaction() failed");
-          return SplitRangeOffFromNodeResult(moveTextNodeResult.unwrapErr());
+          return moveTextNodeResult.propagateErr();
         }
-        moveTextNodeResult.MoveCaretPointTo(
+        MoveNodeResult unwrappedMoveTextNodeResult =
+            moveTextNodeResult.unwrap();
+        unwrappedMoveTextNodeResult.MoveCaretPointTo(
             pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
         return SplitRangeOffFromNodeResult(leftTextNode, middleTextNode,
                                            rightTextNode,
@@ -614,17 +630,20 @@ SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
           element, &aProperty, aAttribute, &aValue);
       if (MOZ_UNLIKELY(result.isErr())) {
         NS_WARNING("HTMLEditor::ElementIsGoodContainerForTheStyle() failed");
-        return SplitRangeOffFromNodeResult(result.unwrapErr());
+        return result.propagateErr();
       }
       if (result.inspect()) {
         // Following sib is already right kind of inline node; slide this over
-        MoveNodeResult moveTextNodeResult = MoveNodeWithTransaction(
-            MOZ_KnownLive(*middleTextNode), EditorDOMPoint(sibling, 0u));
-        if (moveTextNodeResult.isErr()) {
+        Result<MoveNodeResult, nsresult> moveTextNodeResult =
+            MoveNodeWithTransaction(MOZ_KnownLive(*middleTextNode),
+                                    EditorDOMPoint(sibling, 0u));
+        if (MOZ_UNLIKELY(moveTextNodeResult.isErr())) {
           NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
-          return SplitRangeOffFromNodeResult(moveTextNodeResult.unwrapErr());
+          return moveTextNodeResult.propagateErr();
         }
-        moveTextNodeResult.MoveCaretPointTo(
+        MoveNodeResult unwrappedMoveTextNodeResult =
+            moveTextNodeResult.unwrap();
+        unwrappedMoveTextNodeResult.MoveCaretPointTo(
             pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
         return SplitRangeOffFromNodeResult(leftTextNode, middleTextNode,
                                            rightTextNode,
@@ -638,7 +657,7 @@ SplitRangeOffFromNodeResult HTMLEditor::SetInlinePropertyOnTextNode(
       MOZ_KnownLive(*middleTextNode), aProperty, aAttribute, aValue);
   if (MOZ_UNLIKELY(setStyleResult.isErr())) {
     NS_WARNING("HTMLEditor::SetInlinePropertyOnNode() failed");
-    return SplitRangeOffFromNodeResult(setStyleResult.unwrapErr());
+    return setStyleResult.propagateErr();
   }
   return SplitRangeOffFromNodeResult(leftTextNode, middleTextNode,
                                      rightTextNode, setStyleResult.unwrap());
@@ -699,14 +718,15 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
       return canMoveIntoPreviousSibling.propagateErr();
     }
     if (canMoveIntoPreviousSibling.inspect()) {
-      MoveNodeResult moveNodeResult =
+      Result<MoveNodeResult, nsresult> moveNodeResult =
           MoveNodeToEndWithTransaction(aContent, *previousSibling);
-      if (moveNodeResult.isErr()) {
+      if (MOZ_UNLIKELY(moveNodeResult.isErr())) {
         NS_WARNING("HTMLEditor::MoveNodeToEndWithTransaction() failed");
-        return Err(moveNodeResult.unwrapErr());
+        return moveNodeResult.propagateErr();
       }
+      MoveNodeResult unwrappedMoveNodeResult = moveNodeResult.unwrap();
       if (!nextSibling || !nextSibling->IsElement()) {
-        return moveNodeResult.UnwrapCaretPoint();
+        return unwrappedMoveNodeResult.UnwrapCaretPoint();
       }
       OwningNonNull<Element> nextElement(*nextSibling->AsElement());
       Result<bool, nsresult> canMoveIntoNextSibling =
@@ -714,25 +734,25 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
                                             &aValue);
       if (canMoveIntoNextSibling.isErr()) {
         NS_WARNING("HTMLEditor::ElementIsGoodContainerForTheStyle() failed");
-        moveNodeResult.IgnoreCaretPointSuggestion();
+        unwrappedMoveNodeResult.IgnoreCaretPointSuggestion();
         return canMoveIntoNextSibling.propagateErr();
       }
       if (!canMoveIntoNextSibling.inspect()) {
-        return moveNodeResult.UnwrapCaretPoint();
+        return unwrappedMoveNodeResult.UnwrapCaretPoint();
       }
-      moveNodeResult.IgnoreCaretPointSuggestion();
+      unwrappedMoveNodeResult.IgnoreCaretPointSuggestion();
 
       // JoinNodesWithTransaction (DoJoinNodes) tries to collapse selection to
       // the joined point and we want to skip updating `Selection` here.
       AutoTransactionsConserveSelection dontChangeMySelection(*this);
-      JoinNodesResult joinNodesResult =
+      Result<JoinNodesResult, nsresult> joinNodesResult =
           JoinNodesWithTransaction(*previousSibling, *nextSibling);
-      if (joinNodesResult.Failed()) {
+      if (MOZ_UNLIKELY(joinNodesResult.isErr())) {
         NS_WARNING("HTMLEditor::JoinNodesWithTransaction() failed");
-        return Err(joinNodesResult.Rv());
+        return joinNodesResult.propagateErr();
       }
       // So, let's take it.
-      return joinNodesResult.AtJoinedPoint<EditorDOMPoint>();
+      return joinNodesResult.inspect().AtJoinedPoint<EditorDOMPoint>();
     }
   }
 
@@ -746,13 +766,13 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
       return canMoveIntoNextSibling.propagateErr();
     }
     if (canMoveIntoNextSibling.inspect()) {
-      MoveNodeResult moveNodeResult =
+      Result<MoveNodeResult, nsresult> moveNodeResult =
           MoveNodeWithTransaction(aContent, EditorDOMPoint(nextElement, 0u));
-      if (moveNodeResult.isErr()) {
+      if (MOZ_UNLIKELY(moveNodeResult.isErr())) {
         NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
-        return Err(moveNodeResult.unwrapErr());
+        return moveNodeResult.propagateErr();
       }
-      return moveNodeResult.UnwrapCaretPoint();
+      return moveNodeResult.unwrap().UnwrapCaretPoint();
     }
   }
 
@@ -794,18 +814,20 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
         !aContent.AsElement()->GetAttrCount()) {
       spanElement = aContent.AsElement();
     } else {
-      CreateElementResult wrapWithSpanElementResult =
+      Result<CreateElementResult, nsresult> wrapInSpanElementResult =
           InsertContainerWithTransaction(aContent, *nsGkAtoms::span);
-      if (wrapWithSpanElementResult.isErr()) {
+      if (MOZ_UNLIKELY(wrapInSpanElementResult.isErr())) {
         NS_WARNING(
             "HTMLEditor::InsertContainerWithTransaction(nsGkAtoms::span) "
             "failed");
-        return Err(wrapWithSpanElementResult.unwrapErr());
+        return wrapInSpanElementResult.propagateErr();
       }
-      MOZ_ASSERT(wrapWithSpanElementResult.GetNewNode());
-      wrapWithSpanElementResult.MoveCaretPointTo(
+      CreateElementResult unwrappedWrapInSpanElementResult =
+          wrapInSpanElementResult.unwrap();
+      MOZ_ASSERT(unwrappedWrapInSpanElementResult.GetNewNode());
+      unwrappedWrapInSpanElementResult.MoveCaretPointTo(
           pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
-      spanElement = wrapWithSpanElementResult.UnwrapNewNode();
+      spanElement = unwrappedWrapInSpanElementResult.UnwrapNewNode();
     }
 
     // Add the CSS styles corresponding to the HTML style request
@@ -851,16 +873,16 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNodeImpl(
   }
 
   // ok, chuck it in its very own container
-  CreateElementResult wrapWithNewElementToFormatResult =
+  Result<CreateElementResult, nsresult> wrapWithNewElementToFormatResult =
       InsertContainerWithTransaction(
           aContent, aProperty, aAttribute ? *aAttribute : *nsGkAtoms::_empty,
           aValue);
-  if (wrapWithNewElementToFormatResult.isErr()) {
+  if (MOZ_UNLIKELY(wrapWithNewElementToFormatResult.isErr())) {
     NS_WARNING("HTMLEditor::InsertContainerWithTransaction() failed");
-    return Err(wrapWithNewElementToFormatResult.unwrapErr());
+    return wrapWithNewElementToFormatResult.propagateErr();
   }
-  MOZ_ASSERT(wrapWithNewElementToFormatResult.GetNewNode());
-  return wrapWithNewElementToFormatResult.UnwrapCaretPoint();
+  MOZ_ASSERT(wrapWithNewElementToFormatResult.inspect().GetNewNode());
+  return wrapWithNewElementToFormatResult.unwrap().UnwrapCaretPoint();
 }
 
 Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNode(
@@ -930,80 +952,90 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetInlinePropertyOnNode(
   return pointToPutCaret;
 }
 
-SplitRangeOffResult HTMLEditor::SplitAncestorStyledInlineElementsAtRangeEdges(
+Result<SplitRangeOffResult, nsresult>
+HTMLEditor::SplitAncestorStyledInlineElementsAtRangeEdges(
     const EditorDOMRange& aRange, nsAtom* aProperty, nsAtom* aAttribute) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   if (NS_WARN_IF(!aRange.IsPositioned())) {
-    return SplitRangeOffResult(NS_ERROR_FAILURE);
+    return Err(NS_ERROR_FAILURE);
   }
 
   EditorDOMRange range(aRange);
 
   // split any matching style nodes above the start of range
-  SplitNodeResult resultAtStart = [&]() MOZ_CAN_RUN_SCRIPT {
+  auto resultAtStart =
+      [&]() MOZ_CAN_RUN_SCRIPT -> Result<SplitNodeResult, nsresult> {
     AutoTrackDOMRange tracker(RangeUpdaterRef(), &range);
-    SplitNodeResult result = SplitAncestorStyledInlineElementsAt(
-        range.StartRef(), aProperty, aAttribute);
-    if (result.isErr()) {
+    Result<SplitNodeResult, nsresult> result =
+        SplitAncestorStyledInlineElementsAt(
+            range.StartRef(), aProperty, aAttribute,
+            SplitAtEdges::eAllowToCreateEmptyContainer);
+    if (MOZ_UNLIKELY(result.isErr())) {
       NS_WARNING("HTMLEditor::SplitAncestorStyledInlineElementsAt() failed");
-      return SplitNodeResult(result.unwrapErr());
+      return result;
     }
     tracker.FlushAndStopTracking();
-    if (result.Handled()) {
-      auto startOfRange = result.AtSplitPoint<EditorDOMPoint>();
+    if (result.inspect().Handled()) {
+      auto startOfRange = result.inspect().AtSplitPoint<EditorDOMPoint>();
       if (!startOfRange.IsSet()) {
-        result.IgnoreCaretPointSuggestion();
+        result.inspect().IgnoreCaretPointSuggestion();
         NS_WARNING(
             "HTMLEditor::SplitAncestorStyledInlineElementsAt() didn't return "
             "split point");
-        return SplitNodeResult(NS_ERROR_FAILURE);
+        return Err(NS_ERROR_FAILURE);
       }
       range.SetStart(std::move(startOfRange));
     }
     return result;
   }();
-  if (resultAtStart.isErr()) {
-    return SplitRangeOffResult(resultAtStart.unwrapErr());
+  if (MOZ_UNLIKELY(resultAtStart.isErr())) {
+    return resultAtStart.propagateErr();
   }
+  SplitNodeResult unwrappedResultAtStart = resultAtStart.unwrap();
 
   // second verse, same as the first...
-  SplitNodeResult resultAtEnd = [&]() MOZ_CAN_RUN_SCRIPT {
+  auto resultAtEnd =
+      [&]() MOZ_CAN_RUN_SCRIPT -> Result<SplitNodeResult, nsresult> {
     AutoTrackDOMRange tracker(RangeUpdaterRef(), &range);
-    SplitNodeResult result = SplitAncestorStyledInlineElementsAt(
-        range.EndRef(), aProperty, aAttribute);
-    if (result.isErr()) {
+    Result<SplitNodeResult, nsresult> result =
+        SplitAncestorStyledInlineElementsAt(
+            range.EndRef(), aProperty, aAttribute,
+            SplitAtEdges::eAllowToCreateEmptyContainer);
+    if (MOZ_UNLIKELY(result.isErr())) {
       NS_WARNING("HTMLEditor::SplitAncestorStyledInlineElementsAt() failed");
-      return SplitNodeResult(result.unwrapErr());
+      return result;
     }
     tracker.FlushAndStopTracking();
-    if (result.Handled()) {
-      auto endOfRange = result.AtSplitPoint<EditorDOMPoint>();
+    if (result.inspect().Handled()) {
+      auto endOfRange = result.inspect().AtSplitPoint<EditorDOMPoint>();
       if (!endOfRange.IsSet()) {
-        result.IgnoreCaretPointSuggestion();
+        result.inspect().IgnoreCaretPointSuggestion();
         NS_WARNING(
             "HTMLEditor::SplitAncestorStyledInlineElementsAt() didn't return "
             "split point");
-        return SplitNodeResult(NS_ERROR_FAILURE);
+        return Err(NS_ERROR_FAILURE);
       }
       range.SetEnd(std::move(endOfRange));
     }
     return result;
   }();
-  if (resultAtEnd.isErr()) {
-    resultAtStart.IgnoreCaretPointSuggestion();
-    return SplitRangeOffResult(resultAtEnd.unwrapErr());
+  if (MOZ_UNLIKELY(resultAtEnd.isErr())) {
+    unwrappedResultAtStart.IgnoreCaretPointSuggestion();
+    return resultAtEnd.propagateErr();
   }
 
-  return SplitRangeOffResult(std::move(range), std::move(resultAtStart),
-                             std::move(resultAtEnd));
+  return SplitRangeOffResult(std::move(range),
+                             std::move(unwrappedResultAtStart),
+                             resultAtEnd.unwrap());
 }
 
-SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
-    const EditorDOMPoint& aPointToSplit, nsAtom* aProperty,
-    nsAtom* aAttribute) {
+Result<SplitNodeResult, nsresult>
+HTMLEditor::SplitAncestorStyledInlineElementsAt(
+    const EditorDOMPoint& aPointToSplit, nsAtom* aProperty, nsAtom* aAttribute,
+    SplitAtEdges aSplitAtEdges) {
   if (NS_WARN_IF(!aPointToSplit.IsInContentNode())) {
-    return SplitNodeResult(NS_ERROR_INVALID_ARG);
+    return Err(NS_ERROR_INVALID_ARG);
   }
 
   // We assume that this method is called only when we're removing style(s).
@@ -1017,7 +1049,7 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
   // with nsGkAtoms::tt before calling SetInlinePropertyAsAction() if we
   // are handling a XUL command.  Only in that case, we need to check
   // IsCSSEnabled().
-  bool useCSS = aProperty != nsGkAtoms::tt || IsCSSEnabled();
+  const bool useCSS = aProperty != nsGkAtoms::tt || IsCSSEnabled();
 
   AutoTArray<OwningNonNull<nsIContent>, 24> arrayOfParents;
   for (nsIContent* content :
@@ -1046,12 +1078,12 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
       Result<bool, nsresult> isSpecifiedByCSSOrError =
           CSSEditUtils::IsSpecifiedCSSEquivalentToHTMLInlineStyleSet(
               *this, *content, aProperty, aAttribute, firstValue);
-      if (isSpecifiedByCSSOrError.isErr()) {
+      if (MOZ_UNLIKELY(isSpecifiedByCSSOrError.isErr())) {
         result.IgnoreCaretPointSuggestion();
         NS_WARNING(
             "CSSEditUtils::IsSpecifiedCSSEquivalentToHTMLInlineStyleSet() "
             "failed");
-        return SplitNodeResult(isSpecifiedByCSSOrError.unwrapErr());
+        return isSpecifiedByCSSOrError.propagateErr();
       }
       isSetByCSS = isSpecifiedByCSSOrError.unwrap();
     }
@@ -1084,25 +1116,27 @@ SplitNodeResult HTMLEditor::SplitAncestorStyledInlineElementsAt(
     //     as handled with setting only previous or next node.  If its parent
     //     is a block, we do nothing but return as handled.
     AutoTrackDOMPoint trackPointToPutCaret(RangeUpdaterRef(), &pointToPutCaret);
-    SplitNodeResult splitNodeResult = SplitNodeDeepWithTransaction(
-        MOZ_KnownLive(content), result.AtSplitPoint<EditorDOMPoint>(),
-        SplitAtEdges::eAllowToCreateEmptyContainer);
-    if (splitNodeResult.isErr()) {
+    Result<SplitNodeResult, nsresult> splitNodeResult =
+        SplitNodeDeepWithTransaction(MOZ_KnownLive(content),
+                                     result.AtSplitPoint<EditorDOMPoint>(),
+                                     aSplitAtEdges);
+    if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
       NS_WARNING("HTMLEditor::SplitNodeDeepWithTransaction() failed");
       return splitNodeResult;
     }
+    SplitNodeResult unwrappedSplitNodeResult = splitNodeResult.unwrap();
     trackPointToPutCaret.FlushAndStopTracking();
-    splitNodeResult.MoveCaretPointTo(pointToPutCaret,
-                                     {SuggestCaret::OnlyIfHasSuggestion});
+    unwrappedSplitNodeResult.MoveCaretPointTo(
+        pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
 
     // If it's not handled, it means that `content` is not a splitable node
     // like a void element even if it has some children, and the split point
     // is middle of it.
-    if (!splitNodeResult.Handled()) {
+    if (!unwrappedSplitNodeResult.Handled()) {
       continue;
     }
     // Mark the final result as handled forcibly.
-    result = splitNodeResult.ToHandledResult();
+    result = unwrappedSplitNodeResult.ToHandledResult();
     MOZ_ASSERT(result.Handled());
   }
 
@@ -1129,20 +1163,24 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
   // E.g., if aProperty is nsGkAtoms::b and `<p><b><i>a[]bc</i></b></p>`,
   //       we want to make it as `<p><b><i>a</i></b><b><i>bc</i></b></p>`.
   EditorDOMPoint pointToPutCaret(aPoint);
-  SplitNodeResult splitResult =
-      SplitAncestorStyledInlineElementsAt(aPoint, aProperty, aAttribute);
-  if (splitResult.isErr()) {
+  Result<SplitNodeResult, nsresult> splitNodeResult =
+      SplitAncestorStyledInlineElementsAt(
+          aPoint, aProperty, aAttribute,
+          SplitAtEdges::eAllowToCreateEmptyContainer);
+  if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
     NS_WARNING("HTMLEditor::SplitAncestorStyledInlineElementsAt() failed");
-    return Err(splitResult.unwrapErr());
+    return splitNodeResult.propagateErr();
   }
-  splitResult.MoveCaretPointTo(pointToPutCaret, *this,
-                               {SuggestCaret::OnlyIfHasSuggestion,
-                                SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
+  SplitNodeResult unwrappedSplitNodeResult = splitNodeResult.unwrap();
+  unwrappedSplitNodeResult.MoveCaretPointTo(
+      pointToPutCaret, *this,
+      {SuggestCaret::OnlyIfHasSuggestion,
+       SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
 
   // If there is no styled inline elements of aProperty/aAttribute, we just
   // return the given point.
   // E.g., `<p><i>a[]bc</i></p>` for nsGkAtoms::b.
-  if (!splitResult.Handled()) {
+  if (!unwrappedSplitNodeResult.Handled()) {
     return pointToPutCaret;
   }
 
@@ -1152,18 +1190,18 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
   // above case:
   // <p><b><i>bc</i></b></p>
   //   ^^
-  if (splitResult.GetPreviousContent() &&
+  if (unwrappedSplitNodeResult.GetPreviousContent() &&
       HTMLEditUtils::IsEmptyNode(
-          *splitResult.GetPreviousContent(),
+          *unwrappedSplitNodeResult.GetPreviousContent(),
           {EmptyCheckOption::TreatSingleBRElementAsVisible,
            EmptyCheckOption::TreatListItemAsVisible,
            EmptyCheckOption::TreatTableCellAsVisible})) {
     AutoTrackDOMPoint trackPointToPutCaret(RangeUpdaterRef(), &pointToPutCaret);
     // Delete previous node if it's empty.
-    // MOZ_KnownLive(splitResult.GetPreviousContent()):
-    // It's grabbed by splitResult.
+    // MOZ_KnownLive(unwrappedSplitNodeResult.GetPreviousContent()):
+    // It's grabbed by unwrappedSplitNodeResult.
     nsresult rv = DeleteNodeWithTransaction(
-        MOZ_KnownLive(*splitResult.GetPreviousContent()));
+        MOZ_KnownLive(*unwrappedSplitNodeResult.GetPreviousContent()));
     if (NS_FAILED(rv)) {
       NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
       return Err(rv);
@@ -1175,7 +1213,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
   // we're in CSS mode.
   // XXX Chrome resets block style and creates `<span>` elements for each
   //     line in this case.
-  if (!splitResult.GetNextContent()) {
+  if (!unwrappedSplitNodeResult.GetNextContent()) {
     return pointToPutCaret;
   }
 
@@ -1186,11 +1224,11 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
   // `<p><b><i>a</i></b><b><i></i></b><b><i>bc</i></b></p>`.
   //                    ^^^^^^^^^^^^^^
   nsIContent* firstLeafChildOfNextNode = HTMLEditUtils::GetFirstLeafContent(
-      *splitResult.GetNextContent(), {LeafNodeType::OnlyLeafNode});
-  EditorDOMPoint atStartOfNextNode(firstLeafChildOfNextNode
-                                       ? firstLeafChildOfNextNode
-                                       : splitResult.GetNextContent(),
-                                   0);
+      *unwrappedSplitNodeResult.GetNextContent(), {LeafNodeType::OnlyLeafNode});
+  EditorDOMPoint atStartOfNextNode(
+      firstLeafChildOfNextNode ? firstLeafChildOfNextNode
+                               : unwrappedSplitNodeResult.GetNextContent(),
+      0);
   RefPtr<HTMLBRElement> brElement;
   // But don't try to split non-containers like `<br>`, `<hr>` and `<img>`
   // element.
@@ -1205,20 +1243,23 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
     }
     atStartOfNextNode.Set(atStartOfNextNode.GetContainerParent(), 0);
   }
-  SplitNodeResult splitResultAtStartOfNextNode =
-      SplitAncestorStyledInlineElementsAt(atStartOfNextNode, aProperty,
-                                          aAttribute);
-  if (splitResultAtStartOfNextNode.isErr()) {
+  Result<SplitNodeResult, nsresult> splitResultAtStartOfNextNode =
+      SplitAncestorStyledInlineElementsAt(
+          atStartOfNextNode, aProperty, aAttribute,
+          SplitAtEdges::eAllowToCreateEmptyContainer);
+  if (MOZ_UNLIKELY(splitResultAtStartOfNextNode.isErr())) {
     NS_WARNING("HTMLEditor::SplitAncestorStyledInlineElementsAt() failed");
-    return Err(splitResultAtStartOfNextNode.unwrapErr());
+    return splitResultAtStartOfNextNode.propagateErr();
   }
-  splitResultAtStartOfNextNode.MoveCaretPointTo(
+  SplitNodeResult unwrappedSplitResultAtStartOfNextNode =
+      splitResultAtStartOfNextNode.unwrap();
+  unwrappedSplitResultAtStartOfNextNode.MoveCaretPointTo(
       pointToPutCaret, *this,
       {SuggestCaret::OnlyIfHasSuggestion,
        SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
 
-  if (splitResultAtStartOfNextNode.Handled() &&
-      splitResultAtStartOfNextNode.GetNextContent()) {
+  if (unwrappedSplitResultAtStartOfNextNode.Handled() &&
+      unwrappedSplitResultAtStartOfNextNode.GetNextContent()) {
     // If the right inline elements are empty, we should remove them.  E.g.,
     // if the split point is at end of a text node (or end of an inline
     // element), e.g., <div><b><i>abc[]</i></b></div>, then now, it's been
@@ -1232,35 +1273,35 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
     // previous <i> which will have new content.
     bool seenBR = false;
     if (HTMLEditUtils::IsEmptyNode(
-            *splitResultAtStartOfNextNode.GetNextContent(),
+            *unwrappedSplitResultAtStartOfNextNode.GetNextContent(),
             {EmptyCheckOption::TreatListItemAsVisible,
              EmptyCheckOption::TreatTableCellAsVisible},
             &seenBR)) {
       // Delete next node if it's empty.
-      // MOZ_KnownLive(splitResultAtStartOfNextNode.GetNextContent()):
-      // It's grabbed by splitResultAtStartOfNextNode.
-      nsresult rv = DeleteNodeWithTransaction(
-          MOZ_KnownLive(*splitResultAtStartOfNextNode.GetNextContent()));
+      // MOZ_KnownLive(unwrappedSplitResultAtStartOfNextNode.GetNextContent()):
+      // It's grabbed by unwrappedSplitResultAtStartOfNextNode.
+      nsresult rv = DeleteNodeWithTransaction(MOZ_KnownLive(
+          *unwrappedSplitResultAtStartOfNextNode.GetNextContent()));
       if (NS_FAILED(rv)) {
         NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
         return Err(rv);
       }
       if (seenBR && !brElement) {
         brElement = HTMLEditUtils::GetFirstBRElement(
-            *splitResultAtStartOfNextNode.GetNextContent()->AsElement());
+            *unwrappedSplitResultAtStartOfNextNode.GetNextContentAs<Element>());
       }
     }
   }
 
   // If there is no content, we should return here.
   // XXX Is this possible case without mutation event listener?
-  if (NS_WARN_IF(!splitResultAtStartOfNextNode.Handled()) ||
-      !splitResultAtStartOfNextNode.GetPreviousContent()) {
+  if (NS_WARN_IF(!unwrappedSplitResultAtStartOfNextNode.Handled()) ||
+      !unwrappedSplitResultAtStartOfNextNode.GetPreviousContent()) {
     // XXX This is really odd, but we retrun this value...
-    const EditorRawDOMPoint& splitPoint =
-        splitResult.AtSplitPoint<EditorRawDOMPoint>();
-    const EditorRawDOMPoint& splitPointAtStartOfNextNode =
-        splitResultAtStartOfNextNode.AtSplitPoint<EditorRawDOMPoint>();
+    const auto splitPoint =
+        unwrappedSplitNodeResult.AtSplitPoint<EditorRawDOMPoint>();
+    const auto splitPointAtStartOfNextNode =
+        unwrappedSplitResultAtStartOfNextNode.AtSplitPoint<EditorRawDOMPoint>();
     return EditorDOMPoint(splitPoint.GetContainer(),
                           splitPointAtStartOfNextNode.Offset());
   }
@@ -1269,30 +1310,36 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
   // it was in next node of the first split.
   // E.g., `<p><b><i>a</i></b><b><i><br></i></b><b><i>bc</i></b></p>`
   nsIContent* firstLeafChildOfPreviousNode = HTMLEditUtils::GetFirstLeafContent(
-      *splitResultAtStartOfNextNode.GetPreviousContent(),
+      *unwrappedSplitResultAtStartOfNextNode.GetPreviousContent(),
       {LeafNodeType::OnlyLeafNode});
-  pointToPutCaret.Set(firstLeafChildOfPreviousNode
-                          ? firstLeafChildOfPreviousNode
-                          : splitResultAtStartOfNextNode.GetPreviousContent(),
-                      0);
+  pointToPutCaret.Set(
+      firstLeafChildOfPreviousNode
+          ? firstLeafChildOfPreviousNode
+          : unwrappedSplitResultAtStartOfNextNode.GetPreviousContent(),
+      0);
 
   // If the right node starts with a `<br>`, suck it out of right node and into
   // the left node left node.  This is so we you don't revert back to the
   // previous style if you happen to click at the end of a line.
   if (brElement) {
-    MoveNodeResult moveBRElementResult =
-        MoveNodeWithTransaction(*brElement, pointToPutCaret);
-    if (moveBRElementResult.isErr()) {
-      NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
-      return Err(moveBRElementResult.unwrapErr());
+    {
+      Result<MoveNodeResult, nsresult> moveBRElementResult =
+          MoveNodeWithTransaction(*brElement, pointToPutCaret);
+      if (MOZ_UNLIKELY(moveBRElementResult.isErr())) {
+        NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
+        return moveBRElementResult.propagateErr();
+      }
+      MoveNodeResult unwrappedMoveBRElementResult =
+          moveBRElementResult.unwrap();
+      unwrappedMoveBRElementResult.MoveCaretPointTo(
+          pointToPutCaret, *this,
+          {SuggestCaret::OnlyIfHasSuggestion,
+           SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
     }
-    moveBRElementResult.MoveCaretPointTo(
-        pointToPutCaret, *this,
-        {SuggestCaret::OnlyIfHasSuggestion,
-         SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
 
-    if (splitResultAtStartOfNextNode.GetNextContent() &&
-        splitResultAtStartOfNextNode.GetNextContent()->IsInComposedDoc()) {
+    if (unwrappedSplitResultAtStartOfNextNode.GetNextContent() &&
+        unwrappedSplitResultAtStartOfNextNode.GetNextContent()
+            ->IsInComposedDoc()) {
       // If we split inline elements at immediately before <br> element which is
       // the last visible content in the right element, we don't need the right
       // element anymore.  Otherwise, we'll create the following DOM tree:
@@ -1301,14 +1348,14 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
       // - <b><i>abc</i></b><i><br></i><b></b>
       //                               ^^^^^^^
       if (HTMLEditUtils::IsEmptyNode(
-              *splitResultAtStartOfNextNode.GetNextContent(),
+              *unwrappedSplitResultAtStartOfNextNode.GetNextContent(),
               {EmptyCheckOption::TreatSingleBRElementAsVisible,
                EmptyCheckOption::TreatListItemAsVisible,
                EmptyCheckOption::TreatTableCellAsVisible})) {
         // MOZ_KnownLive because the result is grabbed by
-        // splitResultAtStartOfNextNode.
-        nsresult rv = DeleteNodeWithTransaction(
-            MOZ_KnownLive(*splitResultAtStartOfNextNode.GetNextContent()));
+        // unwrappedSplitResultAtStartOfNextNode.
+        nsresult rv = DeleteNodeWithTransaction(MOZ_KnownLive(
+            *unwrappedSplitResultAtStartOfNextNode.GetNextContent()));
         if (NS_FAILED(rv)) {
           NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
           return Err(rv);
@@ -1321,12 +1368,12 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
       //                                               ^^^^^^^^^^^^^^^^^^
       // We don't need the empty <i>.
       else if (HTMLEditUtils::IsEmptyNode(
-                   *splitResultAtStartOfNextNode.GetNextContent(),
+                   *unwrappedSplitResultAtStartOfNextNode.GetNextContent(),
                    {EmptyCheckOption::TreatListItemAsVisible,
                     EmptyCheckOption::TreatTableCellAsVisible})) {
         AutoTArray<OwningNonNull<nsIContent>, 4> emptyInlineContainerElements;
         HTMLEditUtils::CollectEmptyInlineContainerDescendants(
-            *splitResultAtStartOfNextNode.GetNextContent()->AsElement(),
+            *unwrappedSplitResultAtStartOfNextNode.GetNextContentAs<Element>(),
             emptyInlineContainerElements,
             {EmptyCheckOption::TreatSingleBRElementAsVisible,
              EmptyCheckOption::TreatListItemAsVisible,
@@ -1352,8 +1399,9 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
   // want to make the first example as:
   // `<p><b><i>a</i></b><i>[]</i><b><i>bc</i></b></p>`
   //                    ^^^^^^^^^
-  if (Element* previousElementOfSplitPoint = Element::FromNode(
-          splitResultAtStartOfNextNode.GetPreviousContent())) {
+  if (auto* const previousElementOfSplitPoint =
+          unwrappedSplitResultAtStartOfNextNode
+              .GetPreviousContentAs<Element>()) {
     // Track the point at the new hierarchy.  This is so we can know where
     // to put the selection after we call RemoveStyleInside().
     // RemoveStyleInside() could remove any and all of those nodes, so I
@@ -1361,7 +1409,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
     // selection.
     AutoTrackDOMPoint tracker(RangeUpdaterRef(), &pointToPutCaret);
     // MOZ_KnownLive(previousElementOfSplitPoint):
-    // It's grabbed by splitResultAtStartOfNextNode.
+    // It's grabbed by unwrappedSplitResultAtStartOfNextNode.
     Result<EditorDOMPoint, nsresult> removeStyleResult =
         RemoveStyleInside(MOZ_KnownLive(*previousElementOfSplitPoint),
                           aProperty, aAttribute, aSpecifiedStyle);
@@ -1380,7 +1428,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveStyleInside(
     SpecifiedStyle aSpecifiedStyle) {
   // First, handle all descendants.
   AutoTArray<OwningNonNull<nsIContent>, 32> arrayOfChildContents;
-  HTMLEditor::GetChildNodesOf(aElement, arrayOfChildContents);
+  HTMLEditUtils::CollectAllChildren(aElement, arrayOfChildContents);
   EditorDOMPoint pointToPutCaret;
   for (const OwningNonNull<nsIContent>& child : arrayOfChildContents) {
     if (!child->IsElement()) {
@@ -1431,19 +1479,21 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveStyleInside(
            aElement.HasAttr(kNameSpaceID_None, nsGkAtoms::_class))) {
         // Move `style` attribute and `class` element to span element before
         // removing aElement from the tree.
-        CreateElementResult wrapWithSpanElementResult =
+        Result<CreateElementResult, nsresult> wrapInSpanElementResult =
             InsertContainerWithTransaction(aElement, *nsGkAtoms::span);
-        if (wrapWithSpanElementResult.isErr()) {
+        if (wrapInSpanElementResult.isErr()) {
           NS_WARNING(
               "HTMLEditor::InsertContainerWithTransaction(nsGkAtoms::span) "
               "failed");
-          return Err(wrapWithSpanElementResult.unwrapErr());
+          return wrapInSpanElementResult.propagateErr();
         }
-        MOZ_ASSERT(wrapWithSpanElementResult.GetNewNode());
-        wrapWithSpanElementResult.MoveCaretPointTo(
+        CreateElementResult unwrappedWrapInSpanElementResult =
+            wrapInSpanElementResult.unwrap();
+        MOZ_ASSERT(unwrappedWrapInSpanElementResult.GetNewNode());
+        unwrappedWrapInSpanElementResult.MoveCaretPointTo(
             pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
         const RefPtr<Element> spanElement =
-            wrapWithSpanElementResult.UnwrapNewNode();
+            unwrappedWrapInSpanElementResult.UnwrapNewNode();
         nsresult rv = CloneAttributeWithTransaction(*nsGkAtoms::style,
                                                     *spanElement, aElement);
         if (NS_WARN_IF(Destroyed())) {
@@ -2188,11 +2238,15 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
     return NS_OK;
   }
 
-  EditActionResult result = CanHandleHTMLEditSubAction();
-  if (result.Failed() || result.Canceled()) {
-    NS_WARNING_ASSERTION(result.Succeeded(),
-                         "HTMLEditor::CanHandleHTMLEditSubAction() failed");
-    return result.Rv();
+  {
+    Result<EditActionResult, nsresult> result = CanHandleHTMLEditSubAction();
+    if (MOZ_UNLIKELY(result.isErr())) {
+      NS_WARNING("HTMLEditor::CanHandleHTMLEditSubAction() failed");
+      return result.unwrapErr();
+    }
+    if (result.inspect().Canceled()) {
+      return NS_OK;
+    }
   }
 
   AutoPlaceholderBatch treatAsOneTransaction(
@@ -2249,11 +2303,11 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
 
       // Remove this style from ancestors of our range endpoints, splitting
       // them as appropriate
-      SplitRangeOffResult splitRangeOffResult =
+      Result<SplitRangeOffResult, nsresult> splitRangeOffResult =
           SplitAncestorStyledInlineElementsAtRangeEdges(
               EditorDOMRange(range), styleToRemove.mHTMLProperty,
               styleToRemove.mAttribute);
-      if (splitRangeOffResult.isErr()) {
+      if (MOZ_UNLIKELY(splitRangeOffResult.isErr())) {
         NS_WARNING(
             "HTMLEditor::SplitAncestorStyledInlineElementsAtRangeEdges() "
             "failed");
@@ -2261,13 +2315,14 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
       }
       // There is AutoTransactionsConserveSelection, so we don't need to
       // update selection here.
-      splitRangeOffResult.IgnoreCaretPointSuggestion();
+      splitRangeOffResult.inspect().IgnoreCaretPointSuggestion();
 
       // XXX Modifying `range` means that we may modify ranges in `Selection`.
       //     Is this intentional?  Note that the range may be not in
       //     `Selection` too.  It seems that at least one of them is not
       //     an unexpected case.
-      const EditorDOMRange& splitRange = splitRangeOffResult.RangeRef();
+      const EditorDOMRange& splitRange =
+          splitRangeOffResult.inspect().RangeRef();
       if (NS_WARN_IF(!splitRange.IsPositioned())) {
         continue;
       }
@@ -2426,28 +2481,30 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
           uint32_t endOffset = content == splitRange.EndRef().GetContainer()
                                    ? splitRange.EndRef().Offset()
                                    : content->Length();
-          SplitRangeOffFromNodeResult wrapTextInStyledElementResult =
-              SetInlinePropertyOnTextNode(
+          Result<SplitRangeOffFromNodeResult, nsresult>
+              wrapTextInStyledElementResult = SetInlinePropertyOnTextNode(
                   MOZ_KnownLive(*content->AsText()), startOffset, endOffset,
                   *styleToRemove.mHTMLProperty, styleToRemove.mAttribute,
                   u"-moz-editor-invert-value"_ns);
-          if (wrapTextInStyledElementResult.isErr()) {
+          if (MOZ_UNLIKELY(wrapTextInStyledElementResult.isErr())) {
             NS_WARNING(
                 "HTMLEditor::SetInlinePropertyOnTextNode(-moz-editor-invert-"
                 "value) failed");
             return wrapTextInStyledElementResult.unwrapErr();
           }
+          SplitRangeOffFromNodeResult unwrappedWrapTextInStyledElementResult =
+              wrapTextInStyledElementResult.unwrap();
           // There is AutoTransactionsConserveSelection, so we don't need to
           // update selection here.
-          wrapTextInStyledElementResult.IgnoreCaretPointSuggestion();
+          unwrappedWrapTextInStyledElementResult.IgnoreCaretPointSuggestion();
           // If we've split the content, let's swap content in
           // arrayOfContentsToInvertStyle with the text node which is applied
           // the style.
           if (isCSSInvertibleStyle) {
-            MOZ_ASSERT(
-                wrapTextInStyledElementResult.GetMiddleContentAs<Text>());
-            if (Text* textNode =
-                    wrapTextInStyledElementResult.GetMiddleContentAs<Text>()) {
+            MOZ_ASSERT(unwrappedWrapTextInStyledElementResult
+                           .GetMiddleContentAs<Text>());
+            if (Text* textNode = unwrappedWrapTextInStyledElementResult
+                                     .GetMiddleContentAs<Text>()) {
               if (textNode != content) {
                 arrayOfContentsToInvertStyle.ReplaceElementAt(
                     arrayOfContentsToInvertStyle.Length() - 1,
@@ -2490,12 +2547,12 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
         }
         // MOZ_KnownLive because 'leafTextNodes' is guaranteed to
         // keep it alive.
-        SplitRangeOffFromNodeResult wrapTextInStyledElementResult =
-            SetInlinePropertyOnTextNode(
+        Result<SplitRangeOffFromNodeResult, nsresult>
+            wrapTextInStyledElementResult = SetInlinePropertyOnTextNode(
                 MOZ_KnownLive(textNode), 0, textNode->TextLength(),
                 *styleToRemove.mHTMLProperty, styleToRemove.mAttribute,
                 u"-moz-editor-invert-value"_ns);
-        if (wrapTextInStyledElementResult.isErr()) {
+        if (MOZ_UNLIKELY(wrapTextInStyledElementResult.isErr())) {
           NS_WARNING(
               "HTMLEditor::SetInlinePropertyOnTextNode(-moz-editor-invert-"
               "value) failed");
@@ -2503,7 +2560,7 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
         }
         // There is AutoTransactionsConserveSelection, so we don't need to
         // update selection here.
-        wrapTextInStyledElementResult.IgnoreCaretPointSuggestion();
+        wrapTextInStyledElementResult.inspect().IgnoreCaretPointSuggestion();
       }  // for-loop of leafTextNodes
     }    // for-loop of selectionRanges
     MOZ_ASSERT(selectionRanges.HasSavedRanges());
@@ -2678,18 +2735,18 @@ nsresult HTMLEditor::IncrementOrDecrementFontSizeAsSubAction(
     }
 
     if (range.InSameContainer() && range.StartRef().IsInTextNode()) {
-      CreateElementResult wrapWithBigOrSmallElementResult =
+      Result<CreateElementResult, nsresult> wrapInBigOrSmallElementResult =
           SetFontSizeOnTextNode(
               MOZ_KnownLive(*range.StartRef().ContainerAs<Text>()),
               range.StartRef().Offset(), range.EndRef().Offset(),
               aIncrementOrDecrement);
-      if (wrapWithBigOrSmallElementResult.isErr()) {
+      if (MOZ_UNLIKELY(wrapInBigOrSmallElementResult.isErr())) {
         NS_WARNING("HTMLEditor::SetFontSizeOnTextNode() failed");
-        return wrapWithBigOrSmallElementResult.unwrapErr();
+        return wrapInBigOrSmallElementResult.unwrapErr();
       }
       // There is an AutoTransactionsConserveSelection instance so that we don't
       // need to update selection for this change.
-      wrapWithBigOrSmallElementResult.IgnoreCaretPointSuggestion();
+      wrapInBigOrSmallElementResult.inspect().IgnoreCaretPointSuggestion();
       continue;
     }
 
@@ -2742,34 +2799,34 @@ nsresult HTMLEditor::IncrementOrDecrementFontSizeAsSubAction(
         !range.StartRef().IsEndOfContainer() &&
         EditorUtils::IsEditableContent(*range.StartRef().ContainerAs<Text>(),
                                        EditorType::HTML)) {
-      CreateElementResult wrapWithBigOrSmallElementResult =
+      Result<CreateElementResult, nsresult> wrapInBigOrSmallElementResult =
           SetFontSizeOnTextNode(
               MOZ_KnownLive(*range.StartRef().ContainerAs<Text>()),
               range.StartRef().Offset(),
               range.StartRef().ContainerAs<Text>()->TextDataLength(),
               aIncrementOrDecrement);
-      if (wrapWithBigOrSmallElementResult.isErr()) {
+      if (MOZ_UNLIKELY(wrapInBigOrSmallElementResult.isErr())) {
         NS_WARNING("HTMLEditor::SetFontSizeOnTextNode() failed");
-        return wrapWithBigOrSmallElementResult.unwrapErr();
+        return wrapInBigOrSmallElementResult.unwrapErr();
       }
       // There is an AutoTransactionsConserveSelection instance so that we
       // don't need to update selection for this change.
-      wrapWithBigOrSmallElementResult.IgnoreCaretPointSuggestion();
+      wrapInBigOrSmallElementResult.inspect().IgnoreCaretPointSuggestion();
     }
     if (range.EndRef().IsInTextNode() && !range.EndRef().IsStartOfContainer() &&
         EditorUtils::IsEditableContent(*range.EndRef().ContainerAs<Text>(),
                                        EditorType::HTML)) {
-      CreateElementResult wrapWithBigOrSmallElementResult =
+      Result<CreateElementResult, nsresult> wrapInBigOrSmallElementResult =
           SetFontSizeOnTextNode(
               MOZ_KnownLive(*range.EndRef().ContainerAs<Text>()), 0u,
               range.EndRef().Offset(), aIncrementOrDecrement);
-      if (wrapWithBigOrSmallElementResult.isErr()) {
+      if (MOZ_UNLIKELY(wrapInBigOrSmallElementResult.isErr())) {
         NS_WARNING("HTMLEditor::SetFontSizeOnTextNode() failed");
-        return wrapWithBigOrSmallElementResult.unwrapErr();
+        return wrapInBigOrSmallElementResult.unwrapErr();
       }
       // There is an AutoTransactionsConserveSelection instance so that we
       // don't need to update selection for this change.
-      wrapWithBigOrSmallElementResult.IgnoreCaretPointSuggestion();
+      wrapInBigOrSmallElementResult.inspect().IgnoreCaretPointSuggestion();
     }
   }
 
@@ -2783,7 +2840,7 @@ nsresult HTMLEditor::IncrementOrDecrementFontSizeAsSubAction(
   return rv;
 }
 
-CreateElementResult HTMLEditor::SetFontSizeOnTextNode(
+Result<CreateElementResult, nsresult> HTMLEditor::SetFontSizeOnTextNode(
     Text& aTextNode, uint32_t aStartOffset, uint32_t aEndOffset,
     FontSize aIncrementOrDecrement) {
   // Don't need to do anything if no characters actually selected
@@ -2811,59 +2868,61 @@ CreateElementResult HTMLEditor::SetFontSizeOnTextNode(
       EditorDOMPoint atEnd(textNodeForTheRange, aEndOffset);
       if (!atEnd.IsEndOfContainer()) {
         // We need to split off back of text node
-        SplitNodeResult splitAtEndResult = SplitNodeWithTransaction(atEnd);
-        if (splitAtEndResult.isErr()) {
+        Result<SplitNodeResult, nsresult> splitAtEndResult =
+            SplitNodeWithTransaction(atEnd);
+        if (MOZ_UNLIKELY(splitAtEndResult.isErr())) {
           NS_WARNING("HTMLEditor::SplitNodeWithTransaction() failed");
-          return Err(splitAtEndResult.unwrapErr());
+          return splitAtEndResult.propagateErr();
         }
-        if (MOZ_UNLIKELY(!splitAtEndResult.HasCaretPointSuggestion())) {
+        SplitNodeResult unwrappedSplitAtEndResult = splitAtEndResult.unwrap();
+        if (MOZ_UNLIKELY(
+                !unwrappedSplitAtEndResult.HasCaretPointSuggestion())) {
           NS_WARNING(
               "HTMLEditor::SplitNodeWithTransaction() didn't suggest caret "
               "point");
           return Err(NS_ERROR_FAILURE);
         }
-        splitAtEndResult.MoveCaretPointTo(pointToPutCaret, *this, {});
+        unwrappedSplitAtEndResult.MoveCaretPointTo(pointToPutCaret, *this, {});
         MOZ_ASSERT_IF(AllowsTransactionsToChangeSelection(),
                       pointToPutCaret.IsSet());
         textNodeForTheRange =
-            Text::FromNodeOrNull(splitAtEndResult.GetPreviousContent());
+            unwrappedSplitAtEndResult.GetPreviousContentAs<Text>();
         MOZ_DIAGNOSTIC_ASSERT(textNodeForTheRange);
-        // When adding caret suggestion to SplitNodeResult, here didn't change
-        // selection so that just ignore it.
-        splitAtEndResult.IgnoreCaretPointSuggestion();
       }
 
       // Split at the start of the range.
       EditorDOMPoint atStart(textNodeForTheRange, aStartOffset);
       if (!atStart.IsStartOfContainer()) {
         // We need to split off front of text node
-        SplitNodeResult splitAtStartResult = SplitNodeWithTransaction(atStart);
-        if (splitAtStartResult.isErr()) {
+        Result<SplitNodeResult, nsresult> splitAtStartResult =
+            SplitNodeWithTransaction(atStart);
+        if (MOZ_UNLIKELY(splitAtStartResult.isErr())) {
           NS_WARNING("HTMLEditor::SplitNodeWithTransaction() failed");
-          return Err(splitAtStartResult.unwrapErr());
+          return splitAtStartResult.propagateErr();
         }
-        if (MOZ_UNLIKELY(!splitAtStartResult.HasCaretPointSuggestion())) {
+        SplitNodeResult unwrappedSplitAtStartResult =
+            splitAtStartResult.unwrap();
+        if (MOZ_UNLIKELY(
+                !unwrappedSplitAtStartResult.HasCaretPointSuggestion())) {
           NS_WARNING(
               "HTMLEditor::SplitNodeWithTransaction() didn't suggest caret "
               "point");
           return Err(NS_ERROR_FAILURE);
         }
-        splitAtStartResult.MoveCaretPointTo(pointToPutCaret, *this, {});
+        unwrappedSplitAtStartResult.MoveCaretPointTo(pointToPutCaret, *this,
+                                                     {});
         MOZ_ASSERT_IF(AllowsTransactionsToChangeSelection(),
                       pointToPutCaret.IsSet());
         textNodeForTheRange =
-            Text::FromNodeOrNull(splitAtStartResult.GetNextContent());
+            unwrappedSplitAtStartResult.GetNextContentAs<Text>();
         MOZ_DIAGNOSTIC_ASSERT(textNodeForTheRange);
-        // When adding caret suggestion to SplitNodeResult, here didn't change
-        // selection so that just ignore it.
-        splitAtStartResult.IgnoreCaretPointSuggestion();
       }
 
       return pointToPutCaret;
     }();
     if (MOZ_UNLIKELY(pointToPutCaretOrError.isErr())) {
       // Don't warn here since it should be done in the lambda.
-      return CreateElementResult(pointToPutCaretOrError.unwrapErr());
+      return pointToPutCaretOrError.propagateErr();
     }
     pointToPutCaret = pointToPutCaretOrError.unwrap();
   }
@@ -2876,14 +2935,15 @@ CreateElementResult HTMLEditor::SetFontSizeOnTextNode(
       *textNodeForTheRange, {WalkTreeOption::IgnoreNonEditableNode});
   if (sibling && sibling->IsHTMLElement(bigOrSmallTagName)) {
     // Previous sib is already right kind of inline node; slide this over
-    MoveNodeResult moveTextNodeResult =
+    Result<MoveNodeResult, nsresult> moveTextNodeResult =
         MoveNodeToEndWithTransaction(*textNodeForTheRange, *sibling);
-    if (moveTextNodeResult.isErr()) {
+    if (MOZ_UNLIKELY(moveTextNodeResult.isErr())) {
       NS_WARNING("HTMLEditor::MoveNodeToEndWithTransaction() failed");
-      return CreateElementResult(moveTextNodeResult.unwrapErr());
+      return moveTextNodeResult.propagateErr();
     }
-    moveTextNodeResult.MoveCaretPointTo(pointToPutCaret, *this,
-                                        {SuggestCaret::OnlyIfHasSuggestion});
+    MoveNodeResult unwrappedMoveTextNodeResult = moveTextNodeResult.unwrap();
+    unwrappedMoveTextNodeResult.MoveCaretPointTo(
+        pointToPutCaret, *this, {SuggestCaret::OnlyIfHasSuggestion});
     // XXX Should we return the new container?
     return CreateElementResult::NotHandled(std::move(pointToPutCaret));
   }
@@ -2891,30 +2951,34 @@ CreateElementResult HTMLEditor::SetFontSizeOnTextNode(
       *textNodeForTheRange, {WalkTreeOption::IgnoreNonEditableNode});
   if (sibling && sibling->IsHTMLElement(bigOrSmallTagName)) {
     // Following sib is already right kind of inline node; slide this over
-    MoveNodeResult moveTextNodeResult = MoveNodeWithTransaction(
-        *textNodeForTheRange, EditorDOMPoint(sibling, 0u));
-    if (moveTextNodeResult.isErr()) {
+    Result<MoveNodeResult, nsresult> moveTextNodeResult =
+        MoveNodeWithTransaction(*textNodeForTheRange,
+                                EditorDOMPoint(sibling, 0u));
+    if (MOZ_UNLIKELY(moveTextNodeResult.isErr())) {
       NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
-      return CreateElementResult(moveTextNodeResult.unwrapErr());
+      return moveTextNodeResult.propagateErr();
     }
-    moveTextNodeResult.MoveCaretPointTo(pointToPutCaret, *this,
-                                        {SuggestCaret::OnlyIfHasSuggestion});
+    MoveNodeResult unwrappedMoveTextNodeResult = moveTextNodeResult.unwrap();
+    unwrappedMoveTextNodeResult.MoveCaretPointTo(
+        pointToPutCaret, *this, {SuggestCaret::OnlyIfHasSuggestion});
     // XXX Should we return the new container?
     return CreateElementResult::NotHandled(std::move(pointToPutCaret));
   }
 
   // Else wrap the node inside font node with appropriate relative size
-  CreateElementResult wrapTextWithBigOrSmallElementResult =
+  Result<CreateElementResult, nsresult> wrapTextInBigOrSmallElementResult =
       InsertContainerWithTransaction(*textNodeForTheRange,
                                      MOZ_KnownLive(*bigOrSmallTagName));
-  if (wrapTextWithBigOrSmallElementResult.isErr()) {
+  if (wrapTextInBigOrSmallElementResult.isErr()) {
     NS_WARNING("HTMLEditor::InsertContainerWithTransaction() failed");
-    return wrapTextWithBigOrSmallElementResult;
+    return wrapTextInBigOrSmallElementResult;
   }
-  wrapTextWithBigOrSmallElementResult.MoveCaretPointTo(
+  CreateElementResult unwrappedWrapTextInBigOrSmallElementResult =
+      wrapTextInBigOrSmallElementResult.unwrap();
+  unwrappedWrapTextInBigOrSmallElementResult.MoveCaretPointTo(
       pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
   return CreateElementResult(
-      wrapTextWithBigOrSmallElementResult.UnwrapNewNode(),
+      unwrappedWrapTextInBigOrSmallElementResult.UnwrapNewNode(),
       std::move(pointToPutCaret));
 }
 
@@ -2932,7 +2996,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetFontSizeOfFontElementChildren(
 
     // Cycle through children and adjust relative font size.
     AutoTArray<OwningNonNull<nsIContent>, 32> arrayOfContents;
-    HTMLEditor::GetChildNodesOf(aContent, arrayOfContents);
+    HTMLEditUtils::CollectAllChildren(aContent, arrayOfContents);
     for (const auto& child : arrayOfContents) {
       // MOZ_KnownLive because of bug 1622253
       Result<EditorDOMPoint, nsresult> setFontSizeOfChildResult =
@@ -2955,7 +3019,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetFontSizeOfFontElementChildren(
   // Otherwise cycle through the children.
   EditorDOMPoint pointToPutCaret;
   AutoTArray<OwningNonNull<nsIContent>, 32> arrayOfContents;
-  HTMLEditor::GetChildNodesOf(aContent, arrayOfContents);
+  HTMLEditUtils::CollectAllChildren(aContent, arrayOfContents);
   for (const auto& child : arrayOfContents) {
     // MOZ_KnownLive because of bug 1622253
     Result<EditorDOMPoint, nsresult> fontSizeChangeResult =
@@ -3020,41 +3084,45 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetFontSizeWithBigOrSmallElement(
     nsCOMPtr<nsIContent> sibling = HTMLEditUtils::GetPreviousSibling(
         aContent, {WalkTreeOption::IgnoreNonEditableNode});
     if (sibling && sibling->IsHTMLElement(bigOrSmallTagName)) {
-      MoveNodeResult moveNodeResult =
+      Result<MoveNodeResult, nsresult> moveNodeResult =
           MoveNodeToEndWithTransaction(aContent, *sibling);
-      if (moveNodeResult.isErr()) {
+      if (MOZ_UNLIKELY(moveNodeResult.isErr())) {
         NS_WARNING("HTMLEditor::MoveNodeToEndWithTransaction() failed");
-        return Err(moveNodeResult.unwrapErr());
+        return moveNodeResult.propagateErr();
       }
-      moveNodeResult.MoveCaretPointTo(pointToPutCaret,
-                                      {SuggestCaret::OnlyIfHasSuggestion});
+      MoveNodeResult unwrappedMoveNodeResult = moveNodeResult.unwrap();
+      unwrappedMoveNodeResult.MoveCaretPointTo(
+          pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
       return pointToPutCaret;
     }
 
     sibling = HTMLEditUtils::GetNextSibling(
         aContent, {WalkTreeOption::IgnoreNonEditableNode});
     if (sibling && sibling->IsHTMLElement(bigOrSmallTagName)) {
-      MoveNodeResult moveNodeResult =
+      Result<MoveNodeResult, nsresult> moveNodeResult =
           MoveNodeWithTransaction(aContent, EditorDOMPoint(sibling, 0u));
-      if (moveNodeResult.isErr()) {
+      if (MOZ_UNLIKELY(moveNodeResult.isErr())) {
         NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
-        return Err(moveNodeResult.unwrapErr());
+        return moveNodeResult.propagateErr();
       }
-      moveNodeResult.MoveCaretPointTo(pointToPutCaret,
-                                      {SuggestCaret::OnlyIfHasSuggestion});
+      MoveNodeResult unwrappedMoveNodeResult = moveNodeResult.unwrap();
+      unwrappedMoveNodeResult.MoveCaretPointTo(
+          pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
       return pointToPutCaret;
     }
 
     // Otherwise, wrap aContent in new <big> or <small>
-    CreateElementResult wrapInBigOrSmallElementResult =
+    Result<CreateElementResult, nsresult> wrapInBigOrSmallElementResult =
         InsertContainerWithTransaction(aContent,
                                        MOZ_KnownLive(*bigOrSmallTagName));
-    if (wrapInBigOrSmallElementResult.isErr()) {
+    if (MOZ_UNLIKELY(wrapInBigOrSmallElementResult.isErr())) {
       NS_WARNING("HTMLEditor::InsertContainerWithTransaction() failed");
       return Err(wrapInBigOrSmallElementResult.unwrapErr());
     }
-    MOZ_ASSERT(wrapInBigOrSmallElementResult.GetNewNode());
-    wrapInBigOrSmallElementResult.MoveCaretPointTo(
+    CreateElementResult unwrappedWrapInBigOrSmallElementResult =
+        wrapInBigOrSmallElementResult.unwrap();
+    MOZ_ASSERT(unwrappedWrapInBigOrSmallElementResult.GetNewNode());
+    unwrappedWrapInBigOrSmallElementResult.MoveCaretPointTo(
         pointToPutCaret, {SuggestCaret::OnlyIfHasSuggestion});
     return pointToPutCaret;
   }
@@ -3065,7 +3133,7 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::SetFontSizeWithBigOrSmallElement(
   // each getting their own.
   EditorDOMPoint pointToPutCaret;
   AutoTArray<OwningNonNull<nsIContent>, 32> arrayOfContents;
-  HTMLEditor::GetChildNodesOf(aContent, arrayOfContents);
+  HTMLEditUtils::CollectAllChildren(aContent, arrayOfContents);
   for (const auto& child : arrayOfContents) {
     // MOZ_KnownLive because of bug 1622253
     Result<EditorDOMPoint, nsresult> setFontSizeOfChildResult =

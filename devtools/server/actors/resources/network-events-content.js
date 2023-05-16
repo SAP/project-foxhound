@@ -3,19 +3,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const { Ci } = require("chrome");
 
 loader.lazyRequireGetter(
   this,
   "NetworkEventActor",
-  "devtools/server/actors/network-monitor/network-event-actor",
+  "resource://devtools/server/actors/network-monitor/network-event-actor.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "NetworkUtils",
-  "devtools/server/actors/network-monitor/utils/network-utils"
+  "resource://devtools/server/actors/network-monitor/utils/network-utils.js"
 );
 
 /**

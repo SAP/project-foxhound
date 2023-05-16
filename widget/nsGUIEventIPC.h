@@ -11,6 +11,8 @@
 #include "mozilla/ContentCache.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/dom/Touch.h"
+#include "mozilla/ipc/IPDLParamTraits.h"  // for ReadIPDLParam and WriteIPDLParam
+#include "mozilla/ipc/URIUtils.h"         // for IPDLParamTraits<nsIURI*>
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
@@ -811,25 +813,28 @@ struct ParamTraits<mozilla::widget::InputContext> {
   static void Write(MessageWriter* aWriter, const paramType& aParam) {
     WriteParam(aWriter, aParam.mIMEState);
     WriteParam(aWriter, aParam.mHTMLInputType);
-    WriteParam(aWriter, aParam.mHTMLInputInputmode);
+    WriteParam(aWriter, aParam.mHTMLInputMode);
     WriteParam(aWriter, aParam.mActionHint);
     WriteParam(aWriter, aParam.mAutocapitalize);
     WriteParam(aWriter, aParam.mOrigin);
     WriteParam(aWriter, aParam.mMayBeIMEUnaware);
     WriteParam(aWriter, aParam.mHasHandledUserInput);
     WriteParam(aWriter, aParam.mInPrivateBrowsing);
+    mozilla::ipc::WriteIPDLParam(aWriter, aWriter->GetActor(), aParam.mURI);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
     return ReadParam(aReader, &aResult->mIMEState) &&
            ReadParam(aReader, &aResult->mHTMLInputType) &&
-           ReadParam(aReader, &aResult->mHTMLInputInputmode) &&
+           ReadParam(aReader, &aResult->mHTMLInputMode) &&
            ReadParam(aReader, &aResult->mActionHint) &&
            ReadParam(aReader, &aResult->mAutocapitalize) &&
            ReadParam(aReader, &aResult->mOrigin) &&
            ReadParam(aReader, &aResult->mMayBeIMEUnaware) &&
            ReadParam(aReader, &aResult->mHasHandledUserInput) &&
-           ReadParam(aReader, &aResult->mInPrivateBrowsing);
+           ReadParam(aReader, &aResult->mInPrivateBrowsing) &&
+           mozilla::ipc::ReadIPDLParam(aReader, aReader->GetActor(),
+                                       address_of(aResult->mURI));
   }
 };
 

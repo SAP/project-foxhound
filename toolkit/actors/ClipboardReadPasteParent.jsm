@@ -5,9 +5,6 @@
 
 var EXPORTED_SYMBOLS = ["ClipboardReadPasteParent"];
 
-const kPasteMenuItemClickedEventType = "PasteMenuItemClicked";
-const kPasteMenupopupHidingEventType = "PasteMenupopupHiding";
-
 const kMenuPopupId = "clipboardReadPasteMenuPopup";
 
 // Exchanges messages with the child actor and handles events from the
@@ -17,31 +14,72 @@ class ClipboardReadPasteParent extends JSWindowActorParent {
     super();
 
     this._menupopup = null;
+    this._menuitem = null;
+    this._delayTimer = null;
     this._pasteMenuItemClicked = false;
+    this._lastBeepTime = 0;
+  }
+
+  didDestroy() {
+    if (this._menupopup) {
+      this._menupopup.hidePopup(true);
+    }
   }
 
   // EventListener interface.
   handleEvent(aEvent) {
     switch (aEvent.type) {
-      case kPasteMenuItemClickedEventType: {
-        this._pasteMenuItemClicked = true;
-        this.sendAsyncMessage("ClipboardReadPaste:PasteMenuItemClicked");
+      case "command": {
+        this.onCommand();
         break;
       }
-      case kPasteMenupopupHidingEventType: {
-        // Remove the listeners before potentially sending the async message
-        // below, because that might throw.
-        this._removeMenupopupEventListeners();
+      case "popuphiding": {
+        this.onPopupHiding();
+        break;
+      }
+      case "keydown": {
+        this.onKeyDown(aEvent);
+        break;
+      }
+    }
+  }
 
-        if (this._pasteMenuItemClicked) {
-          // A message was already sent. Reset the state to handle further
-          // click/dismiss events properly.
-          this._pasteMenuItemClicked = false;
-        } else {
-          this.sendAsyncMessage("ClipboardReadPaste:PasteMenuItemDismissed");
-        }
-        break;
+  onCommand() {
+    this._pasteMenuItemClicked = true;
+    this.sendAsyncMessage("ClipboardReadPaste:PasteMenuItemClicked");
+  }
+
+  onPopupHiding() {
+    // Remove the listeners before potentially sending the async message
+    // below, because that might throw.
+    this._removeMenupopupEventListeners();
+    this._clearDelayTimer();
+    this._stopWatchingForSpammyActivation();
+
+    if (this._pasteMenuItemClicked) {
+      // A message was already sent. Reset the state to handle further
+      // click/dismiss events properly.
+      this._pasteMenuItemClicked = false;
+    } else {
+      this.sendAsyncMessage("ClipboardReadPaste:PasteMenuItemDismissed");
+    }
+  }
+
+  onKeyDown(aEvent) {
+    if (!this._menuitem.disabled) {
+      return;
+    }
+
+    let accesskey = this._menuitem.getAttribute("accesskey");
+    if (
+      aEvent.key == accesskey.toLowerCase() ||
+      aEvent.key == accesskey.toUpperCase()
+    ) {
+      if (Date.now() - this._lastBeepTime > 1000) {
+        Cc["@mozilla.org/sound;1"].getService(Ci.nsISound).beep();
+        this._lastBeepTime = Date.now();
       }
+      this._refreshDelayTimer();
     }
   }
 
@@ -50,6 +88,7 @@ class ClipboardReadPasteParent extends JSWindowActorParent {
     if (value.name == "ClipboardReadPaste:ShowMenupopup") {
       if (!this._menupopup) {
         this._menupopup = this._getMenupopup();
+        this._menuitem = this._menupopup.firstElementChild;
       }
 
       this._addMenupopupEventListeners();
@@ -65,6 +104,8 @@ class ClipboardReadPasteParent extends JSWindowActorParent {
         mouseYInCSSPixels
       );
 
+      this._menuitem.disabled = true;
+      this._startWatchingForSpammyActivation();
       // `openPopup` is a no-op if the popup is already opened.
       // That property is used when `navigator.clipboard.readText()` or
       // `navigator.clipboard.read()`is called from two different frames, e.g.
@@ -82,38 +123,28 @@ class ClipboardReadPasteParent extends JSWindowActorParent {
         mouseYInCSSPixels.value,
         true /* isContextMenu */
       );
+
+      this._refreshDelayTimer();
     }
   }
 
   _addMenupopupEventListeners() {
-    this._menupopup.addEventListener(kPasteMenuItemClickedEventType, this);
-    this._menupopup.addEventListener(kPasteMenupopupHidingEventType, this);
+    this._menupopup.addEventListener("command", this);
+    this._menupopup.addEventListener("popuphiding", this);
   }
 
   _removeMenupopupEventListeners() {
-    this._menupopup.removeEventListener(kPasteMenuItemClickedEventType, this);
-    this._menupopup.removeEventListener(kPasteMenupopupHidingEventType, this);
+    this._menupopup.removeEventListener("command", this);
+    this._menupopup.removeEventListener("popuphiding", this);
   }
 
   _createMenupopup(aChromeDoc) {
     let menuitem = aChromeDoc.createXULElement("menuitem");
     menuitem.id = "clipboardReadPasteMenuItem";
     menuitem.setAttribute("data-l10n-id", "text-action-paste");
-    menuitem.setAttribute(
-      "oncommand",
-      "this.parentElement.dispatchEvent(new CustomEvent('" +
-        kPasteMenuItemClickedEventType +
-        "'));"
-    );
 
     let menupopup = aChromeDoc.createXULElement("menupopup");
     menupopup.id = kMenuPopupId;
-    menupopup.setAttribute(
-      "onpopuphiding",
-      "this.dispatchEvent(new CustomEvent('" +
-        kPasteMenupopupHidingEventType +
-        "'));"
-    );
     menupopup.appendChild(menuitem);
     return menupopup;
   }
@@ -132,5 +163,35 @@ class ClipboardReadPasteParent extends JSWindowActorParent {
     }
 
     return menupopup;
+  }
+
+  _startWatchingForSpammyActivation() {
+    let doc = this._menuitem.ownerDocument;
+    Services.els.addSystemEventListener(doc, "keydown", this, true);
+  }
+
+  _stopWatchingForSpammyActivation() {
+    let doc = this._menuitem.ownerDocument;
+    Services.els.removeSystemEventListener(doc, "keydown", this, true);
+  }
+
+  _clearDelayTimer() {
+    if (this._delayTimer) {
+      let window = this._menuitem.ownerGlobal;
+      window.clearTimeout(this._delayTimer);
+      this._delayTimer = null;
+    }
+  }
+
+  _refreshDelayTimer() {
+    this._clearDelayTimer();
+
+    let window = this._menuitem.ownerGlobal;
+    let delay = Services.prefs.getIntPref("security.dialog_enable_delay");
+    this._delayTimer = window.setTimeout(() => {
+      this._menuitem.disabled = false;
+      this._stopWatchingForSpammyActivation();
+      this._delayTimer = null;
+    }, delay);
   }
 }

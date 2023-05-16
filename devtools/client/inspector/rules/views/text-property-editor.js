@@ -4,45 +4,45 @@
 
 "use strict";
 
-const { l10n } = require("devtools/shared/inspector/css-logic");
+const { l10n } = require("resource://devtools/shared/inspector/css-logic.js");
 const {
   InplaceEditor,
   editableField,
-} = require("devtools/client/shared/inplace-editor");
+} = require("resource://devtools/client/shared/inplace-editor.js");
 const {
   createChild,
   appendText,
   advanceValidate,
   blurOnMultipleProperties,
-} = require("devtools/client/inspector/shared/utils");
-const { throttle } = require("devtools/shared/throttle");
+} = require("resource://devtools/client/inspector/shared/utils.js");
+const { throttle } = require("resource://devtools/shared/throttle.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "openContentLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["parseDeclarations", "parseSingleValue"],
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "findCssSelector",
-  "devtools/shared/inspector/css-logic",
+  "resource://devtools/shared/inspector/css-logic.js",
   true
 );
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AppConstants",
-  "resource://gre/modules/AppConstants.jsm",
-  true
+  "resource://gre/modules/AppConstants.jsm"
 );
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -581,6 +581,14 @@ TextPropertyEditor.prototype = {
 
     this.valueSpan.innerHTML = "";
     this.valueSpan.appendChild(frag);
+    if (
+      this.valueSpan.textProperty?.name === "grid-template-areas" &&
+      this.isValid() &&
+      (this.valueSpan.innerText.includes(`"`) ||
+        this.valueSpan.innerText.includes(`'`))
+    ) {
+      this._formatGridTemplateAreasValue();
+    }
 
     this.ruleView.emit("property-value-updated", {
       rule: this.prop.rule,
@@ -1341,7 +1349,8 @@ TextPropertyEditor.prototype = {
    * @returns {Boolean}
    */
   _hasSmallIncrementModifier(event) {
-    const modifier = AppConstants.platform === "macosx" ? "altKey" : "ctrlKey";
+    const modifier =
+      lazy.AppConstants.platform === "macosx" ? "altKey" : "ctrlKey";
     return event[modifier] === true;
   },
 
@@ -1540,6 +1549,43 @@ TextPropertyEditor.prototype = {
    */
   isNameValid() {
     return this.prop.isNameValid();
+  },
+
+  /**
+   * Display grid-template-area value strings each on their own line
+   * to display it in an ascii-art style matrix
+   */
+  _formatGridTemplateAreasValue() {
+    this.valueSpan.classList.add("ruleview-propertyvalue-break-spaces");
+
+    let quoteSymbolsUsed = [];
+
+    const getQuoteSymbolsUsed = cssValue => {
+      const regex = /\"|\'/g;
+      const found = cssValue.match(regex);
+      quoteSymbolsUsed = found.filter((_, i) => i % 2 === 0);
+    };
+
+    getQuoteSymbolsUsed(this.valueSpan.innerText);
+
+    this.valueSpan.innerText = this.valueSpan.innerText
+      .split('"')
+      .filter(s => s !== "")
+      .map(s => s.split("'"))
+      .flat()
+      .map(s => s.trim().replace(/\s+/g, " "))
+      .filter(s => s.length)
+      .map(line => line.split(" "))
+      .map((line, i, lines) =>
+        line.map((col, j) =>
+          col.padEnd(Math.max(...lines.map(l => l[j].length)), " ")
+        )
+      )
+      .map(
+        (line, i) =>
+          `\n${quoteSymbolsUsed[i]}` + line.join(" ") + quoteSymbolsUsed[i]
+      )
+      .join(" ");
   },
 };
 

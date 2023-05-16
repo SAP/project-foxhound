@@ -38,7 +38,9 @@ pub use self::border::{BorderImageRepeat, BorderImageSideWidth};
 pub use self::border::{BorderRadius, BorderSideWidth, BorderSpacing, BorderStyle};
 pub use self::box_::{AnimationIterationCount, AnimationName, AnimationTimeline, Contain, Display};
 pub use self::box_::{Appearance, BreakBetween, BreakWithin, ContainerName, ContainerType};
-pub use self::box_::{Clear, ContentVisibility, ContainIntrinsicSize, LineClamp, Float, Overflow, OverflowAnchor};
+pub use self::box_::{
+    Clear, ContainIntrinsicSize, ContentVisibility, Float, LineClamp, Overflow, OverflowAnchor,
+};
 pub use self::box_::{OverflowClipBox, OverscrollBehavior, Perspective, Resize, ScrollbarGutter};
 pub use self::box_::{ScrollAxis, ScrollSnapAlign, ScrollSnapAxis, ScrollSnapStop};
 pub use self::box_::{ScrollSnapStrictness, ScrollSnapType, ScrollTimelineName};
@@ -49,7 +51,7 @@ pub use self::counters::{Content, ContentItem, CounterIncrement, CounterReset, C
 pub use self::easing::TimingFunction;
 pub use self::effects::{BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
-pub use self::font::{FontFamily, FontLanguageOverride, FontStyle};
+pub use self::font::{FontFamily, FontLanguageOverride, FontStyle, FontPalette};
 pub use self::font::{FontFeatureSettings, FontVariantLigatures, FontVariantNumeric};
 pub use self::font::{FontSize, FontSizeAdjust, FontSizeKeyword, FontStretch, FontSynthesis};
 pub use self::font::{FontVariantAlternates, FontWeight};
@@ -70,7 +72,7 @@ pub use self::list::ListStyleType;
 pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
-pub use self::page::{PageOrientation, PageName, PageSize, PaperSize};
+pub use self::page::{PageName, PageOrientation, PageSize, PaperSize};
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::AspectRatio;
 pub use self::position::{
@@ -97,7 +99,7 @@ pub use self::transform::{Rotate, Scale, Transform};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
-pub use self::ui::{Cursor, MozForceBrokenImageIcon, UserSelect};
+pub use self::ui::{BoolInteger, Cursor, UserSelect};
 pub use super::generics::grid::GridTemplateComponent as GenericGridTemplateComponent;
 
 #[cfg(feature = "gecko")]
@@ -406,6 +408,18 @@ impl NonNegativeNumber {
     #[inline]
     pub fn get(&self) -> f32 {
         self.0.get()
+    }
+}
+
+/// An Integer which is >= 0.
+pub type NonNegativeInteger = NonNegative<Integer>;
+
+impl Parse for NonNegativeInteger {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        Ok(NonNegative(Integer::parse_non_negative(context, input)?))
     }
 }
 

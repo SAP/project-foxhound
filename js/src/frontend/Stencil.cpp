@@ -2421,7 +2421,7 @@ bool CompilationStencil::instantiateStencilAfterPreparation(
   const JS::InstantiateOptions options(input.options);
 
   // Phase 1: Instantiate JSAtom/JSStrings.
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   if (!InstantiateAtoms(cx, &ec, atomCache, stencil)) {
     return false;
   }
@@ -2445,7 +2445,6 @@ bool CompilationStencil::instantiateStencilAfterPreparation(
       }
     }
 
-    MainThreadErrorContext ec(cx);
     if (!InstantiateFunctions(cx, &ec, atomCache, stencil, gcOutput)) {
       return false;
     }
@@ -2512,7 +2511,7 @@ bool CompilationStencil::instantiateSelfHostedAtoms(
 
   // We must instantiate atoms during startup so they can be made permanent
   // across multiple runtimes.
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   return InstantiateMarkedAtomsAsPermanent(cx, &ec, atomSet, parserAtomData,
                                            atomCache);
 }
@@ -2617,7 +2616,7 @@ bool CompilationStencil::delazifySelfHostedFunction(
 
   // Prepare to instantiate by reserving the output vectors. We also set a base
   // index to avoid allocations in most cases.
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   Rooted<CompilationGCOutput> gcOutput(cx);
   if (!gcOutput.get().ensureReservedWithBaseIndex(&ec, range.start, range.limit,
                                                   scopeIndex, scopeLimit)) {
@@ -2699,7 +2698,7 @@ bool CompilationStencil::prepareForInstantiate(
     JSContext* cx, CompilationAtomCache& atomCache,
     const CompilationStencil& stencil, CompilationGCOutput& gcOutput) {
   // Reserve the `gcOutput` vectors.
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   if (!gcOutput.ensureReserved(&ec, stencil.scriptData.size(),
                                stencil.scopeData.size())) {
     return false;
@@ -2715,7 +2714,7 @@ bool CompilationStencil::serializeStencils(JSContext* cx,
   if (succeededOut) {
     *succeededOut = false;
   }
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   XDRStencilEncoder encoder(cx, &ec, buf);
 
   XDRResult res = encoder.codeStencil(*this);
@@ -2815,12 +2814,6 @@ SharedDataContainer::~SharedDataContainer() {
   }
 }
 
-bool SharedDataContainer::initVector(JSContext* cx) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return initVector(&ec);
-}
-
 bool SharedDataContainer::initVector(ErrorContext* ec) {
   MOZ_ASSERT(isEmpty());
 
@@ -2831,12 +2824,6 @@ bool SharedDataContainer::initVector(ErrorContext* ec) {
   }
   data_ = uintptr_t(vec) | VectorTag;
   return true;
-}
-
-bool SharedDataContainer::initMap(JSContext* cx) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return initMap(&ec);
 }
 
 bool SharedDataContainer::initMap(ErrorContext* ec) {
@@ -4840,13 +4827,6 @@ bool CompilationStencilMerger::buildAtomIndexMap(
 }
 
 bool CompilationStencilMerger::setInitial(
-    JSContext* cx, UniquePtr<ExtensibleCompilationStencil>&& initial) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return setInitial(&ec, std::move(initial));
-}
-
-bool CompilationStencilMerger::setInitial(
     ErrorContext* ec, UniquePtr<ExtensibleCompilationStencil>&& initial) {
   MOZ_ASSERT(!initial_);
 
@@ -4929,13 +4909,6 @@ static void MergeScriptStencil(ScriptStencil& dest, const ScriptStencil& src,
   if (src.hasSharedData()) {
     dest.setHasSharedData();
   }
-}
-
-bool CompilationStencilMerger::addDelazification(
-    JSContext* cx, const CompilationStencil& delazification) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return addDelazification(&ec, delazification);
 }
 
 bool CompilationStencilMerger::addDelazification(
@@ -5215,7 +5188,7 @@ static already_AddRefed<JS::Stencil> CompileGlobalScriptToStencilImpl(
   ScopeKind scopeKind =
       options.nonSyntacticScope ? ScopeKind::NonSyntactic : ScopeKind::Global;
 
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   NoScopeBindingCache scopeCache;
   Rooted<CompilationInput> input(cx, CompilationInput(options));
   RefPtr<JS::Stencil> stencil = js::frontend::CompileGlobalScriptToStencil(
@@ -5248,7 +5221,7 @@ static already_AddRefed<JS::Stencil> CompileModuleScriptToStencilImpl(
   JS::CompileOptions options(cx, optionsInput);
   options.setModule();
 
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   NoScopeBindingCache scopeCache;
   Rooted<CompilationInput> input(cx, CompilationInput(options));
   RefPtr<JS::Stencil> stencil = js::frontend::ParseModuleToStencil(
@@ -5315,7 +5288,7 @@ JS_PUBLIC_API JSObject* JS::InstantiateModuleStencil(
 
 JS::TranscodeResult JS::EncodeStencil(JSContext* cx, JS::Stencil* stencil,
                                       TranscodeBuffer& buffer) {
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   XDRStencilEncoder encoder(cx, &ec, buffer);
   XDRResult res = encoder.codeStencil(*stencil);
   if (res.isErr()) {
@@ -5336,7 +5309,7 @@ JS::TranscodeResult JS::DecodeStencil(JSContext* cx,
   if (!stencil) {
     return TranscodeResult::Throw;
   }
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   XDRStencilDecoder decoder(cx, &ec, range);
   XDRResult res = decoder.codeStencil(options, *stencil);
   if (res.isErr()) {

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_HTMLEditUtils_h
-#define mozilla_HTMLEditUtils_h
+#ifndef HTMLEditUtils_h
+#define HTMLEditUtils_h
 
 /**
  * This header declares/defines static helper methods as members of
@@ -12,11 +12,12 @@
  * HTMLEditor, see HTMLEditHelpers.h.
  */
 
+#include "EditorBase.h"
+#include "EditorDOMPoint.h"
+#include "EditorForwards.h"
+#include "EditorUtils.h"
+
 #include "mozilla/Attributes.h"
-#include "mozilla/EditorBase.h"
-#include "mozilla/EditorDOMPoint.h"
-#include "mozilla/EditorForwards.h"
-#include "mozilla/EditorUtils.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
@@ -27,6 +28,7 @@
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
+
 #include "nsContentUtils.h"
 #include "nsCRT.h"
 #include "nsGkAtoms.h"
@@ -166,6 +168,13 @@ class HTMLEditUtils final {
   static bool IsInlineElement(const nsIContent& aContent) {
     return !IsBlockElement(aContent);
   }
+
+  /**
+   * IsVisibleElementEvenIfLeafNode() returns true if aContent is an empty block
+   * element, a visible replaced element such as a form control.  This does not
+   * check the layout information.
+   */
+  static bool IsVisibleElementEvenIfLeafNode(const nsIContent& aContent);
 
   static bool IsInlineStyle(nsINode* aNode);
 
@@ -591,6 +600,17 @@ class HTMLEditUtils final {
   }
 
   /**
+   * Whether aElement has at least one attribute except _moz_dirty attribute or
+   * has no attribute or only has _moz_dirty attribute.
+   */
+  static bool ElementHasAttributesExceptMozDirty(const Element& aElement) {
+    uint32_t attrCount = aElement.GetAttrCount();
+    return attrCount > 1 ||
+           (attrCount == 1u &&
+            !aElement.GetAttrNameAt(0)->Equals(nsGkAtoms::mozdirty));
+  }
+
+  /**
    * Get adjacent content node of aNode if there is (even if one is in different
    * parent element).
    *
@@ -848,7 +868,7 @@ class HTMLEditUtils final {
   };
   using LeafNodeTypes = EnumSet<LeafNodeType>;
   static nsIContent* GetLastLeafContent(
-      nsINode& aNode, const LeafNodeTypes& aLeafNodeTypes,
+      const nsINode& aNode, const LeafNodeTypes& aLeafNodeTypes,
       const Element* aAncestorLimiter = nullptr) {
     MOZ_ASSERT_IF(
         aLeafNodeTypes.contains(LeafNodeType::OnlyEditableLeafNode),
@@ -1500,11 +1520,11 @@ class HTMLEditUtils final {
   }
 
   /**
-   * GetMostDistantAnscestorEditableEmptyInlineElement() returns most distant
+   * GetMostDistantAncestorEditableEmptyInlineElement() returns most distant
    * ancestor which only has aEmptyContent or its ancestor, editable and
    * inline element.
    */
-  static Element* GetMostDistantAnscestorEditableEmptyInlineElement(
+  static Element* GetMostDistantAncestorEditableEmptyInlineElement(
       const nsIContent& aEmptyContent, const Element* aEditingHost = nullptr) {
     nsIContent* lastEmptyContent = const_cast<nsIContent*>(&aEmptyContent);
     for (Element* element = aEmptyContent.GetParentElement();
@@ -1644,6 +1664,17 @@ class HTMLEditUtils final {
     }
     return nullptr;
   }
+
+  /**
+   * Return last <br> element or last text node ending with a preserved line
+   * break of/before aBlockElement.
+   */
+  enum ScanLineBreak {
+    AtEndOfBlock,
+    BeforeBlock,
+  };
+  static nsIContent* GetUnnecessaryLineBreakContent(
+      const Element& aBlockElement, ScanLineBreak aScanLineBreak);
 
   /**
    * IsInTableCellSelectionMode() returns true when Gecko's editor thinks that
@@ -2020,6 +2051,20 @@ class HTMLEditUtils final {
   }
 
   /**
+   * CollectAllChildren() collects all child nodes of aParentNode.
+   */
+  static void CollectAllChildren(
+      const nsINode& aParentNode,
+      nsTArray<OwningNonNull<nsIContent>>& aOutArrayOfContents) {
+    MOZ_ASSERT(aOutArrayOfContents.IsEmpty());
+    aOutArrayOfContents.SetCapacity(aParentNode.GetChildCount());
+    for (nsIContent* childContent = aParentNode.GetFirstChild(); childContent;
+         childContent = childContent->GetNextSibling()) {
+      aOutArrayOfContents.AppendElement(*childContent);
+    }
+  }
+
+  /**
    * CollectChildren() collects child nodes of aNode (starting from
    * first editable child, but may return non-editable children after it).
    *
@@ -2236,4 +2281,4 @@ class MOZ_STACK_CLASS SelectedTableCellScanner final {
 
 }  // namespace mozilla
 
-#endif  // #ifndef mozilla_HTMLEditUtils_h
+#endif  // #ifndef HTMLEditUtils_h

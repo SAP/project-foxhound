@@ -9,10 +9,10 @@
 
 var CC = Components.Constructor;
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
-const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // We do not want to log packets by default, because in some tests,
 // we can be sending large amounts of data. The test harness has
@@ -25,10 +25,16 @@ Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
 const {
   ActorRegistry,
-} = require("devtools/server/actors/utils/actor-registry");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { SocketListener } = require("devtools/shared/security/socket");
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+const {
+  SocketListener,
+} = require("resource://devtools/shared/security/socket.js");
 
 // Convert an nsIScriptError 'logLevel' value into an appropriate string.
 function scriptErrorLogLevel(message) {

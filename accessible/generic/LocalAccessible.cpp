@@ -50,7 +50,6 @@
 #include "nsIContent.h"
 #include "nsIFormControl.h"
 
-#include "nsDeckFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
@@ -70,6 +69,7 @@
 #include "nsArrayUtils.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsAttrName.h"
+#include "nsContainerFrame.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/BasicEvents.h"
@@ -324,22 +324,16 @@ uint64_t LocalAccessible::VisibilityState() const {
       return states::INVISIBLE;
     }
 
-    if (nsLayoutUtils::IsPopup(curFrame)) return 0;
-
-    // Offscreen state for background tab content and invisible for not selected
-    // deck panel.
-    nsIFrame* parentFrame = curFrame->GetParent();
-    nsDeckFrame* deckFrame = do_QueryFrame(parentFrame);
-    if (deckFrame && deckFrame->GetSelectedBox() != curFrame) {
-      if (deckFrame->GetContent()->IsXULElement(nsGkAtoms::tabpanels)) {
-        return states::OFFSCREEN;
-      }
-
-      MOZ_ASSERT_UNREACHABLE(
-          "Children of not selected deck panel are not accessible.");
-      return states::INVISIBLE;
+    if (nsLayoutUtils::IsPopup(curFrame)) {
+      return 0;
     }
 
+    if (curFrame->StyleUIReset()->mMozSubtreeHiddenOnlyVisually) {
+      // Offscreen state for background tab content.
+      return states::OFFSCREEN;
+    }
+
+    nsIFrame* parentFrame = curFrame->GetParent();
     // If contained by scrollable frame then check that at least 12 pixels
     // around the object is visible, otherwise the object is offscreen.
     nsIScrollableFrame* scrollableFrame = do_QueryFrame(parentFrame);
@@ -864,10 +858,7 @@ nsresult LocalAccessible::HandleAccEvent(AccEvent* aEvent) {
     // HasLoadState(eTreeConstructed) is false.
     MOZ_ASSERT(ipcDoc);
     if (ipcDoc) {
-      uint64_t id = aEvent->GetAccessible()->IsDoc()
-                        ? 0
-                        : reinterpret_cast<uintptr_t>(
-                              aEvent->GetAccessible()->UniqueID());
+      uint64_t id = aEvent->GetAccessible()->ID();
 
       switch (aEvent->GetEventType()) {
         case nsIAccessibleEvent::EVENT_SHOW:
@@ -878,7 +869,26 @@ nsresult LocalAccessible::HandleAccEvent(AccEvent* aEvent) {
           ipcDoc->SendHideEvent(id, aEvent->IsFromUserInput());
           break;
 
+        case nsIAccessibleEvent::EVENT_INNER_REORDER:
         case nsIAccessibleEvent::EVENT_REORDER:
+          if (IsTable()) {
+            SendCache(CacheDomain::Table, CacheUpdateType::Update);
+          }
+
+#if defined(XP_WIN)
+          if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
+              HasOwnContent() && mContent->IsMathMLElement()) {
+            // For any change in a MathML subtree, update the innerHTML cache on
+            // the root math element.
+            for (LocalAccessible* acc = this; acc; acc = acc->LocalParent()) {
+              if (acc->HasOwnContent() &&
+                  acc->mContent->IsMathMLElement(nsGkAtoms::math)) {
+                mDoc->QueueCacheUpdate(acc, CacheDomain::InnerHTML);
+              }
+            }
+          }
+#endif  // defined(XP_WIN)
+
           // reorder events on the application acc aren't necessary to tell the
           // parent about new top level documents.
           if (!aEvent->GetAccessible()->IsApplication()) {
@@ -926,11 +936,8 @@ nsresult LocalAccessible::HandleAccEvent(AccEvent* aEvent) {
         case nsIAccessibleEvent::EVENT_SELECTION_ADD:
         case nsIAccessibleEvent::EVENT_SELECTION_REMOVE: {
           AccSelChangeEvent* selEvent = downcast_accEvent(aEvent);
-          uint64_t widgetID =
-              selEvent->Widget()->IsDoc()
-                  ? 0
-                  : reinterpret_cast<uintptr_t>(selEvent->Widget()->UniqueID());
-          ipcDoc->SendSelectionEvent(id, widgetID, aEvent->GetEventType());
+          ipcDoc->SendSelectionEvent(id, selEvent->Widget()->ID(),
+                                     aEvent->GetEventType());
           break;
         }
         case nsIAccessibleEvent::EVENT_VIRTUALCURSOR_CHANGED: {
@@ -938,14 +945,11 @@ nsresult LocalAccessible::HandleAccEvent(AccEvent* aEvent) {
           LocalAccessible* position = vcEvent->NewAccessible();
           LocalAccessible* oldPosition = vcEvent->OldAccessible();
           ipcDoc->SendVirtualCursorChangeEvent(
-              id,
-              oldPosition ? reinterpret_cast<uintptr_t>(oldPosition->UniqueID())
-                          : 0,
+              id, oldPosition ? oldPosition->ID() : 0,
               vcEvent->OldStartOffset(), vcEvent->OldEndOffset(),
-              position ? reinterpret_cast<uintptr_t>(position->UniqueID()) : 0,
-              vcEvent->NewStartOffset(), vcEvent->NewEndOffset(),
-              vcEvent->Reason(), vcEvent->BoundaryType(),
-              vcEvent->IsFromUserInput());
+              position ? position->ID() : 0, vcEvent->NewStartOffset(),
+              vcEvent->NewEndOffset(), vcEvent->Reason(),
+              vcEvent->BoundaryType(), vcEvent->IsFromUserInput());
           break;
         }
 #if defined(XP_WIN)
@@ -991,14 +995,9 @@ nsresult LocalAccessible::HandleAccEvent(AccEvent* aEvent) {
             const TextRange& range = ranges.ElementAt(i);
             LocalAccessible* start = range.StartContainer()->AsLocal();
             LocalAccessible* end = range.EndContainer()->AsLocal();
-            textRangeData.AppendElement(TextRangeData(
-                start->IsDoc() && start->AsDoc()->IPCDoc()
-                    ? 0
-                    : reinterpret_cast<uint64_t>(start->UniqueID()),
-                end->IsDoc() && end->AsDoc()->IPCDoc()
-                    ? 0
-                    : reinterpret_cast<uint64_t>(end->UniqueID()),
-                range.StartOffset(), range.EndOffset()));
+            textRangeData.AppendElement(TextRangeData(start->ID(), end->ID(),
+                                                      range.StartOffset(),
+                                                      range.EndOffset()));
           }
           ipcDoc->SendTextSelectionChangeEvent(id, textRangeData);
           break;
@@ -2494,27 +2493,7 @@ void LocalAccessible::BindToParent(LocalAccessible* aParent,
         table->GetHeaderCache().Clear();
       }
     }
-  } else if (IsTableRow() && aParent->IsTable() &&
-             StaticPrefs::accessibility_cache_enabled_AtStartup()) {
-    // This table might have previously been treated as a layout table. Now that
-    // a row has been added, it might have sufficient rows to be considered a
-    // data table.
-    mDoc->QueueCacheUpdate(aParent, CacheDomain::Table);
   }
-
-#if defined(XP_WIN)
-  if (StaticPrefs::accessibility_cache_enabled_AtStartup() &&
-      aParent->HasOwnContent() && aParent->mContent->IsMathMLElement()) {
-    // For any change in a MathML subtree, update the innerHTML cache on the
-    // root math element.
-    for (LocalAccessible* acc = aParent; acc; acc = acc->LocalParent()) {
-      if (acc->HasOwnContent() &&
-          acc->mContent->IsMathMLElement(nsGkAtoms::math)) {
-        mDoc->QueueCacheUpdate(acc, CacheDomain::InnerHTML);
-      }
-    }
-  }
-#endif  // defined(XP_WIN)
 }
 
 // LocalAccessible protected
@@ -3126,8 +3105,7 @@ void LocalAccessible::SendCache(uint64_t aCacheDomain,
   RefPtr<AccAttributes> fields =
       BundleFieldsForCache(aCacheDomain, aUpdateType);
   nsTArray<CacheData> data;
-  data.AppendElement(
-      CacheData(IsDoc() ? 0 : reinterpret_cast<uint64_t>(UniqueID()), fields));
+  data.AppendElement(CacheData(ID(), fields));
   ipcDoc->SendCache(aUpdateType, data, true);
 }
 
@@ -3244,17 +3222,15 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
             LocalAccessible* child = acc->LocalChildAt(i);
             MOZ_ASSERT(child);
             if (inViewAccs.EnsureInserted(child)) {
-              viewportCache.AppendElement(
-                  child->IsDoc()
-                      ? 0
-                      : reinterpret_cast<uint64_t>(child->UniqueID()));
+              MOZ_ASSERT(!child->IsDoc());
+              viewportCache.AppendElement(child->ID());
             }
           }
         }
 
         if (inViewAccs.EnsureInserted(acc)) {
-          viewportCache.AppendElement(
-              acc->IsDoc() ? 0 : reinterpret_cast<uint64_t>(acc->UniqueID()));
+          MOZ_ASSERT(!acc->IsDoc());
+          viewportCache.AppendElement(acc->ID());
         }
       }
 
@@ -3604,7 +3580,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
       }
 
       while (LocalAccessible* acc = rel.LocalNext()) {
-        ids.AppendElement(acc->IsDoc() ? 0 : acc->ID());
+        ids.AppendElement(acc->ID());
       }
       if (ids.Length()) {
         fields->SetAttribute(relAtom, std::move(ids));

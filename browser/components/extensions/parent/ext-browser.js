@@ -20,16 +20,10 @@ ChromeUtils.defineModuleGetter(
   "BrowserWindowTracker",
   "resource:///modules/BrowserWindowTracker.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseUtils",
-  "resource://gre/modules/PromiseUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "AboutReaderParent",
-  "resource:///actors/AboutReaderParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+});
 
 var { ExtensionError } = ExtensionUtils;
 

@@ -98,6 +98,7 @@
 #include "mozilla/MacroForEach.h"
 #include "mozilla/ManualNAC.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/MediaFeatureChange.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/NullPrincipal.h"
@@ -738,6 +739,33 @@ class nsContentUtils::UserInteractionObserver final
   ~UserInteractionObserver() = default;
 };
 
+static constexpr nsLiteralCString kRfpPrefs[] = {
+    "privacy.resistFingerprinting"_ns,
+    "privacy.resistFingerprinting.testGranularityMask"_ns,
+};
+
+static void RecomputeResistFingerprintingAllDocs(const char*, void*) {
+  AutoTArray<RefPtr<BrowsingContextGroup>, 5> bcGroups;
+  BrowsingContextGroup::GetAllGroups(bcGroups);
+  for (auto& bcGroup : bcGroups) {
+    AutoTArray<DocGroup*, 5> docGroups;
+    bcGroup->GetDocGroups(docGroups);
+    for (auto* docGroup : docGroups) {
+      for (Document* doc : *docGroup) {
+        const bool old = doc->ShouldResistFingerprinting();
+        doc->RecomputeResistFingerprinting();
+        if (old != doc->ShouldResistFingerprinting()) {
+          if (auto* pc = doc->GetPresContext()) {
+            pc->MediaFeatureValuesChanged(
+                {MediaFeatureChangeReason::PreferenceChange},
+                MediaFeatureChangePropagation::JustThisDocument);
+          }
+        }
+      }
+    }
+  }
+}
+
 // static
 nsresult nsContentUtils::Init() {
   if (sInitialized) {
@@ -820,6 +848,10 @@ nsresult nsContentUtils::Init() {
   RefPtr<UserInteractionObserver> uio = new UserInteractionObserver();
   uio->Init();
   uio.forget(&sUserInteractionObserver);
+
+  for (const auto& pref : kRfpPrefs) {
+    Preferences::RegisterCallback(RecomputeResistFingerprintingAllDocs, pref);
+  }
 
   sInitialized = true;
 
@@ -1964,6 +1996,10 @@ void nsContentUtils::Shutdown() {
     NS_RELEASE(sUserInteractionObserver);
   }
 
+  for (const auto& pref : kRfpPrefs) {
+    Preferences::UnregisterCallback(RecomputeResistFingerprintingAllDocs, pref);
+  }
+
   TextControlState::Shutdown();
   nsMappedAttributes::Shutdown();
 }
@@ -2211,27 +2247,18 @@ bool nsContentUtils::ShouldResistFingerprinting(const char* aJustification) {
 bool nsContentUtils::ShouldResistFingerprinting(nsIDocShell* aDocShell) {
   if (!aDocShell) {
     MOZ_LOG(nsContentUtils::ResistFingerprintingLog(), LogLevel::Info,
-            ("Called nsContentUtils::ShouldResistFingerprinting(const "
-             "nsIDocShell* aDocShell) with NULL docshell"));
+            ("Called nsContentUtils::ShouldResistFingerprinting(nsIDocShell*) "
+             "with NULL docshell"));
     return ShouldResistFingerprinting();
   }
-  return ShouldResistFingerprinting(aDocShell->GetDocument());
-}
-
-// --------------------------------------------------------------------
-/* static */
-bool nsContentUtils::ShouldResistFingerprinting(const Document* aDoc) {
-  if (!aDoc) {
+  Document* doc = aDocShell->GetDocument();
+  if (!doc) {
     MOZ_LOG(nsContentUtils::ResistFingerprintingLog(), LogLevel::Info,
-            ("Called nsContentUtils::ShouldResistFingerprinting(const "
-             "Document* aDoc) with NULL document"));
+            ("Called nsContentUtils::ShouldResistFingerprinting(nsIDocShell*) "
+             "with NULL doc"));
     return ShouldResistFingerprinting();
   }
-  bool isChrome = nsContentUtils::IsChromeDoc(aDoc);
-  if (isChrome) {
-    return false;
-  }
-  return ShouldResistFingerprinting(aDoc->GetChannel());
+  return doc->ShouldResistFingerprinting();
 }
 
 // ----------------------------------------------------------------------
@@ -7327,15 +7354,25 @@ bool nsContentUtils::IsNodeInEditableRegion(nsINode* aNode) {
 }
 
 // static
-bool nsContentUtils::IsForbiddenRequestHeader(const nsACString& aHeader) {
+bool nsContentUtils::IsForbiddenRequestHeader(const nsACString& aHeader,
+                                              const nsACString& aValue) {
   if (IsForbiddenSystemRequestHeader(aHeader)) {
     return true;
   }
 
-  return StringBeginsWith(aHeader, "proxy-"_ns,
-                          nsCaseInsensitiveCStringComparator) ||
-         StringBeginsWith(aHeader, "sec-"_ns,
-                          nsCaseInsensitiveCStringComparator);
+  if ((nsContentUtils::IsOverrideMethodHeader(aHeader) &&
+       nsContentUtils::ContainsForbiddenMethod(aValue))) {
+    return true;
+  }
+
+  if (StringBeginsWith(aHeader, "proxy-"_ns,
+                       nsCaseInsensitiveCStringComparator) ||
+      StringBeginsWith(aHeader, "sec-"_ns,
+                       nsCaseInsensitiveCStringComparator)) {
+    return true;
+  }
+
+  return false;
 }
 
 // static
@@ -7373,6 +7410,31 @@ bool nsContentUtils::IsForbiddenSystemRequestHeader(const nsACString& aHeader) {
 bool nsContentUtils::IsForbiddenResponseHeader(const nsACString& aHeader) {
   return (aHeader.LowerCaseEqualsASCII("set-cookie") ||
           aHeader.LowerCaseEqualsASCII("set-cookie2"));
+}
+
+// static
+bool nsContentUtils::IsOverrideMethodHeader(const nsACString& headerName) {
+  return headerName.EqualsIgnoreCase("x-http-method-override") ||
+         headerName.EqualsIgnoreCase("x-http-method") ||
+         headerName.EqualsIgnoreCase("x-method-override");
+}
+
+// static
+bool nsContentUtils::ContainsForbiddenMethod(const nsACString& headerValue) {
+  bool hasInsecureMethod = false;
+  nsCCharSeparatedTokenizer tokenizer(headerValue, ',');
+
+  while (tokenizer.hasMoreTokens()) {
+    const nsDependentCSubstring& value = tokenizer.nextToken();
+
+    if (value.EqualsIgnoreCase("connect") || value.EqualsIgnoreCase("trace") ||
+        value.EqualsIgnoreCase("track")) {
+      hasInsecureMethod = true;
+      break;
+    }
+  }
+
+  return hasInsecureMethod;
 }
 
 // static

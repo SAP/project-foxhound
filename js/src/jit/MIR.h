@@ -6767,6 +6767,12 @@ class MStoreElementHole
 
   bool needsNegativeIntCheck() const { return needsNegativeIntCheck_; }
 
+  AliasSet getAliasSet() const override {
+    // StoreElementHole can update the initialized length, the array length
+    // or reallocate obj->elements.
+    return AliasSet::Store(AliasSet::ObjectFields | AliasSet::Element);
+  }
+
   void collectRangeInfoPreTrunc() override;
 
   ALLOW_CLONE(MStoreElementHole)
@@ -9001,7 +9007,8 @@ class MObjectStaticProto : public MUnaryInstruction,
   }
   AliasType mightAlias(const MDefinition* def) const override {
     // These instructions never modify the [[Prototype]].
-    if (def->isAddAndStoreSlot() || def->isAllocateAndStoreSlot()) {
+    if (def->isAddAndStoreSlot() || def->isAllocateAndStoreSlot() ||
+        def->isStoreElementHole() || def->isArrayPush()) {
       return AliasType::NoAlias;
     }
     return AliasType::MayAlias;

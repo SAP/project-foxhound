@@ -10,6 +10,8 @@
 #include "KeyEvent.h"
 #include "PuppetWidget.h"
 #include "nsIContent.h"
+#include "nsITransferable.h"
+#include "nsStringStream.h"
 
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/IMEStateManager.h"
@@ -1452,10 +1454,10 @@ GeckoEditableSupport::GetIMENotificationRequests() {
 }
 
 static bool ShouldKeyboardDismiss(const nsAString& aInputType,
-                                  const nsAString& aInputmode) {
+                                  const nsAString& aInputMode) {
   // Some input type uses the prompt to input value. So it is unnecessary to
   // show software keyboard.
-  return aInputmode.EqualsLiteral("none") || aInputType.EqualsLiteral("date") ||
+  return aInputMode.EqualsLiteral("none") || aInputType.EqualsLiteral("date") ||
          aInputType.EqualsLiteral("time") ||
          aInputType.EqualsLiteral("month") ||
          aInputType.EqualsLiteral("week") ||
@@ -1478,7 +1480,7 @@ void GeckoEditableSupport::SetInputContext(const InputContext& aContext,
 
   if (mInputContext.mIMEState.mEnabled != IMEEnabled::Disabled &&
       !ShouldKeyboardDismiss(mInputContext.mHTMLInputType,
-                             mInputContext.mHTMLInputInputmode) &&
+                             mInputContext.mHTMLInputMode) &&
       aAction.UserMightRequestOpenVKB()) {
     // Don't reset keyboard when we should simply open the vkb
     mEditable->NotifyIME(EditableListener::NOTIFY_IME_OPEN_VKB);
@@ -1514,10 +1516,10 @@ void GeckoEditableSupport::NotifyIMEContext(const InputContext& aContext,
            ? EditableListener::IME_FOCUS_NOT_CHANGED
            : 0);
 
-  mEditable->NotifyIMEContext(
-      static_cast<int32_t>(aContext.mIMEState.mEnabled),
-      aContext.mHTMLInputType, aContext.mHTMLInputInputmode,
-      aContext.mActionHint, aContext.mAutocapitalize, flags);
+  mEditable->NotifyIMEContext(static_cast<int32_t>(aContext.mIMEState.mEnabled),
+                              aContext.mHTMLInputType, aContext.mHTMLInputMode,
+                              aContext.mActionHint, aContext.mAutocapitalize,
+                              flags);
 }
 
 InputContext GeckoEditableSupport::GetInputContext() {
@@ -1645,6 +1647,46 @@ nsWindow* GeckoEditableSupport::GetNsWindow() const {
   }
 
   return acc->GetNsWindow();
+}
+
+void GeckoEditableSupport::OnImeInsertImage(jni::ByteArray::Param aData,
+                                            jni::String::Param aMimeType) {
+  AutoGeckoEditableBlocker blocker(this);
+
+  nsCString mimeType(aMimeType->ToCString());
+  nsCOMPtr<nsIInputStream> byteStream;
+
+  nsresult rv = NS_NewByteInputStream(
+      getter_AddRefs(byteStream),
+      mozilla::Span(
+          reinterpret_cast<const char*>(aData->GetElements().Elements()),
+          aData->Length()),
+      NS_ASSIGNMENT_COPY);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  nsCOMPtr<nsITransferable> trans =
+      do_CreateInstance("@mozilla.org/widget/transferable;1");
+  if (NS_WARN_IF(!trans)) {
+    return;
+  }
+  trans->Init(nullptr);
+  rv = trans->SetTransferData(mimeType.get(), byteStream);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (NS_WARN_IF(!widget) || NS_WARN_IF(widget->Destroyed())) {
+    return;
+  }
+
+  WidgetContentCommandEvent command(true, eContentCommandPasteTransferable,
+                                    widget);
+  command.mTransferable = trans.forget();
+  nsEventStatus status;
+  widget->DispatchEvent(&command, status);
 }
 
 }  // namespace widget

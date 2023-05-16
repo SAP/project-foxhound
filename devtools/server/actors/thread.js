@@ -8,68 +8,73 @@
 // error packets.
 /* eslint-disable no-throw-literal */
 
-const DebuggerNotificationObserver = require("DebuggerNotificationObserver");
-const { Cr, Ci } = require("chrome");
-const { Pool } = require("devtools/shared/protocol/Pool");
-const { createValueGrip } = require("devtools/server/actors/object/utils");
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const { Pool } = require("resource://devtools/shared/protocol/Pool.js");
+const {
+  createValueGrip,
+} = require("resource://devtools/server/actors/object/utils.js");
+const {
+  ActorClassWithSpec,
+  Actor,
+} = require("resource://devtools/shared/protocol.js");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const Debugger = require("Debugger");
 const { assert, dumpn, reportException } = DevToolsUtils;
-const { threadSpec } = require("devtools/shared/specs/thread");
+const { threadSpec } = require("resource://devtools/shared/specs/thread.js");
 const {
   getAvailableEventBreakpoints,
   eventBreakpointForNotification,
   eventsRequireNotifications,
   firstStatementBreakpointId,
   makeEventBreakpointMessage,
-} = require("devtools/server/actors/utils/event-breakpoints");
+} = require("resource://devtools/server/actors/utils/event-breakpoints.js");
 const {
   WatchpointMap,
-} = require("devtools/server/actors/utils/watchpoint-map");
+} = require("resource://devtools/server/actors/utils/watchpoint-map.js");
 
-const { logEvent } = require("devtools/server/actors/utils/logEvent");
+const {
+  logEvent,
+} = require("resource://devtools/server/actors/utils/logEvent.js");
 
 loader.lazyRequireGetter(
   this,
   "EnvironmentActor",
-  "devtools/server/actors/environment",
+  "resource://devtools/server/actors/environment.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "BreakpointActorMap",
-  "devtools/server/actors/utils/breakpoint-actor-map",
+  "resource://devtools/server/actors/utils/breakpoint-actor-map.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PauseScopedObjectActor",
-  "devtools/server/actors/pause-scoped",
+  "resource://devtools/server/actors/pause-scoped.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "EventLoop",
-  "devtools/server/actors/utils/event-loop",
+  "resource://devtools/server/actors/utils/event-loop.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["FrameActor", "getSavedFrameParent", "isValidSavedFrame"],
-  "devtools/server/actors/frame",
+  "resource://devtools/server/actors/frame.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "HighlighterEnvironment",
-  "devtools/server/actors/highlighters",
+  "resource://devtools/server/actors/highlighters.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PausedDebuggerOverlay",
-  "devtools/server/actors/highlighters/paused-debugger",
+  "resource://devtools/server/actors/highlighters/paused-debugger.js",
   true
 );
 

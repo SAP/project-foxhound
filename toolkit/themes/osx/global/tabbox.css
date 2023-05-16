@@ -26,6 +26,9 @@ tabs {
   padding: 0 10px;
   margin-bottom: -12px;
   position: relative;
+  /* Needs to sort on top of the tabbox, which is a grid container (and thus
+   * causes pseudo stacking contexts to be created) */
+  z-index: 1;
 }
 
 tab {
@@ -47,7 +50,7 @@ tab:where(:last-of-type) {
   padding-inline-end: 2px;
 }
 
-tab[visuallyselected="true"]:not(:-moz-window-inactive) {
+tab:where([visuallyselected="true"]:not(:-moz-window-inactive)) {
   color: #FFF;
 }
 

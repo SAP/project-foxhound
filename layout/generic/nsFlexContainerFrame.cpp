@@ -57,6 +57,11 @@ static bool IsLegacyBox(const nsIFrame* aFlexContainer) {
       NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
 }
 
+static bool IsLegacyMozBox(const nsFlexContainerFrame* aFlexContainer) {
+  return aFlexContainer->HasAnyStateBits(
+      NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
+}
+
 // Returns the OrderState enum we should pass to CSSOrderAwareFrameIterator
 // (depending on whether aFlexContainer has
 // NS_STATE_FLEX_NORMAL_FLOW_CHILDREN_IN_CSS_ORDER state bit).
@@ -1174,8 +1179,7 @@ static void BuildStrutInfoFromCollapsedItems(const nsTArray<FlexLine>& aLines,
   uint32_t itemIdxInContainer = 0;
   for (const FlexLine& line : aLines) {
     for (const FlexItem& item : line.Items()) {
-      if (StyleVisibility::Collapse ==
-          item.Frame()->StyleVisibility()->mVisible) {
+      if (item.Frame()->StyleVisibility()->IsCollapse()) {
         // Note the cross size of the line as the item's strut size.
         aStruts.AppendElement(
             StrutInfo(itemIdxInContainer, line.LineCrossSize()));
@@ -1362,19 +1366,7 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
       // If we get here, we're resolving the flex base size for a flex item, and
       // we fall into the flexbox spec section 9.2 step 3, substep C (if we have
       // a definite cross size) or E (if not).
-      if (aChildFrame->GetAspectRatio() ||
-          aChildFrame->IsFrameOfType(eReplacedSizing)) {
-        // FIXME: This is a workaround. Once bug 1670151 is fixed, aspect-ratio
-        // will be considered when resolving flex item's flex base size with the
-        // value 'max-content'. Replaced elements without preferred
-        // aspect-ratio, e.g. <svg> without viewBox nor aspect-ratio property,
-        // need this workaround since we still want to use replaced elements'
-        // intrinsic sizing rules in
-        // https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
-        styleFlexBaseSize.emplace(StyleSize::Auto());
-      } else {
-        styleFlexBaseSize.emplace(StyleSize::MaxContent());
-      }
+      styleFlexBaseSize.emplace(StyleSize::MaxContent());
     } else if (flexBasis.IsSize() && !flexBasis.IsAuto()) {
       // For all other non-'auto' flex-basis values, we just swap in the
       // flex-basis itself for the preferred main-size property.
@@ -1444,55 +1436,6 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
       aAxisTracker, childWM, childRI.ComputedMaxISize(),
       childRI.ComputedMaxBSize());
 
-  // SPECIAL-CASE FOR WIDGET-IMPOSED SIZES
-  // Check if we're a themed widget, in which case we might have a minimum
-  // main & cross size imposed by our widget (which we can't go below), or
-  // (more severe) our widget might have only a single valid size.
-  bool isFixedSizeWidget = false;
-  const nsStyleDisplay* disp = aChildFrame->StyleDisplay();
-  if (aChildFrame->IsThemed(disp)) {
-    LayoutDeviceIntSize widgetMinSize;
-    bool canOverride = true;
-    PresContext()->Theme()->GetMinimumWidgetSize(PresContext(), aChildFrame,
-                                                 disp->EffectiveAppearance(),
-                                                 &widgetMinSize, &canOverride);
-
-    nscoord widgetMainMinSize = PresContext()->DevPixelsToAppUnits(
-        aAxisTracker.MainComponent(widgetMinSize));
-    nscoord widgetCrossMinSize = PresContext()->DevPixelsToAppUnits(
-        aAxisTracker.CrossComponent(widgetMinSize));
-
-    // GetMinimumWidgetSize() returns border-box. We need content-box, so
-    // subtract borderPadding.
-    const LogicalMargin bpInFlexWM =
-        childRI.ComputedLogicalBorderPadding(flexWM);
-    widgetMainMinSize -= aAxisTracker.MarginSizeInMainAxis(bpInFlexWM);
-    widgetCrossMinSize -= aAxisTracker.MarginSizeInCrossAxis(bpInFlexWM);
-    // ... (but don't let that push these min sizes below 0).
-    widgetMainMinSize = std::max(0, widgetMainMinSize);
-    widgetCrossMinSize = std::max(0, widgetCrossMinSize);
-
-    if (!canOverride) {
-      // Fixed-size widget: freeze our main-size at the widget's mandated size.
-      // (Set min and max main-sizes to that size, too, to keep us from
-      // clamping to any other size later on.)
-      flexBaseSize = mainMinSize = mainMaxSize = widgetMainMinSize;
-      tentativeCrossSize = crossMinSize = crossMaxSize = widgetCrossMinSize;
-      isFixedSizeWidget = true;
-    } else {
-      // Variable-size widget: ensure our min/max sizes are at least as large
-      // as the widget's mandated minimum size, so we don't flex below that.
-      mainMinSize = std::max(mainMinSize, widgetMainMinSize);
-      mainMaxSize = std::max(mainMaxSize, widgetMainMinSize);
-
-      if (tentativeCrossSize != NS_UNCONSTRAINEDSIZE) {
-        tentativeCrossSize = std::max(tentativeCrossSize, widgetCrossMinSize);
-      }
-      crossMinSize = std::max(crossMinSize, widgetCrossMinSize);
-      crossMaxSize = std::max(crossMaxSize, widgetCrossMinSize);
-    }
-  }
-
   // Construct the flex item!
   FlexItem* item = aLine.Items().EmplaceBack(
       childRI, flexGrow, flexShrink, flexBaseSize, mainMinSize, mainMaxSize,
@@ -1530,9 +1473,8 @@ FlexItem* nsFlexContainerFrame::GenerateFlexItemForChild(
   item->ResolveFlexBaseSizeFromAspectRatio(childRI);
 
   // If we're inflexible, we can just freeze to our hypothetical main-size
-  // up-front. Similarly, if we're a fixed-size widget, we only have one
-  // valid size, so we freeze to keep ourselves from flexing.
-  if (isFixedSizeWidget || (flexGrow == 0.0f && flexShrink == 0.0f)) {
+  // up-front.
+  if (flexGrow == 0.0f && flexShrink == 0.0f) {
     item->Freeze();
     if (flexBaseSize < mainMinSize) {
       item->SetWasMinClamped();
@@ -2269,7 +2211,7 @@ FlexItem::FlexItem(nsIFrame* aChildFrame, nscoord aCrossSize,
       mIsStrut(true),  // (this is the constructor for making struts, after all)
       mAlignSelf({StyleAlignFlags::FLEX_START}) {
   MOZ_ASSERT(mFrame, "expecting a non-null child frame");
-  MOZ_ASSERT(StyleVisibility::Collapse == mFrame->StyleVisibility()->mVisible,
+  MOZ_ASSERT(mFrame->StyleVisibility()->IsCollapse(),
              "Should only make struts for children with 'visibility:collapse'");
   MOZ_ASSERT(!mFrame->IsPlaceholderFrame(),
              "placeholder frames should not be treated as flex items");
@@ -3647,10 +3589,9 @@ CrossAxisPositionTracker::CrossAxisPositionTracker(
   if (mPackingSpaceRemaining != 0) {
     if (mAlignContent.primary == StyleAlignFlags::BASELINE ||
         mAlignContent.primary == StyleAlignFlags::LAST_BASELINE) {
-      NS_WARNING(
-          "NYI: "
-          "align-items/align-self:left/right/self-start/self-end/baseline/"
-          "last baseline");
+      // TODO: Bug 1480850 will implement 'align-content: [first/last] baseline'
+      // for flexbox. Until then, behaves as if align-content is 'flex-start' by
+      // doing nothing.
     } else if (mAlignContent.primary == StyleAlignFlags::FLEX_START) {
       // All packing space should go at the end --> nothing to do here.
     } else if (mAlignContent.primary == StyleAlignFlags::FLEX_END) {
@@ -4050,43 +3991,12 @@ LogicalSide FlexboxAxisTracker::CrossAxisStartSide() const {
       CrossAxis(), IsCrossAxisReversed() ? eLogicalEdgeEnd : eLogicalEdgeStart);
 }
 
-bool nsFlexContainerFrame::ShouldUseMozBoxCollapseBehavior(
-    const nsStyleDisplay* aFlexStyleDisp) {
-  MOZ_ASSERT(StyleDisplay() == aFlexStyleDisp, "wrong StyleDisplay passed in");
-
-  // Quick filter to screen out *actual* (not-coopted-for-emulation)
-  // flex containers, using state bit:
-  if (!IsLegacyBox(this)) {
-    return false;
-  }
-
-  // Check our own display value:
-  if (aFlexStyleDisp->mDisplay == mozilla::StyleDisplay::MozBox ||
-      aFlexStyleDisp->mDisplay == mozilla::StyleDisplay::MozInlineBox) {
-    return true;
-  }
-
-  // Check our parent's display value, if we're an anonymous box (with a
-  // potentially-untrustworthy display value):
-  auto pseudoType = Style()->GetPseudoType();
-  if (pseudoType == PseudoStyleType::scrolledContent ||
-      pseudoType == PseudoStyleType::buttonContent) {
-    const nsStyleDisplay* disp = GetParent()->StyleDisplay();
-    if (disp->mDisplay == mozilla::StyleDisplay::MozBox ||
-        disp->mDisplay == mozilla::StyleDisplay::MozInlineBox) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 void nsFlexContainerFrame::GenerateFlexLines(
     const ReflowInput& aReflowInput, const nscoord aTentativeContentBoxMainSize,
     const nscoord aTentativeContentBoxCrossSize,
     const nsTArray<StrutInfo>& aStruts, const FlexboxAxisTracker& aAxisTracker,
     nscoord aMainGapSize, nsTArray<nsIFrame*>& aPlaceholders,
-    nsTArray<FlexLine>& aLines /* out */) {
+    nsTArray<FlexLine>& aLines, bool& aHasCollapsedItems) {
   MOZ_ASSERT(aLines.IsEmpty(), "Expecting outparam to start out empty");
 
   auto ConstructNewFlexLine = [&aLines, aMainGapSize]() {
@@ -4135,8 +4045,7 @@ void nsFlexContainerFrame::GenerateFlexLines(
                        iter.ItemsAreAlreadyInOrder());
 
   bool prevItemRequestedBreakAfter = false;
-  const bool useMozBoxCollapseBehavior =
-      ShouldUseMozBoxCollapseBehavior(aReflowInput.mStyleDisplay);
+  const bool useMozBoxCollapseBehavior = IsLegacyMozBox(this);
 
   for (; !iter.AtEnd(); iter.Next()) {
     nsIFrame* childFrame = *iter;
@@ -4155,9 +4064,10 @@ void nsFlexContainerFrame::GenerateFlexLines(
       prevItemRequestedBreakAfter = false;
     }
 
-    if (useMozBoxCollapseBehavior &&
-        (StyleVisibility::Collapse ==
-         childFrame->StyleVisibility()->mVisible)) {
+    const bool collapsed = childFrame->StyleVisibility()->IsCollapse();
+    aHasCollapsedItems = aHasCollapsedItems || collapsed;
+
+    if (useMozBoxCollapseBehavior && collapsed) {
       // Legacy visibility:collapse behavior: make a 0-sized strut. (No need to
       // bother with aStruts and remembering cross size.)
       curLine->Items().EmplaceBack(childFrame, 0, aReflowInput.GetWritingMode(),
@@ -4713,57 +4623,61 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
 
   // Overflow area = union(my overflow area, children's overflow areas)
   aReflowOutput.SetOverflowAreasToDesiredBounds();
-  for (nsIFrame* childFrame : mFrames) {
-    ConsiderChildOverflow(aReflowOutput.mOverflowAreas, childFrame);
+
+  // The CSS Overflow spec [1] requires that a scrollable container's
+  // scrollable overflow should include the following areas.
+  //
+  // a) "the box's own content and padding areas": we treat the *content* as
+  // the scrolled inner frame's theoretical content-box that's intrinsically
+  // sized to the union of all the flex items' margin boxes, _without_
+  // relative positioning applied. The *padding areas* is just inflation on
+  // top of the theoretical content-box by the flex container's padding.
+  //
+  // b) "the margin areas of grid item and flex item boxes for which the box
+  // establishes a containing block": a) already includes the flex items'
+  // normal-positioned margin boxes into the scrollable overflow, but their
+  // relative-positioned margin boxes should also be included because relpos
+  // children are still flex items.
+  //
+  // [1] https://drafts.csswg.org/css-overflow-3/#scrollable.
+  const bool isScrolledContent =
+      Style()->GetPseudoType() == PseudoStyleType::scrolledContent;
+  MOZ_ASSERT(
+      !isScrolledContent || aReflowInput.ComputedLogicalBorderPadding(wm) ==
+                                aReflowInput.ComputedLogicalPadding(wm),
+      "A scrolled inner frame shouldn't have any border!");
+
+  bool anyScrolledContentItem = false;
+  // Union of normal-positioned margin boxes for all the items.
+  nsRect itemMarginBoxes;
+  // Union of relative-positioned margin boxes for the relpos items only.
+  nsRect relPosItemMarginBoxes;
+  const bool useMozBoxCollapseBehavior = IsLegacyMozBox(this);
+  for (nsIFrame* f : mFrames) {
+    if (useMozBoxCollapseBehavior && f->StyleVisibility()->IsCollapse()) {
+      continue;
+    }
+    ConsiderChildOverflow(aReflowOutput.mOverflowAreas, f);
+    if (!isScrolledContent) {
+      continue;
+    }
+    if (f->IsPlaceholderFrame()) {
+      continue;
+    }
+    anyScrolledContentItem = true;
+    if (MOZ_UNLIKELY(f->IsRelativelyOrStickyPositioned())) {
+      const nsRect marginRect = f->GetMarginRectRelativeToSelf();
+      itemMarginBoxes =
+          itemMarginBoxes.Union(marginRect + f->GetNormalPosition());
+      relPosItemMarginBoxes =
+          relPosItemMarginBoxes.Union(marginRect + f->GetPosition());
+    } else {
+      itemMarginBoxes = itemMarginBoxes.Union(f->GetMarginRect());
+    }
   }
 
-  MOZ_ASSERT(!flr.mLines.IsEmpty(),
-             "Flex container should have at least one FlexLine!");
-  if (Style()->GetPseudoType() == PseudoStyleType::scrolledContent &&
-      !flr.mLines.IsEmpty() && !flr.mLines[0].IsEmpty()) {
-    MOZ_ASSERT(aReflowInput.ComputedLogicalBorderPadding(wm) ==
-                   aReflowInput.ComputedLogicalPadding(wm),
-               "A scrolled inner frame shouldn't have any border!");
-    const LogicalMargin& padding = borderPadding;
-
-    // The CSS Overflow spec [1] requires that a scrollable container's
-    // scrollable overflow should include the following areas.
-    //
-    // a) "the box's own content and padding areas": we treat the *content* as
-    // the scrolled inner frame's theoretical content-box that's intrinsically
-    // sized to the union of all the flex items' margin boxes, _without_
-    // relative positioning applied. The *padding areas* is just inflation on
-    // top of the theoretical content-box by the flex container's padding.
-    //
-    // b) "the margin areas of grid item and flex item boxes for which the box
-    // establishes a containing block": a) already includes the flex items'
-    // normal-positioned margin boxes into the scrollable overflow, but their
-    // relative-positioned margin boxes should also be included because relpos
-    // children are still flex items.
-    //
-    // [1] https://drafts.csswg.org/css-overflow-3/#scrollable.
-
-    // Union of normal-positioned margin boxes for all the items.
-    nsRect itemMarginBoxes;
-    // Union of relative-positioned margin boxes for the relpos items only.
-    nsRect relPosItemMarginBoxes;
-
-    for (const FlexLine& line : flr.mLines) {
-      for (const FlexItem& item : line.Items()) {
-        const nsIFrame* f = item.Frame();
-        if (MOZ_UNLIKELY(f->IsRelativelyOrStickyPositioned())) {
-          const nsRect marginRect = f->GetMarginRectRelativeToSelf();
-          itemMarginBoxes =
-              itemMarginBoxes.Union(marginRect + f->GetNormalPosition());
-          relPosItemMarginBoxes =
-              relPosItemMarginBoxes.Union(marginRect + f->GetPosition());
-        } else {
-          itemMarginBoxes = itemMarginBoxes.Union(f->GetMarginRect());
-        }
-      }
-    }
-
-    itemMarginBoxes.Inflate(padding.GetPhysicalMargin(wm));
+  if (anyScrolledContentItem) {
+    itemMarginBoxes.Inflate(borderPadding.GetPhysicalMargin(wm));
     aReflowOutput.mOverflowAreas.UnionAllWith(itemMarginBoxes);
     aReflowOutput.mOverflowAreas.UnionAllWith(relPosItemMarginBoxes);
   }
@@ -5097,7 +5011,8 @@ nsFlexContainerFrame::FlexLayoutResult nsFlexContainerFrame::DoFlexLayout(
 
   GenerateFlexLines(aReflowInput, aTentativeContentBoxMainSize,
                     aTentativeContentBoxCrossSize, aStruts, aAxisTracker,
-                    aMainGapSize, flr.mPlaceholders, flr.mLines);
+                    aMainGapSize, flr.mPlaceholders, flr.mLines,
+                    flr.mHasCollapsedItems);
 
   if ((flr.mLines.Length() == 1 && flr.mLines[0].IsEmpty()) ||
       aReflowInput.mStyleDisplay->IsContainLayout()) {
@@ -5195,8 +5110,8 @@ nsFlexContainerFrame::FlexLayoutResult nsFlexContainerFrame::DoFlexLayout(
   // "align-content:stretch" adjustments, from the CrossAxisPositionTracker
   // constructor), we can create struts for any flex items with
   // "visibility: collapse" (and restart flex layout).
-  if (aStruts.IsEmpty() &&  // (Don't make struts if we already did)
-      !ShouldUseMozBoxCollapseBehavior(aReflowInput.mStyleDisplay)) {
+  // Make sure to only do this if we had no struts.
+  if (aStruts.IsEmpty() && !IsLegacyMozBox(this) && flr.mHasCollapsedItems) {
     BuildStrutInfoFromCollapsedItems(flr.mLines, aStruts);
     if (!aStruts.IsEmpty()) {
       // Restart flex layout, using our struts.
@@ -5718,8 +5633,7 @@ nscoord nsFlexContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
                                                     NS_UNCONSTRAINEDSIZE);
   }
 
-  const bool useMozBoxCollapseBehavior =
-      ShouldUseMozBoxCollapseBehavior(StyleDisplay());
+  const bool useMozBoxCollapseBehavior = IsLegacyMozBox(this);
 
   // The loop below sets aside space for a gap before each item besides the
   // first. This bool helps us handle that special-case.
@@ -5731,31 +5645,33 @@ nscoord nsFlexContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
       continue;
     }
 
-    // If we're using legacy "visibility:collapse" behavior, then we don't
-    // care about the sizes of any collapsed children.
-    if (!useMozBoxCollapseBehavior ||
-        (StyleVisibility::Collapse !=
-         childFrame->StyleVisibility()->mVisible)) {
-      nscoord childISize = nsLayoutUtils::IntrinsicForContainer(
-          aRenderingContext, childFrame, aType);
-      // * For a row-oriented single-line flex container, the intrinsic
-      // {min/pref}-isize is the sum of its items' {min/pref}-isizes and
-      // (n-1) column gaps.
-      // * For a column-oriented flex container, the intrinsic min isize
-      // is the max of its items' min isizes.
-      // * For a row-oriented multi-line flex container, the intrinsic
-      // pref isize is former (sum), and its min isize is the latter (max).
-      bool isSingleLine = (StyleFlexWrap::Nowrap == stylePos->mFlexWrap);
-      if (axisTracker.IsRowOriented() &&
-          (isSingleLine || aType == IntrinsicISizeType::PrefISize)) {
-        containerISize += childISize;
-        if (!onFirstChild) {
-          containerISize += mainGapSize;
-        }
-        onFirstChild = false;
-      } else {  // (col-oriented, or MinISize for multi-line row flex container)
-        containerISize = std::max(containerISize, childISize);
+    if (useMozBoxCollapseBehavior &&
+        childFrame->StyleVisibility()->IsCollapse()) {
+      // If we're using legacy "visibility:collapse" behavior, then we don't
+      // care about the sizes of any collapsed children.
+      continue;
+    }
+
+    nscoord childISize = nsLayoutUtils::IntrinsicForContainer(
+        aRenderingContext, childFrame, aType);
+
+    // * For a row-oriented single-line flex container, the intrinsic
+    // {min/pref}-isize is the sum of its items' {min/pref}-isizes and
+    // (n-1) column gaps.
+    // * For a column-oriented flex container, the intrinsic min isize
+    // is the max of its items' min isizes.
+    // * For a row-oriented multi-line flex container, the intrinsic
+    // pref isize is former (sum), and its min isize is the latter (max).
+    bool isSingleLine = (StyleFlexWrap::Nowrap == stylePos->mFlexWrap);
+    if (axisTracker.IsRowOriented() &&
+        (isSingleLine || aType == IntrinsicISizeType::PrefISize)) {
+      containerISize += childISize;
+      if (!onFirstChild) {
+        containerISize += mainGapSize;
       }
+      onFirstChild = false;
+    } else {  // (col-oriented, or MinISize for multi-line row flex container)
+      containerISize = std::max(containerISize, childISize);
     }
   }
 
@@ -5790,4 +5706,107 @@ nscoord nsFlexContainerFrame::GetPrefISize(gfxContext* aRenderingContext) {
   }
 
   return mCachedPrefISize;
+}
+
+int32_t nsFlexContainerFrame::GetNumLines() const {
+  // TODO(emilio, bug 1793251): Treating all row oriented frames as single-lines
+  // might not be great for flex-wrap'd containers, consider trying to do
+  // better? We probably would need to persist more stuff than we do after
+  // layout.
+  return FlexboxAxisInfo(this).mIsRowOriented ? 1 : mFrames.GetLength();
+}
+
+bool nsFlexContainerFrame::IsLineIteratorFlowRTL() {
+  FlexboxAxisInfo info(this);
+  if (info.mIsRowOriented) {
+    const bool isRtl = StyleVisibility()->mDirection == StyleDirection::Rtl;
+    return info.mIsMainAxisReversed != isRtl;
+  }
+  return false;
+}
+
+Result<nsILineIterator::LineInfo, nsresult> nsFlexContainerFrame::GetLine(
+    int32_t aLineNumber) {
+  if (aLineNumber < 0 || aLineNumber >= GetNumLines()) {
+    return Err(NS_ERROR_FAILURE);
+  }
+  FlexboxAxisInfo info(this);
+  LineInfo lineInfo;
+  if (info.mIsRowOriented) {
+    lineInfo.mLineBounds = GetRect();
+    lineInfo.mFirstFrameOnLine = mFrames.FirstChild();
+    // This isn't quite ideal for multi-line row flexbox, see bug 1793251.
+    lineInfo.mNumFramesOnLine = mFrames.GetLength();
+  } else {
+    // TODO(emilio, bug 1793322): Deal with column-reverse (mIsMainAxisReversed)
+    nsIFrame* f = mFrames.FrameAt(aLineNumber);
+    lineInfo.mLineBounds = f->GetRect();
+    lineInfo.mFirstFrameOnLine = f;
+    lineInfo.mNumFramesOnLine = 1;
+  }
+  return lineInfo;
+}
+
+int32_t nsFlexContainerFrame::FindLineContaining(nsIFrame* aFrame,
+                                                 int32_t aStartLine) {
+  const int32_t index = mFrames.IndexOf(aFrame);
+  if (index < 0) {
+    return -1;
+  }
+  const FlexboxAxisInfo info(this);
+  if (info.mIsRowOriented) {
+    return 0;
+  }
+  if (index < aStartLine) {
+    return -1;
+  }
+  return index;
+}
+
+NS_IMETHODIMP
+nsFlexContainerFrame::CheckLineOrder(int32_t aLine, bool* aIsReordered,
+                                     nsIFrame** aFirstVisual,
+                                     nsIFrame** aLastVisual) {
+  *aIsReordered = false;
+  *aFirstVisual = nullptr;
+  *aLastVisual = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFlexContainerFrame::FindFrameAt(int32_t aLineNumber, nsPoint aPos,
+                                  nsIFrame** aFrameFound,
+                                  bool* aPosIsBeforeFirstFrame,
+                                  bool* aPosIsAfterLastFrame) {
+  const auto wm = GetWritingMode();
+  const LogicalPoint pos(wm, aPos, GetSize());
+  const FlexboxAxisInfo info(this);
+
+  *aFrameFound = nullptr;
+  *aPosIsBeforeFirstFrame = true;
+  *aPosIsAfterLastFrame = false;
+
+  if (!info.mIsRowOriented) {
+    nsIFrame* f = mFrames.FrameAt(aLineNumber);
+    if (!f) {
+      return NS_OK;
+    }
+
+    auto rect = f->GetLogicalRect(wm, GetSize());
+    *aFrameFound = f;
+    *aPosIsBeforeFirstFrame = pos.I(wm) < rect.IStart(wm);
+    *aPosIsAfterLastFrame = pos.I(wm) > rect.IEnd(wm);
+    return NS_OK;
+  }
+
+  LineFrameFinder finder(aPos, GetSize(), GetWritingMode(),
+                         IsLineIteratorFlowRTL());
+  for (nsIFrame* f : mFrames) {
+    finder.Scan(f);
+    if (finder.IsDone()) {
+      break;
+    }
+  }
+  finder.Finish(aFrameFound, aPosIsBeforeFirstFrame, aPosIsAfterLastFrame);
+  return NS_OK;
 }

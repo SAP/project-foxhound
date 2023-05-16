@@ -1718,9 +1718,10 @@ class EditorBase : public nsIEditor,
    *                            point to put caret.
    */
   template <typename ContentNodeType>
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT CreateNodeResultBase<ContentNodeType>
-  InsertNodeWithTransaction(ContentNodeType& aContentToInsert,
-                            const EditorDOMPoint& aPointToInsert);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT
+      Result<CreateNodeResultBase<ContentNodeType>, nsresult>
+      InsertNodeWithTransaction(ContentNodeType& aContentToInsert,
+                                const EditorDOMPoint& aPointToInsert);
 
   /**
    * InsertPaddingBRElementForEmptyLastLineWithTransaction() creates a padding
@@ -1732,7 +1733,7 @@ class EditorBase : public nsIEditor,
    * @return                    If succeeded, returns the new <br> element and
    *                            point to put caret around it.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT CreateElementResult
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
   InsertPaddingBRElementForEmptyLastLineWithTransaction(
       const EditorDOMPoint& aPointToInsert);
 
@@ -1921,12 +1922,6 @@ class EditorBase : public nsIEditor,
   }
 
   /**
-   * CollapseSelectionToEnd() collapses the selection to the last leaf content
-   * of the editor.
-   */
-  MOZ_CAN_RUN_SCRIPT nsresult CollapseSelectionToEndOfLastLeafNode() const;
-
-  /**
    * AllowsTransactionsToChangeSelection() returns true if editor allows any
    * transactions to change Selection.  Otherwise, transactions shouldn't
    * change Selection.
@@ -2058,7 +2053,7 @@ class EditorBase : public nsIEditor,
    *                            TextEditor instance.  Otherwise,
    *                            nsIEditor::eStrip is also valid.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual EditActionResult
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual Result<EditActionResult, nsresult>
   HandleDeleteSelection(nsIEditor::EDirection aDirectionAndAmount,
                         nsIEditor::EStripWrappers aStripWrappers) = 0;
 
@@ -2079,9 +2074,10 @@ class EditorBase : public nsIEditor,
    * @param aSelectionHandling  Specify whether selected content should be
    *                            deleted or ignored.
    */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual EditActionResult HandleInsertText(
-      EditSubAction aEditSubAction, const nsAString& aInsertionString,
-      SelectionHandling aSelectionHandling) = 0;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual Result<EditActionResult, nsresult>
+  HandleInsertText(EditSubAction aEditSubAction,
+                   const nsAString& aInsertionString,
+                   SelectionHandling aSelectionHandling) = 0;
 
   /**
    * InsertWithQuotationsAsSubAction() inserts aQuotedText with appending ">"
@@ -2103,29 +2099,32 @@ class EditorBase : public nsIEditor,
    *                            shouldn't use this instance after calling this
    *                            method because this method may cause changing
    *                            the DOM tree and Selection.
-   * @param aDoDeleteSelection  true if selected content should be removed.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult PrepareToInsertContent(
-      const EditorDOMPoint& aPointToInsert, bool aDoDeleteSelection);
+  enum class DeleteSelectedContent : bool {
+    No,   // Don't delete selection
+    Yes,  // Delete selected content
+  };
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PrepareToInsertContent(const EditorDOMPoint& aPointToInsert,
+                         DeleteSelectedContent aDeleteSelectedContent);
 
   /**
    * InsertTextAt() inserts aStringToInsert at aPointToInsert.
    *
    * @param aStringToInsert     The string which you want to insert.
    * @param aPointToInsert      The insertion point.
-   * @param aDoDeleteSelection  true if you want this to delete selected
-   *                            content.  Otherwise, false.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult InsertTextAt(const nsAString& aStringToInsert,
-                                           const EditorDOMPoint& aPointToInsert,
-                                           bool aDoDeleteSelection);
+  MOZ_CAN_RUN_SCRIPT nsresult InsertTextAt(
+      const nsAString& aStringToInsert, const EditorDOMPoint& aPointToInsert,
+      DeleteSelectedContent aDeleteSelectedContent);
 
   /**
-   * Return true if the data is safe to insert as the source and destination
+   * Return whether the data is safe to insert as the source and destination
    * principals match, or we are in a editor context where this doesn't matter.
    * Otherwise, the data must be sanitized first.
    */
-  bool IsSafeToInsertData(nsIPrincipal* aSourcePrincipal) const;
+  enum class SafeToInsertData : bool { No, Yes };
+  SafeToInsertData IsSafeToInsertData(nsIPrincipal* aSourcePrincipal) const;
 
  protected:  // Called by helper classes.
   /**
@@ -2244,13 +2243,6 @@ class EditorBase : public nsIEditor,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult FlushPendingSpellCheck();
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult EnsureEmptyTextFirstChild();
-
-  /**
-   * InitEditorContentAndSelection() may insert a padding `<br>` element for
-   * if it's required in the anonymous `<div>` element or `<body>` element and
-   * collapse selection at the end if there is no selection ranges.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InitEditorContentAndSelection();
 
   int32_t WrapWidth() const { return mWrapColumn; }
 
@@ -2869,6 +2861,8 @@ class EditorBase : public nsIEditor,
   friend class AlignStateAtSelection;  // AutoEditActionDataSetter,
                                        // ToGenericNSResult
   friend class AutoRangeArray;  // IsSEditActionDataAvailable, SelectionRef
+  friend class CaretPoint;      // AllowsTransactionsToChangeSelection,
+                                // CollapseSelectionTo
   friend class CompositionTransaction;  // CollapseSelectionTo, DoDeleteText,
                                         // DoInsertText, DoReplaceText,
                                         // HideCaret, RangeupdaterRef
@@ -2900,9 +2894,6 @@ class EditorBase : public nsIEditor,
   friend class SplitNodeTransaction;    // ToGenericNSResult
   friend class WhiteSpaceVisibilityKeeper;  // AutoTransactionsConserveSelection
   friend class nsIEditor;                   // mIsHTMLEditorClass
-
-  template <typename NodeType>
-  friend class CreateNodeResultBase;  // CollapseSelectionTo
 };
 
 }  // namespace mozilla

@@ -5,20 +5,22 @@
 /* eslint-env browser */
 "use strict";
 (function() {
-  const { require } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
+  const { require } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/Loader.sys.mjs"
   );
-  const { gDevTools } = require("devtools/client/framework/devtools");
+  const {
+    gDevTools,
+  } = require("resource://devtools/client/framework/devtools.js");
   const {
     appendStyleSheet,
-  } = require("devtools/client/shared/stylesheet-utils");
+  } = require("resource://devtools/client/shared/stylesheet-utils.js");
 
   const {
     getTheme,
     getAutoTheme,
     addThemeObserver,
     removeThemeObserver,
-  } = require("devtools/client/shared/theme");
+  } = require("resource://devtools/client/shared/theme.js");
 
   const documentElement = document.documentElement;
 

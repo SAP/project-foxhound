@@ -3,28 +3,30 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
-const DESCRIPTOR_TYPES = require("devtools/client/fronts/descriptors/descriptor-types");
+const {
+  tabDescriptorSpec,
+} = require("resource://devtools/shared/specs/descriptors/tab.js");
+const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
 
 loader.lazyRequireGetter(
   this,
   "gDevTools",
-  "devtools/client/framework/devtools",
+  "resource://devtools/client/framework/devtools.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WindowGlobalTargetFront",
-  "devtools/client/fronts/targets/window-global",
+  "resource://devtools/client/fronts/targets/window-global.js",
   true
 );
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 const {
   DescriptorMixin,
-} = require("devtools/client/fronts/descriptors/descriptor-mixin");
+} = require("resource://devtools/client/fronts/descriptors/descriptor-mixin.js");
 
 const SERVER_TARGET_SWITCHING_ENABLED_PREF =
   "devtools.target-switching.server.enabled";
@@ -113,12 +115,6 @@ class TabDescriptorFront extends DescriptorMixin(
   setLocalTab(localTab) {
     this._localTab = localTab;
     this._setupLocalTabListeners();
-
-    // This is pure legacy. We always assumed closing the DevToolsClient
-    // when the tab was closed. It is mostly important for tests,
-    // but also ensure cleaning up the client and everything on tab closing.
-    // (this flag is handled by DescriptorMixin)
-    this.shouldCloseClient = true;
   }
 
   get isTabDescriptor() {
@@ -314,7 +310,7 @@ class TabDescriptorFront extends DescriptorMixin(
         // Always destroy the toolbox opened for this local tab descriptor.
         // When the toolbox is in a Window Host, it won't be removed from the
         // DOM when the tab is closed.
-        const toolbox = gDevTools.getToolboxForDescriptor(this);
+        const toolbox = gDevTools.getToolboxForDescriptorFront(this);
         if (toolbox) {
           // Toolbox.destroy will call target.destroy eventually.
           await toolbox.destroy();

@@ -4,12 +4,12 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const { symbolSpec } = require("devtools/shared/specs/symbol");
+const protocol = require("resource://devtools/shared/protocol.js");
+const { symbolSpec } = require("resource://devtools/shared/specs/symbol.js");
 loader.lazyRequireGetter(
   this,
   "createValueGrip",
-  "devtools/server/actors/object/utils",
+  "resource://devtools/server/actors/object/utils.js",
   true
 );
 

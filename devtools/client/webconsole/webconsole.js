@@ -7,34 +7,34 @@
 loader.lazyRequireGetter(
   this,
   "Utils",
-  "devtools/client/webconsole/utils",
+  "resource://devtools/client/webconsole/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WebConsoleUI",
-  "devtools/client/webconsole/webconsole-ui",
+  "resource://devtools/client/webconsole/webconsole-ui.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "gDevTools",
-  "devtools/client/framework/devtools",
+  "resource://devtools/client/framework/devtools.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "openDocLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "DevToolsUtils",
-  "devtools/shared/DevToolsUtils"
+  "resource://devtools/shared/DevToolsUtils.js"
 );
-const EventEmitter = require("devtools/shared/event-emitter");
-const Telemetry = require("devtools/client/shared/telemetry");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const Telemetry = require("resource://devtools/client/shared/telemetry.js");
 
 var gHudId = 0;
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -329,7 +329,7 @@ class WebConsole {
 
     const {
       ParserDispatcher,
-    } = require("devtools/client/debugger/src/workers/parser/index");
+    } = require("resource://devtools/client/debugger/src/workers/parser/index.js");
 
     this._parserService = new ParserDispatcher();
     this._parserService.start(

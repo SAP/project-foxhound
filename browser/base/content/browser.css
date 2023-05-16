@@ -32,6 +32,21 @@ body {
   min-width: -moz-fit-content;
 }
 
+#appcontent,
+#browser,
+#tabbrowser-tabbox,
+#tabbrowser-tabpanels,
+.browserSidebarContainer {
+  /* Allow devtools with large specified width/height to shrink */
+  min-width: 0;
+  min-height: 0;
+}
+
+.browserContainer {
+  /* .browserContainer only contains the devtools when docked horizontally */
+  min-height: 0;
+}
+
 /* We set large flex on both containers to allow the devtools toolbox to
  * set a flex value itself. We don't want the toolbox to actually take up free
  * space, but we do want it to collapse when the window shrinks, and with
@@ -995,6 +1010,10 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
   -moz-user-focus: none !important;
 }
 
+#browser {
+  -moz-box-layout: flex;
+}
+
 /* Status panel */
 
 #statuspanel:not([hidden]) {
@@ -1261,7 +1280,7 @@ toolbarpaletteitem[place="palette"] {
   margin-bottom: 5px;
   margin-inline-end: 24px;
   overflow: visible;
-  display: inline-block;
+  display: -moz-inline-box;
   vertical-align: top;
 }
 
@@ -1478,6 +1497,12 @@ printpreview-pagination:focus-within,
   }
 }
 
+#sidebar-box {
+  min-width: 14em;
+  max-width: 36em;
+  width: 18em;
+}
+
 /* WebExtension Sidebars */
 #sidebar-box[sidebarcommand$="-sidebar-action"] > #sidebar-header > #sidebar-switcher-target > #sidebar-icon {
   list-style-image: var(--webextension-menuitem-image, inherit);
@@ -1517,6 +1542,8 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
   /* Should outrank the z-index values of other UI elements, particularly the devtools
      splitter element. */
   z-index: 2;
+  position: absolute;
+  inset: 0;
 }
 
 .dialogStack.temporarilyHidden {
@@ -1563,6 +1590,7 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
 }
 
 .dialogBox[sizeto="available"] {
+  --box-top-px: 0px; /* Overridden using inline style */
   --box-inline-margin: 4px;
   --box-block-margin: 4px;
   --box-ideal-width: 1000;
@@ -1610,7 +1638,7 @@ toolbar[keyNav=true]:not([collapsed=true], [customizing=true]) toolbartabstop {
 
 .dialogStack .dialogBox.spotlightBox[sizeto="available"] {
   /* Tab modal: subtract the navigator toolbox height from the dialog height. */
-  height: calc(100vh - var(--box-top-px, 0px));
+  height: calc(100vh - var(--box-top-px));
 }
 
 .content-prompt-dialog > .dialogOverlay {

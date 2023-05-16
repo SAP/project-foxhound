@@ -89,6 +89,7 @@ class InterceptedHttpChannel final
   nsCString mResumeEntityId;
   nsString mStatusHost;
   Atomic<bool> mCallingStatusAndProgress;
+  bool mInterceptionReset{false};
 
   /**
    *  InterceptionTimeStamps is used to record the time stamps of the
@@ -243,7 +244,7 @@ class InterceptedHttpChannel final
   Resume(void) override;
 
   NS_IMETHOD
-  GetSecurityInfo(nsISupports** aSecurityInfo) override;
+  GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) override;
 
   NS_IMETHOD
   AsyncOpen(nsIStreamListener* aListener) override;

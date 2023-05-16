@@ -424,15 +424,23 @@ void nsImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
     UpdateIntrinsicSize();
   }
 
-  auto newOrientation = StyleVisibility()->mImageOrientation;
+  nsCOMPtr<imgIRequest> currentRequest = GetCurrentRequest();
+
+  bool shouldUpdateOrientation = false;
+  auto newOrientation = StyleVisibility()->UsedImageOrientation(currentRequest);
 
   // We need to update our orientation either if we had no ComputedStyle before
   // because this is the first time it's been set, or if the image-orientation
   // property changed from its previous value.
-  bool shouldUpdateOrientation =
-      mImage &&
-      (!aOldStyle ||
-       aOldStyle->StyleVisibility()->mImageOrientation != newOrientation);
+  if (mImage) {
+    if (aOldStyle) {
+      auto oldOrientation =
+          aOldStyle->StyleVisibility()->UsedImageOrientation(currentRequest);
+      shouldUpdateOrientation = oldOrientation != newOrientation;
+    } else {
+      shouldUpdateOrientation = true;
+    }
+  }
 
   if (shouldUpdateOrientation) {
     nsCOMPtr<imgIContainer> image(mImage->Unwrap());
@@ -623,7 +631,7 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
                                           bool aUseMappedRatio,
                                           nsImageFrame::Kind aKind,
                                           const nsImageFrame& aFrame) {
-  const auto containAxes = aFrame.StyleDisplay()->GetContainSizeAxes();
+  const auto containAxes = aFrame.GetContainSizeAxes();
   if (containAxes.IsBoth()) {
     return containAxes.ContainIntrinsicSize(IntrinsicSize(0, 0), aFrame);
   }
@@ -703,8 +711,7 @@ bool nsImageFrame::UpdateIntrinsicSize() {
 static AspectRatio ComputeIntrinsicRatio(imgIContainer* aImage,
                                          bool aUseMappedRatio,
                                          const nsImageFrame& aFrame) {
-  const ComputedStyle& style = *aFrame.Style();
-  if (style.StyleDisplay()->GetContainSizeAxes().IsAny()) {
+  if (aFrame.GetContainSizeAxes().IsAny()) {
     return AspectRatio();
   }
 
@@ -714,7 +721,7 @@ static AspectRatio ComputeIntrinsicRatio(imgIContainer* aImage,
     }
   }
   if (aUseMappedRatio) {
-    const StyleAspectRatio& ratio = style.StylePosition()->mAspectRatio;
+    const StyleAspectRatio& ratio = aFrame.StylePosition()->mAspectRatio;
     if (ratio.auto_ && ratio.HasRatio()) {
       // Return the mapped intrinsic aspect ratio stored in
       // nsStylePosition::mAspectRatio.
@@ -940,10 +947,11 @@ void nsImageFrame::OnSizeAvailable(imgIRequest* aRequest,
 
 void nsImageFrame::UpdateImage(imgIRequest* aRequest, imgIContainer* aImage) {
   if (SizeIsAvailable(aRequest)) {
+    StyleImageOrientation orientation =
+        StyleVisibility()->UsedImageOrientation(aRequest);
     // This is valid and for the current request, so update our stored image
     // container, orienting according to our style.
-    mImage = nsLayoutUtils::OrientImage(aImage,
-                                        StyleVisibility()->mImageOrientation);
+    mImage = nsLayoutUtils::OrientImage(aImage, orientation);
     MOZ_ASSERT(mImage);
   } else {
     // We no longer have a valid image, so release our stored image container.
@@ -1202,7 +1210,7 @@ bool nsImageFrame::IsForMarkerPseudo() const {
 }
 
 void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
-  const auto containAxes = StyleDisplay()->GetContainSizeAxes();
+  const auto containAxes = GetContainSizeAxes();
   if (containAxes.IsBoth()) {
     // If we have 'contain:size', then we have no intrinsic aspect ratio,
     // and the intrinsic size is determined by contain-intrinsic-size,
@@ -2630,8 +2638,7 @@ void nsImageFrame::List(FILE* out, const char* aPrefix,
 
   // output the img src url
   if (nsCOMPtr<imgIRequest> currentRequest = GetCurrentRequest()) {
-    nsCOMPtr<nsIURI> uri;
-    currentRequest->GetURI(getter_AddRefs(uri));
+    nsCOMPtr<nsIURI> uri = currentRequest->GetURI();
     nsAutoCString uristr;
     uri->GetAsciiSpec(uristr);
     str += nsPrintfCString(" [src=%s]", uristr.get());

@@ -353,7 +353,6 @@ class nsContentUtils {
   static bool ShouldResistFingerprinting(nsIGlobalObject* aGlobalObject);
   static bool ShouldResistFingerprinting(nsIDocShell* aDocShell);
   // These functions are the new, nuanced functions
-  static bool ShouldResistFingerprinting(const Document* aDoc);
   static bool ShouldResistFingerprinting(nsIChannel* aChannel);
   static bool ShouldResistFingerprinting(nsILoadInfo* aPrincipal);
   // These functions are labeled as dangerous because they will do the wrong
@@ -2765,7 +2764,8 @@ class nsContentUtils {
    * Returns whether a given header is forbidden for an XHR or fetch
    * request.
    */
-  static bool IsForbiddenRequestHeader(const nsACString& aHeader);
+  static bool IsForbiddenRequestHeader(const nsACString& aHeader,
+                                       const nsACString& aValue);
 
   /**
    * Returns whether a given header is forbidden for a system XHR
@@ -2773,6 +2773,14 @@ class nsContentUtils {
    */
   static bool IsForbiddenSystemRequestHeader(const nsACString& aHeader);
 
+  /**
+   * Checks whether the header overrides any http methods
+   */
+  static bool IsOverrideMethodHeader(const nsACString& headerName);
+  /**
+   * Checks whether the  header value contains any forbidden method
+   */
+  static bool ContainsForbiddenMethod(const nsACString& headerValue);
   /**
    * Returns whether a given header has characters that aren't permitted
    */

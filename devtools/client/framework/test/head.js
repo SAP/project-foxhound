@@ -14,7 +14,7 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 /**
  * Retrieve all tool ids compatible with a target created for the provided tab.
@@ -62,23 +62,10 @@ function toggleAllTools(state) {
 }
 
 async function getParentProcessActors(callback) {
-  const { DevToolsServer } = require("devtools/server/devtools-server");
-  const { DevToolsClient } = require("devtools/client/devtools-client");
+  const commands = await CommandsFactory.forMainProcess();
+  const mainProcessTargetFront = await commands.descriptorFront.getTarget();
 
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  DevToolsServer.allowChromeProcess = true;
-
-  SimpleTest.registerCleanupFunction(() => {
-    DevToolsServer.destroy();
-  });
-
-  const client = new DevToolsClient(DevToolsServer.connectPipe());
-  await client.connect();
-  const mainProcessDescriptor = await client.mainRoot.getMainProcess();
-  const mainProcessTargetFront = await mainProcessDescriptor.getTarget();
-
-  callback(client, mainProcessTargetFront);
+  callback(commands.client, mainProcessTargetFront);
 }
 
 function getSourceActor(aSources, aURL) {

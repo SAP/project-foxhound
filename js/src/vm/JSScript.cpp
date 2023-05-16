@@ -65,7 +65,7 @@
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"  // Disassemble
 #include "vm/Compression.h"
-#include "vm/ErrorContext.h"
+#include "vm/ErrorContext.h"       // AutoReportFrontendContext
 #include "vm/HelperThreadState.h"  // js::RunPendingSourceCompressions
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
@@ -1812,7 +1812,7 @@ bool ScriptSource::xdrFinalizeEncoder(JSContext* cx,
 
   auto cleanup = mozilla::MakeScopeExit([&] { xdrEncoder_.reset(); });
 
-  MainThreadErrorContext ec(cx);
+  AutoReportFrontendContext ec(cx);
   XDRStencilEncoder encoder(cx, &ec, buffer);
 
   frontend::BorrowingCompilationStencil borrowingStencil(
@@ -1820,6 +1820,7 @@ bool ScriptSource::xdrFinalizeEncoder(JSContext* cx,
   XDRResult res = encoder.codeStencil(this, borrowingStencil);
   if (res.isErr()) {
     if (JS::IsTranscodeFailureResult(res.unwrapErr())) {
+      ec.clearAutoReport();
       JS_ReportErrorASCII(cx, "XDR encoding failure");
     }
     return false;
@@ -1949,23 +1950,11 @@ bool ScriptSource::setFilename(JSContext* cx, ErrorContext* ec,
   return setFilename(cx, ec, std::move(owned));
 }
 
-bool ScriptSource::setFilename(JSContext* cx, UniqueChars&& filename) {
-  // TODO bug 1783951 remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return setFilename(cx, &ec, std::move(filename));
-}
-
 bool ScriptSource::setFilename(JSContext* cx, ErrorContext* ec,
                                UniqueChars&& filename) {
   MOZ_ASSERT(!filename_);
   filename_ = getOrCreateStringZ(cx, ec, std::move(filename));
   return bool(filename_);
-}
-
-bool ScriptSource::setIntroducerFilename(JSContext* cx, const char* filename) {
-  // TODO bug 1783951 remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return setIntroducerFilename(cx, &ec, filename);
 }
 
 bool ScriptSource::setIntroducerFilename(JSContext* cx, ErrorContext* ec,
@@ -1991,12 +1980,6 @@ bool ScriptSource::setDisplayURL(JSContext* cx, ErrorContext* ec,
     return false;
   }
   return setDisplayURL(cx, ec, std::move(owned));
-}
-
-bool ScriptSource::setDisplayURL(JSContext* cx, UniqueTwoByteChars&& url) {
-  // TODO bug 1783951 remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return setDisplayURL(cx, &ec, std::move(url));
 }
 
 bool ScriptSource::setDisplayURL(JSContext* cx, ErrorContext* ec,
@@ -2026,12 +2009,6 @@ bool ScriptSource::setSourceMapURL(JSContext* cx, ErrorContext* ec,
     return false;
   }
   return setSourceMapURL(cx, ec, std::move(owned));
-}
-
-bool ScriptSource::setSourceMapURL(JSContext* cx, UniqueTwoByteChars&& url) {
-  // TODO bug 1783951 remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return setSourceMapURL(cx, &ec, std::move(url));
 }
 
 bool ScriptSource::setSourceMapURL(JSContext* cx, ErrorContext* ec,
@@ -2082,16 +2059,6 @@ bool ScriptSource::setSourceMapURL(JSContext* cx, ErrorContext* ec,
   size += CheckedInt<uint32_t>(numTryNotes) * sizeof(TryNote);
 
   return size;
-}
-
-js::UniquePtr<ImmutableScriptData> js::ImmutableScriptData::new_(
-    JSContext* cx, uint32_t codeLength, uint32_t noteLength,
-    uint32_t numResumeOffsets, uint32_t numScopeNotes, uint32_t numTryNotes) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return ImmutableScriptData::new_(&ec, codeLength, noteLength,
-                                   numResumeOffsets, numScopeNotes,
-                                   numTryNotes);
 }
 
 js::UniquePtr<ImmutableScriptData> js::ImmutableScriptData::new_(
@@ -2208,12 +2175,6 @@ void JSScript::relazify(JSRuntime* rt) {
   warmUpData_.initEnclosingScope(scope);
 
   MOZ_ASSERT(isReadyForDelazification());
-}
-bool SharedImmutableScriptData::shareScriptData(
-    JSContext* cx, RefPtr<SharedImmutableScriptData>& sisd) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return shareScriptData(cx, &ec, sisd);
 }
 
 // Takes ownership of the passed SharedImmutableScriptData and either adds it
@@ -2929,22 +2890,6 @@ template <typename SourceSpan, typename TargetSpan>
 void CopySpan(const SourceSpan& source, TargetSpan target) {
   MOZ_ASSERT(source.size() == target.size());
   std::copy(source.cbegin(), source.cend(), target.begin());
-}
-
-/* static */
-js::UniquePtr<ImmutableScriptData> ImmutableScriptData::new_(
-    JSContext* cx, uint32_t mainOffset, uint32_t nfixed, uint32_t nslots,
-    GCThingIndex bodyScopeIndex, uint32_t numICEntries, bool isFunction,
-    uint16_t funLength, mozilla::Span<const jsbytecode> code,
-    mozilla::Span<const SrcNote> notes,
-    mozilla::Span<const uint32_t> resumeOffsets,
-    mozilla::Span<const ScopeNote> scopeNotes,
-    mozilla::Span<const TryNote> tryNotes) {
-  // TODO bug 1783951 - remove in favor of the ErrorContext version
-  MainThreadErrorContext ec(cx);
-  return ImmutableScriptData::new_(
-      &ec, mainOffset, nfixed, nslots, bodyScopeIndex, numICEntries, isFunction,
-      funLength, code, notes, resumeOffsets, scopeNotes, tryNotes);
 }
 
 /* static */

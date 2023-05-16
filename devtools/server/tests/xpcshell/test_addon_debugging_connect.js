@@ -7,13 +7,12 @@ const { ExtensionTestUtils } = ChromeUtils.import(
   "resource://testing-common/ExtensionXPCShellUtils.jsm"
 );
 
+const lazy = {};
 ChromeUtils.defineModuleGetter(
-  this,
+  lazy,
   "ExtensionParent",
   "resource://gre/modules/ExtensionParent.jsm"
 );
-
-const { startDebugger } = require("resource://test/webextension-helpers.js");
 
 const { createAppInfo, promiseStartupManager } = AddonTestUtils;
 
@@ -77,15 +76,10 @@ add_task(
     await extension.startup();
     const bgPageURL = await extension.awaitMessage("background page ready");
 
-    const client = await startDebugger();
-
-    const addonDescriptor = await client.mainRoot.getAddon({
-      id: extension.id,
-    });
-    ok(addonDescriptor, "Got an RDP description");
+    const commands = await CommandsFactory.forAddon(extension.id);
 
     // Connect to the target addon actor and wait for the updated list of frames.
-    const addonTarget = await addonDescriptor.getTarget();
+    const addonTarget = await commands.descriptorFront.getTarget();
     ok(addonTarget, "Got an RDP target");
 
     const { frames } = await addonTarget.listFrames();
@@ -104,7 +98,7 @@ add_task(
     equal(threadFront.paused, false, "The addon threadActor isn't paused");
 
     equal(
-      ExtensionParent.DebugUtils.debugBrowserPromises.size,
+      lazy.ExtensionParent.DebugUtils.debugBrowserPromises.size,
       1,
       "The expected number of debug browser has been created by the addon actor"
     );
@@ -123,7 +117,7 @@ add_task(
     await promiseBgPageFrameUpdate;
 
     equal(
-      ExtensionParent.DebugUtils.debugBrowserPromises.size,
+      lazy.ExtensionParent.DebugUtils.debugBrowserPromises.size,
       1,
       "The number of debug browser has not been changed after an addon reload"
     );
@@ -151,12 +145,12 @@ add_task(
       "Got the expected frame update when the addon background page was loaded back"
     );
 
-    await client.close();
+    await commands.destroy();
 
     // Check that if we close the debugging client without uninstalling the addon,
     // the webextension debugging actor should release the debug browser.
     equal(
-      ExtensionParent.DebugUtils.debugBrowserPromises.size,
+      lazy.ExtensionParent.DebugUtils.debugBrowserPromises.size,
       0,
       "The debug browser has been released when the RDP connection has been closed"
     );

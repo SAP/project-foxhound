@@ -719,6 +719,8 @@ void FindExceptionStackForConsoleReport(
 // property.
 extern void GetCurrentRealmName(JSContext*, nsCString& name);
 
+nsCString GetFunctionName(JSContext* cx, JS::Handle<JSObject*> obj);
+
 void AddGCCallback(xpcGCCallback cb);
 void RemoveGCCallback(xpcGCCallback cb);
 

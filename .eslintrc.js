@@ -156,47 +156,12 @@ module.exports = {
       },
     },
     {
-      // This section enables warning of no-unused-vars globally for all test*.js
+      // This section enables errors of no-unused-vars globally for all test*.js
       // files in xpcshell test paths.
-      // These are turned into errors with selected exclusions in the next
-      // section.
-      // Bug 1612907: This section should go away once the exclusions are removed
-      // from the following section.
+      // This is not done in the xpcshell-test configuration as we cannot pull
+      // in overrides from there. We should at some stage, aim to enable this
+      // for all files in xpcshell-tests.
       files: testPaths.xpcshell.map(path => `${path}test*.js`),
-      rules: {
-        // No declaring variables that are never used
-        "no-unused-vars": [
-          "warn",
-          {
-            args: "none",
-            vars: "all",
-          },
-        ],
-      },
-    },
-    {
-      // This section makes global issues with no-unused-vars be reported as
-      // errors - except for the excluded lists which are being fixed in the
-      // dependencies of bug 1612907.
-      files: testPaths.xpcshell.map(path => `${path}test*.js`),
-      excludedFiles: [
-        // These are suitable as good first bugs, take one or two related lines
-        // per bug.
-        "extensions/permissions/**",
-        "image/test/unit/**",
-        "modules/libjar/zipwriter/test/unit/test_alignment.js",
-        "modules/libjar/zipwriter/test/unit/test_bug419769_2.js",
-        "modules/libjar/zipwriter/test/unit/test_storedata.js",
-        "modules/libjar/zipwriter/test/unit/test_zippermissions.js",
-        "modules/libpref/test/unit/test_dirtyPrefs.js",
-        "toolkit/crashreporter/test/unit/test_crash_AsyncShutdown.js",
-        "toolkit/mozapps/update/tests/unit_aus_update/testConstants.js",
-
-        // These are more complicated bugs which may require some in-depth
-        // investigation or different solutions. They are also likely to be
-        // a reasonable size.
-        "dom/indexedDB/**",
-      ],
       rules: {
         // No declaring variables that are never used
         "no-unused-vars": [
@@ -370,8 +335,6 @@ module.exports = {
         "no-unreachable": "off",
         "no-unsanitized/method": "off",
         "no-unsanitized/property": "off",
-        "no-undef": "off",
-        "no-unused-vars": "off",
         "no-useless-call": "off",
         "no-useless-concat": "off",
         "no-useless-return": "off",
@@ -379,33 +342,49 @@ module.exports = {
       },
     },
     {
+      // Bug 1792693: Gradually enable no-undef and no-unused-vars on these
+      // directories.
       files: [
-        "testing/mochitest/browser-harness.xhtml",
-        "testing/mochitest/chrome/test_chromeGetTestFile.xhtml",
-        "testing/mochitest/chrome/test_sanityEventUtils.xhtml",
-        "testing/mochitest/chrome/test_sanityException.xhtml",
-        "testing/mochitest/chrome/test_sanityException2.xhtml",
-        "testing/mochitest/harness.xhtml",
+        "dom/animation/test/**",
+        "dom/base/test/*.*",
+        "dom/base/test/unit/test_serializers_entities*.js",
+        "dom/base/test/unit_ipc/**",
+        "dom/base/test/jsmodules/**",
+        "dom/canvas/test/**",
+        "dom/encoding/test/**",
+        "dom/events/test/**",
+        "dom/file/ipc/tests/**",
+        "dom/file/tests/**",
+        "dom/html/test/**",
+        "dom/media/tests/**",
+        "dom/media/webaudio/test/**",
+        "dom/media/webrtc/tests/**",
+        "dom/media/webspeech/recognition/test/**",
+        "dom/media/webspeech/synth/test/**",
+        "dom/payments/test/**",
+        "dom/performance/tests/**",
+        "dom/quota/test/browser/**",
+        "dom/quota/test/common/**",
+        "dom/quota/test/mochitest/**",
+        "dom/quota/test/xpcshell/**",
+        "dom/security/test/cors/**",
+        "dom/security/test/csp/**",
+        "dom/security/test/mixedcontentblocker/**",
+        "dom/serviceworkers/test/**",
+        "dom/smil/test/**",
+        "dom/tests/mochitest/**",
+        "dom/u2f/tests/**",
+        "dom/vr/test/**",
+        "dom/webauthn/tests/**",
+        "dom/webgpu/mochitest/**",
+        "dom/websocket/tests/**",
+        "dom/workers/test/**",
+        "dom/worklet/tests/**",
+        "dom/xslt/tests/**",
       ],
       rules: {
-        "dot-notation": "off",
-        "object-shorthand": "off",
-        "mozilla/use-services": "off",
-        "mozilla/no-compare-against-boolean-literals": "off",
-        "mozilla/no-useless-parameters": "off",
-        "mozilla/no-useless-removeEventListener": "off",
-        "mozilla/use-cc-etc": "off",
-        "consistent-return": "off",
-        "no-fallthrough": "off",
-        "no-nested-ternary": "off",
-        "no-redeclare": "off",
-        "no-sequences": "off",
-        "no-shadow": "off",
-        "no-throw-literal": "off",
         "no-undef": "off",
-        "no-unsanitized/property": "off",
         "no-unused-vars": "off",
-        "no-useless-call": "off",
       },
     },
     {
@@ -1616,6 +1595,10 @@ module.exports = {
         "dom/performance/tests/test_performance_paint_observer_helper.html",
         "dom/performance/tests/test_performance_paint_timing_helper.html",
         "dom/quota/test/xpcshell/make_unknownFiles.js",
+        "dom/security/test/cors/file_bug1456721.html",
+        "dom/security/test/cors/test_CrossSiteXHR.html",
+        "dom/security/test/cors/test_CrossSiteXHR_cache.html",
+        "dom/security/test/cors/test_CrossSiteXHR_origin.html",
         "dom/security/test/csp/browser_manifest-src-override-default-src.js",
         "dom/security/test/csp/browser_test_uir_optional_clicks.js",
         "dom/security/test/csp/browser_test_web_manifest.js",
@@ -1710,6 +1693,15 @@ module.exports = {
         "dom/security/test/https-only/test_http_background_request.html",
         "dom/security/test/https-only/test_resource_upgrade.html",
         "dom/security/test/https-only/test_user_suggestion_box.html",
+        "dom/security/test/mixedcontentblocker/browser_test_mixed_content_download.js",
+        "dom/security/test/mixedcontentblocker/download_page.html",
+        "dom/security/test/mixedcontentblocker/file_auth_download_page.html",
+        "dom/security/test/mixedcontentblocker/file_frameNavigation.html",
+        "dom/security/test/mixedcontentblocker/file_frameNavigation_blankTarget.html",
+        "dom/security/test/mixedcontentblocker/file_frameNavigation_secure_grandchild.html",
+        "dom/security/test/mixedcontentblocker/file_main.html",
+        "dom/security/test/mixedcontentblocker/file_main_bug803225.html",
+        "dom/security/test/mixedcontentblocker/file_redirect_handler.sjs",
         "dom/security/test/referrer-policy/browser_referrer_disallow_cross_site_relaxing.js",
         "dom/security/test/referrer-policy/img_referrer_testserver.sjs",
         "dom/security/test/referrer-policy/referrer_testserver.sjs",

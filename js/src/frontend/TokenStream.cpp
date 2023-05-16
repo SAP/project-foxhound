@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -147,10 +148,9 @@ static const ReservedWordInfo* FindReservedWord(
   return nullptr;
 }
 
-static uint32_t GetSingleCodePoint(const char16_t** p, const char16_t* end) {
+static char32_t GetSingleCodePoint(const char16_t** p, const char16_t* end) {
   using namespace js;
 
-  uint32_t codePoint;
   if (MOZ_UNLIKELY(unicode::IsLeadSurrogate(**p)) && *p + 1 < end) {
     char16_t lead = **p;
     char16_t maybeTrail = *(*p + 1);
@@ -160,7 +160,7 @@ static uint32_t GetSingleCodePoint(const char16_t** p, const char16_t* end) {
     }
   }
 
-  codePoint = **p;
+  char32_t codePoint = **p;
   (*p)++;
   return codePoint;
 }
@@ -255,7 +255,7 @@ bool IsIdentifier(const char16_t* chars, size_t length) {
 
   const char16_t* p = chars;
   const char16_t* end = chars + length;
-  uint32_t codePoint;
+  char32_t codePoint;
 
   codePoint = GetSingleCodePoint(&p, end);
   if (!unicode::IsIdentifierStart(codePoint)) {
@@ -279,7 +279,7 @@ bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length) {
 
   const char16_t* p = chars;
   const char16_t* end = chars + length;
-  uint32_t codePoint;
+  char32_t codePoint;
 
   codePoint = GetSingleCodePoint(&p, end);
 
@@ -1099,7 +1099,7 @@ MOZ_COLD void TokenStreamChars<Utf8Unit, AnyCharsAccess>::badTrailingUnit(
 template <class AnyCharsAccess>
 MOZ_COLD void
 TokenStreamChars<Utf8Unit, AnyCharsAccess>::badStructurallyValidCodePoint(
-    uint32_t codePoint, uint8_t codePointLength, const char* reason) {
+    char32_t codePoint, uint8_t codePointLength, const char* reason) {
   // Construct a string like "0x203D" (including null terminator) to include
   // in the error message.  Write the string end-to-start from end to start
   // of an adequately sized |char| array, shifting least significant nibbles
@@ -1173,7 +1173,7 @@ TokenStreamChars<Utf8Unit, AnyCharsAccess>::getNonAsciiCodePointDontNormalize(
 
 template <class AnyCharsAccess>
 bool TokenStreamChars<char16_t, AnyCharsAccess>::getNonAsciiCodePoint(
-    int32_t lead, int32_t* codePoint) {
+    int32_t lead, char32_t* codePoint) {
   MOZ_ASSERT(lead != EOF);
   MOZ_ASSERT(!isAsciiCodePoint(lead),
              "ASCII code unit/point must be handled separately");
@@ -1181,7 +1181,7 @@ bool TokenStreamChars<char16_t, AnyCharsAccess>::getNonAsciiCodePoint(
              "getNonAsciiCodePoint called incorrectly");
 
   // The code point is usually |lead|: overwrite later if needed.
-  *codePoint = lead;
+  *codePoint = AssertedCast<char32_t>(lead);
 
   // ECMAScript specifically requires that unpaired UTF-16 surrogates be
   // treated as the corresponding code point and not as an error.  See
@@ -1195,7 +1195,8 @@ bool TokenStreamChars<char16_t, AnyCharsAccess>::getNonAsciiCodePoint(
                      lead == unicode::PARA_SEPARATOR)) {
       if (!updateLineInfoForEOL()) {
 #ifdef DEBUG
-        *codePoint = EOF;  // sentinel value to hopefully cause errors
+        // Assign to a sentinel value to hopefully cause errors.
+        *codePoint = std::numeric_limits<char32_t>::max();
 #endif
         MOZ_MAKE_MEM_UNDEFINED(codePoint, sizeof(*codePoint));
         return false;
@@ -1203,7 +1204,7 @@ bool TokenStreamChars<char16_t, AnyCharsAccess>::getNonAsciiCodePoint(
 
       *codePoint = '\n';
     } else {
-      MOZ_ASSERT(!IsLineTerminator(AssertedCast<char32_t>(*codePoint)));
+      MOZ_ASSERT(!IsLineTerminator(*codePoint));
     }
 
     return true;
@@ -1213,36 +1214,36 @@ bool TokenStreamChars<char16_t, AnyCharsAccess>::getNonAsciiCodePoint(
   if (MOZ_UNLIKELY(
           this->sourceUnits.atEnd() ||
           !unicode::IsTrailSurrogate(this->sourceUnits.peekCodeUnit()))) {
-    MOZ_ASSERT(!IsLineTerminator(AssertedCast<char32_t>(*codePoint)));
+    MOZ_ASSERT(!IsLineTerminator(*codePoint));
     return true;
   }
 
   // Otherwise we have a multi-unit code point.
   *codePoint = unicode::UTF16Decode(lead, this->sourceUnits.getCodeUnit());
-  MOZ_ASSERT(!IsLineTerminator(AssertedCast<char32_t>(*codePoint)));
+  MOZ_ASSERT(!IsLineTerminator(*codePoint));
   return true;
 }
 
 template <typename Unit, class AnyCharsAccess>
-bool TokenStreamSpecific<Unit, AnyCharsAccess>::getCodePoint(int32_t* cp) {
+bool TokenStreamSpecific<Unit, AnyCharsAccess>::getCodePoint() {
   int32_t unit = getCodeUnit();
   if (unit == EOF) {
     MOZ_ASSERT(anyCharsAccess().flags.isEOF,
                "flags.isEOF should have been set by getCodeUnit()");
-    *cp = EOF;
     return true;
   }
 
   if (isAsciiCodePoint(unit)) {
-    return getFullAsciiCodePoint(unit, cp);
+    return getFullAsciiCodePoint(unit);
   }
 
-  return getNonAsciiCodePoint(unit, cp);
+  char32_t cp;
+  return getNonAsciiCodePoint(unit, &cp);
 }
 
 template <class AnyCharsAccess>
 bool TokenStreamChars<Utf8Unit, AnyCharsAccess>::getNonAsciiCodePoint(
-    int32_t unit, int32_t* codePoint) {
+    int32_t unit, char32_t* codePoint) {
   MOZ_ASSERT(unit != EOF);
   MOZ_ASSERT(!isAsciiCodePoint(unit),
              "ASCII code unit/point must be handled separately");
@@ -1287,7 +1288,8 @@ bool TokenStreamChars<Utf8Unit, AnyCharsAccess>::getNonAsciiCodePoint(
                    cp == unicode::PARA_SEPARATOR)) {
     if (!updateLineInfoForEOL()) {
 #ifdef DEBUG
-      *codePoint = EOF;  // sentinel value to hopefully cause errors
+      // Assign to a sentinel value to hopefully cause errors.
+      *codePoint = std::numeric_limits<char32_t>::max();
 #endif
       MOZ_MAKE_MEM_UNDEFINED(codePoint, sizeof(*codePoint));
       return false;
@@ -1296,7 +1298,7 @@ bool TokenStreamChars<Utf8Unit, AnyCharsAccess>::getNonAsciiCodePoint(
     *codePoint = '\n';
   } else {
     MOZ_ASSERT(!IsLineTerminator(cp));
-    *codePoint = AssertedCast<int32_t>(cp);
+    *codePoint = cp;
   }
 
   return true;
@@ -1545,8 +1547,7 @@ template <typename Unit, class AnyCharsAccess>
 bool TokenStreamSpecific<Unit, AnyCharsAccess>::advance(size_t position) {
   const Unit* end = this->sourceUnits.codeUnitPtrAt(position);
   while (this->sourceUnits.addressOfNextCodeUnit() < end) {
-    int32_t c;
-    if (!getCodePoint(&c)) {
+    if (!getCodePoint()) {
       return false;
     }
   }
@@ -1803,7 +1804,7 @@ void TokenStreamSpecific<Unit, AnyCharsAccess>::reportIllegalCharacter(
 // involed.  Otherwise, return 0 and don't advance along the buffer.
 template <typename Unit, class AnyCharsAccess>
 uint32_t GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchUnicodeEscape(
-    uint32_t* codePoint) {
+    char32_t* codePoint) {
   MOZ_ASSERT(this->sourceUnits.previousCodeUnit() == Unit('\\'));
 
   int32_t unit = getCodeUnit();
@@ -1835,7 +1836,7 @@ uint32_t GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchUnicodeEscape(
 template <typename Unit, class AnyCharsAccess>
 uint32_t
 GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchExtendedUnicodeEscape(
-    uint32_t* codePoint) {
+    char32_t* codePoint) {
   MOZ_ASSERT(this->sourceUnits.previousCodeUnit() == Unit('{'));
 
   int32_t unit = getCodeUnit();
@@ -1874,7 +1875,7 @@ GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchExtendedUnicodeEscape(
 template <typename Unit, class AnyCharsAccess>
 uint32_t
 GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchUnicodeEscapeIdStart(
-    uint32_t* codePoint) {
+    char32_t* codePoint) {
   uint32_t length = matchUnicodeEscape(codePoint);
   if (MOZ_LIKELY(length > 0)) {
     if (MOZ_LIKELY(unicode::IsIdentifierStart(*codePoint))) {
@@ -1890,7 +1891,7 @@ GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchUnicodeEscapeIdStart(
 
 template <typename Unit, class AnyCharsAccess>
 bool GeneralTokenStreamChars<Unit, AnyCharsAccess>::matchUnicodeEscapeIdent(
-    uint32_t* codePoint) {
+    char32_t* codePoint) {
   uint32_t length = matchUnicodeEscape(codePoint);
   if (MOZ_LIKELY(length > 0)) {
     if (MOZ_LIKELY(unicode::IsIdentifierPart(*codePoint))) {
@@ -1909,34 +1910,46 @@ template <typename Unit, class AnyCharsAccess>
 TokenStreamSpecific<Unit, AnyCharsAccess>::matchIdentifierStart(
     IdentifierEscapes* sawEscape) {
   int32_t unit = getCodeUnit();
-  if (unicode::IsIdentifierStart(char16_t(unit))) {
-    ungetCodeUnit(unit);
+  if (unit == EOF) {
+    error(JSMSG_MISSING_PRIVATE_NAME);
+    return false;
+  }
+
+  if (MOZ_LIKELY(isAsciiCodePoint(unit))) {
+    if (unicode::IsIdentifierStart(char16_t(unit))) {
+      *sawEscape = IdentifierEscapes::None;
+      return true;
+    }
+
+    if (unit == '\\') {
+      char32_t codePoint;
+      uint32_t escapeLength = matchUnicodeEscapeIdStart(&codePoint);
+      if (escapeLength != 0) {
+        *sawEscape = IdentifierEscapes::SawUnicodeEscape;
+        return true;
+      }
+
+      // We could point "into" a mistyped escape, e.g. for "\u{41H}" we
+      // could point at the 'H'.  But we don't do that now, so the code
+      // unit after the '\' isn't necessarily bad, so just point at the
+      // start of the actually-invalid escape.
+      ungetCodeUnit('\\');
+      error(JSMSG_BAD_ESCAPE);
+      return false;
+    }
+  }
+
+  // Unget the lead code unit before peeking at the full code point.
+  ungetCodeUnit(unit);
+
+  PeekedCodePoint<Unit> peeked = this->sourceUnits.peekCodePoint();
+  if (!peeked.isNone() && unicode::IsIdentifierStart(peeked.codePoint())) {
+    this->sourceUnits.consumeKnownCodePoint(peeked);
+
     *sawEscape = IdentifierEscapes::None;
     return true;
   }
 
-  if (unit == '\\') {
-    *sawEscape = IdentifierEscapes::SawUnicodeEscape;
-
-    uint32_t codePoint;
-    uint32_t escapeLength = matchUnicodeEscapeIdStart(&codePoint);
-    if (escapeLength != 0) {
-      return true;
-    }
-
-    // We could point "into" a mistyped escape, e.g. for "\u{41H}" we
-    // could point at the 'H'.  But we don't do that now, so the code
-    // unit after the '\' isn't necessarily bad, so just point at the
-    // start of the actually-invalid escape.
-    ungetCodeUnit('\\');
-    error(JSMSG_BAD_ESCAPE);
-    return false;
-  }
-
-  *sawEscape = IdentifierEscapes::None;
-
-  // NOTE: |unit| may be EOF here.
-  ungetCodeUnit(unit);
   error(JSMSG_MISSING_PRIVATE_NAME);
   return false;
 }
@@ -2121,7 +2134,7 @@ MOZ_COLD bool GeneralTokenStreamChars<Unit, AnyCharsAccess>::badToken() {
   return false;
 };
 
-bool AppendCodePointToCharBuffer(CharBuffer& charBuffer, uint32_t codePoint) {
+bool AppendCodePointToCharBuffer(CharBuffer& charBuffer, char32_t codePoint) {
   MOZ_ASSERT(codePoint <= unicode::NonBMPMax,
              "should only be processing code points validly decoded from UTF-8 "
              "or WTF-16 source text (surrogate code points permitted)");
@@ -2161,7 +2174,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::putIdentInCharBuffer(
       break;
     }
 
-    uint32_t codePoint;
+    char32_t codePoint;
     if (MOZ_LIKELY(isAsciiCodePoint(unit))) {
       if (unicode::IsIdentifierPart(char16_t(unit)) || unit == '#') {
         if (!this->charBuffer.append(unit)) {
@@ -2221,7 +2234,7 @@ template <typename Unit, class AnyCharsAccess>
               !unicode::IsIdentifierPart(static_cast<char16_t>(unit)))) {
         // Handle a Unicode escape -- otherwise it's not part of the
         // identifier.
-        uint32_t codePoint;
+        char32_t codePoint;
         if (unit != '\\' || !matchUnicodeEscapeIdent(&codePoint)) {
           ungetCodeUnit(unit);
           break;
@@ -2764,8 +2777,7 @@ template <typename Unit, class AnyCharsAccess>
 
       PeekedCodePoint<Unit> peeked = this->sourceUnits.peekCodePoint();
       if (peeked.isNone()) {
-        int32_t bad;
-        MOZ_ALWAYS_FALSE(getCodePoint(&bad));
+        MOZ_ALWAYS_FALSE(getCodePoint());
         return badToken();
       }
 
@@ -3108,7 +3120,7 @@ template <typename Unit, class AnyCharsAccess>
         break;
 
       case '\\': {
-        uint32_t codePoint;
+        char32_t codePoint;
         if (uint32_t escapeLength = matchUnicodeEscapeIdStart(&codePoint)) {
           return identifierName(
               start,
@@ -3266,12 +3278,11 @@ template <typename Unit, class AnyCharsAccess>
                 return badToken();
               }
             } else if (MOZ_LIKELY(isAsciiCodePoint(unit))) {
-              int32_t codePoint;
-              if (!getFullAsciiCodePoint(unit, &codePoint)) {
+              if (!getFullAsciiCodePoint(unit)) {
                 return badToken();
               }
             } else {
-              int32_t codePoint;
+              char32_t codePoint;
               if (!getNonAsciiCodePoint(unit, &codePoint)) {
                 return badToken();
               }
@@ -3422,7 +3433,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
       // Non-ASCII |unit| isn't handled by code after this, so dedicate
       // an unlikely special-case to it and then continue.
       if (MOZ_UNLIKELY(!isAsciiCodePoint(unit))) {
-        int32_t codePoint;
+        char32_t codePoint;
         if (!getNonAsciiCodePoint(unit, &codePoint)) {
           return false;
         }
@@ -3432,8 +3443,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
         // LineContinuation represents no code points, so don't append
         // in this case.
         if (codePoint != '\n') {
-          if (!AppendCodePointToCharBuffer(this->charBuffer,
-                                           AssertedCast<char32_t>(codePoint))) {
+          if (!AppendCodePointToCharBuffer(this->charBuffer, codePoint)) {
             return false;
           }
         }

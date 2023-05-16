@@ -20,16 +20,16 @@ const MAX_DATA_URL_LENGTH = 40;
 loader.lazyRequireGetter(
   this,
   "getCSSLexer",
-  "devtools/shared/css/lexer",
+  "resource://devtools/shared/css/lexer.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getTabPrefs",
-  "devtools/shared/indentation",
+  "resource://devtools/shared/indentation.js",
   true
 );
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const styleInspectorL10N = new LocalizationHelper(
   "devtools/shared/locales/styleinspector.properties"
 );

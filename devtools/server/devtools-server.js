@@ -4,51 +4,56 @@
 
 "use strict";
 
-var { Ci } = require("chrome");
-var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var {
+  ActorRegistry,
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 var { dumpn } = DevToolsUtils;
 
 loader.lazyRequireGetter(
   this,
   "DevToolsServerConnection",
-  "devtools/server/devtools-server-connection",
+  "resource://devtools/server/devtools-server-connection.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "Authentication",
-  "devtools/shared/security/auth"
+  "resource://devtools/shared/security/auth.js"
 );
 loader.lazyRequireGetter(
   this,
   "LocalDebuggerTransport",
-  "devtools/shared/transport/local-transport",
+  "resource://devtools/shared/transport/local-transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ChildDebuggerTransport",
-  "devtools/shared/transport/child-transport",
+  "resource://devtools/shared/transport/child-transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "JsWindowActorTransport",
-  "devtools/shared/transport/js-window-actor-transport",
+  "resource://devtools/shared/transport/js-window-actor-transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WorkerThreadWorkerDebuggerTransport",
-  "devtools/shared/transport/worker-transport",
+  "resource://devtools/shared/transport/worker-transport.js",
   true
 );
 
 const CONTENT_PROCESS_SERVER_STARTUP_SCRIPT =
   "resource://devtools/server/startup/content-process.js";
 
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 
 /**
  * DevToolsServer is a singleton that has several responsibilities. It will
@@ -133,7 +138,7 @@ var DevToolsServer = {
   },
 
   get protocol() {
-    return require("devtools/shared/protocol");
+    return require("resource://devtools/shared/protocol.js");
   },
 
   get initialized() {
@@ -209,7 +214,9 @@ var DevToolsServer = {
     }
 
     if (root) {
-      const { createRootActor } = require("devtools/server/actors/webbrowser");
+      const {
+        createRootActor,
+      } = require("resource://devtools/server/actors/webbrowser.js");
       this.setRootActor(createRootActor);
     }
 

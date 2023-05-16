@@ -329,7 +329,8 @@ bool HttpTransactionParent::DataSentToChildProcess() {
   return mDataSentToChildProcess;
 }
 
-already_AddRefed<nsISupports> HttpTransactionParent::SecurityInfo() {
+already_AddRefed<nsITransportSecurityInfo>
+HttpTransactionParent::SecurityInfo() {
   return do_AddRef(mSecurityInfo);
 }
 
@@ -887,5 +888,10 @@ void HttpTransactionParent::HandleAsyncAbort() {
 }
 
 bool HttpTransactionParent::GetSupportsHTTP3() { return mSupportsHTTP3; }
+
+// We will need to support this in the socket process (See Bug 1791027)
+mozilla::TimeStamp HttpTransactionParent::GetPendingTime() {
+  return TimeStamp::Now();
+}
 
 }  // namespace mozilla::net

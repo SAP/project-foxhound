@@ -14,17 +14,40 @@ ChromeUtils.import("resource://gre/modules/NotificationDB.jsm");
 // lazy module getters
 
 ChromeUtils.defineESModuleGetters(this, {
+  AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  BrowserTelemetryUtils: "resource://gre/modules/BrowserTelemetryUtils.sys.mjs",
+  Color: "resource://gre/modules/Color.sys.mjs",
+
+  DevToolsSocketStatus:
+    "resource://devtools/shared/security/DevToolsSocketStatus.sys.mjs",
+
   FirefoxViewNotificationManager:
     "resource:///modules/firefox-view-notification-manager.sys.mjs",
+
+  LightweightThemeConsumer:
+    "resource://gre/modules/LightweightThemeConsumer.sys.mjs",
+
+  Log: "resource://gre/modules/Log.sys.mjs",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+  ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+  SubDialog: "resource://gre/modules/SubDialog.sys.mjs",
+  SubDialogManager: "resource://gre/modules/SubDialog.sys.mjs",
+  TabsSetupFlowManager:
+    "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
   UrlbarInput: "resource:///modules/UrlbarInput.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+
   UrlbarProviderSearchTips:
     "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
+
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter: "resource:///modules/UrlbarValueFormatter.sys.mjs",
@@ -33,67 +56,56 @@ ChromeUtils.defineESModuleGetters(this, {
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  AboutReaderParent: "resource:///actors/AboutReaderParent.jsm",
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   NewTabPagePreloading: "resource:///modules/NewTabPagePreloading.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
-  BrowserTelemetryUtils: "resource://gre/modules/BrowserTelemetryUtils.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   CFRPageActions: "resource://activity-stream/lib/CFRPageActions.jsm",
-  Color: "resource://gre/modules/Color.jsm",
+
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.jsm",
+
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   Deprecated: "resource://gre/modules/Deprecated.jsm",
-  DevToolsSocketStatus:
-    "resource://devtools/shared/security/DevToolsSocketStatus.jsm",
   DownloadsCommon: "resource:///modules/DownloadsCommon.jsm",
   DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
-  LightweightThemeConsumer:
-    "resource://gre/modules/LightweightThemeConsumer.jsm",
-  Log: "resource://gre/modules/Log.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   LoginManagerParent: "resource://gre/modules/LoginManagerParent.jsm",
   MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
   OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
   PanelMultiView: "resource:///modules/PanelMultiView.jsm",
   PanelView: "resource:///modules/PanelMultiView.jsm",
-  PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   Pocket: "chrome://pocket/content/Pocket.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   PromptUtils: "resource://gre/modules/SharedPromptUtils.jsm",
+
   // TODO (Bug 1529552): Remove once old urlbar code goes away.
   ReaderMode: "resource://gre/modules/ReaderMode.jsm",
+
   RFPHelper: "resource://gre/modules/RFPHelper.jsm",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
-  ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   SiteDataManager: "resource:///modules/SiteDataManager.jsm",
   SitePermissions: "resource:///modules/SitePermissions.jsm",
-  SubDialog: "resource://gre/modules/SubDialog.jsm",
-  SubDialogManager: "resource://gre/modules/SubDialog.jsm",
   TabModalPrompt: "chrome://global/content/tabprompts.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
   Translation: "resource:///modules/translation/TranslationParent.jsm",
   UITour: "resource:///modules/UITour.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
   Weave: "resource://services-sync/main.js",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
   webrtcUI: "resource:///modules/webrtcUI.jsm",
@@ -421,22 +433,24 @@ XPCOMUtils.defineLazyGetter(this, "gNotificationBox", () => {
 });
 
 XPCOMUtils.defineLazyGetter(this, "InlineSpellCheckerUI", () => {
-  let { InlineSpellChecker } = ChromeUtils.import(
-    "resource://gre/modules/InlineSpellChecker.jsm"
+  let { InlineSpellChecker } = ChromeUtils.importESModule(
+    "resource://gre/modules/InlineSpellChecker.sys.mjs"
   );
   return new InlineSpellChecker();
 });
 
 XPCOMUtils.defineLazyGetter(this, "PopupNotifications", () => {
   // eslint-disable-next-line no-shadow
-  let { PopupNotifications } = ChromeUtils.import(
-    "resource://gre/modules/PopupNotifications.jsm"
+  let { PopupNotifications } = ChromeUtils.importESModule(
+    "resource://gre/modules/PopupNotifications.sys.mjs"
   );
   try {
-    // Hide all PopupNotifications while the URL is being edited and the
-    // address bar has focus, including the virtual focus in the results popup.
+    // Hide all PopupNotifications while the URL is being edited and the address
+    // bar has focus or while async tab switching, including the virtual focus in
+    // the results popup.
     let shouldSuppress = () =>
-      (gURLBar.getAttribute("pageproxystate") != "valid" && gURLBar.focused) ||
+      (gURLBar.getAttribute("pageproxystate") != "valid" &&
+        (gURLBar.focused || gBrowser.selectedBrowser._awaitingSetURI)) ||
       shouldSuppressPopupNotifications();
     return new PopupNotifications(
       gBrowser,
@@ -545,6 +559,34 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "gAlwaysOpenPanel",
   "browser.download.alwaysOpenPanel",
   true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gScreenshotsDisabled",
+  "extensions.screenshots.disabled",
+  false,
+  () => {
+    Services.obs.notifyObservers(
+      window,
+      "toggle-screenshot-disable",
+      gScreenshots.shouldScreenshotsButtonBeDisabled()
+    );
+  }
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gScreenshotsComponentEnabled",
+  "screenshots.browser.component.enabled",
+  false,
+  () => {
+    Services.obs.notifyObservers(
+      window,
+      "toggle-screenshot-disable",
+      gScreenshots.shouldScreenshotsButtonBeDisabled()
+    );
+  }
 );
 
 customElements.setElementCreationCallback("translation-notification", () => {
@@ -676,6 +718,21 @@ var gNavigatorBundle = {
   },
   getFormattedString(key, array) {
     return gBrowserBundle.formatStringFromName(key, array);
+  },
+};
+
+var gScreenshots = {
+  shouldScreenshotsButtonBeDisabled() {
+    // About pages other than about:reader are not currently supported by
+    // the screenshots extension (see Bug 1620992).
+    let uri = gBrowser.currentURI;
+    let shouldBeDisabled =
+      gScreenshotsDisabled ||
+      (!gScreenshotsComponentEnabled &&
+        uri.scheme === "about" &&
+        !uri.spec.startsWith("about:reader"));
+
+    return shouldBeDisabled;
   },
 };
 
@@ -911,7 +968,7 @@ const gSessionHistoryObserver = {
     fwdCommand.setAttribute("disabled", "true");
 
     // Clear undo history of the URL bar
-    gURLBar.editor.transactionManager.clear();
+    gURLBar.editor.clearUndoRedo();
   },
 };
 
@@ -1645,8 +1702,8 @@ var gBrowserInit = {
         window.matchMedia("(-moz-windows-default-theme)").matches
       ) {
         let windowFrameColor = new Color(
-          ...ChromeUtils.import(
-            "resource:///modules/Windows8WindowFrameColor.jsm"
+          ...ChromeUtils.importESModule(
+            "resource:///modules/Windows8WindowFrameColor.sys.mjs"
           ).Windows8WindowFrameColor.get()
         );
         // Default to black for foreground text.
@@ -1724,6 +1781,8 @@ var gBrowserInit = {
     });
 
     updateFxaToolbarMenu(gFxaToolbarEnabled, true);
+
+    gUnifiedExtensions.init();
 
     // Setting the focus will cause a style flush, it's preferable to call anything
     // that will modify the DOM from within this function before this call.
@@ -2171,23 +2230,23 @@ var gBrowserInit = {
         return;
       }
 
-      if (gBrowser.selectedBrowser.isRemoteBrowser) {
-        // If the initial browser is remote, in order to optimize for first paint,
-        // we'll defer switching focus to that browser until it has painted.
-        this._firstContentWindowPaintDeferred.promise.then(() => {
-          // If focus didn't move while we were waiting for first paint, we're okay
-          // to move to the browser.
-          if (
-            document.commandDispatcher.focusedElement == initiallyFocusedElement
-          ) {
-            gBrowser.selectedBrowser.focus();
-          }
-        });
-      } else {
-        // If the initial browser is not remote, we can focus the browser
-        // immediately with no paint performance impact.
-        gBrowser.selectedBrowser.focus();
-      }
+      // If the initial browser is remote, in order to optimize for first paint,
+      // we'll defer switching focus to that browser until it has painted.
+      // Otherwise use a regular promise to guarantee that mutationobserver
+      // microtasks that could affect focusability have run.
+      let promise = gBrowser.selectedBrowser.isRemoteBrowser
+        ? this._firstContentWindowPaintDeferred.promise
+        : Promise.resolve();
+
+      promise.then(() => {
+        // If focus didn't move while we were waiting, we're okay to move to
+        // the browser.
+        if (
+          document.commandDispatcher.focusedElement == initiallyFocusedElement
+        ) {
+          gBrowser.selectedBrowser.focus();
+        }
+      });
     });
 
     // Delay removing the attribute using requestAnimationFrame to avoid
@@ -2343,11 +2402,6 @@ var gBrowserInit = {
     scheduleIdleTask(() => {
       // Initialize the Sync UI
       gSync.init();
-    });
-
-    scheduleIdleTask(() => {
-      // Initialize the unified extensions UI.
-      gUnifiedExtensions.init();
     });
 
     scheduleIdleTask(() => {
@@ -4320,12 +4374,6 @@ const BrowserSearch = {
     );
   },
 
-  pasteAndSearch(event) {
-    BrowserSearch.searchBar.select();
-    goDoCommand("cmd_paste");
-    BrowserSearch.searchBar.handleSearchCommand(event);
-  },
-
   /**
    * Returns the search bar element if it is present in the toolbar, null otherwise.
    */
@@ -5441,14 +5489,11 @@ var XULBrowserWindow = {
       closeOpenPanels("panel[locationspecific='true']");
     }
 
-    // About pages other than about:reader are not currently supported by
-    // screenshots (see Bug 1620992).
+    let screenshotsButtonsDisabled = gScreenshots.shouldScreenshotsButtonBeDisabled();
     Services.obs.notifyObservers(
       window,
       "toggle-screenshot-disable",
-      (aLocationURI.scheme == "about" &&
-        !aLocationURI.spec.startsWith("about:reader")) ||
-        Services.prefs.getBoolPref("extensions.screenshots.disabled")
+      screenshotsButtonsDisabled
     );
 
     gPermissionPanel.onLocationChange();
@@ -8049,11 +8094,9 @@ function warnAboutClosingWindow(source) {
     PrivateBrowsingUtils.isWindowPrivate(window) &&
     !PrivateBrowsingUtils.permanentPrivateBrowsing;
 
-  let closingTabs = gBrowser.tabs.length - gBrowser._removingTabs.length;
-
   if (!isPBWindow && !toolbar.visible) {
     return gBrowser.warnAboutClosingTabs(
-      closingTabs,
+      gBrowser.visibleTabs.length,
       gBrowser.closingTabsEnum.ALL,
       source
     );
@@ -8094,7 +8137,7 @@ function warnAboutClosingWindow(source) {
     return (
       isPBWindow ||
       gBrowser.warnAboutClosingTabs(
-        closingTabs,
+        gBrowser.visibleTabs.length,
         gBrowser.closingTabsEnum.ALL,
         source
       )
@@ -8120,7 +8163,7 @@ function warnAboutClosingWindow(source) {
     AppConstants.platform != "macosx" ||
     isPBWindow ||
     gBrowser.warnAboutClosingTabs(
-      closingTabs,
+      gBrowser.visibleTabs.length,
       gBrowser.closingTabsEnum.ALL,
       source
     )
@@ -8165,7 +8208,27 @@ var MailIntegration = {
   },
 };
 
-function BrowserOpenAddonsMgr(aView) {
+/**
+ * Open about:addons page by given view id.
+ * @param {String} aView
+ *                 View id of page that will open.
+ *                 e.g. "addons://discover/"
+ * @param {Object} options
+ *        {
+ *          selectTabByViewId: If true, if there is the tab opening page having
+ *                             same view id, select the tab. Else if the current
+ *                             page is blank, load on it. Otherwise, open a new
+ *                             tab, then load on it.
+ *                             If false, if there is the tab opening
+ *                             about:addoons page, select the tab and load page
+ *                             for view id on it. Otherwise, leave the loading
+ *                             behavior to switchToTabHavingURI().
+ *                             If no options, handles as false.
+ *        }
+ * @returns {Promise} When the Promise resolves, returns window object loaded the
+ *                    view id.
+ */
+function BrowserOpenAddonsMgr(aView, { selectTabByViewId = false } = {}) {
   return new Promise(resolve => {
     let emWindow;
     let browserWindow;
@@ -8173,6 +8236,13 @@ function BrowserOpenAddonsMgr(aView) {
     var receivePong = function(aSubject, aTopic, aData) {
       let browserWin = aSubject.browsingContext.topChromeWindow;
       if (!emWindow || browserWin == window /* favor the current window */) {
+        if (
+          selectTabByViewId &&
+          aSubject.gViewController.currentViewId !== aView
+        ) {
+          return;
+        }
+
         emWindow = aSubject;
         browserWindow = browserWin;
       }
@@ -8182,7 +8252,7 @@ function BrowserOpenAddonsMgr(aView) {
     Services.obs.removeObserver(receivePong, "EM-pong");
 
     if (emWindow) {
-      if (aView) {
+      if (aView && !selectTabByViewId) {
         emWindow.loadView(aView);
       }
       let tab = browserWindow.gBrowser.getTabForBrowser(
@@ -8194,9 +8264,16 @@ function BrowserOpenAddonsMgr(aView) {
       return;
     }
 
-    // This must be a new load, else the ping/pong would have
-    // found the window above.
-    switchToTabHavingURI("about:addons", true);
+    if (selectTabByViewId) {
+      const target = isBlankPageURL(gBrowser.currentURI.spec)
+        ? "current"
+        : "tab";
+      openTrustedLinkIn("about:addons", target);
+    } else {
+      // This must be a new load, else the ping/pong would have
+      // found the window above.
+      switchToTabHavingURI("about:addons", true);
+    }
 
     Services.obs.addObserver(function observer(aSubject, aTopic, aData) {
       Services.obs.removeObserver(observer, aTopic);
@@ -9042,6 +9119,10 @@ const SafeBrowsingNotificationBox = {
  * suppressed.
  */
 class TabDialogBox {
+  static _containerFor(browser) {
+    return browser.closest(".browserStack, .webextension-popup-stack");
+  }
+
   constructor(browser) {
     this._weakBrowserRef = Cu.getWeakReference(browser);
 
@@ -9050,10 +9131,7 @@ class TabDialogBox {
     let dialogStack = template.content.cloneNode(true).firstElementChild;
     dialogStack.classList.add("tab-prompt-dialog");
 
-    this.browser.parentNode.insertBefore(
-      dialogStack,
-      this.browser.nextElementSibling
-    );
+    TabDialogBox._containerFor(browser).appendChild(dialogStack);
 
     // Initially the stack only contains the template
     let dialogTemplate = dialogStack.firstElementChild;
@@ -9185,10 +9263,9 @@ class TabDialogBox {
     contentDialogStack.classList.add("content-prompt-dialog");
 
     // Create a dialog manager for content prompts.
-    let tabPromptDialog = this.browser.parentNode.querySelector(
-      ".tab-prompt-dialog"
-    );
-    this.browser.parentNode.insertBefore(contentDialogStack, tabPromptDialog);
+    let browserContainer = TabDialogBox._containerFor(this.browser);
+    let tabPromptDialog = browserContainer.querySelector(".tab-prompt-dialog");
+    browserContainer.insertBefore(contentDialogStack, tabPromptDialog);
 
     let contentDialogTemplate = contentDialogStack.firstElementChild;
     this._contentDialogManager = new SubDialogManager({
@@ -9935,13 +10012,17 @@ var FirefoxViewHandler = {
       gBrowser.hideTab(this.tab);
       this.button.setAttribute("aria-controls", this.tab.linkedPanel);
     }
+    // we put this here to avoid a race condition that would occur
+    // if this was called in response to "TabSelect"
+    this._closeDeviceConnectedTab();
     gBrowser.selectedTab = this.tab;
   },
   handleEvent(e) {
     switch (e.type) {
       case "TabSelect":
-        this.button?.toggleAttribute("open", e.target == this.tab);
-        this.button?.setAttribute("aria-selected", e.target == this.tab);
+        const selected = e.target == this.tab;
+        this.button?.toggleAttribute("open", selected);
+        this.button?.setAttribute("aria-pressed", selected);
         this._recordViewIfTabSelected();
         this._onTabForegrounded();
         break;
@@ -9962,6 +10043,33 @@ var FirefoxViewHandler = {
         this._toggleNotificationDot(shouldShow);
         break;
     }
+  },
+  _closeDeviceConnectedTab() {
+    if (!TabsSetupFlowManager.didFxaTabOpen) {
+      return;
+    }
+    // close the tab left behind after a user pairs a device and
+    // is redirected back to the Firefox View tab
+    const fxaRoot = Services.prefs.getCharPref(
+      "identity.fxaccounts.remote.root"
+    );
+    const fxDeviceConnectedTab = gBrowser.tabs.find(tab =>
+      tab.linkedBrowser.currentURI.displaySpec.startsWith(
+        `${fxaRoot}pair/auth/complete`
+      )
+    );
+
+    if (!fxDeviceConnectedTab) {
+      return;
+    }
+
+    if (gBrowser.tabs.length <= 2) {
+      // if its the only tab besides the Firefox View tab,
+      // open a new tab first so the browser doesn't close
+      gBrowser.addTrustedTab("about:newtab");
+    }
+    gBrowser.removeTab(fxDeviceConnectedTab);
+    TabsSetupFlowManager.didFxaTabOpen = false;
   },
   _onTabForegrounded() {
     if (this.tab?.selected) {

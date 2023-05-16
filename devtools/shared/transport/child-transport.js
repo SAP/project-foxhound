@@ -4,8 +4,7 @@
 
 "use strict";
 
-const { Cr } = require("chrome");
-const flags = require("devtools/shared/flags");
+const flags = require("resource://devtools/shared/flags.js");
 
 /**
  * A transport for the debugging protocol that uses nsIMessageManagers to

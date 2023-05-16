@@ -6,9 +6,8 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
-);
+import { PromiseUtils } from "resource://gre/modules/PromiseUtils.sys.mjs";
+
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -17,8 +16,10 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonSearchEngine: "resource://gre/modules/AddonSearchEngine.sys.mjs",
+  IgnoreLists: "resource://gre/modules/IgnoreLists.sys.mjs",
   OpenSearchEngine: "resource://gre/modules/OpenSearchEngine.sys.mjs",
   PolicySearchEngine: "resource://gre/modules/PolicySearchEngine.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
   SearchEngine: "resource://gre/modules/SearchEngine.sys.mjs",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
@@ -29,8 +30,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  IgnoreLists: "resource://gre/modules/IgnoreLists.jsm",
-  Region: "resource://gre/modules/Region.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
@@ -397,6 +396,7 @@ export class SearchService {
     await this.init();
     await this.#migrateLegacyEngines();
     await this.#checkWebExtensionEngines();
+    await this.#addOpenSearchTelemetry();
   }
 
   /**
@@ -696,10 +696,11 @@ export class SearchService {
       );
     }
 
+    engineToRemove.pendingRemoval = true;
+
     if (engineToRemove == this.defaultEngine) {
       this.#findAndSetNewDefaultEngine({
         privateMode: false,
-        excludeEngineName: engineToRemove.name,
       });
     }
 
@@ -714,7 +715,6 @@ export class SearchService {
     ) {
       this.#findAndSetNewDefaultEngine({
         privateMode: true,
-        excludeEngineName: engineToRemove.name,
       });
     }
 
@@ -723,6 +723,7 @@ export class SearchService {
       // avoid future conflicts with other engines.
       engineToRemove.hidden = true;
       engineToRemove.alias = null;
+      engineToRemove.pendingRemoval = false;
     } else {
       // Remove the engine file from disk if we had a legacy file in the profile.
       if (engineToRemove._filePath) {
@@ -1369,7 +1370,7 @@ export class SearchService {
     // we started listening, so do a check on startup.
     Services.tm.dispatchToMainThread(async () => {
       await lazy.NimbusFeatures.search.ready();
-      this.#checkNimbusPrefs();
+      this.#checkNimbusPrefs(true);
     });
 
     return this.#initRV;
@@ -1758,7 +1759,6 @@ export class SearchService {
       privateDefault,
     } = await this._fetchEngineSelectorEngines();
 
-    let enginesToRemove = [];
     let configEngines = [...appDefaultConfigEngines];
     let oldEngineList = [...this._engines.values()];
 
@@ -1785,7 +1785,7 @@ export class SearchService {
         // engines so we'll remove the existing engine and add new later if
         // necessary.
         if (replacementEngines.length != 1) {
-          enginesToRemove.push(engine);
+          engine.pendingRemoval = true;
           continue;
         }
 
@@ -1803,7 +1803,7 @@ export class SearchService {
           manifest.chrome_settings_overrides.search_provider.name.trim()
         ) {
           // No matching name, so just remove it.
-          enginesToRemove.push(engine);
+          engine.pendingRemoval = true;
           continue;
         }
 
@@ -1847,21 +1847,18 @@ export class SearchService {
     this.#loadEnginesMetadataFromSettings(settings.engines);
 
     // Now set the sort out the default engines and notify as appropriate.
+
+    // Clear the current values, so that we'll completely reset.
     this.#currentEngine = null;
     this.#currentPrivateEngine = null;
+
     // If the user's default is one of the private engines that is being removed,
     // reset the stored setting, so that we correctly detect the change in
     // in default.
-    if (
-      prevCurrentEngine &&
-      enginesToRemove.some(e => e.name == prevCurrentEngine.name)
-    ) {
+    if (prevCurrentEngine?.pendingRemoval) {
       this._settings.setMetaDataAttribute("current", "");
     }
-    if (
-      prevPrivateEngine &&
-      enginesToRemove.some(e => e.name == prevPrivateEngine.name)
-    ) {
+    if (prevPrivateEngine?.pendingRemoval) {
       this._settings.setMetaDataAttribute("private", "");
     }
 
@@ -1896,7 +1893,7 @@ export class SearchService {
         prevMetaData &&
         settings.metaData &&
         !this.#didSettingsMetaDataUpdate(prevMetaData) &&
-        enginesToRemove.includes(prevCurrentEngine) &&
+        prevCurrentEngine?.pendingRemoval &&
         Services.prefs.getBoolPref("browser.search.removeEngineInfobar.enabled")
       ) {
         this._showRemovalOfSearchEngineNotificationBox(
@@ -1923,9 +1920,15 @@ export class SearchService {
       );
     }
 
-    // Finally, remove any engines that need removing.
+    // Finally, remove any engines that need removing. We do this after sorting
+    // out the new default, as otherwise this could cause multiple notifications
+    // and the wrong engine to be selected as default.
 
-    for (let engine of enginesToRemove) {
+    for (let engine of this._engines.values()) {
+      if (!engine.pendingRemoval) {
+        continue;
+      }
+
       // If we have other engines that use the same extension ID, then
       // we do not want to remove the add-on - only remove the engine itself.
       let inUseEngines = [...this._engines.values()].filter(
@@ -2504,6 +2507,62 @@ export class SearchService {
   }
 
   /**
+   * Counts the number of secure, insecure, securely updated and insecurely
+   * updated OpenSearch engines the user has installed and reports those
+   * counts via telemetry.
+   *
+   * Run during the background checks.
+   */
+  async #addOpenSearchTelemetry() {
+    let totalSecure = 0;
+    let totalInsecure = 0;
+    let totalWithSecureUpdates = 0;
+    let totalWithInsecureUpdates = 0;
+
+    let engine;
+    let searchURI;
+    let updateURI;
+    for (let elem of this._engines) {
+      engine = elem[1];
+      if (engine instanceof lazy.OpenSearchEngine) {
+        searchURI = engine.getSubmission("").uri;
+        updateURI = engine._updateURI;
+
+        if (lazy.SearchUtils.isSecureURIForOpenSearch(searchURI)) {
+          totalSecure++;
+        } else {
+          totalInsecure++;
+        }
+
+        // Note: there is a possibility that an OpenSearch engine doesn't have
+        // an updateURI at all, hence the else if clause below
+        if (updateURI && lazy.SearchUtils.isSecureURIForOpenSearch(updateURI)) {
+          totalWithSecureUpdates++;
+        } else if (updateURI) {
+          totalWithInsecureUpdates++;
+        }
+      }
+    }
+
+    Services.telemetry.scalarSet(
+      "browser.searchinit.secure_opensearch_engine_count",
+      totalSecure
+    );
+    Services.telemetry.scalarSet(
+      "browser.searchinit.insecure_opensearch_engine_count",
+      totalInsecure
+    );
+    Services.telemetry.scalarSet(
+      "browser.searchinit.secure_opensearch_update_count",
+      totalWithSecureUpdates
+    );
+    Services.telemetry.scalarSet(
+      "browser.searchinit.insecure_opensearch_update_count",
+      totalWithInsecureUpdates
+    );
+  }
+
+  /**
    * Creates and adds a WebExtension based engine.
    * Note: this is currently used for enterprise policy engines as well.
    *
@@ -2710,6 +2769,9 @@ export class SearchService {
    * be used if there is not default set yet, or if the current default is
    * being removed.
    *
+   * This function will not consider engines that have a `pendingRemoval`
+   * property set to true.
+   *
    * The new default will be chosen from (in order):
    *
    * - Existing default from configuration, if it is not hidden.
@@ -2722,38 +2784,28 @@ export class SearchService {
    *   If true, returns the default engine for private browsing mode, otherwise
    *   the default engine for the normal mode. Note, this function does not
    *   check the "separatePrivateDefault" preference - that is up to the caller.
-   * @param {string} [excludeEngineName]
-   *   Exclude the given engine name from the search for a new engine. This is
-   *   typically used when removing engines to ensure we do not try to reselect
-   *   the same engine again.
    * @returns {nsISearchEngine|null}
    *   The appropriate search engine, or null if one could not be determined.
    */
-  #findAndSetNewDefaultEngine({ privateMode, excludeEngineName = "" }) {
+  #findAndSetNewDefaultEngine({ privateMode }) {
     // First to the app default engine...
     let newDefault = privateMode
       ? this.appPrivateDefaultEngine
       : this.appDefaultEngine;
 
-    if (
-      !newDefault ||
-      newDefault.hidden ||
-      newDefault.name == excludeEngineName
-    ) {
+    if (!newDefault || newDefault.hidden || newDefault.pendingRemoval) {
       let sortedEngines = this.#sortedVisibleEngines;
       let generalSearchEngines = sortedEngines.filter(
         e => e.isGeneralPurposeEngine
       );
 
       // then to the first visible general search engine that isn't excluded...
-      let firstVisible = generalSearchEngines.find(
-        e => e.name != excludeEngineName
-      );
+      let firstVisible = generalSearchEngines.find(e => !e.pendingRemoval);
       if (firstVisible) {
         newDefault = firstVisible;
       } else if (newDefault) {
         // then to the app default if it is not the one that is excluded...
-        if (newDefault.name != excludeEngineName) {
+        if (!newDefault.pendingRemoval) {
           newDefault.hidden = false;
         } else {
           newDefault = null;
@@ -3227,7 +3279,19 @@ export class SearchService {
     );
   }
 
-  #checkNimbusPrefs() {
+  /**
+   * Check the prefs are correctly updated for users enrolled in a Nimbus experiment.
+   *
+   * @param {boolean} isStartup
+   *   Whether this function was called as part of the startup flow.
+   */
+  #checkNimbusPrefs(isStartup = false) {
+    // If we are in an experiment we may need to check the status on startup, otherwise
+    // ignore the call to check on startup so we do not reset users prefs when they are
+    // not an experiment.
+    if (isStartup && !lazy.NimbusFeatures.search.getVariable("experiment")) {
+      return;
+    }
     let nimbusPrivateDefaultUIEnabled = lazy.NimbusFeatures.search.getVariable(
       "seperatePrivateDefaultUIEnabled"
     );
@@ -3563,11 +3627,7 @@ var engineUpdateService = {
     }
 
     let testEngine = null;
-    let updateURL = engine._getURLOfType(lazy.SearchUtils.URL_TYPE.OPENSEARCH);
-    let updateURI =
-      updateURL && updateURL._hasRelation("self")
-        ? updateURL.getSubmission("", engine).uri
-        : lazy.SearchUtils.makeURI(engine._updateURL);
+    let updateURI = engine._updateURI;
     if (updateURI) {
       if (engine.isAppProvided && !updateURI.schemeIs("https")) {
         lazy.logConsole.debug("Invalid scheme for default engine update");

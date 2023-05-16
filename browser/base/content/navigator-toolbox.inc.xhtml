@@ -44,7 +44,8 @@
           <toolbarbutton id="firefox-view-button"
                          class="toolbarbutton-1 chromeclass-toolbar-additional"
                          data-l10n-id="toolbar-button-firefox-view"
-                         role="tab"
+                         role="button"
+                         aria-pressed="false"
                          oncommand="FirefoxViewHandler.openTab(event);"
                          onmousedown="FirefoxViewHandler.openTab(event);"
                          cui-areatype="toolbar"
@@ -354,6 +355,7 @@
               <hbox id="reader-mode-button"
                     class="urlbar-page-action"
                     role="button"
+                    data-l10n-id="reader-view-enter-button"
                     hidden="true"
                     tooltip="dynamic-shortcut-tooltip"
                     onclick="AboutReaderParent.buttonClick(event);">

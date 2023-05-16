@@ -8,11 +8,15 @@
   --content-area-padding-block: 16px;
   --header-spacing: 40px;
   --footer-spacing: 80px;
-  --card-border-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
 
   --success-fill-color: #2AC3A2;
   --success-background-color: #87FFD1;
   --success-box-text-color: #15141A;
+
+  --details-grid-column: 1;
+  --recently-closed-tabs-grid-row: 2;
+  --colorways-grid-column: 2;
+  --colorways-grid-row: 1 / 3;
 
   --colorways-figure-size: 225px;
   --colorways-figure-margin: 0 0 1.5em;
@@ -51,18 +55,21 @@
 
 body {
   --fxview-background-color: var(--newtab-background-color, var(--in-content-page-background));
-  --fxview-element-hover-color: color-mix(in srgb, var(--fxview-background-color) 90%, currentColor);
-  --fxview-element-active-color: color-mix(in srgb, var(--fxview-background-color) 80%, currentColor);
-  --fxview-element-hover-text-color: var(--newtab-text-primary-color);
+  --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 90%, currentColor);
+  --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 80%, currentColor);
+  --fxview-text-color-hover: var(--newtab-text-primary-color);
   --fxview-contrast-border: color-mix(in hsl, currentColor 45%, transparent);
+  --fxview-extra-contrast-border: color-mix(in hsl, currentColor 85%, transparent);
+  --in-content-zap-gradient: linear-gradient(var(--fxview-extra-contrast-border), var(--fxview-extra-contrast-border));
+  --card-border-zap-gradient: var(--in-content-zap-gradient);
   --fxview-text-secondary-color: color-mix(in srgb, currentColor 80%, transparent);
   --newtab-background-color-secondary: #FFF;
   --colorways-no-collection-notice-bg-color: transparent;
 
   /* ensure utility button hover states match those of the rest of the page */
-  --in-content-button-background-hover: var(--fxview-element-hover-color);
-  --in-content-button-background-active: var(--fxview-element-active-color);
-  --in-content-button-text-color-hover: var(--fxview-element-hover-text-color);
+  --in-content-button-background-hover: var(--fxview-element-background-hover);
+  --in-content-button-background-active: var(--fxview-element-background-active);
+  --in-content-button-text-color-hover: var(--fxview-text-color-hover);
 
   display: flex;
   justify-content: center;
@@ -74,19 +81,23 @@ body {
   color: var(--newtab-text-primary-color);
 }
 
+body:not([lwt-newtab]) {
+  --in-content-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
+}
+
 @media (prefers-color-scheme: dark) {
   body {
-    --fxview-element-hover-color: color-mix(in srgb, var(--fxview-background-color) 80%, white);
-    --fxview-element-active-color: color-mix(in srgb, var(--fxview-background-color) 60%, white);
+    --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 80%, white);
+    --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 60%, white);
     --newtab-background-color-secondary: #42414d;
   }
 }
 
 @media (prefers-contrast) {
   body {
-    --fxview-element-hover-color: ButtonText;
-    --fxview-element-active-color: ButtonText;
-    --fxview-element-hover-text-color: ButtonFace;
+    --fxview-element-background-hover: ButtonText;
+    --fxview-element-background-active: ButtonText;
+    --fxview-text-color-hover: ButtonFace;
   }
 }
 
@@ -113,12 +124,12 @@ body > main {
 }
 
 body > main > details {
-  grid-column: 1;
+  grid-column: var(--details-grid-column);
 }
 
-body > main > aside {
-  grid-column: 2;
-  grid-row: 1 / 3;
+#colorway-landmark {
+  grid-column: var(--colorways-grid-column);
+  grid-row: var(--colorways-grid-row);
 }
 
 @media (max-width: 76rem) {
@@ -135,12 +146,12 @@ body > main > aside {
   body {
     --colorways-no-collection-notice-bg-color: var(--newtab-background-color-secondary);
   }
-  body > main > details,
-  body > main > aside {
-    grid-column: 1 / -1;
-    grid-row: auto;
-  }
   :root {
+    --recently-closed-tabs-grid-row: 3;
+    --details-grid-column: 1 / -1;
+    --colorways-grid-column: 1 / -1;
+    --colorways-grid-row: 2;
+
     --colorways-grid-template-areas:
       "colorways-header colorways-figure"
       "colorways-description colorways-figure"
@@ -433,12 +444,12 @@ details[open] > .page-section-header > .twisty {
 }
 
 .page-section-header:hover > .twisty {
-  background-color: var(--fxview-element-hover-color);
-  color: var(--fxview-element-hover-text-color);
+  background-color: var(--fxview-element-background-hover);
+  color: var(--fxview-text-color-hover);
 }
 
 .page-section-header:hover:active > .twisty {
-  background-color: var(--fxview-element-active-color);
+  background-color: var(--fxview-element-background-active);
 }
 
 .page-section-header > .section-description {
@@ -546,7 +557,7 @@ details[open] > .page-section-header > .twisty {
 }
 
 .message-content > .message-header {
-  font-size: 1.12em;
+  font-size: 1em;
   margin-block: 0 0.33em;
 }
 
@@ -583,9 +594,14 @@ details[open] > .page-section-header > .twisty {
   }
 }
 
+#tab-pickup-container {
+  grid-row: 1;
+}
+
 /* 117px is the total height of the collapsible-tabs-container; setting that size
  for the second row stabilizes the layout so it doesn't shift when collapsibled */
 #recently-closed-tabs-container {
+  grid-row: var(--recently-closed-tabs-grid-row);
   display: grid;
   grid-template-rows: max-content 117px;
 }
@@ -635,13 +651,13 @@ details[open] > .page-section-header > .twisty {
 }
 
 .closed-tab-li:hover {
-  background-color: var(--fxview-element-hover-color);
-  color: var(--fxview-element-hover-text-color);
+  background-color: var(--fxview-element-background-hover);
+  color: var(--fxview-text-color-hover);
 }
 
 .closed-tab-li:active {
-  background-color: var(--fxview-element-active-color);
-  color: var(--fxview-element-hover-text-color);
+  background-color: var(--fxview-element-background-active);
+  color: var(--fxview-text-color-hover);
 }
 
 .closed-tab-li:focus-visible {
@@ -726,6 +742,16 @@ details[open] > .page-section-header > .twisty {
   grid-template-areas:
       "first second"
       "first third";
+}
+
+@media only screen and (max-width: 43rem) {
+  .synced-tabs-list {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "first"
+      "second"
+      "third";
+  }
 }
 
 .synced-tab-a,

@@ -9,7 +9,7 @@ const TEST_URL = "https://example.org/document-builder.sjs?html=org";
 const SECOND_TEST_URL = "https://example.com/document-builder.sjs?html=org";
 const CHROME_WORKER_URL = CHROME_URL_ROOT + "test_worker.js";
 
-const DESCRIPTOR_TYPES = require("devtools/client/fronts/descriptors/descriptor-types");
+const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
 
 add_task(async function() {
   // Enabled fission prefs
@@ -91,11 +91,6 @@ async function testLocalTab() {
     "Descriptor front isTabDescriptor is correct"
   );
 
-  // By default, tab descriptor will close the client when destroying the client
-  // Disable this behavior via this boolean
-  // Bug 1698890: The test should probably stop assuming this.
-  descriptorFront.shouldCloseClient = false;
-
   const targetCommand = commands.targetCommand;
   await targetCommand.startListening();
 
@@ -123,9 +118,9 @@ async function testRemoteTab() {
   );
 
   const tab = await addTab(TEST_URL);
-  const commands = await CommandsFactory.forRemoteTabInTest({
-    browserId: tab.linkedBrowser.browserId,
-  });
+  const commands = await CommandsFactory.forRemoteTab(
+    tab.linkedBrowser.browserId
+  );
   const { descriptorFront } = commands;
   is(
     descriptorFront.descriptorType,

@@ -4,22 +4,24 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n.js");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "copyString",
-  "devtools/shared/platform/clipboard",
+  "resource://devtools/shared/platform/clipboard.js",
   true
 );
 const {
   getMessagePayload,
-} = require("devtools/client/netmonitor/src/utils/request-utils.js");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 class MessageListContextMenu {
   constructor(props) {

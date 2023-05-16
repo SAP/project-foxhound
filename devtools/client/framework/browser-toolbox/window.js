@@ -4,19 +4,21 @@
 
 "use strict";
 
-var { loader, require, DevToolsLoader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+var { loader, require, DevToolsLoader } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 
 // Require this module to setup core modules
-loader.require("devtools/client/framework/devtools-browser");
+loader.require("resource://devtools/client/framework/devtools-browser.js");
 
-var { gDevTools } = require("devtools/client/framework/devtools");
-var { Toolbox } = require("devtools/client/framework/toolbox");
-var { DevToolsClient } = require("devtools/client/devtools-client");
-var { PrefsHelper } = require("devtools/client/shared/prefs");
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+var { gDevTools } = require("resource://devtools/client/framework/devtools.js");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
+var {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+var { PrefsHelper } = require("resource://devtools/client/shared/prefs.js");
+const KeyShortcuts = require("resource://devtools/client/shared/key-shortcuts.js");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
@@ -29,6 +31,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserToolboxLauncher:
     "resource://devtools/client/framework/browser-toolbox/Launcher.sys.mjs",
 });
+
+const {
+  CommandsFactory,
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
 // Timeout to wait before we assume that a connect() timed out without an error.
 // In milliseconds. (With the Debugger pane open, this has been reported to last
@@ -43,7 +49,7 @@ var Prefs = new PrefsHelper("devtools.debugger", {
   chromeDebuggingWebSocket: ["Bool", "chrome-debugging-websocket"],
 });
 
-var gToolbox, gClient, gShortcuts;
+var gCommands, gToolbox, gShortcuts;
 
 function appendStatusMessage(msg) {
   const statusMessage = document.getElementById("status-message");
@@ -105,13 +111,19 @@ var connect = async function() {
     port,
     webSocket,
   });
-  gClient = new DevToolsClient(transport);
+  const client = new DevToolsClient(transport);
   appendStatusMessage("Start protocol client for connection");
-  await gClient.connect();
+  await client.connect();
 
   appendStatusMessage("Get root form for toolbox");
-  const mainProcessDescriptor = await gClient.mainRoot.getMainProcess();
-  await openToolbox(mainProcessDescriptor);
+  gCommands = await CommandsFactory.forMainProcess({ client });
+
+  // Bug 1794607: for some unexpected reason, closing the DevToolsClient
+  // when the commands is destroyed by the toolbox would introduce leaks
+  // when running the browser-toolbox mochitests.
+  gCommands.shouldCloseClient = false;
+
+  await openToolbox(gCommands);
 };
 
 // Certain options should be toggled since we can assume chrome debugging here
@@ -197,8 +209,8 @@ function onReloadBrowser() {
   gToolbox.commands.targetCommand.reloadTopLevelTarget();
 }
 
-async function openToolbox(descriptorFront) {
-  const form = descriptorFront._form;
+async function openToolbox(commands) {
+  const form = commands.descriptorFront._form;
   appendStatusMessage(
     `Create toolbox for target descriptor: ${JSON.stringify({ form }, null, 2)}`
   );
@@ -213,7 +225,7 @@ async function openToolbox(descriptorFront) {
   const toolboxOptions = { doc: document };
   appendStatusMessage(`Show toolbox with ${selectedTool} selected`);
 
-  gToolbox = await gDevTools.showToolbox(descriptorFront, {
+  gToolbox = await gDevTools.showToolbox(commands, {
     toolId: selectedTool,
     hostType: Toolbox.HostType.BROWSERTOOLBOX,
     hostOptions: toolboxOptions,
@@ -257,10 +269,10 @@ function installTestingServer() {
     invisibleToDebugger: true,
   });
   const { DevToolsServer } = testLoader.require(
-    "devtools/server/devtools-server"
+    "resource://devtools/server/devtools-server.js"
   );
   const { SocketListener } = testLoader.require(
-    "devtools/shared/security/socket"
+    "resource://devtools/shared/security/socket.js"
   );
 
   DevToolsServer.init();
@@ -284,7 +296,7 @@ async function bindToolboxHandlers() {
 
   // If the remote connection drops, firefox was closed
   // In such case, force closing the browser toolbox
-  gClient.once("closed", quitApp);
+  gCommands.client.once("closed", quitApp);
 
   if (Services.appinfo.OS == "Darwin") {
     // Badge the dock icon to differentiate this process from the main application

@@ -116,12 +116,12 @@ const MESSAGE_CONTENT = {
   targeting: "true",
 };
 
-const getCFRExperiment = async () => {
+const getExperiment = async feature => {
   let recipe = ExperimentFakes.recipe(
     // In tests by default studies/experiments are turned off. We turn them on
     // to run the test and rollback at the end. Cleanup causes unenrollment so
     // for cases where the test runs multiple times we need unique ids.
-    `test_xman_cfr_${Date.now()}`,
+    `test_xman_${feature}_${Date.now()}`,
     {
       id: "xman_test_message",
       bucketConfig: {
@@ -133,13 +133,17 @@ const getCFRExperiment = async () => {
       },
     }
   );
-  recipe.branches[0].features[0].featureId = "cfr";
+  recipe.branches[0].features[0].featureId = feature;
   recipe.branches[0].features[0].value = MESSAGE_CONTENT;
-  recipe.branches[1].features[0].featureId = "cfr";
+  recipe.branches[1].features[0].featureId = feature;
   recipe.branches[1].features[0].value = MESSAGE_CONTENT;
-  recipe.featureIds = ["cfr"];
+  recipe.featureIds = [feature];
   await ExperimentTestUtils.validateExperiment(recipe);
   return recipe;
+};
+
+const getCFRExperiment = async () => {
+  return getExperiment("cfr");
 };
 
 const getLegacyCFRExperiment = async () => {
@@ -222,6 +226,29 @@ add_task(async function test_loading_experimentsAPI() {
   await cleanup();
 });
 
+add_task(async function test_loading_fxms_message_1_feature() {
+  let experiment = await getExperiment("fxms-message-1");
+  await setup(experiment);
+  // Fetch the new recipe from RS
+  await RemoteSettingsExperimentLoader.updateRecipes();
+  await BrowserTestUtils.waitForCondition(
+    () => ExperimentAPI.getExperiment({ featureId: "fxms-message-1" }),
+    "ExperimentAPI should return an experiment"
+  );
+
+  // Reload the provider
+  await ASRouter._updateMessageProviders();
+  // Wait to load the messages from the messaging-experiments provider
+  await ASRouter.loadMessagesFromAllProviders();
+
+  Assert.ok(
+    ASRouter.state.messages.find(m => m.id === "xman_test_message"),
+    "Experiment message found in ASRouter state"
+  );
+
+  await cleanup();
+});
+
 add_task(async function test_loading_experimentsAPI_legacy() {
   let experiment = await getLegacyCFRExperiment();
   await setup(experiment);
@@ -246,6 +273,28 @@ add_task(async function test_loading_experimentsAPI_legacy() {
   Assert.ok(
     ASRouter.state.messages.find(m => m.id === "xman_test_message"),
     "Experiment message found in ASRouter state"
+  );
+
+  await cleanup();
+});
+
+add_task(async function test_loading_experimentsAPI_rollout() {
+  const rollout = await getCFRExperiment();
+  rollout.isRollout = true;
+  rollout.branches.pop();
+
+  await setup(rollout);
+  await RemoteSettingsExperimentLoader.updateRecipes();
+  await BrowserTestUtils.waitForCondition(() =>
+    ExperimentAPI.getRolloutMetaData({ featureId: "cfr" })
+  );
+
+  await ASRouter._updateMessageProviders();
+  await ASRouter.loadMessagesFromAllProviders();
+
+  Assert.ok(
+    ASRouter.state.messages.find(m => m.id === "xman_test_message"),
+    "Found rollout message in ASRouter state"
   );
 
   await cleanup();

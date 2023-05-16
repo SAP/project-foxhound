@@ -7,9 +7,10 @@
 #include "vm/ErrorContext.h"
 
 #include "gc/GC.h"
+#include "js/AllocPolicy.h"         // js::ReportOutOfMemory
+#include "js/friend/StackLimits.h"  // js::ReportOverRecursed
 #include "util/DifferentialTesting.h"
 #include "vm/JSContext.h"
-#include "vm/SelfHosting.h"  // selfHosting_ErrorReporter
 
 using namespace js;
 
@@ -22,58 +23,14 @@ void* ErrorAllocator::onOutOfMemory(AllocFunction allocFunc, arena_id_t arena,
   return context_->onOutOfMemory(allocFunc, arena, nbytes, reallocPtr);
 }
 
-MainThreadErrorContext::MainThreadErrorContext(JSContext* cx) : cx_(cx) {}
-
-void* MainThreadErrorContext::onOutOfMemory(AllocFunction allocFunc,
-                                            arena_id_t arena, size_t nbytes,
-                                            void* reallocPtr) {
-  return cx_->onOutOfMemory(allocFunc, arena, nbytes, reallocPtr);
-}
-
-void MainThreadErrorContext::onOutOfMemory() { cx_->onOutOfMemory(); }
-
-void MainThreadErrorContext::onAllocationOverflow() {
-  return cx_->reportAllocationOverflow();
-}
-
-void MainThreadErrorContext::onOverRecursed() { cx_->onOverRecursed(); }
-
-void MainThreadErrorContext::recoverFromOutOfMemory() {
-  cx_->recoverFromOutOfMemory();
-}
-
-const JSErrorFormatString* MainThreadErrorContext::gcSafeCallback(
-    JSErrorCallback callback, void* userRef, const unsigned errorNumber) {
-  gc::AutoSuppressGC suppressGC(cx_);
-  return callback(userRef, errorNumber);
-}
-
-void MainThreadErrorContext::reportError(CompileError* err) {
-  // On the main thread, report the error immediately.
-
-  if (MOZ_UNLIKELY(!cx_->runtime()->hasInitializedSelfHosting())) {
-    selfHosting_ErrorReporter(err);
-    return;
+bool OffThreadErrorContext::hadErrors() const {
+  if (maybeCx_) {
+    if (maybeCx_->isExceptionPending()) {
+      return true;
+    }
   }
 
-  err->throwError(cx_);
-}
-
-void MainThreadErrorContext::reportWarning(CompileError* err) {
-  err->throwError(cx_);
-}
-
-bool MainThreadErrorContext::hadOutOfMemory() const {
-  return cx_->offThreadFrontendErrors()->outOfMemory;
-}
-
-bool MainThreadErrorContext::hadOverRecursed() const {
-  return cx_->offThreadFrontendErrors()->overRecursed;
-}
-
-bool MainThreadErrorContext::hadErrors() const {
-  return hadOutOfMemory() || hadOverRecursed() ||
-         !cx_->offThreadFrontendErrors()->errors.empty();
+  return errors_.hadErrors();
 }
 
 void* OffThreadErrorContext::onOutOfMemory(AllocFunction allocFunc,
@@ -84,8 +41,7 @@ void* OffThreadErrorContext::onOutOfMemory(AllocFunction allocFunc,
 }
 
 void OffThreadErrorContext::onAllocationOverflow() {
-  // TODO Bug 1780599 - Currently allocation overflows are not reported for
-  // helper threads; see js::reportAllocationOverflow()
+  errors_.allocationOverflow = true;
 }
 
 void OffThreadErrorContext::onOutOfMemory() { addPendingOutOfMemory(); }
@@ -93,11 +49,22 @@ void OffThreadErrorContext::onOutOfMemory() { addPendingOutOfMemory(); }
 void OffThreadErrorContext::onOverRecursed() { errors_.overRecursed = true; }
 
 void OffThreadErrorContext::recoverFromOutOfMemory() {
+  // TODO: Remove this branch once error report directly against JSContext is
+  //       removed from the frontend code.
+  if (maybeCx_) {
+    maybeCx_->recoverFromOutOfMemory();
+  }
+
   errors_.outOfMemory = false;
 }
 
 const JSErrorFormatString* OffThreadErrorContext::gcSafeCallback(
     JSErrorCallback callback, void* userRef, const unsigned errorNumber) {
+  if (maybeCx_) {
+    gc::AutoSuppressGC suppressGC(maybeCx_);
+    return callback(userRef, errorNumber);
+  }
+
   return callback(userRef, errorNumber);
 }
 
@@ -114,8 +81,17 @@ void OffThreadErrorContext::reportError(CompileError* err) {
   }
 }
 
-void OffThreadErrorContext::reportWarning(CompileError* err) {
-  reportError(err);
+bool OffThreadErrorContext::reportWarning(CompileError* err) {
+  auto errorPtr = getAllocator()->make_unique<CompileError>(std::move(*err));
+  if (!errorPtr) {
+    return false;
+  }
+  if (!errors_.warnings.append(std::move(errorPtr))) {
+    ReportOutOfMemory();
+    return false;
+  }
+
+  return true;
 }
 
 void OffThreadErrorContext::ReportOutOfMemory() {
@@ -135,6 +111,34 @@ void OffThreadErrorContext::addPendingOutOfMemory() {
   errors_.outOfMemory = true;
 }
 
+void OffThreadErrorContext::setCurrentJSContext(JSContext* cx) {
+  maybeCx_ = cx;
+}
+
+void OffThreadErrorContext::convertToRuntimeError(
+    JSContext* cx, Warning warning /* = Warning::Report */) {
+  // Report out of memory errors eagerly, or errors could be malformed.
+  if (hadOutOfMemory()) {
+    js::ReportOutOfMemory(cx);
+    return;
+  }
+
+  for (const UniquePtr<CompileError>& error : errors()) {
+    error->throwError(cx);
+  }
+  if (warning == Warning::Report) {
+    for (const UniquePtr<CompileError>& error : warnings()) {
+      error->throwError(cx);
+    }
+  }
+  if (hadOverRecursed()) {
+    js::ReportOverRecursed(cx);
+  }
+  if (hadAllocationOverflow()) {
+    js::ReportAllocationOverflow(cx);
+  }
+}
+
 void OffThreadErrorContext::linkWithJSContext(JSContext* cx) {
   if (cx) {
     cx->setOffThreadFrontendErrors(&errors_);
@@ -142,28 +146,22 @@ void OffThreadErrorContext::linkWithJSContext(JSContext* cx) {
 }
 
 #ifdef __wasi__
-void MainThreadErrorContext::incWasiRecursionDepth() {
-  IncWasiRecursionDepth(cx_);
-}
-
-void MainThreadErrorContext::decWasiRecursionDepth() {
-  DecWasiRecursionDepth(cx_);
-}
-
-bool MainThreadErrorContext::checkWasiRecursionLimit() {
-  return CheckWasiRecursionLimit(cx_);
-}
-
 void OffThreadErrorContext::incWasiRecursionDepth() {
-  // WASI doesn't support thread.
+  if (maybeCx_) {
+    IncWasiRecursionDepth(maybeCx_);
+  }
 }
 
 void OffThreadErrorContext::decWasiRecursionDepth() {
-  // WASI doesn't support thread.
+  if (maybeCx_) {
+    DecWasiRecursionDepth(maybeCx_);
+  }
 }
 
 bool OffThreadErrorContext::checkWasiRecursionLimit() {
-  // WASI doesn't support thread.
+  if (maybeCx_) {
+    return CheckWasiRecursionLimit(maybeCx_);
+  }
   return true;
 }
 

@@ -73,6 +73,7 @@
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/MediaList.h"
 #include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/CSSMozDocumentRule.h"
@@ -986,6 +987,13 @@ StyleGenericFontFamily Gecko_nsStyleFont_ComputeFallbackFontTypeForLanguage(
   return ThreadSafeGetLangGroupFontPrefs(*aDoc, aLanguage)->GetDefaultGeneric();
 }
 
+Length Gecko_GetBaseSize(const Document* aDoc, nsAtom* aLang,
+                         StyleGenericFontFamily aGeneric) {
+  return ThreadSafeGetLangGroupFontPrefs(*aDoc, aLang)
+      ->GetDefaultFont(aGeneric)
+      ->size;
+}
+
 gfxFontFeatureValueSet* Gecko_ConstructFontFeatureValueSet() {
   return new gfxFontFeatureValueSet();
 }
@@ -996,6 +1004,32 @@ nsTArray<uint32_t>* Gecko_AppendFeatureValueHashEntry(
   MOZ_ASSERT(NS_IsMainThread());
   return aFontFeatureValues->AppendFeatureValueHashEntry(nsAtomCString(aFamily),
                                                          aName, aAlternate);
+}
+
+gfx::FontPaletteValueSet* Gecko_ConstructFontPaletteValueSet() {
+  return new gfx::FontPaletteValueSet();
+}
+
+gfx::FontPaletteValueSet::PaletteValues* Gecko_AppendPaletteValueHashEntry(
+    gfx::FontPaletteValueSet* aPaletteValueSet, nsAtom* aFamily,
+    nsAtom* aName) {
+  MOZ_ASSERT(NS_IsMainThread());
+  return aPaletteValueSet->Insert(aName, nsAtomCString(aFamily));
+}
+
+void Gecko_SetFontPaletteBase(gfx::FontPaletteValueSet::PaletteValues* aValues,
+                              int32_t aBasePaletteIndex) {
+  aValues->mBasePalette = aBasePaletteIndex;
+}
+
+void Gecko_SetFontPaletteOverride(
+    gfx::FontPaletteValueSet::PaletteValues* aValues, int32_t aIndex,
+    StyleRGBA aColor) {
+  if (aIndex < 0) {
+    return;
+  }
+  aValues->mOverrides.AppendElement(gfx::FontPaletteValueSet::OverrideColor{
+      uint32_t(aIndex), gfx::sRGBColor::FromABGR(aColor.ToColor())});
 }
 
 void Gecko_CounterStyle_ToPtr(const StyleCounterStyle* aStyle,
@@ -1320,17 +1354,6 @@ Length Gecko_nsStyleFont_ComputeMinSize(const nsStyleFont* aFont,
   return minFontSize;
 }
 
-StyleDefaultFontSizes Gecko_GetBaseSize(nsAtom* aLanguage) {
-  LangGroupFontPrefs prefs;
-  nsStaticAtom* langGroupAtom =
-      StaticPresData::Get()->GetUncachedLangGroup(aLanguage);
-  prefs.Initialize(langGroupAtom);
-  return {prefs.mDefaultVariableFont.size,  prefs.mDefaultSerifFont.size,
-          prefs.mDefaultSansSerifFont.size, prefs.mDefaultMonospaceFont.size,
-          prefs.mDefaultCursiveFont.size,   prefs.mDefaultFantasyFont.size,
-          prefs.mDefaultSystemUiFont.size};
-}
-
 static StaticRefPtr<UACacheReporter> gUACacheReporter;
 
 namespace mozilla {
@@ -1385,8 +1408,6 @@ GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext* aPresContext,
   // ArrayBuffer-backed FontFace objects are handled synchronously.
 
   nsPresContext* presContext = const_cast<nsPresContext*>(aPresContext);
-  presContext->SetUsesFontMetricDependentFontUnits(true);
-
   RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetMetricsFor(
       presContext, aIsVertical, aFont, aFontSize, aUseUserFontSet);
   RefPtr<gfxFont> font = fm->GetThebesFontGroup()->GetFirstValidFont();
@@ -1659,6 +1680,8 @@ bool Gecko_IsFontTechSupported(StyleFontFaceSourceTechFlags aFlag) {
 bool Gecko_IsInServoTraversal() { return ServoStyleSet::IsInServoTraversal(); }
 
 bool Gecko_IsMainThread() { return NS_IsMainThread(); }
+
+bool Gecko_IsDOMWorkerThread() { return !!GetCurrentThreadWorkerPrivate(); }
 
 const nsAttrValue* Gecko_GetSVGAnimatedClass(const Element* aElement) {
   MOZ_ASSERT(aElement->IsSVGElement());

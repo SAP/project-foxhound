@@ -21,7 +21,6 @@
 #endif
 
 DECL_CLASS(nsISupports);
-DECL_CLASS(nsIModule);
 DECL_CLASS(nsIComponentManager);
 DECL_CLASS(nsIComponentRegistrar);
 DECL_CLASS(nsIServiceManager);
@@ -133,16 +132,6 @@ XPCOM_API(nsresult) NS_GetComponentManager(nsIComponentManager** aResult);
  *         other error codes indicate a failure during initialisation.
  */
 XPCOM_API(nsresult) NS_GetComponentRegistrar(nsIComponentRegistrar** aResult);
-
-/**
- * Public Method to access to the memory manager.  See nsIMemory
- *
- * @param aResult Interface pointer to the memory manager
- *
- * @return NS_OK for success;
- *         other error codes indicate a failure during initialisation.
- */
-XPCOM_API(nsresult) NS_GetMemoryManager(nsIMemory** aResult);
 
 /**
  * Public Method to create an instance of a nsIFile.  This function

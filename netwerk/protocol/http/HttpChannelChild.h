@@ -88,7 +88,7 @@ class HttpChannelChild final : public PHttpChannelChild,
   NS_IMETHOD Suspend() override;
   NS_IMETHOD Resume() override;
   // nsIChannel
-  NS_IMETHOD GetSecurityInfo(nsISupports** aSecurityInfo) override;
+  NS_IMETHOD GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) override;
   NS_IMETHOD AsyncOpen(nsIStreamListener* aListener) override;
 
   // HttpBaseChannel::nsIHttpChannel
@@ -124,6 +124,9 @@ class HttpChannelChild final : public PHttpChannelChild,
   void OnBackgroundChildDestroyed(HttpBackgroundChannelChild* aBgChild);
 
   nsresult CrossProcessRedirectFinished(nsresult aStatus);
+
+  void RegisterStreamFilter(
+      RefPtr<extensions::StreamFilterParent>& aStreamFilter);
 
  protected:
   mozilla::ipc::IPCResult RecvOnStartRequestSent() override;
@@ -231,6 +234,7 @@ class HttpChannelChild final : public PHttpChannelChild,
 
   void ProcessAttachStreamFilter(
       Endpoint<extensions::PStreamFilterParent>&& aEndpoint);
+  void ProcessDetachStreamFilters();
 
   // Return true if we need to tell the parent the size of unreported received
   // data
@@ -321,6 +325,12 @@ class HttpChannelChild final : public PHttpChannelChild,
       false};
   // True if we need to tell the parent the size of unreported received data
   Atomic<bool, SequentiallyConsistent> mNeedToReportBytesRead{true};
+
+  // Attached StreamFilterParents
+  // Using raw pointer here since StreamFilterParent owns the channel.
+  // Should be only accessed on the main thread.
+  using StreamFilters = nsTArray<extensions::StreamFilterParent*>;
+  StreamFilters mStreamFilters;
 
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   bool mDoDiagnosticAssertWhenOnStopNotCalledOnDestroy = false;
@@ -416,6 +426,7 @@ class HttpChannelChild final : public PHttpChannelChild,
   void ContinueDoNotifyListener();
   void OnAfterLastPart(const nsresult& aStatus);
   void MaybeConnectToSocketProcess();
+  void OnDetachStreamFilters();
 
   // Create a a new channel to be used in a redirection, based on the provided
   // response headers.

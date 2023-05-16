@@ -1422,11 +1422,105 @@ class AForm {
     this._color = color;
     this._dateFormats = ["m/d", "m/d/yy", "mm/dd/yy", "mm/yy", "d-mmm", "d-mmm-yy", "dd-mmm-yy", "yy-mm-dd", "mmm-yy", "mmmm-yy", "mmm d, yyyy", "mmmm d, yyyy", "m/d/yy h:MM tt", "m/d/yy HH:MM"];
     this._timeFormats = ["HH:MM", "h:MM tt", "HH:MM:ss", "h:MM:ss tt"];
+    this._dateActionsCache = new Map();
     this._emailRegex = new RegExp("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+" + "@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" + "(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$");
   }
 
   _mkTargetName(event) {
     return event.target ? `[ ${event.target.name} ]` : "";
+  }
+
+  _tryToGuessDate(cFormat, cDate) {
+    let actions = this._dateActionsCache.get(cFormat);
+
+    if (!actions) {
+      actions = [];
+
+      this._dateActionsCache.set(cFormat, actions);
+
+      cFormat.replace(/(d+)|(m+)|(y+)|(H+)|(M+)|(s+)/g, function (match, d, m, y, H, M, s) {
+        if (d) {
+          actions.push((n, date) => {
+            if (n >= 1 && n <= 31) {
+              date.setDate(n);
+              return true;
+            }
+
+            return false;
+          });
+        } else if (m) {
+          actions.push((n, date) => {
+            if (n >= 1 && n <= 12) {
+              date.setMonth(n - 1);
+              return true;
+            }
+
+            return false;
+          });
+        } else if (y) {
+          actions.push((n, date) => {
+            if (n < 50) {
+              n += 2000;
+            } else if (n < 100) {
+              n += 1900;
+            }
+
+            date.setYear(n);
+            return true;
+          });
+        } else if (H) {
+          actions.push((n, date) => {
+            if (n >= 0 && n <= 23) {
+              date.setHours(n);
+              return true;
+            }
+
+            return false;
+          });
+        } else if (M) {
+          actions.push((n, date) => {
+            if (n >= 0 && n <= 59) {
+              date.setMinutes(n);
+              return true;
+            }
+
+            return false;
+          });
+        } else if (s) {
+          actions.push((n, date) => {
+            if (n >= 0 && n <= 59) {
+              date.setSeconds(n);
+              return true;
+            }
+
+            return false;
+          });
+        }
+
+        return "";
+      });
+    }
+
+    const number = /\d+/g;
+    let i = 0;
+    let array;
+    const date = new Date();
+
+    while ((array = number.exec(cDate)) !== null) {
+      if (i < actions.length) {
+        if (!actions[i++](parseInt(array[0]), date)) {
+          return null;
+        }
+      } else {
+        break;
+      }
+    }
+
+    if (i === 0) {
+      return null;
+    }
+
+    return date;
   }
 
   _parseDate(cFormat, cDate) {
@@ -1440,7 +1534,7 @@ class AForm {
       date = Date.parse(cDate);
 
       if (isNaN(date)) {
-        date = null;
+        date = this._tryToGuessDate(cFormat, cDate);
       } else {
         date = new Date(date);
       }
@@ -1989,6 +2083,14 @@ class AForm {
     return this._emailRegex.test(str);
   }
 
+  AFExactMatch(rePatterns, str) {
+    if (rePatterns instanceof RegExp) {
+      return str.match(rePatterns)?.[0] === str || 0;
+    }
+
+    return rePatterns.findIndex(re => str.match(re)?.[0] === str) + 1;
+  }
+
 }
 
 exports.AForm = AForm;
@@ -2048,7 +2150,6 @@ class App extends _pdf_object.PDFObject {
     this._timeoutCallbackId = 0;
     this._globalEval = data.globalEval;
     this._externalCall = data.externalCall;
-    this._document = data._document;
   }
 
   _dispatchEvent(pdfEvent) {
@@ -3131,6 +3232,8 @@ var _print_params = __w_pdfjs_require__(15);
 
 var _constants = __w_pdfjs_require__(2);
 
+const DOC_EXTERNAL = false;
+
 class InfoProxyHandler {
   static get(obj, prop) {
     return obj[prop.toLowerCase()];
@@ -3372,7 +3475,7 @@ class Doc extends _pdf_object.PDFObject {
   }
 
   get external() {
-    return true;
+    return DOC_EXTERNAL;
   }
 
   set external(_) {
@@ -3944,7 +4047,7 @@ class Doc extends _pdf_object.PDFObject {
       if (name.startsWith(fieldName)) {
         const finalPart = name.slice(len);
 
-        if (finalPart.match(pattern)) {
+        if (pattern.test(finalPart)) {
           children.push(field);
         }
       }
@@ -5072,8 +5175,8 @@ Object.defineProperty(exports, "initSandbox", ({
 
 var _initialization = __w_pdfjs_require__(1);
 
-const pdfjsVersion = '3.0.60';
-const pdfjsBuild = '493bb6500';
+const pdfjsVersion = '3.0.201';
+const pdfjsBuild = '39160c752';
 })();
 
 /******/ 	return __webpack_exports__;

@@ -31,7 +31,7 @@
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "util/StringBuffer.h"
-#include "vm/ErrorContext.h"
+#include "vm/ErrorContext.h"  // AutoReportFrontendContext
 #include "vm/MatchPairs.h"
 #include "vm/PlainObject.h"
 #include "vm/RegExpShared.h"
@@ -635,7 +635,8 @@ bool InitializeNamedCaptures(JSContext* cx, HandleRegExpShared re,
 
   // Allocate the capture index array.
   uint32_t arraySize = numNamedCaptures * sizeof(uint32_t);
-  uint32_t* captureIndices = static_cast<uint32_t*>(js_malloc(arraySize));
+  UniquePtr<uint32_t[], JS::FreePolicy> captureIndices(
+      static_cast<uint32_t*>(js_malloc(arraySize)));
   if (!captureIndices) {
     js::ReportOutOfMemory(cx);
     return false;
@@ -660,8 +661,8 @@ bool InitializeNamedCaptures(JSContext* cx, HandleRegExpShared re,
     captureIndices[i] = capture->index();
   }
 
-  RegExpShared::InitializeNamedCaptures(cx, re, numNamedCaptures,
-                                        templateObject, captureIndices);
+  RegExpShared::InitializeNamedCaptures(
+      cx, re, numNamedCaptures, templateObject, captureIndices.release());
   return true;
 }
 
@@ -679,7 +680,7 @@ bool CompilePattern(JSContext* cx, MutableHandleRegExpShared re,
     V8HandleString wrappedPattern(v8::internal::String(pattern), cx->isolate);
     if (!RegExpParser::ParseRegExpFromHeapString(
             cx->isolate, &zone, wrappedPattern, flags, &data)) {
-      MainThreadErrorContext ec(cx);
+      AutoReportFrontendContext ec(cx);
       JS::CompileOptions options(cx);
       DummyTokenStream dummyTokenStream(cx, &ec, options);
       ReportSyntaxError(dummyTokenStream, data, pattern);

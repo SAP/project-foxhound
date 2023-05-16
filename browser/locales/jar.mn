@@ -29,7 +29,6 @@
     locale/browser/tabbrowser.properties           (%chrome/browser/tabbrowser.properties)
     locale/browser/taskbar.properties              (%chrome/browser/taskbar.properties)
     locale/browser/translation.dtd                 (%chrome/browser/translation.dtd)
-    locale/browser/webrtcIndicator.properties      (%chrome/browser/webrtcIndicator.properties)
     locale/browser/downloads/downloads.properties  (%chrome/browser/downloads/downloads.properties)
     locale/browser/places/places.properties        (%chrome/browser/places/places.properties)
     locale/browser/places/bookmarkProperties.properties (%chrome/browser/places/bookmarkProperties.properties)
@@ -38,7 +37,6 @@
     locale/browser/syncSetup.properties         (%chrome/browser/syncSetup.properties)
 % locale browser-region @AB_CD@ %locale/browser-region/
 # the following files are browser-specific overrides
-    locale/browser/netError.dtd                (%chrome/overrides/netError.dtd)
     locale/browser/appstrings.properties       (%chrome/overrides/appstrings.properties)
 
 #ifdef XPI_NAME

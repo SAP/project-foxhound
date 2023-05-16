@@ -926,7 +926,6 @@ fuzzy-if(winWidget,0-123,0-1900) fuzzy-if(swgl,0-1,0-39) == 409659-1d.html 40965
 == 410621-1.html 410621-1-ref.html
 == 411059-1.html 411059-1-ref.html
 fuzzy-if(winWidget,46-129,652-770) == 411334-1.xml 411334-1-ref.xml
-== 411367-3.html 411367-3-ref.html
 == 411585-1.html 411585-1-ref.html
 == 411585-2.html 411585-2-ref.html
 fails == 411585-3.html 411585-3-ref.html # bug 426909
@@ -1897,7 +1896,6 @@ pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-43,0-9) == 113
 pref(apz.allow_zooming,true) skip-if(!Android) fuzzy-if(Android,0-54,0-17) == 1133905-6-vh-rtl.html 1133905-ref-vh-rtl.html
 pref(apz.allow_zooming,true) skip-if(!Android) != 1133905-ref-vh-rtl.html about:blank # make sure it doesn't render blank
 == 1149304-1-transform-change.html 1149304-1-transform-change-ref.html
-== chrome://reftest/content/bugs/1150021-1.xhtml chrome://reftest/content/bugs/1150021-1-ref.xhtml
 fuzzy(0-128,0-22) == 1151145-1.html 1151145-1-ref.html # bug 1646527 for WR fuzz
 == 1151306-1.html 1151306-1-ref.html
 == 1153845-1.html 1153845-1-ref.html
@@ -2133,3 +2131,4 @@ test-pref(widget.non-native-theme.use-theme-accent,false) == 1778834.html 177883
 pref(layout.css.prefers-color-scheme.content-override,0) == 1787127.html 1787127-ref.html
 pref(layout.css.prefers-color-scheme.content-override,1) == 1787127.html 1787127-ref.html
 pref(layout.css.prefers-color-scheme.content-override,2) == 1787127.html 1787127-ref.html
+== 1792643-1.html 1792643-1-ref.html

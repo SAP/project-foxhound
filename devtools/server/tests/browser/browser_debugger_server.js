@@ -131,10 +131,12 @@ async function testDevToolsServerKeepAlive() {
 
 async function assertServerInitialized(browser, expected, message) {
   const isInitialized = await SpecialPowers.spawn(browser, [], function() {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
-    const { DevToolsServer } = require("devtools/server/devtools-server");
+    const {
+      DevToolsServer,
+    } = require("resource://devtools/server/devtools-server.js");
     return DevToolsServer.initialized;
   });
   is(isInitialized, expected, message);
@@ -142,10 +144,12 @@ async function assertServerInitialized(browser, expected, message) {
 
 async function setContentServerKeepAlive(browser, keepAlive, message) {
   await SpecialPowers.spawn(browser, [keepAlive], function(_keepAlive) {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
-    const { DevToolsServer } = require("devtools/server/devtools-server");
+    const {
+      DevToolsServer,
+    } = require("resource://devtools/server/devtools-server.js");
     DevToolsServer.keepAlive = _keepAlive;
   });
 }

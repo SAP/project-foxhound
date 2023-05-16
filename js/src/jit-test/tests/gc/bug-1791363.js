@@ -1,3 +1,5 @@
+// |jit-test| allow-unhandlable-oom
+
 gczeal(0);
 if (!this.enqueueMark) {
   quit();

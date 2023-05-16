@@ -26,7 +26,7 @@
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
-#include "vm/ErrorContext.h"
+#include "vm/ErrorContext.h"  // AutoReportFrontendContext
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/Collator.h"
 #  include "builtin/intl/DateTimeFormat.h"
@@ -103,16 +103,6 @@ using namespace js::selfhosted;
 
 using JS::CompileOptions;
 using mozilla::Maybe;
-
-static void selfHosting_WarningReporter(JSContext* cx, JSErrorReport* report) {
-  MOZ_ASSERT(report->isWarning());
-
-  js::selfHosting_ErrorReporter(report);
-}
-
-void js::selfHosting_ErrorReporter(JSErrorReport* report) {
-  JS::PrintError(stderr, report, true);
-}
 
 static bool intrinsic_ToObject(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2475,23 +2465,38 @@ void js::FillSelfHostingCompileOptions(CompileOptions& options) {
   options.setNoScriptRval(true);
 }
 
-class MOZ_STACK_CLASS AutoSelfHostingErrorReporter {
+// Report all errors and warnings to stderr because it is too early in the
+// startup process for any other error reporting to be used, and we don't want
+// errors in self-hosted code to be silently swallowed.
+class MOZ_STACK_CLASS AutoPrintSelfHostingFrontendContext
+    : public OffThreadErrorContext {
   JSContext* cx_;
-  JS::WarningReporter oldReporter_;
 
  public:
-  explicit AutoSelfHostingErrorReporter(JSContext* cx) : cx_(cx) {
-    oldReporter_ = JS::SetWarningReporter(cx_, selfHosting_WarningReporter);
+  explicit AutoPrintSelfHostingFrontendContext(JSContext* cx)
+      : OffThreadErrorContext(), cx_(cx) {
+    setCurrentJSContext(cx_);
   }
-  ~AutoSelfHostingErrorReporter() {
-    JS::SetWarningReporter(cx_, oldReporter_);
-
-    // Exceptions in self-hosted code will usually be printed to stderr in
-    // ErrorToException, but not all exceptions are handled there. For
-    // instance, ReportOutOfMemory will throw the "out of memory" string
-    // without going through ErrorToException. We handle these other
-    // exceptions here.
+  ~AutoPrintSelfHostingFrontendContext() {
+    // TODO: Remove this once JSContext is removed from frontend.
     MaybePrintAndClearPendingException(cx_);
+
+    if (hadOutOfMemory()) {
+      fprintf(stderr, "Out of memory\n");
+    }
+
+    for (const UniquePtr<CompileError>& error : errors()) {
+      JS::PrintError(stderr, const_cast<CompileError*>(error.get()), true);
+    }
+    for (const UniquePtr<CompileError>& error : warnings()) {
+      JS::PrintError(stderr, const_cast<CompileError*>(error.get()), true);
+    }
+    if (hadOverRecursed()) {
+      fprintf(stderr, "Over recursed\n");
+    }
+    if (hadAllocationOverflow()) {
+      fprintf(stderr, "Allocation overflow\n");
+    }
   }
 };
 
@@ -2573,23 +2578,13 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
     return true;
   }
 
-  /*
-   * Set a temporary error reporter printing to stderr because it is too
-   * early in the startup process for any other reporter to be registered
-   * and we don't want errors in self-hosted code to be silently swallowed.
-   *
-   * This class also overrides the warning reporter to print warnings to
-   * stderr. See selfHosting_WarningReporter.
-   */
-  AutoSelfHostingErrorReporter errorReporter(cx);
-
   // Variables used to instantiate scripts.
   CompileOptions options(cx);
   FillSelfHostingCompileOptions(options);
 
   // Try initializing from Stencil XDR.
   bool decodeOk = false;
-  MainThreadErrorContext ec(cx);
+  AutoPrintSelfHostingFrontendContext ec(cx);
   if (xdrCache.Length() > 0) {
     // Allow the VM to directly use bytecode from the XDR buffer without
     // copying it. The buffer must outlive all runtimes (including workers).
@@ -2759,24 +2754,27 @@ ScriptSourceObject* GlobalObject::getOrCreateSelfHostingScriptSourceObject(
     return nullptr;
   }
 
-  MainThreadErrorContext ec(cx);
-  if (!source->initFromOptions(cx, &ec, options)) {
-    return nullptr;
+  Rooted<ScriptSourceObject*> sourceObject(cx);
+  {
+    AutoReportFrontendContext ec(cx);
+    if (!source->initFromOptions(cx, &ec, options)) {
+      return nullptr;
+    }
+
+    sourceObject = ScriptSourceObject::create(cx, source.get());
+    if (!sourceObject) {
+      return nullptr;
+    }
+
+    JS::InstantiateOptions instantiateOptions(options);
+    if (!ScriptSourceObject::initFromOptions(cx, sourceObject,
+                                             instantiateOptions)) {
+      return nullptr;
+    }
+
+    global->data().selfHostingScriptSource.init(sourceObject);
   }
 
-  Rooted<ScriptSourceObject*> sourceObject(
-      cx, ScriptSourceObject::create(cx, source.get()));
-  if (!sourceObject) {
-    return nullptr;
-  }
-
-  JS::InstantiateOptions instantiateOptions(options);
-  if (!ScriptSourceObject::initFromOptions(cx, sourceObject,
-                                           instantiateOptions)) {
-    return nullptr;
-  }
-
-  global->data().selfHostingScriptSource.init(sourceObject);
   return sourceObject;
 }
 

@@ -7,25 +7,27 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { cssPropertiesSpec } = require("devtools/shared/specs/css-properties");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  cssPropertiesSpec,
+} = require("resource://devtools/shared/specs/css-properties.js");
 
 loader.lazyRequireGetter(
   this,
   "cssColors",
-  "devtools/shared/css/color-db",
+  "resource://devtools/shared/css/color-db.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CSS_PROPERTIES_DB",
-  "devtools/shared/css/properties-db",
+  "resource://devtools/shared/css/properties-db.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CSS_TYPES",
-  "devtools/shared/css/constants",
+  "resource://devtools/shared/css/constants.js",
   true
 );
 

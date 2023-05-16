@@ -723,6 +723,12 @@ void XPCJSRuntime::TraceAdditionalNativeGrayRoots(JSTracer* trc) {
 void XPCJSRuntime::TraverseAdditionalNativeRoots(
     nsCycleCollectionNoteRootCallback& cb) {
   XPCWrappedNativeScope::SuspectAllWrappers(cb);
+
+  auto* parti = NS_CYCLE_COLLECTION_PARTICIPANT(nsXPCWrappedJS);
+  for (auto* wjs : mSubjectToFinalizationWJS) {
+    MOZ_DIAGNOSTIC_ASSERT(wjs->IsSubjectToFinalization());
+    cb.NoteXPCOMRoot(ToSupports(wjs), parti);
+  }
 }
 
 void XPCJSRuntime::UnmarkSkippableJSHolders() {
@@ -1103,6 +1109,8 @@ void XPCJSRuntime::Shutdown(JSContext* cx) {
 
   // Prevent ~LinkedList assertion failures if we leaked things.
   mWrappedNativeScopes.clear();
+
+  mSubjectToFinalizationWJS.clear();
 
   CycleCollectedJSRuntime::Shutdown(cx);
 }
@@ -2270,6 +2278,9 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
   mozJSModuleLoader* loader = mozJSModuleLoader::Get();
   size_t jsModuleLoaderSize =
       loader ? loader->SizeOfIncludingThis(JSMallocSizeOf) : 0;
+  mozJSModuleLoader* devToolsLoader = mozJSModuleLoader::GetDevToolsLoader();
+  size_t jsDevToolsModuleLoaderSize =
+      devToolsLoader ? devToolsLoader->SizeOfIncludingThis(JSMallocSizeOf) : 0;
 
   // This is the second step (see above).  First we report stuff in the
   // "explicit" tree, then we report other stuff.
@@ -2501,6 +2512,8 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
 
   REPORT_BYTES("explicit/xpconnect/js-module-loader"_ns, KIND_HEAP,
                jsModuleLoaderSize, "XPConnect's JS module loader.");
+  REPORT_BYTES("explicit/xpconnect/js-devtools-module-loader"_ns, KIND_HEAP,
+               jsDevToolsModuleLoaderSize, "DevTools's JS module loader.");
 
   // Report HelperThreadState.
 

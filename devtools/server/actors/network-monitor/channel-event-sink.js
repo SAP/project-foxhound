@@ -4,15 +4,16 @@
 
 "use strict";
 
-const { Cc, Ci, Cm, Cr, components } = require("chrome");
-const { ComponentUtils } = require("resource://gre/modules/ComponentUtils.jsm");
+const { ComponentUtils } = ChromeUtils.import(
+  "resource://gre/modules/ComponentUtils.jsm"
+);
 
 /**
  * This is a nsIChannelEventSink implementation that monitors channel redirects and
  * informs the registered StackTraceCollector about the old and new channels.
  */
 const SINK_CLASS_DESCRIPTION = "NetworkMonitor Channel Event Sink";
-const SINK_CLASS_ID = components.ID("{e89fa076-c845-48a8-8c45-2604729eba1d}");
+const SINK_CLASS_ID = Components.ID("{e89fa076-c845-48a8-8c45-2604729eba1d}");
 const SINK_CONTRACT_ID = "@mozilla.org/network/monitor/channeleventsink;1";
 const SINK_CATEGORY_NAME = "net-channel-event-sinks";
 
@@ -57,7 +58,7 @@ const ChannelEventSinkFactory = ComponentUtils.generateSingletonFactory(
 );
 
 ChannelEventSinkFactory.register = function() {
-  const registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
+  const registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
   if (registrar.isCIDRegistered(SINK_CLASS_ID)) {
     return;
   }
@@ -79,7 +80,7 @@ ChannelEventSinkFactory.register = function() {
 };
 
 ChannelEventSinkFactory.unregister = function() {
-  const registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
+  const registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
   registrar.unregisterFactory(SINK_CLASS_ID, ChannelEventSinkFactory);
 
   Services.catMan.deleteCategoryEntry(

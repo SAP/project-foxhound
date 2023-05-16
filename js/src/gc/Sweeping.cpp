@@ -31,6 +31,7 @@
 #include "gc/GCRuntime.h"
 #include "gc/ParallelWork.h"
 #include "gc/Statistics.h"
+#include "gc/TraceKind.h"
 #include "gc/WeakMap.h"
 #include "gc/Zone.h"
 #include "jit/JitRuntime.h"
@@ -116,7 +117,7 @@ inline size_t Arena::finalize(JS::GCContext* gcx, AllocKind thingKind,
 
   for (ArenaCellIterUnderFinalize cell(this); !cell.done(); cell.next()) {
     T* t = cell.as<T>();
-    if (t->asTenured().isMarkedAny()) {
+    if (TenuredThingIsMarkedAny(t)) {
       uint_fast16_t thing = uintptr_t(t) & ArenaMask;
       if (thing != firstThingOrSuccessorOfLastMarkedThing) {
         // We just finished passing over one or more free things,
@@ -340,7 +341,7 @@ void GCRuntime::sweepBackgroundThings(ZoneList& zones) {
     Zone* zone = zones.removeFront();
     MOZ_ASSERT(zone->isGCFinished());
 
-    TimeStamp startTime = ReallyNow();
+    TimeStamp startTime = TimeStamp::Now();
 
     Arena* emptyArenas = zone->arenas.takeSweptEmptyArenas();
 
@@ -374,7 +375,7 @@ void GCRuntime::sweepBackgroundThings(ZoneList& zones) {
     }
 
     // Record time spent sweeping this zone.
-    TimeStamp endTime = ReallyNow();
+    TimeStamp endTime = TimeStamp::Now();
     zone->perZoneGCTime += endTime - startTime;
   }
 }
@@ -1742,7 +1743,7 @@ IncrementalProgress GCRuntime::joinBackgroundMarkTask() {
 
 template <typename T>
 static void SweepThing(JS::GCContext* gcx, T* thing) {
-  if (!thing->isMarkedAny()) {
+  if (!TenuredThingIsMarkedAny(thing)) {
     thing->sweep(gcx);
   }
 }

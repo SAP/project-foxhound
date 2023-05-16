@@ -29,11 +29,11 @@ const known_scripts = {
     "resource://gre/modules/XPCOMUtils.sys.mjs",
 
     // Logging related
-    "resource://gre/modules/Log.jsm",
+    "resource://gre/modules/Log.sys.mjs",
 
     // Browser front-end
-    "resource:///actors/AboutReaderChild.jsm",
-    "resource:///actors/BrowserTabChild.jsm",
+    "resource:///actors/AboutReaderChild.sys.mjs",
+    "resource:///actors/BrowserTabChild.sys.mjs",
     "resource:///actors/LinkHandlerChild.jsm",
     "resource:///actors/PageStyleChild.jsm",
     "resource:///actors/SearchSERPTelemetryChild.jsm",
@@ -78,9 +78,12 @@ const intermittently_loaded_scripts = {
     // may not load early enough for the test.
     "resource://webcompat/AboutCompat.jsm",
 
+    // Cookie banner handling.
+    "resource://gre/actors/CookieBannerChild.jsm",
+
     // Test related
-    "chrome://remote/content/marionette/actors/MarionetteEventsChild.jsm",
-    "chrome://remote/content/shared/Log.jsm",
+    "chrome://remote/content/marionette/actors/MarionetteEventsChild.sys.mjs",
+    "chrome://remote/content/shared/Log.sys.mjs",
     "resource://testing-common/BrowserTestUtilsChild.jsm",
     "resource://testing-common/ContentEventListenerChild.jsm",
     "resource://specialpowers/AppTestDelegateChild.jsm",

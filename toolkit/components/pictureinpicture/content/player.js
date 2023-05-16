@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { PictureInPicture } = ChromeUtils.import(
-  "resource://gre/modules/PictureInPicture.jsm"
+const { PictureInPicture } = ChromeUtils.importESModule(
+  "resource://gre/modules/PictureInPicture.sys.mjs"
 );
-const { ShortcutUtils } = ChromeUtils.import(
-  "resource://gre/modules/ShortcutUtils.jsm"
+const { ShortcutUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/ShortcutUtils.sys.mjs"
 );
 const { DeferredTask } = ChromeUtils.import(
   "resource://gre/modules/DeferredTask.jsm"

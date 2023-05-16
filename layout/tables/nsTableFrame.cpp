@@ -18,6 +18,7 @@
 #include "gfxContext.h"
 #include "nsCOMPtr.h"
 #include "mozilla/ComputedStyle.h"
+#include "nsFrameList.h"
 #include "nsStyleConsts.h"
 #include "nsIContent.h"
 #include "nsCellMap.h"
@@ -475,27 +476,23 @@ void nsTableFrame::ResetRowIndices(
   OrderRowGroups(rowGroups);
 
   nsTHashSet<nsTableRowGroupFrame*> excludeRowGroups;
-  nsFrameList::Enumerator excludeRowGroupsEnumerator(aRowGroupsToExclude);
-  while (!excludeRowGroupsEnumerator.AtEnd()) {
+  for (nsIFrame* excludeRowGroup : aRowGroupsToExclude) {
     excludeRowGroups.Insert(
-        static_cast<nsTableRowGroupFrame*>(excludeRowGroupsEnumerator.get()));
+        static_cast<nsTableRowGroupFrame*>(excludeRowGroup));
 #ifdef DEBUG
     {
       // Check to make sure that the row indices of all rows in excluded row
       // groups are '0' (i.e. the initial value since they haven't been added
       // yet)
-      const nsFrameList& rowFrames =
-          excludeRowGroupsEnumerator.get()->PrincipalChildList();
-      for (nsFrameList::Enumerator rows(rowFrames); !rows.AtEnd();
-           rows.Next()) {
-        nsTableRowFrame* row = static_cast<nsTableRowFrame*>(rows.get());
+      const nsFrameList& rowFrames = excludeRowGroup->PrincipalChildList();
+      for (nsIFrame* r : rowFrames) {
+        auto* row = static_cast<nsTableRowFrame*>(r);
         MOZ_ASSERT(row->GetRowIndex() == 0,
                    "exclusions cannot be used for rows that were already added,"
                    "because we'd need to process mDeletedRowIndexRanges");
       }
     }
 #endif
-    excludeRowGroupsEnumerator.Next();
   }
 
   int32_t rowIndex = 0;
@@ -503,11 +500,9 @@ void nsTableFrame::ResetRowIndices(
     nsTableRowGroupFrame* rgFrame = rowGroups[rgIdx];
     if (!excludeRowGroups.Contains(rgFrame)) {
       const nsFrameList& rowFrames = rgFrame->PrincipalChildList();
-      for (nsFrameList::Enumerator rows(rowFrames); !rows.AtEnd();
-           rows.Next()) {
-        if (mozilla::StyleDisplay::TableRow ==
-            rows.get()->StyleDisplay()->mDisplay) {
-          nsTableRowFrame* row = static_cast<nsTableRowFrame*>(rows.get());
+      for (nsIFrame* r : rowFrames) {
+        if (mozilla::StyleDisplay::TableRow == r->StyleDisplay()->mDisplay) {
+          auto* row = static_cast<nsTableRowFrame*>(r);
           row->SetRowIndex(rowIndex);
           rowIndex++;
         }
@@ -519,32 +514,23 @@ void nsTableFrame::ResetRowIndices(
 void nsTableFrame::InsertColGroups(int32_t aStartColIndex,
                                    const nsFrameList::Slice& aColGroups) {
   int32_t colIndex = aStartColIndex;
-  nsFrameList::Enumerator colGroups(aColGroups);
-  for (; !colGroups.AtEnd(); colGroups.Next()) {
-    MOZ_ASSERT(colGroups.get()->IsTableColGroupFrame());
-    nsTableColGroupFrame* cgFrame =
-        static_cast<nsTableColGroupFrame*>(colGroups.get());
-    cgFrame->SetStartColumnIndex(colIndex);
-    // XXXbz this sucks.  AddColsToTable will actually remove colgroups from
-    // the list we're traversing!  Need to fix things here.  :( I guess this is
-    // why the old code used pointer-to-last-frame as opposed to
-    // pointer-to-frame-after-last....
 
-    // How about dealing with this by storing a const reference to the
-    // mNextSibling of the framelist's last frame, instead of storing a pointer
-    // to the first-after-next frame?  Will involve making nsFrameList friend
-    // of nsIFrame, but it's time for that anyway.
-    cgFrame->AddColsToTable(colIndex, false,
-                            colGroups.get()->PrincipalChildList());
+  // XXX: We cannot use range-based for loop because AddColsToTable() can
+  // destroy the nsTableColGroupFrame in the slice we're traversing! Need to
+  // check the validity of *colGroupIter.
+  auto colGroupIter = aColGroups.begin();
+  for (auto colGroupIterEnd = aColGroups.end();
+       *colGroupIter && colGroupIter != colGroupIterEnd; ++colGroupIter) {
+    MOZ_ASSERT((*colGroupIter)->IsTableColGroupFrame());
+    auto* cgFrame = static_cast<nsTableColGroupFrame*>(*colGroupIter);
+    cgFrame->SetStartColumnIndex(colIndex);
+    cgFrame->AddColsToTable(colIndex, false, cgFrame->PrincipalChildList());
     int32_t numCols = cgFrame->GetColCount();
     colIndex += numCols;
   }
 
-  nsFrameList::Enumerator remainingColgroups =
-      colGroups.GetUnlimitedEnumerator();
-  if (!remainingColgroups.AtEnd()) {
-    nsTableColGroupFrame::ResetColIndices(
-        static_cast<nsTableColGroupFrame*>(remainingColgroups.get()), colIndex);
+  if (*colGroupIter) {
+    nsTableColGroupFrame::ResetColIndices(*colGroupIter, colIndex);
   }
 }
 
@@ -856,7 +842,7 @@ int32_t nsTableFrame::InsertRows(nsTableRowGroupFrame* aRowGroupFrame,
     TableArea damageArea(0, 0, 0, 0);
     bool shouldRecalculateIndex = !IsDeletedRowIndexRangesEmpty();
     if (shouldRecalculateIndex) {
-      ResetRowIndices(nsFrameList::Slice(mFrames, nullptr, nullptr));
+      ResetRowIndices(nsFrameList::Slice(nullptr, nullptr));
     }
     int32_t origNumRows = cellMap->GetRowCount();
     int32_t numNewRows = aRowFrames.Length();
@@ -1054,9 +1040,8 @@ void nsTableFrame::InsertRowGroups(const nsFrameList::Slice& aRowGroups) {
     // and M is number of rowgroups we have!
     uint32_t rgIndex;
     for (rgIndex = 0; rgIndex < orderedRowGroups.Length(); rgIndex++) {
-      for (nsFrameList::Enumerator rowgroups(aRowGroups); !rowgroups.AtEnd();
-           rowgroups.Next()) {
-        if (orderedRowGroups[rgIndex] == rowgroups.get()) {
+      for (nsIFrame* rowGroup : aRowGroups) {
+        if (orderedRowGroups[rgIndex] == rowGroup) {
           nsTableRowGroupFrame* priorRG =
               (0 == rgIndex) ? nullptr : orderedRowGroups[rgIndex - 1];
           // create and add the cell map for the row group
@@ -1071,13 +1056,12 @@ void nsTableFrame::InsertRowGroups(const nsFrameList::Slice& aRowGroups) {
 
     // now that the cellmaps are reordered too insert the rows
     for (rgIndex = 0; rgIndex < orderedRowGroups.Length(); rgIndex++) {
-      for (nsFrameList::Enumerator rowgroups(aRowGroups); !rowgroups.AtEnd();
-           rowgroups.Next()) {
-        if (orderedRowGroups[rgIndex] == rowgroups.get()) {
+      for (nsIFrame* rowGroup : aRowGroups) {
+        if (orderedRowGroups[rgIndex] == rowGroup) {
           nsTableRowGroupFrame* priorRG =
               (0 == rgIndex) ? nullptr : orderedRowGroups[rgIndex - 1];
           // collect the new row frames in an array and add them to the table
-          int32_t numRows = CollectRows(rowgroups.get(), rows);
+          int32_t numRows = CollectRows(rowGroup, rows);
           if (numRows > 0) {
             int32_t rowIndex = 0;
             if (priorRG) {
@@ -2144,14 +2128,14 @@ void nsTableFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
       mColGroups.InsertFrame(this, lastColGroup, f);
       // Insert the colgroup and its cols into the table
       InsertColGroups(startColIndex,
-                      nsFrameList::Slice(mColGroups, f, f->GetNextSibling()));
+                      nsFrameList::Slice(f, f->GetNextSibling()));
     } else if (IsRowGroup(display->mDisplay)) {
       DrainSelfOverflowList();  // ensure the last frame is in mFrames
       // Append the new row group frame to the sibling chain
       mFrames.AppendFrame(nullptr, f);
 
       // insert the row group and its rows into the table
-      InsertRowGroups(nsFrameList::Slice(mFrames, f, nullptr));
+      InsertRowGroups(nsFrameList::Slice(f, nullptr));
     } else {
       // Nothing special to do, just add the frame to our child list
       MOZ_ASSERT_UNREACHABLE(
@@ -2168,12 +2152,6 @@ void nsTableFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
   SetGeometryDirty();
 }
-
-// Needs to be at file scope or ArrayLength fails to compile.
-struct ChildListInsertions {
-  nsIFrame::ChildListID mID;
-  nsFrameList mList;
-};
 
 void nsTableFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                 const nsLineList::iterator* aPrevFrameLine,
@@ -2196,34 +2174,28 @@ void nsTableFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
 
   // Collect ColGroupFrames into a separate list and insert those separately
   // from the other frames (bug 759249).
-  ChildListInsertions insertions[2];  // ColGroup, other
-  const nsStyleDisplay* display = aFrameList.FirstChild()->StyleDisplay();
-  nsFrameList::FrameLinkEnumerator e(aFrameList);
-  for (; !aFrameList.IsEmpty(); e.Next()) {
-    nsIFrame* next = e.NextFrame();
-    if (!next || next->StyleDisplay()->mDisplay != display->mDisplay) {
-      nsFrameList head = aFrameList.ExtractHead(e);
-      if (display->mDisplay == mozilla::StyleDisplay::TableColumnGroup) {
-        insertions[0].mID = kColGroupList;
-        insertions[0].mList.AppendFrames(nullptr, head);
-      } else {
-        insertions[1].mID = kPrincipalList;
-        insertions[1].mList.AppendFrames(nullptr, head);
-      }
-      if (!next) {
-        break;
-      }
-      display = next->StyleDisplay();
+  nsFrameList colGroupList;
+  nsFrameList principalList;
+  do {
+    const auto display = aFrameList.FirstChild()->StyleDisplay()->mDisplay;
+    nsFrameList head = aFrameList.Split([display](nsIFrame* aFrame) {
+      return aFrame->StyleDisplay()->mDisplay != display;
+    });
+    if (display == mozilla::StyleDisplay::TableColumnGroup) {
+      colGroupList.AppendFrames(nullptr, head);
+    } else {
+      principalList.AppendFrames(nullptr, head);
     }
+  } while (aFrameList.NotEmpty());
+
+  // We pass aPrevFrame for both ColGroup and other frames since
+  // HomogenousInsertFrames will only use it if it's a suitable
+  // prev-sibling for the frames in the frame list.
+  if (colGroupList.NotEmpty()) {
+    HomogenousInsertFrames(kColGroupList, aPrevFrame, colGroupList);
   }
-  for (uint32_t i = 0; i < ArrayLength(insertions); ++i) {
-    // We pass aPrevFrame for both ColGroup and other frames since
-    // HomogenousInsertFrames will only use it if it's a suitable
-    // prev-sibling for the frames in the frame list.
-    if (!insertions[i].mList.IsEmpty()) {
-      HomogenousInsertFrames(insertions[i].mID, aPrevFrame,
-                             insertions[i].mList);
-    }
+  if (principalList.NotEmpty()) {
+    HomogenousInsertFrames(kPrincipalList, aPrevFrame, principalList);
   }
 }
 
@@ -2408,7 +2380,7 @@ void nsTableFrame::DoRemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
     if (cellMap) {
       cellMap->Synchronize(this);
       // Create an empty slice
-      ResetRowIndices(nsFrameList::Slice(mFrames, nullptr, nullptr));
+      ResetRowIndices(nsFrameList::Slice(nullptr, nullptr));
       TableArea damageArea;
       cellMap->RebuildConsideringCells(nullptr, nullptr, 0, 0, false,
                                        damageArea);

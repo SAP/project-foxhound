@@ -4,9 +4,12 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const { isWindowIncluded } = require("devtools/shared/layout/utils");
-const { WebConsoleUtils } = require("devtools/server/actors/webconsole/utils");
+const {
+  isWindowIncluded,
+} = require("resource://devtools/shared/layout/utils.js");
+const {
+  WebConsoleUtils,
+} = require("resource://devtools/server/actors/webconsole/utils.js");
 
 // The page errors listener
 

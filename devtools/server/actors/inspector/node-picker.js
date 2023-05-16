@@ -3,24 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const { Ci } = require("chrome");
 
 loader.lazyRequireGetter(
   this,
   "isRemoteBrowserElement",
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "HighlighterEnvironment",
-  "devtools/server/actors/highlighters",
+  "resource://devtools/server/actors/highlighters.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "RemoteNodePickerNotice",
-  "devtools/server/actors/highlighters/remote-node-picker-notice.js",
+  "resource://devtools/server/actors/highlighters/remote-node-picker-notice.js",
   true
 );
 

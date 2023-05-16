@@ -4,15 +4,15 @@
 
 "use strict";
 
-const { Ci, Cu } = require("chrome");
-
-const protocol = require("devtools/shared/protocol");
-const { walkerSpec } = require("devtools/shared/specs/walker");
-const { LongStringActor } = require("devtools/server/actors/string");
+const protocol = require("resource://devtools/shared/protocol.js");
+const { walkerSpec } = require("resource://devtools/shared/specs/walker.js");
+const {
+  LongStringActor,
+} = require("resource://devtools/server/actors/string.js");
 const InspectorUtils = require("InspectorUtils");
 const {
   EXCLUDED_LISTENER,
-} = require("devtools/server/actors/inspector/constants");
+} = require("resource://devtools/server/actors/inspector/constants.js");
 
 loader.lazyRequireGetter(
   this,
@@ -31,11 +31,16 @@ loader.lazyRequireGetter(
     "isTemplateElement",
     "loadSheet",
   ],
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 
-loader.lazyRequireGetter(this, "throttle", "devtools/shared/throttle", true);
+loader.lazyRequireGetter(
+  this,
+  "throttle",
+  "resource://devtools/shared/throttle.js",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
@@ -47,66 +52,66 @@ loader.lazyRequireGetter(
     "nodeDocument",
     "standardTreeWalkerFilter",
   ],
-  "devtools/server/actors/inspector/utils",
+  "resource://devtools/server/actors/inspector/utils.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "CustomElementWatcher",
-  "devtools/server/actors/inspector/custom-element-watcher",
+  "resource://devtools/server/actors/inspector/custom-element-watcher.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["DocumentWalker", "SKIP_TO_SIBLING"],
-  "devtools/server/actors/inspector/document-walker",
+  "resource://devtools/server/actors/inspector/document-walker.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["NodeActor", "NodeListActor"],
-  "devtools/server/actors/inspector/node",
+  "resource://devtools/server/actors/inspector/node.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "NodePicker",
-  "devtools/server/actors/inspector/node-picker",
+  "resource://devtools/server/actors/inspector/node-picker.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "LayoutActor",
-  "devtools/server/actors/layout",
+  "resource://devtools/server/actors/layout.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["getLayoutChangesObserver", "releaseLayoutChangesObserver"],
-  "devtools/server/actors/reflow",
+  "resource://devtools/server/actors/reflow.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WalkerSearch",
-  "devtools/server/actors/utils/walker-search",
+  "resource://devtools/server/actors/utils/walker-search.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "hasStyleSheetWatcherSupportForTarget",
-  "devtools/server/actors/utils/stylesheets-manager",
+  "resource://devtools/server/actors/utils/stylesheets-manager.js",
   true
 );
 
 // ContentDOMReference requires ChromeUtils, which isn't available in worker context.
+const lazy = {};
 if (!isWorker) {
-  loader.lazyRequireGetter(
-    this,
+  ChromeUtils.defineModuleGetter(
+    lazy,
     "ContentDOMReference",
-    "resource://gre/modules/ContentDOMReference.jsm",
-    true
+    "resource://gre/modules/ContentDOMReference.jsm"
   );
 }
 
@@ -2648,7 +2653,7 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
    * Given a contentDomReference return the NodeActor for the corresponding frameElement.
    */
   getNodeActorFromContentDomReference(contentDomReference) {
-    let rawNode = ContentDOMReference.resolve(contentDomReference);
+    let rawNode = lazy.ContentDOMReference.resolve(contentDomReference);
     if (!rawNode || !this._isInDOMTree(rawNode)) {
       return null;
     }

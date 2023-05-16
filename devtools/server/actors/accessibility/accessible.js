@@ -4,61 +4,69 @@
 
 "use strict";
 
-const { Ci, Cu } = require("chrome");
-const { Actor, ActorClassWithSpec } = require("devtools/shared/protocol");
-const { accessibleSpec } = require("devtools/shared/specs/accessibility");
+const {
+  Actor,
+  ActorClassWithSpec,
+} = require("resource://devtools/shared/protocol.js");
+const {
+  accessibleSpec,
+} = require("resource://devtools/shared/specs/accessibility.js");
 const {
   accessibility: { AUDIT_TYPE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "getContrastRatioFor",
-  "devtools/server/actors/accessibility/audit/contrast",
+  "resource://devtools/server/actors/accessibility/audit/contrast.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "auditKeyboard",
-  "devtools/server/actors/accessibility/audit/keyboard",
+  "resource://devtools/server/actors/accessibility/audit/keyboard.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "auditTextLabel",
-  "devtools/server/actors/accessibility/audit/text-label",
+  "resource://devtools/server/actors/accessibility/audit/text-label.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isDefunct",
-  "devtools/server/actors/utils/accessibility",
+  "resource://devtools/server/actors/utils/accessibility.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "findCssSelector",
-  "devtools/shared/inspector/css-logic",
+  "resource://devtools/shared/inspector/css-logic.js",
   true
 );
-loader.lazyRequireGetter(this, "events", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "events",
+  "resource://devtools/shared/event-emitter.js"
+);
 loader.lazyRequireGetter(
   this,
   "getBounds",
-  "devtools/server/actors/highlighters/utils/accessibility",
+  "resource://devtools/server/actors/highlighters/utils/accessibility.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isFrameWithChildTarget",
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "ContentDOMReference",
-  "resource://gre/modules/ContentDOMReference.jsm",
-  true
+  "resource://gre/modules/ContentDOMReference.jsm"
 );
 
 const RELATIONS_TO_IGNORE = new Set([
@@ -172,7 +180,7 @@ function getSnapshot(acc, a11yService, targetActor) {
   if (useChildTargetToFetchChildren) {
     snapshot.useChildTargetToFetchChildren = useChildTargetToFetchChildren;
     snapshot.childCount = 1;
-    snapshot.contentDOMReference = ContentDOMReference.get(acc.DOMNode);
+    snapshot.contentDOMReference = lazy.ContentDOMReference.get(acc.DOMNode);
   }
 
   return snapshot;

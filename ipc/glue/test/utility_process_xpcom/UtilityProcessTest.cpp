@@ -8,11 +8,12 @@
 #  include "mozilla/ipc/UtilityProcessTest.h"
 #  include "mozilla/ipc/UtilityProcessManager.h"
 #  include "mozilla/dom/Promise.h"
+#  include "mozilla/ProcInfo.h"
 
 namespace mozilla::ipc {
 
 NS_IMETHODIMP
-UtilityProcessTest::StartProcess(JSContext* aCx,
+UtilityProcessTest::StartProcess(int32_t aUnknownActors, JSContext* aCx,
                                  mozilla::dom::Promise** aOutPromise) {
   NS_ENSURE_ARG(aOutPromise);
   *aOutPromise = nullptr;
@@ -34,9 +35,18 @@ UtilityProcessTest::StartProcess(JSContext* aCx,
   utilityProc->LaunchProcess(SandboxingKind::GENERIC_UTILITY)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [promise, utilityProc]() {
+          [promise, utilityProc, aUnknownActors]() {
             Maybe<int32_t> utilityPid =
                 utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
+            if (aUnknownActors > 0) {
+              RefPtr<UtilityProcessParent> utilityParent =
+                  utilityProc->GetProcessParent(
+                      SandboxingKind::GENERIC_UTILITY);
+              for (int32_t i = 0; i < aUnknownActors; i++) {
+                utilityProc->RegisterActor(utilityParent,
+                                           UtilityActorName::Unknown);
+              }
+            }
             if (utilityPid.isSome()) {
               promise->MaybeResolve(*utilityPid);
             } else {
@@ -64,6 +74,20 @@ UtilityProcessTest::StopProcess() {
       utilityProc->ProcessPid(SandboxingKind::GENERIC_UTILITY);
   MOZ_RELEASE_ASSERT(utilityPid.isNothing(),
                      "Should not have a utility process PID anymore");
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+UtilityProcessTest::TestTelemetryProbes() {
+  RefPtr<UtilityProcessManager> utilityProc =
+      UtilityProcessManager::GetSingleton();
+  MOZ_ASSERT(utilityProc, "No UtilityprocessManager?");
+
+  for (RefPtr<UtilityProcessParent>& parent :
+       utilityProc->GetAllProcessesProcessParent()) {
+    Unused << parent->SendTestTelemetryProbes();
+  }
 
   return NS_OK;
 }

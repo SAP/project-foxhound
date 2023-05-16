@@ -186,12 +186,9 @@ zlib-1.2.12:
     description: zlib 1.2.12 source code
     fetch:
         type: static-url
-        url: http://zlib.net/zlib-1.2.12.tar.gz
+        url: https://zlib.net/fossils/zlib-1.2.12.tar.gz
         sha256: 91844808532e5ce316b3c010929493c0244f3d37593afd6de04f71821d5136d9
         size: 1490071
-        gpg-signature:
-            sig-url: "{url}.asc"
-            key-path: build/unix/build-gcc/5ED46A6721D365587791E2AA783FCD8E58BCAFBA.key
 
 nsis-3.07:
     description: nsis 3.07 source code
@@ -365,13 +362,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.63.0:
-    description: Rust 1.63.0 source code
+rust-1.64.0:
+    description: Rust 1.64.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 4b91a6ea7258a947e59c6522cd5898e7c0a6a88f
+        revision: a55dd71d5fb0ec5a6a3a9e8c27b2127ba491ce52
 
 wasi-sdk:
     description: wasi-sdk-16 source code
@@ -406,7 +403,7 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: b4b85e7187bbcdd0850417498ce03e2da356b170
+        revision: c7df854b953b6ddc875afaa415ef1fb2f7bf01f6
 
 rust-minidump:
     description: rust-minidump 0.14.0 source code (for minidump-stackwalk)
@@ -614,4 +611,4 @@ symbol-scrapers:
     fetch:
         type: git
         repo: http://github.com/mozilla/symbol-scrapers
-        revision: 32df4bfb69b0ef166ed8288da9760c2badff2e91
+        revision: 91c63d5407f76073f87191b94c79b5867622c876

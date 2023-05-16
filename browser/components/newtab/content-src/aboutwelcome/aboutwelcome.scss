@@ -78,6 +78,7 @@ html {
   --grey-subtitle-1: #696977;
   --newtab-button-secondary-color: #0060DF;
   --mr-welcome-background-color: #F8F6F4;
+  --mr-screen-heading-color: var(--in-content-text-color);
   --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.2) 0%, rgba(2, 144, 238, 0.2) 100%);
   --mr-screen-background-color: #F8F6F4;
 
@@ -96,7 +97,9 @@ html {
   text-align: center;
   height: 100vh;
 
-  @media (prefers-contrast: more) {
+  @media (prefers-contrast) {
+    --mr-screen-background-color: buttontext;
+    --mr-screen-heading-color: buttonface;
     background-color: var(--in-content-page-background);
   }
 
@@ -247,6 +250,16 @@ html {
           font-weight: normal;
           line-height: 20px;
         }
+
+        &.top {
+          button {
+            color: #FFF;
+
+            &:hover {
+              color: #E0E0E6;
+            }
+          }
+        }
       }
     }
 
@@ -262,10 +275,6 @@ html {
 
       .secondary-cta.top {
         padding-inline-end: 0;
-
-        @media (max-height: 650px) and (max-width: 990px) {
-          display: none;
-        }
 
         button {
           color: var(--in-content-page-color);
@@ -360,15 +369,18 @@ html {
               }
 
               .arrow-icon {
-                background: url('chrome://browser/skin/forward.svg') no-repeat right 8px center;
-                background-size: 12px;
-                padding-inline-end: 24px;
                 -moz-context-properties: fill;
                 fill: currentColor;
 
-                &:dir(rtl) {
+                &::after {
+                  content: '';
+                  padding-inline-end: 12px;
+                  margin-inline-start: 4px;
+                  background: url('chrome://browser/skin/forward.svg') no-repeat center / 12px;
+                }
+
+                &:dir(rtl)::after {
                   background-image: url('chrome://browser/skin/back.svg');
-                  background-position-x: left 8px;
                 }
               }
             }
@@ -442,6 +454,7 @@ html {
         }
 
         h1 {
+          color: var(--mr-screen-heading-color);
           font-weight: 700;
           font-size: 47px;
           line-height: 110%;
@@ -480,6 +493,7 @@ html {
           transition: var(--transition);
           font-size: 13px;
           line-height: 1.5;
+          min-height: 4.5em;
           margin-block: 10px 20px;
         }
 
@@ -526,10 +540,16 @@ html {
             margin: 6px 0;
           }
 
+          .message-text {
+            margin-inline: auto;
+          }
+
           h1 {
             font-size: 35px;
             text-align: center;
             white-space: normal;
+            margin-inline: auto;
+            margin-block: 14px 6px;
           }
 
           &:dir(rtl) {
@@ -618,6 +638,34 @@ html {
           }
         }
 
+      }
+
+      // Reposition the "Sign in" button on the welcome screen to move inside
+      // the screen when it would otherwise overlap the screen.
+      @media only screen and (max-height: 650px) {
+        @media (min-width: 800px) and (max-width: 990px) {
+          .section-main {
+            position: relative;
+
+            .secondary-cta.top {
+              padding: 0;
+              top: 20px;
+              inset-inline-end: 20px;
+            }
+          }
+        }
+
+        @media (max-width: 590px) {
+          .section-main {
+            position: relative;
+
+            .secondary-cta.top {
+              padding: 0;
+              top: 0;
+              inset-inline-end: 0;
+            }
+          }
+        }
       }
     }
   }
@@ -967,7 +1015,7 @@ html {
         color: #FFF;
       }
 
-      @media (prefers-contrast: more) {
+      @media (prefers-contrast) {
         outline: 2px solid var(--in-content-button-border-color);
         border-radius: 2px;
 
@@ -1274,14 +1322,6 @@ html {
       top: 10px;
       inset-inline-end: 20px;
       z-index: 2;
-
-      button {
-        color: #FFF;
-
-        &:hover {
-          color: #E0E0E6;
-        }
-      }
     }
 
     span {

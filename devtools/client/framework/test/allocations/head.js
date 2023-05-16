@@ -8,18 +8,18 @@
 // This is especially important for allocation sites. We need to catch the global the
 // earliest possible in order to ensure that all allocation objects come with a stack.
 //
-// If we want to track DevTools module loader we should ensure loading Loader.jsm within
+// If we want to track DevTools module loader we should ensure loading Loader.sys.mjs within
 // the `testScript` Function. i.e. after having calling startRecordingAllocations.
 let tracker;
 {
-  const { DevToolsLoader } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
+  const { DevToolsLoader } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/Loader.sys.mjs"
   );
   const loader = new DevToolsLoader({
     invisibleToDebugger: true,
   });
   const { allocationTracker } = loader.require(
-    "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker"
+    "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker.js"
   );
   tracker = allocationTracker({ watchDevToolsGlobals: true });
 }
@@ -38,8 +38,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 XPCOMUtils.defineLazyGetter(this, "TrackedObjects", () => {
-  return ChromeUtils.import(
-    "resource://devtools/shared/test-helpers/tracked-objects.jsm"
+  return ChromeUtils.importESModule(
+    "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
   );
 });
 
@@ -86,14 +86,14 @@ async function startRecordingAllocations({
       gBrowser.selectedBrowser,
       [DEBUG_ALLOCATIONS],
       async debug_allocations => {
-        const { DevToolsLoader } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { DevToolsLoader } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const loader = new DevToolsLoader({
           invisibleToDebugger: true,
         });
         const { allocationTracker } = loader.require(
-          "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker"
+          "chrome://mochitests/content/browser/devtools/shared/test-helpers/allocation-tracker.js"
         );
         // We watch all globals in the content process, (instead of only DevTools global in parent process)
         // because we may easily leak web page objects, which aren't in DevTools global.
@@ -140,8 +140,8 @@ async function stopRecordingAllocations(
       gBrowser.selectedBrowser,
       [DEBUG_ALLOCATIONS],
       debug_allocations => {
-        const { DevToolsLoader } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { DevToolsLoader } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const { tracker } = DevToolsLoader;
         ok(
@@ -157,13 +157,13 @@ async function stopRecordingAllocations(
     gBrowser.selectedBrowser,
     [],
     () => {
-      const TrackedObjects = ChromeUtils.import(
-        "resource://devtools/shared/test-helpers/tracked-objects.jsm"
+      const TrackedObjects = ChromeUtils.importESModule(
+        "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
       );
       const objectNodeIds = TrackedObjects.getAllNodeIds();
       if (objectNodeIds.length) {
-        const { DevToolsLoader } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { DevToolsLoader } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const { tracker } = DevToolsLoader;
         // Record the heap snapshot from the content process,

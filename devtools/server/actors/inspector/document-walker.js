@@ -4,23 +4,21 @@
 
 "use strict";
 
-const { Cc, Ci, Cu } = require("chrome");
-
 loader.lazyRequireGetter(
   this,
   "isShadowRoot",
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "nodeFilterConstants",
-  "devtools/shared/dom-node-filter-constants"
+  "resource://devtools/shared/dom-node-filter-constants.js"
 );
 loader.lazyRequireGetter(
   this,
   "standardTreeWalkerFilter",
-  "devtools/server/actors/inspector/utils",
+  "resource://devtools/server/actors/inspector/utils.js",
   true
 );
 

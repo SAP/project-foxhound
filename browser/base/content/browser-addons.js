@@ -13,6 +13,11 @@ ChromeUtils.defineModuleGetter(
   "ExtensionParent",
   "resource://gre/modules/ExtensionParent.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "OriginControls",
+  "resource://gre/modules/ExtensionPermissions.jsm"
+);
 
 customElements.define(
   "addon-progress-notification",
@@ -1005,7 +1010,7 @@ var gExtensionsNotifications = {
     const DEFAULT_EXTENSION_ICON =
       "chrome://mozapps/skin/extensions/extensionGeneric.svg";
     button.setAttribute("image", icon || DEFAULT_EXTENSION_ICON);
-    button.className = "addon-banner-item";
+    button.className = "addon-banner-item subviewbutton";
 
     button.addEventListener("command", callback);
     PanelUI.addonNotificationContainer.appendChild(button);
@@ -1213,7 +1218,7 @@ customElements.define(
       this._openMenuButton.addEventListener("blur", this);
       this._openMenuButton.addEventListener("focus", this);
 
-      this.addEventListener("click", this);
+      this.addEventListener("command", this);
       this.addEventListener("mouseout", this);
       this.addEventListener("mouseover", this);
 
@@ -1224,11 +1229,7 @@ customElements.define(
       const { target } = event;
 
       switch (event.type) {
-        case "click":
-          if (event.button !== 0) {
-            return;
-          }
-
+        case "command":
           if (target === this._openMenuButton) {
             const popup = target.ownerDocument.getElementById(
               "unified-extensions-context-menu"
@@ -1259,20 +1260,70 @@ customElements.define(
 
         case "blur":
         case "mouseout":
-          if (target !== this._openMenuButton) {
-            return;
+          if (target === this._openMenuButton) {
+            this.removeAttribute("secondary-button-hovered");
+          } else if (target === this._actionButton) {
+            this._updateStateMessage();
           }
-          this.removeAttribute("secondary-button-hovered");
           break;
 
         case "focus":
         case "mouseover":
-          if (target !== this._openMenuButton) {
-            return;
+          if (target === this._openMenuButton) {
+            this.setAttribute("secondary-button-hovered", true);
+          } else if (target === this._actionButton) {
+            this._updateStateMessage({ hover: true });
           }
-          this.setAttribute("secondary-button-hovered", true);
           break;
       }
+    }
+
+    async _updateStateMessage({ hover = false } = {}) {
+      const policy = WebExtensionPolicy.getByID(this.addon.id);
+
+      const messages = lazy.OriginControls.getStateMessageIDs(
+        policy,
+        this.ownerGlobal.gBrowser.currentURI
+      );
+      if (!messages) {
+        return;
+      }
+
+      const messageElement = this.querySelector(
+        ".unified-extensions-item-message-default"
+      );
+
+      // We only want to adjust the height of an item in the panel when we
+      // first draw it, and not on hover (even if the hover message is longer,
+      // which shouldn't happen in practice but even if it was, we don't want
+      // to change the height on hover).
+      let adjustMinHeight = false;
+      if (hover && messages.onHover) {
+        this.ownerDocument.l10n.setAttributes(messageElement, messages.onHover);
+      } else if (messages.default) {
+        this.ownerDocument.l10n.setAttributes(messageElement, messages.default);
+        adjustMinHeight = true;
+      }
+
+      await document.l10n.translateElements([messageElement]);
+
+      if (adjustMinHeight) {
+        const contentsElement = this.querySelector(
+          ".unified-extensions-item-contents"
+        );
+        const { height } = getComputedStyle(contentsElement);
+        contentsElement.style.minHeight = height;
+      }
+    }
+
+    _hasAction() {
+      const policy = WebExtensionPolicy.getByID(this.addon.id);
+      const state = lazy.OriginControls.getState(
+        policy,
+        this.ownerGlobal.gBrowser.currentURI
+      );
+
+      return state && state.whenClicked && !state.hasAccess;
     }
 
     render() {
@@ -1283,6 +1334,12 @@ customElements.define(
       }
 
       this.setAttribute("extension-id", this.addon.id);
+
+      let policy = WebExtensionPolicy.getByID(this.addon.id);
+      this.setAttribute(
+        "attention",
+        lazy.OriginControls.getAttention(policy, this.ownerGlobal)
+      );
 
       this.querySelector(
         ".unified-extensions-item-name"
@@ -1296,11 +1353,15 @@ customElements.define(
         );
       }
 
+      this._actionButton.disabled = !this._hasAction();
+
       this._openMenuButton.dataset.extensionId = this.addon.id;
       this._openMenuButton.setAttribute(
         "data-l10n-args",
         JSON.stringify({ extensionName: this.addon.name })
       );
+
+      this._updateStateMessage();
     }
   }
 );
@@ -1316,6 +1377,7 @@ var gUnifiedExtensions = {
     }
 
     if (this.isEnabled) {
+      MozXULElement.insertFTLIfNeeded("preview/originControls.ftl");
       MozXULElement.insertFTLIfNeeded("preview/unifiedExtensions.ftl");
 
       this._button = document.getElementById("unified-extensions-button");

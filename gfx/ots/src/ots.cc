@@ -22,6 +22,8 @@
 #include "avar.h"
 #include "cff.h"
 #include "cmap.h"
+#include "colr.h"
+#include "cpal.h"
 #include "cvar.h"
 #include "cvt.h"
 #include "fpgm.h"
@@ -144,6 +146,11 @@ const struct {
   { OTS_TAG_STAT, false },
   { OTS_TAG_VVAR, false },
   { OTS_TAG_CFF2, false },
+  // Color font tables.
+  // We need to parse CPAL before COLR so that the number of palette entries
+  // is known; and these tables follow fvar because COLR may use variations.
+  { OTS_TAG_CPAL, false },
+  { OTS_TAG_COLR, false },
   // We need to parse GDEF table in advance of parsing GSUB/GPOS tables
   // because they could refer GDEF table.
   { OTS_TAG_GDEF, false },
@@ -696,6 +703,18 @@ bool ProcessGeneric(ots::FontFile *header,
     }
   }
 
+#ifdef OTS_SYNTHESIZE_MISSING_GVAR
+  // If there was an fvar table but no gvar, synthesize an empty gvar to avoid
+  // issues with rasterizers (e.g. Core Text) that assume it must be present.
+  if (font->GetTable(OTS_TAG_FVAR) && !font->GetTable(OTS_TAG_GVAR)) {
+    ots::OpenTypeGVAR *gvar = new ots::OpenTypeGVAR(font, OTS_TAG_GVAR);
+    if (gvar->InitEmpty()) {
+      table_map[OTS_TAG_GVAR] = { OTS_TAG_GVAR, 0, 0, 0, 0 };
+      font->AddTable(gvar);
+    }
+  }
+#endif
+
   ots::Table *glyf = font->GetTable(OTS_TAG_GLYF);
   ots::Table *loca = font->GetTable(OTS_TAG_LOCA);
   ots::Table *cff  = font->GetTable(OTS_TAG_CFF);
@@ -884,6 +903,8 @@ bool Font::ParseTable(const TableEntry& table_entry, const uint8_t* data,
       case OTS_TAG_CFF:  table = new OpenTypeCFF(this,  tag); break;
       case OTS_TAG_CFF2: table = new OpenTypeCFF2(this, tag); break;
       case OTS_TAG_CMAP: table = new OpenTypeCMAP(this, tag); break;
+      case OTS_TAG_COLR: table = new OpenTypeCOLR(this, tag); break;
+      case OTS_TAG_CPAL: table = new OpenTypeCPAL(this, tag); break;
       case OTS_TAG_CVAR: table = new OpenTypeCVAR(this, tag); break;
       case OTS_TAG_CVT:  table = new OpenTypeCVT(this,  tag); break;
       case OTS_TAG_FPGM: table = new OpenTypeFPGM(this, tag); break;
@@ -963,6 +984,13 @@ Table* Font::GetTypedTable(uint32_t tag) const {
   if (t && t->Type() == tag)
     return t;
   return NULL;
+}
+
+void Font::AddTable(Table* table) {
+  // Attempting to add a duplicate table would be an error; this should only
+  // be used to add a table that does not already exist.
+  assert(m_tables.find(table->Tag()) == m_tables.end());
+  m_tables[table->Tag()] = table;
 }
 
 void Font::DropGraphite() {

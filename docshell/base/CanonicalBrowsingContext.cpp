@@ -30,6 +30,7 @@
 #endif
 #include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_docshell.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/Telemetry.h"
@@ -100,7 +101,7 @@ static void DecreasePrivateCount() {
           ("%s: Private browsing context count %d -> %d", __func__,
            gNumberOfPrivateContexts + 1, gNumberOfPrivateContexts));
   if (!gNumberOfPrivateContexts &&
-      !mozilla::Preferences::GetBool("browser.privatebrowsing.autostart")) {
+      !mozilla::StaticPrefs::browser_privatebrowsing_autostart()) {
     nsCOMPtr<nsIObserverService> observerService =
         mozilla::services::GetObserverService();
     if (observerService) {
@@ -1755,9 +1756,7 @@ nsresult CanonicalBrowsingContext::PendingRemotenessChange::FinishSubframe() {
   }
 
   nsCOMPtr<nsIPrincipal> initialPrincipal =
-      NullPrincipal::CreateWithInheritedAttributes(
-          target->OriginAttributesRef(),
-          /* isFirstParty */ false);
+      NullPrincipal::Create(target->OriginAttributesRef());
   WindowGlobalInit windowInit =
       WindowGlobalActor::AboutBlankInitializer(target, initialPrincipal);
 

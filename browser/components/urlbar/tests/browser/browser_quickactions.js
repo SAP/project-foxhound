@@ -7,7 +7,7 @@
 
 "use strict";
 
-requestLongerTimeout(2);
+requestLongerTimeout(3);
 
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderQuickActions:
@@ -17,7 +17,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AppUpdater: "resource:///modules/AppUpdater.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
 });
 
 const DUMMY_PAGE =
@@ -28,13 +27,11 @@ let testActionCalled = 0;
 add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["browser.urlbar.quickactions.enabled", true],
       ["browser.urlbar.suggest.quickactions", true],
       ["browser.urlbar.shortcuts.quickactions", true],
       ["screenshots.browser.component.enabled", true],
       ["extensions.screenshots.disabled", false],
-      // about:addons page holds last visit, as then will open the page if visit
-      // about:addons URL, clear it.
-      ["extensions.ui.lastCategory", ""],
     ],
   });
 
@@ -108,8 +105,8 @@ add_task(async function enter_search_mode_button() {
     window.document.getElementById("urlbar-engine-one-off-item-actions")
   );
   Assert.ok(oneOffButton, "One off button is available when preffed on");
-  EventUtils.synthesizeMouseAtCenter(oneOffButton, {}, window);
 
+  EventUtils.synthesizeMouseAtCenter(oneOffButton, {}, window);
   await UrlbarTestUtils.assertSearchMode(window, {
     source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
     entry: "oneoff",
@@ -118,6 +115,38 @@ add_task(async function enter_search_mode_button() {
   await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
   Assert.ok(true, "Actions are shown when we enter actions search mode.");
 
+  await UrlbarTestUtils.exitSearchMode(window);
+  await UrlbarTestUtils.promisePopupClose(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+});
+
+add_task(async function enter_search_mode_oneoff_by_key() {
+  // Select actions oneoff button by keyboard.
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "",
+  });
+  await UrlbarTestUtils.enterSearchMode(window);
+  const oneOffButtons = UrlbarTestUtils.getOneOffSearchButtons(window);
+  for (;;) {
+    EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
+    if (
+      oneOffButtons.selectedButton.source === UrlbarUtils.RESULT_SOURCE.ACTIONS
+    ) {
+      break;
+    }
+  }
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: " ",
+  });
+  await UrlbarTestUtils.assertSearchMode(window, {
+    source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
+    entry: "oneoff",
+  });
+
+  await UrlbarTestUtils.exitSearchMode(window);
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_Escape");
 });
@@ -131,6 +160,8 @@ add_task(async function enter_search_mode_key() {
     source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
     entry: "typed",
   });
+
+  await UrlbarTestUtils.exitSearchMode(window);
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_Escape");
 });
@@ -313,11 +344,154 @@ add_task(async function test_other_search_mode() {
   );
 });
 
+add_task(async function test_no_quickactions_suggestions() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "screenshot",
+  });
+  Assert.ok(
+    !window.document.querySelector(
+      ".urlbarView-row[dynamicType=quickactions] .urlbarView-quickaction-row"
+    ),
+    "Screenshot button is not suggested"
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "> screenshot",
+  });
+  Assert.ok(
+    window.document.querySelector(
+      ".urlbarView-row[dynamicType=quickactions] .urlbarView-quickaction-row"
+    ),
+    "Screenshot button is suggested"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_quickactions_disabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.quickactions.enabled", false],
+      ["browser.urlbar.suggest.quickactions", true],
+    ],
+  });
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "screenshot",
+  });
+  Assert.ok(
+    !window.document.querySelector(
+      ".urlbarView-row[dynamicType=quickactions] .urlbarView-quickaction-row"
+    ),
+    "Screenshot button is not suggested"
+  );
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "> screenshot",
+  });
+  Assert.ok(
+    !window.document.querySelector(
+      ".urlbarView-row[dynamicType=quickactions] .urlbarView-quickaction-row"
+    ),
+    "Screenshot button is not suggested"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+  EventUtils.synthesizeKey("KEY_Escape");
+
+  await SpecialPowers.popPrefEnv();
+});
+
 let COMMANDS_TESTS = [
-  ["add-ons", async () => isSelected("button[name=discover]")],
-  ["plugins", async () => isSelected("button[name=plugin]")],
-  ["extensions", async () => isSelected("button[name=extension]")],
-  ["themes", async () => isSelected("button[name=theme]")],
+  {
+    cmd: "add-ons",
+    uri: "about:addons",
+    testFun: async () => isSelected("button[name=discover]"),
+  },
+  {
+    cmd: "plugins",
+    uri: "about:addons",
+    testFun: async () => isSelected("button[name=plugin]"),
+  },
+  {
+    cmd: "extensions",
+    uri: "about:addons",
+    testFun: async () => isSelected("button[name=extension]"),
+  },
+  {
+    cmd: "themes",
+    uri: "about:addons",
+    testFun: async () => isSelected("button[name=theme]"),
+  },
+  {
+    cmd: "add-ons",
+    setup: async () => {
+      const onLoad = BrowserTestUtils.browserLoaded(
+        gBrowser.selectedBrowser,
+        false,
+        "http://example.com/"
+      );
+      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      await onLoad;
+    },
+    uri: "about:addons",
+    isNewTab: true,
+    testFun: async () => isSelected("button[name=discover]"),
+  },
+  {
+    cmd: "plugins",
+    setup: async () => {
+      const onLoad = BrowserTestUtils.browserLoaded(
+        gBrowser.selectedBrowser,
+        false,
+        "http://example.com/"
+      );
+      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      await onLoad;
+    },
+    uri: "about:addons",
+    isNewTab: true,
+    testFun: async () => isSelected("button[name=plugin]"),
+  },
+  {
+    cmd: "extensions",
+    setup: async () => {
+      const onLoad = BrowserTestUtils.browserLoaded(
+        gBrowser.selectedBrowser,
+        false,
+        "http://example.com/"
+      );
+      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      await onLoad;
+    },
+    uri: "about:addons",
+    isNewTab: true,
+    testFun: async () => isSelected("button[name=extension]"),
+  },
+  {
+    cmd: "themes",
+    setup: async () => {
+      const onLoad = BrowserTestUtils.browserLoaded(
+        gBrowser.selectedBrowser,
+        false,
+        "http://example.com/"
+      );
+      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "http://example.com/");
+      await onLoad;
+    },
+    uri: "about:addons",
+    isNewTab: true,
+    testFun: async () => isSelected("button[name=theme]"),
+  },
 ];
 
 let isSelected = async selector =>
@@ -328,112 +502,37 @@ let isSelected = async selector =>
   });
 
 add_task(async function test_pages() {
-  for (const [cmd, testFun] of COMMANDS_TESTS) {
+  for (const { cmd, uri, setup, isNewTab, testFun } of COMMANDS_TESTS) {
     info(`Testing ${cmd} command is triggered`);
     let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+
+    if (setup) {
+      info("Setup");
+      await setup();
+    }
+
+    let onLoad = isNewTab
+      ? BrowserTestUtils.waitForNewTab(gBrowser, uri, true)
+      : BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, uri);
+
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       value: cmd,
     });
     EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
     EventUtils.synthesizeKey("KEY_Enter", {}, window);
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+
+    const newTab = await onLoad;
 
     Assert.ok(
       await testFun(),
       `The command "${cmd}" passed completed its test`
     );
+
+    if (isNewTab) {
+      await BrowserTestUtils.removeTab(newTab);
+    }
     await BrowserTestUtils.removeTab(tab);
-  }
-});
-
-add_task(async function test_about_pages_refocused() {
-  const testData = [
-    {
-      firstInput: "downloads",
-      uri: "about:downloads",
-    },
-    {
-      firstInput: "logins",
-      uri: "about:logins",
-    },
-    {
-      firstInput: "settings",
-      uri: "about:preferences",
-    },
-    {
-      firstInput: "plugins",
-      secondInput: "add-ons",
-      uri: "about:addons",
-      component: "button[name=plugin]",
-    },
-    {
-      firstLoad: "about:preferences#home",
-      secondInput: "settings",
-      uri: "about:preferences#home",
-    },
-  ];
-
-  for (const {
-    firstInput,
-    firstLoad,
-    secondInput,
-    uri,
-    component,
-  } of testData) {
-    info("Setup initial state");
-    let firstTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-    let onLoad = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser,
-      false,
-      uri
-    );
-    if (firstLoad) {
-      info("Load initial URI");
-      BrowserTestUtils.loadURI(gBrowser.selectedBrowser, uri);
-    } else {
-      info("Open about page by quick action");
-      await UrlbarTestUtils.promiseAutocompleteResultPopup({
-        window,
-        value: firstInput,
-      });
-      EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
-      EventUtils.synthesizeKey("KEY_Enter", {}, window);
-    }
-    await onLoad;
-
-    if (component) {
-      info("Check whether the component is in the page");
-      Assert.ok(await isSelected(component), "There is expected component");
-    }
-
-    info("Do the second quick action in second tab");
-    let secondTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: secondInput || firstInput,
-    });
-    EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
-    EventUtils.synthesizeKey("KEY_Enter", {}, window);
-    Assert.equal(
-      gBrowser.selectedTab,
-      firstTab,
-      "Switched to the tab that is opening the about page"
-    );
-    Assert.equal(
-      gBrowser.selectedBrowser.currentURI.spec,
-      uri,
-      "URI is not changed"
-    );
-    Assert.equal(gBrowser.tabs.length, 3, "Not opened a new tab");
-
-    if (component) {
-      info("Check whether the component is still in the page");
-      Assert.ok(await isSelected(component), "There is expected component");
-    }
-
-    BrowserTestUtils.removeTab(secondTab);
-    BrowserTestUtils.removeTab(firstTab);
   }
 });
 
@@ -444,138 +543,6 @@ const assertActionButtonStatus = async (name, expectedEnabled, description) => {
   const target = window.document.querySelector(`[data-key=${name}]`);
   Assert.equal(!target.hasAttribute("disabled"), expectedEnabled, description);
 };
-
-add_task(async function test_inspector() {
-  const testData = [
-    {
-      description: "Test for 'about:' page",
-      page: "about:home",
-      isDevToolsUser: true,
-      actionVisible: true,
-      actionEnabled: true,
-    },
-    {
-      description: "Test for another 'about:' page",
-      page: "about:about",
-      isDevToolsUser: true,
-      actionVisible: true,
-      actionEnabled: true,
-    },
-    {
-      description: "Test for another devtools-toolbox page",
-      page: "about:devtools-toolbox",
-      isDevToolsUser: true,
-      actionVisible: true,
-      actionEnabled: false,
-    },
-    {
-      description: "Test for web content",
-      page: "http://example.com",
-      isDevToolsUser: true,
-      actionVisible: true,
-      actionEnabled: true,
-    },
-    {
-      description: "Test for disabled DevTools",
-      page: "http://example.com",
-      prefs: [["devtools.policy.disabled", true]],
-      isDevToolsUser: true,
-      actionVisible: true,
-      actionEnabled: false,
-    },
-    {
-      description: "Test for not DevTools user",
-      page: "http://example.com",
-      isDevToolsUser: false,
-      actionVisible: true,
-      actionEnabled: false,
-    },
-    {
-      description: "Test for fully disabled",
-      page: "http://example.com",
-      prefs: [["devtools.policy.disabled", true]],
-      isDevToolsUser: false,
-      actionVisible: false,
-    },
-  ];
-
-  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-
-  for (const {
-    description,
-    page,
-    prefs = [],
-    isDevToolsUser,
-    actionEnabled,
-    actionVisible,
-  } of testData) {
-    info(description);
-
-    info("Set preferences");
-    await SpecialPowers.pushPrefEnv({
-      set: [...prefs, ["devtools.selfxss.count", isDevToolsUser ? 5 : 0]],
-    });
-
-    info("Check the button status");
-    const onLoad = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-    BrowserTestUtils.loadURI(gBrowser.selectedBrowser, page);
-    await onLoad;
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: "inspector",
-    });
-
-    if (actionVisible) {
-      await assertActionButtonStatus(
-        "inspect",
-        actionEnabled,
-        "The status of action button is correct"
-      );
-    } else {
-      const target = window.document.querySelector(`[data-key=inspect]`);
-      Assert.ok(!target, "Inspect button should not be displayed");
-    }
-
-    await SpecialPowers.popPrefEnv();
-
-    if (!actionEnabled) {
-      continue;
-    }
-
-    info("Do inspect action");
-    EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
-    EventUtils.synthesizeKey("KEY_Enter", {}, window);
-    await BrowserTestUtils.waitForCondition(
-      () => DevToolsShim.hasToolboxForTab(gBrowser.selectedTab),
-      "Wait for opening inspector for current selected tab"
-    );
-    const toolbox = await DevToolsShim.getToolboxForTab(gBrowser.selectedTab);
-    await BrowserTestUtils.waitForCondition(
-      () => toolbox.currentToolId === "inspector",
-      "Wait until the inspector is selected"
-    );
-
-    info("Do inspect action again in the same page during opening inspector");
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: "inspector",
-    });
-    await assertActionButtonStatus(
-      "inspect",
-      false,
-      "The action button should be disabled since the inspector is already opening"
-    );
-
-    info(
-      "Select another tool to check whether the inspector will be selected in next test even if the previous tool is not inspector"
-    );
-    await toolbox.selectTool("options");
-    await toolbox.destroy();
-  }
-
-  // Clean up.
-  BrowserTestUtils.removeTab(tab);
-});
 
 add_task(async function test_viewsource() {
   info("Check the button status of when the page is not web content");

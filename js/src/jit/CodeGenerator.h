@@ -7,9 +7,7 @@
 #ifndef jit_CodeGenerator_h
 #define jit_CodeGenerator_h
 
-#if defined(JS_ION_PERF)
-#  include "jit/PerfSpewer.h"
-#endif
+#include "jit/PerfSpewer.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 
 #if defined(JS_CODEGEN_X86)
@@ -78,6 +76,7 @@ class OutOfLineAbortingWasmTrap;
 class OutOfLineZeroIfNaN;
 class OutOfLineGuardNumberToIntPtrIndex;
 class OutOfLineBoxNonStrictThis;
+class OutOfLineArrayPush;
 
 class CodeGenerator final : public CodeGeneratorSpecific {
   [[nodiscard]] bool generateBody();
@@ -171,6 +170,8 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   void visitOutOfLineGuardNumberToIntPtrIndex(
       OutOfLineGuardNumberToIntPtrIndex* ool);
+
+  void visitOutOfLineArrayPush(OutOfLineArrayPush* ool);
 
  private:
   void emitPostWriteBarrier(const LAllocation* obj);
@@ -363,9 +364,7 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   // Script counts created during code generation.
   IonScriptCounts* scriptCounts_;
 
-#if defined(JS_ION_PERF)
   IonPerfSpewer perfSpewer_;
-#endif
 
   // Bit mask of JitRealm stubs that are to be read-barriered.
   uint32_t realmStubsToReadBarrier_;

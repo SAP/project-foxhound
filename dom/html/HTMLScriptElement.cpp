@@ -208,9 +208,10 @@ void HTMLScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
       mKind = ScriptKind::eModule;
     }
 
-    // https://wicg.github.io/import-maps/#integration-prepare-a-script
-    // If the script block’s type string is an ASCII case-insensitive match
-    // for the string "importmap", the script’s type is "importmap".
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    // Step 11. Otherwise, if the script block's type string is an ASCII
+    // case-insensitive match for the string "importmap", then set el's type to
+    // "importmap".
     if (aOwnerDoc->ImportMapsEnabled() &&
         type.LowerCaseEqualsASCII("importmap")) {
       mKind = ScriptKind::eImportMap;

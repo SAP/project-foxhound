@@ -44,13 +44,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=471722
           // So now we will have emptied the textfield and the editor will have
           // created a padding <br> element for empty editor.
           // Check the transaction is in the undo stack...
-          var t1Enabled = {};
-          var t1CanUndo = {};
-          editor.canUndo(t1Enabled, t1CanUndo);
-          ok(t1CanUndo.value, "undo is enabled");
+          ok(editor.canUndo, "undo should be available");
 
           // Undo the cut
-          editor.undo(1);
+          editor.undo();
           is(t1.value, "minefield", "text reinserted");
 
           // So now, the cut should be in the redo stack, so executing the redo
@@ -58,10 +55,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=471722
           // element for empty editor that was removed after undo.
           // This will require the editor to figure out that we have a padding
           // <br> element again...
-          var t1CanRedo = {};
-          editor.canRedo(t1Enabled, t1CanRedo);
-          ok(t1CanRedo.value, "redo is enabled");
-          editor.redo(1);
+          ok(editor.canRedo, "redo should be available");
+          editor.redo();
 
           // Did the editor notice a padding <br> element for empty editor
           // reappeared?

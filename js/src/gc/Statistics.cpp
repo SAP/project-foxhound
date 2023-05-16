@@ -761,7 +761,7 @@ Statistics::Statistics(GCRuntime* gc)
       gcTimerFile(nullptr),
       gcDebugFile(nullptr),
       nonincrementalReason_(GCAbortReason::None),
-      creationTime_(ReallyNow()),
+      creationTime_(TimeStamp::Now()),
       allocsSinceMinorGC({0, 0}),
       preTotalHeapBytes(0),
       postTotalHeapBytes(0),
@@ -1011,7 +1011,9 @@ void Statistics::sendGCTelemetry() {
   // NOTE: "Compartmental" is term that was deprecated with the
   // introduction of zone-based GC, but the old telemetry probe
   // continues to be used.
-  runtime->metrics().GC_IS_COMPARTMENTAL(!runtime->gc.fullGCRequested);
+  runtime->metrics().GC_IS_COMPARTMENTAL(!gc->fullGCRequested);
+  runtime->metrics().GC_ZONE_COUNT(zoneStats.zoneCount);
+  runtime->metrics().GC_ZONES_COLLECTED(zoneStats.collectedZoneCount);
   TimeDuration prepareTotal = SumPhase(PhaseKind::PREPARE, phaseTimes);
   TimeDuration markTotal = SumPhase(PhaseKind::MARK, phaseTimes);
   TimeDuration markRootsTotal = SumPhase(PhaseKind::MARK_ROOTS, phaseTimes);
@@ -1131,7 +1133,7 @@ void Statistics::beginSlice(const ZoneGCStats& zoneStats, JS::GCOptions options,
 
   this->zoneStats = zoneStats;
 
-  TimeStamp currentTime = ReallyNow();
+  TimeStamp currentTime = TimeStamp::Now();
 
   bool first = !gc->isIncrementalGCInProgress();
   if (first) {
@@ -1176,7 +1178,7 @@ void Statistics::endSlice() {
 
   if (!aborted) {
     auto& slice = slices_.back();
-    slice.end = ReallyNow();
+    slice.end = TimeStamp::Now();
     slice.endFaults = GetPageFaultCount();
     slice.finalState = gc->state();
 
@@ -1352,7 +1354,7 @@ void Statistics::resumePhases() {
          suspendedPhases.back() != Phase::IMPLICIT_SUSPENSION) {
     Phase resumePhase = suspendedPhases.popCopy();
     if (resumePhase == Phase::MUTATOR) {
-      timedGCTime += ReallyNow() - timedGCStart;
+      timedGCTime += TimeStamp::Now() - timedGCStart;
     }
     recordPhaseBegin(resumePhase);
   }
@@ -1382,7 +1384,7 @@ void Statistics::recordPhaseBegin(Phase phase) {
   Phase current = currentPhase();
   MOZ_ASSERT(phases[phase].parent == current);
 
-  TimeStamp now = ReallyNow();
+  TimeStamp now = TimeStamp::Now();
 
   if (current != Phase::NONE) {
     MOZ_ASSERT(now >= phaseStartTimes[currentPhase()],
@@ -1403,7 +1405,7 @@ void Statistics::recordPhaseEnd(Phase phase) {
 
   MOZ_ASSERT(phaseStartTimes[phase]);
 
-  TimeStamp now = ReallyNow();
+  TimeStamp now = TimeStamp::Now();
 
   // Make sure this phase ends after it starts.
   MOZ_ASSERT(now >= phaseStartTimes[phase],
@@ -1485,14 +1487,14 @@ void Statistics::recordParallelPhase(PhaseKind phaseKind,
   maxTime = std::max(maxTime, duration);
 }
 
-TimeStamp Statistics::beginSCC() { return ReallyNow(); }
+TimeStamp Statistics::beginSCC() { return TimeStamp::Now(); }
 
 void Statistics::endSCC(unsigned scc, TimeStamp start) {
   if (scc >= sccTimes.length() && !sccTimes.resize(scc + 1)) {
     return;
   }
 
-  sccTimes[scc] += ReallyNow() - start;
+  sccTimes[scc] += TimeStamp::Now() - start;
 }
 
 /*

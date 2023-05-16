@@ -4,18 +4,17 @@
 
 "use strict";
 
-const { Cu, Ci } = require("chrome");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const { DevToolsServer } = require("resource://devtools/server/devtools-server.js");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 loader.lazyRequireGetter(
   this,
   "ObjectUtils",
-  "devtools/server/actors/object/utils"
+  "resource://devtools/server/actors/object/utils.js"
 );
 loader.lazyRequireGetter(
   this,
   "PropertyIterators",
-  "devtools/server/actors/object/property-iterator"
+  "resource://devtools/server/actors/object/property-iterator.js"
 );
 
 // Number of items to preview in objects, arrays, maps, sets, lists,

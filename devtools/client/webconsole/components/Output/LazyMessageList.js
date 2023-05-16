@@ -34,12 +34,12 @@ const {
   Component,
   createElement,
   createRef,
-} = require("devtools/client/shared/vendor/react");
+} = require("resource://devtools/client/shared/vendor/react.js");
 
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 
 // This element is a webconsole optimization for handling large numbers of

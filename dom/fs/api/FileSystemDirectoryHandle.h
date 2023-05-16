@@ -17,7 +17,6 @@ class ErrorResult;
 
 namespace dom {
 
-class FileSystemDirectoryIterator;
 struct FileSystemGetFileOptions;
 struct FileSystemGetDirectoryOptions;
 struct FileSystemRemoveOptions;
@@ -46,13 +45,16 @@ class FileSystemDirectoryHandle final : public FileSystemHandle {
   // WebIDL Interface
   FileSystemHandleKind Kind() const override;
 
-  void InitAsyncIterator(iterator_t* aIterator, ErrorResult& aError);
+  struct IteratorData {
+    UniquePtr<FileSystemDirectoryIterator::Impl> mImpl;
+  };
 
-  void DestroyAsyncIterator(iterator_t* aIterator);
+  void InitAsyncIteratorData(IteratorData& aData,
+                             iterator_t::IteratorType aType,
+                             ErrorResult& aError);
 
-  [[nodiscard]] already_AddRefed<Promise> GetNextPromise(JSContext* aCx,
-                                                         iterator_t* aIterator,
-                                                         ErrorResult& aError);
+  [[nodiscard]] already_AddRefed<Promise> GetNextIterationResult(
+      iterator_t* aIterator, ErrorResult& aError);
 
   already_AddRefed<Promise> GetFileHandle(
       const nsAString& aName, const FileSystemGetFileOptions& aOptions,

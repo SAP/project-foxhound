@@ -87,6 +87,7 @@
 #include "nsIStreamListener.h"
 #include "nsISupports.h"
 #include "nsISupportsUtils.h"
+#include "nsITransportSecurityInfo.h"
 #include "nsIURI.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsLiteralString.h"
@@ -2249,7 +2250,7 @@ class Document : public nsINode,
    *
    * @see nsIChannel
    */
-  nsISupports* GetSecurityInfo() { return mSecurityInfo; }
+  nsITransportSecurityInfo* GetSecurityInfo() { return mSecurityInfo; }
 
   /**
    * Get the channel that failed to load and resulted in an error page, if it
@@ -4072,6 +4073,12 @@ class Document : public nsINode,
 
   bool DidHitCompleteSheetCache() const { return mDidHitCompleteSheetCache; }
 
+  bool ShouldResistFingerprinting() const {
+    return mShouldResistFingerprinting;
+  }
+
+  void RecomputeResistFingerprinting();
+
  protected:
   // Returns the WindowContext for the document that we will contribute
   // page use counters to.
@@ -4812,6 +4819,29 @@ class Document : public nsINode,
   // Set the true if a completed cached stylesheet was created for the document.
   bool mDidHitCompleteSheetCache : 1;
 
+  // Whether we have initialized mShouldReportUseCounters and
+  // mShouldSendPageUseCounters, and sent any needed message to the parent
+  // process to indicate that use counter data will be sent at some later point.
+  bool mUseCountersInitialized : 1;
+
+  // Whether this document should report use counters.
+  bool mShouldReportUseCounters : 1;
+
+  // Whether this document should send page use counters.  Set to true after
+  // we've called SendExpectPageUseCounters on the top-level WindowGlobal.
+  bool mShouldSendPageUseCounters : 1;
+
+  // Whether the user has interacted with the document or not:
+  bool mUserHasInteracted : 1;
+
+  // We constantly update the user-interaction anti-tracking permission at any
+  // user-interaction using a timer. This boolean value is set to true when this
+  // timer is scheduled.
+  bool mHasUserInteractionTimerScheduled : 1;
+
+  // Whether we should resist fingerprinting.
+  bool mShouldResistFingerprinting : 1;
+
   uint8_t mPendingFullscreenRequests;
 
   uint8_t mXMLDeclarationBits;
@@ -4902,7 +4932,7 @@ class Document : public nsINode,
 
  protected:
   // The document's security info
-  nsCOMPtr<nsISupports> mSecurityInfo;
+  nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo;
 
   // The channel that failed to load and resulted in an error page.
   // This only applies to error pages. Might be null.
@@ -5017,26 +5047,6 @@ class Document : public nsINode,
 
   // The CSS property use counters.
   UniquePtr<StyleUseCounters> mStyleUseCounters;
-
-  // Whether we have initialized mShouldReportUseCounters and
-  // mShouldSendPageUseCounters, and sent any needed message to the parent
-  // process to indicate that use counter data will be sent at some later point.
-  bool mUseCountersInitialized : 1;
-
-  // Whether this document should report use counters.
-  bool mShouldReportUseCounters : 1;
-
-  // Whether this document should send page use counters.  Set to true after
-  // we've called SendExpectPageUseCounters on the top-level WindowGlobal.
-  bool mShouldSendPageUseCounters : 1;
-
-  // Whether the user has interacted with the document or not:
-  bool mUserHasInteracted;
-
-  // We constantly update the user-interaction anti-tracking permission at any
-  // user-interaction using a timer. This boolean value is set to true when this
-  // timer is scheduled.
-  bool mHasUserInteractionTimerScheduled;
 
   TimeStamp mPageUnloadingEventTimeStamp;
 

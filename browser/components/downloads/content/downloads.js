@@ -40,22 +40,18 @@ ChromeUtils.defineModuleGetter(
   "DownloadsViewUI",
   "resource:///modules/DownloadsViewUI.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "NetUtil",
   "resource://gre/modules/NetUtil.jsm"
 );
-ChromeUtils.defineESModuleGetters(this, {
-  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-});
 
-const { Integration } = ChromeUtils.import(
-  "resource://gre/modules/Integration.jsm"
+const { Integration } = ChromeUtils.importESModule(
+  "resource://gre/modules/Integration.sys.mjs"
 );
 
 /* global DownloadIntegration */
@@ -111,16 +107,10 @@ var DownloadsPanel = {
       "Attempting to initialize DownloadsPanel for a window."
     );
 
-    // Allow the download spam protection module to notify DownloadsView
-    // if it's been created.
-    if (
-      DownloadIntegration.downloadSpamProtection &&
-      !DownloadIntegration.downloadSpamProtection.spamList._views.has(
-        DownloadsView
-      )
-    ) {
-      DownloadIntegration.downloadSpamProtection.spamList.addView(
-        DownloadsView
+    if (DownloadIntegration.downloadSpamProtection) {
+      DownloadIntegration.downloadSpamProtection.register(
+        DownloadsView,
+        window
       );
     }
 
@@ -183,9 +173,7 @@ var DownloadsPanel = {
     this._unattachEventListeners();
 
     if (DownloadIntegration.downloadSpamProtection) {
-      DownloadIntegration.downloadSpamProtection.spamList.removeView(
-        DownloadsView
-      );
+      DownloadIntegration.downloadSpamProtection.unregister(window);
     }
 
     this._state = this.kStateUninitialized;

@@ -20,6 +20,7 @@ use crate::prim_store::gradient::{
     FastLinearGradientInstance, LinearGradientInstance, RadialGradientInstance,
     ConicGradientInstance,
 };
+use crate::renderer::{GpuBufferBuilder};
 use crate::render_backend::DataStores;
 use crate::render_task::{RenderTaskKind, RenderTaskAddress};
 use crate::render_task::{RenderTask, ScalingTask, SvgFilterInfo};
@@ -262,6 +263,7 @@ impl RenderTarget for ColorRenderTarget {
     ) {
         profile_scope!("build");
         let mut merged_batches = AlphaBatchContainer::new(None);
+        let mut gpu_buffer_builder = GpuBufferBuilder::new();
 
         for task_id in &self.alpha_tasks {
             profile_scope!("alpha_task");
@@ -297,12 +299,9 @@ impl RenderTarget for ColorRenderTarget {
                     let mut batch_builder = BatchBuilder::new(alpha_batch_builder);
                     let cmd_buffer = cmd_buffers.get(pic_task.cmd_buffer_index);
 
-                    cmd_buffer.iter_prims(&mut |prim_instance_index, spatial_node_index, gpu_address| {
-                        let prim_instance = &prim_instances[prim_instance_index.0 as usize];
-
+                    cmd_buffer.iter_prims(&mut |cmd, spatial_node_index| {
                         batch_builder.add_prim_to_batch(
-                            prim_instance,
-                            gpu_address,
+                            cmd,
                             spatial_node_index,
                             ctx,
                             gpu_cache,
@@ -312,6 +311,8 @@ impl RenderTarget for ColorRenderTarget {
                             pic_task.raster_spatial_node_index,
                             pic_task.surface_spatial_node_index,
                             z_generator,
+                            prim_instances,
+                            &mut gpu_buffer_builder,
                         );
                     });
 

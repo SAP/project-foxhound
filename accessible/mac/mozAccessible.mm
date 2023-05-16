@@ -370,23 +370,12 @@ static const uint64_t kCacheInitialized = ((uint64_t)0x1) << 63;
 - (nsStaticAtom*)ARIARole {
   MOZ_ASSERT(mGeckoAccessible);
 
-  if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
-    if (acc->HasARIARole()) {
-      const nsRoleMapEntry* roleMap = acc->ARIARoleMap();
-      return roleMap->roleAtom;
-    }
-
-    return nsGkAtoms::_empty;
+  if (mGeckoAccessible->HasARIARole()) {
+    const nsRoleMapEntry* roleMap = mGeckoAccessible->ARIARoleMap();
+    return roleMap->roleAtom;
   }
 
-  if (!mARIARole) {
-    mARIARole = mGeckoAccessible->AsRemote()->ARIARoleAtom();
-    if (!mARIARole) {
-      mARIARole = nsGkAtoms::_empty;
-    }
-  }
-
-  return mARIARole;
+  return nsGkAtoms::_empty;
 }
 
 - (NSString*)moxSubrole {
@@ -629,7 +618,8 @@ struct RoleDescrComparator {
 
   if (docAcc) nativeWindow = static_cast<NSWindow*>(docAcc->GetNativeWindow());
 
-  MOZ_ASSERT(nativeWindow, "Couldn't get native window");
+  MOZ_ASSERT(nativeWindow || gfxPlatform::IsHeadless(),
+             "Couldn't get native window");
   return nativeWindow;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);

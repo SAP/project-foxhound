@@ -15,7 +15,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsString.h"
 #include "nsMimeTypes.h"
-#include "nsMemory.h"
 #include "nsIURL.h"
 #include "nsNetCID.h"
 #include "nsIPipe.h"
@@ -74,8 +73,7 @@ NS_IMETHODIMP nsIconChannel::GetCanceledReason(nsACString& aReason) {
   return GetCanceledReasonImpl(aReason);
 }
 
-NS_IMETHODIMP nsIconChannel::CancelWithReason(nsresult aStatus,
-                                              const nsACString& aReason) {
+NS_IMETHODIMP nsIconChannel::CancelWithReason(nsresult aStatus, const nsACString& aReason) {
   return CancelWithReasonImpl(aStatus, aReason);
 }
 
@@ -498,7 +496,7 @@ nsIconChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aNotificationCall
 }
 
 NS_IMETHODIMP
-nsIconChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsIconChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   *aSecurityInfo = nullptr;
   return NS_OK;
 }

@@ -9,7 +9,6 @@ use crate::applicable_declarations::{
 };
 use crate::context::{CascadeInputs, QuirksMode};
 use crate::dom::{TElement, TShadowRoot};
-use crate::font_metrics::FontMetricsProvider;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
 use crate::invalidation::element::invalidation_map::InvalidationMap;
@@ -34,7 +33,7 @@ use crate::stylesheets::layer_rule::{LayerName, LayerOrder};
 use crate::stylesheets::viewport_rule::{self, MaybeNew, ViewportRule};
 #[cfg(feature = "gecko")]
 use crate::stylesheets::{
-    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, PageRule, ScrollTimelineRule,
+    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, FontPaletteValuesRule, PageRule,
 };
 use crate::stylesheets::{
     CssRule, EffectiveRulesIterator, Origin, OriginSet, PerOrigin, PerOriginIter,
@@ -861,7 +860,6 @@ impl Stylist {
         guards: &StylesheetGuards,
         pseudo: &PseudoElement,
         parent: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
     ) -> Arc<ComputedValues>
     where
         E: TElement,
@@ -870,13 +868,7 @@ impl Stylist {
 
         let rule_node = self.rule_node_for_precomputed_pseudo(guards, pseudo, vec![]);
 
-        self.precomputed_values_for_pseudo_with_rule_node::<E>(
-            guards,
-            pseudo,
-            parent,
-            font_metrics,
-            rule_node,
-        )
+        self.precomputed_values_for_pseudo_with_rule_node::<E>(guards, pseudo, parent, rule_node)
     }
 
     /// Computes the style for a given "precomputed" pseudo-element with
@@ -889,7 +881,6 @@ impl Stylist {
         guards: &StylesheetGuards,
         pseudo: &PseudoElement,
         parent: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
         rules: StrongRuleNode,
     ) -> Arc<ComputedValues>
     where
@@ -903,7 +894,6 @@ impl Stylist {
             pseudo,
             guards,
             parent,
-            font_metrics,
             None,
         )
     }
@@ -958,13 +948,7 @@ impl Stylist {
     where
         E: TElement,
     {
-        use crate::font_metrics::ServoMetricsProvider;
-        self.precomputed_values_for_pseudo::<E>(
-            guards,
-            &pseudo,
-            Some(parent_style),
-            &ServoMetricsProvider,
-        )
+        self.precomputed_values_for_pseudo::<E>(guards, &pseudo, Some(parent_style))
     }
 
     /// Computes a pseudo-element style lazily during layout.
@@ -982,7 +966,6 @@ impl Stylist {
         rule_inclusion: RuleInclusion,
         parent_style: &ComputedValues,
         is_probe: bool,
-        font_metrics: &dyn FontMetricsProvider,
         matching_fn: Option<&dyn Fn(&PseudoElement) -> bool>,
     ) -> Option<Arc<ComputedValues>>
     where
@@ -1003,7 +986,6 @@ impl Stylist {
             pseudo,
             guards,
             Some(parent_style),
-            font_metrics,
             Some(element),
         ))
     }
@@ -1018,7 +1000,6 @@ impl Stylist {
         pseudo: &PseudoElement,
         guards: &StylesheetGuards,
         parent_style: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
         element: Option<E>,
     ) -> Arc<ComputedValues>
     where
@@ -1044,7 +1025,6 @@ impl Stylist {
             parent_style,
             parent_style,
             parent_style,
-            font_metrics,
             /* rule_cache = */ None,
             &mut RuleCacheConditions::default(),
         )
@@ -1071,7 +1051,6 @@ impl Stylist {
         parent_style: Option<&ComputedValues>,
         parent_style_ignoring_first_line: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
-        font_metrics: &dyn FontMetricsProvider,
         rule_cache: Option<&RuleCache>,
         rule_cache_conditions: &mut RuleCacheConditions,
     ) -> Arc<ComputedValues>
@@ -1108,7 +1087,6 @@ impl Stylist {
             parent_style_ignoring_first_line,
             layout_parent_style,
             visited_rules,
-            font_metrics,
             self.quirks_mode,
             rule_cache,
             rule_cache_conditions,
@@ -1494,10 +1472,7 @@ impl Stylist {
     where
         E: TElement,
     {
-        use crate::font_metrics::get_metrics_provider_for_product;
-
         let block = declarations.read_with(guards.author);
-        let metrics = get_metrics_provider_for_product();
 
         // We don't bother inserting these declarations in the rule tree, since
         // it'd be quite useless and slow.
@@ -1522,7 +1497,6 @@ impl Stylist {
             Some(parent_style),
             Some(parent_style),
             Some(parent_style),
-            &metrics,
             CascadeMode::Unvisited {
                 visited_rules: None,
             },
@@ -1663,8 +1637,7 @@ pub struct PageRuleData {
 /// named page rules that match a certain page.
 #[derive(Clone, Debug, Deref, MallocSizeOf)]
 pub struct PageRuleDataNoLayer(
-    #[ignore_malloc_size_of = "Arc, stylesheet measures as primary ref"]
-    pub Arc<Locked<PageRule>>,
+    #[ignore_malloc_size_of = "Arc, stylesheet measures as primary ref"] pub Arc<Locked<PageRule>>,
 );
 
 /// Stores page rules indexed by page names.
@@ -1703,6 +1676,10 @@ pub struct ExtraStyleData {
     #[cfg(feature = "gecko")]
     pub font_feature_values: LayerOrderedVec<Arc<Locked<FontFeatureValuesRule>>>,
 
+    /// A list of effective font-palette-values rules.
+    #[cfg(feature = "gecko")]
+    pub font_palette_values: LayerOrderedVec<Arc<Locked<FontPaletteValuesRule>>>,
+
     /// A map of effective counter-style rules.
     #[cfg(feature = "gecko")]
     pub counter_styles: LayerOrderedMap<Arc<Locked<CounterStyleRule>>>,
@@ -1710,10 +1687,6 @@ pub struct ExtraStyleData {
     /// A map of effective page rules.
     #[cfg(feature = "gecko")]
     pub pages: PageRuleMap,
-
-    /// A map of effective scroll-timeline rules.
-    #[cfg(feature = "gecko")]
-    pub scroll_timelines: LayerOrderedMap<Arc<Locked<ScrollTimelineRule>>>,
 }
 
 #[cfg(feature = "gecko")]
@@ -1730,6 +1703,15 @@ impl ExtraStyleData {
         layer: LayerId,
     ) {
         self.font_feature_values.push(rule.clone(), layer);
+    }
+
+    /// Add the given @font-palette-values rule.
+    fn add_font_palette_values(
+        &mut self,
+        rule: &Arc<Locked<FontPaletteValuesRule>>,
+        layer: LayerId,
+    ) {
+        self.font_palette_values.push(rule.clone(), layer);
     }
 
     /// Add the given @counter-style rule.
@@ -1752,36 +1734,30 @@ impl ExtraStyleData {
     ) -> Result<(), AllocErr> {
         let page_rule = rule.read_with(guard);
         if page_rule.selectors.0.is_empty() {
-            self.pages.global.push(PageRuleDataNoLayer(rule.clone()), layer);
+            self.pages
+                .global
+                .push(PageRuleDataNoLayer(rule.clone()), layer);
         } else {
             // TODO: Handle pseudo-classes
             self.pages.named.try_reserve(page_rule.selectors.0.len())?;
             for name in page_rule.selectors.as_slice() {
-                let vec = self.pages.named.entry(name.0.0.clone()).or_default();
+                let vec = self.pages.named.entry(name.0 .0.clone()).or_default();
                 vec.try_reserve(1)?;
-                vec.push(PageRuleData{layer, rule: rule.clone()});
+                vec.push(PageRuleData {
+                    layer,
+                    rule: rule.clone(),
+                });
             }
         }
         Ok(())
     }
 
-    /// Add the given @scroll-timeline rule.
-    fn add_scroll_timeline(
-        &mut self,
-        guard: &SharedRwLockReadGuard,
-        rule: &Arc<Locked<ScrollTimelineRule>>,
-        layer: LayerId,
-    ) -> Result<(), AllocErr> {
-        let name = rule.read_with(guard).name.as_atom().clone();
-        self.scroll_timelines.try_insert(name, rule.clone(), layer)
-    }
-
     fn sort_by_layer(&mut self, layers: &[CascadeLayer]) {
         self.font_faces.sort(layers);
         self.font_feature_values.sort(layers);
+        self.font_palette_values.sort(layers);
         self.counter_styles.sort(layers);
         self.pages.global.sort(layers);
-        self.scroll_timelines.sort(layers);
     }
 
     fn clear(&mut self) {
@@ -1789,9 +1765,9 @@ impl ExtraStyleData {
         {
             self.font_faces.clear();
             self.font_feature_values.clear();
+            self.font_palette_values.clear();
             self.counter_styles.clear();
             self.pages.clear();
-            self.scroll_timelines.clear();
         }
     }
 }
@@ -1826,9 +1802,9 @@ impl MallocSizeOf for ExtraStyleData {
         let mut n = 0;
         n += self.font_faces.shallow_size_of(ops);
         n += self.font_feature_values.shallow_size_of(ops);
+        n += self.font_palette_values.shallow_size_of(ops);
         n += self.counter_styles.shallow_size_of(ops);
         n += self.pages.shallow_size_of(ops);
-        n += self.scroll_timelines.shallow_size_of(ops);
         n
     }
 }
@@ -2132,7 +2108,6 @@ impl ContainerConditionId {
     }
 }
 
-
 #[derive(Clone, Debug, MallocSizeOf)]
 struct ContainerConditionReference {
     parent: ContainerConditionId,
@@ -2380,7 +2355,12 @@ impl CascadeData {
         self.layers[id.0 as usize].order
     }
 
-    pub(crate) fn container_condition_matches<E>(&self, mut id: ContainerConditionId, stylist: &Stylist, element: E) -> bool
+    pub(crate) fn container_condition_matches<E>(
+        &self,
+        mut id: ContainerConditionId,
+        stylist: &Stylist,
+        element: E,
+    ) -> bool
     where
         E: TElement,
     {
@@ -2415,7 +2395,6 @@ impl CascadeData {
         self.mapped_ids.shrink_if_needed();
         self.layer_id.shrink_if_needed();
         self.selectors_for_cache_revalidation.shrink_if_needed();
-
     }
 
     fn compute_layer_order(&mut self) {
@@ -2649,13 +2628,6 @@ impl CascadeData {
                     )?;
                 },
                 #[cfg(feature = "gecko")]
-                CssRule::ScrollTimeline(ref rule) => {
-                    // Note: Bug 1733260: we may drop @scroll-timeline rule once this spec issue
-                    // https://github.com/w3c/csswg-drafts/issues/6674 gets landed.
-                    self.extra_data
-                        .add_scroll_timeline(guard, rule, containing_rule_state.layer_id)?;
-                },
-                #[cfg(feature = "gecko")]
                 CssRule::FontFace(ref rule) => {
                     // NOTE(emilio): We don't care about container_condition_id
                     // because:
@@ -2667,7 +2639,8 @@ impl CascadeData {
                     //
                     // https://drafts.csswg.org/css-contain-3/#container-rule
                     // (Same elsewhere)
-                    self.extra_data.add_font_face(rule, containing_rule_state.layer_id);
+                    self.extra_data
+                        .add_font_face(rule, containing_rule_state.layer_id);
                 },
                 #[cfg(feature = "gecko")]
                 CssRule::FontFeatureValues(ref rule) => {
@@ -2675,13 +2648,22 @@ impl CascadeData {
                         .add_font_feature_values(rule, containing_rule_state.layer_id);
                 },
                 #[cfg(feature = "gecko")]
-                CssRule::CounterStyle(ref rule) => {
+                CssRule::FontPaletteValues(ref rule) => {
                     self.extra_data
-                        .add_counter_style(guard, rule, containing_rule_state.layer_id)?;
+                        .add_font_palette_values(rule, containing_rule_state.layer_id);
+                },
+                #[cfg(feature = "gecko")]
+                CssRule::CounterStyle(ref rule) => {
+                    self.extra_data.add_counter_style(
+                        guard,
+                        rule,
+                        containing_rule_state.layer_id,
+                    )?;
                 },
                 #[cfg(feature = "gecko")]
                 CssRule::Page(ref rule) => {
-                    self.extra_data.add_page(guard, rule, containing_rule_state.layer_id)?;
+                    self.extra_data
+                        .add_page(guard, rule, containing_rule_state.layer_id)?;
                 },
                 CssRule::Viewport(..) => {},
                 _ => {
@@ -2765,7 +2747,8 @@ impl CascadeData {
                 };
                 for name in name.layer_names() {
                     containing_rule_state.layer_name.0.push(name.clone());
-                    containing_rule_state.layer_id = maybe_register_layer(data, &containing_rule_state.layer_name);
+                    containing_rule_state.layer_id =
+                        maybe_register_layer(data, &containing_rule_state.layer_name);
                 }
                 debug_assert_ne!(containing_rule_state.layer_id, LayerId::root());
             }
@@ -2779,11 +2762,7 @@ impl CascadeData {
                             .saw_effective(import_rule);
                     }
                     if let Some(ref layer) = import_rule.layer {
-                        maybe_register_layers(
-                            self,
-                            layer.name.as_ref(),
-                            containing_rule_state
-                        );
+                        maybe_register_layers(self, layer.name.as_ref(), containing_rule_state);
                     }
                 },
                 CssRule::Media(ref lock) => {
@@ -2794,11 +2773,7 @@ impl CascadeData {
                 },
                 CssRule::LayerBlock(ref lock) => {
                     let layer_rule = lock.read_with(guard);
-                    maybe_register_layers(
-                        self,
-                        layer_rule.name.as_ref(),
-                        containing_rule_state,
-                    );
+                    maybe_register_layers(self, layer_rule.name.as_ref(), containing_rule_state);
                 },
                 CssRule::LayerStatement(ref lock) => {
                     let layer_rule = lock.read_with(guard);
@@ -2923,12 +2898,12 @@ impl CascadeData {
                 CssRule::CounterStyle(..) |
                 CssRule::Supports(..) |
                 CssRule::Keyframes(..) |
-                CssRule::ScrollTimeline(..) |
                 CssRule::Page(..) |
                 CssRule::Viewport(..) |
                 CssRule::Document(..) |
                 CssRule::LayerBlock(..) |
                 CssRule::LayerStatement(..) |
+                CssRule::FontPaletteValues(..) |
                 CssRule::FontFeatureValues(..) => {
                     // Not affected by device changes.
                     continue;
@@ -2998,7 +2973,8 @@ impl CascadeData {
         self.layers.clear();
         self.layers.push(CascadeLayer::root());
         self.container_conditions.clear();
-        self.container_conditions.push(ContainerConditionReference::none());
+        self.container_conditions
+            .push(ContainerConditionReference::none());
         self.extra_data.clear();
         self.rules_source_order = 0;
         self.num_selectors = 0;

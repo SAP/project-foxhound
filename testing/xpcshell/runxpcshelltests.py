@@ -710,6 +710,10 @@ class XPCShellTestThread(Thread):
         """Parses a single line of output, determining its significance and
         reporting a message.
         """
+        if isinstance(line_string, bytes):
+            # Transform binary to string representation
+            line_string = line_string.decode(sys.stdout.encoding, errors="replace")
+
         if not line_string.strip():
             return
 
@@ -1260,9 +1264,14 @@ class XPCShellTests(object):
         usingTSan = "tsan" in self.mozInfo and self.mozInfo["tsan"]
         if usingASan or usingTSan:
             # symbolizer support
-            llvmsym = os.path.join(
-                self.xrePath, "llvm-symbolizer" + self.mozInfo["bin_suffix"]
-            )
+            if "ASAN_SYMBOLIZER_PATH" in self.env and os.path.isfile(
+                self.env["ASAN_SYMBOLIZER_PATH"]
+            ):
+                llvmsym = self.env["ASAN_SYMBOLIZER_PATH"]
+            else:
+                llvmsym = os.path.join(
+                    self.xrePath, "llvm-symbolizer" + self.mozInfo["bin_suffix"]
+                )
             if os.path.isfile(llvmsym):
                 if usingASan:
                     self.env["ASAN_SYMBOLIZER_PATH"] = llvmsym
@@ -1975,6 +1984,8 @@ class XPCShellTests(object):
                 # Run tests sequentially, with MOZ_CHAOSMODE enabled.
                 sequential_tests = []
                 self.env["MOZ_CHAOSMODE"] = "0xfb"
+                # chaosmode runs really slow, allow tests extra time to pass
+                self.harness_timeout = self.harness_timeout * 2
                 for i in range(VERIFY_REPEAT):
                     self.testCount += 1
                     test = testClass(
@@ -1984,6 +1995,7 @@ class XPCShellTests(object):
                 status = self.runTestList(
                     tests_queue, sequential_tests, testClass, mobileArgs, **kwargs
                 )
+                self.harness_timeout = self.harness_timeout / 2
                 return status
 
             steps = [

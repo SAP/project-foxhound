@@ -133,9 +133,14 @@ MFMediaEngineStreamWrapper::FakeDecodedDataCreator::FakeDecodedDataCreator(
 }
 
 MFMediaEngineStream::MFMediaEngineStream()
-    : mIsShutdown(false), mIsSelected(false), mReceivedEOS(false) {}
+    : mIsShutdown(false), mIsSelected(false), mReceivedEOS(false) {
+  MOZ_COUNT_CTOR(MFMediaEngineStream);
+}
 
-MFMediaEngineStream::~MFMediaEngineStream() { MOZ_ASSERT(IsShutdown()); }
+MFMediaEngineStream::~MFMediaEngineStream() {
+  MOZ_ASSERT(IsShutdown());
+  MOZ_COUNT_DTOR(MFMediaEngineStream);
+}
 
 HRESULT MFMediaEngineStream::RuntimeClassInitialize(
     uint64_t aStreamId, const TrackInfo& aInfo, MFMediaSource* aParentSource) {
@@ -179,11 +184,11 @@ HRESULT MFMediaEngineStream::Start(const PROPVARIANT* aPosition) {
             !isFromCurrentPosition && IsEnded()) {
           SLOG("Stream restarts again from a new position, reset EOS");
           mReceivedEOS = false;
-        } else if (!IsEnded()) {
-          // Process pending requests (if any) which happened when the stream
-          // wasn't allowed to serve samples. Eg. stream is paused.
-          ReplySampleRequestIfPossible();
         }
+        // Process pending requests (if any) which happened when the stream
+        // wasn't allowed to serve samples. Eg. stream is paused. Or resend the
+        // ended event if the stream is ended already.
+        ReplySampleRequestIfPossible();
       }));
   return S_OK;
 }
@@ -443,7 +448,7 @@ void MFMediaEngineStream::NotifyNewData(MediaRawData* aSample) {
   }
 }
 
-void MFMediaEngineStream::NotifyEndOfStream() {
+void MFMediaEngineStream::NotifyEndOfStreamInternal() {
   AssertOnTaskQueue();
   if (mReceivedEOS) {
     return;
@@ -454,6 +459,7 @@ void MFMediaEngineStream::NotifyEndOfStream() {
 }
 
 bool MFMediaEngineStream::IsEnded() const {
+  AssertOnTaskQueue();
   return mReceivedEOS && mRawDataQueue.GetSize() == 0;
 }
 

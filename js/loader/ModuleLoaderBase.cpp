@@ -546,6 +546,12 @@ nsresult ModuleLoaderBase::OnFetchComplete(ModuleLoadRequest* aRequest,
   if (NS_SUCCEEDED(rv)) {
     rv = CreateModuleScript(aRequest);
 
+    // If a module script was created, it should either have a module record
+    // object or a parse error.
+    if (ModuleScript* ms = aRequest->mModuleScript) {
+      MOZ_DIAGNOSTIC_ASSERT(bool(ms->ModuleRecord()) != ms->HasParseError());
+    }
+
     aRequest->ClearScriptSource();
 
     if (NS_FAILED(rv)) {
@@ -590,7 +596,7 @@ nsresult ModuleLoaderBase::CreateModuleScript(ModuleLoadRequest* aRequest) {
       rv = CompileFetchedModule(cx, global, options, aRequest, &module);
     }
 
-    MOZ_ASSERT(NS_SUCCEEDED(rv) == (module != nullptr));
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv) == (module != nullptr));
 
     if (module) {
       JS::RootedValue privateValue(cx);
@@ -611,9 +617,9 @@ nsresult ModuleLoaderBase::CreateModuleScript(ModuleLoadRequest* aRequest) {
       LOG(("ScriptLoadRequest (%p):   compilation failed (%d)", aRequest,
            unsigned(rv)));
 
-      MOZ_ASSERT(jsapi.HasException());
       JS::Rooted<JS::Value> error(cx);
-      if (!jsapi.StealException(&error)) {
+      if (!jsapi.HasException() || !jsapi.StealException(&error) ||
+          error.isUndefined()) {
         aRequest->mModuleScript = nullptr;
         return NS_ERROR_FAILURE;
       }
@@ -1001,11 +1007,13 @@ void ModuleLoaderBase::CancelDynamicImport(ModuleLoadRequest* aRequest,
   MOZ_ASSERT(aRequest->mLoader == this);
 
   RefPtr<ScriptLoadRequest> req = mDynamicImportRequests.Steal(aRequest);
-  aRequest->Cancel();
-  // FinishDynamicImport must happen exactly once for each dynamic import
-  // request. If the load is aborted we do it when we remove the request
-  // from mDynamicImportRequests.
-  FinishDynamicImportAndReject(aRequest, aResult);
+  if (!aRequest->IsCanceled()) {
+    aRequest->Cancel();
+    // FinishDynamicImport must happen exactly once for each dynamic import
+    // request. If the load is aborted we do it when we remove the request
+    // from mDynamicImportRequests.
+    FinishDynamicImportAndReject(aRequest, aResult);
+  }
 }
 
 void ModuleLoaderBase::RemoveDynamicImport(ModuleLoadRequest* aRequest) {
@@ -1245,15 +1253,10 @@ nsresult ModuleLoaderBase::EvaluateModuleInContext(
 }
 
 void ModuleLoaderBase::CancelAndClearDynamicImports() {
-  for (ScriptLoadRequest* req = mDynamicImportRequests.getFirst(); req;
-       req = req->getNext()) {
-    req->Cancel();
-    // FinishDynamicImport must happen exactly once for each dynamic import
-    // request. If the load is aborted we do it when we remove the request
-    // from mDynamicImportRequests.
-    FinishDynamicImportAndReject(req->AsModuleRequest(), NS_ERROR_ABORT);
+  while (ScriptLoadRequest* req = mDynamicImportRequests.getFirst()) {
+    // This also removes the request from the list.
+    CancelDynamicImport(req->AsModuleRequest(), NS_ERROR_ABORT);
   }
-  mDynamicImportRequests.CancelRequestsAndClear();
 }
 
 UniquePtr<ImportMap> ModuleLoaderBase::ParseImportMap(
@@ -1273,21 +1276,23 @@ UniquePtr<ImportMap> ModuleLoaderBase::ParseImportMap(
   JS::SourceText<char16_t>& text = maybeSource.ref<SourceText<char16_t>>();
   ReportWarningHelper warning{mLoader, aRequest};
 
-  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
-  // https://wicg.github.io/import-maps/#integration-prepare-a-script
-  // Insert the following case to prepare a script step 25.2:
-  // (Impl Note: the latest html spec is step 27.2)
-  // Switch on the script's type:
-  // "importmap"
-  // Step 1. Let import map parse result be the result of create an import map
-  // parse result, given source text, base URL and settings object.
+  // https://html.spec.whatwg.org/multipage/webappapis.html#create-an-import-map-parse-result
+  // Step 2. Parse an import map string given input and baseURL, catching any
+  // exceptions. If this threw an exception, then set result's error to rethrow
+  // to that exception. Otherwise, set result's import map to the return value.
   //
-  // Impl note: According to the spec, ImportMap::ParseString will throw a
-  // TypeError if there's any invalid key/value in the text. After the parsing
-  // is done, we should report the error if there's any, this is done in
-  // ~AutoJSAPI.
+  // https://html.spec.whatwg.org/multipage/webappapis.html#register-an-import-map
+  // Step 1. If result's error to rethrow is not null, then report the exception
+  // given by result's error to rethrow and return.
   //
-  // See https://wicg.github.io/import-maps/#register-an-import-map, step 7.
+  // Impl note: We didn't implement 'Import map parse result' from the spec,
+  // https://html.spec.whatwg.org/multipage/webappapis.html#import-map-parse-result
+  // As the struct has another item called 'error to rethow' to store the
+  // exception thrown during parsing import-maps, and report that exception
+  // while registering an import map. Currently only inline import-maps are
+  // supported, therefore parsing and registering import-maps will be executed
+  // consecutively. To simplify the implementation, we didn't create the 'error
+  // to rethow' item and report the exception immediately(done in ~AutoJSAPI).
   return ImportMap::ParseString(jsapi.cx(), text, aRequest->mBaseURL, warning);
 }
 
@@ -1295,8 +1300,20 @@ void ModuleLoaderBase::RegisterImportMap(UniquePtr<ImportMap> aImportMap) {
   // Check for aImportMap is done in ScriptLoader.
   MOZ_ASSERT(aImportMap);
 
-  // Step 8. Set element’s node document's import map to import map parse
-  // result’s import map.
+  // https://html.spec.whatwg.org/multipage/webappapis.html#register-an-import-map
+  // The step 1(report the exception if there's an error) is done in
+  // ParseImportMap.
+  //
+  // Step 2. Assert: global's import map is an empty import map.
+  // Impl note: The default import map from the spec is an empty import map, but
+  // from the implementation it defaults to nullptr, so we check if the global's
+  // import map is null here.
+  //
+  // Also see
+  // https://html.spec.whatwg.org/multipage/webappapis.html#empty-import-map
+  MOZ_ASSERT(!mImportMap);
+
+  // Step 3. Set global's import map to result's import map.
   mImportMap = std::move(aImportMap);
 }
 

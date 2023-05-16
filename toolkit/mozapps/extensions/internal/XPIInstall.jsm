@@ -26,6 +26,13 @@ var EXPORTED_SYMBOLS = [
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+const {
+  computeSha256HashAsString,
+  getHashStringForCrypto,
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/crypto-utils.sys.mjs"
+);
+
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
@@ -35,16 +42,18 @@ const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  CertUtils: "resource://gre/modules/CertUtils.sys.mjs",
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
-  CertUtils: "resource://gre/modules/CertUtils.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   ProductAddonChecker: "resource://gre/modules/addons/ProductAddonChecker.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
-
   AddonInternal: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIDatabase: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIInternal: "resource://gre/modules/addons/XPIProvider.jsm",
@@ -169,7 +178,9 @@ const MSG_JAR_FLUSH = "Extension:FlushJarCache";
  */
 var gIDTest = /^(\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}|[a-z0-9-\._]*\@[a-z0-9-\._]+)$/i;
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const LOGGER_ID = "addons.xpi";
 
 // Create a new logger for use by all objects in this Addons XPI Provider module
@@ -487,7 +498,8 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
     addon.previewImage = "preview.png";
   }
 
-  if (addon.type == "sitepermission") {
+  // TODO(Bug 1789718): Remove after the deprecated XPIProvider-based implementation is also removed.
+  if (addon.type == "sitepermission-deprecated") {
     addon.sitePermissions = manifest.site_permissions;
     addon.siteOrigin = manifest.install_origins[0];
   }
@@ -781,21 +793,6 @@ function getTemporaryFile() {
   file.append(`tmp-${random}.xpi`);
   file.createUnique(Ci.nsIFile.NORMAL_FILE_TYPE, lazy.FileUtils.PERMS_FILE);
   return file;
-}
-
-/**
- * Returns the string representation (hex) of the SHA256 hash of `input`.
- *
- * @param {string} input
- *        The value to hash.
- * @returns {string}
- *          The hex representation of a SHA256 hash.
- */
-function computeSha256HashAsString(input) {
-  const data = new Uint8Array(new TextEncoder().encode(input));
-  const crypto = CryptoHash("sha256");
-  crypto.update(data, data.length);
-  return getHashStringForCrypto(crypto);
 }
 
 function getHashForFile(file, algorithm) {
@@ -1219,16 +1216,6 @@ SafeInstallOperation.prototype = {
     }
   },
 };
-
-function getHashStringForCrypto(aCrypto) {
-  // return the two-digit hexadecimal code for a byte
-  let toHexString = charCode => ("0" + charCode.toString(16)).slice(-2);
-
-  // convert the binary hash data to a hex string.
-  let binary = aCrypto.finish(/* base64 */ false);
-  let hash = Array.from(binary, c => toHexString(c.charCodeAt(0)));
-  return hash.join("").toLowerCase();
-}
 
 // A hash algorithm if the caller of AddonInstall did not specify one.
 const DEFAULT_HASH_ALGO = "sha256";

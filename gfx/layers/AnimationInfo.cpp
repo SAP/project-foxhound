@@ -18,6 +18,7 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
+#include "nsPresContextInlines.h"
 #include "nsStyleTransformMatrix.h"
 #include "PuppetWidget.h"
 
@@ -81,15 +82,6 @@ void AnimationInfo::ClearAnimationsForNextTransaction() {
   }
 
   mPendingAnimations->Clear();
-}
-
-void AnimationInfo::SetCompositorAnimations(
-    const LayersId& aLayersId,
-    const CompositorAnimations& aCompositorAnimations) {
-  mCompositorAnimationsId = aCompositorAnimations.id();
-
-  mStorageData = AnimationHelper::ExtractAnimations(
-      aLayersId, aCompositorAnimations.animations());
 }
 
 bool AnimationInfo::StartPendingAnimations(const TimeStamp& aReadyTime) {

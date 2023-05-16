@@ -302,8 +302,11 @@ void MFMediaEngineParent::NotifyError(MF_MEDIA_ENGINE_ERR aError,
 
 MFMediaEngineStreamWrapper* MFMediaEngineParent::GetMediaEngineStream(
     TrackType aType, const CreateDecoderParams& aParam) {
+  // Has been shutdowned.
+  if (!mMediaSource) {
+    return nullptr;
+  }
   LOG("Create a media engine decoder for %s", TrackTypeToStr(aType));
-  MOZ_ASSERT(mMediaSource);
   if (aType == TrackType::kAudioTrack) {
     auto* stream = mMediaSource->GetAudioStream();
     return new MFMediaEngineStreamWrapper(stream, stream->GetTaskQueue(),
@@ -348,9 +351,10 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvNotifyMediaInfo(
   });
 
   // Create media source and set it to the media engine.
-  NS_ENSURE_TRUE(SUCCEEDED(MakeAndInitialize<MFMediaSource>(
-                     &mMediaSource, aInfo.audioInfo(), aInfo.videoInfo())),
-                 IPC_OK());
+  NS_ENSURE_TRUE(
+      SUCCEEDED(MakeAndInitialize<MFMediaSource>(
+          &mMediaSource, aInfo.audioInfo(), aInfo.videoInfo(), mManagerThread)),
+      IPC_OK());
   mMediaEngineExtension->SetMediaSource(mMediaSource.Get());
 
   // We use the source scheme in order to let the media engine to load our

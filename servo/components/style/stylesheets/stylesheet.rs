@@ -370,9 +370,9 @@ impl SanitizationKind {
             CssRule::Keyframes(..) |
             CssRule::Page(..) |
             CssRule::FontFeatureValues(..) |
+            CssRule::FontPaletteValues(..) |
             CssRule::Viewport(..) |
-            CssRule::CounterStyle(..) |
-            CssRule::ScrollTimeline(..) => !is_standard,
+            CssRule::CounterStyle(..) => !is_standard,
         }
     }
 }

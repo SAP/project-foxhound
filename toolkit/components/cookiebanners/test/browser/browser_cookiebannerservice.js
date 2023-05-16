@@ -10,9 +10,12 @@ function genUUID() {
 add_setup(async function() {
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("cookiebanners.service.mode");
+    Services.prefs.clearUserPref("cookiebanners.service.mode.privateBrowsing");
     if (
       Services.prefs.getIntPref("cookiebanners.service.mode") !=
-      Ci.nsICookieBannerService.MODE_DISABLED
+        Ci.nsICookieBannerService.MODE_DISABLED ||
+      Services.prefs.getIntPref("cookiebanners.service.mode.privateBrowsing") !=
+        Ci.nsICookieBannerService.MODE_DISABLED
     ) {
       // Restore original rules.
       Services.cookieBanners.resetRules(true);
@@ -26,6 +29,10 @@ add_task(async function test_enabled_pref() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_DISABLED],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_DISABLED,
+      ],
     ],
   });
 
@@ -73,7 +80,8 @@ add_task(async function test_enabled_pref() {
   Assert.throws(
     () => {
       Services.cookieBanners.getCookiesForURI(
-        Services.io.newURI("https://example.com")
+        Services.io.newURI("https://example.com"),
+        false
       );
     },
     /NS_ERROR_NOT_AVAILABLE/,
@@ -85,6 +93,39 @@ add_task(async function test_enabled_pref() {
     },
     /NS_ERROR_NOT_AVAILABLE/,
     "Should have thrown NS_ERROR_NOT_AVAILABLE for rules getClickRuleForDomain."
+  );
+  let uri = Services.io.newURI("https://example.com");
+  Assert.throws(
+    () => {
+      Services.cookieBanners.getDomainPref(uri, false);
+    },
+    /NS_ERROR_NOT_AVAILABLE/,
+    "Should have thrown NS_ERROR_NOT_AVAILABLE for getDomainPref."
+  );
+  Assert.throws(
+    () => {
+      Services.cookieBanners.setDomainPref(
+        uri,
+        Ci.nsICookieBannerService.MODE_REJECT,
+        false
+      );
+    },
+    /NS_ERROR_NOT_AVAILABLE/,
+    "Should have thrown NS_ERROR_NOT_AVAILABLE for setDomainPref."
+  );
+  Assert.throws(
+    () => {
+      Services.cookieBanners.removeDomainPref(uri, false);
+    },
+    /NS_ERROR_NOT_AVAILABLE/,
+    "Should have thrown NS_ERROR_NOT_AVAILABLE for removeDomainPref."
+  );
+  Assert.throws(
+    () => {
+      Services.cookieBanners.removeAllDomainPrefs(false);
+    },
+    /NS_ERROR_NOT_AVAILABLE/,
+    "Should have thrown NS_ERROR_NOT_AVAILABLE for removeAllSitePref."
   );
 
   info("Enabling cookie banner service. MODE_REJECT");
@@ -115,6 +156,54 @@ add_task(async function test_enabled_pref() {
     Array.isArray(rules),
     "Rules getter should not throw but return an array."
   );
+});
+
+/**
+ * Test both service mode pref combinations to ensure the cookie banner service
+ * is (un-)initialized correctly.
+ */
+add_task(async function test_enabled_pref_pbm_combinations() {
+  const MODES = [
+    Ci.nsICookieBannerService.MODE_DISABLED,
+    Ci.nsICookieBannerService.MODE_REJECT,
+    Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+  ];
+
+  // Test all pref combinations
+  MODES.forEach(modeNormal => {
+    MODES.forEach(modePrivate => {
+      info(
+        `cookiebanners.service.mode=${modeNormal}; cookiebanners.service.mode.privateBrowsing=${modePrivate}`
+      );
+      Services.prefs.setIntPref("cookiebanners.service.mode", modeNormal);
+      Services.prefs.setIntPref(
+        "cookiebanners.service.mode.privateBrowsing",
+        modePrivate
+      );
+
+      if (
+        modeNormal == Ci.nsICookieBannerService.MODE_DISABLED &&
+        modePrivate == Ci.nsICookieBannerService.MODE_DISABLED
+      ) {
+        Assert.throws(
+          () => {
+            Services.cookieBanners.rules;
+          },
+          /NS_ERROR_NOT_AVAILABLE/,
+          "Cookie banner service should be disabled. Should throw NS_ERROR_NOT_AVAILABLE for rules getter."
+        );
+      } else {
+        ok(
+          Services.cookieBanners.rules,
+          "Cookie banner service should be enabled, rules getter should not throw."
+        );
+      }
+    });
+  });
+
+  // Cleanup.
+  Services.prefs.clearUserPref("cookiebanners.service.mode");
+  Services.prefs.clearUserPref("cookiebanners.service.mode.privateBrowsing");
 });
 
 add_task(async function test_insertAndGetRule() {
@@ -259,7 +348,8 @@ add_task(async function test_insertAndGetRule() {
 
   info("Getting cookies by URI for example.com.");
   let ruleArray = Services.cookieBanners.getCookiesForURI(
-    Services.io.newURI("http://example.com")
+    Services.io.newURI("http://example.com"),
+    false
   );
   ok(
     ruleArray && Array.isArray(ruleArray),
@@ -300,7 +390,8 @@ add_task(async function test_insertAndGetRule() {
 
   info("Getting cookies by URI for example.org.");
   let ruleArray2 = Services.cookieBanners.getCookiesForURI(
-    Services.io.newURI("http://example.org")
+    Services.io.newURI("http://example.org"),
+    false
   );
   ok(
     ruleArray2 && Array.isArray(ruleArray2),
@@ -342,7 +433,8 @@ add_task(async function test_insertAndGetRule() {
   });
 
   ruleArray2 = Services.cookieBanners.getCookiesForURI(
-    Services.io.newURI("http://example.org")
+    Services.io.newURI("http://example.org"),
+    false
   );
   ok(
     ruleArray2 && Array.isArray(ruleArray2),
@@ -356,7 +448,8 @@ add_task(async function test_insertAndGetRule() {
 
   info("Calling getCookiesForURI for unknown domain.");
   let ruleArrayUnknown = Services.cookieBanners.getCookiesForURI(
-    Services.io.newURI("http://example.net")
+    Services.io.newURI("http://example.net"),
+    false
   );
   ok(
     ruleArrayUnknown && Array.isArray(ruleArrayUnknown),
@@ -622,7 +715,8 @@ add_task(async function test_globalRules() {
 
   is(
     Services.cookieBanners.getCookiesForURI(
-      Services.io.newURI("http://example.com")
+      Services.io.newURI("http://example.com"),
+      false
     ).length,
     1,
     "There should be a cookie rule for example.com"
@@ -636,7 +730,8 @@ add_task(async function test_globalRules() {
 
   is(
     Services.cookieBanners.getCookiesForURI(
-      Services.io.newURI("http://thishasnorule.com")
+      Services.io.newURI("http://thishasnorule.com"),
+      false
     ).length,
     0,
     "There should be no cookie rule for thishasnorule.com"
@@ -674,7 +769,8 @@ add_task(async function test_globalRules() {
 
   is(
     Services.cookieBanners.getCookiesForURI(
-      Services.io.newURI("http://thishasnorule.com")
+      Services.io.newURI("http://thishasnorule.com"),
+      false
     ).length,
     0,
     "There should be no cookie rule for thishasnorule.com"
@@ -687,4 +783,137 @@ add_task(async function test_globalRules() {
     0,
     "There should be no click rules for thishasnorule.com since global rules are disabled"
   );
+});
+
+add_task(async function test_DomainPreference() {
+  info("Enabling cookie banner service with MODE_REJECT");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+    ],
+  });
+
+  let uri = Services.io.newURI("http://example.com");
+
+  // Check no site preference at the beginning
+  is(
+    Services.cookieBanners.getDomainPref(uri, false),
+    Ci.nsICookieBannerService.MODE_UNSET,
+    "There should be no per site preference at the beginning."
+  );
+
+  // Check setting and getting a site preference.
+  Services.cookieBanners.setDomainPref(
+    uri,
+    Ci.nsICookieBannerService.MODE_REJECT,
+    false
+  );
+
+  is(
+    Services.cookieBanners.getDomainPref(uri, false),
+    Ci.nsICookieBannerService.MODE_REJECT,
+    "Can get site preference for example.com with the correct value."
+  );
+
+  // Check site preference is shared between http and https.
+  let uriHttps = Services.io.newURI("https://example.com");
+  is(
+    Services.cookieBanners.getDomainPref(uriHttps, false),
+    Ci.nsICookieBannerService.MODE_REJECT,
+    "Can get site preference for example.com in secure context."
+  );
+
+  // Check site preference in the other domain, example.org.
+  let uriOther = Services.io.newURI("http://example.org");
+  is(
+    Services.cookieBanners.getDomainPref(uriOther, false),
+    Ci.nsICookieBannerService.MODE_UNSET,
+    "There should be no domain preference for example.org."
+  );
+
+  // Check setting site preference won't affect the other domain.
+  Services.cookieBanners.setDomainPref(
+    uriOther,
+    Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+    false
+  );
+
+  is(
+    Services.cookieBanners.getDomainPref(uriOther, false),
+    Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+    "Can get domain preference for example.org with the correct value."
+  );
+  is(
+    Services.cookieBanners.getDomainPref(uri, false),
+    Ci.nsICookieBannerService.MODE_REJECT,
+    "Can get site preference for example.com"
+  );
+
+  // Check removing the site preference.
+  Services.cookieBanners.removeDomainPref(uri, false);
+  is(
+    Services.cookieBanners.getDomainPref(uri, false),
+    Ci.nsICookieBannerService.MODE_UNSET,
+    "There should be no site preference for example.com."
+  );
+
+  // Check remove all site preferences.
+  Services.cookieBanners.removeAllDomainPrefs(false);
+  is(
+    Services.cookieBanners.getDomainPref(uri, false),
+    Ci.nsICookieBannerService.MODE_UNSET,
+    "There should be no site preference for example.com."
+  );
+  is(
+    Services.cookieBanners.getDomainPref(uriOther, false),
+    Ci.nsICookieBannerService.MODE_UNSET,
+    "There should be no site preference for example.org."
+  );
+});
+
+add_task(async function test_DomainPreference_dont_override_disable_pref() {
+  info("Enabling cookie banner service with MODE_REJECT");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+    ],
+  });
+
+  info("Adding a domain preference for example.com");
+  let uri = Services.io.newURI("http://example.com");
+
+  // Set a domain preference.
+  Services.cookieBanners.setDomainPref(
+    uri,
+    Ci.nsICookieBannerService.MODE_REJECT,
+    false
+  );
+
+  info("Disabling the cookie banner service.");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_DISABLED],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_DISABLED,
+      ],
+    ],
+  });
+
+  info("Verifying if the cookie banner service is disabled.");
+  Assert.throws(
+    () => {
+      Services.cookieBanners.getDomainPref(uri, false);
+    },
+    /NS_ERROR_NOT_AVAILABLE/,
+    "Should have thrown NS_ERROR_NOT_AVAILABLE for getDomainPref."
+  );
+
+  info("Enable the service again in order to clear the domain prefs.");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+    ],
+  });
+  Services.cookieBanners.removeAllDomainPrefs(false);
 });

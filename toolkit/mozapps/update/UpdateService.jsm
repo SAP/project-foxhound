@@ -18,8 +18,8 @@ const {
   BitsUnknownError,
   BitsVerificationError,
 } = ChromeUtils.import("resource://gre/modules/Bits.jsm");
-const { FileUtils } = ChromeUtils.import(
-  "resource://gre/modules/FileUtils.jsm"
+const { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
 );
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -27,15 +27,18 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  CertUtils: "resource://gre/modules/CertUtils.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+  WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  CertUtils: "resource://gre/modules/CertUtils.jsm",
   ctypes: "resource://gre/modules/ctypes.jsm",
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
-  WindowsRegistry: "resource://gre/modules/WindowsRegistry.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -4796,9 +4799,7 @@ Checker.prototype = {
     // Check whether there is a mitm, i.e. check whether the root cert is
     // built-in or not.
     try {
-      let sslStatus = request.channel
-        .QueryInterface(Ci.nsIRequest)
-        .securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+      let sslStatus = request.channel.securityInfo;
       if (sslStatus && sslStatus.succeededCertChain) {
         let rootCert = null;
         // The root cert is the last cert in the chain.
@@ -4866,9 +4867,7 @@ Checker.prototype = {
 
     // Set MitM pref.
     try {
-      var secInfo = request.channel.securityInfo.QueryInterface(
-        Ci.nsITransportSecurityInfo
-      );
+      var secInfo = request.channel.securityInfo;
       if (secInfo.serverCert && secInfo.serverCert.issuerName) {
         Services.prefs.setStringPref(
           "security.pki.mitm_canary_issuer",

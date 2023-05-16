@@ -14,15 +14,15 @@ add_task(async function() {
     },
     async function(browser) {
       await SpecialPowers.spawn(browser, [], async function() {
-        const { require } = ChromeUtils.import(
-          "resource://devtools/shared/loader/Loader.jsm"
+        const { require } = ChromeUtils.importESModule(
+          "resource://devtools/shared/loader/Loader.sys.mjs"
         );
         const {
           HighlighterEnvironment,
-        } = require("devtools/server/actors/highlighters");
+        } = require("resource://devtools/server/actors/highlighters.js");
         const {
           TabbingOrderHighlighter,
-        } = require("devtools/server/actors/highlighters/tabbing-order");
+        } = require("resource://devtools/server/actors/highlighters/tabbing-order.js");
 
         // Start testing. First, create highlighter environment and initialize.
         const env = new HighlighterEnvironment();

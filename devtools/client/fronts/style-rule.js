@@ -7,13 +7,15 @@
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
-const { styleRuleSpec } = require("devtools/shared/specs/style-rule");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  styleRuleSpec,
+} = require("resource://devtools/shared/specs/style-rule.js");
 
 loader.lazyRequireGetter(
   this,
   "RuleRewriter",
-  "devtools/client/fronts/inspector/rule-rewriter"
+  "resource://devtools/client/fronts/inspector/rule-rewriter.js"
 );
 
 /**

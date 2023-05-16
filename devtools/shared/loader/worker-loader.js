@@ -323,22 +323,6 @@ function WorkerDebuggerLoader(options) {
 
 this.WorkerDebuggerLoader = WorkerDebuggerLoader;
 
-// The following APIs rely on the use of Components, and the worker debugger
-// does not provide alternative definitions for them. Consequently, they are
-// stubbed out both on the main thread and worker threads.
-
-var chrome = {
-  CC: undefined,
-  Cc: undefined,
-  ChromeWorker: undefined,
-  Cm: undefined,
-  Ci: undefined,
-  Cu: undefined,
-  Cr: undefined,
-  components: undefined,
-  Services: undefined,
-};
-
 var loader = {
   lazyGetter(object, name, lambda) {
     Object.defineProperty(object, name, {
@@ -350,9 +334,6 @@ var loader = {
       configurable: true,
       enumerable: true,
     });
-  },
-  lazyImporter() {
-    throw new Error("Can't import JSM from worker thread!");
   },
   lazyServiceGetter() {
     throw new Error("Can't import XPCOM service from worker thread!");
@@ -392,15 +373,15 @@ var {
   dump,
   rpc,
   loadSubScript,
-  reportError,
   setImmediate,
   xpcInspector,
 } = function() {
   // Main thread
   if (typeof Components === "object") {
-    const { Constructor: CC } = Components;
-
-    const principal = CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")();
+    const principal = Components.Constructor(
+      "@mozilla.org/systemprincipal;1",
+      "nsIPrincipal"
+    )();
 
     // To ensure that the this passed to addDebuggerToGlobal is a global, the
     // Debugger object needs to be defined in a sandbox.
@@ -409,10 +390,10 @@ var {
     });
     Cu.evalInSandbox(
       `
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  'resource://gre/modules/jsdebugger.jsm'
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  'resource://gre/modules/jsdebugger.sys.mjs'
 );
-addDebuggerToGlobal(this);
+addDebuggerToGlobal(globalThis);
 `,
       sandbox
     );
@@ -439,8 +420,6 @@ addDebuggerToGlobal(this);
       subScriptLoader.loadSubScript(url, sandbox);
     };
 
-    const reportError = Cu.reportError;
-
     const Timer = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
     const setImmediate = function(callback) {
@@ -462,7 +441,6 @@ addDebuggerToGlobal(this);
       dump: this.dump,
       rpc,
       loadSubScript,
-      reportError,
       setImmediate,
       xpcInspector,
     };
@@ -501,7 +479,6 @@ addDebuggerToGlobal(this);
     dump: this.dump,
     rpc: this.rpc,
     loadSubScript: this.loadSubScript,
-    reportError: this.reportError,
     setImmediate: this.setImmediate,
     xpcInspector,
   };
@@ -517,7 +494,6 @@ this.worker = new WorkerDebuggerLoader({
     isWorker: true,
     dump,
     loader,
-    reportError,
     rpc,
     URL,
     setImmediate,
@@ -529,13 +505,22 @@ this.worker = new WorkerDebuggerLoader({
     atob: this.atob,
     Services: Object.create(null),
     ChromeUtils,
+    DebuggerNotificationObserver,
+
+    // The following APIs rely on the use of Components, and the worker debugger
+    // does not provide alternative definitions for them. Consequently, they are
+    // stubbed out both on the main thread and worker threads.
+    Cc: undefined,
+    ChromeWorker: undefined,
+    Ci: undefined,
+    Cu: undefined,
+    Cr: undefined,
+    Components: undefined,
   },
   loadSubScript,
   modules: {
     Debugger,
-    chrome,
     xpcInspector,
-    DebuggerNotificationObserver,
   },
   paths: {
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠

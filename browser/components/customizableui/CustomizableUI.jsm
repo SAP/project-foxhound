@@ -14,6 +14,10 @@ const { AppConstants } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
@@ -21,7 +25,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   CustomizableWidgets: "resource:///modules/CustomizableWidgets.jsm",
   PanelMultiView: "resource:///modules/PanelMultiView.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  ShortcutUtils: "resource://gre/modules/ShortcutUtils.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
 });
@@ -2224,18 +2227,13 @@ var CustomizableUIInternal = {
       return;
     }
 
-    // If the user hit enter/return, we don't check preventDefault - it makes sense
-    // that this was prevented, but we probably still want to close the panel.
-    // If consumers don't want this to happen, they should specify the closemenu
-    // attribute.
-    if (
-      eventType != "command" &&
-      eventType != "keypress" &&
-      (aEvent.defaultPrevented || aEvent.button != 0)
-    ) {
+    if (eventType == "click" && aEvent.button != 0) {
       return;
     }
 
+    // We don't check preventDefault - it makes sense that this was prevented,
+    // but we probably still want to close the panel. If consumers don't want
+    // this to happen, they should specify the closemenu attribute.
     if (eventType != "command" && this._isOnInteractiveElement(aEvent)) {
       return;
     }

@@ -10,12 +10,14 @@ var EXPORTED_SYMBOLS = ["AsyncTabSwitcher"];
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 const lazy = {};
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -466,7 +468,7 @@ class AsyncTabSwitcher {
       let index = Array.prototype.indexOf.call(tabpanels.children, showPanel);
       if (index != -1) {
         this.log(`Switch to tab ${index} - ${this.tinfo(showTab)}`);
-        tabpanels.setAttribute("selectedIndex", index);
+        tabpanels.updateSelectedIndex(index);
         if (showTab === this.requestedTab) {
           if (requestedTabState == this.STATE_LOADED) {
             // The new tab will be made visible in the next paint, record the expected

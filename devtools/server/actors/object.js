@@ -4,51 +4,50 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const { assert } = DevToolsUtils;
 
-const protocol = require("devtools/shared/protocol");
-const { objectSpec } = require("devtools/shared/specs/object");
+const protocol = require("resource://devtools/shared/protocol.js");
+const { objectSpec } = require("resource://devtools/shared/specs/object.js");
 
 loader.lazyRequireGetter(
   this,
   "PropertyIteratorActor",
-  "devtools/server/actors/object/property-iterator",
+  "resource://devtools/server/actors/object/property-iterator.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "SymbolIteratorActor",
-  "devtools/server/actors/object/symbol-iterator",
+  "resource://devtools/server/actors/object/symbol-iterator.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PrivatePropertiesIteratorActor",
-  "devtools/server/actors/object/private-properties-iterator",
+  "resource://devtools/server/actors/object/private-properties-iterator.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "previewers",
-  "devtools/server/actors/object/previewers"
+  "resource://devtools/server/actors/object/previewers.js"
 );
 
 loader.lazyRequireGetter(
   this,
   "makeSideeffectFreeDebugger",
-  "devtools/server/actors/webconsole/eval-with-debugger",
+  "resource://devtools/server/actors/webconsole/eval-with-debugger.js",
   true
 );
 
 // ContentDOMReference requires ChromeUtils, which isn't available in worker context.
+const lazy = {};
 if (!isWorker) {
-  loader.lazyRequireGetter(
-    this,
+  ChromeUtils.defineModuleGetter(
+    lazy,
     "ContentDOMReference",
-    "resource://gre/modules/ContentDOMReference.jsm",
-    true
+    "resource://gre/modules/ContentDOMReference.jsm"
   );
 }
 
@@ -59,7 +58,7 @@ const {
   isArray,
   isStorage,
   isTypedArray,
-} = require("devtools/server/actors/object/utils");
+} = require("resource://devtools/server/actors/object/utils.js");
 
 const proto = {
   /**
@@ -191,14 +190,14 @@ const proto = {
     this._populateGripPreview(g, raw);
     this.hooks.decrementGripDepth();
 
-    if (raw && Node.isInstance(raw) && ContentDOMReference) {
+    if (raw && Node.isInstance(raw) && lazy.ContentDOMReference) {
       // ContentDOMReference.get takes a DOM element and returns an object with
       // its browsing context id, as well as a unique identifier. We are putting it in
       // the grip here in order to be able to retrieve the node later, potentially from a
       // different DevToolsServer running in the same process.
       // If ContentDOMReference.get throws, we simply don't add the property to the grip.
       try {
-        g.contentDomReference = ContentDOMReference.get(raw);
+        g.contentDomReference = lazy.ContentDOMReference.get(raw);
       } catch (e) {}
     }
 

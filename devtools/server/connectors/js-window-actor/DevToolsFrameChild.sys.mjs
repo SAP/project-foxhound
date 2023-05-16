@@ -5,9 +5,7 @@
 const { EventEmitter } = ChromeUtils.import(
   "resource://gre/modules/EventEmitter.jsm"
 );
-const Loader = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
+import * as Loader from "resource://devtools/shared/loader/Loader.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -322,11 +320,11 @@ export class DevToolsFrameChild extends JSWindowActorChild {
         : Loader;
     }
     const { DevToolsServer } = this.loader.require(
-      "devtools/server/devtools-server"
+      "resource://devtools/server/devtools-server.js"
     );
 
     const { WindowGlobalTargetActor } = this.loader.require(
-      "devtools/server/actors/targets/window-global"
+      "resource://devtools/server/actors/targets/window-global.js"
     );
 
     DevToolsServer.init();

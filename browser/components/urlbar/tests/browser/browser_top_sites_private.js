@@ -3,9 +3,12 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
 });
 
 const EN_US_TOPSITES =
@@ -29,7 +32,7 @@ async function addTestVisits() {
   });
 }
 
-add_task(async function init() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.topsites", true],

@@ -18,6 +18,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/WrappingOperations.h"
 
 #include <string.h>
@@ -409,11 +410,11 @@ bool js::RunScript(JSContext* cx, RunState& state) {
   if (measuringTime) {
     cx->setIsMeasuringExecutionTime(true);
     cx->setIsExecuting(true);
-    startTime = ReallyNow();
+    startTime = mozilla::TimeStamp::Now();
   }
   auto timerEnd = mozilla::MakeScopeExit([&]() {
     if (measuringTime) {
-      mozilla::TimeDuration delta = ReallyNow() - startTime;
+      mozilla::TimeDuration delta = mozilla::TimeStamp::Now() - startTime;
       cx->realm()->timers.executionTime += delta;
       cx->setIsMeasuringExecutionTime(false);
       cx->setIsExecuting(false);

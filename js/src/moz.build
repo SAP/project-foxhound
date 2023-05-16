@@ -165,6 +165,7 @@ EXPORTS.js += [
     "../public/Id.h",
     "../public/Initialization.h",
     "../public/Interrupt.h",
+    "../public/JitCodeAPI.h",
     "../public/JSON.h",
     "../public/LocaleSensitive.h",
     "../public/MapAndSet.h",
@@ -440,7 +441,7 @@ UNIFIED_SOURCES += [
     "vm/Xdr.cpp",
 ]
 
-if not CONFIG["MOZ_DOM_STREAMS"]:
+if CONFIG["MOZ_JS_STREAMS"]:
     UNIFIED_SOURCES += [
         "builtin/Stream.cpp",
         "builtin/streams/MiscellaneousOperations.cpp",

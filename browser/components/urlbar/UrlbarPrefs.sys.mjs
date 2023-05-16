@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 /**
  * This module exports the UrlbarPrefs singleton, which manages preferences for
  * the urlbar. It also provides access to urlbar Nimbus variables as if they are
@@ -15,18 +13,16 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  Region: "resource://gre/modules/Region.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  Region: "resource://gre/modules/Region.jsm",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
 });
 
 const PREF_URLBAR_BRANCH = "browser.urlbar.";
-
-const FIREFOX_SUGGEST_UPDATE_TOPIC = "firefox-suggest-update";
-const FIREFOX_SUGGEST_UPDATE_SKIPPED_TOPIC = "firefox-suggest-update-skipped";
 
 // Prefs are defined as [pref name, default value] or [pref name, [default
 // value, type]].  In the former case, the getter method name is inferred from
@@ -229,8 +225,12 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // must also be enabled, from Sync preferences.
   ["suggest.remotetab", true],
 
-  // Whether results will include QuickActions.
+  // Whether results will include QuickActions in the default search mode.
   ["suggest.quickactions", false],
+
+  // If disabled, QuickActions will not be included in either the default search
+  // mode or the QuickActions search mode.
+  ["quickactions.enabled", false],
 
   // Whether we show the Actions section in about:preferences.
   ["quickactions.showPrefs", false],
@@ -713,6 +713,16 @@ class Preferences {
       await lazy.NimbusFeatures.urlbar.ready();
       this._clearNimbusCache();
 
+      // This also races TelemetryEnvironment's initialization, so wait for it
+      // to finish. TelemetryEnvironment is important because it records the
+      // values of a number of Suggest preferences. If we didn't wait, we could
+      // end up updating prefs after TelemetryEnvironment does its initial pref
+      // cache but before it adds its observer to be notified of pref changes.
+      // It would end up recording the wrong values on startup in that case.
+      if (!this._testSkipTelemetryEnvironmentInit) {
+        await lazy.TelemetryEnvironment.onInitialized();
+      }
+
       this._updateFirefoxSuggestScenarioHelper(isStartup, testOverrides);
     } finally {
       this._updatingFirefoxSuggestScenario = false;
@@ -836,17 +846,6 @@ class Preferences {
     // what the last-seen scenario was. Set it on the user branch so that its
     // value persists across app restarts.
     this.set("quicksuggest.scenario", scenario);
-
-    // Update the pref cache in TelemetryEnvironment. This is only necessary
-    // when we're initializing the scenario on startup, but the scenario will
-    // rarely if ever change after that, so there's no harm in always doing it.
-    // See bug 1731373.
-    //
-    // IMPORTANT: Send the notification only after setting the prefs above.
-    // TelemetryEnvironment updates its cache by fetching the prefs from the
-    // pref service, so the new values need to be set beforehand. See also the
-    // comments in D126017.
-    Services.obs.notifyObservers(null, FIREFOX_SUGGEST_UPDATE_TOPIC);
   }
 
   /**
@@ -1286,9 +1285,6 @@ class Preferences {
         return;
       }
     }
-
-    // Notify consumer who are waiting for the scenario to be updated.
-    Services.obs.notifyObservers(null, FIREFOX_SUGGEST_UPDATE_SKIPPED_TOPIC);
   }
 
   /**

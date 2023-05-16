@@ -21,40 +21,44 @@
  * See devtools/docs/backend/actor-hierarchy.md for more details.
  */
 
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { Cc, Ci } = require("chrome");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 
 const {
   createBrowserSessionContext,
   createContentProcessSessionContext,
-} = require("devtools/server/actors/watcher/session-context");
-const { ActorClassWithSpec, Actor } = require("devtools/shared/protocol");
+} = require("resource://devtools/server/actors/watcher/session-context.js");
+const {
+  ActorClassWithSpec,
+  Actor,
+} = require("resource://devtools/shared/protocol.js");
 const {
   processDescriptorSpec,
-} = require("devtools/shared/specs/descriptors/process");
+} = require("resource://devtools/shared/specs/descriptors/process.js");
 
 loader.lazyRequireGetter(
   this,
   "ContentProcessTargetActor",
-  "devtools/server/actors/targets/content-process",
+  "resource://devtools/server/actors/targets/content-process.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ParentProcessTargetActor",
-  "devtools/server/actors/targets/parent-process",
+  "resource://devtools/server/actors/targets/parent-process.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "connectToContentProcess",
-  "devtools/server/connectors/content-process-connector",
+  "resource://devtools/server/connectors/content-process-connector.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WatcherActor",
-  "devtools/server/actors/watcher",
+  "resource://devtools/server/actors/watcher.js",
   true
 );
 

@@ -3,14 +3,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Ci } = require("chrome");
-const { rootSpec } = require("devtools/shared/specs/root");
+const { rootSpec } = require("resource://devtools/shared/specs/root.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
-loader.lazyRequireGetter(this, "getFront", "devtools/shared/protocol", true);
+loader.lazyRequireGetter(
+  this,
+  "getFront",
+  "resource://devtools/shared/protocol.js",
+  true
+);
 
 class RootFront extends FrontClassWithSpec(rootSpec) {
   constructor(client, targetFront, parentFront) {

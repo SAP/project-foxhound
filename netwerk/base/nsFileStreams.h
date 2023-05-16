@@ -12,6 +12,7 @@
 #include "nsICloneableInputStream.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
+#include "nsIRandomAccessStream.h"
 #include "nsISafeOutputStream.h"
 #include "nsISeekableStream.h"
 #include "nsILineInputStream.h"
@@ -250,15 +251,18 @@ class nsSafeFileOutputStream : public nsAtomicFileOutputStream {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class nsFileStream : public nsFileStreamBase,
-                     public nsIInputStream,
-                     public nsIOutputStream,
-                     public nsIFileStream {
+class nsFileRandomAccessStream : public nsFileStreamBase,
+                                 public nsIFileRandomAccessStream,
+                                 public nsIInputStream,
+                                 public nsIOutputStream {
  public:
   static nsresult Create(REFNSIID aIID, void** aResult);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIFILESTREAM
+  NS_FORWARD_NSITELLABLESTREAM(nsFileStreamBase::)
+  NS_FORWARD_NSISEEKABLESTREAM(nsFileStreamBase::)
+  NS_DECL_NSIRANDOMACCESSSTREAM
+  NS_DECL_NSIFILERANDOMACCESSSTREAM
   NS_FORWARD_NSIINPUTSTREAM(nsFileStreamBase::)
 
   // Can't use NS_FORWARD_NSIOUTPUTSTREAM due to overlapping methods
@@ -278,7 +282,7 @@ class nsFileStream : public nsFileStreamBase,
   }
 
  protected:
-  virtual ~nsFileStream() = default;
+  virtual ~nsFileRandomAccessStream() = default;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

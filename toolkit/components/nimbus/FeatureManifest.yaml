@@ -28,6 +28,10 @@ testFeature:
       type: int
       fallbackPref: nimbus.testing.testInt
       description: Int pref used by platform API tests
+    testSetString:
+      type: string
+      setPref: nimbus.testing.testSetString
+      description: A string pref set by Nimbus tests
 search:
   description: The Search Services
   owner: search-and-suggest-program@mozilla.com
@@ -101,6 +105,12 @@ urlbar:
       type: string
       fallbackPref: browser.urlbar.merino.endpointURL
       description: The Merino endpoint URL, not including parameters.
+    merinoProviders:
+      type: string
+      fallbackPref: browser.urlbar.merino.providers
+      description: >-
+        Comma-separated list of providers to request from the Merino server.
+        Merino will return suggestions only for these providers.
     merinoTimeoutMs:
       type: int
       fallbackPref: browser.urlbar.merino.timeoutMs
@@ -283,6 +293,10 @@ pocketNewtab:
       type: string
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.spocZoneIds
       description: CSV string of data to set the spoc content.
+    spocSiteId:
+      type: string
+      fallbackPref: browser.newtabpage.activity-stream.discoverystream.spocSiteId
+      description: String ID to set the spoc content.
     widgetPositions:
       type: string
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.widget-positions
@@ -537,6 +551,17 @@ infobar:
   variables: {}
 spotlight:
   description: "A Firefox Messaging System message for the spotlight message channel"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
+fxms-message-1:
+  description: "A Firefox Messaging System message"
   owner: omc@mozilla.com
   hasExposure: true
   exposureDescription: >-

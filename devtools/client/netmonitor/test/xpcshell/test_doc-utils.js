@@ -6,8 +6,8 @@
 "use strict";
 
 function run_test() {
-  const { require } = ChromeUtils.import(
-    "resource://devtools/shared/loader/Loader.jsm"
+  const { require } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/Loader.sys.mjs"
   );
   const MDN_URL = "https://developer.mozilla.org/docs/";
   const GTM_PARAMS_NM =
@@ -24,7 +24,7 @@ function run_test() {
     getNetMonitorTimingsURL,
     getPerformanceAnalysisURL,
     getFilterBoxURL,
-  } = require("devtools/client/netmonitor/src/utils/doc-utils");
+  } = require("resource://devtools/client/netmonitor/src/utils/doc-utils.js");
 
   info("Checking for supported headers");
   equal(

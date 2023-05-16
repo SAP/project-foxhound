@@ -92,6 +92,9 @@ class Document;
 class Element;
 enum class PrefersColorSchemeOverride : uint8_t;
 }  // namespace dom
+namespace gfx {
+class FontPaletteValueSet;
+}  // namespace gfx
 }  // namespace mozilla
 
 // supported values for cached integer pref types
@@ -923,6 +926,9 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void FlushFontFeatureValues();
   void MarkFontFeatureValuesDirty() { mFontFeatureValuesDirty = true; }
 
+  void FlushFontPaletteValues();
+  void MarkFontPaletteValuesDirty() { mFontPaletteValuesDirty = true; }
+
   // Ensure that it is safe to hand out CSS rules outside the layout
   // engine by ensuring that all CSS style sheets have unique inners
   // and, if necessary, synchronously rebuilding all style data.
@@ -1058,14 +1064,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   bool HasEverBuiltInvisibleText() const { return mHasEverBuiltInvisibleText; }
   void SetBuiltInvisibleText() { mHasEverBuiltInvisibleText = true; }
 
-  bool UsesFontMetricDependentFontUnits() const {
-    return mUsesFontMetricDependentFontUnits;
-  }
-
-  void SetUsesFontMetricDependentFontUnits(bool aValue) {
-    mUsesFontMetricDependentFontUnits = aValue;
-  }
-
   bool IsDeviceSizePageSize();
 
   bool HasWarnedAboutTooLargeDashedOrDottedRadius() const {
@@ -1090,6 +1088,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   gfxFontFeatureValueSet* GetFontFeatureValuesLookup() const {
     return mFontFeatureValuesLookup;
+  }
+
+  mozilla::gfx::FontPaletteValueSet* GetFontPaletteValueSet() const {
+    return mFontPaletteValueSet;
   }
 
  protected:
@@ -1193,6 +1195,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   RefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
   const nsStaticAtom* mMedium;
   RefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
+  RefPtr<mozilla::gfx::FontPaletteValueSet> mFontPaletteValueSet;
 
   // TODO(emilio): Maybe lazily create and put under a UniquePtr if this grows a
   // lot?
@@ -1342,25 +1345,16 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Are we currently drawing an SVG glyph?
   unsigned mIsGlyph : 1;
 
-  // Does the associated document use ex or ch units?
-  //
-  // TODO(emilio, bug 1791281): It's a bit weird that this lives here but all
-  // the other relevant bits live in Device on the rust side.
-  unsigned mUsesFontMetricDependentFontUnits : 1;
-
   // Is the current mCounterStyleManager valid?
   unsigned mCounterStylesDirty : 1;
 
   // Is the current mFontFeatureValuesLookup valid?
   unsigned mFontFeatureValuesDirty : 1;
 
-  unsigned mIsVisual : 1;
+  // Is the current mFontFeatureValueSet valid?
+  unsigned mFontPaletteValuesDirty : 1;
 
-  // FIXME(emilio, bug 1791281): Remove this and
-  // mUsesFontMetricDependentFontUnits, which can be written to from multiple
-  // threads (synchronized, but other code reads from other bits
-  // unsynchronized).
-  unsigned mUnused : 1;
+  unsigned mIsVisual : 1;
 
   unsigned mHasWarnedAboutTooLargeDashedOrDottedRadius : 1;
 

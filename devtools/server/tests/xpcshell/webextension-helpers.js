@@ -9,29 +9,16 @@
  * Test helpers shared by the devtools server xpcshell tests related to webextensions.
  */
 
-const { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
-const { Ci } = require("chrome");
+const { FileUtils } = ChromeUtils.import(
+  "resource://gre/modules/FileUtils.jsm"
+);
+const { ExtensionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/ExtensionXPCShellUtils.jsm"
+);
+
 const {
-  ExtensionTestUtils,
-} = require("resource://testing-common/ExtensionXPCShellUtils.jsm");
-
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { DevToolsClient } = require("devtools/client/devtools-client");
-
-/**
- * Starts up DevTools server and connects a new DevTools client.
- *
- * @return {Promise} Resolves with a client object when the debugger has started up.
- */
-async function startDebugger() {
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  const transport = DevToolsServer.connectPipe();
-  const client = new DevToolsClient(transport);
-  await client.connect();
-  return client;
-}
-exports.startDebugger = startDebugger;
+  CommandsFactory,
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
 /**
  * Set up the equivalent of an `about:debugging` toolbox for a given extension, minus
@@ -42,11 +29,9 @@ exports.startDebugger = startDebugger;
  * the debugger has been connected to the extension.
  */
 async function setupExtensionDebugging(id) {
-  const client = await startDebugger();
-  const front = await client.mainRoot.getAddon({ id });
-  // Starts a DevTools server in the extension child process.
-  const target = await front.getTarget();
-  return { front, target };
+  const commands = await CommandsFactory.forAddon(id);
+  const target = await commands.descriptorFront.getTarget();
+  return { front: commands.descriptorFront, target };
 }
 exports.setupExtensionDebugging = setupExtensionDebugging;
 

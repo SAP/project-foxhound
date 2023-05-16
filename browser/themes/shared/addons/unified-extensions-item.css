@@ -4,13 +4,34 @@
 
 /* Style for the custom element "unified-extensions-item". */
 
+:root {
+  --icon-size: 32px;
+  --dot-position: calc(var(--icon-size) / 2 + var(--arrowpanel-menuitem-margin-inline) + var(--arrowpanel-menuitem-padding-inline) - 4px);
+}
+
+:root[uidensity="compact"] {
+  --icon-size: 24px;
+}
+
 unified-extensions-item {
   align-items: center;
   display: flex;
 }
 
+/* Larger attention indicator for use below larger icons, see for reference:
+ * https://searchfox.org/mozilla-central/rev/560b7b1b17/browser/themes/shared/tabs.css#624 */
+unified-extensions-item[attention="true"] {
+  background-image: radial-gradient(circle, var(--tab-attention-icon-color), var(--tab-attention-icon-color) 3px, transparent 3px);
+  background-position: left var(--dot-position) bottom 3px;
+  background-size: 8px 8px;
+  background-repeat: no-repeat;
+}
+
+unified-extensions-item[attention="true"]:-moz-locale-dir(rtl) {
+  background-position-x: right var(--dot-position);
+}
+
 .unified-extensions-item-action {
-  flex-grow: 1;
   overflow: hidden;
 }
 
@@ -21,23 +42,33 @@ unified-extensions-item {
   padding-block: 4px;
 }
 
+.unified-extensions-item-action[disabled].subviewbutton {
+  color: var(--panel-description-color);
+}
+
+.unified-extensions-item-action[disabled] .unified-extensions-item-icon {
+  opacity: 0.5;
+}
+
+unified-extensions-item[secondary-button-hovered="true"] .unified-extensions-item-action.subviewbutton {
+  color: inherit;
+}
+
 .unified-extensions-item-icon {
-  height: 32px;
-  width: 32px;
+  height: var(--icon-size);
+  width: var(--icon-size);
   margin-inline-end: 6px;
 }
 
+.unified-extensions-item-icon,
 .unified-extensions-item-contents {
-  min-height: 40px; /* Avoid the add-on name to "jump" when we hover the menu
-                       button and the help message is displayed */
-  max-width: 20em;
+  pointer-events: none;
 }
 
 .unified-extensions-item-name,
 .unified-extensions-item-message {
-  display: inherit;
-  overflow-x: hidden;
-  text-overflow: ellipsis;
+  width: 22em;
+  word-break: break-word;
 }
 
 .unified-extensions-item-message {

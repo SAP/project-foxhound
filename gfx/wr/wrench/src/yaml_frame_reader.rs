@@ -153,7 +153,6 @@ impl ExternalImageHandler for LocalExternalImageHandler {
         &mut self,
         key: ExternalImageId,
         _channel_index: u8,
-        _rendering: ImageRendering,
     ) -> ExternalImage {
         let (id, desc) = self.texture_ids[key.0 as usize];
         ExternalImage {
@@ -788,11 +787,9 @@ impl YamlFrameReader {
         let image_rect = item["rect"]
             .as_rect()
             .unwrap_or_else(|| LayoutRect::from_size(image_dims));
-        let image_repeat = item["repeat"].as_bool().expect("Expected boolean");
         Some(ImageMask {
             image: image_key,
             rect: image_rect,
-            repeat: image_repeat,
         })
     }
 

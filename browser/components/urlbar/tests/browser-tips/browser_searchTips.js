@@ -11,15 +11,15 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
+  ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderSearchTips:
     "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.jsm",
   HttpServer: "resource://testing-common/httpd.js",
-  ProfileAge: "resource://gre/modules/ProfileAge.jsm",
 });
 
 // These should match the same consts in UrlbarProviderSearchTips.jsm.
@@ -35,7 +35,7 @@ const GOOGLE_DOMAINS = [
   "www.google.co.nz",
 ];
 
-add_task(async function init() {
+add_setup(async function() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
 

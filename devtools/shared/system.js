@@ -3,19 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Cc, Ci } = require("chrome");
-
 loader.lazyRequireGetter(
   this,
   "DevToolsServer",
-  "devtools/server/devtools-server",
+  "resource://devtools/server/devtools-server.js",
   true
 );
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AppConstants",
-  "resource://gre/modules/AppConstants.jsm",
-  true
+  "resource://gre/modules/AppConstants.jsm"
 );
 loader.lazyGetter(this, "hostname", () => {
   try {
@@ -156,7 +154,7 @@ function getSystemInfo() {
     profile: getProfileLocation(),
 
     // Update channel
-    channel: AppConstants.MOZ_UPDATE_CHANNEL,
+    channel: lazy.AppConstants.MOZ_UPDATE_CHANNEL,
 
     dpi,
     useragent,

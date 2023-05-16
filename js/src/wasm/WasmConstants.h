@@ -749,9 +749,9 @@ enum class SimdOp {
   I32x4RelaxedTruncSatF64x2SZero = 0x103,
   I32x4RelaxedTruncSatF64x2UZero = 0x104,
   F32x4RelaxedFma = 0x105,
-  F32x4RelaxedFms = 0x106,
+  F32x4RelaxedFnma = 0x106,
   F64x2RelaxedFma = 0x107,
-  F64x2RelaxedFms = 0x108,
+  F64x2RelaxedFnma = 0x108,
   I8x16RelaxedLaneSelect = 0x109,
   I16x8RelaxedLaneSelect = 0x10a,
   I32x4RelaxedLaneSelect = 0x10b,
@@ -763,7 +763,8 @@ enum class SimdOp {
   I16x8RelaxedQ15MulrS = 0x111,
   I16x8DotI8x16I7x16S = 0x112,
   I32x4DotI8x16I7x16AddS = 0x113,
-  // bfloat16 dot product = 0x114
+  F32x4RelaxedDotBF16x8AddF32x4 = 0x114,
+
   // Reserved for Relaxed SIMD = 0x115-0x12f
 
   // Unused = 0x130 and up

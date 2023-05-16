@@ -7,35 +7,35 @@
 const {
   createFactory,
   PureComponent,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
-const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const FluentReact = require("resource://devtools/client/shared/vendor/fluent-react.js");
 const Localized = createFactory(FluentReact.Localized);
 
 loader.lazyRequireGetter(
   this,
   "openDocLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 
 const UnsupportedBrowserList = createFactory(
-  require("devtools/client/inspector/compatibility/components/UnsupportedBrowserList")
+  require("resource://devtools/client/inspector/compatibility/components/UnsupportedBrowserList.js")
 );
 
-const Types = require("devtools/client/inspector/compatibility/types");
+const Types = require("resource://devtools/client/inspector/compatibility/types.js");
 
 const NodePane = createFactory(
-  require("devtools/client/inspector/compatibility/components/NodePane")
+  require("resource://devtools/client/inspector/compatibility/components/NodePane.js")
 );
 
 // For test
 loader.lazyRequireGetter(
   this,
   "toSnakeCase",
-  "devtools/client/inspector/compatibility/utils/cases",
+  "resource://devtools/client/inspector/compatibility/utils/cases.js",
   true
 );
 

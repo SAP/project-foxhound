@@ -86,7 +86,7 @@ avoid-blacklist-and-whitelist:
         - devtools/client/inspector/markup/test/lib_babel_6.21.0_min.js
         - devtools/client/inspector/markup/test/lib_react_dom_15.4.1.js
         - docshell/base/nsDocShell.cpp
-        - docshell/base/URIFixup.jsm
+        - docshell/base/URIFixup.sys.mjs
         - docshell/test/unit/test_URIFixup_info.js
         - dom/base/Document.cpp
         - dom/base/MaybeCrossOriginObject.cpp
@@ -268,7 +268,7 @@ avoid-blacklist-and-whitelist:
         - python/mozbuild/mozbuild/configure/options.py
         - python/mozbuild/mozbuild/vendor/moz_yaml.py
         - python/mozbuild/mozbuild/vendor/vendor_rust.py
-        - remote/cdp/Protocol.jsm
+        - remote/cdp/Protocol.sys.mjs
         - security/certverifier/NSSCertDBTrustDomain.cpp
         - security/certverifier/TrustOverrideUtils.h
         - security/manager/ssl/DataStorageList.h
@@ -383,16 +383,13 @@ avoid-blacklist-and-whitelist:
         - toolkit/crashreporter/client/ping.cpp
         - toolkit/crashreporter/CrashAnnotations.cpp
         - toolkit/crashreporter/generate_crash_reporter_sources.py
-        - toolkit/modules/BrowserUtils.jsm
-        - toolkit/modules/E10SUtils.jsm
-        - toolkit/modules/PermissionsUtils.jsm
-        - toolkit/modules/RemotePageAccessManager.jsm
+        - toolkit/modules/PermissionsUtils.sys.mjs
         - toolkit/modules/tests/browser/browser_AsyncPrefs.js
         - toolkit/modules/tests/browser/browser_Troubleshoot.js
         - toolkit/modules/tests/browser/browser_web_channel.js
         - toolkit/modules/tests/xpcshell/test_PermissionsUtils.js
         - toolkit/modules/third_party/jsesc/jsesc.js
-        - toolkit/modules/Troubleshoot.jsm
+        - toolkit/modules/Troubleshoot.sys.mjs
         - toolkit/mozapps/extensions/internal/XPIInstall.jsm
         - toolkit/mozapps/extensions/internal/XPIProvider.jsm
         - toolkit/mozapps/extensions/test/browser/browser_html_discover_view.js

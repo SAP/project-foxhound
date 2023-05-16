@@ -1827,13 +1827,15 @@ bool gfxPlatform::IsFontFormatSupported(
   }
   StyleFontFaceSourceTechFlags unsupportedTechnologies =
       StyleFontFaceSourceTechFlags::INCREMENTAL |
-      StyleFontFaceSourceTechFlags::PALETTES |
       StyleFontFaceSourceTechFlags::COLOR_SBIX;
   if (!StaticPrefs::gfx_downloadable_fonts_keep_color_bitmaps()) {
     unsupportedTechnologies |= StyleFontFaceSourceTechFlags::COLOR_CBDT;
   }
   if (!StaticPrefs::gfx_font_rendering_colr_v1_enabled()) {
     unsupportedTechnologies |= StyleFontFaceSourceTechFlags::COLOR_COLRV1;
+  }
+  if (!StaticPrefs::layout_css_font_palette_enabled()) {
+    unsupportedTechnologies |= StyleFontFaceSourceTechFlags::PALETTES;
   }
   if (!StaticPrefs::layout_css_font_variations_enabled()) {
     unsupportedTechnologies |= StyleFontFaceSourceTechFlags::VARIATIONS;
@@ -2114,8 +2116,8 @@ void gfxPlatform::InitializeCMS() {
     nsTArray<uint8_t> outputProfileData =
         gfxPlatform::GetPlatform()->GetPlatformCMSOutputProfileData();
     if (!outputProfileData.IsEmpty()) {
-      gCMSOutputProfile = qcms_profile_from_memory(outputProfileData.Elements(),
-                                                   outputProfileData.Length());
+      gCMSOutputProfile = qcms_profile_from_memory_curves_only(outputProfileData.Elements(),
+                                                               outputProfileData.Length());
     }
   }
 

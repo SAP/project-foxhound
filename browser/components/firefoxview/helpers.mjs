@@ -7,12 +7,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 const lazy = {};
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "BrowserUtils",
-  "resource://gre/modules/BrowserUtils.jsm"
-);
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
 });
 
@@ -32,6 +28,10 @@ export function convertTimestamp(
   fluentStrings,
   _nowThresholdMs = NOW_THRESHOLD_MS
 ) {
+  if (!timestamp) {
+    // It's marginally better to show nothing instead of "53 years ago"
+    return "";
+  }
   const elapsed = Date.now() - timestamp;
   let formattedTime;
   if (elapsed <= _nowThresholdMs) {

@@ -375,8 +375,8 @@ template <ComparisonKind Kind>
 bool StringsCompare(JSContext* cx, HandleString lhs, HandleString rhs,
                     bool* res);
 
-[[nodiscard]] bool ArrayPushDense(JSContext* cx, Handle<ArrayObject*> arr,
-                                  HandleValue v, uint32_t* length);
+[[nodiscard]] bool ArrayPushDensePure(JSContext* cx, ArrayObject* arr,
+                                      Value* v);
 JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep);
 [[nodiscard]] bool SetArrayLength(JSContext* cx, HandleObject obj,
                                   HandleValue value, bool strict);
@@ -501,8 +501,8 @@ JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
 JSString* StringReplace(JSContext* cx, HandleString string,
                         HandleString pattern, HandleString repl);
 
-[[nodiscard]] bool SetDenseElement(JSContext* cx, Handle<NativeObject*> obj,
-                                   int32_t index, HandleValue value);
+[[nodiscard]] bool SetDenseElementPure(JSContext* cx, NativeObject* obj,
+                                       int32_t index, Value* value);
 
 void AssertValidBigIntPtr(JSContext* cx, JS::BigInt* bi);
 void AssertValidObjectPtr(JSContext* cx, JSObject* obj);
@@ -547,6 +547,9 @@ void HandleCodeCoverageAtPrologue(BaselineFrame* frame);
 
 bool GetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyName* name,
                                Value* vp);
+
+bool GetNativeDataPropertyPureFallback(JSContext* cx, JSObject* obj,
+                                       PropertyName* name, Value* vp);
 
 bool GetNativeDataPropertyByValuePure(JSContext* cx, JSObject* obj, Value* vp);
 

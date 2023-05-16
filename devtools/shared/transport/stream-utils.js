@@ -4,17 +4,16 @@
 
 "use strict";
 
-const { Ci, Cc, Cr, CC } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const { dumpv } = DevToolsUtils;
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 DevToolsUtils.defineLazyGetter(this, "IOUtil", () => {
   return Cc["@mozilla.org/io-util;1"].getService(Ci.nsIIOUtil);
 });
 
 DevToolsUtils.defineLazyGetter(this, "ScriptableInputStream", () => {
-  return CC(
+  return Components.Constructor(
     "@mozilla.org/scriptableinputstream;1",
     "nsIScriptableInputStream",
     "init"

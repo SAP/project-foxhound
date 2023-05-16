@@ -5,8 +5,8 @@ add_task(async function aria_attributes() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   is(
     win.FirefoxViewHandler.button.getAttribute("role"),
-    "tab",
-    "Firefox View button should have the 'tab' ARIA role"
+    "button",
+    "Firefox View button should have the 'button' ARIA role"
   );
   await openFirefoxViewTab(win);
   isnot(
@@ -20,15 +20,15 @@ add_task(async function aria_attributes() {
     "Firefox View button should refence the hidden tab's linked panel via `aria-controls`"
   );
   is(
-    win.FirefoxViewHandler.button.getAttribute("aria-selected"),
+    win.FirefoxViewHandler.button.getAttribute("aria-pressed"),
     "true",
-    'Firefox View button should have `aria-selected="true"` upon selecting it'
+    'Firefox View button should have `aria-pressed="true"` upon selecting it'
   );
   win.BrowserOpenTab();
   is(
-    win.FirefoxViewHandler.button.getAttribute("aria-selected"),
+    win.FirefoxViewHandler.button.getAttribute("aria-pressed"),
     "false",
-    'Firefox View button should have `aria-selected="false"` upon selecting a different tab'
+    'Firefox View button should have `aria-pressed="false"` upon selecting a different tab'
   );
   await BrowserTestUtils.closeWindow(win);
 });
@@ -157,4 +157,27 @@ add_task(async function test_firefoxview_view_count() {
   );
 
   BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_add_ons_cant_unhide_fx_view() {
+  // Test that add-ons can't unhide the Firefox View tab by calling
+  // browser.tabs.show(). See bug 1791770 for details.
+  let win = await BrowserTestUtils.openNewBrowserWindow();
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    win.gBrowser,
+    "about:about"
+  );
+  let viewTab = await openFirefoxViewTab(win);
+  win.gBrowser.hideTab(tab);
+
+  ok(tab.hidden, "Regular tab is hidden");
+  ok(viewTab.hidden, "Firefox View tab is hidden");
+
+  win.gBrowser.showTab(tab);
+  win.gBrowser.showTab(viewTab);
+
+  ok(!tab.hidden, "Add-on showed regular hidden tab");
+  ok(viewTab.hidden, "Add-on did not show Firefox View tab");
+
+  await BrowserTestUtils.closeWindow(win);
 });

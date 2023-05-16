@@ -16,11 +16,13 @@ export function initContentProcessTarget(msg) {
   const prefix = msg.data.prefix;
   const watcherActorID = msg.data.watcherActorID;
 
-  // Lazy load Loader.jsm to prevent loading any devtools dependency too early.
+  // Lazy load Loader.sys.mjs to prevent loading any devtools dependency too early.
   const {
     useDistinctSystemPrincipalLoader,
     releaseDistinctSystemPrincipalLoader,
-  } = ChromeUtils.import("resource://devtools/shared/loader/Loader.jsm");
+  } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/Loader.sys.mjs"
+  );
 
   // Use a unique object to identify this one usage of the loader
   const loaderRequester = {};
@@ -30,7 +32,9 @@ export function initContentProcessTarget(msg) {
   // using it in the same process.
   const loader = useDistinctSystemPrincipalLoader(loaderRequester);
 
-  const { DevToolsServer } = loader.require("devtools/server/devtools-server");
+  const { DevToolsServer } = loader.require(
+    "resource://devtools/server/devtools-server.js"
+  );
 
   DevToolsServer.init();
   // For browser content toolbox, we do need a regular root actor and all tab
@@ -44,7 +48,7 @@ export function initContentProcessTarget(msg) {
   conn.parentMessageManager = mm;
 
   const { ContentProcessTargetActor } = loader.require(
-    "devtools/server/actors/targets/content-process"
+    "resource://devtools/server/actors/targets/content-process.js"
   );
 
   const actor = new ContentProcessTargetActor(conn, {

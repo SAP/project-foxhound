@@ -1,13 +1,15 @@
 /* exported addTabAndCreateCommands */
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
-const { DevToolsServer } = require("devtools/server/devtools-server");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 const {
   CommandsFactory,
-} = require("devtools/shared/commands/commands-factory");
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
 // Always log packets when running tests.
 Services.prefs.setBoolPref("devtools.debugger.log", true);
@@ -43,9 +45,9 @@ async function addTabAndCreateCommands(url) {
  */
 async function addTab(url) {
   const { gBrowser } = Services.wm.getMostRecentWindow("navigator:browser");
-  const {
-    BrowserTestUtils,
-  } = require("resource://testing-common/BrowserTestUtils.jsm");
+  const { BrowserTestUtils } = ChromeUtils.import(
+    "resource://testing-common/BrowserTestUtils.jsm"
+  );
   const tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, url));
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   return tab;

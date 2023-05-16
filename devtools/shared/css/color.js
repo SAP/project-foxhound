@@ -4,19 +4,19 @@
 
 "use strict";
 
-const { getCSSLexer } = require("devtools/shared/css/lexer");
-const { cssColors } = require("devtools/shared/css/color-db");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
+const { cssColors } = require("resource://devtools/shared/css/color-db.js");
 
 loader.lazyRequireGetter(
   this,
   "CSS_ANGLEUNIT",
-  "devtools/shared/css/constants",
+  "resource://devtools/shared/css/constants.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getAngleValueInDegrees",
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 

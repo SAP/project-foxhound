@@ -17,14 +17,14 @@ appInfo.updateAppInfo({
   crashReporter: true,
 });
 
-const { require, loader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require, loader } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const { worker } = ChromeUtils.import(
   "resource://devtools/shared/loader/worker-loader.js"
 );
 
-const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // Always log packets when running tests. runxpcshelltests.py will throw
 // the output away anyway, unless you give it the --verbose flag.
@@ -32,22 +32,33 @@ Services.prefs.setBoolPref("devtools.debugger.log", false);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
-const makeDebugger = require("devtools/server/actors/utils/make-debugger");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const makeDebugger = require("resource://devtools/server/actors/utils/make-debugger.js");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   ActorRegistry,
-} = require("devtools/server/actors/utils/actor-registry");
-const { DevToolsServer } = require("devtools/server/devtools-server");
+} = require("resource://devtools/server/actors/utils/actor-registry.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
 const { DevToolsServer: WorkerDevToolsServer } = worker.require(
-  "devtools/server/devtools-server"
+  "resource://devtools/server/devtools-server.js"
 );
-const { DevToolsClient } = require("devtools/client/devtools-client");
-const { ObjectFront } = require("devtools/client/fronts/object");
-const { LongStringFront } = require("devtools/client/fronts/string");
-const { createCommandsDictionary } = require("devtools/shared/commands/index");
+const {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+const { ObjectFront } = require("resource://devtools/client/fronts/object.js");
+const {
+  LongStringFront,
+} = require("resource://devtools/client/fronts/string.js");
+const {
+  createCommandsDictionary,
+} = require("resource://devtools/shared/commands/index.js");
+const {
+  CommandsFactory,
+} = require("resource://devtools/shared/commands/commands-factory.js");
 
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  "resource://gre/modules/jsdebugger.jsm"
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
 );
 
 const { AddonTestUtils } = ChromeUtils.import(
@@ -96,15 +107,8 @@ async function createTargetForFakeTab(title) {
 }
 
 async function createTargetForMainProcess() {
-  DevToolsServer.init();
-  DevToolsServer.registerAllActors();
-  DevToolsServer.allowChromeProcess = true;
-
-  const client = new DevToolsClient(DevToolsServer.connectPipe());
-  await client.connect();
-
-  const mainProcessDescriptor = await client.mainRoot.getMainProcess();
-  return mainProcessDescriptor.getTarget();
+  const commands = await CommandsFactory.forMainProcess();
+  return commands.descriptorFront.getTarget();
 }
 
 /**

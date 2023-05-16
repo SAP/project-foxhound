@@ -25,17 +25,10 @@ const PREF_APP_DISTRIBUTION_VERSION = "distribution.version";
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "UpdateUtils",
-  "resource://gre/modules/UpdateUtils.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "Region",
-  "resource://gre/modules/Region.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  Region: "resource://gre/modules/Region.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+});
 
 function nsURLFormatterService() {
   XPCOMUtils.defineLazyGetter(this, "ABI", function UFS_ABI() {

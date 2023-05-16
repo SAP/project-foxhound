@@ -103,6 +103,11 @@ static int WaylandAllocateShmMemory(int aSize) {
 /* static */
 RefPtr<WaylandShmPool> WaylandShmPool::Create(
     const RefPtr<nsWaylandDisplay>& aWaylandDisplay, int aSize) {
+  if (!aWaylandDisplay->GetShm()) {
+    NS_WARNING("Missing Wayland shm interface!");
+    return nullptr;
+  }
+
   RefPtr<WaylandShmPool> shmPool = new WaylandShmPool(aSize);
 
   shmPool->mShmPoolFd = WaylandAllocateShmMemory(aSize);

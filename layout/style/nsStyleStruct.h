@@ -118,6 +118,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   static mozilla::Length ZoomText(const mozilla::dom::Document&,
                                   mozilla::Length);
 
+  nsAtom* GetFontPaletteAtom() const { return mFontPalette._0.AsAtom(); }
+
   nsFont mFont;
 
   // Our "computed size". Can be different from mFont.size which is our "actual
@@ -131,6 +133,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   float mFontSizeFactor;
   mozilla::Length mFontSizeOffset;
   mozilla::StyleFontSizeKeyword mFontSizeKeyword;
+  mozilla::StyleFontPalette mFontPalette;
 
   // math-depth support (used for MathML scriptlevel)
   int8_t mMathDepth;
@@ -949,7 +952,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
   mozilla::StyleTextSizeAdjust mTextSizeAdjust;
   uint8_t mTextCombineUpright;  // NS_STYLE_TEXT_COMBINE_UPRIGHT_*
   mozilla::StyleMozControlCharacterVisibility mMozControlCharacterVisibility;
-  uint8_t mTextEmphasisPosition;  // NS_STYLE_TEXT_EMPHASIS_POSITION_*
+  mozilla::StyleTextEmphasisPosition mTextEmphasisPosition;
   mozilla::StyleTextRendering mTextRendering;
   mozilla::StyleColor mTextEmphasisColor;
   mozilla::StyleColor mWebkitTextFillColor;
@@ -1100,21 +1103,14 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleVisibility {
   explicit nsStyleVisibility(const mozilla::dom::Document&);
   nsStyleVisibility(const nsStyleVisibility& aVisibility);
   MOZ_COUNTED_DTOR(nsStyleVisibility)
-  static constexpr bool kHasTriggerImageLoads = false;
-
   nsChangeHint CalcDifference(const nsStyleVisibility& aNewData) const;
-
-  mozilla::StyleImageOrientation mImageOrientation;
-  mozilla::StyleDirection mDirection;
-  mozilla::StyleVisibility mVisible;
-  mozilla::StyleImageRendering mImageRendering;
-  mozilla::StyleWritingModeProperty mWritingMode;
-  mozilla::StyleTextOrientation mTextOrientation;
-  mozilla::StyleMozBoxLayout mMozBoxLayout;
-  mozilla::StylePrintColorAdjust mPrintColorAdjust;
 
   bool IsVisible() const {
     return mVisible == mozilla::StyleVisibility::Visible;
+  }
+
+  bool IsCollapse() const {
+    return mVisible == mozilla::StyleVisibility::Collapse;
   }
 
   bool IsVisibleOrCollapsed() const {
@@ -1125,6 +1121,43 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleVisibility {
   bool EmulateMozBoxWithFlex() const {
     return mMozBoxLayout == mozilla::StyleMozBoxLayout::Flex;
   }
+
+  /**
+   * Given an image request, returns the orientation that should be used
+   * on the image. The returned orientation may differ from the style
+   * struct's orientation member value, if the image request is not of the
+   * same origin.
+   *
+   * @param aRequest     The image request used to determine if same origin.
+   */
+  mozilla::StyleImageOrientation UsedImageOrientation(
+      imgIRequest* aRequest) const {
+    return UsedImageOrientation(aRequest, mImageOrientation);
+  }
+
+  /**
+   * Given an image request and an orientation, returns the orientation
+   * that should be used on the image. The returned orientation may differ
+   * from the input orientation if the image request is not of the same
+   * origin.
+   *
+   * @param aRequest     The image request used to determine if same origin.
+   * @param aOrientation The input orientation.
+   */
+  static mozilla::StyleImageOrientation UsedImageOrientation(
+      imgIRequest* aRequest, mozilla::StyleImageOrientation aOrientation);
+
+  static constexpr bool kHasTriggerImageLoads = false;
+  mozilla::StyleDirection mDirection;
+  mozilla::StyleVisibility mVisible;
+  mozilla::StyleImageRendering mImageRendering;
+  mozilla::StyleWritingModeProperty mWritingMode;
+  mozilla::StyleTextOrientation mTextOrientation;
+  mozilla::StyleMozBoxLayout mMozBoxLayout;
+  mozilla::StylePrintColorAdjust mPrintColorAdjust;
+
+ private:
+  mozilla::StyleImageOrientation mImageOrientation;
 };
 
 namespace mozilla {
@@ -1269,7 +1302,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StylePositionProperty mPosition;
 
   mozilla::StyleFloat mFloat;
-  mozilla::StyleClear mBreakType;
+  mozilla::StyleClear mClear;
   mozilla::StyleBreakWithin mBreakInside;
   mozilla::StyleBreakBetween mBreakBefore;
   mozilla::StyleBreakBetween mBreakAfter;
@@ -1543,27 +1576,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
   bool IsContainAny() const { return !!EffectiveContainment(); }
 
-  mozilla::ContainSizeAxes GetContainSizeAxes() const {
-    const auto contain = EffectiveContainment();
-    // Short circuit for no containment whatsoever
-    if (!contain) {
-      return mozilla::ContainSizeAxes(false, false);
-    }
-    // Note: The spec for size containment says it should
-    // have no effect on non-atomic, inline-level boxes. We
-    // don't check for these here because we don't know
-    // what type of element is involved. Callers are
-    // responsible for checking if the box in question is
-    // non-atomic and inline-level, and creating an
-    // exemption as necessary.
-    if (IsInternalRubyDisplayType() ||
-        DisplayInside() == mozilla::StyleDisplayInside::Table ||
-        IsInnerTableStyle()) {
-      return mozilla::ContainSizeAxes(false, false);
-    }
-    return mozilla::ContainSizeAxes(
-        static_cast<bool>(contain & StyleContain::INLINE_SIZE),
-        static_cast<bool>(contain & StyleContain::BLOCK_SIZE));
+  bool PrecludesSizeContainment() const {
+    return IsInternalRubyDisplayType() ||
+           DisplayInside() == mozilla::StyleDisplayInside::Table ||
+           IsInnerTableStyle();
   }
 
   bool IsContentVisibilityVisible() const {
@@ -1685,7 +1701,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   IsFixedPosContainingBlockForContainLayoutAndPaintSupportingFrames() const;
   inline bool IsFixedPosContainingBlockForTransformSupportingFrames() const;
 
- private:
   StyleContain EffectiveContainment() const {
     auto contain = mContain;
     // content-visibility and container-type implicitly enable some containment
@@ -1699,6 +1714,9 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
       case StyleContentVisibility::Visible:
         break;
       case StyleContentVisibility::Auto:
+        // `content-visibility:auto` also applies size containment when content
+        // is not relevant (and therefore skipped). This is checked in
+        // nsIFrame::GetContainSizeAxes.
         contain |=
             StyleContain::LAYOUT | StyleContain::PAINT | StyleContain::STYLE;
         break;
@@ -1854,7 +1872,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
     return mAnimations[aIndex % mAnimationTimelineCount].GetTimeline();
   }
 
-  uint8_t mMozForceBrokenImageIcon;  // (0 if not forcing, otherwise forcing)
+  mozilla::StyleBoolInteger mMozForceBrokenImageIcon;
+  mozilla::StyleBoolInteger mMozSubtreeHiddenOnlyVisually;
   mozilla::StyleImeMode mIMEMode;
   mozilla::StyleWindowDragging mWindowDragging;
   mozilla::StyleWindowShadow mWindowShadow;

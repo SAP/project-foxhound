@@ -4,17 +4,19 @@
 
 "use strict";
 
-const Telemetry = require("devtools/client/shared/telemetry");
+const Telemetry = require("resource://devtools/client/shared/telemetry.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol.js");
-const { inspectorSpec } = require("devtools/shared/specs/inspector");
+} = require("resource://devtools/shared/protocol.js");
+const {
+  inspectorSpec,
+} = require("resource://devtools/shared/specs/inspector.js");
 
 loader.lazyRequireGetter(
   this,
   "captureScreenshot",
-  "devtools/client/shared/screenshot",
+  "resource://devtools/client/shared/screenshot.js",
   true
 );
 

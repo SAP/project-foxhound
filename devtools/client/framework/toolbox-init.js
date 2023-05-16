@@ -6,8 +6,8 @@
 
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 
 // URL constructor doesn't support about: scheme
@@ -51,7 +51,7 @@ async function showErrorPage(doc, errorMessage) {
   const React = browserRequire("devtools/client/shared/vendor/react");
   const ReactDOM = browserRequire("devtools/client/shared/vendor/react-dom");
   const DebugTargetErrorPage = React.createFactory(
-    require("devtools/client/framework/components/DebugTargetErrorPage")
+    require("resource://devtools/client/framework/components/DebugTargetErrorPage.js")
   );
   const { LocalizationHelper } = browserRequire("devtools/shared/l10n");
   const L10N = new LocalizationHelper(
@@ -82,27 +82,31 @@ async function showErrorPage(doc, errorMessage) {
 }
 
 async function initToolbox(url, host) {
-  const { gDevTools } = require("devtools/client/framework/devtools");
+  const {
+    gDevTools,
+  } = require("resource://devtools/client/framework/devtools.js");
 
   const {
-    descriptorFromURL,
-  } = require("devtools/client/framework/descriptor-from-url");
-  const { Toolbox } = require("devtools/client/framework/toolbox");
+    commandsFromURL,
+  } = require("resource://devtools/client/framework/commands-from-url.js");
+  const {
+    Toolbox,
+  } = require("resource://devtools/client/framework/toolbox.js");
 
   // Specify the default tool to open
   const tool = url.searchParams.get("tool");
 
   try {
-    const descriptor = await descriptorFromURL(url);
-    const toolbox = gDevTools.getToolboxForDescriptor(descriptor);
+    const commands = await commandsFromURL(url);
+    const toolbox = gDevTools.getToolboxForCommands(commands);
     if (toolbox && toolbox.isDestroying()) {
-      // If a toolbox already exists for the descriptor, wait for current
+      // If a toolbox already exists for the commands, wait for current
       // toolbox destroy to be finished.
       await toolbox.destroy();
     }
 
     // Display an error page if we are connected to a remote target and we lose it
-    descriptor.once("descriptor-destroyed", function() {
+    commands.descriptorFront.once("descriptor-destroyed", function() {
       // Prevent trying to display the error page if the toolbox tab is being destroyed
       if (host.contentDocument) {
         const error = new Error("Debug target was disconnected");
@@ -111,7 +115,7 @@ async function initToolbox(url, host) {
     });
 
     const options = { customIframe: host };
-    await gDevTools.showToolbox(descriptor, {
+    await gDevTools.showToolbox(commands, {
       toolId: tool,
       hostType: Toolbox.HostType.PAGE,
       hostOptions: options,

@@ -61,6 +61,14 @@ class DocAccessibleParent : public RemoteAccessible,
   void SetTopLevelInContentProcess() { mTopLevelInContentProcess = true; }
   bool IsTopLevelInContentProcess() const { return mTopLevelInContentProcess; }
 
+  /**
+   * Determine whether this is an out-of-process iframe document, embedded by a
+   * remote embedder document.
+   */
+  bool IsOOPIframeDoc() const {
+    return !mTopLevel && mTopLevelInContentProcess;
+  }
+
   bool IsShutdown() const { return mShutdown; }
 
   /**
@@ -71,6 +79,7 @@ class DocAccessibleParent : public RemoteAccessible,
   void MarkAsShutdown() {
     MOZ_ASSERT(mChildDocs.IsEmpty());
     MOZ_ASSERT(mAccessibles.Count() == 0);
+    MOZ_ASSERT(!mBrowsingContext);
     mShutdown = true;
   }
 
@@ -154,7 +163,8 @@ class DocAccessibleParent : public RemoteAccessible,
   virtual mozilla::ipc::IPCResult RecvTextSelectionChangeEvent(
       const uint64_t& aID, nsTArray<TextRangeData>&& aSelection) override;
 
-  mozilla::ipc::IPCResult RecvRoleChangedEvent(const a11y::role& aRole) final;
+  mozilla::ipc::IPCResult RecvRoleChangedEvent(
+      const a11y::role& aRole, const uint8_t& aRoleMapEntryIndex) final;
 
   virtual mozilla::ipc::IPCResult RecvBindChildDoc(
       PDocAccessibleParent* aChildDoc, const uint64_t& aID) override;

@@ -3,18 +3,20 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Preferences } = require("resource://gre/modules/Preferences.jsm");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
 const {
   assert,
   reportException,
   isSet,
-} = require("devtools/shared/DevToolsUtils");
+} = require("resource://devtools/shared/DevToolsUtils.js");
 const {
   censusIsUpToDate,
   getSnapshot,
   createSnapshot,
   dominatorTreeIsComputed,
-} = require("devtools/client/memory/utils");
+} = require("resource://devtools/client/memory/utils.js");
 const {
   actions,
   snapshotState: states,
@@ -23,11 +25,11 @@ const {
   treeMapState,
   dominatorTreeState,
   individualsState,
-} = require("devtools/client/memory/constants");
-const view = require("devtools/client/memory/actions/view");
-const refresh = require("devtools/client/memory/actions/refresh");
-const diffing = require("devtools/client/memory/actions/diffing");
-const TaskCache = require("devtools/client/memory/actions/task-cache");
+} = require("resource://devtools/client/memory/constants.js");
+const view = require("resource://devtools/client/memory/actions/view.js");
+const refresh = require("resource://devtools/client/memory/actions/refresh.js");
+const diffing = require("resource://devtools/client/memory/actions/diffing.js");
+const TaskCache = require("resource://devtools/client/memory/actions/task-cache.js");
 
 /**
  * A series of actions are fired from this task to save, read and generate the

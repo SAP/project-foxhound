@@ -21,8 +21,6 @@
     "accessible/tests/browser/Layout.jsm",
   "chrome://mochitests/content/browser/devtools/client/shared/sourceeditor/test/CodeMirrorTestActors.jsm":
     "devtools/client/shared/sourceeditor/test/CodeMirrorTestActors.jsm",
-  "chrome://mochitests/content/browser/remote/shared/messagehandler/test/browser/resources/modules/ModuleRegistry.jsm":
-    "remote/shared/messagehandler/test/browser/resources/modules/ModuleRegistry.jsm",
   "chrome://mochitests/content/chrome/docshell/test/chrome/DocShellHelpers.jsm":
     "docshell/test/chrome/DocShellHelpers.jsm",
   "chrome://mochitests/content/chrome/dom/console/tests/console.jsm":
@@ -43,244 +41,6 @@
     "browser/components/pocket/content/pktApi.jsm",
   "chrome://pocket/content/pktTelemetry.jsm":
     "browser/components/pocket/content/pktTelemetry.jsm",
-  "chrome://remote/content/cdp/CDP.jsm": "remote/cdp/CDP.jsm",
-  "chrome://remote/content/cdp/CDPConnection.jsm":
-    "remote/cdp/CDPConnection.jsm",
-  "chrome://remote/content/cdp/Error.jsm": "remote/cdp/Error.jsm",
-  "chrome://remote/content/cdp/JSONHandler.jsm": "remote/cdp/JSONHandler.jsm",
-  "chrome://remote/content/cdp/Protocol.jsm": "remote/cdp/Protocol.jsm",
-  "chrome://remote/content/cdp/StreamRegistry.jsm":
-    "remote/cdp/StreamRegistry.jsm",
-  "chrome://remote/content/cdp/domains/ContentProcessDomain.jsm":
-    "remote/cdp/domains/ContentProcessDomain.jsm",
-  "chrome://remote/content/cdp/domains/ContentProcessDomains.jsm":
-    "remote/cdp/domains/ContentProcessDomains.jsm",
-  "chrome://remote/content/cdp/domains/Domain.jsm":
-    "remote/cdp/domains/Domain.jsm",
-  "chrome://remote/content/cdp/domains/DomainCache.jsm":
-    "remote/cdp/domains/DomainCache.jsm",
-  "chrome://remote/content/cdp/domains/ParentProcessDomains.jsm":
-    "remote/cdp/domains/ParentProcessDomains.jsm",
-  "chrome://remote/content/cdp/domains/content/DOM.jsm":
-    "remote/cdp/domains/content/DOM.jsm",
-  "chrome://remote/content/cdp/domains/content/Emulation.jsm":
-    "remote/cdp/domains/content/Emulation.jsm",
-  "chrome://remote/content/cdp/domains/content/Input.jsm":
-    "remote/cdp/domains/content/Input.jsm",
-  "chrome://remote/content/cdp/domains/content/Log.jsm":
-    "remote/cdp/domains/content/Log.jsm",
-  "chrome://remote/content/cdp/domains/content/Network.jsm":
-    "remote/cdp/domains/content/Network.jsm",
-  "chrome://remote/content/cdp/domains/content/Page.jsm":
-    "remote/cdp/domains/content/Page.jsm",
-  "chrome://remote/content/cdp/domains/content/Performance.jsm":
-    "remote/cdp/domains/content/Performance.jsm",
-  "chrome://remote/content/cdp/domains/content/Runtime.jsm":
-    "remote/cdp/domains/content/Runtime.jsm",
-  "chrome://remote/content/cdp/domains/content/Security.jsm":
-    "remote/cdp/domains/content/Security.jsm",
-  "chrome://remote/content/cdp/domains/content/runtime/ExecutionContext.jsm":
-    "remote/cdp/domains/content/runtime/ExecutionContext.jsm",
-  "chrome://remote/content/cdp/domains/parent/Browser.jsm":
-    "remote/cdp/domains/parent/Browser.jsm",
-  "chrome://remote/content/cdp/domains/parent/Emulation.jsm":
-    "remote/cdp/domains/parent/Emulation.jsm",
-  "chrome://remote/content/cdp/domains/parent/Fetch.jsm":
-    "remote/cdp/domains/parent/Fetch.jsm",
-  "chrome://remote/content/cdp/domains/parent/IO.jsm":
-    "remote/cdp/domains/parent/IO.jsm",
-  "chrome://remote/content/cdp/domains/parent/Input.jsm":
-    "remote/cdp/domains/parent/Input.jsm",
-  "chrome://remote/content/cdp/domains/parent/Network.jsm":
-    "remote/cdp/domains/parent/Network.jsm",
-  "chrome://remote/content/cdp/domains/parent/Page.jsm":
-    "remote/cdp/domains/parent/Page.jsm",
-  "chrome://remote/content/cdp/domains/parent/Security.jsm":
-    "remote/cdp/domains/parent/Security.jsm",
-  "chrome://remote/content/cdp/domains/parent/Target.jsm":
-    "remote/cdp/domains/parent/Target.jsm",
-  "chrome://remote/content/cdp/domains/parent/page/DialogHandler.jsm":
-    "remote/cdp/domains/parent/page/DialogHandler.jsm",
-  "chrome://remote/content/cdp/observers/ChannelEventSink.jsm":
-    "remote/cdp/observers/ChannelEventSink.jsm",
-  "chrome://remote/content/cdp/observers/ContextObserver.jsm":
-    "remote/cdp/observers/ContextObserver.jsm",
-  "chrome://remote/content/cdp/observers/NetworkObserver.jsm":
-    "remote/cdp/observers/NetworkObserver.jsm",
-  "chrome://remote/content/cdp/observers/TargetObserver.jsm":
-    "remote/cdp/observers/TargetObserver.jsm",
-  "chrome://remote/content/cdp/sessions/ContentProcessSession.jsm":
-    "remote/cdp/sessions/ContentProcessSession.jsm",
-  "chrome://remote/content/cdp/sessions/MainProcessSession.jsm":
-    "remote/cdp/sessions/MainProcessSession.jsm",
-  "chrome://remote/content/cdp/sessions/Session.jsm":
-    "remote/cdp/sessions/Session.jsm",
-  "chrome://remote/content/cdp/sessions/TabSession.jsm":
-    "remote/cdp/sessions/TabSession.jsm",
-  "chrome://remote/content/cdp/targets/MainProcessTarget.jsm":
-    "remote/cdp/targets/MainProcessTarget.jsm",
-  "chrome://remote/content/cdp/targets/TabTarget.jsm":
-    "remote/cdp/targets/TabTarget.jsm",
-  "chrome://remote/content/cdp/targets/Target.jsm":
-    "remote/cdp/targets/Target.jsm",
-  "chrome://remote/content/cdp/targets/TargetList.jsm":
-    "remote/cdp/targets/TargetList.jsm",
-  "chrome://remote/content/components/Marionette.jsm":
-    "remote/components/Marionette.jsm",
-  "chrome://remote/content/components/RemoteAgent.jsm":
-    "remote/components/RemoteAgent.jsm",
-  "chrome://remote/content/marionette/PerTestCoverageUtils.jsm":
-    "tools/code-coverage/PerTestCoverageUtils.jsm",
-  "chrome://remote/content/marionette/accessibility.js":
-    "remote/marionette/accessibility.js",
-  "chrome://remote/content/marionette/action.js": "remote/marionette/action.js",
-  "chrome://remote/content/marionette/actors/MarionetteCommandsChild.jsm":
-    "remote/marionette/actors/MarionetteCommandsChild.jsm",
-  "chrome://remote/content/marionette/actors/MarionetteCommandsParent.jsm":
-    "remote/marionette/actors/MarionetteCommandsParent.jsm",
-  "chrome://remote/content/marionette/actors/MarionetteEventsChild.jsm":
-    "remote/marionette/actors/MarionetteEventsChild.jsm",
-  "chrome://remote/content/marionette/actors/MarionetteEventsParent.jsm":
-    "remote/marionette/actors/MarionetteEventsParent.jsm",
-  "chrome://remote/content/marionette/actors/MarionetteReftestChild.jsm":
-    "remote/marionette/actors/MarionetteReftestChild.jsm",
-  "chrome://remote/content/marionette/actors/MarionetteReftestParent.jsm":
-    "remote/marionette/actors/MarionetteReftestParent.jsm",
-  "chrome://remote/content/marionette/addon.js": "remote/marionette/addon.js",
-  "chrome://remote/content/marionette/atom.js": "remote/marionette/atom.js",
-  "chrome://remote/content/marionette/browser.js":
-    "remote/marionette/browser.js",
-  "chrome://remote/content/marionette/capture.js":
-    "remote/marionette/capture.js",
-  "chrome://remote/content/marionette/cert.js": "remote/marionette/cert.js",
-  "chrome://remote/content/marionette/cookie.js": "remote/marionette/cookie.js",
-  "chrome://remote/content/marionette/dom.js": "remote/marionette/dom.js",
-  "chrome://remote/content/marionette/driver.js": "remote/marionette/driver.js",
-  "chrome://remote/content/marionette/element.js":
-    "remote/marionette/element.js",
-  "chrome://remote/content/marionette/evaluate.js":
-    "remote/marionette/evaluate.js",
-  "chrome://remote/content/marionette/event.js": "remote/marionette/event.js",
-  "chrome://remote/content/marionette/interaction.js":
-    "remote/marionette/interaction.js",
-  "chrome://remote/content/marionette/l10n.js": "remote/marionette/l10n.js",
-  "chrome://remote/content/marionette/legacyaction.js":
-    "remote/marionette/legacyaction.js",
-  "chrome://remote/content/marionette/message.js":
-    "remote/marionette/message.js",
-  "chrome://remote/content/marionette/modal.js": "remote/marionette/modal.js",
-  "chrome://remote/content/marionette/navigate.js":
-    "remote/marionette/navigate.js",
-  "chrome://remote/content/marionette/packets.js":
-    "remote/marionette/packets.js",
-  "chrome://remote/content/marionette/permissions.js":
-    "remote/marionette/permissions.js",
-  "chrome://remote/content/marionette/prefs.js": "remote/marionette/prefs.js",
-  "chrome://remote/content/marionette/reftest.js":
-    "remote/marionette/reftest.js",
-  "chrome://remote/content/marionette/server.js": "remote/marionette/server.js",
-  "chrome://remote/content/marionette/stream-utils.js":
-    "remote/marionette/stream-utils.js",
-  "chrome://remote/content/marionette/sync.js": "remote/marionette/sync.js",
-  "chrome://remote/content/marionette/transport.js":
-    "remote/marionette/transport.js",
-  "chrome://remote/content/server/WebSocketHandshake.jsm":
-    "remote/server/WebSocketHandshake.jsm",
-  "chrome://remote/content/server/WebSocketTransport.jsm":
-    "remote/server/WebSocketTransport.jsm",
-  "chrome://remote/content/shared/AppInfo.jsm": "remote/shared/AppInfo.jsm",
-  "chrome://remote/content/shared/Format.jsm": "remote/shared/Format.jsm",
-  "chrome://remote/content/shared/Log.jsm": "remote/shared/Log.jsm",
-  "chrome://remote/content/shared/MobileTabBrowser.jsm":
-    "remote/shared/MobileTabBrowser.jsm",
-  "chrome://remote/content/shared/Navigate.jsm": "remote/shared/Navigate.jsm",
-  "chrome://remote/content/shared/PDF.jsm": "remote/shared/PDF.jsm",
-  "chrome://remote/content/shared/RecommendedPreferences.jsm":
-    "remote/shared/RecommendedPreferences.jsm",
-  "chrome://remote/content/shared/Stack.jsm": "remote/shared/Stack.jsm",
-  "chrome://remote/content/shared/Sync.jsm": "remote/shared/Sync.jsm",
-  "chrome://remote/content/shared/TabManager.jsm":
-    "remote/shared/TabManager.jsm",
-  "chrome://remote/content/shared/WebSocketConnection.jsm":
-    "remote/shared/WebSocketConnection.jsm",
-  "chrome://remote/content/shared/WindowManager.jsm":
-    "remote/shared/WindowManager.jsm",
-  "chrome://remote/content/shared/listeners/BrowsingContextListener.jsm":
-    "remote/shared/listeners/BrowsingContextListener.jsm",
-  "chrome://remote/content/shared/listeners/ConsoleAPIListener.jsm":
-    "remote/shared/listeners/ConsoleAPIListener.jsm",
-  "chrome://remote/content/shared/listeners/ConsoleListener.jsm":
-    "remote/shared/listeners/ConsoleListener.jsm",
-  "chrome://remote/content/shared/listeners/LoadListener.jsm":
-    "remote/shared/listeners/LoadListener.jsm",
-  "chrome://remote/content/shared/messagehandler/Errors.jsm":
-    "remote/shared/messagehandler/Errors.jsm",
-  "chrome://remote/content/shared/messagehandler/EventsDispatcher.jsm":
-    "remote/shared/messagehandler/EventsDispatcher.jsm",
-  "chrome://remote/content/shared/messagehandler/MessageHandler.jsm":
-    "remote/shared/messagehandler/MessageHandler.jsm",
-  "chrome://remote/content/shared/messagehandler/MessageHandlerRegistry.jsm":
-    "remote/shared/messagehandler/MessageHandlerRegistry.jsm",
-  "chrome://remote/content/shared/messagehandler/Module.jsm":
-    "remote/shared/messagehandler/Module.jsm",
-  "chrome://remote/content/shared/messagehandler/ModuleCache.jsm":
-    "remote/shared/messagehandler/ModuleCache.jsm",
-  "chrome://remote/content/shared/messagehandler/RootMessageHandler.jsm":
-    "remote/shared/messagehandler/RootMessageHandler.jsm",
-  "chrome://remote/content/shared/messagehandler/RootMessageHandlerRegistry.jsm":
-    "remote/shared/messagehandler/RootMessageHandlerRegistry.jsm",
-  "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.jsm":
-    "remote/shared/messagehandler/WindowGlobalMessageHandler.jsm",
-  "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.jsm":
-    "remote/shared/messagehandler/sessiondata/SessionData.jsm",
-  "chrome://remote/content/shared/messagehandler/sessiondata/SessionDataReader.jsm":
-    "remote/shared/messagehandler/sessiondata/SessionDataReader.jsm",
-  "chrome://remote/content/shared/messagehandler/transports/FrameContextUtils.jsm":
-    "remote/shared/messagehandler/transports/FrameContextUtils.jsm",
-  "chrome://remote/content/shared/messagehandler/transports/FrameTransport.jsm":
-    "remote/shared/messagehandler/transports/FrameTransport.jsm",
-  "chrome://remote/content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameActor.jsm":
-    "remote/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameActor.jsm",
-  "chrome://remote/content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameChild.jsm":
-    "remote/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameChild.jsm",
-  "chrome://remote/content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameParent.jsm":
-    "remote/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameParent.jsm",
-  "chrome://remote/content/shared/webdriver/Assert.jsm":
-    "remote/shared/webdriver/Assert.jsm",
-  "chrome://remote/content/shared/webdriver/Capabilities.jsm":
-    "remote/shared/webdriver/Capabilities.jsm",
-  "chrome://remote/content/shared/webdriver/Errors.jsm":
-    "remote/shared/webdriver/Errors.jsm",
-  "chrome://remote/content/shared/webdriver/KeyData.jsm":
-    "remote/shared/webdriver/KeyData.jsm",
-  "chrome://remote/content/shared/webdriver/Session.jsm":
-    "remote/shared/webdriver/Session.jsm",
-  "chrome://remote/content/webdriver-bidi/NewSessionHandler.jsm":
-    "remote/webdriver-bidi/NewSessionHandler.jsm",
-  "chrome://remote/content/webdriver-bidi/RemoteValue.jsm":
-    "remote/webdriver-bidi/RemoteValue.jsm",
-  "chrome://remote/content/webdriver-bidi/WebDriverBiDi.jsm":
-    "remote/webdriver-bidi/WebDriverBiDi.jsm",
-  "chrome://remote/content/webdriver-bidi/WebDriverBiDiConnection.jsm":
-    "remote/webdriver-bidi/WebDriverBiDiConnection.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/ModuleRegistry.jsm":
-    "remote/webdriver-bidi/modules/ModuleRegistry.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.jsm":
-    "remote/webdriver-bidi/modules/root/browsingContext.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/root/log.jsm":
-    "remote/webdriver-bidi/modules/root/log.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/root/script.jsm":
-    "remote/webdriver-bidi/modules/root/script.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/root/session.jsm":
-    "remote/webdriver-bidi/modules/root/session.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/windowglobal-in-root/log.jsm":
-    "remote/webdriver-bidi/modules/windowglobal-in-root/log.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/windowglobal/browsingContext.jsm":
-    "remote/webdriver-bidi/modules/windowglobal/browsingContext.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/windowglobal/log.jsm":
-    "remote/webdriver-bidi/modules/windowglobal/log.jsm",
-  "chrome://remote/content/webdriver-bidi/modules/windowglobal/script.jsm":
-    "remote/webdriver-bidi/modules/windowglobal/script.jsm",
   "resource:///actors/ASRouterChild.jsm":
     "browser/components/newtab/actors/ASRouterChild.jsm",
   "resource:///actors/ASRouterParent.jsm":
@@ -407,8 +167,6 @@
     "mobile/android/actors/MediaControlDelegateChild.jsm",
   "resource:///actors/MediaControlDelegateParent.jsm":
     "mobile/android/actors/MediaControlDelegateParent.jsm",
-  "resource:///actors/NetErrorChild.jsm": "browser/actors/NetErrorChild.jsm",
-  "resource:///actors/NetErrorParent.jsm": "browser/actors/NetErrorParent.jsm",
   "resource:///actors/PageDataChild.jsm":
     "browser/components/pagedata/PageDataChild.jsm",
   "resource:///actors/PageDataParent.jsm":
@@ -1097,6 +855,9 @@
     "toolkit/actors/KeyPressEventModelCheckerChild.jsm",
   "resource://gre/actors/LayoutDebugChild.jsm":
     "layout/tools/layout-debug/LayoutDebugChild.jsm",
+  "resource://gre/actors/NetErrorChild.jsm": "toolkit/actors/NetErrorChild.jsm",
+  "resource://gre/actors/NetErrorParent.jsm":
+    "toolkit/actors/NetErrorParent.jsm",
   "resource://gre/actors/PictureInPictureChild.jsm":
     "toolkit/actors/PictureInPictureChild.jsm",
   "resource://gre/actors/PopupBlockingChild.jsm":
@@ -1854,7 +1615,7 @@
   "resource://gre/modules/handlers/HandlerList.jsm":
     "uriloader/exthandler/HandlerList.jsm",
   "resource://gre/modules/jsdebugger.jsm":
-    "js/ductwork/debugger/jsdebugger.jsm",
+    "devtools/platform/jsdebugger.jsm",
   "resource://gre/modules/kvstore.jsm":
     "toolkit/components/kvstore/kvstore.jsm",
   "resource://gre/modules/lz4.js": "toolkit/components/lz4/lz4.js",

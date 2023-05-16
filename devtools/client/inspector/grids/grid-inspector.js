@@ -4,35 +4,39 @@
 
 "use strict";
 
-const flags = require("devtools/shared/flags");
-const { throttle } = require("devtools/shared/throttle");
+const flags = require("resource://devtools/shared/flags.js");
+const { throttle } = require("resource://devtools/shared/throttle.js");
 
-const gridsReducer = require("devtools/client/inspector/grids/reducers/grids");
-const highlighterSettingsReducer = require("devtools/client/inspector/grids/reducers/highlighter-settings");
+const gridsReducer = require("resource://devtools/client/inspector/grids/reducers/grids.js");
+const highlighterSettingsReducer = require("resource://devtools/client/inspector/grids/reducers/highlighter-settings.js");
 const {
   updateGridColor,
   updateGridHighlighted,
   updateGrids,
-} = require("devtools/client/inspector/grids/actions/grids");
+} = require("resource://devtools/client/inspector/grids/actions/grids.js");
 const {
   updateShowGridAreas,
   updateShowGridLineNumbers,
   updateShowInfiniteLines,
-} = require("devtools/client/inspector/grids/actions/highlighter-settings");
+} = require("resource://devtools/client/inspector/grids/actions/highlighter-settings.js");
 
 loader.lazyRequireGetter(
   this,
   "compareFragmentsGeometry",
-  "devtools/client/inspector/grids/utils/utils",
+  "resource://devtools/client/inspector/grids/utils/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "parseURL",
-  "devtools/client/shared/source-utils",
+  "resource://devtools/client/shared/source-utils.js",
   true
 );
-loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
+loader.lazyRequireGetter(
+  this,
+  "asyncStorage",
+  "resource://devtools/shared/async-storage.js"
+);
 
 const CSS_GRID_COUNT_HISTOGRAM_ID = "DEVTOOLS_NUMBER_OF_CSS_GRIDS_IN_A_PAGE";
 

@@ -190,10 +190,6 @@ var gSyncPane = {
     setEventListener("openChangeProfileImage", "keypress", function(event) {
       gSyncPane.openChangeProfileImage(event);
     });
-    setEventListener("verifiedManage", "keypress", function(event) {
-      gSyncPane.openManageFirefoxAccount(event);
-    });
-
     setEventListener("fxaChangeDeviceName", "command", function() {
       this._toggleComputerNameControls(true);
       this._focusComputerNameTextbox();
@@ -449,6 +445,9 @@ var gSyncPane = {
   },
 
   async signIn() {
+    if (!(await FxAccounts.canConnectAccount())) {
+      return;
+    }
     const url = await FxAccounts.config.promiseConnectAccountURI(
       this._getEntryPoint()
     );
@@ -460,6 +459,10 @@ var gSyncPane = {
     // lost the FxA account data - in which case we'll not get a URL as the re-auth
     // URL embeds account info and the server endpoint complains if we don't
     // supply it - So we just use the regular "sign in" URL in that case.
+    if (!(await FxAccounts.canConnectAccount())) {
+      return;
+    }
+
     let entryPoint = this._getEntryPoint();
     const url =
       (await FxAccounts.config.promiseForceSigninURI(entryPoint)) ||
@@ -491,23 +494,6 @@ var gSyncPane = {
       // Prevent page from scrolling on the space key.
       event.preventDefault();
     }
-  },
-
-  openManageFirefoxAccount(event) {
-    if (this.clickOrSpaceOrEnterPressed(event)) {
-      this.manageFirefoxAccount();
-      // Prevent page from scrolling on the space key.
-      event.preventDefault();
-    }
-  },
-
-  manageFirefoxAccount() {
-    FxAccounts.config.promiseManageURI(this._getEntryPoint()).then(url => {
-      this.openContentInBrowser(url, {
-        replaceQueryString: true,
-        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-      });
-    });
   },
 
   verifyFirefoxAccount() {

@@ -3,6 +3,68 @@
 
 All notable changes to this program are documented in this file.
 
+## 0.32.0  (2022-10-13, `4563dd583110`)
+
+### Added
+
+- Native aarch64 builds of geckodriver for Linux and Windows are now available.
+
+- Support `wheel` input source for [Actions], which is associated with a
+  wheel-type input device. This endpoint is supported by geckodriver when
+  using Firefox version ≥106.
+
+- Support `touch` as `pointerType` for `pointer` input source for [Actions],
+  which is associated with a touch input device. This also includes the
+  addition of all the remaining properties for `pointer` input sources as
+  specified by WebDriver. This endpoint is supported by geckodriver when using
+  Firefox version ≥104.
+
+### Fixed
+
+- Using geckodriver to launch Firefox inside a sandbox -- for example
+  a Firefox distribution using Snap or Flatpak -- can fail with a
+  "Profile not found" error if the sandbox restricts Firefox's ability
+  to access the system temporary directory. geckodriver uses the
+  temporary directory to store Firefox profiles created during the run.
+
+  This issue can now be worked around by using the `--profile-root`
+  command line option or setting the `TMPDIR` environment variable to
+  a location that both Firefox and geckodriver have read/write access
+  to e.g.:
+
+  ```bash
+  % mkdir $HOME/tmp
+  % geckodriver --profile-root=~/tmp
+  ```
+
+  or
+
+  ```bash
+  % TMPDIR=$HOME/tmp geckodriver
+  ```
+
+  Alternatively, geckodriver may be used with a Firefox install that
+  is not packaged inside a sandbox e.g. from [mozilla.org].
+
+- The sandboxed Firefox binary is now automatically detected when geckodriver
+  is used from within a Snap confinement.
+
+  Implemented by [Olivier Tilloy].
+
+- On MacOS the geckodriver binary is now technically both signed and notarized.
+
+  Note: The actual validation can only be performed if the machine that starts
+  the geckodriver binary for the very first time is online. You can find more
+  details on how to work around this issue in the [macOS notarization] section
+  of the documentation.
+
+- The backup of the original Firefox preferences are now correctly restored
+  on Android when the WebDriver session ends.
+
+### Changed
+
+- Update dependencies
+
 ## 0.31.0  (2022-04-11, `b617178ef491`)
 
 ### Known problems
@@ -15,20 +77,8 @@ All notable changes to this program are documented in this file.
   to access the system temporary directory. geckodriver uses the
   temporary directory to store Firefox profiles created during the run.
 
-  This issue can be worked around by using the `--profile-root`
-  command line option or setting the `TMPDIR` environment variable to
-  a location that both Firefox and geckodriver have read/write access
-  to e.g.:
-
-  % mkdir $HOME/tmp
-  % geckodriver --profile-root=~/tmp
-
-  or
-
-  % TMPDIR=$HOME/tmp geckodriver
-
-  Alternatively, geckodriver may be used with a Firefox install that
-  is not packaged inside a sandboxed e.g. from [mozilla.org].
+  As workaround geckodriver may be used with a Firefox install that
+  is not packaged inside a sandbox e.g. from [mozilla.org].
 
 - _macOS 10.15 (Catalina) and later:_
 
@@ -1656,7 +1706,6 @@ and greater.
 [David Burns]: https://github.com/AutomatedTester
 [Jason Juang]: https://github.com/juangj
 [Jeremy Lempereur]: https://github.com/o0Ignition0o
-[Joshua Bruning]: https://github.com/joshbruning
 [Kalpesh Krishna]: https://github.com/martiansideofthemoon
 [Kriti Singh]: https://github.com/kritisingh1
 [Mike Pennisi]: https://github.com/jugglinmike
@@ -1665,3 +1714,4 @@ and greater.
 [Shivam Singhal]: https://github.com/championshuttler
 [Sven Jost]: https://github/mythsunwind
 [Vlad Filippov]: https://github.com/vladikoff
+[Olivier Tilloy]: https://github.com/oSoMoN

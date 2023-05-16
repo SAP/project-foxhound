@@ -6,7 +6,9 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryEnvironment", "Policy"];
 
-const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { Log } = ChromeUtils.importESModule(
+  "resource://gre/modules/Log.sys.mjs"
+);
 const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
 );
@@ -16,8 +18,8 @@ const { ObjectUtils } = ChromeUtils.import(
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-const { UpdateUtils } = ChromeUtils.import(
-  "resource://gre/modules/UpdateUtils.jsm"
+const { UpdateUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/UpdateUtils.sys.mjs"
 );
 
 const Utils = TelemetryUtils;
@@ -33,16 +35,10 @@ ChromeUtils.defineModuleGetter(
   "AttributionCode",
   "resource:///modules/AttributionCode.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "ProfileAge",
-  "resource://gre/modules/ProfileAge.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "WindowsRegistry",
-  "resource://gre/modules/WindowsRegistry.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
+  WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
+});
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
@@ -414,7 +410,6 @@ const BACKGROUND_UPDATE_PREF_CHANGE_TOPIC =
   UpdateUtils.PER_INSTALLATION_PREFS["app.update.background.enabled"]
     .observerTopic;
 const SERVICES_INFO_CHANGE_TOPIC = "sync-ui-state:update";
-const FIREFOX_SUGGEST_UPDATE_TOPIC = "firefox-suggest-update";
 
 /**
  * Enforces the parameter to a boolean value.
@@ -1336,7 +1331,6 @@ EnvironmentCache.prototype = {
     Services.obs.addObserver(this, AUTO_UPDATE_PREF_CHANGE_TOPIC);
     Services.obs.addObserver(this, BACKGROUND_UPDATE_PREF_CHANGE_TOPIC);
     Services.obs.addObserver(this, SERVICES_INFO_CHANGE_TOPIC);
-    Services.obs.addObserver(this, FIREFOX_SUGGEST_UPDATE_TOPIC);
   },
 
   _removeObservers() {
@@ -1355,7 +1349,6 @@ EnvironmentCache.prototype = {
     Services.obs.removeObserver(this, AUTO_UPDATE_PREF_CHANGE_TOPIC);
     Services.obs.removeObserver(this, BACKGROUND_UPDATE_PREF_CHANGE_TOPIC);
     Services.obs.removeObserver(this, SERVICES_INFO_CHANGE_TOPIC);
-    Services.obs.removeObserver(this, FIREFOX_SUGGEST_UPDATE_TOPIC);
   },
 
   observe(aSubject, aTopic, aData) {
@@ -1428,9 +1421,6 @@ EnvironmentCache.prototype = {
         break;
       case SERVICES_INFO_CHANGE_TOPIC:
         this._updateServicesInfo();
-        break;
-      case FIREFOX_SUGGEST_UPDATE_TOPIC:
-        this._updateFirefoxSuggest();
         break;
     }
   },
@@ -1809,21 +1799,6 @@ EnvironmentCache.prototype = {
       accountEnabled,
       syncEnabled,
     };
-  },
-
-  /**
-   * Updates environment data related to Firefox Suggest.
-   */
-  _updateFirefoxSuggest() {
-    let prefs = [
-      "browser.urlbar.suggest.quicksuggest.nonsponsored",
-      "browser.urlbar.suggest.quicksuggest.sponsored",
-    ];
-    for (let p of prefs) {
-      this._currentEnvironment.settings.userPrefs[
-        p
-      ] = Services.prefs.getBoolPref(p);
-    }
   },
 
   /**

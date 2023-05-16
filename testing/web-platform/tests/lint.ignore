@@ -210,7 +210,7 @@ SET TIMEOUT: resource-timing/resources/nested-contexts.js
 SET TIMEOUT: reporting/resources/first-csp-report.https.sub.html
 SET TIMEOUT: reporting/resources/second-csp-report.https.sub.html
 SET TIMEOUT: secure-contexts/basic-popup-and-iframe-tests.https.js
-SET TIMEOUT: service-workers/cache-storage/script-tests/cache-abort.js
+SET TIMEOUT: service-workers/cache-storage/cache-abort.https.any.js
 SET TIMEOUT: service-workers/service-worker/activation.https.html
 SET TIMEOUT: service-workers/service-worker/fetch-frame-resource.https.html
 SET TIMEOUT: service-workers/service-worker/fetch-request-redirect.https.html
@@ -342,6 +342,7 @@ SET TIMEOUT: scheduler/tentative/current-task-signal-async-priority.any.js
 SET TIMEOUT: speculation-rules/prerender/resources/activation-start.html
 SET TIMEOUT: speculation-rules/prerender/resources/prerender-response-code.html
 SET TIMEOUT: speculation-rules/prerender/resources/deferred-promise-utils.js
+SET TIMEOUT: speculation-rules/prerender/resources/session-history-harness.js
 SET TIMEOUT: speculation-rules/prerender/resources/utils.js
 SET TIMEOUT: speculation-rules/prerender/resources/request-picture-in-picture.html
 SET TIMEOUT: speculation-rules/prerender/resources/media-autoplay-attribute.html

@@ -12,7 +12,7 @@
 #include "SharedSSLState.h"
 #include "sslt.h"
 #include "ssl.h"
-#include "mozilla/net/SSLTokensCache.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "nsICertOverrideService.h"
 #include "nsITlsHandshakeListener.h"
 
@@ -224,10 +224,7 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
 }
 
 void CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache() {
-  nsAutoCString key;
-  GetPeerId(key);
-  mozilla::net::SessionCacheInfo info;
-  if (!mozilla::net::SSLTokensCache::GetSessionCacheInfo(key, info)) {
+  if (!mSessionCacheInfo) {
     MOZ_LOG(
         gPIPNSSLog, LogLevel::Debug,
         ("CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache cannot "
@@ -235,9 +232,14 @@ void CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache() {
     return;
   }
 
+  mozilla::net::SessionCacheInfo& info = *mSessionCacheInfo;
   nsCOMPtr<nsIX509Cert> cert(
       new nsNSSCertificate(std::move(info.mServerCertBytes)));
-  SetServerCert(cert, info.mEVStatus);
+  if (info.mOverridableErrorCategory == OverridableErrorCategory::ERROR_UNSET) {
+    SetServerCert(cert, info.mEVStatus);
+  } else {
+    SetStatusErrorBits(cert, info.mOverridableErrorCategory);
+  }
   SetCertificateTransparencyStatus(info.mCertificateTransparencyStatus);
   if (info.mSucceededCertChainBytes) {
     SetSucceededCertChain(std::move(*info.mSucceededCertChainBytes));
@@ -245,6 +247,10 @@ void CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache() {
 
   if (info.mIsBuiltCertChainRootBuiltInRoot) {
     SetIsBuiltCertChainRootBuiltInRoot(*info.mIsBuiltCertChainRootBuiltInRoot);
+  }
+
+  if (info.mFailedCertChainBytes) {
+    SetFailedCertChain(std::move(*info.mFailedCertChainBytes));
   }
 }
 

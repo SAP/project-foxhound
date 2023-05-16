@@ -15,7 +15,7 @@
             Cc, Cu, arrayFromChildren, forceGC, contentSpawnMutation,
             DEFAULT_IFRAME_ID, DEFAULT_IFRAME_DOC_BODY_ID, invokeContentTask,
             matchContentDoc, currentContentDoc, getContentDPR,
-            waitForImageMap, getContentBoundsForDOMElm, untilCacheIs, untilCacheOk, testBoundsInContent, waitForContentPaint */
+            waitForImageMap, getContentBoundsForDOMElm, untilCacheIs, untilCacheOk, testBoundsWithContent, waitForContentPaint */
 
 const CURRENT_FILE_DIR = "/browser/accessible/tests/browser/";
 
@@ -333,7 +333,7 @@ async function loadContentScripts(target, ...scripts) {
       target,
       [contentScript, symbol],
       async (_contentScript, importSymbol) => {
-        let module = ChromeUtils.import(_contentScript);
+        let module = ChromeUtils.importESModule(_contentScript);
         content.window[importSymbol] = module[importSymbol];
       }
     );
@@ -513,7 +513,7 @@ function accessibleTask(doc, task, options = {}) {
 
         await SimpleTest.promiseFocus(browser);
         await loadContentScripts(browser, {
-          script: "Common.jsm",
+          script: "Common.sys.mjs",
           symbol: "CommonUtils",
         });
 
@@ -811,8 +811,8 @@ async function waitForImageMap(browser, accDoc, id = "imgmap") {
 
 async function getContentBoundsForDOMElm(browser, id) {
   return invokeContentTask(browser, [id], contentId => {
-    const { Layout: LayoutUtils } = ChromeUtils.import(
-      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
+    const { Layout: LayoutUtils } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
     );
 
     return LayoutUtils.getBoundsForDOMElm(contentId, content.document);
@@ -884,56 +884,30 @@ async function waitForContentPaint(browser) {
   });
 }
 
-async function testBoundsInContent(iframeDocAcc, id, browser) {
+async function testBoundsWithContent(iframeDocAcc, id, browser) {
+  // Retrieve layout bounds from content
+  let expectedBounds = await invokeContentTask(browser, [id], _id => {
+    const { Layout: LayoutUtils } = ChromeUtils.importESModule(
+      "chrome://mochitests/content/browser/accessible/tests/browser/Layout.sys.mjs"
+    );
+    return LayoutUtils.getBoundsForDOMElm(_id, content.document);
+  });
+
+  // Returns true if both number arrays match within `FUZZ`.
+  function isWithinExpected(bounds) {
+    const FUZZ = 1;
+    return bounds
+      .map((val, i) => Math.abs(val - expectedBounds[i]) <= FUZZ)
+      .reduce((a, b) => a && b, true);
+  }
+
   const acc = findAccessibleChildByID(iframeDocAcc, id);
-  const x = {};
-  const y = {};
-  const width = {};
-  const height = {};
-  acc.getBounds(x, y, width, height);
+  let [accBounds] = await untilCacheCondition(isWithinExpected, () => [
+    getBounds(acc),
+  ]);
 
-  await invokeContentTask(
-    browser,
-    [id, x.value, y.value, width.value, height.value],
-    (_id, _x, _y, _width, _height) => {
-      const { Layout: LayoutUtils } = ChromeUtils.import(
-        "chrome://mochitests/content/browser/accessible/tests/browser/Layout.jsm"
-      );
-      const FUZZ = 1;
-
-      let [
-        expectedX,
-        expectedY,
-        expectedWidth,
-        expectedHeight,
-      ] = LayoutUtils.getBoundsForDOMElm(_id, content.document);
-
-      ok(
-        _x >= expectedX - FUZZ && _x <= expectedX + FUZZ,
-        "Got " + _x + " expected " + expectedX + ", accurate x for " + _id
-      );
-      ok(
-        _y >= expectedY - FUZZ && _y <= expectedY + FUZZ,
-        "Got " + _y + " expected " + expectedY + ", accurate y for " + _id
-      );
-      ok(
-        _width >= expectedWidth - FUZZ && _width <= expectedWidth + FUZZ,
-        "Got " +
-          _width +
-          " expected " +
-          expectedWidth +
-          ", accurate width for " +
-          _id
-      );
-      ok(
-        _height >= expectedHeight - FUZZ && _height <= expectedHeight + FUZZ,
-        "Got " +
-          _height +
-          " expected " +
-          expectedHeight +
-          ", accurate height for " +
-          _id
-      );
-    }
+  ok(
+    isWithinExpected(accBounds),
+    `${accBounds} fuzzily matches expected ${expectedBounds}`
   );
 }

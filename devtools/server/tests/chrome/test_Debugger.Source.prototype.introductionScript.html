@@ -17,8 +17,8 @@ behave when 'eval' is called with no scripted frames active at all.
 <script>
 "use strict";
 
-const {addDebuggerToGlobal} = ChromeUtils.import("resource://gre/modules/jsdebugger.jsm");
-addDebuggerToGlobal(this);
+const {addDebuggerToGlobal} = ChromeUtils.importESModule("resource://gre/modules/jsdebugger.sys.mjs");
+addDebuggerToGlobal(globalThis);
 
 window.onload = function() {
   SimpleTest.waitForExplicitFinish();

@@ -80,7 +80,7 @@ class ImageBitmapRenderingContext final
 
   virtual void SetOpaqueValueFromOpaqueAttr(bool aOpaqueAttrValue) override;
   virtual bool GetIsOpaque() override;
-  NS_IMETHOD Reset() override;
+  void ResetBitmap() override;
   virtual already_AddRefed<layers::Image> GetAsImage() override {
     return ClipToIntrinsicSize();
   }
@@ -89,7 +89,6 @@ class ImageBitmapRenderingContext final
   virtual void MarkContextClean() override;
 
   NS_IMETHOD Redraw(const gfxRect& aDirty) override;
-  NS_IMETHOD SetIsIPC(bool aIsIPC) override;
 
   virtual void DidRefresh() override;
 

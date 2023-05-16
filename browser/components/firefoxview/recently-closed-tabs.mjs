@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 const lazy = {};
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -76,7 +74,7 @@ class RecentlyClosedTabsList extends HTMLElement {
 
   handleEvent(event) {
     if (
-      event.type == "click" ||
+      (event.type == "click" && !event.altKey) ||
       (event.type == "keydown" && event.keyCode == KeyEvent.DOM_VK_RETURN)
     ) {
       this.openTabAndUpdate(event);

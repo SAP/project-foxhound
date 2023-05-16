@@ -69,7 +69,7 @@ void ImageBitmapRenderingContext::TransferImageBitmap(
 
 void ImageBitmapRenderingContext::TransferFromImageBitmap(
     ImageBitmap* aImageBitmap) {
-  Reset();
+  ResetBitmap();
 
   if (aImageBitmap) {
     mImage = aImageBitmap->TransferAsImage();
@@ -216,15 +216,13 @@ void ImageBitmapRenderingContext::SetOpaqueValueFromOpaqueAttr(
 
 bool ImageBitmapRenderingContext::GetIsOpaque() { return false; }
 
-NS_IMETHODIMP
-ImageBitmapRenderingContext::Reset() {
+void ImageBitmapRenderingContext::ResetBitmap() {
   if (mCanvasElement) {
     mCanvasElement->InvalidateCanvas();
   }
 
   mImage = nullptr;
   mFrameCaptureState = FrameCaptureState::CLEAN;
-  return NS_OK;
 }
 
 bool ImageBitmapRenderingContext::UpdateWebRenderCanvasData(
@@ -264,9 +262,6 @@ ImageBitmapRenderingContext::Redraw(const gfxRect& aDirty) {
 
   return NS_OK;
 }
-
-NS_IMETHODIMP
-ImageBitmapRenderingContext::SetIsIPC(bool aIsIPC) { return NS_OK; }
 
 void ImageBitmapRenderingContext::DidRefresh() {}
 

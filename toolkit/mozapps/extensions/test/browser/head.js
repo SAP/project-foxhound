@@ -13,7 +13,7 @@ const { TelemetryTestUtils } = ChromeUtils.import(
 let { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-let { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+let { Log } = ChromeUtils.importESModule("resource://gre/modules/Log.sys.mjs");
 
 var pathParts = gTestPath.split("/");
 // Drop the test filename
@@ -596,9 +596,7 @@ function addCertOverride(host) {
     req.onload = reject;
     req.onerror = () => {
       if (req.channel && req.channel.securityInfo) {
-        let securityInfo = req.channel.securityInfo.QueryInterface(
-          Ci.nsITransportSecurityInfo
-        );
+        let securityInfo = req.channel.securityInfo;
         if (securityInfo.serverCert) {
           let cos = Cc["@mozilla.org/security/certoverride;1"].getService(
             Ci.nsICertOverrideService
@@ -632,10 +630,10 @@ function addCertOverrides() {
 
 /** *** Mock Provider *****/
 
-function MockProvider() {
+function MockProvider(addonTypes) {
   this.addons = [];
   this.installs = [];
-  this.addonTypes = ["extension"];
+  this.addonTypes = addonTypes ?? ["extension"];
 
   var self = this;
   registerCleanupFunction(function() {
@@ -1465,8 +1463,8 @@ function waitAppMenuNotificationShown(
   accept = false,
   win = window
 ) {
-  const { AppMenuNotifications } = ChromeUtils.import(
-    "resource://gre/modules/AppMenuNotifications.jsm"
+  const { AppMenuNotifications } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppMenuNotifications.sys.mjs"
   );
   return new Promise(resolve => {
     let { document, PanelUI } = win;

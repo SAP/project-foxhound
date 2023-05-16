@@ -1049,33 +1049,27 @@ JavaScript engine (SpiderMonkey)
     * - Peer(s)
       -
         | `André Bargull (anba) <https://people.mozilla.org/s?query=anba>`__
-        | `Ted Campbell (tcampbell) <https://people.mozilla.org/s?query=tcampbell>`__
-        | `Jon Coppeard (jonco) <https://people.mozilla.org/s?query=jonco>`__
-        | `sfink <https://people.mozilla.org/s?query=sfink>`__
         | `Tooru Fujisawa (arai) <https://people.mozilla.org/s?query=arai>`__
-        | `Tom Schuster (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
-        | `Kannan Vijayan (djvj) <https://people.mozilla.org/s?query=djvj>`__
-        | `Jeff Walden (Waldo) <https://people.mozilla.org/s?query=Waldo>`__
-        | `Yulia Startsev (yulia) <https://people.mozilla.org/s?query=yulia>`__
-        | `Matthew Gaudet (mgaudet) <https://people.mozilla.org/s?query=mgaudet>`__
-        | `Iain Ireland (iain) <https://people.mozilla.org/s?query=iain>`__
-        | `Nicolas B (nbp) <https://people.mozilla.org/s?query=nbp>`__
-        | `Caroline Cullen (caroline) <https://people.mozilla.org/s?query=caroline>`__
-        | `Nick Fitzgerald (fitzgen) <https://people.mozilla.org/s?query=fitzgen>`__
-        | `Luke Wagner (luke) <https://people.mozilla.org/s?query=luke>`__
-        | `Dan Gohman (sunfish) <https://people.mozilla.org/s?query=sunfish>`__
         | `Bobby Holley (bholley) <https://people.mozilla.org/s?query=bholley>`__
+        | `Tom Schuster (evilpie) <https://people.mozilla.org/s?query=evilpie>`__
+        | `Iain Ireland (iain) <https://people.mozilla.org/s?query=iain>`__
+        | `Jon Coppeard (jonco) <https://people.mozilla.org/s?query=jonco>`__
+        | `Matthew Gaudet (mgaudet) <https://people.mozilla.org/s?query=mgaudet>`__
+        | `Nicolas B (nbp) <https://people.mozilla.org/s?query=nbp>`__
+        | `Steve Fink (sfink) <https://people.mozilla.org/s?query=sfink>`__
+        | `Ted Campbell (tcampbell) <https://people.mozilla.org/s?query=tcampbell>`__
+        | `Yulia Startsev (yulia) <https://people.mozilla.org/s?query=yulia>`__
+    * - Owner(s) Emeritus
+      - Brendan Eich, Dave Mandelin, Luke Wagner, Jason Orendorff
     * - Peer(s) Emeritus
-      - Brendan Eich, Hannes Verschore, Blake Kaplan, Bill McCloskey, Shu-yu Guo, Niko Matsakis, Eddy Bruel, David Anderson, Igor Bukanov, Andreas Gal, Eric Faust, Ashley Hauck, Brian Hackett, Till Schneidereit, Nicholas Nethercote, Jason Orendorff
+      - Andreas Gal, Ashley Hauck, Bill McCloskey, Blake Kaplan, Brian Hackett, Caroline Cullen, Dan Gohman, David Anderson, Eddy Bruel, Eric Faust, Hannes Verschore, Igor Bukanov, Jeff Walden, Kannan Vijayan, Nicholas Nethercote, Nick Fitzgerald, Niko Matsakis, Shu-yu Guo, Till Schneidereit
     * - Includes
       -
         | `js/src/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=js/src/\*\*/\*>`__
-    * - Group
-      - dev-tech-js-engine
     * - URL
-      - http://www.mozilla.org/js/spidermonkey, http://developer.mozilla.org/en/docs/About_JavaScript
+      - https://spidermonkey.dev/
     * - Bugzilla Components
-      - Core::JavaScript Engine
+      - Core::JavaScript Engine, Core::JavaScript: GC, Core::JavaScript: Internationalization API, Core::JavaScript: Standard Library, Core::JavaScript: WebAssembly, Core::js-ctypes
 
 Core: JavaScript JIT
 ~~~~~~~~~~~~~~~~~~~~
@@ -1108,10 +1102,8 @@ JavaScript engine's JIT compilers (IonMonkey, Baseline)
     * - Includes
       -
         | `js/src/jit/\*\*/\* <https://searchfox.org/mozilla-central/search?q=&path=js/src/jit/\*\*/\*>`__
-    * - Group
-      - dev-tech-js-engine-internals
     * - URL
-      - http://www.mozilla.org/js/spidermonkey
+      - https://spidermonkey.dev/
     * - Bugzilla Components
       - Core::JavaScript Engine: JIT
 
@@ -1949,7 +1941,7 @@ Tools for checking C++ code looking for problems at compile time, plus tools for
     * - Peer(s)
       -
         | `Nika Layzell (nika) <https://people.mozilla.org/s?query=nika>`__
-        | `sfink <https://people.mozilla.org/s?query=sfink>`__
+        | `Steve Fink (sfink) <https://people.mozilla.org/s?query=sfink>`__
         | `Jeff Muizelaar (jrmuizel) <https://people.mozilla.org/s?query=jrmuizel>`__
     * - Peer(s) Emeritus
       - Birunthan Mohanathas, Ehsan Akhgari
@@ -2312,7 +2304,7 @@ Submodule of WebRTC responsible for access to media input devices (microphones, 
         | `Randell Jesup (jesup) <https://people.mozilla.org/s?query=jesup>`__
     * - Peer(s)
       -
-        | `On PTO back Aug 29 (jib) <https://people.mozilla.org/s?query=jib>`__
+        | `Jan-Ivar Bruaroey (jib) <https://people.mozilla.org/s?query=jib>`__
         | `Dan Minor (dminor) <https://people.mozilla.org/s?query=dminor>`__
         | `Andreas Pehrson (pehrsons) <https://people.mozilla.org/s?query=pehrsons>`__
     * - Peer(s) Emeritus
@@ -3160,7 +3152,7 @@ Code relating to Screenshots functionality
         | `Sam Foster (sfoster) <https://people.mozilla.org/s?query=sfoster>`__
     * - Peer(s)
       -
-        | `Jared Hirsch (jhirsch) <https://people.mozilla.org/s?query=jhirsch>`__
+        | `jhirsch <https://people.mozilla.org/s?query=jhirsch>`__
         | `Niklas Baumgardner (niklas) <https://people.mozilla.org/s?query=niklas>`__
     * - Owner(s) Emeritus
       - Emma Malysz, Ian Bicking

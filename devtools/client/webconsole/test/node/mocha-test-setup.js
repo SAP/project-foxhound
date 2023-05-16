@@ -50,18 +50,18 @@ global.loader = {
   lazyRequireGetter: (context, names, path, destruct) => {
     const excluded = [
       "Debugger",
-      "devtools/shared/event-emitter",
-      "devtools/client/shared/autocomplete-popup",
-      "devtools/client/framework/devtools",
-      "devtools/client/shared/keycodes",
-      "devtools/client/shared/sourceeditor/editor",
-      "devtools/client/shared/telemetry",
-      "devtools/client/shared/screenshot",
-      "devtools/client/shared/focus",
-      "devtools/shared/commands/target/legacy-target-watchers/legacy-processes-watcher",
-      "devtools/shared/commands/target/legacy-target-watchers/legacy-workers-watcher",
-      "devtools/shared/commands/target/legacy-target-watchers/legacy-sharedworkers-watcher",
-      "devtools/shared/commands/target/legacy-target-watchers/legacy-serviceworkers-watcher",
+      "resource://devtools/shared/event-emitter.js",
+      "resource://devtools/client/shared/autocomplete-popup.js",
+      "resource://devtools/client/framework/devtools.js",
+      "resource://devtools/client/shared/keycodes.js",
+      "resource://devtools/client/shared/sourceeditor/editor.js",
+      "resource://devtools/client/shared/telemetry.js",
+      "resource://devtools/client/shared/screenshot.js",
+      "resource://devtools/client/shared/focus.js",
+      "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-processes-watcher.js",
+      "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-workers-watcher.js",
+      "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-sharedworkers-watcher.js",
+      "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-serviceworkers-watcher.js",
     ];
     if (!excluded.includes(path)) {
       if (!Array.isArray(names)) {
@@ -109,7 +109,11 @@ global.ChromeUtils = {
   addProfilerMarker: () => {},
 };
 
-global.Cu = { isInAutomation: true };
+global.Cc = {};
+global.Ci = {};
+global.Cu = { isInAutomation: true, now: () => {} };
+global.Components = { stack: { caller: "" } };
+
 global.define = function() {};
 
 // Used for the HTMLTooltip component.
@@ -121,6 +125,15 @@ global.document.nodePrincipal = {
 // Point to vendored-in files and mocks when needed.
 const requireHacker = require("require-hacker");
 requireHacker.global_hook("default", (path, module) => {
+  // Once all modules in devtools/ folder are using absolute URI,
+  // we might drop this two path.replace and change the keys of `paths`
+  // to mention full URLs and include .js suffix.
+  if (path.startsWith("resource://devtools/")) {
+    path = path.replace("resource://", "");
+  }
+  if (path.endsWith(".js")) {
+    path = path.replace(".js", "");
+  }
   const paths = {
     // For Enzyme
     "react-dom": () => getModule("devtools/client/shared/vendor/react-dom"),
@@ -138,8 +151,6 @@ requireHacker.global_hook("default", (path, module) => {
         "devtools/client/webconsole/test/browser/stub-generator-helpers"
       ),
 
-    chrome: () =>
-      `module.exports = { Cc: {}, Ci: {}, Cu: { now: () => {}}, components: {stack: {caller: ""}} }`,
     // Some modules depend on Chrome APIs which don't work in mocha. When such a module
     // is required, replace it with a mock version.
     "devtools/server/devtools-server": () =>

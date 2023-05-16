@@ -4,12 +4,13 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.sys.mjs");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 loader.lazyRequireGetter(
   this,
   "WorkerDescriptorActor",
-  "devtools/server/actors/descriptors/worker",
+  "resource://devtools/server/actors/descriptors/worker.js",
   true
 );
 

@@ -24,7 +24,7 @@ const POLICY_PREF = "suggest.quicksuggest.nonsponsored";
 let gDefaultBranch = Services.prefs.getDefaultBranch("browser.urlbar.");
 let gUserBranch = Services.prefs.getBranch("browser.urlbar.");
 
-add_task(async function init() {
+add_setup(async function() {
   await QuickSuggestTestUtils.ensureQuickSuggestInit();
 });
 
@@ -109,6 +109,8 @@ add_task(async function test_merino() {
     valueOverrides: {
       merinoEnabled: true,
       merinoEndpointURL: "http://example.com/test_merino_config",
+      merinoClientVariants: "test-client-variants",
+      merinoProviders: "test-providers",
     },
     callback: () => {
       Assert.equal(UrlbarPrefs.get("merinoEnabled"), true, "merinoEnabled");
@@ -116,6 +118,16 @@ add_task(async function test_merino() {
         UrlbarPrefs.get("merinoEndpointURL"),
         "http://example.com/test_merino_config",
         "merinoEndpointURL"
+      );
+      Assert.equal(
+        UrlbarPrefs.get("merinoClientVariants"),
+        "test-client-variants",
+        "merinoClientVariants"
+      );
+      Assert.equal(
+        UrlbarPrefs.get("merinoProviders"),
+        "test-providers",
+        "merinoProviders"
       );
     },
   });

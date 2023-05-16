@@ -2737,9 +2737,7 @@ AttachDecision GetPropIRGenerator::tryAttachProxyElement(HandleObject obj,
 }
 
 void GetPropIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", val_);
@@ -3077,9 +3075,7 @@ AttachDecision GetNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
 }
 
 void GetNameIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", ObjectValue(*env_));
@@ -3225,9 +3221,7 @@ AttachDecision BindNameIRGenerator::tryAttachEnvironmentName(ObjOperandId objId,
 }
 
 void BindNameIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", ObjectValue(*env_));
@@ -3582,9 +3576,7 @@ AttachDecision HasPropIRGenerator::tryAttachStub() {
 }
 
 void HasPropIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", val_);
@@ -3650,9 +3642,7 @@ AttachDecision CheckPrivateFieldIRGenerator::tryAttachNative(
 }
 
 void CheckPrivateFieldIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("base", val_);
@@ -3914,9 +3904,7 @@ static bool ValueIsNumeric(Scalar::Type type, const Value& val) {
 }
 
 void SetPropIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", JSOp(*pc_));
@@ -5040,9 +5028,7 @@ AttachDecision InstanceOfIRGenerator::tryAttachStub() {
 }
 
 void InstanceOfIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("lhs", lhsVal_);
@@ -5060,9 +5046,7 @@ TypeOfIRGenerator::TypeOfIRGenerator(JSContext* cx, HandleScript script,
     : IRGenerator(cx, script, pc, CacheKind::TypeOf, state), val_(value) {}
 
 void TypeOfIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -5217,9 +5201,7 @@ AttachDecision GetIteratorIRGenerator::tryAttachNullOrUndefined(
 }
 
 void GetIteratorIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -5443,9 +5425,7 @@ AttachDecision OptimizeSpreadCallIRGenerator::tryAttachNotOptimizable() {
 }
 
 void OptimizeSpreadCallIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -8796,9 +8776,11 @@ AttachDecision CallIRGenerator::tryAttachFunCall(HandleFunction callee) {
     emitCalleeGuard(thisObjId, target);
 
     if (isScripted) {
-      writer.callScriptedFunction(thisObjId, argcId, targetFlags);
+      writer.callScriptedFunction(thisObjId, argcId, targetFlags,
+                                  ClampFixedArgc(argc_));
     } else {
-      writer.callNativeFunction(thisObjId, argcId, op_, target, targetFlags);
+      writer.callNativeFunction(thisObjId, argcId, op_, target, targetFlags,
+                                ClampFixedArgc(argc_));
     }
   } else {
     // Guard that |this| is a function.
@@ -8809,10 +8791,12 @@ AttachDecision CallIRGenerator::tryAttachFunCall(HandleFunction callee) {
 
     if (isScripted) {
       writer.guardFunctionHasJitEntry(thisObjId, /*isConstructing =*/false);
-      writer.callScriptedFunction(thisObjId, argcId, targetFlags);
+      writer.callScriptedFunction(thisObjId, argcId, targetFlags,
+                                  ClampFixedArgc(argc_));
     } else {
       writer.guardFunctionHasNoJitEntry(thisObjId);
-      writer.callAnyNativeFunction(thisObjId, argcId, targetFlags);
+      writer.callAnyNativeFunction(thisObjId, argcId, targetFlags,
+                                   ClampFixedArgc(argc_));
     }
   }
 
@@ -9436,14 +9420,18 @@ AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
   ObjOperandId thisObjId;
   std::tie(thisObjId, std::ignore) = emitFunApplyGuard(argcId, format);
 
+  // We always MaxUnrolledArgCopy here because the fixed argc is meaningless
+  // in a FunApply case.
+  uint32_t fixedArgc = MaxUnrolledArgCopy;
   if (mode_ == ICState::Mode::Specialized) {
     // Ensure that |this| is the expected target function.
     emitCalleeGuard(thisObjId, target);
 
     if (isScripted) {
-      writer.callScriptedFunction(thisObjId, argcId, targetFlags);
+      writer.callScriptedFunction(thisObjId, argcId, targetFlags, fixedArgc);
     } else {
-      writer.callNativeFunction(thisObjId, argcId, op_, target, targetFlags);
+      writer.callNativeFunction(thisObjId, argcId, op_, target, targetFlags,
+                                fixedArgc);
     }
   } else {
     // Guard that |this| is a function.
@@ -9455,11 +9443,11 @@ AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
     if (isScripted) {
       // Guard that function is scripted.
       writer.guardFunctionHasJitEntry(thisObjId, /*constructing =*/false);
-      writer.callScriptedFunction(thisObjId, argcId, targetFlags);
+      writer.callScriptedFunction(thisObjId, argcId, targetFlags, fixedArgc);
     } else {
       // Guard that function is native.
       writer.guardFunctionHasNoJitEntry(thisObjId);
-      writer.callAnyNativeFunction(thisObjId, argcId, targetFlags);
+      writer.callAnyNativeFunction(thisObjId, argcId, targetFlags, fixedArgc);
     }
   }
 
@@ -9597,8 +9585,8 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
     writer.guardWasmArg(argId, sig.args()[i].kind());
   }
 
-  writer.callWasmFunction(calleeObjId, argcId, flags, &funcExport,
-                          inst.object());
+  writer.callWasmFunction(calleeObjId, argcId, flags, ClampFixedArgc(argc_),
+                          &funcExport, inst.object());
   writer.returnFromIC();
 
   trackAttached("WasmCall");
@@ -10176,7 +10164,8 @@ AttachDecision CallIRGenerator::tryAttachCallScripted(
     }
   }
 
-  writer.callScriptedFunction(calleeObjId, argcId, flags);
+  writer.callScriptedFunction(calleeObjId, argcId, flags,
+                              ClampFixedArgc(argc_));
   writer.returnFromIC();
 
   if (isSpecialized) {
@@ -10237,13 +10226,15 @@ AttachDecision CallIRGenerator::tryAttachCallNative(HandleFunction calleeFunc) {
 
     // Ensure callee matches this stub's callee
     writer.guardSpecificFunction(calleeObjId, calleeFunc);
-    writer.callDOMFunction(calleeObjId, argcId, thisObjId, calleeFunc, flags);
+    writer.callDOMFunction(calleeObjId, argcId, thisObjId, calleeFunc, flags,
+                           ClampFixedArgc(argc_));
 
     trackAttached("CallDOM");
   } else if (isSpecialized) {
     // Ensure callee matches this stub's callee
     writer.guardSpecificFunction(calleeObjId, calleeFunc);
-    writer.callNativeFunction(calleeObjId, argcId, op_, calleeFunc, flags);
+    writer.callNativeFunction(calleeObjId, argcId, op_, calleeFunc, flags,
+                              ClampFixedArgc(argc_));
 
     trackAttached("CallNative");
   } else {
@@ -10258,7 +10249,8 @@ AttachDecision CallIRGenerator::tryAttachCallNative(HandleFunction calleeFunc) {
       // If callee is a class constructor, we have to throw.
       writer.guardNotClassConstructor(calleeObjId);
     }
-    writer.callAnyNativeFunction(calleeObjId, argcId, flags);
+    writer.callAnyNativeFunction(calleeObjId, argcId, flags,
+                                 ClampFixedArgc(argc_));
 
     trackAttached("CallAnyNative");
   }
@@ -10301,7 +10293,7 @@ AttachDecision CallIRGenerator::tryAttachCallHook(HandleObject calleeObj) {
   // Ensure the callee's class matches the one in this stub.
   writer.guardAnyClass(calleeObjId, calleeObj->getClass());
 
-  writer.callClassHook(calleeObjId, argcId, hook, flags);
+  writer.callClassHook(calleeObjId, argcId, hook, flags, ClampFixedArgc(argc_));
   writer.returnFromIC();
 
   trackAttached("Call native func");
@@ -10365,9 +10357,7 @@ AttachDecision CallIRGenerator::tryAttachStub() {
 }
 
 void CallIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("callee", callee_);
@@ -10943,9 +10933,7 @@ AttachDecision CompareIRGenerator::tryAttachStub() {
 }
 
 void CompareIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("lhs", lhsVal_);
@@ -10961,9 +10949,7 @@ ToBoolIRGenerator::ToBoolIRGenerator(JSContext* cx, HandleScript script,
     : IRGenerator(cx, script, pc, CacheKind::ToBool, state), val_(val) {}
 
 void ToBoolIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -11099,9 +11085,7 @@ GetIntrinsicIRGenerator::GetIntrinsicIRGenerator(JSContext* cx,
     : IRGenerator(cx, script, pc, CacheKind::GetIntrinsic, state), val_(val) {}
 
 void GetIntrinsicIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -11127,9 +11111,7 @@ UnaryArithIRGenerator::UnaryArithIRGenerator(JSContext* cx, HandleScript script,
       res_(res) {}
 
 void UnaryArithIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -11464,9 +11446,7 @@ ToPropertyKeyIRGenerator::ToPropertyKeyIRGenerator(JSContext* cx,
     : IRGenerator(cx, script, pc, CacheKind::ToPropertyKey, state), val_(val) {}
 
 void ToPropertyKeyIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.valueProperty("val", val_);
@@ -11563,9 +11543,7 @@ BinaryArithIRGenerator::BinaryArithIRGenerator(JSContext* cx,
       res_(res) {}
 
 void BinaryArithIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", op_);
@@ -12052,9 +12030,7 @@ NewArrayIRGenerator::NewArrayIRGenerator(JSContext* cx, HandleScript script,
 }
 
 void NewArrayIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", op_);
@@ -12139,9 +12115,7 @@ NewObjectIRGenerator::NewObjectIRGenerator(JSContext* cx, HandleScript script,
 }
 
 void NewObjectIRGenerator::trackAttached(const char* name) {
-#ifdef JS_ION_PERF
-  stubName_ = JS_smprintf("%s", name);
-#endif
+  stubName_ = JS_smprintf("%s", name ? name : "NotAttached");
 #ifdef JS_CACHEIR_SPEW
   if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
     sp.opcodeProperty("op", op_);

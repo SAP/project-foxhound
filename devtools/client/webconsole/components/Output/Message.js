@@ -9,42 +9,44 @@ const {
   Component,
   createFactory,
   createElement,
-} = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
-const actions = require("devtools/client/webconsole/actions/index");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const {
+  l10n,
+} = require("resource://devtools/client/webconsole/utils/messages.js");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
 const {
   MESSAGE_LEVEL,
   MESSAGE_SOURCE,
   MESSAGE_TYPE,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 const {
   MessageIndent,
-} = require("devtools/client/webconsole/components/Output/MessageIndent");
-const MessageIcon = require("devtools/client/webconsole/components/Output/MessageIcon");
+} = require("resource://devtools/client/webconsole/components/Output/MessageIndent.js");
+const MessageIcon = require("resource://devtools/client/webconsole/components/Output/MessageIcon.js");
 const FrameView = createFactory(
-  require("devtools/client/shared/components/Frame")
+  require("resource://devtools/client/shared/components/Frame.js")
 );
 
 loader.lazyRequireGetter(
   this,
   "CollapseButton",
-  "devtools/client/webconsole/components/Output/CollapseButton"
+  "resource://devtools/client/webconsole/components/Output/CollapseButton.js"
 );
 loader.lazyRequireGetter(
   this,
   "MessageRepeat",
-  "devtools/client/webconsole/components/Output/MessageRepeat"
+  "resource://devtools/client/webconsole/components/Output/MessageRepeat.js"
 );
 loader.lazyRequireGetter(
   this,
   "PropTypes",
-  "devtools/client/shared/vendor/react-prop-types"
+  "resource://devtools/client/shared/vendor/react-prop-types.js"
 );
 loader.lazyRequireGetter(
   this,
   "SmartTrace",
-  "devtools/client/shared/components/SmartTrace"
+  "resource://devtools/client/shared/components/SmartTrace.js"
 );
 
 class Message extends Component {

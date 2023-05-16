@@ -7,6 +7,7 @@
 #include "gc/GCParallelTask.h"
 
 #include "mozilla/Maybe.h"
+#include "mozilla/TimeStamp.h"
 
 #include "gc/GCContext.h"
 #include "gc/GCInternals.h"
@@ -23,6 +24,10 @@ using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 
 js::GCParallelTask::~GCParallelTask() {
+  // The LinkedListElement destructor will remove us from any list we are part
+  // of without synchronization, so ensure that doesn't happen.
+  MOZ_DIAGNOSTIC_ASSERT(!isInList());
+
   // Only most-derived classes' destructors may do the join: base class
   // destructors run after those for derived classes' members, so a join in a
   // base class can't ensure that the task is done using the members. All we
@@ -112,7 +117,7 @@ void js::GCParallelTask::joinNonIdleTask(Maybe<TimeStamp> deadline,
   while (!isFinished(lock)) {
     TimeDuration timeout = TimeDuration::Forever();
     if (deadline) {
-      TimeStamp now = ReallyNow();
+      TimeStamp now = TimeStamp::Now();
       if (*deadline <= now) {
         break;
       }
@@ -135,7 +140,7 @@ void js::GCParallelTask::cancelDispatchedTask(AutoLockHelperThreadState& lock) {
 }
 
 static inline TimeDuration TimeSince(TimeStamp prev) {
-  TimeStamp now = ReallyNow();
+  TimeStamp now = TimeStamp::Now();
   // Sadly this happens sometimes.
   MOZ_ASSERT(now >= prev);
   if (now < prev) {
@@ -191,7 +196,7 @@ void GCParallelTask::runTask(JS::GCContext* gcx,
   // allowed to GC.
   JS::AutoSuppressGCAnalysis nogc;
 
-  TimeStamp timeStart = ReallyNow();
+  TimeStamp timeStart = TimeStamp::Now();
   run(lock);
   duration_ = TimeSince(timeStart);
 }

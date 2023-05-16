@@ -4,11 +4,12 @@
 
 "use strict";
 
-const { Ci, Cc, CC } = require("chrome");
-const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.sys.mjs");
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
 XPCOMUtils.defineLazyGetter(this, "ZipWriter", function() {
-  return CC("@mozilla.org/zipwriter;1", "nsIZipWriter");
+  return Components.Constructor("@mozilla.org/zipwriter;1", "nsIZipWriter");
 });
 
 const OPEN_FLAGS = {

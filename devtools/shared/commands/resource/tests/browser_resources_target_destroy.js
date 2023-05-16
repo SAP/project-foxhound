@@ -31,16 +31,16 @@ add_task(async function() {
   await ContentTask.spawn(tab.linkedBrowser, [connectionPrefix], function(
     _connectionPrefix
   ) {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
-    const {
-      TargetActorRegistry,
-    } = require("devtools/server/actors/targets/target-actor-registry.jsm");
+    const { TargetActorRegistry } = ChromeUtils.import(
+      "resource://devtools/server/actors/targets/target-actor-registry.jsm"
+    );
     const {
       getResourceWatcher,
       TYPES,
-    } = require("devtools/server/actors/resources/index");
+    } = require("resource://devtools/server/actors/resources/index.js");
 
     // Retrieve the target actor instance and its watcher for console messages
     const targetActor = TargetActorRegistry.getTopLevelTargetActorForContext(
@@ -68,13 +68,13 @@ add_task(async function() {
     "Spawn a content task in order to run some assertions on actors and resource watchers directly"
   );
   await ContentTask.spawn(tab.linkedBrowser, [], function() {
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
     const {
       getResourceWatcher,
       TYPES,
-    } = require("devtools/server/actors/resources/index");
+    } = require("resource://devtools/server/actors/resources/index.js");
 
     ok(
       content._testTargetActor && !content._testTargetActor.actorID,

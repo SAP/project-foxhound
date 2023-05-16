@@ -41,6 +41,8 @@
 #include "nsIFormControl.h"
 #include "nsINode.h"
 #include "nsISupports.h"
+#include "nsIURI.h"
+#include "nsIURIMutator.h"
 #include "nsPresContext.h"
 
 namespace mozilla {
@@ -1474,21 +1476,21 @@ MOZ_CAN_RUN_SCRIPT static void GetActionHint(const IMEState& aState,
   aActionHint.AssignLiteral("go");
 }
 
-static void GetInputmode(const IMEState& aState, const nsIContent& aContent,
-                         nsAString& aInputmode) {
+static void GetInputMode(const IMEState& aState, const nsIContent& aContent,
+                         nsAString& aInputMode) {
   if (aState.IsEditable() &&
       (StaticPrefs::dom_forms_inputmode() ||
        nsContentUtils::IsChromeDoc(aContent.OwnerDoc()))) {
     aContent.AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,
-                                  aInputmode);
+                                  aInputMode);
     if (aContent.IsHTMLElement(nsGkAtoms::input) &&
-        aInputmode.EqualsLiteral("mozAwesomebar")) {
+        aInputMode.EqualsLiteral("mozAwesomebar")) {
       if (!nsContentUtils::IsChromeDoc(aContent.OwnerDoc())) {
         // mozAwesomebar should be allowed only in chrome
-        aInputmode.Truncate();
+        aInputMode.Truncate();
       }
     } else {
-      ToLowerCase(aInputmode);
+      ToLowerCase(aInputMode);
     }
   }
 }
@@ -1521,6 +1523,37 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
 
   InputContext context;
   context.mIMEState = aState;
+  if (aPresContext) {
+    if (nsIURI* uri = aPresContext->Document()->GetDocumentURI()) {
+      // We don't need to and should not expose special URLs such as:
+      // about: Any apps like IME should work normally and constantly in any
+      //        default pages such as about:blank, about:home, etc in either
+      //        the main process or a content process.
+      // blob: This may contain big data.  If we copy it to the main process,
+      //       it may make the heap dirty which makes the process slower.
+      // chrome: Same as about, any apps should work normally and constantly in
+      //         any chrome documents.
+      // data: Any native apps in the environment shouldn't change the behavior
+      //       with the data URL's content and it may contain too big data.
+      // file: The file path may contain private things and we shouldn't let
+      //       other apps like IME know which one is touched by the user because
+      //       malicious text services may like files which are explicitly used
+      //       by the user better.
+      if (uri->SchemeIs("http") || uri->SchemeIs("https")) {
+        // Note that we don't need to expose UserPass, Query and Reference to
+        // IME since they may contain sensitive data, but non-malicious text
+        // services must not require these data.
+        nsCOMPtr<nsIURI> exposableURL;
+        if (NS_SUCCEEDED(NS_MutateURI(uri)
+                             .SetQuery(""_ns)
+                             .SetRef(""_ns)
+                             .SetUserPass(""_ns)
+                             .Finalize(exposableURL))) {
+          context.mURI = std::move(exposableURL);
+        }
+      }
+    }
+  }
   context.mOrigin = aOrigin;
   context.mMayBeIMEUnaware =
       context.mIMEState.IsEditable() &&
@@ -1543,7 +1576,7 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
   if (focusedElement && focusedElement->IsHTMLElement()) {
     GetInputType(aState, *focusedElement, context.mHTMLInputType);
     GetActionHint(aState, *focusedElement, context.mActionHint);
-    GetInputmode(aState, *focusedElement, context.mHTMLInputInputmode);
+    GetInputMode(aState, *focusedElement, context.mHTMLInputMode);
     GetAutocapitalize(aState, *focusedElement, context,
                       context.mAutocapitalize);
   }

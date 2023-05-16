@@ -7,6 +7,7 @@
 #include "CachedTableAccessible.h"
 #include "DocAccessibleParent.h"
 #include "mozilla/a11y/Platform.h"
+#include "mozilla/Components.h"  // for mozilla::components
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
@@ -14,6 +15,7 @@
 #include "xpcAccessibleDocument.h"
 #include "xpcAccEvents.h"
 #include "nsAccUtils.h"
+#include "nsIIOService.h"
 #include "TextRange.h"
 #include "RootAccessible.h"
 
@@ -342,6 +344,16 @@ void DocAccessibleParent::FireEvent(RemoteAccessible* aAcc,
            child = child->RemoteNextSibling()) {
         child->InvalidateGroupInfo();
       }
+    } else if (aEventType == nsIAccessibleEvent::EVENT_DOCUMENT_LOAD_COMPLETE &&
+               aAcc == this) {
+      // A DocAccessible gets the STALE state while it is still loading, but we
+      // don't fire a state change for that. That state might have been
+      // included in the initial cache push, so clear it here.
+      // We also clear the BUSY state here. Although we do fire a state change
+      // for that, we fire it after doc load complete. It doesn't make sense
+      // for the document to report BUSY after doc load complete and doing so
+      // confuses JAWS.
+      UpdateStateCache(states::STALE | states::BUSY, false);
     }
   }
 
@@ -755,16 +767,17 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvTextSelectionChangeEvent(
 }
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
-    const a11y::role& aRole) {
+    const a11y::role& aRole, const uint8_t& aRoleMapEntryIndex) {
   ACQUIRE_ANDROID_LOCK
   if (mShutdown) {
     return IPC_OK();
   }
 
   mRole = aRole;
+  mRoleMapEntryIndex = aRoleMapEntryIndex;
 
 #ifdef MOZ_WIDGET_COCOA
-  ProxyRoleChangedEvent(this, aRole);
+  ProxyRoleChangedEvent(this, aRole, aRoleMapEntryIndex);
 #endif
 
   return IPC_OK();
@@ -965,6 +978,7 @@ void DocAccessibleParent::Destroy() {
   }
 
   mShutdown = true;
+  mBrowsingContext = nullptr;
 
   MOZ_DIAGNOSTIC_ASSERT(LiveDocs().Contains(mActorID));
   uint32_t childDocCount = mChildDocs.Length();
@@ -1290,12 +1304,26 @@ void DocAccessibleParent::URL(nsAString& aURL) const {
   if (!mBrowsingContext) {
     return;
   }
-  nsAutoCString url;
   nsCOMPtr<nsIURI> uri = mBrowsingContext->GetCurrentURI();
   if (!uri) {
     return;
   }
-  uri->GetSpec(url);
+  // Let's avoid treating too long URI in the main process for avoiding
+  // memory fragmentation as far as possible.
+  if (uri->SchemeIs("data") || uri->SchemeIs("blob")) {
+    return;
+  }
+  nsCOMPtr<nsIIOService> io = mozilla::components::IO::Service();
+  if (NS_WARN_IF(!io)) {
+    return;
+  }
+  nsCOMPtr<nsIURI> exposableURI;
+  if (NS_FAILED(io->CreateExposableURI(uri, getter_AddRefs(exposableURI))) ||
+      MOZ_UNLIKELY(!exposableURI)) {
+    return;
+  }
+  nsAutoCString url;
+  exposableURI->GetSpec(url);
   CopyUTF8toUTF16(url, aURL);
 }
 

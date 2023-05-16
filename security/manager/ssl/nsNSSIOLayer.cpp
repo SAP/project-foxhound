@@ -774,9 +774,7 @@ PRStatus nsNSSSocketInfo::CloseSocketAndDestroy() {
 
   // We need to clear the callback to make sure the ssl layer cannot call the
   // callback after mFD is nulled.
-  if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
-    SSL_SetResumptionTokenCallback(mFd, nullptr, nullptr);
-  }
+  SSL_SetResumptionTokenCallback(mFd, nullptr, nullptr);
 
   PRStatus status = mFd->methods->close(mFd);
 
@@ -901,10 +899,6 @@ nsNSSSocketInfo::GetPeerId(nsACString& aResult) {
 }
 
 nsresult nsNSSSocketInfo::SetResumptionTokenFromExternalCache() {
-  if (!StaticPrefs::network_ssl_tokens_cache_enabled()) {
-    return NS_OK;
-  }
-
   if (!mFd) {
     return NS_ERROR_FAILURE;
   }
@@ -926,7 +920,9 @@ nsresult nsNSSSocketInfo::SetResumptionTokenFromExternalCache() {
     return rv;
   }
 
-  rv = mozilla::net::SSLTokensCache::Get(peerId, token);
+  uint64_t tokenId = 0;
+  mozilla::net::SessionCacheInfo info;
+  rv = mozilla::net::SSLTokensCache::Get(peerId, token, info, &tokenId);
   if (NS_FAILED(rv)) {
     if (rv == NS_ERROR_NOT_AVAILABLE) {
       // It's ok if we can't find the token.
@@ -939,7 +935,7 @@ nsresult nsNSSSocketInfo::SetResumptionTokenFromExternalCache() {
   SECStatus srv = SSL_SetResumptionToken(mFd, token.Elements(), token.Length());
   if (srv == SECFailure) {
     PRErrorCode error = PR_GetError();
-    mozilla::net::SSLTokensCache::Remove(peerId);
+    mozilla::net::SSLTokensCache::Remove(peerId, tokenId);
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("Setting token failed with NSS error %d [id=%s]", error,
              PromiseFlatCString(peerId).get()));
@@ -952,6 +948,8 @@ nsresult nsNSSSocketInfo::SetResumptionTokenFromExternalCache() {
 
     return NS_ERROR_FAILURE;
   }
+
+  SetSessionCacheInfo(std::move(info));
 
   return NS_OK;
 }
@@ -2251,13 +2249,11 @@ nsresult nsSSLIOLayerAddToSocket(int32_t family, const char* host, int32_t port,
 
   infoObject->SharedState().NoteSocketCreated();
 
-  if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
-    rv = infoObject->SetResumptionTokenFromExternalCache();
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-    SSL_SetResumptionTokenCallback(sslSock, &StoreResumptionToken, infoObject);
+  rv = infoObject->SetResumptionTokenFromExternalCache();
+  if (NS_FAILED(rv)) {
+    return rv;
   }
+  SSL_SetResumptionTokenCallback(sslSock, &StoreResumptionToken, infoObject);
 
   return NS_OK;
 loser:

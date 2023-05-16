@@ -36,7 +36,6 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DisplayPortUtils.h"
-#include "mozilla/GeckoBindings.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/dom/AnonymousContent.h"
 #include "mozilla/dom/BrowserChild.h"
@@ -121,7 +120,6 @@
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
 #include "nsTHashMap.h"
-#include "nsDeckFrame.h"
 #include "nsDisplayList.h"
 #include "nsFlexContainerFrame.h"
 #include "nsFontInflationData.h"
@@ -2689,35 +2687,34 @@ LayoutDeviceIntPoint nsLayoutUtils::TranslateViewToWidget(
   return relativeToViewWidget + WidgetToWidgetOffset(viewWidget, aWidget);
 }
 
-// Combine aNewBreakType with aOrigBreakType, but limit the break types
-// to StyleClear::Left, Right, Both.
-StyleClear nsLayoutUtils::CombineBreakType(StyleClear aOrigBreakType,
-                                           StyleClear aNewBreakType) {
-  StyleClear breakType = aOrigBreakType;
-  switch (breakType) {
+StyleClear nsLayoutUtils::CombineClearType(StyleClear aOrigClearType,
+                                           StyleClear aNewClearType) {
+  StyleClear clearType = aOrigClearType;
+  switch (clearType) {
     case StyleClear::Left:
-      if (StyleClear::Right == aNewBreakType ||
-          StyleClear::Both == aNewBreakType) {
-        breakType = StyleClear::Both;
+      if (StyleClear::Right == aNewClearType ||
+          StyleClear::Both == aNewClearType) {
+        clearType = StyleClear::Both;
       }
       break;
     case StyleClear::Right:
-      if (StyleClear::Left == aNewBreakType ||
-          StyleClear::Both == aNewBreakType) {
-        breakType = StyleClear::Both;
+      if (StyleClear::Left == aNewClearType ||
+          StyleClear::Both == aNewClearType) {
+        clearType = StyleClear::Both;
       }
       break;
     case StyleClear::None:
-      if (StyleClear::Left == aNewBreakType ||
-          StyleClear::Right == aNewBreakType ||
-          StyleClear::Both == aNewBreakType) {
-        breakType = aNewBreakType;
+      if (StyleClear::Left == aNewClearType ||
+          StyleClear::Right == aNewClearType ||
+          StyleClear::Both == aNewClearType) {
+        clearType = aNewClearType;
       }
       break;
-    default:
+    case StyleClear::Both:
+      // Do nothing.
       break;
   }
-  return breakType;
+  return clearType;
 }
 
 #ifdef MOZ_DUMP_PAINTING
@@ -4510,14 +4507,17 @@ static nscoord GetDefiniteSizeTakenByBoxSizing(
   return sizeTakenByBoxSizing;
 }
 
-// Handles only max-content and min-content, and
-// -moz-fit-content for min-width and max-width, since the others
-// (-moz-fit-content for width, and -moz-available) have no effect on
-// intrinsic widths.
+/**
+ * Handles only max-content and min-content, and
+ * -moz-fit-content for min-width and max-width, since the others
+ * (-moz-fit-content for width, and -moz-available) have no effect on
+ * intrinsic widths.
+ */
 static bool GetIntrinsicCoord(nsIFrame::ExtremumLength aStyle,
                               gfxContext* aRenderingContext, nsIFrame* aFrame,
                               Maybe<nscoord> aInlineSizeFromAspectRatio,
                               nsIFrame::SizeProperty aProperty,
+                              nscoord aContentBoxToBoxSizingDiff,
                               nscoord& aResult) {
   if (aStyle == nsIFrame::ExtremumLength::MozAvailable) {
     return false;
@@ -4559,6 +4559,9 @@ static bool GetIntrinsicCoord(nsIFrame::ExtremumLength aStyle,
   } else {
     aResult = aFrame->GetMinISize(aRenderingContext);
   }
+
+  aResult += aContentBoxToBoxSizingDiff;
+
   return true;
 }
 
@@ -4567,13 +4570,15 @@ static bool GetIntrinsicCoord(const SizeOrMaxSize& aStyle,
                               gfxContext* aRenderingContext, nsIFrame* aFrame,
                               Maybe<nscoord> aInlineSizeFromAspectRatio,
                               nsIFrame::SizeProperty aProperty,
+                              nscoord aContentBoxToBoxSizingDiff,
                               nscoord& aResult) {
   auto length = nsIFrame::ToExtremumLength(aStyle);
   if (!length) {
     return false;
   }
   return GetIntrinsicCoord(*length, aRenderingContext, aFrame,
-                           aInlineSizeFromAspectRatio, aProperty, aResult);
+                           aInlineSizeFromAspectRatio, aProperty,
+                           aContentBoxToBoxSizingDiff, aResult);
 }
 
 #undef DEBUG_INTRINSIC_WIDTH
@@ -4646,6 +4651,7 @@ static nscoord AddIntrinsicSizeOffset(
   nscoord result = aContentSize;
   nscoord min = aContentMinSize;
   nscoord coordOutsideSize = 0;
+  nscoord contentBoxToBoxSizingDiff = 0;
 
   if (!(aFlags & nsLayoutUtils::IGNORE_PADDING)) {
     coordOutsideSize += aOffsets.padding;
@@ -4654,6 +4660,10 @@ static nscoord AddIntrinsicSizeOffset(
   coordOutsideSize += aOffsets.border;
 
   if (aBoxSizing == StyleBoxSizing::Border) {
+    // Store the padding of the box so we can pass it into
+    // functions that works with content box-sizing.
+    contentBoxToBoxSizingDiff = coordOutsideSize;
+
     min += coordOutsideSize;
     result = NSCoordSaturatingAdd(result, coordOutsideSize);
 
@@ -4676,6 +4686,8 @@ static nscoord AddIntrinsicSizeOffset(
       minContent = aFrame->GetMinISize(aRenderingContext);
       maxContent = aFrame->GetPrefISize(aRenderingContext);
     }
+    minContent += contentBoxToBoxSizingDiff;
+    maxContent += contentBoxToBoxSizingDiff;
   }
 
   // Compute size.
@@ -4687,7 +4699,8 @@ static nscoord AddIntrinsicSizeOffset(
   } else if (GetAbsoluteCoord(aStyleSize, size) ||
              GetIntrinsicCoord(aStyleSize, aRenderingContext, aFrame,
                                aInlineSizeFromAspectRatio,
-                               nsIFrame::SizeProperty::Size, size)) {
+                               nsIFrame::SizeProperty::Size,
+                               contentBoxToBoxSizingDiff, size)) {
     result = size + coordOutsideSize;
   } else if (aStyleSize.IsFitContentFunction()) {
     // |result| here is the content size or border size, depends on
@@ -4705,10 +4718,10 @@ static nscoord AddIntrinsicSizeOffset(
 
   // Compute max-size.
   nscoord maxSize = aFixedMaxSize ? *aFixedMaxSize : 0;
-  if (aFixedMaxSize ||
-      GetIntrinsicCoord(aStyleMaxSize, aRenderingContext, aFrame,
-                        aInlineSizeFromAspectRatio,
-                        nsIFrame::SizeProperty::MaxSize, maxSize)) {
+  if (aFixedMaxSize || GetIntrinsicCoord(aStyleMaxSize, aRenderingContext,
+                                         aFrame, aInlineSizeFromAspectRatio,
+                                         nsIFrame::SizeProperty::MaxSize,
+                                         contentBoxToBoxSizingDiff, maxSize)) {
     maxSize += coordOutsideSize;
     if (result > maxSize) {
       result = maxSize;
@@ -4726,10 +4739,10 @@ static nscoord AddIntrinsicSizeOffset(
 
   // Compute min-size.
   nscoord minSize = aFixedMinSize ? *aFixedMinSize : 0;
-  if (aFixedMinSize ||
-      GetIntrinsicCoord(aStyleMinSize, aRenderingContext, aFrame,
-                        aInlineSizeFromAspectRatio,
-                        nsIFrame::SizeProperty::MinSize, minSize)) {
+  if (aFixedMinSize || GetIntrinsicCoord(aStyleMinSize, aRenderingContext,
+                                         aFrame, aInlineSizeFromAspectRatio,
+                                         nsIFrame::SizeProperty::MinSize,
+                                         contentBoxToBoxSizingDiff, minSize)) {
     minSize += coordOutsideSize;
     if (result < minSize) {
       result = minSize;
@@ -4754,16 +4767,14 @@ static nscoord AddIntrinsicSizeOffset(
 
   const nsStyleDisplay* disp = aFrame->StyleDisplay();
   if (aFrame->IsThemed(disp)) {
-    LayoutDeviceIntSize devSize;
-    bool canOverride = true;
     nsPresContext* pc = aFrame->PresContext();
-    pc->Theme()->GetMinimumWidgetSize(pc, aFrame, disp->EffectiveAppearance(),
-                                      &devSize, &canOverride);
+    LayoutDeviceIntSize devSize = pc->Theme()->GetMinimumWidgetSize(
+        pc, aFrame, disp->EffectiveAppearance());
     nscoord themeSize = pc->DevPixelsToAppUnits(
         aAxis == eAxisVertical ? devSize.height : devSize.width);
     // GetMinimumWidgetSize() returns a border-box width.
     themeSize += aOffsets.margin;
-    if (themeSize > result || !canOverride) {
+    if (themeSize > result) {
       result = themeSize;
     }
   }
@@ -6864,25 +6875,29 @@ nsTransparencyMode nsLayoutUtils::GetFrameTransparency(
   StyleAppearance appearance =
       aCSSRootFrame->StyleDisplay()->EffectiveAppearance();
 
-  if (appearance == StyleAppearance::MozWinGlass) return eTransparencyGlass;
+  if (appearance == StyleAppearance::MozWinGlass) {
+    return eTransparencyGlass;
+  }
 
-  if (appearance == StyleAppearance::MozWinBorderlessGlass)
+  if (appearance == StyleAppearance::MozWinBorderlessGlass) {
     return eTransparencyBorderlessGlass;
+  }
 
   nsITheme::Transparency transparency;
-  if (aCSSRootFrame->IsThemed(&transparency))
+  if (aCSSRootFrame->IsThemed(&transparency)) {
     return transparency == nsITheme::eTransparent ? eTransparencyTransparent
                                                   : eTransparencyOpaque;
+  }
 
-  // We need an uninitialized window to be treated as opaque because
-  // doing otherwise breaks window display effects on some platforms,
-  // specifically Vista. (bug 450322)
+  // We need an uninitialized window to be treated as opaque because doing
+  // otherwise breaks window display effects on some platforms, specifically
+  // Vista. (bug 450322)
   if (aBackgroundFrame->IsViewportFrame() &&
       !aBackgroundFrame->PrincipalChildList().FirstChild()) {
     return eTransparencyOpaque;
   }
 
-  ComputedStyle* bgSC = nsCSSRendering::FindBackground(aBackgroundFrame);
+  const ComputedStyle* bgSC = nsCSSRendering::FindBackground(aBackgroundFrame);
   if (!bgSC) {
     return eTransparencyTransparent;
   }
@@ -7236,11 +7251,14 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
 
   nsCOMPtr<nsIContent> content = do_QueryInterface(aElement);
 
-  // Ensure that the image is oriented the same way as it's displayed.
-  auto orientation = StyleImageOrientation::FromImage;
-  if (nsIFrame* f = content->GetPrimaryFrame()) {
-    orientation = f->StyleVisibility()->mImageOrientation;
-  }
+  // Ensure that the image is oriented the same way as it's displayed
+  // if the image request is of the same origin.
+  auto orientation =
+      content->GetPrimaryFrame()
+          ? content->GetPrimaryFrame()->StyleVisibility()->UsedImageOrientation(
+                imgRequest)
+          : nsStyleVisibility::UsedImageOrientation(
+                imgRequest, StyleImageOrientation::FromImage);
   imgContainer = OrientImage(imgContainer, orientation);
 
   const bool noRasterize = aSurfaceFlags & SFE_NO_RASTERIZING_VECTORS;
@@ -7573,9 +7591,7 @@ static void GetFontFacesForFramesInner(
   nsIFrame::ChildListID childLists[] = {nsIFrame::kPrincipalList,
                                         nsIFrame::kPopupList};
   for (size_t i = 0; i < ArrayLength(childLists); ++i) {
-    nsFrameList children(aFrame->GetChildList(childLists[i]));
-    for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next()) {
-      nsIFrame* child = e.get();
+    for (nsIFrame* child : aFrame->GetChildList(childLists[i])) {
       child = nsPlaceholderFrame::GetRealFrameFor(child);
       GetFontFacesForFramesInner(child, aResult, aFontFaces, aMaxRanges,
                                  aSkipCollapsedWhitespace);
@@ -8977,9 +8993,6 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
   if (ShouldDisableApzForElement(aContent)) {
     metadata.SetForceDisableApz(true);
   }
-
-  metadata.SetPrefersReducedMotion(
-      Gecko_MediaFeatures_PrefersReducedMotion(document));
 
   metadata.SetIsPaginatedPresentation(presContext->Type() !=
                                       nsPresContext::eContext_Galley);

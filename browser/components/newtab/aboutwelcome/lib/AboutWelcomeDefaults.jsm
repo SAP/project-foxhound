@@ -14,11 +14,14 @@ const { AppConstants } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AttributionCode: "resource:///modules/AttributionCode.jsm",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -315,6 +318,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           action: {
             data: {
               entrypoint: "activity-stream-firstrun",
+              where: "tab",
             },
             type: "SHOW_FIREFOX_ACCOUNTS",
             addFlowParams: true,
@@ -463,7 +467,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-default",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-default",
+                string_id: "mr2022-onboarding-colorway-tooltip-default2",
               },
               description: {
                 string_id: "mr2022-onboarding-colorway-description-default",
@@ -475,7 +479,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-playmaker",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-playmaker",
+                string_id: "mr2022-onboarding-colorway-tooltip-playmaker2",
               },
               description: {
                 string_id: "mr2022-onboarding-colorway-description-playmaker",
@@ -487,7 +491,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-expressionist",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-expressionist",
+                string_id: "mr2022-onboarding-colorway-tooltip-expressionist2",
               },
               description: {
                 string_id:
@@ -500,7 +504,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-visionary",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-visionary",
+                string_id: "mr2022-onboarding-colorway-tooltip-visionary2",
               },
               description: {
                 string_id: "mr2022-onboarding-colorway-description-visionary",
@@ -512,7 +516,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-activist",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-activist",
+                string_id: "mr2022-onboarding-colorway-tooltip-activist2",
               },
               description: {
                 string_id: "mr2022-onboarding-colorway-description-activist",
@@ -524,7 +528,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-dreamer",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-dreamer",
+                string_id: "mr2022-onboarding-colorway-tooltip-dreamer2",
               },
               description: {
                 string_id: "mr2022-onboarding-colorway-description-dreamer",
@@ -536,7 +540,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
                 string_id: "mr2022-onboarding-colorway-label-innovator",
               },
               tooltip: {
-                string_id: "mr2022-onboarding-colorway-tooltip-innovator",
+                string_id: "mr2022-onboarding-colorway-tooltip-innovator2",
               },
               description: {
                 string_id: "mr2022-onboarding-colorway-description-innovator",
@@ -880,7 +884,7 @@ async function prepareContentForReact(content) {
 
       // Get started content will navigate without action, so remove "Not now."
       if (removeDefault) {
-        delete pinScreen.content.secondary_button;
+        if (!content.templateMR) delete pinScreen.content.secondary_button;
       } else {
         // The "pin" screen will now handle "default" so remove other "default."
         pinScreen.content.primary_button.action.type = "SET_DEFAULT_BROWSER";

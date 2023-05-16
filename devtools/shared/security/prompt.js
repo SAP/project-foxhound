@@ -4,15 +4,15 @@
 
 "use strict";
 
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 loader.lazyRequireGetter(
   this,
   "AuthenticationResult",
-  "devtools/shared/security/auth",
+  "resource://devtools/shared/security/auth.js",
   true
 );
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/shared/locales/debugger.properties"
 );

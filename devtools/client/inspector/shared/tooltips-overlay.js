@@ -9,55 +9,55 @@
  * editor tooltips that appear when clicking swatch based editors.
  */
 
-const flags = require("devtools/shared/flags");
+const flags = require("resource://devtools/shared/flags.js");
 const {
   VIEW_NODE_VALUE_TYPE,
   VIEW_NODE_FONT_TYPE,
   VIEW_NODE_IMAGE_URL_TYPE,
   VIEW_NODE_INACTIVE_CSS,
   VIEW_NODE_VARIABLE_TYPE,
-} = require("devtools/client/inspector/shared/node-types");
+} = require("resource://devtools/client/inspector/shared/node-types.js");
 
 loader.lazyRequireGetter(
   this,
   "getColor",
-  "devtools/client/shared/theme",
+  "resource://devtools/client/shared/theme.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "HTMLTooltip",
-  "devtools/client/shared/widgets/tooltip/HTMLTooltip",
+  "resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["getImageDimensions", "setImageTooltip", "setBrokenImageTooltip"],
-  "devtools/client/shared/widgets/tooltip/ImageTooltipHelper",
+  "resource://devtools/client/shared/widgets/tooltip/ImageTooltipHelper.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "setVariableTooltip",
-  "devtools/client/shared/widgets/tooltip/VariableTooltipHelper",
+  "resource://devtools/client/shared/widgets/tooltip/VariableTooltipHelper.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "InactiveCssTooltipHelper",
-  "devtools/client/shared/widgets/tooltip/inactive-css-tooltip-helper",
+  "resource://devtools/client/shared/widgets/tooltip/inactive-css-tooltip-helper.js",
   false
 );
 loader.lazyRequireGetter(
   this,
   "CssCompatibilityTooltipHelper",
-  "devtools/client/shared/widgets/tooltip/css-compatibility-tooltip-helper",
+  "resource://devtools/client/shared/widgets/tooltip/css-compatibility-tooltip-helper.js",
   false
 );
 loader.lazyRequireGetter(
   this,
   "Telemetry",
-  "devtools/client/shared/telemetry",
+  "resource://devtools/client/shared/telemetry.js",
   false
 );
 
@@ -154,7 +154,7 @@ TooltipsOverlay.prototype = {
     const { doc } = this.view.inspector.toolbox;
     switch (name) {
       case "colorPicker":
-        const SwatchColorPickerTooltip = require("devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip");
+        const SwatchColorPickerTooltip = require("resource://devtools/client/shared/widgets/tooltip/SwatchColorPickerTooltip.js");
         tooltip = new SwatchColorPickerTooltip(
           doc,
           this.view.inspector,
@@ -162,11 +162,11 @@ TooltipsOverlay.prototype = {
         );
         break;
       case "cubicBezier":
-        const SwatchCubicBezierTooltip = require("devtools/client/shared/widgets/tooltip/SwatchCubicBezierTooltip");
+        const SwatchCubicBezierTooltip = require("resource://devtools/client/shared/widgets/tooltip/SwatchCubicBezierTooltip.js");
         tooltip = new SwatchCubicBezierTooltip(doc);
         break;
       case "filterEditor":
-        const SwatchFilterTooltip = require("devtools/client/shared/widgets/tooltip/SwatchFilterTooltip");
+        const SwatchFilterTooltip = require("resource://devtools/client/shared/widgets/tooltip/SwatchFilterTooltip.js");
         tooltip = new SwatchFilterTooltip(doc);
         break;
       case "interactiveTooltip":

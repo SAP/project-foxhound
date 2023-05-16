@@ -2,46 +2,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { require, loader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
-const Editor = require("devtools/client/shared/sourceeditor/editor");
+import {
+  require,
+  loader,
+} from "resource://devtools/shared/loader/Loader.sys.mjs";
+
+const Editor = require("resource://devtools/client/shared/sourceeditor/editor.js");
 const {
   shortSource,
   prettifyCSS,
-} = require("devtools/shared/inspector/css-logic");
-const { throttle } = require("devtools/shared/throttle");
-const EventEmitter = require("devtools/shared/event-emitter");
+} = require("resource://devtools/shared/inspector/css-logic.js");
+const { throttle } = require("resource://devtools/shared/throttle.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const lazy = {};
 
 loader.lazyGetter(lazy, "BufferStream", () => {
-  const { CC } = require("chrome");
-
-  return CC(
+  return Components.Constructor(
     "@mozilla.org/io/arraybuffer-input-stream;1",
     "nsIArrayBufferInputStream",
     "setData"
   );
 });
 
-loader.lazyRequireGetter(
+ChromeUtils.defineModuleGetter(
   lazy,
   "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
+  "resource://gre/modules/FileUtils.jsm"
 );
-loader.lazyRequireGetter(
+ChromeUtils.defineModuleGetter(
   lazy,
   "NetUtil",
-  "resource://gre/modules/NetUtil.jsm",
-  true
+  "resource://gre/modules/NetUtil.jsm"
 );
 
-const {
-  getString,
-  showFilePicker,
-} = require("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
+const { getString, showFilePicker } = ChromeUtils.import(
+  "resource://devtools/client/styleeditor/StyleEditorUtil.jsm"
+);
 
 const LOAD_ERROR = "error-load";
 const SAVE_ERROR = "error-save";

@@ -4,13 +4,13 @@
 
 "use strict";
 
-const { Ci, Cu } = require("chrome");
-
-const { createStringGrip } = require("devtools/server/actors/object/utils");
+const {
+  createStringGrip,
+} = require("resource://devtools/server/actors/object/utils.js");
 
 const {
   getActorIdForInternalSourceId,
-} = require("devtools/server/actors/utils/dbg-source");
+} = require("resource://devtools/server/actors/utils/dbg-source.js");
 
 class nsIConsoleListenerWatcher {
   /**

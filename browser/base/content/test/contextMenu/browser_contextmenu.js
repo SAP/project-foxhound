@@ -59,7 +59,7 @@ function getThisFrameSubMenu(base_menu) {
   return base_menu;
 }
 
-add_task(async function init() {
+add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.search.separatePrivateDefault.ui.enabled", true],
@@ -666,6 +666,10 @@ add_task(async function test_iframe() {
       "---",
       null,
       "context-printframe",
+      true,
+      "---",
+      null,
+      "context-take-frame-screenshot",
       true,
       "---",
       null,
@@ -1565,6 +1569,10 @@ add_task(async function test_srcdoc() {
       "---",
       null,
       "context-printframe",
+      true,
+      "---",
+      null,
+      "context-take-frame-screenshot",
       true,
       "---",
       null,

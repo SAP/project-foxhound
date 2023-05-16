@@ -10,7 +10,7 @@ var EXPORTED_SYMBOLS = ["BackgroundUpdate"];
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-const { BackgroundTasksManager } = ChromeUtils.import(
+const { EXIT_CODE } = ChromeUtils.import(
   "resource://gre/modules/BackgroundTasksManager.jsm"
 );
 const { XPCOMUtils } = ChromeUtils.importESModule(
@@ -19,14 +19,17 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
   BackgroundTasksUtils: "resource://gre/modules/BackgroundTasksUtils.jsm",
-  FileUtils: "resource://gre/modules/FileUtils.jsm",
-  JSONFile: "resource://gre/modules/JSONFile.jsm",
   TaskScheduler: "resource://gre/modules/TaskScheduler.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
@@ -705,7 +708,7 @@ BackgroundUpdate.REASON = {
  * more general errors reading from the default profile.
  */
 BackgroundUpdate.EXIT_CODE = {
-  ...BackgroundTasksManager.EXIT_CODE,
+  ...EXIT_CODE,
   // We clone the other exit codes simply so we can use one object for all the codes.
   DEFAULT_PROFILE_DOES_NOT_EXIST: 11,
   DEFAULT_PROFILE_CANNOT_BE_LOCKED: 12,

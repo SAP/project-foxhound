@@ -67,6 +67,11 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 ChromeUtils.defineModuleGetter(
   lazy,
+  "AddonManager",
+  "resource://gre/modules/AddonManager.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  lazy,
   "SitePermissions",
   "resource:///modules/SitePermissions.jsm"
 );
@@ -95,6 +100,16 @@ XPCOMUtils.defineLazyGetter(lazy, "gBrowserBundle", function() {
     "chrome://browser/locale/browser.properties"
   );
 });
+
+const { SITEPERMS_ADDON_PROVIDER_PREF } = ChromeUtils.importESModule(
+  "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "sitePermsAddonsProviderEnabled",
+  SITEPERMS_ADDON_PROVIDER_PREF,
+  false
+);
 
 var PermissionUI = {};
 
@@ -688,6 +703,70 @@ var PermissionPromptForRequestPrototype = {
 PermissionUI.PermissionPromptForRequestPrototype = PermissionPromptForRequestPrototype;
 
 /**
+ * A subclass of PermissionPromptForRequestPrototype that prompts
+ * for a Synthetic SitePermsAddon addon type and starts a synthetic
+ * addon install flow.
+ */
+var SitePermsAddonInstallRequestPrototype = {
+  __proto__: PermissionPromptForRequestPrototype,
+
+  prompt() {
+    // fallback to regular permission prompt for localhost,
+    // or when the SitePermsAddonProvider is not enabled.
+    if (this.principal.isLoopbackHost || !lazy.sitePermsAddonsProviderEnabled) {
+      PermissionPromptForRequestPrototype.prompt.call(this);
+      return;
+    }
+
+    // Otherwise, we'll use the addon install flow.
+    lazy.AddonManager.installSitePermsAddonFromWebpage(
+      this.browser,
+      this.principal,
+      this.permName
+    ).then(
+      () => {
+        this.allow();
+      },
+      err => {
+        this.cancel();
+
+        // Print an error message in the console to give more information to the developer.
+        let scriptErrorClass = Cc["@mozilla.org/scripterror;1"];
+        let errorMessage =
+          this.getInstallErrorMessage(err) ||
+          `${this.permName} access was rejected: ${err.message}`;
+
+        let scriptError = scriptErrorClass.createInstance(Ci.nsIScriptError);
+        scriptError.initWithWindowID(
+          errorMessage,
+          null,
+          null,
+          0,
+          0,
+          0,
+          "content javascript",
+          this.browser.browsingContext.currentWindowGlobal.innerWindowId
+        );
+        Services.console.logMessage(scriptError);
+      }
+    );
+  },
+
+  /**
+   * Returns an error message that will be printed to the console given a passed Component.Exception.
+   * This should be overriden by children classes.
+   *
+   * @param {Components.Exception} err
+   * @returns {String} The error message
+   */
+  getInstallErrorMessage(err) {
+    return null;
+  },
+};
+
+PermissionUI.SitePermsAddonInstallRequestPrototype = SitePermsAddonInstallRequestPrototype;
+
+/**
  * Creates a PermissionPrompt for a nsIContentPermissionRequest for
  * the GeoLocation API.
  *
@@ -1174,8 +1253,7 @@ function MIDIPermissionPrompt(request) {
 }
 
 MIDIPermissionPrompt.prototype = {
-  __proto__: PermissionPromptForRequestPrototype,
-
+  __proto__: SitePermsAddonInstallRequestPrototype,
   get type() {
     return "midi";
   },
@@ -1259,6 +1337,15 @@ MIDIPermissionPrompt.prototype = {
         action: Ci.nsIPermissionManager.DENY_ACTION,
       },
     ];
+  },
+
+  /**
+   * @override
+   * @param {Components.Exception} err
+   * @returns {String}
+   */
+  getInstallErrorMessage(err) {
+    return `WebMIDI access request was denied: ❝${err.message}❞. See https://developer.mozilla.org/docs/Web/API/Navigator/requestMIDIAccess for more information`;
   },
 };
 

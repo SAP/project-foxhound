@@ -70,6 +70,11 @@ const syncedTabsData5 = [
   },
 ];
 
+const NO_TABS_EVENTS = [
+  ["firefoxview", "entered", "firefoxview", undefined],
+  ["firefoxview", "synced_tabs", "tabs", undefined, { count: "0" }],
+];
+
 const TAB_PICKUP_EVENT = [
   ["firefoxview", "entered", "firefoxview", undefined],
   ["firefoxview", "synced_tabs", "tabs", undefined, { count: "1" }],
@@ -86,12 +91,37 @@ const TAB_PICKUP_OPEN_EVENT = [
   ["firefoxview", "tab_pickup_open", "tabs", "false"],
 ];
 
+const TAB_PICKUP_STATE_PREF =
+  "browser.tabs.firefox-view.ui-state.tab-pickup.open";
+
 function cleanup() {
   Services.prefs.clearUserPref("services.sync.engine.tabs");
   Services.prefs.clearUserPref("services.sync.lastTabFetch");
+  Services.prefs.clearUserPref(TAB_PICKUP_STATE_PREF);
 }
 
 registerCleanupFunction(async function() {
+  cleanup();
+});
+
+add_task(async function test_keyboard_accessibility() {
+  await withFirefoxView({}, async browser => {
+    const win = browser.ownerGlobal;
+    const { document } = browser.contentWindow;
+    const enter = async () => {
+      info("Enter");
+      EventUtils.synthesizeKey("KEY_Enter", {}, win);
+    };
+    let details = document.getElementById("tab-pickup-container");
+    let summary = details.querySelector("summary");
+    ok(summary, "summary element should exist");
+    ok(details.open, "Tab pickup container should be initially open on load");
+    summary.focus();
+    await enter();
+    ok(!details.open, "Tab pickup container should be closed");
+    await enter();
+    ok(details.open, "Tab pickup container should be opened");
+  });
   cleanup();
 });
 
@@ -245,6 +275,7 @@ add_task(async function test_empty_list_items() {
 });
 
 add_task(async function test_empty_list() {
+  await clearAllParentTelemetryEvents();
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
 
@@ -268,6 +299,25 @@ add_task(async function test_empty_list() {
         .querySelector("#synced-tabs-placeholder")
         .classList.contains("empty-container"),
       "collapsible container should have correct styling when the list is empty"
+    );
+
+    await TestUtils.waitForCondition(
+      () => {
+        let events = Services.telemetry.snapshotEvents(
+          Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+          false
+        ).parent;
+        return events && events.length >= 2;
+      },
+      "Waiting for entered and synced_tabs firefoxview telemetry events.",
+      200,
+      100
+    );
+
+    TelemetryTestUtils.assertEvents(
+      NO_TABS_EVENTS,
+      { category: "firefoxview" },
+      { clear: true, process: "parent" }
     );
 
     syncedTabsMock.returns(mockTabs2);
@@ -299,13 +349,13 @@ add_task(async function test_time_updates_correctly() {
   });
   await clearAllParentTelemetryEvents();
 
+  const sandbox = setupRecentDeviceListMocks();
+  const syncedTabsMock = sandbox.stub(SyncedTabs, "getRecentTabs");
+  let mockTabs1 = getMockTabData(syncedTabsData5);
+  syncedTabsMock.returns(mockTabs1);
+
   await withFirefoxView({}, async browser => {
     const { document } = browser.contentWindow;
-
-    const sandbox = setupRecentDeviceListMocks();
-    const syncedTabsMock = sandbox.stub(SyncedTabs, "getRecentTabs");
-    let mockTabs1 = getMockTabData(syncedTabsData5);
-    syncedTabsMock.returns(mockTabs1);
 
     await setupListState(browser);
 
@@ -362,10 +412,14 @@ add_task(async function test_time_updates_correctly() {
       "Tab opened at the beginning of the tab strip"
     );
     gBrowser.removeTab(gBrowser.selectedTab);
+    // make sure we're back on fx-view
+    browser.ownerGlobal.FirefoxViewHandler.openTab();
 
-    await clearAllParentTelemetryEvents();
-
+    info("Waiting for the tab pickup summary to be visible");
     await waitForElementVisible(browser, "#tab-pickup-container > summary");
+    // click on the details summary and verify telemetry gets logged for this event
+    await clearAllParentTelemetryEvents();
+    info("clicking the summary to collapse it");
     document.querySelector("#tab-pickup-container > summary").click();
 
     await TestUtils.waitForCondition(
@@ -380,7 +434,6 @@ add_task(async function test_time_updates_correctly() {
       200,
       100
     );
-
     TelemetryTestUtils.assertEvents(
       TAB_PICKUP_OPEN_EVENT,
       { category: "firefoxview" },

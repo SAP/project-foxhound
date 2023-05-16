@@ -89,7 +89,6 @@ hb_subset_input_create_or_fail (void)
 
   hb_tag_t default_no_subset_tables[] = {
     HB_TAG ('a', 'v', 'a', 'r'),
-    HB_TAG ('f', 'v', 'a', 'r'),
     HB_TAG ('g', 'a', 's', 'p'),
     HB_TAG ('c', 'v', 't', ' '),
     HB_TAG ('f', 'p', 'g', 'm'),
@@ -391,7 +390,7 @@ hb_subset_input_get_user_data (const hb_subset_input_t *input,
  *
  * Return value: `true` if success, `false` otherwise
  *
- * Since: REPLACEME
+ * Since: EXPERIMENTAL
  **/
 hb_bool_t
 hb_subset_input_pin_axis_to_default (hb_subset_input_t  *input,
@@ -415,7 +414,7 @@ hb_subset_input_pin_axis_to_default (hb_subset_input_t  *input,
  *
  * Return value: `true` if success, `false` otherwise
  *
- * Since: REPLACEME
+ * Since: EXPERIMENTAL
  **/
 hb_bool_t
 hb_subset_input_pin_axis_location (hb_subset_input_t  *input,

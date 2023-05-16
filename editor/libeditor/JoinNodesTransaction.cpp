@@ -5,9 +5,11 @@
 
 #include "JoinNodesTransaction.h"
 
-#include "EditorDOMPoint.h"   // for EditorDOMPoint, etc.
-#include "HTMLEditHelpers.h"  // for SplitNodeResult, JoinNodesDirection, etc
-#include "HTMLEditor.h"       // for HTMLEditor
+#include "EditorDOMPoint.h"          // for EditorDOMPoint, etc.
+#include "HTMLEditHelpers.h"         // for SplitNodeResult
+#include "JoinSplitNodeDirection.h"  // JoinNodesDirection
+#include "HTMLEditor.h"              // for HTMLEditor
+#include "HTMLEditorInlines.h"
 #include "HTMLEditUtils.h"
 
 #include "mozilla/Logging.h"
@@ -40,8 +42,14 @@ JoinNodesTransaction::JoinNodesTransaction(HTMLEditor& aHTMLEditor,
                                            nsIContent& aLeftContent,
                                            nsIContent& aRightContent)
     : mHTMLEditor(&aHTMLEditor),
-      mRemovedContent(&aLeftContent),
-      mKeepingContent(&aRightContent) {
+      mRemovedContent(aHTMLEditor.GetJoinNodesDirection() ==
+                              JoinNodesDirection::LeftNodeIntoRightNode
+                          ? &aLeftContent
+                          : &aRightContent),
+      mKeepingContent(aHTMLEditor.GetJoinNodesDirection() ==
+                              JoinNodesDirection::LeftNodeIntoRightNode
+                          ? &aRightContent
+                          : &aLeftContent) {
   // printf("JoinNodesTransaction size: %zu\n", sizeof(JoinNodesTransaction));
   static_assert(sizeof(JoinNodesTransaction) <= 64,
                 "Transaction classes may be created a lot and may be alive "
@@ -131,20 +139,28 @@ nsresult JoinNodesTransaction::DoTransactionInternal(
   mParentNode = removingContentParentNode;
   // For now, setting mJoinedOffset to removed content length so that
   // CreateJoinedPoint returns a point in mKeepingContent whose offset is
-  // the result if all content in mRemovedContent are moved to start of
-  // mKeepingContent.  The offset will be adjusted below.
-  mJoinedOffset = mRemovedContent->Length();
+  // the result if all content in mRemovedContent are moved to start or end of
+  // mKeepingContent without any intervation.  The offset will be adjusted
+  // below.
+  mJoinedOffset =
+      GetJoinNodesDirection() == JoinNodesDirection::LeftNodeIntoRightNode
+          ? mRemovedContent->Length()
+          : mKeepingContent->Length();
 
   const OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
   const OwningNonNull<nsIContent> removingContent = *mRemovedContent;
   const OwningNonNull<nsIContent> keepingContent = *mKeepingContent;
   nsresult rv;
   // Let's try to get actual joined point with the tacker.
-  EditorDOMPoint joinNodesPoint(mKeepingContent, 0u);
+  EditorDOMPoint joinNodesPoint =
+      GetJoinNodesDirection() == JoinNodesDirection::LeftNodeIntoRightNode
+          ? EditorDOMPoint(keepingContent, 0u)
+          : EditorDOMPoint::AtEndOf(keepingContent);
   {
     AutoTrackDOMPoint trackJoinNodePoint(htmlEditor->RangeUpdaterRef(),
                                          &joinNodesPoint);
-    rv = htmlEditor->DoJoinNodes(keepingContent, removingContent);
+    rv = htmlEditor->DoJoinNodes(keepingContent, removingContent,
+                                 GetJoinNodesDirection());
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "HTMLEditor::DoJoinNodes() failed");
   }
   // Adjust join node offset to the actual offset where the original first
@@ -173,16 +189,17 @@ NS_IMETHODIMP JoinNodesTransaction::UndoTransaction() {
   const OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
   const OwningNonNull<nsIContent> removedContent = *mRemovedContent;
 
-  const SplitNodeResult splitNodeResult = htmlEditor->DoSplitNode(
-      EditorDOMPoint(mKeepingContent,
-                     std::min(mJoinedOffset, mKeepingContent->Length())),
-      removedContent);
-  NS_WARNING_ASSERTION(splitNodeResult.isOk(),
-                       "HTMLEditor::DoSplitNode() failed");
+  Result<SplitNodeResult, nsresult> splitNodeResult =
+      htmlEditor->DoSplitNode(CreateJoinedPoint<EditorDOMPoint>(),
+                              removedContent, GetSplitNodeDirection());
+  if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
+    NS_WARNING("HTMLEditor::DoSplitNode() failed");
+    return splitNodeResult.unwrapErr();
+  }
   // When adding caret suggestion to SplitNodeResult, here didn't change
   // selection so that just ignore it.
-  splitNodeResult.IgnoreCaretPointSuggestion();
-  return splitNodeResult.unwrapErr();
+  splitNodeResult.inspect().IgnoreCaretPointSuggestion();
+  return NS_OK;
 }
 
 NS_IMETHODIMP JoinNodesTransaction::RedoTransaction() {

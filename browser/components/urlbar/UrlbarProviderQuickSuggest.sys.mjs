@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 import {
@@ -889,12 +887,12 @@ class ProviderQuickSuggest extends UrlbarProvider {
     );
     this._merinoSequenceNumber++;
 
-    let clientVariants = lazy.UrlbarPrefs.get("merino.clientVariants");
+    let clientVariants = lazy.UrlbarPrefs.get("merinoClientVariants");
     if (clientVariants) {
       url.searchParams.set(MERINO_PARAMS.CLIENT_VARIANTS, clientVariants);
     }
 
-    let providers = lazy.UrlbarPrefs.get("merino.providers");
+    let providers = lazy.UrlbarPrefs.get("merinoProviders");
     if (providers) {
       url.searchParams.set(MERINO_PARAMS.PROVIDERS, providers);
     } else if (

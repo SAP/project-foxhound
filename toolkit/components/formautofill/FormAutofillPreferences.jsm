@@ -28,11 +28,9 @@ const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 const lazy = {};
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "OSKeyStore",
-  "resource://gre/modules/OSKeyStore.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+});
 
 const {
   ENABLED_AUTOFILL_ADDRESSES_PREF,
@@ -166,6 +164,9 @@ FormAutofillPreferences.prototype = {
       if (FormAutofill.isAutofillAddressesEnabled) {
         addressAutofillCheckbox.setAttribute("checked", true);
       }
+      if (FormAutofill.isAutofillAddressesLocked) {
+        addressAutofillCheckbox.disabled = true;
+      }
 
       addressAutofillCheckboxGroup.setAttribute("align", "center");
       addressAutofillCheckboxGroup.setAttribute("flex", "1");
@@ -230,6 +231,9 @@ FormAutofillPreferences.prototype = {
       // Manually set the checked state
       if (FormAutofill.isAutofillCreditCardsEnabled) {
         creditCardAutofillCheckbox.setAttribute("checked", true);
+      }
+      if (FormAutofill.isAutofillCreditCardsLocked) {
+        creditCardAutofillCheckbox.disabled = true;
       }
 
       creditCardAutofillCheckboxGroup.setAttribute("align", "center");

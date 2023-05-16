@@ -216,11 +216,9 @@ nsresult MemoryTelemetry::GatherReports(
 
   // If we're running in the parent process, collect data from all processes for
   // the MEMORY_TOTAL histogram.
-#ifndef XP_MACOSX
   if (XRE_IsParentProcess() && !mGatheringTotalMemory) {
     GatherTotalMemory();
   }
-#endif
 
   if (!Telemetry::CanRecordReleaseData()) {
     return NS_OK;
@@ -374,8 +372,13 @@ void MemoryTelemetry::GatherTotalMemory() {
         // Use our handle for the remote process to collect resident unique set
         // size information for that process.
         for (const auto& info : infos) {
+#ifdef XP_MACOSX
           int64_t memory =
-              nsMemoryReporterManager::ResidentUnique(info.mHandle);
+              nsMemoryReporterManager::PhysicalFootprint(info.mHandle);
+#else
+	  int64_t memory =
+	      nsMemoryReporterManager::ResidentUnique(info.mHandle);
+#endif
           if (memory > 0) {
             childSizes.AppendElement(memory);
             totalMemory += memory;
@@ -401,6 +404,12 @@ nsresult MemoryTelemetry::FinishGatheringTotalMemory(
     int64_t aTotalMemory, const nsTArray<int64_t>& aChildSizes) {
   mGatheringTotalMemory = false;
 
+  // Total memory usage can be difficult to measure both accurately and fast
+  // enough for telemetry (iterating memory maps can jank whole processes on
+  // MacOS).  Therefore this shouldn't be relied on as an absolute measurement
+  // especially on MacOS where it double-counts shared memory.  For a more
+  // detailed explaination see:
+  // https://groups.google.com/a/mozilla.org/g/dev-platform/c/WGNOtjHdsdA
   HandleMemoryReport(Telemetry::MEMORY_TOTAL, nsIMemoryReporter::UNITS_BYTES,
                      aTotalMemory);
 

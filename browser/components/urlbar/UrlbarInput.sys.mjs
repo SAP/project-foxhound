@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const { AppConstants } = ChromeUtils.import(
@@ -16,6 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   ExtensionSearchHandler:
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
@@ -36,7 +35,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
     "resource:///modules/PartnerLinkAttribution.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   ReaderMode: "resource://gre/modules/ReaderMode.jsm",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
 });
@@ -2907,6 +2905,7 @@ export class UrlbarInput {
     this._searchModeLabel.textContent = "";
     this._searchModeIndicatorTitle.removeAttribute("data-l10n-id");
     this._searchModeLabel.removeAttribute("data-l10n-id");
+    this.removeAttribute("searchmodesource");
 
     if (!engineName && !source) {
       try {
@@ -2939,6 +2938,7 @@ export class UrlbarInput {
         this.inputField,
         `urlbar-placeholder-search-mode-other-${sourceName}`
       );
+      this.setAttribute("searchmodesource", sourceName);
     }
 
     this.toggleAttribute("searchmode", true);

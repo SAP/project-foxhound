@@ -21,7 +21,7 @@
              lockpanelvertical="true">
     <vbox class="panel-subview-body">
       <vbox id="appMenu-proton-addon-banners"/>
-      <toolbarbutton id="appMenu-proton-update-banner" class="panel-banner-item"
+      <toolbarbutton id="appMenu-proton-update-banner" class="panel-banner-item subviewbutton"
                      oncommand="PanelUI._onBannerItemSelected(event)"
                      wrap="true"
                      hidden="true"/>
@@ -256,6 +256,7 @@
           <vbox class="PanelUI-profiler-toolbarbutton-container">
             <toolbarbutton id="PanelUI-profiler-info-button"
                           class="panel-info-button"
+                          closemenu="none"
                           data-l10n-id="profiler-popup-reveal-description-button">
               <image/>
             </toolbarbutton>

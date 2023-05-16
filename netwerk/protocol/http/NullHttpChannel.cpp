@@ -318,7 +318,7 @@ NullHttpChannel::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-NullHttpChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+NullHttpChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -425,16 +425,16 @@ NullHttpChannel::GetStatus(nsresult* aStatus) {
 }
 
 NS_IMETHODIMP NullHttpChannel::SetCanceledReason(const nsACString& aReason) {
-  return SetCanceledReasonImpl(aReason);
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP NullHttpChannel::GetCanceledReason(nsACString& aReason) {
-  return GetCanceledReasonImpl(aReason);
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP NullHttpChannel::CancelWithReason(nsresult aStatus,
                                                 const nsACString& aReason) {
-  return CancelWithReasonImpl(aStatus, aReason);
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -754,6 +754,12 @@ NullHttpChannel::GetCacheReadEnd(mozilla::TimeStamp* aCacheReadEnd) {
 }
 
 NS_IMETHODIMP
+NullHttpChannel::GetTransactionPending(mozilla::TimeStamp* aRetVal) {
+  *aRetVal = mAsyncOpenTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 NullHttpChannel::GetIsMainDocumentChannel(bool* aValue) {
   *aValue = false;
   return NS_OK;
@@ -834,6 +840,7 @@ IMPL_TIMING_ATTR(CacheReadStart)
 IMPL_TIMING_ATTR(CacheReadEnd)
 IMPL_TIMING_ATTR(RedirectStart)
 IMPL_TIMING_ATTR(RedirectEnd)
+IMPL_TIMING_ATTR(TransactionPending)
 
 #undef IMPL_TIMING_ATTR
 

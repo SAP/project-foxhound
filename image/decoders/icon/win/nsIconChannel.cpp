@@ -22,7 +22,6 @@
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsMimeTypes.h"
-#include "nsMemory.h"
 #include "nsIURL.h"
 #include "nsIPipe.h"
 #include "nsNetCID.h"
@@ -968,7 +967,7 @@ nsIconChannel::SetNotificationCallbacks(
 }
 
 NS_IMETHODIMP
-nsIconChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
+nsIconChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   *aSecurityInfo = nullptr;
   return NS_OK;
 }

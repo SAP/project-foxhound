@@ -4,18 +4,20 @@
 
 "use strict";
 
-const { ActorClassWithSpec } = require("devtools/shared/protocol");
+const {
+  ActorClassWithSpec,
+} = require("resource://devtools/shared/protocol.js");
 
 loader.lazyRequireGetter(
   this,
   "SessionDataProcessors",
-  "devtools/server/actors/targets/session-data-processors/index",
+  "resource://devtools/server/actors/targets/session-data-processors/index.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "StyleSheetsManager",
-  "devtools/server/actors/utils/stylesheets-manager",
+  "resource://devtools/server/actors/utils/stylesheets-manager.js",
   true
 );
 

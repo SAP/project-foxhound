@@ -20,29 +20,31 @@ Services.scriptloader.loadSubScript(
 
 const {
   _loadPreferredDevices,
-} = require("devtools/client/responsive/actions/devices");
-const { getStr } = require("devtools/client/responsive/utils/l10n");
+} = require("resource://devtools/client/responsive/actions/devices.js");
+const {
+  getStr,
+} = require("resource://devtools/client/responsive/utils/l10n.js");
 const {
   getTopLevelWindow,
-} = require("devtools/client/responsive/utils/window");
+} = require("resource://devtools/client/responsive/utils/window.js");
 const {
   addDevice,
   removeDevice,
   removeLocalDevices,
-} = require("devtools/client/shared/devices");
-const { KeyCodes } = require("devtools/client/shared/keycodes");
-const asyncStorage = require("devtools/shared/async-storage");
-const localTypes = require("devtools/client/responsive/types");
+} = require("resource://devtools/client/shared/devices.js");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
+const asyncStorage = require("resource://devtools/shared/async-storage.js");
+const localTypes = require("resource://devtools/client/responsive/types.js");
 
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive/manager"
+  "resource://devtools/client/responsive/manager.js"
 );
 loader.lazyRequireGetter(
   this,
   "message",
-  "devtools/client/responsive/utils/message"
+  "resource://devtools/client/responsive/utils/message.js"
 );
 
 const E10S_MULTI_ENABLED =
@@ -706,7 +708,7 @@ function testViewportDimensions(ui, w, h) {
 
 async function changeUserAgentInput(ui, value) {
   const { Simulate } = ui.toolWindow.require(
-    "devtools/client/shared/vendor/react-dom-test-utils"
+    "resource://devtools/client/shared/vendor/react-dom-test-utils.js"
   );
   const { document, store } = ui.toolWindow;
   const browser = ui.getViewportBrowser();
@@ -732,7 +734,7 @@ async function changeUserAgentInput(ui, value) {
  */
 function addDeviceInModal(ui, device) {
   const { Simulate } = ui.toolWindow.require(
-    "devtools/client/shared/vendor/react-dom-test-utils"
+    "resource://devtools/client/shared/vendor/react-dom-test-utils.js"
   );
   const { document, store } = ui.toolWindow;
 
@@ -775,7 +777,7 @@ function addDeviceInModal(ui, device) {
 
 async function editDeviceInModal(ui, device, newDevice) {
   const { Simulate } = ui.toolWindow.require(
-    "devtools/client/shared/vendor/react-dom-test-utils"
+    "resource://devtools/client/shared/vendor/react-dom-test-utils.js"
   );
   const { document, store } = ui.toolWindow;
 

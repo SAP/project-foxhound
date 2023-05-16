@@ -5,13 +5,15 @@
 
 /* eslint-env browser */
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const { CustomizableUI } = ChromeUtils.import(
   "resource:///modules/CustomizableUI.jsm"
 );
-const { AppConstants } = require("resource://gre/modules/AppConstants.jsm");
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 const { gDevTools } = require("devtools/client/framework/devtools");
 
 async function simulateMenuOpen(menu) {
@@ -74,7 +76,7 @@ add_task(async function() {
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   await new Promise(r => setTimeout(r, 1000));
 
-  is(gDevTools._toolboxes.size, 0, "No toolbox has been opened");
+  is(gDevTools._toolboxesPerCommands.size, 0, "No toolbox has been opened");
 
   info("Open the context menu for the content page.");
   const contextMenu = win.document.getElementById("contentAreaContextMenu");

@@ -2,6 +2,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+// TODO(Bug 1789718): adapt to synthetic addon type implemented by the SitePermAddonProvider
+// or remove if redundant, after the deprecated XPIProvider-based implementation is also removed.
+
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
@@ -591,7 +594,7 @@ var TESTS = [
             action: "privateBrowsingAllowed",
             view: "postInstall",
             addonId: addon.id,
-            type: "sitepermission",
+            type: "sitepermission-deprecated",
           },
         },
       ],
@@ -1462,13 +1465,6 @@ var TESTS = [
 
     let win = await BrowserTestUtils.openNewBrowserWindow();
     await SimpleTest.promiseFocus(win);
-    await new Promise(resolve => {
-      win.requestIdleCallback(resolve);
-    });
-    await TestUtils.waitForCondition(
-      () => win.gUnifiedExtensions._initialized,
-      "Wait gUnifiedExtensions to have been initialized"
-    );
 
     let progressPromise = waitForProgressNotification(
       false,
@@ -1533,6 +1529,10 @@ add_task(async function() {
       ["extensions.InstallTriggerImpl.enabled", true],
       // Relax the user input requirements while running this test.
       ["xpinstall.userActivation.required", false],
+      // This is needed to allow most of the tests to pass no matter the value
+      // of this pref. In the future, we'll want to enable this pref by default
+      // and adjust the assertions on the anchor IDs.
+      ["extensions.unifiedExtensions.enabled", false],
     ],
   });
 

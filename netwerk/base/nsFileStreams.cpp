@@ -869,19 +869,40 @@ nsSafeFileOutputStream::Finish() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// nsFileStream
+// nsFileRandomAccessStream
 
-nsresult nsFileStream::Create(REFNSIID aIID, void** aResult) {
-  RefPtr<nsFileStream> stream = new nsFileStream();
+nsresult nsFileRandomAccessStream::Create(REFNSIID aIID, void** aResult) {
+  RefPtr<nsFileRandomAccessStream> stream = new nsFileRandomAccessStream();
   return stream->QueryInterface(aIID, aResult);
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(nsFileStream, nsFileStreamBase, nsIInputStream,
-                            nsIOutputStream, nsIFileStream)
+NS_IMPL_ISUPPORTS_INHERITED(nsFileRandomAccessStream, nsFileStreamBase,
+                            nsIRandomAccessStream, nsIFileRandomAccessStream,
+                            nsIInputStream, nsIOutputStream)
 
 NS_IMETHODIMP
-nsFileStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
-                   int32_t behaviorFlags) {
+nsFileRandomAccessStream::GetInputStream(nsIInputStream** aInputStream) {
+  nsCOMPtr<nsIInputStream> inputStream(this);
+
+  inputStream.forget(aInputStream);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFileRandomAccessStream::GetOutputStream(nsIOutputStream** aOutputStream) {
+  nsCOMPtr<nsIOutputStream> outputStream(this);
+
+  outputStream.forget(aOutputStream);
+  return NS_OK;
+}
+
+nsIInputStream* nsFileRandomAccessStream::InputStream() { return this; }
+
+nsIOutputStream* nsFileRandomAccessStream::OutputStream() { return this; }
+
+NS_IMETHODIMP
+nsFileRandomAccessStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
+                               int32_t behaviorFlags) {
   NS_ENSURE_TRUE(mFD == nullptr, NS_ERROR_ALREADY_INITIALIZED);
   NS_ENSURE_TRUE(mState == eUnitialized || mState == eClosed,
                  NS_ERROR_ALREADY_INITIALIZED);
@@ -893,7 +914,7 @@ nsFileStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
   if (perm <= 0) perm = 0;
 
   return MaybeOpen(file, ioFlags, perm,
-                   mBehaviorFlags & nsIFileStream::DEFER_OPEN);
+                   mBehaviorFlags & nsIFileRandomAccessStream::DEFER_OPEN);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

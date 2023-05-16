@@ -19,17 +19,12 @@ ChromeUtils.defineModuleGetter(
   "CustomizableUI",
   "resource:///modules/CustomizableUI.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "AboutReaderParent",
-  "resource:///actors/AboutReaderParent.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
+});
 
 var EXPORTED_SYMBOLS = ["SaveToPocket"];
 
-const gStrings = Services.strings.createBundle(
-  "chrome://global/locale/aboutReader.properties"
-);
 var PocketCustomizableWidget = {
   init() {
     lazy.CustomizableUI.createWidget({
@@ -127,10 +122,8 @@ var SaveToPocket = {
 
   _readerButtonData: {
     id: "pocket-button",
+    l10nId: "about-reader-toolbar-savetopocket",
     telemetryId: "save-to-pocket",
-    label: gStrings.formatStringFromName("readerView.savetopocket.label", [
-      "Pocket",
-    ]),
     image: "chrome://global/skin/icons/pocket.svg",
   },
 

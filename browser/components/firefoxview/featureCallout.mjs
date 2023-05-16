@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
@@ -23,7 +21,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "featureTourProgress",
   "browser.firefox-view.feature-tour",
-  '{"message":"","screen":"","complete":true}',
+  '{"screen":"","complete":true}',
   _handlePrefChange,
   val => JSON.parse(val)
 );
@@ -36,12 +34,8 @@ XPCOMUtils.defineLazyPreferenceGetter(
   _handlePrefChange
 );
 
-/* Work around the pref callback being run after the document has been unlinked.
-   See bug 1543537. */
-const docWeak = Cu.getWeakReference(document);
 async function _handlePrefChange() {
-  const doc = docWeak.get();
-  if (!doc || doc.visibilityState === "hidden") {
+  if (document.visibilityState === "hidden") {
     return;
   }
   let prefVal = lazy.featureTourProgress;
@@ -52,7 +46,7 @@ async function _handlePrefChange() {
     CURRENT_SCREEN = null;
   } else if (prefVal.screen !== CURRENT_SCREEN?.id) {
     READY = false;
-    const container = doc.getElementById(CONTAINER_ID);
+    const container = document.getElementById(CONTAINER_ID);
     container?.classList.add("hidden");
     // wait for fade out transition
     setTimeout(async () => {
@@ -65,6 +59,9 @@ async function _handlePrefChange() {
 
 function _addCalloutLinkElements() {
   function addStylesheet(href) {
+    if (document.querySelector(`link[href="${href}"]`)) {
+      return;
+    }
     const link = document.head.appendChild(document.createElement("link"));
     link.rel = "stylesheet";
     link.href = href;
@@ -95,6 +92,8 @@ let CURRENT_SCREEN;
 let CONFIG;
 let RENDER_OBSERVER;
 let READY = false;
+let LISTENERS_REGISTERED = false;
+let AWSetup = false;
 let SAVED_ACTIVE_ELEMENT;
 
 const TRANSITION_MS = 500;
@@ -131,7 +130,18 @@ function _positionCallout() {
   const container = document.getElementById(CONTAINER_ID);
   const parentEl = document.querySelector(CURRENT_SCREEN?.parent_selector);
   // All possible arrow positions
-  const arrowPositions = ["top", "bottom", "end", "start"];
+  // If the position contains a dash, the value before the dash
+  // refers to which edge of the feature callout the arrow points
+  // from. The value after the dash describes where along that edge
+  // the arrow sits, with middle as the default.
+  const arrowPositions = [
+    "top",
+    "bottom",
+    "end",
+    "start",
+    "top-end",
+    "top-start",
+  ];
   const arrowPosition = CURRENT_SCREEN?.content?.arrow_position || "top";
   // Callout should overlap the parent element by 17px (so the box, not
   // including the arrow, will overlap by 5px)
@@ -178,46 +188,38 @@ function _positionCallout() {
     // while needed space should be the space necessary to fit the callout container
     top: {
       availableSpace:
-        document.body.offsetHeight -
+        document.documentElement.offsetHeight -
         getOffset(parentEl).top -
-        parentEl.offsetHeight +
-        overlap,
+        parentEl.offsetHeight,
       neededSpace: container.offsetHeight - overlap,
       position() {
         // Point to an element above the callout
         let containerTop =
           getOffset(parentEl).top + parentEl.offsetHeight - overlap;
-        container.style.top = `${Math.max(
-          container.offsetHeight - overlap,
-          containerTop
-        )}px`;
-        centerHorizontally(container, parentEl);
+        container.style.top = `${Math.max(0, containerTop)}px`;
         container.classList.add("arrow-top");
+        centerHorizontally(container, parentEl);
       },
     },
     bottom: {
-      availableSpace: getOffset(parentEl).top + overlap,
+      availableSpace: getOffset(parentEl).top,
       neededSpace: container.offsetHeight - overlap,
       position() {
         // Point to an element below the callout
         let containerTop =
           getOffset(parentEl).top - container.offsetHeight + overlap;
         container.style.top = `${Math.max(0, containerTop)}px`;
-        centerHorizontally(container, parentEl);
         container.classList.add("arrow-bottom");
+        centerHorizontally(container, parentEl);
       },
     },
     right: {
-      availableSpace: getOffset(parentEl).left + overlap,
+      availableSpace: getOffset(parentEl).left,
       neededSpace: container.offsetWidth - overlap,
       position() {
         // Point to an element to the right of the callout
         let containerLeft =
           getOffset(parentEl).left - container.offsetWidth + overlap;
-        if (RTL) {
-          // Account for cases where the document body may be narrow than the window
-          containerLeft -= window.innerWidth - document.body.offsetWidth;
-        }
         container.style.left = `${Math.max(0, containerLeft)}px`;
         container.style.top = `${getOffset(parentEl).top}px`;
         container.classList.add("arrow-inline-end");
@@ -225,20 +227,28 @@ function _positionCallout() {
     },
     left: {
       availableSpace:
-        document.body.offsetWidth - getOffset(parentEl).right + overlap,
+        document.documentElement.offsetWidth - getOffset(parentEl).right,
       neededSpace: container.offsetWidth - overlap,
       position() {
         // Point to an element to the left of the callout
         let containerLeft =
           getOffset(parentEl).left + parentEl.offsetWidth - overlap;
-        if (RTL) {
-          // Account for cases where the document body may be narrow than the window
-          containerLeft -= window.innerWidth - document.body.offsetWidth;
-        }
-        container.style.left = `${(container.offsetWidth - overlap,
-        containerLeft)}px`;
+        container.style.left = `${Math.max(0, containerLeft)}px`;
         container.style.top = `${getOffset(parentEl).top}px`;
         container.classList.add("arrow-inline-start");
+      },
+    },
+    "top-end": {
+      position() {
+        // Point to an element above and at the end of the callout
+        let containerTop =
+          getOffset(parentEl).top + parentEl.offsetHeight - overlap;
+        container.style.top = `${Math.max(
+          container.offsetHeight - overlap,
+          containerTop
+        )}px`;
+        alignEnd(container, parentEl);
+        container.classList.add(RTL ? "arrow-top-start" : "arrow-top-end");
       },
     },
   };
@@ -246,8 +256,13 @@ function _positionCallout() {
   function calloutFits(position) {
     // Does callout element fit in this position relative
     // to the parent element without going off screen?
+
+    // Only consider which edge of the callout the arrow points from,
+    // not the alignment of the arrow along the edge of the callout
+    let edgePosition = position.split("-")[0];
     return (
-      positioners[position].availableSpace > positioners[position].neededSpace
+      positioners[edgePosition].availableSpace >
+      positioners[edgePosition].neededSpace
     );
   }
 
@@ -267,21 +282,38 @@ function _positionCallout() {
     if (calloutFits(position)) {
       return position;
     }
-    let newPosition = Object.keys(positioners)
+    let sortedPositions = Object.keys(positioners)
       .filter(p => p !== position)
-      .find(p => calloutFits(p));
+      .filter(calloutFits)
+      .sort((a, b) => {
+        return (
+          positioners[b].availableSpace - positioners[b].neededSpace >
+          positioners[a].availableSpace - positioners[a].neededSpace
+        );
+      });
     // If the callout doesn't fit in any position, use the configured one.
     // The callout will be adjusted to overlap the parent element so that
     // the former doesn't go off screen.
-    return newPosition || position;
+    return sortedPositions[0] || position;
   }
 
   function centerHorizontally() {
     let sideOffset = (parentEl.offsetWidth - container.offsetWidth) / 2;
     let containerSide = RTL
-      ? window.innerWidth - getOffset(parentEl).right + sideOffset
+      ? document.documentElement.offsetWidth -
+        getOffset(parentEl).right +
+        sideOffset
       : getOffset(parentEl).left + sideOffset;
     container.style[RTL ? "right" : "left"] = `${Math.max(containerSide, 0)}px`;
+  }
+
+  function alignEnd() {
+    let containerSide = RTL
+      ? parentEl.getBoundingClientRect().left
+      : parentEl.getBoundingClientRect().left +
+        parentEl.offsetWidth -
+        container.offsetWidth;
+    container.style.left = `${Math.max(containerSide, 0)}px`;
   }
 
   clearPosition(container);
@@ -295,16 +327,23 @@ function _positionCallout() {
 }
 
 function _addPositionListeners() {
-  window.addEventListener("scroll", _positionCallout);
-  window.addEventListener("resize", _positionCallout);
+  if (!LISTENERS_REGISTERED) {
+    window.addEventListener("resize", _positionCallout);
+    LISTENERS_REGISTERED = true;
+  }
 }
 
 function _removePositionListeners() {
-  window.removeEventListener("scroll", _positionCallout);
-  window.removeEventListener("resize", _positionCallout);
+  if (LISTENERS_REGISTERED) {
+    window.removeEventListener("resize", _positionCallout);
+    LISTENERS_REGISTERED = false;
+  }
 }
 
 function _setupWindowFunctions() {
+  if (AWSetup) {
+    return;
+  }
   const AWParent = new lazy.AboutWelcomeParent();
   addEventListener("unload", () => {
     AWParent.didDestroy();
@@ -324,6 +363,7 @@ function _setupWindowFunctions() {
   );
   window.AWSendToParent = (name, data) => receive(name)(data);
   window.AWFinish = _endTour;
+  AWSetup = true;
 }
 
 function _endTour() {
@@ -331,6 +371,7 @@ function _endTour() {
   // SAVED_ACTIVE_ELEMENT
   window.removeEventListener("focus", focusHandler, { capture: true });
 
+  READY = false;
   // wait for fade out transition
   let container = document.getElementById(CONTAINER_ID);
   container?.classList.add("hidden");
@@ -390,12 +431,19 @@ async function _loadConfig() {
   });
   CONFIG = result.message.content;
 
+  let newScreen = CONFIG?.screens?.[CONFIG?.startScreen || 0];
+
+  if (newScreen === CURRENT_SCREEN) {
+    return false;
+  }
+
   // Only add an impression if we actually have a message to impress
   if (Object.keys(result.message).length) {
     lazy.ASRouter.addImpression(result.message);
   }
 
-  CURRENT_SCREEN = CONFIG?.screens?.[CONFIG?.startScreen || 0];
+  CURRENT_SCREEN = newScreen;
+  return true;
 }
 
 async function _renderCallout() {
@@ -410,9 +458,9 @@ async function _renderCallout() {
  * Render content based on about:welcome multistage template.
  */
 async function showFeatureCallout(messageId) {
-  await _loadConfig();
+  let updated = await _loadConfig();
 
-  if (!CONFIG?.screens?.length) {
+  if (!updated || !CONFIG?.screens?.length) {
     return;
   }
 
@@ -442,6 +490,10 @@ async function showFeatureCallout(messageId) {
   // Add handlers for repositioning callout
   _addPositionListeners();
   _setupWindowFunctions();
+
+  READY = false;
+  const container = document.getElementById(CONTAINER_ID);
+  container?.remove();
 
   // If user has disabled CFR, don't show any callouts. But make sure we load
   // the necessary stylesheets first, since re-enabling CFR should allow

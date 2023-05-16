@@ -4,57 +4,62 @@
 
 "use strict";
 
-var { Ci, Cc, CC, Cr } = require("chrome");
-
 // Ensure PSM is initialized to support TLS sockets
 Cc["@mozilla.org/psm;1"].getService(Ci.nsISupports);
 
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 var { dumpn } = DevToolsUtils;
 loader.lazyRequireGetter(
   this,
   "WebSocketServer",
-  "devtools/server/socket/websocket-server"
+  "resource://devtools/server/socket/websocket-server.js"
 );
 loader.lazyRequireGetter(
   this,
   "DebuggerTransport",
-  "devtools/shared/transport/transport",
+  "resource://devtools/shared/transport/transport.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WebSocketDebuggerTransport",
-  "devtools/shared/transport/websocket-transport"
+  "resource://devtools/shared/transport/websocket-transport.js"
 );
 loader.lazyRequireGetter(
   this,
   "discovery",
-  "devtools/shared/discovery/discovery"
+  "resource://devtools/shared/discovery/discovery.js"
 );
 loader.lazyRequireGetter(
   this,
   "Authenticators",
-  "devtools/shared/security/auth",
+  "resource://devtools/shared/security/auth.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "AuthenticationResult",
-  "devtools/shared/security/auth",
+  "resource://devtools/shared/security/auth.js",
   true
 );
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  DevToolsSocketStatus:
+    "resource://devtools/shared/security/DevToolsSocketStatus.sys.mjs",
+});
+
 loader.lazyRequireGetter(
   this,
-  "DevToolsSocketStatus",
-  "resource://devtools/shared/security/DevToolsSocketStatus.jsm",
-  true
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
 );
 
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
-
 DevToolsUtils.defineLazyGetter(this, "nsFile", () => {
-  return CC("@mozilla.org/file/local;1", "nsIFile", "initWithPath");
+  return Components.Constructor(
+    "@mozilla.org/file/local;1",
+    "nsIFile",
+    "initWithPath"
+  );
 });
 
 DevToolsUtils.defineLazyGetter(this, "socketTransportService", () => {
@@ -409,7 +414,7 @@ SocketListener.prototype = {
       dumpn("Socket listening on: " + (self.port || self.portOrPath));
     })()
       .then(() => {
-        DevToolsSocketStatus.notifySocketOpened({
+        lazy.DevToolsSocketStatus.notifySocketOpened({
           fromBrowserToolbox: self.fromBrowserToolbox,
         });
         this._advertise();
@@ -457,7 +462,7 @@ SocketListener.prototype = {
       this._socket.close();
       this._socket = null;
 
-      DevToolsSocketStatus.notifySocketClosed({
+      lazy.DevToolsSocketStatus.notifySocketClosed({
         fromBrowserToolbox: this.fromBrowserToolbox,
       });
     }

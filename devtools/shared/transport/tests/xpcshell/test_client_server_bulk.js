@@ -3,8 +3,10 @@
 
 "use strict";
 
-var { FileUtils } = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
-var Pipe = CC("@mozilla.org/pipe;1", "nsIPipe", "init");
+var { FileUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/FileUtils.sys.mjs"
+);
+var Pipe = Components.Constructor("@mozilla.org/pipe;1", "nsIPipe", "init");
 
 function run_test() {
   initTestDevToolsServer();
@@ -24,7 +26,7 @@ function run_test() {
 }
 
 /** * Sample Bulk Actor ***/
-const { Actor } = require("devtools/shared/protocol/Actor");
+const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
 class TestBulkActor extends Actor {
   constructor(conn) {
     super(conn);

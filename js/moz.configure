@@ -168,6 +168,24 @@ def enable_decorators(value):
 set_config("ENABLE_DECORATORS", enable_decorators)
 set_define("ENABLE_DECORATORS", enable_decorators)
 
+# Enable JS Streams
+# ===================================================
+option(
+    "--enable-js-streams",
+    default=False,
+    help="Enable non-default JS Streams implementation",
+)
+
+
+@depends("--enable-js-streams")
+def enable_js_streams(value):
+    if value:
+        return True
+
+
+set_config("MOZ_JS_STREAMS", enable_js_streams)
+set_define("MOZ_JS_STREAMS", enable_js_streams)
+
 # JIT support
 # =======================================================
 @depends(target, "--enable-record-tuple")
@@ -252,6 +270,8 @@ def jit_codegen(jit_enabled, simulator, target):
         return namespace(arm64=True)
     elif target.cpu == "x86_64":
         return namespace(x64=True)
+    elif target.cpu == "loongarch64":
+        return namespace(loong64=True)
 
     return namespace(**{str(target.cpu): True})
 

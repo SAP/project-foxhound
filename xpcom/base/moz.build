@@ -11,11 +11,8 @@ XPIDL_SOURCES += [
     "nsIConsoleService.idl",
     "nsICycleCollectorListener.idl",
     "nsIDebug2.idl",
-    "nsIErrorService.idl",
     "nsIException.idl",
-    "nsIGZFileWriter.idl",
     "nsIInterfaceRequestor.idl",
-    "nsIMemory.idl",
     "nsIMemoryInfoDumper.idl",
     "nsIMemoryReporter.idl",
     "nsIMessageLoop.idl",
@@ -30,7 +27,6 @@ XPIDL_SOURCES += [
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     XPIDL_SOURCES += [
         "nsIMacPreferencesReader.idl",
-        "nsIMacUtils.idl",
     ]
     EXPORTS += [
         "nsObjCExceptions.h",
@@ -72,7 +68,6 @@ EXPORTS += [
     "nsDebugImpl.h",
     "nsDumpUtils.h",
     "nsError.h",
-    "nsErrorService.h",
     "nsGZFileWriter.h",
     "nsIClassInfoImpl.h",
     "nsID.h",
@@ -179,14 +174,12 @@ UNIFIED_SOURCES += [
     "nsCycleCollectionParticipant.cpp",
     "nsCycleCollector.cpp",
     "nsCycleCollectorTraceJSHelpers.cpp",
-    "nsErrorService.cpp",
     "nsGZFileWriter.cpp",
     "nsID.cpp",
     "nsIInterfaceRequestorUtils.cpp",
     "nsINIParser.cpp",
     "nsInterfaceRequestorAgg.cpp",
     "nsISupportsImpl.cpp",
-    "nsMemory.cpp",
     "nsMemoryImpl.cpp",
     "nsMemoryInfoDumper.cpp",
     "nsMemoryReporterManager.cpp",

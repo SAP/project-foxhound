@@ -9,7 +9,6 @@
 (function(factory) {
   if (this.module && module.id.includes("worker")) {
     // require
-    const { Cc, Ci, Cu, ChromeWorker } = require("chrome");
     const dumpn = require("devtools/shared/DevToolsUtils").dumpn;
     factory.call(
       this,
@@ -22,8 +21,8 @@
     );
   } else {
     // Cu.import
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { require } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
     this.isWorker = false;
     this.console = console;

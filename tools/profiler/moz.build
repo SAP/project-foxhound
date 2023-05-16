@@ -78,6 +78,10 @@ if CONFIG["MOZ_GECKO_PROFILER"]:
                 SOURCES += [
                     "/toolkit/crashreporter/google-breakpad/src/common/linux/breakpad_getcontext.S"
                 ]
+        if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Linux":
+            UNIFIED_SOURCES += [
+                "core/PowerCounters-linux.cpp",
+            ]
         if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] != "FreeBSD":
             SOURCES += [
                 "core/EHABIStackWalk.cpp",
@@ -88,7 +92,11 @@ if CONFIG["MOZ_GECKO_PROFILER"]:
         ]
         if CONFIG["CPU_ARCH"] == "aarch64":
             UNIFIED_SOURCES += [
-                "core/PowerCounters-mac.cpp",
+                "core/PowerCounters-mac-arm64.cpp",
+            ]
+        if CONFIG["CPU_ARCH"] == "x86_64":
+            UNIFIED_SOURCES += [
+                "core/PowerCounters-mac-amd64.cpp",
             ]
     elif CONFIG["OS_TARGET"] == "WINNT":
         if CONFIG["CC_TYPE"] == "clang-cl":
@@ -151,6 +159,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
 EXPORTS += [
     "public/ChildProfilerController.h",
     "public/GeckoProfiler.h",
+    "public/MicroGeckoProfiler.h",
     "public/ProfilerBindings.h",
     "public/ProfilerControl.h",
     "public/ProfilerParent.h",

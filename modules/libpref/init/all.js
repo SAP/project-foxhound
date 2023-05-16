@@ -72,11 +72,7 @@ pref("security.pki.mitm_canary_issuer.enabled", true);
 pref("security.pki.mitm_detected", false);
 
 // Intermediate CA Preloading settings
-#if !defined(MOZ_WIDGET_ANDROID)
-  pref("security.remote_settings.intermediates.enabled", true);
-#else
-  pref("security.remote_settings.intermediates.enabled", false);
-#endif
+pref("security.remote_settings.intermediates.enabled", true);
 pref("security.remote_settings.intermediates.downloads_per_poll", 5000);
 pref("security.remote_settings.intermediates.parallel_downloads", 8);
 
@@ -340,6 +336,7 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
     pref("media.peerconnection.sdp.strict_success", false);
   #endif
 
+  pref("media.peerconnection.sdp.disable_stereo_fmtp", false);
   pref("media.webrtc.debug.trace_mask", 0);
   pref("media.webrtc.debug.multi_log", false);
   pref("media.webrtc.debug.log_file", "");
@@ -897,6 +894,12 @@ pref("print.print_edge_bottom", 0);
   pref("print.print_in_color", true);
 #endif
 
+// List of domains of web apps which depend on Gecko's traditional join/split
+// node(s) behavior or Blink/WebKit compatible one in `contenteditable` or
+// `designMode`.
+pref("editor.join_split_direction.force_use_traditional_direction", "");
+pref("editor.join_split_direction.force_use_compatible_direction", "");
+
 // Scripts & Windows prefs
 pref("dom.beforeunload_timeout_ms",         1000);
 pref("dom.disable_window_flip",             false);
@@ -1437,16 +1440,9 @@ pref("network.websocket.delay-failed-reconnects", true);
 // Equal to the DEFAULT_RECONNECTION_TIME_VALUE value in nsEventSource.cpp
 pref("dom.server-events.default-reconnection-time", 5000); // in milliseconds
 
-// This preference, if true, causes all UTF-8 domain names to be normalized to
-// punycode.  The intention is to allow UTF-8 domain names as input, but never
-// generate them from punycode.
-pref("network.IDN_show_punycode", false);
-
-// If "network.IDN.use_whitelist" is set to true, TLDs with
-// "network.IDN.whitelist.tld" explicitly set to true are treated as
-// IDN-safe. Otherwise, they're treated as unsafe and punycode will be used
-// for displaying them in the UI (e.g. URL bar), unless they conform to one of
-// the profiles specified in
+// TLDs are treated as IDN-unsafe and punycode will be used for displaying them
+// in the UI (e.g. URL bar), unless they conform to one of the profiles
+// specified in
 // https://www.unicode.org/reports/tr39/#Restriction_Level_Detection
 // If "network.IDN.restriction_profile" is "high", the Highly Restrictive
 // profile is used.
@@ -1457,122 +1453,9 @@ pref("network.IDN_show_punycode", false);
 // "network.IDN_show_punycode" is false. In other words, all IDNs will be shown
 // in punycode if "network.IDN_show_punycode" is true.
 pref("network.IDN.restriction_profile", "high");
-pref("network.IDN.use_whitelist", false);
-
-// ccTLDs
-pref("network.IDN.whitelist.ac", true);
-pref("network.IDN.whitelist.ar", true);
-pref("network.IDN.whitelist.at", true);
-pref("network.IDN.whitelist.br", true);
-pref("network.IDN.whitelist.ca", true);
-pref("network.IDN.whitelist.ch", true);
-pref("network.IDN.whitelist.cl", true);
-pref("network.IDN.whitelist.cn", true);
-pref("network.IDN.whitelist.de", true);
-pref("network.IDN.whitelist.dk", true);
-pref("network.IDN.whitelist.ee", true);
-pref("network.IDN.whitelist.es", true);
-pref("network.IDN.whitelist.fi", true);
-pref("network.IDN.whitelist.fr", true);
-pref("network.IDN.whitelist.gr", true);
-pref("network.IDN.whitelist.gt", true);
-pref("network.IDN.whitelist.hu", true);
-pref("network.IDN.whitelist.il", true);
-pref("network.IDN.whitelist.io", true);
-pref("network.IDN.whitelist.ir", true);
-pref("network.IDN.whitelist.is", true);
-pref("network.IDN.whitelist.jp", true);
-pref("network.IDN.whitelist.kr", true);
-pref("network.IDN.whitelist.li", true);
-pref("network.IDN.whitelist.lt", true);
-pref("network.IDN.whitelist.lu", true);
-pref("network.IDN.whitelist.lv", true);
-pref("network.IDN.whitelist.no", true);
-pref("network.IDN.whitelist.nu", true);
-pref("network.IDN.whitelist.nz", true);
-pref("network.IDN.whitelist.pl", true);
-pref("network.IDN.whitelist.pm", true);
-pref("network.IDN.whitelist.pr", true);
-pref("network.IDN.whitelist.re", true);
-pref("network.IDN.whitelist.se", true);
-pref("network.IDN.whitelist.sh", true);
-pref("network.IDN.whitelist.si", true);
-pref("network.IDN.whitelist.tf", true);
-pref("network.IDN.whitelist.th", true);
-pref("network.IDN.whitelist.tm", true);
-pref("network.IDN.whitelist.tw", true);
-pref("network.IDN.whitelist.ua", true);
-pref("network.IDN.whitelist.vn", true);
-pref("network.IDN.whitelist.wf", true);
-pref("network.IDN.whitelist.yt", true);
-
-// IDN ccTLDs
-// ae, UAE, .<Emarat>
-pref("network.IDN.whitelist.xn--mgbaam7a8h", true);
-// cn, China, .<China> with variants
-pref("network.IDN.whitelist.xn--fiqz9s", true); // Traditional
-pref("network.IDN.whitelist.xn--fiqs8s", true); // Simplified
-// eg, Egypt, .<Masr>
-pref("network.IDN.whitelist.xn--wgbh1c", true);
-// hk, Hong Kong, .<Hong Kong>
-pref("network.IDN.whitelist.xn--j6w193g", true);
-// ir, Iran, <.Iran> with variants
-pref("network.IDN.whitelist.xn--mgba3a4f16a", true);
-pref("network.IDN.whitelist.xn--mgba3a4fra", true);
-// jo, Jordan, .<Al-Ordon>
-pref("network.IDN.whitelist.xn--mgbayh7gpa", true);
-// lk, Sri Lanka, .<Lanka> and .<Ilangai>
-pref("network.IDN.whitelist.xn--fzc2c9e2c", true);
-pref("network.IDN.whitelist.xn--xkc2al3hye2a", true);
-// qa, Qatar, .<Qatar>
-pref("network.IDN.whitelist.xn--wgbl6a", true);
-// rs, Serbia, .<Srb>
-pref("network.IDN.whitelist.xn--90a3ac", true);
-// ru, Russian Federation, .<RF>
-pref("network.IDN.whitelist.xn--p1ai", true);
-// sa, Saudi Arabia, .<al-Saudiah> with variants
-pref("network.IDN.whitelist.xn--mgberp4a5d4ar", true);
-pref("network.IDN.whitelist.xn--mgberp4a5d4a87g", true);
-pref("network.IDN.whitelist.xn--mgbqly7c0a67fbc", true);
-pref("network.IDN.whitelist.xn--mgbqly7cvafr", true);
-// sy, Syria, .<Souria>
-pref("network.IDN.whitelist.xn--ogbpf8fl", true);
-// th, Thailand, .<Thai>
-pref("network.IDN.whitelist.xn--o3cw4h", true);
-// tw, Taiwan, <.Taiwan> with variants
-pref("network.IDN.whitelist.xn--kpry57d", true);  // Traditional
-pref("network.IDN.whitelist.xn--kprw13d", true);  // Simplified
-
-// gTLDs
-pref("network.IDN.whitelist.asia", true);
-pref("network.IDN.whitelist.biz", true);
-pref("network.IDN.whitelist.cat", true);
-pref("network.IDN.whitelist.info", true);
-pref("network.IDN.whitelist.museum", true);
-pref("network.IDN.whitelist.org", true);
-pref("network.IDN.whitelist.tel", true);
-
-// NOTE: Before these can be removed, one of bug 414812's tests must be updated
-//       or it will likely fail!  Please CC jwalden+bmo on the bug associated
-//       with removing these so he can provide a patch to make the necessary
-//       changes to avoid bustage.
-// ".test" localised TLDs for ICANN's top-level IDN trial
-pref("network.IDN.whitelist.xn--0zwm56d", true);
-pref("network.IDN.whitelist.xn--11b5bs3a9aj6g", true);
-pref("network.IDN.whitelist.xn--80akhbyknj4f", true);
-pref("network.IDN.whitelist.xn--9t4b11yi5a", true);
-pref("network.IDN.whitelist.xn--deba0ad", true);
-pref("network.IDN.whitelist.xn--g6w251d", true);
-pref("network.IDN.whitelist.xn--hgbk6aj7f53bba", true);
-pref("network.IDN.whitelist.xn--hlcj6aya9esc7a", true);
-pref("network.IDN.whitelist.xn--jxalpdlp", true);
-pref("network.IDN.whitelist.xn--kgbechtv", true);
-pref("network.IDN.whitelist.xn--zckzah", true);
 
 // If a domain includes any of the blocklist characters, it may be a spoof
-// attempt and so we always display the domain name as punycode. This would
-// override the settings "network.IDN_show_punycode" and
-// "network.IDN.whitelist.*".
+// attempt and so we always display the domain name as punycode.
 // For a complete list of the blocked IDN characters see:
 //   netwerk/dns/IDNCharacterBlocklist.inc
 
@@ -2100,7 +1983,11 @@ pref("extensions.manifestV2.actionsPopupURLRestricted", false);
   pref("extensions.manifestV3.enabled", false);
 #endif
 // Whether to enable the unified extensions feature.
-pref("extensions.unifiedExtensions.enabled", false);
+#ifdef NIGHTLY_BUILD
+  pref("extensions.unifiedExtensions.enabled", true);
+#else
+  pref("extensions.unifiedExtensions.enabled", false);
+#endif
 
 // Modifier key prefs: default to Windows settings,
 // menu access key = alt, accelerator key = control.
@@ -4377,9 +4264,6 @@ pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false
 pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false, locked);
 #endif
 
-// Whether to start the private browsing mode at application startup
-pref("browser.privatebrowsing.autostart", false);
-
 // Whether sites require the open-protocol-handler permission to open a
 //preferred external application for a protocol. If a site doesn't have
 // permission we will show a prompt.
@@ -4409,31 +4293,19 @@ pref("extensions.formautofill.creditCards.supportedCountries", "US,CA,GB,FR,DE")
 // Temporary preference to control displaying the UI elements for
 // credit card autofill used for the duration of the A/B test.
 pref("extensions.formautofill.creditCards.hideui", false);
+
 // Algorithm used by formautofill while determine whether a field is a credit card field
 // 0:Heurstics based on regular expression string matching
 // 1:Fathom in js implementation
 // 2:Fathom in c++ implementation
 pref("extensions.formautofill.creditCards.heuristics.mode", 2);
-pref("extensions.formautofill.creditCards.heuristics.confidenceThreshold", "0.5");
-
-// Confidence threshold hold to determin whether a credit card form is valid when
-// the form only contains a credit card number field.
-#ifdef EARLY_BETA_OR_EARLIER
-// Set the credit card number only confidence threshold to the same value as the default
-// confidence threshold. This means as long as a form contains a cc-number fieild, we consider it
-// as a valid credit card form.
-pref("extensions.formautofill.creditCards.heuristics.numberOnly.confidenceThreshold", "0.5");
-#else
-pref("extensions.formautofill.creditCards.heuristics.numberOnly.confidenceThreshold", "0.95");
-#endif
-
-// When enabled, a credit card form with cc-name and cc-exp fields is considered as a valid credit
-// card form, regardless of the existence of a cc-number field
-#ifdef NIGHTLY_BUILD
-pref("extensions.formautofill.creditCards.heuristics.nameExpirySection.enabled", true);
-#else
-pref("extensions.formautofill.creditCards.heuristics.nameExpirySection.enabled", false);
-#endif
+pref("extensions.formautofill.creditCards.heuristics.fathom.types", "cc-number,cc-name");
+// Defines the threshold to identify whether a field is a cc field
+pref("extensions.formautofill.creditCards.heuristics.fathom.confidenceThreshold", "0.5");
+// Defineis the threshold to mark fields that are "high-confidence", see `isValidSection` for details
+pref("extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold", "0.95");
+// This is Only for testing! Set the confidence value (> 0 && <= 1) after a field is identified by fathom
+pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0");
 
 // Pref for shield/heartbeat to recognize users who have used Credit Card
 // Autofill. The valid values can be:

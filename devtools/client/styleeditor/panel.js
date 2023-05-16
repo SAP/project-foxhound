@@ -4,15 +4,17 @@
 
 "use strict";
 
-var { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.sys.mjs");
-var EventEmitter = require("devtools/shared/event-emitter");
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+var EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-var {
-  StyleEditorUI,
-} = require("resource://devtools/client/styleeditor/StyleEditorUI.jsm");
-var {
-  getString,
-} = require("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
+var { StyleEditorUI } = ChromeUtils.import(
+  "resource://devtools/client/styleeditor/StyleEditorUI.jsm"
+);
+var { getString } = ChromeUtils.import(
+  "resource://devtools/client/styleeditor/StyleEditorUtil.jsm"
+);
 
 var StyleEditorPanel = function StyleEditorPanel(panelWin, toolbox, commands) {
   EventEmitter.decorate(this);

@@ -11,25 +11,25 @@
 
 var CC = Components.Constructor;
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
-const { Match } = ChromeUtils.import("resource://test/Match.jsm");
-const { Census } = ChromeUtils.import("resource://test/Census.jsm");
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  "resource://gre/modules/jsdebugger.jsm"
+const { Match } = ChromeUtils.importESModule("resource://test/Match.sys.mjs");
+const { Census } = ChromeUtils.importESModule("resource://test/Census.sys.mjs");
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
 );
 
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const HeapAnalysesClient = require("devtools/shared/heapsnapshot/HeapAnalysesClient");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+const HeapAnalysesClient = require("resource://devtools/shared/heapsnapshot/HeapAnalysesClient.js");
 const {
   censusReportToCensusTreeNode,
-} = require("devtools/shared/heapsnapshot/census-tree-node");
-const CensusUtils = require("devtools/shared/heapsnapshot/CensusUtils");
-const DominatorTreeNode = require("devtools/shared/heapsnapshot/DominatorTreeNode");
+} = require("resource://devtools/shared/heapsnapshot/census-tree-node.js");
+const CensusUtils = require("resource://devtools/shared/heapsnapshot/CensusUtils.js");
+const DominatorTreeNode = require("resource://devtools/shared/heapsnapshot/DominatorTreeNode.js");
 const {
   deduplicatePaths,
-} = require("devtools/shared/heapsnapshot/shortest-paths");
+} = require("resource://devtools/shared/heapsnapshot/shortest-paths.js");
 const { LabelAndShallowSizeVisitor } = DominatorTreeNode;
 
 // Always log packets when running tests. runxpcshelltests.py will throw

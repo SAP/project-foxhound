@@ -5,8 +5,8 @@
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { KeyCodes } = require("devtools/client/shared/keycodes");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
 
 /**
  * A tree widget with keyboard navigation and collapsable structure.
@@ -143,10 +143,16 @@ TreeWidget.prototype = {
   },
 
   /**
-   * Sets the text to be shown when no node is present in the tree
+   * Sets the text to be shown when no node is present in the tree.
+   * The placeholder will be hidden if text is empty.
    */
   setPlaceholderText(text) {
     this.placeholder.textContent = text;
+    if (text) {
+      this.placeholder.removeAttribute("hidden");
+    } else {
+      this.placeholder.setAttribute("hidden", "true");
+    }
   },
 
   /**

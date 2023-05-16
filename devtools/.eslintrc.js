@@ -11,8 +11,8 @@ module.exports = {
     isWorker: true,
     loader: true,
     module: true,
-    reportError: true,
     require: true,
+    DebuggerNotificationObserver: true,
   },
   overrides: [
     {

@@ -7,6 +7,7 @@
 #include "DrawTargetWebglInternal.h"
 #include "SourceSurfaceWebgl.h"
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/gfx/Blur.h"
 #include "mozilla/gfx/DrawTargetSkia.h"
@@ -247,6 +248,10 @@ DrawTargetWebgl::SharedContext::~SharedContext() {
   if (sSharedContext.init() && sSharedContext.get() == this) {
     sSharedContext.set(nullptr);
   }
+  // Detect context loss before deletion.
+  if (mWebgl) {
+    mWebgl->ActiveTexture(LOCAL_GL_TEXTURE0);
+  }
   ClearAllTextures();
   UnlinkSurfaceTextures();
   UnlinkGlyphCaches();
@@ -329,8 +334,13 @@ void DrawTargetWebgl::SharedContext::ClearCachesIfNecessary() {
   ClearLastTexture();
 }
 
+// If a non-recoverable error occurred that would stop the canvas from initing.
+static Atomic<bool> sContextInitError(false);
+
 MOZ_THREAD_LOCAL(DrawTargetWebgl::SharedContext*)
 DrawTargetWebgl::sSharedContext;
+
+RefPtr<DrawTargetWebgl::SharedContext> DrawTargetWebgl::sMainSharedContext;
 
 // Try to initialize a new WebGL context. Verifies that the requested size does
 // not exceed the available texture limits and that shader creation succeeded.
@@ -340,10 +350,6 @@ bool DrawTargetWebgl::Init(const IntSize& size, const SurfaceFormat format) {
 
   mSize = size;
   mFormat = format;
-
-  if (!Factory::AllowedSurfaceSize(size)) {
-    return false;
-  }
 
   if (!sSharedContext.init()) {
     return false;
@@ -358,6 +364,15 @@ bool DrawTargetWebgl::Init(const IntSize& size, const SurfaceFormat format) {
     }
 
     sSharedContext.set(mSharedContext.get());
+
+    if (NS_IsMainThread()) {
+      // Keep the shared context alive for the main thread by adding a ref.
+      // Ensure the ref will get cleared on shutdown so it doesn't leak.
+      if (!sMainSharedContext) {
+        ClearOnShutdown(&sMainSharedContext);
+      }
+      sMainSharedContext = mSharedContext;
+    }
   } else {
     mSharedContext = sharedContext;
   }
@@ -405,7 +420,7 @@ bool DrawTargetWebgl::SharedContext::Initialize() {
 
   mWebgl = new ClientWebGLContext(true);
   mWebgl->SetContextOptions(options);
-  if (mWebgl->SetDimensions(1, 1) != NS_OK) {
+  if (mWebgl->SetDimensions(1, 1) != NS_OK || mWebgl->IsContextLost()) {
     mWebgl = nullptr;
     return false;
   }
@@ -413,6 +428,8 @@ bool DrawTargetWebgl::SharedContext::Initialize() {
   mMaxTextureSize = mWebgl->Limits().maxTex2dSize;
 
   if (!CreateShaders()) {
+    // There was a non-recoverable error when trying to init shaders.
+    sContextInitError = true;
     mWebgl = nullptr;
     return false;
   }
@@ -671,6 +688,15 @@ bool DrawTargetWebgl::IsValid() const {
 already_AddRefed<DrawTargetWebgl> DrawTargetWebgl::Create(
     const IntSize& aSize, SurfaceFormat aFormat) {
   if (!StaticPrefs::gfx_canvas_accelerated()) {
+    return nullptr;
+  }
+
+  // If context initialization would fail, don't even try to create a context.
+  if (sContextInitError) {
+    return nullptr;
+  }
+
+  if (!Factory::AllowedSurfaceSize(aSize)) {
     return nullptr;
   }
 

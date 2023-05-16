@@ -27,10 +27,10 @@
       ChromeUtils.defineESModuleGetters(this, {
         UrlbarProviderOpenTabs:
           "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
+        PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
       });
       XPCOMUtils.defineLazyModuleGetters(this, {
         E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-        PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
       });
       XPCOMUtils.defineLazyServiceGetters(this, {
         MacSharingService: [
@@ -679,10 +679,7 @@
         return;
       }
 
-      if (aTab.hidden) {
-        this.showTab(aTab);
-      }
-
+      this.showTab(aTab);
       this.moveTabTo(aTab, this._numPinnedTabs);
       aTab.setAttribute("pinned", "true");
       this._updateTabBarForPinnedTabs();
@@ -1096,9 +1093,7 @@
 
       this._selectedBrowser = newBrowser;
       this._selectedTab = newTab;
-      if (newTab != FirefoxViewHandler.tab) {
-        this.showTab(newTab);
-      }
+      this.showTab(newTab);
 
       this._appendStatusPanel();
 
@@ -1386,6 +1381,10 @@
 
         if (!window.fullScreen || newTab.isEmpty) {
           if (this._asyncTabSwitching) {
+            // Set _awaitingSetURI flag to suppress popup notification
+            // explicitly while tab switching asynchronously.
+            newBrowser._awaitingSetURI = true;
+
             // The onLocationChange event called in updateCurrentBrowser() will
             // be captured in browser.js, then it calls gURLBar.setURI(). In case
             // of that doing processing of here before doing above processing,
@@ -1399,6 +1398,7 @@
                 if (currentActiveElement === document.activeElement) {
                   gURLBar.select();
                 }
+                delete newBrowser._awaitingSetURI;
               },
               { once: true }
             );
@@ -4667,20 +4667,21 @@
     },
 
     showTab(aTab) {
-      if (aTab.hidden) {
-        aTab.removeAttribute("hidden");
-        this._invalidateCachedTabs();
-
-        this.tabContainer._updateCloseButtons();
-        this.tabContainer._updateHiddenTabsStatus();
-
-        this.tabContainer._setPositionalAttributes();
-
-        let event = document.createEvent("Events");
-        event.initEvent("TabShow", true, false);
-        aTab.dispatchEvent(event);
-        SessionStore.deleteCustomTabValue(aTab, "hiddenBy");
+      if (!aTab.hidden || aTab == FirefoxViewHandler.tab) {
+        return;
       }
+      aTab.removeAttribute("hidden");
+      this._invalidateCachedTabs();
+
+      this.tabContainer._updateCloseButtons();
+      this.tabContainer._updateHiddenTabsStatus();
+
+      this.tabContainer._setPositionalAttributes();
+
+      let event = document.createEvent("Events");
+      event.initEvent("TabShow", true, false);
+      aTab.dispatchEvent(event);
+      SessionStore.deleteCustomTabValue(aTab, "hiddenBy");
     },
 
     hideTab(aTab, aSource) {

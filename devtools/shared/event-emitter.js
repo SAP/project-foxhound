@@ -11,7 +11,7 @@ const BAD_LISTENER =
 const eventListeners = Symbol("EventEmitter/listeners");
 const onceOriginalListener = Symbol("EventEmitter/once-original-listener");
 const handler = Symbol("EventEmitter/event-handler");
-loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
+loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 
 class EventEmitter {
   /**
@@ -350,7 +350,9 @@ module.exports = EventEmitter;
 const isEventHandler = listener =>
   listener && handler in listener && typeof listener[handler] === "function";
 
-const { getNthPathExcluding } = require("devtools/shared/platform/stack");
+const {
+  getNthPathExcluding,
+} = require("resource://devtools/shared/platform/stack.js");
 let loggingEnabled = false;
 
 if (!isWorker) {

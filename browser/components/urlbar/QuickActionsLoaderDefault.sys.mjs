@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+  ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProviderQuickActions:
     "resource:///modules/UrlbarProviderQuickActions.sys.mjs",
@@ -22,8 +22,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   AppUpdater: "resource:///modules/AppUpdater.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
-  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
-  ResetProfile: "resource://gre/modules/ResetProfile.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "BrowserUpdater", () => {
@@ -50,7 +48,7 @@ let openUrl = url => {
 let openAddonsUrl = url => {
   return () => {
     let window = lazy.BrowserWindowTracker.getTopWindow();
-    window.BrowserOpenAddonsMgr(url);
+    window.BrowserOpenAddonsMgr(url, { selectTabByViewId: true });
   };
 };
 
@@ -75,7 +73,7 @@ const DEFAULT_ACTIONS = {
     l10nCommands: ["quickactions-cmd-addons2", "quickactions-addons"],
     icon: "chrome://mozapps/skin/extensions/category-extensions.svg",
     label: "quickactions-addons",
-    onPick: () => openUrl("about:addons"),
+    onPick: openAddonsUrl("addons://discover/"),
   },
   bookmarks: {
     l10nCommands: ["quickactions-cmd-bookmarks", "quickactions-bookmarks"],

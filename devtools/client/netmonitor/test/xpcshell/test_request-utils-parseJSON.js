@@ -7,12 +7,12 @@
 
 "use strict";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const {
   parseJSON,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 function run_test() {
   const validJSON = '{"item":{"subitem":true},"seconditem":"bar"}';

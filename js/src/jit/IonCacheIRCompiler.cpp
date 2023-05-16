@@ -1248,7 +1248,7 @@ bool IonCacheIRCompiler::emitAddAndStoreSlotShared(
     masm.move32(Imm32(numNewSlots), scratch2.ref());
     masm.passABIArg(scratch2.ref());
     masm.callWithABI<Fn, NativeObject::growSlotsPure>();
-    masm.mov(ReturnReg, scratch1);
+    masm.storeCallPointerResult(scratch1);
 
     LiveRegisterSet ignore;
     ignore.add(scratch1);
@@ -1970,15 +1970,14 @@ bool IonCacheIRCompiler::emitGuardFunctionScript(ObjOperandId funId,
 
 bool IonCacheIRCompiler::emitCallScriptedFunction(ObjOperandId calleeId,
                                                   Int32OperandId argcId,
-                                                  CallFlags flags) {
+                                                  CallFlags flags,
+                                                  uint32_t argcFixed) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 
-bool IonCacheIRCompiler::emitCallWasmFunction(ObjOperandId calleeId,
-                                              Int32OperandId argcId,
-                                              CallFlags flags,
-                                              uint32_t funcExportOffset,
-                                              uint32_t instanceOffset) {
+bool IonCacheIRCompiler::emitCallWasmFunction(
+    ObjOperandId calleeId, Int32OperandId argcId, CallFlags flags,
+    uint32_t argcFixed, uint32_t funcExportOffset, uint32_t instanceOffset) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 
@@ -1986,21 +1985,21 @@ bool IonCacheIRCompiler::emitCallWasmFunction(ObjOperandId calleeId,
 bool IonCacheIRCompiler::emitCallNativeFunction(ObjOperandId calleeId,
                                                 Int32OperandId argcId,
                                                 CallFlags flags,
+                                                uint32_t argcFixed,
                                                 uint32_t targetOffset) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 
-bool IonCacheIRCompiler::emitCallDOMFunction(ObjOperandId calleeId,
-                                             Int32OperandId argcId,
-                                             ObjOperandId thisObjId,
-                                             CallFlags flags,
-                                             uint32_t targetOffset) {
+bool IonCacheIRCompiler::emitCallDOMFunction(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t targetOffset) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 #else
 bool IonCacheIRCompiler::emitCallNativeFunction(ObjOperandId calleeId,
                                                 Int32OperandId argcId,
                                                 CallFlags flags,
+                                                uint32_t argcFixed,
                                                 bool ignoresReturnValue) {
   MOZ_CRASH("Call ICs not used in ion");
 }
@@ -2008,14 +2007,15 @@ bool IonCacheIRCompiler::emitCallNativeFunction(ObjOperandId calleeId,
 bool IonCacheIRCompiler::emitCallDOMFunction(ObjOperandId calleeId,
                                              Int32OperandId argcId,
                                              ObjOperandId thisObjId,
-                                             CallFlags flags) {
+                                             CallFlags flags,
+                                             uint32_t argcFixed) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 #endif
 
 bool IonCacheIRCompiler::emitCallClassHook(ObjOperandId calleeId,
                                            Int32OperandId argcId,
-                                           CallFlags flags,
+                                           CallFlags flags, uint32_t argcFixed,
                                            uint32_t targetOffset) {
   MOZ_CRASH("Call ICs not used in ion");
 }
@@ -2023,7 +2023,8 @@ bool IonCacheIRCompiler::emitCallClassHook(ObjOperandId calleeId,
 bool IonCacheIRCompiler::emitCallInlinedFunction(ObjOperandId calleeId,
                                                  Int32OperandId argcId,
                                                  uint32_t icScriptOffset,
-                                                 CallFlags flags) {
+                                                 CallFlags flags,
+                                                 uint32_t argcFixed) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 

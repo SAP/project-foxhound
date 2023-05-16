@@ -156,7 +156,7 @@ class BlockReflowState {
   void PlaceBelowCurrentLineFloats(nsLineBox* aLine);
 
   // Returns the first coordinate >= aBCoord that clears the
-  // floats indicated by aBreakType and has enough inline size between floats
+  // floats indicated by aClearType and has enough inline size between floats
   // (or no floats remaining) to accomodate aFloatAvoidingBlock.
   enum class ClearFloatsResult : uint8_t {
     BCoordNoChange,
@@ -164,7 +164,7 @@ class BlockReflowState {
     FloatsPushedOrSplit,
   };
   std::tuple<nscoord, ClearFloatsResult> ClearFloats(
-      nscoord aBCoord, StyleClear aBreakType,
+      nscoord aBCoord, StyleClear aClearType,
       nsIFrame* aFloatAvoidingBlock = nullptr);
 
   nsFloatManager* FloatManager() const {
@@ -350,8 +350,6 @@ class BlockReflowState {
   // The overflow areas of all floats placed so far
   OverflowAreas mFloatOverflowAreas;
 
-  nsFloatCacheFreeList mFloatCacheFreeList;
-
   // Previous child. This is used when pulling up a frame to update
   // the sibling list.
   nsIFrame* mPrevChild;
@@ -373,13 +371,13 @@ class BlockReflowState {
   // The list of floats that are "current-line" floats. These are
   // added to the line after the line has been reflowed, to keep the
   // list fiddling from being N^2.
-  nsFloatCacheFreeList mCurrentLineFloats;
+  nsTArray<nsIFrame*> mCurrentLineFloats;
 
   // The list of floats which are "below current-line"
   // floats. These are reflowed/placed after the line is reflowed
   // and placed. Again, this is done to keep the list fiddling from
   // being N^2.
-  nsFloatCacheFreeList mBelowCurrentLineFloats;
+  nsTArray<nsIFrame*> mBelowCurrentLineFloats;
 
   // The list of floats that are waiting on a break opportunity in order to be
   // placed, since we're on a nowrap context.
@@ -391,7 +389,9 @@ class BlockReflowState {
 
   Flags mFlags;
 
-  StyleClear mFloatBreakType;
+  // Cache the result of nsBlockFrame::FindTrailingClear() from mBlock's
+  // prev-in-flows. See nsBlockFrame::ReflowPushedFloats().
+  StyleClear mTrailingClearFromPIF;
 
   // The amount of computed content block-size "consumed" by our previous
   // continuations.

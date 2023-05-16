@@ -15,6 +15,9 @@
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/FOGIPC.h"
 
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryIPC.h"
+
 #include "nsHashPropertyBag.h"
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
@@ -62,6 +65,48 @@ mozilla::ipc::IPCResult UtilityProcessParent::RecvFOGData(ByteBuf&& aBuf) {
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult UtilityProcessParent::RecvAccumulateChildHistograms(
+    nsTArray<HistogramAccumulation>&& aAccumulations) {
+  TelemetryIPC::AccumulateChildHistograms(Telemetry::ProcessID::Utility,
+                                          aAccumulations);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+UtilityProcessParent::RecvAccumulateChildKeyedHistograms(
+    nsTArray<KeyedHistogramAccumulation>&& aAccumulations) {
+  TelemetryIPC::AccumulateChildKeyedHistograms(Telemetry::ProcessID::Utility,
+                                               aAccumulations);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvUpdateChildScalars(
+    nsTArray<ScalarAction>&& aScalarActions) {
+  TelemetryIPC::UpdateChildScalars(Telemetry::ProcessID::Utility,
+                                   aScalarActions);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvUpdateChildKeyedScalars(
+    nsTArray<KeyedScalarAction>&& aScalarActions) {
+  TelemetryIPC::UpdateChildKeyedScalars(Telemetry::ProcessID::Utility,
+                                        aScalarActions);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvRecordChildEvents(
+    nsTArray<mozilla::Telemetry::ChildEventData>&& aEvents) {
+  TelemetryIPC::RecordChildEvents(Telemetry::ProcessID::Utility, aEvents);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvRecordDiscardedData(
+    const mozilla::Telemetry::DiscardedData& aDiscardedData) {
+  TelemetryIPC::RecordDiscardedData(Telemetry::ProcessID::Utility,
+                                    aDiscardedData);
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult UtilityProcessParent::RecvInitCompleted() {
   MOZ_ASSERT(mHost);
   mHost->ResolvePromise();
@@ -76,9 +121,20 @@ void UtilityProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
 
     if (mCrashReporter) {
 #if defined(MOZ_SANDBOX)
-      mCrashReporter->AddAnnotation(
-          CrashReporter::Annotation::UtilityProcessSandboxingKind,
-          (unsigned int)mHost->mSandbox);
+      RefPtr<mozilla::ipc::UtilityProcessManager> upm =
+          mozilla::ipc::UtilityProcessManager::GetSingleton();
+      if (upm) {
+        Span<const UtilityActorName> actors = upm->GetActors(this);
+        nsAutoCString actorsName;
+        if (!actors.IsEmpty()) {
+          actorsName += GetUtilityActorName(actors.First<1>()[0]);
+          for (const auto& actor : actors.From(1)) {
+            actorsName += ", "_ns + GetUtilityActorName(actor);
+          }
+        }
+        mCrashReporter->AddAnnotation(
+            CrashReporter::Annotation::UtilityActorsName, actorsName);
+      }
 #endif
     }
 

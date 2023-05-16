@@ -11,6 +11,7 @@
 #include "nsRect.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Result.h"
+#include "mozilla/WritingModes.h"
 
 class nsIFrame;
 
@@ -37,14 +38,9 @@ class nsILineIterator {
   virtual int32_t GetNumLines() const = 0;
 
   /**
-   * The prevailing direction of lines.
-   *
-   * @return true if the CSS direction property for the block is
-   *         "rtl", otherwise false
-   *
-   *XXX after bug 924851 change this to return a UBiDiDirection
+   * Returns whether our lines are rtl.
    */
-  virtual bool GetDirection() = 0;
+  virtual bool IsLineIteratorFlowRTL() = 0;
 
   struct LineInfo {
     /** The first frame on the line. */
@@ -89,6 +85,37 @@ class nsILineIterator {
                             nsIFrame** aFirstVisual,
                             nsIFrame** aLastVisual) = 0;
 };
+
+namespace mozilla {
+
+// Helper struct for FindFrameAt.
+struct LineFrameFinder {
+  LineFrameFinder(const nsPoint& aPos, const nsSize& aContainerSize,
+                  WritingMode aWM, bool aIsReversed)
+      : mPos(aWM, aPos, aContainerSize),
+        mContainerSize(aContainerSize),
+        mWM(aWM),
+        mIsReversed(aIsReversed) {}
+
+  void Scan(nsIFrame*);
+  void Finish(nsIFrame**, bool* aPosIsBeforeFirstFrame,
+              bool* aPosIsAfterLastFrame);
+
+  const LogicalPoint mPos;
+  const nsSize mContainerSize;
+  const WritingMode mWM;
+  const bool mIsReversed;
+
+  bool IsDone() const { return mDone; }
+
+ private:
+  bool mDone = false;
+  nsIFrame* mFirstFrame = nullptr;
+  nsIFrame* mClosestFromStart = nullptr;
+  nsIFrame* mClosestFromEnd = nullptr;
+};
+
+}  // namespace mozilla
 
 /**
  * Helper intended to be used in a scope where we're using an nsILineIterator

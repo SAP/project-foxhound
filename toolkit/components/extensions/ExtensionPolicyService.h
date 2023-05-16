@@ -60,6 +60,12 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
     return do_AddRef(&GetSingleton());
   }
 
+  // Unlike the other methods on the ExtensionPolicyService, this method is
+  // threadsafe, and can look up a WebExtensionPolicyCore by hostname on any
+  // thread.
+  static RefPtr<extensions::WebExtensionPolicyCore> GetCoreByHost(
+      const nsACString& aHost);
+
   WebExtensionPolicy* GetByID(const nsAtom* aAddonId) {
     return mExtensions.GetWeak(aAddonId);
   }
@@ -71,11 +77,7 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
 
   WebExtensionPolicy* GetByURL(const extensions::URLInfo& aURL);
 
-  WebExtensionPolicy* GetByHost(const nsACString& aHost) const {
-    nsAutoCString host;
-    ToLowerCase(aHost, host);
-    return mExtensionHosts.GetWeak(host);
-  }
+  WebExtensionPolicy* GetByHost(const nsACString& aHost) const;
 
   void GetAll(nsTArray<RefPtr<WebExtensionPolicy>>& aResult);
 
@@ -113,7 +115,6 @@ class ExtensionPolicyService final : public nsIAddonPolicyService,
       const nsTArray<RefPtr<extensions::WebExtensionContentScript>>& aScripts);
 
   nsRefPtrHashtable<nsPtrHashKey<const nsAtom>, WebExtensionPolicy> mExtensions;
-  nsRefPtrHashtable<nsCStringHashKey, WebExtensionPolicy> mExtensionHosts;
 
   nsRefPtrHashtable<nsPtrHashKey<const extensions::DocumentObserver>,
                     extensions::DocumentObserver>

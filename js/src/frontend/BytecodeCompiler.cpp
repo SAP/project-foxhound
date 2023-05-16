@@ -25,7 +25,7 @@
 #include "js/SourceText.h"
 #include "js/Stack.h"  // JS::NativeStackLimit
 #include "js/UniquePtr.h"
-#include "vm/ErrorContext.h"
+#include "vm/ErrorContext.h"           // AutoReportFrontendContext
 #include "vm/FunctionFlags.h"          // FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
 #include "vm/HelperThreads.h"  // StartOffThreadDelazification, WaitForAllDelazifyTasks
@@ -57,8 +57,7 @@ class MOZ_RAII AutoAssertReportedException {
   bool check_;
 
  public:
-  explicit AutoAssertReportedException(JSContext* cx,
-                                       ErrorContext* ec = nullptr)
+  explicit AutoAssertReportedException(JSContext* cx, ErrorContext* ec)
       : cx_(cx), ec_(ec), check_(true) {}
   void reset() { check_ = false; }
   ~AutoAssertReportedException() {
@@ -66,18 +65,22 @@ class MOZ_RAII AutoAssertReportedException {
       return;
     }
 
-    if (!cx_->isHelperThreadContext()) {
-      // Error while compiling self-hosted code isn't set as an exception.
-      MOZ_ASSERT_IF(cx_->runtime()->hasInitializedSelfHosting(),
-                    cx_->isExceptionPending());
+    // Error while compiling self-hosted code isn't set as an exception.
+    // TODO: Remove this once all errors are added to frontend context.
+    if (!cx_->runtime()->hasInitializedSelfHosting()) {
       return;
     }
 
-    MOZ_ASSERT_IF(ec_, ec_->hadErrors());
+    // TODO: Remove this once JSContext is removed from frontend.
+    if (!cx_->isHelperThreadContext()) {
+      MOZ_ASSERT(cx_->isExceptionPending() || ec_->hadErrors());
+    } else {
+      MOZ_ASSERT(ec_->hadErrors());
+    }
   }
 #else
  public:
-  explicit AutoAssertReportedException(JSContext*, ErrorContext* = nullptr) {}
+  explicit AutoAssertReportedException(JSContext*, ErrorContext*) {}
   void reset() {}
 #endif
 };
@@ -512,43 +515,47 @@ static JSScript* CompileEvalScriptImpl(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
     SourceText<Unit>& srcBuf, JS::Handle<js::Scope*> enclosingScope,
     JS::Handle<JSObject*> enclosingEnv) {
-  AutoAssertReportedException assertException(cx);
-
-  MainThreadErrorContext ec(cx);
-  Rooted<CompilationInput> input(cx, CompilationInput(options));
-  if (!input.get().initForEval(cx, &ec, enclosingScope)) {
-    return nullptr;
-  }
-
-  LifoAllocScope parserAllocScope(&cx->tempLifoAlloc());
-
-  JS::NativeStackLimit stackLimit = cx->stackLimitForCurrentPrincipal();
-  ScopeBindingCache* scopeCache = &cx->caches().scopeCache;
-  ScriptCompiler<Unit> compiler(cx, stackLimit, parserAllocScope, input.get(),
-                                srcBuf);
-  if (!compiler.init(cx, &ec, scopeCache, InheritThis::Yes, enclosingEnv)) {
-    return nullptr;
-  }
-
-  uint32_t len = srcBuf.length();
-  SourceExtent extent =
-      SourceExtent::makeGlobalExtent(len, options.lineno, options.column);
-  EvalSharedContext evalsc(cx, &ec, compiler.compilationState(), extent);
-  if (!compiler.compile(cx, &evalsc)) {
-    return nullptr;
-  }
-
-  Rooted<CompilationGCOutput> gcOutput(cx);
+  JS::Rooted<JSScript*> script(cx);
   {
-    BorrowingCompilationStencil borrowingStencil(compiler.stencil());
-    if (!InstantiateStencils(cx, input.get(), borrowingStencil,
-                             gcOutput.get())) {
+    AutoReportFrontendContext ec(cx);
+    AutoAssertReportedException assertException(cx, &ec);
+
+    Rooted<CompilationInput> input(cx, CompilationInput(options));
+    if (!input.get().initForEval(cx, &ec, enclosingScope)) {
       return nullptr;
     }
-  }
 
-  assertException.reset();
-  return gcOutput.get().script;
+    LifoAllocScope parserAllocScope(&cx->tempLifoAlloc());
+
+    JS::NativeStackLimit stackLimit = cx->stackLimitForCurrentPrincipal();
+    ScopeBindingCache* scopeCache = &cx->caches().scopeCache;
+    ScriptCompiler<Unit> compiler(cx, stackLimit, parserAllocScope, input.get(),
+                                  srcBuf);
+    if (!compiler.init(cx, &ec, scopeCache, InheritThis::Yes, enclosingEnv)) {
+      return nullptr;
+    }
+
+    uint32_t len = srcBuf.length();
+    SourceExtent extent =
+        SourceExtent::makeGlobalExtent(len, options.lineno, options.column);
+    EvalSharedContext evalsc(cx, &ec, compiler.compilationState(), extent);
+    if (!compiler.compile(cx, &evalsc)) {
+      return nullptr;
+    }
+
+    Rooted<CompilationGCOutput> gcOutput(cx);
+    {
+      BorrowingCompilationStencil borrowingStencil(compiler.stencil());
+      if (!InstantiateStencils(cx, input.get(), borrowingStencil,
+                               gcOutput.get())) {
+        return nullptr;
+      }
+    }
+
+    assertException.reset();
+    script = gcOutput.get().script;
+  }
+  return script;
 }
 
 JSScript* frontend::CompileEvalScript(JSContext* cx,
@@ -746,7 +753,7 @@ bool ScriptCompiler<Unit>::compile(JSContext* cx, SharedContext* sc) {
     }
   }
 
-  MOZ_ASSERT_IF(!cx->isHelperThreadContext(), !cx->isExceptionPending());
+  MOZ_ASSERT(!this->errorContext->hadErrors());
 
   return true;
 }
@@ -787,7 +794,8 @@ bool ModuleCompiler<Unit>::compile(JSContext* cx, ErrorContext* ec) {
 
   builder.finishFunctionDecls(moduleMetadata);
 
-  MOZ_ASSERT_IF(!cx->isHelperThreadContext(), !cx->isExceptionPending());
+  MOZ_ASSERT(!this->errorContext->hadErrors());
+
   return true;
 }
 
@@ -1441,80 +1449,80 @@ static JSFunction* CompileStandaloneFunction(
     JS::SourceText<char16_t>& srcBuf, const Maybe<uint32_t>& parameterListEnd,
     FunctionSyntaxKind syntaxKind, GeneratorKind generatorKind,
     FunctionAsyncKind asyncKind, Handle<Scope*> enclosingScope = nullptr) {
-  AutoAssertReportedException assertException(cx);
-
-  MainThreadErrorContext ec(cx);
-  Rooted<CompilationInput> input(cx, CompilationInput(options));
-  if (enclosingScope) {
-    if (!input.get().initForStandaloneFunctionInNonSyntacticScope(
-            cx, &ec, enclosingScope)) {
-      return nullptr;
-    }
-  } else {
-    if (!input.get().initForStandaloneFunction(cx, &ec)) {
-      return nullptr;
-    }
-  }
-
-  LifoAllocScope parserAllocScope(&cx->tempLifoAlloc());
-  InheritThis inheritThis = (syntaxKind == FunctionSyntaxKind::Arrow)
-                                ? InheritThis::Yes
-                                : InheritThis::No;
-  JS::NativeStackLimit stackLimit = cx->stackLimitForCurrentPrincipal();
-  ScopeBindingCache* scopeCache = &cx->caches().scopeCache;
-  StandaloneFunctionCompiler<char16_t> compiler(
-      cx, stackLimit, parserAllocScope, input.get(), srcBuf);
-  if (!compiler.init(cx, &ec, scopeCache, inheritThis)) {
-    return nullptr;
-  }
-
-  if (!compiler.compile(cx, syntaxKind, generatorKind, asyncKind,
-                        parameterListEnd)) {
-    return nullptr;
-  }
-
-  Rooted<CompilationGCOutput> gcOutput(cx);
-  RefPtr<ScriptSource> source;
+  JS::Rooted<JSFunction*> fun(cx);
   {
-    BorrowingCompilationStencil borrowingStencil(compiler.stencil());
-    if (!CompilationStencil::instantiateStencils(
-            cx, input.get(), borrowingStencil, gcOutput.get())) {
+    AutoReportFrontendContext ec(cx);
+    AutoAssertReportedException assertException(cx, &ec);
+
+    Rooted<CompilationInput> input(cx, CompilationInput(options));
+    if (enclosingScope) {
+      if (!input.get().initForStandaloneFunctionInNonSyntacticScope(
+              cx, &ec, enclosingScope)) {
+        return nullptr;
+      }
+    } else {
+      if (!input.get().initForStandaloneFunction(cx, &ec)) {
+        return nullptr;
+      }
+    }
+
+    LifoAllocScope parserAllocScope(&cx->tempLifoAlloc());
+    InheritThis inheritThis = (syntaxKind == FunctionSyntaxKind::Arrow)
+                                  ? InheritThis::Yes
+                                  : InheritThis::No;
+    JS::NativeStackLimit stackLimit = cx->stackLimitForCurrentPrincipal();
+    ScopeBindingCache* scopeCache = &cx->caches().scopeCache;
+    StandaloneFunctionCompiler<char16_t> compiler(
+        cx, stackLimit, parserAllocScope, input.get(), srcBuf);
+    if (!compiler.init(cx, &ec, scopeCache, inheritThis)) {
       return nullptr;
     }
-    source = borrowingStencil.source;
-  }
 
-#ifdef DEBUG
-  JSFunction* fun =
-      gcOutput.get().getFunctionNoBaseIndex(CompilationStencil::TopLevelIndex);
-  MOZ_ASSERT(fun->hasBytecode() || IsAsmJSModule(fun));
-#endif
-
-  // Enqueue an off-thread source compression task after finishing parsing.
-  if (!cx->isHelperThreadContext()) {
-    if (!source->tryCompressOffThread(cx)) {
+    if (!compiler.compile(cx, syntaxKind, generatorKind, asyncKind,
+                          parameterListEnd)) {
       return nullptr;
     }
-  }
 
-  // Note: If AsmJS successfully compiles, the into.script will still be
-  // nullptr. In this case we have compiled to a native function instead of an
-  // interpreted script.
-  if (gcOutput.get().script) {
-    if (parameterListEnd) {
-      source->setParameterListEnd(*parameterListEnd);
+    Rooted<CompilationGCOutput> gcOutput(cx);
+    RefPtr<ScriptSource> source;
+    {
+      BorrowingCompilationStencil borrowingStencil(compiler.stencil());
+      if (!CompilationStencil::instantiateStencils(
+              cx, input.get(), borrowingStencil, gcOutput.get())) {
+        return nullptr;
+      }
+      source = borrowingStencil.source;
     }
 
-    MOZ_ASSERT(!cx->isHelperThreadContext());
+    fun = gcOutput.get().getFunctionNoBaseIndex(
+        CompilationStencil::TopLevelIndex);
+    MOZ_ASSERT(fun->hasBytecode() || IsAsmJSModule(fun));
 
-    const JS::InstantiateOptions instantiateOptions(options);
-    Rooted<JSScript*> script(cx, gcOutput.get().script);
-    FireOnNewScript(cx, instantiateOptions, script);
+    // Enqueue an off-thread source compression task after finishing parsing.
+    if (!cx->isHelperThreadContext()) {
+      if (!source->tryCompressOffThread(cx)) {
+        return nullptr;
+      }
+    }
+
+    // Note: If AsmJS successfully compiles, the into.script will still be
+    // nullptr. In this case we have compiled to a native function instead of an
+    // interpreted script.
+    if (gcOutput.get().script) {
+      if (parameterListEnd) {
+        source->setParameterListEnd(*parameterListEnd);
+      }
+
+      MOZ_ASSERT(!cx->isHelperThreadContext());
+
+      const JS::InstantiateOptions instantiateOptions(options);
+      Rooted<JSScript*> script(cx, gcOutput.get().script);
+      FireOnNewScript(cx, instantiateOptions, script);
+    }
+
+    assertException.reset();
   }
-
-  assertException.reset();
-  return gcOutput.get().getFunctionNoBaseIndex(
-      CompilationStencil::TopLevelIndex);
+  return fun;
 }
 
 JSFunction* frontend::CompileStandaloneFunction(

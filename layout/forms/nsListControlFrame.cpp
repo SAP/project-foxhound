@@ -213,7 +213,7 @@ nscoord nsListControlFrame::CalcBSizeOfARow() {
   // either of which may be visible or invisible, may use different
   // fonts, etc.
   nscoord rowBSize(0);
-  if (StyleDisplay()->GetContainSizeAxes().mBContained ||
+  if (GetContainSizeAxes().mBContained ||
       !GetMaxRowBSize(GetOptionsContainer(), GetWritingMode(), &rowBSize)) {
     // We don't have any <option>s or <optgroup> labels with a frame.
     // (Or we're size-contained in block axis, which has the same outcome for
@@ -504,9 +504,7 @@ void nsListControlFrame::InitSelectionRange(int32_t aClickedIndex) {
 
 static uint32_t CountOptionsAndOptgroups(nsIFrame* aFrame) {
   uint32_t count = 0;
-  nsFrameList::Enumerator e(aFrame->PrincipalChildList());
-  for (; !e.AtEnd(); e.Next()) {
-    nsIFrame* child = e.get();
+  for (nsIFrame* child : aFrame->PrincipalChildList()) {
     nsIContent* content = child->GetContent();
     if (content) {
       if (content->IsHTMLElement(nsGkAtoms::option)) {

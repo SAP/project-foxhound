@@ -11,9 +11,12 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+ChromeUtils.defineESModuleGetters(this, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.jsm",
@@ -1080,6 +1083,10 @@ function buildHelpMenu() {
   document.getElementById(
     "helpSafeMode"
   ).disabled = !Services.policies.isAllowed("safeMode");
+
+  document.getElementById(
+    "troubleShooting"
+  ).disabled = !Services.policies.isAllowed("aboutSupport");
 
   let supportMenu = Services.policies.getSupportMenu();
   if (supportMenu) {

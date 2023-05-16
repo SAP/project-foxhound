@@ -14,6 +14,7 @@
 #include "mozilla/dom/FlexBinding.h"
 #include "mozilla/UniquePtr.h"
 #include "nsContainerFrame.h"
+#include "nsILineIterator.h"
 
 namespace mozilla {
 class LogicalPoint;
@@ -118,7 +119,8 @@ class MOZ_STACK_CLASS FlexboxAxisInfo final {
  * layout here as well (since that's what the -webkit versions are aliased to)
  * -- but only inside of a "display:-webkit-{inline-}box" container.)
  */
-class nsFlexContainerFrame final : public nsContainerFrame {
+class nsFlexContainerFrame final : public nsContainerFrame,
+                                   public nsILineIterator {
  public:
   NS_DECL_FRAMEARENA_HELPERS(nsFlexContainerFrame)
   NS_DECL_QUERYFRAME
@@ -274,6 +276,19 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    */
   static void MarkCachedFlexMeasurementsDirty(nsIFrame* aItemFrame);
 
+  bool CanProvideLineIterator() const final { return true; }
+  nsILineIterator* GetLineIterator() final { return this; }
+  int32_t GetNumLines() const final;
+  bool IsLineIteratorFlowRTL() final;
+  mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
+  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
+                         nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
+                         bool* aPosIsAfterLastFrame) final;
+  NS_IMETHOD CheckLineOrder(int32_t aLine, bool* aIsReordered,
+                            nsIFrame** aFirstVisual,
+                            nsIFrame** aLastVisual) final;
+
  protected:
   // Protected constructor & destructor
   explicit nsFlexContainerFrame(ComputedStyle* aStyle,
@@ -309,6 +324,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
 
     // The absolutely-positioned flex children.
     nsTArray<nsIFrame*> mPlaceholders;
+
+    bool mHasCollapsedItems = false;
 
     // The final content-box main-size of the flex container as if there's no
     // fragmentation.
@@ -412,17 +429,6 @@ class nsFlexContainerFrame final : public nsContainerFrame {
                                       const FlexboxAxisTracker& aAxisTracker);
 
   /**
-   * Returns true if "this" is the nsFlexContainerFrame for a -moz-box or
-   * a -moz-inline-box -- these boxes have special behavior for flex items with
-   * "visibility:collapse".
-   *
-   * @param aFlexStyleDisp This frame's StyleDisplay(). (Just an optimization to
-   *                       avoid repeated lookup; some callers already have it.)
-   * @return true if "this" is the nsFlexContainerFrame for a -moz-{inline}box.
-   */
-  bool ShouldUseMozBoxCollapseBehavior(const nsStyleDisplay* aFlexStyleDisp);
-
-  /**
    * This method:
    *  - Creates FlexItems for all of our child frames (except placeholders).
    *  - Groups those FlexItems into FlexLines.
@@ -442,7 +448,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
                          const FlexboxAxisTracker& aAxisTracker,
                          nscoord aMainGapSize,
                          nsTArray<nsIFrame*>& aPlaceholders,
-                         nsTArray<FlexLine>& aLines);
+                         nsTArray<FlexLine>& aLines,
+                         bool& aHasCollapsedItems);
 
   /**
    * Generates and returns a FlexLayoutResult that contains the FlexLines and

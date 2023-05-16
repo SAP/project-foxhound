@@ -4,16 +4,17 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const { assert, fetch } = DevToolsUtils;
-const EventEmitter = require("devtools/shared/event-emitter");
-const { SourceLocation } = require("devtools/server/actors/common");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const {
+  SourceLocation,
+} = require("resource://devtools/server/actors/common.js");
 
 loader.lazyRequireGetter(
   this,
   "SourceActor",
-  "devtools/server/actors/source",
+  "resource://devtools/server/actors/source.js",
   true
 );
 

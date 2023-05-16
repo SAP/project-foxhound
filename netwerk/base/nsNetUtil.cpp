@@ -1303,11 +1303,12 @@ nsresult NS_NewSafeLocalFileOutputStream(nsIOutputStream** result,
   return rv;
 }
 
-nsresult NS_NewLocalFileStream(nsIFileStream** result, nsIFile* file,
-                               int32_t ioFlags /* = -1 */,
-                               int32_t perm /* = -1 */,
-                               int32_t behaviorFlags /* = 0 */) {
-  nsCOMPtr<nsIFileStream> stream = new nsFileStream();
+nsresult NS_NewLocalFileRandomAccessStream(nsIRandomAccessStream** result,
+                                           nsIFile* file,
+                                           int32_t ioFlags /* = -1 */,
+                                           int32_t perm /* = -1 */,
+                                           int32_t behaviorFlags /* = 0 */) {
+  nsCOMPtr<nsIFileRandomAccessStream> stream = new nsFileRandomAccessStream();
   nsresult rv = stream->Init(file, ioFlags, perm, behaviorFlags);
   if (NS_SUCCEEDED(rv)) {
     stream.forget(result);
@@ -1315,12 +1316,13 @@ nsresult NS_NewLocalFileStream(nsIFileStream** result, nsIFile* file,
   return rv;
 }
 
-mozilla::Result<nsCOMPtr<nsIFileStream>, nsresult> NS_NewLocalFileStream(
-    nsIFile* file, int32_t ioFlags /* = -1 */, int32_t perm /* = -1 */,
-    int32_t behaviorFlags /* = 0 */) {
-  nsCOMPtr<nsIFileStream> stream;
-  const nsresult rv = NS_NewLocalFileStream(getter_AddRefs(stream), file,
-                                            ioFlags, perm, behaviorFlags);
+mozilla::Result<nsCOMPtr<nsIRandomAccessStream>, nsresult>
+NS_NewLocalFileRandomAccessStream(nsIFile* file, int32_t ioFlags /* = -1 */,
+                                  int32_t perm /* = -1 */,
+                                  int32_t behaviorFlags /* = 0 */) {
+  nsCOMPtr<nsIRandomAccessStream> stream;
+  const nsresult rv = NS_NewLocalFileRandomAccessStream(
+      getter_AddRefs(stream), file, ioFlags, perm, behaviorFlags);
   if (NS_SUCCEEDED(rv)) {
     return stream;
   }

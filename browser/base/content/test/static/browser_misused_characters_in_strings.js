@@ -11,61 +11,6 @@
  * entries. */
 let gExceptionsList = [
   {
-    file: "netError.dtd",
-    key: "certerror.introPara2",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.sts.introPara",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.expiredCert.introPara",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.expiredCert.whatCanYouDoAboutIt2",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.whatShouldIDo.badStsCertExplanation1",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "inadequateSecurityError.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "clockSkewError.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.mitm.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.mitm.whatCanYouDoAboutIt3",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "certerror.mitm.sts.whatCanYouDoAboutIt3",
-    type: "single-quote",
-  },
-  {
-    file: "mathfont.properties",
-    key: "operator.\\u002E\\u002E\\u002E.postfix",
-    type: "ellipsis",
-  },
-  {
     file: "layout_errors.properties",
     key: "ImageMapRectBoundsError",
     type: "double-quote",
@@ -99,16 +44,6 @@ let gExceptionsList = [
   {
     file: "dom.properties",
     key: "PatternAttributeCompileFailure",
-    type: "single-quote",
-  },
-  {
-    file: "netError.dtd",
-    key: "inadequateSecurityError.longDesc",
-    type: "single-quote",
-  },
-  {
-    file: "netErrorApp.dtd",
-    key: "securityOverride.warningContent",
     type: "single-quote",
   },
 ];
@@ -305,8 +240,10 @@ add_task(async function checkAllTheFluents() {
     }
 
     visitTextElement(node) {
-      let stripped_val = this.domParser.parseFromString(node.value, "text/html")
-        .documentElement.textContent;
+      const stripped_val = this.domParser.parseFromString(
+        "<!DOCTYPE html>" + node.value,
+        "text/html"
+      ).documentElement.textContent;
       testForErrors(this.uri, this.key, stripped_val);
     }
   }

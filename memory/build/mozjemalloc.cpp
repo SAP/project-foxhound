@@ -1220,39 +1220,43 @@ static ArenaCollection gArenas;
 static AddressRadixTree<(sizeof(void*) << 3) - LOG2(kChunkSize)> gChunkRTree;
 
 // Protects chunk-related data structures.
-static Mutex chunks_mtx MOZ_UNANNOTATED;
+static Mutex chunks_mtx;
 
 // Trees of chunks that were previously allocated (trees differ only in node
 // ordering).  These are used when allocating chunks, in an attempt to re-use
 // address space.  Depending on function, different tree orderings are needed,
 // which is why there are two trees with the same contents.
-static RedBlackTree<extent_node_t, ExtentTreeSzTrait> gChunksBySize;
-static RedBlackTree<extent_node_t, ExtentTreeTrait> gChunksByAddress;
+static RedBlackTree<extent_node_t, ExtentTreeSzTrait> gChunksBySize
+    MOZ_GUARDED_BY(chunks_mtx);
+static RedBlackTree<extent_node_t, ExtentTreeTrait> gChunksByAddress
+    MOZ_GUARDED_BY(chunks_mtx);
 
 // Protects huge allocation-related data structures.
-static Mutex huge_mtx MOZ_UNANNOTATED;
+static Mutex huge_mtx;
 
 // Tree of chunks that are stand-alone huge allocations.
-static RedBlackTree<extent_node_t, ExtentTreeTrait> huge;
+static RedBlackTree<extent_node_t, ExtentTreeTrait> huge
+    MOZ_GUARDED_BY(huge_mtx);
 
 // Huge allocation statistics.
-static size_t huge_allocated;
-static size_t huge_mapped;
+static size_t huge_allocated MOZ_GUARDED_BY(huge_mtx);
+static size_t huge_mapped MOZ_GUARDED_BY(huge_mtx);
 
 // **************************
 // base (internal allocation).
 
+static Mutex base_mtx;
+
 // Current pages that are being used for internal memory allocations.  These
 // pages are carved up in cacheline-size quanta, so that there is no chance of
 // false cache line sharing.
-
-static void* base_pages;
-static void* base_next_addr;
-static void* base_next_decommitted;
-static void* base_past_addr;  // Addr immediately past base_pages.
-static Mutex base_mtx MOZ_UNANNOTATED;
-static size_t base_mapped;
-static size_t base_committed;
+static void* base_pages MOZ_GUARDED_BY(base_mtx);
+static void* base_next_addr MOZ_GUARDED_BY(base_mtx);
+static void* base_next_decommitted MOZ_GUARDED_BY(base_mtx);
+// Address immediately past base_pages.
+static void* base_past_addr MOZ_GUARDED_BY(base_mtx);
+static size_t base_mapped MOZ_GUARDED_BY(base_mtx);
+static size_t base_committed MOZ_GUARDED_BY(base_mtx);
 
 // ******
 // Arenas.
@@ -1369,8 +1373,7 @@ static inline void ApplyZeroOrJunk(void* aPtr, size_t aSize) {
   }
 }
 
-// On Windows, delay crashing on OOM. Partly experimental. (See bug 1785145 for
-// more details.)
+// On Windows, delay crashing on OOM.
 #ifdef XP_WIN
 
 // Implementation of VirtualAlloc wrapper (bug 1716727).
@@ -1382,27 +1385,31 @@ constexpr size_t kMaxAttempts = 10;
 // Microsoft's documentation for ::Sleep() for details.)
 constexpr size_t kDelayMs = 50;
 
-Atomic<bool> sHasStalled{false};
-static inline bool ShouldStallAndRetry() {
+struct StallSpecs {
+  size_t maxAttempts;
+  size_t delayMs;
+};
+
+static constexpr StallSpecs maxStall = {.maxAttempts = kMaxAttempts,
+                                        .delayMs = kDelayMs};
+
+static inline StallSpecs GetStallSpecs() {
 #  if defined(JS_STANDALONE)
   // GetGeckoProcessType() isn't available in this configuration. (SpiderMonkey
   // on Windows mostly skips this in favor of directly calling ::VirtualAlloc(),
   // though, so it's probably not going to matter whether we stall here or not.)
-  return true;
-#  elif 0 && defined(NIGHTLY_BUILD)
-  // On Nightly, always stall, for experiment's sake (bug 1785162).
-  //
-  // This is temporarily disabled in order to confirm its effect on main-process
-  // OOMs, due to the possible confounding factor of bug 965392. (See discussion
-  // in bug 1785162 for more detail.)
-  return true;
+  return maxStall;
 #  else
-  // In the main process, always stall.
-  if (GetGeckoProcessType() == GeckoProcessType::GeckoProcessType_Default) {
-    return true;
+  switch (GetGeckoProcessType()) {
+    // For the main process, stall for the maximum permissible time period. (The
+    // main process is the most important one to keep alive.)
+    case GeckoProcessType::GeckoProcessType_Default:
+      return maxStall;
+
+    // For all other process types, stall for at most half as long.
+    default:
+      return {.maxAttempts = kMaxAttempts / 2, .delayMs = kDelayMs};
   }
-  // Otherwise, stall at most once.
-  return sHasStalled.compareExchange(false, true);
 #  endif
 }
 
@@ -1438,13 +1445,11 @@ static inline bool ShouldStallAndRetry() {
     if (!(flAllocationType & MEM_COMMIT)) return nullptr;
   }
 
-  // Also return if we just aren't supposed to be retrying at the moment, for
-  // whatever reason.
-  if (!ShouldStallAndRetry()) return nullptr;
+  // Retry as many times as desired (possibly zero).
+  const StallSpecs stallSpecs = GetStallSpecs();
 
-  // Otherwise, retry.
-  for (size_t i = 0; i < kMaxAttempts; ++i) {
-    ::Sleep(kDelayMs);
+  for (size_t i = 0; i < stallSpecs.maxAttempts; ++i) {
+    ::Sleep(stallSpecs.delayMs);
     void* ptr = ::VirtualAlloc(lpAddress, dwSize, flAllocationType, flProtect);
 
     if (ptr) {
@@ -1536,7 +1541,7 @@ static inline void pages_decommit(void* aAddr, size_t aSize) {
   return true;
 }
 
-static bool base_pages_alloc(size_t minsize) {
+static bool base_pages_alloc(size_t minsize) MOZ_REQUIRES(base_mtx) {
   size_t csize;
   size_t pminsize;
 
@@ -4217,19 +4222,25 @@ static bool malloc_init_hard() {
 
   // Initialize chunks data.
   chunks_mtx.Init();
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   gChunksBySize.Init();
   gChunksByAddress.Init();
+  MOZ_POP_THREAD_SAFETY
 
   // Initialize huge allocation data.
   huge_mtx.Init();
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   huge.Init();
   huge_allocated = 0;
   huge_mapped = 0;
+  MOZ_POP_THREAD_SAFETY
 
   // Initialize base allocation data structures.
+  base_mtx.Init();
+  MOZ_PUSH_IGNORE_THREAD_SAFETY
   base_mapped = 0;
   base_committed = 0;
-  base_mtx.Init();
+  MOZ_POP_THREAD_SAFETY
 
   // Initialize arenas collection here.
   if (!gArenas.Init()) {

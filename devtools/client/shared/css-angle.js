@@ -6,12 +6,12 @@
 
 const SPECIALVALUES = new Set(["initial", "inherit", "unset"]);
 
-const { getCSSLexer } = require("devtools/shared/css/lexer");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
 
 loader.lazyRequireGetter(
   this,
   "CSS_ANGLEUNIT",
-  "devtools/shared/css/constants",
+  "resource://devtools/shared/css/constants.js",
   true
 );
 

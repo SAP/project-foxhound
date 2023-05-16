@@ -4,12 +4,12 @@
 "use strict";
 const {
   FallibleJSPropertyProvider: JSPropertyProvider,
-} = require("devtools/shared/webconsole/js-property-provider");
+} = require("resource://devtools/shared/webconsole/js-property-provider.js");
 
-const { addDebuggerToGlobal } = ChromeUtils.import(
-  "resource://gre/modules/jsdebugger.jsm"
+const { addDebuggerToGlobal } = ChromeUtils.importESModule(
+  "resource://gre/modules/jsdebugger.sys.mjs"
 );
-addDebuggerToGlobal(this);
+addDebuggerToGlobal(globalThis);
 
 function run_test() {
   Services.prefs.setBoolPref(

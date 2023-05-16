@@ -6,46 +6,52 @@
 const {
   createElement,
   createFactory,
-} = require("devtools/client/shared/vendor/react");
-const ReactDOM = require("devtools/client/shared/vendor/react-dom");
+} = require("resource://devtools/client/shared/vendor/react.js");
+const ReactDOM = require("resource://devtools/client/shared/vendor/react-dom.js");
 const {
   Provider,
   createProvider,
-} = require("devtools/client/shared/vendor/react-redux");
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
-const actions = require("devtools/client/webconsole/actions/index");
-const { configureStore } = require("devtools/client/webconsole/store");
+const actions = require("resource://devtools/client/webconsole/actions/index.js");
+const {
+  configureStore,
+} = require("resource://devtools/client/webconsole/store.js");
 
 const {
   isPacketPrivate,
-} = require("devtools/client/webconsole/utils/messages");
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 const {
   getMutableMessagesById,
   getMessage,
   getAllNetworkMessagesUpdateById,
-} = require("devtools/client/webconsole/selectors/messages");
-const Telemetry = require("devtools/client/shared/telemetry");
+} = require("resource://devtools/client/webconsole/selectors/messages.js");
+const Telemetry = require("resource://devtools/client/shared/telemetry.js");
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const App = createFactory(require("devtools/client/webconsole/components/App"));
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const App = createFactory(
+  require("resource://devtools/client/webconsole/components/App.js")
+);
 
 loader.lazyGetter(this, "AppErrorBoundary", () =>
-  createFactory(require("devtools/client/shared/components/AppErrorBoundary"))
+  createFactory(
+    require("resource://devtools/client/shared/components/AppErrorBoundary.js")
+  )
 );
 
 const {
   setupServiceContainer,
-} = require("devtools/client/webconsole/service-container");
+} = require("resource://devtools/client/webconsole/service-container.js");
 
 loader.lazyRequireGetter(
   this,
   "Constants",
-  "devtools/client/webconsole/constants"
+  "resource://devtools/client/webconsole/constants.js"
 );
 
 // Localized strings for (devtools/client/locales/en-US/startup.properties)
 loader.lazyGetter(this, "L10N", function() {
-  const { LocalizationHelper } = require("devtools/shared/l10n");
+  const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
   return new LocalizationHelper("devtools/client/locales/startup.properties");
 });
 
@@ -53,13 +59,13 @@ loader.lazyGetter(this, "L10N", function() {
 loader.lazyRequireGetter(
   this,
   "FluentL10n",
-  "devtools/client/shared/fluent-l10n/fluent-l10n",
+  "resource://devtools/client/shared/fluent-l10n/fluent-l10n.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "LocalizationProvider",
-  "devtools/client/shared/vendor/fluent-react",
+  "resource://devtools/client/shared/vendor/fluent-react.js",
   true
 );
 

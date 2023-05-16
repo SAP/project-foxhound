@@ -4,24 +4,24 @@
 
 "use strict";
 
-const { dumpn } = require("devtools/shared/DevToolsUtils");
+const { dumpn } = require("resource://devtools/shared/DevToolsUtils.js");
 
-loader.lazyImporter(
-  this,
+const lazy = {};
+
+ChromeUtils.defineModuleGetter(
+  lazy,
   "ExtensionParent",
   "resource://gre/modules/ExtensionParent.jsm"
 );
-loader.lazyRequireGetter(
-  this,
+ChromeUtils.defineModuleGetter(
+  lazy,
   "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
+  "resource://gre/modules/FileUtils.jsm"
 );
-loader.lazyRequireGetter(
-  this,
+ChromeUtils.defineModuleGetter(
+  lazy,
   "NetUtil",
-  "resource://gre/modules/NetUtil.jsm",
-  true
+  "resource://gre/modules/NetUtil.jsm"
 );
 loader.lazyGetter(this, "UNPACKED_ROOT_PATH", () => {
   return PathUtils.join(PathUtils.localProfileDir, "adb");
@@ -45,14 +45,14 @@ const MANIFEST = "manifest.json";
  */
 async function readFromExtension(fileUri) {
   return new Promise(resolve => {
-    NetUtil.asyncFetch(
+    lazy.NetUtil.asyncFetch(
       {
         uri: fileUri,
         loadUsingSystemPrincipal: true,
       },
       input => {
         try {
-          const string = NetUtil.readInputStreamToString(
+          const string = lazy.NetUtil.readInputStreamToString(
             input,
             input.available()
           );
@@ -74,7 +74,7 @@ async function readFromExtension(fileUri) {
  *        The path name of the file in the extension.
  */
 async function unpackFile(file) {
-  const policy = ExtensionParent.WebExtensionPolicy.getByID(EXTENSION_ID);
+  const policy = lazy.ExtensionParent.WebExtensionPolicy.getByID(EXTENSION_ID);
   if (!policy) {
     return;
   }
@@ -83,7 +83,7 @@ async function unpackFile(file) {
   const basePath = file.substring(file.lastIndexOf("/") + 1);
   const filePath = PathUtils.join(UNPACKED_ROOT_PATH, basePath);
   await new Promise((resolve, reject) => {
-    NetUtil.asyncFetch(
+    lazy.NetUtil.asyncFetch(
       {
         uri: policy.getURL(file),
         loadUsingSystemPrincipal: true,
@@ -92,9 +92,9 @@ async function unpackFile(file) {
         try {
           // Since we have to use NetUtil to read, probably it's okay to use for
           // writing, rather than bouncing to IOUtils...?
-          const outputFile = new FileUtils.File(filePath);
-          const output = FileUtils.openAtomicFileOutputStream(outputFile);
-          NetUtil.asyncCopy(input, output, resolve);
+          const outputFile = new lazy.FileUtils.File(filePath);
+          const output = lazy.FileUtils.openAtomicFileOutputStream(outputFile);
+          lazy.NetUtil.asyncCopy(input, output, resolve);
         } catch (e) {
           dumpn(`Could not unpack file ${file} in the extension: ${e}`);
           reject(e);
@@ -111,7 +111,7 @@ async function unpackFile(file) {
  * if it fails.
  */
 async function extractFiles() {
-  const policy = ExtensionParent.WebExtensionPolicy.getByID(EXTENSION_ID);
+  const policy = lazy.ExtensionParent.WebExtensionPolicy.getByID(EXTENSION_ID);
   if (!policy) {
     return false;
   }
@@ -170,7 +170,7 @@ async function extractFiles() {
  * Uses NetUtil since data is packed inside the extension, not a local file.
  */
 async function getManifestFromExtension() {
-  const policy = ExtensionParent.WebExtensionPolicy.getByID(EXTENSION_ID);
+  const policy = lazy.ExtensionParent.WebExtensionPolicy.getByID(EXTENSION_ID);
   if (!policy) {
     return null;
   }
@@ -240,7 +240,7 @@ async function getFileForBinary() {
     return null;
   }
 
-  const file = new FileUtils.File(ADB_BINARY_PATH);
+  const file = new lazy.FileUtils.File(ADB_BINARY_PATH);
   if (!file.exists()) {
     return null;
   }

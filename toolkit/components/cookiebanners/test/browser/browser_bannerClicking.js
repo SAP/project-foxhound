@@ -3,6 +3,9 @@
 
 "use strict";
 
+// TODO: Split up the test into multiple tests (Bug 1795238)
+requestLongerTimeout(3);
+
 const TEST_DOMAIN_A = "example.com";
 const TEST_DOMAIN_B = "example.org";
 const TEST_DOMAIN_C = "example.net";
@@ -220,9 +223,12 @@ add_setup(async function() {
 
   registerCleanupFunction(() => {
     Services.prefs.clearUserPref("cookiebanners.service.mode");
+    Services.prefs.clearUserPref("cookiebanners.service.mode.privateBrowsing");
     if (
       Services.prefs.getIntPref("cookiebanners.service.mode") !=
-      Ci.nsICookieBannerService.MODE_DISABLED
+        Ci.nsICookieBannerService.MODE_DISABLED ||
+      Services.prefs.getIntPref("cookiebanners.service.mode.privateBrowsing") !=
+        Ci.nsICookieBannerService.MODE_DISABLED
     ) {
       // Restore original rules.
       Services.cookieBanners.resetRules(true);
@@ -237,6 +243,10 @@ add_task(async function test_cookie_banner_service_disabled() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_DISABLED],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_DISABLED,
+      ],
     ],
   });
 
@@ -384,7 +394,10 @@ add_task(async function test_embedded_iframe() {
 add_task(async function test_pbm() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
     ],
   });
 
@@ -406,12 +419,118 @@ add_task(async function test_pbm() {
 });
 
 /**
+ * Tests service mode pref combinations for normal and private browsing.
+ */
+add_task(async function test_pref_pbm_pref() {
+  info("Enable in normal browsing but disable in private browsing.");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_DISABLED,
+      ],
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+    ],
+  });
+
+  insertTestRules();
+
+  let pbmWindow = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+
+  await openPageAndVerify({
+    domain: TEST_DOMAIN_A,
+    testURL: TEST_PAGE_A,
+    visible: false,
+    expected: "OptOut",
+  });
+
+  await openPageAndVerify({
+    win: pbmWindow,
+    domain: TEST_DOMAIN_A,
+    testURL: TEST_PAGE_A,
+    visible: true,
+    expected: "NoClick",
+  });
+
+  info("Disable in normal browsing but enable in private browsing.");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_DISABLED],
+    ],
+  });
+
+  await openPageAndVerify({
+    domain: TEST_DOMAIN_A,
+    testURL: TEST_PAGE_A,
+    visible: true,
+    expected: "NoClick",
+  });
+
+  await openPageAndVerify({
+    win: pbmWindow,
+    domain: TEST_DOMAIN_A,
+    testURL: TEST_PAGE_A,
+    visible: false,
+    expected: "OptOut",
+  });
+
+  info(
+    "Set normal browsing to REJECT_OR_ACCEPT and private browsing to REJECT."
+  );
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
+      [
+        "cookiebanners.service.mode",
+        Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+      ],
+    ],
+  });
+
+  info(
+    "The normal browsing window accepts the banner according to the opt-in rule."
+  );
+  await openPageAndVerify({
+    win: window,
+    domain: TEST_DOMAIN_B,
+    testURL: TEST_PAGE_B,
+    visible: false,
+    expected: "OptIn",
+  });
+
+  info(
+    "The private browsing window should not perform any click, because there is only an opt-in rule."
+  );
+  await openPageAndVerify({
+    win: pbmWindow,
+    domain: TEST_DOMAIN_B,
+    testURL: TEST_PAGE_B,
+    visible: true,
+    expected: "NoClick",
+  });
+
+  await BrowserTestUtils.closeWindow(pbmWindow);
+});
+
+/**
  * Test that the banner clicking in an iframe with the private browsing window.
  */
 add_task(async function test_embedded_iframe_pbm() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
     ],
   });
 
@@ -566,4 +685,130 @@ add_task(async function test_clicking_global_rules_precedence() {
     // applies, opt-in means the domain specific rule applies.
     expected: "OptIn",
   });
+});
+
+/**
+ * Test that domain preference takes precedence over pref settings.
+ */
+add_task(async function test_domain_preference() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
+    ],
+  });
+
+  insertTestRules();
+
+  for (let testPBM of [false, true]) {
+    let testWin = window;
+    if (testPBM) {
+      testWin = await BrowserTestUtils.openNewBrowserWindow({
+        private: true,
+      });
+    }
+
+    info(
+      "Make sure the example.org follows the pref setting when there is no domain preference."
+    );
+    await openPageAndVerify({
+      win: testWin,
+      domain: TEST_DOMAIN_B,
+      testURL: TEST_PAGE_B,
+      visible: true,
+      expected: "NoClick",
+    });
+
+    info("Set the domain preference of example.org to MODE_REJECT_OR_ACCEPT");
+    let uri = Services.io.newURI(TEST_ORIGIN_B);
+    Services.cookieBanners.setDomainPref(
+      uri,
+      Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+      testPBM
+    );
+
+    info(
+      "Verify if domain preference takes precedence over then the pref setting for example.org"
+    );
+    await openPageAndVerify({
+      win: testWin,
+      domain: TEST_DOMAIN_B,
+      testURL: TEST_PAGE_B,
+      visible: false,
+      expected: "OptIn",
+    });
+
+    Services.cookieBanners.removeAllDomainPrefs(testPBM);
+
+    if (testPBM) {
+      await BrowserTestUtils.closeWindow(testWin);
+    }
+  }
+});
+
+/**
+ * Test that domain preference works on the top-level domain.
+ */
+add_task(async function test_domain_preference_iframe() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+      [
+        "cookiebanners.service.mode.privateBrowsing",
+        Ci.nsICookieBannerService.MODE_REJECT,
+      ],
+    ],
+  });
+
+  insertTestRules();
+
+  for (let testPBM of [false, true]) {
+    let testWin = window;
+    if (testPBM) {
+      testWin = await BrowserTestUtils.openNewBrowserWindow({
+        private: true,
+      });
+    }
+
+    info(
+      "Make sure the example.org follows the pref setting when there is no domain preference for the top-level example.net."
+    );
+    await openIframeAndVerify({
+      win: testWin,
+      domain: TEST_DOMAIN_B,
+      testURL: TEST_PAGE_B,
+      visible: true,
+      expected: "NoClick",
+    });
+
+    info(
+      "Set the domain preference of the top-level domain to MODE_REJECT_OR_ACCEPT"
+    );
+    let uri = Services.io.newURI(TEST_ORIGIN_C);
+    Services.cookieBanners.setDomainPref(
+      uri,
+      Ci.nsICookieBannerService.MODE_REJECT_OR_ACCEPT,
+      testPBM
+    );
+
+    info(
+      "Verify if domain preference takes precedence over then the pref setting for top-level example.net"
+    );
+    await openIframeAndVerify({
+      win: testWin,
+      domain: TEST_DOMAIN_B,
+      testURL: TEST_PAGE_B,
+      visible: false,
+      expected: "OptIn",
+    });
+
+    Services.cookieBanners.removeAllDomainPrefs(testPBM);
+
+    if (testPBM) {
+      await BrowserTestUtils.closeWindow(testWin);
+    }
+  }
 });

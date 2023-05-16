@@ -810,22 +810,17 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   class FuncScope final {
    public:
     const ClientWebGLContext& mWebGL;
+    const std::shared_ptr<webgl::NotLostData> mKeepNotLostOrNull;
     const char* const mFuncName;
-    const FuncScopeId mId;
 
     FuncScope(const ClientWebGLContext& webgl, const char* funcName)
         : mWebGL(webgl),
-          mFuncName(funcName),
-          mId(FuncScopeId::FuncScopeIdError) {
+          mKeepNotLostOrNull(webgl.mNotLost),
+          mFuncName(funcName) {
       // Only set if an "outer" scope hasn't already been set.
       if (!mWebGL.mFuncScope) {
         mWebGL.mFuncScope = this;
       }
-    }
-
-    FuncScope(const ClientWebGLContext* webgl, FuncScopeId aId)
-        : mWebGL(*webgl), mFuncName(GetFuncScopeName(aId)), mId(aId) {
-      mWebGL.mFuncScope = this;
     }
 
     ~FuncScope() {
@@ -833,17 +828,17 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
         mWebGL.mFuncScope = nullptr;
       }
     }
+
+    FuncScope(const FuncScope&) = delete;
+    FuncScope(FuncScope&&) = delete;
   };
+
 
  protected:
   // The scope of the function at the top of the current WebGL function call
   // stack
   mutable FuncScope* mFuncScope = nullptr;
 
-  const auto& CurFuncScope() const { return *mFuncScope; }
-  FuncScopeId GetFuncScopeId() const {
-    return mFuncScope ? mFuncScope->mId : FuncScopeId::FuncScopeIdError;
-  }
   const char* FuncName() const {
     return mFuncScope ? mFuncScope->mFuncName : nullptr;
   }
@@ -967,10 +962,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  NS_IMETHOD Reset() override {
-    /* (InitializeWithSurface) */
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
+  void ResetBitmap() override;
 
   UniquePtr<uint8_t[]> GetImageBuffer(int32_t* out_format) override;
   NS_IMETHOD GetInputStream(const char* mimeType,
@@ -982,8 +974,6 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
   void SetOpaqueValueFromOpaqueAttr(bool) override{};
   bool GetIsOpaque() override { return !mInitialOptions->alpha; }
-
-  NS_IMETHOD SetIsIPC(bool) override { return NS_ERROR_NOT_IMPLEMENTED; }
 
   /**
    * An abstract base class to be implemented by callers wanting to be notified
@@ -2053,13 +2043,12 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   // -------------------------------- Drawing -------------------------------
  public:
   void DrawArrays(GLenum mode, GLint first, GLsizei count) {
-    DrawArraysInstanced(mode, first, count, 1, FuncScopeId::drawArrays);
+    DrawArraysInstanced(mode, first, count, 1);
   }
 
   void DrawElements(GLenum mode, GLsizei count, GLenum type,
                     WebGLintptr byteOffset) {
-    DrawElementsInstanced(mode, count, type, byteOffset, 1,
-                          FuncScopeId::drawElements);
+    DrawElementsInstanced(mode, count, type, byteOffset, 1);
   }
 
   void DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count,
@@ -2069,8 +2058,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
       EnqueueError(LOCAL_GL_INVALID_VALUE, "end must be >= start.");
       return;
     }
-    DrawElementsInstanced(mode, count, type, byteOffset, 1,
-                          FuncScopeId::drawRangeElements);
+    DrawElementsInstanced(mode, count, type, byteOffset, 1);
   }
 
   // ------------------------------ Readback -------------------------------
@@ -2103,13 +2091,10 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   void BindVertexArray(WebGLVertexArrayJS*);
 
   void DrawArraysInstanced(GLenum mode, GLint first, GLsizei count,
-                           GLsizei primcount,
-                           FuncScopeId aFuncId = FuncScopeId::drawArrays);
+                           GLsizei primcount);
 
-  void DrawElementsInstanced(
-      GLenum mode, GLsizei count, GLenum type, WebGLintptr offset,
-      GLsizei primcount,
-      FuncScopeId aFuncId = FuncScopeId::drawElementsInstanced);
+  void DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type,
+                             WebGLintptr offset, GLsizei primcount);
 
   void VertexAttribDivisor(GLuint index, GLuint divisor);
 

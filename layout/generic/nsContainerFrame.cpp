@@ -32,6 +32,7 @@
 #include "nsGkAtoms.h"
 #include "nsViewManager.h"
 #include "nsIWidget.h"
+#include "nsCanvasFrame.h"
 #include "nsCSSRendering.h"
 #include "nsError.h"
 #include "nsDisplayList.h"
@@ -687,8 +688,8 @@ void nsContainerFrame::ReparentFrameViewList(const nsFrameList& aChildFrameList,
     nsViewManager* viewManager = oldParentView->GetViewManager();
 
     // They're not so we need to reparent any child views
-    for (nsFrameList::Enumerator e(aChildFrameList); !e.AtEnd(); e.Next()) {
-      e.get()->ReparentFrameViewTo(viewManager, newParentView, oldParentView);
+    for (nsIFrame* f : aChildFrameList) {
+      f->ReparentFrameViewTo(viewManager, newParentView, oldParentView);
     }
   }
 }
@@ -734,17 +735,29 @@ static bool IsTopLevelWidget(nsIWidget* aWidget) {
 void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
                                             nsIFrame* aFrame, nsView* aView,
                                             gfxContext* aRC, uint32_t aFlags) {
-  if (!aView || !nsCSSRendering::IsCanvasFrame(aFrame) || !aView->HasWidget())
+  if (!aView || !aView->HasWidget()) {
     return;
+  }
+
+  {
+    const bool isValid = aFrame->IsCanvasFrame() || aFrame->IsViewportFrame();
+    if (!isValid) {
+      return;
+    }
+  }
 
   nsCOMPtr<nsIWidget> windowWidget =
       GetPresContextContainerWidget(aPresContext);
-  if (!windowWidget || !IsTopLevelWidget(windowWidget)) return;
+  if (!windowWidget || !IsTopLevelWidget(windowWidget)) {
+    return;
+  }
 
   nsViewManager* vm = aView->GetViewManager();
   nsView* rootView = vm->GetRootView();
 
-  if (aView != rootView) return;
+  if (aView != rootView) {
+    return;
+  }
 
   Element* rootElement = aPresContext->Document()->GetRootElement();
   if (!rootElement) {
@@ -753,7 +766,9 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
 
   nsIFrame* rootFrame =
       aPresContext->PresShell()->FrameConstructor()->GetRootElementStyleFrame();
-  if (!rootFrame) return;
+  if (!rootFrame) {
+    return;
+  }
 
   if (aFlags & SET_ASYNC) {
     aView->SetNeedsWindowPropertiesSync();
@@ -774,8 +789,9 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
     // careful because apparently some Firefox extensions expect
     // openDialog("something.html") to produce an opaque window
     // even if the HTML doesn't have a background-color set.
-    nsTransparencyMode mode =
-        nsLayoutUtils::GetFrameTransparency(aFrame, rootFrame);
+    auto* canvas = aPresContext->PresShell()->GetCanvasFrame();
+    nsTransparencyMode mode = nsLayoutUtils::GetFrameTransparency(
+        canvas ? canvas : aFrame, rootFrame);
     StyleWindowShadow shadow = rootFrame->StyleUIReset()->mWindowShadow;
     nsCOMPtr<nsIWidget> viewWidget = aView->GetWidget();
     viewWidget->SetTransparencyMode(mode);
@@ -787,7 +803,9 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
     }
   }
 
-  if (!aRC) return;
+  if (!aRC) {
+    return;
+  }
 
   if (!weak.IsAlive()) {
     return;
@@ -795,7 +813,7 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
 
   nsSize minSize(0, 0);
   nsSize maxSize(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
-  if (rootElement->IsXULElement()) {
+  if (rootFrame->IsXULBoxFrame()) {
     nsBoxLayoutState aState(aPresContext, aRC);
     minSize = rootFrame->GetXULMinSize(aState);
     maxSize = rootFrame->GetXULMaxSize(aState);
@@ -1406,26 +1424,21 @@ nsFrameList nsContainerFrame::StealFramesAfter(nsIFrame* aChild) {
   NS_ASSERTION(!IsBlockFrame(), "unexpected call");
 
   if (!aChild) {
-    nsFrameList copy(mFrames);
-    mFrames.Clear();
-    return copy;
+    return std::move(mFrames);
   }
 
-  for (nsFrameList::FrameLinkEnumerator iter(mFrames); !iter.AtEnd();
-       iter.Next()) {
-    if (iter.PrevFrame() == aChild) {
-      return mFrames.ExtractTail(iter);
+  for (nsIFrame* f : mFrames) {
+    if (f == aChild) {
+      return mFrames.TakeFramesAfter(f);
     }
   }
 
   // We didn't find the child in the principal child list.
   // Maybe it's on the overflow list?
-  nsFrameList* overflowFrames = GetOverflowFrames();
-  if (overflowFrames) {
-    for (nsFrameList::FrameLinkEnumerator iter(*overflowFrames); !iter.AtEnd();
-         iter.Next()) {
-      if (iter.PrevFrame() == aChild) {
-        return overflowFrames->ExtractTail(iter);
+  if (nsFrameList* overflowFrames = GetOverflowFrames()) {
+    for (nsIFrame* f : *overflowFrames) {
+      if (f == aChild) {
+        return mFrames.TakeFramesAfter(f);
       }
     }
   }
@@ -1513,7 +1526,7 @@ void nsContainerFrame::PushChildrenToOverflow(nsIFrame* aFromChild,
 
   // Add the frames to our overflow list (let our next in flow drain
   // our overflow list when it is ready)
-  SetOverflowFrames(mFrames.RemoveFramesAfter(aPrevSibling));
+  SetOverflowFrames(mFrames.TakeFramesAfter(aPrevSibling));
 }
 
 void nsContainerFrame::PushChildren(nsIFrame* aFromChild,
@@ -1523,7 +1536,7 @@ void nsContainerFrame::PushChildren(nsIFrame* aFromChild,
   MOZ_ASSERT(aPrevSibling->GetNextSibling() == aFromChild, "bad prev sibling");
 
   // Disconnect aFromChild from its previous sibling
-  nsFrameList tail = mFrames.RemoveFramesAfter(aPrevSibling);
+  nsFrameList tail = mFrames.TakeFramesAfter(aPrevSibling);
 
   nsContainerFrame* nextInFlow =
       static_cast<nsContainerFrame*>(GetNextInFlow());
@@ -2940,9 +2953,7 @@ nsresult nsOverflowContinuationTracker::Insert(nsIFrame* aOverflowCont,
     nsIFrame* nif = aOverflowCont->GetNextInFlow();
     if ((pif && pif->GetParent() == mParent && pif != mPrevOverflowCont) ||
         (nif && nif->GetParent() == mParent && mPrevOverflowCont)) {
-      for (nsFrameList::Enumerator e(*mOverflowContList); !e.AtEnd();
-           e.Next()) {
-        nsIFrame* f = e.get();
+      for (nsIFrame* f : *mOverflowContList) {
         if (f == pif) {
           mPrevOverflowCont = pif;
           break;

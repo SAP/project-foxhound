@@ -38,11 +38,9 @@ ChromeUtils.defineModuleGetter(
   "Downloads",
   "resource://gre/modules/Downloads.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyGetter(this, "nsBinaryStream", () =>
   CC(
@@ -488,13 +486,15 @@ window.onload = function() {
   gFooter = appendElement(document.body, "div", "ancillary hidden");
   gFooter.setAttribute("role", "contentinfo");
 
-  let a = appendElementWithText(
-    gFooter,
-    "a",
-    "option",
-    "Troubleshooting information"
-  );
-  a.href = "about:support";
+  if (Services.policies.isAllowed("aboutSupport")) {
+    let a = appendElementWithText(
+      gFooter,
+      "a",
+      "option",
+      "Troubleshooting information"
+    );
+    a.href = "about:support";
+  }
 
   let legendText1 =
     "Click on a non-leaf node in a tree to expand ('++') " +

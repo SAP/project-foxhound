@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -597,6 +595,7 @@ class InteractionsStore {
   /**
    * Tracks interactions replicating the unique index in the underlying schema.
    * Interactions are keyed by url and then created_at.
+   *
    * @type {Map<string, Map<number, InteractionInfo>>}
    */
   #interactions = new Map();
@@ -648,6 +647,7 @@ class InteractionsStore {
 
   /**
    * Synchronizes the pending interactions with the storage device.
+   *
    * @returns {Promise} resolved when the pending data is on disk.
    */
   async flush() {

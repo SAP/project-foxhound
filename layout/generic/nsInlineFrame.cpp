@@ -260,10 +260,10 @@ static void ReparentChildListStyle(nsPresContext* aPresContext,
                                    nsIFrame* aParentFrame) {
   RestyleManager* restyleManager = aPresContext->RestyleManager();
 
-  for (nsFrameList::Enumerator e(aFrames); !e.AtEnd(); e.Next()) {
-    NS_ASSERTION(e.get()->GetParent() == aParentFrame, "Bogus parentage");
-    restyleManager->ReparentComputedStyleForFirstLine(e.get());
-    nsLayoutUtils::MarkDescendantsDirty(e.get());
+  for (nsIFrame* f : aFrames) {
+    NS_ASSERTION(f->GetParent() == aParentFrame, "Bogus parentage");
+    restyleManager->ReparentComputedStyleForFirstLine(f);
+    nsLayoutUtils::MarkDescendantsDirty(f);
   }
 }
 
@@ -673,10 +673,10 @@ void nsInlineFrame::ReflowInlineFrame(nsPresContext* aPresContext,
       // Change break-before status into break-after since we have
       // already placed at least one child frame. This preserves the
       // break-type so that it can be propagated upward.
-      StyleClear oldBreakType = aStatus.BreakType();
+      StyleClear oldClearType = aStatus.FloatClearType();
       aStatus.Reset();
       aStatus.SetIncomplete();
-      aStatus.SetInlineLineBreakAfter(oldBreakType);
+      aStatus.SetInlineLineBreakAfter(oldClearType);
       PushFrames(aPresContext, aFrame, irs.mPrevFrame, irs);
     } else {
       // Preserve reflow status when breaking-before our first child

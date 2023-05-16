@@ -806,7 +806,7 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowColumns(
       kidNextInFlow->MarkSubtreeDirty();
       // Move any of our leftover columns to our overflow list. Our
       // next-in-flow will eventually pick them up.
-      nsFrameList continuationColumns = mFrames.RemoveFramesAfter(child);
+      nsFrameList continuationColumns = mFrames.TakeFramesAfter(child);
       if (continuationColumns.NotEmpty()) {
         SetOverflowFrames(std::move(continuationColumns));
       }
@@ -1236,8 +1236,8 @@ void nsColumnSetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   // Our children won't have backgrounds so it doesn't matter where we put them.
-  for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
-    BuildDisplayListForChild(aBuilder, e.get(), aLists);
+  for (nsIFrame* f : mFrames) {
+    BuildDisplayListForChild(aBuilder, f, aLists);
   }
 }
 

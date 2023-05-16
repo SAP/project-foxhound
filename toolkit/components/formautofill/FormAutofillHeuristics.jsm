@@ -20,8 +20,11 @@ const { FormAutofill } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  CreditCard: "resource://gre/modules/CreditCard.jsm",
   creditCardRulesets: "resource://autofill/CreditCardRuleset.jsm",
   FormAutofillUtils: "resource://autofill/FormAutofillUtils.jsm",
   LabelUtils: "resource://autofill/FormAutofillUtils.jsm",
@@ -493,7 +496,7 @@ class FieldScanner {
     }
 
     let highestField = null;
-    let highestConfidence = lazy.FormAutofillUtils.ccHeuristicsThreshold; // Start with a threshold of 0.5
+    let highestConfidence = lazy.FormAutofillUtils.ccFathomConfidenceThreshold; // Start with a threshold of 0.5
     for (let [key, value] of Object.entries(elementConfidences)) {
       if (!fields.includes(key)) {
         // ignore field that we don't care
@@ -511,10 +514,8 @@ class FieldScanner {
     }
 
     // Used by test ONLY! This ensure testcases always get the same confidence
-    if (lazy.FormAutofillUtils.ccHeuristicTestConfidence != null) {
-      highestConfidence = parseFloat(
-        lazy.FormAutofillUtils.ccHeuristicTestConfidence
-      );
+    if (lazy.FormAutofillUtils.ccFathomTestConfidence > 0) {
+      highestConfidence = lazy.FormAutofillUtils.ccFathomTestConfidence;
     }
 
     return [highestField, highestConfidence];
@@ -1174,11 +1175,13 @@ FormAutofillHeuristics = {
         return infoRecordWithFieldName(matchedFieldName, confidence);
       }
 
-      // TODO: Do we want to run old heuristics for fields that fathom isn't confident?
-      // Since Fathom isn't confident, try the old heuristics. I've removed all
-      // the CC-specific ones, so this should be almost a mutually exclusive
-      // set of fields.
-      fields = fields.filter(r => !lazy.creditCardRulesets.types.includes(r));
+      // Continue to run regex-based heuristics even when fathom doesn't recognize
+      // the field. Since the regex-based heuristic has good search coverage but
+      // has a worse precision. We use it in conjunction with fathom to maximize
+      // our search coverage. For example, when a <input> is not considered cc-name
+      // by fathom but is considered cc-name by regex-based heuristic, if the form
+      // also contains a cc-number identified by fathom, we will treat the form as a
+      // valid cc form; hence both cc-number & cc-name are identified.
     }
 
     if (fields.length) {

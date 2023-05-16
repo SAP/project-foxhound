@@ -21,7 +21,6 @@
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
 #include "nsImageRenderer.h"
-#include "nsMemory.h"
 
 using namespace mozilla;
 using namespace mozilla::image;
@@ -462,7 +461,7 @@ nsresult nsFloatManager::List(FILE* out) const {
 #endif
 
 nscoord nsFloatManager::ClearFloats(nscoord aBCoord,
-                                    StyleClear aBreakType) const {
+                                    StyleClear aClearType) const {
   if (!HasAnyFloats()) {
     return aBCoord;
   }
@@ -470,7 +469,7 @@ nscoord nsFloatManager::ClearFloats(nscoord aBCoord,
   nscoord blockEnd = aBCoord + mBlockStart;
 
   const FloatInfo& tail = mFloats[mFloats.Length() - 1];
-  switch (aBreakType) {
+  switch (aClearType) {
     case StyleClear::Both:
       blockEnd = std::max(blockEnd, tail.mLeftBEnd);
       blockEnd = std::max(blockEnd, tail.mRightBEnd);
@@ -491,11 +490,11 @@ nscoord nsFloatManager::ClearFloats(nscoord aBCoord,
   return blockEnd;
 }
 
-bool nsFloatManager::ClearContinues(StyleClear aBreakType) const {
+bool nsFloatManager::ClearContinues(StyleClear aClearType) const {
   return ((mPushedLeftFloatPastBreak || mSplitLeftFloatAcrossBreak) &&
-          (aBreakType == StyleClear::Both || aBreakType == StyleClear::Left)) ||
+          (aClearType == StyleClear::Both || aClearType == StyleClear::Left)) ||
          ((mPushedRightFloatPastBreak || mSplitRightFloatAcrossBreak) &&
-          (aBreakType == StyleClear::Both || aBreakType == StyleClear::Right));
+          (aClearType == StyleClear::Both || aClearType == StyleClear::Right));
 }
 
 /////////////////////////////////////////////////////////////////////////////

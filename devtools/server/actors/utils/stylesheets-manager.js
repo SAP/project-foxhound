@@ -4,31 +4,32 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { Ci } = require("chrome");
-const { fetch } = require("devtools/shared/DevToolsUtils");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const { fetch } = require("resource://devtools/shared/DevToolsUtils.js");
 const InspectorUtils = require("InspectorUtils");
 const {
   getSourcemapBaseURL,
-} = require("devtools/server/actors/utils/source-map-utils");
-const { TYPES } = require("devtools/server/actors/resources/index");
+} = require("resource://devtools/server/actors/utils/source-map-utils.js");
+const {
+  TYPES,
+} = require("resource://devtools/server/actors/resources/index.js");
 
 loader.lazyRequireGetter(
   this,
   ["addPseudoClassLock", "removePseudoClassLock"],
-  "devtools/server/actors/highlighters/utils/markup",
+  "resource://devtools/server/actors/highlighters/utils/markup.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "loadSheet",
-  "devtools/shared/layout/utils",
+  "resource://devtools/shared/layout/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["getSheetOwnerNode", "UPDATE_GENERAL", "UPDATE_PRESERVING_RULES"],
-  "devtools/server/actors/style-sheet",
+  "resource://devtools/server/actors/style-sheet.js",
   true
 );
 

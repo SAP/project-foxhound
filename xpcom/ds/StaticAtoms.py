@@ -1131,6 +1131,7 @@ STATIC_ATOMS = [
     Atom("shape", "shape"),
     Atom("show", "show"),
     Atom("showcaret", "showcaret"),
+    Atom("sibling", "sibling"),
     Atom("simple", "simple"),
     Atom("simp_chinese_formal", "simp-chinese-formal"),
     Atom("simp_chinese_informal", "simp-chinese-informal"),
@@ -1977,6 +1978,13 @@ STATIC_ATOMS = [
     Atom("webRequestFilterResponse_serviceWorkerScript", "webRequestFilterResponse.serviceWorkerScript"),
     Atom("http", "http"),
     Atom("https", "https"),
+    Atom("ws", "ws"),
+    Atom("wss", "wss"),
+    Atom("ftp", "ftp"),
+    Atom("chrome", "chrome"),
+    Atom("moz", "moz"),
+    Atom("moz_icon", "moz-icon"),
+    Atom("moz_gio", "moz-gio"),
     Atom("proxy", "proxy"),
     Atom("privateBrowsingAllowedPermission", "internal:privateBrowsingAllowed"),
     Atom("svgContextPropertiesAllowedPermission", "internal:svgContextPropertiesAllowed"),
@@ -2206,6 +2214,9 @@ STATIC_ATOMS = [
     Atom("monospace", "monospace"),
     Atom("mozfixed", "-moz-fixed"),
     Atom("moz_fixed_pos_containing_block", "-moz-fixed-pos-containing-block"),
+    # Standard font-palette identifiers
+    Atom("light", "light"),
+    Atom("dark", "dark"),
     # IPC stuff
     # Atom("Remote", "remote"),  # "remote" is present above
     Atom("RemoteId", "_remote_id"),
@@ -2390,6 +2401,8 @@ STATIC_ATOMS = [
     Atom("onsupportedkeyschange", "onsupportedkeyschange"),
     # media query for MathML Core's implementation of maction/semantics
     Atom("_moz_mathml_core_maction_and_semantics", "-moz-mathml-core-maction-and-semantics"),
+    # media query for MathML Core's implementation of ms
+    Atom("_moz_mathml_core_ms", "-moz-mathml-core-ms"),
     # Contextual Identity / Containers
     Atom("usercontextid", "usercontextid"),
     Atom("geckoViewSessionContextId", "geckoViewSessionContextId"),

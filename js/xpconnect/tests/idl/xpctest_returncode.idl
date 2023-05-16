@@ -20,7 +20,7 @@
 interface nsIXPCTestReturnCodeParent : nsISupports {
   // Calls the "child" interface with the specified behavior flag.  Returns
   // the NSRESULT from the child interface.
-  nsresult        callChild(in long childBehavior);
+  nsresult callChild(in long childBehavior);
 };
 
 [scriptable, uuid(672cfd34-1fd1-455d-9901-d879fa6fdb95)]

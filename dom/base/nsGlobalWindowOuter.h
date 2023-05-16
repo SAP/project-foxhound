@@ -305,8 +305,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
       mozilla::dom::EventTarget* aChromeEventHandler) override;
 
   // Outer windows only.
-  virtual void SetInitialPrincipalToSubject(
-      nsIContentSecurityPolicy* aCSP,
+  virtual void SetInitialPrincipal(
+      nsIPrincipal* aNewWindowPrincipal, nsIContentSecurityPolicy* aCSP,
       const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCoep)
       override;
 
@@ -625,6 +625,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void SizeToContentOuter(mozilla::dom::CallerType aCallerType,
+                          int32_t aMaxWidth, int32_t aMaxHeight,
                           mozilla::ErrorResult& aError);
   nsIControllers* GetControllersOuter(mozilla::ErrorResult& aError);
   nsresult GetControllers(nsIControllers** aControllers) override;

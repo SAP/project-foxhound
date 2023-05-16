@@ -4,28 +4,28 @@
 
 "use strict";
 
-const boxModelReducer = require("devtools/client/inspector/boxmodel/reducers/box-model");
+const boxModelReducer = require("resource://devtools/client/inspector/boxmodel/reducers/box-model.js");
 const {
   updateGeometryEditorEnabled,
   updateLayout,
   updateOffsetParent,
-} = require("devtools/client/inspector/boxmodel/actions/box-model");
+} = require("resource://devtools/client/inspector/boxmodel/actions/box-model.js");
 
 loader.lazyRequireGetter(
   this,
   "EditingSession",
-  "devtools/client/inspector/boxmodel/utils/editing-session"
+  "resource://devtools/client/inspector/boxmodel/utils/editing-session.js"
 );
 loader.lazyRequireGetter(
   this,
   "InplaceEditor",
-  "devtools/client/shared/inplace-editor",
+  "resource://devtools/client/shared/inplace-editor.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "RulePreviewTooltip",
-  "devtools/client/shared/widgets/tooltip/RulePreviewTooltip"
+  "resource://devtools/client/shared/widgets/tooltip/RulePreviewTooltip.js"
 );
 
 const NUMERIC = /^-?[\d\.]+$/;

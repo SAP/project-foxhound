@@ -4,25 +4,29 @@
 
 "use strict";
 
-const { ThreadStateTypes } = require("devtools/client/constants");
+const { ThreadStateTypes } = require("resource://devtools/client/constants.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
-const { threadSpec } = require("devtools/shared/specs/thread");
+const { threadSpec } = require("resource://devtools/shared/specs/thread.js");
 
 loader.lazyRequireGetter(
   this,
   "ObjectFront",
-  "devtools/client/fronts/object",
+  "resource://devtools/client/fronts/object.js",
   true
 );
-loader.lazyRequireGetter(this, "FrameFront", "devtools/client/fronts/frame");
+loader.lazyRequireGetter(
+  this,
+  "FrameFront",
+  "resource://devtools/client/fronts/frame.js"
+);
 loader.lazyRequireGetter(
   this,
   "SourceFront",
-  "devtools/client/fronts/source",
+  "resource://devtools/client/fronts/source.js",
   true
 );
 

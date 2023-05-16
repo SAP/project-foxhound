@@ -10,11 +10,11 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const { Input: I } = ChromeUtils.import(
-  "chrome://remote/content/cdp/domains/parent/Input.jsm"
+const { Input: I } = ChromeUtils.importESModule(
+  "chrome://remote/content/cdp/domains/parent/Input.sys.mjs"
 );
-const { AppInfo } = ChromeUtils.import(
-  "chrome://remote/content/shared/AppInfo.jsm"
+const { AppInfo } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/AppInfo.sys.mjs"
 );
 
 const { alt, ctrl, meta, shift } = I.Modifier;

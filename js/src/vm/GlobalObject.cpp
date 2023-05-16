@@ -183,7 +183,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_RelativeTimeFormat:
       return false;
 #endif
-#ifndef MOZ_DOM_STREAMS
+#ifdef MOZ_JS_STREAMS
     case JSProto_ReadableStream:
     case JSProto_ReadableStreamDefaultReader:
     case JSProto_ReadableStreamDefaultController:

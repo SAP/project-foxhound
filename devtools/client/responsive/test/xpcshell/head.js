@@ -5,13 +5,13 @@
 
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 
-const Store = require("devtools/client/responsive/store");
+const Store = require("resource://devtools/client/responsive/store.js");
 
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 Services.prefs.setBoolPref("devtools.testing", true);
 registerCleanupFunction(() => {

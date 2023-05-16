@@ -257,8 +257,8 @@ class nsContextMenu {
       this.selectionInfo = this.contentData.selectionInfo;
       this.actor = this.contentData.actor;
     } else {
-      const { SelectionUtils } = ChromeUtils.import(
-        "resource://gre/modules/SelectionUtils.jsm"
+      const { SelectionUtils } = ChromeUtils.importESModule(
+        "resource://gre/modules/SelectionUtils.sys.mjs"
       );
 
       this.browser = this.ownerDoc.defaultView.docShell.chromeEventHandler;
@@ -1276,12 +1276,8 @@ class nsContextMenu {
   }
 
   shouldShowTakeScreenshot() {
-    // About pages other than about:reader are not currently supported by
-    // screenshots (see Bug 1620992)
-    let uri = this.contentData?.documentURIObject;
     let shouldShow =
-      !screenshotsDisabled &&
-      (uri.scheme != "about" || uri.spec.startsWith("about:reader")) &&
+      !gScreenshots.shouldScreenshotsButtonBeDisabled() &&
       this.inTabBrowser &&
       !this.onTextInput &&
       !this.onLink &&
@@ -2465,9 +2461,12 @@ class nsContextMenu {
   }
 }
 
+ChromeUtils.defineESModuleGetters(nsContextMenu, {
+  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(nsContextMenu, {
   LoginManagerContextMenu: "resource://gre/modules/LoginManagerContextMenu.jsm",
-  DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(

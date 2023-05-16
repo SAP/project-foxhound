@@ -30,20 +30,18 @@ const { fathom } = ChromeUtils.import(
   "resource://gre/modules/third_party/fathom/fathom.jsm"
 );
 const { element: clickedElement, out, rule, ruleset, score, type } = fathom;
-const { CreditCard } = ChromeUtils.import(
-  "resource://gre/modules/CreditCard.jsm"
+const { CreditCard } = ChromeUtils.importESModule(
+  "resource://gre/modules/CreditCard.sys.mjs"
 );
-const { NETWORK_NAMES } = ChromeUtils.import(
-  "resource://gre/modules/CreditCard.jsm"
+const { NETWORK_NAMES } = ChromeUtils.importESModule(
+  "resource://gre/modules/CreditCard.sys.mjs"
 );
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "FormLikeFactory",
-  "resource://gre/modules/FormLikeFactory.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  FormLikeFactory: "resource://gre/modules/FormLikeFactory.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   lazy,
   "FormAutofillUtils",
@@ -1196,21 +1194,22 @@ const biases = [
 // different types. To workaround this issue, we create a new ruleset for each type.
 var creditCardRulesets = {
   init() {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "supportedTypes",
+      "extensions.formautofill.creditCards.heuristics.fathom.types",
+      null,
+      null,
+      val => val.split(",")
+    );
+
     for (const type of this.types) {
       this[type] = makeRuleset([...coefficients[type]], biases);
     }
   },
 
   get types() {
-    return [
-      // Only use Fathom to detect cc-number fields for now.
-      "cc-number",
-      //"cc-name",
-      //"cc-exp-month",
-      //"cc-exp-year",
-      //"cc-exp",
-      //"cc-type",
-    ];
+    return this.supportedTypes;
   },
 };
 this.creditCardRulesets.init();

@@ -6,12 +6,15 @@
 #include "SplitNodeTransaction.h"
 
 #include "EditorDOMPoint.h"   // for EditorRawDOMPoint
-#include "HTMLEditHelpers.h"  // for SplitNodeResult, SplitNodeDirection, etc
+#include "HTMLEditHelpers.h"  // for SplitNodeResult
 #include "HTMLEditor.h"       // for HTMLEditor
+#include "HTMLEditorInlines.h"
 #include "HTMLEditUtils.h"
-#include "SelectionState.h"  // for AutoTrackDOMPoint and RangeUpdater
+#include "JoinSplitNodeDirection.h"  // for SplitNodeDirection
+#include "SelectionState.h"          // for AutoTrackDOMPoint and RangeUpdater
 
 #include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/ToString.h"
 #include "nsAString.h"
 #include "nsDebug.h"     // for NS_ASSERTION, etc.
@@ -125,18 +128,18 @@ NS_IMETHODIMP SplitNodeTransaction::DoTransaction() {
   const OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
   const OwningNonNull<nsIContent> splittingContent = *mSplitContent;
   // MOZ_KnownLive(*mNewContent): it's grabbed by newNode
-  const SplitNodeResult splitNodeResult = DoTransactionInternal(
+  Result<SplitNodeResult, nsresult> splitNodeResult = DoTransactionInternal(
       htmlEditor, splittingContent, MOZ_KnownLive(*mNewContent), mSplitOffset);
-  if (splitNodeResult.isErr()) {
+  if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
     NS_WARNING("SplitNodeTransaction::DoTransactionInternal() failed");
     return EditorBase::ToGenericNSResult(splitNodeResult.unwrapErr());
   }
   // The user should handle selection rather here.
-  splitNodeResult.IgnoreCaretPointSuggestion();
+  splitNodeResult.inspect().IgnoreCaretPointSuggestion();
   return NS_OK;
 }
 
-SplitNodeResult SplitNodeTransaction::DoTransactionInternal(
+Result<SplitNodeResult, nsresult> SplitNodeTransaction::DoTransactionInternal(
     HTMLEditor& aHTMLEditor, nsIContent& aSplittingContent,
     nsIContent& aNewContent, uint32_t aSplitOffset) {
   if (Element* const splittingElement = Element::FromNode(aSplittingContent)) {
@@ -144,22 +147,24 @@ SplitNodeResult SplitNodeTransaction::DoTransactionInternal(
     // the callers.
     nsresult rv =
         aHTMLEditor.MarkElementDirty(MOZ_KnownLive(*splittingElement));
-    if (MOZ_UNLIKELY(NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED))) {
-      return SplitNodeResult(NS_ERROR_EDITOR_DESTROYED);
+    if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
+      return Err(NS_ERROR_EDITOR_DESTROYED);
     }
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "EditorBase::MarkElementDirty() failed, but ignored");
   }
 
-  SplitNodeResult splitNodeResult = aHTMLEditor.DoSplitNode(
+  Result<SplitNodeResult, nsresult> splitNodeResult = aHTMLEditor.DoSplitNode(
       EditorDOMPoint(&aSplittingContent,
                      std::min(aSplitOffset, aSplittingContent.Length())),
-      aNewContent);
-  NS_WARNING_ASSERTION(splitNodeResult.isOk(),
-                       "HTMLEditor::DoSplitNode() failed");
+      aNewContent, GetSplitNodeDirection());
+  if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
+    NS_WARNING("HTMLEditor::DoSplitNode() failed");
+    return splitNodeResult;
+  }
   // When adding caret suggestion to SplitNodeResult, here didn't change
   // selection so that just ignore it.
-  splitNodeResult.IgnoreCaretPointSuggestion();
+  splitNodeResult.inspect().IgnoreCaretPointSuggestion();
   return splitNodeResult;
 }
 
@@ -179,15 +184,25 @@ NS_IMETHODIMP SplitNodeTransaction::UndoTransaction() {
   const OwningNonNull<nsIContent> keepingContent = *mSplitContent;
   const OwningNonNull<nsIContent> removingContent = *mNewContent;
   nsresult rv;
-  EditorDOMPoint joinedPoint(keepingContent, 0u);
+  EditorDOMPoint joinedPoint;
   {
-    AutoTrackDOMPoint trackJoinedPoint(htmlEditor->RangeUpdaterRef(),
-                                       &joinedPoint);
-    rv = htmlEditor->DoJoinNodes(keepingContent, removingContent);
+    // Unfortunately, we cannot track joining point if moving right node content
+    // into left node since it cannot track changes from web apps and HTMLEditor
+    // never removes the content of the left node.  So it should be true that
+    // we don't need to track the point in the direction.
+    Maybe<AutoTrackDOMPoint> trackJoinedPoint;
+    if (GetJoinNodesDirection() == JoinNodesDirection::LeftNodeIntoRightNode) {
+      joinedPoint.Set(keepingContent, 0u);
+      trackJoinedPoint.emplace(htmlEditor->RangeUpdaterRef(), &joinedPoint);
+    }
+    rv = htmlEditor->DoJoinNodes(keepingContent, removingContent,
+                                 GetJoinNodesDirection());
   }
   if (NS_SUCCEEDED(rv)) {
     // Adjust split offset for redo here
-    mSplitOffset = joinedPoint.Offset();
+    if (joinedPoint.IsSet()) {
+      mSplitOffset = joinedPoint.Offset();
+    }
   } else {
     NS_WARNING("HTMLEditor::DoJoinNodes() failed");
   }
@@ -211,14 +226,16 @@ NS_IMETHODIMP SplitNodeTransaction::RedoTransaction() {
   const OwningNonNull<HTMLEditor> htmlEditor = *mHTMLEditor;
   const OwningNonNull<nsIContent> newContent = *mNewContent;
   const OwningNonNull<nsIContent> splittingContent = *mSplitContent;
-  const SplitNodeResult splitNodeResult = DoTransactionInternal(
+  Result<SplitNodeResult, nsresult> splitNodeResult = DoTransactionInternal(
       htmlEditor, splittingContent, newContent, mSplitOffset);
-  NS_WARNING_ASSERTION(splitNodeResult.isOk(),
-                       "SplitNodeTransaction::DoTransactionInternal() failed");
+  if (MOZ_UNLIKELY(splitNodeResult.isErr())) {
+    NS_WARNING("SplitNodeTransaction::DoTransactionInternal() failed");
+    return EditorBase::ToGenericNSResult(splitNodeResult.unwrapErr());
+  }
   // When adding caret suggestion to SplitNodeResult, here didn't change
   // selection so that just ignore it.
-  splitNodeResult.IgnoreCaretPointSuggestion();
-  return EditorBase::ToGenericNSResult(splitNodeResult.unwrapErr());
+  splitNodeResult.inspect().IgnoreCaretPointSuggestion();
+  return NS_OK;
 }
 
 }  // namespace mozilla

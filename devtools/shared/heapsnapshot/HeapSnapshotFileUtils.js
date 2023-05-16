@@ -22,13 +22,10 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-loader.lazyRequireGetter(
-  this,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 function getHeapSnapshotFileTemplate() {
   return PathUtils.join(PathUtils.osTempDir, `${Date.now()}.fxsnapshot`);
@@ -41,7 +38,7 @@ function getHeapSnapshotFileTemplate() {
  * @returns String
  */
 exports.getNewUniqueHeapSnapshotTempFilePath = function() {
-  const file = new FileUtils.File(getHeapSnapshotFileTemplate());
+  const file = new lazy.FileUtils.File(getHeapSnapshotFileTemplate());
   // The call to createUnique will append "-N" after the leaf name (but before
   // the extension) until a new file is found and create it. This guarantees we
   // won't accidentally choose the same file twice.

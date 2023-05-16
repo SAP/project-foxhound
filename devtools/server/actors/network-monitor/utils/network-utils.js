@@ -3,16 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
-const { Ci, Cr } = require("chrome");
 
 const {
   wildcardToRegExp,
-} = require("devtools/server/actors/network-monitor/utils/wildcard-to-regexp");
+} = require("resource://devtools/server/actors/network-monitor/utils/wildcard-to-regexp.js");
 
 loader.lazyRequireGetter(
   this,
   "NetworkHelper",
-  "devtools/shared/webconsole/network-helper"
+  "resource://devtools/shared/webconsole/network-helper.js"
 );
 
 loader.lazyGetter(this, "tpFlagsMask", () => {

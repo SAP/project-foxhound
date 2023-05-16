@@ -12,7 +12,6 @@
 
 #include "nsIStringStream.h"
 #include "nsString.h"
-#include "nsMemory.h"
 #include "nsTArray.h"
 
 /**
@@ -30,6 +29,15 @@
       0xaf, 0x28, 0x61, 0xb3, 0xba, 0x17, 0xc2, 0x95 \
     }                                                \
   }
+
+/**
+ * An enumeration type used to represent a method of assignment.
+ */
+enum nsAssignmentType {
+  NS_ASSIGNMENT_COPY,    // copy by value
+  NS_ASSIGNMENT_DEPEND,  // copy by reference
+  NS_ASSIGNMENT_ADOPT    // copy by reference (take ownership of resource)
+};
 
 /**
  * Factory method to get an nsInputStream from a byte buffer.  Result will

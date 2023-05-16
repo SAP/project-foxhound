@@ -4,40 +4,46 @@
 
 "use strict";
 
-const { safeAsyncMethod } = require("devtools/shared/async-utils");
-const EventEmitter = require("devtools/shared/event-emitter");
-const WalkerEventListener = require("devtools/client/inspector/shared/walker-event-listener");
+const {
+  safeAsyncMethod,
+} = require("resource://devtools/shared/async-utils.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const WalkerEventListener = require("resource://devtools/client/inspector/shared/walker-event-listener.js");
 const {
   VIEW_NODE_VALUE_TYPE,
   VIEW_NODE_SHAPE_POINT_TYPE,
-} = require("devtools/client/inspector/shared/node-types");
+} = require("resource://devtools/client/inspector/shared/node-types.js");
 
 loader.lazyRequireGetter(
   this,
   "parseURL",
-  "devtools/client/shared/source-utils",
+  "resource://devtools/client/shared/source-utils.js",
   true
 );
-loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
+loader.lazyRequireGetter(
+  this,
+  "asyncStorage",
+  "resource://devtools/shared/async-storage.js"
+);
 loader.lazyRequireGetter(
   this,
   "gridsReducer",
-  "devtools/client/inspector/grids/reducers/grids"
+  "resource://devtools/client/inspector/grids/reducers/grids.js"
 );
 loader.lazyRequireGetter(
   this,
   "highlighterSettingsReducer",
-  "devtools/client/inspector/grids/reducers/highlighter-settings"
+  "resource://devtools/client/inspector/grids/reducers/highlighter-settings.js"
 );
 loader.lazyRequireGetter(
   this,
   "flexboxReducer",
-  "devtools/client/inspector/flexbox/reducers/flexbox"
+  "resource://devtools/client/inspector/flexbox/reducers/flexbox.js"
 );
 loader.lazyRequireGetter(
   this,
   "deepEqual",
-  "devtools/shared/DevToolsUtils",
+  "resource://devtools/shared/DevToolsUtils.js",
   true
 );
 
@@ -1425,7 +1431,7 @@ class HighlightersOverlay {
         if (!highlighter) {
           return null;
         }
-        const ShapesInContextEditor = require("devtools/client/shared/widgets/ShapesInContextEditor");
+        const ShapesInContextEditor = require("resource://devtools/client/shared/widgets/ShapesInContextEditor.js");
 
         editor = new ShapesInContextEditor(
           highlighter,

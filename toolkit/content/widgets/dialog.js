@@ -55,7 +55,7 @@
       });
 
       // for things that we need to initialize after onload fires
-      window.addEventListener("load", event => this.postLoadInit(event));
+      window.addEventListener("load", () => this._postLoadInit());
     }
 
     static get observedAttributes() {
@@ -240,79 +240,97 @@
       window.moveTo(xOffset, yOffset);
     }
 
-    postLoadInit(aEvent) {
-      let focusInit = () => {
-        const defaultButton = this.getButton(this.defaultButton);
+    // Give focus to the first focusable element in the dialog
+    _setInitialFocusIfNeeded() {
+      let focusedElt = document.commandDispatcher.focusedElement;
+      if (focusedElt) {
+        return;
+      }
 
-        // give focus to the first focusable element in the dialog
-        let focusedElt = document.commandDispatcher.focusedElement;
-        if (!focusedElt) {
-          Services.focus.moveFocus(
-            window,
-            null,
-            Services.focus.MOVEFOCUS_FORWARD,
-            Services.focus.FLAG_NOPARENTFRAME
-          );
+      const defaultButton = this.getButton(this.defaultButton);
+      Services.focus.moveFocus(
+        window,
+        null,
+        Services.focus.MOVEFOCUS_FORWARD,
+        Services.focus.FLAG_NOPARENTFRAME
+      );
 
-          focusedElt = document.commandDispatcher.focusedElement;
-          if (focusedElt) {
-            var initialFocusedElt = focusedElt;
-            while (
-              focusedElt.localName == "tab" ||
-              focusedElt.getAttribute("noinitialfocus") == "true"
-            ) {
-              Services.focus.moveFocus(
-                window,
-                focusedElt,
-                Services.focus.MOVEFOCUS_FORWARD,
-                Services.focus.FLAG_NOPARENTFRAME
-              );
-              focusedElt = document.commandDispatcher.focusedElement;
-              if (focusedElt) {
-                if (focusedElt == initialFocusedElt) {
-                  if (focusedElt.getAttribute("noinitialfocus") == "true") {
-                    focusedElt.blur();
-                  }
-                  break;
-                }
-              }
-            }
+      focusedElt = document.commandDispatcher.focusedElement;
+      if (!focusedElt) {
+        return; // No focusable element?
+      }
 
-            if (initialFocusedElt.localName == "tab") {
-              if (focusedElt.hasAttribute("dlgtype")) {
-                // We don't want to focus on anonymous OK, Cancel, etc. buttons,
-                // so return focus to the tab itself
-                initialFocusedElt.focus();
-              }
-            } else if (
-              AppConstants.platform != "macosx" &&
-              focusedElt.hasAttribute("dlgtype") &&
-              focusedElt != defaultButton
-            ) {
-              // If the default button is not focusable, then return focus.
-              defaultButton.focus();
-              if (document.commandDispatcher.focusedElement != defaultButton) {
-                initialFocusedElt.focus();
-              }
-            }
+      let firstFocusedElt = focusedElt;
+      while (
+        focusedElt.localName == "tab" ||
+        focusedElt.getAttribute("noinitialfocus") == "true"
+      ) {
+        Services.focus.moveFocus(
+          window,
+          focusedElt,
+          Services.focus.MOVEFOCUS_FORWARD,
+          Services.focus.FLAG_NOPARENTFRAME
+        );
+        focusedElt = document.commandDispatcher.focusedElement;
+        if (focusedElt == firstFocusedElt) {
+          if (focusedElt.getAttribute("noinitialfocus") == "true") {
+            focusedElt.blur();
+          }
+          // Didn't find anything else to focus, we're done.
+          return;
+        }
+      }
+
+      if (firstFocusedElt.localName == "tab") {
+        if (focusedElt.hasAttribute("dlgtype")) {
+          // We don't want to focus on anonymous OK, Cancel, etc. buttons,
+          // so return focus to the tab itself
+          firstFocusedElt.focus();
+        }
+      } else if (
+        AppConstants.platform != "macosx" &&
+        focusedElt.hasAttribute("dlgtype") &&
+        focusedElt != defaultButton
+      ) {
+        defaultButton.focus();
+        if (document.commandDispatcher.focusedElement != defaultButton) {
+          // If the default button is not focusable, then return focus to the
+          // initial element if possible, or blur otherwise.
+          if (firstFocusedElt.getAttribute("noinitialfocus") == "true") {
+            focusedElt.blur();
+          } else {
+            firstFocusedElt.focus();
           }
         }
-
-        try {
-          if (defaultButton) {
-            window.notifyDefaultButtonLoaded(defaultButton);
-          }
-        } catch (e) {}
-      };
-
-      // Give focus after onload completes, see bug 103197.
-      setTimeout(focusInit, 0);
-
-      if (this._l10nButtons.length) {
-        document.l10n.translateElements(this._l10nButtons).then(() => {
-          window.sizeToContent();
-        });
       }
+    }
+
+    async _postLoadInit() {
+      this._setInitialFocusIfNeeded();
+      if (this._l10nButtons.length) {
+        await document.l10n.translateElements(this._l10nButtons);
+        // FIXME(emilio): Should this be outside the if condition?
+        window.sizeToContent();
+      }
+      await this._snapCursorToDefaultButtonIfNeeded();
+    }
+
+    // This snaps the cursor to the default button rect on windows, when
+    // SPI_GETSNAPTODEFBUTTON is set.
+    async _snapCursorToDefaultButtonIfNeeded() {
+      const defaultButton = this.getButton(this.defaultButton);
+      if (!defaultButton) {
+        return;
+      }
+      try {
+        // FIXME(emilio, bug 1797624): This setTimeout() ensures enough time
+        // has passed so that the dialog vertical margin has been set by the
+        // front-end. For subdialogs, cursor positioning should probably be
+        // done by the opener instead, once the dialog is positioned.
+        await new Promise(r => setTimeout(r, 0));
+        await window.promiseDocumentFlushed(() => {});
+        window.notifyDefaultButtonLoaded(defaultButton);
+      } catch (e) {}
     }
 
     _configureButtons(aButtons) {

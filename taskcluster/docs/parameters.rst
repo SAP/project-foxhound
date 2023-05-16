@@ -36,8 +36,14 @@ Push Information
    ``base_repository`` in cases where ``base_repository`` is likely to be cached
    and only a few additional commits are needed from ``head_repository``.
 
+``base_rev``
+   The previous revision before ``head_rev`` got merged into. This can be a short revision string.
+
 ``head_rev``
    The revision to check out; this can be a short revision string
+
+``base_ref``
+   Reference where ``head_rev`` got merged into. It is usually a branch or a tag.
 
 ``head_ref``
    For Mercurial repositories, this is the same as ``head_rev``.  For
@@ -179,7 +185,7 @@ Release Promotion
    Specify the next version for version bump tasks.
 
 ``release_type``
-   The type of release being promoted. One of "nightly", "beta", "esr91", "esr102", "release-rc", or "release".
+   The type of release being promoted. One of "nightly", "beta", "esr102", "release-rc", or "release".
 
 ``release_eta``
    The time and date when a release is scheduled to live. This value is passed to Balrog.

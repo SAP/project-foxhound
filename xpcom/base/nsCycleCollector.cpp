@@ -1882,6 +1882,13 @@ class CCGraphBuilder final : public nsCycleCollectionTraversalCallback,
   NS_IMETHOD_(void)
   NoteWeakMapping(JSObject* aMap, JS::GCCellPtr aKey, JSObject* aKdelegate,
                   JS::GCCellPtr aVal) override;
+  // This is used to create synthetic non-refcounted references to
+  // nsXPCWrappedJS from their wrapped JS objects. No map is needed, because
+  // the SubjectToFinalization list is like a known-black weak map, and
+  // no delegate is needed because the keys are all unwrapped objects.
+  NS_IMETHOD_(void)
+  NoteWeakMapping(JSObject* aKey, nsISupports* aVal,
+                  nsCycleCollectionParticipant* aValParticipant) override;
 
   // nsCycleCollectionTraversalCallback methods.
   NS_IMETHOD_(void)
@@ -2245,6 +2252,23 @@ CCGraphBuilder::NoteWeakMapping(JSObject* aMap, JS::GCCellPtr aKey,
   }
 }
 
+NS_IMETHODIMP_(void)
+CCGraphBuilder::NoteWeakMapping(JSObject* aKey, nsISupports* aVal,
+                                nsCycleCollectionParticipant* aValParticipant) {
+  MOZ_ASSERT(aKey, "Don't call NoteWeakMapping with a null key");
+  MOZ_ASSERT(aVal, "Don't call NoteWeakMapping with a null value");
+  WeakMapping* mapping = mGraph.mWeakMaps.AppendElement();
+  mapping->mMap = nullptr;
+  mapping->mKey = AddWeakMapNode(aKey);
+  mapping->mKeyDelegate = mapping->mKey;
+  MOZ_ASSERT(js::UncheckedUnwrapWithoutExpose(aKey) == aKey);
+  mapping->mVal = AddNode(aVal, aValParticipant);
+
+  if (mLogger) {
+    mLogger->NoteWeakMapEntry(0, (uint64_t)aKey, 0, (uint64_t)aVal);
+  }
+}
+
 static bool AddPurpleRoot(CCGraphBuilder& aBuilder, void* aRoot,
                           nsCycleCollectionParticipant* aParti) {
   return aBuilder.AddPurpleRoot(aRoot, aParti);
@@ -2262,6 +2286,10 @@ class ChildFinder : public nsCycleCollectionTraversalCallback {
   NS_IMETHOD_(void)
   NoteNativeChild(void* aChild, nsCycleCollectionParticipant* aHelper) override;
   NS_IMETHOD_(void) NoteJSChild(JS::GCCellPtr aThing) override;
+
+  NS_IMETHOD_(void)
+  NoteWeakMapping(JSObject* aKey, nsISupports* aVal,
+                  nsCycleCollectionParticipant* aValParticipant) override {}
 
   NS_IMETHOD_(void)
   DescribeRefCountedNode(nsrefcnt aRefcount, const char* aObjname) override {}

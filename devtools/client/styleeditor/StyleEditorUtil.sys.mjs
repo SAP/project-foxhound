@@ -7,18 +7,21 @@
 
 const PROPERTIES_URL = "chrome://devtools/locale/styleeditor.properties";
 
-const { loader } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
+import { loader } from "resource://devtools/shared/loader/Loader.sys.mjs";
+
 const gStringBundle = Services.strings.createBundle(PROPERTIES_URL);
 
 const lazy = {};
 
-loader.lazyRequireGetter(lazy, "Menu", "devtools/client/framework/menu");
+loader.lazyRequireGetter(
+  lazy,
+  "Menu",
+  "resource://devtools/client/framework/menu.js"
+);
 loader.lazyRequireGetter(
   lazy,
   "MenuItem",
-  "devtools/client/framework/menu-item"
+  "resource://devtools/client/framework/menu-item.js"
 );
 
 const PREF_MEDIA_SIDEBAR = "devtools.styleeditor.showMediaSidebar";

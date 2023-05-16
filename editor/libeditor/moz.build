@@ -14,20 +14,15 @@ MOCHITEST_CHROME_MANIFESTS += ["tests/chrome.ini"]
 BROWSER_CHROME_MANIFESTS += ["tests/browser.ini"]
 
 EXPORTS.mozilla += [
-    "ChangeStyleTransaction.h",
-    "CSSEditUtils.h",
     "EditAction.h",
     "EditorBase.h",
     "EditorCommands.h",
     "EditorController.h",
     "EditorDOMPoint.h",
     "EditorForwards.h",
-    "EditorUtils.h",
     "EditTransactionBase.h",
-    "HTMLEditHelpers.h",
     "HTMLEditor.h",
     "HTMLEditorController.h",
-    "HTMLEditUtils.h",
     "ManualNAC.h",
     "PendingStyles.h",
     "SelectionState.h",

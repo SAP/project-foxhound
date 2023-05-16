@@ -4,13 +4,13 @@
 
 "use strict";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const Telemetry = require("devtools/client/shared/telemetry");
-const { DOMHelpers } = require("devtools/shared/dom-helpers");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
+const Telemetry = require("resource://devtools/client/shared/telemetry.js");
+const { DOMHelpers } = require("resource://devtools/shared/dom-helpers.js");
 
 // The min-width of toolbox and browser toolbox.
 const WIDTH_CHEVRON_AND_MEATBALL = 50;
@@ -20,13 +20,13 @@ const ZOOM_VALUE_PREF = "devtools.toolbox.zoomValue";
 loader.lazyRequireGetter(
   this,
   "Toolbox",
-  "devtools/client/framework/toolbox",
+  "resource://devtools/client/framework/toolbox.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "Hosts",
-  "devtools/client/framework/toolbox-hosts",
+  "resource://devtools/client/framework/toolbox-hosts.js",
   true
 );
 
@@ -55,12 +55,12 @@ const LAST_HOST = "devtools.toolbox.host";
 const PREVIOUS_HOST = "devtools.toolbox.previousHost";
 let ID_COUNTER = 1;
 
-function ToolboxHostManager(descriptor, hostType, hostOptions) {
-  this.descriptor = descriptor;
+function ToolboxHostManager(commands, hostType, hostOptions) {
+  this.commands = commands;
 
   // When debugging a local tab, we keep a reference of the current tab into which the toolbox is displayed.
   // This will only change from the descriptor's localTab when we start debugging popups (i.e. window.open).
-  this.currentTab = this.descriptor.localTab;
+  this.currentTab = this.commands.descriptorFront.localTab;
 
   // Keep the previously instantiated Host for all tabs where we displayed the Toolbox.
   // This will only be useful when we start debugging popups (i.e. window.open).
@@ -107,7 +107,7 @@ ToolboxHostManager.prototype = {
       10
     );
     const toolbox = new Toolbox(
-      this.descriptor,
+      this.commands,
       toolId,
       this.host.type,
       this.host.frame.contentWindow,
@@ -142,14 +142,15 @@ ToolboxHostManager.prototype = {
       this.hostType === Toolbox.HostType.LEFT ||
       this.hostType === Toolbox.HostType.RIGHT
     ) {
-      this.host.frame.minWidth =
-        WIDTH_CHEVRON_AND_MEATBALL_AND_CLOSE * zoomValue;
+      this.host.frame.style.minWidth =
+        WIDTH_CHEVRON_AND_MEATBALL_AND_CLOSE * zoomValue + "px";
     } else if (
       this.hostType === Toolbox.HostType.WINDOW ||
       this.hostType === Toolbox.HostType.PAGE ||
       this.hostType === Toolbox.HostType.BROWSERTOOLBOX
     ) {
-      this.host.frame.minWidth = WIDTH_CHEVRON_AND_MEATBALL * zoomValue;
+      this.host.frame.style.minWidth =
+        WIDTH_CHEVRON_AND_MEATBALL * zoomValue + "px";
     }
   },
 
@@ -206,7 +207,7 @@ ToolboxHostManager.prototype = {
     this.hostPerTab.clear();
     this.host = null;
     this.hostType = null;
-    this.descriptor = null;
+    this.commands = null;
   },
 
   /**

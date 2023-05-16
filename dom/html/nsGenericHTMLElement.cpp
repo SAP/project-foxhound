@@ -1196,13 +1196,13 @@ static inline void MapLangAttributeInto(const nsMappedAttributes* aAttributes,
     const nsAtom* lang = langValue->GetAtomValue();
     if (nsStyleUtil::MatchesLanguagePrefix(lang, u"zh")) {
       aDecls.SetKeywordValue(eCSSProperty_text_emphasis_position,
-                             NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT_ZH);
+                             StyleTextEmphasisPosition::DEFAULT_ZH.bits);
     } else if (nsStyleUtil::MatchesLanguagePrefix(lang, u"ja") ||
                nsStyleUtil::MatchesLanguagePrefix(lang, u"mn")) {
       // This branch is currently no part of the spec.
       // See bug 1040668 comment 69 and comment 75.
       aDecls.SetKeywordValue(eCSSProperty_text_emphasis_position,
-                             NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT);
+                             StyleTextEmphasisPosition::DEFAULT.bits);
     }
   }
 }
@@ -2277,19 +2277,19 @@ void nsGenericHTMLElement::HandleKeyboardActivation(
   bool shouldActivate = false;
   switch (message) {
     case eKeyDown:
-      if (keyEvent->mKeyCode == NS_VK_SPACE) {
+      if (keyEvent->ShouldWorkAsSpaceKey()) {
         SetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
       }
       return;
     case eKeyPress:
       shouldActivate = keyEvent->mKeyCode == NS_VK_RETURN;
-      if (keyEvent->mKeyCode == NS_VK_SPACE) {
+      if (keyEvent->ShouldWorkAsSpaceKey()) {
         // Consume 'space' key to prevent scrolling the page down.
         aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
       }
       break;
     case eKeyUp:
-      shouldActivate = keyEvent->mKeyCode == NS_VK_SPACE &&
+      shouldActivate = keyEvent->ShouldWorkAsSpaceKey() &&
                        HasFlag(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);
       if (shouldActivate) {
         UnsetFlags(HTML_ELEMENT_ACTIVE_FOR_KEYBOARD);

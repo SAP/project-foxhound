@@ -7,27 +7,27 @@ const {
   isGroupType,
   isMessageNetworkError,
   l10n,
-} = require("devtools/client/webconsole/utils/messages");
+} = require("resource://devtools/client/webconsole/utils/messages.js");
 
-const constants = require("devtools/client/webconsole/constants");
+const constants = require("resource://devtools/client/webconsole/constants.js");
 const { DEFAULT_FILTERS, FILTERS, MESSAGE_TYPE, MESSAGE_SOURCE } = constants;
 
 loader.lazyRequireGetter(
   this,
   "getGripPreviewItems",
-  "devtools/client/shared/components/reps/index",
+  "resource://devtools/client/shared/components/reps/index.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getUnicodeUrlPath",
-  "devtools/client/shared/unicode-url",
+  "resource://devtools/client/shared/unicode-url.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getSourceNames",
-  "devtools/client/shared/source-utils",
+  "resource://devtools/client/shared/source-utils.js",
   true
 );
 loader.lazyRequireGetter(
@@ -41,15 +41,17 @@ loader.lazyRequireGetter(
     "getParentWarningGroupMessageId",
     "getNaturalOrder",
   ],
-  "devtools/client/webconsole/utils/messages",
+  "resource://devtools/client/webconsole/utils/messages.js",
   true
 );
 
-const { UPDATE_REQUEST } = require("devtools/client/netmonitor/src/constants");
+const {
+  UPDATE_REQUEST,
+} = require("resource://devtools/client/netmonitor/src/constants.js");
 
 const {
   processNetworkUpdates,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 
 const MessageState = overrides =>
   Object.freeze(

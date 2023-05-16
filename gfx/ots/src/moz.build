@@ -19,6 +19,8 @@ UNIFIED_SOURCES += [
     'cff.cc',
     'cff_charstring.cc',
     'cmap.cc',
+    'colr.cc',
+    'cpal.cc',
     'cvar.cc',
     'cvt.cc',
     'feat.cc',
@@ -69,6 +71,7 @@ DEFINES['PACKAGE_VERSION'] = '"moz"'
 DEFINES['PACKAGE_BUGREPORT'] = '"http://bugzilla.mozilla.org/"'
 DEFINES['OTS_GRAPHITE'] = 1
 DEFINES['OTS_VARIATIONS'] = 1
+DEFINES['OTS_SYNTHESIZE_MISSING_GVAR'] = 1
 
 USE_LIBS += [
     'brotli',

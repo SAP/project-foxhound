@@ -1553,7 +1553,7 @@ using CharBuffer = Vector<char16_t, 32>;
  * code points included) to the buffer.
  */
 [[nodiscard]] extern bool AppendCodePointToCharBuffer(CharBuffer& charBuffer,
-                                                      uint32_t codePoint);
+                                                      char32_t codePoint);
 
 /**
  * Accumulate the range of UTF-16 text (lone surrogates permitted, because JS
@@ -1950,8 +1950,8 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     return token;
   }
 
-  uint32_t matchUnicodeEscape(uint32_t* codePoint);
-  uint32_t matchExtendedUnicodeEscape(uint32_t* codePoint);
+  uint32_t matchUnicodeEscape(char32_t* codePoint);
+  uint32_t matchExtendedUnicodeEscape(char32_t* codePoint);
 
  protected:
   using CharsBase::addLineOfContext;
@@ -2090,15 +2090,14 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
 
   /**
    * Given a just-consumed ASCII code unit/point |lead|, consume a full code
-   * point or LineTerminatorSequence (normalizing it to '\n') and store it in
-   * |*codePoint|.  Return true on success, otherwise return false and leave
-   * |*codePoint| undefined on failure.
+   * point or LineTerminatorSequence (normalizing it to '\n'). Return true on
+   * success, otherwise return false.
    *
    * If a LineTerminatorSequence was consumed, also update line/column info.
    *
    * This may change the current |sourceUnits| offset.
    */
-  [[nodiscard]] bool getFullAsciiCodePoint(int32_t lead, int32_t* codePoint) {
+  [[nodiscard]] bool getFullAsciiCodePoint(int32_t lead) {
     MOZ_ASSERT(isAsciiCodePoint(lead),
                "non-ASCII code units must be handled separately");
     MOZ_ASSERT(toUnit(lead) == this->sourceUnits.previousCodeUnit(),
@@ -2107,19 +2106,9 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     if (MOZ_UNLIKELY(lead == '\r')) {
       matchLineTerminator('\n');
     } else if (MOZ_LIKELY(lead != '\n')) {
-      *codePoint = lead;
       return true;
     }
-
-    *codePoint = '\n';
-    bool ok = updateLineInfoForEOL();
-    if (!ok) {
-#ifdef DEBUG
-      *codePoint = EOF;  // sentinel value to hopefully cause errors
-#endif
-      MOZ_MAKE_MEM_UNDEFINED(codePoint, sizeof(*codePoint));
-    }
-    return ok;
+    return updateLineInfoForEOL();
   }
 
   [[nodiscard]] MOZ_ALWAYS_INLINE bool updateLineInfoForEOL() {
@@ -2127,8 +2116,8 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
         this->sourceUnits.offset());
   }
 
-  uint32_t matchUnicodeEscapeIdStart(uint32_t* codePoint);
-  bool matchUnicodeEscapeIdent(uint32_t* codePoint);
+  uint32_t matchUnicodeEscapeIdStart(char32_t* codePoint);
+  bool matchUnicodeEscapeIdent(char32_t* codePoint);
   bool matchIdentifierStart();
 
   /**
@@ -2246,7 +2235,7 @@ class TokenStreamChars<char16_t, AnyCharsAccess>
    *
    * This may change the current |sourceUnits| offset.
    */
-  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, int32_t* codePoint);
+  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, char32_t* codePoint);
 };
 
 template <class AnyCharsAccess>
@@ -2340,7 +2329,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
   // that have all the requisite high bits set/unset in a manner that *could*
   // encode a valid code point, but the remaining bits encoding its actual
   // value do not define a permitted value.
-  MOZ_COLD void badStructurallyValidCodePoint(uint32_t codePoint,
+  MOZ_COLD void badStructurallyValidCodePoint(char32_t codePoint,
                                               uint8_t codePointLength,
                                               const char* reason);
 
@@ -2348,7 +2337,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
    * Report an error for UTF-8 that encodes a UTF-16 surrogate or a number
    * outside the Unicode range.
    */
-  MOZ_COLD void badCodePoint(uint32_t codePoint, uint8_t codePointLength) {
+  MOZ_COLD void badCodePoint(char32_t codePoint, uint8_t codePointLength) {
     MOZ_ASSERT(unicode::IsSurrogate(codePoint) ||
                codePoint > unicode::NonBMPMax);
 
@@ -2362,7 +2351,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
    * Report an error for UTF-8 that encodes a code point not in its shortest
    * form.
    */
-  MOZ_COLD void notShortestForm(uint32_t codePoint, uint8_t codePointLength) {
+  MOZ_COLD void notShortestForm(char32_t codePoint, uint8_t codePointLength) {
     MOZ_ASSERT(!unicode::IsSurrogate(codePoint));
     MOZ_ASSERT(codePoint <= unicode::NonBMPMax);
 
@@ -2394,7 +2383,7 @@ class TokenStreamChars<mozilla::Utf8Unit, AnyCharsAccess>
    *
    * This function will change the current |sourceUnits| offset.
    */
-  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, int32_t* codePoint);
+  [[nodiscard]] bool getNonAsciiCodePoint(int32_t lead, char32_t* codePoint);
 };
 
 // TokenStream is the lexical scanner for JavaScript source text.
@@ -2514,11 +2503,10 @@ class MOZ_STACK_CLASS TokenStreamSpecific
 
   /**
    * Get the next code point, converting LineTerminatorSequences to '\n' and
-   * updating internal line-counter state if needed.  Return true on success
-   * and store the code point in |*cp|.  Return false and leave |*cp|
-   * undefined on failure.
+   * updating internal line-counter state if needed. Return true on success.
+   * Return false on failure.
    */
-  [[nodiscard]] bool getCodePoint(int32_t* cp);
+  [[nodiscard]] bool getCodePoint();
 
   // If there is an invalid escape in a template, report it and return false,
   // otherwise return true.

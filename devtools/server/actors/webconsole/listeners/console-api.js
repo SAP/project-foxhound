@@ -4,11 +4,10 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
 const {
   CONSOLE_WORKER_IDS,
   WebConsoleUtils,
-} = require("devtools/server/actors/webconsole/utils");
+} = require("resource://devtools/server/actors/webconsole/utils.js");
 
 // The window.console API observer
 

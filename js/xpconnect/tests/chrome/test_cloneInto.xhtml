@@ -45,10 +45,10 @@
     if (Array.isArray(a))
       return 'array';
 
-    if (a instanceof File)
+    if (File.isInstance(a))
       return 'file';
 
-    if (a instanceof Blob)
+    if (Blob.isInstance(a))
       return 'blob';
 
     if (TypedArrayThings.includes(a.constructor.name))
@@ -85,15 +85,15 @@
       ok ( a !== b, 'They should not match');
 
       var aProps = [];
-      for (var p in a) aProps.push(p);
+      for (let p in a) aProps.push(p);
 
       var bProps = [];
-      for (var p in b) bProps.push(p);
+      for (let p in b) bProps.push(p);
 
       is (aProps.length, bProps.length, 'Props match');
       is (aProps.sort().toString(), bProps.sort().toString(), 'Props names match');
 
-      for (var p in a) {
+      for (let p in a) {
         compare(a[p], b[p]);
       }
 
@@ -116,7 +116,7 @@
   };
   var sandbox = new Cu.Sandbox(window, sandboxOptions);
   // The second sandbox is for testing the exportHelper version of the cloneInto
-  var sandbox2 = new Cu.Sandbox("http://example.com", sandboxOptions);
+  var sandbox2 = new Cu.Sandbox("https://example.com", sandboxOptions);
   sandbox.sandbox2 = sandbox2;
   sandbox2.sandbox = sandbox;
 
@@ -152,7 +152,7 @@
     cloneAndTest(tests[i]);
   }
 
-  checkThrows(function() { Cu.cloneInto({ a: function() {} }, sandbox); },
+  checkThrows(function() { Cu.cloneInto({ a() {} }, sandbox); },
               'Function should not be cloned by default');
 
   checkThrows(function() { Cu.cloneInto({ a: document }, sandbox); },
@@ -168,9 +168,9 @@
               'CloneInto should only work on less privileged target scopes.',
               /denied|insecure/);
 
-  var cloneTarget = new Cu.Sandbox('http://example.com');
-  var sameOriginSB = new Cu.Sandbox('http://example.com', { wantGlobalProperties: ['XMLHttpRequest'] });
-  var crossOriginSB = new Cu.Sandbox('http://example.net', { wantGlobalProperties: ['XMLHttpRequest'] });
+  var cloneTarget = new Cu.Sandbox("https://example.com");
+  var sameOriginSB = new Cu.Sandbox("https://example.com", { wantGlobalProperties: ['XMLHttpRequest'] });
+  var crossOriginSB = new Cu.Sandbox("https://example.net", { wantGlobalProperties: ['XMLHttpRequest'] });
   sandbox2.cloneTarget = cloneTarget;
   sandbox2.soXHR = Cu.evalInSandbox('new XMLHttpRequest()', sameOriginSB);
   sandbox2.xoXHR = Cu.evalInSandbox('new XMLHttpRequest()', crossOriginSB);
@@ -181,11 +181,11 @@
               'wrapReflectors may not wrap cross-origin reflectors', /unsupported value type/);
 
 
-  var test = { a: function() { return 42; } };
+  var test = { a() { return 42; } };
   cloneAndTestWithFunctions(test);
 
   // Check that inputs are properly passed through cloned functions:
-  test = { a: function(obj) { return obj; } };
+  test = { a(obj) { return obj; } };
   var clonedTest = Cu.cloneInto(test, sandbox, {cloneFunctions: true});
   var testInput = {};
   is(clonedTest.a(testInput), testInput, "Objects should be identical");

@@ -138,6 +138,13 @@ web-sys = { path = "build/rust/dummy-web/web-sys" }
 # Overrides to allow easier use of common internal crates.
 moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
 
+# Patch `rure` to disable building the cdylib and staticlib targets
+# Cargo has no way to disable building targets your dependencies provide which
+# you don't depend on, and linking the cdylib breaks during instrumentation
+# builds.
+# Workaround for https://github.com/rust-lang/cargo/issues/11232
+rure = { path = "third_party/rust/rure" }
+
 # Other overrides
 async-task = { git = "https://github.com/smol-rs/async-task", rev="f6488e35beccb26eb6e85847b02aa78a42cd3d0e" }
 chardetng = { git = "https://github.com/hsivonen/chardetng", rev="3484d3e3ebdc8931493aa5df4d7ee9360a90e76b" }
@@ -150,11 +157,11 @@ midir = { git = "https://github.com/mozilla/midir.git", rev = "e1b4dcb767f9e69af
 minidump_writer_linux = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "75ada456c92a429704691a85e1cb42fef8cafc0d" }
 
 # application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
-sync15-traits = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61" }
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "d8503475f43dbf1d78eef4e23b0578d0fada3f39" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "d8503475f43dbf1d78eef4e23b0578d0fada3f39" }
+sync15 = { git = "https://github.com/mozilla/application-services", rev = "d8503475f43dbf1d78eef4e23b0578d0fada3f39" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "d8503475f43dbf1d78eef4e23b0578d0fada3f39" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "d8503475f43dbf1d78eef4e23b0578d0fada3f39" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.
@@ -168,8 +175,8 @@ path = "third_party/rust/mio-0.6.23"
 # duplicate crates.
 
 [patch."https://github.com/mozilla/uniffi-rs.git"]
-uniffi = "=0.19.6"
-uniffi_bindgen = "=0.19.6"
-uniffi_build = "=0.19.6"
-uniffi_macros = "=0.19.6"
+uniffi = "=0.20.0"
+uniffi_bindgen = "=0.20.0"
+uniffi_build = "=0.20.0"
+uniffi_macros = "=0.20.0"
 weedle2 = "=4.0.0"

@@ -3,21 +3,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/TextEditor.h"
+#include "TextEditor.h"
 
 #include <algorithm>
 
+#include "EditAction.h"
 #include "EditAggregateTransaction.h"
+#include "EditorDOMPoint.h"
+#include "HTMLEditor.h"
 #include "HTMLEditUtils.h"
 #include "InternetCiter.h"
 #include "PlaceholderTransaction.h"
 #include "gfxFontUtils.h"
+
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentIterator.h"
-#include "mozilla/EditAction.h"
-#include "mozilla/EditorDOMPoint.h"
-#include "mozilla/HTMLEditor.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/mozalloc.h"
@@ -31,6 +32,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/StaticRange.h"
+
 #include "nsAString.h"
 #include "nsCRT.h"
 #include "nsCaret.h"
@@ -108,6 +110,36 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TextEditor)
   NS_INTERFACE_MAP_ENTRY(nsINamed)
 NS_INTERFACE_MAP_END_INHERITING(EditorBase)
 
+NS_IMETHODIMP TextEditor::EndOfDocument() {
+  AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
+  if (NS_WARN_IF(!editActionData.CanHandle())) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+  nsresult rv = CollapseSelectionToEndOfTextNode();
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "TextEditor::CollapseSelectionToEndOfTextNode() failed");
+  // This is low level API for embedders and chrome script so that we can return
+  // raw error code here.
+  return rv;
+}
+
+nsresult TextEditor::CollapseSelectionToEndOfTextNode() {
+  MOZ_ASSERT(IsEditActionDataAvailable());
+
+  Element* anonymousDivElement = GetRoot();
+  if (NS_WARN_IF(!anonymousDivElement)) {
+    return NS_ERROR_NULL_POINTER;
+  }
+
+  RefPtr<Text> textNode =
+      Text::FromNodeOrNull(anonymousDivElement->GetFirstChild());
+  MOZ_ASSERT(textNode);
+  nsresult rv = CollapseSelectionToEndOf(*textNode);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "EditorBase::CollapseSelectionToEndOf() failed");
+  return rv;
+}
+
 nsresult TextEditor::Init(Document& aDocument, Element& aAnonymousDivElement,
                           nsISelectionController& aSelectionController,
                           uint32_t aFlags,
@@ -138,7 +170,7 @@ nsresult TextEditor::Init(Document& aDocument, Element& aAnonymousDivElement,
 
   rv = InitEditorContentAndSelection();
   if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::InitEditorContentAndSelection() failed");
+    NS_WARNING("TextEditor::InitEditorContentAndSelection() failed");
     // XXX Shouldn't we expose `NS_ERROR_EDITOR_DESTROYED` even though this
     //     is a public method?
     mInitSucceeded = false;
@@ -149,6 +181,33 @@ nsresult TextEditor::Init(Document& aDocument, Element& aAnonymousDivElement,
   // we're initializing the editor.
   ClearUndoRedo();
   EnableUndoRedo();
+  return NS_OK;
+}
+
+nsresult TextEditor::InitEditorContentAndSelection() {
+  MOZ_ASSERT(IsEditActionDataAvailable());
+
+  MOZ_TRY(EnsureEmptyTextFirstChild());
+
+  // If the selection hasn't been set up yet, set it up collapsed to the end of
+  // our editable content.
+  if (!SelectionRef().RangeCount()) {
+    nsresult rv = CollapseSelectionToEndOfTextNode();
+    if (NS_FAILED(rv)) {
+      NS_WARNING("EditorBase::CollapseSelectionToEndOfTextNode() failed");
+      return rv;
+    }
+  }
+
+  if (!IsSingleLineEditor()) {
+    nsresult rv = EnsurePaddingBRElementInMultilineEditor();
+    if (NS_FAILED(rv)) {
+      NS_WARNING(
+          "EditorBase::EnsurePaddingBRElementInMultilineEditor() failed");
+      return rv;
+    }
+  }
+
   return NS_OK;
 }
 
@@ -361,11 +420,14 @@ nsresult TextEditor::SetTextAsSubAction(const nsAString& aString) {
 
   if (!IsIMEComposing() && !IsUndoRedoEnabled() &&
       GetEditAction() != EditAction::eReplaceText && mMaxTextLength < 0) {
-    EditActionResult result = SetTextWithoutTransaction(aString);
-    if (result.Failed() || result.Canceled() || result.Handled()) {
-      NS_WARNING_ASSERTION(result.Succeeded(),
-                           "TextEditor::SetTextWithoutTransaction() failed");
-      return result.Rv();
+    Result<EditActionResult, nsresult> result =
+        SetTextWithoutTransaction(aString);
+    if (MOZ_UNLIKELY(result.isErr())) {
+      NS_WARNING("TextEditor::SetTextWithoutTransaction() failed");
+      return result.unwrapErr();
+    }
+    if (!result.inspect().Ignored()) {
+      return NS_OK;
     }
   }
 
@@ -734,6 +796,62 @@ nsresult TextEditor::RemoveAttributeOrEquivalent(Element* aElement,
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "EditorBase::RemoveAttributeWithTransaction() failed");
   return EditorBase::ToGenericNSResult(rv);
+}
+
+// static
+void TextEditor::MaskString(nsString& aString, const Text& aTextNode,
+                            uint32_t aStartOffsetInString,
+                            uint32_t aStartOffsetInText) {
+  MOZ_ASSERT(aTextNode.HasFlag(NS_MAYBE_MASKED));
+  MOZ_ASSERT(aStartOffsetInString == 0 || aStartOffsetInText == 0);
+
+  uint32_t unmaskStart = UINT32_MAX, unmaskLength = 0;
+  TextEditor* textEditor =
+      nsContentUtils::GetTextEditorFromAnonymousNodeWithoutCreation(&aTextNode);
+  if (textEditor && textEditor->UnmaskedLength() > 0) {
+    unmaskStart = textEditor->UnmaskedStart();
+    unmaskLength = textEditor->UnmaskedLength();
+    // If text is copied from after unmasked range, we can treat this case
+    // as mask all.
+    if (aStartOffsetInText >= unmaskStart + unmaskLength) {
+      unmaskLength = 0;
+      unmaskStart = UINT32_MAX;
+    } else {
+      // If text is copied from middle of unmasked range, reduce the length
+      // and adjust start offset.
+      if (aStartOffsetInText > unmaskStart) {
+        unmaskLength = unmaskStart + unmaskLength - aStartOffsetInText;
+        unmaskStart = 0;
+      }
+      // If text is copied from before start of unmasked range, just adjust
+      // the start offset.
+      else {
+        unmaskStart -= aStartOffsetInText;
+      }
+      // Make the range is in the string.
+      unmaskStart += aStartOffsetInString;
+    }
+  }
+
+  const char16_t kPasswordMask = TextEditor::PasswordMask();
+  for (uint32_t i = aStartOffsetInString; i < aString.Length(); ++i) {
+    bool isSurrogatePair = NS_IS_HIGH_SURROGATE(aString.CharAt(i)) &&
+                           i < aString.Length() - 1 &&
+                           NS_IS_LOW_SURROGATE(aString.CharAt(i + 1));
+    if (i < unmaskStart || i >= unmaskStart + unmaskLength) {
+      if (isSurrogatePair) {
+        aString.SetCharAt(kPasswordMask, i);
+        aString.SetCharAt(kPasswordMask, i + 1);
+      } else {
+        aString.SetCharAt(kPasswordMask, i);
+      }
+    }
+
+    // Skip the following low surrogate.
+    if (isSurrogatePair) {
+      ++i;
+    }
+  }
 }
 
 nsresult TextEditor::SetUnmaskRangeInternal(uint32_t aStart, uint32_t aLength,

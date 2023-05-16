@@ -50,45 +50,49 @@
  * we connect it up through its parents.
  */
 
-const { setTimeout } = require("resource://gre/modules/Timer.jsm");
-const protocol = require("devtools/shared/protocol");
-const { LongStringActor } = require("devtools/server/actors/string");
+const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const protocol = require("resource://devtools/shared/protocol.js");
+const {
+  LongStringActor,
+} = require("resource://devtools/server/actors/string.js");
 
-const { inspectorSpec } = require("devtools/shared/specs/inspector");
+const {
+  inspectorSpec,
+} = require("resource://devtools/shared/specs/inspector.js");
 
 loader.lazyRequireGetter(
   this,
   "InspectorActorUtils",
-  "devtools/server/actors/inspector/utils"
+  "resource://devtools/server/actors/inspector/utils.js"
 );
 loader.lazyRequireGetter(
   this,
   "WalkerActor",
-  "devtools/server/actors/inspector/walker",
+  "resource://devtools/server/actors/inspector/walker.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "EyeDropper",
-  "devtools/server/actors/highlighters/eye-dropper",
+  "resource://devtools/server/actors/highlighters/eye-dropper.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PageStyleActor",
-  "devtools/server/actors/page-style",
+  "resource://devtools/server/actors/page-style.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["CustomHighlighterActor", "isTypeRegistered", "HighlighterEnvironment"],
-  "devtools/server/actors/highlighters",
+  "resource://devtools/server/actors/highlighters.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CompatibilityActor",
-  "devtools/server/actors/compatibility/compatibility",
+  "resource://devtools/server/actors/compatibility/compatibility.js",
   true
 );
 

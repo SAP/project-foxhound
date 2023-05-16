@@ -5,9 +5,9 @@ const { TabsSetupFlowManager } = ChromeUtils.importESModule(
   "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
 );
 
-async function setupWithDesktopDevices() {
+async function setupWithDesktopDevices(state = UIState.STATUS_SIGNED_IN) {
   const sandbox = setupSyncFxAMocks({
-    state: UIState.STATUS_SIGNED_IN,
+    state,
     fxaDevices: [
       {
         id: 1,
@@ -202,6 +202,21 @@ add_task(async function test_sync_error() {
   await tearDown(sandbox);
 });
 
+add_task(async function test_sync_error_signed_out() {
+  // sync error should not show if user is not signed in
+  let sandbox = await setupWithDesktopDevices(UIState.STATUS_NOT_CONFIGURED);
+  await withFirefoxView({}, async browser => {
+    Services.obs.notifyObservers(null, UIState.ON_UPDATE);
+    Services.obs.notifyObservers(null, "weave:service:sync:error");
+
+    await waitForElementVisible(browser, "#tabpickup-steps", true);
+    await waitForVisibleSetupStep(browser, {
+      expectedVisible: "#tabpickup-steps-view1",
+    });
+  });
+  await tearDown(sandbox);
+});
+
 add_task(async function test_sync_disconnected_error() {
   // it's possible for fxa to be enabled but sync not enabled.
   const sandbox = setupSyncFxAMocks({
@@ -254,5 +269,42 @@ add_task(async function test_sync_disconnected_error() {
     await BrowserTestUtils.removeTab(preferencesTab);
   });
   await tearDown(sandbox);
-}).skip(); // Bug XXX: either de-support the case where we handle fxa signed-in + sync not enabled,
-// or find a different way to signal ready-to-sync tab other as implemented in Bug   1789885
+});
+
+add_task(async function test_password_change_disconnect_error() {
+  // When the user changes their password on another device, we get into a state
+  // where the user is signed out but sync is still enabled.
+  const sandbox = setupSyncFxAMocks({
+    state: UIState.STATUS_LOGIN_FAILED,
+    syncEnabled: true,
+  });
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+
+    // triggered by the user changing fxa password on another device
+    Services.obs.notifyObservers(null, UIState.ON_UPDATE);
+
+    await waitForElementVisible(browser, "#tabpickup-steps", true);
+    await waitForVisibleSetupStep(browser, {
+      expectedVisible: "#tabpickup-steps-view0",
+    });
+
+    const errorStateHeader = document.querySelector(
+      "#tabpickup-steps-view0-header"
+    );
+
+    await BrowserTestUtils.waitForMutationCondition(
+      errorStateHeader,
+      { childList: true },
+      () => errorStateHeader.textContent.includes("Turn on syncing to continue")
+    );
+
+    ok(
+      errorStateHeader
+        .getAttribute("data-l10n-id")
+        .includes("sync-disconnected"),
+      "Correct message should show when user has been logged out due to external password change."
+    );
+  });
+  await tearDown(sandbox);
+});

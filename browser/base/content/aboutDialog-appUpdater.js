@@ -10,10 +10,14 @@
 var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
+
+ChromeUtils.defineESModuleGetters(this, {
+  UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppUpdater: "resource:///modules/AppUpdater.jsm",
   DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
-  UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
 });
 
 var UPDATING_MIN_DISPLAY_TIME_MS = 1500;
@@ -48,10 +52,11 @@ function appUpdater(options = {}) {
       Services.urlFormatter.formatURLPref("app.update.url.manual")
     );
 
-    let manualLink = document.getElementById("manualLink");
-    // Strip hash and search parameters for display text.
-    manualLink.textContent = manualURL.origin + manualURL.pathname;
-    manualLink.href = manualURL.href;
+    for (const manualLink of document.getElementsByClassName("manualLink")) {
+      // Strip hash and search parameters for display text.
+      manualLink.textContent = manualURL.origin + manualURL.pathname;
+      manualLink.href = manualURL.href;
+    }
 
     document.getElementById("failedLink").href = manualURL.href;
   } catch (e) {
@@ -79,7 +84,7 @@ appUpdater.prototype = {
   },
 
   get selectedPanel() {
-    return this.updateDeck.querySelector(".selected");
+    return this.updateDeck.selectedPanel;
   },
 
   _onAppUpdateStatus(status, ...args) {
@@ -93,22 +98,23 @@ appUpdater.prototype = {
       case AppUpdater.STATUS.OTHER_INSTANCE_HANDLING_UPDATES:
         this.selectPanel("otherInstanceHandlingUpdates");
         break;
-      case AppUpdater.STATUS.DOWNLOADING:
-        this.downloadStatus = document.getElementById("downloadStatus");
+      case AppUpdater.STATUS.DOWNLOADING: {
+        let downloadStatus = document.getElementById("downloadStatus");
         if (!args.length) {
-          this.downloadStatus.textContent = DownloadUtils.getTransferTotal(
+          downloadStatus.textContent = DownloadUtils.getTransferTotal(
             0,
             this.update.selectedPatch.size
           );
           this.selectPanel("downloading");
         } else {
           let [progress, max] = args;
-          this.downloadStatus.textContent = DownloadUtils.getTransferTotal(
+          downloadStatus.textContent = DownloadUtils.getTransferTotal(
             progress,
             max
           );
         }
         break;
+      }
       case AppUpdater.STATUS.STAGING:
         this.selectPanel("applying");
         break;
@@ -151,6 +157,13 @@ appUpdater.prototype = {
       case AppUpdater.STATUS.DOWNLOAD_FAILED:
         this.selectPanel("downloadFailed");
         break;
+      case AppUpdater.STATUS.INTERNAL_ERROR:
+        this.selectPanel("internalError");
+        break;
+      case AppUpdater.STATUS.NO_UPDATER:
+      default:
+        this.selectPanel("noUpdater");
+        break;
     }
   },
 
@@ -167,6 +180,9 @@ appUpdater.prototype = {
     if (icons) {
       icons.className = aChildID;
     }
+
+    // Make sure to select the panel before potentially auto-focusing the button.
+    this.updateDeck.selectedPanel = panel;
 
     let button = panel.querySelector("button");
     if (button) {
@@ -188,8 +204,6 @@ appUpdater.prototype = {
           "update.downloadAndInstallButton.accesskey"
         );
       }
-      this.selectedPanel?.classList.remove("selected");
-      panel.classList.add("selected");
       if (
         this.options.buttonAutoFocus &&
         (!document.commandDispatcher.focusedElement || // don't steal the focus
@@ -198,9 +212,6 @@ appUpdater.prototype = {
         // except from the other buttons
         button.focus();
       }
-    } else {
-      this.selectedPanel?.classList.remove("selected");
-      panel.classList.add("selected");
     }
   },
 

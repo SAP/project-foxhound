@@ -4,28 +4,28 @@
 
 "use strict";
 
-const Rule = require("devtools/client/inspector/rules/models/rule");
-const UserProperties = require("devtools/client/inspector/rules/models/user-properties");
+const Rule = require("resource://devtools/client/inspector/rules/models/rule.js");
+const UserProperties = require("resource://devtools/client/inspector/rules/models/user-properties.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "promiseWarn",
-  "devtools/client/inspector/shared/utils",
+  "resource://devtools/client/inspector/shared/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["parseDeclarations", "parseNamedDeclarations", "parseSingleValue"],
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isCssVariable",
-  "devtools/client/fronts/css-properties",
+  "resource://devtools/client/fronts/css-properties.js",
   true
 );
 

@@ -4,32 +4,32 @@
 
 "use strict";
 
-const { Pool } = require("devtools/shared/protocol/Pool");
+const { Pool } = require("resource://devtools/shared/protocol/Pool.js");
 const { isWindowGlobalPartOfContext } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
 );
 const { WatcherRegistry } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs"
 );
-const Targets = require("devtools/server/actors/targets/index");
+const Targets = require("resource://devtools/server/actors/targets/index.js");
 
 loader.lazyRequireGetter(
   this,
   "NetworkObserver",
-  "devtools/server/actors/network-monitor/network-observer",
+  "resource://devtools/server/actors/network-monitor/network-observer.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "NetworkUtils",
-  "devtools/server/actors/network-monitor/utils/network-utils"
+  "resource://devtools/server/actors/network-monitor/utils/network-utils.js"
 );
 
 loader.lazyRequireGetter(
   this,
   "NetworkEventActor",
-  "devtools/server/actors/network-monitor/network-event-actor",
+  "resource://devtools/server/actors/network-monitor/network-event-actor.js",
   true
 );
 

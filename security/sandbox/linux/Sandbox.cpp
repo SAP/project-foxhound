@@ -754,10 +754,6 @@ void SetUtilitySandbox(int aBroker, ipc::SandboxingKind aKind) {
       policy = GetUtilitySandboxPolicy(sBroker);
       break;
 
-    case ipc::SandboxingKind::UTILITY_AUDIO_DECODING_GENERIC:
-      policy = GetUtilityAudioDecoderSandboxPolicy(sBroker);
-      break;
-
     default:
       MOZ_ASSERT(false, "Invalid SandboxingKind");
       break;

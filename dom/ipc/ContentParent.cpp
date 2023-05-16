@@ -190,7 +190,6 @@
 #include "nsHyphenationManager.h"
 #include "nsIAlertsService.h"
 #include "nsIAppShell.h"
-#include "nsIAppStartup.h"
 #include "nsIAppWindow.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIBidiKeyboard.h"
@@ -327,6 +326,9 @@
 
 // For VP9Benchmark::sBenchmarkFpsPref
 #include "Benchmark.h"
+
+#include "nsIToolkitProfileService.h"
+#include "nsIToolkitProfile.h"
 
 static NS_DEFINE_CID(kCClipboardCID, NS_CLIPBOARD_CID);
 
@@ -997,7 +999,9 @@ already_AddRefed<ContentParent> ContentParent::GetUsedBrowserProcess(
     if (!preallocated->IsLaunching()) {
       // Specialize this process for the appropriate remote type, and activate
       // it.
-      Unused << preallocated->SendRemoteType(preallocated->mRemoteType);
+
+      Unused << preallocated->SendRemoteType(preallocated->mRemoteType,
+                                             preallocated->mProfile);
 
       nsCOMPtr<nsIObserverService> obs =
           mozilla::services::GetObserverService();
@@ -1765,10 +1769,8 @@ void MaybeLogBlockShutdownDiagnostics(ContentParent* aSelf, const char* aMsg,
                                       const char* aFile, int32_t aLine) {
 #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
   if (aSelf->IsBlockingShutdown()) {
-    nsAutoCString logmsg;
-    logmsg.AppendPrintf("ContentParent: id=%p - ", aSelf);
-    logmsg.Append(aMsg);
-    NS_DebugBreak(NS_DEBUG_WARNING, logmsg.get(), nullptr, aFile, aLine);
+    MOZ_LOG(ContentParent::GetLog(), LogLevel::Info,
+            ("ContentParent: id=%p - %s at %s(%d)", aSelf, aMsg, aFile, aLine));
   }
 #else
   Unused << aSelf;
@@ -2934,6 +2936,19 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
     cps->GetState(&xpcomInit.captivePortalState());
   }
 
+  if (StaticPrefs::fission_processProfileName()) {
+    nsCOMPtr<nsIToolkitProfileService> profileSvc =
+        do_GetService(NS_PROFILESERVICE_CONTRACTID);
+    if (profileSvc) {
+      nsCOMPtr<nsIToolkitProfile> currentProfile;
+      nsresult rv =
+          profileSvc->GetCurrentProfile(getter_AddRefs(currentProfile));
+      if (NS_SUCCEEDED(rv) && currentProfile) {
+        currentProfile->GetName(mProfile);
+      }
+    }
+  }
+
   nsIBidiKeyboard* bidi = nsContentUtils::GetBidiKeyboard();
 
   xpcomInit.isLangRTL() = false;
@@ -3104,7 +3119,8 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   // Send the child its remote type. On Mac, this needs to be sent prior
   // to the message we send to enable the Sandbox (SendStartProcessSandbox)
   // because different remote types require different sandbox privileges.
-  Unused << SendRemoteType(mRemoteType);
+
+  Unused << SendRemoteType(mRemoteType, mProfile);
 
   ScriptPreloader::InitContentChild(*this);
 
@@ -4280,8 +4296,8 @@ void ContentParent::GeneratePairedMinidump(const char* aReason) {
   // Something has gone wrong to get us here, so we generate a minidump
   // of the parent and child for submission to the crash server unless we're
   // already shutting down.
-  nsCOMPtr<nsIAppStartup> appStartup = components::AppStartup::Service();
-  if (mCrashReporter && !appStartup->GetShuttingDown() &&
+  if (mCrashReporter &&
+      !AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed) &&
       StaticPrefs::dom_ipc_tabs_createKillHardCrashReports_AtStartup()) {
     // GeneratePairedMinidump creates two minidumps for us - the main
     // one is for the content process we're about to kill, and the other
@@ -5503,8 +5519,11 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
     return IPC_OK();
   }
 
+  WindowFeatures features;
+  features.Tokenize(aFeatures);
+
   aResult = pwwatch->OpenWindowWithRemoteTab(
-      thisBrowserHost, aFeatures, aCalledFromJS, aParent.FullZoom(), openInfo,
+      thisBrowserHost, features, aCalledFromJS, aParent.FullZoom(), openInfo,
       getter_AddRefs(aNewRemoteTab));
   if (NS_WARN_IF(NS_FAILED(aResult))) {
     return IPC_OK();
@@ -5519,12 +5538,15 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
   // the frameloader to display will be correct (instead of falling back to a
   // 10x10 default), we force layout if necessary to get the most up-to-date
   // dimensions. See bug 1358712 for details.
-  //
-  // This involves doing a bit of gymnastics in order to get at the FrameLoader,
-  // so we scope this to avoid polluting the main function scope.
-  {
-    nsCOMPtr<Element> frameElement = newBrowserHost->GetOwnerElement();
-    MOZ_ASSERT(frameElement);
+  nsCOMPtr<Element> frameElement = newBrowserHost->GetOwnerElement();
+  MOZ_ASSERT(frameElement);
+  if (nsWindowWatcher::HaveSpecifiedSize(features)) {
+    // We want to flush the layout anyway because of the resize to the specified
+    // size. (Bug 1793605).
+    RefPtr<Document> chromeDoc = frameElement->OwnerDoc();
+    MOZ_ASSERT(chromeDoc);
+    chromeDoc->FlushPendingNotifications(FlushType::Layout);
+  } else {
     RefPtr<nsFrameLoaderOwner> frameLoaderOwner = do_QueryObject(frameElement);
     MOZ_ASSERT(frameLoaderOwner);
     RefPtr<nsFrameLoader> frameLoader = frameLoaderOwner->GetFrameLoader();
@@ -7636,11 +7658,15 @@ mozilla::ipc::IPCResult ContentParent::RecvHistoryCommit(
     const bool& aCloneEntryChildren, const bool& aChannelExpired,
     const uint32_t& aCacheKey) {
   if (!aContext.IsDiscarded()) {
-    aContext.get_canonical()->SessionHistoryCommit(
-        aLoadID, aChangeID, aLoadType, aPersist, aCloneEntryChildren,
-        aChannelExpired, aCacheKey);
+    CanonicalBrowsingContext* canonical = aContext.get_canonical();
+    if (!canonical) {
+      return IPC_FAIL(
+          this, "Could not get canonical. aContext.get_canonical() fails.");
+    }
+    canonical->SessionHistoryCommit(aLoadID, aChangeID, aLoadType, aPersist,
+                                    aCloneEntryChildren, aChannelExpired,
+                                    aCacheKey);
   }
-
   return IPC_OK();
 }
 

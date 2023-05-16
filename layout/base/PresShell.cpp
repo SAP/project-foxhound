@@ -41,6 +41,7 @@
 #include "mozilla/StaticPrefs_font.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_toolkit.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
@@ -2433,9 +2434,7 @@ PresShell::ScrollLine(bool aForward) {
       GetScrollableFrameToScroll(VerticalScrollDirection);
   ScrollMode scrollMode = apz::GetScrollModeForOrigin(ScrollOrigin::Lines);
   if (scrollFrame) {
-    int32_t lineCount =
-        Preferences::GetInt("toolkit.scrollbox.verticalScrollDistance",
-                            NS_DEFAULT_VERTICAL_SCROLL_DISTANCE);
+    int32_t lineCount = StaticPrefs::toolkit_scrollbox_verticalScrollDistance();
     scrollFrame->ScrollBy(
         nsIntPoint(0, aForward ? lineCount : -lineCount), ScrollUnit::LINES,
         scrollMode, nullptr, mozilla::ScrollOrigin::NotSpecified,
@@ -2450,9 +2449,7 @@ PresShell::ScrollCharacter(bool aRight) {
       GetScrollableFrameToScroll(HorizontalScrollDirection);
   ScrollMode scrollMode = apz::GetScrollModeForOrigin(ScrollOrigin::Lines);
   if (scrollFrame) {
-    int32_t h =
-        Preferences::GetInt("toolkit.scrollbox.horizontalScrollDistance",
-                            NS_DEFAULT_HORIZONTAL_SCROLL_DISTANCE);
+    int32_t h = StaticPrefs::toolkit_scrollbox_horizontalScrollDistance();
     scrollFrame->ScrollBy(
         nsIntPoint(aRight ? h : -h, 0), ScrollUnit::LINES, scrollMode, nullptr,
         mozilla::ScrollOrigin::NotSpecified, nsIScrollableFrame::NOT_MOMENTUM,
@@ -3524,8 +3521,20 @@ static nscoord ComputeWhereToScroll(WhereToScroll aWhereToScroll,
 }
 
 static WhereToScroll GetApplicableWhereToScroll(
-    StyleScrollSnapAlignKeyword aAlign, WhereToScroll aOriginal) {
-  switch (aAlign) {
+    const nsIScrollableFrame* aFrameAsScrollable,
+    const nsIFrame* aScrollableFrame, const nsIFrame* aTarget,
+    ScrollDirection aScrollDirection, WhereToScroll aOriginal) {
+  MOZ_ASSERT(do_QueryFrame(aFrameAsScrollable) == aScrollableFrame);
+  if (aTarget == aScrollableFrame) {
+    return aOriginal;
+  }
+
+  StyleScrollSnapAlignKeyword align =
+      aScrollDirection == ScrollDirection::eHorizontal
+          ? aFrameAsScrollable->GetScrollSnapAlignFor(aTarget).first
+          : aFrameAsScrollable->GetScrollSnapAlignFor(aTarget).second;
+
+  switch (align) {
     case StyleScrollSnapAlignKeyword::None:
       return aOriginal;
     case StyleScrollSnapAlignKeyword::Start:
@@ -3547,6 +3556,7 @@ static WhereToScroll GetApplicableWhereToScroll(
  * This needs to work even if aRect has a width or height of zero.
  */
 static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
+                             const nsIFrame* aScrollableFrame,
                              const nsIFrame* aTarget, const nsRect& aRect,
                              const nsMargin& aMargin, ScrollAxis aVertical,
                              ScrollAxis aHorizontal, ScrollFlags aScrollFlags) {
@@ -3587,8 +3597,8 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
                             visibleRect.YMost() - padding.bottom)) {
       // If the scroll-snap-align on the frame is valid, we need to respect it.
       WhereToScroll whereToScroll = GetApplicableWhereToScroll(
-          aFrameAsScrollable->GetScrollSnapAlignFor(aTarget).second,
-          aVertical.mWhereToScroll);
+          aFrameAsScrollable, aScrollableFrame, aTarget,
+          ScrollDirection::eVertical, aVertical.mWhereToScroll);
 
       nscoord maxHeight;
       scrollPt.y = ComputeWhereToScroll(
@@ -3608,8 +3618,8 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
                             visibleRect.XMost() - padding.right)) {
       // If the scroll-snap-align on the frame is valid, we need to respect it.
       WhereToScroll whereToScroll = GetApplicableWhereToScroll(
-          aFrameAsScrollable->GetScrollSnapAlignFor(aTarget).first,
-          aHorizontal.mWhereToScroll);
+          aFrameAsScrollable, aScrollableFrame, aTarget,
+          ScrollDirection::eHorizontal, aHorizontal.mWhereToScroll);
 
       nscoord maxWidth;
       scrollPt.x = ComputeWhereToScroll(
@@ -3844,7 +3854,7 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
 
       {
         AutoWeakFrame wf(container);
-        ScrollToShowRect(sf, target, targetRect, aMargin, aVertical,
+        ScrollToShowRect(sf, container, target, targetRect, aMargin, aVertical,
                          aHorizontal, aScrollFlags);
         if (!wf.IsAlive()) {
           return didScroll;
@@ -3964,38 +3974,24 @@ void PresShell::ClearMouseCaptureOnView(nsView* aView) {
 }
 
 void PresShell::ClearMouseCapture() {
-  nsIContent* capturingContent = GetCapturingContent();
-  if (!capturingContent) {
-    AllowMouseCapture(false);
-    return;
-  }
-
   ReleaseCapturingContent();
   AllowMouseCapture(false);
 }
 
 void PresShell::ClearMouseCapture(nsIFrame* aFrame) {
-  MOZ_ASSERT(
-      aFrame && aFrame->GetParent() &&
-          aFrame->GetParent()->Type() == LayoutFrameType::Deck,
-      "This function should only be called with a child frame of <deck>");
+  MOZ_ASSERT(aFrame);
 
   nsIContent* capturingContent = GetCapturingContent();
   if (!capturingContent) {
-    AllowMouseCapture(false);
     return;
   }
 
   nsIFrame* capturingFrame = capturingContent->GetPrimaryFrame();
-  if (!capturingFrame) {
-    ReleaseCapturingContent();
-    AllowMouseCapture(false);
-    return;
-  }
-
-  if (nsLayoutUtils::IsAncestorFrameCrossDocInProcess(aFrame, capturingFrame)) {
-    ReleaseCapturingContent();
-    AllowMouseCapture(false);
+  const bool shouldClear =
+      !capturingFrame ||
+      nsLayoutUtils::IsAncestorFrameCrossDocInProcess(aFrame, capturingFrame);
+  if (shouldClear) {
+    ClearMouseCapture();
   }
 }
 
@@ -4370,14 +4366,18 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
 
       mPresContext->FlushFontFeatureValues();
 
+      mPresContext->FlushFontPaletteValues();
+
       // Flush any requested SMIL samples.
       if (mDocument->HasAnimationController()) {
         mDocument->GetAnimationController()->FlushResampleRequests();
       }
+    }
 
-      if (aFlush.mFlushAnimations && mPresContext->EffectCompositor()) {
-        mPresContext->EffectCompositor()->PostRestyleForThrottledAnimations();
-      }
+    // The FlushResampleRequests() above flushed style changes.
+    if (MOZ_LIKELY(!mIsDestroying) && aFlush.mFlushAnimations &&
+        mPresContext->EffectCompositor()) {
+      mPresContext->EffectCompositor()->PostRestyleForThrottledAnimations();
     }
 
     // The FlushResampleRequests() above flushed style changes.
@@ -4656,20 +4656,11 @@ void PresShell::ReconstructFrames() {
     return;
   }
 
-  // Have to make sure that the content notifications are flushed before we
-  // start messing with the frame model; otherwise we can get content doubling.
-  //
-  // Also make sure that styles are flushed before calling into the frame
-  // constructor, since that's what it expects.
-  mDocument->FlushPendingNotifications(FlushType::Style);
-
-  if (mIsDestroying) {
-    return;
+  if (Element* root = mDocument->GetRootElement()) {
+    PostRecreateFramesFor(root);
   }
 
-  nsAutoCauseReflowNotifier crNotifier(this);
-  mFrameConstructor->ReconstructDocElementHierarchy(
-      nsCSSFrameConstructor::InsertionKind::Sync);
+  mDocument->FlushPendingNotifications(FlushType::Frames);
 }
 
 nsresult PresShell::RenderDocument(const nsRect& aRect,
@@ -5386,7 +5377,7 @@ void PresShell::AddCanvasBackgroundColorItem(
   // cases (it will usually be a viewport frame when we have a canvas frame in
   // the (sub)tree).
   if (!(aFlags & AddCanvasBackgroundColorFlags::ForceDraw) &&
-      !nsCSSRendering::IsCanvasFrame(aFrame)) {
+      !aFrame->IsViewportFrame() && !aFrame->IsPageContentFrame()) {
     return;
   }
 
@@ -9435,6 +9426,8 @@ void PresShell::WillDoReflow() {
 
   mPresContext->FlushFontFeatureValues();
 
+  mPresContext->FlushFontPaletteValues();
+
   mLastReflowStart = GetPerformanceNowUnclamped();
 }
 
@@ -10151,9 +10144,10 @@ static bool CompareTrees(nsPresContext* aFirstPresContext,
     LayoutDeviceIntRect r1, r2;
     nsView* v1;
     nsView* v2;
-    for (nsFrameList::Enumerator e1(kids1), e2(kids2);; e1.Next(), e2.Next()) {
-      nsIFrame* k1 = e1.get();
-      nsIFrame* k2 = e2.get();
+    for (auto kids1Iter = kids1.begin(), kids2Iter = kids2.begin();;
+         ++kids1Iter, ++kids2Iter) {
+      nsIFrame* k1 = *kids1Iter;
+      nsIFrame* k2 = *kids2Iter;
       if (((nullptr == k1) && (nullptr != k2)) ||
           ((nullptr != k1) && (nullptr == k2))) {
         ok = false;

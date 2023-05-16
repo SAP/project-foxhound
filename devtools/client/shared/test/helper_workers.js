@@ -13,9 +13,13 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-var { DevToolsServer } = require("devtools/server/devtools-server");
-var { DevToolsClient } = require("devtools/client/devtools-client");
-var { Toolbox } = require("devtools/client/framework/toolbox");
+var {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+var {
+  DevToolsClient,
+} = require("resource://devtools/client/devtools-client.js");
+var { Toolbox } = require("resource://devtools/client/framework/toolbox.js");
 
 function createWorkerInTab(tab, url) {
   info("Creating worker with url '" + url + "' in tab.");
@@ -107,16 +111,6 @@ function listWorkers(targetFront) {
   return targetFront.listWorkers();
 }
 
-function findWorker(workers, url) {
-  info("Finding worker with url '" + url + "'.");
-  for (const worker of workers) {
-    if (worker.url === url) {
-      return worker;
-    }
-  }
-  return null;
-}
-
 function waitForWorkerListChanged(targetFront) {
   info("Waiting for worker list to change.");
   return targetFront.once("workerListChanged");
@@ -171,15 +165,15 @@ function executeAndWaitForMessage(
 
 async function initWorkerDebugger(TAB_URL, WORKER_URL) {
   const tab = await addTab(TAB_URL);
-  const target = await createAndAttachTargetForTab(tab);
-  const { client } = target;
 
   await createWorkerInTab(tab, WORKER_URL);
 
-  const { workers } = await listWorkers(target);
-  const workerDescriptorFront = findWorker(workers, WORKER_URL);
+  const commands = await CommandsFactory.forLocalTabWorker(tab, WORKER_URL);
+  const workerDescriptorFront = commands.descriptorFront;
+  const target = workerDescriptorFront.parentFront;
+  const client = commands.client;
 
-  const toolbox = await gDevTools.showToolbox(workerDescriptorFront, {
+  const toolbox = await gDevTools.showToolbox(commands, {
     toolId: "jsdebugger",
     hostType: Toolbox.HostType.WINDOW,
   });

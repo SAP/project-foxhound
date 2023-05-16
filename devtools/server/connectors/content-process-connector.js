@@ -4,23 +4,27 @@
 
 "use strict";
 
-var DevToolsUtils = require("devtools/shared/DevToolsUtils");
+var DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 var { dumpn } = DevToolsUtils;
 var {
   createContentProcessSessionContext,
-} = require("devtools/server/actors/watcher/session-context");
+} = require("resource://devtools/server/actors/watcher/session-context.js");
 
 loader.lazyRequireGetter(
   this,
   "ChildDebuggerTransport",
-  "devtools/shared/transport/child-transport",
+  "resource://devtools/shared/transport/child-transport.js",
   true
 );
 
 const CONTENT_PROCESS_SERVER_STARTUP_SCRIPT =
   "resource://devtools/server/startup/content-process.js";
 
-loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "EventEmitter",
+  "resource://devtools/shared/event-emitter.js"
+);
 
 /**
  * Start a DevTools server in a content process (representing the entire process, not

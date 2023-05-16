@@ -53,6 +53,10 @@ NetworkLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
                                      nsISupports* aContext, nsresult aStatus,
                                      uint32_t aStringLen,
                                      const uint8_t* aString) {
+  if (mLoader->IsCancelled()) {
+    return mLoader->GetCancelResult();
+  }
+
   nsresult rv = DataReceivedFromNetwork(aLoader, aStatus, aStringLen, aString);
   return mLoader->OnStreamComplete(mLoadContext->mRequest, rv);
 }
@@ -62,10 +66,6 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
                                                      uint32_t aStringLen,
                                                      const uint8_t* aString) {
   AssertIsOnMainThread();
-
-  if (mLoader->IsCancelled()) {
-    return mLoader->mCancelMainThread.ref();
-  }
 
   if (NS_FAILED(aStatus)) {
     return aStatus;

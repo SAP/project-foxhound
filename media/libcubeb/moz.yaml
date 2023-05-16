@@ -9,8 +9,8 @@ origin:
   description: "Cross platform audio library"
   url: https://github.com/mozilla/cubeb
   license: ISC
-  release: 4783607ecc09e9493677a9c4e3db95f78d87409a (2022-09-06T12:38:56Z).
-  revision: 4783607ecc09e9493677a9c4e3db95f78d87409a
+  release: 93d1fa3fccdc22da37aa59f67b213591797db369 (2022-09-22T21:52:54Z).
+  revision: 93d1fa3fccdc22da37aa59f67b213591797db369
 
 vendoring:
   url: https://github.com/mozilla/cubeb
@@ -29,12 +29,12 @@ vendoring:
     - docs
     - scan-build-install.sh
     - src/cubeb-jni-instances.h
-    - src/cubeb-sles.h
     - src/cubeb_assert.h
     - src/cubeb_audiotrack.c
     - src/cubeb_kai.c
     - src/cubeb_osx_run_loop.cpp
     - src/cubeb_pulse.c
+    - src/cubeb_tracing.h
     - subprojects
     - tools
   keep:
@@ -43,8 +43,8 @@ vendoring:
     - include/cubeb_export.h
     - include/moz.build
     - src/cubeb-jni-instances.h
-    - src/cubeb-sles.h
     - src/cubeb_assert.h
     - src/cubeb_osx_run_loop.c
+    - src/cubeb_tracing.h
     - src/moz.build
 

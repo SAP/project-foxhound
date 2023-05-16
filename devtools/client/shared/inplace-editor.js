@@ -22,17 +22,17 @@
 "use strict";
 
 const focusManager = Services.focus;
-const { KeyCodes } = require("devtools/client/shared/keycodes");
-const EventEmitter = require("devtools/shared/event-emitter");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   findMostRelevantCssPropertyIndex,
-} = require("devtools/client/shared/suggestion-picker");
+} = require("resource://devtools/client/shared/suggestion-picker.js");
 
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AppConstants",
-  "resource://gre/modules/AppConstants.jsm",
-  true
+  "resource://gre/modules/AppConstants.jsm"
 );
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -1368,7 +1368,7 @@ InplaceEditor.prototype = {
    */
   _getIncrement(event) {
     const getSmallIncrementKey = evt => {
-      if (AppConstants.platform === "macosx") {
+      if (lazy.AppConstants.platform === "macosx") {
         return evt.altKey;
       }
       return evt.ctrlKey;

@@ -418,6 +418,8 @@ Result NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
     if (revocationState == nsICertStorage::STATE_ENFORCE) {
       MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
               ("NSSCertDBTrustDomain: certificate is in blocklist"));
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CERT_REVOCATION_MECHANISMS::OneCRL);
       return Result::ERROR_REVOKED_CERTIFICATE;
     }
   }
@@ -744,6 +746,8 @@ Result NSSCertDBTrustDomain::CheckRevocation(
     }
 
     if (crliteCoversCertificate) {
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CERT_REVOCATION_MECHANISMS::CRLite);
       // If we don't return here we will consult OCSP.
       // In Enforce CRLite mode we can return "Revoked" or "Not Revoked"
       // without consulting OCSP.
@@ -841,9 +845,12 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
   Result stapledOCSPResponseResult = Success;
   if (stapledOCSPResponse) {
     bool expired;
+    uint32_t ageInHours;
     stapledOCSPResponseResult = VerifyAndMaybeCacheEncodedOCSPResponse(
         certID, time, maxOCSPLifetimeInDays, *stapledOCSPResponse,
-        ResponseWasStapled, expired);
+        ResponseWasStapled, expired, ageInHours);
+    Telemetry::AccumulateCategorical(
+        Telemetry::LABELS_CERT_REVOCATION_MECHANISMS::StapledOCSP);
     if (stapledOCSPResponseResult == Success) {
       // stapled OCSP response present and good
       mOCSPStaplingStatus = CertVerifier::OCSP_STAPLING_GOOD;
@@ -888,6 +895,8 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
       mOCSPCache.Get(certID, mOriginAttributes, cachedResponseResult,
                      cachedResponseValidThrough);
   if (cachedResponsePresent) {
+    Telemetry::AccumulateCategorical(
+        Telemetry::LABELS_CERT_REVOCATION_MECHANISMS::CachedOCSP);
     if (cachedResponseResult == Success && cachedResponseValidThrough >= time) {
       MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
               ("NSSCertDBTrustDomain: cached OCSP response: good"));
@@ -936,6 +945,10 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
   // Additionally, this doesn't properly handle OCSP-must-staple when OCSP
   // fetching is disabled.
   Duration shortLifetime(mCertShortLifetimeInDays * Time::ONE_DAY_IN_SECONDS);
+  if (validityDuration < shortLifetime) {
+    Telemetry::AccumulateCategorical(
+        Telemetry::LABELS_CERT_REVOCATION_MECHANISMS::ShortValidity);
+  }
   if ((mOCSPFetching == NeverFetchOCSP) || (validityDuration < shortLifetime)) {
     // We're not going to be doing any fetching, so if there was a cached
     // "unknown" response, say so.
@@ -1016,6 +1029,8 @@ Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
   mOCSPFetchStatus = OCSPFetchStatus::Fetched;
   rv = DoOCSPRequest(aiaLocation, mOriginAttributes, ocspRequestBytes,
                      ocspRequestLength, GetOCSPTimeout(), ocspResponse);
+  Telemetry::AccumulateCategorical(
+      Telemetry::LABELS_CERT_REVOCATION_MECHANISMS::OCSP);
   if (rv == Success &&
       response.Init(ocspResponse.begin(), ocspResponse.length()) != Success) {
     rv = Result::ERROR_OCSP_MALFORMED_RESPONSE;  // too big
@@ -1053,9 +1068,10 @@ Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
   // or unknown certificate, PR_GetError() will return the appropriate error.
   // We actually ignore expired here.
   bool expired;
-  rv = VerifyAndMaybeCacheEncodedOCSPResponse(certID, time,
-                                              maxOCSPLifetimeInDays, response,
-                                              ResponseIsFromNetwork, expired);
+  uint32_t ageInHours;
+  rv = VerifyAndMaybeCacheEncodedOCSPResponse(
+      certID, time, maxOCSPLifetimeInDays, response, ResponseIsFromNetwork,
+      expired, ageInHours);
 
   // If the CRLite filter covers the certificate, compare the CRLite result
   // with the OCSP fetching result. OCSP may have succeeded, said the
@@ -1074,6 +1090,11 @@ Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
         // CRLite says the certificate is revoked, but OCSP says it is OK.
         Telemetry::AccumulateCategorical(
             Telemetry::LABELS_CRLITE_VS_OCSP_RESULT::CRLiteRevOCSPOk);
+
+        if (mCRLiteMode == CRLiteMode::ConfirmRevocations) {
+          Telemetry::Accumulate(Telemetry::OCSP_AGE_AT_CRLITE_OVERRIDE,
+                                ageInHours);
+        }
       }
     } else if (rv == Result::ERROR_REVOKED_CERTIFICATE) {
       if (crliteResult == Success) {
@@ -1169,7 +1190,8 @@ Result NSSCertDBTrustDomain::HandleOCSPFailure(
 Result NSSCertDBTrustDomain::VerifyAndMaybeCacheEncodedOCSPResponse(
     const CertID& certID, Time time, uint16_t maxLifetimeInDays,
     Input encodedResponse, EncodedResponseSource responseSource,
-    /*out*/ bool& expired) {
+    /*out*/ bool& expired,
+    /*out*/ uint32_t& ageInHours) {
   Time thisUpdate(Time::uninitialized);
   Time validThrough(Time::uninitialized);
 
@@ -1192,6 +1214,30 @@ Result NSSCertDBTrustDomain::VerifyAndMaybeCacheEncodedOCSPResponse(
     if (validThrough.AddSeconds(ServerFailureDelaySeconds) != Success) {
       return Result::FATAL_ERROR_LIBRARY_FAILURE;  // integer overflow
     }
+  }
+  // The `thisUpdate` field holds the latest time at which the server knew the
+  // response was correct. The age of the response is the time that has elapsed
+  // since. We only use this for the telemetry defined in Bug 1794479.
+  uint64_t timeInSeconds;
+  uint64_t thisUpdateInSeconds;
+  uint64_t ageInSeconds;
+  SecondsSinceEpochFromTime(time, &timeInSeconds);
+  SecondsSinceEpochFromTime(thisUpdate, &thisUpdateInSeconds);
+  if (timeInSeconds >= thisUpdateInSeconds) {
+    ageInSeconds = timeInSeconds - thisUpdateInSeconds;
+    // ageInHours is 32 bits because of the telemetry api.
+    if (ageInSeconds > UINT32_MAX) {
+      // We could divide by 3600 before checking the UINT32_MAX bound, but if
+      // ageInSeconds is more than UINT32_MAX then there's been some sort of
+      // error.
+      ageInHours = UINT32_MAX;
+    } else {
+      // We start at 1 and divide with truncation to reserve ageInHours=0 for
+      // the case where `thisUpdate` is in the future.
+      ageInHours = 1 + ageInSeconds / (60 * 60);
+    }
+  } else {
+    ageInHours = 0;
   }
   if (responseSource == ResponseIsFromNetwork || rv == Success ||
       rv == Result::ERROR_REVOKED_CERTIFICATE ||

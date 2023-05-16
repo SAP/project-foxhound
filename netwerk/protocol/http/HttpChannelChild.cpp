@@ -38,6 +38,7 @@
 #include "nsNetUtil.h"
 #include "nsSerializationHelper.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -450,6 +451,21 @@ void HttpChannelChild::OnStartRequest(
   // gHttpHandler->OnExamineResponse(this);
 
   ResourceTimingStructArgsToTimingsStruct(aArgs.timing(), mTransactionTimings);
+
+  if (!mAsyncOpenTime.IsNull() &&
+      !aArgs.timing().transactionPending().IsNull()) {
+    Telemetry::AccumulateTimeDelta(
+        Telemetry::NETWORK_ASYNC_OPEN_CHILD_TO_TRANSACTION_PENDING_MS,
+        ClassOfService::ToString(mClassOfService), mAsyncOpenTime,
+        aArgs.timing().transactionPending());
+  }
+
+  if (!aArgs.timing().responseStart().IsNull()) {
+    Telemetry::AccumulateTimeDelta(
+        Telemetry::NETWORK_RESPONSE_START_PARENT_TO_CONTENT_MS,
+        ClassOfService::ToString(mClassOfService),
+        aArgs.timing().responseStart(), TimeStamp::Now());
+  }
 
   StoreAllRedirectsSameOrigin(aArgs.allRedirectsSameOrigin());
 
@@ -1883,7 +1899,7 @@ HttpChannelChild::Resume() {
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-HttpChannelChild::GetSecurityInfo(nsISupports** aSecurityInfo) {
+HttpChannelChild::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
   NS_ENSURE_ARG_POINTER(aSecurityInfo);
   *aSecurityInfo = do_AddRef(mSecurityInfo).take();
   return NS_OK;
@@ -2909,6 +2925,12 @@ class AttachStreamFilterEvent : public ChannelEvent {
   Endpoint<extensions::PStreamFilterParent> mEndpoint;
 };
 
+void HttpChannelChild::RegisterStreamFilter(
+    RefPtr<extensions::StreamFilterParent>& aStreamFilter) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mStreamFilters.AppendElement(aStreamFilter);
+}
+
 void HttpChannelChild::ProcessAttachStreamFilter(
     Endpoint<extensions::PStreamFilterParent>&& aEndpoint) {
   LOG(("HttpChannelChild::ProcessAttachStreamFilter [this=%p]\n", this));
@@ -2916,6 +2938,25 @@ void HttpChannelChild::ProcessAttachStreamFilter(
 
   mEventQ->RunOrEnqueue(new AttachStreamFilterEvent(this, GetNeckoTarget(),
                                                     std::move(aEndpoint)));
+}
+
+void HttpChannelChild::OnDetachStreamFilters() {
+  LOG(("HttpChannelChild::OnDetachStreamFilters [this=%p]\n", this));
+  MOZ_ASSERT(NS_IsMainThread());
+  for (auto& StreamFilter : mStreamFilters) {
+    StreamFilter->Disconnect("ServiceWorker fallback redirection"_ns);
+  }
+  mStreamFilters.Clear();
+}
+
+void HttpChannelChild::ProcessDetachStreamFilters() {
+  LOG(("HttpChannelChild::ProcessDetachStreamFilter [this=%p]\n", this));
+  MOZ_ASSERT(OnSocketThread());
+
+  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
+      this, [self = UnsafePtr<HttpChannelChild>(this)]() {
+        self->OnDetachStreamFilters();
+      }));
 }
 
 void HttpChannelChild::ActorDestroy(ActorDestroyReason aWhy) {

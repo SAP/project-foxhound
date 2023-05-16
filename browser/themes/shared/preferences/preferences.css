@@ -11,6 +11,7 @@
 
 #preferences-root {
   text-rendering: optimizeLegibility;
+  -moz-box-layout: flex;
 }
 
 @media not print {
@@ -48,6 +49,9 @@
 
 .main-content {
   padding-top: 0;
+  /* the 32px min-height, plus 20+30px margin below, plus some leeway: */
+  scroll-padding-top: 90px;
+  contain: inline-size;
 }
 
 .pane-container {
@@ -216,19 +220,6 @@ checkbox {
 
 #category-more-from-mozilla > .category-icon {
   list-style-image: url("chrome://browser/skin/preferences/mozilla-logo.svg");
-  -moz-context-properties: fill, stroke, fill-opacity, stroke-opacity;
-  fill: currentColor;
-  stroke: var(--in-content-page-background);
-}
-
-@media (prefers-contrast) {
-  #category-more-from-mozilla:hover > .category-icon {
-    stroke: var(--in-content-button-background-hover);
-  }
-
-  #category-more-from-mozilla[selected] > .category-icon {
-    stroke: var(--in-content-button-background-hover);
-  }
 }
 
 /* All panes */
@@ -341,13 +332,9 @@ checkbox {
   margin-block: 4px 32px;
 }
 
-#updateDeck > *:not(.selected) {
-  visibility: hidden;
-}
-
 /* Work around bug 560067 - animated images in visibility: hidden
  * still eat CPU. */
-#updateDeck > *:not(.selected) > .update-throbber {
+#updateDeck > *:not(.deck-selected) > .update-throbber {
   display: none;
 }
 
@@ -360,12 +347,12 @@ checkbox {
   -moz-box-flex: 1;
 }
 
-#manualLink {
+.manualLink {
   margin-inline-start: 6px !important;
 }
 
 #updateRadioGroup > radio {
-  height: 30px;
+  min-height: 30px;
   margin: 2px 0;
 }
 
@@ -380,6 +367,11 @@ checkbox {
 
 #handlersView > richlistitem {
   min-height: 30px;
+}
+
+#handlersViewHeader > treecol,
+#handlersView > richlistitem > hbox {
+  width: 50%;
 }
 
 #handlersView .actionsMenu {
@@ -663,7 +655,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
   margin: 10px;
   -moz-box-flex: 1;
   /* Default dialog dimensions */
-  width: 66ch;
+  min-width: 66ch;
 }
 
 /**
@@ -952,11 +944,6 @@ image.update-throbber {
   margin-inline-end: 8px;
 }
 
-.main-content {
-  /* the 32px min-height, plus 20+30px margin below, plus some leeway: */
-  scroll-padding-top: 90px;
-}
-
 #policies-container,
 #searchInput {
   min-height: 32px;
@@ -1018,14 +1005,14 @@ image.update-throbber {
 }
 
 .search-tooltip {
-  max-width: 150px;
-  font-size: 1.25rem;
+  max-width: 10em;
+  font-size: 1rem;
   position: absolute;
-  padding: 0 10px;
+  padding: 0 .7em;
   background-color: #ffe900;
   color: #000;
   border: 1px solid #d7b600;
-  bottom: 36px;
+  margin-top: -18px;
   opacity: .85;
 }
 
@@ -1056,6 +1043,7 @@ image.update-throbber {
 }
 
 .search-tooltip > span {
+  display: block;
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
@@ -1463,10 +1451,6 @@ richlistitem .text-link:hover {
   #browserUseBookmark,
   #browserUseBlank {
     margin-top: 10px;
-  }
-
-  #advancedPrefs {
-    margin: 0 8px;
   }
 
   #privacyPrefs {

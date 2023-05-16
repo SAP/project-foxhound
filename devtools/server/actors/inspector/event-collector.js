@@ -7,17 +7,16 @@
 
 "use strict";
 
-const { Cu } = require("chrome");
 const {
   isAfterPseudoElement,
   isBeforePseudoElement,
   isMarkerPseudoElement,
   isNativeAnonymous,
-} = require("devtools/shared/layout/utils");
+} = require("resource://devtools/shared/layout/utils.js");
 const Debugger = require("Debugger");
 const {
   EXCLUDED_LISTENER,
-} = require("devtools/server/actors/inspector/constants");
+} = require("resource://devtools/server/actors/inspector/constants.js");
 
 // eslint-disable-next-line
 const JQUERY_LIVE_REGEX = /return typeof \w+.*.event\.triggered[\s\S]*\.event\.(dispatch|handle).*arguments/;

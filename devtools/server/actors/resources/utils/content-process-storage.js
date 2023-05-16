@@ -4,16 +4,16 @@
 
 "use strict";
 
-const { storageTypePool } = require("devtools/server/actors/storage");
-const EventEmitter = require("devtools/shared/event-emitter");
-const { Ci } = require("chrome");
+const {
+  storageTypePool,
+} = require("resource://devtools/server/actors/storage.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
-loader.lazyRequireGetter(
-  this,
-  "getAddonIdForWindowGlobal",
-  "devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getAddonIdForWindowGlobal:
+    "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
+});
 
 // ms of delay to throttle updates
 const BATCH_DELAY = 200;
@@ -224,7 +224,7 @@ class StorageActorMock extends EventEmitter {
   }
 
   isIncludedInTargetExtension(subject) {
-    const addonId = getAddonIdForWindowGlobal(subject.windowGlobalChild);
+    const addonId = lazy.getAddonIdForWindowGlobal(subject.windowGlobalChild);
     return addonId && addonId === this.targetActor.addonId;
   }
 

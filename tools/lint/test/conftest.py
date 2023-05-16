@@ -257,7 +257,7 @@ def perfdocs_sample():
         ) as tmpindex:
             yield {
                 "top_dir": tmpdir,
-                "manifest": tmpmanifest,
+                "manifest": {"path": tmpmanifest},
                 "example1_manifest": tmpexample1manifest,
                 "example2_manifest": tmpexample2manifest,
                 "test": tmptest,

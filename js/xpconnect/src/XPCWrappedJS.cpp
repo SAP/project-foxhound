@@ -63,11 +63,9 @@ bool nsXPCWrappedJS::CanSkip() {
     return false;
   }
 
-  if (IsSubjectToFinalization()) {
-    return true;
-  }
-
   // If this wrapper holds a gray object, need to trace it.
+  // We can't skip it even if it is subject to finalization, because we want to
+  // be able to collect it if the JS object is gray.
   JSObject* obj = GetJSObjectPreserveColor();
   if (obj && JS::ObjectIsMarkedGray(obj)) {
     return false;
@@ -80,6 +78,10 @@ bool nsXPCWrappedJS::CanSkip() {
     NS_ENSURE_TRUE(mRoot, false);
     return mRoot->CanSkip();
   }
+
+  // At this point, the WJS must be a root wrapper with a black JS object, so
+  // if it is subject to finalization, the JS object will be holding it alive
+  // so it will be okay to skip it.
 
   // For the root wrapper, check if there is an aggregated
   // native object that will be added to the CC graph.
@@ -113,14 +115,15 @@ NS_CYCLE_COLLECTION_CLASSNAME(nsXPCWrappedJS)::TraverseNative(
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(nsXPCWrappedJS, refcnt)
   }
 
-  // A wrapper that is subject to finalization will only die when its JS object
-  // dies.
   if (tmp->IsSubjectToFinalization()) {
-    return NS_OK;
+    // If the WJS is subject to finalization, then it can be held alive by its
+    // JS object. We represent this edge by using NoteWeakMapping. The linked
+    // list of subject-to-finalization WJS acts like a known-black weak map.
+    cb.NoteWeakMapping(tmp->GetJSObjectPreserveColor(), s,
+                       NS_CYCLE_COLLECTION_PARTICIPANT(nsXPCWrappedJS));
   }
 
-  // Don't let the extra reference for nsSupportsWeakReference keep a wrapper
-  // that is not subject to finalization alive.
+  // Don't let the extra reference for nsSupportsWeakReference keep a WJS alive.
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "self");
   cb.NoteXPCOMChild(s);
 
@@ -151,8 +154,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsXPCWrappedJS)
   }
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
-// XPCJSContext keeps a table of WJS, so we can remove them from
-// the purple buffer in between CCs.
+// WJS are JS holders, so we'll always add them as roots in CCs and we can
+// remove them from the purple buffer in between CCs.
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsXPCWrappedJS)
   return true;
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
@@ -165,12 +168,17 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsXPCWrappedJS)
   return tmp->CanSkip();
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
-NS_IMETHODIMP
-nsXPCWrappedJS::AggregatedQueryInterface(REFNSIID aIID, void** aInstancePtr) {
-  MOZ_ASSERT(IsAggregatedToNative(), "bad AggregatedQueryInterface call");
+nsXPCWrappedJS* nsIXPConnectWrappedJS::AsXPCWrappedJS() {
+  return static_cast<nsXPCWrappedJS*>(this);
+}
+
+nsresult nsIXPConnectWrappedJS::AggregatedQueryInterface(REFNSIID aIID,
+                                                         void** aInstancePtr) {
+  MOZ_ASSERT(AsXPCWrappedJS()->IsAggregatedToNative(),
+             "bad AggregatedQueryInterface call");
   *aInstancePtr = nullptr;
 
-  if (!IsValid()) {
+  if (!AsXPCWrappedJS()->IsValid()) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -180,11 +188,11 @@ nsXPCWrappedJS::AggregatedQueryInterface(REFNSIID aIID, void** aInstancePtr) {
   // once in QueryInterface and once in DelegatedQueryInterface.
   if (aIID.Equals(NS_GET_IID(nsIXPConnectWrappedJS))) {
     NS_ADDREF(this);
-    *aInstancePtr = (void*)static_cast<nsIXPConnectWrappedJS*>(this);
+    *aInstancePtr = (void*)this;
     return NS_OK;
   }
 
-  return DelegatedQueryInterface(aIID, aInstancePtr);
+  return AsXPCWrappedJS()->DelegatedQueryInterface(aIID, aInstancePtr);
 }
 
 NS_IMETHODIMP
@@ -253,6 +261,11 @@ MozExternalRefCountType nsXPCWrappedJS::AddRef(void) {
 
   if (2 == cnt && IsValid()) {
     GetJSObject();  // Unmark gray JSObject.
+
+    // This WJS is no longer subject to finalization.
+    if (isInList()) {
+      remove();
+    }
   }
 
   return cnt;
@@ -287,6 +300,10 @@ MozExternalRefCountType nsXPCWrappedJS::Release(void) {
       return Release();
     }
 
+    if (IsValid()) {
+      XPCJSRuntime::Get()->AddSubjectToFinalizationWJS(this);
+    }
+
     MOZ_ASSERT(IsRootWrapper(),
                "Only root wrappers should have weak references");
   }
@@ -307,8 +324,8 @@ nsXPCWrappedJS::GetWeakReference(nsIWeakReference** aInstancePtr) {
 
 JSObject* nsXPCWrappedJS::GetJSObject() { return mJSObj; }
 
-JSObject* nsXPCWrappedJS::GetJSObjectGlobal() {
-  JSObject* obj = mJSObj;
+JSObject* nsIXPConnectWrappedJS::GetJSObjectGlobal() {
+  JSObject* obj = AsXPCWrappedJS()->mJSObj;
   if (js::IsCrossCompartmentWrapper(obj)) {
     JS::Compartment* comp = JS::GetCompartment(obj);
     return js::GetFirstGlobalInCompartment(comp);
@@ -499,6 +516,9 @@ void nsXPCWrappedJS::Unlink() {
   }
 
   if (IsRootWrapper()) {
+    if (isInList()) {
+      remove();
+    }
     ClearWeakReferences();
   } else if (mRoot) {
     // unlink this wrapper
@@ -574,11 +594,11 @@ nsXPCWrappedJS* nsXPCWrappedJS::FindInherited(REFNSIID aIID) {
   return nullptr;
 }
 
-NS_IMETHODIMP
-nsXPCWrappedJS::GetInterfaceIID(nsIID** iid) {
+nsresult
+nsIXPConnectWrappedJS::GetInterfaceIID(nsIID** iid) {
   MOZ_ASSERT(iid, "bad param");
 
-  *iid = GetIID().Clone();
+  *iid = AsXPCWrappedJS()->GetIID().Clone();
   return NS_OK;
 }
 
@@ -597,6 +617,9 @@ void nsXPCWrappedJS::SystemIsBeingShutDown() {
   // if we are not currently running an incremental GC.
   MOZ_ASSERT(!IsIncrementalGCInProgress(xpc_GetSafeJSContext()));
   *mJSObj.unsafeGet() = nullptr;
+  if (isInList()) {
+    remove();
+  }
 
   // Notify other wrappers in the chain.
   if (mNext) {
@@ -625,8 +648,11 @@ size_t nsXPCWrappedJS::SizeOfIncludingThis(
 
 /***************************************************************************/
 
-NS_IMETHODIMP
-nsXPCWrappedJS::DebugDump(int16_t depth) {
+nsresult nsIXPConnectWrappedJS::DebugDump(int16_t depth) {
+  return AsXPCWrappedJS()->DebugDump(depth);
+}
+
+nsresult nsXPCWrappedJS::DebugDump(int16_t depth) {
 #ifdef DEBUG
   XPC_LOG_ALWAYS(
       ("nsXPCWrappedJS @ %p with mRefCnt = %" PRIuPTR, this, mRefCnt.get()));

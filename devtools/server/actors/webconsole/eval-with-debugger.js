@@ -5,48 +5,48 @@
 "use strict";
 
 const Debugger = require("Debugger");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "Reflect",
-  "resource://gre/modules/reflect.jsm",
-  true
+  "resource://gre/modules/reflect.jsm"
 );
 loader.lazyRequireGetter(
   this,
   "formatCommand",
-  "devtools/server/actors/webconsole/commands",
+  "resource://devtools/server/actors/webconsole/commands.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isCommand",
-  "devtools/server/actors/webconsole/commands",
+  "resource://devtools/server/actors/webconsole/commands.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WebConsoleCommands",
-  "devtools/server/actors/webconsole/utils",
+  "resource://devtools/server/actors/webconsole/utils.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "LongStringActor",
-  "devtools/server/actors/string",
+  "resource://devtools/server/actors/string.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "eagerEcmaAllowlist",
-  "devtools/server/actors/webconsole/eager-ecma-allowlist"
+  "resource://devtools/server/actors/webconsole/eager-ecma-allowlist.js"
 );
 loader.lazyRequireGetter(
   this,
   "eagerFunctionAllowlist",
-  "devtools/server/actors/webconsole/eager-function-allowlist"
+  "resource://devtools/server/actors/webconsole/eager-function-allowlist.js"
 );
 
 function isObject(value) {
@@ -268,7 +268,7 @@ function parseErrorOutput(dbgGlobal, string) {
   // since it's already being handled elsewhere and we are only interested
   // in initializing bindings.
   try {
-    ast = Reflect.parse(string);
+    ast = lazy.Reflect.parse(string);
   } catch (ex) {
     return;
   }

@@ -34,6 +34,7 @@
 
     init() {
       this.arrowScrollbox = this.querySelector("arrowscrollbox");
+      this.arrowScrollbox.addEventListener("wheel", this, true);
 
       this.baseConnect();
 
@@ -630,7 +631,9 @@
         let newIndex = this._getDropIndex(event, effects == "link");
         let children = this.allTabs;
         if (newIndex == children.length) {
-          let tabRect = children[newIndex - 1].getBoundingClientRect();
+          let tabRect = this._getVisibleTabs()
+            .at(-1)
+            .getBoundingClientRect();
           if (RTL_UI) {
             newMargin = rect.right - tabRect.left;
           } else {
@@ -1006,6 +1009,14 @@
       event.stopPropagation();
     }
 
+    on_wheel(event) {
+      if (
+        Services.prefs.getBoolPref("toolkit.tabbox.switchByScrolling", false)
+      ) {
+        event.stopImmediatePropagation();
+      }
+    }
+
     getTabTitleMessageId() {
       // Normal tab title is used also in the permanent private browsing mode.
       return PrivateBrowsingUtils.isWindowPrivate(window) &&
@@ -1092,6 +1103,7 @@
           }
 
           this._positionPinnedTabs();
+          this._updateCloseButtons();
         },
         true
       );
@@ -1109,6 +1121,7 @@
 
         this.setAttribute("overflow", "true");
         this._positionPinnedTabs();
+        this._updateCloseButtons();
         this._handleTabSelect(true);
       });
 
@@ -1973,8 +1986,9 @@
       if (!RTL_UI) {
         for (let i = tab ? tab._tPos : 0; i < tabs.length; i++) {
           if (
+            !tabs[i].hidden &&
             event.screenX <
-            tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
+              tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
           ) {
             return i;
           }
@@ -1982,8 +1996,9 @@
       } else {
         for (let i = tab ? tab._tPos : 0; i < tabs.length; i++) {
           if (
+            !tabs[i].hidden &&
             event.screenX >
-            tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
+              tabs[i].screenX + tabs[i].getBoundingClientRect().width / 2
           ) {
             return i;
           }

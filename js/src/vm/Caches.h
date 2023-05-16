@@ -104,6 +104,12 @@ using EvalCache =
 // The cache is also invalidated on each major GC.
 class MegamorphicCache {
  public:
+  static constexpr size_t NumEntries = 1024;
+  // log2(alignof(Shape))
+  static constexpr uint8_t ShapeHashShift1 = 3;
+  // ShapeHashShift1 + log2(NumEntries)
+  static constexpr uint8_t ShapeHashShift2 = ShapeHashShift1 + 10;
+
   class Entry {
     // Receiver object's shape.
     Shape* shape_ = nullptr;
@@ -121,14 +127,15 @@ class MegamorphicCache {
     // Number of hops on the proto chain to get to the holder object. If this is
     // zero, the property exists on the receiver object. It can also be one of
     // the sentinel values indicating a missing property lookup.
-    static constexpr size_t MaxHopsForDataProperty = UINT8_MAX - 2;
-    static constexpr size_t NumHopsForMissingProperty = UINT8_MAX - 1;
-    static constexpr size_t NumHopsForMissingOwnProperty = UINT8_MAX;
     uint8_t numHops_ = 0;
 
     friend class MegamorphicCache;
 
    public:
+    static constexpr uint8_t MaxHopsForDataProperty = UINT8_MAX - 2;
+    static constexpr uint8_t NumHopsForMissingProperty = UINT8_MAX - 1;
+    static constexpr uint8_t NumHopsForMissingOwnProperty = UINT8_MAX;
+
     void init(Shape* shape, PropertyKey key, uint16_t generation,
               uint8_t numHops, uint16_t slot) {
       shape_ = shape;
@@ -154,20 +161,35 @@ class MegamorphicCache {
       MOZ_ASSERT(isDataProperty());
       return slot_;
     }
+
+    static constexpr size_t offsetOfShape() { return offsetof(Entry, shape_); }
+
+    static constexpr size_t offsetOfKey() { return offsetof(Entry, key_); }
+
+    static constexpr size_t offsetOfGeneration() {
+      return offsetof(Entry, generation_);
+    }
+
+    static constexpr size_t offsetOfSlot() { return offsetof(Entry, slot_); }
+
+    static constexpr size_t offsetOfNumHops() {
+      return offsetof(Entry, numHops_);
+    }
   };
 
  private:
-  static constexpr size_t NumEntries = 1024;
   mozilla::Array<Entry, NumEntries> entries_;
 
   // Generation counter used to invalidate all entries.
   uint16_t generation_ = 0;
 
+  // NOTE: this logic is mirrored in MacroAssembler::emitMegamorphicCacheLookup
   Entry& getEntry(Shape* shape, PropertyKey key) {
     static_assert(mozilla::IsPowerOfTwo(NumEntries),
                   "NumEntries must be a power-of-two for fast modulo");
-    uintptr_t hash = (uintptr_t(shape) ^ (uintptr_t(shape) >> 13)) +
-                     HashAtomOrSymbolPropertyKey(key);
+    uintptr_t hash = uintptr_t(shape) >> ShapeHashShift1;
+    hash ^= uintptr_t(shape) >> ShapeHashShift2;
+    hash += HashAtomOrSymbolPropertyKey(key);
     return entries_[hash % NumEntries];
   }
 
@@ -203,6 +225,14 @@ class MegamorphicCache {
       return;
     }
     entry->init(shape, key, generation_, numHops, slot);
+  }
+
+  static constexpr size_t offsetOfEntries() {
+    return offsetof(MegamorphicCache, entries_);
+  }
+
+  static constexpr size_t offsetOfGeneration() {
+    return offsetof(MegamorphicCache, generation_);
   }
 };
 

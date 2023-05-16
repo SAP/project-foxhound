@@ -4,27 +4,33 @@
 
 "use strict";
 
-const { Cc, Ci, Cu, CC } = require("chrome");
-const protocol = require("devtools/shared/protocol");
-const { LongStringActor } = require("devtools/server/actors/string");
-const { DevToolsServer } = require("devtools/server/devtools-server");
-const { isWindowIncluded } = require("devtools/shared/layout/utils");
-const specs = require("devtools/shared/specs/storage");
-const { parseItemValue } = require("devtools/shared/storage/utils");
+const protocol = require("resource://devtools/shared/protocol.js");
+const {
+  LongStringActor,
+} = require("resource://devtools/server/actors/string.js");
+const {
+  DevToolsServer,
+} = require("resource://devtools/server/devtools-server.js");
+const {
+  isWindowIncluded,
+} = require("resource://devtools/shared/layout/utils.js");
+const specs = require("resource://devtools/shared/specs/storage.js");
+const {
+  parseItemValue,
+} = require("resource://devtools/shared/storage/utils.js");
 loader.lazyGetter(this, "ExtensionProcessScript", () => {
-  return require("resource://gre/modules/ExtensionProcessScript.jsm")
+  return ChromeUtils.import("resource://gre/modules/ExtensionProcessScript.jsm")
     .ExtensionProcessScript;
 });
 loader.lazyGetter(this, "ExtensionStorageIDB", () => {
-  return require("resource://gre/modules/ExtensionStorageIDB.jsm")
+  return ChromeUtils.import("resource://gre/modules/ExtensionStorageIDB.jsm")
     .ExtensionStorageIDB;
 });
-loader.lazyRequireGetter(
-  this,
-  "getAddonIdForWindowGlobal",
-  "devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
-  true
-);
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getAddonIdForWindowGlobal:
+    "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
+});
 
 const EXTENSION_STORAGE_ENABLED_PREF =
   "devtools.storage.extensionStorage.enabled";
@@ -34,7 +40,7 @@ const DEFAULT_VALUE = "value";
 loader.lazyRequireGetter(
   this,
   "naturalSortCaseInsensitive",
-  "devtools/shared/natural-sort",
+  "resource://devtools/shared/natural-sort.js",
   true
 );
 
@@ -54,7 +60,11 @@ const SAFE_HOSTS_PREFIXES_REGEX = /^(about\+|https?\+|file\+|moz-extension\+)/;
 // devtools/server/tests/browser/head.js
 const SEPARATOR_GUID = "{9d414cc5-8319-0a04-0586-c0a6ae01670a}";
 
-loader.lazyImporter(this, "Sqlite", "resource://gre/modules/Sqlite.jsm");
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "Sqlite",
+  "resource://gre/modules/Sqlite.jsm"
+);
 
 // We give this a funny name to avoid confusion with the global
 // indexedDB.
@@ -62,7 +72,10 @@ loader.lazyGetter(this, "indexedDBForStorage", () => {
   // On xpcshell, we can't instantiate indexedDB without crashing
   try {
     const sandbox = Cu.Sandbox(
-      CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
+      Components.Constructor(
+        "@mozilla.org/systemprincipal;1",
+        "nsIPrincipal"
+      )(),
       { wantGlobalProperties: ["indexedDB"] }
     );
     return sandbox.indexedDB;
@@ -3185,7 +3198,7 @@ var indexedDBHelpers = {
     // will throw. Thus we retry for some time to see if lock is removed.
     while (!connection && retryCount++ < 25) {
       try {
-        connection = await Sqlite.openConnection({ path });
+        connection = await lazy.Sqlite.openConnection({ path });
       } catch (ex) {
         // Continuously retrying is overkill. Waiting for 100ms before next try
         await sleep(100);
@@ -3624,7 +3637,7 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
   },
 
   isIncludedInTargetExtension(subject) {
-    const addonId = getAddonIdForWindowGlobal(subject.windowGlobalChild);
+    const addonId = lazy.getAddonIdForWindowGlobal(subject.windowGlobalChild);
     return addonId && addonId === this.parentActor.addonId;
   },
 

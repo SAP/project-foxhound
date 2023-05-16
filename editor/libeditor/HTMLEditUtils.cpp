@@ -20,6 +20,7 @@
 #include "mozilla/dom/Element.h"  // for Element, nsINode
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/StaticRange.h"
 #include "mozilla/dom/Text.h"  // for Text
 
 #include "nsAString.h"  // for nsAString::IsEmpty
@@ -162,6 +163,31 @@ bool HTMLEditUtils::IsBlockElement(const nsIContent& aContent) {
 
   return nsHTMLElement::IsBlock(
       nsHTMLTags::AtomTagToId(aContent.NodeInfo()->NameAtom()));
+}
+
+bool HTMLEditUtils::IsVisibleElementEvenIfLeafNode(const nsIContent& aContent) {
+  if (!aContent.IsElement()) {
+    return false;
+  }
+  // Assume non-HTML element is visible.
+  if (!aContent.IsHTMLElement()) {
+    return true;
+  }
+  if (HTMLEditUtils::IsBlockElement(aContent)) {
+    return true;
+  }
+  if (aContent.IsAnyOfHTMLElements(nsGkAtoms::applet, nsGkAtoms::iframe,
+                                   nsGkAtoms::img, nsGkAtoms::meter,
+                                   nsGkAtoms::progress, nsGkAtoms::select,
+                                   nsGkAtoms::textarea)) {
+    return true;
+  }
+  if (const HTMLInputElement* inputElement =
+          HTMLInputElement::FromNode(&aContent)) {
+    return inputElement->ControlType() != FormControlType::InputHidden;
+  }
+  // Maybe, empty inline element such as <span>.
+  return false;
 }
 
 /**
@@ -505,10 +531,7 @@ Element* HTMLEditUtils::GetElementOfImmediateBlockBoundary(
 
       // If there is a visible content which generates something visible,
       // stop scanning.
-      if (nextContent->IsAnyOfHTMLElements(
-              nsGkAtoms::applet, nsGkAtoms::iframe, nsGkAtoms::img,
-              nsGkAtoms::meter, nsGkAtoms::progress, nsGkAtoms::select,
-              nsGkAtoms::textarea)) {
+      if (HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*nextContent)) {
         return nullptr;
       }
 
@@ -529,15 +552,6 @@ Element* HTMLEditUtils::GetElementOfImmediateBlockBoundary(
         // start of the text node are invisible.  In this case, we return
         // the found <br> element.
         return nextContent->AsElement();
-      }
-
-      if (HTMLInputElement* inputElement =
-              HTMLInputElement::FromNode(nextContent)) {
-        if (inputElement->ControlType() == FormControlType::InputHidden) {
-          continue;  // Keep scanning next one due to invisible form control.
-        }
-        return nullptr;  // Followed by a visible form control so that visible
-                         // <br>.
       }
 
       continue;
@@ -580,6 +594,159 @@ Element* HTMLEditUtils::GetElementOfImmediateBlockBoundary(
   // the <br> element is the last content in the block and invisible.
   // XXX Should we treat it visible if it's the only child of a block?
   return maybeNonEditableAncestorBlock;
+}
+
+nsIContent* HTMLEditUtils::GetUnnecessaryLineBreakContent(
+    const Element& aBlockElement, ScanLineBreak aScanLineBreak) {
+  auto* lastLineBreakContent = [&]() -> nsIContent* {
+    const LeafNodeTypes leafNodeOrNonEditableNode{
+        LeafNodeType::LeafNodeOrNonEditableNode};
+    const WalkTreeOptions onlyPrecedingLine{
+        WalkTreeOption::StopAtBlockBoundary};
+    for (nsIContent* content =
+             aScanLineBreak == ScanLineBreak::AtEndOfBlock
+                 ? HTMLEditUtils::GetLastLeafContent(aBlockElement,
+                                                     leafNodeOrNonEditableNode)
+                 : HTMLEditUtils::GetPreviousContent(
+                       aBlockElement, onlyPrecedingLine,
+                       aBlockElement.GetParentElement());
+         content;
+         content =
+             aScanLineBreak == ScanLineBreak::AtEndOfBlock
+                 ? HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
+                       *content, aBlockElement, leafNodeOrNonEditableNode)
+                 : HTMLEditUtils::GetPreviousContent(
+                       *content, onlyPrecedingLine,
+                       aBlockElement.GetParentElement())) {
+      // If we're scanning preceding <br> element of aBlockElement, we don't
+      // need to look for a line break in another block because the caller
+      // needs to handle only preceding <br> element of aBlockElement.
+      if (aScanLineBreak == ScanLineBreak::BeforeBlock &&
+          HTMLEditUtils::IsBlockElement(*content)) {
+        return nullptr;
+      }
+      if (Text* textNode = Text::FromNode(content)) {
+        if (!textNode->TextLength()) {
+          continue;  // ignore empty text node
+        }
+        const nsTextFragment& textFragment = textNode->TextFragment();
+        if (EditorUtils::IsNewLinePreformatted(*textNode) &&
+            textFragment.CharAt(textFragment.GetLength() - 1u) ==
+                HTMLEditUtils::kNewLine) {
+          // If the text node ends with a preserved line break, it's unnecessary
+          // unless it follows another preformatted line break.
+          if (textFragment.GetLength() == 1u) {
+            return textNode;  // Need to scan previous leaf.
+          }
+          return textFragment.CharAt(textFragment.GetLength() - 2u) ==
+                         HTMLEditUtils::kNewLine
+                     ? nullptr
+                     : textNode;
+        }
+        if (HTMLEditUtils::IsVisibleTextNode(*textNode)) {
+          return nullptr;
+        }
+        continue;
+      }
+      if (content->IsCharacterData()) {
+        continue;  // ignore hidden character data nodes like comment
+      }
+      if (content->IsHTMLElement(nsGkAtoms::br)) {
+        return content;
+      }
+      // If found element is empty block or visible element, there is no
+      // unnecessary line break.
+      if (HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*content)) {
+        return nullptr;
+      }
+      // Otherwise, e.g., empty <b>, we should keep scanning.
+    }
+    return nullptr;
+  }();
+  if (!lastLineBreakContent) {
+    return nullptr;
+  }
+
+  // If the found node is a text node and contains only one preformatted new
+  // line break, we need to keep scanning previous one, but if it has 2 or more
+  // characters, we know it has redundant line break.
+  Text* lastLineBreakText = Text::FromNode(lastLineBreakContent);
+  if (lastLineBreakText && lastLineBreakText->TextDataLength() != 1u) {
+    return lastLineBreakText;
+  }
+
+  // Scan previous leaf content, but now, we can stop at child block boundary.
+  const LeafNodeTypes leafNodeOrNonEditableNodeOrChildBlock{
+      LeafNodeType::LeafNodeOrNonEditableNode,
+      LeafNodeType::LeafNodeOrChildBlock};
+  const Element* blockElement = HTMLEditUtils::GetAncestorElement(
+      *lastLineBreakContent, HTMLEditUtils::ClosestBlockElement);
+  for (nsIContent* content =
+           HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
+               *lastLineBreakContent, *blockElement,
+               leafNodeOrNonEditableNodeOrChildBlock);
+       content;
+       content = HTMLEditUtils::GetPreviousLeafContentOrPreviousBlockElement(
+           *content, *blockElement, leafNodeOrNonEditableNodeOrChildBlock)) {
+    if (HTMLEditUtils::IsBlockElement(*content) ||
+        (content->IsElement() && !content->IsHTMLElement())) {
+      // Now, must found <div>...<div>...</div><br></div>
+      //                                       ^^^^
+      // In this case, the <br> element is necessary to make a following empty
+      // line of the inner <div> visible.
+      return nullptr;
+    }
+    if (Text* textNode = Text::FromNode(content)) {
+      if (!textNode->TextLength()) {
+        continue;  // ignore empty text node
+      }
+      const nsTextFragment& textFragment = textNode->TextFragment();
+      if (EditorUtils::IsNewLinePreformatted(*textNode) &&
+          textFragment.CharAt(textFragment.GetLength() - 1u) ==
+              HTMLEditUtils::kNewLine) {
+        // So, we are here because the preformatted line break is followed by
+        // lastLineBreakContent which is <br> or a text node containing only
+        // one.  In this case, even if their parents are different,
+        // lastLineBreakContent is necessary to make the last line visible.
+        return nullptr;
+      }
+      if (!HTMLEditUtils::IsVisibleTextNode(*textNode)) {
+        continue;
+      }
+      if (EditorUtils::IsWhiteSpacePreformatted(*textNode)) {
+        // If the white-space is preserved, neither following <br> nor a
+        // preformatted line break is not necessary.
+        return lastLineBreakContent;
+      }
+      // Otherwise, only if the last character is a collapsible white-space,
+      // we need lastLineBreakContent to make the trailing white-space visible.
+      switch (textFragment.CharAt(textFragment.GetLength() - 1u)) {
+        case HTMLEditUtils::kSpace:
+        case HTMLEditUtils::kCarriageReturn:
+        case HTMLEditUtils::kTab:
+        case HTMLEditUtils::kNBSP:
+          return nullptr;
+        default:
+          return lastLineBreakContent;
+      }
+    }
+    if (content->IsCharacterData()) {
+      continue;  // ignore hidden character data nodes like comment
+    }
+    // If lastLineBreakContent follows a <br> element in same block, it's
+    // necessary to make the empty last line visible.
+    if (content->IsHTMLElement(nsGkAtoms::br)) {
+      return nullptr;
+    }
+    // If it follows a visible element, it's unnecessary line break.
+    if (HTMLEditUtils::IsVisibleElementEvenIfLeafNode(*content)) {
+      return lastLineBreakContent;
+    }
+    // Otherwise, ignore empty inline elements such as <b>.
+  }
+  // If the block is empty except invisible data nodes and lastLineBreakContent,
+  // lastLineBreakContent is necessary to make the block visible.
+  return nullptr;
 }
 
 bool HTMLEditUtils::IsEmptyNode(nsPresContext* aPresContext,

@@ -4,54 +4,58 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const { getCSSLexer } = require("devtools/shared/css/lexer");
-const { LongStringActor } = require("devtools/server/actors/string");
+const protocol = require("resource://devtools/shared/protocol.js");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
+const {
+  LongStringActor,
+} = require("resource://devtools/server/actors/string.js");
 const InspectorUtils = require("InspectorUtils");
-const TrackChangeEmitter = require("devtools/server/actors/utils/track-change-emitter");
+const TrackChangeEmitter = require("resource://devtools/server/actors/utils/track-change-emitter.js");
 
-const { pageStyleSpec } = require("devtools/shared/specs/page-style");
+const {
+  pageStyleSpec,
+} = require("resource://devtools/shared/specs/page-style.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 const {
   hasStyleSheetWatcherSupportForTarget,
-} = require("devtools/server/actors/utils/stylesheets-manager");
+} = require("resource://devtools/server/actors/utils/stylesheets-manager.js");
 
 loader.lazyRequireGetter(
   this,
   "StyleRuleActor",
-  "devtools/server/actors/style-rule",
+  "resource://devtools/server/actors/style-rule.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getFontPreviewData",
-  "devtools/server/actors/utils/style-utils",
+  "resource://devtools/server/actors/utils/style-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/server/actors/inspector/css-logic",
+  "resource://devtools/server/actors/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "SharedCssLogic",
-  "devtools/shared/inspector/css-logic"
+  "resource://devtools/shared/inspector/css-logic.js"
 );
 loader.lazyRequireGetter(
   this,
   "getDefinedGeometryProperties",
-  "devtools/server/actors/highlighters/geometry-editor",
+  "resource://devtools/server/actors/highlighters/geometry-editor.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "UPDATE_GENERAL",
-  "devtools/server/actors/style-sheet",
+  "resource://devtools/server/actors/style-sheet.js",
   true
 );
 

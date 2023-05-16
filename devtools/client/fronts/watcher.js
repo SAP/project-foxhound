@@ -3,28 +3,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { watcherSpec } = require("devtools/shared/specs/watcher");
+const { watcherSpec } = require("resource://devtools/shared/specs/watcher.js");
 const {
   FrontClassWithSpec,
   registerFront,
-} = require("devtools/shared/protocol");
+} = require("resource://devtools/shared/protocol.js");
 
 loader.lazyRequireGetter(
   this,
   "WindowGlobalTargetFront",
-  "devtools/client/fronts/targets/window-global",
+  "resource://devtools/client/fronts/targets/window-global.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ContentProcessTargetFront",
-  "devtools/client/fronts/targets/content-process",
+  "resource://devtools/client/fronts/targets/content-process.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "WorkerTargetFront",
-  "devtools/client/fronts/targets/worker",
+  "resource://devtools/client/fronts/targets/worker.js",
   true
 );
 

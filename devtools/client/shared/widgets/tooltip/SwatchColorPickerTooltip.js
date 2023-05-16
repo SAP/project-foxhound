@@ -4,29 +4,34 @@
 
 "use strict";
 
-const { colorUtils } = require("devtools/shared/css/color");
-const Spectrum = require("devtools/client/shared/widgets/Spectrum");
-const SwatchBasedEditorTooltip = require("devtools/client/shared/widgets/tooltip/SwatchBasedEditorTooltip");
-const { LocalizationHelper } = require("devtools/shared/l10n");
+const { colorUtils } = require("resource://devtools/shared/css/color.js");
+const Spectrum = require("resource://devtools/client/shared/widgets/Spectrum.js");
+const SwatchBasedEditorTooltip = require("resource://devtools/client/shared/widgets/tooltip/SwatchBasedEditorTooltip.js");
+const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
-const { openDocLink } = require("devtools/client/shared/link");
+const { openDocLink } = require("resource://devtools/client/shared/link.js");
 const {
   A11Y_CONTRAST_LEARN_MORE_LINK,
-} = require("devtools/client/accessibility/constants");
-loader.lazyRequireGetter(this, "throttle", "devtools/shared/throttle", true);
+} = require("resource://devtools/client/accessibility/constants.js");
+loader.lazyRequireGetter(
+  this,
+  "throttle",
+  "resource://devtools/shared/throttle.js",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
   ["getFocusableElements", "wrapMoveFocus"],
-  "devtools/client/shared/focus",
+  "resource://devtools/client/shared/focus.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "PICKER_TYPES",
-  "devtools/shared/picker-constants"
+  "resource://devtools/shared/picker-constants.js"
 );
 
 const TELEMETRY_PICKER_EYEDROPPER_OPEN_COUNT =

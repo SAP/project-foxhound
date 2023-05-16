@@ -146,7 +146,7 @@ struct PaintState {
     const COLRHeader* v0;
     const COLRv1Header* v1;
   } mHeader;
-  const hb_color_t* mPalette;
+  const sRGBColor* mPalette;
   DrawTarget* mDrawTarget;
   ScaledFont* mScaledFont;
   const int* mCoords;
@@ -174,16 +174,13 @@ struct PaintState {
 DeviceColor PaintState::GetColor(uint16_t aPaletteIndex, float aAlpha) const {
   sRGBColor color;
   if (aPaletteIndex < mNumColors) {
-    const hb_color_t& c = mPalette[uint16_t(aPaletteIndex)];
-    color = sRGBColor(
-        hb_color_get_red(c) / 255.0, hb_color_get_green(c) / 255.0,
-        hb_color_get_blue(c) / 255.0, hb_color_get_alpha(c) / 255.0 * aAlpha);
+    color = mPalette[uint16_t(aPaletteIndex)];
   } else if (aPaletteIndex == 0xffff) {
     color = mCurrentColor;
-    color.a *= aAlpha;
   } else {  // Palette index out of range! Return transparent black.
     color = sRGBColor();
   }
+  color.a *= aAlpha;
   return ToDeviceColor(color);
 }
 
@@ -628,46 +625,61 @@ struct ColorLineT {
         aState.GetColor(stop->GetPaletteIndex(), stop->GetAlpha(aState)));
   }
 
-  already_AddRefed<GradientStops> MakeGradientStops(
-      const PaintState& aState, float* aFirstStop = nullptr,
-      float* aLastStop = nullptr, bool aReverse = false) const {
+  // Retrieve the color stops into an array of GradientStop records. The stops
+  // are normalized to the range [0 .. 1], and the original offsets of the
+  // first and last stops are returned.
+  // If aReverse is true, the color line is reversed.
+  void CollectGradientStops(const PaintState& aState,
+                            nsTArray<GradientStop>& aStops, float* aFirstStop,
+                            float* aLastStop, bool aReverse = false) const {
+    MOZ_ASSERT(aStops.IsEmpty());
     uint16_t count = numStops;
     if (!count) {
-      return nullptr;
+      return;
     }
-    AutoTArray<GradientStop, 8> stops;
     const auto* stop = colorStops();
     if (reinterpret_cast<const char*>(stop) + count * sizeof(T) >
         aState.COLRv1BaseAddr() + aState.mCOLRLength) {
-      return nullptr;
+      return;
     }
-    stops.SetCapacity(count);
+    aStops.SetCapacity(count);
     for (uint16_t i = 0; i < count; ++i, ++stop) {
       DeviceColor color =
           aState.GetColor(stop->GetPaletteIndex(), stop->GetAlpha(aState));
-      stops.AppendElement(GradientStop{stop->GetStopOffset(aState), color});
+      aStops.AppendElement(GradientStop{stop->GetStopOffset(aState), color});
     }
-    stops.StableSort(nsDefaultComparator<GradientStop, GradientStop>());
+    if (count == 1) {
+      *aFirstStop = *aLastStop = aStops[0].offset;
+      return;
+    }
+    aStops.StableSort(nsDefaultComparator<GradientStop, GradientStop>());
     if (aReverse) {
-      float a = stops[0].offset;
-      float b = stops.LastElement().offset;
-      stops.Reverse();
-      for (auto& gs : stops) {
+      float a = aStops[0].offset;
+      float b = aStops.LastElement().offset;
+      aStops.Reverse();
+      for (auto& gs : aStops) {
         gs.offset = a + b - gs.offset;
       }
     }
-    if (aFirstStop && aLastStop) {
-      // Normalize stops to the range 0.0 .. 1.0, and return the original
-      // start & end.
-      *aFirstStop = stops[0].offset;
-      *aLastStop = stops.LastElement().offset;
-      if (*aLastStop > *aFirstStop) {
-        float f = 1.0f / (*aLastStop - *aFirstStop);
-        for (auto& gs : stops) {
-          gs.offset = (gs.offset - *aFirstStop) * f;
-        }
+    // Normalize stops to the range 0.0 .. 1.0, and return the original
+    // start & end.
+    // Note that if all stops are at the same offset, no normalization
+    // will be done.
+    *aFirstStop = aStops[0].offset;
+    *aLastStop = aStops.LastElement().offset;
+    if ((*aLastStop > *aFirstStop) &&
+        (*aLastStop != 1.0f || *aFirstStop != 0.0f)) {
+      float f = 1.0f / (*aLastStop - *aFirstStop);
+      for (auto& gs : aStops) {
+        gs.offset = (gs.offset - *aFirstStop) * f;
       }
     }
+  }
+
+  // Create a gfx::GradientStops representing the given color line stops,
+  // applying our extend mode.
+  already_AddRefed<GradientStops> MakeGradientStops(
+      const PaintState& aState, nsTArray<GradientStop>& aStops) const {
     auto mapExtendMode = [](uint8_t aExtend) -> ExtendMode {
       switch (aExtend) {
         case EXTEND_REPEAT:
@@ -680,7 +692,18 @@ struct ColorLineT {
       }
     };
     return aState.mDrawTarget->CreateGradientStops(
-        stops.Elements(), stops.Length(), mapExtendMode(extend));
+        aStops.Elements(), aStops.Length(), mapExtendMode(extend));
+  }
+
+  already_AddRefed<GradientStops> MakeGradientStops(
+      const PaintState& aState, float* aFirstStop, float* aLastStop,
+      bool aReverse = false) const {
+    AutoTArray<GradientStop, 8> stops;
+    CollectGradientStops(aState, stops, aFirstStop, aLastStop, aReverse);
+    if (stops.IsEmpty()) {
+      return nullptr;
+    }
+    return MakeGradientStops(aState, stops);
   }
 };
 
@@ -818,29 +841,42 @@ struct PaintLinearGradient : public PaintPatternBase {
   UniquePtr<Pattern> NormalizeAndMakeGradient(const PaintState& aState,
                                               const T* aColorLine, Point p0,
                                               Point p1, Point p2) const {
+    // Ill-formed gradient should not be rendered.
+    if (p1 == p0 || p2 == p0) {
+      return MakeUnique<ColorPattern>(DeviceColor());
+    }
     UniquePtr<Pattern> solidColor = aColorLine->AsSolidColor(aState);
     if (solidColor) {
       return solidColor;
     }
     float firstStop, lastStop;
-    RefPtr stops = aColorLine->MakeGradientStops(aState, &firstStop, &lastStop);
-    if (!stops) {
-      return nullptr;
+    AutoTArray<GradientStop, 8> stopArray;
+    aColorLine->CollectGradientStops(aState, stopArray, &firstStop, &lastStop);
+    if (stopArray.IsEmpty()) {
+      return MakeUnique<ColorPattern>(DeviceColor());
     }
     if (firstStop != 0.0 || lastStop != 1.0) {
       if (firstStop == lastStop) {
         if (aColorLine->extend != T::EXTEND_PAD) {
           return MakeUnique<ColorPattern>(DeviceColor());
         }
-      } else {
-        // Normalize the gradient stops range to 0.0 - 1.0, and adjust positions
-        // of the endpoints accordingly.
-        Point v = p1 - p0;
-        p0 += v * firstStop;
-        p1 -= v * (1.0f - lastStop);
-        // Move the rotation vector to maintain the same direction from p0.
-        p2 += v * firstStop;
+        // For extend-pad, when the color line is zero-length, we add a "fake"
+        // color stop to create a [0.0..1.0]-normalized color line, so that the
+        // projection of points below works as expected.
+        for (auto& gs : stopArray) {
+          gs.offset = 0.0f;
+        }
+        stopArray.AppendElement(
+            GradientStop{1.0f, stopArray.LastElement().color});
+        lastStop += 1.0f;
       }
+      // Adjust positions of the points to account for normalization of the
+      // color line stop offsets.
+      Point v = p1 - p0;
+      p0 += v * firstStop;
+      p1 -= v * (1.0f - lastStop);
+      // Move the rotation vector to maintain the same direction from p0.
+      p2 += v * firstStop;
     }
     Point p3;
     if (FuzzyEqualsMultiplicative(p2.y, p0.y)) {
@@ -858,6 +894,7 @@ struct PaintLinearGradient : public PaintPatternBase {
       float y3 = (c1 * m - c2 * mInv) / (m - mInv);
       p3 = Point(x3, y3);
     }
+    RefPtr stops = aColorLine->MakeGradientStops(aState, stopArray);
     return MakeUnique<LinearGradientPattern>(p0, p3, std::move(stops),
                                              Matrix::Scaling(1.0, -1.0));
   }
@@ -919,6 +956,81 @@ struct PaintRadialGradient : public PaintPatternBase {
     return NormalizeAndMakeGradient(aState, colorLine, c1, c2, r1, r2);
   }
 
+  // Helper function to trim the gradient stops array at the start or end.
+  void TruncateGradientStops(nsTArray<GradientStop>& aStops, float aStart,
+                             float aEnd) const {
+    // For pad mode, we may need a sub-range of the line: figure out which
+    // stops to trim, and interpolate as needed at truncation point(s).
+    // (Currently this is only ever used to trim one end of the color line,
+    // so edge cases that may occur when trimming both ends are untested.)
+    MOZ_ASSERT(aStart == 0.0f || aEnd == 1.0f,
+               "Trimming both ends of color-line is untested!");
+
+    // Create a color that is |r| of the way from c1 to c2.
+    auto interpolateColor = [](DeviceColor c1, DeviceColor c2, float r) {
+      return DeviceColor(
+          c2.r * r + c1.r * (1.0f - r), c2.g * r + c1.g * (1.0f - r),
+          c2.b * r + c1.b * (1.0f - r), c2.a * r + c1.a * (1.0f - r));
+    };
+
+    size_t count = aStops.Length();
+    MOZ_ASSERT(count > 1);
+
+    // Truncate at the start of the color line?
+    if (aStart > 0.0f) {
+      // Skip forward past any stops that can be dropped.
+      size_t i = 0;
+      while (i < count - 1 && aStops[i].offset < aStart) {
+        ++i;
+      }
+      // If we're not truncating exactly at a color-stop offset, shift the
+      // preceding stop to the truncation offset and interpolate its color.
+      if (i && aStops[i].offset > aStart) {
+        auto& prev = aStops[i - 1];
+        auto& curr = aStops[i];
+        float ratio = (aStart - prev.offset) / (curr.offset - prev.offset);
+        prev.color = interpolateColor(prev.color, curr.color, ratio);
+        prev.offset = aStart;
+        --i;  // We don't want to remove this stop, as we adjusted it.
+      }
+      aStops.RemoveElementsAt(0, i);
+      // Re-normalize the remaining stops to the [0, 1] range.
+      if (aStart < 1.0f) {
+        float r = 1.0f / (1.0f - aStart);
+        for (auto& gs : aStops) {
+          gs.offset = r * (gs.offset - aStart);
+        }
+      }
+    }
+
+    // Truncate at the end of the color line?
+    if (aEnd < 1.0f) {
+      // Skip back over any stops that can be dropped.
+      size_t i = count - 1;
+      while (i && aStops[i].offset > aEnd) {
+        --i;
+      }
+      // If we're not truncating exactly at a color-stop offset, shift the
+      // following stop to the truncation offset and interpolate its color.
+      if (i + 1 < count && aStops[i].offset < aEnd) {
+        auto& next = aStops[i + 1];
+        auto& curr = aStops[i];
+        float ratio = (aEnd - curr.offset) / (next.offset - curr.offset);
+        next.color = interpolateColor(curr.color, next.color, ratio);
+        next.offset = aEnd;
+        ++i;
+      }
+      aStops.RemoveElementsAt(i + 1, count - i - 1);
+      // Re-normalize the remaining stops to the [0, 1] range.
+      if (aEnd > 0.0f) {
+        float r = 1.0f / aEnd;
+        for (auto& gs : aStops) {
+          gs.offset = r * gs.offset;
+        }
+      }
+    }
+  }
+
   template <typename T>
   UniquePtr<Pattern> NormalizeAndMakeGradient(const PaintState& aState,
                                               const T* aColorLine, Point c1,
@@ -932,26 +1044,107 @@ struct PaintRadialGradient : public PaintPatternBase {
       return solidColor;
     }
     float firstStop, lastStop;
-    RefPtr stops = aColorLine->MakeGradientStops(aState, &firstStop, &lastStop);
-    if (!stops) {
-      return nullptr;
+    AutoTArray<GradientStop, 8> stopArray;
+    aColorLine->CollectGradientStops(aState, stopArray, &firstStop, &lastStop);
+    if (stopArray.IsEmpty()) {
+      return MakeUnique<ColorPattern>(DeviceColor());
     }
-    if (firstStop != 0.0 || lastStop != 1.0) {
+    // If the color stop offsets had to be normalized to the [0, 1] range,
+    // adjust the circle positions and radii to match.
+    if (firstStop != 0.0f || lastStop != 1.0f) {
       if (firstStop == lastStop) {
         if (aColorLine->extend != T::EXTEND_PAD) {
           return MakeUnique<ColorPattern>(DeviceColor());
         }
+        // For extend-pad, when the color line is zero-length, we add a "fake"
+        // color stop to ensure we'll maintain the orientation of the cone,
+        // otherwise when we adjust circles to account for the normalized color
+        // stops, the centers will coalesce and the cone or cylinder collapses.
+        for (auto& gs : stopArray) {
+          gs.offset = 0.0f;
+        }
+        stopArray.AppendElement(
+            GradientStop{1.0f, stopArray.LastElement().color});
+        lastStop += 1.0f;
+      }
+      // Adjust centers along the vector between them, and scale radii for
+      // gradient line defined from 0.0 to 1.0.
+      Point vec = c2 - c1;
+      c1 += vec * firstStop;
+      c2 -= vec * (1.0f - lastStop);
+      float deltaR = r2 - r1;
+      r1 = r1 + deltaR * firstStop;
+      r2 = r2 - deltaR * (1.0f - lastStop);
+    }
+    if ((r1 < 0.0f || r2 < 0.0f) && aColorLine->extend == T::EXTEND_PAD) {
+      // For EXTEND_PAD, we can restrict the gradient definition to just its
+      // visible portion because the shader doesn't need to see any part of the
+      // color line that extends into the negative-radius "virtual cone".
+      if (r1 < 0.0f && r2 < 0.0f) {
+        // If both radii are negative, then only the color at the closer circle
+        // will appear in the projected positive cone (or if they're equal,
+        // nothing will be visible at all).
+        if (r1 == r2) {
+          return MakeUnique<ColorPattern>(DeviceColor());
+        }
+        // The defined range of the color line is entirely in the invisible
+        // cone; all that will project into visible space is a single color.
+        if (r1 < r2) {
+          // Keep only the last color stop.
+          stopArray.RemoveElementsAt(0, stopArray.Length() - 1);
+        } else {
+          // Keep only the first color stop.
+          stopArray.RemoveElementsAt(1, stopArray.Length() - 1);
+        }
       } else {
-        Point v = c2 - c1;
-        c1 += v * firstStop;
-        c2 -= v * (1.0f - lastStop);
-        float deltaR = r2 - r1;
-        r1 = r1 + deltaR * firstStop;
-        r2 = r2 - deltaR * (1.0f - lastStop);
+        // Truncate the gradient at the tip of the visible cone: find the color
+        // stops closest to that point and interpolate between them.
+        if (r1 < r2) {
+          float start = r1 / (r1 - r2);
+          TruncateGradientStops(stopArray, start, 1.0f);
+          r1 = 0.0f;
+          c1 = c1 * (1.0f - start) + c2 * start;
+        } else if (r2 < r1) {
+          float end = 1.0f - r2 / (r2 - r1);
+          TruncateGradientStops(stopArray, 0.0f, end);
+          r2 = 0.0f;
+          c2 = c1 * (1.0f - end) + c2 * end;
+        }
       }
     }
-    return MakeUnique<RadialGradientPattern>(c1, c2, fabsf(r1), fabsf(r2),
-                                             std::move(stops),
+    // Handle negative radii, which the shader won't understand directly, by
+    // projecting the circles along the cones such that both radii are positive.
+    if (r1 < 0.0f || r2 < 0.0f) {
+      float deltaR = r2 - r1;
+      // If deltaR is zero, then nothing is visible because the cone has
+      // degenerated into a negative-radius cylinder, and does not project
+      // into visible space at all.
+      if (deltaR == 0.0f) {
+        return MakeUnique<ColorPattern>(DeviceColor());
+      }
+      Point vec = c2 - c1;
+      if (aColorLine->extend == T::EXTEND_REFLECT) {
+        deltaR *= 2.0f;
+        vec = vec * 2.0f;
+      }
+      if (r2 < r1) {
+        vec = -vec;
+        deltaR = -deltaR;
+      }
+      // Number of repeats by which we need to shift.
+      float n = std::ceil(std::max(-r1, -r2) / deltaR);
+      deltaR *= n;
+      r1 += deltaR;
+      r2 += deltaR;
+      vec = vec * n;
+      c1 += vec;
+      c2 += vec;
+    }
+    RefPtr stops = aColorLine->MakeGradientStops(aState, stopArray);
+    if (!stops) {
+      return MakeUnique<ColorPattern>(DeviceColor());
+    }
+    return MakeUnique<RadialGradientPattern>(c1, c2, r1, r2, std::move(stops),
                                              Matrix::Scaling(1.0, -1.0));
   }
 };
@@ -1615,16 +1808,37 @@ struct PaintComposite {
     if (compositeMode == COMPOSITE_DEST) {
       return DispatchPaint(aState, aOffset + backdropPaintOffset);
     }
-    aState.mDrawTarget->PushLayer(true, 1.0, nullptr, Matrix());
-    bool ok = DispatchPaint(aState, aOffset + backdropPaintOffset);
-    if (ok) {
-      aState.mDrawTarget->PushLayerWithBlend(true, 1.0, nullptr, Matrix(),
-                                             IntRect(), false,
-                                             mapCompositionMode(compositeMode));
-      ok = DispatchPaint(aState, aOffset + sourcePaintOffset);
-      aState.mDrawTarget->PopLayer();
+    Rect r = GetBoundingRect(aState, aOffset);
+    if (r.IsEmpty()) {
+      return true;
     }
-    aState.mDrawTarget->PopLayer();
+    r.RoundOut();
+    // Because not all backends support PushLayerWithBlend (looking at you,
+    // DrawTargetD2D1), we paint this sub-graph of the glyph to a temporary
+    // Skia surface where we know we *can* use PushLayerWithBlend, and then
+    // copy it to the final destination.
+    RefPtr dt = Factory::CreateDrawTarget(BackendType::SKIA,
+                                          IntSize(int(r.width), int(r.height)),
+                                          SurfaceFormat::B8G8R8A8);
+    if (!dt) {
+      // If this failed, we'll just bail out, leaving this glyph (partially)
+      // unpainted, but allow other rendering to continue.
+      return true;
+    }
+    dt->SetTransform(Matrix::Translation(-r.TopLeft()));
+    PaintState state = aState;
+    state.mDrawTarget = dt;
+    bool ok = DispatchPaint(state, aOffset + backdropPaintOffset);
+    if (ok) {
+      dt->PushLayerWithBlend(true, 1.0, nullptr, Matrix(), IntRect(), false,
+                             mapCompositionMode(compositeMode));
+      ok = DispatchPaint(state, aOffset + sourcePaintOffset);
+      dt->PopLayer();
+    }
+    if (ok) {
+      RefPtr snapshot = dt->Snapshot();
+      aState.mDrawTarget->DrawSurface(snapshot, r, Rect(Point(), r.Size()));
+    }
     return ok;
   }
 
@@ -2163,8 +2377,8 @@ const COLRFonts::GlyphLayers* COLRFonts::GetGlyphLayers(hb_blob_t* aCOLR,
 bool COLRFonts::PaintGlyphLayers(
     hb_blob_t* aCOLR, hb_face_t* aFace, const GlyphLayers* aLayers,
     DrawTarget* aDrawTarget, layout::TextDrawTarget* aTextDrawer,
-    ScaledFont* aScaledFont, DrawOptions aDrawOptions,
-    const sRGBColor& aCurrentColor, const Point& aPoint) {
+    ScaledFont* aScaledFont, DrawOptions aDrawOptions, const Point& aPoint,
+    const sRGBColor& aCurrentColor, const nsTArray<sRGBColor>* aColors) {
   const auto* glyphRecord = reinterpret_cast<const BaseGlyphRecord*>(aLayers);
   // Default to opaque rendering (non-webrender applies alpha with a layer)
   float alpha = 1.0;
@@ -2189,19 +2403,11 @@ bool COLRFonts::PaintGlyphLayers(
     alpha = aCurrentColor.a;
   }
 
-  // Get the default palette (TODO: hook up CSS font-palette support)
-  unsigned int colorCount = 0;
-  AutoTArray<hb_color_t, 64> colors;
-  colors.SetLength(hb_ot_color_palette_get_colors(aFace, /* paletteIndex */ 0,
-                                                  0, &colorCount, nullptr));
-  colorCount = colors.Length();
-  hb_ot_color_palette_get_colors(aFace, 0, 0, &colorCount, colors.Elements());
-
   unsigned int length;
   const COLRHeader* colr =
       reinterpret_cast<const COLRHeader*>(hb_blob_get_data(aCOLR, &length));
   PaintState state{{colr},
-                   colors.Elements(),
+                   aColors->Elements(),
                    aDrawTarget,
                    aScaledFont,
                    nullptr,  // variations not needed
@@ -2209,7 +2415,7 @@ bool COLRFonts::PaintGlyphLayers(
                    length,
                    aCurrentColor,
                    0.0,  // fontUnitsToPixels not needed
-                   uint16_t(colors.Length()),
+                   uint16_t(aColors->Length()),
                    0,
                    nullptr};
   return glyphRecord->Paint(state, alpha, aPoint);
@@ -2240,29 +2446,21 @@ const COLRFonts::GlyphPaintGraph* COLRFonts::GetGlyphPaintGraph(
 bool COLRFonts::PaintGlyphGraph(
     hb_blob_t* aCOLR, hb_font_t* aFont, const GlyphPaintGraph* aPaintGraph,
     DrawTarget* aDrawTarget, layout::TextDrawTarget* aTextDrawer,
-    ScaledFont* aScaledFont, DrawOptions aDrawOptions,
-    const sRGBColor& aCurrentColor, const Point& aPoint, uint32_t aGlyphId,
-    float aFontUnitsToPixels) {
+    ScaledFont* aScaledFont, DrawOptions aDrawOptions, const Point& aPoint,
+    const sRGBColor& aCurrentColor, const nsTArray<sRGBColor>* aColors,
+    uint32_t aGlyphId, float aFontUnitsToPixels) {
   if (aTextDrawer) {
     // Currently we always punt to a blob for COLRv1 glyphs.
     aTextDrawer->FoundUnsupportedFeature();
     return true;
   }
 
-  unsigned int colorCount = 0;
-  AutoTArray<hb_color_t, 64> colors;
-  hb_face_t* face = hb_font_get_face(aFont);
-  colors.SetLength(hb_ot_color_palette_get_colors(face, /* paletteIndex */ 0, 0,
-                                                  &colorCount, nullptr));
-  colorCount = colors.Length();
-  hb_ot_color_palette_get_colors(face, 0, 0, &colorCount, colors.Elements());
-
   unsigned int coordCount;
   const int* coords = hb_font_get_var_coords_normalized(aFont, &coordCount);
 
   AutoTArray<uint32_t, 32> visitedOffsets;
   PaintState state{{nullptr},
-                   colors.Elements(),
+                   aColors->Elements(),
                    aDrawTarget,
                    aScaledFont,
                    coords,
@@ -2270,7 +2468,7 @@ bool COLRFonts::PaintGlyphGraph(
                    hb_blob_get_length(aCOLR),
                    aCurrentColor,
                    aFontUnitsToPixels,
-                   uint16_t(colors.Length()),
+                   uint16_t(aColors->Length()),
                    uint16_t(coordCount),
                    &visitedOffsets};
   state.mHeader.v1 =
@@ -2329,6 +2527,100 @@ uint16_t COLRFonts::GetColrTableVersion(hb_blob_t* aCOLR) {
   MOZ_ASSERT(colr, "Cannot get COLR raw data");
   MOZ_ASSERT(blobLength >= sizeof(COLRHeader), "COLR data too small");
   return colr->version;
+}
+
+UniquePtr<nsTArray<sRGBColor>> COLRFonts::SetupColorPalette(
+    hb_face_t* aFace, const FontPaletteValueSet* aPaletteValueSet,
+    nsAtom* aFontPalette, const nsACString& aFamilyName) {
+  // Find the base color palette to use, if there are multiple available;
+  // default to first in the font, if nothing matches what is requested.
+  unsigned int paletteIndex = 0;
+  unsigned int count = hb_ot_color_palette_get_count(aFace);
+  MOZ_ASSERT(count > 0, "No palettes? Font should have been rejected!");
+
+  const FontPaletteValueSet::PaletteValues* fpv = nullptr;
+  if (aFontPalette && aFontPalette != nsGkAtoms::normal &&
+      (count > 1 || aPaletteValueSet)) {
+    auto findPalette = [&](hb_ot_color_palette_flags_t flag) -> unsigned int {
+      MOZ_ASSERT(flag != HB_OT_COLOR_PALETTE_FLAG_DEFAULT);
+      for (unsigned int i = 0; i < count; ++i) {
+        if (hb_ot_color_palette_get_flags(aFace, i) & flag) {
+          return i;
+        }
+      }
+      return 0;
+    };
+
+    if (aFontPalette == nsGkAtoms::light) {
+      paletteIndex =
+          findPalette(HB_OT_COLOR_PALETTE_FLAG_USABLE_WITH_LIGHT_BACKGROUND);
+    } else if (aFontPalette == nsGkAtoms::dark) {
+      paletteIndex =
+          findPalette(HB_OT_COLOR_PALETTE_FLAG_USABLE_WITH_DARK_BACKGROUND);
+    } else {
+      if (aPaletteValueSet) {
+        if ((fpv = aPaletteValueSet->Lookup(aFontPalette, aFamilyName))) {
+          if (fpv->mBasePalette >= 0 && fpv->mBasePalette < int32_t(count)) {
+            paletteIndex = fpv->mBasePalette;
+          } else if (fpv->mBasePalette ==
+                     FontPaletteValueSet::PaletteValues::kLight) {
+            paletteIndex = findPalette(
+                HB_OT_COLOR_PALETTE_FLAG_USABLE_WITH_LIGHT_BACKGROUND);
+          } else if (fpv->mBasePalette ==
+                     FontPaletteValueSet::PaletteValues::kDark) {
+            paletteIndex = findPalette(
+                HB_OT_COLOR_PALETTE_FLAG_USABLE_WITH_DARK_BACKGROUND);
+          }
+        }
+      }
+    }
+  }
+
+  // Collect the palette colors and convert them to sRGBColor values.
+  count =
+      hb_ot_color_palette_get_colors(aFace, paletteIndex, 0, nullptr, nullptr);
+  nsTArray<hb_color_t> colors;
+  colors.SetLength(count);
+  hb_ot_color_palette_get_colors(aFace, paletteIndex, 0, &count,
+                                 colors.Elements());
+
+  auto palette = MakeUnique<nsTArray<sRGBColor>>();
+  palette->SetCapacity(count);
+  for (const auto c : colors) {
+    palette->AppendElement(
+        sRGBColor(hb_color_get_red(c) / 255.0, hb_color_get_green(c) / 255.0,
+                  hb_color_get_blue(c) / 255.0, hb_color_get_alpha(c) / 255.0));
+  }
+
+  // Apply @font-palette-values overrides, if present.
+  if (fpv) {
+    for (const auto overrideColor : fpv->mOverrides) {
+      if (overrideColor.mIndex < palette->Length()) {
+        (*palette)[overrideColor.mIndex] = overrideColor.mColor;
+      }
+    }
+  }
+
+  return palette;
+}
+
+const FontPaletteValueSet::PaletteValues* FontPaletteValueSet::Lookup(
+    nsAtom* aName, const nsACString& aFamily) const {
+  nsAutoCString family(aFamily);
+  ToLowerCase(family);
+  if (const HashEntry* entry =
+          mValues.GetEntry(PaletteHashKey(aName, family))) {
+    return &entry->mValue;
+  }
+  return nullptr;
+}
+
+FontPaletteValueSet::PaletteValues* FontPaletteValueSet::Insert(
+    nsAtom* aName, const nsACString& aFamily) {
+  nsAutoCString family(aFamily);
+  ToLowerCase(family);
+  HashEntry* entry = mValues.PutEntry(PaletteHashKey(aName, family));
+  return &entry->mValue;
 }
 
 }  // end namespace mozilla::gfx

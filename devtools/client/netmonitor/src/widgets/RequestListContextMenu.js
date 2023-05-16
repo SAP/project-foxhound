@@ -4,36 +4,48 @@
 
 "use strict";
 
-const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  L10N,
+} = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   formDataURI,
   getUrlQuery,
   getUrlBaseName,
   parseQueryString,
   getRequestHeadersRawText,
-} = require("devtools/client/netmonitor/src/utils/request-utils");
+} = require("resource://devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   hasMatchingBlockingRequestPattern,
-} = require("devtools/client/netmonitor/src/utils/request-blocking");
+} = require("resource://devtools/client/netmonitor/src/utils/request-blocking.js");
 
-loader.lazyRequireGetter(this, "Curl", "devtools/client/shared/curl", true);
-loader.lazyRequireGetter(this, "saveAs", "devtools/shared/DevToolsUtils", true);
+loader.lazyRequireGetter(
+  this,
+  "Curl",
+  "resource://devtools/client/shared/curl.js",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "saveAs",
+  "resource://devtools/shared/DevToolsUtils.js",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "copyString",
-  "devtools/shared/platform/clipboard",
+  "resource://devtools/shared/platform/clipboard.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "HarMenuUtils",
-  "devtools/client/netmonitor/src/har/har-menu-utils",
+  "resource://devtools/client/netmonitor/src/har/har-menu-utils.js",
   true
 );
 

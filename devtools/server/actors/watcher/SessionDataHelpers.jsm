@@ -20,14 +20,14 @@ if (typeof module == "object") {
   loader.lazyRequireGetter(
     lazy,
     "validateBreakpointLocation",
-    "devtools/shared/validate-breakpoint.jsm",
+    "resource://devtools/shared/validate-breakpoint.jsm",
     true
   );
 
   loader.lazyRequireGetter(
     lazy,
     "validateEventBreakpoint",
-    "devtools/server/actors/utils/event-breakpoints",
+    "resource://devtools/server/actors/utils/event-breakpoints.js",
     true
   );
 } else {
@@ -44,11 +44,12 @@ if (typeof module == "object") {
   });
   // eslint-disable-next-line mozilla/valid-lazy
   XPCOMUtils.defineLazyGetter(lazy, "validateEventBreakpoint", () => {
-    const { loader } = ChromeUtils.import(
-      "resource://devtools/shared/loader/Loader.jsm"
+    const { loader } = ChromeUtils.importESModule(
+      "resource://devtools/shared/loader/Loader.sys.mjs"
     );
-    return loader.require("devtools/server/actors/utils/event-breakpoints")
-      .validateEventBreakpoint;
+    return loader.require(
+      "resource://devtools/server/actors/utils/event-breakpoints.js"
+    ).validateEventBreakpoint;
   });
 }
 

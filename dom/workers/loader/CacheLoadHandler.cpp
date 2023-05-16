@@ -79,7 +79,10 @@ void CachePromiseHandler::RejectedCallback(JSContext* aCx,
 
   // This will delete the cache object and will call LoadingFinished() with an
   // error for each ongoing operation.
-  mLoadContext->GetCacheCreator()->DeleteCache(NS_ERROR_FAILURE);
+  auto cacheCreator = mLoadContext->GetCacheCreator();
+  if (cacheCreator) {
+    cacheCreator->DeleteCache(NS_ERROR_FAILURE);
+  }
 }
 
 CacheCreator::CacheCreator(WorkerPrivate* aWorkerPrivate)
@@ -267,6 +270,10 @@ void CacheLoadHandler::Fail(nsresult aRv) {
   }
   mLoadContext->mCachePromise = nullptr;
 
+  if (mLoader->IsCancelled()) {
+    return;
+  }
+
   mLoader->LoadingFinished(mLoadContext->mRequest, aRv);
 }
 
@@ -316,6 +323,11 @@ void CacheLoadHandler::RejectedCallback(JSContext* aCx,
                                         JS::Handle<JS::Value> aValue,
                                         ErrorResult& aRv) {
   AssertIsOnMainThread();
+
+  if (mLoader->IsCancelled()) {
+    return;
+  }
+
   MOZ_ASSERT(mLoadContext->mCacheStatus == WorkerLoadContext::Uncached);
   Fail(NS_ERROR_FAILURE);
 }
@@ -324,8 +336,9 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
                                         JS::Handle<JS::Value> aValue,
                                         ErrorResult& aRv) {
   AssertIsOnMainThread();
-  // If we have already called 'Fail', we should not proceed.
-  if (mFailed) {
+  // If we have already called 'Fail', we should not proceed. If we cancelled,
+  // we should similarily not proceed.
+  if (mFailed || mLoader->IsCancelled()) {
     return;
   }
 
@@ -405,8 +418,10 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
     mLoadContext->mCacheStatus = WorkerLoadContext::Cached;
 
     if (mLoader->IsCancelled()) {
-      mLoadContext->GetCacheCreator()->DeleteCache(
-          mLoader->mCancelMainThread.ref());
+      auto cacheCreator = mLoadContext->GetCacheCreator();
+      if (cacheCreator) {
+        cacheCreator->DeleteCache(mLoader->GetCancelResult());
+      }
       return;
     }
 
@@ -478,8 +493,10 @@ CacheLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
   MOZ_ASSERT(mPrincipalInfo);
 
   if (mLoader->IsCancelled()) {
-    mLoadContext->GetCacheCreator()->DeleteCache(
-        mLoader->mCancelMainThread.ref());
+    auto cacheCreator = mLoadContext->GetCacheCreator();
+    if (cacheCreator) {
+      cacheCreator->DeleteCache(mLoader->GetCancelResult());
+    }
     return NS_OK;
   }
 

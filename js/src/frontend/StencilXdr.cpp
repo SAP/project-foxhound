@@ -344,7 +344,7 @@ XDRResult StencilXDR::codeSharedData(XDRState<mode>* xdr,
   }
 
   if (mode == XDR_DECODE) {
-    if (!SharedImmutableScriptData::shareScriptData(cx, sisd)) {
+    if (!SharedImmutableScriptData::shareScriptData(cx, xdr->ec(), sisd)) {
       return xdr->fail(JS::TranscodeResult::Throw);
     }
   }
@@ -401,7 +401,7 @@ template <XDRMode mode>
 
     case Kind::Vector: {
       if (mode == XDR_DECODE) {
-        if (!sharedData.initVector(xdr->cx())) {
+        if (!sharedData.initVector(xdr->ec())) {
           return xdr->fail(JS::TranscodeResult::Throw);
         }
       }
@@ -417,7 +417,7 @@ template <XDRMode mode>
 
     case Kind::Map: {
       if (mode == XDR_DECODE) {
-        if (!sharedData.initMap(xdr->cx())) {
+        if (!sharedData.initMap(xdr->ec())) {
           return xdr->fail(JS::TranscodeResult::Throw);
         }
       }
@@ -1197,6 +1197,7 @@ XDRResult StencilXDR::codeSource(XDRState<mode>* xdr,
                                  const JS::DecodeOptions* maybeOptions,
                                  RefPtr<ScriptSource>& source) {
   JSContext* cx = xdr->cx();
+  ErrorContext* ec = xdr->ec();
 
   if (mode == XDR_DECODE) {
     // Allocate a new ScriptSource and root it with the holder.
@@ -1237,7 +1238,7 @@ XDRResult StencilXDR::codeSource(XDRState<mode>* xdr,
     }
     MOZ_TRY(xdr->codeCharsZ(chars));
     if (mode == XDR_DECODE) {
-      if (!source->setFilename(cx, std::move(chars.ref<UniqueChars>()))) {
+      if (!source->setFilename(cx, ec, std::move(chars.ref<UniqueChars>()))) {
         return xdr->fail(JS::TranscodeResult::Throw);
       }
     }
@@ -1251,7 +1252,7 @@ XDRResult StencilXDR::codeSource(XDRState<mode>* xdr,
     }
     MOZ_TRY(xdr->codeCharsZ(chars));
     if (mode == XDR_DECODE) {
-      if (!source->setDisplayURL(cx,
+      if (!source->setDisplayURL(cx, ec,
                                  std::move(chars.ref<UniqueTwoByteChars>()))) {
         return xdr->fail(JS::TranscodeResult::Throw);
       }
@@ -1267,7 +1268,7 @@ XDRResult StencilXDR::codeSource(XDRState<mode>* xdr,
     MOZ_TRY(xdr->codeCharsZ(chars));
     if (mode == XDR_DECODE) {
       if (!source->setSourceMapURL(
-              cx, std::move(chars.ref<UniqueTwoByteChars>()))) {
+              cx, ec, std::move(chars.ref<UniqueTwoByteChars>()))) {
         return xdr->fail(JS::TranscodeResult::Throw);
       }
     }
@@ -1288,7 +1289,7 @@ XDRResult StencilXDR::codeSource(XDRState<mode>* xdr,
     source->introductionType_ = maybeOptions->introductionType;
     source->setIntroductionOffset(maybeOptions->introductionOffset);
     if (maybeOptions->introducerFilename) {
-      if (!source->setIntroducerFilename(cx,
+      if (!source->setIntroducerFilename(cx, ec,
                                          maybeOptions->introducerFilename)) {
         return xdr->fail(JS::TranscodeResult::Throw);
       }
@@ -1399,7 +1400,7 @@ XDRResult XDRStencilEncoder::codeStencil(
     const frontend::CompilationStencil& stencil) {
 #ifdef DEBUG
   auto sanityCheck = mozilla::MakeScopeExit(
-      [&] { MOZ_ASSERT(validateResultCode(cx(), resultCode())); });
+      [&] { MOZ_ASSERT(validateResultCode(cx(), ec(), resultCode())); });
 #endif
 
   MOZ_TRY(frontend::StencilXDR::checkCompilationStencil(this, stencil));
@@ -1432,21 +1433,23 @@ bool StencilIncrementalEncoderPtr::setInitial(
     return false;
   }
 
+  AutoReportFrontendContext ec(cx);
   return merger_->setInitial(
-      cx,
+      &ec,
       std::forward<UniquePtr<frontend::ExtensibleCompilationStencil>>(initial));
 }
 
 bool StencilIncrementalEncoderPtr::addDelazification(
     JSContext* cx, const frontend::CompilationStencil& delazification) {
-  return merger_->addDelazification(cx, delazification);
+  AutoReportFrontendContext ec(cx);
+  return merger_->addDelazification(&ec, delazification);
 }
 
 XDRResult XDRStencilDecoder::codeStencil(
     const JS::DecodeOptions& options, frontend::CompilationStencil& stencil) {
 #ifdef DEBUG
   auto sanityCheck = mozilla::MakeScopeExit(
-      [&] { MOZ_ASSERT(validateResultCode(cx(), resultCode())); });
+      [&] { MOZ_ASSERT(validateResultCode(cx(), ec(), resultCode())); });
 #endif
 
   auto resetOptions = mozilla::MakeScopeExit([&] { options_ = nullptr; });

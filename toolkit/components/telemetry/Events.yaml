@@ -188,7 +188,15 @@ addonsManager:
       These events are recorded during the install and update flow for extensions and themes,
       the value of the event is an install_id shared by the events related to the same install
       or update flow.
-    objects: ["extension", "theme", "locale", "dictionary", "sitepermission", "other", "unknown"]
+    objects:
+      - "extension"
+      - "theme"
+      - "locale"
+      - "dictionary"
+      - "sitepermission"
+      - "siteperm_deprecated"
+      - "other"
+      - "unknown"
     methods: ["install", "update"]
     extra_keys:
       addon_id: A string which identify the extension (when available)
@@ -198,7 +206,8 @@ addonsManager:
         The source that originally triggered the add-on installation, one of "about:addons",
         "about:debugging", "about:preferences", "amo", "disco", "distribution",
         "extension", "enterprise-policy", "file-url", "geckoview-app", "gmp-plugin",
-        "internal", "plugin", "rtamo", "sync", "system-addon", "temporary-addon", "unknown".
+        "internal", "plugin", "rtamo", "siteperm-addon-provider" "sync", "system-addon",
+        "temporary-addon", "unknown".
         For events with method set to "sideload", the source value is derived from the XPIProvider
         location name (e.g. possible values are "app-builtin", "app-global", "app-profile",
         "app-system-addons", "app-system-defaults", "app-system-local", "app-system-profile",
@@ -207,7 +216,7 @@ addonsManager:
         The method used by the source to install the add-on (included when the source can use more than one,
         e.g. install events with source "about:addons" may have "install-from-file" or "url" as method),
         one of "amWebAPI", "drag-and-drop", "installTrigger", "install-from-file", "link",
-        "management-webext-api", "sideload", "url", "product-updates".
+        "management-webext-api", "sideload", "synthetic-install", "url", "product-updates".
       num_strings: The number of permission description strings in the extension permission doorhanger
       updated_from: Determine if an update has been requested by the user or the application ("app" / "user")
       install_origins: This flag indicates whether install_origins is defined in the addon manifest. ("1" / "0")
@@ -230,7 +239,15 @@ addonsManager:
       These events are recorded at the end of the install flow, but only when
       the source that originally triggered the add-on installation is "amo" or
       "disco". The value of an event is the SHA256 hash of the addon_id.
-    objects: ["extension", "theme", "locale", "dictionary", "sitepermission", "other", "unknown"]
+    objects:
+      - "extension"
+      - "theme"
+      - "locale"
+      - "dictionary"
+      - "sitepermission"
+      - "siteperm_deprecated"
+      - "other"
+      - "unknown"
     extra_keys:
       addon_id: >
         A string which identifies the add-on. This value might be trimmed.
@@ -261,7 +278,15 @@ addonsManager:
       This events are recorded when an installed add-ons is being disable/enabled/uninstalled,
       the value of the event is the addon_id (which also allow to correlate multiple events
       related to each other).
-    objects: ["extension", "theme", "locale", "dictionary", "sitepermission", "other"]
+    objects:
+      - "extension"
+      - "theme"
+      - "locale"
+      - "dictionary"
+      - "sitepermission"
+      - "siteperm_deprecated"
+      - "other"
+      - "unknown"
     methods: ["disable", "enable", "sideload_prompt", "uninstall"]
     extra_keys:
       source: >
@@ -571,8 +596,11 @@ creditcard:
       User interactions for credit card autofill forms
       Expected values are store in extra_keys and are varies depends on the methods
         'detected': Recorded when a form is recognized as a credit card form.
-                    "true" or an integer between 0-100 when the field is identified in the form, "false" otherwise
-                    When the value is an integer number, the value indicates the confidence value from fathom (normalized to 0-100)
+                    The possible value of cc_* in extra_keys are "true", "false", or an integer between 0-100
+                    When the value is "true", the field is identified via autocomplete attribute
+                    When the value is "false", the field is not detected in the form
+                    When the value is an integer greater than 0, the value indicates the confidence value from fathom (normalized to 0-100)
+                    When the value is an 0, then the field is identified by regexp-based heuristic
         'popup_shown': Recorded when autofill popup is shown. Using field_name to record the field
                        that triggers this event
         'filled': Recorded when a form is autofiled. Possible values are

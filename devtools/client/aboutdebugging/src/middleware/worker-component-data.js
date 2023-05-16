@@ -4,14 +4,12 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-
 const {
   DEBUG_TARGETS,
   REQUEST_WORKERS_SUCCESS,
   SERVICE_WORKER_FETCH_STATES,
   SERVICE_WORKER_STATUSES,
-} = require("devtools/client/aboutdebugging/src/constants");
+} = require("resource://devtools/client/aboutdebugging/src/constants.js");
 
 /**
  * This middleware converts workers object that get from DevToolsClient.listAllWorkers()

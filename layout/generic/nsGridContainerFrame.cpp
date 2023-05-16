@@ -4808,9 +4808,7 @@ void nsGridContainerFrame::Grid::PlaceGridItems(
     mGridColEnd -= offsetToColZero;
     mGridRowEnd -= offsetToRowZero;
     aState.mAbsPosItems.ClearAndRetainStorage();
-    size_t i = 0;
-    for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next(), ++i) {
-      nsIFrame* child = e.get();
+    for (nsIFrame* child : children) {
       GridItemInfo* info = aState.mAbsPosItems.AppendElement(GridItemInfo(
           child,
           PlaceAbsPos(child, colLineNameMap, rowLineNameMap, gridStyle)));
@@ -8500,8 +8498,7 @@ nscoord nsGridContainerFrame::ReflowChildren(GridReflowInput& aState,
                                bSize + pad.BStartEnd(wm));
       const nsSize gridCBPhysicalSize = gridCB.Size(wm).GetPhysicalSize(wm);
       size_t i = 0;
-      for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next(), ++i) {
-        nsIFrame* child = e.get();
+      for (nsIFrame* child : children) {
         MOZ_ASSERT(i < aState.mAbsPosItems.Length());
         MOZ_ASSERT(aState.mAbsPosItems[i].mFrame == child);
         GridArea& area = aState.mAbsPosItems[i].mArea;
@@ -8514,6 +8511,7 @@ nscoord nsGridContainerFrame::ReflowChildren(GridReflowInput& aState,
           child->SetProperty(GridItemContainingBlockRect(), cb);
         }
         *cb = itemCB.GetPhysicalRect(wm, gridCBPhysicalSize);
+        ++i;
       }
       // We pass a dummy rect as CB because each child has its own CB rect.
       // The eIsGridContainerCB flag tells nsAbsoluteContainingBlock::Reflow to
@@ -9847,4 +9845,72 @@ nsGridContainerFrame* nsGridContainerFrame::GetGridFrameWithComputedInfo(
   }
 
   return gridFrame;
+}
+
+// TODO: This is a rather dumb implementation of nsILineIterator, but it's
+// better than our pre-existing behavior. Ideally, we should probably use the
+// grid information to return a meaningful number of lines etc.
+bool nsGridContainerFrame::IsLineIteratorFlowRTL() { return false; }
+
+int32_t nsGridContainerFrame::GetNumLines() const {
+  return mFrames.GetLength();
+}
+
+Result<nsILineIterator::LineInfo, nsresult> nsGridContainerFrame::GetLine(
+    int32_t aLineNumber) {
+  if (aLineNumber < 0 || aLineNumber >= GetNumLines()) {
+    return Err(NS_ERROR_FAILURE);
+  }
+  LineInfo rv;
+  nsIFrame* f = mFrames.FrameAt(aLineNumber);
+  rv.mLineBounds = f->GetRect();
+  rv.mFirstFrameOnLine = f;
+  rv.mNumFramesOnLine = 1;
+  return rv;
+}
+
+int32_t nsGridContainerFrame::FindLineContaining(nsIFrame* aFrame,
+                                                 int32_t aStartLine) {
+  const int32_t index = mFrames.IndexOf(aFrame);
+  if (index < 0) {
+    return -1;
+  }
+  if (index < aStartLine) {
+    return -1;
+  }
+  return index;
+}
+
+NS_IMETHODIMP
+nsGridContainerFrame::CheckLineOrder(int32_t aLine, bool* aIsReordered,
+                                     nsIFrame** aFirstVisual,
+                                     nsIFrame** aLastVisual) {
+  *aIsReordered = false;
+  *aFirstVisual = nullptr;
+  *aLastVisual = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsGridContainerFrame::FindFrameAt(int32_t aLineNumber, nsPoint aPos,
+                                  nsIFrame** aFrameFound,
+                                  bool* aPosIsBeforeFirstFrame,
+                                  bool* aPosIsAfterLastFrame) {
+  const auto wm = GetWritingMode();
+  const LogicalPoint pos(wm, aPos, GetSize());
+
+  *aFrameFound = nullptr;
+  *aPosIsBeforeFirstFrame = true;
+  *aPosIsAfterLastFrame = false;
+
+  nsIFrame* f = mFrames.FrameAt(aLineNumber);
+  if (!f) {
+    return NS_OK;
+  }
+
+  auto rect = f->GetLogicalRect(wm, GetSize());
+  *aFrameFound = f;
+  *aPosIsBeforeFirstFrame = pos.I(wm) < rect.IStart(wm);
+  *aPosIsAfterLastFrame = pos.I(wm) > rect.IEnd(wm);
+  return NS_OK;
 }

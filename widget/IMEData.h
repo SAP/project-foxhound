@@ -11,6 +11,8 @@
 #include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/ToString.h"
 
+#include "nsCOMPtr.h"
+#include "nsIURI.h"
 #include "nsPoint.h"
 #include "nsRect.h"
 #include "nsString.h"
@@ -411,8 +413,9 @@ struct InputContext final {
   // of its members need to be deleted at XPCOM shutdown.  Otherwise, it's
   // detected as memory leak.
   void ShutDown() {
+    mURI = nullptr;
     mHTMLInputType.Truncate();
-    mHTMLInputInputmode.Truncate();
+    mHTMLInputMode.Truncate();
     mActionHint.Truncate();
     mAutocapitalize.Truncate();
   }
@@ -445,7 +448,7 @@ struct InputContext final {
            // input type and inputmode are supported by Windows IME API, GTK
            // IME API and Android IME API
            mHTMLInputType != aOldContext.mHTMLInputType ||
-           mHTMLInputInputmode != aOldContext.mHTMLInputInputmode ||
+           mHTMLInputMode != aOldContext.mHTMLInputMode ||
 #endif
 #if defined(ANDROID) || defined(MOZ_WIDGET_GTK)
            // autocapitalize is supported by Android IME API and GTK IME API
@@ -460,11 +463,14 @@ struct InputContext final {
 
   IMEState mIMEState;
 
+  // The URI of the document which has the editable element.
+  nsCOMPtr<nsIURI> mURI;
+
   /* The type of the input if the input is a html input field */
   nsString mHTMLInputType;
 
-  /* The type of the inputmode */
-  nsString mHTMLInputInputmode;
+  // The value of the inputmode
+  nsString mHTMLInputMode;
 
   /* A hint for the action that is performed when the input is submitted */
   nsString mActionHint;

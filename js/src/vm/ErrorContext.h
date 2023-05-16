@@ -16,12 +16,18 @@ namespace js {
 class ErrorContext;
 
 struct OffThreadFrontendErrors {
-  OffThreadFrontendErrors() : overRecursed(false), outOfMemory(false) {}
+  OffThreadFrontendErrors() = default;
   // Any errors or warnings produced during compilation. These are reported
   // when finishing the script.
   Vector<UniquePtr<CompileError>, 0, SystemAllocPolicy> errors;
-  bool overRecursed;
-  bool outOfMemory;
+  Vector<UniquePtr<CompileError>, 0, SystemAllocPolicy> warnings;
+  bool overRecursed = false;
+  bool outOfMemory = false;
+  bool allocationOverflow = false;
+
+  bool hadErrors() const {
+    return outOfMemory || overRecursed || allocationOverflow || !errors.empty();
+  }
 };
 
 class ErrorAllocator : public MallocProvider<ErrorAllocator> {
@@ -47,7 +53,7 @@ class ErrorContext {
 
   // Report CompileErrors
   virtual void reportError(js::CompileError* err) = 0;
-  virtual void reportWarning(js::CompileError* err) = 0;
+  virtual bool reportWarning(js::CompileError* err) = 0;
 
   // Report ErrorAllocator errors
   virtual void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
@@ -65,6 +71,7 @@ class ErrorContext {
   // Status of errors reported to this ErrorContext
   virtual bool hadOutOfMemory() const = 0;
   virtual bool hadOverRecursed() const = 0;
+  virtual bool hadAllocationOverflow() const = 0;
   virtual bool hadErrors() const = 0;
 
 #ifdef __wasi__
@@ -74,58 +81,39 @@ class ErrorContext {
 #endif  // __wasi__
 };
 
-class MainThreadErrorContext : public ErrorContext {
- private:
-  JSContext* cx_;
-
- public:
-  explicit MainThreadErrorContext(JSContext* cx);
-
-  // Report CompileErrors
-  void reportError(js::CompileError* err) override;
-  void reportWarning(js::CompileError* err) override;
-
-  // Report ErrorAllocator errors
-  void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
-                      size_t nbytes, void* reallocPtr = nullptr) override;
-  void onAllocationOverflow() override;
-
-  void onOutOfMemory() override;
-  void onOverRecursed() override;
-
-  void recoverFromOutOfMemory() override;
-
-  const JSErrorFormatString* gcSafeCallback(
-      JSErrorCallback callback, void* userRef,
-      const unsigned errorNumber) override;
-
-  // Status of errors reported to this ErrorContext
-  bool hadOutOfMemory() const override;
-  bool hadOverRecursed() const override;
-  bool hadErrors() const override;
-
-#ifdef __wasi__
-  void incWasiRecursionDepth() override;
-  void decWasiRecursionDepth() override;
-  bool checkWasiRecursionLimit() override;
-#endif  // __wasi__
-};
-
 class OffThreadErrorContext : public ErrorContext {
  private:
   js::OffThreadFrontendErrors errors_;
 
+ protected:
+  // (optional) Current JSContext to support main-thread-specific
+  // handling for error reporting, GC, and memory allocation.
+  //
+  // Set by setCurrentJSContext.
+  JSContext* maybeCx_ = nullptr;
+
  public:
   OffThreadErrorContext() = default;
 
+  void setCurrentJSContext(JSContext* cx);
+
+  enum class Warning { Suppress, Report };
+
+  void convertToRuntimeError(JSContext* cx, Warning warning = Warning::Report);
+
   void linkWithJSContext(JSContext* cx);
+
   const Vector<UniquePtr<CompileError>, 0, SystemAllocPolicy>& errors() const {
     return errors_.errors;
+  }
+  const Vector<UniquePtr<CompileError>, 0, SystemAllocPolicy>& warnings()
+      const {
+    return errors_.warnings;
   }
 
   // Report CompileErrors
   void reportError(js::CompileError* err) override;
-  void reportWarning(js::CompileError* err) override;
+  bool reportWarning(js::CompileError* err) override;
 
   // Report ErrorAllocator errors
   void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
@@ -144,9 +132,10 @@ class OffThreadErrorContext : public ErrorContext {
   // Status of errors reported to this ErrorContext
   bool hadOutOfMemory() const override { return errors_.outOfMemory; }
   bool hadOverRecursed() const override { return errors_.overRecursed; }
-  bool hadErrors() const override {
-    return hadOutOfMemory() || hadOverRecursed() || !errors_.errors.empty();
+  bool hadAllocationOverflow() const override {
+    return errors_.allocationOverflow;
   }
+  bool hadErrors() const override;
 
 #ifdef __wasi__
   void incWasiRecursionDepth() override;
@@ -157,6 +146,35 @@ class OffThreadErrorContext : public ErrorContext {
  private:
   void ReportOutOfMemory();
   void addPendingOutOfMemory();
+};
+
+// Automatically report any pending exception when leaving the scope.
+class MOZ_STACK_CLASS AutoReportFrontendContext : public OffThreadErrorContext {
+  // The target JSContext to report the errors to.
+  JSContext* cx_;
+
+  Warning warning_;
+
+ public:
+  explicit AutoReportFrontendContext(JSContext* cx,
+                                     Warning warning = Warning::Report)
+      : OffThreadErrorContext(), cx_(cx), warning_(warning) {
+    setCurrentJSContext(cx_);
+    MOZ_ASSERT(cx_ == maybeCx_);
+  }
+
+  ~AutoReportFrontendContext() {
+    if (cx_) {
+      convertToRuntimeErrorAndClear();
+    }
+  }
+
+  void clearAutoReport() { cx_ = nullptr; }
+
+  void convertToRuntimeErrorAndClear() {
+    convertToRuntimeError(cx_, warning_);
+    cx_ = nullptr;
+  }
 };
 
 }  // namespace js

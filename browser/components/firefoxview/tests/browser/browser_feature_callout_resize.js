@@ -9,7 +9,6 @@ const primaryButtonSelector = `#${calloutId} .primary`;
 const featureTourPref = "browser.firefox-view.feature-tour";
 const getPrefValueByScreen = screen => {
   return JSON.stringify({
-    message: "FIREFOX_VIEW_FEATURE_TOUR",
     screen: `FEATURE_CALLOUT_${screen}`,
     complete: false,
   });
@@ -27,10 +26,28 @@ const clickPrimaryButton = async doc => {
   doc.querySelector(primaryButtonSelector).click();
 };
 
+add_setup(async function setup() {
+  let originalWidth = window.outerWidth;
+  let originalHeight = window.outerHeight;
+  registerCleanupFunction(async () => {
+    await BrowserTestUtils.withNewTab(
+      {
+        gBrowser,
+        url: "about:firefoxview",
+      },
+      async browser => window.FullZoom.reset(browser)
+    );
+    window.resizeTo(originalWidth, originalHeight);
+  });
+});
+
 // Tour is accessible using a screen reader and keyboard navigation
 add_task(async function feature_callout_is_accessible() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.firefox-view.feature-tour", getPrefValueByScreen(1)]],
+    set: [
+      ["browser.firefox-view.feature-tour", getPrefValueByScreen(1)],
+      ["browser.sessionstore.max_tabs_undo", 1],
+    ],
   });
 
   await BrowserTestUtils.withNewTab(
@@ -39,24 +56,26 @@ add_task(async function feature_callout_is_accessible() {
       url: "about:firefoxview",
     },
     async browser => {
-      let startHeight = window.outerHeight;
-      let startWidth = window.outerWidth;
-
       const { document } = browser.contentWindow;
+
+      window.FullZoom.setZoom(0.5, browser);
+      browser.contentWindow.resizeTo(1550, 1000);
+
       await waitForCalloutScreen(document, 1);
 
-      ok(
-        (document.activeElement.id = calloutId),
+      await BrowserTestUtils.waitForCondition(
+        () => document.activeElement.id === calloutId,
         "Feature Callout is focused on page load"
       );
-      ok(
-        document.querySelector(`${calloutSelector}[role="alert"]`),
+      await BrowserTestUtils.waitForCondition(
+        () => document.querySelector(`${calloutSelector}[role="alert"]`),
         "The callout container has role of alert"
       );
-      ok(
-        document.querySelector(
-          `${calloutSelector}[aria-describedby="#${calloutId} .welcome-text"]`
-        ),
+      await BrowserTestUtils.waitForCondition(
+        () =>
+          document.querySelector(
+            `${calloutSelector}[aria-describedby="#${calloutId} .welcome-text"]`
+          ),
         "The callout container has an aria-describedby value equal to the screen welcome text"
       );
 
@@ -74,23 +93,24 @@ add_task(async function feature_callout_is_accessible() {
         () => document.querySelector(calloutSelector).style.top != startingTop
       );
 
-      ok(
-        (document.activeElement.id = calloutId),
+      await BrowserTestUtils.waitForCondition(
+        () => document.activeElement.id === calloutId,
         "Feature Callout is focused after advancing screens"
       );
-      ok(
-        document.querySelector(`${calloutSelector}[role="alert"]`),
+      await BrowserTestUtils.waitForCondition(
+        () => document.querySelector(`${calloutSelector}[role="alert"]`),
         "The callout container has role of alert after advancing screens"
       );
-
-      browser.contentWindow.resizeTo(startWidth, startHeight);
     }
   );
 });
 
 add_task(async function feature_callout_is_repositioned_if_it_does_not_fit() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.firefox-view.feature-tour", getPrefValueByScreen(3)]],
+    set: [
+      ["browser.firefox-view.feature-tour", getPrefValueByScreen(1)],
+      ["browser.sessionstore.max_tabs_undo", 1],
+    ],
   });
 
   await BrowserTestUtils.withNewTab(
@@ -99,39 +119,160 @@ add_task(async function feature_callout_is_repositioned_if_it_does_not_fit() {
       url: "about:firefoxview",
     },
     async browser => {
-      let startHeight = window.outerHeight;
-      let startWidth = window.outerWidth;
-
       const { document } = browser.contentWindow;
 
-      await waitForCalloutScreen(document, 3);
-
-      let startingTop = document.querySelector(calloutSelector).style.top;
-
-      browser.contentWindow.resizeTo(1200, 800);
-
+      browser.contentWindow.resizeTo(1550, 1000);
+      await waitForCalloutScreen(document, 1);
       ok(
-        document.querySelector(`${calloutSelector}.arrow-inline-end`),
-        "On third screen, the callout is positioned at the start of the parent element originally configured"
+        document.querySelector(`${calloutSelector}.arrow-top`),
+        "On first screen at 1550x1000, the callout is positioned below the parent element"
       );
 
-      startingTop = document.querySelector(calloutSelector).style.top;
-
-      browser.contentWindow.resizeTo(800, 800);
-
+      let startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(1550, 600);
       // Wait for callout to be repositioned
       await BrowserTestUtils.waitForMutationCondition(
         document.querySelector(calloutSelector),
         { attributeFilter: ["style"], attributes: true },
         () => document.querySelector(calloutSelector).style.top != startingTop
       );
-
       ok(
-        document.querySelector(`${calloutSelector}.arrow-top`),
-        "On third screen at a narrower window width, the callout is positioned below the parent element"
+        document.querySelector(`${calloutSelector}.arrow-inline-start`),
+        "On first screen at 1550x600, the callout is positioned to the right of the parent element"
       );
 
-      browser.contentWindow.resizeTo(startWidth, startHeight);
+      startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(1100, 600);
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-top`),
+        "On first screen at 1100x600, the callout is positioned below the parent element"
+      );
+
+      clickPrimaryButton(document);
+      await waitForCalloutScreen(document, 2);
+      clickPrimaryButton(document);
+      await waitForCalloutScreen(document, 3);
+
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-inline-end`),
+        "On third screen at 1100x600, the callout is positioned at the start of the parent element originally configured"
+      );
+
+      startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(800, 800);
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-bottom`),
+        "On third screen at 800x800, the callout is positioned above the parent element"
+      );
+
+      startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(800, 1300);
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-top`),
+        "On third screen at 800x1300, the callout is positioned below the parent element"
+      );
+    }
+  );
+});
+
+add_task(async function feature_callout_is_repositioned_rtl() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [featureTourPref, getPrefValueByScreen(1)],
+      // Set layout direction to right to left
+      ["intl.l10n.pseudo", "bidi"],
+      ["browser.sessionstore.max_tabs_undo", 1],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      browser.contentWindow.resizeTo(1550, 1000);
+      await waitForCalloutScreen(document, 1);
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-top`),
+        "On first screen at 1550x1000, the callout is positioned below the parent element"
+      );
+
+      let startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(1550, 600);
+      // Wait for callout to be repositioned
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-inline-end`),
+        "On first screen at 1550x600, the callout is positioned to the right of the parent element"
+      );
+
+      startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(1100, 600);
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-top`),
+        "On first screen at 1100x600, the callout is positioned below the parent element"
+      );
+
+      clickPrimaryButton(document);
+      await waitForCalloutScreen(document, 2);
+      clickPrimaryButton(document);
+      await waitForCalloutScreen(document, 3);
+
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-inline-start`),
+        "On third screen at 1100x600, the callout is positioned at the start of the parent element originally configured"
+      );
+
+      startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(800, 800);
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-bottom`),
+        "On third screen at 800x800, the callout is positioned above the parent element"
+      );
+
+      startingTop = document.querySelector(calloutSelector).style.top;
+      browser.contentWindow.resizeTo(800, 1300);
+      await BrowserTestUtils.waitForMutationCondition(
+        document.querySelector(calloutSelector),
+        { attributeFilter: ["style"], attributes: true },
+        () => document.querySelector(calloutSelector).style.top != startingTop
+      );
+      ok(
+        document.querySelector(`${calloutSelector}.arrow-top`),
+        "On third screen at 800x1300, the callout is positioned below the parent element"
+      );
     }
   );
 });

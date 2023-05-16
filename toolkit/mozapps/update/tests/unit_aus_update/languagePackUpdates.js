@@ -7,8 +7,8 @@ const { getAppInfo } = ChromeUtils.import(
 const { XPIInstall } = ChromeUtils.import(
   "resource://gre/modules/addons/XPIInstall.jsm"
 );
-const { PromiseUtils } = ChromeUtils.import(
-  "resource://gre/modules/PromiseUtils.jsm"
+const { PromiseUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PromiseUtils.sys.mjs"
 );
 const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 const { TelemetryTestUtils } = ChromeUtils.import(
@@ -62,7 +62,7 @@ function mockLangpackUpdate() {
   return stagingCall.promise;
 }
 
-add_task(async function init() {
+add_setup(async function() {
   // Thunderbird doesn't have one or more of the probes used in this test.
   // Ensure the data is collected anyway.
   Services.prefs.setBoolPref(

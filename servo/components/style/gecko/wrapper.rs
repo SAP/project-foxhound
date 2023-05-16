@@ -19,8 +19,6 @@ use crate::author_styles::AuthorStyles;
 use crate::context::{PostAnimationTasks, QuirksMode, SharedStyleContext, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
-use dom::{DocumentState, ElementState};
-use crate::font_metrics::{FontMetrics, FontMetricsOrientation, FontMetricsProvider};
 use crate::gecko::data::GeckoStyleSheet;
 use crate::gecko::selector_parser::{NonTSPseudoClass, PseudoElement, SelectorImpl};
 use crate::gecko::snapshot_helpers;
@@ -64,15 +62,13 @@ use crate::selector_parser::{AttrValue, Lang};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::stylist::CascadeData;
-use crate::values::computed::font::GenericFontFamily;
-use crate::values::computed::Length;
-use crate::values::specified::length::FontBaseSize;
 use crate::values::{AtomIdent, AtomString};
 use crate::CaseSensitivityExt;
 use crate::LocalName;
 use app_units::Au;
-use euclid::default::Size2D;
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
+use dom::{DocumentState, ElementState};
+use euclid::default::Size2D;
 use fxhash::FxHashMap;
 use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
@@ -81,12 +77,11 @@ use selectors::matching::{ElementSelectorFlags, MatchingContext};
 use selectors::sink::Push;
 use selectors::{Element, OpaqueElement};
 use servo_arc::{Arc, ArcBorrow, RawOffsetArc};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::cell::RefCell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[inline]
 fn elements_with_id<'a, 'le>(
@@ -280,16 +275,15 @@ impl<'ln> GeckoNode<'ln> {
         #[allow(dead_code)]
         fn static_assert() {
             let _: [u8; std::mem::size_of::<Cell<u32>>()] = [0u8; std::mem::size_of::<AtomicU32>()];
-            let _: [u8; std::mem::align_of::<Cell<u32>>()] = [0u8; std::mem::align_of::<AtomicU32>()];
+            let _: [u8; std::mem::align_of::<Cell<u32>>()] =
+                [0u8; std::mem::align_of::<AtomicU32>()];
         }
 
         // Rust doesn't provide standalone atomic functions like GCC/clang do
         // (via the atomic intrinsics) or via std::atomic_ref, but it guarantees
         // that the memory representation of u32 and AtomicU32 matches:
         // https://doc.rust-lang.org/std/sync/atomic/struct.AtomicU32.html
-        unsafe {
-            std::mem::transmute::<&Cell<u32>, &AtomicU32>(flags)
-        }
+        unsafe { std::mem::transmute::<&Cell<u32>, &AtomicU32>(flags) }
     }
 
     #[inline]
@@ -682,12 +676,16 @@ impl<'le> GeckoElement<'le> {
 
     #[inline]
     fn set_flags(&self, flags: u32) {
-        self.as_node().flags_atomic().fetch_or(flags, Ordering::Relaxed);
+        self.as_node()
+            .flags_atomic()
+            .fetch_or(flags, Ordering::Relaxed);
     }
 
     #[inline]
     unsafe fn unset_flags(&self, flags: u32) {
-        self.as_node().flags_atomic().fetch_and(!flags, Ordering::Relaxed);
+        self.as_node()
+            .flags_atomic()
+            .fetch_and(!flags, Ordering::Relaxed);
     }
 
     /// Returns true if this element has descendants for lazy frame construction.
@@ -955,150 +953,8 @@ fn get_animation_rule(
     }
 }
 
-#[derive(Debug)]
-/// Gecko font metrics provider
-pub struct GeckoFontMetricsProvider {
-    /// Cache of base font sizes for each language. Usually will have 1 element.
-    ///
-    /// This may be slow on pages using more languages, might be worth
-    /// optimizing by caching lang->group mapping separately and/or using a
-    /// hashmap on larger loads.
-    pub font_size_cache: RefCell<Vec<(Atom, DefaultFontSizes)>>,
-}
-
-impl GeckoFontMetricsProvider {
-    /// Construct
-    pub fn new() -> Self {
-        GeckoFontMetricsProvider {
-            font_size_cache: RefCell::new(Vec::new()),
-        }
-    }
-}
-
-impl FontMetricsProvider for GeckoFontMetricsProvider {
-    fn create_from(_: &SharedStyleContext) -> GeckoFontMetricsProvider {
-        GeckoFontMetricsProvider::new()
-    }
-
-    fn get_size(&self, font_name: &Atom, font_family: GenericFontFamily) -> Length {
-        let mut cache = self.font_size_cache.borrow_mut();
-        if let Some(sizes) = cache.iter().find(|el| el.0 == *font_name) {
-            return sizes.1.size_for_generic(font_family);
-        }
-        let sizes = unsafe { bindings::Gecko_GetBaseSize(font_name.as_ptr()) };
-        let size = sizes.size_for_generic(font_family);
-        cache.push((font_name.clone(), sizes));
-        size
-    }
-
-    fn query(
-        &self,
-        context: &crate::values::computed::Context,
-        base_size: FontBaseSize,
-        orientation: FontMetricsOrientation,
-        retrieve_math_scales: bool,
-    ) -> FontMetrics {
-        let pc = match context.device().pres_context() {
-            Some(pc) => pc,
-            None => return Default::default(),
-        };
-
-        let size = base_size.resolve(context);
-        let style = context.style();
-
-        let (wm, font) = match base_size {
-            FontBaseSize::CurrentStyle => (style.writing_mode, style.get_font()),
-            // This is only used for font-size computation.
-            FontBaseSize::InheritedStyle => {
-                (*style.inherited_writing_mode(), style.get_parent_font())
-            },
-        };
-
-        let vertical_metrics = match orientation {
-            FontMetricsOrientation::MatchContextPreferHorizontal => {
-                wm.is_vertical() && wm.is_upright()
-            },
-            FontMetricsOrientation::MatchContextPreferVertical => {
-                wm.is_vertical() && !wm.is_sideways()
-            },
-            FontMetricsOrientation::Horizontal => false,
-        };
-        let gecko_metrics = unsafe {
-            bindings::Gecko_GetFontMetrics(
-                pc,
-                vertical_metrics,
-                font.gecko(),
-                size,
-                // we don't use the user font set in a media query
-                !context.in_media_query,
-                retrieve_math_scales,
-            )
-        };
-        FontMetrics {
-            x_height: Some(gecko_metrics.mXSize),
-            zero_advance_measure: if gecko_metrics.mChSize.px() >= 0. {
-                Some(gecko_metrics.mChSize)
-            } else {
-                None
-            },
-            cap_height: if gecko_metrics.mCapHeight.px() >= 0. {
-                Some(gecko_metrics.mCapHeight)
-            } else {
-                None
-            },
-            ic_width: if gecko_metrics.mIcWidth.px() >= 0. {
-                Some(gecko_metrics.mIcWidth)
-            } else {
-                None
-            },
-            ascent: gecko_metrics.mAscent,
-            script_percent_scale_down: if gecko_metrics.mScriptPercentScaleDown > 0. {
-                Some(gecko_metrics.mScriptPercentScaleDown)
-            } else {
-                None
-            },
-            script_script_percent_scale_down: if gecko_metrics.mScriptScriptPercentScaleDown > 0. {
-                Some(gecko_metrics.mScriptScriptPercentScaleDown)
-            } else {
-                None
-            },
-        }
-    }
-}
-
-/// The default font sizes for generic families for a given language group.
-#[derive(Debug)]
-#[repr(C)]
-pub struct DefaultFontSizes {
-    variable: Length,
-    serif: Length,
-    sans_serif: Length,
-    monospace: Length,
-    cursive: Length,
-    fantasy: Length,
-    system_ui: Length,
-}
-
-impl DefaultFontSizes {
-    fn size_for_generic(&self, font_family: GenericFontFamily) -> Length {
-        match font_family {
-            GenericFontFamily::None => self.variable,
-            GenericFontFamily::Serif => self.serif,
-            GenericFontFamily::SansSerif => self.sans_serif,
-            GenericFontFamily::Monospace => self.monospace,
-            GenericFontFamily::Cursive => self.cursive,
-            GenericFontFamily::Fantasy => self.fantasy,
-            GenericFontFamily::SystemUi => self.system_ui,
-            GenericFontFamily::MozEmoji => unreachable!(
-                "Should never get here, since this doesn't (yet) appear on font family"
-            ),
-        }
-    }
-}
-
 impl<'le> TElement for GeckoElement<'le> {
     type ConcreteNode = GeckoNode<'le>;
-    type FontMetricsProvider = GeckoFontMetricsProvider;
     type TraversalChildrenIterator = GeckoChildrenIterator<'le>;
 
     fn inheritance_parent(&self) -> Option<Self> {
@@ -1191,7 +1047,14 @@ impl<'le> TElement for GeckoElement<'le> {
         }
 
         unsafe {
-            let frame = self.0._base._base._base.__bindgen_anon_1.mPrimaryFrame.as_ref();
+            let frame = self
+                .0
+                ._base
+                ._base
+                ._base
+                .__bindgen_anon_1
+                .mPrimaryFrame
+                .as_ref();
             if frame.is_null() {
                 return Size2D::zero();
             }

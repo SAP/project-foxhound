@@ -8,12 +8,12 @@
 const TEST_URL =
   "http://example.com/browser/devtools/client/framework/test/allocations/reloaded-page.html";
 
-const { require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
+const { require } = ChromeUtils.importESModule(
+  "resource://devtools/shared/loader/Loader.sys.mjs"
 );
 const {
   BrowserConsoleManager,
-} = require("devtools/client/webconsole/browser-console-manager");
+} = require("resource://devtools/client/webconsole/browser-console-manager.js");
 
 async function testScript() {
   // Open

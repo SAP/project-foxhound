@@ -4,59 +4,61 @@
 
 "use strict";
 
-const protocol = require("devtools/shared/protocol");
-const { getCSSLexer } = require("devtools/shared/css/lexer");
+const protocol = require("resource://devtools/shared/protocol.js");
+const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
 const InspectorUtils = require("InspectorUtils");
-const TrackChangeEmitter = require("devtools/server/actors/utils/track-change-emitter");
+const TrackChangeEmitter = require("resource://devtools/server/actors/utils/track-change-emitter.js");
 const {
   getRuleText,
   getTextAtLineColumn,
-} = require("devtools/server/actors/utils/style-utils");
+} = require("resource://devtools/server/actors/utils/style-utils.js");
 
-const { styleRuleSpec } = require("devtools/shared/specs/style-rule");
+const {
+  styleRuleSpec,
+} = require("resource://devtools/shared/specs/style-rule.js");
 const {
   style: { ELEMENT_STYLE },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
   this,
   "CssLogic",
-  "devtools/server/actors/inspector/css-logic",
+  "resource://devtools/server/actors/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "SharedCssLogic",
-  "devtools/shared/inspector/css-logic"
+  "resource://devtools/shared/inspector/css-logic.js"
 );
 loader.lazyRequireGetter(
   this,
   ["CSSRuleTypeName", "findCssSelector", "prettifyCSS"],
-  "devtools/shared/inspector/css-logic",
+  "resource://devtools/shared/inspector/css-logic.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isCssPropertyKnown",
-  "devtools/server/actors/css-properties",
+  "resource://devtools/server/actors/css-properties.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "isPropertyUsed",
-  "devtools/server/actors/utils/inactive-property-helper",
+  "resource://devtools/server/actors/utils/inactive-property-helper.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "parseNamedDeclarations",
-  "devtools/shared/css/parsing-utils",
+  "resource://devtools/shared/css/parsing-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["UPDATE_PRESERVING_RULES", "UPDATE_GENERAL"],
-  "devtools/server/actors/style-sheet",
+  "resource://devtools/server/actors/style-sheet.js",
   true
 );
 

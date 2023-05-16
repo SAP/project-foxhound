@@ -28,7 +28,7 @@ Services.scriptloader.loadSubScript(
 const {
   ORDERED_PROPS,
   PREF_KEYS,
-} = require("devtools/client/accessibility/constants");
+} = require("resource://devtools/client/accessibility/constants.js");
 
 // Enable the Accessibility panel
 Services.prefs.setBoolPref("devtools.accessibility.enabled", true);
@@ -799,7 +799,7 @@ function addA11yPanelTestsTask(tests, uri, msg, options) {
  *         Resolves when the toolbox and tab have been destroyed and closed.
  */
 async function closeTabToolboxAccessibility(tab = gBrowser.selectedTab) {
-  if (TabDescriptorFactory.isKnownTab(tab)) {
+  if (gDevTools.hasToolboxForTab(tab)) {
     await gDevTools.closeToolboxForTab(tab);
   }
 

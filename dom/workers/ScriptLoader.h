@@ -8,6 +8,7 @@
 #define mozilla_dom_workers_scriptloader_h__
 
 #include "js/loader/ScriptLoadRequest.h"
+#include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/Maybe.h"
@@ -39,8 +40,8 @@ enum WorkerScriptType { WorkerScript, DebuggerScript };
 namespace workerinternals {
 
 namespace loader {
-class ScriptLoaderRunnable;
 class ScriptExecutorRunnable;
+class AbruptCancellationRunnable;
 class CachePromiseHandler;
 class CacheLoadHandler;
 class CacheCreator;
@@ -70,7 +71,6 @@ class NetworkLoadHandler;
  *                |
  *                | Create the loader, along with the ScriptLoadRequests
  *                | call DispatchLoadScripts()
- *                | Create ScriptLoaderRunnable
  *                |
  *  #####################################################################
  *                             Enter Main thread
@@ -116,27 +116,23 @@ class NetworkLoadHandler;
  *                                          +------------------------+
  */
 
-class WorkerScriptLoader final : public nsINamed {
-  friend class ScriptLoaderRunnable;
+class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
+                           public nsINamed {
   friend class ScriptExecutorRunnable;
+  friend class AbruptCancellationRunnable;
   friend class CachePromiseHandler;
   friend class CacheLoadHandler;
   friend class CacheCreator;
   friend class NetworkLoadHandler;
 
-  using ScriptLoadRequest = JS::loader::ScriptLoadRequest;
-  using ScriptLoadRequestList = JS::loader::ScriptLoadRequestList;
-  using ScriptFetchOptions = JS::loader::ScriptFetchOptions;
-
   RefPtr<ThreadSafeWorkerRef> mWorkerRef;
   UniquePtr<SerializedStackHolder> mOriginStack;
   nsString mOriginStackJSON;
   nsCOMPtr<nsIEventTarget> mSyncLoopTarget;
-  JS::loader::ScriptLoadRequestList mLoadingRequests;
-  JS::loader::ScriptLoadRequestList mLoadedRequests;
+  ScriptLoadRequestList mLoadingRequests;
+  ScriptLoadRequestList mLoadedRequests;
   Maybe<ServiceWorkerDescriptor> mController;
   WorkerScriptType mWorkerScriptType;
-  Maybe<nsresult> mCancelMainThread;
   ErrorResult& mRv;
   bool mExecutionAborted = false;
   bool mMutedErrorFlag = false;
@@ -187,7 +183,7 @@ class WorkerScriptLoader final : public nsINamed {
   bool DispatchLoadScripts();
 
  protected:
-  nsIURI* GetBaseURI();
+  nsIURI* GetBaseURI() const override;
 
   nsIURI* GetInitialBaseURI();
 
@@ -215,6 +211,10 @@ class WorkerScriptLoader final : public nsINamed {
 
   bool IsCancelled() { return mCancelMainThread.isSome(); }
 
+  nsresult GetCancelResult() {
+    return (IsCancelled()) ? mCancelMainThread.ref() : NS_OK;
+  }
+
   void CancelMainThread(nsresult aCancelResult,
                         nsTArray<WorkerLoadContext*>* aContextList);
 
@@ -223,6 +223,8 @@ class WorkerScriptLoader final : public nsINamed {
   nsresult LoadScript(ScriptLoadRequest* aRequest);
 
   void ShutdownScriptLoader(bool aResult, bool aMutedError);
+
+  void AbruptShutdown();
 
  private:
   ~WorkerScriptLoader() = default;
@@ -235,6 +237,8 @@ class WorkerScriptLoader final : public nsINamed {
 
   void TryShutdown();
 
+  void DispatchAbruptShutdown();
+
   nsTArray<WorkerLoadContext*> GetLoadingList();
 
   nsIGlobalObject* GetGlobal();
@@ -245,7 +249,23 @@ class WorkerScriptLoader final : public nsINamed {
 
   bool EvaluateScript(JSContext* aCx, ScriptLoadRequest* aRequest);
 
+  nsresult FillCompileOptionsForRequest(
+      JSContext* cx, ScriptLoadRequest* aRequest, JS::CompileOptions* aOptions,
+      JS::MutableHandle<JSScript*> aIntroductionScript) override;
+
+  void ReportErrorToConsole(ScriptLoadRequest* aRequest,
+                            nsresult aResult) const override;
+
+  // Only used by import maps, crash if we get here.
+  void ReportWarningToConsole(
+      ScriptLoadRequest* aRequest, const char* aMessageName,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>()) const override {
+    MOZ_CRASH("Import maps have not been implemented for this context");
+  }
+
   void LogExceptionToConsole(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+
+  Maybe<nsresult> mCancelMainThread;
 };
 
 }  // namespace loader

@@ -115,6 +115,7 @@ use std::collections::hash_map::Entry;
 use time::precise_time_ns;
 
 mod debug;
+mod gpu_buffer;
 mod gpu_cache;
 mod shade;
 mod vertex;
@@ -124,6 +125,7 @@ pub(crate) mod init;
 pub use debug::DebugRenderer;
 pub use shade::{Shaders, SharedShaders};
 pub use vertex::{desc, VertexArrayKind, MAX_VERTEX_TEXTURE_WIDTH};
+pub use gpu_buffer::{GpuBuffer, GpuBufferBuilder, GpuBufferAddress};
 
 /// The size of the array of each type of vertex data texture that
 /// is round-robin-ed each frame during bind_frame_data. Doing this
@@ -328,6 +330,7 @@ pub(crate) enum TextureSampler {
     PrimitiveHeadersF,
     PrimitiveHeadersI,
     ClipMask,
+    GpuBuffer,
 }
 
 impl TextureSampler {
@@ -356,6 +359,7 @@ impl Into<TextureSlot> for TextureSampler {
             TextureSampler::PrimitiveHeadersF => TextureSlot(7),
             TextureSampler::PrimitiveHeadersI => TextureSlot(8),
             TextureSampler::ClipMask => TextureSlot(9),
+            TextureSampler::GpuBuffer => TextureSlot(10),
         }
     }
 }
@@ -3938,7 +3942,7 @@ impl Renderer {
                 .external_image
                 .expect("BUG: Deferred resolves must be external images!");
             // Provide rendering information for NativeTexture external images.
-            let image = handler.lock(ext_image.id, ext_image.channel_index, deferred_resolve.rendering);
+            let image = handler.lock(ext_image.id, ext_image.channel_index);
             let texture_target = match ext_image.image_type {
                 ExternalImageType::TextureHandle(target) => target,
                 ExternalImageType::Buffer => {
@@ -3956,6 +3960,7 @@ impl Renderer {
                         texture_id,
                         texture_target,
                         image.uv,
+                        deferred_resolve.rendering,
                     )
                 }
                 ExternalImageSource::Invalid => {
@@ -3970,6 +3975,7 @@ impl Renderer {
                         0,
                         texture_target,
                         image.uv,
+                        deferred_resolve.rendering,
                     )
                 }
                 ExternalImageSource::RawData(_) => {
@@ -4217,6 +4223,34 @@ impl Renderer {
         self.device.disable_stencil();
 
         self.bind_frame_data(frame);
+
+        // Upload experimental GPU buffer texture if there is any data present
+        // TODO: Recycle these textures, upload via PBO or best approach for platform
+        let gpu_buffer_texture = if frame.gpu_buffer.is_empty() {
+            None
+        } else {
+            let gpu_buffer_texture = self.device.create_texture(
+                ImageBufferKind::Texture2D,
+                ImageFormat::RGBAF32,
+                frame.gpu_buffer.size.width,
+                frame.gpu_buffer.size.height,
+                TextureFilter::Nearest,
+                None,
+            );
+
+            self.device.bind_texture(
+                TextureSampler::GpuBuffer,
+                &gpu_buffer_texture,
+                Swizzle::default(),
+            );
+
+            self.device.upload_texture_immediate(
+                &gpu_buffer_texture,
+                &frame.gpu_buffer.data,
+            );
+
+            Some(gpu_buffer_texture)
+        };
 
         // Determine the present mode and dirty rects, if device_size
         // is Some(..). If it's None, no composite will occur and only
@@ -4472,6 +4506,10 @@ impl Renderer {
             results,
             present_mode,
         );
+
+        if let Some(gpu_buffer_texture) = gpu_buffer_texture {
+            self.device.delete_texture(gpu_buffer_texture);
+        }
 
         frame.has_been_rendered = true;
     }
@@ -5267,7 +5305,7 @@ struct DummyExternalImageHandler {
 
 #[cfg(feature = "replay")]
 impl ExternalImageHandler for DummyExternalImageHandler {
-    fn lock(&mut self, key: ExternalImageId, channel_index: u8, _rendering: ImageRendering) -> ExternalImage {
+    fn lock(&mut self, key: ExternalImageId, channel_index: u8) -> ExternalImage {
         let (ref captured_data, ref uv) = self.data[&(key, channel_index)];
         ExternalImage {
             uv: *uv,
@@ -5402,7 +5440,7 @@ impl Renderer {
                 info!("\t{}", def.short_path);
                 let ExternalImageData { id, channel_index, image_type } = def.external;
                 // The image rendering parameter is irrelevant because no filtering happens during capturing.
-                let ext_image = handler.lock(id, channel_index, ImageRendering::Auto);
+                let ext_image = handler.lock(id, channel_index);
                 let (data, short_path) = match ext_image.source {
                     ExternalImageSource::RawData(data) => {
                         let arc_id = arc_map.len() + 1;

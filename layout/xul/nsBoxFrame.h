@@ -29,11 +29,8 @@ class DrawTarget;
 }  // namespace gfx
 }  // namespace mozilla
 
-nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                         mozilla::ComputedStyle* aStyle, bool aIsRoot,
-                         nsBoxLayout* aLayoutManager);
-nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                         mozilla::ComputedStyle* aStyle);
+nsContainerFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
+                                 mozilla::ComputedStyle* aStyle);
 
 class nsBoxFrame : public nsContainerFrame {
  protected:
@@ -45,11 +42,8 @@ class nsBoxFrame : public nsContainerFrame {
   NS_DECL_QUERYFRAME
 #endif
 
-  friend nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                                  ComputedStyle* aStyle, bool aIsRoot,
-                                  nsBoxLayout* aLayoutManager);
-  friend nsIFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
-                                  ComputedStyle* aStyle);
+  friend nsContainerFrame* NS_NewBoxFrame(mozilla::PresShell* aPresShell,
+                                          ComputedStyle* aStyle);
 
   // gets the rect inside our border and debug border. If you wish to paint
   // inside a box call this method to get the rect so you don't draw on the
@@ -63,7 +57,6 @@ class nsBoxFrame : public nsContainerFrame {
   virtual nsSize GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) override;
   virtual nsSize GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) override;
-  virtual int32_t GetXULFlex() override;
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState) override;
   virtual Valignment GetXULVAlign() const override { return mValign; }
   virtual Halignment GetXULHAlign() const override { return mHalign; }
@@ -151,11 +144,10 @@ class nsBoxFrame : public nsContainerFrame {
 
  private:
   explicit nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsBoxFrame(aStyle, aPresContext, kClassID, false, nullptr) {}
+      : nsBoxFrame(aStyle, aPresContext, kClassID) {}
 
  protected:
-  nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID,
-             bool aIsRoot = false, nsBoxLayout* aLayoutManager = nullptr);
+  nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID);
   virtual ~nsBoxFrame();
 
   virtual bool GetInitialEqualSize(bool& aEqualSize);
@@ -171,7 +163,6 @@ class nsBoxFrame : public nsContainerFrame {
   nsSize mPrefSize;
   nsSize mMinSize;
   nsSize mMaxSize;
-  nscoord mFlex;
   nscoord mAscent;
 
   nsCOMPtr<nsBoxLayout> mLayoutManager;

@@ -14,6 +14,7 @@ from subprocess import CalledProcessError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+import mozilla_repo_urls
 from voluptuous import ALLOW_EXTRA, Any, Optional, Required, Schema
 
 from taskgraph.util import yaml
@@ -31,6 +32,8 @@ class ParameterMismatch(Exception):
 base_schema = Schema(
     {
         Required("base_repository"): str,
+        Required("base_ref"): str,
+        Required("base_rev"): str,
         Required("build_date"): int,
         Required("build_number"): int,
         Required("do_not_optimize"): [str],
@@ -77,22 +80,24 @@ def _get_defaults(repo_root=None):
     repo = get_repository(repo_path)
     try:
         repo_url = repo.get_url()
-        project = repo_url.rsplit("/", 1)[1]
-    except (CalledProcessError, IndexError):
-        # IndexError is raised if repo url doesn't have any slashes.
+        parsed_url = mozilla_repo_urls.parse(repo_url)
+        project = parsed_url.repo_name
+    except (CalledProcessError, mozilla_repo_urls.errors.InvalidRepoUrlError):
         repo_url = ""
         project = ""
 
     return {
         "base_repository": repo_url,
+        "base_ref": "",
+        "base_rev": "",
         "build_date": int(time.time()),
         "build_number": 1,
         "do_not_optimize": [],
         "existing_tasks": {},
         "filters": ["target_tasks_method"],
-        "head_ref": repo.head_ref,
+        "head_ref": repo.branch or repo.head_rev,
         "head_repository": repo_url,
-        "head_rev": repo.head_ref,
+        "head_rev": repo.head_rev,
         "head_tag": "",
         "level": "3",
         "moz_build_date": datetime.now().strftime("%Y%m%d%H%M%S"),

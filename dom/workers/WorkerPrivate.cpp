@@ -49,6 +49,7 @@
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerService.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/WorkerScope.h"
@@ -2864,7 +2865,7 @@ nsresult WorkerPrivate::GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
       loadInfo.mHasStorageAccessPermissionGranted =
           document->HasStorageAccessPermissionGranted();
       loadInfo.mShouldResistFingerprinting =
-          nsContentUtils::ShouldResistFingerprinting(document);
+          document->ShouldResistFingerprinting();
 
       // This is an hack to deny the storage-access-permission for workers of
       // sub-iframes.

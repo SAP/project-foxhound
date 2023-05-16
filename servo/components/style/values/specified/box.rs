@@ -8,10 +8,14 @@ use crate::custom_properties::Name as CustomPropertyName;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::{LonghandId, PropertyDeclarationId};
 use crate::properties::{PropertyId, ShorthandId};
-use crate::values::generics::box_::{GenericAnimationIterationCount, GenericPerspective, GenericLineClamp};
-use crate::values::generics::box_::{GenericContainIntrinsicSize, GenericVerticalAlign, VerticalAlignKeyword};
+use crate::values::generics::box_::{
+    GenericAnimationIterationCount, GenericLineClamp, GenericPerspective,
+};
+use crate::values::generics::box_::{
+    GenericContainIntrinsicSize, GenericVerticalAlign, VerticalAlignKeyword,
+};
 use crate::values::specified::length::{LengthPercentage, NonNegativeLength};
-use crate::values::specified::{AllowQuirks, Number, Integer};
+use crate::values::specified::{AllowQuirks, Integer, Number};
 use crate::values::{CustomIdent, KeyframesName, TimelineName};
 use crate::Atom;
 use cssparser::Parser;
@@ -100,8 +104,6 @@ pub enum DisplayInside {
     WebkitBox,
     #[cfg(feature = "gecko")]
     MozBox,
-    #[cfg(feature = "gecko")]
-    MozDeck,
     #[cfg(feature = "gecko")]
     MozPopup,
 }
@@ -215,8 +217,6 @@ impl Display {
     pub const MozBox: Self = Self::new(DisplayOutside::Block, DisplayInside::MozBox);
     #[cfg(feature = "gecko")]
     pub const MozInlineBox: Self = Self::new(DisplayOutside::Inline, DisplayInside::MozBox);
-    #[cfg(feature = "gecko")]
-    pub const MozDeck: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozDeck);
     #[cfg(feature = "gecko")]
     pub const MozPopup: Self = Self::new(DisplayOutside::XUL, DisplayInside::MozPopup);
 
@@ -598,8 +598,6 @@ impl Parse for Display {
             #[cfg(feature = "gecko")]
             "-moz-inline-box" if moz_display_values_enabled(context) => Display::MozInlineBox,
             #[cfg(feature = "gecko")]
-            "-moz-deck" if moz_display_values_enabled(context) => Display::MozDeck,
-            #[cfg(feature = "gecko")]
             "-moz-popup" if moz_display_values_enabled(context) => Display::MozPopup,
         })
     }
@@ -845,13 +843,10 @@ pub enum AnimationTimeline {
     /// Use default timeline. The animation’s timeline is a DocumentTimeline.
     Auto,
     /// The scroll-timeline name.
-    ///
-    /// Note: This could be the timeline name from @scroll-timeline rule, or scroll-timeline-name
-    /// from itself, its ancestors, or its previous siblings.
-    /// https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-timelines-named
+    /// https://drafts.csswg.org/scroll-animations-1/#scroll-timelines-named
     Timeline(TimelineName),
     /// The scroll() notation.
-    /// https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-notation
+    /// https://drafts.csswg.org/scroll-animations-1/#scroll-notation
     #[css(function)]
     Scroll(
         #[css(skip_if = "is_default")] ScrollAxis,
@@ -894,7 +889,10 @@ impl Parse for AnimationTimeline {
         }
 
         // https://drafts.csswg.org/scroll-animations-1/rewrite#scroll-notation
-        if input.try_parse(|i| i.expect_function_matching("scroll")).is_ok() {
+        if input
+            .try_parse(|i| i.expect_function_matching("scroll"))
+            .is_ok()
+        {
             return input.parse_nested_block(|i| {
                 Ok(Self::Scroll(
                     i.try_parse(ScrollAxis::parse).unwrap_or(ScrollAxis::Block),
@@ -1459,9 +1457,7 @@ impl Parse for ContainIntrinsicSize {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-
-        if let Ok(l) = input.try_parse(|i| NonNegativeLength::parse(context, i))
-        {
+        if let Ok(l) = input.try_parse(|i| NonNegativeLength::parse(context, i)) {
             return Ok(Self::Length(l));
         }
 
@@ -1481,9 +1477,10 @@ impl Parse for LineClamp {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        if let Ok(i) = input.try_parse(|i| crate::values::specified::PositiveInteger::parse(context, i))
+        if let Ok(i) =
+            input.try_parse(|i| crate::values::specified::PositiveInteger::parse(context, i))
         {
-            return Ok(Self(i.0))
+            return Ok(Self(i.0));
         }
         input.expect_ident_matching("none")?;
         Ok(Self::none())
@@ -1540,7 +1537,17 @@ bitflags! {
 
 /// https://drafts.csswg.org/css-contain-3/#container-name
 #[repr(transparent)]
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 pub struct ContainerName(#[css(iterable, if_empty = "none")] pub crate::OwnedSlice<CustomIdent>);
 
 impl ContainerName {
@@ -1556,17 +1563,29 @@ impl ContainerName {
 }
 
 impl Parse for ContainerName {
-    fn parse<'i, 't>( _: &ParserContext, input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
+    fn parse<'i, 't>(
+        _: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
         let mut idents = vec![];
         let location = input.current_source_location();
         let first = input.expect_ident()?;
         if first.eq_ignore_ascii_case("none") {
-            return Ok(Self::none())
+            return Ok(Self::none());
         }
-        const DISALLOWED_CONTAINER_NAMES: &'static [&'static str] = &["none", "not", "or", "and", "auto", "normal"];
-        idents.push(CustomIdent::from_ident(location, first, DISALLOWED_CONTAINER_NAMES)?);
+        const DISALLOWED_CONTAINER_NAMES: &'static [&'static str] =
+            &["none", "not", "or", "and", "auto", "normal"];
+        idents.push(CustomIdent::from_ident(
+            location,
+            first,
+            DISALLOWED_CONTAINER_NAMES,
+        )?);
         while let Ok(ident) = input.try_parse(|input| input.expect_ident_cloned()) {
-            idents.push(CustomIdent::from_ident(location, &ident, DISALLOWED_CONTAINER_NAMES)?);
+            idents.push(CustomIdent::from_ident(
+                location,
+                &ident,
+                DISALLOWED_CONTAINER_NAMES,
+            )?);
         }
         Ok(ContainerName(idents.into()))
     }
@@ -1691,7 +1710,7 @@ pub enum Float {
 #[derive(
     Clone, Copy, Debug, Eq, Hash, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem,
 )]
-/// https://drafts.csswg.org/css-box/#propdef-clear
+/// https://drafts.csswg.org/css2/#propdef-clear
 pub enum Clear {
     None,
     Left,
@@ -2189,7 +2208,10 @@ pub enum Overflow {
 // This can be derived once we remove or keep `-moz-hidden-unscrollable`
 // indefinitely.
 impl Parse for Overflow {
-    fn parse<'i, 't>(_: &ParserContext, input: &mut Parser<'i, 't>) -> Result<Self, ParseError<'i>> {
+    fn parse<'i, 't>(
+        _: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
         Ok(try_match_ident_ignore_ascii_case! { input,
             "visible" => Self::Visible,
             "hidden" => Self::Hidden,

@@ -190,8 +190,13 @@ interface nsIEditor  : nsISupports
 
   /* ------------ Transaction methods -------------- */
 
-  /** transactionManager Get the transaction manager the editor is using.
-    */
+  /**
+   * Retruns the transaction manager which is managed by the editor.
+   * Note that this is deprecated and temporarily available for comm-central.
+   * Therefore, don't use this in new code, and if you want to do something
+   * which is not available with nsIEditor, please file a bug for requesting
+   * new API.
+   */
   readonly attribute nsITransactionManager transactionManager;
 
   /** turn the undo system on or off
@@ -204,45 +209,55 @@ interface nsIEditor  : nsISupports
     */
   void enableUndo(in boolean enable);
 
-  /** undo reverses the effects of the last Do operation,
-    * if Undo is enabled in the editor.
-    * It is provided here so clients need no knowledge of whether
-    * the editor has a transaction manager or not.
-    * If a transaction manager is present, it is told to undo,
-    * and the result of that undo is returned.
-    * Otherwise, the Undo request is ignored and an
-    * error NS_ERROR_NOT_AVAILABLE is returned.
-    *
-    */
+  /**
+   * Returns true when undo/redo is enabled (by default).
+   */
+  [infallible] readonly attribute boolean undoRedoEnabled;
+
+  /**
+   * Retruns true when undo/redo is enabled and there is one or more transaction
+   * in the undo stack.
+   */
+  [infallible] readonly attribute boolean canUndo;
+
+  /**
+   * Returns true when undo/redo is enabled and there is one or more transaction
+   * in the redo stack.
+   */
+  [infallible] readonly attribute boolean canRedo;
+
+  /**
+   * Clears the transactions both for undo and redo.
+   * This may fail if you call this while editor is handling something, i.e.,
+   * don't call this from a legacy mutation event listeners, then, you won't
+   * see any exceptions.
+   */
+  [binaryname(ClearUndoRedoXPCOM)]
+  void clearUndoRedo();
+
+  /**
+   * Undo the topmost transaction in the undo stack.
+   * This may throw exception when this is called while editor is handling
+   * transactions.
+   */
   [can_run_script]
-  void undo(in unsigned long count);
+  void undo();
 
-  /** returns state information about the undo system.
-    * @param aIsEnabled [OUT] PR_TRUE if undo is enabled
-    * @param aCanUndo   [OUT] PR_TRUE if at least one transaction is
-    *                         currently ready to be undone.
-    */
-  void canUndo(out boolean isEnabled, out boolean canUndo);
-
-  /** redo reverses the effects of the last Undo operation
-    * It is provided here so clients need no knowledge of whether
-    * the editor has a transaction manager or not.
-    * If a transaction manager is present, it is told to redo and the
-    * result of the previously undone transaction is reapplied to the document.
-    * If no transaction is available for Redo, or if the document
-    * has no transaction manager, the Redo request is ignored and an
-    * error NS_ERROR_NOT_AVAILABLE is returned.
-    *
-    */
+  /**
+   * Undo all transactions in the undo stack.
+   * This may throw exception when this is called while editor is handling
+   * transactions.
+   */
   [can_run_script]
-  void redo(in unsigned long count);
+  void undoAll();
 
-  /** returns state information about the redo system.
-    * @param aIsEnabled [OUT] PR_TRUE if redo is enabled
-    * @param aCanRedo   [OUT] PR_TRUE if at least one transaction is
-                              currently ready to be redone.
-    */
-  void canRedo(out boolean isEnabled, out boolean canRedo);
+  /**
+   * Redo the topmost transaction in the redo stack.
+   * This may throw exception when this is called while editor is handling
+   * transactions.
+   */
+  [can_run_script]
+  void redo();
 
   /** beginTransaction is a signal from the caller to the editor that
     * the caller will execute multiple updates to the content tree

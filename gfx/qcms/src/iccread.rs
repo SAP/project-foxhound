@@ -22,7 +22,7 @@
 
 use std::{
     convert::TryInto,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::AtomicBool,
     sync::Arc,
 };
 
@@ -416,7 +416,7 @@ pub extern "C" fn qcms_profile_is_bogus(profile: &mut Profile) -> bool {
         }
         i += 1
     }
-    if !cfg!(target_os = "macos") {
+    if false {
         negative = (rX < 0.)
             || (rY < 0.)
             || (rZ < 0.)
@@ -432,8 +432,7 @@ pub extern "C" fn qcms_profile_is_bogus(profile: &mut Profile) -> bool {
         // See https://bugzilla.mozilla.org/show_bug.cgi?id=498245#c18 onwards
         // for discussion about whether profile XYZ can or cannot be negative,
         // per the spec. Also the https://bugzil.la/450923 user report.
-
-        // FIXME: allow this relaxation on all ports?
+        // Also: https://bugzil.la/1799391 and https://bugzil.la/1792469
         negative = false; // bogus
     }
     if negative {
@@ -1588,10 +1587,10 @@ impl Profile {
     }
 
     pub fn new_from_path(file: &str) -> Option<Box<Profile>> {
-        Profile::new_from_slice(&std::fs::read(file).ok()?)
+        Profile::new_from_slice(&std::fs::read(file).ok()?, false)
     }
 
-    pub fn new_from_slice(mem: &[u8]) -> Option<Box<Profile>> {
+    pub fn new_from_slice(mem: &[u8], curves_only: bool) -> Option<Box<Profile>> {
         let length: u32;
         let mut source: MemSource = MemSource {
             buf: mem,
@@ -1645,23 +1644,25 @@ impl Profile {
             || profile.class_type == COLOR_SPACE_PROFILE
         {
             if profile.color_space == RGB_SIGNATURE {
-                if let Some(A2B0) = find_tag(&index, TAG_A2B0) {
-                    let lut_type = read_u32(src, A2B0.offset as usize);
-                    if lut_type == LUT8_TYPE || lut_type == LUT16_TYPE {
-                        profile.A2B0 = read_tag_lutType(src, A2B0)
-                    } else if lut_type == LUT_MAB_TYPE {
-                        profile.mAB = read_tag_lutmABType(src, A2B0)
+                if !curves_only {
+                    if let Some(A2B0) = find_tag(&index, TAG_A2B0) {
+                        let lut_type = read_u32(src, A2B0.offset as usize);
+                        if lut_type == LUT8_TYPE || lut_type == LUT16_TYPE {
+                            profile.A2B0 = read_tag_lutType(src, A2B0)
+                        } else if lut_type == LUT_MAB_TYPE {
+                            profile.mAB = read_tag_lutmABType(src, A2B0)
+                        }
+                    }
+                    if let Some(B2A0) = find_tag(&index, TAG_B2A0) {
+                        let lut_type = read_u32(src, B2A0.offset as usize);
+                        if lut_type == LUT8_TYPE || lut_type == LUT16_TYPE {
+                            profile.B2A0 = read_tag_lutType(src, B2A0)
+                        } else if lut_type == LUT_MBA_TYPE {
+                            profile.mBA = read_tag_lutmABType(src, B2A0)
+                        }
                     }
                 }
-                if let Some(B2A0) = find_tag(&index, TAG_B2A0) {
-                    let lut_type = read_u32(src, B2A0.offset as usize);
-                    if lut_type == LUT8_TYPE || lut_type == LUT16_TYPE {
-                        profile.B2A0 = read_tag_lutType(src, B2A0)
-                    } else if lut_type == LUT_MBA_TYPE {
-                        profile.mBA = read_tag_lutmABType(src, B2A0)
-                    }
-                }
-                if find_tag(&index, TAG_rXYZ).is_some() || !SUPPORTS_ICCV4.load(Ordering::Relaxed) {
+                if find_tag(&index, TAG_rXYZ).is_some() || curves_only {
                     profile.redColorant = read_tag_XYZType(src, &index, TAG_rXYZ);
                     profile.greenColorant = read_tag_XYZType(src, &index, TAG_gXYZ);
                     profile.blueColorant = read_tag_XYZType(src, &index, TAG_bXYZ)
@@ -1670,7 +1671,7 @@ impl Profile {
                     return None;
                 }
 
-                if find_tag(&index, TAG_rTRC).is_some() || !SUPPORTS_ICCV4.load(Ordering::Relaxed) {
+                if find_tag(&index, TAG_rTRC).is_some() || curves_only {
                     profile.redTRC = read_tag_curveType(src, &index, TAG_rTRC);
                     profile.greenTRC = read_tag_curveType(src, &index, TAG_gTRC);
                     profile.blueTRC = read_tag_curveType(src, &index, TAG_bTRC);

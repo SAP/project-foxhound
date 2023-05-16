@@ -1073,7 +1073,7 @@ CanvasRenderingContext2D::CanvasRenderingContext2D(
 CanvasRenderingContext2D::~CanvasRenderingContext2D() {
   RemovePostRefreshObserver();
   RemoveShutdownObserver();
-  Reset();
+  ResetBitmap();
 
   sNumLivingContexts.set(sNumLivingContexts.get() - 1);
   if (sNumLivingContexts.get() == 0 && sErrorTarget.get()) {
@@ -1117,7 +1117,7 @@ bool CanvasRenderingContext2D::ParseColor(const nsACString& aString,
   return true;
 }
 
-nsresult CanvasRenderingContext2D::Reset() {
+void CanvasRenderingContext2D::ResetBitmap() {
   if (mCanvasElement) {
     mCanvasElement->InvalidateCanvas();
   }
@@ -1138,8 +1138,6 @@ nsresult CanvasRenderingContext2D::Reset() {
   mIsEntireFrameInvalid = false;
   mPredictManyRedrawCalls = false;
   mFrameCaptureState = FrameCaptureState::CLEAN;
-
-  return NS_OK;
 }
 
 void CanvasRenderingContext2D::OnShutdown() {
@@ -1147,7 +1145,7 @@ void CanvasRenderingContext2D::OnShutdown() {
 
   RefPtr<PersistentBufferProvider> provider = mBufferProvider;
 
-  Reset();
+  ResetBitmap();
 
   if (provider) {
     provider->OnShutdown();
@@ -1652,7 +1650,7 @@ void CanvasRenderingContext2D::RemoveAssociatedMemory() {
 }
 
 void CanvasRenderingContext2D::ClearTarget(int32_t aWidth, int32_t aHeight) {
-  Reset();
+  ResetBitmap();
 
   mResetLayer = true;
 
@@ -1752,16 +1750,6 @@ void CanvasRenderingContext2D::SetOpaqueValueFromOpaqueAttr(
 void CanvasRenderingContext2D::UpdateIsOpaque() {
   mOpaque = !mContextAttributesHasAlpha || mOpaqueAttrValue;
   ClearTarget();
-}
-
-NS_IMETHODIMP
-CanvasRenderingContext2D::SetIsIPC(bool aIsIPC) {
-  if (aIsIPC != mIPC) {
-    mIPC = aIsIPC;
-    ClearTarget();
-  }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -3458,6 +3446,7 @@ static void SerializeFontForCanvas(const StyleFontFamilyList& aList,
   // font-weight is serialized as a number
   if (!aStyle.weight.IsNormal()) {
     aUsedFont.AppendFloat(aStyle.weight.ToFloat());
+    aUsedFont.Append(" ");
   }
 
   // font-stretch is serialized using CSS Fonts 3 keywords, not percentages.
@@ -4700,7 +4689,7 @@ SurfaceFromElementResult CanvasRenderingContext2D::CachedSurfaceFromElement(
     return res;
   }
 
-  res.mSourceSurface = CanvasImageCache::LookupAllCanvas(aElement);
+  res.mSourceSurface = CanvasImageCache::LookupAllCanvas(aElement, mTarget);
   if (!res.mSourceSurface) {
     return res;
   }
@@ -4846,8 +4835,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       element = video;
     }
 
-    srcSurf = CanvasImageCache::LookupCanvas(element, mCanvasElement, &imgSize,
-                                             &intrinsicImgSize);
+    srcSurf = CanvasImageCache::LookupCanvas(element, mCanvasElement, mTarget,
+                                             &imgSize, &intrinsicImgSize);
   }
 
   DirectDrawInfo drawInfo;
@@ -4892,7 +4881,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
     if (res.mSourceSurface) {
       if (res.mImageRequest) {
-        CanvasImageCache::NotifyDrawImage(element, mCanvasElement,
+        CanvasImageCache::NotifyDrawImage(element, mCanvasElement, mTarget,
                                           res.mSourceSurface, imgSize,
                                           intrinsicImgSize);
       }

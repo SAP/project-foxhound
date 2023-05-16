@@ -948,7 +948,7 @@ struct BaseCompiler final {
                     CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
   CodeOffset callImport(unsigned globalDataOffset, const FunctionCall& call);
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
-  void callRef(const Stk& calleeRef, const FunctionCall& call, bool checkNull,
+  void callRef(const Stk& calleeRef, const FunctionCall& call,
                CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
 #endif
   CodeOffset builtinCall(SymbolicAddress builtin, const FunctionCall& call);
@@ -1491,6 +1491,10 @@ struct BaseCompiler final {
   inline void emitTernary(void (*op)(CompilerType&, ValType src0, ValType src1,
                                      ValType srcDest, ValType temp));
 
+  template <typename CompilerType, typename ValType>
+  inline void emitTernaryResultLast(void (*op)(CompilerType&, ValType src0,
+                                               ValType src1, ValType srcDest));
+
   template <typename R>
   [[nodiscard]] inline bool emitInstanceCallOp(
       const SymbolicAddressSignature& fn, R reader);
@@ -1665,6 +1669,7 @@ struct BaseCompiler final {
   void emitVectorAndNot();
 #  ifdef ENABLE_WASM_RELAXED_SIMD
   void emitDotI8x16I7x16AddS();
+  void emitDotBF16x8AddF32x4();
 #  endif
 
   void loadSplat(MemoryAccessDesc* access);

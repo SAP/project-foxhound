@@ -981,7 +981,7 @@ static char16_t Final_Sigma(const char16_t* chars, size_t length,
   bool precededByCased = false;
   for (size_t i = index; i > 0;) {
     char16_t c = chars[--i];
-    uint32_t codePoint = c;
+    char32_t codePoint = c;
     if (unicode::IsTrailSurrogate(c) && i > 0) {
       char16_t lead = chars[i - 1];
       if (unicode::IsLeadSurrogate(lead)) {
@@ -1007,7 +1007,7 @@ static char16_t Final_Sigma(const char16_t* chars, size_t length,
   bool followedByCased = false;
   for (size_t i = index + 1; i < length;) {
     char16_t c = chars[i++];
-    uint32_t codePoint = c;
+    char32_t codePoint = c;
     if (unicode::IsLeadSurrogate(c) && i < length) {
       char16_t trail = chars[i];
       if (unicode::IsTrailSurrogate(trail)) {
@@ -4201,14 +4201,14 @@ bool js::str_fromCharCode_one_arg(JSContext* cx, HandleValue code,
 }
 
 static MOZ_ALWAYS_INLINE bool ToCodePoint(JSContext* cx, HandleValue code,
-                                          uint32_t* codePoint) {
+                                          char32_t* codePoint) {
   // String.fromCodePoint, Steps 5.a-b.
 
   // Fast path for the common case - the input is already an int32.
   if (code.isInt32()) {
     int32_t nextCP = code.toInt32();
     if (nextCP >= 0 && nextCP <= int32_t(unicode::NonBMPMax)) {
-      *codePoint = uint32_t(nextCP);
+      *codePoint = char32_t(nextCP);
       return true;
     }
   }
@@ -4229,7 +4229,7 @@ static MOZ_ALWAYS_INLINE bool ToCodePoint(JSContext* cx, HandleValue code,
     return false;
   }
 
-  *codePoint = uint32_t(nextCP);
+  *codePoint = char32_t(nextCP);
   return true;
 }
 
@@ -4238,7 +4238,7 @@ bool js::str_fromCodePoint_one_arg(JSContext* cx, HandleValue code,
   // Steps 1-4 (omitted).
 
   // Steps 5.a-d.
-  uint32_t codePoint;
+  char32_t codePoint;
   if (!ToCodePoint(cx, code, &codePoint)) {
     return false;
   }
@@ -4271,7 +4271,7 @@ static bool str_fromCodePoint_few_args(JSContext* cx, const CallArgs& args) {
   unsigned length = 0;
   for (unsigned nextIndex = 0; nextIndex < args.length(); nextIndex++) {
     // Steps 5.a-d.
-    uint32_t codePoint;
+    char32_t codePoint;
     if (!ToCodePoint(cx, args[nextIndex], &codePoint)) {
       return false;
     }
@@ -4325,7 +4325,7 @@ bool js::str_fromCodePoint(JSContext* cx, unsigned argc, Value* vp) {
   unsigned length = 0;
   for (unsigned nextIndex = 0; nextIndex < args.length(); nextIndex++) {
     // Steps 5.a-d.
-    uint32_t codePoint;
+    char32_t codePoint;
     if (!ToCodePoint(cx, args[nextIndex], &codePoint)) {
       return false;
     }
@@ -4590,7 +4590,7 @@ static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
           return Encode_BadUri;
         }
 
-        uint32_t v;
+        char32_t v;
         if (!unicode::IsLeadSurrogate(c)) {
           v = c;
         } else {
@@ -4761,7 +4761,7 @@ static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
         if (taint.at(k))
           sb.taint().append(TaintRange(sb.length(), sb.length() + 1, *taint.at(k)));
 
-        uint32_t v = JS::Utf8ToOneUcs4Char(octets, n);
+        char32_t v = JS::Utf8ToOneUcs4Char(octets, n);
         MOZ_ASSERT(v >= 128);
         if (v >= unicode::NonBMPMin) {
           if (v > unicode::NonBMPMax) {

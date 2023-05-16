@@ -46,18 +46,18 @@ class ReportWarningHelper {
 };
 
 // Specifier map from import maps.
-// https://wicg.github.io/import-maps/#specifier-map
+// https://html.spec.whatwg.org/multipage/webappapis.html#module-specifier-map
 using SpecifierMap =
     std::map<nsString, nsCOMPtr<nsIURI>, std::greater<nsString>>;
 
 // Scope map from import maps.
-// https://wicg.github.io/import-maps/#import-map-scopes
+// https://html.spec.whatwg.org/multipage/webappapis.html#concept-import-map-scopes
 using ScopeMap = std::map<nsCString, mozilla::UniquePtr<SpecifierMap>,
                           std::greater<nsCString>>;
 
 /**
  * Implementation of Import maps.
- * https://wicg.github.io/import-maps
+ * https://html.spec.whatwg.org/multipage/webappapis.html#import-maps
  */
 class ImportMap {
  public:
@@ -67,10 +67,10 @@ class ImportMap {
 
   /**
    * Parse the JSON string from the Import map script.
-   * This function will throw TypeError if there's any invalid key or value in
+   * This function will throw a TypeError if there's any invalid key or value in
    * the JSON text according to the spec.
    *
-   * See https://wicg.github.io/import-maps/#parse-an-import-map-string
+   * https://html.spec.whatwg.org/multipage/webappapis.html#parse-an-import-map-string
    */
   static mozilla::UniquePtr<ImportMap> ParseString(
       JSContext* aCx, JS::SourceText<char16_t>& aInput, nsIURI* aBaseURL,
@@ -80,7 +80,18 @@ class ImportMap {
    * This implements "Resolve a module specifier" algorithm defined in the
    * Import maps spec.
    *
-   * See https://wicg.github.io/import-maps/#resolve-a-module-specifier
+   * See
+   * https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+   *
+   * Impl note: According to the spec, if the specifier cannot be resolved, this
+   * method will throw a TypeError(Step 13). But the tricky part is when
+   * creating a module script,
+   * see
+   * https://html.spec.whatwg.org/multipage/webappapis.html#validate-requested-module-specifiers
+   * If the resolving failed, it shall catch the exception and set to the
+   * script's parse error.
+   * For implementation we return a ResolveResult here, and the callers will
+   * need to convert the result to a TypeError if it fails.
    */
   static ResolveResult ResolveModuleSpecifier(ImportMap* aImportMap,
                                               ScriptLoaderInterface* aLoader,
@@ -92,11 +103,11 @@ class ImportMap {
 
  private:
   /**
-   * https://wicg.github.io/import-maps/#import-map
+   * https://html.spec.whatwg.org/multipage/webappapis.html#import-map-processing-model
    *
-   * A import map is a struct with two items:
-   * 1. imports, a specifier map, and
-   * 2. scopes, an ordered map of URLs to specifier maps.
+   * Formally, an import map is a struct with two items:
+   * 1. imports, a module specifier map, and
+   * 2. scopes, an ordered map of URLs to module specifier maps.
    */
   mozilla::UniquePtr<SpecifierMap> mImports;
   mozilla::UniquePtr<ScopeMap> mScopes;

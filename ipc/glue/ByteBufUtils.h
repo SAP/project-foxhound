@@ -41,9 +41,6 @@ struct ParamTraits<mozilla::ipc::ByteBuf> {
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
     // We make a copy from the BufferList so that we get a contigous result.
-    // For users the can handle a non-contiguous result using ExtractBuffers
-    // is an option, alternatively if the users don't need to take ownership of
-    // the data they can use the removed FlattenBytes (bug 1297981)
     uint32_t length;
     if (!ReadParam(aReader, &length)) return false;
     if (!aResult->Allocate(length)) {
@@ -51,10 +48,6 @@ struct ParamTraits<mozilla::ipc::ByteBuf> {
       return false;
     }
     return aReader->ReadBytesInto(aResult->mData, length);
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog) {
-    aLog->append(L"(byte buf)");
   }
 };
 

@@ -110,6 +110,10 @@ notes = "This is a first-party crate which is also published to crates.io, but w
 audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io, but we should publish audits for it for the benefit of the ecosystem."
 
+[policy.mozversion]
+audit-as-crates-io = true
+notes = "This is a first-party crate which is also published to crates.io, but we should publish audits for it for the benefit of the ecosystem."
+
 [policy.naga]
 audit-as-crates-io = true
 notes = "wgpu-core pins this crate."
@@ -125,6 +129,10 @@ notes = "This is a first-party crate which is entirely unrelated to the crates.i
 [policy.qcms]
 audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io, but we should publish audits for it for the benefit of the ecosystem."
+
+[policy.rure]
+audit-as-crates-io = true
+notes = "Identical to upstream, but with cdylib and staticlib targets disabled to avoid unnecessary build artifacts and linker errors."
 
 [policy.selectors]
 audit-as-crates-io = true
@@ -331,10 +339,6 @@ criteria = "safe-to-deploy"
 version = "0.11.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.comedy]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.cookie]]
 version = "0.16.0"
 criteria = "safe-to-run"
@@ -405,10 +409,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.crossbeam-utils]]
 version = "0.8.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.crypto-common]]
-version = "0.1.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.d3d12]]
@@ -525,10 +525,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.ffi-support]]
 version = "0.4.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.filetime_win]]
-version = "0.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.flate2]]
@@ -723,10 +719,6 @@ criteria = "safe-to-deploy"
 version = "1.0.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.inplace_it]]
-version = "0.3.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.instant]]
 version = "0.1.12"
 criteria = "safe-to-deploy"
@@ -885,14 +877,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.mozdevice]]
 version = "0.5.0"
-criteria = "safe-to-run"
-
-[[exemptions.mozprofile]]
-version = "0.8.0"
-criteria = "safe-to-run"
-
-[[exemptions.mozrunner]]
-version = "0.14.0"
 criteria = "safe-to-run"
 
 [[exemptions.murmurhash3]]
@@ -1085,10 +1069,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.range-alloc]]
 version = "0.1.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.raw-window-handle]]
-version = "0.4.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.redox_syscall]]

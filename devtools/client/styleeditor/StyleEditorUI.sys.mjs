@@ -2,67 +2,70 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { loader, require } = ChromeUtils.import(
-  "resource://devtools/shared/loader/Loader.jsm"
-);
-const EventEmitter = require("devtools/shared/event-emitter");
+import {
+  loader,
+  require,
+} from "resource://devtools/shared/loader/Loader.sys.mjs";
+
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
+
 const {
   getString,
   text,
   showFilePicker,
   optionsPopupMenu,
-} = require("resource://devtools/client/styleeditor/StyleEditorUtil.jsm");
-const {
-  StyleSheetEditor,
-} = require("resource://devtools/client/styleeditor/StyleSheetEditor.jsm");
-const { PluralForm } = require("devtools/shared/plural-form");
-const { PrefObserver } = require("devtools/client/shared/prefs");
+} = ChromeUtils.import(
+  "resource://devtools/client/styleeditor/StyleEditorUtil.jsm"
+);
+const { StyleSheetEditor } = ChromeUtils.import(
+  "resource://devtools/client/styleeditor/StyleSheetEditor.jsm"
+);
+const { PluralForm } = require("resource://devtools/shared/plural-form.js");
+const { PrefObserver } = require("resource://devtools/client/shared/prefs.js");
 
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
+const KeyShortcuts = require("resource://devtools/client/shared/key-shortcuts.js");
 
 const lazy = {};
 
 loader.lazyRequireGetter(
   lazy,
   "KeyCodes",
-  "devtools/client/shared/keycodes",
+  "resource://devtools/client/shared/keycodes.js",
   true
 );
 
 loader.lazyRequireGetter(
   lazy,
   "OriginalSource",
-  "devtools/client/styleeditor/original-source",
+  "resource://devtools/client/styleeditor/original-source.js",
   true
 );
 
-loader.lazyRequireGetter(
+ChromeUtils.defineModuleGetter(
   lazy,
   "FileUtils",
-  "resource://gre/modules/FileUtils.jsm",
-  true
+  "resource://gre/modules/FileUtils.jsm"
 );
-loader.lazyRequireGetter(
+ChromeUtils.defineModuleGetter(
   lazy,
   "NetUtil",
-  "resource://gre/modules/NetUtil.jsm",
-  true
+  "resource://gre/modules/NetUtil.jsm"
 );
 loader.lazyRequireGetter(
   lazy,
   "ResponsiveUIManager",
-  "devtools/client/responsive/manager"
+  "resource://devtools/client/responsive/manager.js"
 );
 loader.lazyRequireGetter(
   lazy,
   "openContentLink",
-  "devtools/client/shared/link",
+  "resource://devtools/client/shared/link.js",
   true
 );
 loader.lazyRequireGetter(
   lazy,
   "copyString",
-  "devtools/shared/platform/clipboard",
+  "resource://devtools/shared/platform/clipboard.js",
   true
 );
 
@@ -1329,7 +1332,7 @@ export class StyleEditorUI extends EventEmitter {
         if (!rule.matches) {
           cond.classList.add("media-condition-unmatched");
         }
-        if (this.#toolbox.descriptorFront.isLocalTab) {
+        if (this.#commands.descriptorFront.isLocalTab) {
           this.#setConditionContents(cond, rule.conditionText);
         } else {
           cond.textContent = rule.conditionText;

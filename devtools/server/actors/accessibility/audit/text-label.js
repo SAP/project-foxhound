@@ -4,15 +4,13 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-
 const {
   accessibility: {
     AUDIT_TYPE: { TEXT_LABEL },
     ISSUE_TYPE,
     SCORES: { BEST_PRACTICES, FAIL, WARNING },
   },
-} = require("devtools/shared/constants");
+} = require("resource://devtools/shared/constants.js");
 
 const {
   AREA_NO_NAME_FROM_ALT,

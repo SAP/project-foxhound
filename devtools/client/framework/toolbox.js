@@ -24,32 +24,35 @@ const BROWSERTOOLBOX_SCOPE_PREF = "devtools.browsertoolbox.scope";
 const BROWSERTOOLBOX_SCOPE_EVERYTHING = "everything";
 const BROWSERTOOLBOX_SCOPE_PARENTPROCESS = "parent-process";
 
-var { Ci, Cc } = require("chrome");
-const { debounce } = require("devtools/shared/debounce");
-const { throttle } = require("devtools/shared/throttle");
-const { safeAsyncMethod } = require("devtools/shared/async-utils");
-var { gDevTools } = require("devtools/client/framework/devtools");
-var EventEmitter = require("devtools/shared/event-emitter");
-const Selection = require("devtools/client/framework/selection");
-var Telemetry = require("devtools/client/shared/telemetry");
-const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
-var { DOMHelpers } = require("devtools/shared/dom-helpers");
-const { KeyCodes } = require("devtools/client/shared/keycodes");
+const { debounce } = require("resource://devtools/shared/debounce.js");
+const { throttle } = require("resource://devtools/shared/throttle.js");
+const {
+  safeAsyncMethod,
+} = require("resource://devtools/shared/async-utils.js");
+var { gDevTools } = require("resource://devtools/client/framework/devtools.js");
+var EventEmitter = require("resource://devtools/shared/event-emitter.js");
+const Selection = require("resource://devtools/client/framework/selection.js");
+var Telemetry = require("resource://devtools/client/shared/telemetry.js");
+const {
+  getUnicodeUrl,
+} = require("resource://devtools/client/shared/unicode-url.js");
+var { DOMHelpers } = require("resource://devtools/shared/dom-helpers.js");
+const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
 const {
   FluentL10n,
-} = require("devtools/client/shared/fluent-l10n/fluent-l10n");
+} = require("resource://devtools/client/shared/fluent-l10n/fluent-l10n.js");
 
 var Startup = Cc["@mozilla.org/devtools/startup-clh;1"].getService(
   Ci.nsISupports
 ).wrappedJSObject;
 
-const { createCommandsDictionary } = require("devtools/shared/commands/index");
-
 const { BrowserLoader } = ChromeUtils.import(
   "resource://devtools/shared/loader/browser-loader.js"
 );
 
-const { MultiLocalizationHelper } = require("devtools/shared/l10n");
+const {
+  MultiLocalizationHelper,
+} = require("resource://devtools/shared/l10n.js");
 const L10N = new MultiLocalizationHelper(
   "devtools/client/locales/toolbox.properties",
   "chrome://branding/locale/brand.properties"
@@ -58,144 +61,148 @@ const L10N = new MultiLocalizationHelper(
 loader.lazyRequireGetter(
   this,
   "registerStoreObserver",
-  "devtools/client/shared/redux/subscriber",
+  "resource://devtools/client/shared/redux/subscriber.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "createToolboxStore",
-  "devtools/client/framework/store",
+  "resource://devtools/client/framework/store.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["registerWalkerListeners"],
-  "devtools/client/framework/actions/index",
+  "resource://devtools/client/framework/actions/index.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   ["selectTarget"],
-  "devtools/shared/commands/target/actions/targets",
+  "resource://devtools/shared/commands/target/actions/targets.js",
   true
 );
 
-loader.lazyRequireGetter(
-  this,
+const lazy = {};
+ChromeUtils.defineModuleGetter(
+  lazy,
   "AppConstants",
-  "resource://gre/modules/AppConstants.jsm",
-  true
+  "resource://gre/modules/AppConstants.jsm"
 );
-loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
+loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 loader.lazyRequireGetter(
   this,
   "KeyShortcuts",
-  "devtools/client/shared/key-shortcuts"
+  "resource://devtools/client/shared/key-shortcuts.js"
 );
-loader.lazyRequireGetter(this, "ZoomKeys", "devtools/client/shared/zoom-keys");
+loader.lazyRequireGetter(
+  this,
+  "ZoomKeys",
+  "resource://devtools/client/shared/zoom-keys.js"
+);
 loader.lazyRequireGetter(
   this,
   "ToolboxButtons",
-  "devtools/client/definitions",
+  "resource://devtools/client/definitions.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "SourceMapURLService",
-  "devtools/client/framework/source-map-url-service",
+  "resource://devtools/client/framework/source-map-url-service.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "BrowserConsoleManager",
-  "devtools/client/webconsole/browser-console-manager",
+  "resource://devtools/client/webconsole/browser-console-manager.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "viewSource",
-  "devtools/client/shared/view-source"
+  "resource://devtools/client/shared/view-source.js"
 );
 loader.lazyRequireGetter(
   this,
   "buildHarLog",
-  "devtools/client/netmonitor/src/har/har-builder-utils",
+  "resource://devtools/client/netmonitor/src/har/har-builder-utils.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "NetMonitorAPI",
-  "devtools/client/netmonitor/src/api",
+  "resource://devtools/client/netmonitor/src/api.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "sortPanelDefinitions",
-  "devtools/client/framework/toolbox-tabs-order-manager",
+  "resource://devtools/client/framework/toolbox-tabs-order-manager.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "createEditContextMenu",
-  "devtools/client/framework/toolbox-context-menu",
+  "resource://devtools/client/framework/toolbox-context-menu.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "getSelectedTarget",
-  "devtools/shared/commands/target/selectors/targets",
+  "resource://devtools/shared/commands/target/selectors/targets.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "remoteClientManager",
-  "devtools/client/shared/remote-debugging/remote-client-manager.js",
+  "resource://devtools/client/shared/remote-debugging/remote-client-manager.js",
   true
 );
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive/manager"
+  "resource://devtools/client/responsive/manager.js"
 );
 loader.lazyRequireGetter(
   this,
   "DevToolsUtils",
-  "devtools/shared/DevToolsUtils"
+  "resource://devtools/shared/DevToolsUtils.js"
 );
 loader.lazyRequireGetter(
   this,
   "NodePicker",
-  "devtools/client/inspector/node-picker"
+  "resource://devtools/client/inspector/node-picker.js"
 );
 
 loader.lazyGetter(this, "domNodeConstants", () => {
-  return require("devtools/shared/dom-node-constants");
+  return require("resource://devtools/shared/dom-node-constants.js");
 });
 
 loader.lazyRequireGetter(
   this,
   "NodeFront",
-  "devtools/client/fronts/node",
+  "resource://devtools/client/fronts/node.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "PICKER_TYPES",
-  "devtools/shared/picker-constants"
+  "resource://devtools/shared/picker-constants.js"
 );
 
 loader.lazyRequireGetter(
   this,
   "HarAutomation",
-  "devtools/client/netmonitor/src/har/har-automation",
+  "resource://devtools/client/netmonitor/src/har/har-automation.js",
   true
 );
 
 loader.lazyRequireGetter(
   this,
   "getThreadOptions",
-  "devtools/client/shared/thread-utils",
+  "resource://devtools/client/shared/thread-utils.js",
   true
 );
 
@@ -206,8 +213,8 @@ const DEVTOOLS_F12_DISABLED_PREF = "devtools.experiment.f12.shortcut_disabled";
  * target. Visually, it's a document that includes the tools tabs and all
  * the iframes where the tool panels will be living in.
  *
- * @param {object} descriptorFront
- *        The context to inspect identified by this descriptor.
+ * @param {object} commands
+ *        The context to inspect identified by this commands.
  * @param {string} selectedTool
  *        Tool to select initially
  * @param {Toolbox.HostType} hostType
@@ -222,7 +229,7 @@ const DEVTOOLS_F12_DISABLED_PREF = "devtools.experiment.f12.shortcut_disabled";
  *        timestamps (unaffected by system clock changes).
  */
 function Toolbox(
-  descriptorFront,
+  commands,
   selectedTool,
   hostType,
   contentWindow,
@@ -234,7 +241,12 @@ function Toolbox(
   this.selection = new Selection();
   this.telemetry = new Telemetry();
 
-  this.descriptorFront = descriptorFront;
+  // This attribute is meant to be a public attribute on the Toolbox object
+  // It exposes commands modules listed in devtools/shared/commands/index.js
+  // which are an abstraction on top of RDP methods.
+  // See devtools/shared/commands/README.md
+  this.commands = commands;
+  this._descriptorFront = commands.descriptorFront;
 
   // The session ID is used to determine which telemetry events belong to which
   // toolbox session. Because we use Amplitude to analyse the telemetry data we
@@ -762,7 +774,7 @@ Toolbox.prototype = {
     if (
       targetFront.targetForm.isPopup &&
       !targetFront.isTopLevel &&
-      this.descriptorFront.isLocalTab
+      this._descriptorFront.isLocalTab
     ) {
       await this.switchHostToTab(targetFront.targetForm.browsingContextID);
     }
@@ -845,13 +857,6 @@ Toolbox.prototype = {
           this._URL
         );
       });
-
-      // This attribute is meant to be a public attribute on the Toolbox object
-      // It exposes commands modules listed in devtools/shared/commands/index.js
-      // which are an abstraction on top of RDP methods.
-      // See devtools/shared/commands/README.md
-      // Bug 1700909 will make the commands be instantiated by gDevTools instead of the Toolbox.
-      this.commands = await createCommandsDictionary(this.descriptorFront);
 
       this.commands.targetCommand.on(
         "target-thread-wrong-order-on-resume",
@@ -1205,7 +1210,9 @@ Toolbox.prototype = {
     }
 
     // Add zoom-related shortcuts.
-    if (!this._hostOptions || this._hostOptions.zoom === true) {
+    if (this.hostType != Toolbox.HostType.PAGE) {
+      // When the toolbox is rendered in a tab (ie host type is PAGE), the
+      // zoom should be handled by the default browser shortcuts.
       ZoomKeys.register(this.win, this.shortcuts);
     }
   },
@@ -1268,7 +1275,7 @@ Toolbox.prototype = {
       L10N.getStr("toolbox.toggleToolboxF12.key"),
       this.closeToolbox
     );
-    if (AppConstants.platform == "macosx") {
+    if (lazy.AppConstants.platform == "macosx") {
       shortcuts.on(
         L10N.getStr("toolbox.toggleToolboxOSX.key"),
         this.closeToolbox
@@ -1337,7 +1344,7 @@ Toolbox.prototype = {
     return {
       connectionType,
       runtimeInfo,
-      descriptorType: this.descriptorFront.descriptorType,
+      descriptorType: this._descriptorFront.descriptorType,
     };
   },
 
@@ -1472,7 +1479,7 @@ Toolbox.prototype = {
 
     const {
       ParserDispatcher,
-    } = require("devtools/client/debugger/src/workers/parser/index");
+    } = require("resource://devtools/client/debugger/src/workers/parser/index.js");
 
     this._parserService = new ParserDispatcher();
     this._parserService.start(
@@ -1766,12 +1773,16 @@ Toolbox.prototype = {
 
     if (openedConsolePanel) {
       deck.collapsed = true;
+      deck.removeAttribute("expanded");
       splitter.hidden = true;
       webconsolePanel.collapsed = false;
+      webconsolePanel.setAttribute("expanded", "");
     } else {
       deck.collapsed = false;
+      deck.toggleAttribute("expanded", !this.splitConsole);
       splitter.hidden = !this.splitConsole;
       webconsolePanel.collapsed = !this.splitConsole;
+      webconsolePanel.removeAttribute("expanded");
     }
   },
 
@@ -1819,7 +1830,7 @@ Toolbox.prototype = {
    * the host changes.
    */
   _buildDockOptions() {
-    if (!this.descriptorFront.isLocalTab) {
+    if (!this._descriptorFront.isLocalTab) {
       this.component.setDockOptionsEnabled(false);
       this.component.setCanCloseToolbox(false);
       return;
@@ -1883,7 +1894,7 @@ Toolbox.prototype = {
     // Popup auto-hide disabling is only available in browser toolbox and webextension toolboxes.
     if (
       this.isBrowserToolbox ||
-      this.descriptorFront.isWebExtensionDescriptor
+      this._descriptorFront.isWebExtensionDescriptor
     ) {
       disableAutohide = await this._isDisableAutohideEnabled();
     }
@@ -1900,7 +1911,7 @@ Toolbox.prototype = {
       this.component.setPseudoLocale(pseudoLocale);
     }
     if (
-      this.descriptorFront.isWebExtensionDescriptor &&
+      this._descriptorFront.isWebExtensionDescriptor &&
       this.hostType === Toolbox.HostType.WINDOW
     ) {
       const alwaysOnTop = Services.prefs.getBoolPref(
@@ -3357,7 +3368,7 @@ Toolbox.prototype = {
 
     if (
       this.isBrowserToolbox ||
-      this.descriptorFront.isWebExtensionDescriptor
+      this._descriptorFront.isWebExtensionDescriptor
     ) {
       this.component.setDisableAutohide(toggledValue);
     }
@@ -3378,7 +3389,7 @@ Toolbox.prototype = {
     );
     Services.prefs.setBoolPref(DEVTOOLS_ALWAYS_ON_TOP, !currentValue);
 
-    const addonId = this.descriptorFront.id;
+    const addonId = this._descriptorFront.id;
     await this.destroy();
     gDevTools.showToolboxForWebExtension(addonId);
   },
@@ -3386,7 +3397,7 @@ Toolbox.prototype = {
   async _isDisableAutohideEnabled() {
     if (
       !this.isBrowserToolbox &&
-      !this.descriptorFront.isWebExtensionDescriptor
+      !this._descriptorFront.isWebExtensionDescriptor
     ) {
       return false;
     }
@@ -3616,7 +3627,7 @@ Toolbox.prototype = {
    *        The host type of the new host object
    */
   switchHost(hostType) {
-    if (hostType == this.hostType || !this.descriptorFront.isLocalTab) {
+    if (hostType == this.hostType || !this._descriptorFront.isLocalTab) {
       return null;
     }
 
@@ -4234,17 +4245,17 @@ Toolbox.prototype = {
             // Notify toolbox-host-manager that the host can be destroyed.
             this.emit("toolbox-unload");
 
-            // targetCommand need to be notified that the toolbox is being torn down.
+            // All Commands need to be destroyed.
             // This is done after other destruction tasks since it may tear down
             // fronts and the debugger transport which earlier destroy methods may
             // require to complete.
+            // (i.e. avoid exceptions about closing connection with pending requests)
             //
-            // For similar reasons, only destroy the target-list after every
+            // For similar reasons, only destroy the TargetCommand after every
             // other outstanding cleanup is done. Destroying the target list
             // will lead to destroy frame targets which can temporarily make
             // some fronts unresponsive and block the cleanup.
-            this.commands.targetCommand.destroy();
-            return this.descriptorFront.destroy();
+            return this.commands.destroy();
           }, console.error)
           .then(() => {
             this.emit("destroyed");
@@ -4254,7 +4265,7 @@ Toolbox.prototype = {
             this._host = null;
             this._win = null;
             this._toolPanels.clear();
-            this.descriptorFront = null;
+            this._descriptorFront = null;
             this.resourceCommand = null;
             this.commands = null;
 
@@ -4673,7 +4684,7 @@ Toolbox.prototype = {
     // but we still want to display target data.
     if (
       this.hostType === Toolbox.HostType.PAGE ||
-      this.descriptorFront.isWebExtensionDescriptor
+      this._descriptorFront.isWebExtensionDescriptor
     ) {
       // Displays DebugTargetInfo which shows the basic information of debug target,
       // if `about:devtools-toolbox` URL opens directly.

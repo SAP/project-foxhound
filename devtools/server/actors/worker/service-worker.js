@@ -4,11 +4,10 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
-const protocol = require("devtools/shared/protocol");
+const protocol = require("resource://devtools/shared/protocol.js");
 const {
   serviceWorkerSpec,
-} = require("devtools/shared/specs/worker/service-worker");
+} = require("resource://devtools/shared/specs/worker/service-worker.js");
 
 const ServiceWorkerActor = protocol.ActorClassWithSpec(serviceWorkerSpec, {
   initialize(conn, worker) {

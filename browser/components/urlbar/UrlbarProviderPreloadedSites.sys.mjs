@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-"use strict";
-
 /**
  * This module exports a provider that provides preloaded site results. These
  * are intended to populate address bar results when the user has no history.
@@ -20,13 +18,10 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ProfileAge: "resource://gre/modules/ProfileAge.jsm",
 });
 
 const MS_PER_DAY = 86400000; // 24 * 60 * 60 * 1000

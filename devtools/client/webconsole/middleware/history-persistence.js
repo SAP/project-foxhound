@@ -8,11 +8,15 @@ const {
   APPEND_TO_HISTORY,
   CLEAR_HISTORY,
   EVALUATE_EXPRESSION,
-} = require("devtools/client/webconsole/constants");
+} = require("resource://devtools/client/webconsole/constants.js");
 
-const historyActions = require("devtools/client/webconsole/actions/history");
+const historyActions = require("resource://devtools/client/webconsole/actions/history.js");
 
-loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
+loader.lazyRequireGetter(
+  this,
+  "asyncStorage",
+  "resource://devtools/shared/async-storage.js"
+);
 
 /**
  * History persistence middleware is responsible for loading

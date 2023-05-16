@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-"use strict";
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const { AppConstants } = ChromeUtils.import(
@@ -472,6 +470,22 @@ export var UrlbarTestUtils = {
       !!expectedSearchMode,
       "gURLBar.searchMode should exist as expected"
     );
+
+    if (
+      window.gURLBar.searchMode?.source &&
+      window.gURLBar.searchMode.source !== UrlbarUtils.RESULT_SOURCE.SEARCH
+    ) {
+      this.Assert.equal(
+        window.gURLBar.getAttribute("searchmodesource"),
+        UrlbarUtils.getResultSourceName(window.gURLBar.searchMode.source),
+        "gURLBar has proper searchmodesource attribute"
+      );
+    } else {
+      this.Assert.ok(
+        !window.gURLBar.hasAttribute("searchmodesource"),
+        "gURLBar does not have searchmodesource attribute"
+      );
+    }
 
     if (!expectedSearchMode) {
       // Check the input's placeholder.

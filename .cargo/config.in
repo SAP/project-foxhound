@@ -35,12 +35,12 @@ rev = "e1b4dcb767f9e69afe95a860374aaa9635d81e3d"
 [source."https://github.com/mozilla/cubeb-pulse-rs"]
 git = "https://github.com/mozilla/cubeb-pulse-rs"
 replace-with = "vendored-sources"
-rev = "f32b3ef708c0bfb2c414c08971d638527353d376"
+rev = "cf48897be5cbe147d051ebbbe1eaf5fd8fb6bbc9"
 
 [source."https://github.com/mozilla/cubeb-coreaudio-rs"]
 git = "https://github.com/mozilla/cubeb-coreaudio-rs"
 replace-with = "vendored-sources"
-rev = "ab933e7cbd569f79b37b540412a7990a5352dd66"
+rev = "369c45504c45d74ebb19845506fb1596a471c7c9"
 
 [source."https://github.com/mozilla/audioipc"]
 git = "https://github.com/mozilla/audioipc"
@@ -50,7 +50,7 @@ rev = "fb7a2b12ced3b43e6a268621989c6191d1ed7e39"
 [source."https://github.com/mozilla/application-services"]
 git = "https://github.com/mozilla/application-services"
 replace-with = "vendored-sources"
-rev = "fb1c78b13c27b5db1fd5458b8c2d8f433855dd61"
+rev = "d8503475f43dbf1d78eef4e23b0578d0fada3f39"
 
 [source."https://github.com/mozilla-spidermonkey/jsparagus"]
 git = "https://github.com/mozilla-spidermonkey/jsparagus"
@@ -65,7 +65,7 @@ rev = "21c26326f5f45f415c49eac4ba5bc41a2f961321"
 [source."https://github.com/kinetiknz/audioipc-2"]
 git = "https://github.com/kinetiknz/audioipc-2"
 replace-with = "vendored-sources"
-rev = "ea7cabf8c9dc051a52ffb6cd7d2564b29b7428eb"
+rev = "42eb59ab3b86cd43d3dbe37d159ce102a8eaf2a5"
 
 [source."https://github.com/jfkthame/mapped_hyph.git"]
 git = "https://github.com/jfkthame/mapped_hyph.git"
@@ -90,22 +90,12 @@ rev = "3484d3e3ebdc8931493aa5df4d7ee9360a90e76b"
 [source."https://github.com/gfx-rs/wgpu"]
 git = "https://github.com/gfx-rs/wgpu"
 replace-with = "vendored-sources"
-rev = "b370b990"
+rev = "b752c7d2"
 
 [source."https://github.com/gfx-rs/naga"]
 git = "https://github.com/gfx-rs/naga"
 replace-with = "vendored-sources"
-rev = "27d38aae"
-
-[source."https://github.com/gfx-rs/metal-rs"]
-git = "https://github.com/gfx-rs/metal-rs"
-replace-with = "vendored-sources"
-rev = "1aaa903"
-
-[source."https://github.com/gfx-rs/d3d12-rs.git"]
-git = "https://github.com/gfx-rs/d3d12-rs.git"
-replace-with = "vendored-sources"
-rev = "ffe5e261da0a6cb85332b82ab310abd2a7e849f6"
+rev = "b209d911"
 
 [source."https://github.com/chris-zen/coremidi.git"]
 git = "https://github.com/chris-zen/coremidi.git"

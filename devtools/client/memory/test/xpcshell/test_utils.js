@@ -9,12 +9,14 @@
  * formatPercent methods.
  */
 
-const utils = require("devtools/client/memory/utils");
+const utils = require("resource://devtools/client/memory/utils.js");
 const {
   snapshotState: states,
   viewState,
-} = require("devtools/client/memory/constants");
-const { Preferences } = require("resource://gre/modules/Preferences.jsm");
+} = require("resource://devtools/client/memory/constants.js");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
 
 add_task(async function() {
   const s1 = utils.createSnapshot({ view: { state: viewState.CENSUS } });

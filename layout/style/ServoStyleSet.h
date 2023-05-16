@@ -45,6 +45,9 @@ class CSSImportRule;
 class Element;
 class ShadowRoot;
 }  // namespace dom
+namespace gfx {
+class FontPaletteValueSet;
+}  // namespace gfx
 class StyleSheet;
 struct Keyframe;
 class ServoElementSnapshotTable;
@@ -152,6 +155,8 @@ class ServoStyleSet {
   const RawServoStyleSet* RawSet() const { return mRawSet.get(); }
 
   bool GetAuthorStyleDisabled() const { return mAuthorStyleDisabled; }
+
+  bool UsesFontMetrics() const;
 
   void SetAuthorStyleDisabled(bool aStyleDisabled);
 
@@ -361,10 +366,11 @@ class ServoStyleSet {
 
   const RawServoCounterStyleRule* CounterStyleRuleForName(nsAtom* aName);
 
-  const RawServoScrollTimelineRule* ScrollTimelineRuleForName(nsAtom* aName);
-
   // Get all the currently-active font feature values set.
   already_AddRefed<gfxFontFeatureValueSet> BuildFontFeatureValueSet();
+
+  // Get the set of all currently-active font-palette-values.
+  already_AddRefed<gfx::FontPaletteValueSet> BuildFontPaletteValueSet();
 
   already_AddRefed<ComputedStyle> GetBaseContextForElement(
       dom::Element* aElement, const ComputedStyle* aStyle);

@@ -67,6 +67,7 @@
 .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .steps {
   align-self: baseline;
   margin: -38px 30px -30px;
+  padding-block: 0;
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .section-main .main-content .dismiss-button {
   margin-block: 25px -45px;
@@ -164,6 +165,22 @@
   border-bottom: 1px solid #CFCFD8;
   border-inline-start: 1px solid #CFCFD8;
 }
+.onboardingContainer.featureCallout.arrow-top-end::before, .onboardingContainer.featureCallout.arrow-top-end::after {
+  top: -12px;
+  inset-inline-end: 12px;
+}
+.onboardingContainer.featureCallout.arrow-top-end::before {
+  border-top: 1px solid #CFCFD8;
+  border-inline-start: 1px solid #CFCFD8;
+}
+.onboardingContainer.featureCallout.arrow-top-start::before, .onboardingContainer.featureCallout.arrow-top-start::after {
+  top: -12px;
+  inset-inline-start: 12px;
+}
+.onboardingContainer.featureCallout.arrow-top-start::before {
+  border-top: 1px solid #CFCFD8;
+  border-inline-start: 1px solid #CFCFD8;
+}
 
 html {
   height: 100%;
@@ -202,6 +219,7 @@ html {
   --grey-subtitle-1: #696977;
   --newtab-button-secondary-color: #0060DF;
   --mr-welcome-background-color: #F8F6F4;
+  --mr-screen-heading-color: var(--in-content-text-color);
   --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 0.2) 0%, rgba(2, 144, 238, 0.2) 100%);
   --mr-screen-background-color: #F8F6F4;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu", "Helvetica Neue", sans-serif;
@@ -220,8 +238,10 @@ html {
     --mr-screen-background-color: #62697A;
   }
 }
-@media (prefers-contrast: more) {
+@media (prefers-contrast) {
   .onboardingContainer {
+    --mr-screen-background-color: buttontext;
+    --mr-screen-heading-color: buttonface;
     background-color: var(--in-content-page-background);
   }
 }
@@ -345,6 +365,12 @@ html {
   font-weight: normal;
   line-height: 20px;
 }
+.onboardingContainer .screen:not([pos=split]) .secondary-cta.top button {
+  color: #FFF;
+}
+.onboardingContainer .screen:not([pos=split]) .secondary-cta.top button:hover {
+  color: #E0E0E6;
+}
 .onboardingContainer .screen[pos=split] {
   margin: auto;
   min-height: 550px;
@@ -356,11 +382,6 @@ html {
 }
 .onboardingContainer .screen[pos=split] .secondary-cta.top {
   padding-inline-end: 0;
-}
-@media (max-height: 650px) and (max-width: 990px) {
-  .onboardingContainer .screen[pos=split] .secondary-cta.top {
-    display: none;
-  }
 }
 .onboardingContainer .screen[pos=split] .secondary-cta.top button {
   color: var(--in-content-page-color);
@@ -435,15 +456,17 @@ html {
   color: var(--in-content-button-text-color-hover);
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon {
-  background: url("chrome://browser/skin/forward.svg") no-repeat right 8px center;
-  background-size: 12px;
-  padding-inline-end: 24px;
   -moz-context-properties: fill;
   fill: currentColor;
 }
-.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon:dir(rtl) {
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon::after {
+  content: "";
+  padding-inline-end: 12px;
+  margin-inline-start: 4px;
+  background: url("chrome://browser/skin/forward.svg") no-repeat center/12px;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon:dir(rtl)::after {
   background-image: url("chrome://browser/skin/back.svg");
-  background-position-x: left 8px;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container {
   text-align: start;
@@ -501,6 +524,7 @@ html {
   margin: auto auto auto 0;
 }
 .onboardingContainer .screen[pos=split] .section-secondary h1 {
+  color: var(--mr-screen-heading-color);
   font-weight: 700;
   font-size: 47px;
   line-height: 110%;
@@ -536,6 +560,7 @@ html {
   transition: var(--transition);
   font-size: 13px;
   line-height: 1.5;
+  min-height: 4.5em;
   margin-block: 10px 20px;
 }
 .onboardingContainer .screen[pos=split] .tiles-theme-container .theme {
@@ -573,10 +598,15 @@ html {
   .onboardingContainer .screen[pos=split] .section-secondary .hero-image img {
     margin: 6px 0;
   }
+  .onboardingContainer .screen[pos=split] .section-secondary .message-text {
+    margin-inline: auto;
+  }
   .onboardingContainer .screen[pos=split] .section-secondary h1 {
     font-size: 35px;
     text-align: center;
     white-space: normal;
+    margin-inline: auto;
+    margin-block: 14px 6px;
   }
   .onboardingContainer .screen[pos=split] .section-secondary:dir(rtl) {
     margin: auto auto 0;
@@ -643,6 +673,26 @@ html {
   }
   .onboardingContainer .screen[pos=split] .section-main:dir(rtl) .main-content {
     border-radius: 0 0 8px 8px;
+  }
+}
+@media only screen and (max-height: 650px) and (min-width: 800px) and (max-width: 990px) {
+  .onboardingContainer .screen[pos=split] .section-main {
+    position: relative;
+  }
+  .onboardingContainer .screen[pos=split] .section-main .secondary-cta.top {
+    padding: 0;
+    top: 20px;
+    inset-inline-end: 20px;
+  }
+}
+@media only screen and (max-height: 650px) and (max-width: 590px) {
+  .onboardingContainer .screen[pos=split] .section-main {
+    position: relative;
+  }
+  .onboardingContainer .screen[pos=split] .section-main .secondary-cta.top {
+    padding: 0;
+    top: 0;
+    inset-inline-end: 0;
   }
 }
 .onboardingContainer .brand-logo {
@@ -923,7 +973,7 @@ html {
   border-radius: 2px;
   color: #FFF;
 }
-@media (prefers-contrast: more) {
+@media (prefers-contrast) {
   .onboardingContainer .colorway-variations .variation-button {
     outline: 2px solid var(--in-content-button-border-color);
     border-radius: 2px;
@@ -1168,12 +1218,6 @@ html {
   top: 10px;
   inset-inline-end: 20px;
   z-index: 2;
-}
-.onboardingContainer .secondary-cta.top button {
-  color: #FFF;
-}
-.onboardingContainer .secondary-cta.top button:hover {
-  color: #E0E0E6;
 }
 .onboardingContainer .secondary-cta span {
   color: var(--grey-subtitle-1);

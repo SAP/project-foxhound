@@ -29,6 +29,7 @@
 #include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/CSSFontFaceRule.h"
 #include "mozilla/dom/CSSFontFeatureValuesRule.h"
+#include "mozilla/dom/CSSFontPaletteValuesRule.h"
 #include "mozilla/dom/CSSImportRule.h"
 #include "mozilla/dom/CSSContainerRule.h"
 #include "mozilla/dom/CSSLayerBlockRule.h"
@@ -39,7 +40,6 @@
 #include "mozilla/dom/CSSKeyframeRule.h"
 #include "mozilla/dom/CSSNamespaceRule.h"
 #include "mozilla/dom/CSSPageRule.h"
-#include "mozilla/dom/CSSScrollTimelineRule.h"
 #include "mozilla/dom/CSSSupportsRule.h"
 #include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/FontFaceSet.h"
@@ -948,13 +948,13 @@ void ServoStyleSet::RuleChangedInternal(StyleSheet& aSheet, css::Rule& aRule,
     CASE_FOR(Media, Media)
     CASE_FOR(Keyframes, Keyframes)
     CASE_FOR(FontFeatureValues, FontFeatureValues)
+    CASE_FOR(FontPaletteValues, FontPaletteValues)
     CASE_FOR(FontFace, FontFace)
     CASE_FOR(Page, Page)
     CASE_FOR(Document, MozDocument)
     CASE_FOR(Supports, Supports)
     CASE_FOR(LayerBlock, LayerBlock)
     CASE_FOR(LayerStatement, LayerStatement)
-    CASE_FOR(ScrollTimeline, ScrollTimeline)
     CASE_FOR(Container, Container)
     // @namespace can only be inserted / removed when there are only other
     // @namespace and @import rules, and can't be mutated.
@@ -1057,6 +1057,10 @@ already_AddRefed<RawServoAnimationValue> ServoStyleSet::ComputeAnimationValue(
   return Servo_AnimationValue_Compute(aElement, aDeclarations, aStyle,
                                       mRawSet.get())
       .Consume();
+}
+
+bool ServoStyleSet::UsesFontMetrics() const {
+  return Servo_StyleSet_UsesFontMetrics(mRawSet.get());
 }
 
 bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
@@ -1213,17 +1217,19 @@ const RawServoCounterStyleRule* ServoStyleSet::CounterStyleRuleForName(
   return Servo_StyleSet_GetCounterStyleRule(mRawSet.get(), aName);
 }
 
-const RawServoScrollTimelineRule* ServoStyleSet::ScrollTimelineRuleForName(
-    nsAtom* aName) {
-  MOZ_ASSERT(!StylistNeedsUpdate());
-  return Servo_StyleSet_GetScrollTimelineRule(mRawSet.get(), aName);
-}
-
 already_AddRefed<gfxFontFeatureValueSet>
 ServoStyleSet::BuildFontFeatureValueSet() {
   MOZ_ASSERT(!StylistNeedsUpdate());
   RefPtr<gfxFontFeatureValueSet> set =
       Servo_StyleSet_BuildFontFeatureValueSet(mRawSet.get());
+  return set.forget();
+}
+
+already_AddRefed<gfx::FontPaletteValueSet>
+ServoStyleSet::BuildFontPaletteValueSet() {
+  MOZ_ASSERT(!StylistNeedsUpdate());
+  RefPtr<gfx::FontPaletteValueSet> set =
+      Servo_StyleSet_BuildFontPaletteValueSet(mRawSet.get());
   return set.forget();
 }
 

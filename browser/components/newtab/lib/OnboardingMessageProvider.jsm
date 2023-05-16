@@ -16,11 +16,14 @@ const { FeatureCalloutMessages } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
-  ShellService: "resource:///modules/ShellService.jsm",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
+  ShellService: "resource:///modules/ShellService.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -299,7 +302,7 @@ const BASE_MESSAGES = () => [
                     string_id: "mr2022-onboarding-colorway-label-default",
                   },
                   tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-default",
+                    string_id: "mr2022-onboarding-colorway-tooltip-default2",
                   },
                   description: {
                     string_id: "mr2022-onboarding-colorway-description-default",
@@ -311,7 +314,7 @@ const BASE_MESSAGES = () => [
                     string_id: "mr2022-onboarding-colorway-label-playmaker",
                   },
                   tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-playmaker",
+                    string_id: "mr2022-onboarding-colorway-tooltip-playmaker2",
                   },
                   description: {
                     string_id:
@@ -325,7 +328,7 @@ const BASE_MESSAGES = () => [
                   },
                   tooltip: {
                     string_id:
-                      "mr2022-onboarding-colorway-tooltip-expressionist",
+                      "mr2022-onboarding-colorway-tooltip-expressionist2",
                   },
                   description: {
                     string_id:
@@ -338,7 +341,7 @@ const BASE_MESSAGES = () => [
                     string_id: "mr2022-onboarding-colorway-label-visionary",
                   },
                   tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-visionary",
+                    string_id: "mr2022-onboarding-colorway-tooltip-visionary2",
                   },
                   description: {
                     string_id:
@@ -351,7 +354,7 @@ const BASE_MESSAGES = () => [
                     string_id: "mr2022-onboarding-colorway-label-activist",
                   },
                   tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-activist",
+                    string_id: "mr2022-onboarding-colorway-tooltip-activist2",
                   },
                   description: {
                     string_id:
@@ -364,7 +367,7 @@ const BASE_MESSAGES = () => [
                     string_id: "mr2022-onboarding-colorway-label-dreamer",
                   },
                   tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-dreamer",
+                    string_id: "mr2022-onboarding-colorway-tooltip-dreamer2",
                   },
                   description: {
                     string_id: "mr2022-onboarding-colorway-description-dreamer",
@@ -376,7 +379,7 @@ const BASE_MESSAGES = () => [
                     string_id: "mr2022-onboarding-colorway-label-innovator",
                   },
                   tooltip: {
-                    string_id: "mr2022-onboarding-colorway-tooltip-innovator",
+                    string_id: "mr2022-onboarding-colorway-tooltip-innovator2",
                   },
                   description: {
                     string_id:
@@ -1207,7 +1210,6 @@ const OnboardingMessageProvider = {
           string_id: "mr2022-onboarding-get-started-primary-button-label",
         };
         delete primary.action.type;
-        delete pinScreen.content.secondary_button;
       }
     }
 

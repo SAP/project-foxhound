@@ -4,7 +4,7 @@
 
 "use strict";
 
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const BROWSERTOOLBOX_FISSION_ENABLED = "devtools.browsertoolbox.fission";
 const BROWSERTOOLBOX_SCOPE_PREF = "devtools.browsertoolbox.scope";
@@ -13,13 +13,13 @@ const BROWSERTOOLBOX_SCOPE_EVERYTHING = "everything";
 const BROWSERTOOLBOX_SCOPE_PARENTPROCESS = "parent-process";
 
 // eslint-disable-next-line mozilla/reject-some-requires
-const createStore = require("devtools/client/shared/redux/create-store");
-const reducer = require("devtools/shared/commands/target/reducers/targets");
+const createStore = require("resource://devtools/client/shared/redux/create-store.js");
+const reducer = require("resource://devtools/shared/commands/target/reducers/targets.js");
 
 loader.lazyRequireGetter(
   this,
   ["refreshTargets", "registerTarget", "unregisterTarget"],
-  "devtools/shared/commands/target/actions/targets",
+  "resource://devtools/shared/commands/target/actions/targets.js",
   true
 );
 
@@ -996,7 +996,7 @@ class TargetCommand extends EventEmitter {
     // TabDescriptor may emit the event with a null targetFront, interpret that as if the previous target
     // has already been destroyed
     if (targetFront) {
-      // Wait for the target to be destroyed so that TabDescriptorFactory clears its memoized target for this tab
+      // Wait for the target to be destroyed so that LocalTabCommandsFactory clears its memoized target for this tab
       await targetFront.once("target-destroyed");
     }
 
@@ -1179,22 +1179,22 @@ const LegacyTargetWatchers = {};
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.PROCESS,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-processes-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-processes-watcher.js"
 );
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.WORKER,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-workers-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-workers-watcher.js"
 );
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.SHARED_WORKER,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-sharedworkers-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-sharedworkers-watcher.js"
 );
 loader.lazyRequireGetter(
   LegacyTargetWatchers,
   TargetCommand.TYPES.SERVICE_WORKER,
-  "devtools/shared/commands/target/legacy-target-watchers/legacy-serviceworkers-watcher"
+  "resource://devtools/shared/commands/target/legacy-target-watchers/legacy-serviceworkers-watcher.js"
 );
 
 module.exports = TargetCommand;

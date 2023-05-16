@@ -1,7 +1,7 @@
 "use strict";
 
-const { BuiltInThemes } = ChromeUtils.import(
-  "resource:///modules/BuiltInThemes.jsm"
+const { BuiltInThemes } = ChromeUtils.importESModule(
+  "resource:///modules/BuiltInThemes.sys.mjs"
 );
 
 const { AddonManager } = ChromeUtils.import(
@@ -29,10 +29,7 @@ add_task(async function test_firefox_view_colorways_reminder_targeting() {
 
   await SpecialPowers.pushPrefEnv({
     set: [
-      [
-        "browser.firefox-view.feature-tour",
-        `{"message":"","screen":"","complete":true}`,
-      ],
+      ["browser.firefox-view.feature-tour", `{"screen":"","complete":true}`],
     ],
   });
 
@@ -68,10 +65,7 @@ add_task(
 
     await SpecialPowers.pushPrefEnv({
       set: [
-        [
-          "browser.firefox-view.feature-tour",
-          `{"message":"","screen":"","complete":true}`,
-        ],
+        ["browser.firefox-view.feature-tour", `{"screen":"","complete":true}`],
       ],
     });
 
@@ -113,10 +107,7 @@ add_task(
 
     await SpecialPowers.pushPrefEnv({
       set: [
-        [
-          "browser.firefox-view.feature-tour",
-          `{"message":"","screen":"","complete":true}`,
-        ],
+        ["browser.firefox-view.feature-tour", `{"screen":"","complete":true}`],
       ],
     });
 

@@ -17,6 +17,8 @@ module.exports = {
     "chrome-test": require("../lib/configs/chrome-test"),
     "mochitest-test": require("../lib/configs/mochitest-test"),
     recommended: require("../lib/configs/recommended"),
+    "require-jsdoc": require("../lib/configs/require-jsdoc"),
+    "valid-jsdoc": require("../lib/configs/valid-jsdoc"),
     "xpcshell-test": require("../lib/configs/xpcshell-test"),
   },
   environments: {
@@ -30,6 +32,7 @@ module.exports = {
     simpletest: require("../lib/environments/simpletest.js"),
     sjs: require("../lib/environments/sjs.js"),
     "special-powers-sandbox": require("../lib/environments/special-powers-sandbox.js"),
+    specific: require("../lib/environments/specific"),
     privileged: require("../lib/environments/privileged.js"),
     xpcshell: require("../lib/environments/xpcshell.js"),
   },

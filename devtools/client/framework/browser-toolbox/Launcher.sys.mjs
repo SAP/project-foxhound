@@ -10,11 +10,11 @@ const BROWSER_TOOLBOX_WINDOW_URL =
   "chrome://devtools/content/framework/browser-toolbox/window.html";
 const CHROME_DEBUGGER_PROFILE_NAME = "chrome_debugger_profile";
 
-const {
+import {
   require,
   useDistinctSystemPrincipalLoader,
   releaseDistinctSystemPrincipalLoader,
-} = ChromeUtils.import("resource://devtools/shared/loader/Loader.jsm");
+} from "resource://devtools/shared/loader/Loader.sys.mjs";
 
 const { Subprocess } = ChromeUtils.import(
   "resource://gre/modules/Subprocess.jsm"
@@ -30,11 +30,9 @@ ChromeUtils.defineModuleGetter(
   "BackgroundTasksUtils",
   "resource://gre/modules/BackgroundTasksUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   XreDirProvider: [
@@ -43,8 +41,8 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
   ],
 });
 
-const Telemetry = require("devtools/client/shared/telemetry");
-const EventEmitter = require("devtools/shared/event-emitter");
+const Telemetry = require("resource://devtools/client/shared/telemetry.js");
+const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const env = Cc["@mozilla.org/process/environment;1"].getService(
   Ci.nsIEnvironment
@@ -136,10 +134,10 @@ export class BrowserToolboxLauncher extends EventEmitter {
     // invisible to the debugger (unlike the usual loader settings).
     this.#loader = useDistinctSystemPrincipalLoader(this);
     const { DevToolsServer } = this.#loader.require(
-      "devtools/server/devtools-server"
+      "resource://devtools/server/devtools-server.js"
     );
     const { SocketListener } = this.#loader.require(
-      "devtools/shared/security/socket"
+      "resource://devtools/shared/security/socket.js"
     );
     this.#devToolsServer = DevToolsServer;
     dumpn("Created a separate loader instance for the DevToolsServer.");

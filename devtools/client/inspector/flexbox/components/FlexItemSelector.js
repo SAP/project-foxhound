@@ -4,26 +4,28 @@
 
 "use strict";
 
-const { PureComponent } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const {
+  PureComponent,
+} = require("resource://devtools/client/shared/vendor/react.js");
+const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   getSelectorFromGrip,
   translateNodeFrontToGrip,
-} = require("devtools/client/inspector/shared/utils");
+} = require("resource://devtools/client/inspector/shared/utils.js");
 
 loader.lazyRequireGetter(
   this,
   "getNodeRep",
-  "devtools/client/inspector/shared/node-reps"
+  "resource://devtools/client/inspector/shared/node-reps.js"
 );
 
-const Types = require("devtools/client/inspector/flexbox/types");
+const Types = require("resource://devtools/client/inspector/flexbox/types.js");
 
 loader.lazyRequireGetter(
   this,
   "showMenu",
-  "devtools/client/shared/components/menu/utils",
+  "resource://devtools/client/shared/components/menu/utils.js",
   true
 );
 
