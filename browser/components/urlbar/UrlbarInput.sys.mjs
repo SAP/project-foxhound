@@ -4,9 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -14,6 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   ExtensionSearchHandler:
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
@@ -34,7 +33,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   CONTEXTUAL_SERVICES_PING_TYPES:
     "resource:///modules/PartnerLinkAttribution.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ReaderMode: "resource://gre/modules/ReaderMode.jsm",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
 });
@@ -326,26 +324,30 @@ export class UrlbarInput {
    * @param {boolean} [dueToSessionRestore]
    *        True if this is being called due to session restore and false
    *        otherwise.
-   * @param {nsIURI} [originalUri]
-   *        The uri may have been re-directed, so if originalUri exists,
-   *        we can recover the uri used to make a request. This is also used
-   *        as a means of knowing if the caller is a GET request.
+   * @param {boolean} [dontShowSearchTerms]
+   *        True if userTypedValue should not be overidden by search terms
+   *        and false otherwise.
    */
   setURI(
     uri = null,
     dueToTabSwitch = false,
     dueToSessionRestore = false,
-    originalUri = null
+    dontShowSearchTerms = false
   ) {
-    if (
-      lazy.UrlbarPrefs.get("showSearchTerms") &&
-      !lazy.UrlbarPrefs.get("browser.search.widget.inNavBar") &&
-      this.window.gBrowser.userTypedValue == null &&
-      !dueToTabSwitch
-    ) {
-      let term = this._getSearchTermIfDefaultSerpUrl(originalUri ?? uri);
-      if (term) {
-        this.window.gBrowser.userTypedValue = term;
+    if (!dontShowSearchTerms && this.window.gBrowser.userTypedValue == null) {
+      this.window.gBrowser.selectedBrowser.showingSearchTerms = false;
+      if (
+        lazy.UrlbarPrefs.get("showSearchTermsFeatureGate") &&
+        lazy.UrlbarPrefs.get("showSearchTerms.enabled") &&
+        !lazy.UrlbarPrefs.get("browser.search.widget.inNavBar")
+      ) {
+        let term = lazy.UrlbarSearchUtils.getSearchTermIfDefaultSerpUri(
+          this.window.gBrowser.selectedBrowser.originalURI ?? uri
+        );
+        if (term) {
+          this.window.gBrowser.userTypedValue = term;
+          this.window.gBrowser.selectedBrowser.showingSearchTerms = true;
+        }
       }
     }
 
@@ -486,7 +488,8 @@ export class UrlbarInput {
 
   /**
    * Passes DOM events to the _on_<event type> methods.
-   * @param {Event} event
+   *
+   * @param {Event} event The event to handle.
    */
   handleEvent(event) {
     let methodName = "_on_" + event.type;
@@ -531,22 +534,29 @@ export class UrlbarInput {
   }
 
   /**
+   * @typedef {object} HandleNavigationOneOffParams
+   *
+   * @property {string} openWhere
+   *   Where we expect the result to be opened.
+   * @property {object} openParams
+   *   The parameters related to where the result will be opened.
+   * @property {Node} engine
+   *   The selected one-off's engine.
+   */
+
+  /**
    * Handles an event which would cause a URL or text to be opened.
    *
-   * @param {Event} [event]
+   * @param {object} [options]
+   *   Options for the navigation.
+   * @param {Event} [options.event]
    *   The event triggering the open.
-   * @param {object} [oneOffParams]
+   * @param {HandleNavigationOneOffParams} [options.oneOffParams]
    *   Optional. Pass if this navigation was triggered by a one-off. Practically
    *   speaking, UrlbarSearchOneOffs passes this when the user holds certain key
    *   modifiers while picking a one-off. In those cases, we do an immediate
    *   search using the one-off's engine instead of entering search mode.
-   * @param {string} oneOffParams.openWhere
-   *   Where we expect the result to be opened.
-   * @param {object} oneOffParams.openParams
-   *   The parameters related to where the result will be opened.
-   * @param {Node} oneOffParams.engine
-   *   The selected one-off's engine.
-   * @param {object} [triggeringPrincipal]
+   * @param {object} [options.triggeringPrincipal]
    *   The principal that the action was triggered from.
    */
   handleNavigation({ event, oneOffParams, triggeringPrincipal }) {
@@ -731,11 +741,11 @@ export class UrlbarInput {
     // Don't add further handling here, the catch above is our last resort.
   }
 
-  handleRevert() {
+  handleRevert(dontShowSearchTerms = false) {
     this.window.gBrowser.userTypedValue = null;
     // Nullify search mode before setURI so it won't try to restore it.
     this.searchMode = null;
-    this.setURI(null, true);
+    this.setURI(null, true, false, dontShowSearchTerms);
     if (this.value && this.focused) {
       this.select();
     }
@@ -747,6 +757,7 @@ export class UrlbarInput {
    * about:privatebrowsing.
    *
    * @param {string} searchString
+   *   The search string to use.
    * @param {nsISearchEngine} [searchEngine]
    *   Optional. If included and the right prefs are set, we will enter search
    *   mode when handing `searchString` from the fake input to the Urlbar.
@@ -831,6 +842,7 @@ export class UrlbarInput {
           ? result.payload.url
           : undefined,
       },
+      private: this.isPrivate,
     };
 
     if (
@@ -1172,11 +1184,13 @@ export class UrlbarInput {
    * with the current input value.  If you need to set this result but don't
    * want to also set the input value, then use setResultForCurrentValue.
    *
-   * @param {UrlbarResult} [result]
+   * @param {object} options
+   *   Options.
+   * @param {UrlbarResult} [options.result]
    *   The result that was selected or picked, null if no result was selected.
-   * @param {Event} [event]
+   * @param {Event} [options.event]
    *   The event that picked the result.
-   * @param {string} [urlOverride]
+   * @param {string} [options.urlOverride]
    *   Normally the URL is taken from `result.payload.url`, but if `urlOverride`
    *   is specified, it's used instead.
    * @returns {boolean}
@@ -1386,6 +1400,8 @@ export class UrlbarInput {
   /**
    * Starts a query based on the current input value.
    *
+   * @param {object} [options]
+   *   Object options
    * @param {boolean} [options.allowAutofill]
    *   Whether or not to allow providers to include autofill results.
    * @param {boolean} [options.autofillIgnoresSelection]
@@ -1440,6 +1456,7 @@ export class UrlbarInput {
       isPrivate: this.isPrivate,
       maxResults: lazy.UrlbarPrefs.get("maxRichResults"),
       searchString,
+      view: this.view,
       userContextId: this.window.gBrowser.selectedBrowser.getAttribute(
         "usercontextid"
       ),
@@ -1474,6 +1491,8 @@ export class UrlbarInput {
    * @param {string} value
    *   The input's value will be set to this value, and the search will
    *   use it as its query.
+   * @param {object} [options]
+   *   Object options
    * @param {nsISearchEngine} [options.searchEngine]
    *   Search engine to use when the search is using a known alias.
    * @param {UrlbarUtils.SEARCH_MODE_ENTRY} [options.searchModeEntry]
@@ -1907,14 +1926,16 @@ export class UrlbarInput {
    * Confirms search mode and starts a new search if appropriate for the given
    * result.  See also _searchModeForResult.
    *
-   * @param {string} entry
+   * @param {object} options
+   *   Options object.
+   * @param {string} options.entry
    *   The search mode entry point. See setSearchMode documentation for details.
-   * @param {UrlbarResult} [result]
+   * @param {UrlbarResult} [options.result]
    *   The result to confirm. Defaults to the currently selected result.
-   * @param {boolean} [checkValue]
+   * @param {boolean} [options.checkValue]
    *   If true, the trimmed input value must equal the result's keyword in order
    *   to enter search mode.
-   * @param {boolean} [startQuery]
+   * @param {boolean} [options.startQuery]
    *   If true, start a query after entering search mode. Defaults to true.
    * @returns {boolean}
    *   True if we entered search mode and false if not.
@@ -2197,50 +2218,6 @@ export class UrlbarInput {
   }
 
   /**
-   * Checks if the given uri is constructed by the default search engine.
-   * When passing URI's to check against, it's best to use the "original" URI
-   * that was requested, as the server may re-direct the URIs.
-   *
-   * @param {nsIURI} uri
-   *   The uri to check against
-   * @param {boolean} mustBeEqual
-   *   The uri to check against
-   * @returns {string}
-   *   The search terms use.
-   *   Will return an empty string if it's not a default SERP
-   *   or if the default engine hasn't been initialized.
-   */
-  _getSearchTermIfDefaultSerpUrl(uri) {
-    try {
-      // nsIURI.host can throw for non-standard URI's
-      if (
-        Services.search.isInitialized &&
-        Services.io.newURI(Services.search.defaultEngine.searchForm).host ==
-          uri.host
-      ) {
-        let { engine, terms } = Services.search.parseSubmissionURL(uri.spec);
-        if (engine && terms) {
-          let [expectedSearchUrl] = lazy.UrlbarUtils.getSearchQueryUrl(
-            engine,
-            terms
-          );
-          if (
-            lazy.UrlbarSearchUtils.serpsAreEquivalent(
-              uri.spec,
-              expectedSearchUrl
-            )
-          ) {
-            return terms;
-          }
-        }
-      }
-    } catch (ex) {
-      return "";
-    }
-    return "";
-  }
-
-  /**
    * Invoked on overflow/underflow/scrollend events to update attributes
    * related to the input text directionality. Overflow fade masks use these
    * attributes to appear at the proper side of the urlbar.
@@ -2452,6 +2429,11 @@ export class UrlbarInput {
       // necessary; the intent is the same regardless of whether the user is
       // in search mode when they do a key-modified click/enter on a one-off.
       source = "urlbar-searchmode";
+    } else if (
+      this.window.gBrowser.selectedBrowser.showingSearchTerms &&
+      !isOneOff
+    ) {
+      source = "urlbar-persisted";
     }
 
     lazy.BrowserSearchTelemetry.recordSearch(
@@ -2544,15 +2526,17 @@ export class UrlbarInput {
    * Autofills a value into the input.  The value will be autofilled regardless
    * of the input's current value.
    *
-   * @param {string} value
+   * @param {object} options
+   *   The options object.
+   * @param {string} options.value
    *   The value to autofill.
-   * @param {integer} selectionStart
+   * @param {integer} options.selectionStart
    *   The new selectionStart.
-   * @param {integer} selectionEnd
+   * @param {integer} options.selectionEnd
    *   The new selectionEnd.
-   * @param {string} type
+   * @param {"origin" | "url" | "adaptive"} options.type
    *   The autofill type, one of: "origin", "url", "adaptive"
-   * @param {string} adaptiveHistoryInput
+   * @param {string} options.adaptiveHistoryInput
    *   If the autofill type is "adaptive", this is the matching `input` value
    *   from adaptive history.
    */
@@ -2590,11 +2574,11 @@ export class UrlbarInput {
    *   Whether the principal can be inherited.
    * @param {object} [resultDetails]
    *   Details of the selected result, if any.
-   * @param {UrlbarUtils.RESULT_TYPE} [result.type]
+   * @param {UrlbarUtils.RESULT_TYPE} [resultDetails.type]
    *   Details of the result type, if any.
-   * @param {string} [result.searchTerm]
+   * @param {string} [resultDetails.searchTerm]
    *   Search term of the result source, if any.
-   * @param {UrlbarUtils.RESULT_SOURCE} [result.source]
+   * @param {UrlbarUtils.RESULT_SOURCE} [resultDetails.source]
    *   Details of the result source, if any.
    * @param {object} browser [optional] the browser to use for the load.
    */
@@ -2609,7 +2593,9 @@ export class UrlbarInput {
     // No point in setting these because we'll handleRevert() a few rows below.
     if (openUILinkWhere == "current") {
       this.value =
-        lazy.UrlbarPrefs.get("showSearchTerms") && resultDetails?.searchTerm
+        lazy.UrlbarPrefs.get("showSearchTermsFeatureGate") &&
+        lazy.UrlbarPrefs.get("showSearchTerms.enabled") &&
+        resultDetails?.searchTerm
           ? resultDetails.searchTerm
           : url;
       browser.userTypedValue = this.value;
@@ -2677,6 +2663,12 @@ export class UrlbarInput {
       params.avoidBrowserFocus = true;
       this._keyDownEnterDeferred.loadedContent = true;
       this._keyDownEnterDeferred.resolve(browser);
+    }
+
+    // Ensure the window gets the `private` feature if the current window
+    // is private, unless the caller explicitly requested not to.
+    if (this.isPrivate && !("private" in params)) {
+      params.private = true;
     }
 
     // Focus the content area before triggering loads, since if the load
@@ -2831,6 +2823,7 @@ export class UrlbarInput {
    * selected.
    *
    * @param {UrlbarResult} result
+   *   The result to check.
    * @param {string} [entry]
    *   If provided, this will be recorded as the entry point into search mode.
    *   See setSearchMode() documentation for details.
@@ -3617,6 +3610,7 @@ export class UrlbarInput {
 
 /**
  * Tries to extract droppable data from a DND event.
+ *
  * @param {Event} event The DND event to examine.
  * @returns {URL|string|null}
  *          null if there's a security reason for which we should do nothing.
@@ -3807,6 +3801,7 @@ class CopyCutController {
 
   /**
    * @param {string} command
+   *   The name of the command to check.
    * @returns {boolean}
    *   Whether the command is handled by this controller.
    */
@@ -3821,6 +3816,7 @@ class CopyCutController {
 
   /**
    * @param {string} command
+   *   The name of the command to check.
    * @returns {boolean}
    *   Whether the command should be enabled.
    */
@@ -3838,11 +3834,19 @@ class CopyCutController {
 /**
  * Manages the Add Search Engine contextual menu entries.
  *
- * @note setEnginesFromBrowser must be invoked from the outside when the
+ * Note: setEnginesFromBrowser must be invoked from the outside when the
  *       page provided engines list changes.
  *       refreshContextMenu must be invoked when the context menu is opened.
  */
 class AddSearchEngineHelper {
+  /**
+   * @type {UrlbarSearchOneOffs}
+   */
+  shortcutButtons;
+
+  /**
+   * @param {UrlbarInput} input The parent UrlbarInput.
+   */
   constructor(input) {
     this.input = input;
     this.shortcutButtons = input.view.oneOffSearchButtons;
@@ -3851,6 +3855,8 @@ class AddSearchEngineHelper {
   /**
    * If there's more than this number of engines, the context menu offers
    * them in a submenu.
+   *
+   * @returns {number}
    */
   get maxInlineEngines() {
     return this.shortcutButtons._maxInlineAddEngines;
@@ -3858,6 +3864,7 @@ class AddSearchEngineHelper {
 
   /**
    * Invoked by browser when the list of available engines changes.
+   *
    * @param {object} browser The invoking browser.
    */
   setEnginesFromBrowser(browser) {

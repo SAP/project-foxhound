@@ -93,6 +93,12 @@ enum class TypeCode {
   // The 'empty' case of blocktype.
   BlockVoid = 0x40,  // SLEB128(-0x40)
 
+  // Type constructor for recursion groups - gc proposal
+  RecGroup = 0x45,
+
+  // Type prefix for parent types - gc proposal
+  SubType = 0x50,
+
   Limit = 0x80
 };
 
@@ -107,12 +113,10 @@ static constexpr TypeCode LowestPrimitiveTypeCode = TypeCode::I16;
 
 static constexpr TypeCode AbstractReferenceTypeCode = TypeCode::ExternRef;
 
-// A type code used to represent (ref null? typeindex) whether or not the type
+// A type code used to represent (ref null? T) whether or not the type
 // is encoded with 'Ref' or 'NullableRef'.
 
-static constexpr TypeCode AbstractReferenceTypeIndexCode = TypeCode::Ref;
-
-enum class TypeIdDescKind { None, Immediate, Global };
+static constexpr TypeCode AbstractTypeRefCode = TypeCode::Ref;
 
 // A wasm::Trap represents a wasm-defined trap that can occur during execution
 // which triggers a WebAssembly.RuntimeError. Generated code may jump to a Trap
@@ -476,6 +480,7 @@ enum class GcOp {
   RefTest = 0x44,
   RefCast = 0x45,
   BrOnCast = 0x46,
+  BrOnCastFail = 0x47,
 
   Limit
 };
@@ -1018,6 +1023,7 @@ static const unsigned MaxTypeIndex = 1000000;
 static const unsigned MaxTypeIndex = 15000;
 #endif
 
+static const unsigned MaxRecGroups = 1000000;
 static const unsigned MaxTags = 1000000;
 
 // These limits pertain to our WebAssembly implementation only.
@@ -1039,12 +1045,6 @@ static const unsigned MaxFrameSize = 512 * 1024;
 // Asserted by Decoder::readVarU32.
 
 static const unsigned MaxVarU32DecodedBytes = 5;
-
-// Which backend to use in the case of the optimized tier.
-
-enum class OptimizedBackend {
-  Ion,
-};
 
 // The CompileMode controls how compilation of a module is performed (notably,
 // how many times we compile it).

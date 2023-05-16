@@ -36,6 +36,11 @@ add_task(async function test_primary_password_locked() {
   const sandbox = setupMocks();
 
   await withFirefoxView({}, async browser => {
+    sandbox
+      .stub(TabsSetupFlowManager, "syncTabs")
+      .returns(Promise.resolve(null));
+    sandbox.stub(TabsSetupFlowManager, "startFullTabsSync").returns(undefined);
+
     const { document } = browser.contentWindow;
     Services.obs.notifyObservers(null, UIState.ON_UPDATE);
 
@@ -43,6 +48,31 @@ add_task(async function test_primary_password_locked() {
     await waitForVisibleSetupStep(browser, {
       expectedVisible: "#tabpickup-steps-view0",
     });
+
+    const errorStateHeader = document.querySelector(
+      "#tabpickup-steps-view0-header"
+    );
+    await BrowserTestUtils.waitForMutationCondition(
+      errorStateHeader,
+      { childList: true },
+      () => errorStateHeader.textContent.includes("Enter your Primary Password")
+    );
+
+    ok(
+      errorStateHeader.getAttribute("data-l10n-id").includes("password-locked"),
+      "Correct error message is shown"
+    );
+
+    const errorLink = document.querySelector("#error-state-link");
+    ok(
+      errorLink && BrowserTestUtils.is_visible(errorLink),
+      "Error link is visible"
+    );
+    ok(
+      errorLink.getAttribute("data-l10n-id").includes("password-locked-link"),
+      "Correct link text is shown"
+    );
+
     const primaryButton = document.querySelector("#error-state-button");
     ok(
       primaryButton && BrowserTestUtils.is_visible(primaryButton),
@@ -72,6 +102,9 @@ add_task(async function test_primary_password_locked() {
 
     info("notifying of the primary-password unlock");
     const clearErrorSpy = sandbox.spy(TabsSetupFlowManager, "tryToClearError");
+    // we stubbed out sync, so pretend it ran.
+    info("notifying of sync:finish");
+    Services.obs.notifyObservers(null, "weave:service:sync:finish");
 
     const setupContainer = document.querySelector(".sync-setup-container");
     // wait until the setup container gets hidden before checking if the tabs container is visible
@@ -113,5 +146,5 @@ add_task(async function test_primary_password_locked() {
       "Synced tabs isn't loading any more"
     );
   });
-  tearDown();
+  await tearDown(sandbox);
 });

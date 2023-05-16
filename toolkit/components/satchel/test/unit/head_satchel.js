@@ -63,18 +63,10 @@ const isGUID = /[A-Za-z0-9\+\/]{16}/;
 
 // Find form history entries.
 function searchEntries(terms, params, iter) {
-  let results = [];
-  FormHistory.search(terms, params, {
-    handleResult: result => results.push(result),
-    handleError(error) {
-      do_throw("Error occurred searching form history: " + error);
-    },
-    handleCompletion(reason) {
-      if (!reason) {
-        iter.next(results);
-      }
-    },
-  });
+  FormHistory.search(terms, params).then(
+    results => iter.next(results),
+    error => do_throw("Error occurred searching form history: " + error)
+  );
 }
 
 // Count the number of entries with the given name and value, and call then(number)
@@ -88,18 +80,14 @@ function countEntries(name, value, then) {
     obj.value = value;
   }
 
-  let count = 0;
-  FormHistory.count(obj, {
-    handleResult: result => (count = result),
-    handleError(error) {
+  FormHistory.count(obj).then(
+    count => {
+      then(count);
+    },
+    error => {
       do_throw("Error occurred searching form history: " + error);
-    },
-    handleCompletion(reason) {
-      if (!reason) {
-        then(count);
-      }
-    },
-  });
+    }
+  );
 }
 
 // Perform a single form history update and call then() when done.
@@ -153,33 +141,13 @@ function promiseAddEntry(name, value) {
 
 // Wrapper around FormHistory.update which handles errors. Calls then() when done.
 function updateFormHistory(changes, then) {
-  FormHistory.update(changes, {
-    handleError(error) {
-      do_throw("Error occurred updating form history: " + error);
-    },
-    handleCompletion(reason) {
-      if (!reason) {
-        then();
-      }
-    },
+  FormHistory.update(changes).then(then, error => {
+    do_throw("Error occurred updating form history: " + error);
   });
 }
 
 function promiseUpdate(change) {
-  return new Promise((resolve, reject) => {
-    FormHistory.update(change, {
-      handleError(error) {
-        this._error = error;
-      },
-      handleCompletion(reason) {
-        if (reason) {
-          reject(this._error);
-        } else {
-          resolve();
-        }
-      },
-    });
-  });
+  return FormHistory.update(change);
 }
 
 /**

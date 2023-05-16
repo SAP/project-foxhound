@@ -1,7 +1,7 @@
 "use strict";
 
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
+const { Subprocess } = ChromeUtils.importESModule(
+  "resource://gre/modules/Subprocess.sys.mjs"
 );
 
 const TEMP_DIR = Services.dirsvc.get("TmpD", Ci.nsIFile).path;
@@ -94,7 +94,7 @@ async function testWindowSizePositive(width, height) {
     let reader = new FileReader();
     reader.onloadend = function() {
       let screenshot = new Image();
-      screenshot.onloadend = function() {
+      screenshot.onload = function() {
         is(
           screenshot.width,
           width,
@@ -131,7 +131,7 @@ async function testGreen(url, path) {
     let reader = new FileReader();
     reader.onloadend = function() {
       let screenshot = new Image();
-      screenshot.onloadend = function() {
+      screenshot.onload = function() {
         resolve(screenshot);
       };
       screenshot.src = reader.result;

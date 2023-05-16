@@ -304,6 +304,15 @@
   value: false
   mirror: always
 
+# After a user has executed a pan gesture, we may receive momentum phase pan
+# gestures from the OS. This specifies how long we should wait following the
+# pan end gesture for possible momentum phase pan gestures before sending the
+# TransformEnd notification.
+- name: apz.scrollend-event.content.delay_ms
+  type: RelaxedAtomicInt32
+  value: 100
+  mirror: always
+
 - name: apz.wr.activate_all_scroll_frames
   type: RelaxedAtomicBool
   value: false
@@ -1043,12 +1052,23 @@
   value: 40 * 1024
   mirror: always
 
+
 # Number of seconds the cache spends writing pending data and closing files
 # after shutdown has been signalled. Past that time data is not written and
 # files are left open for the OS to clean up.
 - name: browser.cache.max_shutdown_io_lag
   type: RelaxedAtomicUint32
   value: 2
+  mirror: always
+
+# After the max_shutdown_io_lag has passed, we will attempt to cancel
+# blocking IO (on windows). The CacheIOThread may pick up more blocking
+# tasks so we want to cancel those too. The main thread will be woken
+# up every shutdown_io_time_between_cancellations_ms to cancel the IO
+# on the other thread.
+- name: browser.cache.shutdown_io_time_between_cancellations_ms
+  type: RelaxedAtomicUint32
+  value: 5
   mirror: always
 
 # A percentage limit for media content type in the disk cache. When some entries
@@ -1648,7 +1668,7 @@
 # JavaScript.
 - name: browser.opaqueResponseBlocking
   type: RelaxedAtomicBool
-  value: @IS_NIGHTLY_BUILD@
+  value: false
   mirror: always
 
 # When this pref is enabled, <object> and <embed> elements will create
@@ -1931,8 +1951,7 @@
   mirror: always
 
 # Enables the cookie banner cookie injector. The cookie banner cookie injector
-# depends on the above `cookiebanners.service.mode` pref: it would be disabled
-# if the servcie mode is disabled.
+# depends on the `cookiebanners.service.mode` pref above.
 - name: cookiebanners.cookieInjector.enabled
   type: bool
   value: true
@@ -1948,11 +1967,10 @@
   mirror: always
 
 # Enables the cookie banner auto clicking. The cookie banner auto clicking
-# depends on the above `cookiebanners.service.mode` pref: it would be disabled
-# if the servcie mode is disabled.
+# depends on the `cookiebanners.service.mode` pref above.
 - name: cookiebanners.bannerClicking.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # The maximum time in ms for detecting banner and button elements for cookie
@@ -2067,12 +2085,6 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "dom."
 #---------------------------------------------------------------------------
-
-# Whether CanvasRenderingContext2D.mozCurrentTransform is enabled.
-- name: dom.mozCurrentTransform.enabled
-  type: bool
-  value: false
-  mirror: always
 
 # Allow cut/copy
 - name: dom.allow_cut_copy
@@ -2244,9 +2256,11 @@
   mirror: always
 
 # Whether the above pref has any effect at all.
+# Make sure cases like bug 1795380 work before trying to turn this off. See
+# bug 1680721 for some other context that might be relevant.
 - name: dom.delay.block_external_protocol_in_iframes.enabled
   type: bool
-  value: @IS_NOT_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # HTML <dialog> element
@@ -2460,6 +2474,13 @@
 # DataTransfer will be read-only whenever it should be protected, and will not
 # be disconnected after a drag event is completed.
 - name: dom.events.dataTransfer.protected.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# Whether to hide normal files (i.e. non-images) in dataTransfer inside
+# the content process.
+- name: dom.events.dataTransfer.mozFile.enabled
   type: bool
   value: false
   mirror: always
@@ -2693,10 +2714,11 @@
   value: false
   mirror: always
 
-# Whether we perform a more strict alignment with vsync for input events
-- name: dom.input_events.strict_input_vsync_alignment
-  type: bool
-  value: true
+# The maximum time (milliseconds) we reserve for handling input events in each
+# frame.
+- name: dom.input_event_queue.duration.max
+  type: uint32_t
+  value: 8
   mirror: always
 
 # Enable not moving the cursor to end when a text input or textarea has .value
@@ -2843,6 +2865,13 @@
   value: 0
 #endif
   mirror: always
+
+#ifdef XP_WIN
+- name: dom.ipc.processPriorityManager.backgroundUsesEcoQoS
+  type: bool
+  value: false
+  mirror: always
+#endif
 
 # Is support for HTMLElement.autocapitalize enabled?
 - name: dom.forms.autocapitalize
@@ -3017,7 +3046,7 @@
 # Is support for import maps (<script type="importmap">) enabled for content?
 - name: dom.importMaps.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # Whether we disable triggering mutation events for changes to style
@@ -3081,13 +3110,6 @@
 # Origin trial state for "TestTrial".
 # 0: normal, 1: always-enabled, 2: always-disabled
 - name: dom.origin-trials.test-trial.state
-  type: RelaxedAtomicInt32
-  value: 0
-  mirror: always
-
-# Origin trial state for OffscreenCanvas.
-# 0: normal, 1: always-enabled, 2: always-disabled
-- name: dom.origin-trials.offscreen-canvas.state
   type: RelaxedAtomicInt32
   value: 0
   mirror: always
@@ -3175,7 +3197,7 @@
 # element's style.
 - name: dom.picture_source_dimension_attributes.enabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # Is support for Element.requestPointerLock enabled?
@@ -3683,10 +3705,17 @@
   value: false
   mirror: always
 
-# pref controls `identity` credentials being exposed
+# pref controls `identity` credentials timeout for testing
 - name: dom.security.credentialmanagement.identity.wait_for_timeout
   type: bool
   value: true
+  mirror: always
+
+# pref controls `identity` credential UI for testing. When true, UI is not shown and
+# the first option in the account and provider lists are chosen
+- name: dom.security.credentialmanagement.identity.select_first_in_ui_lists
+  type: bool
+  value: false
   mirror: always
 
 # Whether or not selection events on text controls are enabled.
@@ -3774,7 +3803,7 @@
 
 - name: dom.sitepermsaddon-provider.enabled
   type: bool
-  value: false
+  value: @IS_NOT_ANDROID@
   mirror: always
 
 # Whether automatic storage access granting heuristics should be turned on.
@@ -3823,6 +3852,15 @@
 
 # Whether the File System API is enabled
 - name: dom.fs.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Whether the WritableFileStream is enabled on the main thread.
+# WritableFileStream currently does all IO on the current thread which is okish
+# for workers but not for the main thread. The situation will change after bug
+# 1798513.
+- name: dom.fs.main_thread_writable_file_stream
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -4431,11 +4469,7 @@
 # Whether the WebMIDI API is enabled
 - name: dom.webmidi.enabled
   type: bool
-#if !defined(MOZ_WIDGET_ANDROID) && defined(EARLY_BETA_OR_EARLIER)
-  value: true
-#else
-  value: false
-#endif
+  value: @IS_NOT_ANDROID@
   mirror: always
 
 # midi permission is addon-gated
@@ -4825,6 +4859,17 @@
 - name: editor.positioning.enabled_by_default
   type: bool
   value: false
+  mirror: always
+
+# Controls if a double click word selection also deletes one adjacent whitespace
+# (if feasible). This mimics native behaviour on MacOS.
+- name: editor.word_select.delete_space_after_doubleclick_selection
+  type: bool
+#ifdef XP_MACOSX
+  value: true
+#else
+  value: false
+#endif
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -5486,7 +5531,7 @@
 #if defined(XP_MACOSX)
 - name: gfx.cairo_quartz_cg_layer.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 #endif
 
@@ -5557,6 +5602,11 @@
   value: 0.66
   mirror: always
 
+- name: gfx.canvas.accelerated.gpu-path-size
+  type: RelaxedAtomicUint32
+  value: 4
+  mirror: always
+
 # 0x7fff is the maximum supported xlib surface size and is more than enough for canvases.
 - name: gfx.canvas.max-size
   type: RelaxedAtomicInt32
@@ -5588,11 +5638,7 @@
 
 - name: gfx.color_management.enablev4
   type: RelaxedAtomicBool
-#if defined(XP_MACOSX) || defined(NIGHTLY_BUILD)
   value: true
-#else
-  value: false
-#endif
   mirror: always
 
 # 0 = Off, 1 = Full, 2 = Tagged Images Only.
@@ -5771,6 +5817,11 @@
 - name: gfx.display.frame-rate-divisor
   type: RelaxedAtomicInt32
   value: 1
+  mirror: always
+
+- name: gfx.display.max-frame-rate
+  type: RelaxedAtomicInt32
+  value: 0
   mirror: always
 
 # Whether to preserve color bitmap tables in fonts (bypassing OTS).
@@ -6007,18 +6058,6 @@
 - name: gfx.offscreencanvas.enabled
   type: RelaxedAtomicBool
   value: true
-  mirror: always
-
-# Enable OffscreenCanvas based on the domain allowlist.
-- name: gfx.offscreencanvas.domain-enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-
-# Domains included in the allowlist.
-- name: gfx.offscreencanvas.domain-allowlist
-  type: DataMutexString
-  value: "*.zoom.us,zoom.us"
   mirror: always
 
 - name: gfx.omta.background-color
@@ -6513,7 +6552,7 @@
 # Disable wait of GPU execution completion
 - name: gfx.webrender.wait-gpu-finished.disabled
   type: bool
-#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+#if defined(XP_WIN)
   value: true
 #else
   value: false
@@ -6906,12 +6945,177 @@
   mirror: always
 
 #ifdef XP_WIN
+  # Whether making Gecko TSF-aware or only working with IMM.  TSF is a modern
+  # IME API set of Windows which replaces IMM APIs.  Unless you can avoid the
+  # problem which you see with enabling TSF, you shouldn't change this pref
+  # to false since IMM handler is now not maintained nor tested with latest
+  # Windows.  If you need to change this pref to false, please file a bug to
+  # <https://bugzilla.mozilla.org>.
+  # Restart required to apply this pref change.
+-   name: intl.tsf.enabled
+    type: bool
+    value: true
+    mirror: once
+
+  # Whether Gecko creates or does not create native caret for legacy ATOK
+  # (2011 - 2015).
+-   name: intl.tsf.hack.atok.create_native_caret
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko returns available composition string rect or TS_E_NOLAYOUT
+  # from ITextStoreACP::GetTextExt() when the specified range is same as the
+  # range of composition string but some character rects in it are still dirty
+  # if and only if ATOK is active TIP.
+  # Note that this is ignored if active ATOK is or older than 2016 and
+  # create_native_caret is true.
+-   name: intl.tsf.hack.atok.do_not_return_no_layout_error_of_composition_string
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko sets input scope of ATOK to "search" or never does it.
+  # When "search" is set to the input scope, ATOK may stop their suggestions.
+  # To avoid it, turn this pref on, or changing the settings in ATOK.
+  # Note that if you enable this pref and you use the touch keyboard for touch
+  # screens, you cannot access some specific features for a "search" input
+  # field.
+-   name: intl.tsf.hack.atok.search_input_scope_disabled
+    type: bool
+    value: false
+    mirror: always
+
+  # Whether Gecko returns caret rect before composition string or TS_E_NOLAYOUT
+  # from ITextStoreACP::GetTextExt() when the specified range is larger than
+  # composition start offset if and only if Free ChangJie is active TIP.
+-   name: intl.tsf.hack.free_chang_jie.do_not_return_no_layout_error
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko returns available composition string rect or TS_E_NOLAYOUT
+  # from ITextStoreACP::GetTextExt() when the specified range is same as the
+  # range of composition string but some character rects in it are still dirty
+  # if and only if Japanist 10 is active TIP.
+-   name: intl.tsf.hack.japanist10.do_not_return_no_layout_error_of_composition_string
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko returns previous character rect or TS_E_NOLAYOUT from
+  # ITfContextView::GetTextExt() when the specified range is the first
+  # character of selected clause of composition string if and only if Japanese TIP
+  # of Microsoft is active.
+-   name: intl.tsf.hack.ms_japanese_ime.do_not_return_no_layout_error_at_first_char
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko returns previous character rect or TS_E_NOLAYOUT from
+  # ITfContextView::GetTextExt() when the specified range is the caret of
+  # composition string if and only if Japanese TIP of Microsoft is active.
+-   name: intl.tsf.hack.ms_japanese_ime.do_not_return_no_layout_error_at_caret
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko returns caret rect before composition string or TS_E_NOLAYOUT
+  # from ITfContextView::GetTextExt() when the specified range is larger than
+  # composition start offset if and only Simplified Chinese TIP of Microsoft
+  # is active.
+-   name: intl.tsf.hack.ms_simplified_chinese.do_not_return_no_layout_error
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Geckos hacks ITextStoreACP::QueryInsert() or not.  The method should
+  # return new selection after specified length text is inserted at specified
+  # range.  However, Microsoft Pinyin and Microsoft Wubi expect that the result
+  # is same as specified range.  If following prefs are true,
+  # ITextStoreACP::QueryInsert() returns specified range only when one of the
+  # TIPs is active.
+-   name: intl.tsf.hack.ms_simplified_chinese.query_insert_result
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko returns caret rect before composition string or TS_E_NOLAYOUT
+  # from ITfContextView::GetTextExt() when the specified range is larger than
+  # composition start offset if and only Traditional Chinese TIP of Microsoft
+  # is active.
+-   name: intl.tsf.hack.ms_traditional_chinese.do_not_return_no_layout_error
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Geckos hacks ITextStoreACP::QueryInsert() or not.  The method should
+  # return new selection after specified length text is inserted at specified
+  # range.  However, Microsoft ChangJie and Microsoft Quick expect that the
+  # result is same as specified range.  If following prefs are true,
+  # ITextStoreACP::QueryInsert() returns specified range only when one of the
+  # TIPs is active.
+-   name: intl.tsf.hack.ms_traditional_chinese.query_insert_result
+    type: bool
+    value: true
+    mirror: always
+
+  # Whether Gecko sets input scope of the URL bar to IS_DEFAULT when black
+  # listed IMEs are active or does not.  If you use tablet mode mainly and you
+  # want to use touch keyboard for URL when you set focus to the URL bar, you
+  # can set this to false.  Then, you'll see, e.g., ".com" key on the keyboard.
+  # However, if you set this to false, such IMEs set its open state to "closed"
+  # when you set focus to the URL bar.  I.e., input mode is automatically
+  # changed to English input mode.
+  # Known buggy IME list:
+  #   - Microsoft IME for Japanese
+  #   - Google Japanese Input
+  #   - Microsoft Bopomofo
+  #   - Microsoft ChangJie
+  #   - Microsoft Phonetic
+  #   - Microsoft Quick
+  #   - Microsoft New ChangJie
+  #   - Microsoft New Phonetic
+  #   - Microsoft New Quick
+  #   - Microsoft Pinyin
+  #   - Microsoft Pinyin New Experience Input Style
+  #   - Microsoft Wubi
+  #   - Microsoft IME for Korean (except on Win7)
+  #   - Microsoft Old Hangul
+-   name: intl.ime.hack.set_input_scope_of_url_bar_to_default
+    type: bool
+    value: true
+    mirror: always
+
+  # On Windows 10 Build 17643 (an Insider Preview build of RS5), Microsoft
+  # have fixed the caller of ITextACPStore::GetTextExt() to return
+  # TS_E_NOLAYOUT to TIP as-is, rather than converting to E_FAIL.
+  # Therefore, if TIP supports asynchronous layout computation perfectly, we
+  # can return TS_E_NOLAYOUT and TIP waits next OnLayoutChange()
+  # notification.  However, some TIPs still have some bugs of asynchronous
+  # layout support.  We keep hacking the result of GetTextExt() like running
+  # on Windows 10, however, there could be unknown TIP bugs if we stop
+  # hacking the result.  So, user can stop checking build ID to make Gecko
+  # hack the result forcibly.
+-   name: intl.tsf.hack.allow_to_stop_hacking_on_build_17643_or_later
+    type: bool
+    value: @IS_EARLY_BETA_OR_EARLIER@
+    mirror: always
+
   # If true, automatically extend selection to cluster boundaries when
   # TSF/TIP requests to select from/by middle of a cluster.
 -   name: intl.tsf.hack.extend_setting_selection_range_to_cluster_boundaries
     type: bool
     value: @IS_NOT_EARLY_BETA_OR_EARLIER@
     mirror: always
+
+  # Whether Gecko supports IMM even if TSF is enabled.  This pref exists
+  # only for check TSF behavior of new versions.  Therefore, users should
+  # not set this to false for daily use.
+-   name: intl.tsf.support_imm
+    type: bool
+    value: true
+    mirror: once
 
   # If true, TSF and TIP (IME) can retrieve URL of the document containing
   # the focused element.  When this is set to true, Gecko exposes the spec
@@ -6949,6 +7153,7 @@
   type: bool
   value: false
   mirror: always
+
 
 #if defined(XP_MACOSX) || defined(MOZ_WIDGET_GTK)
 # Whether text input without keyboard press nor IME composition should cause a
@@ -7122,15 +7327,9 @@
   # Experimental support for Array Grouping in JavaScript.
 -   name: javascript.options.experimental.array_grouping
     type: bool
-    value: true
+    value: false
     mirror: always
 #endif  // NIGHTLY_BUILD
-
-# Experimental support for class static blocks in JavaScript.
--   name: javascript.options.experimental.class_static_blocks
-    type: bool
-    value: true
-    mirror: always
 
 #ifdef NIGHTLY_BUILD
   # Experimental support for Import Assertions in JavaScript.
@@ -7139,24 +7338,6 @@
     value: false
     mirror: always
 #endif  // NIGHTLY_BUILD
-
-  # Support for Private Fields in JavaScript.
-- name: javascript.options.experimental.private_fields
-  type: bool
-  value: true
-  mirror: always
-
-  # Experimental support for Private Methods in JavaScript.
-- name: javascript.options.experimental.private_methods
-  type: bool
-  value: true
-  mirror: always
-
-  # Experimental support for the ergonomic brand check proposal.
-- name: javascript.options.experimental.ergonomic_brand_checks
-  type: bool
-  value: true
-  mirror: always
 
   # Experimental support for change-array-by-copy methods
 - name: javascript.options.experimental.enable_change_array_by_copy
@@ -7171,12 +7352,6 @@
   value: false
   mirror: always
 #endif
-
-  # Experimental support for Top-level Await in JavaScript.
--   name: javascript.options.experimental.top_level_await
-    type: bool
-    value: true
-    mirror: always
 
 - name: javascript.options.wasm_caching
   type: bool
@@ -7803,6 +7978,13 @@
 # Whether trigonometric constants and functions are enabled in calc().
 - name: layout.css.trig.enabled
   type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
+# Whether the round() function is enabled in calc().
+- name: layout.css.round.enabled
+  type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
@@ -8104,6 +8286,13 @@
 - name: layout.css.font-tech.enabled
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+  rust: true
+
+# Is support for font-variant-emoji enabled?
+- name: layout.css.font-variant-emoji.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -8951,6 +9140,25 @@
   value: 0
   mirror: always
 
+# Whether to allow autoplay on extension background pages.
+- name: media.autoplay.allow-extension-background-pages
+  type: bool
+  value: true
+  mirror: always
+
+# Block autoplay, asking for permission by default.
+# 0=Allowed, 1=Blocked, 5=All Blocked
+- name: media.autoplay.default
+  type: int32_t
+  value: 1
+  mirror: always
+
+# Wether to block autoplay for webaudio
+- name: media.autoplay.block-webaudio
+  type: bool
+  value: false
+  mirror: always
+
 # File-backed MediaCache size.
 - name: media.cache_size
   type: RelaxedAtomicUint32
@@ -8973,7 +9181,7 @@
 #elif defined(XP_WIN) && !defined(_ARM64_)
   value: true
 #elif defined(XP_MACOSX)
-  value: false
+  value: @IS_NIGHTLY_BUILD@
 #else
   value: false
 #endif
@@ -8987,7 +9195,7 @@
 #elif defined(XP_WIN) && !defined(_ARM64_)
   value: true
 #elif defined(XP_MACOSX)
-  value: false
+  value: @IS_NIGHTLY_BUILD@
 #else
   value: false
 #endif
@@ -9430,7 +9638,7 @@
 # using the IPC actor within the Utility process rather than the RDD process.
 # When it is set to true, then the utility process will take precedence over RDD
 # to perform audio decoding.
-# TODO: Android: Bug 1767930
+# TODO: Enabling for Isolated Processes builds on Android
 - name: media.utility-process.enabled
   type: RelaxedAtomicBool
 #if defined(XP_WIN)
@@ -9439,11 +9647,20 @@
   value: true
 #elif defined(XP_LINUX) && !defined(ANDROID)
   value: true
+#elif defined(ANDROID) && !defined(MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS)
+  value: true
 #elif defined(XP_OPENBSD)
   value: true
 #else
   value: false
 #endif
+  mirror: always
+
+# Specifies how many times we restart Utility process after crash till we give
+# up.
+- name: media.utility-process.max-crashes
+  type: RelaxedAtomicInt32
+  value: 2
   mirror: always
 
 #ifdef MOZ_FFMPEG
@@ -9953,6 +10170,12 @@
 - name: media.seamless-looping
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+
+# Should enable this in bug1799205.
+- name: media.seamless-looping-video
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 - name: media.autoplay.block-event.enabled
@@ -11397,6 +11620,12 @@
   value: 32 * 1024 * 1024
   mirror: always
 
+# Should be removed if no breakage occurs. See bug 1797846
+- name: network.url.strip-data-url-whitespace
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # Force remapping of remote port numbers to allow reaching local testing
 # servers or port forwarders listening on non-standard ports.  Note that
 # this is not changing the origin URL in the addressbar, only internally
@@ -12565,6 +12794,20 @@
   mirror: always
   do_not_use_directly: true # Consumers should use SandboxSettings to ask.
 
+# This controls the strength of the Windows GPU process sandbox.  Changes
+# will require restart.
+# For information on what the level number means, see
+# SetSecurityLevelForGPUProcess() in
+# security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
+- name: security.sandbox.gpu.level
+  type: int32_t
+#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+  value: 1
+#else
+  value: 0
+#endif
+  mirror: always
+
 # Enrollment preferences for the win32k experiment, set and managed by Normandy
 - name: security.sandbox.content.win32k-experiment.enrollmentStatus
   type: uint32_t
@@ -12673,16 +12916,22 @@
   value: true
   mirror: always
 
+# unsafe-hashes source keyword
+- name: security.csp.unsafe-hashes.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # The script-src-attr and script-src-elem directive
 - name: security.csp.script-src-attr-elem.enabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # The style-src-attr and style-src-elem directive
 - name: security.csp.style-src-attr-elem.enabled
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 # No way to enable on Android, Bug 1552602
@@ -13283,6 +13532,12 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "toolkit."
 #---------------------------------------------------------------------------
+
+# Makes removeDirectory background task wait for the given milliseconds before removal.
+- name: toolkit.background_tasks.remove_directory.testing.sleep_ms
+  type: RelaxedAtomicUint32
+  value: 0
+  mirror: always
 
 # Returns true if BHR is disabled.
 - name: toolkit.content-background-hang-monitor.disabled
@@ -14447,22 +14702,6 @@
   type: bool
   value: true
   mirror: once
-
-#---------------------------------------------------------------------------
-# Prefs starting with "xul."
-#---------------------------------------------------------------------------
-
-# Pref to control whether arrow-panel animations are enabled or not.
-# Transitions are currently disabled on Linux due to rendering issues on
-# certain configurations.
-- name: xul.panel-animations.enabled
-  type: bool
-#ifdef MOZ_WIDGET_GTK
-  value: false
-#else
-  value: true
-#endif
-  mirror: always
 
 #---------------------------------------------------------------------------
 # Prefs starting with "zoom."

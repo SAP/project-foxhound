@@ -7,6 +7,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StateMirroring.h"
@@ -27,7 +28,6 @@
 #include "api/video_codecs/sdp_video_format.h"
 #include "call/call_basic_stats.h"
 #include "common_video/include/video_frame_buffer_pool.h"
-#include "media/base/video_adapter.h"
 #include "media/base/video_broadcaster.h"
 #include <functional>
 #include <memory>
@@ -92,13 +92,6 @@ class WebrtcVideoConduit
   void StartTransmitting();
   void StopReceiving();
   void StartReceiving();
-
-  /**
-   * Function to select and change the encoding resolution based on incoming
-   * frame size and current available bandwidth.
-   * @param width, height: dimensions of the frame
-   */
-  void SelectSendResolution(unsigned short width, unsigned short height);
 
   /**
    * Function to deliver a capture video frame for encoding and transport.
@@ -167,6 +160,8 @@ class WebrtcVideoConduit
   void NotifyUnsetCurrentRemoteSSRC();
   void SetRemoteSSRCConfig(uint32_t aSsrc, uint32_t aRtxSsrc);
   void SetRemoteSSRCAndRestartAsNeeded(uint32_t aSsrc, uint32_t aRtxSsrc);
+  rtc::RefCountedObject<mozilla::VideoStreamFactory>*
+  CreateVideoStreamFactory();
 
  public:
   // Creating a recv stream or a send stream requires a local ssrc to be
@@ -342,11 +337,6 @@ class WebrtcVideoConduit
   // handles CodecPluginID plumbing tied to this VideoConduit.
   const UniquePtr<WebrtcVideoEncoderFactory> mEncoderFactory;
 
-  // Adapter handling resolution constraints from signaling and sinks.
-  // Written only on the Call thread. Guarded by mMutex, except for reads on the
-  // Call thread.
-  UniquePtr<cricket::VideoAdapter> mVideoAdapter;
-
   // Our own record of the sinks added to mVideoBroadcaster so we can support
   // dispatching updates to sinks from off-Call-thread. Call thread only.
   AutoTArray<rtc::VideoSinkInterface<webrtc::VideoFrame>*, 1> mRegisteredSinks;
@@ -354,10 +344,6 @@ class WebrtcVideoConduit
   // Broadcaster that distributes our frames to all registered sinks.
   // Threadsafe.
   rtc::VideoBroadcaster mVideoBroadcaster;
-
-  // When true the send resolution needs to be updated next time we process a
-  // video frame. Set on various threads.
-  Atomic<bool> mUpdateSendResolution{false};
 
   // Buffer pool used for scaling frames.
   // Accessed on the frame-feeding thread only.
@@ -407,9 +393,6 @@ class WebrtcVideoConduit
   // Guarded by mMutex.
   Maybe<uint32_t> mLastRTPTimestampReceive;
 
-  // Accessed under mMutex.
-  unsigned int mMaxFramerateForAllStreams;
-
   // Accessed from any thread under mRendererMonitor.
   uint64_t mVideoLatencyAvg = 0;
 
@@ -457,7 +440,8 @@ class WebrtcVideoConduit
 
   // Written only on the Call thread. Guarded by mMutex, except for reads on the
   // Call thread. Calls can happen under mMutex on any thread.
-  RefPtr<rtc::RefCountedObject<VideoStreamFactory>> mVideoStreamFactory;
+  DataMutex<RefPtr<rtc::RefCountedObject<VideoStreamFactory>>>
+      mVideoStreamFactory;
 
   // Call thread only.
   webrtc::VideoReceiveStream::Config mRecvStreamConfig;

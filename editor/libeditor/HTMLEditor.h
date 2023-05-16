@@ -1017,7 +1017,10 @@ class HTMLEditor final : public EditorBase,
    * XXX I think that `IsSelectionEditable()` is better name, but it's already
    *     in `EditorBase`...
    */
-  Result<EditActionResult, nsresult> CanHandleHTMLEditSubAction() const;
+  enum class CheckSelectionInReplacedElement { Yes, OnlyWhenNotInSameNode };
+  Result<EditActionResult, nsresult> CanHandleHTMLEditSubAction(
+      CheckSelectionInReplacedElement aCheckSelectionInReplacedElement =
+          CheckSelectionInReplacedElement::Yes) const;
 
   /**
    * EnsureCaretNotAfterInvisibleBRElement() makes sure that caret is NOT after
@@ -4252,10 +4255,10 @@ class HTMLEditor final : public EditorBase,
    * operation is finished.
    *
    * @param aBlob       The input blob
-   * @param aWindow     The global object under which the read should happen.
+   * @param aGlobal     The global object under which the read should happen.
    * @param aBlobReader The blob reader object to be notified when finished.
    */
-  static nsresult SlurpBlob(dom::Blob* aBlob, nsPIDOMWindowOuter* aWindow,
+  static nsresult SlurpBlob(dom::Blob* aBlob, nsIGlobalObject* aGlobal,
                             BlobReader* aBlobReader);
 
   /**

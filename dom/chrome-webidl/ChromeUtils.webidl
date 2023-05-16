@@ -648,7 +648,8 @@ partial namespace ChromeUtils {
 
 /*
  * This type is a WebIDL representation of mozilla::ProcType.
- * These must match the similar ones in E10SUtils.jsm, RemoteTypes.h, ProcInfo.h and ChromeUtils.cpp
+ * These must match the similar ones in E10SUtils.sys.mjs, RemoteTypes.h,
+ * ProcInfo.h and ChromeUtils.cpp
  */
 enum WebIDLProcType {
  "web",
@@ -824,7 +825,7 @@ dictionary MemoryInfoDictionary {
   unsigned long long domDom = 0;
   unsigned long long domStyle = 0;
   unsigned long long domOther = 0;
-  unsigned long long GCHeapUsage = 0;
+  unsigned long long jsMemUsage = 0;
   required MediaMemoryInfoDictionary media;
 };
 

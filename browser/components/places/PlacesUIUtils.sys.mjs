@@ -5,28 +5,24 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { clearTimeout, setTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
-);
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
-  MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Weave: "resource://services-sync/main.js",
 });
 
@@ -52,10 +48,15 @@ let InternalFaviconLoader = {
    * Actually cancel the request, and clear the timeout for cancelling it.
    *
    * @param {object} options
-   * @param {string} options.uri
+   *   The options object containing:
+   * @param {object} options.uri
+   *   The URI of the favicon to cancel.
    * @param {number} options.innerWindowID
+   *   The inner window ID of the window. Unused.
    * @param {number} options.timerID
+   *   The timer ID of the timeout to be cancelled
    * @param {*} options.callback
+   *   The request callback
    * @param {string} reason
    *   The reason for cancelling the request.
    */
@@ -126,12 +127,15 @@ let InternalFaviconLoader = {
    * load data per chrome window.
    *
    * @param {DOMWindow} win
-   *        the chrome window in which we should look for this load
-   * @param {object} filterData ({innerWindowID, uri, callback})
-   *        the data we should use to find this particular load to remove.
+   *   the chrome window in which we should look for this load
+   * @param {object} filterData
+   *   the data we should use to find this particular load to remove.
    * @param {number} filterData.innerWindowID
+   *   The inner window ID of the window.
    * @param {string} filterData.uri
-   * @param {Function} filterData.callback
+   *   The URI of the favicon to cancel.
+   * @param {*} filterData.callback
+   *   The request callback
    *
    * @returns {object|null}
    *   the loadData object we removed, or null if we didn't find any.
@@ -163,7 +167,9 @@ let InternalFaviconLoader = {
    * away) but that will be a no-op in such cases.
    *
    * @param {DOMWindow} win
+   *   The chrome window in which the request was made.
    * @param {number} id
+   *   The inner window ID of the window.
    * @returns {object}
    */
   _makeCompletionCallback(win, id) {
@@ -291,6 +297,7 @@ class BookmarkState {
    * Save edited title for the bookmark
    *
    * @param {string} title
+   *   The title of the bookmark
    */
   _titleChanged(title) {
     this._newState.title = title;
@@ -300,6 +307,7 @@ class BookmarkState {
    * Save edited location for the bookmark
    *
    * @param {string} location
+   *   The location of the bookmark
    */
   _locationChanged(location) {
     this._newState.uri = location;
@@ -319,6 +327,7 @@ class BookmarkState {
    * Save edited keyword for the bookmark
    *
    * @param {string} keyword
+   *   The keyword of the bookmark
    */
   _keywordChanged(keyword) {
     this._newState.keyword = keyword;
@@ -328,6 +337,7 @@ class BookmarkState {
    * Save edited parentGuid for the bookmark
    *
    * @param {string} parentGuid
+   *   The parentGuid of the bookmark
    */
   _parentGuidChanged(parentGuid) {
     this._newState.parentGuid = parentGuid;
@@ -514,7 +524,7 @@ export var PlacesUIUtils = {
     this.lastBookmarkDialogDeferred = lazy.PromiseUtils.defer();
 
     let dialogURL = "chrome://browser/content/places/bookmarkProperties.xhtml";
-    let features = "centerscreen,chrome,modal";
+    let features = "centerscreen,chrome,modal,resizable=no";
     let bookmarkGuid;
 
     if (
@@ -957,11 +967,11 @@ export var PlacesUIUtils = {
 
     let browserWindow = getBrowserWindow(aWindow);
     var urls = [];
-    let skipMarking =
+    let isPrivate =
       browserWindow && lazy.PrivateBrowsingUtils.isWindowPrivate(browserWindow);
     for (let item of aItemsToOpen) {
       urls.push(item.uri);
-      if (skipMarking) {
+      if (isPrivate) {
         continue;
       }
 
@@ -988,11 +998,16 @@ export var PlacesUIUtils = {
       );
       args.appendElement(stringsToLoad);
 
+      let features = "chrome,dialog=no,all";
+      if (isPrivate) {
+        features += ",private";
+      }
+
       browserWindow = Services.ww.openWindow(
         aWindow,
         AppConstants.BROWSER_CHROME_URL,
         null,
-        "chrome,dialog=no,all",
+        features,
         args
       );
       return;
@@ -1110,6 +1125,12 @@ export var PlacesUIUtils = {
         } else {
           this.markPageAsTyped(aNode.uri);
         }
+      } else {
+        // This is a targeted fix for bug 1792163, where it was discovered
+        // that if you open the Library from a Private Browsing window, and then
+        // use the "Open in New Window" context menu item to open a new window,
+        // that the window will open under the wrong icon on the Windows taskbar.
+        aPrivate = true;
       }
 
       const isJavaScriptURL = aNode.uri.startsWith("javascript:");

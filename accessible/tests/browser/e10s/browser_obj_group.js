@@ -55,11 +55,17 @@ addAccessibleTask(
     testGroupAttrs(getAcc("select2_opt4"), 2, 2, 1);
     testGroupAttrs(getAcc("select2_opt1"), 1, 2, 2);
     testGroupAttrs(getAcc("select2_opt2"), 2, 2, 2);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
 /**
- * radios
+ * HTML radios
  */
 addAccessibleTask(
   `<form>
@@ -68,12 +74,15 @@ addAccessibleTask(
   </form>
 
   <input type="radio" id="radio3" name="group2"/>
-  <input type="radio" id="radio4" name="group2"/>
+  <label><input type="radio" id="radio4" name="group2"/></label>
 
   <form>
     <input type="radio" style="display: none;" name="group3">
     <input type="radio" id="radio5" name="group3">
-  </form>`,
+    <input type="radio" id="radio6" name="group4">
+  </form>
+
+  <input type="radio" id="radio7">`,
   async function(browser, accDoc) {
     let getAcc = id => findAccessibleChildByID(accDoc, id);
 
@@ -85,11 +94,26 @@ addAccessibleTask(
     // ////////////////////////////////////////////////////////////////////////
     // HTML input@type="radio" within document
     testGroupAttrs(getAcc("radio3"), 1, 2);
+    // radio4 is wrapped in a label
     testGroupAttrs(getAcc("radio4"), 2, 2);
 
     // ////////////////////////////////////////////////////////////////////////
     // Hidden HTML input@type="radio"
     testGroupAttrs(getAcc("radio5"), 1, 1);
+
+    // ////////////////////////////////////////////////////////////////////////
+    // HTML input@type="radio" with different name but same parent
+    testGroupAttrs(getAcc("radio6"), 1, 1);
+
+    // ////////////////////////////////////////////////////////////////////////
+    // HTML input@type="radio" with no name
+    testGroupAttrs(getAcc("radio7"), 0, 0);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -206,6 +230,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("lgt_li2_nli2"), 2, 2, 2);
     // aria list with nested list
     testGroupParentAttrs(getAcc("aria-list_3"), 2, true);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -240,6 +270,12 @@ addAccessibleTask(
     // Bug 1492529. Menu should have total number of items 5 from both sets,
     // but only has the first 2 item set.
     todoAttr(getAcc("menu"), "child-item-count", "5");
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -259,6 +295,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("tab_3"), 3, 3);
     // tab list tab count
     testGroupParentAttrs(getAcc("tablist_1"), 3, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -278,6 +320,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("r3"), 3, 3);
     // explicit aria radio group
     testGroupParentAttrs(getAcc("rg1"), 3, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -372,6 +420,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("tree3_ti2a"), 1, 2, 2);
     testGroupAttrs(getAcc("tree3_ti2b"), 2, 2, 2);
     testGroupParentAttrs(getAcc("tree_3"), 2, true);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -399,6 +453,12 @@ addAccessibleTask(
     testAbsentAttrs(getAcc("grid_cell3"), { posinset: "", setsize: "" });
     testAbsentAttrs(getAcc("grid_cell4"), { posinset: "", setsize: "" });
     testGroupParentAttrs(getAcc("grid"), 2, false, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -437,6 +497,12 @@ addAccessibleTask(
     testGroupParentAttrs(getAcc("treegrid"), 2, true);
     // row child item count provided by parent grid's aria-colcount
     testGroupParentAttrs(getAcc("treegrid_row1"), 4, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -464,6 +530,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("ariaHeadingNoLevel"), 0, 0, 2);
     // No child item counts or "tree" flag for parent of headings
     testAbsentAttrs(getAcc("headings"), { "child-item-count": "", tree: "" });
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -484,6 +556,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("combo1_opt3"), 3, 4);
     testGroupAttrs(getAcc("combo1_opt4"), 4, 4);
     testGroupParentAttrs(getAcc("combo1"), 4, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -505,6 +583,12 @@ addAccessibleTask(
     testGroupParentAttrs(getAcc("table"), 2, false);
     // row child item count provided by parent grid's aria-colcount
     testGroupParentAttrs(getAcc("table_row"), 4, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -525,8 +609,26 @@ addAccessibleTask(
     let getAcc = id => findAccessibleChildByID(accDoc, id);
 
     // Attributes calculated even when row is wrapped in a div.
-    testGroupAttrs(getAcc("wrapped_row_1"), 1, 2, null, isCacheEnabled);
-    testGroupAttrs(getAcc("wrapped_row_2"), 2, 2, null, isCacheEnabled);
+    testGroupAttrs(
+      getAcc("wrapped_row_1"),
+      1,
+      2,
+      null,
+      isCacheEnabled && browser.isRemoteBrowser
+    );
+    testGroupAttrs(
+      getAcc("wrapped_row_2"),
+      2,
+      2,
+      null,
+      isCacheEnabled && browser.isRemoteBrowser
+    );
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -545,6 +647,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("t1_li2"), 2, 3);
     testGroupAttrs(getAcc("t1_li3"), 3, 3);
     testGroupParentAttrs(getAcc("aria-list_4"), 3, false);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -581,6 +689,12 @@ addAccessibleTask(
     testGroupAttrs(getAcc("comm_nested_2_1"), 1, 1, 2);
     testGroupAttrs(getAcc("comm_nested_2_1_1"), 1, 1, 3);
     testGroupAttrs(getAcc("comm_nested_3"), 3, 3, 1);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );
 
@@ -604,5 +718,11 @@ addAccessibleTask(
     await p;
     testGroupAttrs(getAcc("tree4_ti2"), 1, 1, 1);
     testGroupParentAttrs(getAcc("tree4"), 1, true);
+  },
+  {
+    topLevel: !isWinNoCache,
+    iframe: !isWinNoCache,
+    remoteIframe: !isWinNoCache,
+    chrome: true,
   }
 );

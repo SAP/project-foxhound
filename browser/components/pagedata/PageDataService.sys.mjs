@@ -4,20 +4,18 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
-);
+import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   HiddenFrame: "resource://gre/modules/HiddenFrame.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "logConsole", function() {
@@ -72,11 +70,13 @@ function shift(set) {
 class HiddenBrowserManager {
   /**
    * The hidden frame if one has been created.
+   *
    * @type {HiddenFrame | null}
    */
   #frame = null;
   /**
    * The number of hidden browser elements currently in use.
+   *
    * @type {number}
    */
   #browsers = 0;
@@ -279,24 +279,28 @@ export const PageDataService = new (class PageDataService extends EventEmitter {
 
   /**
    * The number of currently running background fetches.
+   *
    * @type {number}
    */
   #backgroundFetches = 0;
 
   /**
    * The list of urls waiting to be loaded in the background.
+   *
    * @type {Set<string>}
    */
   #backgroundQueue = new Set();
 
   /**
    * Tracks whether the user is currently idle.
+   *
    * @type {boolean}
    */
   #userIsIdle = false;
 
   /**
    * A manager for hidden browsers.
+   *
    * @type {HiddenBrowserManager}
    */
   #browserManager = new HiddenBrowserManager();
@@ -305,7 +309,7 @@ export const PageDataService = new (class PageDataService extends EventEmitter {
    * A map of hidden browsers to a resolve function that should be passed the
    * actor that was created for the browser.
    *
-   * @type {WeakMap<Browser, (actor: PageDataParent) => void>}
+   * @type {WeakMap<Browser, function(PageDataParent): void>}
    */
   #backgroundBrowsers = new WeakMap();
 

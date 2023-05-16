@@ -118,14 +118,15 @@ bool wasm::DecodeLocalEntries(Decoder& d, const TypeContext& types,
   return true;
 }
 
-bool wasm::DecodeValidatedLocalEntries(Decoder& d, ValTypeVector* locals) {
+bool wasm::DecodeValidatedLocalEntries(const TypeContext& types, Decoder& d,
+                                       ValTypeVector* locals) {
   uint32_t numLocalEntries;
   MOZ_ALWAYS_TRUE(d.readVarU32(&numLocalEntries));
 
   for (uint32_t i = 0; i < numLocalEntries; i++) {
     uint32_t count = d.uncheckedReadVarU32();
     MOZ_ASSERT(MaxLocals - locals->length() >= count);
-    if (!locals->appendN(d.uncheckedReadValType(), count)) {
+    if (!locals->appendN(d.uncheckedReadValType(types), count)) {
       return false;
     }
   }
@@ -135,35 +136,29 @@ bool wasm::DecodeValidatedLocalEntries(Decoder& d, ValTypeVector* locals) {
 
 bool wasm::CheckIsSubtypeOf(Decoder& d, const ModuleEnvironment& env,
                             size_t opcodeOffset, FieldType actual,
-                            FieldType expected, TypeCache* cache) {
-  switch (env.types->isSubtypeOf(actual, expected, cache)) {
-    case TypeResult::OOM:
-      return false;
-    case TypeResult::True:
-      return true;
-    case TypeResult::False: {
-      UniqueChars actualText = ToString(actual);
-      if (!actualText) {
-        return false;
-      }
-
-      UniqueChars expectedText = ToString(expected);
-      if (!expectedText) {
-        return false;
-      }
-
-      UniqueChars error(
-          JS_smprintf("type mismatch: expression has type %s but expected %s",
-                      actualText.get(), expectedText.get()));
-      if (!error) {
-        return false;
-      }
-
-      return d.fail(opcodeOffset, error.get());
-    }
-    default:
-      MOZ_CRASH();
+                            FieldType expected) {
+  if (FieldType::isSubTypeOf(actual, expected)) {
+    return true;
   }
+
+  UniqueChars actualText = ToString(actual, env.types);
+  if (!actualText) {
+    return false;
+  }
+
+  UniqueChars expectedText = ToString(expected, env.types);
+  if (!expectedText) {
+    return false;
+  }
+
+  UniqueChars error(
+      JS_smprintf("type mismatch: expression has type %s but expected %s",
+                  actualText.get(), expectedText.get()));
+  if (!error) {
+    return false;
+  }
+
+  return d.fail(opcodeOffset, error.get());
 }
 
 // Function body validation.
@@ -645,6 +640,12 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             uint32_t typeIndex;
             CHECK(iter.readBrOnCast(&unusedRelativeDepth, &typeIndex,
                                     &unusedType, &nothings));
+          }
+          case uint16_t(GcOp::BrOnCastFail): {
+            uint32_t unusedRelativeDepth;
+            uint32_t typeIndex;
+            CHECK(iter.readBrOnCastFail(&unusedRelativeDepth, &typeIndex,
+                                        &unusedType, &nothings));
           }
           default:
             return iter.unrecognizedOpcode(&op);
@@ -1466,30 +1467,6 @@ static bool DecodePreamble(Decoder& d) {
   return true;
 }
 
-enum class TypeState { None, Gc, ForwardGc, Func };
-
-using TypeStateVector = Vector<TypeState, 0, SystemAllocPolicy>;
-
-template <class T>
-static bool ValidateTypeState(Decoder& d, TypeStateVector* typeState, T type) {
-  if (!type.isTypeIndex()) {
-    return true;
-  }
-
-  uint32_t refTypeIndex = type.refType().typeIndex();
-  switch ((*typeState)[refTypeIndex]) {
-    case TypeState::None:
-      (*typeState)[refTypeIndex] = TypeState::ForwardGc;
-      break;
-    case TypeState::Gc:
-    case TypeState::ForwardGc:
-      break;
-    case TypeState::Func:
-      return d.fail("ref does not reference a gc type");
-  }
-  return true;
-}
-
 #ifdef WASM_PRIVATE_REFTYPES
 static bool FuncTypeIsJSCompatible(Decoder& d, const FuncType& ft) {
   if (ft.exposesTypeIndex()) {
@@ -1500,24 +1477,13 @@ static bool FuncTypeIsJSCompatible(Decoder& d, const FuncType& ft) {
 #endif
 
 static bool DecodeValTypeVector(Decoder& d, ModuleEnvironment* env,
-                                TypeStateVector* typeState, uint32_t count,
-                                ValTypeVector* valTypes) {
+                                uint32_t count, ValTypeVector* valTypes) {
   if (!valTypes->resize(count)) {
     return false;
   }
 
   for (uint32_t i = 0; i < count; i++) {
-    if (!d.readValType(env->types->length(), env->features, &(*valTypes)[i])) {
-      return false;
-    }
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
-    if (env->functionReferencesEnabled()) {
-      // Disable validatation of param/result types for functions.
-      // ValidateTypeState rejects only TypeState::Func, which is needed.
-      continue;
-    }
-#endif
-    if (!ValidateTypeState(d, typeState, (*valTypes)[i])) {
+    if (!d.readValType(*env->types, env->features, &(*valTypes)[i])) {
       return false;
     }
   }
@@ -1525,7 +1491,7 @@ static bool DecodeValTypeVector(Decoder& d, ModuleEnvironment* env,
 }
 
 static bool DecodeFuncType(Decoder& d, ModuleEnvironment* env,
-                           TypeStateVector* typeState, uint32_t typeIndex) {
+                           FuncType* funcType) {
   uint32_t numArgs;
   if (!d.readVarU32(&numArgs)) {
     return d.fail("bad number of function args");
@@ -1534,7 +1500,7 @@ static bool DecodeFuncType(Decoder& d, ModuleEnvironment* env,
     return d.fail("too many arguments in signature");
   }
   ValTypeVector args;
-  if (!DecodeValTypeVector(d, env, typeState, numArgs, &args)) {
+  if (!DecodeValTypeVector(d, env, numArgs, &args)) {
     return false;
   }
 
@@ -1546,30 +1512,18 @@ static bool DecodeFuncType(Decoder& d, ModuleEnvironment* env,
     return d.fail("too many returns in signature");
   }
   ValTypeVector results;
-  if (!DecodeValTypeVector(d, env, typeState, numResults, &results)) {
+  if (!DecodeValTypeVector(d, env, numResults, &results)) {
     return false;
   }
 
-  if ((*typeState)[typeIndex] != TypeState::None) {
-    return d.fail("function type entry referenced as gc");
-  }
-
-  (*env->types)[typeIndex] =
-      TypeDef(FuncType(std::move(args), std::move(results)));
-  (*typeState)[typeIndex] = TypeState::Func;
-
+  *funcType = FuncType(std::move(args), std::move(results));
   return true;
 }
 
 static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
-                             TypeStateVector* typeState, uint32_t typeIndex) {
+                             StructType* structType) {
   if (!env->gcEnabled()) {
     return d.fail("Structure types not enabled");
-  }
-
-  if ((*typeState)[typeIndex] != TypeState::None &&
-      (*typeState)[typeIndex] != TypeState::ForwardGc) {
-    return d.fail("gc type entry referenced as function");
   }
 
   uint32_t numFields;
@@ -1587,8 +1541,7 @@ static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
   }
 
   for (uint32_t i = 0; i < numFields; i++) {
-    if (!d.readPackedType(env->types->length(), env->features,
-                          &fields[i].type)) {
+    if (!d.readFieldType(*env->types, env->features, &fields[i].type)) {
       return false;
     }
 
@@ -1600,37 +1553,25 @@ static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
       return d.fail("garbage flag bits");
     }
     fields[i].isMutable = flags & uint8_t(FieldFlags::Mutable);
-
-    if (!ValidateTypeState(d, typeState, fields[i].type)) {
-      return false;
-    }
   }
 
-  StructType structType = StructType(std::move(fields));
+  *structType = StructType(std::move(fields));
 
-  if (!structType.computeLayout()) {
-    return d.fail("Struct type too large");
+  // Compute the struct layout, and fail if the struct is too large
+  if (!structType->init()) {
+    return d.fail("too many fields in struct");
   }
-
-  (*env->types)[typeIndex] = TypeDef(std::move(structType));
-  (*typeState)[typeIndex] = TypeState::Gc;
-
   return true;
 }
 
 static bool DecodeArrayType(Decoder& d, ModuleEnvironment* env,
-                            TypeStateVector* typeState, uint32_t typeIndex) {
+                            ArrayType* arrayType) {
   if (!env->gcEnabled()) {
     return d.fail("gc types not enabled");
   }
 
-  if ((*typeState)[typeIndex] != TypeState::None &&
-      (*typeState)[typeIndex] != TypeState::ForwardGc) {
-    return d.fail("gc type entry referenced as function");
-  }
-
   FieldType elementType;
-  if (!d.readFieldType(env->types->length(), env->features, &elementType)) {
+  if (!d.readFieldType(*env->types, env->features, &elementType)) {
     return false;
   }
 
@@ -1643,13 +1584,7 @@ static bool DecodeArrayType(Decoder& d, ModuleEnvironment* env,
   }
   bool isMutable = flags & uint8_t(FieldFlags::Mutable);
 
-  if (!ValidateTypeState(d, typeState, elementType)) {
-    return false;
-  }
-
-  (*env->types)[typeIndex] = TypeDef(ArrayType(elementType, isMutable));
-  (*typeState)[typeIndex] = TypeState::Gc;
-
+  *arrayType = ArrayType(elementType, isMutable);
   return true;
 }
 
@@ -1659,51 +1594,143 @@ static bool DecodeTypeSection(Decoder& d, ModuleEnvironment* env) {
     return false;
   }
   if (!range) {
-    return env->initTypes(0);
+    return true;
   }
 
-  uint32_t numTypes;
-  if (!d.readVarU32(&numTypes)) {
+  uint32_t numRecGroups;
+  if (!d.readVarU32(&numRecGroups)) {
     return d.fail("expected number of types");
   }
 
-  if (numTypes > MaxTypes) {
+  // Check if we've reached our implementation defined limit of recursion
+  // groups.
+  if (numRecGroups > MaxRecGroups) {
     return d.fail("too many types");
   }
 
-  if (!env->initTypes(numTypes)) {
-    return false;
-  }
+  for (uint32_t recGroupIndex = 0; recGroupIndex < numRecGroups;
+       recGroupIndex++) {
+    uint32_t recGroupLength = 1;
 
-  TypeStateVector typeState;
-  if (!typeState.appendN(TypeState::None, numTypes)) {
-    return false;
-  }
+    // Decode an optional recursion group length, if the GC proposal is
+    // enabled.
+    if (env->gcEnabled()) {
+      uint8_t firstTypeCode;
+      if (!d.peekByte(&firstTypeCode)) {
+        return d.fail("expected type form");
+      }
 
-  for (uint32_t typeIndex = 0; typeIndex < numTypes; typeIndex++) {
-    uint8_t form;
-    if (!d.readFixedU8(&form)) {
-      return d.fail("expected type form");
+      if (firstTypeCode == (uint8_t)TypeCode::RecGroup) {
+        // Skip over the prefix byte that was peeked.
+        d.uncheckedReadFixedU8();
+
+        // Read the number of types in this recursion group
+        if (!d.readVarU32(&recGroupLength)) {
+          return d.fail("expected recursion group length");
+        }
+      }
     }
 
-    switch (form) {
-      case uint8_t(TypeCode::Func):
-        if (!DecodeFuncType(d, env, &typeState, typeIndex)) {
-          return false;
+    // Start a recursion group. This will extend the type context with empty
+    // type definitions to be filled.
+    MutableRecGroup recGroup = env->types->startRecGroup(recGroupLength);
+    if (!recGroup) {
+      return false;
+    }
+
+    for (uint32_t recGroupTypeIndex = 0; recGroupTypeIndex < recGroupLength;
+         recGroupTypeIndex++) {
+      uint32_t typeIndex =
+          env->types->length() - recGroupLength + recGroupTypeIndex;
+
+      // Check if we've reached our implementation defined limit of type
+      // definitions.
+      if (typeIndex > MaxTypes) {
+        return d.fail("too many types");
+      }
+
+      uint8_t form;
+      const TypeDef* superTypeDef = nullptr;
+
+      // Decode an optional declared super type index, if the GC proposal is
+      // enabled.
+      if (env->gcEnabled() && d.peekByte(&form) &&
+          form == (uint8_t)TypeCode::SubType) {
+        // Skip over the `sub` prefix byte we peeked.
+        d.uncheckedReadFixedU8();
+
+        // Decode the number of super types, which is currently limited to at
+        // most one.
+        uint32_t numSuperTypes;
+        if (!d.readVarU32(&numSuperTypes)) {
+          return d.fail("expected number of super types");
         }
-        break;
-      case uint8_t(TypeCode::Struct):
-        if (!DecodeStructType(d, env, &typeState, typeIndex)) {
-          return false;
+        if (numSuperTypes > 1) {
+          return d.fail("too many super types");
         }
-        break;
-      case uint8_t(TypeCode::Array):
-        if (!DecodeArrayType(d, env, &typeState, typeIndex)) {
-          return false;
+
+        // Decode the super type, if any.
+        if (numSuperTypes == 1) {
+          uint32_t superTypeDefIndex;
+          if (!d.readVarU32(&superTypeDefIndex)) {
+            return d.fail("expected super type index");
+          }
+
+          // A super type index must be strictly less than the current type
+          // index in order to avoid cycles.
+          if (superTypeDefIndex >= typeIndex) {
+            return d.fail("invalid super type index");
+          }
+
+          superTypeDef = &env->types->type(superTypeDefIndex);
         }
-        break;
-      default:
+      }
+
+      // Decode the kind of type definition
+      if (!d.readFixedU8(&form)) {
         return d.fail("expected type form");
+      }
+
+      TypeDef* typeDef = &recGroup->type(recGroupTypeIndex);
+      switch (form) {
+        case uint8_t(TypeCode::Func): {
+          FuncType funcType;
+          if (!DecodeFuncType(d, env, &funcType)) {
+            return false;
+          }
+          *typeDef = std::move(funcType);
+          break;
+        }
+        case uint8_t(TypeCode::Struct): {
+          StructType structType;
+          if (!DecodeStructType(d, env, &structType)) {
+            return false;
+          }
+          *typeDef = std::move(structType);
+          break;
+        }
+        case uint8_t(TypeCode::Array): {
+          ArrayType arrayType;
+          if (!DecodeArrayType(d, env, &arrayType)) {
+            return false;
+          }
+          *typeDef = std::move(arrayType);
+          break;
+        }
+        default:
+          return d.fail("expected type form");
+      }
+
+      // Attempt to set the super type, if any, now that we've decoded the
+      // definition of this type. This will check if the types are compatible.
+      if (superTypeDef && !typeDef->trySetSuperTypeDef(superTypeDef)) {
+        return d.fail("incompatible super type");
+      }
+    }
+
+    // Finish the recursion group, which will canonicalize the types.
+    if (!env->types->endRecGroup()) {
+      return false;
     }
   }
 
@@ -1879,7 +1906,7 @@ static bool GlobalIsJSCompatible(Decoder& d, ValType type) {
         case RefType::Extern:
         case RefType::Eq:
           break;
-        case RefType::TypeIndex:
+        case RefType::TypeRef:
 #ifdef WASM_PRIVATE_REFTYPES
           return d.fail("cannot expose indexed reference type");
 #else
@@ -1956,7 +1983,7 @@ static bool DecodeMemoryTypeAndLimits(Decoder& d, ModuleEnvironment* env) {
 #ifdef WASM_PRIVATE_REFTYPES
 static bool TagIsJSCompatible(Decoder& d, const ValTypeVector& type) {
   for (auto t : type) {
-    if (t.isTypeIndex()) {
+    if (t.isTypeRef()) {
       return d.fail("cannot expose indexed reference type");
     }
   }
@@ -2017,13 +2044,13 @@ static bool DecodeImport(Decoder& d, ModuleEnvironment* env) {
         return false;
       }
 #ifdef WASM_PRIVATE_REFTYPES
-      if (!FuncTypeIsJSCompatible(d, env->types->funcType(funcTypeIndex))) {
+      if (!FuncTypeIsJSCompatible(d,
+                                  env->types->type(funcTypeIndex).funcType())) {
         return false;
       }
 #endif
-      if (!env->funcs.append(FuncDesc(&env->types->funcType(funcTypeIndex),
-                                      &env->typeIds[funcTypeIndex],
-                                      funcTypeIndex))) {
+      if (!env->funcs.append(FuncDesc(
+              &env->types->type(funcTypeIndex).funcType(), funcTypeIndex))) {
         return false;
       }
       if (env->funcs.length() > MaxFuncs) {
@@ -2126,11 +2153,7 @@ static bool DecodeImportSection(Decoder& d, ModuleEnvironment* env) {
     return false;
   }
 
-  // The global data offsets will be filled in by ModuleGenerator::init.
-  if (!env->funcImportGlobalDataOffsets.resize(env->funcs.length())) {
-    return false;
-  }
-
+  env->numFuncImports = env->funcs.length();
   return true;
 }
 
@@ -2163,9 +2186,8 @@ static bool DecodeFunctionSection(Decoder& d, ModuleEnvironment* env) {
     if (!DecodeFuncTypeIndex(d, env->types, &funcTypeIndex)) {
       return false;
     }
-    env->funcs.infallibleAppend(FuncDesc(&env->types->funcType(funcTypeIndex),
-                                         &env->typeIds[funcTypeIndex],
-                                         funcTypeIndex));
+    env->funcs.infallibleAppend(
+        FuncDesc(&env->types->type(funcTypeIndex).funcType(), funcTypeIndex));
   }
 
   return d.finishSection(*range, "function");
@@ -2620,10 +2642,9 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
       case ElemSegmentKind::Active:
       case ElemSegmentKind::ActiveWithTableIndex: {
         RefType tblElemType = env->tables[seg->tableIndex].elemType;
-        TypeCache cache;
         if (!CheckIsSubtypeOf(d, *env, d.currentOffset(),
                               ValType(elemType).fieldType(),
-                              ValType(tblElemType).fieldType(), &cache)) {
+                              ValType(tblElemType).fieldType())) {
           return false;
         }
         break;
@@ -2665,7 +2686,6 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
     // generalize the ElemSection data structure yet, so instead read the
     // required Ref.Func and End here.
 
-    TypeCache cache;
     for (uint32_t i = 0; i < numElems; i++) {
       bool needIndex = true;
 
@@ -2691,7 +2711,7 @@ static bool DecodeElemSection(Decoder& d, ModuleEnvironment* env) {
         }
         if (!CheckIsSubtypeOf(d, *env, d.currentOffset(),
                               ValType(initType).fieldType(),
-                              ValType(elemType).fieldType(), &cache)) {
+                              ValType(elemType).fieldType())) {
           return false;
         }
       }
@@ -2877,7 +2897,7 @@ static bool DecodeCodeSection(Decoder& d, ModuleEnvironment* env) {
   }
 
   for (uint32_t funcDefIndex = 0; funcDefIndex < numFuncDefs; funcDefIndex++) {
-    if (!DecodeFunctionBody(d, *env, env->numFuncImports() + funcDefIndex)) {
+    if (!DecodeFunctionBody(d, *env, env->numFuncImports + funcDefIndex)) {
       return false;
     }
   }
@@ -3135,6 +3155,10 @@ bool wasm::Validate(JSContext* cx, const ShareableBytes& bytecode,
 
   FeatureArgs features = FeatureArgs::build(cx, options);
   ModuleEnvironment env(features);
+  if (!env.init()) {
+    return false;
+  }
+
   if (!DecodeModuleEnvironment(d, &env)) {
     return false;
   }

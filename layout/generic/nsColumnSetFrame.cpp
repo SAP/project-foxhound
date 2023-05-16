@@ -924,7 +924,7 @@ void nsColumnSetFrame::DrainOverflowColumns() {
     if (overflows) {
       nsContainerFrame::ReparentFrameViewList(*overflows, prev, this);
 
-      mFrames.InsertFrames(this, nullptr, *overflows);
+      mFrames.InsertFrames(this, nullptr, std::move(*overflows));
     }
   }
 
@@ -934,7 +934,7 @@ void nsColumnSetFrame::DrainOverflowColumns() {
   if (overflows) {
     // We're already the parent for these frames, so no need to set
     // their parent again.
-    mFrames.AppendFrames(nullptr, *overflows);
+    mFrames.AppendFrames(nullptr, std::move(*overflows));
   }
 }
 
@@ -1176,10 +1176,11 @@ void nsColumnSetFrame::Reflow(nsPresContext* aPresContext,
       aReflowInput.ComputedLogicalBorderPadding(aReflowInput.GetWritingMode())
           .IsAllZero(),
       "Only the column container can have border and padding!");
-  MOZ_ASSERT(GetChildList(kOverflowContainersList).IsEmpty() &&
-                 GetChildList(kExcessOverflowContainersList).IsEmpty(),
-             "ColumnSetFrame should store overflow containers in principal "
-             "child list!");
+  MOZ_ASSERT(
+      GetChildList(FrameChildListID::OverflowContainers).IsEmpty() &&
+          GetChildList(FrameChildListID::ExcessOverflowContainers).IsEmpty(),
+      "ColumnSetFrame should store overflow containers in principal "
+      "child list!");
 
   //------------ Handle Incremental Reflow -----------------
 
@@ -1258,20 +1259,20 @@ void nsColumnSetFrame::AppendDirectlyOwnedAnonBoxes(
 
 #ifdef DEBUG
 void nsColumnSetFrame::SetInitialChildList(ChildListID aListID,
-                                           nsFrameList& aChildList) {
-  MOZ_ASSERT(aListID != kPrincipalList || aChildList.OnlyChild(),
+                                           nsFrameList&& aChildList) {
+  MOZ_ASSERT(aListID != FrameChildListID::Principal || aChildList.OnlyChild(),
              "initial principal child list must have exactly one child");
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
 }
 
 void nsColumnSetFrame::AppendFrames(ChildListID aListID,
-                                    nsFrameList& aFrameList) {
+                                    nsFrameList&& aFrameList) {
   MOZ_CRASH("unsupported operation");
 }
 
 void nsColumnSetFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                     const nsLineList::iterator* aPrevFrameLine,
-                                    nsFrameList& aFrameList) {
+                                    nsFrameList&& aFrameList) {
   MOZ_CRASH("unsupported operation");
 }
 

@@ -930,14 +930,20 @@ nsPrintSettingsService::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
  *  Save all of the printer settings; if we can find a printer name, save
  *  printer-specific preferences. Otherwise, save generic ones.
  */
-nsresult nsPrintSettingsService::SavePrintSettingsToPrefs(
-    nsIPrintSettings* aPS, bool aUsePrinterNamePrefix, uint32_t aFlags) {
+nsresult nsPrintSettingsService::MaybeSavePrintSettingsToPrefs(
+    nsIPrintSettings* aPS, uint32_t aFlags) {
   NS_ENSURE_ARG_POINTER(aPS);
   MOZ_DIAGNOSTIC_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+  MOZ_ASSERT(!(aFlags & nsIPrintSettings::kInitSavePrinterName),
+             "Use SaveLastUsedPrintNameToPrefs");
+
+  if (!Preferences::GetBool("print.save_print_settings", false)) {
+    return NS_OK;
+  }
 
   // Get the printer name from the PrinterSettings for an optional prefix.
   nsAutoString prtName;
-  nsresult rv = GetAdjustedPrinterName(aPS, aUsePrinterNamePrefix, prtName);
+  nsresult rv = GetAdjustedPrinterName(aPS, true, prtName);
   NS_ENSURE_SUCCESS(rv, rv);
 
 #ifndef MOZ_WIDGET_ANDROID
@@ -946,13 +952,27 @@ nsresult nsPrintSettingsService::SavePrintSettingsToPrefs(
   // without a good way for us to fix things for them (unprefixed prefs act as
   // defaults and can result in values being inappropriately propagated to
   // prefixed prefs).
-  if (prtName.IsEmpty() && aFlags != nsIPrintSettings::kInitSavePrinterName) {
+  if (prtName.IsEmpty()) {
     MOZ_DIAGNOSTIC_ASSERT(false, "Print settings must be saved with a prefix");
     return NS_ERROR_FAILURE;
   }
 #endif
 
   return WritePrefs(aPS, prtName, aFlags);
+}
+
+nsresult nsPrintSettingsService::MaybeSaveLastUsedPrinterNameToPrefs(
+    const nsAString& aPrinterName) {
+  MOZ_DIAGNOSTIC_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
+
+  if (!Preferences::GetBool("print.save_print_settings", false)) {
+    return NS_OK;
+  }
+
+  if (!aPrinterName.IsEmpty()) {
+    Preferences::SetString(kPrinterName, aPrinterName);
+  }
+  return NS_OK;
 }
 
 //-----------------------------------------------------

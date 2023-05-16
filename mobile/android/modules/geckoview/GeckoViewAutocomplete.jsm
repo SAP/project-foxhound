@@ -16,14 +16,17 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  EventDispatcher: "resource://gre/modules/Messaging.jsm",
   GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.jsm",
 });
 

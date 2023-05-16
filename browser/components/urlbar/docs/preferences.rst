@@ -24,6 +24,11 @@ browser.urlbar.showSearchSuggestionsFirst (boolean, default: true)
   Whether to show search suggestions before general results.
   Can be controlled from Search Preferences.
 
+browser.urlbar.showSearchTerms.enabled (boolean, default: true)
+  Whether to show the search term in the urlbar
+  on a default search engine results page.
+  Can be controlled from Search Preferences.
+
 browser.urlbar.suggest.bookmark (boolean, default: true)
   Whether results will include the user's bookmarks.
   Can be controlled from Privacy Preferences.
@@ -158,9 +163,6 @@ browser.urlbar.quicksuggest.enabled (boolean, default: false)
   non-sponsored quick suggest results will be shown. If true, then we look at
   the individual prefs ``browser.urlbar.suggest.quicksuggest.nonsponsored`` and
   ``browser.urlbar.suggest.quicksuggest.sponsored``.
-
-browser.urlbar.quicksuggest.log (boolean, default: false)
-  Whether to show QuickSuggest related logs, by default only logs Warnings.
 
 browser.urlbar.quicksuggest.remoteSettings.enabled (boolean, default: true)
   Whether remote settings is enabled as a quick suggest source.

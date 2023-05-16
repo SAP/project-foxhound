@@ -515,7 +515,7 @@ ServoStyleSet::ResolveInheritingAnonymousBoxStyle(PseudoStyleType aType,
 
   if (!style) {
     style = Servo_ComputedValues_GetForAnonymousBox(aParentStyle, aType,
-                                                    mRawSet.get())
+                                                    mRawSet.get(), nullptr)
                 .Consume();
     MOZ_ASSERT(style);
     if (aParentStyle) {
@@ -527,14 +527,29 @@ ServoStyleSet::ResolveInheritingAnonymousBoxStyle(PseudoStyleType aType,
 }
 
 already_AddRefed<ComputedStyle>
-ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType aType) {
+ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType aType,
+                                                     const nsAtom* aPageName) {
   MOZ_ASSERT(PseudoStyle::IsNonInheritingAnonBox(aType));
+  MOZ_ASSERT(!aPageName || aType == PseudoStyleType::pageContent,
+             "page name should only be specified for pageContent");
   nsCSSAnonBoxes::NonInheriting type =
       nsCSSAnonBoxes::NonInheritingTypeForPseudoType(aType);
-  RefPtr<ComputedStyle>& cache = mNonInheritingComputedStyles[type];
-  if (cache) {
-    RefPtr<ComputedStyle> retval = cache;
-    return retval.forget();
+
+  // The empty atom is used to indicate no specified page name, and is not
+  // usable as a page-rule selector. Changing this to null is a slight
+  // optimization to avoid the Servo code from doing an unnecessary hashtable
+  // lookup, and still use the style cache in this case.
+  if (aPageName == nsGkAtoms::_empty) {
+    aPageName = nullptr;
+  }
+  // Only use the cache if we are not doing a lookup for a named page style.
+  RefPtr<ComputedStyle>* cache = nullptr;
+  if (!aPageName) {
+    cache = &mNonInheritingComputedStyles[type];
+    if (*cache) {
+      RefPtr<ComputedStyle> retval = *cache;
+      return retval.forget();
+    }
   }
 
   UpdateStylistIfNeeded();
@@ -547,11 +562,14 @@ ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType aType) {
              "viewport needs fixup to handle blockifying it");
 
   RefPtr<ComputedStyle> computedValues =
-      Servo_ComputedValues_GetForAnonymousBox(nullptr, aType, mRawSet.get())
+      Servo_ComputedValues_GetForAnonymousBox(nullptr, aType, mRawSet.get(),
+                                              aPageName)
           .Consume();
   MOZ_ASSERT(computedValues);
 
-  cache = computedValues;
+  if (cache) {
+    *cache = computedValues;
+  }
   return computedValues.forget();
 }
 
@@ -635,7 +653,7 @@ StyleSheet* ServoStyleSet::SheetAt(Origin aOrigin, size_t aIndex) const {
       Servo_StyleSet_GetSheetAt(mRawSet.get(), aOrigin, aIndex));
 }
 
-Maybe<StylePageOrientation> ServoStyleSet::GetDefaultPageOrientation() {
+Maybe<StylePageSizeOrientation> ServoStyleSet::GetDefaultPageSizeOrientation() {
   const RefPtr<ComputedStyle> style =
       ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType::pageContent);
   const StylePageSize& pageSize = style->StylePage()->mSize;
@@ -646,10 +664,10 @@ Maybe<StylePageOrientation> ServoStyleSet::GetDefaultPageOrientation() {
     const CSSCoord w = pageSize.AsSize().width.ToCSSPixels();
     const CSSCoord h = pageSize.AsSize().height.ToCSSPixels();
     if (w > h) {
-      return Some(StylePageOrientation::Landscape);
+      return Some(StylePageSizeOrientation::Landscape);
     }
     if (w < h) {
-      return Some(StylePageOrientation::Portrait);
+      return Some(StylePageSizeOrientation::Portrait);
     }
   } else {
     MOZ_ASSERT(pageSize.IsAuto(), "Impossible page size");
@@ -776,17 +794,24 @@ bool ServoStyleSet::StyleDocument(ServoTraversalFlags aFlags) {
     postTraversalRequired |= root->HasAnyOfFlags(
         Element::kAllServoDescendantBits | NODE_NEEDS_FRAME);
 
-    if (parent) {
-      MOZ_ASSERT(root == mDocument->GetServoRestyleRoot());
-      if (parent->HasDirtyDescendantsForServo()) {
+    {
+      uint32_t existingBits = mDocument->GetServoRestyleRootDirtyBits();
+      Element* newRoot = nullptr;
+      while (parent && parent->HasDirtyDescendantsForServo()) {
+        MOZ_ASSERT(root == mDocument->GetServoRestyleRoot(),
+                   "Restyle root shouldn't have magically changed");
         // If any style invalidation was triggered in our siblings, then we may
         // need to post-traverse them, even if the root wasn't restyled after
         // all.
-        uint32_t existingBits = mDocument->GetServoRestyleRootDirtyBits();
-        // We need to propagate the existing bits to the parent.
+        // We need to propagate the existing bits to the ancestor.
         parent->SetFlags(existingBits);
+        newRoot = parent;
+        parent = parent->GetFlattenedTreeParentElementForStyle();
+      }
+
+      if (newRoot) {
         mDocument->SetServoRestyleRoot(
-            parent, existingBits | ELEMENT_HAS_DIRTY_DESCENDANTS_FOR_SERVO);
+            newRoot, existingBits | ELEMENT_HAS_DIRTY_DESCENDANTS_FOR_SERVO);
         postTraversalRequired = true;
       }
     }

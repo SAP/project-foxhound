@@ -14,8 +14,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const lazy = {};
@@ -101,13 +101,7 @@ function getPingType(aPayload) {
  */
 function annotateCrashReport(sessionId) {
   try {
-    const cr = Cc["@mozilla.org/toolkit/crash-reporter;1"];
-    if (cr) {
-      cr.getService(Ci.nsICrashReporter).annotateCrashReport(
-        "TelemetrySessionId",
-        sessionId
-      );
-    }
+    Services.appinfo.annotateCrashReport("TelemetrySessionId", sessionId);
   } catch (e) {
     // Ignore errors when crash reporting is disabled
   }

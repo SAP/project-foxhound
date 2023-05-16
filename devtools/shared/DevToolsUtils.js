@@ -17,11 +17,11 @@ var {
 const lazy = {};
 ChromeUtils.defineModuleGetter(lazy, "OS", "resource://gre/modules/osfile.jsm");
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  NetworkHelper:
+    "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
+});
 
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -420,8 +420,9 @@ DevToolsUtils.defineLazyGetter(this, "AppConstants", () => {
   if (isWorker) {
     return {};
   }
-  return ChromeUtils.import("resource://gre/modules/AppConstants.jsm")
-    .AppConstants;
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  ).AppConstants;
 });
 
 /**
@@ -470,10 +471,6 @@ Object.defineProperty(exports, "assert", {
 
 DevToolsUtils.defineLazyGetter(this, "NetUtil", () => {
   return ChromeUtils.import("resource://gre/modules/NetUtil.jsm").NetUtil;
-});
-
-DevToolsUtils.defineLazyGetter(this, "NetworkHelper", () => {
-  return require("resource://devtools/shared/webconsole/network-helper.js");
 });
 
 /**
@@ -618,7 +615,10 @@ function mainThreadFetch(
         if (!charset) {
           charset = aOptions.charset || "UTF-8";
         }
-        const unicodeSource = NetworkHelper.convertToUnicode(source, charset);
+        const unicodeSource = lazy.NetworkHelper.convertToUnicode(
+          source,
+          charset
+        );
 
         // Look for any source map URL in the response.
         let sourceMapURL;

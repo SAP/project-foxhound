@@ -6,6 +6,7 @@
 
 #include "mozilla/PreallocatedProcessManager.h"
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerMarkers.h"
@@ -69,9 +70,12 @@ class PreallocatedProcessManagerImpl final : public nsIObserver {
   void CloseProcesses();
 
   bool IsEmpty() const { return mPreallocatedProcesses.IsEmpty(); }
+  static bool IsShutdown() {
+    return AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed);
+  }
+  bool IsEnabled() { return mEnabled && !IsShutdown(); }
 
   bool mEnabled;
-  static bool sShutdown;
   uint32_t mNumberPreallocs;
   AutoTArray<RefPtr<ContentParent>, 3> mPreallocatedProcesses;
   // Even if we have multiple PreallocatedProcessManagerImpls, we'll have
@@ -82,7 +86,6 @@ class PreallocatedProcessManagerImpl final : public nsIObserver {
 
 /* static */
 uint32_t PreallocatedProcessManagerImpl::sNumBlockers = 0;
-bool PreallocatedProcessManagerImpl::sShutdown = false;
 
 const char* const PreallocatedProcessManagerImpl::kObserverTopics[] = {
     "memory-pressure",
@@ -154,11 +157,6 @@ PreallocatedProcessManagerImpl::Observe(nsISupports* aSubject,
     for (auto topic : kObserverTopics) {
       os->RemoveObserver(this, topic);
     }
-    // Let's prevent any new preallocated processes from starting. ContentParent
-    // will handle the shutdown of the existing process and the
-    // mPreallocatedProcesses reference will be cleared by the ClearOnShutdown
-    // of the manager singleton.
-    sShutdown = true;
   } else if (!strcmp("memory-pressure", aTopic)) {
     CloseProcesses();
   } else {
@@ -196,7 +194,7 @@ void PreallocatedProcessManagerImpl::RereadPrefs() {
 
 already_AddRefed<ContentParent> PreallocatedProcessManagerImpl::Take(
     const nsACString& aRemoteType) {
-  if (!mEnabled || sShutdown) {
+  if (!IsEnabled()) {
     return nullptr;
   }
   RefPtr<ContentParent> process;
@@ -236,7 +234,7 @@ void PreallocatedProcessManagerImpl::Enable(uint32_t aProcesses) {
   mNumberPreallocs = aProcesses;
   MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
           ("Enabling preallocation: %u", aProcesses));
-  if (mEnabled) {
+  if (mEnabled || IsShutdown()) {
     return;
   }
 
@@ -273,14 +271,14 @@ void PreallocatedProcessManagerImpl::RemoveBlocker(ContentParent* aParent) {
 }
 
 bool PreallocatedProcessManagerImpl::CanAllocate() {
-  return mEnabled && sNumBlockers == 0 &&
-         mPreallocatedProcesses.Length() < mNumberPreallocs && !sShutdown &&
+  return IsEnabled() && sNumBlockers == 0 &&
+         mPreallocatedProcesses.Length() < mNumberPreallocs && !IsShutdown() &&
          (FissionAutostart() ||
           !ContentParent::IsMaxProcessCountReached(DEFAULT_REMOTE_TYPE));
 }
 
 void PreallocatedProcessManagerImpl::AllocateAfterDelay(bool aStartup) {
-  if (!mEnabled) {
+  if (!IsEnabled()) {
     return;
   }
   long delay = aStartup ? StaticPrefs::dom_ipc_processPrelaunch_startupDelayMs()
@@ -294,7 +292,7 @@ void PreallocatedProcessManagerImpl::AllocateAfterDelay(bool aStartup) {
 }
 
 void PreallocatedProcessManagerImpl::AllocateOnIdle() {
-  if (!mEnabled) {
+  if (!IsEnabled()) {
     return;
   }
 
@@ -310,7 +308,7 @@ void PreallocatedProcessManagerImpl::AllocateNow() {
   MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
           ("Trying to start process now"));
   if (!CanAllocate()) {
-    if (mEnabled && !sShutdown && IsEmpty() && sNumBlockers > 0) {
+    if (IsEnabled() && IsEmpty() && sNumBlockers > 0) {
       // If it's too early to allocate a process let's retry later.
       AllocateAfterDelay();
     }
@@ -343,7 +341,7 @@ void PreallocatedProcessManagerImpl::AllocateNow() {
                 if (mPreallocatedProcesses.Length() < mNumberPreallocs) {
                   AllocateOnIdle();
                 }
-              } else if (!mEnabled || sShutdown) {
+              } else if (!IsEnabled()) {
                 // if this has a remote type set, it's been allocated for use
                 // already
                 if (process->mRemoteType == PREALLOC_REMOTE_TYPE) {
@@ -387,7 +385,7 @@ void PreallocatedProcessManagerImpl::CloseProcesses() {
 
 inline PreallocatedProcessManagerImpl*
 PreallocatedProcessManager::GetPPMImpl() {
-  if (PreallocatedProcessManagerImpl::sShutdown) {
+  if (PreallocatedProcessManagerImpl::IsShutdown()) {
     return nullptr;
   }
   return PreallocatedProcessManagerImpl::Singleton();
@@ -396,7 +394,7 @@ PreallocatedProcessManager::GetPPMImpl() {
 /* static */
 bool PreallocatedProcessManager::Enabled() {
   if (auto impl = GetPPMImpl()) {
-    return impl->mEnabled;
+    return impl->IsEnabled();
   }
   return false;
 }

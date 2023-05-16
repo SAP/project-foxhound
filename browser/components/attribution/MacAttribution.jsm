@@ -10,11 +10,13 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 );
 const lazy = {};
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
     // tip: set maxLogLevel to "debug" and use lazy.log.debug() to create
-    // detailed messages during development. See LOG_LEVELS in Console.jsm for
-    // details.
+    // detailed messages during development. See LOG_LEVELS in Console.sys.mjs
+    // for details.
     maxLogLevel: "error",
     maxLogLevelPref: "browser.attribution.mac.loglevel",
     prefix: "MacAttribution",
@@ -22,11 +24,9 @@ XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   return new ConsoleAPI(consoleOptions);
 });
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "Subprocess",
-  "resource://gre/modules/Subprocess.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
+});
 
 /**
  * Get the location of the user's macOS quarantine database.

@@ -78,6 +78,7 @@ SOURCES += [
 if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
     SOURCES += [
         'atsc_a53.c',
+        'av1_frame_split_bsf.c',
         'av1dec.c',
         'avpicture.c',
         'cbs.c',
@@ -90,7 +91,6 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
         'qsv_api.c',
         'raw.c',
         'videodsp.c',
-        'vp56rac.c',
         'vp8.c',
         'vp8_parser.c',
         'vp8dsp.c',
@@ -106,7 +106,8 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
         'vp9lpf.c',
         'vp9mvs.c',
         'vp9prob.c',
-        'vp9recon.c'
+        'vp9recon.c',
+        'vpx_rac.c',
     ]
     USE_LIBS += [
         'dav1d',

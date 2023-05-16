@@ -7,6 +7,7 @@
 #include "FileSystemAccessHandleParent.h"
 
 #include "FileSystemDataManager.h"
+#include "mozilla/dom/FileSystemLog.h"
 #include "mozilla/dom/FileSystemManagerParent.h"
 
 namespace mozilla::dom {
@@ -15,10 +16,27 @@ FileSystemAccessHandleParent::FileSystemAccessHandleParent(
     RefPtr<FileSystemManagerParent> aManager, const fs::EntryId& aEntryId)
     : mManager(std::move(aManager)), mEntryId(aEntryId) {}
 
-FileSystemAccessHandleParent::~FileSystemAccessHandleParent() = default;
+FileSystemAccessHandleParent::~FileSystemAccessHandleParent() {
+  MOZ_ASSERT(mClosed);
+}
+
+mozilla::ipc::IPCResult FileSystemAccessHandleParent::RecvClose() {
+  Close();
+
+  return IPC_OK();
+}
 
 void FileSystemAccessHandleParent::ActorDestroy(ActorDestroyReason aWhy) {
+  if (!IsClosed()) {
+    Close();
+  }
+}
+
+void FileSystemAccessHandleParent::Close() {
   LOG(("Closing SyncAccessHandle"));
+
+  mClosed.Flip();
+
   mManager->DataManagerStrongRef()->UnlockExclusive(mEntryId);
 }
 

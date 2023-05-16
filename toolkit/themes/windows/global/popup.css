@@ -25,6 +25,8 @@ panel {
     appearance: auto;
     -moz-default-appearance: menupopup;
 
+    -moz-box-layout: legacy;
+
     /* Native menus are always light */
     color-scheme: light !important;
 
@@ -74,7 +76,9 @@ menupopup > menu > menupopup {
   margin-top: var(--nested-margin);
 }
 
-panel[type="arrow"] {
+#PlacesToolbar menupopup,
+#BMB_bookmarksPopup menupopup,
+:is(panel, menupopup)[type="arrow"] {
   appearance: none;
   background: transparent;
   border: none;
@@ -92,12 +96,16 @@ panel[type="arrow"] {
   border-radius: var(--panel-border-radius);
   border: 1px solid var(--panel-border-color);
   width: var(--panel-width);
+  min-width: 0;
+  min-height: 0;
 }
 
 :is(panel, menupopup)[orient=vertical]::part(content) {
   -moz-box-orient: vertical;
 }
 
+#PlacesToolbar menupopup::part(content),
+#BMB_bookmarksPopup menupopup::part(content),
 :is(panel, menupopup)[type="arrow"]::part(content) {
   margin: 4px;
   box-shadow: var(--windows-panel-box-shadow);

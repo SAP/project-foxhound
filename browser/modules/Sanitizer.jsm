@@ -8,8 +8,8 @@ var EXPORTED_SYMBOLS = ["Sanitizer"];
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const lazy = {};
@@ -482,17 +482,8 @@ var Sanitizer = {
           if (range) {
             [change.firstUsedStart, change.firstUsedEnd] = range;
           }
-          await new Promise(resolve => {
-            lazy.FormHistory.update(change, {
-              handleError(e) {
-                seenException = new Error(
-                  "Error " + e.result + ": " + e.message
-                );
-              },
-              handleCompletion() {
-                resolve();
-              },
-            });
+          await lazy.FormHistory.update(change).catch(e => {
+            seenException = new Error("Error " + e.result + ": " + e.message);
           });
         } catch (ex) {
           seenException = ex;

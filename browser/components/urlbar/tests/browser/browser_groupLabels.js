@@ -553,7 +553,7 @@ async function checkLabels(resultCount, labelsByIndex) {
 /**
  * Asserts that an element for group aria label.
  *
- * @param {object} expectedRows
+ * @param {Array} expectedRows The expected rows.
  */
 async function checkGroupAriaLabels(expectedRows) {
   Assert.equal(
@@ -593,7 +593,7 @@ function engineSuggestionsLabel(engineName) {
  * Adds a search engine that provides suggestions, calls your callback, and then
  * remove the engine.
  *
- * @param {function} callback
+ * @param {Function} callback
  *   Your callback function.
  * @param {string} [engineBasename]
  *   The basename of the engine file.

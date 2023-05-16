@@ -105,12 +105,18 @@ class FileSystemDataManager
 
   RefPtr<BoolPromise> OnClose();
 
+  bool IsLocked(const EntryId& aEntryId) const;
+
   bool LockExclusive(const EntryId& aEntryId);
 
   void UnlockExclusive(const EntryId& aEntryId);
 
+  bool LockShared(const EntryId& aEntryId);
+
+  void UnlockShared(const EntryId& aEntryId);
+
  protected:
-  ~FileSystemDataManager();
+  virtual ~FileSystemDataManager();
 
   bool IsInactive() const;
 

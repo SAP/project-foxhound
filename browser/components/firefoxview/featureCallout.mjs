@@ -11,6 +11,12 @@ const lazy = {};
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
   ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
+  PageEventManager: "resource://activity-stream/lib/PageEventManager.jsm",
+});
+
+XPCOMUtils.defineLazyGetter(lazy, "pageEventManager", () => {
+  window.pageEventManager = new lazy.PageEventManager(document);
+  return window.pageEventManager;
 });
 
 // When expanding the use of Feature Callout
@@ -38,6 +44,24 @@ async function _handlePrefChange() {
   if (document.visibilityState === "hidden") {
     return;
   }
+
+  // If we have more than one screen, it means that we're
+  // displaying a feature tour, and transitions are handled
+  // based on the value of a tour progress pref. Otherwise,
+  // just show the feature callout.
+  if (CONFIG?.screens.length === 1) {
+    showFeatureCallout();
+    return;
+  }
+
+  // If a pref change results from an event in a Spotlight message,
+  // reload the page to clear the Spotlight and initialize the
+  // feature callout with the next message in the tour.
+  if (CURRENT_SCREEN == "spotlight") {
+    location.reload();
+    return;
+  }
+
   let prefVal = lazy.featureTourProgress;
   // End the tour according to the tour progress pref or if the user disabled
   // contextual feature recommendations.
@@ -48,10 +72,12 @@ async function _handlePrefChange() {
     READY = false;
     const container = document.getElementById(CONTAINER_ID);
     container?.classList.add("hidden");
+    window.pageEventManager?.clear();
     // wait for fade out transition
     setTimeout(async () => {
       await _loadConfig();
       container?.remove();
+      _removePositionListeners();
       await _renderCallout();
     }, TRANSITION_MS);
   }
@@ -95,6 +121,7 @@ let READY = false;
 let LISTENERS_REGISTERED = false;
 let AWSetup = false;
 let SAVED_ACTIVE_ELEMENT;
+let LOADING_CONFIG = false;
 
 const TRANSITION_MS = 500;
 const CONTAINER_ID = "root";
@@ -104,7 +131,7 @@ function _createContainer() {
   // Don't render the callout if the parent element is not present.
   // This means the message was misconfigured, mistargeted, or the
   // content of the parent page is not as expected.
-  if (!parent) {
+  if (!parent && !CURRENT_SCREEN?.content.callout_position_override) {
     return false;
   }
 
@@ -118,8 +145,7 @@ function _createContainer() {
   container.id = CONTAINER_ID;
   container.setAttribute("aria-describedby", `#${CONTAINER_ID} .welcome-text`);
   container.tabIndex = 0;
-  parent.setAttribute("aria-owns", `${CONTAINER_ID}`);
-  document.body.appendChild(container);
+  document.body.prepend(container);
   return container;
 }
 
@@ -153,8 +179,11 @@ function _positionCallout() {
   overlap -= arrowWidth;
   // Is the document layout right to left?
   const RTL = document.dir === "rtl";
+  const customPosition = CURRENT_SCREEN?.content.callout_position_override;
 
-  if (!container || !parentEl) {
+  // Early exit if the container doesn't exist,
+  // or if we're missing a parent element and don't have a custom callout position
+  if (!container || (!parentEl && !customPosition)) {
     return;
   }
 
@@ -182,73 +211,144 @@ function _positionCallout() {
     });
   }
 
+  function addArrowPositionClassToContainer(finalArrowPosition) {
+    let className;
+    switch (finalArrowPosition) {
+      case "bottom":
+        className = "arrow-bottom";
+        break;
+      case "left":
+        className = "arrow-inline-start";
+        break;
+      case "right":
+        className = "arrow-inline-end";
+        break;
+      case "top-start":
+        className = RTL ? "arrow-top-end" : "arrow-top-start";
+        break;
+      case "top-end":
+        className = RTL ? "arrow-top-start" : "arrow-top-end";
+        break;
+      case "top":
+      default:
+        className = "arrow-top";
+        break;
+    }
+
+    container.classList.add(className);
+  }
+
+  function overridePosition() {
+    // We override _every_ positioner here, because we want to manually set all
+    // container.style.positions in every positioner's "position" function
+    // regardless of the actual arrow position
+    for (const position in positioners) {
+      positioners[position].position = function() {
+        if (customPosition.top) {
+          container.style.top = customPosition.top;
+        }
+
+        if (customPosition.left) {
+          container.style.left = customPosition.left;
+        }
+
+        if (customPosition.right) {
+          container.style.right = customPosition.right;
+        }
+
+        if (customPosition.bottom) {
+          container.style.bottom = customPosition.bottom;
+        }
+      };
+    }
+  }
+
   const positioners = {
     // availableSpace should be the space between the edge of the page in the assumed direction
     // and the edge of the parent (with the callout being intended to fit between those two edges)
     // while needed space should be the space necessary to fit the callout container
     top: {
-      availableSpace:
-        document.documentElement.offsetHeight -
-        getOffset(parentEl).top -
-        parentEl.offsetHeight,
-      neededSpace: container.offsetHeight - overlap,
+      availableSpace() {
+        return (
+          document.documentElement.clientHeight -
+          getOffset(parentEl).top -
+          parentEl.clientHeight
+        );
+      },
+      neededSpace: container.clientHeight - overlap,
       position() {
         // Point to an element above the callout
         let containerTop =
-          getOffset(parentEl).top + parentEl.offsetHeight - overlap;
+          getOffset(parentEl).top + parentEl.clientHeight - overlap;
         container.style.top = `${Math.max(0, containerTop)}px`;
-        container.classList.add("arrow-top");
         centerHorizontally(container, parentEl);
       },
     },
     bottom: {
-      availableSpace: getOffset(parentEl).top,
-      neededSpace: container.offsetHeight - overlap,
+      availableSpace() {
+        return getOffset(parentEl).top;
+      },
+      neededSpace: container.clientHeight - overlap,
       position() {
         // Point to an element below the callout
         let containerTop =
-          getOffset(parentEl).top - container.offsetHeight + overlap;
+          getOffset(parentEl).top - container.clientHeight + overlap;
         container.style.top = `${Math.max(0, containerTop)}px`;
-        container.classList.add("arrow-bottom");
         centerHorizontally(container, parentEl);
       },
     },
     right: {
-      availableSpace: getOffset(parentEl).left,
-      neededSpace: container.offsetWidth - overlap,
+      availableSpace() {
+        return getOffset(parentEl).left;
+      },
+      neededSpace: container.clientWidth - overlap,
       position() {
         // Point to an element to the right of the callout
         let containerLeft =
-          getOffset(parentEl).left - container.offsetWidth + overlap;
+          getOffset(parentEl).left - container.clientWidth + overlap;
         container.style.left = `${Math.max(0, containerLeft)}px`;
-        container.style.top = `${getOffset(parentEl).top}px`;
+        if (container.offsetHeight <= parentEl.offsetHeight) {
+          container.style.top = `${getOffset(parentEl).top}px`;
+        } else {
+          centerVertically(container, parentEl);
+        }
         container.classList.add("arrow-inline-end");
       },
     },
     left: {
-      availableSpace:
-        document.documentElement.offsetWidth - getOffset(parentEl).right,
-      neededSpace: container.offsetWidth - overlap,
+      availableSpace() {
+        return document.documentElement.clientWidth - getOffset(parentEl).right;
+      },
+      neededSpace: container.clientWidth - overlap,
       position() {
         // Point to an element to the left of the callout
         let containerLeft =
-          getOffset(parentEl).left + parentEl.offsetWidth - overlap;
+          getOffset(parentEl).left + parentEl.clientWidth - overlap;
         container.style.left = `${Math.max(0, containerLeft)}px`;
-        container.style.top = `${getOffset(parentEl).top}px`;
+        if (container.offsetHeight <= parentEl.offsetHeight) {
+          container.style.top = `${getOffset(parentEl).top}px`;
+        } else {
+          centerVertically(container, parentEl);
+        }
         container.classList.add("arrow-inline-start");
       },
     },
     "top-end": {
+      availableSpace() {
+        document.documentElement.clientHeight -
+          getOffset(parentEl).top -
+          parentEl.clientHeight;
+      },
+      neededSpace: container.clientHeight - overlap,
       position() {
         // Point to an element above and at the end of the callout
         let containerTop =
-          getOffset(parentEl).top + parentEl.offsetHeight - overlap;
+          getOffset(parentEl).top + parentEl.clientHeight - overlap;
         container.style.top = `${Math.max(
-          container.offsetHeight - overlap,
+          container.clientHeight - overlap,
           containerTop
         )}px`;
         alignEnd(container, parentEl);
-        container.classList.add(RTL ? "arrow-top-start" : "arrow-top-end");
       },
     },
   };
@@ -261,7 +361,7 @@ function _positionCallout() {
     // not the alignment of the arrow along the edge of the callout
     let edgePosition = position.split("-")[0];
     return (
-      positioners[edgePosition].availableSpace >
+      positioners[edgePosition].availableSpace() >
       positioners[edgePosition].neededSpace
     );
   }
@@ -279,7 +379,8 @@ function _positionCallout() {
       // at an element to the right of itself, while in RTL layouts it is pointing to the left of itself
       position = RTL ^ (position === "start") ? "left" : "right";
     }
-    if (calloutFits(position)) {
+    // If we're overriding the position, we don't need to sort for available space
+    if (customPosition || calloutFits(position)) {
       return position;
     }
     let sortedPositions = Object.keys(positioners)
@@ -287,8 +388,8 @@ function _positionCallout() {
       .filter(calloutFits)
       .sort((a, b) => {
         return (
-          positioners[b].availableSpace - positioners[b].neededSpace >
-          positioners[a].availableSpace - positioners[a].neededSpace
+          positioners[b].availableSpace() - positioners[b].neededSpace >
+          positioners[a].availableSpace() - positioners[a].neededSpace
         );
       });
     // If the callout doesn't fit in any position, use the configured one.
@@ -298,9 +399,9 @@ function _positionCallout() {
   }
 
   function centerHorizontally() {
-    let sideOffset = (parentEl.offsetWidth - container.offsetWidth) / 2;
+    let sideOffset = (parentEl.clientWidth - container.clientWidth) / 2;
     let containerSide = RTL
-      ? document.documentElement.offsetWidth -
+      ? document.documentElement.clientWidth -
         getOffset(parentEl).right +
         sideOffset
       : getOffset(parentEl).left + sideOffset;
@@ -311,16 +412,27 @@ function _positionCallout() {
     let containerSide = RTL
       ? parentEl.getBoundingClientRect().left
       : parentEl.getBoundingClientRect().left +
-        parentEl.offsetWidth -
-        container.offsetWidth;
+        parentEl.clientWidth -
+        container.clientWidth;
     container.style.left = `${Math.max(containerSide, 0)}px`;
   }
 
+  function centerVertically() {
+    let topOffset = (container.offsetHeight - parentEl.offsetHeight) / 2;
+    container.style.top = `${getOffset(parentEl).top - topOffset}px`;
+  }
   clearPosition(container);
+
+  if (customPosition) {
+    // We override the position functions with new functions here,
+    // but they don't actually get executed in the override function
+    overridePosition();
+  }
 
   let finalPosition = choosePosition();
   if (finalPosition) {
     positioners[finalPosition].position();
+    addArrowPositionClassToContainer(finalPosition);
   }
 
   container.classList.remove("hidden");
@@ -329,6 +441,8 @@ function _positionCallout() {
 function _addPositionListeners() {
   if (!LISTENERS_REGISTERED) {
     window.addEventListener("resize", _positionCallout);
+    const parentEl = document.querySelector(CURRENT_SCREEN?.parent_selector);
+    parentEl?.addEventListener("toggle", _positionCallout);
     LISTENERS_REGISTERED = true;
   }
 }
@@ -336,6 +450,8 @@ function _addPositionListeners() {
 function _removePositionListeners() {
   if (LISTENERS_REGISTERED) {
     window.removeEventListener("resize", _positionCallout);
+    const parentEl = document.querySelector(CURRENT_SCREEN?.parent_selector);
+    parentEl?.removeEventListener("toggle", _positionCallout);
     LISTENERS_REGISTERED = false;
   }
 }
@@ -370,6 +486,7 @@ function _endTour() {
   // We don't want focus events that happen during teardown to effect
   // SAVED_ACTIVE_ELEMENT
   window.removeEventListener("focus", focusHandler, { capture: true });
+  window.pageEventManager?.clear();
 
   READY = false;
   // wait for fade out transition
@@ -377,7 +494,6 @@ function _endTour() {
   container?.classList.add("hidden");
   setTimeout(() => {
     container?.remove();
-    _removePositionListeners();
     RENDER_OBSERVER?.disconnect();
 
     // Put the focus back to the last place the user focused outside of the
@@ -422,6 +538,10 @@ function _observeRender(container) {
 }
 
 async function _loadConfig() {
+  if (LOADING_CONFIG) {
+    return false;
+  }
+  LOADING_CONFIG = true;
   await lazy.ASRouter.waitForInitialized;
   let result = await lazy.ASRouter.sendTriggerMessage({
     browser: window.docShell.chromeEventHandler,
@@ -429,6 +549,13 @@ async function _loadConfig() {
     id: "featureCalloutCheck",
     context: { source: document.location.pathname.toLowerCase() },
   });
+  LOADING_CONFIG = false;
+
+  if (result.message.template !== "feature_callout") {
+    CURRENT_SCREEN = result.message.template;
+    return false;
+  }
+
   CONFIG = result.message.content;
 
   let newScreen = CONFIG?.screens?.[CONFIG?.startScreen || 0];
@@ -452,6 +579,7 @@ async function _renderCallout() {
     // This results in rendering the Feature Callout
     await _addScriptsAndRender(container);
     _observeRender(container);
+    _addPositionListeners();
   }
 }
 /**
@@ -473,14 +601,15 @@ async function showFeatureCallout(messageId) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           READY = true;
+          _attachPageEventListeners(
+            CURRENT_SCREEN?.content?.page_event_listeners
+          );
           _positionCallout();
           let container = document.getElementById(CONTAINER_ID);
           container.focus();
           window.addEventListener("focus", focusHandler, {
             capture: true, // get the event before retargeting
           });
-          // Alert screen readers to the presence of the callout
-          container.setAttribute("role", "alert");
         });
       });
     }
@@ -488,9 +617,9 @@ async function showFeatureCallout(messageId) {
 
   _addCalloutLinkElements();
   // Add handlers for repositioning callout
-  _addPositionListeners();
   _setupWindowFunctions();
 
+  window.pageEventManager?.clear();
   READY = false;
   const container = document.getElementById(CONTAINER_ID);
   container?.remove();
@@ -530,6 +659,98 @@ function focusHandler(e) {
   SAVED_ACTIVE_ELEMENT = document.activeElement;
 }
 
+/**
+ * For each member of the screen's page_event_listeners array, add a listener.
+ * @param {Array<PageEventListener>} listeners An array of listeners to set up
+ *
+ * @typedef {Object} PageEventListener
+ * @property {PageEventListenerParams} params Event listener parameters
+ * @property {PageEventListenerAction} action Sent when the event fires
+ *
+ * @typedef {Object} PageEventListenerParams See PageEventManager.jsm
+ * @property {String} type Event type string e.g. `click`
+ * @property {String} selectors Target selector, e.g. `tag.class, #id[attr]`
+ * @property {PageEventListenerOptions} [options] addEventListener options
+ *
+ * @typedef {Object} PageEventListenerOptions
+ * @property {Boolean} [capture] Use event capturing phase?
+ * @property {Boolean} [once] Remove listener after first event?
+ * @property {Boolean} [preventDefault] Prevent default action?
+ *
+ * @typedef {Object} PageEventListenerAction Action sent to AboutWelcomeParent
+ * @property {String} [type] Action type, e.g. `OPEN_URL`
+ * @property {Object} [data] Extra data, properties depend on action type
+ * @property {Boolean} [dismiss] Dismiss screen after performing action?
+ */
+function _attachPageEventListeners(listeners) {
+  listeners?.forEach(({ params, action }) =>
+    lazy.pageEventManager[params.options?.once ? "once" : "on"](
+      params,
+      event => {
+        _handlePageEventAction(action, event);
+        if (params.options?.preventDefault) {
+          event.preventDefault?.();
+        }
+      }
+    )
+  );
+}
+
+/**
+ * Perform an action in response to a page event.
+ * @param {PageEventListenerAction} action
+ * @param {Event} event Triggering event
+ */
+function _handlePageEventAction(action, event) {
+  window.AWSendEventTelemetry?.({
+    event: "PAGE_EVENT",
+    event_context: {
+      action: action.type ?? (action.dismiss ? "DISMISS" : ""),
+      reason: event.type?.toUpperCase(),
+      source: _getUniqueElementIdentifier(event.target),
+      page: document.location.href,
+    },
+    message_id: CONFIG?.id.toUpperCase(),
+  });
+  if (action.type) {
+    window.AWSendToParent("SPECIAL_ACTION", action);
+  }
+  if (action.dismiss) {
+    _endTour();
+  }
+}
+
+/**
+ * For a given element, calculate a unique string that identifies it.
+ * @param {Element} target Element to calculate the selector for
+ * @returns {String} Computed event target selector, e.g. `button#next`
+ */
+function _getUniqueElementIdentifier(target) {
+  let source;
+  if (Element.isInstance(target)) {
+    source = target.localName;
+    if (target.className) {
+      source += `.${[...target.classList].join(".")}`;
+    }
+    if (target.id) {
+      source += `#${target.id}`;
+    }
+    if (target.attributes.length) {
+      source += `${[...target.attributes]
+        .filter(attr => ["is", "role", "open"].includes(attr.name))
+        .map(attr => `[${attr.name}="${attr.value}"]`)
+        .join("")}`;
+    }
+    if (document.querySelectorAll(source).length > 1) {
+      let uniqueAncestor = target.closest(`[id]:not(:scope, :root, body)`);
+      if (uniqueAncestor) {
+        source = `${_getUniqueElementIdentifier(uniqueAncestor)} > ${source}`;
+      }
+    }
+  }
+  return source;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   // Get the message id from the feature tour pref
   // (If/when this surface is used with other pages,
@@ -541,12 +762,5 @@ window.addEventListener("DOMContentLoaded", () => {
 // When the window is focused, ensure tour is synced with tours in
 // any other instances of the parent page
 window.addEventListener("visibilitychange", () => {
-  // If we have more than one screen, it means that we're
-  // displaying a feature tour, in which transitions are handled
-  // by the pref change observer.
-  if (CONFIG?.screens.length > 1) {
-    _handlePrefChange();
-  } else {
-    showFeatureCallout();
-  }
+  _handlePrefChange();
 });

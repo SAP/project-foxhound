@@ -44,12 +44,12 @@ var _XPCSHELL_PROCESS;
 let _Services = Services;
 _register_modules_protocol_handler();
 
-let { AppConstants: _AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+let { AppConstants: _AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
-let { PromiseTestUtils: _PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+let { PromiseTestUtils: _PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
 let { NetUtil: _NetUtil } = ChromeUtils.import(
@@ -127,6 +127,8 @@ if (runningInParent && "mozIAsyncHistory" in Ci) {
 // crashreporter component.
 try {
   if (runningInParent && "@mozilla.org/toolkit/crash-reporter;1" in Cc) {
+    // Intentially access the crash reporter service directly for this.
+    // eslint-disable-next-line mozilla/use-services
     let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
       Ci.nsICrashReporter
     );
@@ -1328,6 +1330,8 @@ function do_get_profile(notifyProfileAfterChange = false) {
 
   // We need to update the crash events directory when the profile changes.
   if (runningInParent && "@mozilla.org/toolkit/crash-reporter;1" in Cc) {
+    // Intentially access the crash reporter service directly for this.
+    // eslint-disable-next-line mozilla/use-services
     let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
       Ci.nsICrashReporter
     );

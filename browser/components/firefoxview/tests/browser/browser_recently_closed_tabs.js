@@ -3,6 +3,15 @@
 
 "use strict";
 
+/**
+ * This test assumes that all opened and closed tabs will live
+ * on the main gBrowser that is created as part of the test.
+ *
+ * If you try to use the withFirefoxView helper with the
+ * add_new_tab, close_tab, open_then_close functions, you're going
+ * to have a bad time.
+ */
+
 XPCOMUtils.defineLazyModuleGetters(globalThis, {
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
 });
@@ -10,13 +19,6 @@ XPCOMUtils.defineLazyModuleGetters(globalThis, {
 const { TabsSetupFlowManager } = ChromeUtils.importESModule(
   "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs"
 );
-
-const URLs = [
-  "http://mochi.test:8888/browser/",
-  "http://www.example.com/",
-  "http://example.net",
-  "http://example.org",
-];
 
 const RECENTLY_CLOSED_EVENT = [
   ["firefoxview", "entered", "firefoxview", undefined],
@@ -26,9 +28,6 @@ const RECENTLY_CLOSED_EVENT = [
 const CLOSED_TABS_OPEN_EVENT = [
   ["firefoxview", "closed_tabs_open", "tabs", "false"],
 ];
-
-const RECENTLY_CLOSED_STATE_PREF =
-  "browser.tabs.firefox-view.ui-state.recently-closed-tabs.open";
 
 async function add_new_tab(URL) {
   let tab = BrowserTestUtils.addTab(gBrowser, URL);
@@ -40,25 +39,6 @@ async function close_tab(tab) {
   const sessionStorePromise = BrowserTestUtils.waitForSessionStoreUpdate(tab);
   BrowserTestUtils.removeTab(tab);
   await sessionStorePromise;
-}
-
-async function open_then_close(url) {
-  let { updatePromise } = await BrowserTestUtils.withNewTab(
-    url,
-    async browser => {
-      return {
-        updatePromise: BrowserTestUtils.waitForSessionStoreUpdate({
-          linkedBrowser: browser,
-        }),
-      };
-    }
-  );
-  await updatePromise;
-  return TestUtils.topicObserved("sessionstore-closed-objects-changed");
-}
-
-function clearHistory() {
-  Services.obs.notifyObservers(null, "browser:purge-session-history");
 }
 
 add_task(async function test_empty_list() {
@@ -358,7 +338,7 @@ add_task(async function test_time_updates_correctly() {
   );
 });
 
-add_task(async function test_keyboard_navigation() {
+add_task(async function test_list_maintains_focus_when_restoring_tab() {
   await SpecialPowers.clearUserPref(RECENTLY_CLOSED_STATE_PREF);
   Services.obs.notifyObservers(null, "browser:purge-session-history");
   is(
@@ -384,51 +364,62 @@ add_task(async function test_keyboard_navigation() {
       url: "about:firefoxview",
     },
     async browser => {
+      let gBrowser = browser.getTabBrowser();
       const { document } = browser.contentWindow;
       const list = document.querySelectorAll(".closed-tab-li");
-      const arrowDown = () => {
-        info("Arrow down");
-        EventUtils.synthesizeKey("KEY_ArrowDown");
-      };
-      const arrowUp = () => {
-        info("Arrow up");
-        EventUtils.synthesizeKey("KEY_ArrowUp");
-      };
-      const enter = () => {
-        info("Enter");
-        EventUtils.synthesizeKey("KEY_Enter");
-      };
-
-      let summary = document.getElementById(
-        "recently-closed-tabs-header-section"
-      );
-      let details = document.getElementById("recently-closed-tabs-container");
-      ok(
-        details.open,
-        "Recently closed details should be initially open on load"
-      );
-      summary.focus();
-      enter();
-      ok(!details.open, "Recently closed details should be closed");
-      enter();
-      ok(details.open, "Recently closed details should be opened");
-
+      let expectedFocusedElement = list[1];
       list[0].focus();
-      ok(list[0].matches(":focus"), "The first link is focused");
-      arrowDown();
-      ok(list[1].matches(":focus"), "The second link is focused");
-      arrowDown();
-      ok(list[2].matches(":focus"), "The third link is focused");
-      arrowDown();
-      ok(list[2].matches(":focus"), "The third link is still focused");
-      arrowUp();
-      ok(list[1].matches(":focus"), "The second link is focused");
-      arrowUp();
-      ok(list[0].matches(":focus"), "The first link is focused");
-      arrowUp();
-      ok(list[0].matches(":focus"), "The first link is still focused");
+      EventUtils.synthesizeKey("KEY_Enter");
+      let firefoxViewTab = gBrowser.tabs.find(
+        tab => tab.label == "Firefox View"
+      );
+      await BrowserTestUtils.switchTab(gBrowser, firefoxViewTab);
+      is(
+        document.activeElement,
+        expectedFocusedElement,
+        "Focus should be on the first item in the recently closed list"
+      );
     }
   );
+
+  // clean up extra tabs
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
+
+  clearHistory();
+  await open_then_close(URLs[2]);
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      let gBrowser = browser.getTabBrowser();
+      const { document } = browser.contentWindow;
+      let expectedFocusedElement = document.getElementById(
+        "recently-closed-tabs-header-section"
+      );
+      const list = document.querySelectorAll(".closed-tab-li");
+      list[0].focus();
+
+      EventUtils.synthesizeKey("KEY_Enter");
+      let firefoxViewTab = gBrowser.tabs.find(
+        tab => tab.label == "Firefox View"
+      );
+      await BrowserTestUtils.switchTab(gBrowser, firefoxViewTab);
+      is(
+        document.activeElement,
+        expectedFocusedElement,
+        "Focus should be on the section header"
+      );
+    }
+  );
+
+  // clean up extra tabs
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
 });
 
 add_task(async function test_switch_before_closing() {
@@ -512,4 +503,69 @@ add_task(async function test_alt_click_no_launch() {
       );
     }
   );
+});
+
+/**
+ * Asserts that tabs that have been recently closed can be
+ * restored by clicking on them, using the Enter key,
+ * and using the Space bar.
+ */
+add_task(async function test_restore_recently_closed_tabs() {
+  clearHistory();
+
+  await open_then_close(URLs[0]);
+  await open_then_close(URLs[1]);
+  await open_then_close(URLs[2]);
+
+  await EventUtils.synthesizeMouseAtCenter(
+    gBrowser.ownerDocument.getElementById("firefox-view-button"),
+    { type: "mousedown" },
+    window
+  );
+  // Wait for Firefox View to be loaded before interacting
+  // with the page.
+  await BrowserTestUtils.browserLoaded(
+    window.FirefoxViewHandler.tab.linkedBrowser
+  );
+  let { document } = gBrowser.contentWindow;
+  let tabRestored = BrowserTestUtils.waitForNewTab(gBrowser, URLs[2]);
+  EventUtils.synthesizeMouseAtCenter(
+    document.querySelector(".closed-tab-li"),
+    {},
+    gBrowser.contentWindow
+  );
+
+  await tabRestored;
+  ok(true, "Tab was restored by mouse click");
+
+  await EventUtils.synthesizeMouseAtCenter(
+    gBrowser.ownerDocument.getElementById("firefox-view-button"),
+    { type: "mousedown" },
+    window
+  );
+
+  tabRestored = BrowserTestUtils.waitForNewTab(gBrowser, URLs[1]);
+  document.querySelector(".closed-tab-li").focus();
+  EventUtils.synthesizeKey("KEY_Enter", {}, gBrowser.contentWindow);
+
+  await tabRestored;
+  ok(true, "Tab was restored by using the Enter key");
+
+  await EventUtils.synthesizeMouseAtCenter(
+    gBrowser.ownerDocument.getElementById("firefox-view-button"),
+    { type: "mousedown" },
+    window
+  );
+
+  tabRestored = BrowserTestUtils.waitForNewTab(gBrowser, URLs[0]);
+  document.querySelector(".closed-tab-li").focus();
+  EventUtils.synthesizeKey(" ", {}, gBrowser.contentWindow);
+
+  await tabRestored;
+  ok(true, "Tab was restored by using the Space bar");
+
+  // clean up extra tabs
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
 });

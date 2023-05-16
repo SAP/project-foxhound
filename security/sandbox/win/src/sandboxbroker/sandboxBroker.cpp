@@ -345,10 +345,12 @@ bool SandboxBroker::LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
   if (!isThunderbird &&
       XRE_GetChildProcBinPathType(aProcessType) == BinPathType::Self) {
     bool isUtilityProcess = aProcessType == GeckoProcessType_Utility;
+    bool isSocketProcess = aProcessType == GeckoProcessType_Socket;
     RefPtr<DllServices> dllSvc(DllServices::Get());
     LauncherVoidResultWithLineInfo blocklistInitOk =
         dllSvc->InitDllBlocklistOOP(aPath, targetInfo.hProcess,
-                                    aCachedNtdllThunk, isUtilityProcess);
+                                    aCachedNtdllThunk, isUtilityProcess,
+                                    isSocketProcess);
     if (blocklistInitOk.isErr()) {
       dllSvc->HandleLauncherError(blocklistInitOk.unwrapErr(),
                                   XRE_GeckoProcessTypeToString(aProcessType));
@@ -564,6 +566,33 @@ static bool CanUseJob() {
   // processes or preventing them from shutting down Windows or accessing the
   // clipboard.
   return false;
+}
+
+// Returns the most strict dynamic code mitigation flag that is compatible with
+// system libraries MSAudDecMFT.dll and msmpeg2vdec.dll. This depends on the
+// Windows version and the architecture. See bug 1783223 comment 27.
+//
+// Use the result with SetDelayedProcessMitigations. Using non-delayed ACG
+// results in incompatibility with third-party antivirus software, the Windows
+// internal Shim Engine mechanism, parts of our own DLL blocklist code, and
+// AddressSanitizer initialization code. See bug 1783223.
+static sandbox::MitigationFlags DynamicCodeFlagForSystemMediaLibraries() {
+  static auto dynamicCodeFlag = []() {
+#ifdef _M_X64
+    if (IsWin10CreatorsUpdateOrLater()) {
+      return sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
+    }
+#endif  // _M_X64
+
+#ifdef NIGHTLY_BUILD
+    if (IsWin10AnniversaryUpdateOrLater()) {
+      return sandbox::MITIGATION_DYNAMIC_CODE_DISABLE_WITH_OPT_OUT;
+    }
+#endif  // NIGHTLY_BUILD
+
+    return sandbox::MitigationFlags{};
+  }();
+  return dynamicCodeFlag;
 }
 
 static sandbox::ResultCode SetJobLevel(sandbox::TargetPolicy* aPolicy,
@@ -968,53 +997,14 @@ void SandboxBroker::SetSecurityLevelForGPUProcess(
       sandbox::SBOX_ALL_OK == result,
       "With these static arguments AddRule should never fail, what happened?");
 
-  // The GPU process needs to write to a shader cache for performance reasons
-  // Note that we can't use the sProfileDir variable stored above because
-  // the GPU process is created very early in Gecko initialization before
-  // SandboxBroker::GeckoDependentInitialize() is called
-  if (aProfileDir) {
-    if (![&aProfileDir, this] {
-          nsString shaderCacheRulePath;
-          nsresult rv = aProfileDir->GetPath(shaderCacheRulePath);
-          if (NS_FAILED(rv)) {
-            return false;
-          }
-          if (shaderCacheRulePath.IsEmpty()) {
-            return false;
-          }
-
-          if (Substring(shaderCacheRulePath, 0, 2).Equals(u"\\\\")) {
-            shaderCacheRulePath.InsertLiteral(u"??\\UNC", 1);
-          }
-
-          shaderCacheRulePath.Append(u"\\shader-cache");
-
-          sandbox::ResultCode result =
-              mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                               sandbox::TargetPolicy::FILES_ALLOW_DIR_ANY,
-                               shaderCacheRulePath.get());
-
-          if (result != sandbox::SBOX_ALL_OK) {
-            return false;
-          }
-
-          shaderCacheRulePath.Append(u"\\*");
-
-          result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                                    sandbox::TargetPolicy::FILES_ALLOW_ANY,
-                                    shaderCacheRulePath.get());
-
-          if (result != sandbox::SBOX_ALL_OK) {
-            return false;
-          }
-
-          return true;
-        }()) {
-      NS_WARNING(
-          "Failed to add rule enabling GPU shader cache. Performance will be "
-          "negatively affected");
-    }
-  }
+  // TEMPORARY WORKAROUND - We don't want to back out the GPU sandbox, so we're
+  // going to give access to the entire filesystem until we can figure out a
+  // reliable way to only give access to the Shader Cache
+  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                            sandbox::TargetPolicy::FILES_ALLOW_ANY, L"*");
+  MOZ_RELEASE_ASSERT(
+      sandbox::SBOX_ALL_OK == result,
+      "With these static arguments AddRule should never fail, what happened?");
 
   // The process needs to be able to duplicate shared memory handles,
   // which are Section handles, to the broker process and other child processes.
@@ -1101,6 +1091,13 @@ bool SandboxBroker::SetSecurityLevelForRDDProcess() {
 
   mitigations = sandbox::MITIGATION_STRICT_HANDLE_CHECKS |
                 sandbox::MITIGATION_DLL_SEARCH_ORDER;
+
+// FIXME: When this goes to Release, add a preference that can disable the
+//        mitigation!
+#ifdef NIGHTLY_BUILD
+  // The RDD process depends on msmpeg2vdec.dll.
+  mitigations |= DynamicCodeFlagForSystemMediaLibraries();
+#endif  // NIGHTLY_BUILD
 
   if (exceptionModules.isNothing()) {
     mitigations |= sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
@@ -1359,26 +1356,18 @@ bool SandboxBroker::SetSecurityLevelForUtilityProcess(
 
   mitigations = sandbox::MITIGATION_STRICT_HANDLE_CHECKS |
                 sandbox::MITIGATION_DLL_SEARCH_ORDER;
-  // TODO: Bug 1766432 - Investigate why this crashes in MSAudDecMFT.dll during
-  // Utility AudioDecoder process startup only on 32-bits systems.
-  //
-  // Investigate also why it crashes (no idea where exactly) for MinGW64 builds
-  // on 32 and 64 archs
-  //
-  // TODO: Bug 1773005 - AAC seems to not work on Windows < 1703
-  if (aSandbox != mozilla::ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF
+
+  if (aSandbox == mozilla::ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF) {
+    // The audio decoder process depends on MsAudDecMFT.dll.
+    mitigations |= DynamicCodeFlagForSystemMediaLibraries();
+  }
 #ifdef MOZ_WMF_MEDIA_ENGINE
-      && aSandbox != mozilla::ipc::SandboxingKind::MF_MEDIA_ENGINE_CDM
-#endif
-  ) {
+  // No ACG on CDM utility processes.
+  else if (aSandbox == mozilla::ipc::SandboxingKind::MF_MEDIA_ENGINE_CDM) {
+  }
+#endif  // MOZ_WMF_MEDIA_ENGINE
+  else {
     mitigations |= sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
-  } else {
-    if (IsWin10CreatorsUpdateOrLater() &&
-        aSandbox == mozilla::ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF) {
-#if defined(_M_X64)
-      mitigations |= sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
-#endif  // defined(_M_X64)
-    }
   }
 
   if (exceptionModules.isNothing()) {

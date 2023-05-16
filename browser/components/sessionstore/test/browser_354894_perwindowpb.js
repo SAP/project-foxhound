@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 /**
  * Checks that restoring the last browser window in session is actually
  * working.
@@ -33,8 +35,8 @@ const { SessionStartup } = ChromeUtils.import(
 //
 // NOTE: Allowing a whole class of rejections should be avoided. Normally you
 //       should use "expectUncaughtRejection" to flag individual failures.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(/getTopWindow/);
 
@@ -148,8 +150,9 @@ let setupTest = async function(options, testFunction) {
     Services.obs.addObserver(observer, o);
   }
 
-  let private = options.private || false;
-  let newWin = await promiseNewWindowLoaded({ private });
+  let newWin = await promiseNewWindowLoaded({
+    private: options.private || false,
+  });
 
   await injectTestTabs(newWin);
 

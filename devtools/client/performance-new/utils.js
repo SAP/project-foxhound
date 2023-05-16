@@ -11,8 +11,8 @@
 
 const UNITS = ["B", "kiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
 
-const AppConstants = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const AppConstants = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 ).AppConstants;
 
 /**

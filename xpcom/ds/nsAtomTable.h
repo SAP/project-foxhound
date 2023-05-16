@@ -8,6 +8,8 @@
 #define nsAtomTable_h__
 
 #include "mozilla/MemoryReporting.h"
+#include "nsAtom.h"
+
 #include <stddef.h>
 
 void NS_InitAtomTable();

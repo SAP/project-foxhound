@@ -8,8 +8,8 @@
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const lazy = {};
@@ -443,6 +443,11 @@ var OriginControls = {
     let couldRequest = policy.extension.optionalOrigins.matches(uri);
     let hasAccess = policy.canAccessURI(uri);
 
+    if (policy.manifestVersion < 3 && !hasAccess) {
+      // MV2 access through content scripts is implicit.
+      hasAccess = policy.contentScripts.some(cs => cs.matchesURI(uri));
+    }
+
     if (
       !allDomains.matches(uri) ||
       WebExtensionPolicy.isRestrictedURI(uri) ||
@@ -450,12 +455,14 @@ var OriginControls = {
     ) {
       return { noAccess: true };
     }
+
     if (!couldRequest && !hasAccess && activeTab) {
       return { whenClicked: true };
     }
     if (policy.allowedOrigins.subsumes(allDomains)) {
       return { allDomains: true, hasAccess };
     }
+
     return {
       whenClicked: true,
       alwaysOn: true,

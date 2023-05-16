@@ -114,17 +114,15 @@ function processStsHeader(host, header, status, securityInfo) {
     value: false,
   };
   let error = ERROR_NONE;
-  if (header != null && securityInfo != null) {
+  if (
+    header != null &&
+    securityInfo != null &&
+    securityInfo.overridableErrorCategory ==
+      Ci.nsITransportSecurityInfo.ERROR_UNSET
+  ) {
     try {
       let uri = Services.io.newURI("https://" + host.name);
-      gSSService.processHeader(
-        uri,
-        header,
-        securityInfo,
-        {},
-        maxAge,
-        includeSubdomains
-      );
+      gSSService.processHeader(uri, header, {}, maxAge, includeSubdomains);
     } catch (e) {
       dump(
         "ERROR: could not process header '" +
@@ -268,7 +266,7 @@ function shouldRetry(response) {
   );
 }
 
-// Copied from browser/components/migration/MigrationUtils.jsm
+// Copied from browser/components/migration/MigrationUtils.sys.mjs
 function spinResolve(promise) {
   if (!(promise instanceof Promise)) {
     return promise;

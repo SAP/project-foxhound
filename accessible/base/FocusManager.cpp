@@ -27,7 +27,7 @@ FocusManager::FocusManager() {}
 
 FocusManager::~FocusManager() {}
 
-LocalAccessible* FocusManager::FocusedAccessible() const {
+LocalAccessible* FocusManager::FocusedLocalAccessible() const {
   if (mActiveItem) {
     if (mActiveItem->IsDefunct()) {
       MOZ_ASSERT_UNREACHABLE("Stored active item is unbound from document");
@@ -48,6 +48,35 @@ LocalAccessible* FocusManager::FocusedAccessible() const {
   return nullptr;
 }
 
+Accessible* FocusManager::FocusedAccessible() const {
+  if (Accessible* focusedAcc = FocusedLocalAccessible()) {
+    return focusedAcc;
+  }
+
+  if (!XRE_IsParentProcess()) {
+    // DocAccessibleParent's don't exist in the content
+    // process, so we can't return anything useful if this
+    // is the case.
+    return nullptr;
+  }
+
+  nsFocusManager* focusManagerDOM = nsFocusManager::GetFocusManager();
+  if (!focusManagerDOM) {
+    return nullptr;
+  }
+
+  // If we call GetFocusedBrowsingContext from the chrome process
+  // it returns the BrowsingContext for the focused _window_, which
+  // is not helpful here. Instead use GetFocusedBrowsingContextInChrome
+  // which returns the content BrowsingContext that has focus.
+  dom::BrowsingContext* focusedContext =
+      focusManagerDOM->GetFocusedBrowsingContextInChrome();
+
+  DocAccessibleParent* focusedDoc =
+      DocAccessibleParent::GetFrom(focusedContext);
+  return focusedDoc ? focusedDoc->GetFocusedAcc() : nullptr;
+}
+
 bool FocusManager::IsFocused(const LocalAccessible* aAccessible) const {
   if (mActiveItem) return mActiveItem == aAccessible;
 
@@ -57,7 +86,7 @@ bool FocusManager::IsFocused(const LocalAccessible* aAccessible) const {
     // they belong to the same document because it can trigger unwanted document
     // accessible creation for temporary about:blank document. Without this
     // peculiarity we would end up with plain implementation based on
-    // FocusedAccessible() method call. Make sure this issue is fixed in
+    // FocusedLocalAccessible() method call. Make sure this issue is fixed in
     // bug 638465.
     if (focusedNode->OwnerDoc() == aAccessible->GetNode()->OwnerDoc()) {
       DocAccessible* doc =
@@ -70,19 +99,19 @@ bool FocusManager::IsFocused(const LocalAccessible* aAccessible) const {
   return false;
 }
 
-bool FocusManager::IsFocusWithin(const LocalAccessible* aContainer) const {
-  LocalAccessible* child = FocusedAccessible();
+bool FocusManager::IsFocusWithin(const Accessible* aContainer) const {
+  Accessible* child = FocusedAccessible();
   while (child) {
     if (child == aContainer) return true;
 
-    child = child->LocalParent();
+    child = child->Parent();
   }
   return false;
 }
 
 FocusManager::FocusDisposition FocusManager::IsInOrContainsFocus(
     const LocalAccessible* aAccessible) const {
-  LocalAccessible* focus = FocusedAccessible();
+  LocalAccessible* focus = FocusedLocalAccessible();
   if (!focus) return eNone;
 
   // If focused.
@@ -203,7 +232,7 @@ void FocusManager::ActiveItemChanged(LocalAccessible* aItem,
   // If active item is changed then fire accessible focus event on it, otherwise
   // if there's no an active item then fire focus event to accessible having
   // DOM focus.
-  LocalAccessible* target = FocusedAccessible();
+  LocalAccessible* target = FocusedLocalAccessible();
   if (target) {
     DispatchFocusEvent(target->Document(), target);
   }

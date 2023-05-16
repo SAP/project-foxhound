@@ -157,9 +157,6 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   /**
    * Get the name of this accessible.
-   *
-   * Note: aName.IsVoid() when name was left empty by the author on purpose.
-   * aName.IsEmpty() when the author missed name, AT can try to repair a name.
    */
   virtual ENameValueFlag Name(nsString& aName) const override;
 
@@ -777,13 +774,15 @@ class LocalAccessible : public nsISupports, public Accessible {
 
   virtual already_AddRefed<nsAtom> DisplayStyle() const override;
 
-  virtual Maybe<float> Opacity() const override;
+  virtual float Opacity() const override;
 
   virtual void DOMNodeID(nsString& aID) const override;
 
   virtual void LiveRegionAttributes(nsAString* aLive, nsAString* aRelevant,
                                     Maybe<bool>* aAtomic,
                                     nsAString* aBusy) const override;
+
+  virtual Maybe<bool> ARIASelected() const override;
 
  protected:
   virtual ~LocalAccessible();

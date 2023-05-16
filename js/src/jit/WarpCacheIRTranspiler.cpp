@@ -656,7 +656,7 @@ bool WarpCacheIRTranspiler::emitMegamorphicLoadSlotResult(ObjOperandId objId,
   MDefinition* obj = getOperand(objId);
   PropertyName* name = stringStubField(nameOffset)->asAtom().asPropertyName();
 
-  auto* ins = MMegamorphicLoadSlot::New(alloc(), obj, name);
+  auto* ins = MMegamorphicLoadSlot::New(alloc(), obj, NameToId(name));
   add(ins);
 
   pushResult(ins);
@@ -4189,6 +4189,16 @@ bool WarpCacheIRTranspiler::emitSetHasResult(ObjOperandId setId,
   return true;
 }
 
+bool WarpCacheIRTranspiler::emitSetSizeResult(ObjOperandId setId) {
+  MDefinition* set = getOperand(setId);
+
+  auto* ins = MSetObjectSize::New(alloc(), set);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitMapHasNonGCThingResult(ObjOperandId mapId,
                                                        ValOperandId valId) {
   MDefinition* map = getOperand(mapId);
@@ -4392,6 +4402,16 @@ bool WarpCacheIRTranspiler::emitMapGetResult(ObjOperandId mapId,
   auto* ins = MMapObjectGetValueVMCall::New(alloc(), map, val);
   add(ins);
 #endif
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitMapSizeResult(ObjOperandId mapId) {
+  MDefinition* map = getOperand(mapId);
+
+  auto* ins = MMapObjectSize::New(alloc(), map);
+  add(ins);
 
   pushResult(ins);
   return true;
@@ -5354,6 +5374,21 @@ bool WarpCacheIRTranspiler::emitCloseIterScriptedResult(ObjOperandId iterId,
 
   return true;
 }
+
+#ifdef FUZZING_JS_FUZZILLI
+bool WarpCacheIRTranspiler::emitFuzzilliHashResult(ValOperandId valId) {
+  MDefinition* input = getOperand(valId);
+
+  auto* hash = MFuzzilliHash::New(alloc(), input);
+  add(hash);
+
+  auto* store = MFuzzilliHashStore::New(alloc(), hash);
+  addEffectful(store);
+  pushResult(constant(UndefinedValue()));
+
+  return resumeAfter(store);
+}
+#endif
 
 static void MaybeSetImplicitlyUsed(uint32_t numInstructionIdsBefore,
                                    MDefinition* input) {

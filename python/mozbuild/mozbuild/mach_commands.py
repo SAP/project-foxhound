@@ -37,6 +37,7 @@ from mozbuild.base import (
     MachCommandConditions as conditions,
     MozbuildObject,
 )
+from mozbuild.util import MOZBUILD_METRICS_PATH
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -116,6 +117,7 @@ def cargo(command_context):
     "cargo",
     "check",
     description="Run `cargo check` on a given crate.  Defaults to gkrust.",
+    metrics_path=MOZBUILD_METRICS_PATH,
 )
 @CommandArgument(
     "--all-crates",
@@ -127,7 +129,7 @@ def cargo(command_context):
 @CommandArgument(
     "--jobs",
     "-j",
-    default="1",
+    default="0",
     nargs="?",
     metavar="jobs",
     type=int,
@@ -147,6 +149,24 @@ def check(
     verbose=False,
     message_format_json=False,
 ):
+    from mozbuild.controller.building import BuildDriver
+
+    command_context.log_manager.enable_all_structured_loggers()
+
+    try:
+        command_context.config_environment
+    except BuildEnvironmentNotFoundException:
+        build = command_context._spawn(BuildDriver)
+        ret = build.build(
+            command_context.metrics,
+            what=["pre-export", "export"],
+            jobs=jobs,
+            verbose=verbose,
+            mach_context=command_context._mach_context,
+        )
+        if ret != 0:
+            return ret
+
     # XXX duplication with `mach vendor rust`
     crates_and_roots = {
         "gkrust": "toolkit/library/rust",
@@ -2386,30 +2406,10 @@ def repackage_msix(
             )
             return 1
 
-    template = os.path.join(
-        command_context.topsrcdir, "browser", "installer", "windows", "msix"
-    )
-
-    # Discard everything after a '#' comment character.
-    locale_allowlist = set(
-        locale.partition("#")[0].strip().lower()
-        for locale in open(os.path.join(template, "msix-all-locales")).readlines()
-        if locale.partition("#")[0].strip()
-    )
-
-    # Release (official) and Beta share branding.
-    branding = os.path.join(
-        command_context.topsrcdir,
-        "browser",
-        "branding",
-        channel if channel != "beta" else "official",
-    )
-
     output = repackage_msix(
         input,
+        command_context.topsrcdir,
         channel=channel,
-        template=template,
-        branding=branding,
         arch=arch,
         displayname=identity_name,
         vendor=vendor,
@@ -2417,7 +2417,6 @@ def repackage_msix(
         publisher_display_name=publisher_display_name,
         version=version,
         distribution_dirs=distribution_dirs,
-        locale_allowlist=locale_allowlist,
         # Configure this run.
         force=True,
         verbose=verbose,

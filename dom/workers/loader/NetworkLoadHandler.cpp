@@ -53,8 +53,14 @@ NetworkLoadHandler::OnStreamComplete(nsIStreamLoader* aLoader,
                                      nsISupports* aContext, nsresult aStatus,
                                      uint32_t aStringLen,
                                      const uint8_t* aString) {
+  // If we have cancelled, or we have no mRequest, it means that the loader has
+  // shut down and we can exit early. If the cancel result is still NS_OK
   if (mLoader->IsCancelled()) {
     return mLoader->GetCancelResult();
+  }
+
+  if (!mLoadContext->mRequest) {
+    return NS_BINDING_ABORTED;
   }
 
   nsresult rv = DataReceivedFromNetwork(aLoader, aStatus, aStringLen, aString);
@@ -66,6 +72,7 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
                                                      uint32_t aStringLen,
                                                      const uint8_t* aString) {
   AssertIsOnMainThread();
+  MOZ_ASSERT(mLoadContext->mRequest);
 
   if (NS_FAILED(aStatus)) {
     return aStatus;
@@ -222,7 +229,7 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
     rv = mWorkerRef->Private()->SetPrincipalsAndCSPFromChannel(channel);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    nsCOMPtr<nsIContentSecurityPolicy> csp = mWorkerRef->Private()->GetCSP();
+    nsCOMPtr<nsIContentSecurityPolicy> csp = mWorkerRef->Private()->GetCsp();
     // We did inherit CSP in bug 1223647. If we do not already have a CSP, we
     // should get it from the HTTP headers on the worker script.
     if (!csp) {
@@ -275,6 +282,7 @@ NetworkLoadHandler::OnStartRequest(nsIRequest* aRequest) {
 
 nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   AssertIsOnMainThread();
+  MOZ_ASSERT(mLoadContext->mRequest);
 
   // If one load info cancels or hits an error, it can race with the start
   // callback coming from another load info.
@@ -362,7 +370,7 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   }
 
   RefPtr<CachePromiseHandler> promiseHandler =
-      new CachePromiseHandler(mLoader, mLoadContext->mRequest);
+      new CachePromiseHandler(mLoader, mLoadContext);
   cachePromise->AppendNativeHandler(promiseHandler);
 
   mLoadContext->mCachePromise.swap(cachePromise);

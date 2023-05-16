@@ -56,6 +56,11 @@ firefoxview-tabpickup-sync-disconnected-header = Turn on syncing to continue
 firefoxview-tabpickup-sync-disconnected-description = To grab your tabs, you’ll need to allow syncing in { -brand-short-name }.
 firefoxview-tabpickup-sync-disconnected-primarybutton = Turn on sync in settings
 
+firefoxview-tabpickup-password-locked-header = Enter your Primary Password to view tabs
+firefoxview-tabpickup-password-locked-description = To grab your tabs, you’ll need to enter the Primary Password for { -brand-short-name }.
+firefoxview-tabpickup-password-locked-link = Learn more
+firefoxview-tabpickup-password-locked-primarybutton = Enter Primary Password
+
 firefoxview-tabpickup-syncing = Sit tight while your tabs sync. It’ll be just a moment.
 
 firefoxview-mobile-promo-header = Grab tabs from your phone or tablet
@@ -68,7 +73,8 @@ firefoxview-mobile-confirmation-description = Now you can grab your { -brand-pro
 firefoxview-closed-tabs-title = Recently closed
 
 firefoxview-closed-tabs-description2 = Reopen pages you’ve closed in this window.
-firefoxview-closed-tabs-placeholder = <strong>No recently closed pages</strong><br/>Never fear losing a closed tab again. You can always retrieve it here.
+firefoxview-closed-tabs-placeholder-header = No recently closed tabs
+firefoxview-closed-tabs-placeholder-body = When you close a tab in this window, you can fetch it from here.
 
 # refers to the last tab that was used
 firefoxview-pickup-tabs-badge = Last active
@@ -87,7 +93,8 @@ firefoxview-change-colorway-button = Change colorway
 #  $collection (String): Colorway Collection name
 firefoxview-colorway-description = { $intensity } · { $collection }
 
-firefoxview-synced-tabs-placeholder = <strong>Nothing to see yet</strong><br/>The next time you open a page in { -brand-product-name } on another device, grab it here like magic.
+firefoxview-synced-tabs-placeholder-header = Nothing to see yet
+firefoxview-synced-tabs-placeholder-body = The next time you open a page in { -brand-product-name } on another device, grab it here like magic.
 
 firefoxview-collapse-button-show =
   .title = Show list

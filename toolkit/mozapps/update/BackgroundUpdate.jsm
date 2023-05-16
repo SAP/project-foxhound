@@ -7,8 +7,8 @@
 
 var EXPORTED_SYMBOLS = ["BackgroundUpdate"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { EXIT_CODE } = ChromeUtils.import(
   "resource://gre/modules/BackgroundTasksManager.jsm"
@@ -33,10 +33,12 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
     // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
-    // messages during development. See LOG_LEVELS in Console.jsm for details.
+    // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
     maxLogLevel: "error",
     maxLogLevelPref: "app.update.background.loglevel",
     prefix: "BackgroundUpdate",
@@ -638,7 +640,7 @@ var BackgroundUpdate = {
           // the regular log apparatus is not available, so use `dump`.
           if (lazy.log.shouldLog("debug")) {
             dump(
-              `${SLUG}: shutting down, so not updating Firefox Messaging System targeting information\n`
+              `${SLUG}: shutting down, so not updating Firefox Messaging System targeting information from beforeSave\n`
             );
           }
           return;
@@ -654,12 +656,12 @@ var BackgroundUpdate = {
 
     // We don't `load`, since we don't care about reading existing (now stale)
     // data.
-    snapshot.data = lazy.ASRouterTargeting.getEnvironmentSnapshot();
+    snapshot.data = await lazy.ASRouterTargeting.getEnvironmentSnapshot();
 
     // Persist.
     snapshot.saveSoon();
 
-    // Continue persisting periodically.  `JSONFile.jsm` will also persist one
+    // Continue persisting periodically.  `JSONFile.sys.mjs` will also persist one
     // last time before shutdown.
     this._targetingSnapshottingTimer = Cc[
       "@mozilla.org/timer;1"
@@ -668,6 +670,18 @@ var BackgroundUpdate = {
     // Hold a reference to prevent GC.
     this._targetingSnapshottingTimer.initWithCallback(
       () => {
+        if (Services.startup.shuttingDown) {
+          // Collecting targeting information can be slow and cause shutdown
+          // crashes, so if we're shutting down, don't try to collect.  During
+          // shutdown, the regular log apparatus is not available, so use `dump`.
+          if (lazy.log.shouldLog("debug")) {
+            dump(
+              `${SLUG}: shutting down, so not updating Firefox Messaging System targeting information from timer\n`
+            );
+          }
+          return;
+        }
+
         snapshot.saveSoon();
       },
       // By default, snapshot Firefox Messaging System targeting for use by the

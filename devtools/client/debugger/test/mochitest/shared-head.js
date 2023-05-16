@@ -50,7 +50,7 @@ const {
   isGeneratedId,
   isOriginalId,
   originalToGeneratedId,
-} = require("devtools/client/shared/source-map/index");
+} = require("devtools/client/shared/source-map-loader/index");
 
 /**
  * Waits for `predicate()` to be true. `state` is the redux app state.
@@ -2445,8 +2445,8 @@ const protocolHandler = Services.io
   .getProtocolHandler("resource")
   .QueryInterface(Ci.nsIResProtocolHandler);
 if (protocolHandler.hasSubstitution("testing-common")) {
-  const { PromiseTestUtils } = ChromeUtils.import(
-    "resource://testing-common/PromiseTestUtils.jsm"
+  const { PromiseTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
   );
 
   // Debugger operations that are canceled because they were rendered obsolete by

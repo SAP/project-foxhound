@@ -65,7 +65,7 @@ struct RelationData {
  * CONTROLLER_FOR relation, while the `for` attribute of a <label> describes a
  * LABEL_FOR relation. To ensure we process these attributes appropriately,
  * RelationData.mValidTag contains the atom for the tag this attribute/relation
- * type paring is valid on. If the pairing is valid for all tag types, this
+ * type pairing is valid on. If the pairing is valid for all tag types, this
  * field is null.
  */
 static constexpr RelationData kRelationTypeAtoms[] = {
@@ -81,7 +81,6 @@ static constexpr RelationData kRelationTypeAtoms[] = {
      Some(RelationType::DESCRIPTION_FOR)},
     {nsGkAtoms::aria_flowto, nullptr, RelationType::FLOWS_TO,
      Some(RelationType::FLOWS_FROM)},
-    {nsGkAtoms::link, nullptr, RelationType::LINKS_TO, Nothing()},
 };
 
 }  // namespace a11y

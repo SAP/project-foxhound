@@ -522,6 +522,11 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    */
   js::ContextData<int32_t> suppressGC;
 
+#ifdef FUZZING_JS_FUZZILLI
+  uint32_t executionHash;
+  uint32_t executionHashInputs;
+#endif
+
 #ifdef DEBUG
   js::ContextData<size_t> noNurseryAllocationCheck;
 
@@ -682,17 +687,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   }
   const js::AutoCycleDetector::Vector& cycleDetectorVector() const {
     return cycleDetectorVector_.ref();
-  }
-
- private:
-  js::ContextData<JS::PersistentRooted<JSFunction*>> watchtowerTestingCallback_;
-
- public:
-  JSFunction*& watchtowerTestingCallbackRef() {
-    if (!watchtowerTestingCallback_.ref().initialized()) {
-      watchtowerTestingCallback_.ref().init(this);
-    }
-    return watchtowerTestingCallback_.ref().get();
   }
 
   /* Client opaque pointer. */

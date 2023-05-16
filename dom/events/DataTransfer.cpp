@@ -888,29 +888,6 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
   const uint32_t baseLength = sizeof(uint32_t) + 1;
   uint32_t totalCustomLength = baseLength;
 
-  const char* knownFormats[] = {kTextMime,
-                                kHTMLMime,
-                                kNativeHTMLMime,
-                                kRTFMime,
-                                kURLMime,
-                                kURLDataMime,
-                                kURLDescriptionMime,
-                                kURLPrivateMime,
-                                kPNGImageMime,
-                                kJPEGImageMime,
-                                kGIFImageMime,
-                                kNativeImageMime,
-                                kFileMime,
-                                kFilePromiseMime,
-                                kFilePromiseURLMime,
-                                kFilePromiseDestFilename,
-                                kFilePromiseDirectoryMime,
-                                kMozTextInternal,
-                                kHTMLContext,
-                                kHTMLInfo,
-                                kImageRequestMime,
-                                kPDFJSMime};
-
   /*
    * Two passes are made here to iterate over all of the types. First, look for
    * any types that are not in the list of known types. For this pass,
@@ -946,8 +923,8 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
 
       // If the data is of one of the well-known formats, use it directly.
       bool isCustomFormat = true;
-      for (uint32_t f = 0; f < ArrayLength(knownFormats); f++) {
-        if (type.EqualsASCII(knownFormats[f])) {
+      for (const char* format : kKnownFormats) {
+        if (type.EqualsASCII(format)) {
           isCustomFormat = false;
           break;
         }
@@ -1379,7 +1356,8 @@ void DataTransfer::CacheExternalData(const nsTArray<nsCString>& aTypes,
   for (const nsCString& type : aTypes) {
     if (type.EqualsLiteral(kCustomTypesMime)) {
       FillInExternalCustomTypes(0, aPrincipal);
-    } else if (type.EqualsLiteral(kFileMime) && XRE_IsContentProcess()) {
+    } else if (type.EqualsLiteral(kFileMime) && XRE_IsContentProcess() &&
+               !StaticPrefs::dom_events_dataTransfer_mozFile_enabled()) {
       // We will be ignoring any application/x-moz-file files found in the paste
       // datatransfer within e10s, as they will fail top be sent over IPC.
       // Because of that, we will unset hasFileData, whether or not it would
@@ -1390,9 +1368,10 @@ void DataTransfer::CacheExternalData(const nsTArray<nsCString>& aTypes,
       // We expect that if kFileMime is supported, then it will be the either at
       // index 0 or at index 1 in the aTypes returned by
       // GetExternalClipboardFormats
-      if (type.EqualsLiteral(kFileMime) && !XRE_IsContentProcess()) {
+      if (type.EqualsLiteral(kFileMime)) {
         hasFileData = true;
       }
+
       // If we aren't the file data, and we have file data, we want to be hidden
       CacheExternalData(
           type.get(), 0, aPrincipal,

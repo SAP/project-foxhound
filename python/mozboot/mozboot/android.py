@@ -43,8 +43,8 @@ AVD_MANIFEST_ARM = Path(__file__).resolve().parent / "android-avds/arm.json"
 AVD_MANIFEST_ARM64 = Path(__file__).resolve().parent / "android-avds/arm64.json"
 
 JAVA_VERSION_MAJOR = "17"
-JAVA_VERSION_MINOR = "0.4.1"
-JAVA_VERSION_PATCH = "1"
+JAVA_VERSION_MINOR = "0.5"
+JAVA_VERSION_PATCH = "8"
 
 ANDROID_NDK_EXISTS = """
 Looks like you have the correct version of the Android NDK installed at:
@@ -104,19 +104,6 @@ class GetNdkVersionError(Exception):
     pass
 
 
-def install_bundletool(url, path: Path):
-    """
-    Fetch bundletool to the desired directory.
-    """
-    try:
-        subprocess.check_call(
-            ["wget", "--continue", url, "--output-document", "bundletool.jar"],
-            cwd=str(path),
-        )
-    finally:
-        pass
-
-
 def install_mobile_android_sdk_or_ndk(url, path: Path):
     """
     Fetch an Android SDK or NDK from |url| and unpack it into the given |path|.
@@ -141,30 +128,7 @@ def install_mobile_android_sdk_or_ndk(url, path: Path):
 
     file_name = url.split("/")[-1]
     download_file_path = download_path / file_name
-
-    with requests.Session() as session:
-        request = session.head(url)
-        remote_file_size = int(request.headers["content-length"])
-
-        if download_file_path.is_file():
-            local_file_size = download_file_path.stat().st_size
-
-            if local_file_size == remote_file_size:
-                print(f"{download_file_path} already downloaded. Skipping download...")
-            else:
-                print(
-                    f"Partial download detected. Resuming download of {download_file_path}..."
-                )
-                download(
-                    download_file_path,
-                    session,
-                    url,
-                    remote_file_size,
-                    local_file_size,
-                )
-        else:
-            print(f"Downloading {download_file_path}...")
-            download(download_file_path, session, url, remote_file_size)
+    download(url, download_file_path)
 
     if file_name.endswith(".tar.gz") or file_name.endswith(".tgz"):
         cmd = ["tar", "zxf", str(download_file_path)]
@@ -194,6 +158,35 @@ def install_mobile_android_sdk_or_ndk(url, path: Path):
 
 
 def download(
+    url,
+    download_file_path: Path,
+):
+    with requests.Session() as session:
+        request = session.head(url)
+        remote_file_size = int(request.headers["content-length"])
+
+        if download_file_path.is_file():
+            local_file_size = download_file_path.stat().st_size
+
+            if local_file_size == remote_file_size:
+                print(f"{download_file_path} already downloaded. Skipping download...")
+            else:
+                print(
+                    f"Partial download detected. Resuming download of {download_file_path}..."
+                )
+                download_internal(
+                    download_file_path,
+                    session,
+                    url,
+                    remote_file_size,
+                    local_file_size,
+                )
+        else:
+            print(f"Downloading {download_file_path}...")
+            download_internal(download_file_path, session, url, remote_file_size)
+
+
+def download_internal(
     download_file_path: Path,
     session,
     url,
@@ -463,7 +456,7 @@ def ensure_android_sdk_and_ndk(
         (cmdline_tools_path / "cmdline-tools").rename(
             cmdline_tools_path / CMDLINE_TOOLS_VERSION_STRING
         )
-        install_bundletool(bundletool_url, mozbuild_path)
+        download(bundletool_url, mozbuild_path / "bundletool.jar")
 
 
 def get_packages_to_install(packages_file_content, avd_manifest):
@@ -837,7 +830,7 @@ def ensure_java(os_name, os_arch):
 
     if not java_path.exists():
         # e.g. https://github.com/adoptium/temurin17-binaries/releases/
-        #      download/jdk-17.0.4.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.4.1_1.tar.gz
+        #      download/jdk-17.0.5%2B8/OpenJDK17U-jdk_x64_linux_hotspot_17.0.5_8.tar.gz
         java_url = (
             "https://github.com/adoptium/temurin{major}-binaries/releases/"
             "download/jdk-{major}.{minor}%2B{patch}/"
@@ -855,7 +848,7 @@ def ensure_java(os_name, os_arch):
 
 
 def java_bin_path(os_name, toolchain_path: Path):
-    # Like jdk-17.0.4.1+1
+    # Like jdk-17.0.5+8
     jdk_folder = "jdk-{major}.{minor}+{patch}".format(
         major=JAVA_VERSION_MAJOR, minor=JAVA_VERSION_MINOR, patch=JAVA_VERSION_PATCH
     )

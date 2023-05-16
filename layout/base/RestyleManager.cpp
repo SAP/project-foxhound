@@ -9,6 +9,7 @@
 
 #include "mozilla/RestyleManager.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/AutoRestyleTimelineMarker.h"
 #include "mozilla/AutoTimelineMarker.h"
 #include "mozilla/ComputedStyle.h"
@@ -977,8 +978,11 @@ static bool ContainingBlockChangeAffectsDescendants(
         // they ignore their position style ... but they can't.
         NS_ASSERTION(!SVGUtils::IsInSVGTextSubtree(outOfFlow),
                      "SVG text frames can't be out of flow");
+        // Top-layer frames don't change containing block based on direct
+        // ancestors.
         auto* display = outOfFlow->StyleDisplay();
-        if (display->IsAbsolutelyPositionedStyle()) {
+        if (display->IsAbsolutelyPositionedStyle() &&
+            display->mTopLayer == StyleTopLayer::None) {
           const bool isContainingBlock =
               aIsFixedPosContainingBlock ||
               (aIsAbsPosContainingBlock &&
@@ -1175,7 +1179,7 @@ static void SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
           nsIFrame* outOfFlowFrame =
               nsPlaceholderFrame::GetRealFrameForPlaceholder(child);
           DoApplyRenderingChangeToTree(outOfFlowFrame, aChange);
-        } else if (listID == nsIFrame::kPopupList) {
+        } else if (listID == FrameChildListID::Popup) {
           DoApplyRenderingChangeToTree(child, aChange);
         } else {  // regular frame
           SyncViewsAndInvalidateDescendants(child, aChange);
@@ -2501,7 +2505,7 @@ static void UpdateBackdropIfNeeded(nsIFrame* aFrame, ServoStyleSet& aStyleSet,
   MOZ_ASSERT(display->IsAbsolutelyPositionedStyle());
 
   nsIFrame* backdropPlaceholder =
-      aFrame->GetChildList(nsIFrame::kBackdropList).FirstChild();
+      aFrame->GetChildList(FrameChildListID::Backdrop).FirstChild();
   if (!backdropPlaceholder) {
     return;
   }
@@ -3273,7 +3277,13 @@ void RestyleManager::UpdateOnlyAnimationStyles() {
 
 void RestyleManager::ElementStateChanged(Element* aElement,
                                          ElementState aChangedBits) {
-  MOZ_DIAGNOSTIC_ASSERT(!mInStyleRefresh);
+#ifdef EARLY_BETA_OR_EARLIER
+  if (MOZ_UNLIKELY(mInStyleRefresh)) {
+    MOZ_CRASH_UNSAFE_PRINTF(
+        "Element state change during style refresh (%" PRIu64 ")",
+        aChangedBits.GetInternalValue());
+  }
+#endif
 
   const ElementState kVisitedAndUnvisited =
       ElementState::VISITED | ElementState::UNVISITED;

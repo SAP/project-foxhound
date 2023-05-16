@@ -21,8 +21,11 @@ const enginesSettings = {
     searchDefaultHash: "TBD",
     // Intentionally in the past, but shouldn't actually matter for this test.
     searchDefaultExpir: 1567694909002,
-    current: "",
-    hash: "TBD",
+    // We use the second engine here so that the user's default is set
+    // to something different, and hence so that we exercise the appropriate
+    // code paths.
+    defaultEngineId: "engine2@search.mozilla.orgdefault",
+    defaultEngineIdHash: "TBD",
     visibleDefaultEngines: "engine1,engine2",
     visibleDefaultEnginesHash: "TBD",
   },
@@ -58,8 +61,8 @@ add_task(async function setup() {
   enginesSettings.metaData.searchDefaultHash = SearchUtils.getVerificationHash(
     enginesSettings.metaData.searchDefault
   );
-  enginesSettings.metaData.hash = SearchUtils.getVerificationHash(
-    enginesSettings.metaData.current
+  enginesSettings.metaData.defaultEngineIdHash = SearchUtils.getVerificationHash(
+    enginesSettings.metaData.defaultEngineId
   );
   enginesSettings.metaData.visibleDefaultEnginesHash = SearchUtils.getVerificationHash(
     enginesSettings.metaData.visibleDefaultEngines
@@ -87,10 +90,14 @@ add_task(async function test_cached_engine_properties() {
   );
 
   const engines = await Services.search.getEngines();
-
+  Assert.equal(
+    Services.search.defaultEngine.name,
+    "engine2",
+    "Should have the expected default engine"
+  );
   Assert.deepEqual(
     engines.map(e => e.name),
     ["engine1", "engine2"],
-    "Should have the expected default engines"
+    "Should have the expected application provided engines"
   );
 });

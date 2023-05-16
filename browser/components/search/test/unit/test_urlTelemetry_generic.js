@@ -35,23 +35,23 @@ const TESTS = [
   {
     title: "Tagged search",
     trackingUrl: "https://www.example.com/search?q=test&abc=ff",
-    expectedSearchCountEntry: "example.in-content:sap:ff",
-    expectedAdKey: "example:sap",
+    expectedSearchCountEntry: "example:tagged:ff",
+    expectedAdKey: "example:tagged",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
   },
   {
     title: "Tagged follow-on",
     trackingUrl: "https://www.example.com/search?q=test&abc=tb&a=next",
-    expectedSearchCountEntry: "example.in-content:sap-follow-on:tb",
-    expectedAdKey: "example:sap-follow-on",
+    expectedSearchCountEntry: "example:tagged-follow-on:tb",
+    expectedAdKey: "example:tagged-follow-on",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
   },
   {
     title: "Organic search matched code",
     trackingUrl: "https://www.example.com/search?q=test&abc=foo",
-    expectedSearchCountEntry: "example.in-content:organic:foo",
+    expectedSearchCountEntry: "example:organic:foo",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
@@ -59,7 +59,7 @@ const TESTS = [
   {
     title: "Organic search non-matched code",
     trackingUrl: "https://www.example.com/search?q=test&abc=ff123",
-    expectedSearchCountEntry: "example.in-content:organic:other",
+    expectedSearchCountEntry: "example:organic:other",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
@@ -67,7 +67,7 @@ const TESTS = [
   {
     title: "Organic search non-matched code 2",
     trackingUrl: "https://www.example.com/search?q=test&abc=foo123",
-    expectedSearchCountEntry: "example.in-content:organic:other",
+    expectedSearchCountEntry: "example:organic:other",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
@@ -75,7 +75,7 @@ const TESTS = [
   {
     title: "Organic search expected organic matched code",
     trackingUrl: "https://www.example.com/search?q=test&abc=baz",
-    expectedSearchCountEntry: "example.in-content:organic:none",
+    expectedSearchCountEntry: "example:organic:none",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
@@ -83,7 +83,7 @@ const TESTS = [
   {
     title: "Organic search no codes",
     trackingUrl: "https://www.example.com/search?q=test",
-    expectedSearchCountEntry: "example.in-content:organic:none",
+    expectedSearchCountEntry: "example:organic:none",
     expectedAdKey: "example:organic",
     adUrls: ["https://www.example.com/ad2"],
     nonAdUrls: ["https://www.example.com/ad3"],
@@ -92,8 +92,8 @@ const TESTS = [
 
 /**
  * This function is primarily for testing the Ad URL regexps that are triggered
- * when a URL is clicked on. These regexps are also used for the `with_ads`
- * probe. However, we test the ad_clicks route as that is easier to hit.
+ * when a URL is clicked on. These regexps are also used for the `withads`
+ * probe. However, we test the adclicks route as that is easier to hit.
  *
  * @param {string} serpUrl
  *   The url to simulate where the page the click came from.
@@ -125,13 +125,13 @@ async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
   const scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
   if (!expectedAdKey) {
     Assert.ok(
-      !("browser.search.ad_clicks" in scalars),
+      !("browser.search.adclicks.unknown" in scalars),
       "Should not have recorded an ad click"
     );
   } else {
     TelemetryTestUtils.assertKeyedScalar(
       scalars,
-      "browser.search.ad_clicks",
+      "browser.search.adclicks.unknown",
       expectedAdKey,
       1
     );
@@ -159,12 +159,12 @@ add_task(async function test_parsing_search_urls() {
       },
       test.trackingUrl
     );
-    let histogram = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS");
-    let snapshot = histogram.snapshot();
-    Assert.ok(snapshot);
-    Assert.ok(
-      test.expectedSearchCountEntry in snapshot,
-      "The histogram must contain the correct key"
+    let scalars = TelemetryTestUtils.getProcessScalars("parent", true, true);
+    TelemetryTestUtils.assertKeyedScalar(
+      scalars,
+      "browser.search.content.unknown",
+      test.expectedSearchCountEntry,
+      1
     );
 
     if ("adUrls" in test) {
@@ -179,6 +179,5 @@ add_task(async function test_parsing_search_urls() {
     if (test.tearDown) {
       test.tearDown();
     }
-    histogram.clear();
   }
 });

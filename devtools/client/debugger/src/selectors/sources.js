@@ -15,7 +15,7 @@ import {
 import { findPosition } from "../utils/breakpoint/breakpointPositions";
 import { isFulfilled } from "../utils/async-value";
 
-import { originalToGeneratedId } from "devtools-source-map";
+import { originalToGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { prefs } from "../utils/prefs";
 
 import {
@@ -159,6 +159,38 @@ export function getSelectedSourceId(state) {
   const source = getSelectedSource(state);
   return source?.id;
 }
+
+/**
+ * Gets the first source actor for the source and/or thread
+ * provided.
+ *
+ * @param {Object} state
+ * @param {String} sourceId
+ *         The source used
+ * @param {String} [threadId]
+ *         The thread to check, this is optional.
+ * @param {Object} sourceActor
+ *
+ */
+export function getFirstSourceActorForGeneratedSource(
+  state,
+  sourceId,
+  threadId
+) {
+  const source = getSource(state, sourceId);
+  if (source.isOriginal) {
+    return null;
+  }
+  let actorsInfo = state.sources.actors[sourceId];
+  if (!actorsInfo.length) {
+    return null;
+  }
+  if (threadId) {
+    actorsInfo = actorsInfo.filter(actorInfo => actorInfo.thread == threadId);
+  }
+  return actorsInfo.length ? getSourceActor(state, actorsInfo[0].id) : null;
+}
+
 /**
  * Get the source actor of the source
  *
@@ -204,6 +236,37 @@ export function canPrettyPrintSource(state, id) {
   }
 
   return true;
+}
+
+export function getPrettyPrintMessage(state, source) {
+  if (!source) {
+    return L10N.getStr("sourceTabs.prettyPrint");
+  }
+
+  if (isPretty(source)) {
+    return L10N.getStr("sourceFooter.prettyPrint.isPrettyPrintedMessage");
+  }
+
+  if (source.isOriginal) {
+    return L10N.getStr("sourceFooter.prettyPrint.isOriginalMessage");
+  }
+
+  if (prefs.clientSourceMapsEnabled && isSourceWithMap(state, source.id)) {
+    return L10N.getStr("sourceFooter.prettyPrint.hasSourceMapMessage");
+  }
+
+  const content = getSourceTextContent(state, source.id);
+  const sourceContent = content && isFulfilled(content) ? content.value : null;
+
+  if (!sourceContent) {
+    return L10N.getStr("sourceFooter.prettyPrint.noContentMessage");
+  }
+
+  if (!isJavaScript(source, sourceContent)) {
+    return L10N.getStr("sourceFooter.prettyPrint.isNotJavascriptMessage");
+  }
+
+  return L10N.getStr("sourceTabs.prettyPrint");
 }
 
 // Used by visibleColumnBreakpoints selectors

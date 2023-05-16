@@ -118,18 +118,11 @@ class TestFirefoxRefresh(MarionetteTestCase):
             value: arguments[1],
             firstUsed: (Date.now() - 5000) * 1000,
           };
-          let finished = false;
           let resolve = arguments[arguments.length - 1];
-          global.FormHistory.update(updateDefinition, {
-            handleError(error) {
-              finished = true;
-              resolve(error);
-            },
-            handleCompletion() {
-              if (!finished) {
-                resolve(false);
-              }
-            }
+          global.FormHistory.update(updateDefinition).then(() => {
+            resolve(false);
+          }, error => {
+            resolve("Unexpected error in adding formhistory: " + error);
           });
         """,
             script_args=(self._formHistoryFieldName, self._formHistoryValue),
@@ -322,17 +315,8 @@ class TestFirefoxRefresh(MarionetteTestCase):
             """
           let resolve = arguments[arguments.length - 1];
           let results = [];
-          global.FormHistory.search(["value"], {fieldname: arguments[0]}, {
-            handleError(error) {
-              results = error;
-            },
-            handleResult(result) {
-              results.push(result);
-            },
-            handleCompletion() {
-              resolve(results);
-            },
-          });
+          global.FormHistory.search(["value"], {fieldname: arguments[0]})
+            .then(resolve);
         """,
             script_args=(self._formHistoryFieldName,),
         )
@@ -352,14 +336,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         formHistoryCount = self.runAsyncCode(
             """
           let [resolve] = arguments;
-          let count;
-          let callbacks = {
-            handleResult: rv => count = rv,
-            handleCompletion() {
-              resolve(count);
-            },
-          };
-          global.FormHistory.count({}, callbacks);
+          global.FormHistory.count({}).then(resolve);
         """
         )
         self.assertEqual(
@@ -534,8 +511,8 @@ class TestFirefoxRefresh(MarionetteTestCase):
           window.global = {};
           global.LoginInfo = Components.Constructor("@mozilla.org/login-manager/loginInfo;1", "nsILoginInfo", "init");
           global.profSvc = Cc["@mozilla.org/toolkit/profile-service;1"].getService(Ci.nsIToolkitProfileService);
-          global.Preferences = ChromeUtils.import(
-            "resource://gre/modules/Preferences.jsm"
+          global.Preferences = ChromeUtils.importESModule(
+            "resource://gre/modules/Preferences.sys.mjs"
           ).Preferences;
           global.FormHistory = ChromeUtils.import(
             "resource://gre/modules/FormHistory.jsm"

@@ -142,47 +142,115 @@ RuleEditor.prototype = {
     this.updateSourceLink();
 
     if (this.rule.domRule.ancestorData.length) {
-      const parts = this.rule.domRule.ancestorData.map(ancestorData => {
-        if (ancestorData.type == "container") {
-          const containerQueryParts = [
-            "@container",
-            ancestorData.containerName,
-            ancestorData.containerQuery,
-          ].filter(p => !!p);
-          return containerQueryParts.join(" ");
-        }
-        if (ancestorData.type == "layer") {
-          return `@layer${ancestorData.value ? " " + ancestorData.value : ""}`;
-        }
-        if (ancestorData.type == "media") {
-          return `@media ${ancestorData.value}`;
-        }
+      const parts = this.rule.domRule.ancestorData.map(
+        (ancestorData, index) => {
+          if (ancestorData.type == "container") {
+            const container = this.doc.createElement("li");
+            container.classList.add("container-query");
+            container.setAttribute("data-ancestor-index", index);
 
-        if (ancestorData.type == "supports") {
-          return `@supports ${ancestorData.conditionText}`;
-        }
-        // We shouldn't get here as `type` can only be set to "container", "layer", "media"
-        // or "supports" (see devtools/server/actors/style-rule form()),
-        // but just in case, let's return an empty string.
-        console.warn("Unknown ancestor data type:", ancestorData.type);
-        return ``;
-      });
+            createChild(container, "span", {
+              class: "container-query-declaration",
+              textContent: `@container${
+                ancestorData.containerName
+                  ? " " + ancestorData.containerName
+                  : ""
+              }`,
+            });
 
-      // We force the string to be LTR in CSS, but as @ is listed as having neutral
-      // directionality and starting a string with this char would default to RTL for that
-      // character (when in RTL locale), and then the next char (`m` of `media`, or `l` of `layer`)
-      // would start a new LTR visual run, since it is strongly LTR (through `direction` CSS property).
-      // To have the `@` properly displayed, we force LTR with \u202A
-      const title = `${parts.join("\n").replaceAll("@", "\u202A@")}`;
+            // @backward-compat { version 108 } Actors from older server don't implement getQueryContainerForNode.
+            if (this.rule.domRule.traits.hasGetQueryContainerForNode) {
+              container.classList.add("has-tooltip");
+
+              const jumpToNodeButton = createChild(container, "button", {
+                class: "open-inspector",
+                title: l10n(
+                  "rule.containerQuery.selectContainerButton.tooltip"
+                ),
+              });
+
+              let containerNodeFront;
+              const getNodeFront = async () => {
+                if (!containerNodeFront) {
+                  const res = await this.rule.domRule.getQueryContainerForNode(
+                    index,
+                    this.rule.inherited ||
+                      this.ruleView.inspector.selection.nodeFront
+                  );
+                  containerNodeFront = res.node;
+                }
+                return containerNodeFront;
+              };
+
+              jumpToNodeButton.addEventListener("click", async () => {
+                const front = await getNodeFront();
+                if (!front) {
+                  return;
+                }
+                this.ruleView.inspector.selection.setNodeFront(front);
+                await this.ruleView.inspector.highlighters.hideHighlighterType(
+                  this.ruleView.inspector.highlighters.TYPES.BOXMODEL
+                );
+              });
+              container.append(jumpToNodeButton);
+
+              container.addEventListener("mouseenter", async () => {
+                const front = await getNodeFront();
+                if (!front) {
+                  return;
+                }
+
+                await this.ruleView.inspector.highlighters.showHighlighterTypeForNode(
+                  this.ruleView.inspector.highlighters.TYPES.BOXMODEL,
+                  front
+                );
+              });
+              container.addEventListener("mouseleave", async () => {
+                await this.ruleView.inspector.highlighters.hideHighlighterType(
+                  this.ruleView.inspector.highlighters.TYPES.BOXMODEL
+                );
+              });
+            }
+
+            createChild(container, "span", {
+              // Add a space between the container name (or @container if there's no name)
+              // and the query so the title, which is computed from the DOM, displays correctly.
+              textContent: " " + ancestorData.containerQuery,
+            });
+            return container;
+          }
+          if (ancestorData.type == "layer") {
+            return `@layer${
+              ancestorData.value ? " " + ancestorData.value : ""
+            }`;
+          }
+          if (ancestorData.type == "media") {
+            return `@media ${ancestorData.value}`;
+          }
+
+          if (ancestorData.type == "supports") {
+            return `@supports ${ancestorData.conditionText}`;
+          }
+          // We shouldn't get here as `type` can only be set to "container", "layer", "media"
+          // or "supports" (see devtools/server/actors/style-rule form()),
+          // but just in case, let's return an empty string.
+          console.warn("Unknown ancestor data type:", ancestorData.type);
+          return ``;
+        }
+      );
 
       this.ancestorDataEl = createChild(this.element, "ul", {
         class: "ruleview-rule-ancestor-data theme-link",
-        title,
       });
+
       for (const part of parts) {
-        createChild(this.ancestorDataEl, "li", {
-          textContent: part,
-        });
+        if (typeof part == "string") {
+          createChild(this.ancestorDataEl, "li", {
+            textContent: part,
+          });
+        } else {
+          this.ancestorDataEl.append(part);
+        }
       }
     }
 
@@ -211,36 +279,23 @@ RuleEditor.prototype = {
     }
 
     if (this.rule.domRule.type !== CSSRule.KEYFRAME_RULE) {
-      // FIXME: Avoid having this as a nested async operation. (Bug 1664511)
-      (async function() {
-        let selector;
-
-        if (this.rule.domRule.selectors) {
-          // This is a "normal" rule with a selector.
-          selector = this.rule.domRule.selectors.join(", ");
-        } else if (this.rule.inherited) {
-          // This is an inline style from an inherited rule. Need to resolve the unique
-          // selector from the node which rule this is inherited from.
-          selector = await this.rule.inherited.getUniqueSelector();
-        } else {
-          // This is an inline style from the current node.
-          selector = await this.ruleView.inspector.selection.nodeFront.getUniqueSelector();
-        }
-
-        const isHighlighted = this.ruleView.isSelectorHighlighted(selector);
-        // Handling of click events is delegated to CssRuleView.handleEvent()
-        createChild(header, "span", {
-          class:
-            "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
-            (isHighlighted ? " highlighted" : ""),
-          "data-selector": selector,
-          title: l10n("rule.selectorHighlighter.tooltip"),
-        });
+      let selector = "";
+      if (this.rule.domRule.selectors) {
+        // This is a "normal" rule with a selector.
+        selector = this.rule.domRule.selectors.join(", ");
+        // Otherwise, the rule is either inherited or inline, and selectors will
+        // be computed on demand when the highlighter is requested.
       }
-        .bind(this)()
-        .catch(error => {
-          console.error("Exception while getting unique selector", error);
-        }));
+
+      const isHighlighted = this.ruleView.isSelectorHighlighted(selector);
+      // Handling of click events is delegated to CssRuleView.handleEvent()
+      createChild(header, "span", {
+        class:
+          "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
+          (isHighlighted ? " highlighted" : ""),
+        "data-selector": selector,
+        title: l10n("rule.selectorHighlighter.tooltip"),
+      });
     }
 
     this.openBrace = createChild(header, "span", {

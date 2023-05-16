@@ -5,19 +5,17 @@
 
 var EXPORTED_SYMBOLS = ["PushService"];
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPush");
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "EventDispatcher",
-  "resource://gre/modules/Messaging.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
+});
 
 // Observer notification topics for push messages and subscription status
 // changes. These are duplicated and used in `nsIPushNotifier`. They're exposed

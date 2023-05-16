@@ -1421,13 +1421,15 @@ add_resultGroups_task({
 /**
  * Adds a single test task.
  *
- * @param {string} testName
+ * @param {object} options
+ *   The options for the test
+ * @param {string} options.testName
  *   This name is logged with `info` as the task starts.
- * @param {object} resultGroups
+ * @param {object} options.resultGroups
  *   browser.urlbar.resultGroups is set to this value as the task starts.
- * @param {array} providerResults
+ * @param {Array} options.providerResults
  *   Array of result objects that the test provider will add.
- * @param {array} expectedResultIndexes
+ * @param {Array} options.expectedResultIndexes
  *   Array of indexes in `providerResults` of the expected final results.
  */
 function add_resultGroups_task({
@@ -1456,10 +1458,16 @@ function add_resultGroups_task({
 /**
  * Adds test tasks for each of the keys in `LIMIT_KEYS`.
  *
- * @param {string} testName
- * @param {object} resultGroups
- * @param {array} providerResults
- * @param {array} expectedResultIndexes
+ * @param {object} options
+ *   The options for the test
+ * @param {string} options.testName
+ *   The name of the test.
+ * @param {object} options.resultGroups
+ *   The resultGroups object to set.
+ * @param {Array} options.providerResults
+ *   The results to return from the test
+ * @param {Array} options.expectedResultIndexes
+ *   Indexes of the expected results within {@link providerResults}
  */
 function add_resultGroupsLimit_tasks({
   testName,

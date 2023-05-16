@@ -603,35 +603,45 @@ MDefinition* MTest::foldsTypes(TempAllocator& alloc) {
   return nullptr;
 }
 
+class UsesIterator {
+  MDefinition* def_;
+
+ public:
+  explicit UsesIterator(MDefinition* def) : def_(def) {}
+  auto begin() const { return def_->usesBegin(); }
+  auto end() const { return def_->usesEnd(); }
+};
+
+static bool AllInstructionsDeadIfUnused(MBasicBlock* block) {
+  for (auto* ins : *block) {
+    // Skip trivial instructions.
+    if (ins->isNop() || ins->isGoto()) {
+      continue;
+    }
+
+    // All uses must be within the current block.
+    for (auto* use : UsesIterator(ins)) {
+      if (use->consumer()->block() != block) {
+        return false;
+      }
+    }
+
+    // All instructions within this block must be dead if unused.
+    if (!DeadIfUnused(ins)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 MDefinition* MTest::foldsNeedlessControlFlow(TempAllocator& alloc) {
-  for (MInstructionIterator iter(ifTrue()->begin()), end(ifTrue()->end());
-       iter != end;) {
-    MInstruction* ins = *iter++;
-    if (ins->isNop() || ins->isGoto()) {
-      continue;
-    }
-    if (ins->hasUses()) {
-      return nullptr;
-    }
-    if (!DeadIfUnused(ins)) {
-      return nullptr;
-    }
+  // All instructions within both successors need be dead if unused.
+  if (!AllInstructionsDeadIfUnused(ifTrue()) ||
+      !AllInstructionsDeadIfUnused(ifFalse())) {
+    return nullptr;
   }
 
-  for (MInstructionIterator iter(ifFalse()->begin()), end(ifFalse()->end());
-       iter != end;) {
-    MInstruction* ins = *iter++;
-    if (ins->isNop() || ins->isGoto()) {
-      continue;
-    }
-    if (ins->hasUses()) {
-      return nullptr;
-    }
-    if (!DeadIfUnused(ins)) {
-      return nullptr;
-    }
-  }
-
+  // Both successors must have the same target successor.
   if (ifTrue()->numSuccessors() != 1 || ifFalse()->numSuccessors() != 1) {
     return nullptr;
   }
@@ -639,6 +649,9 @@ MDefinition* MTest::foldsNeedlessControlFlow(TempAllocator& alloc) {
     return nullptr;
   }
 
+  // The target successor's phis must be redundant. Redundant phis should have
+  // been removed in an earlier pass, so only check if any phis are present,
+  // which is a stronger condition.
   if (ifTrue()->successorWithPhis()) {
     return nullptr;
   }
@@ -6263,6 +6276,31 @@ AliasSet MMegamorphicLoadSlotByValue::getAliasSet() const {
                         AliasSet::DynamicSlot);
 }
 
+MDefinition* MMegamorphicLoadSlotByValue::foldsTo(TempAllocator& alloc) {
+  MDefinition* input = idVal();
+  if (input->isBox()) {
+    input = input->toBox()->input();
+  }
+
+  if (input->isConstant()) {
+    MConstant* constant = input->toConstant();
+    if (constant->type() == MIRType::Symbol) {
+      PropertyKey id = PropertyKey::Symbol(constant->toSymbol());
+      return MMegamorphicLoadSlot::New(alloc, object(), id);
+    }
+
+    if (constant->type() == MIRType::String) {
+      JSString* str = constant->toString();
+      if (str->isAtom() && !str->asAtom().isIndex()) {
+        PropertyKey id = PropertyKey::NonIntAtom(str);
+        return MMegamorphicLoadSlot::New(alloc, object(), id);
+      }
+    }
+  }
+
+  return this;
+}
+
 bool MMegamorphicLoadSlot::congruentTo(const MDefinition* ins) const {
   if (!ins->isMegamorphicLoadSlot()) {
     return false;
@@ -6728,6 +6766,10 @@ AliasSet MSetObjectHasValueVMCall::getAliasSet() const {
   return AliasSet::Load(AliasSet::MapOrSetHashTable);
 }
 
+AliasSet MSetObjectSize::getAliasSet() const {
+  return AliasSet::Load(AliasSet::MapOrSetHashTable);
+}
+
 AliasSet MMapObjectHasNonBigInt::getAliasSet() const {
   return AliasSet::Load(AliasSet::MapOrSetHashTable);
 }
@@ -6760,6 +6802,10 @@ AliasSet MMapObjectGetValueVMCall::getAliasSet() const {
   return AliasSet::Load(AliasSet::MapOrSetHashTable);
 }
 
+AliasSet MMapObjectSize::getAliasSet() const {
+  return AliasSet::Load(AliasSet::MapOrSetHashTable);
+}
+
 MIonToWasmCall* MIonToWasmCall::New(TempAllocator& alloc,
                                     WasmInstanceObject* instanceObj,
                                     const wasm::FuncExport& funcExport) {
@@ -6772,7 +6818,7 @@ MIonToWasmCall* MIonToWasmCall::New(TempAllocator& alloc,
   if (results.length() > 0 && !results[0].isEncodedAsJSValueOnEscape()) {
     MOZ_ASSERT(results.length() == 1,
                "multiple returns not implemented for inlined Wasm calls");
-    resultType = ToMIRType(results[0]);
+    resultType = results[0].toMIRType();
   }
 
   auto* ins = new (alloc) MIonToWasmCall(instanceObj, resultType, funcExport);

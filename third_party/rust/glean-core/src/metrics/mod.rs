@@ -68,6 +68,10 @@ pub use crate::histogram::HistogramType;
 pub use recorded_experiment::RecordedExperiment;
 
 /// A snapshot of all buckets and the accumulated sum of a distribution.
+//
+// Note: Be careful when changing this structure.
+// The serialized form ends up in the ping payload.
+// New fields might require to be skipped on serialization.
 #[derive(Debug, Serialize)]
 pub struct DistributionData {
     /// A map containig the bucket index mapped to the accumulated count.
@@ -77,6 +81,10 @@ pub struct DistributionData {
 
     /// The accumulated sum of all the samples in the distribution.
     pub sum: i64,
+
+    /// The total number of entries in the distribution.
+    #[serde(skip)]
+    pub count: i64,
 }
 
 /// The available metrics.

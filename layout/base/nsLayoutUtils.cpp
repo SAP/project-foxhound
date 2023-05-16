@@ -576,7 +576,7 @@ void nsLayoutUtils::UnionChildOverflow(nsIFrame* aFrame,
                                        FrameChildListIDs aSkipChildLists) {
   // Iterate over all children except pop-ups.
   FrameChildListIDs skip(aSkipChildLists);
-  skip += nsIFrame::kPopupList;
+  skip += FrameChildListID::Popup;
 
   for (auto& [list, listID] : aFrame->ChildLists()) {
     if (skip.contains(listID)) {
@@ -813,43 +813,36 @@ nsContainerFrame* nsLayoutUtils::LastContinuationWithChild(
 
 // static
 FrameChildListID nsLayoutUtils::GetChildListNameFor(nsIFrame* aChildFrame) {
-  nsIFrame::ChildListID id = nsIFrame::kPrincipalList;
+  FrameChildListID id = FrameChildListID::Principal;
 
   MOZ_DIAGNOSTIC_ASSERT(!aChildFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW));
 
   if (aChildFrame->HasAnyStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER)) {
     nsIFrame* pif = aChildFrame->GetPrevInFlow();
     if (pif->GetParent() == aChildFrame->GetParent()) {
-      id = nsIFrame::kExcessOverflowContainersList;
+      id = FrameChildListID::ExcessOverflowContainers;
     } else {
-      id = nsIFrame::kOverflowContainersList;
+      id = FrameChildListID::OverflowContainers;
     }
   } else {
     LayoutFrameType childType = aChildFrame->Type();
     if (LayoutFrameType::MenuPopup == childType) {
       nsIFrame* parent = aChildFrame->GetParent();
       MOZ_ASSERT(parent, "nsMenuPopupFrame can't be the root frame");
-      if (parent) {
-        if (parent->IsPopupSetFrame()) {
-          id = nsIFrame::kPopupList;
-        } else {
-          nsIFrame* firstPopup =
-              parent->GetChildList(nsIFrame::kPopupList).FirstChild();
-          MOZ_ASSERT(
-              !firstPopup || !firstPopup->GetNextSibling(),
-              "We assume popupList only has one child, but it has more.");
-          id = firstPopup == aChildFrame ? nsIFrame::kPopupList
-                                         : nsIFrame::kPrincipalList;
-        }
-      } else {
-        id = nsIFrame::kPrincipalList;
-      }
+      MOZ_ASSERT(parent->IsMenuFrame(),
+                 "nsMenuPopupFrame should be out of flow if not under a menu");
+      nsIFrame* firstPopup =
+          parent->GetChildList(FrameChildListID::Popup).FirstChild();
+      MOZ_ASSERT(!firstPopup || !firstPopup->GetNextSibling(),
+                 "We assume popupList only has one child, but it has more.");
+      id = firstPopup == aChildFrame ? FrameChildListID::Popup
+                                     : FrameChildListID::Principal;
     } else if (LayoutFrameType::TableColGroup == childType) {
-      id = nsIFrame::kColGroupList;
+      id = FrameChildListID::ColGroup;
     } else if (aChildFrame->IsTableCaption()) {
-      id = nsIFrame::kCaptionList;
+      id = FrameChildListID::Caption;
     } else {
-      id = nsIFrame::kPrincipalList;
+      id = FrameChildListID::Principal;
     }
   }
 
@@ -859,7 +852,7 @@ FrameChildListID nsLayoutUtils::GetChildListNameFor(nsIFrame* aChildFrame) {
   nsContainerFrame* parent = aChildFrame->GetParent();
   bool found = parent->GetChildList(id).ContainsFrame(aChildFrame);
   if (!found) {
-    found = parent->GetChildList(nsIFrame::kOverflowList)
+    found = parent->GetChildList(FrameChildListID::Overflow)
                 .ContainsFrame(aChildFrame);
     MOZ_ASSERT(found, "not in child list");
   }
@@ -3600,7 +3593,8 @@ void nsLayoutUtils::AddBoxesForFrame(nsIFrame* aFrame,
   if (pseudoType == PseudoStyleType::tableWrapper) {
     AddBoxesForFrame(aFrame->PrincipalChildList().FirstChild(), aCallback);
     if (aCallback->mIncludeCaptionBoxForTable) {
-      nsIFrame* kid = aFrame->GetChildList(nsIFrame::kCaptionList).FirstChild();
+      nsIFrame* kid =
+          aFrame->GetChildList(FrameChildListID::Caption).FirstChild();
       if (kid) {
         AddBoxesForFrame(kid, aCallback);
       }
@@ -3635,7 +3629,8 @@ nsIFrame* nsLayoutUtils::GetFirstNonAnonymousFrame(nsIFrame* aFrame) {
       if (f) {
         return f;
       }
-      nsIFrame* kid = aFrame->GetChildList(nsIFrame::kCaptionList).FirstChild();
+      nsIFrame* kid =
+          aFrame->GetChildList(FrameChildListID::Caption).FirstChild();
       if (kid) {
         f = GetFirstNonAnonymousFrame(kid);
         if (f) {
@@ -5869,18 +5864,19 @@ bool nsLayoutUtils::GetFirstLinePosition(WritingMode aWM,
     }
 
     // For first-line baselines, we have to consider scroll frames.
-    if (fType == LayoutFrameType::Scroll) {
-      nsIScrollableFrame* sFrame = do_QueryFrame(const_cast<nsIFrame*>(aFrame));
-      if (!sFrame) {
-        MOZ_ASSERT_UNREACHABLE("not scroll frame");
-      }
+    if (nsIScrollableFrame* sFrame =
+            do_QueryFrame(const_cast<nsIFrame*>(aFrame))) {
       LinePosition kidPosition;
       if (GetFirstLinePosition(aWM, sFrame->GetScrolledFrame(), &kidPosition)) {
-        // Consider only the border and padding that contributes to the
-        // kid's position, not the scrolling, so we get the initial
-        // position.
-        *aResult = kidPosition +
-                   aFrame->GetLogicalUsedBorderAndPadding(aWM).BStart(aWM);
+        // Consider only the border (Padding is ignored, since
+        // `-moz-scrolled-content` inherits and handles the padding) that
+        // contributes to the kid's position, not the scrolling, so we get the
+        // initial position.
+        *aResult = kidPosition + aFrame->GetLogicalUsedBorder(aWM).BStart(aWM);
+        // Don't want to move the line's block positioning, but the baseline
+        // needs to be clamped (See bug 1791069).
+        aResult->mBaseline = std::clamp(aResult->mBaseline, 0,
+                                        aFrame->GetLogicalSize(aWM).BSize(aWM));
         return true;
       }
       return false;
@@ -5939,9 +5935,24 @@ bool nsLayoutUtils::GetLastLineBaseline(WritingMode aWM, const nsIFrame* aFrame,
   }
 
   const nsBlockFrame* block = do_QueryFrame(aFrame);
-  if (!block)
-    // No baseline.  (We intentionally don't descend into scroll frames.)
+  if (!block) {
+    if (nsIScrollableFrame* sFrame = do_QueryFrame(aFrame)) {
+      // Use the baseline position only if the last line's baseline is within
+      // the scrolling frame's box in the initial position.
+      const auto* scrolledFrame = sFrame->GetScrolledFrame();
+      if (!GetLastLineBaseline(aWM, scrolledFrame, aResult)) {
+        return false;
+      }
+      // Go from scrolled frame to scrollable frame position.
+      *aResult += aFrame->GetLogicalUsedBorder(aWM).BStart(aWM);
+      const auto maxBaseline = aFrame->GetLogicalSize(aWM).BSize(aWM);
+      // Clamp the last baseline to border (See bug 1791069).
+      *aResult = std::clamp(*aResult, 0, maxBaseline);
+      return true;
+    }
+    // No baseline.
     return false;
+  }
 
   for (nsBlockFrame::ConstReverseLineIterator line = block->LinesRBegin(),
                                               line_end = block->LinesREnd();
@@ -5955,7 +5966,8 @@ bool nsLayoutUtils::GetLastLineBaseline(WritingMode aWM, const nsIFrame* aFrame,
         *aResult = kidBaseline +
                    kid->GetLogicalNormalPosition(aWM, containerSize).B(aWM);
         return true;
-      } else if (kid->IsScrollFrame()) {
+      }
+      if (kid->IsScrollFrame()) {
         // Defer to nsIFrame::GetLogicalBaseline (which synthesizes a baseline
         // from the margin-box).
         kidBaseline = kid->GetLogicalBaseline(aWM);
@@ -6007,14 +6019,14 @@ nscoord nsLayoutUtils::CalculateContentBEnd(WritingMode aWM, nsIFrame* aFrame) {
   // calculation is intended to affect layout.
   LogicalSize overflowSize(aWM, aFrame->ScrollableOverflowRect().Size());
   if (overflowSize.BSize(aWM) > contentBEnd) {
-    nsIFrame::ChildListIDs skip = {nsIFrame::kOverflowList,
-                                   nsIFrame::kExcessOverflowContainersList,
-                                   nsIFrame::kOverflowOutOfFlowList};
+    FrameChildListIDs skip = {FrameChildListID::Overflow,
+                              FrameChildListID::ExcessOverflowContainers,
+                              FrameChildListID::OverflowOutOfFlow};
     nsBlockFrame* blockFrame = do_QueryFrame(aFrame);
     if (blockFrame) {
       contentBEnd =
           std::max(contentBEnd, CalculateBlockContentBEnd(aWM, blockFrame));
-      skip += nsIFrame::kPrincipalList;
+      skip += FrameChildListID::Principal;
     }
     for (auto& [list, listID] : aFrame->ChildLists()) {
       if (!skip.contains(listID)) {
@@ -7588,8 +7600,8 @@ static void GetFontFacesForFramesInner(
     return;
   }
 
-  nsIFrame::ChildListID childLists[] = {nsIFrame::kPrincipalList,
-                                        nsIFrame::kPopupList};
+  FrameChildListID childLists[] = {FrameChildListID::Principal,
+                                   FrameChildListID::Popup};
   for (size_t i = 0; i < ArrayLength(childLists); ++i) {
     for (nsIFrame* child : aFrame->GetChildList(childLists[i])) {
       child = nsPlaceholderFrame::GetRealFrameFor(child);

@@ -11,6 +11,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
   ServiceRequest: "resource://gre/modules/ServiceRequest.sys.mjs",
 });
 
@@ -18,9 +20,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
 });
 
 // The current platform as specified in the AMO API:
@@ -46,6 +46,13 @@ XPCOMUtils.defineLazyGetter(lazy, "PLATFORM", () => {
 var EXPORTED_SYMBOLS = ["AddonRepository"];
 
 const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "getAddonsCacheEnabled",
+  PREF_GETADDONS_CACHE_ENABLED
+);
+
 const PREF_GETADDONS_CACHE_TYPES = "extensions.getAddons.cache.types";
 const PREF_GETADDONS_CACHE_ID_ENABLED =
   "extensions.%ID%.getAddons.cache.enabled";
@@ -338,7 +345,7 @@ var AddonRepository = {
    * Whether caching is currently enabled
    */
   get cacheEnabled() {
-    return Services.prefs.getBoolPref(PREF_GETADDONS_CACHE_ENABLED, false);
+    return lazy.getAddonsCacheEnabled;
   },
 
   /**

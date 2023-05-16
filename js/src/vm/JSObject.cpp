@@ -22,6 +22,7 @@
 
 #include "builtin/BigInt.h"
 #include "builtin/MapObject.h"
+#include "builtin/Object.h"
 #include "builtin/String.h"
 #include "builtin/Symbol.h"
 #include "builtin/WeakSetObject.h"
@@ -804,39 +805,6 @@ NativeObject* js::NewObjectWithClassProto(JSContext* cx, const JSClass* clasp,
 
   Rooted<TaggedProto> taggedProto(cx, TaggedProto(proto));
   return NewObject(cx, clasp, taggedProto, allocKind, newKind);
-}
-
-bool js::NewObjectScriptedCall(JSContext* cx, MutableHandleObject pobj) {
-  gc::AllocKind allocKind = NewObjectGCKind();
-  NewObjectKind newKind = GenericObject;
-
-  JSObject* obj = NewPlainObjectWithAllocKind(cx, allocKind, newKind);
-  if (!obj) {
-    return false;
-  }
-
-  pobj.set(obj);
-  return true;
-}
-
-JSObject* js::CreateThis(JSContext* cx, const JSClass* newclasp,
-                         HandleObject callee) {
-  RootedObject proto(cx);
-  if (!GetPrototypeFromConstructor(
-          cx, callee, JSCLASS_CACHED_PROTO_KEY(newclasp), &proto)) {
-    return nullptr;
-  }
-
-  gc::AllocKind kind = NewObjectGCKind();
-
-  if (newclasp == &PlainObject::class_) {
-    if (proto) {
-      return NewPlainObjectWithProtoAndAllocKind(cx, proto, kind);
-    }
-    return NewPlainObjectWithAllocKind(cx, kind);
-  }
-
-  return NewObjectWithClassProto(cx, newclasp, proto, kind);
 }
 
 bool js::GetPrototypeFromConstructor(JSContext* cx, HandleObject newTarget,
@@ -2238,6 +2206,15 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().groupToMap))) {
     return true;
   }
+
+  // It's gently surprising that this is JSProto_Function, but the trick
+  // to realize is that this is a -constructor function-, not a function
+  // on the prototype; and the proto of the constructor is JSProto_Function.
+  if (key == JSProto_Function &&
+      !cx->realm()->creationOptions().getArrayFromAsyncEnabled() &&
+      id == NameToId(cx->names().fromAsync)) {
+    return true;
+  }
 #endif
 
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
@@ -2363,17 +2340,37 @@ bool JS::OrdinaryToPrimitive(JSContext* cx, HandleObject obj, JSType hint,
   if (hint == JSTYPE_STRING) {
     id = NameToId(cx->names().toString);
 
-    /* Optimize (new String(...)).toString(). */
+    bool calledToString = false;
     if (clasp == &StringObject::class_) {
+      // Optimize (new String(...)).toString().
       StringObject* nobj = &obj->as<StringObject>();
       if (HasNativeMethodPure(nobj, cx->names().toString, str_toString, cx)) {
         vp.setString(nobj->unbox());
         return true;
       }
+    } else if (clasp == &PlainObject::class_) {
+      JSFunction* fun;
+      if (GetPropertyPure(cx, obj, id, vp.address()) &&
+          IsFunctionObject(vp, &fun)) {
+        // Common case: we have a toString function. Try to short-circuit if
+        // it's Object.prototype.toString and there's no @@toStringTag.
+        if (fun->maybeNative() == obj_toString &&
+            !MaybeHasInterestingSymbolProperty(
+                cx, obj, cx->wellKnownSymbols().toStringTag)) {
+          vp.setString(cx->names().objectObject);
+          return true;
+        }
+        if (!js::Call(cx, vp, obj, vp)) {
+          return false;
+        }
+        calledToString = true;
+      }
     }
 
-    if (!MaybeCallMethod(cx, obj, id, vp)) {
-      return false;
+    if (!calledToString) {
+      if (!MaybeCallMethod(cx, obj, id, vp)) {
+        return false;
+      }
     }
     if (vp.isPrimitive()) {
       return true;
@@ -2389,17 +2386,15 @@ bool JS::OrdinaryToPrimitive(JSContext* cx, HandleObject obj, JSType hint,
   } else {
     id = NameToId(cx->names().valueOf);
 
-    /* Optimize new String(...).valueOf(). */
     if (clasp == &StringObject::class_) {
+      // Optimize new String(...).valueOf().
       StringObject* nobj = &obj->as<StringObject>();
       if (HasNativeMethodPure(nobj, cx->names().valueOf, str_toString, cx)) {
         vp.setString(nobj->unbox());
         return true;
       }
-    }
-
-    /* Optimize new Number(...).valueOf(). */
-    if (clasp == &NumberObject::class_) {
+    } else if (clasp == &NumberObject::class_) {
+      // Optimize new Number(...).valueOf().
       NumberObject* nobj = &obj->as<NumberObject>();
       if (HasNativeMethodPure(nobj, cx->names().valueOf, num_valueOf, cx)) {
         vp.setNumber(nobj->unbox());

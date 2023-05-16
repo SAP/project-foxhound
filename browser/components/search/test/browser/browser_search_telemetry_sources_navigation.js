@@ -139,12 +139,10 @@ add_task(async function test_search() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 1,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
     }
   );
@@ -158,13 +156,11 @@ add_task(async function test_reload() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.reload": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.reload": { "example:tagged": 1 },
     }
@@ -178,16 +174,13 @@ add_task(async function test_reload() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.reload": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.reload": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.reload": { "example:tagged": 1 },
     }
   );
@@ -206,12 +199,10 @@ add_task(async function test_fresh_search() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 1,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
     }
   );
@@ -226,14 +217,11 @@ add_task(async function test_click_ad() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 1,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.urlbar": { "example:tagged": 1 },
     }
   );
@@ -247,16 +235,13 @@ add_task(async function test_go_back() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.tabhistory": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.tabhistory": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.urlbar": { "example:tagged": 1 },
     }
   );
@@ -269,18 +254,74 @@ add_task(async function test_go_back() {
 
   await assertSearchSourcesTelemetry(
     {
-      "example.in-content:sap:ff": 2,
       "other-Example.urlbar": 1,
     },
     {
       "browser.search.content.urlbar": { "example:tagged:ff": 1 },
       "browser.search.content.tabhistory": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 2 },
       "browser.search.withads.urlbar": { "example:tagged": 1 },
       "browser.search.withads.tabhistory": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 2 },
       "browser.search.adclicks.urlbar": { "example:tagged": 1 },
       "browser.search.adclicks.tabhistory": { "example:tagged": 1 },
     }
   );
+});
+
+// Conduct a search from the Urlbar with showSearchTerms enabled.
+add_task(async function test_fresh_search_with_urlbar_persisted() {
+  searchCounts.clear();
+  Services.telemetry.clearScalars();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
+  });
+
+  // Load a SERP once in order to show the search term in the Urlbar.
+  await loadSearchPage();
+  await assertSearchSourcesTelemetry(
+    {
+      "other-Example.urlbar": 1,
+    },
+    {
+      "browser.search.content.urlbar": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar": { "example:tagged": 1 },
+    }
+  );
+
+  // Do another search from the context of the default SERP.
+  await loadSearchPage();
+  await assertSearchSourcesTelemetry(
+    {
+      "other-Example.urlbar": 1,
+      "other-Example.urlbar-persisted": 1,
+    },
+    {
+      "browser.search.content.urlbar": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar": { "example:tagged": 1 },
+      "browser.search.content.urlbar_persisted": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar_persisted": { "example:tagged": 1 },
+    }
+  );
+
+  // Click on an ad.
+  let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    content.document.getElementById("ad1").click();
+  });
+  await pageLoadPromise;
+  await assertSearchSourcesTelemetry(
+    {
+      "other-Example.urlbar": 1,
+      "other-Example.urlbar-persisted": 1,
+    },
+    {
+      "browser.search.content.urlbar": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar": { "example:tagged": 1 },
+      "browser.search.content.urlbar_persisted": { "example:tagged:ff": 1 },
+      "browser.search.withads.urlbar_persisted": { "example:tagged": 1 },
+      "browser.search.adclicks.urlbar_persisted": { "example:tagged": 1 },
+    }
+  );
+
+  await SpecialPowers.popPrefEnv();
 });

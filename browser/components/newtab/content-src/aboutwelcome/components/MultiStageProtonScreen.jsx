@@ -6,8 +6,13 @@ import React, { useEffect, useState } from "react";
 import { Localized } from "./MSLocalized";
 import { Colorways } from "./MRColorways";
 import { MobileDownloads } from "./MobileDownloads";
+import { MultiSelect } from "./MultiSelect";
 import { Themes } from "./Themes";
-import { SecondaryCTA, StepsIndicator } from "./MultiStageAboutWelcome";
+import {
+  OnboardingVideo,
+  SecondaryCTA,
+  StepsIndicator,
+} from "./MultiStageAboutWelcome";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { CTAParagraph } from "./CTAParagraph";
 import { HeroImage } from "./HeroImage";
@@ -35,6 +40,8 @@ export const MultiStageProtonScreen = props => {
       id={props.id}
       order={props.order}
       activeTheme={props.activeTheme}
+      activeMultiSelect={props.activeMultiSelect}
+      setActiveMultiSelect={props.setActiveMultiSelect}
       totalNumberOfScreens={props.totalNumberOfScreens}
       handleAction={props.handleAction}
       isFirstCenteredScreen={props.isFirstCenteredScreen}
@@ -110,9 +117,13 @@ export class ProtonScreen extends React.PureComponent {
   getScreenClassName(
     isFirstCenteredScreen,
     isLastCenteredScreen,
-    includeNoodles
+    includeNoodles,
+    isVideoOnboarding
   ) {
     const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
+
+    if (isVideoOnboarding) return "with-video";
+
     return `${isFirstCenteredScreen ? `dialog-initial` : ``} ${
       isLastCenteredScreen ? `dialog-last` : ``
     } ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
@@ -187,6 +198,16 @@ export class ProtonScreen extends React.PureComponent {
             handleAction={this.props.handleAction}
           />
         ) : null}
+        {content.tiles &&
+        content.tiles.type === "multiselect" &&
+        content.tiles.data ? (
+          <MultiSelect
+            content={content}
+            activeMultiSelect={this.props.activeMultiSelect}
+            setActiveMultiSelect={this.props.setActiveMultiSelect}
+            handleAction={this.props.handleAction}
+          />
+        ) : null}
       </React.Fragment>
     );
   }
@@ -240,6 +261,13 @@ export class ProtonScreen extends React.PureComponent {
             : {}
         }
       >
+        {content.image_alt_text ? (
+          <div
+            className="sr-only image-alt"
+            role="img"
+            data-l10n-id={content.image_alt_text.string_id}
+          />
+        ) : null}
         {content.hero_image ? (
           <HeroImage url={content.hero_image.url} />
         ) : (
@@ -274,7 +302,9 @@ export class ProtonScreen extends React.PureComponent {
     // The default screen position is "center"
     const isCenterPosition = content.position === "center" || !content.position;
     const hideStepsIndicator =
-      autoAdvance || (isFirstCenteredScreen && isLastCenteredScreen);
+      autoAdvance ||
+      content?.video_container ||
+      (isFirstCenteredScreen && isLastCenteredScreen);
     const textColorClass = content.text_color
       ? `${content.text_color}-text`
       : "";
@@ -284,7 +314,8 @@ export class ProtonScreen extends React.PureComponent {
       ? this.getScreenClassName(
           isFirstCenteredScreen,
           isLastCenteredScreen,
-          includeNoodles
+          includeNoodles,
+          content?.video_container
         )
       : "";
 
@@ -294,7 +325,7 @@ export class ProtonScreen extends React.PureComponent {
       <main
         className={`screen ${this.props.id ||
           ""} ${screenClassName} ${textColorClass}`}
-        role="dialog"
+        role="alertdialog"
         pos={content.position || "center"}
         tabIndex="-1"
         aria-labelledby="mainContentHeader"
@@ -352,6 +383,12 @@ export class ProtonScreen extends React.PureComponent {
                   />
                 ) : null}
               </div>
+              {content.video_container ? (
+                <OnboardingVideo
+                  content={content.video_container}
+                  handleAction={this.props.handleAction}
+                />
+              ) : null}
               {this.renderContentTiles()}
               {this.renderLanguageSwitcher()}
               <ProtonScreenActionButtons

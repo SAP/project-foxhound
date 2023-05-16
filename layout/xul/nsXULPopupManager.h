@@ -229,8 +229,9 @@ class nsMenuChainItem {
   // The last seen position of the anchor, relative to the screen.
   nsRect mCurrentRect;
 
-  nsMenuChainItem* mParent;
-  nsMenuChainItem* mChild;
+  mozilla::UniquePtr<nsMenuChainItem> mParent;
+  // Back pointer, safe because mChild keeps us alive.
+  nsMenuChainItem* mChild = nullptr;
 
  public:
   nsMenuChainItem(nsMenuPopupFrame* aFrame, bool aNoAutoHide, bool aIsContext,
@@ -241,9 +242,7 @@ class nsMenuChainItem {
         mIsContext(aIsContext),
         mOnMenuBar(false),
         mIgnoreKeys(eIgnoreKeys_False),
-        mFollowAnchor(false),
-        mParent(nullptr),
-        mChild(nullptr) {
+        mFollowAnchor(false) {
     NS_ASSERTION(aFrame, "null frame passed to nsMenuChainItem constructor");
     MOZ_COUNT_CTOR(nsMenuChainItem);
   }
@@ -261,7 +260,7 @@ class nsMenuChainItem {
   void SetIgnoreKeys(nsIgnoreKeys aIgnoreKeys) { mIgnoreKeys = aIgnoreKeys; }
   bool IsOnMenuBar() { return mOnMenuBar; }
   void SetOnMenuBar(bool aOnMenuBar) { mOnMenuBar = aOnMenuBar; }
-  nsMenuChainItem* GetParent() { return mParent; }
+  nsMenuChainItem* GetParent() { return mParent.get(); }
   nsMenuChainItem* GetChild() { return mChild; }
   bool FollowsAnchor() { return mFollowAnchor; }
   void UpdateFollowAnchor();
@@ -269,13 +268,9 @@ class nsMenuChainItem {
 
   // set the parent of this item to aParent, also changing the parent
   // to have this as a child.
-  void SetParent(nsMenuChainItem* aParent);
-
-  // Removes an item from the chain. The root pointer must be supplied in case
-  // the item is the first item in the chain in which case the pointer will be
-  // set to the next item, or null if there isn't another item. After detaching,
-  // this item will not have a parent or a child.
-  void Detach(nsMenuChainItem** aRoot);
+  void SetParent(mozilla::UniquePtr<nsMenuChainItem> aParent);
+  // Removes the parent pointer and returns it.
+  mozilla::UniquePtr<nsMenuChainItem> Detach();
 };
 
 // this class is used for dispatching popuphiding events asynchronously.
@@ -760,6 +755,9 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   // return the topmost menu, skipping over invisible popups
   nsMenuChainItem* GetTopVisibleMenu();
 
+  // Removes the chain item from the chain and deletes it.
+  void RemoveMenuChainItem(nsMenuChainItem*);
+
   // Hide all of the visible popups from the given list. This function can
   // cause style changes and frame destruction.
   void HidePopupsInList(const nsTArray<nsMenuPopupFrame*>& aFrames);
@@ -873,6 +871,9 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   bool IsChildOfDocShell(mozilla::dom::Document* aDoc,
                          nsIDocShellTreeItem* aExpected);
 
+  // Finds a chain item in mPopups.
+  nsMenuChainItem* FindPopup(nsIContent* aPopup) const;
+
   // the document the key event listener is attached to
   nsCOMPtr<mozilla::dom::EventTarget> mKeyListener;
 
@@ -882,8 +883,9 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   // set to the currently active menu bar, if any
   nsMenuBarFrame* mActiveMenuBar;
 
-  // linked list of normal menus and panels.
-  nsMenuChainItem* mPopups;
+  // linked list of normal menus and panels. mPopups points to the innermost
+  // popup, which keeps alive all their parents.
+  mozilla::UniquePtr<nsMenuChainItem> mPopups;
 
   // timer used for HidePopupAfterDelay
   nsCOMPtr<nsITimer> mCloseTimer;

@@ -1480,7 +1480,7 @@
   operands:
     object: Object
   arguments:
-    name: PropertyName*
+    name: PropertyKey
   result_type: Value
   # Bails when non-native or accessor properties are encountered, so we can't
   # DCE this instruction.
@@ -1497,6 +1497,7 @@
   # Bails when non-native or accessor properties are encountered, so we can't
   # DCE this instruction.
   guard: true
+  folds_to: custom
   congruent_to: if_operands_equal
   alias_set: custom
   possibly_calls: true
@@ -2531,6 +2532,14 @@
   alias_set: custom
   possibly_calls: true
 
+- name: SetObjectSize
+  operands:
+    set: Object
+  result_type: Int32
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+
 - name: MapObjectHasNonBigInt
   operands:
     map: Object
@@ -2610,6 +2619,14 @@
   congruent_to: if_operands_equal
   alias_set: custom
   possibly_calls: true
+
+- name: MapObjectSize
+  operands:
+    map: Object
+  result_type: Int32
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
 
 - name: WasmNeg
   gen_boilerplate: false
@@ -2834,3 +2851,11 @@
 
 - name: WasmStoreObjectDataRefField
   gen_boilerplate: false
+
+#ifdef FUZZING_JS_FUZZILLI
+- name: FuzzilliHash
+  gen_boilerplate: false
+
+- name: FuzzilliHashStore
+  gen_boilerplate: false
+#endif

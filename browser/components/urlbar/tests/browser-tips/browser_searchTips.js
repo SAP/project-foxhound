@@ -35,6 +35,14 @@ const GOOGLE_DOMAINS = [
   "www.google.co.nz",
 ];
 
+// In order for the persist tip to appear, the scheme of the
+// search engine has to be the same as the scheme of the SERP url.
+// withDNSRedirect() loads an http: url while the searchform
+// of the default engine uses https. To enable the search term
+// to be shown, we use the Example engine because it doesn't require
+// a redirect.
+const SEARCH_SERP_URL = "https://example.com/?q=chocolate";
+
 add_setup(async function() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
@@ -43,6 +51,10 @@ add_setup(async function() {
     set: [
       [
         `browser.urlbar.tipShownCount.${UrlbarProviderSearchTips.TIP_TYPE.ONBOARD}`,
+        0,
+      ],
+      [
+        `browser.urlbar.tipShownCount.${UrlbarProviderSearchTips.TIP_TYPE.PERSIST}`,
         0,
       ],
       [
@@ -75,6 +87,9 @@ add_setup(async function() {
   let defaultEngine = await Services.search.getDefault();
   let defaultEngineName = defaultEngine.name;
   Assert.equal(defaultEngineName, "Google", "Default engine should be Google.");
+
+  // Add a mock engine so we don't hit the network loading the SERP.
+  await SearchTestUtils.installSearchExtension();
 
   registerCleanupFunction(async () => {
     let age2 = await ProfileAge();
@@ -278,6 +293,96 @@ add_task(async function nonEnginePage() {
   );
 });
 
+// The persist tip should show on default SERPs.
+// This test also has an implied check that the SERP
+// is receiving an originalURI.
+// This is because the page the test is attempting to load
+// will differ from the page that's actually loaded due to
+// the DNS redirect.
+add_task(async function persistTipOnDefault() {
+  await setDefaultEngine("Example");
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
+  });
+  await checkTab(
+    window,
+    SEARCH_SERP_URL,
+    UrlbarProviderSearchTips.TIP_TYPE.PERSIST
+  );
+  await SpecialPowers.popPrefEnv();
+});
+
+// The persist tip should not show on non-default SERPs.
+add_task(async function noPersistTipOnNonDefault() {
+  await setDefaultEngine("DuckDuckGo");
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
+  });
+  await checkTab(
+    window,
+    SEARCH_SERP_URL,
+    UrlbarProviderSearchTips.TIP_TYPE.NONE
+  );
+  await SpecialPowers.popPrefEnv();
+});
+
+// The persist tip should only show up once a session.
+add_task(async function persistTipOnceOnDefaultSerp() {
+  await setDefaultEngine("Example");
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
+  });
+  await checkTab(
+    window,
+    SEARCH_SERP_URL,
+    UrlbarProviderSearchTips.TIP_TYPE.PERSIST
+  );
+  await checkTab(
+    window,
+    SEARCH_SERP_URL,
+    UrlbarProviderSearchTips.TIP_TYPE.NONE
+  );
+  await SpecialPowers.popPrefEnv();
+});
+
+// The persist tip should not show in a window
+// with a selected tab containing a non-SERP url.
+add_task(async function noPersistTipInWindowWithNonSerpTab() {
+  await setDefaultEngine("Example");
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
+  });
+
+  // Create a new window for the SERP to be loaded into.
+  let newWindow = await BrowserTestUtils.openNewBrowserWindow();
+
+  // Focus on the original window.
+  window.focus();
+  await waitForBrowserWindowActive(window);
+
+  // Load the SERP in the new window to initiate a background load.
+  let browserLoadedPromise = BrowserTestUtils.browserLoaded(
+    newWindow.gBrowser.selectedBrowser,
+    false,
+    SEARCH_SERP_URL
+  );
+  BrowserTestUtils.loadURI(newWindow.gBrowser.selectedBrowser, SEARCH_SERP_URL);
+  await browserLoadedPromise;
+
+  // Wait longer than the persist tip delay to check that the search tip
+  // doesn't show on the non-SERP tab.
+  await new Promise(resolve =>
+    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+    setTimeout(resolve, UrlbarProviderSearchTips.SHOW_PERSIST_TIP_DELAY_MS * 2)
+  );
+  Assert.ok(!window.gURLBar.view.isOpen);
+
+  // Clean up.
+  await BrowserTestUtils.closeWindow(newWindow);
+  await SpecialPowers.popPrefEnv();
+  resetSearchTipsProvider();
+});
+
 // Tips should be shown at most once per session regardless of their type.
 add_task(async function oncePerSession() {
   await setDefaultEngine("Google");
@@ -296,6 +401,12 @@ add_task(async function oncePerSession() {
   await withDNSRedirect("www.google.com", "/", async url => {
     await checkTab(window, url, UrlbarProviderSearchTips.TIP_TYPE.NONE);
   });
+  await setDefaultEngine("Example");
+  await checkTab(
+    window,
+    SEARCH_SERP_URL,
+    UrlbarProviderSearchTips.TIP_TYPE.NONE
+  );
 });
 
 // The one-off search buttons should not be shown when
@@ -307,3 +418,19 @@ add_task(async function shortcut_buttons_with_tip() {
     UrlbarProviderSearchTips.TIP_TYPE.ONBOARD
   );
 });
+
+function waitForBrowserWindowActive(win) {
+  return new Promise(resolve => {
+    if (Services.focus.activeWindow == win) {
+      resolve();
+    } else {
+      win.addEventListener(
+        "activate",
+        () => {
+          resolve();
+        },
+        { once: true }
+      );
+    }
+  });
+}

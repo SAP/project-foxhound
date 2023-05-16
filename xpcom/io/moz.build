@@ -96,6 +96,7 @@ EXPORTS += [
 EXPORTS.mozilla += [
     "Base64.h",
     "FilePreferences.h",
+    "FixedBufferOutputStream.h",
     "InputStreamLengthHelper.h",
     "InputStreamLengthWrapper.h",
     "NonBlockingAsyncInputStream.h",
@@ -103,7 +104,10 @@ EXPORTS.mozilla += [
     "SnappyCompressOutputStream.h",
     "SnappyFrameUtils.h",
     "SnappyUncompressInputStream.h",
+    "StreamBufferSink.h",
+    "StreamBufferSinkImpl.h",
     "StreamBufferSource.h",
+    "StreamBufferSourceImpl.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -111,6 +115,7 @@ UNIFIED_SOURCES += [
     "crc32c.c",
     "FileDescriptorFile.cpp",
     "FilePreferences.cpp",
+    "FixedBufferOutputStream.cpp",
     "InputStreamLengthHelper.cpp",
     "InputStreamLengthWrapper.cpp",
     "NonBlockingAsyncInputStream.cpp",

@@ -12,11 +12,9 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-});
 XPCOMUtils.defineLazyScriptGetter(
   this,
   "PlacesTreeView",
@@ -37,16 +35,6 @@ function init() {
 
   document.getElementById("bookmarks-view").place =
     "place:type=" + Ci.nsINavHistoryQueryOptions.RESULTS_AS_ROOTS_QUERY;
-
-  // Needed due to Bug 1596852.
-  // Should be removed once this bug is resolved.
-  window.addEventListener(
-    "pageshow",
-    e => {
-      window.windowGlobalChild.getActor("LightweightTheme").handleEvent(e);
-    },
-    { once: true }
-  );
 }
 
 function searchBookmarks(aSearchString) {

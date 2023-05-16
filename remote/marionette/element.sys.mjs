@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ContentDOMReference: "resource://gre/modules/ContentDOMReference.sys.mjs",
+
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
   atom: "chrome://remote/content/marionette/atom.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
@@ -14,15 +14,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ContentDOMReference: "resource://gre/modules/ContentDOMReference.jsm",
-});
-
 const ORDERED_NODE_ITERATOR_TYPE = 5;
 const FIRST_ORDERED_NODE_TYPE = 9;
 
 const ELEMENT_NODE = 1;
-const DOCUMENT_NODE = 9;
 
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
@@ -743,6 +738,7 @@ element.isStale = function(el, win = undefined) {
   if (typeof win == "undefined") {
     win = el.ownerGlobal;
   }
+
   if (el === null || !el.ownerGlobal || el.ownerDocument !== win.document) {
     return true;
   }
@@ -1309,7 +1305,7 @@ element.isDOMElement = function(obj) {
     typeof obj == "object" &&
     obj !== null &&
     "nodeType" in obj &&
-    [ELEMENT_NODE, DOCUMENT_NODE].includes(obj.nodeType) &&
+    obj.nodeType == ELEMENT_NODE &&
     !element.isXULElement(obj)
   );
 };

@@ -12,7 +12,9 @@ DIRS += [
 ]
 
 EXTRA_JS_MODULES += [
+    "MerinoClient.sys.mjs",
     "QuickActionsLoaderDefault.sys.mjs",
+    "QuickSuggest.sys.mjs",
     "UrlbarController.sys.mjs",
     "UrlbarEventBufferer.sys.mjs",
     "UrlbarInput.sys.mjs",
@@ -42,7 +44,6 @@ EXTRA_JS_MODULES += [
     "UrlbarProviderTokenAliasEngines.sys.mjs",
     "UrlbarProviderTopSites.sys.mjs",
     "UrlbarProviderUnitConversion.sys.mjs",
-    "UrlbarQuickSuggest.sys.mjs",
     "UrlbarResult.sys.mjs",
     "UrlbarSearchOneOffs.sys.mjs",
     "UrlbarSearchUtils.sys.mjs",
@@ -52,7 +53,16 @@ EXTRA_JS_MODULES += [
     "UrlbarView.sys.mjs",
 ]
 
+EXTRA_JS_MODULES["urlbar/private"] += [
+    "private/BaseFeature.sys.mjs",
+    "private/BlockedSuggestions.sys.mjs",
+    "private/ImpressionCaps.sys.mjs",
+    "private/RemoteSettingsClient.sys.mjs",
+    "private/Weather.sys.mjs",
+]
+
 TESTING_JS_MODULES += [
+    "tests/quicksuggest/MerinoTestUtils.sys.mjs",
     "tests/quicksuggest/QuickSuggestTestUtils.sys.mjs",
     "tests/UrlbarTestUtils.sys.mjs",
 ]

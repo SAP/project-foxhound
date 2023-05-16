@@ -30,7 +30,9 @@ const promiseDisableUnifiedExtensions = async () => {
 };
 
 const getListView = win => {
-  return PanelMultiView.getViewNode(win.document, "unified-extensions-view");
+  const { panel } = win.gUnifiedExtensions;
+  ok(panel, "expected panel to be created");
+  return panel.querySelector("#unified-extensions-view");
 };
 
 const openExtensionsPanel = async win => {
@@ -126,7 +128,7 @@ const createExtensions = (
     ExtensionTestUtils.loadExtension({
       manifest: {
         name: "default-extension-name",
-        applications: {
+        browser_specific_settings: {
           gecko: { id: `@ext-${extensionsCreated++}` },
         },
         ...manifestData,

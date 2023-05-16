@@ -1169,6 +1169,11 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
     responseHead = &cleanedUpResponseHead;
   }
 
+  if (chan && chan->ChannelBlockedByOpaqueResponse() &&
+      chan->CachedOpaqueResponseBlockingPref()) {
+    responseHead->ClearHeaders();
+  }
+
   chan->GetIsResolvedByTRR(&args.isResolvedByTRR());
   chan->GetAllRedirectsSameOrigin(&args.allRedirectsSameOrigin());
   chan->GetCrossOriginOpenerPolicy(&args.openerPolicy());
@@ -1231,14 +1236,16 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
 
   if (!args.timing().domainLookupEnd().IsNull() &&
       !args.timing().connectStart().IsNull()) {
-    nsCString protocolVersion;
+    nsAutoCString protocolVersion;
     mChannel->GetProtocolVersion(protocolVersion);
     uint32_t classOfServiceFlags = 0;
     mChannel->GetClassFlags(&classOfServiceFlags);
+    nsAutoCString cosString;
+    ClassOfService::ToString(classOfServiceFlags, cosString);
+    nsAutoCString key(
+        nsPrintfCString("%s_%s", protocolVersion.get(), cosString.get()));
     Telemetry::AccumulateTimeDelta(
-        Telemetry::NETWORK_DNS_END_TO_CONNECT_START_MS,
-        protocolVersion + "_"_ns +
-            ClassOfService::ToString(classOfServiceFlags),
+        Telemetry::NETWORK_DNS_END_TO_CONNECT_START_EXP_MS, key,
         args.timing().domainLookupEnd(), args.timing().connectStart());
   }
 

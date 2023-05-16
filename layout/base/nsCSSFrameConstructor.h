@@ -103,8 +103,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
 
   nsIFrame* ConstructRootFrame();
 
-  void ReconstructDocElementHierarchy(InsertionKind);
-
  private:
   enum Operation { CONTENTAPPEND, CONTENTINSERT };
 
@@ -298,6 +296,12 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   nsIFrame* CreateContinuingFrame(nsIFrame* aFrame,
                                   nsContainerFrame* aParentFrame,
                                   bool aIsFluid = true);
+
+  void SetNextPageContentFramePageName(const nsAtom* aAtom) {
+    MOZ_ASSERT(!mNextPageContentFramePageName,
+               "PageContentFrame page name was already set");
+    mNextPageContentFramePageName = aAtom;
+  }
 
   // Copy over fixed frames from aParentFrame's prev-in-flow
   nsresult ReplicateFixedFrames(nsPageContentFrame* aParentFrame);
@@ -1117,7 +1121,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
           mSuppressWhiteSpaceOptimizations(aSuppressWhiteSpaceOptimizations),
           mIsText(false),
           mIsGeneratedContent(false),
-          mIsRootPopupgroup(false),
           mIsAllInline(false),
           mIsBlock(false),
           mIsPopup(false),
@@ -1178,8 +1181,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     // Whether this is a generated content container.
     // If it is, mContent is a strong pointer.
     bool mIsGeneratedContent : 1;
-    // Whether this is an item for the root popupgroup.
-    bool mIsRootPopupgroup : 1;
     // Whether construction from this item will create only frames that are
     // IsInlineOutside() in the principal child list.  This is not precise, but
     // conservative: if true the frames will really be inline, whereas if false
@@ -1230,7 +1231,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     explicit AutoFrameConstructionItem(nsCSSFrameConstructor* aFCtor,
                                        Args&&... args)
         : mFCtor(aFCtor),
-          mItem(new (aFCtor)
+          mItem(new(aFCtor)
                     FrameConstructionItem(std::forward<Args>(args)...)) {
       MOZ_ASSERT(mFCtor);
     }
@@ -2132,6 +2133,13 @@ class nsCSSFrameConstructor final : public nsFrameManager {
 
   // FrameConstructionItem arena + list of freed items available for re-use.
   mozilla::ArenaAllocator<4096, 8> mFCItemPool;
+
+  // This indicates what page name to use for the next nsPageContentFrame.
+  // Set when CSS named pages cause a breakpoint.
+  // This does not apply to the first page content frame, which has its name
+  // set by nsPageContentFrame::EnsurePageName() during first reflow.
+  RefPtr<const nsAtom> mNextPageContentFramePageName;
+
   struct FreeFCItemLink {
     FreeFCItemLink* mNext;
   };
@@ -2144,7 +2152,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   uint16_t mCurrentDepth;
   bool mQuotesDirty : 1;
   bool mCountersDirty : 1;
-  bool mIsDestroyingFrameTree : 1;
   bool mAlwaysCreateFramesForIgnorableWhitespace : 1;
 
   // The layout state from our history entry (to restore scroll positions and

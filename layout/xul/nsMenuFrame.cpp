@@ -199,7 +199,7 @@ void nsMenuFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 }
 
 const nsFrameList& nsMenuFrame::GetChildList(ChildListID aListID) const {
-  if (kPopupList == aListID) {
+  if (FrameChildListID::Popup == aListID) {
     nsFrameList* list = GetPopupList();
     return list ? *list : nsFrameList::EmptyList();
   }
@@ -210,7 +210,7 @@ void nsMenuFrame::GetChildLists(nsTArray<ChildList>* aLists) const {
   nsBoxFrame::GetChildLists(aLists);
   nsFrameList* list = GetPopupList();
   if (list) {
-    list->AppendIfNonempty(aLists, kPopupList);
+    list->AppendIfNonempty(aLists, FrameChildListID::Popup);
   }
 }
 
@@ -255,8 +255,9 @@ void nsMenuFrame::SetPopupFrame(nsFrameList& aFrameList) {
 }
 
 void nsMenuFrame::SetInitialChildList(ChildListID aListID,
-                                      nsFrameList& aChildList) {
-  if (aListID == kPrincipalList || aListID == kPopupList) {
+                                      nsFrameList&& aChildList) {
+  if (aListID == FrameChildListID::Principal ||
+      aListID == FrameChildListID::Popup) {
     NS_ASSERTION(!HasPopup(), "SetInitialChildList called twice?");
 #ifdef DEBUG
     for (nsIFrame* f : aChildList) {
@@ -265,7 +266,7 @@ void nsMenuFrame::SetInitialChildList(ChildListID aListID,
 #endif
     SetPopupFrame(aChildList);
   }
-  nsBoxFrame::SetInitialChildList(aListID, aChildList);
+  nsBoxFrame::SetInitialChildList(aListID, std::move(aChildList));
 }
 
 void nsMenuFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -1004,8 +1005,9 @@ void nsMenuFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 
 void nsMenuFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                const nsLineList::iterator* aPrevFrameLine,
-                               nsFrameList& aFrameList) {
-  if (!HasPopup() && (aListID == kPrincipalList || aListID == kPopupList)) {
+                               nsFrameList&& aFrameList) {
+  if (!HasPopup() && (aListID == FrameChildListID::Principal ||
+                      aListID == FrameChildListID::Popup)) {
     SetPopupFrame(aFrameList);
     if (HasPopup()) {
       PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
@@ -1019,11 +1021,13 @@ void nsMenuFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
     aPrevFrame = nullptr;
   }
 
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
+  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                           std::move(aFrameList));
 }
 
-void nsMenuFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
-  if (!HasPopup() && (aListID == kPrincipalList || aListID == kPopupList)) {
+void nsMenuFrame::AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) {
+  if (!HasPopup() && (aListID == FrameChildListID::Principal ||
+                      aListID == FrameChildListID::Popup)) {
     SetPopupFrame(aFrameList);
     if (HasPopup()) {
       PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
@@ -1033,7 +1037,7 @@ void nsMenuFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
 
   if (aFrameList.IsEmpty()) return;
 
-  nsBoxFrame::AppendFrames(aListID, aFrameList);
+  nsBoxFrame::AppendFrames(aListID, std::move(aFrameList));
 }
 
 bool nsMenuFrame::SizeToPopup(nsBoxLayoutState& aState, nsSize& aSize) {

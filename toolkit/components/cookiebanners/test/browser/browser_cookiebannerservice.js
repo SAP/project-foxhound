@@ -301,7 +301,13 @@ add_task(async function test_insertAndGetRule() {
   );
 
   info("Adding a click rule to the rule for example.com.");
-  rule.addClickRule("div#presence", "div#hide", "div#optOut", "div#optIn");
+  rule.addClickRule(
+    "div#presence",
+    false,
+    "div#hide",
+    "div#optOut",
+    "div#optIn"
+  );
 
   is(rule.cookiesOptOut.length, 2, "Should have two opt-out cookies.");
   is(rule.cookiesOptIn.length, 1, "Should have one opt-in cookie.");
@@ -338,7 +344,7 @@ add_task(async function test_insertAndGetRule() {
   );
 
   info("Adding a click rule to the rule for example.org.");
-  rule2.addClickRule("div#presence", null, null, "div#optIn");
+  rule2.addClickRule("div#presence", false, null, null, "div#optIn");
 
   is(
     Services.cookieBanners.rules.length,
@@ -670,7 +676,7 @@ add_task(async function test_globalRules() {
     0,
     0
   );
-  rule.addClickRule("#cookieBannerExample", "#btnOptOut", "#btnOptIn");
+  rule.addClickRule("#cookieBannerExample", false, "#btnOptOut", "#btnOptIn");
   Services.cookieBanners.insertRule(rule);
 
   info(
@@ -695,7 +701,12 @@ add_task(async function test_globalRules() {
     0,
     0
   );
-  ruleGlobalA.addClickRule("#globalCookieBanner", "#btnOptOut", "#btnOptIn");
+  ruleGlobalA.addClickRule(
+    "#globalCookieBanner",
+    false,
+    "#btnOptOut",
+    "#btnOptIn"
+  );
   Services.cookieBanners.insertRule(ruleGlobalA);
 
   info("Insert a second global rule");
@@ -704,7 +715,12 @@ add_task(async function test_globalRules() {
   );
   ruleGlobalB.id = genUUID();
   ruleGlobalB.domain = "*";
-  ruleGlobalB.addClickRule("#globalCookieBannerB", "#btnOptOutB", "#btnOptIn");
+  ruleGlobalB.addClickRule(
+    "#globalCookieBannerB",
+    false,
+    "#btnOptOutB",
+    "#btnOptIn"
+  );
   Services.cookieBanners.insertRule(ruleGlobalB);
 
   is(
@@ -785,7 +801,7 @@ add_task(async function test_globalRules() {
   );
 });
 
-add_task(async function test_DomainPreference() {
+add_task(async function test_domain_preference() {
   info("Enabling cookie banner service with MODE_REJECT");
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -871,7 +887,7 @@ add_task(async function test_DomainPreference() {
   );
 });
 
-add_task(async function test_DomainPreference_dont_override_disable_pref() {
+add_task(async function test_domain_preference_dont_override_disable_pref() {
   info("Enabling cookie banner service with MODE_REJECT");
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -916,4 +932,55 @@ add_task(async function test_DomainPreference_dont_override_disable_pref() {
     ],
   });
   Services.cookieBanners.removeAllDomainPrefs(false);
+});
+
+/**
+ * Test that domain preference is properly cleared when private browsing session
+ * ends.
+ */
+add_task(async function test_domain_preference_cleared_PBM_ends() {
+  info("Enabling cookie banner service with MODE_REJECT");
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["cookiebanners.service.mode", Ci.nsICookieBannerService.MODE_REJECT],
+    ],
+  });
+
+  info("Adding a domain preference for example.com in PBM");
+  let uri = Services.io.newURI("http://example.com");
+
+  info("Open a private browsing window.");
+  let PBMWin = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+
+  // Set a domain preference for PBM.
+  Services.cookieBanners.setDomainPref(
+    uri,
+    Ci.nsICookieBannerService.MODE_DISABLED,
+    true
+  );
+
+  info("Verifying if the cookie banner domain pref is set for PBM.");
+  is(
+    Services.cookieBanners.getDomainPref(uri, true),
+    Ci.nsICookieBannerService.MODE_DISABLED,
+    "The domain pref is properly set for PBM."
+  );
+
+  info("Trigger an ending of a private browsing window session");
+  let PBMSessionEndsObserved = TestUtils.topicObserved(
+    "last-pb-context-exited"
+  );
+
+  // Close the PBM window and wait until it finishes.
+  await BrowserTestUtils.closeWindow(PBMWin);
+  await PBMSessionEndsObserved;
+
+  info("Verify if the private domain pref is cleared.");
+  is(
+    Services.cookieBanners.getDomainPref(uri, true),
+    Ci.nsICookieBannerService.MODE_UNSET,
+    "The domain pref is properly set for PBM."
+  );
 });

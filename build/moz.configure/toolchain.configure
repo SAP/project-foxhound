@@ -1194,6 +1194,10 @@ def compiler(
         if info.type == "clang" and language == "C++" and host_or_target.os == "OSX":
             flags.append("-stdlib=libc++")
 
+        # Suppress Clang Argument Warnings
+        if info.type in ("clang", "clang-cl"):
+            flags.append("-Qunused-arguments")
+
         # Check that the additional flags we got are enough to not require any
         # more flags. If we get an exception, just ignore it; it's liable to be
         # invalid command-line flags, which means the compiler we're checking
@@ -1481,17 +1485,20 @@ set_config("CXX_IS_ICECREAM", cxx_is_icecream)
 # - the linker is picked via the LINKER environment variable per windows.configure,
 #   but ought to be llvm-lld in any case.
 # For macOS:
-# - the linker is lld on local developer builds if the clang used is >= 13 (per LLVM
+# - the linker is lld if the clang used is >= 15 (per LLVM version, not Xcode version).
+# - the linker is also lld on local developer builds if the clang used is >= 13 (per LLVM
 #   version, not Xcode version)
 # - otherwise the linker is ld64, either from XCode on macOS, or from cctools-ports when
 #   cross-compiling.
 # For other OSes:
 # - on local developer builds: lld is used if present. Otherwise gold is used if present
 #   otherwise, BFD ld is used.
-# - on release/official builds: whatever "ld" resolves to is used, except on Android x86/x86_64
-#   where BFD ld is used. Usually, "ld" resolves to BFD ld, except with the Android NDK,
-#   where it resolves to gold. lld is not used by default on Linux and Android because
-#   it introduces layout changes that prevent elfhack from working. See e.g.
+# - on release/official builds: whatever the compiler uses by default, except on Android
+#   (see enable_linker_default below). Usually what the compiler uses by default is BFD
+#   ld, except with the Android NDK compiler, where the default varies depending on the
+#   NDK version. The default also varies by platform and clang version.
+#   lld is not used by default on Linux and Android because it introduces layout changes
+#   that prevent elfhack from working. See e.g.
 #   https://bugzilla.mozilla.org/show_bug.cgi?id=1563654#c2.
 @depends(target)
 def is_linker_option_enabled(target):
@@ -1509,11 +1516,17 @@ def enable_gold(value):
 
 @depends(target, developer_options)
 def enable_linker_default(target, developer_options):
-    # x86-64 gold has bugs in how it lays out .note.* sections. See bug 1573820.
-    # x86-32 gold has a bug when assembly files are built. See bug 1651699.
-    # lld is faster, so prefer that for developer builds.
-    if target.os == "Android" and target.cpu in ("x86", "x86_64"):
-        return "lld" if developer_options else "bfd"
+    # Recent versions of clang default to lld when targetting Android, but we don't
+    # want that as the default for non developer builds (see above).
+    # So we want to force the default to whatever it was with older versions of clang,
+    # but with caveats/workarounds:
+    # - x86-64 gold has bugs in how it lays out .note.* sections. See bug 1573820.
+    # - x86-32 gold has a bug when assembly files are built. See bug 1651699.
+    # That leaves us with aarch64 and armv7, which respectively defaulted to
+    # bfd and gold.
+    # On developer builds, select_linker will pick lld if it's not the default.
+    if target.os == "Android" and not developer_options:
+        return "bfd" if target.cpu in ("x86", "x86_64", "aarch64") else "gold"
 
 
 option(
@@ -1627,10 +1640,12 @@ def select_linker(linker, c_compiler, developer_options, toolchain_flags, target
 
     if (
         linker is None
-        and developer_options
         and target.kernel == "Darwin"
         and c_compiler.type == "clang"
-        and c_compiler.version >= "13.0"
+        and (
+            (developer_options and c_compiler.version >= "13.0")
+            or c_compiler.version >= "15.0"
+        )
     ):
         result = try_linker("lld")
     elif (
@@ -1669,10 +1684,17 @@ set_config("LINKER_KIND", select_linker.KIND)
     target_multiarch_dir,
     android_platform,
     c_compiler,
+    developer_options,
 )
 @imports("os")
 def linker_ldflags(
-    linker, target, sysroot, multiarch_dir, android_platform, c_compiler
+    linker,
+    target,
+    sysroot,
+    multiarch_dir,
+    android_platform,
+    c_compiler,
+    developer_options,
 ):
     flags = list((linker and linker.LINKER_FLAG) or [])
     # rpath-link is irrelevant to wasm, see for more info https://github.com/emscripten-core/emscripten/issues/11076.
@@ -1697,6 +1719,13 @@ def linker_ldflags(
         flags.append("-Wl,--rpath-link={}/usr/lib".format(android_platform))
         flags.append("--sysroot")
         flags.append(android_platform)
+    if (
+        developer_options
+        and linker
+        and linker.KIND == "lld"
+        and target.kernel != "WINNT"
+    ):
+        flags.append("-Wl,-O0")
     return flags
 
 
@@ -1837,8 +1866,11 @@ set_config("MOZ_DEBUG_FLAGS", debug_flags)
 add_old_configure_assignment("MOZ_DEBUG_FLAGS", debug_flags)
 
 
-@depends(c_compiler)
-def color_cflags(info):
+@depends(c_compiler, host)
+@imports(
+    _from="mach.logging", _import="enable_blessed", _as="_enable_ansi_escape_codes"
+)
+def color_cflags(info, host):
     # We could test compiling with flags. By why incur the overhead when
     # color support should always be present in a specific toolchain
     # version?
@@ -1852,7 +1884,10 @@ def color_cflags(info):
     if info.type == "gcc":
         return "-fdiagnostics-color"
     elif info.type in ["clang", "clang-cl"]:
-        return "-fcolor-diagnostics"
+        if host.os == "WINNT" and _enable_ansi_escape_codes():
+            return "-fcolor-diagnostics -fansi-escape-codes"
+        else:
+            return "-fcolor-diagnostics"
     else:
         return ""
 

@@ -7,8 +7,8 @@
 /* import-globals-from aboutDialog-appUpdater.js */
 
 // Services = object with smart getters for common XPCOM services
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 if (AppConstants.MOZ_UPDATER) {
   Services.scriptloader.loadSubScript(
@@ -94,13 +94,10 @@ async function init(aEvent) {
     let channelLabel = document.getElementById("currentChannel");
     let currentChannelText = document.getElementById("currentChannelText");
     channelLabel.value = UpdateUtils.UpdateChannel;
-    let hasWinPackageId = false;
-    try {
-      hasWinPackageId = Services.sysinfo.getProperty("hasWinPackageId");
-    } catch (_ex) {
-      // The hasWinPackageId property doesn't exist; assume it should be false.
-    }
-    if (/^release($|\-)/.test(channelLabel.value) || hasWinPackageId) {
+    if (
+      /^release($|\-)/.test(channelLabel.value) ||
+      Services.sysinfo.getProperty("isPackagedApp")
+    ) {
       currentChannelText.hidden = true;
     }
   }

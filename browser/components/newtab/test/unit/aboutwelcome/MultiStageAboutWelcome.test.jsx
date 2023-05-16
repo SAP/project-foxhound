@@ -4,6 +4,7 @@ import {
   SecondaryCTA,
   StepsIndicator,
   WelcomeScreen,
+  OnboardingVideo,
 } from "content-src/aboutwelcome/components/MultiStageAboutWelcome";
 import { Themes } from "content-src/aboutwelcome/components/Themes";
 import React from "react";
@@ -156,6 +157,56 @@ describe("MultiStageAboutWelcome module", () => {
       clock.restore();
       finishStub.restore();
       telemetryStub.restore();
+    });
+
+    it("should send telemetry ping on collectSelect", () => {
+      const screens = [
+        {
+          id: "EASY_SETUP_TEST",
+          content: {
+            tiles: {
+              type: "multiselect",
+              data: [
+                {
+                  id: "checkbox-1",
+                  defaultValue: true,
+                },
+              ],
+            },
+            primary_button: {
+              label: "Test Button",
+              action: {
+                collectSelect: true,
+              },
+            },
+          },
+        },
+      ];
+      const EASY_SETUP_PROPS = {
+        screens,
+        message_id: "DEFAULT_ABOUTWELCOME",
+        startScreen: 0,
+      };
+      const stub = sinon.stub(AboutWelcomeUtils, "sendActionTelemetry");
+      let wrapper = mount(<MultiStageAboutWelcome {...EASY_SETUP_PROPS} />);
+      wrapper.update();
+
+      let welcomeScreenWrapper = wrapper.find(WelcomeScreen);
+      const btnPrimary = welcomeScreenWrapper.find(".primary");
+      btnPrimary.simulate("click");
+      assert.calledTwice(stub);
+      assert.equal(
+        stub.firstCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.equal(stub.firstCall.args[1], "primary_button");
+      assert.equal(
+        stub.lastCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.ok(stub.lastCall.args[1].includes("checkbox-1"));
+      assert.equal(stub.lastCall.args[2], "SELECT_CHECKBOX");
+      stub.restore();
     });
   });
 
@@ -385,6 +436,85 @@ describe("MultiStageAboutWelcome module", () => {
 
         assert.calledWith(AboutWelcomeUtils.handleUserAction, {
           type: "SHOW_MIGRATION_WIZARD",
+        });
+      });
+      it("should handle SHOW_MIGRATION_WIZARD INSIDE MULTI_ACTION", () => {
+        const MULTI_ACTION_SCREEN_PROPS = {
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              action: {
+                type: "MULTI_ACTION",
+                navigate: true,
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "SET_DEFAULT_BROWSER",
+                    },
+                    {
+                      type: "SHOW_MIGRATION_WIZARD",
+                      data: {},
+                    },
+                  ],
+                },
+              },
+              label: "test button",
+            },
+          },
+          navigate: sandbox.stub(),
+        };
+        const wrapper = mount(<WelcomeScreen {...MULTI_ACTION_SCREEN_PROPS} />);
+
+        wrapper.find(".primary").simulate("click");
+        assert.calledWith(AboutWelcomeUtils.handleUserAction, {
+          type: "MULTI_ACTION",
+          navigate: true,
+          data: {
+            actions: [
+              {
+                type: "PIN_FIREFOX_TO_TASKBAR",
+              },
+              {
+                type: "SET_DEFAULT_BROWSER",
+              },
+              {
+                type: "SHOW_MIGRATION_WIZARD",
+                data: {},
+              },
+            ],
+          },
+        });
+      });
+      it("should handle video_start action when video is played", () => {
+        SCREEN_PROPS = {
+          content: {
+            title: "Test title",
+            video_container: {
+              video_url: "test url",
+            },
+          },
+        };
+        const handleAction = sandbox.stub();
+        const wrapper = mount(
+          <OnboardingVideo handleAction={handleAction} {...SCREEN_PROPS} />
+        );
+        wrapper.find("video").simulate("play");
+        assert.calledWith(handleAction, {
+          currentTarget: { value: "video_start" },
+        });
+      });
+      it("should handle video_end action when video has completed playing", () => {
+        const handleAction = sandbox.stub();
+        const wrapper = mount(
+          <OnboardingVideo handleAction={handleAction} {...SCREEN_PROPS} />
+        );
+        wrapper.find("video").simulate("ended");
+        assert.calledWith(handleAction, {
+          currentTarget: { value: "video_end" },
         });
       });
     });

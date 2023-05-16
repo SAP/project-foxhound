@@ -4,9 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
@@ -14,9 +12,12 @@ const { RemoteSettings } = ChromeUtils.import(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   LocationHelper: "resource://gre/modules/LocationHelper.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -86,7 +87,7 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 const log = console.createInstance({
-  prefix: "Region.jsm",
+  prefix: "Region.sys.mjs",
   maxLogLevel: lazy.loggingEnabled ? "All" : "Warn",
 });
 
@@ -133,7 +134,7 @@ class RegionDetector {
   _retryCount = 0;
   // Let tests wait for init to complete.
   _initPromise = null;
-  // Topic for Observer events fired by Region.jsm.
+  // Topic for Observer events fired by Region.sys.mjs.
   REGION_TOPIC = "browser-region-updated";
   // Values for telemetry.
   TELEMETRY = {

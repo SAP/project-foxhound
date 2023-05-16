@@ -1117,7 +1117,7 @@ bool CanvasRenderingContext2D::ParseColor(const nsACString& aString,
   return true;
 }
 
-void CanvasRenderingContext2D::ResetBitmap() {
+void CanvasRenderingContext2D::ResetBitmap(bool aFreeBuffer) {
   if (mCanvasElement) {
     mCanvasElement->InvalidateCanvas();
   }
@@ -1131,7 +1131,13 @@ void CanvasRenderingContext2D::ResetBitmap() {
   bool forceReset = true;
   ReturnTarget(forceReset);
   mTarget = nullptr;
-  mBufferProvider = nullptr;
+  if (aFreeBuffer) {
+    mBufferProvider = nullptr;
+  } else if (mBufferProvider) {
+    // Try to keep the buffer around. However, we still need to clear the
+    // contents as if it was recreated before next use.
+    mBufferNeedsClear = true;
+  }
 
   // Since the target changes the backing texture will change, and this will
   // no longer be valid.
@@ -1341,6 +1347,42 @@ void CanvasRenderingContext2D::RestoreClipsAndTransformToTarget() {
   mClipsNeedConverting = false;
 }
 
+bool CanvasRenderingContext2D::BorrowTarget(const IntRect& aPersistedRect,
+                                            bool aNeedsClear) {
+  if (!mBufferProvider || mBufferProvider->RequiresRefresh()) {
+    return false;
+  }
+  mTarget = mBufferProvider->BorrowDrawTarget(aPersistedRect);
+  if (!mTarget || !mTarget->IsValid()) {
+    if (mTarget) {
+      mBufferProvider->ReturnDrawTarget(mTarget.forget());
+    }
+    return false;
+  }
+  if (mBufferNeedsClear) {
+    if (mBufferProvider->PreservesDrawingState()) {
+      // If the buffer provider preserves the clip and transform state, then
+      // we must ensure it is cleared before reusing the target.
+      if (!mTarget->RemoveAllClips()) {
+        mBufferProvider->ReturnDrawTarget(mTarget.forget());
+        return false;
+      }
+      mTarget->SetTransform(Matrix());
+    }
+    // If the canvas was reset, then we need to clear the target in case its
+    // contents was somehow preserved. We only need to clear the target if
+    // the operation doesn't fill the entire canvas.
+    if (aNeedsClear) {
+      mTarget->ClearRect(gfx::Rect(mTarget->GetRect()));
+    }
+  }
+  if (!mBufferProvider->PreservesDrawingState() || mBufferNeedsClear) {
+    RestoreClipsAndTransformToTarget();
+  }
+  mBufferNeedsClear = false;
+  return true;
+}
+
 bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
                                             bool aWillClear) {
   if (AlreadyShutDown()) {
@@ -1385,17 +1427,13 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
 
   ScheduleStableStateCallback();
 
-  IntRect persistedRect =
-      canDiscardContent ? IntRect() : IntRect(0, 0, mWidth, mHeight);
+  IntRect persistedRect = canDiscardContent || mBufferNeedsClear
+                              ? IntRect()
+                              : IntRect(0, 0, mWidth, mHeight);
 
-  if (mBufferProvider && !mBufferProvider->RequiresRefresh()) {
-    mTarget = mBufferProvider->BorrowDrawTarget(persistedRect);
-    if (mTarget && mTarget->IsValid()) {
-      if (!mBufferProvider->PreservesDrawingState()) {
-        RestoreClipsAndTransformToTarget();
-      }
-      return true;
-    }
+  // Attempt to reuse the existing buffer provider.
+  if (BorrowTarget(persistedRect, !canDiscardContent)) {
+    return true;
   }
 
   RefPtr<DrawTarget> newTarget;
@@ -1415,7 +1453,8 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
   MOZ_ASSERT(newTarget);
   MOZ_ASSERT(newProvider);
 
-  bool needsClear = !canDiscardContent;
+  bool needsClear =
+      !canDiscardContent || (mBufferProvider && mBufferNeedsClear);
   if (newTarget->GetBackendType() == gfx::BackendType::SKIA &&
       (needsClear || !aWillClear)) {
     // Skia expects the unused X channel to contains 0xFF even for opaque
@@ -1426,7 +1465,7 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
   }
 
   // Try to copy data from the previous buffer provider if there is one.
-  if (!canDiscardContent && mBufferProvider &&
+  if (!canDiscardContent && mBufferProvider && !mBufferNeedsClear &&
       CopyBufferProvider(*mBufferProvider, *newTarget, persistedRect)) {
     needsClear = false;
   }
@@ -1437,6 +1476,7 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
 
   mTarget = std::move(newTarget);
   mBufferProvider = std::move(newProvider);
+  mBufferNeedsClear = false;
 
   RegisterAllocation();
   AddZoneWaitingForGC();
@@ -1597,10 +1637,18 @@ bool CanvasRenderingContext2D::TryBasicTarget(
   return true;
 }
 
+PersistentBufferProvider* CanvasRenderingContext2D::GetBufferProvider() {
+  if (mBufferProvider && mBufferNeedsClear) {
+    // Force the buffer to clear before it is used.
+    EnsureTarget();
+  }
+  return mBufferProvider;
+}
+
 Maybe<SurfaceDescriptor> CanvasRenderingContext2D::GetFrontBuffer(
     WebGLFramebufferJS*, const bool webvr) {
-  if (mBufferProvider) {
-    return mBufferProvider->GetFrontBuffer();
+  if (auto* provider = GetBufferProvider()) {
+    return provider->GetFrontBuffer();
   }
   return Nothing();
 }
@@ -1650,7 +1698,9 @@ void CanvasRenderingContext2D::RemoveAssociatedMemory() {
 }
 
 void CanvasRenderingContext2D::ClearTarget(int32_t aWidth, int32_t aHeight) {
-  ResetBitmap();
+  // Only free the buffer provider if the size no longer matches.
+  bool freeBuffer = aWidth != mWidth || aHeight != mHeight;
+  ResetBitmap(freeBuffer);
 
   mResetLayer = true;
 
@@ -1731,10 +1781,7 @@ CanvasRenderingContext2D::InitializeWithDrawTarget(
   mTarget = aTarget;
   mBufferProvider = new PersistentBufferProviderBasic(aTarget);
 
-  if (mTarget->GetBackendType() == gfx::BackendType::CAIRO) {
-    // Cf comment in EnsureTarget
-    mTarget->PushClipRect(gfx::Rect(Point(0, 0), Size(mWidth, mHeight)));
-  }
+  RestoreClipsAndTransformToTarget();
 
   return NS_OK;
 }
@@ -1782,10 +1829,8 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
 
   *aFormat = 0;
 
-  if (!mBufferProvider) {
-    if (!EnsureTarget()) {
-      return nullptr;
-    }
+  if (!GetBufferProvider() && !EnsureTarget()) {
+    return nullptr;
   }
 
   RefPtr<SourceSurface> snapshot = mBufferProvider->BorrowSnapshot();
@@ -2014,113 +2059,6 @@ void CanvasRenderingContext2D::SetTransformInternal(const Matrix& aTransform) {
 
 void CanvasRenderingContext2D::ResetTransform(ErrorResult& aError) {
   SetTransform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0, aError);
-}
-
-static void MatrixToJSObject(JSContext* aCx, const Matrix& aMatrix,
-                             JS::MutableHandle<JSObject*> aResult,
-                             ErrorResult& aError) {
-  double elts[6] = {aMatrix._11, aMatrix._12, aMatrix._21,
-                    aMatrix._22, aMatrix._31, aMatrix._32};
-
-  // XXX Should we enter GetWrapper()'s compartment?
-  JS::Rooted<JS::Value> val(aCx);
-  if (!ToJSValue(aCx, elts, &val)) {
-    aError.Throw(NS_ERROR_OUT_OF_MEMORY);
-  } else {
-    aResult.set(&val.toObject());
-  }
-}
-
-static bool ObjectToMatrix(JSContext* aCx, JS::Handle<JSObject*> aObj,
-                           Matrix& aMatrix, ErrorResult& aError) {
-  uint32_t length;
-  if (!JS::GetArrayLength(aCx, aObj, &length) || length != 6) {
-    // Not an array-like thing or wrong size
-    aError.Throw(NS_ERROR_INVALID_ARG);
-    return false;
-  }
-
-  Float* elts[] = {&aMatrix._11, &aMatrix._12, &aMatrix._21,
-                   &aMatrix._22, &aMatrix._31, &aMatrix._32};
-  for (uint32_t i = 0; i < 6; ++i) {
-    JS::Rooted<JS::Value> elt(aCx);
-    double d;
-    if (!JS_GetElement(aCx, aObj, i, &elt)) {
-      aError.Throw(NS_ERROR_FAILURE);
-      return false;
-    }
-    if (!CoerceDouble(elt, &d)) {
-      aError.Throw(NS_ERROR_INVALID_ARG);
-      return false;
-    }
-    if (!FloatValidate(d)) {
-      // This is weird, but it's the behavior of SetTransform()
-      return false;
-    }
-    *elts[i] = Float(d);
-  }
-  return true;
-}
-
-void CanvasRenderingContext2D::SetMozCurrentTransform(
-    JSContext* aCx, JS::Handle<JSObject*> aCurrentTransform,
-    ErrorResult& aError) {
-  EnsureTarget();
-  if (!IsTargetValid()) {
-    aError.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  Matrix newCTM;
-  if (ObjectToMatrix(aCx, aCurrentTransform, newCTM, aError) &&
-      newCTM.IsFinite()) {
-    mTarget->SetTransform(newCTM);
-  }
-}
-
-void CanvasRenderingContext2D::GetMozCurrentTransform(
-    JSContext* aCx, JS::MutableHandle<JSObject*> aResult, ErrorResult& aError) {
-  EnsureTarget();
-
-  MatrixToJSObject(aCx, mTarget ? mTarget->GetTransform() : Matrix(), aResult,
-                   aError);
-}
-
-void CanvasRenderingContext2D::SetMozCurrentTransformInverse(
-    JSContext* aCx, JS::Handle<JSObject*> aCurrentTransform,
-    ErrorResult& aError) {
-  EnsureTarget();
-  if (!IsTargetValid()) {
-    aError.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  Matrix newCTMInverse;
-  if (ObjectToMatrix(aCx, aCurrentTransform, newCTMInverse, aError)) {
-    // XXX ERRMSG we need to report an error to developers here! (bug 329026)
-    if (newCTMInverse.Invert() && newCTMInverse.IsFinite()) {
-      mTarget->SetTransform(newCTMInverse);
-    }
-  }
-}
-
-void CanvasRenderingContext2D::GetMozCurrentTransformInverse(
-    JSContext* aCx, JS::MutableHandle<JSObject*> aResult, ErrorResult& aError) {
-  EnsureTarget();
-
-  if (!mTarget) {
-    MatrixToJSObject(aCx, Matrix(), aResult, aError);
-    return;
-  }
-
-  Matrix ctm = mTarget->GetTransform();
-
-  if (!ctm.Invert()) {
-    double NaN = JS::GenericNaN();
-    ctm = Matrix(NaN, NaN, NaN, NaN, NaN, NaN);
-  }
-
-  MatrixToJSObject(aCx, ctm, aResult, aError);
 }
 
 //
@@ -3162,7 +3100,8 @@ void CanvasRenderingContext2D::ArcTo(double aX1, double aY1, double aX2,
   }
 
   // Check for colinearity
-  dir = (p2.x - p1.x) * (p0.y - p1.y) + (p2.y - p1.y) * (p1.x - p0.x);
+  dir = (p2.x.value - p1.x.value) * (p0.y.value - p1.y.value) +
+        (p2.y.value - p1.y.value) * (p1.x.value - p0.x.value);
   if (dir == 0) {
     LineTo(p1.x, p1.y);
     return;
@@ -3476,6 +3415,14 @@ bool CanvasRenderingContext2D::SetFontInternalDisconnected(
   RefPtr<URLExtraData> urlExtraData =
       fontFaceSetImpl ? fontFaceSetImpl->GetURLExtraData() : nullptr;
 
+  if (NS_WARN_IF(!urlExtraData)) {
+    // Provided we have a FontFaceSetImpl object, this should only happen on
+    // worker threads, where we failed to initialize the worker before it was
+    // shutdown.
+    aError.ThrowInvalidStateError("Missing URLExtraData");
+    return false;
+  }
+
   if (fontFaceSetImpl) {
     fontFaceSetImpl->FlushUserFontSet();
   }
@@ -3526,15 +3473,16 @@ bool CanvasRenderingContext2D::SetFontInternalDisconnected(
   // TODO: For workers, should we be passing a language? Where from?
 
   // TODO: Cache fontGroups in the Worker (use an nsFontCache?)
-  gfxFontGroup* fontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(
-      nullptr,           // aPresContext
-      list,              // aFontFamilyList
-      &fontStyle,        // aStyle
-      language,          // aLanguage
-      explicitLanguage,  // aExplicitLanguage
-      nullptr,           // aTextPerf
-      fontFaceSetImpl,   // aUserFontSet
-      1.0);              // aDevToCssSize
+  gfxFontGroup* fontGroup =
+      new gfxFontGroup(nullptr,           // aPresContext
+                       list,              // aFontFamilyList
+                       &fontStyle,        // aStyle
+                       language,          // aLanguage
+                       explicitLanguage,  // aExplicitLanguage
+                       nullptr,           // aTextPerf
+                       fontFaceSetImpl,   // aUserFontSet
+                       1.0,               // aDevToCssSize
+                       StyleFontVariantEmoji::Normal);
   CurrentState().fontGroup = fontGroup;
   SerializeFontForCanvas(list, fontStyle, CurrentState().font);
   CurrentState().fontFont = nsFont(StyleFontFamily{list, false, false},
@@ -3843,7 +3791,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
     bool verticalRun = mTextRun->IsVertical();
     RefPtr<gfxPattern> pattern;
 
-    float& inlineCoord = verticalRun ? point.y : point.x;
+    float& inlineCoord = verticalRun ? point.y.value : point.x.value;
     inlineCoord += aXOffset;
 
     // offset is given in terms of left side of string
@@ -4327,10 +4275,10 @@ gfxFontGroup* CanvasRenderingContext2D::GetCurrentFontStyle() {
       gfxFloat devToCssSize = gfxFloat(perDevPixel) / gfxFloat(perCSSPixel);
       const auto* sans =
           Servo_FontFamily_Generic(StyleGenericFontFamily::SansSerif);
-      fontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(
+      fontGroup = new gfxFontGroup(
           presContext, sans->families, &style, language, explicitLanguage,
           presContext ? presContext->GetTextPerfMetrics() : nullptr, nullptr,
-          devToCssSize);
+          devToCssSize, StyleFontVariantEmoji::Normal);
       if (fontGroup) {
         CurrentState().font = kDefaultFontStyle;
       } else {
@@ -4729,7 +4677,8 @@ static Matrix ComputeRotationMatrix(gfxFloat aRotatedWidth,
         Matrix::Translation(-aRotatedWidth / 2.0, -aRotatedHeight / 2.0);
   }
 
-  Matrix rotation = Matrix::Rotation(gfx::Float(aDegrees / 180.0 * M_PI));
+  auto angle = static_cast<double>(aDegrees) / 180.0 * M_PI;
+  Matrix rotation = Matrix::Rotation(static_cast<gfx::Float>(angle));
   Matrix shiftLeftTopToOrigin =
       Matrix::Translation(aRotatedWidth / 2.0, aRotatedHeight / 2.0);
   return shiftVideoCenterToOrigin * rotation * shiftLeftTopToOrigin;
@@ -5440,10 +5389,8 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
     return NS_OK;
   }
 
-  if (!mBufferProvider) {
-    if (!EnsureTarget()) {
-      return NS_ERROR_FAILURE;
-    }
+  if (!GetBufferProvider() && !EnsureTarget()) {
+    return NS_ERROR_FAILURE;
   }
 
   RefPtr<SourceSurface> snapshot = mBufferProvider->BorrowSnapshot();
@@ -5963,7 +5910,8 @@ void CanvasPath::ArcTo(double aX1, double aY1, double aX2, double aY2,
   }
 
   // Check for colinearity
-  dir = (p2.x - p1.x) * (p0.y - p1.y) + (p2.y - p1.y) * (p1.x - p0.x);
+  dir = (p2.x.value - p1.x.value) * (p0.y.value - p1.y.value) +
+        (p2.y.value - p1.y.value) * (p1.x.value - p0.x.value);
   if (dir == 0) {
     LineTo(p1.x, p1.y);
     return;

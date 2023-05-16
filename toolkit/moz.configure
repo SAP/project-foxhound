@@ -1459,7 +1459,16 @@ with only_when("--enable-compile-environment"):
             help="{Enable|Disable} elf hacks",
         )
 
-        set_config("USE_ELF_HACK", depends_if("--enable-elf-hack")(lambda _: True))
+        @depends(select_linker, when="--enable-elf-hack")
+        def use_elf_hack(linker):
+            if linker and linker.KIND == "lld":
+                die(
+                    "Cannot enable elfhack with lld."
+                    " Use --enable-linker=bfd, --enable-linker=gold, or --disable-elf-hack"
+                )
+            return True
+
+        set_config("USE_ELF_HACK", use_elf_hack)
 
 
 @depends(build_environment)
@@ -2456,9 +2465,7 @@ with only_when(requires_wasm_sandboxing & compile_environment):
 
     set_config("WASM_CXX", wasm_cxx_with_flags)
 
-    wasm_compile_flags = dependable(
-        ["-fno-exceptions", "-fno-strict-aliasing", "-Qunused-arguments"]
-    )
+    wasm_compile_flags = dependable(["-fno-exceptions", "-fno-strict-aliasing"])
     option(env="WASM_CFLAGS", nargs=1, help="Options to pass to WASM_CC")
 
     @depends("WASM_CFLAGS", wasm_compile_flags)
@@ -2557,12 +2564,30 @@ check_prog(
 )
 
 
+@depends(valid_windows_sdk_dir, host)
+@imports(_from="os", _import="environ")
+def pdbstr_paths(valid_windows_sdk_dir, host):
+    if not valid_windows_sdk_dir:
+        return
+
+    vc_host = {
+        "x86": "x86",
+        "x86_64": "x64",
+    }.get(host.cpu)
+
+    return [
+        environ["PATH"],
+        os.path.join(valid_windows_sdk_dir.path, "Debuggers", vc_host, "srcsrv"),
+    ]
+
+
 check_prog(
     "PDBSTR",
     ["pdbstr.exe"],
     allow_missing=True,
-    bootstrap="pdbstr",
     when=compile_environment & target_is_windows,
+    paths=pdbstr_paths,
+    allow_spaces=True,
 )
 
 
@@ -2632,17 +2657,12 @@ include("../build/moz.configure/nss.configure")
 # Enable or disable running in background task mode: headless for
 # periodic, short-lived, maintenance tasks.
 # ==============================================================================
-
-
 option(
     "--disable-backgroundtasks",
     help="Disable running in background task mode",
 )
-
-
-set_config(
-    "MOZ_BACKGROUNDTASKS", depends_if("--enable-backgroundtasks")(lambda _: True)
-)
+set_config("MOZ_BACKGROUNDTASKS", True, when="--enable-backgroundtasks")
+set_define("MOZ_BACKGROUNDTASKS", True, when="--enable-backgroundtasks")
 
 
 # Update-related programs: updater, maintenance service, update agent,

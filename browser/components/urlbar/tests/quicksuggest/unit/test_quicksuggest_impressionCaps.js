@@ -6,9 +6,12 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 const SUGGESTIONS = [
@@ -51,7 +54,7 @@ const EXPECTED_SPONSORED_RESULT = {
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "TestAdvertiser",
     sponsoredIabCategory: "22 - Shopping",
-    helpUrl: UrlbarProviderQuickSuggest.helpUrl,
+    helpUrl: QuickSuggest.HELP_URL,
     helpL10nId: "firefox-suggest-urlbar-learn-more",
     source: "remote-settings",
   },
@@ -74,7 +77,7 @@ const EXPECTED_NONSPONSORED_RESULT = {
     sponsoredBlockId: 2,
     sponsoredAdvertiser: "TestAdvertiser",
     sponsoredIabCategory: "5 - Education",
-    helpUrl: UrlbarProviderQuickSuggest.helpUrl,
+    helpUrl: QuickSuggest.HELP_URL,
     helpL10nId: "firefox-suggest-urlbar-learn-more",
     source: "remote-settings",
   },
@@ -109,7 +112,7 @@ add_task(async function init() {
   // Set up a sinon stub for `UrlbarProviderQuickSuggest._getStartupDateMs()` to
   // let the test override the startup date.
   gStartupDateMsStub = gSandbox.stub(
-    UrlbarProviderQuickSuggest,
+    QuickSuggest.impressionCaps,
     "_getStartupDateMs"
   );
   gStartupDateMsStub.returns(0);
@@ -2889,10 +2892,9 @@ add_task(async function prefSync() {
         "JSON is correct"
       );
 
-      UrlbarProviderQuickSuggest._impressionStats = null;
-      UrlbarProviderQuickSuggest._loadImpressionStats();
+      QuickSuggest.impressionCaps._test_reloadStats();
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         {
           sponsored: [
             {
@@ -2957,14 +2959,14 @@ add_task(async function prefDirectlyChanged() {
 
       UrlbarPrefs.set("quicksuggest.impressionCaps.stats", "bogus");
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         expectedStats,
         "Expected stats for 'bogus'"
       );
 
       UrlbarPrefs.set("quicksuggest.impressionCaps.stats", JSON.stringify({}));
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         expectedStats,
         "Expected stats for {}"
       );
@@ -2974,7 +2976,7 @@ add_task(async function prefDirectlyChanged() {
         JSON.stringify({ sponsored: "bogus" })
       );
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         expectedStats,
         "Expected stats for { sponsored: 'bogus' }"
       );
@@ -3008,7 +3010,7 @@ add_task(async function prefDirectlyChanged() {
         })
       );
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         expectedStats,
         "Expected stats with intervalSeconds: 'bogus'"
       );
@@ -3035,7 +3037,7 @@ add_task(async function prefDirectlyChanged() {
         })
       );
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         expectedStats,
         "Expected stats with `maxCount` values different from caps"
       );
@@ -3063,7 +3065,7 @@ add_task(async function prefDirectlyChanged() {
         JSON.stringify(stats)
       );
       Assert.deepEqual(
-        UrlbarProviderQuickSuggest._impressionStats,
+        QuickSuggest.impressionCaps._test_stats,
         stats,
         "Expected stats with valid JSON"
       );
@@ -3094,7 +3096,7 @@ add_task(async function intervalsElapsedButCapNotHit() {
         },
         // 10s
         10: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           let expectedEvents = [
             // 1s: reset with count = 0
             {
@@ -3159,7 +3161,7 @@ add_task(async function restart_1() {
       await doTimedCallbacks({
         // 10s: 6 batched resets for periods starting at 4s
         10: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3209,7 +3211,7 @@ add_task(async function restart_2() {
       await doTimedCallbacks({
         // 10s: 5 batched resets for periods starting at 5s
         10: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3259,7 +3261,7 @@ add_task(async function restart_3() {
       await doTimedCallbacks({
         // 10s: 5 batched resets for periods starting at 5s
         10: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3310,12 +3312,12 @@ add_task(async function restart_4() {
       await doTimedCallbacks({
         // 9s: no resets
         9: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([]);
         },
         // 10s: 1 reset for period starting at 0s
         10: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3334,12 +3336,12 @@ add_task(async function restart_4() {
         },
         // 19s: no resets
         19: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([]);
         },
         // 20s: 1 reset for period starting at 10s
         20: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3389,7 +3391,7 @@ add_task(async function restart_5() {
       await doTimedCallbacks({
         // 20s: 2 batches resets for periods starting at 0s
         20: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3440,12 +3442,12 @@ add_task(async function restart_6() {
       await doTimedCallbacks({
         // 19s: no resets
         19: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([]);
         },
         // 20s: 1 reset for period starting at 10s
         20: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3464,12 +3466,12 @@ add_task(async function restart_6() {
         },
         // 29s: no resets
         29: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([]);
         },
         // 30s: 1 reset for period starting at 20s
         30: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3519,7 +3521,7 @@ add_task(async function restart_7() {
       await doTimedCallbacks({
         // 30s: 2 batched resets for periods starting at 10s
         30: async () => {
-          UrlbarProviderQuickSuggest._resetElapsedImpressionCounters();
+          QuickSuggest.impressionCaps._test_resetElapsedCounters();
           await checkTelemetryEvents([
             {
               object: "reset",
@@ -3553,11 +3555,6 @@ add_task(async function shutdown() {
       },
     },
     callback: async () => {
-      let spy = gSandbox.spy(
-        UrlbarProviderQuickSuggest,
-        "_resetElapsedImpressionCounters"
-      );
-
       // Make `Date.now()` return 10s. Since the cap's `interval_s` is 1s and
       // before this `Date.now()` returned 0s, 10 reset events should be
       // recorded on shutdown.
@@ -3567,7 +3564,6 @@ add_task(async function shutdown() {
       Services.prefs.setBoolPref("toolkit.asyncshutdown.testing", true);
       AsyncShutdown.profileChangeTeardown._trigger();
 
-      Assert.ok(spy.calledOnce, "_resetElapsedImpressionCounters called once");
       await checkTelemetryEvents([
         {
           object: "reset",
@@ -3584,7 +3580,6 @@ add_task(async function shutdown() {
         },
       ]);
 
-      spy.restore();
       gDateNowStub.returns(0);
       Services.prefs.clearUserPref("toolkit.asyncshutdown.testing");
     },
@@ -3606,11 +3601,6 @@ add_task(async function resetInterval() {
       },
     },
     callback: async () => {
-      let spy = gSandbox.spy(
-        UrlbarProviderQuickSuggest,
-        "_resetElapsedImpressionCounters"
-      );
-
       // Restart the reset interval now with a 1s period. Since the cap's
       // `interval_s` is 0.1s, at least 10 reset events should be recorded the
       // first time the reset interval fires. The exact number depends on timing
@@ -3618,15 +3608,14 @@ add_task(async function resetInterval() {
       // between when the config is set to when the reset interval fires. For
       // that reason, we allow some leeway when checking `eventCount` below to
       // avoid intermittent failures.
-      UrlbarProviderQuickSuggest._setImpressionCountersResetInterval(1000);
+      QuickSuggest.impressionCaps._test_setCountersResetInterval(1000);
 
       // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
       await new Promise(r => setTimeout(r, 1100));
 
       // Restore the reset interval to its default.
-      UrlbarProviderQuickSuggest._setImpressionCountersResetInterval();
+      QuickSuggest.impressionCaps._test_setCountersResetInterval();
 
-      Assert.ok(spy.calledOnce, "_resetElapsedImpressionCounters called once");
       await checkTelemetryEvents([
         {
           object: "reset",
@@ -3647,8 +3636,6 @@ add_task(async function resetInterval() {
           },
         },
       ]);
-
-      spy.restore();
     },
   });
 
@@ -3658,7 +3645,7 @@ add_task(async function resetInterval() {
     "now"
   );
   gStartupDateMsStub = gSandbox.stub(
-    UrlbarProviderQuickSuggest,
+    QuickSuggest.impressionCaps,
     "_getStartupDateMs"
   );
   gStartupDateMsStub.returns(0);
@@ -3667,9 +3654,12 @@ add_task(async function resetInterval() {
 /**
  * Main test helper. Sets up state, calls your callback, and resets state.
  *
- * @param {object} config
+ * @param {object} options
+ *   Options object.
+ * @param {object} options.config
  *   The quick suggest config to use during the test.
- * @param {function} callback
+ * @param {Function} options.callback
+ *   The callback that will be run with the {@link config}
  */
 async function doTest({ config, callback }) {
   Services.telemetry.clearEvents();
@@ -3682,7 +3672,7 @@ async function doTest({ config, callback }) {
 
   info(`Clearing stats and setting config`);
   UrlbarPrefs.clear("quicksuggest.impressionCaps.stats");
-  UrlbarProviderQuickSuggest._impressionStats = null;
+  QuickSuggest.impressionCaps._test_reloadStats();
   await QuickSuggestTestUtils.withConfig({ config, callback });
 }
 
@@ -3692,6 +3682,7 @@ async function doTest({ config, callback }) {
  * too.
  *
  * @param {string} searchString
+ *   The query that should be timed
  * @param {object} expectedBySecond
  *   An object that maps from seconds to objects that describe the searches to
  *   perform, their expected results, and the expected telemetry. For a given
@@ -3801,8 +3792,8 @@ async function doTimedCallbacks(callbacksBySecond) {
 // timeout internal to macOS is being hit. This problem does not seem to happen
 // when running the full browser, only during xpcshell tests. In fact the
 // problem can be reproduced in an xpcshell test that simply creates an interval
-// timer whose period is 1s (e.g., using `setInterval()` from Timer.jsm). After
-// ~33 ticks, the timer's period jumps to ~10s.
+// timer whose period is 1s (e.g., using `setInterval()` from Timer.sys.mjs).
+// After ~33 ticks, the timer's period jumps to ~10s.
 async function doTimedCallbacks(callbacksBySecond) {
   await Promise.all(
     Object.entries(callbacksBySecond).map(
@@ -3820,11 +3811,15 @@ async function doTimedCallbacks(callbacksBySecond) {
 /**
  * Does a search, triggers an engagement, and checks the results.
  *
- * @param {string} name
+ * @param {object} options
+ *   Options object.
+ * @param {string} options.name
  *   This value is the name of the search and will be logged in messages to make
  *   debugging easier.
- * @param {string} searchString
- * @param {array} expectedResults
+ * @param {string} options.searchString
+ *   The query that should be searched.
+ * @param {Array} options.expectedResults
+ *   The results that are expected from the search.
  */
 async function checkSearch({ name, searchString, expectedResults }) {
   info(`Preparing search "${name}" with search string "${searchString}"`);
@@ -3846,6 +3841,9 @@ async function checkSearch({ name, searchString, expectedResults }) {
   // because otherwise the following PingCentre error is logged:
   // "Structured Ingestion ping failure with error: undefined"
   let isPrivate = true;
+  if (UrlbarProviderQuickSuggest._resultFromLastQuery) {
+    UrlbarProviderQuickSuggest._resultFromLastQuery.isVisible = true;
+  }
   UrlbarProviderQuickSuggest.onEngagement(isPrivate, "engagement", context, {
     selIndex: -1,
   });
@@ -3855,7 +3853,7 @@ async function checkTelemetryEvents(expectedEvents) {
   QuickSuggestTestUtils.assertEvents(
     expectedEvents.map(event => ({
       ...event,
-      category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+      category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
       method: "impression_cap",
     })),
     // Filter in only impression_cap events.

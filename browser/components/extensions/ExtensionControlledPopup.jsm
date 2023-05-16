@@ -48,11 +48,9 @@ ChromeUtils.defineModuleGetter(
   "ExtensionSettingsStore",
   "resource://gre/modules/ExtensionSettingsStore.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 let { makeWidgetId } = ExtensionCommon;
 
@@ -338,7 +336,9 @@ class ExtensionControlledPopup {
         `${makeWidgetId(extensionId)}-browser-action`
       );
       if (action) {
-        action = action.areaType == "toolbar" && action.forWindow(win).node;
+        action =
+          action.areaType == "toolbar" &&
+          action.forWindow(win).node.firstElementChild;
       }
 
       // Anchor to a toolbar browserAction if found, otherwise use the menu button.

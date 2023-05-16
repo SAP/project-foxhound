@@ -6,8 +6,8 @@
 // that aren't initialized outside of a XUL app environment like AddonManager
 // and the "@mozilla.org/xre/app-info;1" component.
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { Troubleshoot } = ChromeUtils.importESModule(
   "resource://gre/modules/Troubleshoot.sys.mjs"
@@ -45,7 +45,7 @@ function test() {
 }
 
 registerCleanupFunction(function() {
-  // Troubleshoot.jsm is imported into the global scope -- the window -- above.
+  // Troubleshoot.sys.mjs is imported into the global scope -- the window -- above.
   // If it's not deleted, it outlives the test and is reported as a leak.
   delete window.Troubleshoot;
 });
@@ -531,6 +531,39 @@ const SNAPSHOT_SCHEMA = {
         },
       },
     },
+    places: {
+      required: true,
+      type: "array",
+      items: {
+        type: "object",
+        items: {
+          entity: {
+            required: true,
+            type: "string",
+          },
+          count: {
+            required: true,
+            type: "number",
+          },
+          sizeBytes: {
+            required: true,
+            type: "number",
+          },
+          sizePerc: {
+            required: true,
+            type: "number",
+          },
+          efficiencyPerc: {
+            required: true,
+            type: "number",
+          },
+          sequentialityPerc: {
+            required: true,
+            type: "number",
+          },
+        },
+      },
+    },
     graphics: {
       required: true,
       type: "object",
@@ -1009,6 +1042,10 @@ const SNAPSHOT_SCHEMA = {
         contentWin32kLockdownState: {
           required: AppConstants.MOZ_SANDBOX,
           type: "string",
+        },
+        supportSandboxGpuLevel: {
+          required: AppConstants.MOZ_SANDBOX,
+          type: "number",
         },
         syscallLog: {
           required: AppConstants.platform == "linux",

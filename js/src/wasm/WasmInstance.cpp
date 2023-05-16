@@ -93,53 +93,8 @@ static_assert(Instance::offsetOfLastCommonJitField() < 128);
 //
 // Functions and invocation.
 
-class FuncTypeIdSet {
-  using Map =
-      HashMap<const FuncType*, uint32_t, FuncTypeHashPolicy, SystemAllocPolicy>;
-  Map map_;
-
- public:
-  ~FuncTypeIdSet() {
-    MOZ_ASSERT_IF(!JSRuntime::hasLiveRuntimes(), map_.empty());
-  }
-
-  bool allocateFuncTypeId(JSContext* cx, const FuncType& funcType,
-                          const void** funcTypeId) {
-    Map::AddPtr p = map_.lookupForAdd(funcType);
-    if (p) {
-      MOZ_ASSERT(p->value() > 0);
-      p->value()++;
-      *funcTypeId = p->key();
-      return true;
-    }
-
-    UniquePtr<FuncType> clone = MakeUnique<FuncType>();
-    if (!clone || !clone->clone(funcType) || !map_.add(p, clone.get(), 1)) {
-      ReportOutOfMemory(cx);
-      return false;
-    }
-
-    *funcTypeId = clone.release();
-    MOZ_ASSERT(!(uintptr_t(*funcTypeId) & TypeIdDesc::ImmediateBit));
-    return true;
-  }
-
-  void deallocateFuncTypeId(const FuncType& funcType, const void* funcTypeId) {
-    Map::Ptr p = map_.lookup(funcType);
-    MOZ_RELEASE_ASSERT(p && p->key() == funcTypeId && p->value() > 0);
-
-    p->value()--;
-    if (!p->value()) {
-      js_delete(p->key());
-      map_.remove(p);
-    }
-  }
-};
-
-ExclusiveData<FuncTypeIdSet> funcTypeIdSet(mutexid::WasmFuncTypeIdSet);
-
-const void** Instance::addressOfTypeId(const TypeIdDesc& typeId) const {
-  return (const void**)(globalData() + typeId.globalDataOffset());
+const void** Instance::addressOfTypeId(const uint32_t typeIndex) const {
+  return (const void**)(globalData() + typeIndex * sizeof(void*));
 }
 
 FuncImportInstanceData& Instance::funcImportInstanceData(const FuncImport& fi) {
@@ -352,7 +307,7 @@ static int32_t PerformWait(Instance* instance, PtrT byteOffset, ValT value,
   mozilla::Maybe<mozilla::TimeDuration> timeout;
   if (timeout_ns >= 0) {
     timeout = mozilla::Some(
-        mozilla::TimeDuration::FromMicroseconds(timeout_ns / 1000));
+        mozilla::TimeDuration::FromMicroseconds(double(timeout_ns) / 1000));
   }
 
   MOZ_ASSERT(byteOffset <= SIZE_MAX, "Bounds check is broken");
@@ -895,8 +850,7 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
 
 #ifdef ENABLE_WASM_GC
 RttValue* Instance::rttCanon(uint32_t typeIndex) const {
-  const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
-  return *(RttValue**)addressOfTypeId(typeId);
+  return *(RttValue**)addressOfTypeId(typeIndex);
 }
 
 #endif  // ENABLE_WASM_GC
@@ -1564,7 +1518,7 @@ RttValue* Instance::rttCanon(uint32_t typeIndex) const {
 // Instance creation and related.
 
 Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
-                   SharedCode code, Handle<WasmMemoryObject*> memory,
+                   const SharedCode& code, Handle<WasmMemoryObject*> memory,
                    SharedTableVector&& tables, UniqueDebugState maybeDebug)
     : realm_(cx->realm()),
       jsJitArgsRectifier_(
@@ -1587,7 +1541,7 @@ Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
 }
 
 Instance* Instance::create(JSContext* cx, Handle<WasmInstanceObject*> object,
-                           SharedCode code, uint32_t globalDataLength,
+                           const SharedCode& code, uint32_t globalDataLength,
                            Handle<WasmMemoryObject*> memory,
                            SharedTableVector&& tables,
                            UniqueDebugState maybeDebug) {
@@ -1713,64 +1667,31 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
   }
 
   // Allocate in the global type sets for structural type checks
-  if (!metadata().types.empty()) {
-#ifdef ENABLE_WASM_GC
-    if (GcAvailable(cx)) {
-      // Transfer and allocate type objects for the struct types in the module
-      MutableTypeContext tycx = js_new<TypeContext>();
-      if (!tycx || !tycx->clone(metadata().types)) {
-        return false;
-      }
-
-      for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
-           typeIndex++) {
-        const TypeDef& typeDef = metadata().types[typeIndex];
-        const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
-        if (!typeId.isGlobal() ||
-            (!typeDef.isStructType() && !typeDef.isArrayType())) {
-          continue;
-        }
-
-        Rooted<RttValue*> rttValue(
-            cx, RttValue::rttCanon(cx, TypeHandle(tycx, typeIndex)));
-        if (!rttValue) {
-          return false;
-        }
-        // We do not need to use a barrier here because RttValue is always
-        // tenured
-        MOZ_ASSERT(rttValue.get()->isTenured());
-        *((GCPtr<JSObject*>*)addressOfTypeId(typeId)) = rttValue;
-        hasGcTypes_ = true;
-      }
-    }
-#endif
-
-    // Handle functions specially (for now) as they're guaranteed to be
-    // acyclical and can use simpler hash-consing logic.
-    ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
-        funcTypeIdSet.lock();
-
-    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
-         typeIndex++) {
-      const TypeDef& typeDef = metadata().types[typeIndex];
-      const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
-      if (!typeId.isGlobal()) {
-        continue;
-      }
+  const SharedTypeContext& types = metadata().types;
+  if (!types->empty()) {
+    for (uint32_t typeIndex = 0; typeIndex < types->length(); typeIndex++) {
+      const TypeDef& typeDef = types->type(typeIndex);
       switch (typeDef.kind()) {
         case TypeDefKind::Func: {
-          const FuncType& funcType = typeDef.funcType();
-          const void* funcTypeId;
-          if (!lockedFuncTypeIdSet->allocateFuncTypeId(cx, funcType,
-                                                       &funcTypeId)) {
-            return false;
-          }
-          *addressOfTypeId(typeId) = funcTypeId;
+          *addressOfTypeId(typeIndex) = &typeDef;
           break;
         }
+#ifdef ENABLE_WASM_GC
         case TypeDefKind::Struct:
-        case TypeDefKind::Array:
-          continue;
+        case TypeDefKind::Array: {
+          Rooted<RttValue*> rttValue(
+              cx, RttValue::rttCanon(cx, TypeHandle(types, typeIndex)));
+          if (!rttValue) {
+            return false;
+          }
+          // We do not need to use a barrier here because RttValue is always
+          // tenured
+          MOZ_ASSERT(rttValue.get()->isTenured());
+          *((GCPtr<JSObject*>*)addressOfTypeId(typeIndex)) = rttValue;
+          hasGcTypes_ = true;
+          break;
+        }
+#endif
         default:
           MOZ_CRASH();
       }
@@ -1852,24 +1773,6 @@ bool Instance::init(JSContext* cx, const JSFunctionVector& funcImports,
 
 Instance::~Instance() {
   realm_->wasm.unregisterInstance(*this);
-
-  if (!metadata().types.empty()) {
-    ExclusiveData<FuncTypeIdSet>::Guard lockedFuncTypeIdSet =
-        funcTypeIdSet.lock();
-
-    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
-         typeIndex++) {
-      const TypeDef& typeDef = metadata().types[typeIndex];
-      const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
-      if (!typeDef.isFuncType() || !typeId.isGlobal()) {
-        continue;
-      }
-      const FuncType& funcType = typeDef.funcType();
-      if (const void* funcTypeId = *addressOfTypeId(typeId)) {
-        lockedFuncTypeIdSet->deallocateFuncTypeId(funcType, funcTypeId);
-      }
-    }
-  }
 
   if (debugFilter_) {
     js_free(debugFilter_);
@@ -1961,15 +1864,13 @@ void Instance::tracePrivate(JSTracer* trc) {
   TraceNullableEdge(trc, &memory_, "wasm buffer");
 #ifdef ENABLE_WASM_GC
   if (hasGcTypes_) {
-    for (uint32_t typeIndex = 0; typeIndex < metadata().types.length();
+    for (uint32_t typeIndex = 0; typeIndex < metadata().types->length();
          typeIndex++) {
-      const TypeDef& typeDef = metadata().types[typeIndex];
-      const TypeIdDesc& typeId = metadata().typeIds[typeIndex];
-      if (!typeId.isGlobal() ||
-          (!typeDef.isStructType() && !typeDef.isArrayType())) {
+      const TypeDef& typeDef = metadata().types->type(typeIndex);
+      if (!typeDef.isStructType() && !typeDef.isArrayType()) {
         continue;
       }
-      TraceNullableEdge(trc, ((GCPtr<JSObject*>*)addressOfTypeId(typeId)),
+      TraceNullableEdge(trc, ((GCPtr<JSObject*>*)addressOfTypeId(typeIndex)),
                         "wasm rtt value");
     }
   }
@@ -2405,7 +2306,7 @@ bool Instance::callExport(JSContext* cx, uint32_t funcIndex, CallArgs args,
     }
     if (type.isRefRepr()) {
       // Ensure we don't have a temporarily unsupported Ref type in callExport
-      MOZ_RELEASE_ASSERT(!type.isTypeIndex());
+      MOZ_RELEASE_ASSERT(!type.isTypeRef());
       void* ptr = *reinterpret_cast<void**>(rawArgLoc);
       // Store in rooted array until no more GC is possible.
       RootedAnyRef ref(cx, AnyRef::fromCompiledCode(ptr));
@@ -2599,7 +2500,7 @@ JSString* Instance::createDisplayURL(JSContext* cx) {
 
     const ModuleHash& hash = metadata().debugHash;
     for (unsigned char byte : hash) {
-      char digit1 = byte / 16, digit2 = byte % 16;
+      unsigned char digit1 = byte / 16, digit2 = byte % 16;
       if (!result.append(
               (char)(digit1 < 10 ? digit1 + '0' : digit1 + 'a' - 10))) {
         return nullptr;
@@ -2679,5 +2580,4 @@ void wasm::ReportTrapError(JSContext* cx, unsigned errorNumber) {
 
   MOZ_ASSERT(exn.isObject() && exn.toObject().is<ErrorObject>());
   exn.toObject().as<ErrorObject>().setFromWasmTrap();
-  return;
 }

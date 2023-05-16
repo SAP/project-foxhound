@@ -77,6 +77,7 @@
 //! ```
 
 use anyhow::{bail, Result};
+use uniffi_meta::Checksum;
 
 use super::record::Field;
 use super::types::{Type, TypeIterator};
@@ -87,7 +88,7 @@ use super::{APIConverter, ComponentInterface};
 ///
 /// Enums are passed across the FFI by serializing to a bytebuffer, with a
 /// i32 indicating the variant followed by the serialization of each field.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Checksum)]
 pub struct Enum {
     pub(super) name: String,
     pub(super) variants: Vec<Variant>,
@@ -174,7 +175,7 @@ impl APIConverter<Enum> for weedle::InterfaceDefinition<'_> {
 /// Represents an individual variant in an Enum.
 ///
 /// Each variant has a name and zero or more fields.
-#[derive(Debug, Clone, Default, Hash)]
+#[derive(Debug, Clone, Default, Checksum)]
 pub struct Variant {
     pub(super) name: String,
     pub(super) fields: Vec<Field>,
@@ -350,7 +351,7 @@ mod test {
                 .iter()
                 .map(|f| f.type_())
                 .collect::<Vec<_>>(),
-            vec![Type::UInt32]
+            vec![&Type::UInt32]
         );
         assert_eq!(
             ed.variants()[2]
@@ -366,7 +367,7 @@ mod test {
                 .iter()
                 .map(|f| f.type_())
                 .collect::<Vec<_>>(),
-            vec![Type::UInt32, Type::String]
+            vec![&Type::UInt32, &Type::String]
         );
 
         // The enum declared via interface, but with no associated data.
@@ -384,7 +385,7 @@ mod test {
         // (It might be nice to optimize these to pass as plain integers, but that's
         // difficult atop the current factoring of `ComponentInterface` and friends).
         let farg = ci.get_function_definition("takes_an_enum").unwrap();
-        assert_eq!(farg.arguments()[0].type_(), Type::Enum("TestEnum".into()));
+        assert_eq!(*farg.arguments()[0].type_(), Type::Enum("TestEnum".into()));
         assert_eq!(farg.ffi_func().arguments()[0].type_(), FFIType::RustBuffer);
         let fret = ci.get_function_definition("returns_an_enum").unwrap();
         assert!(matches!(fret.return_type(), Some(Type::Enum(nm)) if nm == "TestEnum"));
@@ -398,7 +399,7 @@ mod test {
             .get_function_definition("takes_an_enum_with_data")
             .unwrap();
         assert_eq!(
-            farg.arguments()[0].type_(),
+            *farg.arguments()[0].type_(),
             Type::Enum("TestEnumWithData".into())
         );
         assert_eq!(farg.ffi_func().arguments()[0].type_(), FFIType::RustBuffer);

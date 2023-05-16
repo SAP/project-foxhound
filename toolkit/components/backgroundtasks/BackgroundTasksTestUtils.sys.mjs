@@ -2,12 +2,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
-const { Subprocess } = ChromeUtils.import(
-  "resource://gre/modules/Subprocess.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+
+import { Subprocess } from "resource://gre/modules/Subprocess.sys.mjs";
 
 function getFirefoxExecutableFilename() {
   if (AppConstants.platform === "win") {

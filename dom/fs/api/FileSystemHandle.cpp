@@ -12,10 +12,13 @@
 #include "js/StructuredClone.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemHandleBinding.h"
+#include "mozilla/dom/FileSystemLog.h"
 #include "mozilla/dom/FileSystemManager.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/StorageManager.h"
+#include "prio.h"
+#include "private/pprio.h"
 #include "xpcpublic.h"
 
 namespace mozilla::dom {
@@ -152,9 +155,14 @@ already_AddRefed<Promise> FileSystemHandle::Move(const fs::EntryId& aParentId,
     fs::FileSystemChildMetadata newMetadata;
     newMetadata.parentId() = aParentId;
     newMetadata.childName() = aName;
-    mRequestHandler->MoveEntry(mManager, this, mMetadata, newMetadata, promise);
+    mRequestHandler->MoveEntry(mManager, this, mMetadata, newMetadata, promise,
+                               aError);
   } else {
-    mRequestHandler->RenameEntry(mManager, this, mMetadata, name, promise);
+    mRequestHandler->RenameEntry(mManager, this, mMetadata, name, promise,
+                                 aError);
+  }
+  if (aError.Failed()) {
+    return nullptr;
   }
 
   // Other handles to this will be broken, and the spec is ok with this, but we

@@ -26,10 +26,10 @@ const SCREEN_ORIENTATION_LANDSCAPE = 1;
 
 const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.jsm",
-  SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.jsm",
-  Utils: "resource://gre/modules/sessionstore/Utils.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.sys.mjs",
+  SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.sys.mjs",
+  Utils: "resource://gre/modules/sessionstore/Utils.sys.mjs",
 });
 
 var EXPORTED_SYMBOLS = ["GeckoViewContentChild"];
@@ -254,9 +254,22 @@ class GeckoViewContentChild extends GeckoViewActorChild {
       case "CollectSessionState": {
         return this.collectSessionState();
       }
+      case "ContainsFormData": {
+        return this.containsFormData();
+      }
     }
 
     return null;
+  }
+
+  async containsFormData() {
+    const { contentWindow } = this;
+    let formdata = SessionStoreUtils.collectFormData(contentWindow);
+    formdata = lazy.PrivacyFilter.filterFormData(formdata || {});
+    if (formdata) {
+      return true;
+    }
+    return false;
   }
 
   async restoreSessionState(message) {

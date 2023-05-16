@@ -1352,6 +1352,41 @@ bool gfxHarfBuzzShaper::ShapeText(DrawTarget* aDrawTarget,
                     aShapedText->DisableLigatures(), entry->FamilyName(),
                     addSmallCaps, AddOpenTypeFeature, &features);
 
+  // For CJK script, match kerning and proportional-alternates (palt) features
+  // (and their vertical counterparts) as per spec:
+  // https://learn.microsoft.com/en-us/typography/opentype/spec/features_pt#tag-palt
+  // and disable kerning by default (for font-kerning:auto).
+  if (gfxTextRun::IsCJKScript(aScript)) {
+    hb_tag_t kern =
+        aVertical ? HB_TAG('v', 'k', 'r', 'n') : HB_TAG('k', 'e', 'r', 'n');
+    hb_tag_t alt =
+        aVertical ? HB_TAG('v', 'p', 'a', 'l') : HB_TAG('p', 'a', 'l', 't');
+    struct Cmp {
+      bool Equals(const hb_feature_t& a, const hb_tag_t& b) const {
+        return a.tag == b;
+      }
+    };
+    constexpr auto NoIndex = nsTArray<hb_feature_t>::NoIndex;
+    nsTArray<hb_feature_t>::index_type i = features.IndexOf(kern, 0, Cmp());
+    if (i == NoIndex) {
+      // Kerning was not explicitly set; override harfbuzz's default to disable
+      // it.
+      features.AppendElement(hb_feature_t{kern, 0, HB_FEATURE_GLOBAL_START,
+                                          HB_FEATURE_GLOBAL_END});
+    } else if (features[i].value) {
+      // If kerning was explicitly enabled), we also turn on proportional
+      // alternates, as per the OpenType feature registry.
+      // Bug 1798297: for the Yu Gothic UI font, we don't do this, because its
+      // 'palt' feature produces badly-spaced (overcrowded) kana glyphs.
+      if (!entry->FamilyName().EqualsLiteral("Yu Gothic UI")) {
+        if (features.IndexOf(alt, 0, Cmp()) == NoIndex) {
+          features.AppendElement(hb_feature_t{alt, 1, HB_FEATURE_GLOBAL_START,
+                                              HB_FEATURE_GLOBAL_END});
+        }
+      }
+    }
+  }
+
   bool isRightToLeft = aShapedText->IsRightToLeft();
 
   hb_buffer_set_direction(

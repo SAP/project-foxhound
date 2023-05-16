@@ -41,11 +41,9 @@ loader.lazyRequireGetter(
   true
 );
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "FileUtils",
-  "resource://gre/modules/FileUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   lazy,
   "NetUtil",
@@ -70,8 +68,8 @@ loader.lazyRequireGetter(
 );
 
 const LOAD_ERROR = "error-load";
-const PREF_MEDIA_SIDEBAR = "devtools.styleeditor.showMediaSidebar";
-const PREF_SIDEBAR_WIDTH = "devtools.styleeditor.mediaSidebarWidth";
+const PREF_AT_RULES_SIDEBAR = "devtools.styleeditor.showAtRulesSidebar";
+const PREF_SIDEBAR_WIDTH = "devtools.styleeditor.atRulesSidebarWidth";
 const PREF_NAV_WIDTH = "devtools.styleeditor.navSidebarWidth";
 const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
 
@@ -148,7 +146,10 @@ export class StyleEditorUI extends EventEmitter {
     this.savedLocations = {};
 
     this.#prefObserver = new PrefObserver("devtools.styleeditor.");
-    this.#prefObserver.on(PREF_MEDIA_SIDEBAR, this.#onMediaPrefChanged);
+    this.#prefObserver.on(
+      PREF_AT_RULES_SIDEBAR,
+      this.#onAtRulesSidebarPrefChanged
+    );
     this.#sourceMapPrefObserver = new PrefObserver(
       "devtools.source-map.client-service."
     );
@@ -467,7 +468,7 @@ export class StyleEditorUI extends EventEmitter {
   #onOptionsButtonClick = ({ screenX, screenY }) => {
     this.#optionsMenu = optionsPopupMenu(
       this.#toggleOrigSources,
-      this.#toggleMediaSidebar
+      this.#toggleAtRulesSidebar
     );
 
     this.#optionsMenu.once("open", () => {
@@ -596,7 +597,7 @@ export class StyleEditorUI extends EventEmitter {
             original.relatedEditorName = parentEditorName;
             original.resourceId = resource.resourceId;
             original.targetFront = resource.targetFront;
-            original.mediaRules = resource.mediaRules;
+            original.atRules = resource.atRules;
             await this.#addStyleSheetEditor(original);
           }
         }
@@ -657,7 +658,7 @@ export class StyleEditorUI extends EventEmitter {
     );
 
     editor.on("property-change", this.#summaryChange.bind(this, editor));
-    editor.on("media-rules-changed", this.#updateMediaList.bind(this, editor));
+    editor.on("at-rules-changed", this.#updateAtRulesList.bind(this, editor));
     editor.on("linked-css-file", this.#summaryChange.bind(this, editor));
     editor.on("linked-css-file-error", this.#summaryChange.bind(this, editor));
     editor.on("error", this.#onError);
@@ -666,9 +667,15 @@ export class StyleEditorUI extends EventEmitter {
       this.#onFocusFilterInputKeyboardShortcut
     );
 
-    // onMediaRulesChanged fires media-rules-changed, so call the function after
-    // registering the listener in order to ensure to get media-rules-changed event.
-    editor.onMediaRulesChanged(resource.mediaRules);
+    // onAtRulesChanged fires at-rules-changed, so call the function after
+    // registering the listener in order to ensure to get at-rules-changed event.
+    let { atRules, mediaRules } = resource;
+    // @backward-compat { version 108 } "mediaRules" is only passed on older servers,
+    //                  the whole if block can be removed when 108 hits release.
+    if (mediaRules) {
+      atRules = mediaRules.map(rule => ({ ...rule, type: "media" }));
+    }
+    editor.onAtRulesChanged(atRules);
 
     this.editors.push(editor);
 
@@ -756,18 +763,19 @@ export class StyleEditorUI extends EventEmitter {
   }
 
   /**
-   * Toggle the pref for showing a @media rules sidebar in each editor.
+   * Toggle the pref for showing the at-rules sidebar (for @media, @layer, @container, …)
+   * in each editor.
    */
-  #toggleMediaSidebar() {
-    const isEnabled = Services.prefs.getBoolPref(PREF_MEDIA_SIDEBAR);
-    Services.prefs.setBoolPref(PREF_MEDIA_SIDEBAR, !isEnabled);
+  #toggleAtRulesSidebar() {
+    const isEnabled = Services.prefs.getBoolPref(PREF_AT_RULES_SIDEBAR);
+    Services.prefs.setBoolPref(PREF_AT_RULES_SIDEBAR, !isEnabled);
   }
 
   /**
-   * Toggle the @media sidebar in each editor depending on the setting.
+   * Toggle the at-rules sidebar in each editor depending on the setting.
    */
-  #onMediaPrefChanged = () => {
-    this.editors.forEach(this.#updateMediaList);
+  #onAtRulesSidebarPrefChanged = () => {
+    this.editors.forEach(this.#updateAtRulesList);
   };
 
   /**
@@ -968,12 +976,12 @@ export class StyleEditorUI extends EventEmitter {
         if (!isNaN(sidebarWidth)) {
           Services.prefs.setIntPref(PREF_SIDEBAR_WIDTH, sidebarWidth);
 
-          // update all @media sidebars for consistency
+          // update all at-rules sidebars for consistency
           const sidebars = [
             ...this.#panelDoc.querySelectorAll(".stylesheet-sidebar"),
           ];
-          for (const mediaSidebar of sidebars) {
-            mediaSidebar.style.width = sidebarWidth + "px";
+          for (const atRuleSidebar of sidebars) {
+            atRuleSidebar.style.width = sidebarWidth + "px";
           }
         }
       },
@@ -1274,24 +1282,24 @@ export class StyleEditorUI extends EventEmitter {
   }
 
   /**
-   * Update the @media rules sidebar for an editor. Hide if there are no rules
-   * Display a list of the @media rules in the editor's associated style sheet.
-   * Emits a 'media-list-changed' event after updating the UI.
+   * Update the at-rules sidebar for an editor. Hide if there are no rules
+   * Display a list of the at-rules (@media, @layer, @container, …) in the editor's associated style sheet.
+   * Emits a 'at-rules-list-changed' event after updating the UI.
    *
    * @param  {StyleSheetEditor} editor
-   *         Editor to update @media sidebar of
+   *         Editor to update sidebar of
    */
-  #updateMediaList = editor => {
+  #updateAtRulesList = editor => {
     (async function() {
       const details = await this.getEditorDetails(editor);
-      const list = details.querySelector(".stylesheet-media-list");
+      const list = details.querySelector(".stylesheet-at-rules-list");
 
       while (list.firstChild) {
         list.firstChild.remove();
       }
 
-      const rules = editor.mediaRules;
-      const showSidebar = Services.prefs.getBoolPref(PREF_MEDIA_SIDEBAR);
+      const rules = editor.atRules;
+      const showSidebar = Services.prefs.getBoolPref(PREF_AT_RULES_SIDEBAR);
       const sidebar = details.querySelector(".stylesheet-sidebar");
 
       let inSource = false;
@@ -1314,82 +1322,110 @@ export class StyleEditorUI extends EventEmitter {
           );
         }
 
-        // this @media rule is from a different original source
+        // this at-rule is from a different original source
         if (location.source != editor.styleSheet.href) {
           continue;
         }
         inSource = true;
 
         const div = this.#panelDoc.createElementNS(HTML_NS, "div");
-        div.className = "media-rule-label";
+        div.classList.add("at-rule-label", rule.type);
         div.addEventListener(
           "click",
           this.#jumpToLocation.bind(this, location)
         );
 
-        const cond = this.#panelDoc.createElementNS(HTML_NS, "div");
-        cond.className = "media-rule-condition";
-        if (!rule.matches) {
+        const ruleTextContainer = this.#panelDoc.createElementNS(
+          HTML_NS,
+          "div"
+        );
+        const type = this.#panelDoc.createElementNS(HTML_NS, "span");
+        type.className = "at-rule-type";
+        type.append(this.#panelDoc.createTextNode(`@${rule.type}\u00A0`));
+        if (rule.type == "layer" && rule.layerName) {
+          type.append(this.#panelDoc.createTextNode(`${rule.layerName}\u00A0`));
+        }
+
+        const cond = this.#panelDoc.createElementNS(HTML_NS, "span");
+        cond.className = "at-rule-condition";
+        if (rule.type == "media" && !rule.matches) {
           cond.classList.add("media-condition-unmatched");
         }
         if (this.#commands.descriptorFront.isLocalTab) {
-          this.#setConditionContents(cond, rule.conditionText);
+          this.#setConditionContents(cond, rule.conditionText, rule.type);
         } else {
           cond.textContent = rule.conditionText;
         }
-        div.appendChild(cond);
 
         const link = this.#panelDoc.createElementNS(HTML_NS, "div");
-        link.className = "media-rule-line theme-link";
+        link.className = "at-rule-line theme-link";
         if (location.line != -1) {
           link.textContent = ":" + location.line;
         }
-        div.appendChild(link);
 
+        ruleTextContainer.append(type, cond);
+        div.append(ruleTextContainer, link);
         list.appendChild(div);
       }
 
       sidebar.hidden = !showSidebar || !inSource;
 
-      this.emit("media-list-changed", editor);
+      this.emit("at-rules-list-changed", editor);
     }
       .bind(this)()
       .catch(console.error));
   };
 
   /**
-   * Used to safely inject media query links
+   * Set the condition text for the at-rule element.
+   * For media queries, it also injects links to open RDM at a specific size.
    *
    * @param {HTMLElement} element
    *        The element corresponding to the media sidebar condition
-   * @param {String} rawText
-   *        The raw condition text to parse
+   * @param {String} ruleConditionText
+   *        The rule conditionText
+   * @param {String} type
+   *        The type of the at-rule (e.g. "media", "layer", "supports", …)
    */
-  #setConditionContents(element, rawText) {
+  #setConditionContents(element, ruleConditionText, type) {
+    if (!ruleConditionText) {
+      return;
+    }
+
+    // For non-media rules, we don't do anything more than displaying the conditionText
+    // as there are no other condition text that would justify opening RDM at a specific
+    // size (e.g. `@container` condition is relative to a container size, which varies
+    // depending the node the rule applies to).
+    if (type !== "media") {
+      const node = this.#panelDoc.createTextNode(ruleConditionText);
+      element.appendChild(node);
+      return;
+    }
+
     const minMaxPattern = /(min\-|max\-)(width|height):\s\d+(px)/gi;
 
-    let match = minMaxPattern.exec(rawText);
+    let match = minMaxPattern.exec(ruleConditionText);
     let lastParsed = 0;
     while (match && match.index != minMaxPattern.lastIndex) {
       const matchEnd = match.index + match[0].length;
       const node = this.#panelDoc.createTextNode(
-        rawText.substring(lastParsed, match.index)
+        ruleConditionText.substring(lastParsed, match.index)
       );
       element.appendChild(node);
 
       const link = this.#panelDoc.createElementNS(HTML_NS, "a");
       link.href = "#";
       link.className = "media-responsive-mode-toggle";
-      link.textContent = rawText.substring(match.index, matchEnd);
+      link.textContent = ruleConditionText.substring(match.index, matchEnd);
       link.addEventListener("click", this.#onMediaConditionClick.bind(this));
       element.appendChild(link);
 
-      match = minMaxPattern.exec(rawText);
+      match = minMaxPattern.exec(ruleConditionText);
       lastParsed = matchEnd;
     }
 
     const node = this.#panelDoc.createTextNode(
-      rawText.substring(lastParsed, rawText.length)
+      ruleConditionText.substring(lastParsed, ruleConditionText.length)
     );
     element.appendChild(node);
   }
@@ -1550,10 +1586,18 @@ export class StyleEditorUI extends EventEmitter {
             }
             break;
           }
-          case "media-rules-changed":
-          case "matches-change": {
-            const { mediaRules } = resource;
-            editor.onMediaRulesChanged(mediaRules);
+          // @backward-compat { version 108 } "media-rules-changed" is only passed on older
+          //                  servers and can be removed when 108 hits release.
+          case "at-rules-changed":
+          case "matches-change":
+          case "media-rules-changed": {
+            let { atRules, mediaRules } = resource;
+            // @backward-compat { version 108 } "mediaRules" is only passed on older servers,
+            //                  the whole if block can be removed when 108 hits release.
+            if (mediaRules) {
+              atRules = mediaRules.map(rule => ({ ...rule, type: "media" }));
+            }
+            editor.onAtRulesChanged(atRules);
             break;
           }
         }
@@ -1719,7 +1763,10 @@ export class StyleEditorUI extends EventEmitter {
     }
 
     if (this.#prefObserver) {
-      this.#prefObserver.off(PREF_MEDIA_SIDEBAR, this.#onMediaPrefChanged);
+      this.#prefObserver.off(
+        PREF_AT_RULES_SIDEBAR,
+        this.#onAtRulesSidebarPrefChanged
+      );
       this.#prefObserver.destroy();
       this.#prefObserver = null;
     }

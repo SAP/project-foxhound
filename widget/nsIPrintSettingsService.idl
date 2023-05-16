@@ -85,15 +85,15 @@ interface nsIPrintSettingsService : nsISupports
   void initPrintSettingsFromPrefs(in nsIPrintSettings aPrintSettings, in boolean aUsePrinterNamePrefix, in unsigned long aFlags);
 
   /**
-   * Writes PrintSettings values to Prefs,
-   * the values to be written are indicated by the "flags" arg.
+   * As long as the pref print.save_print_settings isn't set to false, this
+   * saves to prefs the settings from aPrintSettings that are indicated by
+   * aFlags.
    *
    * If there is no PrinterName in the PrinterSettings
    * the values are saved as the "generic" values not associated with any printer.
    * If a PrinterName is there, then it saves the items qualified for that Printer
    *
    * aPS - PrintSettings to have its settings saved
-   * aUsePrinterNamePrefix - indicates whether to use the printer name as a prefix
    * aFlags - indicates which prefs to save, see nsIPrintSettings.idl for the const values.
    *
    * Items not written:
@@ -102,7 +102,13 @@ interface nsIPrintSettingsService : nsISupports
    *   printSilent, shrinkToFit, numCopies
    *
    */
-  void savePrintSettingsToPrefs(in nsIPrintSettings aPrintSettings, in boolean aUsePrinterNamePrefix, in unsigned long aFlags);
+  void maybeSavePrintSettingsToPrefs(in nsIPrintSettings aPrintSettings, in unsigned long aFlags);
+
+  /**
+   * As long as the pref print.save_print_settings isn't set to false, this
+   * saves the given printer name as the last used printer name.
+   */
+  void maybeSaveLastUsedPrinterNameToPrefs(in AString aPrinterName);
 
   /**
    * Given some nsIPrintSettings,

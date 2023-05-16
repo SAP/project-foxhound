@@ -191,7 +191,7 @@ static nsresult UnescapeFragment(const nsACString& aFragment, nsIURI* aURI,
  * Obtains the directory to use.  This tends to vary per platform, and
  * needs to be consistent throughout our codepaths. For platforms where
  * helper apps use the downloads directory, this should be kept in
- * sync with DownloadIntegration.jsm.
+ * sync with DownloadIntegration.sys.mjs.
  *
  * Optionally skip availability of the directory and storage.
  */
@@ -551,7 +551,7 @@ static const nsExtraMimeTypeEntry extraMimeEntries[] = {
     {VIDEO_WEBM, "webm", "Web Media Video"},
     {AUDIO_WEBM, "webm", "Web Media Audio"},
     {AUDIO_MP3, "mp3,mpega,mp2", "MPEG Audio"},
-    {VIDEO_MP4, "mp4", "MPEG-4 Video"},
+    {VIDEO_MP4, "mp4,m4a,m4b", "MPEG-4 Video"},
     {AUDIO_MP4, "m4a,m4b", "MPEG-4 Audio"},
     {VIDEO_RAW, "yuv", "Raw YUV Video"},
     {AUDIO_WAV, "wav", "Waveform Audio"},
@@ -1565,7 +1565,6 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
 
   if (!mForceSave && StaticPrefs::browser_download_enable_spam_prevention() &&
       IsDownloadSpam(aChannel)) {
-    RecordDownloadTelemetry(aChannel, "spam");
     return NS_OK;
   }
 
@@ -1577,7 +1576,6 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
     // cancel the request so no ui knows about this.
     mCanceled = true;
     request->Cancel(NS_ERROR_ABORT);
-    RecordDownloadTelemetry(aChannel, "forbidden");
     return NS_OK;
   }
 
@@ -1654,8 +1652,6 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
     if (mTempFile) mTempFile->GetPath(path);
 
     SendStatusChange(kWriteError, transferError, request, path);
-
-    RecordDownloadTelemetry(aChannel, "savefailed");
 
     return NS_OK;
   }
@@ -1836,20 +1832,6 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
   }
 #endif
 
-  nsAutoCString actionTelem;
-  if (alwaysAsk) {
-    actionTelem.AssignLiteral("ask");
-  } else if (shouldAutomaticallyHandleInternally) {
-    actionTelem.AssignLiteral("internal");
-  } else if (action == nsIMIMEInfo::useHelperApp ||
-             action == nsIMIMEInfo::useSystemDefault) {
-    actionTelem.AssignLiteral("external");
-  } else {
-    actionTelem.AssignLiteral("save");
-  }
-
-  RecordDownloadTelemetry(aChannel, actionTelem.get());
-
   if (alwaysAsk) {
     // Display the dialog
     mDialog = do_CreateInstance(NS_HELPERAPPLAUNCHERDLG_CONTRACTID, &rv);
@@ -1880,50 +1862,6 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
     }
   }
   return NS_OK;
-}
-
-void nsExternalAppHandler::RecordDownloadTelemetry(nsIChannel* aChannel,
-                                                   const char* aAction) {
-  // Telemetry for helper app dialog
-
-  if (XRE_IsContentProcess()) {
-    return;
-  }
-
-  nsAutoCString reason;
-  switch (mReason) {
-    case nsIHelperAppLauncherDialog::REASON_SERVERREQUEST:
-      reason.AssignLiteral("attachment");
-      break;
-    case nsIHelperAppLauncherDialog::REASON_TYPESNIFFED:
-      reason.AssignLiteral("sniffed");
-      break;
-    case nsIHelperAppLauncherDialog::REASON_CANTHANDLE:
-    default:
-      reason.AssignLiteral("other");
-      break;
-  }
-
-  nsAutoCString contentTypeTelem;
-  nsAutoCString contentType;
-  aChannel->GetContentType(contentType);
-  if (contentType.EqualsIgnoreCase(APPLICATION_PDF)) {
-    contentTypeTelem.AssignLiteral("pdf");
-  } else if (contentType.EqualsIgnoreCase(APPLICATION_OCTET_STREAM) ||
-             contentType.EqualsIgnoreCase(BINARY_OCTET_STREAM)) {
-    contentTypeTelem.AssignLiteral("octetstream");
-  } else {
-    contentTypeTelem.AssignLiteral("other");
-  }
-
-  CopyableTArray<mozilla::Telemetry::EventExtraEntry> extra(1);
-  extra.AppendElement(
-      mozilla::Telemetry::EventExtraEntry{"type"_ns, contentTypeTelem});
-  extra.AppendElement(mozilla::Telemetry::EventExtraEntry{"reason"_ns, reason});
-
-  mozilla::Telemetry::RecordEvent(
-      mozilla::Telemetry::EventID::Downloads_Helpertype_Unknowntype,
-      mozilla::Some(aAction), mozilla::Some(extra));
 }
 
 bool nsExternalAppHandler::IsDownloadSpam(nsIChannel* aChannel) {
@@ -2963,6 +2901,18 @@ NS_IMETHODIMP nsExternalHelperAppService::GetFromTypeAndExtension(
   return NS_OK;
 }
 
+bool nsExternalHelperAppService::GetMIMETypeFromDefaultForExtension(
+    const nsACString& aExtension, nsACString& aMIMEType) {
+  // First of all, check our default entries
+  for (auto& entry : defaultMimeEntries) {
+    if (aExtension.LowerCaseEqualsASCII(entry.mFileExtension)) {
+      aMIMEType = entry.mMimeType;
+      return true;
+    }
+  }
+  return false;
+}
+
 NS_IMETHODIMP
 nsExternalHelperAppService::GetTypeFromExtension(const nsACString& aFileExt,
                                                  nsACString& aContentType) {
@@ -2982,11 +2932,8 @@ nsExternalHelperAppService::GetTypeFromExtension(const nsACString& aFileExt,
   }
 
   // First of all, check our default entries
-  for (auto& entry : defaultMimeEntries) {
-    if (aFileExt.LowerCaseEqualsASCII(entry.mFileExtension)) {
-      aContentType = entry.mMimeType;
-      return NS_OK;
-    }
+  if (GetMIMETypeFromDefaultForExtension(aFileExt, aContentType)) {
+    return NS_OK;
   }
 
   // Ask OS.
@@ -3032,6 +2979,35 @@ NS_IMETHODIMP nsExternalHelperAppService::GetPrimaryExtension(
 
   return mi->GetPrimaryExtension(_retval);
 }
+
+NS_IMETHODIMP nsExternalHelperAppService::GetDefaultTypeFromURI(
+    nsIURI* aURI, nsACString& aContentType) {
+  NS_ENSURE_ARG_POINTER(aURI);
+  nsresult rv = NS_ERROR_NOT_AVAILABLE;
+  aContentType.Truncate();
+
+  // Now try to get an nsIURL so we don't have to do our own parsing
+  nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
+  if (!url) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsAutoCString ext;
+  rv = url->GetFileExtension(ext);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (!ext.IsEmpty()) {
+    UnescapeFragment(ext, url, ext);
+
+    if (GetMIMETypeFromDefaultForExtension(ext, aContentType)) {
+      return NS_OK;
+    }
+  }
+
+  return NS_ERROR_NOT_AVAILABLE;
+};
 
 NS_IMETHODIMP nsExternalHelperAppService::GetTypeFromURI(
     nsIURI* aURI, nsACString& aContentType) {

@@ -594,10 +594,7 @@ SubDialog.prototype = {
     let frameOverhead = frameSizeDifference + titleBarHeight;
     let maxHeight = this._window.innerHeight - frameOverhead;
     // Do this with a frame height in pixels...
-    let comparisonFrameHeight;
-    if (frameHeight.endsWith("px")) {
-      comparisonFrameHeight = parseFloat(frameHeight);
-    } else {
+    if (!frameHeight.endsWith("px")) {
       Cu.reportError(
         "This dialog (" +
           this._frame.contentWindow.location.href +
@@ -608,23 +605,22 @@ SubDialog.prototype = {
           "which is likely to lead to bad sizing in in-content preferences. " +
           "Please consider changing this."
       );
-      comparisonFrameHeight = parseFloat(frameHeight);
     }
 
-    if (comparisonFrameHeight > maxHeight) {
+    if (
+      parseFloat(frameMinHeight) > maxHeight ||
+      parseFloat(frameHeight) > maxHeight
+    ) {
       // If the height is bigger than that of the window, we should let the
       // contents scroll. The class is set on the "dialog" element, unless a
       // content pane exists, which is usually the case when the "window"
       // element is used to implement the subdialog instead.
       frameMinHeight = maxHeight + "px";
-
-      if (contentPane) {
-        // There are also instances where the subdialog is neither implemented
-        // using a content pane, nor a <dialog> (such as manageAddresses.xhtml)
-        // so make sure to check that we actually got a contentPane before we
-        // use it.
-        contentPane.classList.add("doScroll");
-      }
+      // There also instances where the subdialog is neither implemented using
+      // a content pane, nor a <dialog> (such as manageAddresses.xhtml)
+      // so make sure to check that we actually got a contentPane before we
+      // use it.
+      contentPane?.classList.add("doScroll");
     }
 
     this._overlay.parentNode.style.setProperty("--inner-height", frameHeight);

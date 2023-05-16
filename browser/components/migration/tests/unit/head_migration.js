@@ -1,7 +1,7 @@
 "use strict";
 
-var { MigrationUtils, MigratorPrototype } = ChromeUtils.import(
-  "resource:///modules/MigrationUtils.jsm"
+var { MigrationUtils, MigratorPrototype } = ChromeUtils.importESModule(
+  "resource:///modules/MigrationUtils.sys.mjs"
 );
 var { LoginHelper } = ChromeUtils.import(
   "resource://gre/modules/LoginHelper.jsm"
@@ -10,8 +10,8 @@ var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 var { PlacesUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PlacesUtils.sys.mjs"
 );
-var { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+var { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 var { PromiseUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PromiseUtils.sys.mjs"

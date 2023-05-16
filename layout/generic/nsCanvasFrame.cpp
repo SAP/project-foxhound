@@ -15,7 +15,6 @@
 #include "nsContentCreatorFunctions.h"
 #include "nsCSSRendering.h"
 #include "nsPresContext.h"
-#include "nsPopupSetFrame.h"
 #include "nsGkAtoms.h"
 #include "nsIFrameInlines.h"
 #include "nsDisplayList.h"
@@ -38,7 +37,7 @@
 #  include "nsIDocShell.h"
 #endif
 
-//#define DEBUG_CANVAS_FOCUS
+// #define DEBUG_CANVAS_FOCUS
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -158,24 +157,11 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
   // support context menus and tooltips.
   if (XRE_IsParentProcess() && doc->NodePrincipal()->IsSystemPrincipal()) {
     nsNodeInfoManager* nodeInfoManager = doc->NodeInfoManager();
-    RefPtr<NodeInfo> nodeInfo =
-        nodeInfoManager->GetNodeInfo(nsGkAtoms::popupgroup, nullptr,
-                                     kNameSpaceID_XUL, nsINode::ELEMENT_NODE);
-
-    nsresult rv = NS_NewXULElement(getter_AddRefs(mPopupgroupContent),
-                                   nodeInfo.forget(), dom::NOT_FROM_PARSER);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    mPopupgroupContent->SetProperty(nsGkAtoms::docLevelNativeAnonymousContent,
-                                    reinterpret_cast<void*>(true));
-
-    aElements.AppendElement(mPopupgroupContent);
-
-    nodeInfo = nodeInfoManager->GetNodeInfo(
+    RefPtr<NodeInfo> nodeInfo = nodeInfoManager->GetNodeInfo(
         nsGkAtoms::tooltip, nullptr, kNameSpaceID_XUL, nsINode::ELEMENT_NODE);
 
-    rv = NS_NewXULElement(getter_AddRefs(mTooltipContent), nodeInfo.forget(),
-                          dom::NOT_FROM_PARSER);
+    nsresult rv = NS_NewXULElement(getter_AddRefs(mTooltipContent),
+                                   nodeInfo.forget(), dom::NOT_FROM_PARSER);
     NS_ENSURE_SUCCESS(rv, rv);
 
     mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::_default, u"true"_ns,
@@ -208,9 +194,6 @@ void nsCanvasFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
   if (mCustomContentContainer) {
     aElements.AppendElement(mCustomContentContainer);
   }
-  if (mPopupgroupContent) {
-    aElements.AppendElement(mPopupgroupContent);
-  }
   if (mTooltipContent) {
     aElements.AppendElement(mTooltipContent);
   }
@@ -225,16 +208,9 @@ void nsCanvasFrame::DestroyFrom(nsIFrame* aDestructRoot,
   }
 
   aPostDestroyData.AddAnonymousContent(mCustomContentContainer.forget());
-  if (mPopupgroupContent) {
-    aPostDestroyData.AddAnonymousContent(mPopupgroupContent.forget());
-  }
   if (mTooltipContent) {
     aPostDestroyData.AddAnonymousContent(mTooltipContent.forget());
   }
-
-  MOZ_ASSERT(!mPopupSetFrame ||
-                 nsLayoutUtils::IsProperAncestorFrame(this, mPopupSetFrame),
-             "Someone forgot to clear popup set frame");
   nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
@@ -264,16 +240,17 @@ nsCanvasFrame::SetHasFocus(bool aHasFocus) {
 }
 
 void nsCanvasFrame::SetInitialChildList(ChildListID aListID,
-                                        nsFrameList& aChildList) {
-  NS_ASSERTION(aListID != kPrincipalList || aChildList.IsEmpty() ||
+                                        nsFrameList&& aChildList) {
+  NS_ASSERTION(aListID != FrameChildListID::Principal || aChildList.IsEmpty() ||
                    aChildList.OnlyChild(),
                "Primary child list can have at most one frame in it");
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
 }
 
-void nsCanvasFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
+void nsCanvasFrame::AppendFrames(ChildListID aListID,
+                                 nsFrameList&& aFrameList) {
 #ifdef DEBUG
-  MOZ_ASSERT(aListID == kPrincipalList, "unexpected child list");
+  MOZ_ASSERT(aListID == FrameChildListID::Principal, "unexpected child list");
   if (!mFrames.IsEmpty()) {
     for (nsIFrame* f : aFrameList) {
       // We only allow native anonymous child frames to be in principal child
@@ -284,21 +261,21 @@ void nsCanvasFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
   }
   nsIFrame::VerifyDirtyBitSet(aFrameList);
 #endif
-  nsContainerFrame::AppendFrames(aListID, aFrameList);
+  nsContainerFrame::AppendFrames(aListID, std::move(aFrameList));
 }
 
 void nsCanvasFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                  const nsLineList::iterator* aPrevFrameLine,
-                                 nsFrameList& aFrameList) {
+                                 nsFrameList&& aFrameList) {
   // Because we only support a single child frame inserting is the same
   // as appending
   MOZ_ASSERT(!aPrevFrame, "unexpected previous sibling frame");
-  AppendFrames(aListID, aFrameList);
+  AppendFrames(aListID, std::move(aFrameList));
 }
 
 #ifdef DEBUG
 void nsCanvasFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  MOZ_ASSERT(aListID == kPrincipalList, "unexpected child list");
+  MOZ_ASSERT(aListID == FrameChildListID::Principal, "unexpected child list");
   nsContainerFrame::RemoveFrame(aListID, aOldFrame);
 }
 #endif
@@ -316,21 +293,7 @@ nsRect nsCanvasFrame::CanvasArea() const {
   return result;
 }
 
-nsPopupSetFrame* nsCanvasFrame::GetPopupSetFrame() { return mPopupSetFrame; }
-
-void nsCanvasFrame::SetPopupSetFrame(nsPopupSetFrame* aPopupSet) {
-  MOZ_ASSERT(!aPopupSet || !mPopupSetFrame,
-             "Popup set is already defined! Only 1 allowed.");
-  mPopupSetFrame = aPopupSet;
-}
-
 Element* nsCanvasFrame::GetDefaultTooltip() { return mTooltipContent; }
-
-void nsCanvasFrame::SetDefaultTooltip(Element* aTooltip) {
-  MOZ_ASSERT(!aTooltip || aTooltip == mTooltipContent,
-             "Default tooltip should be anonymous content tooltip.");
-  mTooltipContent = aTooltip;
-}
 
 void nsDisplayCanvasBackgroundColor::Paint(nsDisplayListBuilder* aBuilder,
                                            gfxContext* aCtx) {
@@ -710,7 +673,7 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
       // Prepend overflow to the our child list. There may already be
       // children placeholders for fixed-pos elements, which don't get
       // reflowed but must not be lost until the canvas frame is destroyed.
-      mFrames.InsertFrames(this, nullptr, *overflow);
+      mFrames.InsertFrames(this, nullptr, std::move(*overflow));
     }
   }
 
@@ -727,7 +690,6 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
   // overflow (painted by BuildPreviousPageOverflow in nsPageFrame.cpp).
   // We may have additional children which are placeholders for continuations
   // of fixed-pos content, see nsCSSFrameConstructor::ReplicateFixedFrames.
-  // We may also have a nsPopupSetFrame child (mPopupSetFrame).
   const WritingMode wm = aReflowInput.GetWritingMode();
   aDesiredSize.SetSize(wm, aReflowInput.ComputedSize());
   if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
@@ -739,11 +701,6 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
   nsIFrame* nextKid = nullptr;
   for (auto* kidFrame = mFrames.FirstChild(); kidFrame; kidFrame = nextKid) {
     nextKid = kidFrame->GetNextSibling();
-    if (kidFrame == mPopupSetFrame) {
-      // This child is handled separately after this loop.
-      continue;
-    }
-
     ReflowOutput kidDesiredSize(aReflowInput);
     bool kidDirty = kidFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY);
     WritingMode kidWM = kidFrame->GetWritingMode();
@@ -870,23 +827,6 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     ReflowOverflowContainerChildren(aPresContext, aReflowInput,
                                     aDesiredSize.mOverflowAreas,
                                     ReflowChildFlags::Default, aStatus);
-  }
-
-  if (mPopupSetFrame) {
-    MOZ_ASSERT(mFrames.ContainsFrame(mPopupSetFrame),
-               "Only normal flow supported.");
-    nsReflowStatus popupStatus;
-    ReflowOutput popupDesiredSize(aReflowInput.GetWritingMode());
-    WritingMode wm = mPopupSetFrame->GetWritingMode();
-    LogicalSize availSize = aReflowInput.ComputedSize(wm);
-    availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
-    ReflowInput popupReflowInput(aPresContext, aReflowInput, mPopupSetFrame,
-                                 availSize);
-    ReflowChild(mPopupSetFrame, aPresContext, popupDesiredSize,
-                popupReflowInput, 0, 0, ReflowChildFlags::NoMoveFrame,
-                popupStatus);
-    FinishReflowChild(mPopupSetFrame, aPresContext, popupDesiredSize,
-                      &popupReflowInput, 0, 0, ReflowChildFlags::NoMoveFrame);
   }
 
   FinishReflowWithAbsoluteFrames(aPresContext, aDesiredSize, aReflowInput,

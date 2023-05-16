@@ -7,47 +7,20 @@ const { ASRouter, MessageLoaderUtils } = ChromeUtils.import(
   "resource://activity-stream/lib/ASRouter.jsm"
 );
 
+const { AboutWelcomeParent } = ChromeUtils.import(
+  "resource:///actors/AboutWelcomeParent.jsm"
+);
+
 const { BuiltInThemes } = ChromeUtils.importESModule(
   "resource:///modules/BuiltInThemes.sys.mjs"
 );
 
-const calloutId = "root";
-const calloutSelector = `#${calloutId}.featureCallout`;
-const primaryButtonSelector = `#${calloutId} .primary`;
+const { FeatureCalloutMessages } = ChromeUtils.import(
+  "resource://activity-stream/lib/FeatureCalloutMessages.jsm"
+);
+
 const featureTourPref = "browser.firefox-view.feature-tour";
-const getPrefValueByScreen = screen => {
-  return JSON.stringify({
-    screen: `FEATURE_CALLOUT_${screen}`,
-    complete: false,
-  });
-};
 const defaultPrefValue = getPrefValueByScreen(1);
-
-/**
- * wait for a feature callout screen of given parameters to be shown
- * @param {Document} doc the document in which the callout appears
- * @param {String|Number} screenPostfix Number: the screen number to wait for.
- *                                      String: the full ID of the screen.
- */
-const waitForCalloutScreen = async (doc, screenPostfix) => {
-  await BrowserTestUtils.waitForCondition(() =>
-    doc.querySelector(
-      `${calloutSelector}:not(.hidden) .${
-        typeof screenPostfix === "number" ? "FEATURE_CALLOUT_" : ""
-      }${screenPostfix}`
-    )
-  );
-};
-
-const waitForCalloutRemoved = async doc => {
-  await BrowserTestUtils.waitForCondition(() => {
-    return !doc.body.querySelector(calloutSelector);
-  });
-};
-
-const clickPrimaryButton = async doc => {
-  doc.querySelector(primaryButtonSelector).click();
-};
 
 add_setup(async function() {
   requestLongerTimeout(2);
@@ -66,7 +39,7 @@ add_task(async function feature_callout_renders_in_firefox_view() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
 
       ok(
         document.querySelector(calloutSelector),
@@ -110,7 +83,7 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
     "about:firefoxview"
   );
   let tab1Doc = tab1.linkedBrowser.contentWindow.document;
-  await waitForCalloutScreen(tab1Doc, 2);
+  await waitForCalloutScreen(tab1Doc, "FEATURE_CALLOUT_2");
 
   ok(
     tab1Doc.querySelector(".FEATURE_CALLOUT_2"),
@@ -123,7 +96,7 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
     "about:firefoxview"
   );
   let tab2Doc = tab2.linkedBrowser.contentWindow.document;
-  await waitForCalloutScreen(tab2Doc, 2);
+  await waitForCalloutScreen(tab2Doc, "FEATURE_CALLOUT_2");
 
   ok(
     tab2Doc.querySelector(".FEATURE_CALLOUT_2"),
@@ -134,7 +107,7 @@ add_task(async function feature_callout_syncs_across_visits_and_tabs() {
 
   gBrowser.selectedTab = tab1;
   tab1.focus();
-  await waitForCalloutScreen(tab1Doc, 3);
+  await waitForCalloutScreen(tab1Doc, "FEATURE_CALLOUT_3");
   ok(
     tab1Doc.querySelector(".FEATURE_CALLOUT_3"),
     "First tab's Feature Callout advances to the next screen when the tour is advanced in second tab"
@@ -175,7 +148,7 @@ add_task(async function feature_callout_closes_on_dismiss() {
     async browser => {
       const { document } = browser.contentWindow;
 
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
 
       document.querySelector(".dismiss-button").click();
       await waitForCalloutRemoved(document);
@@ -213,7 +186,7 @@ add_task(async function feature_callout_only_highlights_existing_elements() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, 2);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_2");
 
       ok(
         document
@@ -248,7 +221,7 @@ add_task(async function feature_callout_arrow_class_exists() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
 
       const arrowParent = document.querySelector(".callout-arrow.arrow-top");
       ok(arrowParent, "Arrow class exists on parent container");
@@ -303,7 +276,7 @@ add_task(async function feature_callout_respects_cfr_features_pref() {
     async browser => {
       const { document } = browser.contentWindow;
 
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
       ok(
         document.querySelector(calloutSelector),
         "Feature Callout element exists"
@@ -332,7 +305,7 @@ add_task(async function feature_callout_respects_cfr_features_pref() {
       );
 
       await toggleCFRFeaturesPref(true);
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
       ok(
         document.querySelector(calloutSelector),
         "Feature Callout element was created because CFR pref was enabled"
@@ -404,6 +377,140 @@ add_task(
   }
 );
 
+add_task(async function feature_callout_dismiss_on_page_click() {
+  let sandbox = sinon.createSandbox();
+  await SpecialPowers.pushPrefEnv({
+    set: [[featureTourPref, `{"message":"","screen":"","complete":true}`]],
+  });
+  const screenId = "FIREFOX_VIEW_COLORWAYS_REMINDER";
+  const testMessage = {
+    message: FeatureCalloutMessages.getMessages().find(m => m.id === screenId),
+  };
+  const sendTriggerStub = sandbox.stub(ASRouter, "sendTriggerMessage");
+  sendTriggerStub.resolves(testMessage);
+
+  const spy = sandbox
+    .spy(AboutWelcomeParent.prototype, "onContentMessage")
+    .withArgs("AWPage:TELEMETRY_EVENT");
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      info("Waiting for callout to render");
+      await waitForCalloutScreen(document, screenId);
+
+      info("Clicking page button");
+      document.querySelector("#colorways-button").click();
+      await waitForCalloutRemoved(document);
+
+      // Test that appropriate telemetry is sent
+      let calledWith = spy.calledWith(
+        "AWPage:TELEMETRY_EVENT",
+        {
+          event: "PAGE_EVENT",
+          event_context: {
+            action: "DISMISS",
+            reason: "CLICK",
+            source: sinon.match("#colorways-button"),
+            page: document.location.href,
+          },
+          message_id: screenId,
+        },
+        document
+      );
+      if (calledWith) {
+        ok(true, "Expected telemetry sent");
+      } else if (spy.called) {
+        ok(false, "Wrong telemetry sent: " + JSON.stringify(spy.lastCall.args));
+      } else {
+        ok(false, "No telemetry sent");
+      }
+    }
+  );
+  Services.prefs.clearUserPref("browser.firefox-view.view-count");
+  Services.prefs.clearUserPref("identity.fxaccounts.enabled");
+  sandbox.restore();
+  ASRouter.resetMessageState();
+});
+
+add_task(async function feature_callout_advance_tour_on_page_click() {
+  let sandbox = sinon.createSandbox();
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        featureTourPref,
+        JSON.stringify({
+          message: "FIREFOX_VIEW_FEATURE_TOUR",
+          screen: "FEATURE_CALLOUT_2",
+          complete: false,
+        }),
+      ],
+    ],
+  });
+
+  // Add page action listeners to the built-in messages.
+  const TEST_MESSAGES = FeatureCalloutMessages.getMessages().filter(msg =>
+    ["FIREFOX_VIEW_FEATURE_TOUR_2", "FIREFOX_VIEW_FEATURE_TOUR_3"].includes(
+      msg.id
+    )
+  );
+  TEST_MESSAGES.forEach(msg => {
+    let { content } = msg.content.screens[msg.content.startScreen ?? 0];
+    content.page_event_listeners = [
+      {
+        params: {
+          type: "click",
+          selectors: ".brand-logo",
+        },
+        action: JSON.parse(JSON.stringify(content.primary_button.action)),
+      },
+    ];
+  });
+  const getMessagesStub = sandbox.stub(FeatureCalloutMessages, "getMessages");
+  getMessagesStub.returns(TEST_MESSAGES);
+  await ASRouter._updateMessageProviders();
+  await ASRouter.loadMessagesFromAllProviders(
+    ASRouter.state.providers.filter(p => p.id === "onboarding")
+  );
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:firefoxview",
+    },
+    async browser => {
+      const { document } = browser.contentWindow;
+
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_2");
+      info("Clicking page button");
+      document.querySelector(".brand-logo").click();
+
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_3");
+      info("Clicking page button");
+      document.querySelector(".brand-logo").click();
+
+      await waitForCalloutRemoved(document);
+      let tourComplete = JSON.parse(
+        Services.prefs.getStringPref(featureTourPref)
+      ).complete;
+      ok(
+        tourComplete,
+        `Tour is recorded as complete in ${featureTourPref} preference value`
+      );
+    }
+  );
+
+  sandbox.restore();
+  await ASRouter._updateMessageProviders();
+  await ASRouter.loadMessagesFromAllProviders(
+    ASRouter.state.providers.filter(p => p.id === "onboarding")
+  );
+});
+
 add_task(async function test_firefox_view_spotlight_promo() {
   // Prevent attempts to fetch CFR messages remotely.
   const sandbox = sinon.createSandbox();
@@ -440,18 +547,19 @@ add_task(async function test_firefox_view_spotlight_promo() {
         () => dialogBrowser.document.querySelector("main.DEFAULT_MODAL_UI"),
         `Should render main.DEFAULT_MODAL_UI`
       );
-      await BrowserTestUtils.waitForCondition(
-        () => dialogBrowser.document.querySelector(primaryBtnSelector),
-        `waiting for selector ${primaryBtnSelector}`,
-        200, // interval
-        100 // maxTries
-      );
+
       dialogBrowser.document.querySelector(primaryBtnSelector).click();
+      info("Fx View Spotlight promo clicked");
 
-      info("Fx View Spotlight promo clicked, entering feature tour");
+      await BrowserTestUtils.waitForCondition(
+        () =>
+          browser.contentWindow.performance.navigation.type ==
+          browser.contentWindow.performance.navigation.TYPE_RELOAD
+      );
+      info("Spotlight modal cleared, entering feature tour");
+
       const { document } = browser.contentWindow;
-
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
       ok(
         document.querySelector(calloutSelector),
         "Feature Callout element exists"
@@ -459,14 +567,14 @@ add_task(async function test_firefox_view_spotlight_promo() {
       info("Feature tour started");
       await clickPrimaryButton(document);
 
-      await waitForCalloutScreen(document, 2);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_2");
       ok(
         document.querySelector(calloutSelector),
         "Feature Callout element exists"
       );
       await clickPrimaryButton(document);
 
-      await waitForCalloutScreen(document, 3);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_3");
       ok(
         document.querySelector(calloutSelector),
         "Feature Callout element exists"
@@ -494,7 +602,7 @@ add_task(async function feature_callout_returns_default_fxview_focus_to_top() {
     },
     async browser => {
       const { document } = browser.contentWindow;
-      await waitForCalloutScreen(document, 1);
+      await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
 
       ok(
         document.querySelector(calloutSelector),
@@ -525,7 +633,7 @@ add_task(
       },
       async browser => {
         const { document } = browser.contentWindow;
-        await waitForCalloutScreen(document, 1);
+        await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
 
         // change focus to recently-closed-tabs-container
         let recentlyClosedHeaderSection = document.querySelector(

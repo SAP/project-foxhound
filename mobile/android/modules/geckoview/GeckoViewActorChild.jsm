@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
-const { EventDispatcher } = ChromeUtils.import(
-  "resource://gre/modules/Messaging.jsm"
+const { EventDispatcher } = ChromeUtils.importESModule(
+  "resource://gre/modules/Messaging.sys.mjs"
 );
 
 var EXPORTED_SYMBOLS = ["GeckoViewActorChild"];

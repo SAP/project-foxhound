@@ -51,10 +51,6 @@ class XULPopupElement : public nsXULElement {
     SetXULAttr(nsGkAtoms::position, aValue, rv);
   }
 
-  bool AutoPosition();
-
-  void SetAutoPosition(bool aShouldAutoPosition);
-
   void OpenPopup(Element* aAnchorElement,
                  const StringOrOpenPopupOptions& aOptions, int32_t aXPos,
                  int32_t aYPos, bool aIsContextMenu, bool aAttributesOverride,
@@ -89,6 +85,9 @@ class XULPopupElement : public nsXULElement {
   void SizeTo(int32_t aWidth, int32_t aHeight);
 
   void SetConstraintRect(DOMRectReadOnly& aRect);
+
+  bool IsWaylandDragSource() const;
+  bool IsWaylandPopup() const;
 
  protected:
   virtual ~XULPopupElement() = default;

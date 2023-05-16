@@ -12,15 +12,6 @@
 #include "mozilla/dom/PFileSystemManagerParent.h"
 #include "nsISupports.h"
 
-namespace mozilla {
-extern LazyLogModule gOPFSLog;
-}
-
-#define LOG(args) MOZ_LOG(mozilla::gOPFSLog, mozilla::LogLevel::Verbose, args)
-
-#define LOG_DEBUG(args) \
-  MOZ_LOG(mozilla::gOPFSLog, mozilla::LogLevel::Debug, args)
-
 namespace mozilla::dom {
 
 namespace fs::data {
@@ -48,8 +39,11 @@ class FileSystemManagerParent : public PFileSystemManagerParent {
       FileSystemGetHandleRequest&& aRequest, GetFileHandleResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvGetAccessHandle(
-      const FileSystemGetAccessHandleRequest& aRequest,
+      FileSystemGetAccessHandleRequest&& aRequest,
       GetAccessHandleResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvGetWritable(
+      FileSystemGetWritableRequest&& aRequest, GetWritableResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvGetFile(FileSystemGetFileRequest&& aRequest,
                                       GetFileResolver&& aResolver);
@@ -68,9 +62,6 @@ class FileSystemManagerParent : public PFileSystemManagerParent {
 
   mozilla::ipc::IPCResult RecvRenameEntry(
       FileSystemRenameEntryRequest&& aRequest, MoveEntryResolver&& aResolver);
-
-  mozilla::ipc::IPCResult RecvGetWritable(FileSystemGetFileRequest&& aRequest,
-                                          GetWritableResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvNeedQuota(FileSystemQuotaRequest&& aRequest,
                                         NeedQuotaResolver&& aResolver);

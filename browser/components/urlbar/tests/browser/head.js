@@ -7,8 +7,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -61,7 +61,7 @@ async function selectAndPaste(str, win = window) {
 /**
  * Updates the Top Sites feed.
  *
- * @param {function} condition
+ * @param {Function} condition
  *   A callback that returns true after Top Sites are successfully updated.
  * @param {boolean} searchShortcuts
  *   True if Top Sites search shortcuts should be enabled.
@@ -70,6 +70,10 @@ async function updateTopSites(condition, searchShortcuts = false) {
   // Toggle the pref to clear the feed cache and force an update.
   await SpecialPowers.pushPrefEnv({
     set: [
+      [
+        "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear",
+        "",
+      ],
       ["browser.newtabpage.activity-stream.feeds.system.topsites", false],
       ["browser.newtabpage.activity-stream.feeds.system.topsites", true],
       [

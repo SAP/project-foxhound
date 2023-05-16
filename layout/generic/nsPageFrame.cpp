@@ -50,7 +50,11 @@ nsPageFrame::~nsPageFrame() = default;
 
 nsReflowStatus nsPageFrame::ReflowPageContent(
     nsPresContext* aPresContext, const ReflowInput& aPageReflowInput) {
-  nsIFrame* const frame = PageContentFrame();
+  nsPageContentFrame* const frame = PageContentFrame();
+  // If this is the first page, it won't have its page name and computed style
+  // set yet. Before reflow, make sure that page name and computed style have
+  // been applied.
+  frame->EnsurePageName();
   // XXX Pay attention to the page's border and padding...
   //
   // Reflow our ::-moz-page-content frame, allowing it only to be as big as we
@@ -604,12 +608,13 @@ nsSize nsPageFrame::ComputePageSize() const {
   }
   if (pageSize.IsOrientation()) {
     // Ensure the correct orientation is applied.
-    if (pageSize.AsOrientation() == StylePageOrientation::Portrait) {
+    if (pageSize.AsOrientation() == StylePageSizeOrientation::Portrait) {
       if (size.width > size.height) {
         std::swap(size.width, size.height);
       }
     } else {
-      MOZ_ASSERT(pageSize.AsOrientation() == StylePageOrientation::Landscape);
+      MOZ_ASSERT(pageSize.AsOrientation() ==
+                 StylePageSizeOrientation::Landscape);
       if (size.width < size.height) {
         std::swap(size.width, size.height);
       }

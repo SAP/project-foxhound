@@ -32,6 +32,7 @@
 #include "IndexedDBCommon.h"
 #include "IndexedDatabaseInlines.h"
 #include "IndexedDatabaseManager.h"
+#include "IndexedDBCipherKeyManager.h"
 #include "KeyPath.h"
 #include "MainThreadUtils.h"
 #include "ProfilerHelpers.h"
@@ -2384,7 +2385,6 @@ class Database final
 
   bool IsInPrivateBrowsing() const {
     AssertIsOnBackgroundThread();
-
     return mInPrivateBrowsing;
   }
 
@@ -3750,6 +3750,48 @@ class NormalTransactionOp : public TransactionDatabaseOperationBase,
       const PreprocessResponse& aResponse) final;
 };
 
+Maybe<CipherKey> IndexedDBCipherKeyManager::Get(const nsCString& aDatabaseID,
+                                                const nsCString& keyStoreID) {
+  auto lockedPrivateBrowsingInfoHashTable =
+      mPrivateBrowsingInfoHashTable.Lock();
+
+  auto dbKeyStore = lockedPrivateBrowsingInfoHashTable->Lookup(aDatabaseID);
+  if (!dbKeyStore) {
+    return Nothing();
+  }
+
+  return dbKeyStore->MaybeGet(keyStoreID);
+}
+
+CipherKey IndexedDBCipherKeyManager::Ensure(const nsCString& aDatabaseID,
+                                            const nsCString& keyStoreID) {
+  auto lockedPrivateBrowsingInfoHashTable =
+      mPrivateBrowsingInfoHashTable.Lock();
+
+  auto& dbKeyStore =
+      lockedPrivateBrowsingInfoHashTable->LookupOrInsert(aDatabaseID);
+
+  return dbKeyStore.LookupOrInsertWith(keyStoreID, [] {
+    // Generate a new key if one corresponding to keyStoreID
+    // does not exists already.
+    auto keyOrErr = IndexedDBCipherStrategy::GenerateKey();
+
+    // Bug1800110 Propagate the error to the caller rather than asserting.
+    MOZ_RELEASE_ASSERT(keyOrErr.isOk());
+    return keyOrErr.unwrap();
+  });
+}
+
+bool IndexedDBCipherKeyManager::Remove(const nsCString& aDatabaseID) {
+  auto lockedPrivateBrowsingInfoHashTable =
+      mPrivateBrowsingInfoHashTable.Lock();
+  return lockedPrivateBrowsingInfoHashTable->Remove(aDatabaseID);
+}
+
+// XXX Maybe we can avoid a mutex here by moving all accesses to the background
+// thread.
+StaticAutoPtr<IndexedDBCipherKeyManager> gIndexedDBCipherKeyManager;
+
 class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
   friend class TransactionBase;
 
@@ -3765,7 +3807,7 @@ class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
 #ifdef DEBUG
     const StructuredCloneFileBase::FileType mType;
 #endif
-
+    void EnsureCipherKey();
     void AssertInvariants() const;
 
     explicit StoredFileInfo(SafeRefPtr<DatabaseFileInfo> aFileInfo);
@@ -3899,6 +3941,18 @@ void ObjectStoreAddOrPutRequestOp::StoredFileInfo::AssertInvariants() const {
   }
 }
 
+void ObjectStoreAddOrPutRequestOp::StoredFileInfo::EnsureCipherKey() {
+  const auto& fileInfo = GetFileInfo();
+  const auto& fileMgr = fileInfo.Manager();
+
+  // no need to generate cipher keys if we are not in PBM
+  if (!fileMgr.IsInPrivateBrowsingMode()) return;
+
+  nsCString keyId;
+  keyId.AppendInt(fileInfo.Id());
+  gIndexedDBCipherKeyManager->Ensure(fileMgr.DatabaseID(), keyId);
+}
+
 ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
     SafeRefPtr<DatabaseFileInfo> aFileInfo)
     : mFileInfo{WrapNotNull(std::move(aFileInfo))},
@@ -3911,6 +3965,7 @@ ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
   AssertIsOnBackgroundThread();
   AssertInvariants();
 
+  EnsureCipherKey();
   MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
 }
 
@@ -3926,6 +3981,7 @@ ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
   AssertIsOnBackgroundThread();
   AssertInvariants();
 
+  EnsureCipherKey();
   MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
 }
 
@@ -3942,6 +3998,7 @@ ObjectStoreAddOrPutRequestOp::StoredFileInfo::StoredFileInfo(
   AssertIsOnBackgroundThread();
   AssertInvariants();
 
+  EnsureCipherKey();
   MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
 }
 
@@ -5555,19 +5612,26 @@ class EncryptedFileBlobImpl final : public FileBlobImpl {
   }
 
  private:
-  const CipherKey& mKey;
+  const CipherKey mKey;
 };
 
 RefPtr<BlobImpl> CreateFileBlobImpl(const Database& aDatabase,
                                     const nsCOMPtr<nsIFile>& aNativeFile,
                                     const DatabaseFileInfo::IdType aId) {
-  const auto& maybeKey = aDatabase.MaybeKeyRef();
-  if (maybeKey) {
-    return MakeRefPtr<EncryptedFileBlobImpl>(aNativeFile, aId, *maybeKey);
+  if (aDatabase.IsInPrivateBrowsing()) {
+    nsCString cipherKeyId;
+    cipherKeyId.AppendInt(aId);
+
+    const auto& key =
+        gIndexedDBCipherKeyManager->Get(aDatabase.Id(), cipherKeyId);
+
+    MOZ_RELEASE_ASSERT(key.isSome());
+    return MakeRefPtr<EncryptedFileBlobImpl>(aNativeFile, aId, *key);
   }
 
   auto impl = MakeRefPtr<FileBlobImpl>(aNativeFile);
   impl->SetFileId(aId);
+
   return impl;
 }
 
@@ -6012,12 +6076,6 @@ using DatabaseActorHashtable =
 
 StaticAutoPtr<DatabaseActorHashtable> gLiveDatabaseHashtable;
 
-using PrivateBrowsingInfoHashtable = nsTHashMap<nsCStringHashKey, CipherKey>;
-// XXX Maybe we can avoid a mutex here by moving all accesses to the background
-// thread.
-StaticAutoPtr<DataMutex<PrivateBrowsingInfoHashtable>>
-    gPrivateBrowsingInfoHashtable;
-
 StaticRefPtr<ConnectionPool> gConnectionPool;
 
 StaticRefPtr<FileHandleThreadPool> gFileHandleThreadPool;
@@ -6051,9 +6109,8 @@ void IncreaseBusyCount() {
     MOZ_ASSERT(!gLiveDatabaseHashtable);
     gLiveDatabaseHashtable = new DatabaseActorHashtable();
 
-    MOZ_ASSERT(!gPrivateBrowsingInfoHashtable);
-    gPrivateBrowsingInfoHashtable = new DataMutex<PrivateBrowsingInfoHashtable>(
-        "gPrivateBrowsingInfoHashtable");
+    MOZ_ASSERT(!gIndexedDBCipherKeyManager);
+    gIndexedDBCipherKeyManager = new IndexedDBCipherKeyManager();
 
     MOZ_ASSERT(!gLoggingInfoHashtable);
     gLoggingInfoHashtable = new DatabaseLoggingInfoHashtable();
@@ -6101,11 +6158,10 @@ void DecreaseBusyCount() {
     MOZ_ASSERT(!gLiveDatabaseHashtable->Count());
     gLiveDatabaseHashtable = nullptr;
 
-    MOZ_ASSERT(gPrivateBrowsingInfoHashtable);
+    MOZ_ASSERT(gIndexedDBCipherKeyManager);
     // XXX After we add the private browsing session end listener, we can assert
     // this.
-    // MOZ_ASSERT(!gPrivateBrowsingInfoHashtable->Count());
-    gPrivateBrowsingInfoHashtable = nullptr;
+    gIndexedDBCipherKeyManager = nullptr;
 
     MOZ_ASSERT(gFactoryOps);
     MOZ_ASSERT(gFactoryOps->IsEmpty());
@@ -12064,11 +12120,14 @@ DatabaseFileManager::MutexType DatabaseFileManager::sMutex;
 DatabaseFileManager::DatabaseFileManager(
     PersistenceType aPersistenceType,
     const quota::OriginMetadata& aOriginMetadata,
-    const nsAString& aDatabaseName, bool aEnforcingQuota)
+    const nsAString& aDatabaseName, const nsCString& aDatabaseID,
+    bool aEnforcingQuota, bool aIsInPrivateBrowsingMode)
     : mPersistenceType(aPersistenceType),
       mOriginMetadata(aOriginMetadata),
       mDatabaseName(aDatabaseName),
-      mEnforcingQuota(aEnforcingQuota) {}
+      mDatabaseID(aDatabaseID),
+      mEnforcingQuota(aEnforcingQuota),
+      mIsInPrivateBrowsingMode(aIsInPrivateBrowsingMode) {}
 
 nsresult DatabaseFileManager::Init(nsIFile* aDirectory,
                                    mozIStorageConnection& aConnection) {
@@ -14931,19 +14990,19 @@ already_AddRefed<nsISupports> MutableFile::CreateStream(bool aReadOnly) {
   nsCOMPtr<nsISupports> result;
 
   if (aReadOnly) {
-    QM_TRY_INSPECT(
-        const auto& stream,
+    QM_TRY_UNWRAP(
+        nsCOMPtr<nsIInputStream> stream,
         CreateFileInputStream(persistenceType, originMetadata, Client::IDB,
                               mFile, -1, -1, nsIFileInputStream::DEFER_OPEN),
         nullptr);
-    result = NS_ISUPPORTS_CAST(nsIFileInputStream*, stream.get());
+    result = stream;
   } else {
-    QM_TRY_INSPECT(const auto& stream,
-                   CreateFileRandomAccessStream(
-                       persistenceType, originMetadata, Client::IDB, mFile, -1,
-                       -1, nsIFileRandomAccessStream::DEFER_OPEN),
-                   nullptr);
-    result = NS_ISUPPORTS_CAST(nsIFileRandomAccessStream*, stream.get());
+    QM_TRY_UNWRAP(nsCOMPtr<nsIRandomAccessStream> stream,
+                  CreateFileRandomAccessStream(
+                      persistenceType, originMetadata, Client::IDB, mFile, -1,
+                      -1, nsIFileRandomAccessStream::DEFER_OPEN),
+                  nullptr);
+    result = stream;
   }
 
   return result.forget();
@@ -15219,22 +15278,7 @@ nsresult FactoryOp::Open() {
   MOZ_ASSERT(permission == PermissionValue::kPermissionAllowed);
 
   if (mInPrivateBrowsing) {
-    const auto lockedPrivateBrowsingInfoHashtable =
-        gPrivateBrowsingInfoHashtable->Lock();
-
-    lockedPrivateBrowsingInfoHashtable->LookupOrInsertWith(mDatabaseId, [] {
-      IndexedDBCipherStrategy cipherStrategy;
-
-      // XXX Generate key using proper random data, such that we can ensure
-      // the use of unique IVs per key by discriminating by database's file
-      // id & offset.
-      auto keyOrErr = cipherStrategy.GenerateKey();
-
-      // XXX Propagate the error to the caller rather than asserting.
-      MOZ_RELEASE_ASSERT(keyOrErr.isOk());
-
-      return keyOrErr.unwrap();
-    });
+    gIndexedDBCipherKeyManager->Ensure(mDatabaseId);
   }
 
   mState = State::FinishOpen;
@@ -15842,19 +15886,11 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
       CloneFileAndAppend(*dbDirectory, databaseFilenameBase +
                                            kFileManagerDirectoryNameSuffix));
 
-  Maybe<const CipherKey> maybeKey;
-  if (mInPrivateBrowsing) {
-    CipherKey key;
+  Maybe<const CipherKey> maybeKey =
+      mInPrivateBrowsing ? gIndexedDBCipherKeyManager->Get(mDatabaseId)
+                         : Nothing();
 
-    {
-      const auto lockedPrivateBrowsingInfoHashtable =
-          gPrivateBrowsingInfoHashtable->Lock();
-      MOZ_ALWAYS_TRUE(
-          lockedPrivateBrowsingInfoHashtable->Get(mDatabaseId, &key));
-    }
-
-    maybeKey.emplace(std::move(key));
-  }
+  MOZ_RELEASE_ASSERT(mInPrivateBrowsing == maybeKey.isSome());
 
   QM_TRY_UNWRAP(
       NotNull<nsCOMPtr<mozIStorageConnection>> connection,
@@ -15897,7 +15933,8 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
 
         if (!fileManager) {
           fileManager = MakeSafeRefPtr<DatabaseFileManager>(
-              persistenceType, mOriginMetadata, databaseName, mEnforcingQuota);
+              persistenceType, mOriginMetadata, databaseName, mDatabaseId,
+              mEnforcingQuota, mInPrivateBrowsing);
 
           QM_TRY(MOZ_TO_RESULT(fileManager->Init(fmDirectory, *connection)));
 
@@ -16557,19 +16594,11 @@ void OpenDatabaseOp::EnsureDatabaseActor() {
     mMetadata = info->mMetadata.clonePtr();
   }
 
-  Maybe<const CipherKey> maybeKey;
-  if (mInPrivateBrowsing) {
-    CipherKey key;
+  Maybe<const CipherKey> maybeKey =
+      mInPrivateBrowsing ? gIndexedDBCipherKeyManager->Get(mDatabaseId)
+                         : Nothing();
 
-    {
-      const auto lockedPrivateBrowsingInfoHashtable =
-          gPrivateBrowsingInfoHashtable->Lock();
-      MOZ_ALWAYS_TRUE(
-          lockedPrivateBrowsingInfoHashtable->Get(mDatabaseId, &key));
-    }
-
-    maybeKey.emplace(std::move(key));
-  }
+  MOZ_RELEASE_ASSERT(mInPrivateBrowsing == maybeKey.isSome());
 
   // XXX Shouldn't Manager() return already_AddRefed when
   // PBackgroundIDBFactoryParent is declared refcounted?
@@ -16872,16 +16901,11 @@ void DeleteDatabaseOp::LoadPreviousVersion(nsIFile& aDatabaseFile) {
     return;
   }
 
-  const auto maybeKey = [this]() -> Maybe<const CipherKey> {
-    CipherKey key;
+  const auto maybeKey = mInPrivateBrowsing
+                            ? gIndexedDBCipherKeyManager->Get(mDatabaseId)
+                            : Nothing();
 
-    const auto lockedPrivateBrowsingInfoHashtable =
-        gPrivateBrowsingInfoHashtable->Lock();
-    if (!lockedPrivateBrowsingInfoHashtable->Get(mDatabaseId, &key)) {
-      return Nothing{};
-    }
-    return Some(std::move(key));
-  }();
+  MOZ_RELEASE_ASSERT(mInPrivateBrowsing == maybeKey.isSome());
 
   // Pass -1 as the directoryLockId to disable quota checking, since we might
   // temporarily exceed quota before deleting the database.
@@ -17150,6 +17174,12 @@ nsresult DeleteDatabaseOp::VersionChangeOp::RunOnIOThread() {
       mDeleteDatabaseOp->mCommonParams.metadata().name());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
+  }
+
+  if (mDeleteDatabaseOp->mInPrivateBrowsing) {
+    DebugOnly<bool> ok =
+        gIndexedDBCipherKeyManager->Remove(mDeleteDatabaseOp->mDatabaseId);
+    MOZ_ASSERT(ok);
   }
 
   rv = mOwningEventTarget->Dispatch(this, NS_DISPATCH_NORMAL);
@@ -19527,11 +19557,22 @@ nsresult ObjectStoreAddOrPutRequestOp::DoDatabaseWork(
           QM_TRY(OkIf(journalFile), NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR,
                  IDB_REPORT_INTERNAL_ERR_LAMBDA);
 
+          nsCString fileKeyId;
+          fileKeyId.AppendInt(fileInfo.Id());
+
+          const auto maybeKey =
+              Transaction()
+                      .GetDatabase()
+                      .GetFileManager()
+                      .IsInPrivateBrowsingMode()
+                  ? gIndexedDBCipherKeyManager->Get(
+                        Transaction().GetDatabase().Id(), fileKeyId)
+                  : Nothing();
+
           QM_TRY(
               MOZ_TO_RESULT(fileHelper->CreateFileFromStream(
                                 *file, *journalFile, *inputStream,
-                                storedFileInfo.ShouldCompress(),
-                                Transaction().GetDatabase().MaybeKeyRef()))
+                                storedFileInfo.ShouldCompress(), maybeKey))
                   .mapErr([](const nsresult rv) {
                     if (NS_ERROR_GET_MODULE(rv) !=
                         NS_ERROR_MODULE_DOM_INDEXEDDB) {
@@ -21453,13 +21494,10 @@ nsresult FileHelper::CreateFileFromStream(nsIFile& aFile, nsIFile& aJournalFile,
   QM_TRY(MOZ_TO_RESULT(aJournalFile.Create(nsIFile::NORMAL_FILE_TYPE, 0644)));
 
   // Now try to copy the stream.
-  QM_TRY_UNWRAP(auto fileOutputStream,
+  QM_TRY_UNWRAP(nsCOMPtr<nsIOutputStream> fileOutputStream,
                 CreateFileOutputStream(mFileManager->Type(),
                                        mFileManager->OriginMetadata(),
-                                       Client::IDB, &aFile)
-                    .map([](NotNull<RefPtr<FileOutputStream>>&& stream) {
-                      return nsCOMPtr<nsIOutputStream>{stream.get()};
-                    }));
+                                       Client::IDB, &aFile));
 
   AutoTArray<char, kFileCopyBufferSize> buffer;
   const auto actualOutputStream =

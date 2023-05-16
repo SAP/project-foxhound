@@ -270,9 +270,19 @@ panel {
 menupopup,
 panel,
 tooltip {
-  display: -moz-popup;
+  position: fixed;
+  -moz-top-layer: top;
+  /* Popups can't have overflow */
+  contain: paint;
   z-index: 2147483647;
   text-shadow: none;
+}
+
+:is(toolbarbutton[type="menu"], button[type="menu"], menulist, menu) > :is(menupopup, panel) {
+  /* TODO: These could be regular abspos frames (just not in the top layer),
+   * once nsMenuFrame is ported to modern flex layout. */
+  position: static;
+  -moz-top-layer: none;
 }
 
 tooltip {
@@ -331,8 +341,7 @@ tooltip:not([position]) {
   }
 }
 
-@supports -moz-bool-pref("xul.panel-animations.enabled") {
-@media (prefers-reduced-motion: no-preference) {
+@media (-moz-panel-animations) and (prefers-reduced-motion: no-preference) {
 @media (-moz-platform: macos) {
   /* On Mac, use the properties "-moz-window-transform" and "-moz-window-opacity"
      instead of "transform" and "opacity" for these animations.
@@ -386,6 +395,7 @@ tooltip:not([position]) {
     transition-duration: 0.18s, 0.18s;
     transition-timing-function:
       var(--animation-easing-function), ease-out;
+    will-change: transform, opacity;
   }
 
   panel[type="arrow"][side="bottom"]:not([animate="false"]) {
@@ -406,7 +416,6 @@ tooltip:not([position]) {
     transform: none;
   }
 } /* end of non-macOS rules */
-}
 }
 
 panel[type="arrow"][animating] {
@@ -581,6 +590,7 @@ menulist[popuponly] {
   appearance: none !important;
   min-width: 0 !important;
   min-height: 0 !important;
+  border: none !important;
   -moz-box-ordinal-group: 2147483646;
 }
 
@@ -644,6 +654,9 @@ wizardpage {
 
 richlistbox {
   -moz-box-orient: vertical;
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 /*********** findbar ************/

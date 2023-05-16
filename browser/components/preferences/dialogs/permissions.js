@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const permissionExceptionsL10n = {
@@ -361,9 +361,8 @@ var gPermissionManager = {
     website.setAttribute("disabled", disabledByPolicy);
     website.setAttribute("class", "website-name-value");
     website.setAttribute("value", permission.origin);
-    hbox.setAttribute("width", "0");
     hbox.setAttribute("class", "website-name");
-    hbox.setAttribute("style", "-moz-box-flex: 3");
+    hbox.setAttribute("style", "-moz-box-flex: 3; width: 0");
     hbox.appendChild(website);
     row.appendChild(hbox);
 
@@ -376,9 +375,8 @@ var gPermissionManager = {
         capability,
         this._getCapabilityL10nId(permission.capability)
       );
-      hbox.setAttribute("width", "0");
       hbox.setAttribute("class", "website-name");
-      hbox.setAttribute("style", "-moz-box-flex: 1");
+      hbox.setAttribute("style", "-moz-box-flex: 1; width: 0");
       hbox.appendChild(capability);
       row.appendChild(hbox);
     }

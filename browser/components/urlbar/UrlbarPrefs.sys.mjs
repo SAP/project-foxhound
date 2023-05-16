@@ -196,8 +196,13 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether to show search suggestions before general results.
   ["showSearchSuggestionsFirst", true],
 
-  // Whether to show search term in the URL bar for the users default engine.
-  ["showSearchTerms", false],
+  // Global toggle for whether the show search terms feature
+  // can be used at all, and enabled/disabled by the user.
+  ["showSearchTerms.featureGate", false],
+
+  // If true, show the search term in the Urlbar while on
+  // a default search engine results page.
+  ["showSearchTerms.enabled", true],
 
   // Whether speculative connections should be enabled.
   ["speculativeConnect.enabled", true],
@@ -256,6 +261,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether results will include top sites and the view will open on focus.
   ["suggest.topsites", true],
 
+  // If `browser.urlbar.weather.featureGate` is true, this controls whether
+  // weather suggestions are turned on.
+  ["suggest.weather", true],
+
   // JSON'ed array of blocked quick suggest URL digests.
   ["quicksuggest.blockedDigests", ""],
 
@@ -280,9 +289,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // JSON'ed object of quick suggest impression stats. Used for implementing
   // impression frequency caps for quick suggest suggestions.
   ["quicksuggest.impressionCaps.stats", ""],
-
-  // Whether to show QuickSuggest related logs.
-  ["quicksuggest.log", false],
 
   // The user's response to the Firefox Suggest online opt-in dialog.
   ["quicksuggest.onboardingDialogChoice", ""],
@@ -345,6 +351,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // The number of times the user has been shown the onboarding search tip.
   ["tipShownCount.searchTip_onboard", 0],
 
+  // The number of times the user has been shown the urlbar persisted search tip.
+  ["tipShownCount.searchTip_persist", 0],
+
   // The number of times the user has been shown the redirect search tip.
   ["tipShownCount.searchTip_redirect", 0],
 
@@ -372,6 +381,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   //  1 - Show search history
   //  2 - Show search and browsing history
   ["update2.emptySearchBehavior", 0],
+
+  // Feature gate pref for weather suggestions in the urlbar.
+  ["weather.featureGate", false],
 ]);
 const PREF_OTHER_DEFAULTS = new Map([
   ["browser.fixup.dns_first_for_single_words", false],
@@ -885,6 +897,8 @@ class Preferences {
    * configurable via Nimbus variables. This getter returns an object that maps
    * from variable names to pref names relative to `browser.urlbar`. See point 3
    * in the comment inside `_updateFirefoxSuggestScenarioHelper()` for more.
+   *
+   * @returns {{ quickSuggestNonSponsoredEnabled: string; quickSuggestSponsoredEnabled: string; quickSuggestDataCollectionEnabled: string; }}
    */
   get FIREFOX_SUGGEST_UI_PREFS_BY_VARIABLE() {
     return {
@@ -896,6 +910,8 @@ class Preferences {
 
   /**
    * Default prefs relative to `browser.urlbar` per Firefox Suggest scenario.
+   *
+   * @returns {Record<Record<string, boolean>>}
    */
   get FIREFOX_SUGGEST_DEFAULT_PREFS() {
     // Important notes when modifying this:
@@ -934,6 +950,8 @@ class Preferences {
 
   /**
    * The current version of the Firefox Suggest prefs.
+   *
+   * @returns {number}
    */
   get FIREFOX_SUGGEST_MIGRATION_VERSION() {
     return 2;
@@ -1198,8 +1216,11 @@ class Preferences {
    * Observes preference changes.
    *
    * @param {nsISupports} subject
+   *   The subject of the notification.
    * @param {string} topic
+   *   The topic of the notification.
    * @param {string} data
+   *   The data attached to the notification.
    */
   observe(subject, topic, data) {
     let pref = data.replace(PREF_URLBAR_BRANCH, "");
@@ -1376,6 +1397,7 @@ class Preferences {
 
   /**
    * Returns a descriptor of the given preference.
+   *
    * @param {string} pref The preference to examine.
    * @returns {object} An object describing the pref with the following shape:
    *          { defaultValue, get, set, clear }

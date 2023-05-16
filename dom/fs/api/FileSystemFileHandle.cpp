@@ -53,7 +53,10 @@ already_AddRefed<Promise> FileSystemFileHandle::GetFile(ErrorResult& aError) {
     return nullptr;
   }
 
-  mRequestHandler->GetFile(mManager, mMetadata, promise);
+  mRequestHandler->GetFile(mManager, mMetadata, promise, aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }
@@ -65,7 +68,11 @@ already_AddRefed<Promise> FileSystemFileHandle::CreateWritable(
     return nullptr;
   }
 
-  promise->MaybeReject(NS_ERROR_NOT_IMPLEMENTED);
+  mRequestHandler->GetWritable(mManager, mMetadata, aOptions.mKeepExistingData,
+                               promise, aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }
@@ -77,7 +84,10 @@ already_AddRefed<Promise> FileSystemFileHandle::CreateSyncAccessHandle(
     return nullptr;
   }
 
-  mRequestHandler->GetAccessHandle(mManager, mMetadata, promise);
+  mRequestHandler->GetAccessHandle(mManager, mMetadata, promise, aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }

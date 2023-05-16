@@ -4890,6 +4890,14 @@ class MacroAssembler : public MacroAssemblerSpecific {
                         temp5, IsBigInt::Maybe);
   }
 
+ private:
+  template <typename OrderedHashTable>
+  void loadOrderedHashTableCount(Register setOrMapObj, Register result);
+
+ public:
+  void loadSetObjectSize(Register setObj, Register result);
+  void loadMapObjectSize(Register mapObj, Register result);
+
   // Inline version of js_TypedArray_uint8_clamp_double.
   // This function clobbers the input register.
   void clampDoubleToUint8(FloatRegister input, Register output) PER_ARCH;
@@ -5014,10 +5022,19 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void loadMegamorphicCache(Register dest);
 
+  void loadAtomOrSymbolAndHash(ValueOperand value, Register outId,
+                               Register outHash, Label* cacheMiss);
+
   void emitMegamorphicCacheLookup(PropertyKey id, Register obj,
                                   Register scratch1, Register scratch2,
                                   Register scratch3, ValueOperand output,
                                   Label* fail, Label* cacheHit);
+
+  void emitMegamorphicCacheLookupExists(ValueOperand id, Register obj,
+                                        Register scratch1, Register scratch2,
+                                        Register scratch3, Register output,
+                                        Label* fail, Label* cacheHit,
+                                        bool hasOwn);
 
   void loadDOMExpandoValueGuardGeneration(
       Register obj, ValueOperand output,

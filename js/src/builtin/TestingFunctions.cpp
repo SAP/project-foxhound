@@ -52,6 +52,8 @@
 #  include "builtin/intl/FormatBuffer.h"
 #  include "builtin/intl/SharedIntlData.h"
 #endif
+#include "builtin/BigInt.h"
+#include "builtin/MapObject.h"
 #include "builtin/Promise.h"
 #include "builtin/TestingUtility.h"  // js::ParseCompileOptions, js::ParseDebugMetadata
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScriptToExtensibleStencil, frontend::DelazifyCanonicalScriptedFunction
@@ -59,6 +61,7 @@
 #include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
 #include "gc/Allocator.h"
 #include "gc/GC.h"
+#include "gc/GCLock.h"
 #include "gc/Zone.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Disassemble.h"
@@ -104,6 +107,8 @@
 #include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
+#include "vm/BooleanObject.h"
+#include "vm/DateObject.h"
 #include "vm/ErrorContext.h"  // AutoReportFrontendContext
 #include "vm/ErrorObject.h"
 #include "vm/GlobalObject.h"
@@ -112,6 +117,7 @@
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
+#include "vm/NumberObject.h"
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseSlot_*
 #include "vm/ProxyObject.h"
@@ -119,6 +125,7 @@
 #include "vm/ScopeKind.h"
 #include "vm/Stack.h"
 #include "vm/StencilObject.h"  // StencilObject, StencilXDRBufferObject
+#include "vm/StringObject.h"
 #include "vm/StringType.h"
 #include "wasm/AsmJS.h"
 #include "wasm/WasmBaselineCompile.h"
@@ -761,12 +768,6 @@ static bool GCParameter(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   uint32_t value = floor(d);
-  if (param == JSGC_MARK_STACK_LIMIT && JS::IsIncrementalGCInProgress(cx)) {
-    JS_ReportErrorASCII(
-        cx, "attempt to set markStackLimit while a GC is in progress");
-    return false;
-  }
-
   bool ok = cx->runtime()->gc.setParameter(param, value);
   if (!ok) {
     JS_ReportErrorASCII(cx, "Parameter value out of range");
@@ -2167,9 +2168,8 @@ static bool InternalConst(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  if (JS_LinearStringEqualsLiteral(linear,
-                                   "INCREMENTAL_MARK_STACK_BASE_CAPACITY")) {
-    args.rval().setNumber(uint32_t(js::INCREMENTAL_MARK_STACK_BASE_CAPACITY));
+  if (JS_LinearStringEqualsLiteral(linear, "MARK_STACK_BASE_CAPACITY")) {
+    args.rval().setNumber(uint32_t(js::MARK_STACK_BASE_CAPACITY));
   } else {
     JS_ReportErrorASCII(cx, "unknown const name");
     return false;
@@ -2396,7 +2396,7 @@ static bool CurrentGC(JSContext* cx, unsigned argc, Value* vp) {
   }
 
 #  ifdef DEBUG
-  val = Int32Value(gc.marker.queuePos);
+  val = Int32Value(gc.testMarkQueuePos());
   if (!JS_DefineProperty(cx, result, "queuePos", val, JSPROP_ENUMERATE)) {
     return false;
   }
@@ -2423,6 +2423,33 @@ static bool DeterministicGC(JSContext* cx, unsigned argc, Value* vp) {
 static bool DumpGCArenaInfo(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   js::gc::DumpArenaInfo();
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool SetMarkStackLimit(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (args.length() != 1) {
+    RootedObject callee(cx, &args.callee());
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
+    return false;
+  }
+
+  int32_t value;
+  if (!ToInt32(cx, args[0], &value) || value <= 0) {
+    JS_ReportErrorASCII(cx, "Bad argument to SetMarkStackLimit");
+    return false;
+  }
+
+  if (JS::IsIncrementalGCInProgress(cx)) {
+    JS_ReportErrorASCII(
+        cx, "Attempt to set markStackLimit while a GC is in progress");
+    return false;
+  }
+
+  JSRuntime* runtime = cx->runtime();
+  AutoLockGC lock(runtime);
+  runtime->gc.setMarkStackLimit(value, lock);
   args.rval().setUndefined();
   return true;
 }
@@ -3015,18 +3042,31 @@ static bool CheckObjectWithManyReservedSlots(JSContext* cx, unsigned argc,
   return true;
 }
 
-static bool SetWatchtowerCallback(JSContext* cx, unsigned argc, Value* vp) {
+static bool GetWatchtowerLog(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  JSFunction* fun = nullptr;
-  if (args.length() != 1 || !IsFunctionObject(args[0], &fun)) {
-    JS_ReportErrorASCII(cx, "Expected a single function argument.");
+  Rooted<GCVector<Value>> values(cx, GCVector<Value>(cx));
+
+  if (auto* log = cx->runtime()->watchtowerTestingLog.ref().get()) {
+    Rooted<JSObject*> elem(cx);
+    for (PlainObject* obj : *log) {
+      elem = obj;
+      if (!cx->compartment()->wrap(cx, &elem)) {
+        return false;
+      }
+      if (!values.append(ObjectValue(*elem))) {
+        return false;
+      }
+    }
+    log->clearAndFree();
+  }
+
+  ArrayObject* arr = NewDenseCopiedArray(cx, values.length(), values.begin());
+  if (!arr) {
     return false;
   }
 
-  cx->watchtowerTestingCallbackRef() = fun;
-
-  args.rval().setUndefined();
+  args.rval().setObject(*arr);
   return true;
 }
 
@@ -3038,8 +3078,16 @@ static bool AddWatchtowerTarget(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  if (!cx->runtime()->watchtowerTestingLog.ref()) {
+    auto vec = cx->make_unique<JSRuntime::RootedPlainObjVec>(cx);
+    if (!vec) {
+      return false;
+    }
+    cx->runtime()->watchtowerTestingLog = std::move(vec);
+  }
+
   RootedObject obj(cx, &args[0].toObject());
-  if (!JSObject::setUseWatchtowerTestingCallback(cx, obj)) {
+  if (!JSObject::setUseWatchtowerTestingLog(cx, obj)) {
     return false;
   }
 
@@ -3859,12 +3907,6 @@ static bool RejectPromise(JSContext* cx, unsigned argc, Value* vp) {
     args.rval().setUndefined();
   }
   return result;
-}
-
-static bool StreamsAreEnabled(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setBoolean(cx->realm()->creationOptions().getStreamsEnabled());
-  return true;
 }
 
 static unsigned finalizeCount = 0;
@@ -4746,6 +4788,13 @@ static mozilla::Maybe<JS::StructuredCloneScope> ParseCloneScope(
 bool js::testingFunc_serialize(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
+  if (js::SupportDifferentialTesting()) {
+    RootedObject callee(cx, &args.callee());
+    ReportUsageErrorASCII(cx, callee,
+                          "Function unavailable in differential testing mode.");
+    return false;
+  }
+
   mozilla::Maybe<JSAutoStructuredCloneBuffer> clonebuf;
   JS::CloneDataPolicy policy;
 
@@ -4842,6 +4891,13 @@ bool js::testingFunc_serialize(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool Deserialize(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
+
+  if (js::SupportDifferentialTesting()) {
+    RootedObject callee(cx, &args.callee());
+    ReportUsageErrorASCII(cx, callee,
+                          "Function unavailable in differential testing mode.");
+    return false;
+  }
 
   if (!args.get(0).isObject() || !args[0].toObject().is<CloneBufferObject>()) {
     JS_ReportErrorASCII(cx, "deserialize requires a clonebuffer argument");
@@ -6838,20 +6894,19 @@ static bool SetGCCallback(JSContext* cx, unsigned argc, Value* vp) {
 #ifdef DEBUG
 static bool EnqueueMark(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-
-  auto& queue = cx->runtime()->gc.marker.markQueue;
+  gc::GCRuntime* gc = &cx->runtime()->gc;
 
   if (args.get(0).isString()) {
     RootedString val(cx, args[0].toString());
     if (!val->ensureLinear(cx)) {
       return false;
     }
-    if (!queue.append(StringValue(val))) {
+    if (!gc->appendTestMarkQueue(StringValue(val))) {
       JS_ReportOutOfMemory(cx);
       return false;
     }
   } else if (args.get(0).isObject()) {
-    if (!queue.append(args[0])) {
+    if (!gc->appendTestMarkQueue(args[0])) {
       JS_ReportOutOfMemory(cx);
       return false;
     }
@@ -6867,7 +6922,7 @@ static bool EnqueueMark(JSContext* cx, unsigned argc, Value* vp) {
 static bool GetMarkQueue(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  auto& queue = cx->runtime()->gc.marker.markQueue.get();
+  const auto& queue = cx->runtime()->gc.getTestMarkQueue();
 
   RootedObject result(cx, JS::NewArrayObject(cx, queue.length()));
   if (!result) {
@@ -6890,7 +6945,7 @@ static bool GetMarkQueue(JSContext* cx, unsigned argc, Value* vp) {
 static bool ClearMarkQueue(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  cx->runtime()->gc.marker.markQueue.clear();
+  cx->runtime()->gc.clearTestMarkQueue();
   args.rval().setUndefined();
   return true;
 }
@@ -8179,10 +8234,11 @@ static const JSFunctionSpecWithHelp TestingFunctions[] = {
 "  Checks the reserved slots set by newObjectWithManyReservedSlots still hold the expected\n"
 "  values."),
 
-    JS_FN_HELP("setWatchtowerCallback", SetWatchtowerCallback, 1, 0,
-"setWatchtowerCallback(function)",
-"  Use the given function as callback for objects added to Watchtower by\n"
-"  addWatchtowerTarget. The callback is called with the following arguments:\n"
+    JS_FN_HELP("getWatchtowerLog", GetWatchtowerLog, 0, 0,
+"getWatchtowerLog()",
+"  Returns the Watchtower log recording object changes for objects for which\n"
+"  addWatchtowerTarget was called. The internal log is cleared. The return\n"
+"  value is an array of plain objects with the following properties:\n"
 "  - kind: a string describing the kind of mutation, for example \"add-prop\"\n"
 "  - object: the object being mutated\n"
 "  - extra: an extra value, for example the name of the property being added"),
@@ -8307,10 +8363,6 @@ JS_FN_HELP("rejectPromise", RejectPromise, 2, 0,
 "rejectPromise(promise, reason)",
 "  Reject a Promise by calling the JSAPI function JS::RejectPromise."),
 
-JS_FN_HELP("streamsAreEnabled", StreamsAreEnabled, 0, 0,
-"streamsAreEnabled()",
-"  Returns a boolean indicating whether WHATWG Streams are enabled for the current realm."),
-
     JS_FN_HELP("makeFinalizeObserver", MakeFinalizeObserver, 0, 0,
 "makeFinalizeObserver()",
 "  Get a special object whose finalization increases the counter returned\n"
@@ -8369,6 +8421,12 @@ gc::ZealModeHelpText),
 "dumpGCArenaInfo()",
 "  Prints information about the different GC things and how they are arranged\n"
 "  in arenas.\n"),
+
+    JS_FN_HELP("setMarkStackLimit", SetMarkStackLimit, 1, 0,
+"markStackLimit(limit)",
+"  Sets a limit on the number of words used for the mark stack. Used to test OOM"
+"  handling during marking.\n"),
+
 #endif
 
     JS_FN_HELP("gcstate", GCState, 0, 0,
@@ -9195,3 +9253,48 @@ bool js::DefineTestingFunctions(JSContext* cx, HandleObject obj,
 
   return JS_DefineFunctionsWithHelp(cx, obj, TestingFunctions);
 }
+
+#ifdef FUZZING_JS_FUZZILLI
+uint32_t js::FuzzilliHashDouble(double value) {
+  // We shouldn't GC here as this is called directly from IC code.
+  AutoUnsafeCallWithABI unsafe;
+  uint64_t v = mozilla::BitwiseCast<uint64_t>(value);
+  return static_cast<uint32_t>(v) + static_cast<uint32_t>(v >> 32);
+}
+
+uint32_t js::FuzzilliHashBigInt(BigInt* bigInt) {
+  // We shouldn't GC here as this is called directly from IC code.
+  AutoUnsafeCallWithABI unsafe;
+  return bigInt->hash();
+}
+
+void js::FuzzilliHashObject(JSContext* cx, JSObject* obj) {
+  // called from IC and baseline/interpreter
+  uint32_t hash;
+  FuzzilliHashObjectInl(cx, obj, &hash);
+
+  cx->executionHashInputs += 1;
+  cx->executionHash = mozilla::RotateLeft(cx->executionHash + hash, 1);
+}
+
+void js::FuzzilliHashObjectInl(JSContext* cx, JSObject* obj, uint32_t* out) {
+  *out = 0;
+  RootedValue v(cx);
+  v.setObject(*obj);
+
+  JSAutoStructuredCloneBuffer JSCloner(
+      JS::StructuredCloneScope::DifferentProcess, nullptr, nullptr);
+  if (JSCloner.write(cx, v)) {
+    JSStructuredCloneData& data = JSCloner.data();
+    data.ForEachDataChunk([&](const char* aData, size_t aSize) {
+      uint32_t h = mozilla::HashBytes(aData, aSize);
+      h = (h << 1) | 1;
+      *out ^= h;
+      *out *= h;
+      return true;
+    });
+  } else if (JS_IsExceptionPending(cx)) {
+    JS_ClearPendingException(cx);
+  }
+}
+#endif

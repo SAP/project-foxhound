@@ -207,7 +207,6 @@ class CookieBannerListService {
 
     // Validate individual array elements (rules) via the schema defined in
     // CookieBannerRule.schema.json.
-    // Allow extra properties. They will be discarded.
     let schema = await lazy.CookieBannerRuleSchema;
     let validator = new lazy.JsonSchema.Validator(schema);
     let validatedTestRules = [];
@@ -283,7 +282,13 @@ class CookieBannerListService {
       return;
     }
 
-    rule.addClickRule(click.presence, click.hide, click.optOut, click.optIn);
+    rule.addClickRule(
+      click.presence,
+      click.skipPresenceVisibilityCheck,
+      click.hide,
+      click.optOut,
+      click.optIn
+    );
   }
 }
 

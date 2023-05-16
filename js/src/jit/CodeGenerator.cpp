@@ -4239,8 +4239,8 @@ void CodeGenerator::visitMegamorphicLoadSlot(LMegamorphicLoadSlot* lir) {
 
   Label bail, cacheHit;
   if (JitOptions.enableWatchtowerMegamorphic) {
-    masm.emitMegamorphicCacheLookup(NameToId(lir->mir()->name()), obj, temp0,
-                                    temp1, temp2, output, &bail, &cacheHit);
+    masm.emitMegamorphicCacheLookup(lir->mir()->name(), obj, temp0, temp1,
+                                    temp2, output, &bail, &cacheHit);
   }
 
   masm.branchIfNonNativeObj(obj, temp0, &bail);
@@ -4249,12 +4249,12 @@ void CodeGenerator::visitMegamorphicLoadSlot(LMegamorphicLoadSlot* lir) {
   masm.moveStackPtrTo(temp2);
 
   using Fn =
-      bool (*)(JSContext * cx, JSObject * obj, PropertyName * name, Value * vp);
+      bool (*)(JSContext * cx, JSObject * obj, PropertyKey id, Value * vp);
   masm.setupAlignedABICall();
   masm.loadJSContext(temp0);
   masm.passABIArg(temp0);
   masm.passABIArg(obj);
-  masm.movePtr(ImmGCPtr(lir->mir()->name()), temp1);
+  masm.movePropertyKey(lir->mir()->name(), temp1);
   masm.passABIArg(temp1);
   masm.passABIArg(temp2);
 
@@ -4341,7 +4341,17 @@ void CodeGenerator::visitMegamorphicHasProp(LMegamorphicHasProp* lir) {
   ValueOperand idVal = ToValue(lir, LMegamorphicHasProp::IdIndex);
   Register temp0 = ToRegister(lir->temp0());
   Register temp1 = ToRegister(lir->temp1());
+  Register temp2 = ToRegister(lir->temp2());
   Register output = ToRegister(lir->output());
+
+  Label bail, cacheHit;
+  if (JitOptions.enableWatchtowerMegamorphic) {
+    masm.emitMegamorphicCacheLookupExists(idVal, obj, temp0, temp1, temp2,
+                                          output, &bail, &cacheHit,
+                                          lir->mir()->hasOwn());
+  }
+
+  masm.branchIfNonNativeObj(obj, temp0, &bail);
 
   // idVal will be in vp[0], result will be stored in vp[1].
   masm.reserveStack(sizeof(Value));
@@ -4368,12 +4378,15 @@ void CodeGenerator::visitMegamorphicHasProp(LMegamorphicHasProp* lir) {
   Label ok;
   masm.branchIfTrueBool(temp0, &ok);
   masm.freeStack(sizeof(Value));  // Discard result Value.
-  bailout(lir->snapshot());
+  masm.jump(&bail);
 
   masm.bind(&ok);
   masm.setFramePushed(framePushed);
   masm.unboxBoolean(Address(masm.getStackPointer(), 0), output);
   masm.freeStack(sizeof(Value));
+  masm.bind(&cacheHit);
+
+  bailoutFrom(&bail, lir->snapshot());
 }
 
 void CodeGenerator::visitGuardIsNotArrayBufferMaybeShared(
@@ -12869,7 +12882,7 @@ static bool CreateStackMapFromLSafepoint(LSafepoint& safepoint,
 }
 
 bool CodeGenerator::generateWasm(
-    wasm::TypeIdDesc funcTypeId, wasm::BytecodeOffset trapOffset,
+    wasm::CallIndirectId callIndirectId, wasm::BytecodeOffset trapOffset,
     const wasm::ArgTypeVector& argTypes, const RegisterOffsets& trapExitLayout,
     size_t trapExitLayoutNumWords, wasm::FuncOffsets* offsets,
     wasm::StackMaps* stackMaps, wasm::Decoder* decoder) {
@@ -12879,7 +12892,8 @@ bool CodeGenerator::generateWasm(
 
   size_t nInboundStackArgBytes = StackArgAreaSizeUnaligned(argTypes);
 
-  wasm::GenerateFunctionPrologue(masm, funcTypeId, mozilla::Nothing(), offsets);
+  wasm::GenerateFunctionPrologue(masm, callIndirectId, mozilla::Nothing(),
+                                 offsets);
 
   MOZ_ASSERT(masm.framePushed() == 0);
 
@@ -16375,6 +16389,9 @@ void CodeGenerator::visitRandom(LRandom* ins) {
   masm.movePtr(ImmPtr(rng), rngReg);
 
   masm.randomDouble(rngReg, output, temp1, temp2);
+  if (js::SupportDifferentialTesting()) {
+    masm.loadConstantDouble(0.0, output);
+  }
 }
 
 void CodeGenerator::visitSignExtendInt32(LSignExtendInt32* ins) {
@@ -17236,6 +17253,13 @@ void CodeGenerator::visitSetObjectHasValueVMCall(
   callVM<Fn, jit::SetObjectHas>(ins);
 }
 
+void CodeGenerator::visitSetObjectSize(LSetObjectSize* ins) {
+  Register setObj = ToRegister(ins->setObject());
+  Register output = ToRegister(ins->output());
+
+  masm.loadSetObjectSize(setObj, output);
+}
+
 void CodeGenerator::visitMapObjectHasNonBigInt(LMapObjectHasNonBigInt* ins) {
   Register mapObj = ToRegister(ins->mapObject());
   ValueOperand input = ToValue(ins, LMapObjectHasNonBigInt::InputIndex);
@@ -17334,6 +17358,13 @@ void CodeGenerator::visitMapObjectGetValueVMCall(
   callVM<Fn, jit::MapObjectGet>(ins);
 }
 
+void CodeGenerator::visitMapObjectSize(LMapObjectSize* ins) {
+  Register mapObj = ToRegister(ins->mapObject());
+  Register output = ToRegister(ins->output());
+
+  masm.loadMapObjectSize(mapObj, output);
+}
+
 template <size_t NumDefs>
 void CodeGenerator::emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir) {
   wasm::JitCallStackArgVector stackArgs;
@@ -17355,7 +17386,7 @@ void CodeGenerator::emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir) {
       case wasm::ValType::I64:
       case wasm::ValType::F32:
       case wasm::ValType::F64:
-        argMir = ToMIRType(sig.args()[i]);
+        argMir = sig.args()[i].toMIRType();
         break;
       case wasm::ValType::V128:
         MOZ_CRASH("unexpected argument type when calling from ion to wasm");
@@ -17363,11 +17394,11 @@ void CodeGenerator::emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir) {
         switch (sig.args()[i].refTypeKind()) {
           case wasm::RefType::Extern:
             // AnyRef is boxed on the JS side, so passed as a pointer here.
-            argMir = ToMIRType(sig.args()[i]);
+            argMir = sig.args()[i].toMIRType();
             break;
           case wasm::RefType::Func:
           case wasm::RefType::Eq:
-          case wasm::RefType::TypeIndex:
+          case wasm::RefType::TypeRef:
             MOZ_CRASH("unexpected argument type when calling from ion to wasm");
         }
         break;
@@ -17444,7 +17475,7 @@ void CodeGenerator::emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir) {
             // API to do so.
             MOZ_ASSERT(lir->mir()->type() == MIRType::Value);
             break;
-          case wasm::RefType::TypeIndex:
+          case wasm::RefType::TypeRef:
             MOZ_CRASH("unexpected return type when calling from ion to wasm");
         }
         break;
@@ -17527,6 +17558,210 @@ void CodeGenerator::visitWasmAnyRefFromJSObject(LWasmAnyRefFromJSObject* lir) {
     masm.movePtr(input, output);
   }
 }
+
+#ifdef FUZZING_JS_FUZZILLI
+void CodeGenerator::emitFuzzilliHashDouble(FloatRegister floatDouble,
+                                           Register scratch, Register output) {
+#  ifdef JS_PUNBOX64
+  Register64 reg64_1(scratch);
+  Register64 reg64_2(output);
+  masm.moveDoubleToGPR64(floatDouble, reg64_1);
+  masm.move64(reg64_1, reg64_2);
+  masm.rshift64(Imm32(32), reg64_2);
+  masm.add32(scratch, output);
+#  else
+  Register64 reg64(scratch, output);
+  masm.moveDoubleToGPR64(floatDouble, reg64);
+  masm.add32(scratch, output);
+#  endif
+}
+
+void CodeGenerator::emitFuzzilliHashObject(LInstruction* lir, Register obj,
+                                           Register output) {
+  using Fn = void (*)(JSContext * cx, JSObject * obj, uint32_t * out);
+  OutOfLineCode* ool = oolCallVM<Fn, FuzzilliHashObjectInl>(
+      lir, ArgList(obj), StoreRegisterTo(output));
+
+  masm.jump(ool->entry());
+  masm.bind(ool->rejoin());
+}
+
+void CodeGenerator::emitFuzzilliHashBigInt(Register bigInt, Register output) {
+  LiveRegisterSet volatileRegs(GeneralRegisterSet::All(),
+                               FloatRegisterSet::All());
+  volatileRegs.takeUnchecked(output);
+  masm.PushRegsInMask(volatileRegs);
+
+  using Fn = uint32_t (*)(BigInt * bigInt);
+  masm.setupUnalignedABICall(output);
+  masm.passABIArg(bigInt);
+  masm.callWithABI<Fn, js::FuzzilliHashBigInt>();
+  masm.storeCallInt32Result(output);
+
+  masm.PopRegsInMask(volatileRegs);
+}
+
+void CodeGenerator::visitFuzzilliHashV(LFuzzilliHashV* ins) {
+  MOZ_ASSERT(ins->mir()->getOperand(0)->type() == MIRType::Value);
+
+  ValueOperand value = ToValue(ins, 0);
+
+  Label isDouble, isObject, isBigInt, done;
+
+  FloatRegister scratchFloat = ToFloatRegister(ins->getTemp(1));
+  Register scratch = ToRegister(ins->getTemp(0));
+  Register output = ToRegister(ins->output());
+  MOZ_ASSERT(scratch != output);
+
+#  ifdef JS_PUNBOX64
+  Register tagReg = ToRegister(ins->getTemp(0));
+  masm.splitTag(value, tagReg);
+#  else
+  Register tagReg = value.typeReg();
+#  endif
+
+  Label noBigInt;
+  masm.branchTestBigInt(Assembler::NotEqual, tagReg, &noBigInt);
+  masm.unboxBigInt(value, scratch);
+  masm.jump(&isBigInt);
+  masm.bind(&noBigInt);
+
+  Label noObject;
+  masm.branchTestObject(Assembler::NotEqual, tagReg, &noObject);
+  masm.unboxObject(value, scratch);
+  masm.jump(&isObject);
+  masm.bind(&noObject);
+
+  Label noInt32;
+  masm.branchTestInt32(Assembler::NotEqual, tagReg, &noInt32);
+  masm.unboxInt32(value, scratch);
+  masm.convertInt32ToDouble(scratch, scratchFloat);
+  masm.jump(&isDouble);
+  masm.bind(&noInt32);
+
+  Label noNull;
+  masm.branchTestNull(Assembler::NotEqual, tagReg, &noNull);
+  masm.move32(Imm32(1), scratch);
+  masm.convertInt32ToDouble(scratch, scratchFloat);
+  masm.jump(&isDouble);
+  masm.bind(&noNull);
+
+  Label noUndefined;
+  masm.branchTestUndefined(Assembler::NotEqual, tagReg, &noUndefined);
+  masm.move32(Imm32(2), scratch);
+  masm.convertInt32ToDouble(scratch, scratchFloat);
+  masm.jump(&isDouble);
+  masm.bind(&noUndefined);
+
+  Label noBoolean;
+  masm.branchTestBoolean(Assembler::NotEqual, tagReg, &noBoolean);
+  masm.unboxBoolean(value, scratch);
+  masm.add32(Imm32(3), scratch);
+  masm.convertInt32ToDouble(scratch, scratchFloat);
+  masm.jump(&isDouble);
+  masm.bind(&noBoolean);
+
+  Label noDouble;
+  masm.branchTestDouble(Assembler::NotEqual, tagReg, &noDouble);
+  masm.unboxDouble(value, scratchFloat);
+  masm.canonicalizeDoubleIfDeterministic(scratchFloat);
+
+  masm.jump(&isDouble);
+  masm.bind(&noDouble);
+  masm.move32(Imm32(0), output);
+  masm.jump(&done);
+
+  masm.bind(&isBigInt);
+  emitFuzzilliHashBigInt(scratch, output);
+  masm.jump(&done);
+
+  masm.bind(&isObject);
+  emitFuzzilliHashObject(ins, scratch, output);
+  masm.jump(&done);
+
+  masm.bind(&isDouble);
+  emitFuzzilliHashDouble(scratchFloat, scratch, output);
+
+  masm.bind(&done);
+}
+
+void CodeGenerator::visitFuzzilliHashT(LFuzzilliHashT* ins) {
+  const LAllocation* value = ins->value();
+  MIRType mirType = ins->mir()->getOperand(0)->type();
+
+  FloatRegister scratchFloat = ToFloatRegister(ins->getTemp(1));
+  Register scratch = ToRegister(ins->getTemp(0));
+  Register output = ToRegister(ins->output());
+  MOZ_ASSERT(scratch != output);
+
+  if (mirType == MIRType::Object) {
+    MOZ_ASSERT(value->isGeneralReg());
+    masm.mov(value->toGeneralReg()->reg(), scratch);
+    emitFuzzilliHashObject(ins, scratch, output);
+  } else if (mirType == MIRType::BigInt) {
+    MOZ_ASSERT(value->isGeneralReg());
+    masm.mov(value->toGeneralReg()->reg(), scratch);
+    emitFuzzilliHashBigInt(scratch, output);
+  } else if (mirType == MIRType::Double) {
+    MOZ_ASSERT(value->isFloatReg());
+    masm.moveDouble(value->toFloatReg()->reg(), scratchFloat);
+    masm.canonicalizeDoubleIfDeterministic(scratchFloat);
+    emitFuzzilliHashDouble(scratchFloat, scratch, output);
+  } else if (mirType == MIRType::Float32) {
+    MOZ_ASSERT(value->isFloatReg());
+    masm.convertFloat32ToDouble(value->toFloatReg()->reg(), scratchFloat);
+    masm.canonicalizeDoubleIfDeterministic(scratchFloat);
+    emitFuzzilliHashDouble(scratchFloat, scratch, output);
+  } else if (mirType == MIRType::Int32) {
+    MOZ_ASSERT(value->isGeneralReg());
+    masm.mov(value->toGeneralReg()->reg(), scratch);
+    masm.convertInt32ToDouble(scratch, scratchFloat);
+    emitFuzzilliHashDouble(scratchFloat, scratch, output);
+  } else if (mirType == MIRType::Null) {
+    MOZ_ASSERT(value->isBogus());
+    masm.move32(Imm32(1), scratch);
+    masm.convertInt32ToDouble(scratch, scratchFloat);
+    emitFuzzilliHashDouble(scratchFloat, scratch, output);
+  } else if (mirType == MIRType::Undefined) {
+    MOZ_ASSERT(value->isBogus());
+    masm.move32(Imm32(2), scratch);
+    masm.convertInt32ToDouble(scratch, scratchFloat);
+    emitFuzzilliHashDouble(scratchFloat, scratch, output);
+  } else if (mirType == MIRType::Boolean) {
+    MOZ_ASSERT(value->isGeneralReg());
+    masm.mov(value->toGeneralReg()->reg(), scratch);
+    masm.add32(Imm32(3), scratch);
+    masm.convertInt32ToDouble(scratch, scratchFloat);
+    emitFuzzilliHashDouble(scratchFloat, scratch, output);
+  } else {
+    MOZ_CRASH("unexpected type");
+  }
+}
+
+void CodeGenerator::visitFuzzilliHashStore(LFuzzilliHashStore* ins) {
+  const LAllocation* value = ins->value();
+  MOZ_ASSERT(ins->mir()->getOperand(0)->type() == MIRType::Int32);
+  MOZ_ASSERT(value->isGeneralReg());
+
+  Register scratchJSContext = ToRegister(ins->getTemp(0));
+  Register scratch = ToRegister(ins->getTemp(1));
+
+  masm.loadJSContext(scratchJSContext);
+
+  // stats
+  Address addrExecHashInputs(scratchJSContext,
+                             offsetof(JSContext, executionHashInputs));
+  masm.load32(addrExecHashInputs, scratch);
+  masm.add32(Imm32(1), scratch);
+  masm.store32(scratch, addrExecHashInputs);
+
+  Address addrExecHash(scratchJSContext, offsetof(JSContext, executionHash));
+  masm.load32(addrExecHash, scratch);
+  masm.add32(value->toGeneralReg()->reg(), scratch);
+  masm.rotateLeft(Imm32(1), scratch, scratch);
+  masm.store32(scratch, addrExecHash);
+}
+#endif
 
 static_assert(!std::is_polymorphic_v<CodeGenerator>,
               "CodeGenerator should not have any virtual methods");

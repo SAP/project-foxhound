@@ -11,8 +11,8 @@
 
 var EXPORTED_SYMBOLS = ["SearchWidgetTracker"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const lazy = {};
@@ -110,35 +110,20 @@ const SearchWidgetTracker = {
   removePersistedWidths() {
     Services.xulStore.removeValue(
       AppConstants.BROWSER_CHROME_URL,
-      "urlbar-container",
-      "width"
-    );
-    Services.xulStore.removeValue(
-      AppConstants.BROWSER_CHROME_URL,
-      this.WIDGET_ID,
+      WIDGET_ID,
       "width"
     );
     for (let win of lazy.CustomizableUI.windows) {
-      let urlbar = win.document.getElementById("urlbar-container");
-      urlbar.removeAttribute("width");
-      win.document
-        .getElementById("nav-bar")
-        .querySelectorAll("toolbarspring")
-        .forEach(n => n.removeAttribute("width"));
-      win.PanelUI.overflowPanel
-        .querySelectorAll("toolbarspring")
-        .forEach(n => n.removeAttribute("width"));
       let searchbar =
         win.document.getElementById(WIDGET_ID) ||
         win.gNavToolbox.palette.querySelector("#" + WIDGET_ID);
       searchbar.removeAttribute("width");
+      searchbar.style.removeProperty("width");
     }
   },
 
   get widgetIsInNavBar() {
     let placement = lazy.CustomizableUI.getPlacementOfWidget(WIDGET_ID);
-    return placement
-      ? placement.area == lazy.CustomizableUI.AREA_NAVBAR
-      : false;
+    return placement?.area == lazy.CustomizableUI.AREA_NAVBAR;
   },
 };

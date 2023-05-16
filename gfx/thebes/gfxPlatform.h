@@ -232,8 +232,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static bool IsHeadless();
 
-  static bool UseWebRender();
-
   static bool UseRemoteCanvas();
 
   static bool IsBackendAccelerated(
@@ -321,6 +319,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void GetCMSSupportInfo(mozilla::widget::InfoObject& aObj);
   void GetDisplayInfo(mozilla::widget::InfoObject& aObj);
   void GetOverlayInfo(mozilla::widget::InfoObject& aObj);
+  void GetSwapChainInfo(mozilla::widget::InfoObject& aObj);
 
   // Get the default content backend that will be used with the default
   // compositor. If the compositor is known when calling this function,
@@ -397,16 +396,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   nsAutoCString GetDefaultFontName(const nsACString& aLangGroup,
                                    const nsACString& aGenericFamily);
-
-  /**
-   * Create a gfxFontGroup based on the given family list and style.
-   */
-  gfxFontGroup* CreateFontGroup(
-      nsPresContext* aPresContext,
-      const mozilla::StyleFontFamilyList& aFontFamilyList,
-      const gfxFontStyle* aStyle, nsAtom* aLanguage, bool aExplicitLanguage,
-      gfxTextPerfMetrics* aTextPerf, gfxUserFontSet* aUserFontSet,
-      gfxFloat aDevToCssSize) const;
 
   /**
    * Look up a local platform font using the full font face name.
@@ -780,6 +769,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
     mOverlayInfo = mozilla::Some(aInfo);
   }
 
+  void SetSwapChainInfo(const mozilla::layers::SwapChainInfo& aInfo) {
+    mSwapChainInfo = mozilla::Some(aInfo);
+  }
+
   static bool HasVariationFontSupport();
 
   // you probably want to use gfxVars::UseWebRender() instead of this
@@ -1008,6 +1001,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   mozilla::widget::GfxInfoCollector<gfxPlatform> mCMSInfoCollector;
   mozilla::widget::GfxInfoCollector<gfxPlatform> mDisplayInfoCollector;
   mozilla::widget::GfxInfoCollector<gfxPlatform> mOverlayInfoCollector;
+  mozilla::widget::GfxInfoCollector<gfxPlatform> mSwapChainInfoCollector;
 
   nsTArray<mozilla::layers::FrameStats> mFrameStats;
 
@@ -1019,6 +1013,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   mozilla::gfx::IntSize mScreenSize;
 
   mozilla::Maybe<mozilla::layers::OverlayInfo> mOverlayInfo;
+  mozilla::Maybe<mozilla::layers::SwapChainInfo> mSwapChainInfo;
 
   // An instance of gfxSkipChars which is empty. It is used as the
   // basis for error-case iterators.

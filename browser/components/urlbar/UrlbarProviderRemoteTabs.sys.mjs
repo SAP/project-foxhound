@@ -81,6 +81,8 @@ class ProviderRemoteTabs extends UrlbarProvider {
 
   /**
    * Unique name for the provider, used by the context to filter on providers.
+   *
+   * @returns {string}
    */
   get name() {
     return "RemoteTabs";
@@ -88,6 +90,8 @@ class ProviderRemoteTabs extends UrlbarProvider {
 
   /**
    * The type of the provider, must be one of UrlbarUtils.PROVIDER_TYPE.
+   *
+   * @returns {UrlbarUtils.PROVIDER_TYPE}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.NETWORK;
@@ -97,6 +101,7 @@ class ProviderRemoteTabs extends UrlbarProvider {
    * Whether this provider should be invoked for the given context.
    * If this method returns false, the providers manager won't start a query
    * with this provider, to save on resources.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
    * @returns {boolean} Whether this provider should be invoked for the search.
    */
@@ -113,12 +118,12 @@ class ProviderRemoteTabs extends UrlbarProvider {
   }
 
   /**
-   * Starts querying.
+   * Starts querying. Extended classes should return a Promise resolved when the
+   * provider is done searching AND returning results.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {function} addCallback Callback invoked by the provider to add a new
+   * @param {Function} addCallback Callback invoked by the provider to add a new
    *        result. A UrlbarResult should be passed to it.
-   * @note Extended classes should return a Promise resolved when the provider
-   *       is done searching AND returning results.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -221,7 +226,7 @@ class ProviderRemoteTabs extends UrlbarProvider {
 
   /**
    * Ensure the cache is good.
-   **/
+   */
   async ensureCache() {
     if (!_cache) {
       _cache = await this.buildItems();

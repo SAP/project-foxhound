@@ -225,8 +225,8 @@ const BROWSER_STARTUP_RESUME_SESSION = 3;
 const kNoIndex = Number.MAX_SAFE_INTEGER;
 const kLastIndex = Number.MAX_SAFE_INTEGER - 1;
 
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 const { TelemetryTimestamps } = ChromeUtils.import(
   "resource://gre/modules/TelemetryTimestamps.jsm"
@@ -234,8 +234,8 @@ const { TelemetryTimestamps } = ChromeUtils.import(
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { GlobalState } = ChromeUtils.import(
   "resource:///modules/sessionstore/GlobalState.jsm"
@@ -243,27 +243,23 @@ const { GlobalState } = ChromeUtils.import(
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "SessionHistory",
-  "resource://gre/modules/sessionstore/SessionHistory.jsm"
-);
-
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   gScreenManager: ["@mozilla.org/gfx/screenmanager;1", "nsIScreenManager"],
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
-  PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.jsm",
   RunState: "resource:///modules/sessionstore/RunState.jsm",
   SessionCookies: "resource:///modules/sessionstore/SessionCookies.jsm",
   SessionFile: "resource:///modules/sessionstore/SessionFile.jsm",
@@ -274,7 +270,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   TabState: "resource:///modules/sessionstore/TabState.jsm",
   TabStateCache: "resource:///modules/sessionstore/TabStateCache.jsm",
   TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 /**
@@ -1524,7 +1519,12 @@ var SessionStoreInternal = {
       case "TabClose":
         // `adoptedBy` will be set if the tab was closed because it is being
         // moved to a new window.
-        if (!aEvent.detail.adoptedBy) {
+        if (aEvent.detail.adoptedBy) {
+          this.onMoveToNewWindow(
+            target.linkedBrowser,
+            aEvent.detail.adoptedBy.linkedBrowser
+          );
+        } else {
           this.onTabClose(win, target);
         }
         this.onTabRemove(win, target);
@@ -2609,6 +2609,20 @@ var SessionStoreInternal = {
 
     // Store closed-tab data for undo.
     this.maybeSaveClosedTab(aWindow, aTab, tabState);
+  },
+
+  /**
+   * Flush and copy tab state when moving a tab to a new window.
+   * @param aFromBrowser
+   *        Browser reference.
+   * @param aToBrowser
+   *        Browser reference.
+   */
+  onMoveToNewWindow(aFromBrowser, aToBrowser) {
+    lazy.TabStateFlusher.flush(aFromBrowser).then(() => {
+      let tabState = lazy.TabStateCache.get(aFromBrowser.permanentKey);
+      lazy.TabStateCache.update(aToBrowser.permanentKey, tabState);
+    });
   },
 
   /**

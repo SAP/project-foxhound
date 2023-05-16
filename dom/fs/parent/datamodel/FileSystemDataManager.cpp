@@ -17,6 +17,7 @@
 #include "mozStorageCID.h"
 #include "mozilla/Result.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/FileSystemLog.h"
 #include "mozilla/dom/FileSystemManagerParent.h"
 #include "mozilla/dom/quota/ClientImpl.h"
 #include "mozilla/dom/quota/DirectoryLock.h"
@@ -376,19 +377,34 @@ RefPtr<BoolPromise> FileSystemDataManager::OnClose() {
   return mClosePromiseHolder.Ensure(__func__);
 }
 
+bool FileSystemDataManager::IsLocked(const EntryId& aEntryId) const {
+  return mExclusiveLocks.Contains(aEntryId);
+}
+
 bool FileSystemDataManager::LockExclusive(const EntryId& aEntryId) {
-  if (mExclusiveLocks.Contains(aEntryId)) {
+  if (IsLocked(aEntryId)) {
     return false;
   }
 
+  LOG_VERBOSE(("ExclusiveLock"));
   mExclusiveLocks.Insert(aEntryId);
+
   return true;
 }
 
 void FileSystemDataManager::UnlockExclusive(const EntryId& aEntryId) {
   MOZ_ASSERT(mExclusiveLocks.Contains(aEntryId));
 
+  LOG_VERBOSE(("ExclusiveUnlock"));
   mExclusiveLocks.Remove(aEntryId);
+}
+
+bool FileSystemDataManager::LockShared(const EntryId& aEntryId) {
+  return LockExclusive(aEntryId);
+}
+
+void FileSystemDataManager::UnlockShared(const EntryId& aEntryId) {
+  UnlockExclusive(aEntryId);
 }
 
 bool FileSystemDataManager::IsInactive() const {
@@ -505,7 +521,7 @@ RefPtr<BoolPromise> FileSystemDataManager::BeginOpen() {
 
               self->mDatabaseManager =
                   MakeUnique<FileSystemDatabaseManagerVersion001>(
-                      std::move(connection),
+                      self, std::move(connection),
                       MakeUnique<FileSystemFileManager>(std::move(fmRes)),
                       rootId);
             }

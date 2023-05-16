@@ -6,21 +6,16 @@
 
 var EXPORTED_SYMBOLS = ["GeckoViewSessionStore"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { GeckoViewUtils } = ChromeUtils.import(
-  "resource://gre/modules/GeckoViewUtils.jsm"
+const { GeckoViewUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/GeckoViewUtils.sys.mjs"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "SessionHistory",
-  "resource://gre/modules/sessionstore/SessionHistory.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.sys.mjs",
+});
 
 const { debug, warn } = GeckoViewUtils.initLogging("SessionStore");
 const kNoIndex = Number.MAX_SAFE_INTEGER;

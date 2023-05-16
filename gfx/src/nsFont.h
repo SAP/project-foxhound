@@ -60,7 +60,7 @@ struct nsFont final {
   // Some font-variant-alternates property values require
   // font-specific settings defined via @font-feature-values rules.
   // These are resolved *after* font matching occurs.
-  mozilla::StyleVariantAlternatesList variantAlternates;
+  mozilla::StyleFontVariantAlternates variantAlternates;
 
   // Variant subproperties
   uint16_t variantLigatures = NS_FONT_VARIANT_LIGATURES_NORMAL;
@@ -70,6 +70,7 @@ struct nsFont final {
   uint8_t variantNumeric = NS_FONT_VARIANT_NUMERIC_NORMAL;
   uint8_t variantPosition = NS_FONT_VARIANT_POSITION_NORMAL;
   uint8_t variantWidth = NS_FONT_VARIANT_WIDTH_NORMAL;
+  StyleFontVariantEmoji variantEmoji = StyleFontVariantEmoji::Normal;
 
   // Smoothing - controls subpixel-antialiasing (currently OSX only)
   uint8_t smoothing = NS_FONT_SMOOTHING_AUTO;

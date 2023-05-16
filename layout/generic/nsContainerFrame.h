@@ -90,7 +90,7 @@ class nsContainerFrame : public nsSplittableFrame {
    * @see     #Init()
    */
   virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList);
+                                   nsFrameList&& aChildList);
 
   /**
    * This method is responsible for appending frames to the frame
@@ -101,7 +101,7 @@ class nsContainerFrame : public nsSplittableFrame {
    * @param   aFrameList list of child frames to append. Each of the frames has
    *            its NS_FRAME_IS_DIRTY bit set.  Must not be empty.
    */
-  virtual void AppendFrames(ChildListID aListID, nsFrameList& aFrameList);
+  virtual void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList);
 
   /**
    * This method is responsible for inserting frames into the frame
@@ -117,7 +117,7 @@ class nsContainerFrame : public nsSplittableFrame {
    */
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                             const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList);
+                            nsFrameList&& aFrameList);
 
   /**
    * This method is responsible for removing a frame in the frame
@@ -362,7 +362,7 @@ class nsContainerFrame : public nsSplittableFrame {
   static inline void DefaultChildFrameMerge(nsFrameList& aDest,
                                             nsFrameList& aSrc,
                                             nsContainerFrame* aParent) {
-    aDest.AppendFrames(nullptr, aSrc);
+    aDest.AppendFrames(nullptr, std::move(aSrc));
   }
 
   /**

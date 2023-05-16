@@ -22,7 +22,7 @@ static_prefs = { path = "../../../../modules/libpref/init/static_prefs" }
 profiler_helper = { path = "../../../../tools/profiler/rust-helper", optional = true }
 mozurl = { path = "../../../../netwerk/base/mozurl" }
 webrender_bindings = { path = "../../../../gfx/webrender_bindings" }
-cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "369c45504c45d74ebb19845506fb1596a471c7c9", optional = true }
+cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "93b5c01a131f65c83c11aeb317f4583405c5eb79", optional = true }
 cubeb-pulse = { git = "https://github.com/mozilla/cubeb-pulse-rs", rev="cf48897be5cbe147d051ebbbe1eaf5fd8fb6bbc9", optional = true, features=["pulse-dlopen"] }
 cubeb-sys = { version = "0.10.3", optional = true, features=["gecko-in-tree"] }
 audioipc2-client = { git = "https://github.com/kinetiknz/audioipc-2", rev = "42eb59ab3b86cd43d3dbe37d159ce102a8eaf2a5", optional = true } # macos (v2) branch
@@ -81,6 +81,7 @@ uniffi-example-rondpoint = { git = "https://github.com/mozilla/uniffi-rs.git", r
 uniffi-example-sprites = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "bb2039f077a29dba0879372a67e764e6ace8e33f", optional = true }
 uniffi-example-todolist = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "bb2039f077a29dba0879372a67e764e6ace8e33f", optional = true }
 uniffi-example-custom-types = { path = "../../../components/uniffi-example-custom-types/", optional = true }
+uniffi-fixture-external-types = { path = "../../../components/uniffi-fixture-external-types/", optional = true }
 
 # Note: `modern_sqlite` means rusqlite's bindings file be for a sqlite with
 # version less than or equal to what we link to. This isn't a problem because we
@@ -98,19 +99,22 @@ localization-ffi = { path = "../../../../intl/l10n/rust/localization-ffi" }
 processtools = { path = "../../../components/processtools" }
 qcms = { path = "../../../../gfx/qcms", features = ["c_bindings", "neon"], default-features = false }
 
+wpf-gpu-raster = { git = "https://github.com/FirefoxGraphics/wpf-gpu-raster", rev = "f0d95ce14af8a8de74f469dbad715c4064fca2e1" }
+
 # Force url to stay at 2.1.0. See bug 1734538.
 url = "=2.1.0"
 
 # Force mio to stay at 0.8.0 to avoid windows-sys dependencies.
 mio = "=0.8.0"
 
-# Since we're building with at least rustc 1.61, enable rust 1.57 features.
+# Since we're building with at least rustc 1.63, enable rust 1.57 features.
 # This happens to work around issues the older code has with 1.65.
 fallible_collections = { version = "0.4", features = ["rust_1_57"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 viaduct = "0.1"
 webext_storage_bridge = { path = "../../../components/extensions/storage/webext_storage_bridge" }
+tabs = { version = "0.1" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 detect_win32k_conflicts = { path = "../../../xre/detect_win32k_conflicts" }
@@ -133,13 +137,14 @@ new_xulstore = ["xulstore"]
 libfuzzer = ["neqo_glue/fuzzing"]
 webrtc = ["mdns_service"]
 glean_disable_upload = ["fog_control/disable_upload"]
+glean_million_queue = ["fog_control/million_queue"]
 glean_with_gecko = ["fog_control/with_gecko", "jog/with_gecko"]
 oxidized_breakpad = ["rust_minidump_writer_linux"]
 with_dbus = ["audio_thread_priority/with_dbus"]
 thread_sanitizer = ["xpcom/thread_sanitizer"]
 uniffi_fixtures = [
     "uniffi-example-arithmetic", "uniffi-example-geometry", "uniffi-example-rondpoint", "uniffi-example-sprites",
-    "uniffi-example-todolist", "uniffi-example-custom-types"
+    "uniffi-example-todolist", "uniffi-example-custom-types", "uniffi-fixture-external-types",
 ]
 webmidi_midir_impl = ["midir_impl"]
 

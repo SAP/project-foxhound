@@ -48,6 +48,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ViewportUtils.h"
+#include "mozilla/gfx/Types.h"
 #include <algorithm>
 
 #ifdef XP_WIN
@@ -195,6 +196,7 @@
 #include "mozilla/layers/APZPublicUtils.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/ScrollTimelineAnimationTracker.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSet.h"
@@ -2434,7 +2436,12 @@ PresShell::ScrollLine(bool aForward) {
       GetScrollableFrameToScroll(VerticalScrollDirection);
   ScrollMode scrollMode = apz::GetScrollModeForOrigin(ScrollOrigin::Lines);
   if (scrollFrame) {
+    nsRect scrollPort = scrollFrame->GetScrollPortRect();
+    nsSize lineSize = scrollFrame->GetLineScrollAmount();
     int32_t lineCount = StaticPrefs::toolkit_scrollbox_verticalScrollDistance();
+    if (lineCount * lineSize.height > scrollPort.Height()) {
+      return ScrollPage(aForward);
+    }
     scrollFrame->ScrollBy(
         nsIntPoint(0, aForward ? lineCount : -lineCount), ScrollUnit::LINES,
         scrollMode, nullptr, mozilla::ScrollOrigin::NotSpecified,
@@ -2502,50 +2509,6 @@ PresShell::CompleteMove(bool aForward, bool aExtend) {
       nsISelectionController::SELECTION_FOCUS_REGION,
       nsISelectionController::SCROLL_SYNCHRONOUS |
           nsISelectionController::SCROLL_FOR_CARET_MOVE);
-}
-
-static void DoCheckVisibility(nsPresContext* aPresContext, nsIContent* aNode,
-                              int16_t aStartOffset, int16_t aEndOffset,
-                              bool* aRetval) {
-  nsIFrame* frame = aNode->GetPrimaryFrame();
-  if (!frame) {
-    // No frame to look at so it must not be visible.
-    return;
-  }
-
-  // Start process now to go through all frames to find startOffset. Then check
-  // chars after that to see if anything until EndOffset is visible.
-  bool finished = false;
-  frame->CheckVisibility(aPresContext, aStartOffset, aEndOffset, true,
-                         &finished, aRetval);
-  // Don't worry about other return value.
-}
-
-NS_IMETHODIMP
-PresShell::CheckVisibility(nsINode* node, int16_t startOffset,
-                           int16_t EndOffset, bool* _retval) {
-  if (!node || startOffset > EndOffset || !_retval || startOffset < 0 ||
-      EndOffset < 0)
-    return NS_ERROR_INVALID_ARG;
-  *_retval = false;  // initialize return parameter
-  nsCOMPtr<nsIContent> content(do_QueryInterface(node));
-  if (!content) return NS_ERROR_FAILURE;
-
-  DoCheckVisibility(mPresContext, content, startOffset, EndOffset, _retval);
-  return NS_OK;
-}
-
-nsresult PresShell::CheckVisibilityContent(nsIContent* aNode,
-                                           int16_t aStartOffset,
-                                           int16_t aEndOffset, bool* aRetval) {
-  if (!aNode || aStartOffset > aEndOffset || !aRetval || aStartOffset < 0 ||
-      aEndOffset < 0) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *aRetval = false;
-  DoCheckVisibility(mPresContext, aNode, aStartOffset, aEndOffset, aRetval);
-  return NS_OK;
 }
 
 // end implementations nsISelectionController
@@ -3558,6 +3521,7 @@ static WhereToScroll GetApplicableWhereToScroll(
 static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
                              const nsIFrame* aScrollableFrame,
                              const nsIFrame* aTarget, const nsRect& aRect,
+                             const Sides aScrollPaddingSkipSides,
                              const nsMargin& aMargin, ScrollAxis aVertical,
                              ScrollAxis aHorizontal, ScrollFlags aScrollFlags) {
   nsPoint scrollPt = aFrameAsScrollable->GetVisualViewportOffset();
@@ -3565,7 +3529,11 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
   const nsRect visibleRect(scrollPt,
                            aFrameAsScrollable->GetVisualViewportSize());
 
-  const nsMargin padding = aFrameAsScrollable->GetScrollPadding() + aMargin;
+  const nsMargin padding = [&] {
+    nsMargin p = aFrameAsScrollable->GetScrollPadding();
+    p.ApplySkipSides(aScrollPaddingSkipSides);
+    return p + aMargin;
+  }();
 
   const nsRect rectToScrollIntoView = [&] {
     nsRect r(aRect);
@@ -3710,17 +3678,16 @@ nsresult PresShell::ScrollContentIntoView(nsIContent* aContent,
   return NS_OK;
 }
 
-static nsMargin GetScrollMargin(const nsIContent* aContentToScrollTo,
-                                const nsIFrame* aFrame) {
-  MOZ_ASSERT(aContentToScrollTo->GetPrimaryFrame() == aFrame);
+static nsMargin GetScrollMargin(const nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame);
   // If we're focusing something that can't be targeted by content, allow
   // content to customize the margin.
   //
   // TODO: This is also a bit of an issue for delegated focus, see
   // https://github.com/whatwg/html/issues/7033.
-  if (aContentToScrollTo->ChromeOnlyAccess()) {
+  if (aFrame->GetContent() && aFrame->GetContent()->ChromeOnlyAccess()) {
     if (const nsIContent* userContent =
-            aContentToScrollTo->GetChromeOnlyAccessSubtreeRootParent()) {
+            aFrame->GetContent()->GetChromeOnlyAccessSubtreeRootParent()) {
       if (const nsIFrame* frame = userContent->GetPrimaryFrame()) {
         return frame->StyleMargin()->GetScrollMargin();
       }
@@ -3746,20 +3713,6 @@ void PresShell::DoScrollContentIntoView() {
     return;
   }
 
-  // We really just need a non-fragmented frame so that we can accumulate the
-  // bounds of all our continuations relative to it. We shouldn't jump out of
-  // our nearest scrollable frame, and that's an ok reference frame, so try to
-  // use that, or the root frame if there's nothing to scroll in this document.
-  nsIFrame* container = nsLayoutUtils::GetClosestFrameOfType(
-      frame->GetParent(), LayoutFrameType::Scroll);
-  if (!container) {
-    container = frame->PresShell()->GetRootFrame();
-    MOZ_DIAGNOSTIC_ASSERT(container);
-    if (!container) {
-      return;
-    }
-  }
-
   auto* data = static_cast<ScrollIntoViewData*>(
       mContentToScrollTo->GetProperty(nsGkAtoms::scrolling));
   if (MOZ_UNLIKELY(!data)) {
@@ -3767,65 +3720,102 @@ void PresShell::DoScrollContentIntoView() {
     return;
   }
 
-  // Get the scroll-margin here since |frame| is going to be changed to iterate
-  // over all continuation frames below.
-  const nsMargin scrollMargin = GetScrollMargin(mContentToScrollTo, frame);
-
-  const nsIFrame* target = frame;
-  // This is a two-step process.
-  // Step 1: Find the bounds of the rect we want to scroll into view.  For
-  //         example, for an inline frame we may want to scroll in the whole
-  //         line, or we may want to scroll multiple lines into view.
-  // Step 2: Walk container frame and its ancestors and scroll them
-  //         appropriately.
-  // frameBounds is relative to container. We're assuming
-  // that scrollframes don't split so every continuation of frame will
-  // be a descendant of container. (Things would still mostly work
-  // even if that assumption was false.)
-  nsRect frameBounds;
-  bool haveRect = false;
-  bool useWholeLineHeightForInlines = data->mContentScrollVAxis.mWhenToScroll !=
-                                      WhenToScroll::IfNotFullyVisible;
-  {
-    AutoAssertNoDomMutations guard;  // Ensure use of nsILineIterators is safe.
-    nsIFrame* prevBlock = nullptr;
-    // Reuse the same line iterator across calls to AccumulateFrameBounds.
-    // We set it every time we detect a new block (stored in prevBlock).
-    nsILineIterator* lines = nullptr;
-    // The last line we found a continuation on in |lines|.  We assume that
-    // later continuations cannot come on earlier lines.
-    int32_t curLine = 0;
-    do {
-      AccumulateFrameBounds(container, frame, useWholeLineHeightForInlines,
-                            frameBounds, haveRect, prevBlock, lines, curLine);
-    } while ((frame = frame->GetNextContinuation()));
-  }
-
-  ScrollFrameRectIntoView(container, frameBounds, scrollMargin,
-                          data->mContentScrollVAxis, data->mContentScrollHAxis,
-                          data->mContentToScrollToFlags, target);
+  ScrollFrameIntoView(frame, Nothing(), data->mContentScrollVAxis,
+                      data->mContentScrollHAxis, data->mContentToScrollToFlags);
 }
 
-bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
-                                        const nsMargin& aMargin,
-                                        ScrollAxis aVertical,
-                                        ScrollAxis aHorizontal,
-                                        ScrollFlags aScrollFlags,
-                                        const nsIFrame* aTarget) {
-  if (aFrame->IsHiddenByContentVisibilityOnAnyAncestor()) {
+bool PresShell::ScrollFrameIntoView(
+    nsIFrame* aTargetFrame, const Maybe<nsRect>& aKnownRectRelativeToTarget,
+    ScrollAxis aVertical, ScrollAxis aHorizontal, ScrollFlags aScrollFlags) {
+  if (aTargetFrame->IsHiddenByContentVisibilityOnAnyAncestor()) {
     return false;
   }
 
-  bool didScroll = false;
+  // The scroll margin only applies to the whole bounds of the element, so don't
+  // apply it if we get an arbitrary rect / point to scroll to.
+  const nsMargin scrollMargin =
+      aKnownRectRelativeToTarget ? nsMargin() : GetScrollMargin(aTargetFrame);
+
+  Sides skipPaddingSides;
+  const auto MaybeSkipPaddingSides = [&](nsIFrame* aFrame) {
+    if (!aFrame->IsStickyPositioned()) {
+      return;
+    }
+    const nsPoint pos = aFrame->GetPosition();
+    const nsPoint normalPos = aFrame->GetNormalPosition();
+    if (pos == normalPos) {
+      return;  // Frame is not stuck.
+    }
+    // If we're targetting a sticky element, make sure not to apply
+    // scroll-padding on the direction we're stuck.
+    const auto& offsets = aFrame->StylePosition()->mOffset;
+    for (auto side : AllPhysicalSides()) {
+      if (offsets.Get(side).IsAuto()) {
+        continue;
+      }
+      // See if this axis is stuck.
+      const bool yAxis = side == eSideTop || side == eSideBottom;
+      const bool stuck = yAxis ? pos.y != normalPos.y : pos.x != normalPos.x;
+      if (!stuck) {
+        continue;
+      }
+      skipPaddingSides |= SideToSideBit(side);
+    }
+  };
+
+  nsIFrame* container = aTargetFrame;
+
   // This function needs to work even if rect has a width or height of 0.
-  nsRect rect = aRect;
-  nsIFrame* container = aFrame;
-  const nsIFrame* target = aTarget ? aTarget : aFrame;
+  nsRect rect = [&] {
+    if (aKnownRectRelativeToTarget) {
+      return *aKnownRectRelativeToTarget;
+    }
+    MaybeSkipPaddingSides(aTargetFrame);
+    while (nsIFrame* parent = container->GetParent()) {
+      container = parent;
+      if (static_cast<nsIScrollableFrame*>(do_QueryFrame(container))) {
+        // We really just need a non-fragmented frame so that we can accumulate
+        // the bounds of all our continuations relative to it. We shouldn't jump
+        // out of our nearest scrollable frame, and that's an ok reference
+        // frame, so try to use that, or the root frame if there's nothing to
+        // scroll in this document.
+        break;
+      }
+      MaybeSkipPaddingSides(container);
+    }
+    MOZ_DIAGNOSTIC_ASSERT(container);
+
+    nsRect targetFrameBounds;
+    {
+      bool haveRect = false;
+      const bool useWholeLineHeightForInlines =
+          aVertical.mWhenToScroll != WhenToScroll::IfNotFullyVisible;
+      AutoAssertNoDomMutations
+          guard;  // Ensure use of nsILineIterators is safe.
+      nsIFrame* prevBlock = nullptr;
+      // Reuse the same line iterator across calls to AccumulateFrameBounds.
+      // We set it every time we detect a new block (stored in prevBlock).
+      nsILineIterator* lines = nullptr;
+      // The last line we found a continuation on in |lines|.  We assume that
+      // later continuations cannot come on earlier lines.
+      int32_t curLine = 0;
+      nsIFrame* frame = aTargetFrame;
+      do {
+        AccumulateFrameBounds(container, frame, useWholeLineHeightForInlines,
+                              targetFrameBounds, haveRect, prevBlock, lines,
+                              curLine);
+      } while ((frame = frame->GetNextContinuation()));
+    }
+
+    return targetFrameBounds;
+  }();
+
+  bool didScroll = false;
+  const nsIFrame* target = aTargetFrame;
   // Walk up the frame hierarchy scrolling the rect into view and
   // keeping rect relative to container
   do {
-    nsIScrollableFrame* sf = do_QueryFrame(container);
-    if (sf) {
+    if (nsIScrollableFrame* sf = do_QueryFrame(container)) {
       nsPoint oldPosition = sf->GetScrollPosition();
       nsRect targetRect = rect;
       // Inflate the scrolled rect by the container's padding in each dimension,
@@ -3854,8 +3844,8 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
 
       {
         AutoWeakFrame wf(container);
-        ScrollToShowRect(sf, container, target, targetRect, aMargin, aVertical,
-                         aHorizontal, aScrollFlags);
+        ScrollToShowRect(sf, container, target, targetRect, skipPaddingSides,
+                         scrollMargin, aVertical, aHorizontal, aScrollFlags);
         if (!wf.IsAlive()) {
           return didScroll;
         }
@@ -3878,7 +3868,13 @@ bool PresShell::ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
       // This scroll container will be the next target element in the nearest
       // ancestor scroll container.
       target = container;
+      // We found a sticky scroll container, we shouldn't skip that side
+      // anymore.
+      skipPaddingSides = {};
     }
+
+    MaybeSkipPaddingSides(container);
+
     nsIFrame* parent;
     if (container->IsTransformed()) {
       container->GetTransformMatrix(ViewportType::Layout, RelativeTo{nullptr},
@@ -4249,6 +4245,14 @@ static inline void AssertFrameTreeIsSane(const PresShell& aPresShell) {
 #endif
 }
 
+static void TriggerPendingScrollTimelineAnimations(Document* aDocument) {
+  auto* tracker = aDocument->GetScrollTimelineAnimationTracker();
+  if (!tracker || !tracker->HasPendingAnimations()) {
+    return;
+  }
+  tracker->TriggerPendingAnimations();
+}
+
 void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
   // FIXME(emilio, bug 1530177): Turn into a release assert when bug 1530188 and
   // bug 1530190 are fixed.
@@ -4421,6 +4425,17 @@ void PresShell::DoFlushPendingNotifications(mozilla::ChangesToFlush aFlush) {
     }
 
     FlushPendingScrollResnap();
+
+    if (MOZ_LIKELY(!mIsDestroying)) {
+      // Try to trigger pending scroll-linked animations after we flush
+      // style and layout (if any). If we try to trigger them after flushing
+      // style but the frame tree is not ready, we will check them again after
+      // we flush layout because the requirement to trigger scroll-linked
+      // animations is that the associated scroll containers are ready (i.e. the
+      // scroll-timeline is active), and this depends on the readiness of the
+      // scrollable frame and the primary frame of the scroll container.
+      TriggerPendingScrollTimelineAnimations(mDocument);
+    }
 
     if (flushType >= FlushType::Layout) {
       if (!mIsDestroying) {
@@ -5146,10 +5161,12 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
     // content we're painting, relative to the scale at which it would normally
     // get painted at as part of page rendering (`unclampedResolution`).
     float scaleRelativeToNormalContent = scale / unclampedResolution;
-    aScreenRect->x = NSToIntFloor(aPoint.x - float(aPoint.x - visualPoint.x) *
-                                                 scaleRelativeToNormalContent);
-    aScreenRect->y = NSToIntFloor(aPoint.y - float(aPoint.y - visualPoint.y) *
-                                                 scaleRelativeToNormalContent);
+    aScreenRect->x =
+        NSToIntFloor(aPoint.x - float(aPoint.x.value - visualPoint.x.value) *
+                                    scaleRelativeToNormalContent);
+    aScreenRect->y =
+        NSToIntFloor(aPoint.y - float(aPoint.y.value - visualPoint.y.value) *
+                                    scaleRelativeToNormalContent);
 
     pixelArea.width = NSToIntFloor(float(pixelArea.width) * scale);
     pixelArea.height = NSToIntFloor(float(pixelArea.height) * scale);
@@ -5414,7 +5431,8 @@ void PresShell::AddCanvasBackgroundColorItem(
   if (!addedScrollingBackgroundColor || forceUnscrolledItem) {
     nsDisplaySolidColor* item = MakeDisplayItem<nsDisplaySolidColor>(
         aBuilder, aFrame, aBounds, bgcolor);
-    if (addedScrollingBackgroundColor) {
+    if (addedScrollingBackgroundColor &&
+        mPresContext->IsRootContentDocumentCrossProcess()) {
       item->SetIsCheckerboardBackground();
     }
     AddDisplayItemToBottom(aBuilder, aList, item);
@@ -6047,7 +6065,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
   bool preserves3DChildren = aFrame->Extend3DContext();
 
   for (const auto& [list, listID] : aFrame->ChildLists()) {
-    if (listID == nsIFrame::kPopupList) {
+    if (listID == FrameChildListID::Popup) {
       // We assume all frames in popups are visible, so we skip them here.
       continue;
     }
@@ -6803,7 +6821,11 @@ void PresShell::nsSynthMouseMoveEvent::Revoke() {
 // static
 nsIFrame* PresShell::EventHandler::GetNearestFrameContainingPresShell(
     PresShell* aPresShell) {
-  nsView* view = aPresShell->GetViewManager()->GetRootView();
+  nsViewManager* vm = aPresShell->GetViewManager();
+  if (!vm) {
+    return nullptr;
+  }
+  nsView* view = vm->GetRootView();
   while (view && !view->GetFrame()) {
     view = view->GetParent();
   }
@@ -10125,10 +10147,12 @@ static bool CompareTrees(nsPresContext* aFirstPresContext,
   auto iterLists1 = childLists1.begin();
   auto iterLists2 = childLists2.begin();
   do {
-    const nsFrameList& kids1 =
-        iterLists1 != childLists1.end() ? iterLists1->mList : nsFrameList();
-    const nsFrameList& kids2 =
-        iterLists2 != childLists2.end() ? iterLists2->mList : nsFrameList();
+    const nsFrameList& kids1 = iterLists1 != childLists1.end()
+                                   ? iterLists1->mList
+                                   : nsFrameList::EmptyList();
+    const nsFrameList& kids2 = iterLists2 != childLists2.end()
+                                   ? iterLists2->mList
+                                   : nsFrameList::EmptyList();
     int32_t l1 = kids1.GetLength();
     int32_t l2 = kids2.GetLength();
     if (l1 != l2) {
@@ -11181,7 +11205,7 @@ void PresShell::MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty) {
   nsIFrame* rootFrame = mFrameConstructor->GetRootFrame();
   if (rootFrame) {
     const nsFrameList& childList =
-        rootFrame->GetChildList(nsIFrame::kFixedList);
+        rootFrame->GetChildList(FrameChildListID::Fixed);
     for (nsIFrame* childFrame : childList) {
       FrameNeedsReflow(childFrame, aIntrinsicDirty, NS_FRAME_IS_DIRTY);
     }

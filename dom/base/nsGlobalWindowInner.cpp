@@ -877,7 +877,8 @@ class PromiseDocumentFlushedResolver final {
       mPromise->MaybeReject(std::move(error));
     } else if (guard.Mutated(0)) {
       // Something within the callback mutated the DOM.
-      mPromise->MaybeReject(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
+      mPromise->MaybeRejectWithNoModificationAllowedError(
+          "DOM mutated from promiseDocumentFlushed callbacks");
     } else {
       mPromise->MaybeResolve(returnVal);
     }
@@ -3934,16 +3935,14 @@ void nsGlobalWindowInner::ResizeBy(int32_t aWidthDif, int32_t aHeightDif,
 
 void nsGlobalWindowInner::SizeToContent(CallerType aCallerType,
                                         ErrorResult& aError) {
-  FORWARD_TO_OUTER_OR_THROW(SizeToContentOuter, (aCallerType, 0, 0, aError),
+  FORWARD_TO_OUTER_OR_THROW(SizeToContentOuter, (aCallerType, {}, aError),
                             aError, );
 }
 
-void nsGlobalWindowInner::SizeToContentConstrained(int32_t aMaxWidth,
-                                                   int32_t aMaxHeight,
-                                                   ErrorResult& aError) {
-  FORWARD_TO_OUTER_OR_THROW(SizeToContentOuter,
-                            (CallerType::System, aMaxWidth, aMaxHeight, aError),
-                            aError, );
+void nsGlobalWindowInner::SizeToContentConstrained(
+    const SizeToContentConstraints& aConstraints, ErrorResult& aError) {
+  FORWARD_TO_OUTER_OR_THROW(
+      SizeToContentOuter, (CallerType::System, aConstraints, aError), aError, );
 }
 
 already_AddRefed<nsPIWindowRoot> nsGlobalWindowInner::GetTopWindowRoot() {
@@ -7216,18 +7215,22 @@ already_AddRefed<Promise> nsGlobalWindowInner::PromiseDocumentFlushed(
   MOZ_RELEASE_ASSERT(IsChromeWindow());
 
   if (!IsCurrentInnerWindow()) {
-    aError.Throw(NS_ERROR_FAILURE);
+    aError.ThrowInvalidStateError("Not the current inner window");
+    return nullptr;
+  }
+  if (!mDoc) {
+    aError.ThrowInvalidStateError("No document");
     return nullptr;
   }
 
-  if (!mDoc || mIteratingDocumentFlushedResolvers) {
-    aError.Throw(NS_ERROR_FAILURE);
+  if (mIteratingDocumentFlushedResolvers) {
+    aError.ThrowInvalidStateError("Already iterating through resolvers");
     return nullptr;
   }
 
   PresShell* presShell = mDoc->GetPresShell();
   if (!presShell) {
-    aError.Throw(NS_ERROR_FAILURE);
+    aError.ThrowInvalidStateError("No pres shell");
     return nullptr;
   }
 
@@ -7237,7 +7240,7 @@ already_AddRefed<Promise> nsGlobalWindowInner::PromiseDocumentFlushed(
   // we can still resolve the Promise.
   nsIGlobalObject* global = GetIncumbentGlobal();
   if (!global) {
-    aError.Throw(NS_ERROR_FAILURE);
+    aError.ThrowInvalidStateError("No incumbent global");
     return nullptr;
   }
 
@@ -7255,7 +7258,7 @@ already_AddRefed<Promise> nsGlobalWindowInner::PromiseDocumentFlushed(
   }
 
   if (!TryToObserveRefresh()) {
-    aError.Throw(NS_ERROR_FAILURE);
+    aError.ThrowInvalidStateError("Couldn't observe refresh");
     return nullptr;
   }
 

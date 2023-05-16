@@ -52,7 +52,6 @@
 #include "CaretAssociationHint.h"
 #include "FrameProperties.h"
 #include "LayoutConstants.h"
-#include "mozilla/layout/FrameChildList.h"
 #include "mozilla/AspectRatio.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
@@ -547,9 +546,6 @@ class nsIFrame : public nsQueryFrame {
   typedef mozilla::FrameProperties FrameProperties;
   typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
-  typedef mozilla::layout::FrameChildList ChildList;
-  typedef mozilla::layout::FrameChildListID ChildListID;
-  typedef mozilla::layout::FrameChildListIDs ChildListIDs;
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::Matrix Matrix;
   typedef mozilla::gfx::Matrix4x4 Matrix4x4;
@@ -560,6 +556,12 @@ class nsIFrame : public nsQueryFrame {
 
   typedef nsQueryFrame::ClassID ClassID;
 
+ protected:
+  using ChildList = mozilla::FrameChildList;
+  using ChildListID = mozilla::FrameChildListID;
+  using ChildListIDs = mozilla::FrameChildListIDs;
+
+ public:
   // nsQueryFrame
   NS_DECL_QUERYFRAME
   NS_DECL_QUERYFRAME_TARGET(nsIFrame)
@@ -636,7 +638,7 @@ class nsIFrame : public nsQueryFrame {
 
   void* operator new(size_t, mozilla::PresShell*) MOZ_MUST_OVERRIDE;
 
-  using PostDestroyData = mozilla::layout::PostFrameDestroyData;
+  using PostDestroyData = mozilla::PostFrameDestroyData;
   struct MOZ_RAII AutoPostDestroyData {
     explicit AutoPostDestroyData(nsPresContext* aPresContext)
         : mPresContext(aPresContext) {}
@@ -1637,6 +1639,10 @@ class nsIFrame : public nsQueryFrame {
     return GetLogicalBaseline(GetWritingMode());
   }
 
+  // Gets the page-name value to be used for the page that contains this frame
+  // during paginated reflow.
+  const nsAtom* ComputePageValue() const MOZ_NONNULL_RETURN;
+
   ///////////////////////////////////////////////////////////////////////////////
   // The public visibility API.
   ///////////////////////////////////////////////////////////////////////////////
@@ -1734,7 +1740,7 @@ class nsIFrame : public nsQueryFrame {
    */
   virtual const nsFrameList& GetChildList(ChildListID aListID) const;
   const nsFrameList& PrincipalChildList() const {
-    return GetChildList(kPrincipalList);
+    return GetChildList(mozilla::FrameChildListID::Principal);
   }
 
   /**
@@ -1757,29 +1763,6 @@ class nsIFrame : public nsQueryFrame {
    * document.
    */
   AutoTArray<ChildList, 4> CrossDocChildLists();
-
-  // The individual concrete child lists.
-  static const ChildListID kPrincipalList = mozilla::layout::kPrincipalList;
-  static const ChildListID kAbsoluteList = mozilla::layout::kAbsoluteList;
-  static const ChildListID kBulletList = mozilla::layout::kBulletList;
-  static const ChildListID kCaptionList = mozilla::layout::kCaptionList;
-  static const ChildListID kColGroupList = mozilla::layout::kColGroupList;
-  static const ChildListID kExcessOverflowContainersList =
-      mozilla::layout::kExcessOverflowContainersList;
-  static const ChildListID kFixedList = mozilla::layout::kFixedList;
-  static const ChildListID kFloatList = mozilla::layout::kFloatList;
-  static const ChildListID kOverflowContainersList =
-      mozilla::layout::kOverflowContainersList;
-  static const ChildListID kOverflowList = mozilla::layout::kOverflowList;
-  static const ChildListID kOverflowOutOfFlowList =
-      mozilla::layout::kOverflowOutOfFlowList;
-  static const ChildListID kPopupList = mozilla::layout::kPopupList;
-  static const ChildListID kPushedFloatsList =
-      mozilla::layout::kPushedFloatsList;
-  static const ChildListID kBackdropList = mozilla::layout::kBackdropList;
-  // A special alias for kPrincipalList that do not request reflow.
-  static const ChildListID kNoReflowPrincipalList =
-      mozilla::layout::kNoReflowPrincipalList;
 
   /**
    * Child frames are linked together in a doubly-linked list
@@ -1894,7 +1877,9 @@ class nsIFrame : public nsQueryFrame {
    * Flex items also have the same special-case described in
    * https://drafts.csswg.org/css-flexbox/#painting
    */
-  DisplayChildFlag DisplayFlagForFlexOrGridItem() const;
+  static DisplayChildFlags DisplayFlagsForFlexOrGridItem() {
+    return DisplayChildFlags{DisplayChildFlag::ForcePseudoStackingContext};
+  }
 
   bool RefusedAsyncAnimation() const {
     return GetProperty(RefusedAsyncAnimationProperty());
@@ -3180,6 +3165,11 @@ class nsIFrame : public nsQueryFrame {
   nsIWidget* GetNearestWidget() const;
 
   /**
+   * Whether the frame is a subgrid right now.
+   */
+  bool IsSubgrid() const;
+
+  /**
    * Same as GetNearestWidget() above but uses an outparam to return the offset
    * of this frame to the returned widget expressed in appunits of |this| (the
    * widget might be in a different document with a different zoom).
@@ -3921,28 +3911,6 @@ class nsIFrame : public nsQueryFrame {
 
  public:
   /**
-   * Called to see if the children of the frame are visible from indexstart to
-   * index end. This does not change any state. Returns true only if the indexes
-   * are valid and any of the children are visible. For textframes this index
-   * is the character index. If aStart = aEnd result will be false.
-   *
-   * @param aStart start index of first child from 0-N (number of children)
-   *
-   * @param aEnd end index of last child from 0-N
-   *
-   * @param aRecurse should this frame talk to siblings to get to the contents
-   * other children?
-   *
-   * @param aFinished did this frame have the aEndIndex? or is there more work
-   * to do
-   *
-   * @param _retval return value true or false. false = range is not rendered.
-   */
-  virtual nsresult CheckVisibility(nsPresContext* aContext, int32_t aStartIndex,
-                                   int32_t aEndIndex, bool aRecurse,
-                                   bool* aFinished, bool* _retval);
-
-  /**
    * Called to tell a frame that one of its child frames is dirty (i.e.,
    * has the NS_FRAME_IS_DIRTY *or* NS_FRAME_HAS_DIRTY_CHILDREN bit
    * set).  This should always set the NS_FRAME_HAS_DIRTY_CHILDREN on
@@ -4507,8 +4475,8 @@ class nsIFrame : public nsQueryFrame {
   void MarkAsNotAbsoluteContainingBlock();
   // Child frame types override this function to select their own child list
   // name
-  virtual mozilla::layout::FrameChildListID GetAbsoluteListID() const {
-    return kAbsoluteList;
+  virtual mozilla::FrameChildListID GetAbsoluteListID() const {
+    return mozilla::FrameChildListID::Absolute;
   }
 
   // Checks if we (or any of our descendants) have NS_FRAME_PAINTED_THEBES set,

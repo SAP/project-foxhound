@@ -60,6 +60,7 @@ class SearchUtils {
    * @param {string} prefix
    *   String containing the first part of the matching domain name(s).
    * @param {object} [options]
+   *   Options object.
    * @param {boolean} [options.matchAllDomainLevels]
    *   Match at each sub domain, for example "a.b.c.com" will be matched at
    *   "a.b.c.com", "b.c.com", and "c.com". Partial matches are always returned
@@ -169,7 +170,7 @@ class SearchUtils {
   /**
    * The list of engines with token ("@") aliases.
    *
-   * @returns {array}
+   * @returns {Array}
    *   Array of objects { engine, tokenAliases } for token alias engines.
    */
   async tokenAliasEngines() {
@@ -188,6 +189,7 @@ class SearchUtils {
 
   /**
    * @param {nsISearchEngine} engine
+   *   The engine to get the root domain of
    * @returns {string}
    *   The root domain of a search engine. e.g. If `engine` has the domain
    *   www.subdomain.rootdomain.com, `rootdomain` is returned. Returns the
@@ -277,11 +279,61 @@ class SearchUtils {
   }
 
   /**
+   * Checks if the given uri is constructed by the default search engine.
+   * When passing URI's to check against, it's best to use the "original" URI
+   * that was requested, as the server may have redirected the request.
+   *
+   * @param {nsIURI | string} uri
+   *   The uri to check.
+   * @returns {string}
+   *   The search terms used.
+   *   Will return an empty string if it's not a default SERP
+   *   or if the default engine hasn't been initialized.
+   */
+  getSearchTermIfDefaultSerpUri(uri) {
+    if (!Services.search.isInitialized || !uri) {
+      return "";
+    }
+
+    let uriHost;
+    let searchUri, searchHost;
+    // Creating a URI and accessing nsIURI.host can throw.
+    try {
+      if (typeof uri == "string") {
+        uri = Services.io.newURI(uri);
+      }
+      uriHost = uri.host;
+      searchUri = Services.io.newURI(Services.search.defaultEngine.searchForm);
+      searchHost = searchUri.host;
+    } catch (e) {
+      return "";
+    }
+
+    if (searchHost == uriHost && searchUri.scheme == uri.scheme) {
+      let { engine, terms } = Services.search.parseSubmissionURL(uri.spec);
+      if (engine && terms) {
+        let [expectedSearchUrl] = lazy.UrlbarUtils.getSearchQueryUrl(
+          engine,
+          terms
+        );
+        if (this.serpsAreEquivalent(uri.spec, expectedSearchUrl)) {
+          return terms;
+        }
+      }
+    }
+    return "";
+  }
+
+  /**
    * Compares the query parameters of two SERPs to see if one is equivalent to
    * the other. URL `x` is equivalent to URL `y` if
    *   (a) `y` contains at least all the query parameters contained in `x`, and
    *   (b) The values of the query parameters contained in both `x` and `y `are
    *       the same.
+   *
+   * This function does not compare the SERPs' origins or pathnames.
+   * `historySerp` can have a different origin and/or pathname than
+   * `generatedSerp` and still be considered equivalent.
    *
    * @param {string} historySerp
    *   The SERP from history whose params should be contained in
@@ -289,14 +341,10 @@ class SearchUtils {
    * @param {string} generatedSerp
    *   The search URL we would generate for a search result with the same search
    *   string used in `historySerp`.
-   * @param {array} [ignoreParams]
+   * @param {Array} [ignoreParams]
    *   A list of params to ignore in the matching, i.e. params that can be
    *   contained in `historySerp` but not be in `generatedSerp`.
    * @returns {boolean} True if `historySerp` can be deduped by `generatedSerp`.
-   *
-   * @note This function does not compare the SERPs' origins or pathnames.
-   *   `historySerp` can have a different origin and/or pathname than
-   *   `generatedSerp` and still be considered equivalent.
    */
   serpsAreEquivalent(historySerp, generatedSerp, ignoreParams = []) {
     let historyParams = new URL(historySerp).searchParams;
@@ -323,7 +371,7 @@ class SearchUtils {
    *
    * @param {nsISearchEngine} engine
    *   The aliases of this search engine will be returned.
-   * @returns {array}
+   * @returns {Array}
    *   An array of lower-cased string aliases as described above.
    */
   _aliasesForEngine(engine) {

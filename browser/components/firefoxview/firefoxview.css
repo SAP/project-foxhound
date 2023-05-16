@@ -29,18 +29,6 @@
   --colorways-grid-template-rows: auto auto auto;
   --colorways-figure-display: flex;
   --colorways-header-flex-direction: column;
-  --colorways-no-collection-border-radius: 8px;
-  --colorways-no-collection-div-bg-position: center top;
-  --colorways-no-collection-div-bg-size: 100%;
-  --colorways-no-collection-div-padding-inline: var(--content-area-padding-inline);
-  --colorways-no-collection-div-padding-block: var(--content-area-padding-block);
-  --colorways-no-collection-notice-padding-block: 0 1em;
-  --colorways-no-collection-notice-padding-inline: 1em;
-  --colorways-no-collection-notice-height: auto;
-  --colorways-no-collection-notice-justify-content: center;
-  --colorways-no-collection-notice-margin: 0;
-  --colorways-no-collection-notice-width: auto;
-  --colorways-no-collection-notice-text-color: #FFF;
 
   --info-icon-background-color: #0090ED;
 }
@@ -57,14 +45,14 @@ body {
   --fxview-background-color: var(--newtab-background-color, var(--in-content-page-background));
   --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 90%, currentColor);
   --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 80%, currentColor);
+  --fxview-text-primary-color: var(--newtab-text-primary-color, var(--in-content-page-color));
   --fxview-text-color-hover: var(--newtab-text-primary-color);
   --fxview-contrast-border: color-mix(in hsl, currentColor 45%, transparent);
   --fxview-extra-contrast-border: color-mix(in hsl, currentColor 85%, transparent);
   --in-content-zap-gradient: linear-gradient(var(--fxview-extra-contrast-border), var(--fxview-extra-contrast-border));
   --card-border-zap-gradient: var(--in-content-zap-gradient);
-  --fxview-text-secondary-color: color-mix(in srgb, currentColor 80%, transparent);
+  --fxview-text-secondary-color: color-mix(in srgb, currentColor 70%, transparent);
   --newtab-background-color-secondary: #FFF;
-  --colorways-no-collection-notice-bg-color: transparent;
 
   /* ensure utility button hover states match those of the rest of the page */
   --in-content-button-background-hover: var(--fxview-element-background-hover);
@@ -98,11 +86,12 @@ body:not([lwt-newtab]) {
     --fxview-element-background-hover: ButtonText;
     --fxview-element-background-active: ButtonText;
     --fxview-text-color-hover: ButtonFace;
+    --fxview-text-secondary-color: currentColor;
   }
 }
 
 h1 {
-  color: var(--newtab-text-primary-color);
+  color: var(--fxview-text-primary-color);
   font-weight: 600;
   font-size: 1.5em;
 }
@@ -143,9 +132,6 @@ body > main > details {
 }
 
 @media (max-width: 65rem) {
-  body {
-    --colorways-no-collection-notice-bg-color: var(--newtab-background-color-secondary);
-  }
   :root {
     --recently-closed-tabs-grid-row: 3;
     --details-grid-column: 1 / -1;
@@ -159,17 +145,6 @@ body > main > details {
     --colorways-grid-template-columns: 1fr var(--colorways-figure-size);
     --colorways-grid-template-rows: min-content min-content 1fr;
     --colorways-header-flex-direction: row;
-    --colorways-no-collection-div-bg-position: right top;
-    --colorways-no-collection-div-bg-size: 230px;
-    --colorways-no-collection-div-padding-inline: 0 246px;
-    --colorways-no-collection-div-padding-block: 0;
-    --colorways-no-collection-notice-padding-block: 0;
-    --colorways-no-collection-notice-padding-inline: var(--colorways-no-collection-border-radius);
-    --colorways-no-collection-notice-height: 107px;
-    --colorways-no-collection-notice-justify-content: flex-start;
-    --colorways-no-collection-notice-margin: 1px;
-    --colorways-no-collection-notice-width: 100%;
-    --colorways-no-collection-notice-text-color: inherit;
     --colorways-figure-margin: 0;
   }
 }
@@ -187,8 +162,6 @@ body > main > details {
     --colorways-grid-template-rows: auto;
     --colorways-figure-display: none;
     --colorways-header-flex-direction: column;
-    --colorways-no-collection-div-bg-size: 15%;
-    --colorways-no-collection-div-padding-inline: 0 15%;
   }
 }
 
@@ -231,23 +204,7 @@ body > main > details {
 }
 
 #colorways.no-collection {
-  display: block;
-  background: linear-gradient(51.95deg, #7542E5 -8.36%, #C953F2 98.73%);
-  border-radius: var(--colorways-no-collection-border-radius);
-}
-
-#colorways.no-collection > div {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding-inline: var(--colorways-no-collection-div-padding-inline);
-  padding-block: var(--colorways-no-collection-div-padding-block);
-  justify-content: flex-end;
-  background: url("chrome://browser/content/colorway-background.svg");
-  background-size: var(--colorways-no-collection-div-bg-size);
-  background-position: var(--colorways-no-collection-div-bg-position);
-  background-repeat: no-repeat;
-  border-radius: inherit;
+  visibility: collapse;
 }
 
 #colorways > header {
@@ -258,23 +215,6 @@ body > main > details {
   flex-wrap: wrap;
 }
 
-#no-current-colorway-collection-notice {
-  display: flex;
-  width: var(--colorways-no-collection-notice-width);
-  height: var(--colorways-no-collection-notice-height);
-  border-start-start-radius: calc(var(--colorways-no-collection-border-radius) - var(--colorways-no-collection-notice-margin));
-  border-end-start-radius: calc(var(--colorways-no-collection-border-radius) - var(--colorways-no-collection-notice-margin));
-  margin: var(--colorways-no-collection-notice-margin);
-  padding-block: var(--colorways-no-collection-notice-padding-block);
-  padding-inline: var(--colorways-no-collection-notice-padding-inline);
-  justify-content: var(--colorways-no-collection-notice-justify-content);
-  align-items: center;
-  font-size: 2em;
-  background-color: var(--colorways-no-collection-notice-bg-color);
-  color: var(--colorways-no-collection-notice-text-color);
-}
-
-#no-current-colorway-collection-notice,
 #colorways-collection-description {
   grid-area: colorways-description;
 }
@@ -362,6 +302,11 @@ button.close {
   border: 1px solid var(--fxview-contrast-border);
 }
 
+#collapsible-tabs-container,
+#tabpickup-tabs-container {
+  margin-block-start: 0.5em;
+}
+
 .empty-container {
   border-radius: 4px;
 }
@@ -381,19 +326,50 @@ button.close {
 
 .placeholder-content {
   color: var(--fxview-text-secondary-color);
-  text-align: center;
-  padding: 24px 16px;
+  display: flex;
+  padding: 1.8em 1.1em;
+}
+
+#recently-closed-empty-image,
+#tab-pickup-empty-image {
+  margin-inline-end: 1.1em;
+  -moz-context-properties: fill, stroke, fill-opacity;
+  fill: var(--fxview-background-color);
+  stroke: var(--fxview-text-primary-color);
+  fill-opacity: 0.07;
+}
+
+@media (prefers-color-scheme: dark) {
+  #recently-closed-empty-image,
+  #tab-pickup-empty-image {
+    fill: var(--newtab-background-color-secondary);
+    fill-opacity: 0.15;
+  }
+}
+
+.placeholder-text {
+  margin: 0;
+}
+
+.placeholder-header {
+  margin-block: 0 0.27em;
+  font-weight: 600;
+}
+
+.placeholder-body {
+  margin-block: 0;
+  line-height: 1.3em;
 }
 
 .page-section-header {
   column-gap: 16px;
   cursor: pointer;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: auto 1fr;
   grid-template-rows: 1fr auto;
   grid-template-areas:
-      "head head head head head head head twisty"
-      "desc desc desc desc desc desc desc desc";
+      "twisty head"
+      "none desc";
   list-style-type: none;
   padding-inline-start: 8px;
   position: relative;
@@ -420,17 +396,20 @@ button.close {
 
 /* the twisty is just an ornament; the whole summary parent node is clickable */
 .page-section-header > .twisty {
-  background-image: url("chrome://global/skin/icons/arrow-down.svg");
+  background-image: url("chrome://global/skin/icons/arrow-right.svg");
   display: inline-block;
   grid-area: twisty;
   align-self: center;
-  justify-self: end;
+  justify-self: start;
   padding-block: 4px;
   padding-inline: 8px;
   fill: currentColor;
   border-radius: 4px;
   margin-block: 0;
-  margin-inline-end: 4px;
+}
+
+[dir="rtl"] .page-section-header > .twisty {
+  background-image: url("chrome://global/skin/icons/arrow-left.svg");
 }
 
 @media (prefers-contrast) {
@@ -440,7 +419,7 @@ button.close {
 }
 
 details[open] > .page-section-header > .twisty {
-  background-image: url("chrome://global/skin/icons/arrow-up.svg");
+  background-image: url("chrome://global/skin/icons/arrow-down.svg");
 }
 
 .page-section-header:hover > .twisty {
@@ -626,7 +605,7 @@ details[open] > .page-section-header > .twisty {
 
 .closed-tabs-list {
   padding-inline-start: 0;
-  margin-block-start: 8px;
+  margin-block-start: 0;
   display: grid;
   grid-template-columns: min-content repeat(5, 1fr) min-content;
   column-gap: 8px;
@@ -640,6 +619,7 @@ details[open] > .page-section-header > .twisty {
   padding: 8px;
   cursor: pointer;
   align-items: center;
+  user-select: none;
 }
 
 @media (prefers-contrast) {
@@ -695,6 +675,16 @@ details[open] > .page-section-header > .twisty {
 }
 
 @media (prefers-contrast) {
+  .synced-tab-a {
+    border-color: FieldText;
+  }
+  .synced-tab-a,
+  .synced-tab-a:hover,
+  .synced-tab-a:active,
+  .synced-tab-a:hover:active,
+  .synced-tab-a:visited {
+    color: LinkText;
+  }
   .synced-tab-a:focus-visible {
     box-shadow: none;
     outline: var(--in-content-focus-outline);
@@ -732,7 +722,7 @@ details[open] > .page-section-header > .twisty {
 
 .synced-tabs-list {
   padding: 0;
-  margin-block-start: 8px;
+  margin-block-start: 0;
   list-style: none;
   display: grid;
   grid-template-columns: 4fr 4fr;
@@ -751,6 +741,14 @@ details[open] > .page-section-header > .twisty {
       "first"
       "second"
       "third";
+  }
+
+  body {
+    flex-flow: column;
+  }
+
+  #logo-container .brand-logo {
+    justify-content: center;
   }
 }
 
@@ -900,6 +898,12 @@ details[open] > .page-section-header > .twisty {
   margin-inline-end: 10px;
 }
 
+@media (prefers-contrast) {
+  .synced-tab-li .favicon {
+    color: LinkText;
+  }
+}
+
 .synced-tab-li .icon {
   vertical-align: bottom;
   margin-inline-end: 5px;
@@ -998,4 +1002,16 @@ details[open] > .page-section-header > .twisty {
   letter-spacing: 0.02em;
   margin-inline-start: 4px;
   color: #000000;
+}
+
+@media (prefers-contrast) {
+  .last-active-badge {
+    border: 1px solid CanvasText;
+  }
+  .dot {
+    background-color: FieldText;
+  }
+  .badge-text {
+    color: FieldText;
+  }
 }

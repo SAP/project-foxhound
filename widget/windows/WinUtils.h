@@ -38,6 +38,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/HalScreenConfiguration.h"
+#include "mozilla/HashTable.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WindowsDpiAwareness.h"
@@ -122,13 +123,6 @@ void EnumerateThreadWindows(F&& f)
 }
 
 namespace widget {
-
-// Windows message debugging data
-typedef struct {
-  const char* mStr;
-  UINT mId;
-} EventMsgInfo;
-extern std::unordered_map<UINT, EventMsgInfo> gAllEvents;
 
 // More complete QS definitions for MsgWaitForMultipleObjects() and
 // GetQueueStatus() that include newer win8 specific defines.
@@ -240,6 +234,13 @@ class WinUtils {
 
   static bool HasSystemMetricsForDpi();
   static int GetSystemMetricsForDpi(int nIndex, UINT dpi);
+
+  /**
+   * @param msg Windows event message
+   * @return User-friendly event name, or nullptr if no
+   *         match is found.
+   */
+  static const char* WinEventToEventName(UINT msg);
 
   /**
    * @param aHdc HDC for printer

@@ -47,6 +47,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/indexedDB/IDBResult.h"
 #include "mozilla/dom/indexedDB/Key.h"
+#include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
@@ -2862,7 +2863,8 @@ nsresult UpgradeFileIdsFunction::Init(nsIFile* aFMDirectory,
   // purpose is to store file ids without adding more complexity or code
   // duplication.
   auto fileManager = MakeSafeRefPtr<DatabaseFileManager>(
-      PERSISTENCE_TYPE_INVALID, quota::OriginMetadata{}, u""_ns, false);
+      PERSISTENCE_TYPE_INVALID, quota::OriginMetadata{}, u""_ns, ""_ns, false,
+      false);
 
   nsresult rv = fileManager->Init(aFMDirectory, aConnection);
   if (NS_WARN_IF(NS_FAILED(rv))) {

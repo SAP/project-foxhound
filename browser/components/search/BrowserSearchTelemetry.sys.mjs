@@ -7,13 +7,13 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 // A map of known search origins.
@@ -33,6 +33,7 @@ const KNOWN_SEARCH_SOURCES = new Map([
   ["system", "system"],
   ["urlbar", "urlbar"],
   ["urlbar-handoff", "urlbar_handoff"],
+  ["urlbar-persisted", "urlbar_persisted"],
   ["urlbar-searchmode", "urlbar_searchmode"],
   ["webextension", "webextension"],
 ]);
@@ -128,6 +129,7 @@ class BrowserSearchTelemetryHandler {
    *
    * Telemetry records only which search mode is entered and how it was entered.
    * It does not record anything pertaining to searches made within search mode.
+   *
    * @param {object} searchMode
    *   A search mode object. See UrlbarInput.setSearchMode documentation for
    *   details.
@@ -205,6 +207,7 @@ class BrowserSearchTelemetryHandler {
         case "urlbar":
         case "searchbar":
         case "urlbar-searchmode":
+        case "urlbar-persisted":
         case "urlbar-handoff":
           this._handleSearchAndUrlbar(browser, engine, source, details);
           break;
@@ -245,7 +248,7 @@ class BrowserSearchTelemetryHandler {
    * @param {string} source
    *   Where the search originated from.
    * @param {object} details
-   *   @see recordSearch
+   *   See {@link BrowserSearchTelemetryHandler.recordSearch}
    */
   _handleSearchAndUrlbar(browser, engine, source, details) {
     const isOneOff = !!details.isOneOff;

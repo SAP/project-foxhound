@@ -19,6 +19,7 @@
 #ifndef wasm_valtype_h
 #define wasm_valtype_h
 
+#include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
 
 #include <type_traits>
@@ -33,35 +34,41 @@ namespace wasm {
 
 using mozilla::Maybe;
 
-// A PackedTypeCode represents any value type in an compact POD format.
+class RecGroup;
+class TypeDef;
+class TypeContext;
+
+// A PackedTypeCode represents any value type.
 union PackedTypeCode {
  public:
-  using PackedRepr = uint32_t;
+  using PackedRepr = uint64_t;
 
  private:
-  static constexpr size_t TypeCodeBits = 8;
-  static constexpr size_t TypeIndexBits = 20;
   static constexpr size_t NullableBits = 1;
+  static constexpr size_t TypeCodeBits = 8;
+  static constexpr size_t TypeDefBits = 48;
   static constexpr size_t PointerTagBits = 2;
 
-  static_assert(TypeCodeBits + TypeIndexBits + NullableBits + PointerTagBits <=
+  static_assert(NullableBits + TypeCodeBits + TypeDefBits + PointerTagBits <=
                     (sizeof(PackedRepr) * 8),
                 "enough bits");
-  static_assert(MaxTypes < (1 << TypeIndexBits), "enough bits");
 
   PackedRepr bits_;
   struct {
-    PackedRepr typeCode_ : TypeCodeBits;
-    PackedRepr typeIndex_ : TypeIndexBits;
     PackedRepr nullable_ : NullableBits;
+    PackedRepr typeCode_ : TypeCodeBits;
+    // A pointer to the TypeDef this type references. We use 48-bits for this,
+    // and rely on system memory allocators not allocating outside of this
+    // range. This is also assumed by JS::Value, and so should be safe here.
+    PackedRepr typeDef_ : TypeDefBits;
+    // Reserve the bottom two bits for use as a tagging scheme for BlockType
+    // and ResultType, which can encode a ValType inside themselves in special
+    // cases.
     PackedRepr pointerTag_ : PointerTagBits;
   };
 
-  WASM_CHECK_CACHEABLE_POD(bits_);
-
  public:
-  static constexpr uint32_t NoTypeCode = (1 << TypeCodeBits) - 1;
-  static constexpr uint32_t NoTypeIndex = (1 << TypeIndexBits) - 1;
+  static constexpr PackedRepr NoTypeCode = ((uint64_t)1 << TypeCodeBits) - 1;
 
   static PackedTypeCode invalid() {
     PackedTypeCode ptc = {};
@@ -75,27 +82,26 @@ union PackedTypeCode {
     return ptc;
   }
 
-  static constexpr PackedTypeCode pack(TypeCode tc, uint32_t refTypeIndex,
-                                       bool isNullable) {
+  static PackedTypeCode pack(TypeCode tc, const TypeDef* typeDef,
+                             bool isNullable) {
     MOZ_ASSERT(uint32_t(tc) <= ((1 << TypeCodeBits) - 1));
-    MOZ_ASSERT_IF(tc != AbstractReferenceTypeIndexCode,
-                  refTypeIndex == NoTypeIndex);
-    MOZ_ASSERT_IF(tc == AbstractReferenceTypeIndexCode,
-                  refTypeIndex <= MaxTypeIndex);
+    MOZ_ASSERT_IF(tc != AbstractTypeRefCode, typeDef == nullptr);
+    MOZ_ASSERT_IF(tc == AbstractTypeRefCode, typeDef != nullptr);
+    // Double check that the type definition was allocated within 48-bits, as
+    // noted above.
+    MOZ_ASSERT((uint64_t)typeDef <= ((uint64_t)1 << TypeDefBits) - 1);
     PackedTypeCode ptc = {};
     ptc.typeCode_ = PackedRepr(tc);
-    ptc.typeIndex_ = refTypeIndex;
+    ptc.typeDef_ = (uintptr_t)typeDef;
     ptc.nullable_ = isNullable;
     return ptc;
   }
 
-  static constexpr PackedTypeCode pack(TypeCode tc, bool nullable) {
-    return pack(tc, PackedTypeCode::NoTypeIndex, nullable);
+  static PackedTypeCode pack(TypeCode tc, bool nullable) {
+    return pack(tc, nullptr, nullable);
   }
 
-  static constexpr PackedTypeCode pack(TypeCode tc) {
-    return pack(tc, PackedTypeCode::NoTypeIndex, false);
-  }
+  static PackedTypeCode pack(TypeCode tc) { return pack(tc, nullptr, false); }
 
   bool isValid() const { return typeCode_ != NoTypeCode; }
 
@@ -132,14 +138,9 @@ union PackedTypeCode {
   // Return whether this type is represented by a reference at runtime.
   bool isRefRepr() const { return typeCode() < LowestPrimitiveTypeCode; }
 
-  uint32_t typeIndex() const {
+  const TypeDef* typeDef() const {
     MOZ_ASSERT(isValid());
-    return uint32_t(typeIndex_);
-  }
-
-  uint32_t typeIndexUnchecked() const {
-    MOZ_ASSERT(isValid());
-    return uint32_t(typeIndex_);
+    return (const TypeDef*)(uintptr_t)typeDef_;
   }
 
   bool isNullable() const {
@@ -162,11 +163,127 @@ union PackedTypeCode {
   }
 };
 
-WASM_DECLARE_CACHEABLE_POD(PackedTypeCode);
+static_assert(sizeof(PackedTypeCode) == sizeof(uint64_t), "packed");
 
-static_assert(sizeof(PackedTypeCode) == sizeof(uint32_t), "packed");
-static_assert(std::is_pod_v<PackedTypeCode>,
-              "must be POD to be simply serialized/deserialized");
+// A SerializableTypeCode represents any value type in a form that can be
+// serialized and deserialized.
+union SerializableTypeCode {
+  using PackedRepr = uintptr_t;
+
+  static constexpr size_t NullableBits = 1;
+  static constexpr size_t TypeCodeBits = 8;
+  static constexpr size_t TypeIndexBits = 20;
+
+  PackedRepr bits;
+  struct {
+    PackedRepr nullable : NullableBits;
+    PackedRepr typeCode : TypeCodeBits;
+    PackedRepr typeIndex : TypeIndexBits;
+  };
+
+  WASM_CHECK_CACHEABLE_POD(bits);
+
+  static constexpr PackedRepr NoTypeIndex = (1 << TypeIndexBits) - 1;
+
+  static_assert(NullableBits + TypeCodeBits + TypeIndexBits <=
+                    (sizeof(PackedRepr) * 8),
+                "enough bits");
+  static_assert(NoTypeIndex < (1 << TypeIndexBits), "enough bits");
+  static_assert(MaxTypes < NoTypeIndex, "enough bits");
+
+  // Defined in WasmSerialize.cpp
+  static inline SerializableTypeCode serialize(PackedTypeCode ptc,
+                                               const TypeContext& types);
+  inline PackedTypeCode deserialize(const TypeContext& types);
+};
+
+WASM_DECLARE_CACHEABLE_POD(SerializableTypeCode);
+static_assert(sizeof(SerializableTypeCode) == sizeof(uintptr_t), "packed");
+
+// [SMDOC] Matching type definitions
+//
+// WebAssembly type equality is structural, and we implement canonicalization
+// such that equality of pointers to type definitions means that the type
+// definitions are structurally equal.
+//
+// 'Matching' is the algorithm used to determine if two types are equal while
+// canonicalizing types.
+//
+// A match type code encodes a type code for use in equality and hashing
+// matching. It normalizes type references that are local to a recursion group
+// so that they can be bitwise compared to type references from other recursion
+// groups.
+//
+// This is useful for the following example:
+//   (rec (func $a))
+//   (rec
+//     (func $b)
+//     (struct
+//       (field (ref $a)))
+//       (field (ref $b)))
+//   )
+//   (rec
+//     (func $c)
+//     (struct
+//       (field (ref $a)))
+//       (field (ref $c)))
+//   )
+//
+// The last two recursion groups are identical and should canonicalize to the
+// same instance. However, they will be initially represented as two separate
+// recursion group instances each with an array type instance with element
+// types that point to the function type instance before them. A bitwise
+// comparison of the element type pointers would fail.
+//
+// To solve this, we use `MatchTypeCode` to convert the example to:
+//   (rec (func $a))
+//   (rec
+//     (func $b)
+//     (struct
+//       (field (ref nonlocal $a)))
+//       (field (ref local 0)))
+//   )
+//   (rec
+//     (func $c)
+//     (struct
+//       (field (ref nonlocal $a)))
+//       (field (ref local 0)))
+//   )
+//
+// Now, comparing the element types will see that these are local type
+// references of the same kinds. `MatchTypeCode` performs the same mechanism
+// as `tie` in the MVP presentation of type equality [1].
+//
+// [1]
+// https://github.com/WebAssembly/gc/blob/main/proposals/gc/MVP.md#equivalence
+union MatchTypeCode {
+  using PackedRepr = uint64_t;
+
+  static constexpr size_t NullableBits = 1;
+  static constexpr size_t TypeCodeBits = 8;
+  static constexpr size_t TypeRefBits = 48;
+
+  PackedRepr bits;
+  struct {
+    PackedRepr nullable : NullableBits;
+    PackedRepr typeCode : TypeCodeBits;
+    PackedRepr typeRef : TypeRefBits;
+  };
+
+  WASM_CHECK_CACHEABLE_POD(bits);
+
+  static_assert(NullableBits + TypeCodeBits + TypeRefBits <=
+                    (sizeof(PackedRepr) * 8),
+                "enough bits");
+
+  // Defined in WasmTypeDef.h to avoid a cycle while allowing inlining
+  static inline MatchTypeCode forMatch(PackedTypeCode ptc,
+                                       const RecGroup* recGroup);
+
+  bool operator==(MatchTypeCode other) const { return bits == other.bits; }
+  bool operator!=(MatchTypeCode other) const { return bits != other.bits; }
+  HashNumber hash() const { return HashNumber(bits); }
+};
 
 // An enum that describes the representation classes for tables; The table
 // element type is mapped into this by Table::repr().
@@ -182,13 +299,11 @@ class RefType {
     Func = uint8_t(TypeCode::FuncRef),
     Extern = uint8_t(TypeCode::ExternRef),
     Eq = uint8_t(TypeCode::EqRef),
-    TypeIndex = uint8_t(AbstractReferenceTypeIndexCode)
+    TypeRef = uint8_t(AbstractTypeRefCode)
   };
 
  private:
   PackedTypeCode ptc_;
-
-  WASM_CHECK_CACHEABLE_POD(ptc_);
 
 #ifdef DEBUG
   bool isValid() const {
@@ -196,10 +311,10 @@ class RefType {
       case TypeCode::FuncRef:
       case TypeCode::ExternRef:
       case TypeCode::EqRef:
-        MOZ_ASSERT(ptc_.typeIndex() == PackedTypeCode::NoTypeIndex);
+        MOZ_ASSERT(ptc_.typeDef() == nullptr);
         return true;
-      case AbstractReferenceTypeIndexCode:
-        MOZ_ASSERT(ptc_.typeIndex() != PackedTypeCode::NoTypeIndex);
+      case AbstractTypeRefCode:
+        MOZ_ASSERT(ptc_.typeDef() != nullptr);
         return true;
       default:
         return false;
@@ -211,9 +326,8 @@ class RefType {
     MOZ_ASSERT(isValid());
   }
 
-  RefType(uint32_t refTypeIndex, bool nullable)
-      : ptc_(PackedTypeCode::pack(AbstractReferenceTypeIndexCode, refTypeIndex,
-                                  nullable)) {
+  RefType(const TypeDef* typeDef, bool nullable)
+      : ptc_(PackedTypeCode::pack(AbstractTypeRefCode, typeDef, nullable)) {
     MOZ_ASSERT(isValid());
   }
 
@@ -222,19 +336,21 @@ class RefType {
   explicit RefType(PackedTypeCode ptc) : ptc_(ptc) { MOZ_ASSERT(isValid()); }
 
   static RefType fromTypeCode(TypeCode tc, bool nullable) {
-    MOZ_ASSERT(tc != AbstractReferenceTypeIndexCode);
+    MOZ_ASSERT(tc != AbstractTypeRefCode);
     return RefType(Kind(tc), nullable);
   }
 
-  static RefType fromTypeIndex(uint32_t refTypeIndex, bool nullable) {
-    return RefType(refTypeIndex, nullable);
+  static RefType fromTypeDef(const TypeDef* typeDef, bool nullable) {
+    return RefType(typeDef, nullable);
   }
 
   Kind kind() const { return Kind(ptc_.typeCode()); }
 
-  uint32_t typeIndex() const { return ptc_.typeIndex(); }
+  const TypeDef* typeDef() const { return ptc_.typeDef(); }
 
   PackedTypeCode packed() const { return ptc_; }
+  PackedTypeCode* addressOfPacked() { return &ptc_; }
+  const PackedTypeCode* addressOfPacked() const { return &ptc_; }
 
   static RefType func() { return RefType(Func, true); }
   static RefType extern_() { return RefType(Extern, true); }
@@ -243,7 +359,7 @@ class RefType {
   bool isFunc() const { return kind() == RefType::Func; }
   bool isExtern() const { return kind() == RefType::Extern; }
   bool isEq() const { return kind() == RefType::Eq; }
-  bool isTypeIndex() const { return kind() == RefType::TypeIndex; }
+  bool isTypeRef() const { return kind() == RefType::TypeRef; }
 
   bool isNullable() const { return bool(ptc_.isNullable()); }
   RefType asNonNullable() const { return RefType(ptc_.asNonNullable()); }
@@ -255,17 +371,18 @@ class RefType {
       case RefType::Extern:
       case RefType::Eq:
         return TableRepr::Ref;
-      case RefType::TypeIndex:
+      case RefType::TypeRef:
         MOZ_CRASH("NYI");
     }
     MOZ_CRASH("switch is exhaustive");
   }
 
+  // Defined in WasmTypeDef.h to avoid a cycle while allowing inlining
+  static bool isSubTypeOf(RefType subType, RefType superType);
+
   bool operator==(const RefType& that) const { return ptc_ == that.ptc_; }
   bool operator!=(const RefType& that) const { return ptc_ != that.ptc_; }
 };
-
-WASM_DECLARE_CACHEABLE_POD(RefType);
 
 class FieldTypeTraits {
  public:
@@ -299,7 +416,7 @@ class FieldTypeTraits {
       case TypeCode::EqRef:
 #endif
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
-      case AbstractReferenceTypeIndexCode:
+      case AbstractTypeRefCode:
 #endif
         return true;
       default:
@@ -369,7 +486,7 @@ class ValTypeTraits {
       case TypeCode::EqRef:
 #endif
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
-      case AbstractReferenceTypeIndexCode:
+      case AbstractTypeRefCode:
 #endif
         return true;
       default:
@@ -415,10 +532,8 @@ class PackedType : public T {
  protected:
   PackedTypeCode tc_;
 
-  WASM_CHECK_CACHEABLE_POD(tc_);
-
   explicit PackedType(TypeCode c) : tc_(PackedTypeCode::pack(c)) {
-    MOZ_ASSERT(c != AbstractReferenceTypeIndexCode);
+    MOZ_ASSERT(c != AbstractTypeRefCode);
     MOZ_ASSERT(isValid());
   }
 
@@ -441,25 +556,27 @@ class PackedType : public T {
 
   explicit PackedType(PackedTypeCode ptc) : tc_(ptc) { MOZ_ASSERT(isValid()); }
 
-  explicit PackedType(jit::MIRType mty) {
+  static PackedType fromMIRType(jit::MIRType mty) {
     switch (mty) {
       case jit::MIRType::Int32:
-        tc_ = PackedTypeCode::pack(TypeCode::I32);
+        return PackedType::I32;
         break;
       case jit::MIRType::Int64:
-        tc_ = PackedTypeCode::pack(TypeCode::I64);
+        return PackedType::I64;
         break;
       case jit::MIRType::Float32:
-        tc_ = PackedTypeCode::pack(TypeCode::F32);
+        return PackedType::F32;
         break;
       case jit::MIRType::Double:
-        tc_ = PackedTypeCode::pack(TypeCode::F64);
+        return PackedType::F64;
         break;
       case jit::MIRType::Simd128:
-        tc_ = PackedTypeCode::pack(TypeCode::V128);
+        return PackedType::V128;
         break;
+      case jit::MIRType::RefOrNull:
+        return PackedType::Ref;
       default:
-        MOZ_CRASH("PackedType(MIRType): unexpected type");
+        MOZ_CRASH("fromMIRType: unexpected type");
     }
   }
 
@@ -481,7 +598,7 @@ class PackedType : public T {
     return PackedType(tc);
   }
 
-  static PackedType fromBitsUnsafe(uint64_t bits) {
+  static PackedType fromBitsUnsafe(PackedTypeCode::PackedRepr bits) {
     return PackedType(PackedTypeCode::fromBits(bits));
   }
 
@@ -500,41 +617,29 @@ class PackedType : public T {
     return T::isValidTypeCode(tc_.typeCode());
   }
 
+  MatchTypeCode forMatch(const RecGroup* recGroup) const {
+    return MatchTypeCode::forMatch(tc_, recGroup);
+  }
+
   PackedTypeCode packed() const {
     MOZ_ASSERT(isValid());
     return tc_;
   }
+  PackedTypeCode* addressOfPacked() { return &tc_; }
+  const PackedTypeCode* addressOfPacked() const { return &tc_; }
 
-  uint64_t bitsUnsafe() const {
+  PackedTypeCode::PackedRepr bitsUnsafe() const {
     MOZ_ASSERT(isValid());
     return tc_.bits();
   }
 
-  bool isNumber() const {
-    if (!tc_.isValid()) {
-      return false;
-    }
-    return T::isNumberTypeCode(tc_.typeCode());
-  }
+  bool isNumber() const { return T::isNumberTypeCode(tc_.typeCode()); }
 
-  bool isPacked() const {
-    if (!tc_.isValid()) {
-      return false;
-    }
-    return T::isPackedTypeCode(tc_.typeCode());
-  }
+  bool isPacked() const { return T::isPackedTypeCode(tc_.typeCode()); }
 
-  bool isVector() const {
-    if (!tc_.isValid()) {
-      return false;
-    }
-    return T::isVectorTypeCode(tc_.typeCode());
-  }
+  bool isVector() const { return T::isVectorTypeCode(tc_.typeCode()); }
 
-  bool isRefType() const {
-    MOZ_ASSERT(isValid());
-    return tc_.isRefType();
-  }
+  bool isRefType() const { return tc_.isRefType(); }
 
   bool isFuncRef() const { return tc_.typeCode() == TypeCode::FuncRef; }
 
@@ -542,46 +647,27 @@ class PackedType : public T {
 
   bool isEqRef() const { return tc_.typeCode() == TypeCode::EqRef; }
 
-  bool isTypeIndex() const {
-    MOZ_ASSERT(isValid());
-    return tc_.typeCode() == AbstractReferenceTypeIndexCode;
-  }
+  bool isTypeRef() const { return tc_.typeCode() == AbstractTypeRefCode; }
 
-  bool isRefRepr() const {
-    MOZ_ASSERT(isValid());
-    return tc_.isRefRepr();
-  }
+  bool isRefRepr() const { return tc_.isRefRepr(); }
 
   // Returns whether the type has a default value.
-  bool isDefaultable() const {
-    MOZ_ASSERT(isValid());
-    return !(isRefType() && !isNullable());
-  }
+  bool isDefaultable() const { return !(isRefType() && !isNullable()); }
 
   // Returns whether the type has a representation in JS.
   bool isExposable() const {
-    MOZ_ASSERT(isValid());
 #if defined(ENABLE_WASM_SIMD) || defined(ENABLE_WASM_GC)
-    return !(kind() == Kind::V128 || isTypeIndex());
+    return !(kind() == Kind::V128 || isTypeRef());
 #else
     return true;
 #endif
   }
 
-  bool isNullable() const {
-    MOZ_ASSERT(isValid());
-    return tc_.isNullable();
-  }
+  bool isNullable() const { return tc_.isNullable(); }
 
-  uint32_t typeIndex() const {
-    MOZ_ASSERT(isValid());
-    return tc_.typeIndex();
-  }
+  const TypeDef* typeDef() const { return tc_.typeDef(); }
 
-  Kind kind() const {
-    MOZ_ASSERT(isValid());
-    return Kind(tc_.typeCodeAbstracted());
-  }
+  Kind kind() const { return Kind(tc_.typeCodeAbstracted()); }
 
   RefType refType() const {
     MOZ_ASSERT(isRefType());
@@ -665,6 +751,29 @@ class PackedType : public T {
     return PackedType<ValTypeTraits>(tc_);
   }
 
+  // Note, ToMIRType is only correct within Wasm, where an AnyRef is represented
+  // as a pointer.  At the JS/wasm boundary, an AnyRef can be represented as a
+  // JS::Value, and the type translation may have to be handled specially and on
+  // a case-by-case basis.
+  jit::MIRType toMIRType() const {
+    switch (tc_.typeCodeAbstracted()) {
+      case TypeCode::I32:
+        return jit::MIRType::Int32;
+      case TypeCode::I64:
+        return jit::MIRType::Int64;
+      case TypeCode::F32:
+        return jit::MIRType::Float32;
+      case TypeCode::F64:
+        return jit::MIRType::Double;
+      case TypeCode::V128:
+        return jit::MIRType::Simd128;
+      case AbstractReferenceTypeCode:
+        return jit::MIRType::RefOrNull;
+      default:
+        MOZ_CRASH("bad type");
+    }
+  }
+
   bool isValType() const {
     switch (tc_.typeCode()) {
       case TypeCode::I8:
@@ -678,6 +787,20 @@ class PackedType : public T {
   PackedType<FieldTypeTraits> fieldType() const {
     MOZ_ASSERT(isValid());
     return PackedType<FieldTypeTraits>(tc_);
+  }
+
+  static bool isSubTypeOf(PackedType subType, PackedType superType) {
+    // Anything is a subtype of itself.
+    if (subType == superType) {
+      return true;
+    }
+
+    // A reference may be a subtype of another reference
+    if (subType.isRefType() && superType.isRefType()) {
+      return RefType::isSubTypeOf(subType.refType(), superType.refType());
+    }
+
+    return false;
   }
 
   bool operator==(const PackedType& that) const {
@@ -702,9 +825,6 @@ class PackedType : public T {
 using ValType = PackedType<ValTypeTraits>;
 using FieldType = PackedType<FieldTypeTraits>;
 
-WASM_DECLARE_CACHEABLE_POD(ValType);
-WASM_DECLARE_CACHEABLE_POD(FieldType);
-
 // The dominant use of this data type is for locals and args, and profiling
 // with ZenGarden and Tanks suggests an initial size of 16 minimises heap
 // allocation, both in terms of blocks and bytes.
@@ -712,60 +832,15 @@ using ValTypeVector = Vector<ValType, 16, SystemAllocPolicy>;
 
 // ValType utilities
 
-static inline unsigned SizeOf(ValType vt) {
-  switch (vt.kind()) {
-    case ValType::I32:
-    case ValType::F32:
-      return 4;
-    case ValType::I64:
-    case ValType::F64:
-      return 8;
-    case ValType::V128:
-      return 16;
-    case ValType::Ref:
-      return sizeof(intptr_t);
-  }
-  MOZ_CRASH("Invalid ValType");
-}
-
-// Note, ToMIRType is only correct within Wasm, where an AnyRef is represented
-// as a pointer.  At the JS/wasm boundary, an AnyRef can be represented as a
-// JS::Value, and the type translation may have to be handled specially and on a
-// case-by-case basis.
-
-static inline jit::MIRType ToMIRType(ValType vt) {
-  switch (vt.kind()) {
-    case ValType::I32:
-      return jit::MIRType::Int32;
-    case ValType::I64:
-      return jit::MIRType::Int64;
-    case ValType::F32:
-      return jit::MIRType::Float32;
-    case ValType::F64:
-      return jit::MIRType::Double;
-    case ValType::V128:
-      return jit::MIRType::Simd128;
-    case ValType::Ref:
-      return jit::MIRType::RefOrNull;
-  }
-  MOZ_CRASH("bad type");
-}
-
-static inline bool IsNumberType(ValType vt) { return !vt.isRefType(); }
-
-static inline jit::MIRType ToMIRType(const Maybe<ValType>& t) {
-  return t ? ToMIRType(ValType(t.ref())) : jit::MIRType::None;
-}
-
 extern bool ToValType(JSContext* cx, HandleValue v, ValType* out);
 extern bool ToRefType(JSContext* cx, JSLinearString* typeLinearStr,
                       RefType* out);
 
-extern UniqueChars ToString(RefType type);
-extern UniqueChars ToString(ValType type);
-extern UniqueChars ToString(FieldType type);
-
-extern UniqueChars ToString(const Maybe<ValType>& type);
+extern UniqueChars ToString(RefType type, const TypeContext* types);
+extern UniqueChars ToString(ValType type, const TypeContext* types);
+extern UniqueChars ToString(FieldType type, const TypeContext* types);
+extern UniqueChars ToString(const Maybe<ValType>& type,
+                            const TypeContext* types);
 
 }  // namespace wasm
 }  // namespace js

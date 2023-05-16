@@ -125,6 +125,8 @@ Structure:
             count: <number>,  // desktop only, e.g. 8, or null on failure - logical cpus
             cores: <number>, // desktop only, e.g., 4, or null on failure - physical cores
             vendor: <string>, // desktop only, e.g. "GenuineIntel", or null on failure
+            name: <string>, // desktop only, e.g. "Intel(R) Core(TM) i9-8950HK CPU @ 2.90GHz",
+                            // or null on failure
             family: <number>, // desktop only, null on failure
             model: <number, // desktop only, null on failure
             stepping: <number>, // desktop only, null on failure
@@ -393,6 +395,8 @@ The following is a partial list of `collected preferences <https://searchfox.org
 
 - ``browser.urlbar.quicksuggest.dataCollection.enabled``: Whether the user has opted in to data collection for Firefox Suggest. This pref is set to true when the user opts in to the Firefox Suggest onboarding dialog modal. The user can also toggle the pref using a toggle switch in the Firefox Suggest preferences UI.
 
+- ``browser.urlbar.showSearchTerms.enabled``: True if to show the search term in the urlbar while on a default search engine results page.
+
 - ``browser.urlbar.suggest.bestmatch``: True if to show best match result is enabled in the urlbar.
 
 - ``browser.urlbar.suggest.quicksuggest.nonsponsored``: True if non-sponsored Firefox Suggest suggestions are enabled in the urlbar.
@@ -448,6 +452,10 @@ The following is a partial list of `collected preferences <https://searchfox.org
 - ``media.gmp-manager.lastCheck``: When the gmp-manager last checked for updates as seconds since Jan 1, 1970.
 
 - ``media.gmp-manager.lastEmptyCheck``: When the gmp-manager last checked for updates and there was nothing to install as seconds since Jan 1, 1970.
+
+- ``nimbus.qa.pref-1``: Used to monitor the results of pref-setting test experiments.
+
+- ``nimbus.qa.pref-2``: Used to monitor the results of pref-setting test experiments.
 
 attribution
 ~~~~~~~~~~~

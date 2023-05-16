@@ -47,33 +47,15 @@ var FormWrapper = {
   _getEntryCols: ["fieldname", "value"],
   _guidCols: ["guid"],
 
-  async _search(terms, searchData) {
-    return new Promise(resolve => {
-      let results = [];
-      let callbacks = {
-        handleResult(result) {
-          results.push(result);
-        },
-        handleCompletion(reason) {
-          resolve(results);
-        },
-      };
-      lazy.FormHistory.search(terms, searchData, callbacks);
-    });
+  _search(terms, searchData) {
+    return lazy.FormHistory.search(terms, searchData);
   },
 
   async _update(changes) {
     if (!lazy.FormHistory.enabled) {
       return; // update isn't going to do anything.
     }
-    await new Promise(resolve => {
-      let callbacks = {
-        handleCompletion(reason) {
-          resolve();
-        },
-      };
-      lazy.FormHistory.update(changes, callbacks);
-    });
+    await lazy.FormHistory.update(changes).catch(Cu.reportError);
   },
 
   async getEntry(guid) {

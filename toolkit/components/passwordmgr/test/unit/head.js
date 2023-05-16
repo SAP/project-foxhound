@@ -6,8 +6,8 @@
 
 // Globals
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -24,18 +24,15 @@ const { FileTestUtils } = ChromeUtils.import(
 const { LoginTestUtils } = ChromeUtils.import(
   "resource://testing-common/LoginTestUtils.jsm"
 );
-const { MockDocument } = ChromeUtils.import(
-  "resource://testing-common/MockDocument.jsm"
+const { MockDocument } = ChromeUtils.importESModule(
+  "resource://testing-common/MockDocument.sys.mjs"
 );
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(this, {
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
 });
 
 const LoginInfo = Components.Constructor(

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Tests the chunking feature of `UrlbarQuickSuggest._addResults()`.
+// Tests the chunking feature of `RemoteSettingsClient.#addResults()`.
 
 "use strict";
 
@@ -10,43 +10,43 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
 });
 
-// This overrides `UrlbarQuickSuggest._addResultsChunkSize`. Testing the actual
-// value can make the test run too long. This is OK because the correctness of
-// the chunking behavior doesn't depend on the chunk size.
+// This overrides `QuickSuggest.remoteSettings._addResultsChunkSize`. Testing
+// the actual value can make the test run too long. This is OK because the
+// correctness of the chunking behavior doesn't depend on the chunk size.
 const TEST_ADD_RESULTS_CHUNK_SIZE = 100;
 
 add_task(async function init() {
   UrlbarPrefs.set("quicksuggest.enabled", true);
   await QuickSuggestTestUtils.ensureQuickSuggestInit();
 
-  // Sanity check the actual `UrlbarQuickSuggest._addResultsChunkSize` value.
+  // Sanity check the actual `_addResultsChunkSize` value.
   Assert.equal(
-    typeof UrlbarQuickSuggest._addResultsChunkSize,
+    typeof QuickSuggest.remoteSettings._addResultsChunkSize,
     "number",
-    "Sanity check: UrlbarQuickSuggest._addResultsChunkSize is a number"
+    "Sanity check: _addResultsChunkSize is a number"
   );
   Assert.greater(
-    UrlbarQuickSuggest._addResultsChunkSize,
+    QuickSuggest.remoteSettings._addResultsChunkSize,
     0,
-    "Sanity check: UrlbarQuickSuggest._addResultsChunkSize > 0"
+    "Sanity check: _addResultsChunkSize > 0"
   );
 
   // Set our test value.
-  UrlbarQuickSuggest._addResultsChunkSize = TEST_ADD_RESULTS_CHUNK_SIZE;
+  QuickSuggest.remoteSettings._addResultsChunkSize = TEST_ADD_RESULTS_CHUNK_SIZE;
 });
 
 // Tests many results with one keyword each.
 add_task(async function chunking_singleKeyword() {
   let resultCounts = [
-    1 * UrlbarQuickSuggest._addResultsChunkSize - 1,
-    1 * UrlbarQuickSuggest._addResultsChunkSize,
-    1 * UrlbarQuickSuggest._addResultsChunkSize + 1,
-    2 * UrlbarQuickSuggest._addResultsChunkSize - 1,
-    2 * UrlbarQuickSuggest._addResultsChunkSize,
-    2 * UrlbarQuickSuggest._addResultsChunkSize + 1,
-    3 * UrlbarQuickSuggest._addResultsChunkSize - 1,
-    3 * UrlbarQuickSuggest._addResultsChunkSize,
-    3 * UrlbarQuickSuggest._addResultsChunkSize + 1,
+    1 * QuickSuggest.remoteSettings._addResultsChunkSize - 1,
+    1 * QuickSuggest.remoteSettings._addResultsChunkSize,
+    1 * QuickSuggest.remoteSettings._addResultsChunkSize + 1,
+    2 * QuickSuggest.remoteSettings._addResultsChunkSize - 1,
+    2 * QuickSuggest.remoteSettings._addResultsChunkSize,
+    2 * QuickSuggest.remoteSettings._addResultsChunkSize + 1,
+    3 * QuickSuggest.remoteSettings._addResultsChunkSize - 1,
+    3 * QuickSuggest.remoteSettings._addResultsChunkSize,
+    3 * QuickSuggest.remoteSettings._addResultsChunkSize + 1,
   ];
   for (let count of resultCounts) {
     await doChunkingTest(count, 1);
@@ -56,15 +56,15 @@ add_task(async function chunking_singleKeyword() {
 // Tests a small number of results with many keywords each.
 add_task(async function chunking_manyKeywords() {
   let keywordCounts = [
-    1 * UrlbarQuickSuggest._addResultsChunkSize - 1,
-    1 * UrlbarQuickSuggest._addResultsChunkSize,
-    1 * UrlbarQuickSuggest._addResultsChunkSize + 1,
-    2 * UrlbarQuickSuggest._addResultsChunkSize - 1,
-    2 * UrlbarQuickSuggest._addResultsChunkSize,
-    2 * UrlbarQuickSuggest._addResultsChunkSize + 1,
-    3 * UrlbarQuickSuggest._addResultsChunkSize - 1,
-    3 * UrlbarQuickSuggest._addResultsChunkSize,
-    3 * UrlbarQuickSuggest._addResultsChunkSize + 1,
+    1 * QuickSuggest.remoteSettings._addResultsChunkSize - 1,
+    1 * QuickSuggest.remoteSettings._addResultsChunkSize,
+    1 * QuickSuggest.remoteSettings._addResultsChunkSize + 1,
+    2 * QuickSuggest.remoteSettings._addResultsChunkSize - 1,
+    2 * QuickSuggest.remoteSettings._addResultsChunkSize,
+    2 * QuickSuggest.remoteSettings._addResultsChunkSize + 1,
+    3 * QuickSuggest.remoteSettings._addResultsChunkSize - 1,
+    3 * QuickSuggest.remoteSettings._addResultsChunkSize,
+    3 * QuickSuggest.remoteSettings._addResultsChunkSize + 1,
   ];
   for (let resultCount = 1; resultCount <= 3; resultCount++) {
     for (let keywordCount of keywordCounts) {
@@ -99,24 +99,26 @@ async function doChunkingTest(resultCount, keywordCountPerResult) {
   }
 
   // Add the results.
-  UrlbarQuickSuggest._resultsByKeyword.clear();
-  await UrlbarQuickSuggest._addResults(results);
+  QuickSuggest.remoteSettings._test_resultsByKeyword.clear();
+  await QuickSuggest.remoteSettings._test_addResults(results);
 
   // Make sure all keyword-result pairs have been added.
   for (let i = 0; i < resultCount; i++) {
     for (let k = 0; k < keywordCountPerResult; k++) {
       let keyword = `keyword-${i}-${k}`;
 
-      // Check the `_resultsByKeyword` map. Logging all assertions takes a ton
-      // of time and makes the test run much longer than it otherwise would,
+      // Check the resultsByKeyword map. Logging all assertions takes a ton of
+      // time and makes the test run much longer than it otherwise would,
       // especially if `_addResultsChunkSize` is large, so only log failing
       // assertions.
-      let actualResult = UrlbarQuickSuggest._resultsByKeyword.get(keyword);
+      let actualResult = QuickSuggest.remoteSettings._test_resultsByKeyword.get(
+        keyword
+      );
       if (!ObjectUtils.deepEqual(actualResult, results[i])) {
         Assert.deepEqual(
           actualResult,
           results[i],
-          `Result ${i} is in _resultsByKeyword for keyword ${keyword}`
+          `Result ${i} is in _test_resultsByKeyword for keyword ${keyword}`
         );
       }
 
@@ -124,7 +126,7 @@ async function doChunkingTest(resultCount, keywordCountPerResult) {
       // Computing the expected value of `full_keyword` is kind of a pain and
       // it's not important to check it, so first delete it from the returned
       // suggestion.
-      let actualSuggestions = await UrlbarQuickSuggest.query(keyword);
+      let actualSuggestions = await QuickSuggest.remoteSettings.fetch(keyword);
       for (let s of actualSuggestions) {
         delete s.full_keyword;
       }
@@ -138,7 +140,8 @@ async function doChunkingTest(resultCount, keywordCountPerResult) {
           advertiser: "TestAdvertiser",
           iab_category: "22 - Shopping",
           is_sponsored: true,
-          score: UrlbarQuickSuggest.DEFAULT_SUGGESTION_SCORE,
+          score: RemoteSettingsClient.DEFAULT_SUGGESTION_SCORE,
+          is_top_pick: false,
           source: "remote-settings",
           icon: null,
           position: undefined,

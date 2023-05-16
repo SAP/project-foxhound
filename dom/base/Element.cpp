@@ -904,7 +904,7 @@ void Element::ScrollBy(const ScrollToOptions& aOptions) {
 
 int32_t Element::ScrollTop() {
   nsIScrollableFrame* sf = GetScrollFrame();
-  return sf ? sf->GetScrollPositionCSSPixels().y : 0;
+  return sf ? sf->GetScrollPositionCSSPixels().y.value : 0;
 }
 
 void Element::SetScrollTop(int32_t aScrollTop) {
@@ -929,7 +929,7 @@ void Element::SetScrollTop(int32_t aScrollTop) {
 
 int32_t Element::ScrollLeft() {
   nsIScrollableFrame* sf = GetScrollFrame();
-  return sf ? sf->GetScrollPositionCSSPixels().x : 0;
+  return sf ? sf->GetScrollPositionCSSPixels().x.value : 0;
 }
 
 void Element::SetScrollLeft(int32_t aScrollLeft) {
@@ -2882,22 +2882,9 @@ bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
 }
 
 int32_t Element::FindAttrValueIn(int32_t aNameSpaceID, const nsAtom* aName,
-                                 AttrValuesArray* aValues,
+                                 AttrArray::AttrValuesArray* aValues,
                                  nsCaseTreatment aCaseSensitive) const {
-  NS_ASSERTION(aName, "Must have attr name");
-  NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown, "Must have namespace");
-  NS_ASSERTION(aValues, "Null value array");
-
-  const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
-  if (val) {
-    for (int32_t i = 0; aValues[i]; ++i) {
-      if (val->Equals(aValues[i], aCaseSensitive)) {
-        return i;
-      }
-    }
-    return ATTR_VALUE_NO_MATCH;
-  }
-  return ATTR_MISSING;
+  return mAttrs.FindAttrValueIn(aNameSpaceID, aName, aValues, aCaseSensitive);
 }
 
 nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
@@ -3853,14 +3840,19 @@ void Element::CloneAnimationsFrom(const Element& aOther) {
       EffectSet* const clonedEffects =
           EffectSet::GetOrCreateEffectSet(this, pseudoType);
       for (KeyframeEffect* const effect : *effects) {
+        auto* animation = effect->GetAnimation();
+        if (animation->AsCSSTransition()) {
+          // Don't clone transitions, for compat with other browsers.
+          continue;
+        }
         // Clone the effect.
         RefPtr<KeyframeEffect> clonedEffect = new KeyframeEffect(
             OwnerDoc(), OwningAnimationTarget{this, pseudoType}, *effect);
 
         // Clone the animation
         RefPtr<Animation> clonedAnimation = Animation::ClonePausedAnimation(
-            OwnerDoc()->GetParentObject(), *effect->GetAnimation(),
-            *clonedEffect, *timeline);
+            OwnerDoc()->GetParentObject(), *animation, *clonedEffect,
+            *timeline);
         clonedEffects->AddEffect(*clonedEffect);
       }
     }

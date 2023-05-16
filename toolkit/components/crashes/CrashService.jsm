@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { AsyncShutdown } = ChromeUtils.import(
   "resource://gre/modules/AsyncShutdown.jsm"
@@ -189,11 +189,8 @@ CrashService.prototype = Object.freeze({
         throw new Error("Unrecognized CRASH_TYPE: " + crashType);
     }
 
-    let cr = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-      Ci.nsICrashReporter
-    );
-    let minidumpPath = cr.getMinidumpForID(id).path;
-    let extraPath = cr.getExtraFileForID(id).path;
+    let minidumpPath = Services.appinfo.getMinidumpForID(id).path;
+    let extraPath = Services.appinfo.getExtraFileForID(id).path;
     let metadata = {};
     let hash = null;
 

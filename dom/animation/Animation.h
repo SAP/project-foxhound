@@ -111,7 +111,8 @@ class Animation : public DOMEventTargetHelper,
     return GetCurrentTimeForHoldTime(mHoldTime);
   }
   Nullable<double> GetCurrentTimeAsDouble() const;
-  void SetCurrentTime(const TimeDuration& aNewCurrentTime);
+  void SetCurrentTime(const TimeDuration& aSeekTime);
+  void SetCurrentTimeNoUpdate(const TimeDuration& aSeekTime);
   void SetCurrentTimeAsDouble(const Nullable<double>& aCurrentTime,
                               ErrorResult& aRv);
 
@@ -226,11 +227,6 @@ class Animation : public DOMEventTargetHelper,
    */
   void TriggerOnNextTick(const Nullable<TimeDuration>& aReadyTime);
   /**
-   * For the non-monotonically increasing timeline (e.g. ScrollTimeline), this
-   * is used when playing or pausing because we don't put the animations into
-   * PendingAnimationTracker, and we would like to use the current scroll
-   * position as the ready time.
-   *
    * For the monotonically increasing timeline, we use this only for testing:
    * Start or pause a pending animation using the current timeline time. This
    * is used to support existing tests that expect animations to begin
@@ -242,6 +238,13 @@ class Animation : public DOMEventTargetHelper,
    * added to.
    */
   void TriggerNow();
+  /**
+   * For the non-monotonically increasing timeline (e.g. ScrollTimeline), we try
+   * to trigger it in ScrollTimelineAnimationTracker by this method. This uses
+   * the current scroll position as the ready time. Return true if we don't need
+   * to trigger it or we trigger it successfully.
+   */
+  bool TryTriggerNowForFiniteTimeline();
   /**
    * When TriggerOnNextTick is called, we store the ready time but we don't
    * apply it until the next tick. In the meantime, GetStartTime() will return
@@ -595,6 +598,9 @@ class Animation : public DOMEventTargetHelper,
     return mTimeline && !mTimeline->IsMonotonicallyIncreasing();
   }
 
+  void UpdatePendingAnimationTracker(AnimationTimeline* aOldTimeline,
+                                     AnimationTimeline* aNewTimeline);
+
   RefPtr<AnimationTimeline> mTimeline;
   RefPtr<AnimationEffect> mEffect;
   // The beginning of the delay period.
@@ -666,6 +672,8 @@ class Animation : public DOMEventTargetHelper,
   RefPtr<MicroTaskRunnable> mFinishNotificationTask;
 
   nsString mId;
+
+  bool mResetCurrentTimeOnResume = false;
 
  private:
   // The id for this animaiton on the compositor.

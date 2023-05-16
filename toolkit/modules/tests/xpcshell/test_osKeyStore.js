@@ -1,5 +1,5 @@
 /**
- * Tests of OSKeyStore.jsm
+ * Tests of OSKeyStore.sys.mjs
  */
 
 "use strict";
@@ -10,8 +10,8 @@ var { TestUtils } = ChromeUtils.import(
 
 let OSKeyStoreTestUtils;
 add_task(async function os_key_store_setup() {
-  ({ OSKeyStoreTestUtils } = ChromeUtils.import(
-    "resource://testing-common/OSKeyStoreTestUtils.jsm"
+  ({ OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
   ));
   OSKeyStoreTestUtils.setup();
   registerCleanupFunction(async function cleanup() {

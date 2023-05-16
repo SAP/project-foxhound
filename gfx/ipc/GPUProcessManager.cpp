@@ -586,10 +586,6 @@ bool GPUProcessManager::FallbackFromAcceleration(wr::WebRenderError aError,
 
 bool GPUProcessManager::DisableWebRenderConfig(wr::WebRenderError aError,
                                                const nsCString& aMsg) {
-  if (!gfx::gfxVars::UseWebRender()) {
-    return false;
-  }
-
   // If we have a stable compositor process, this may just be due to an OOM or
   // bad driver state. In that case, we should consider restarting the GPU
   // process, or simulating a device reset to teardown the compositors to
@@ -614,9 +610,13 @@ bool GPUProcessManager::DisableWebRenderConfig(wr::WebRenderError aError,
   gfx::gfxVars::SetUseWebRenderDCompVideoOverlayWin(false);
 
   // If we still have the GPU process, and we fallback to a new configuration
-  // that prefers to have the GPU process, reset the counter.
-  if (wantRestart && mProcess) {
+  // that prefers to have the GPU process, reset the counter. Because we
+  // updated the gfxVars, we want to flag the GPUChild to wait for the update
+  // to be processed before creating new compositor sessions, otherwise we risk
+  // them being out of sync with the content/parent processes.
+  if (wantRestart && mProcess && mGPUChild) {
     mUnstableProcessAttempts = 1;
+    mGPUChild->MarkWaitForVarUpdate();
   }
 
   return true;
@@ -658,13 +658,6 @@ void GPUProcessManager::NotifyWebRenderError(wr::WebRenderError aError) {
 }
 
 bool GPUProcessManager::OnDeviceReset(bool aTrackThreshold) {
-#ifdef XP_WIN
-  // Disable double buffering when device reset happens.
-  if (!gfxVars::UseWebRender() && gfxVars::UseDoubleBufferingWithCompositor()) {
-    gfxVars::SetUseDoubleBufferingWithCompositor(false);
-  }
-#endif
-
   // Ignore resets for thresholding if requested.
   if (!aTrackThreshold) {
     return false;

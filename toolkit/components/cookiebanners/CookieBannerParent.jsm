@@ -12,8 +12,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -122,6 +122,7 @@ class CookieBannerParent extends JSWindowActorParent {
       return {
         hide: rule.hide ?? rule.presence,
         presence: rule.presence,
+        skipPresenceVisibilityCheck: rule.skipPresenceVisibilityCheck,
         target,
       };
     });

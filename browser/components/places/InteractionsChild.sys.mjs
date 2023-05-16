@@ -4,14 +4,9 @@
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-
 ChromeUtils.defineESModuleGetters(lazy, {
   InteractionsBlocklist: "resource:///modules/InteractionsBlocklist.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 /**
@@ -139,9 +134,7 @@ export class InteractionsChild extends JSWindowActorChild {
   /**
    * Returns the current document information for sending to the parent process.
    *
-   * @returns {object|null} [docInfo]
-   * @returns {string} docInfo.url
-   *   The url of the document.
+   * @returns {{ isActive: boolean, url: string, referrer: * }?}
    */
   #getDocumentInfo() {
     let doc = this.document;

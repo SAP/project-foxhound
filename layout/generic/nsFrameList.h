@@ -10,6 +10,7 @@
 #include <stdio.h> /* for FILE* */
 #include "nsDebug.h"
 #include "nsTArray.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/FunctionTypeTraits.h"
 #include "mozilla/RefPtr.h"
 
@@ -26,27 +27,26 @@ class nsPresContext;
 
 namespace mozilla {
 class PresShell;
-namespace layout {
 class FrameChildList;
-enum FrameChildListID {
+enum class FrameChildListID {
   // The individual concrete child lists.
-  kPrincipalList,
-  kPopupList,
-  kCaptionList,
-  kColGroupList,
-  kAbsoluteList,
-  kFixedList,
-  kOverflowList,
-  kOverflowContainersList,
-  kExcessOverflowContainersList,
-  kOverflowOutOfFlowList,
-  kFloatList,
-  kBulletList,
-  kPushedFloatsList,
-  kBackdropList,
-  // A special alias for kPrincipalList that suppress the reflow request that
-  // is normally done when manipulating child lists.
-  kNoReflowPrincipalList,
+  Principal,
+  Popup,
+  Caption,
+  ColGroup,
+  Absolute,
+  Fixed,
+  Overflow,
+  OverflowContainers,
+  ExcessOverflowContainers,
+  OverflowOutOfFlow,
+  Float,
+  Bullet,
+  PushedFloats,
+  Backdrop,
+  // A special alias for FrameChildListID::Principal that suppress the reflow
+  // request that is normally done when manipulating child lists.
+  NoReflowPrincipal,
 };
 
 // A helper class for nsIFrame::Destroy[From].  It's defined here because
@@ -60,7 +60,6 @@ struct PostFrameDestroyData {
     mAnonymousContent.AppendElement(aContent);
   }
 };
-}  // namespace layout
 }  // namespace mozilla
 
 // Uncomment this to enable expensive frame-list integrity checking
@@ -98,16 +97,14 @@ class nsFrameList {
     VerifyList();
   }
 
-  // XXX: Ideally, copy constructor should be removed because a frame should be
-  // owned by one list.
-  nsFrameList(const nsFrameList& aOther) = default;
-
-  // XXX: ideally, copy assignment should be removed because we should use move
-  // assignment to transfer the ownership.
-  nsFrameList& operator=(const nsFrameList& aOther) = default;
+  // nsFrameList is a move-only class by default. Use Clone() if you really want
+  // a copy of this list.
+  nsFrameList(const nsFrameList& aOther) = delete;
+  nsFrameList& operator=(const nsFrameList& aOther) = delete;
+  nsFrameList Clone() const { return nsFrameList(mFirstChild, mLastChild); }
 
   /**
-   * Move the frames in aOther to this list. aOther becomes empty after this
+   * Transfer frames in aOther to this list. aOther becomes empty after this
    * operation.
    */
   nsFrameList(nsFrameList&& aOther)
@@ -116,7 +113,12 @@ class nsFrameList {
     VerifyList();
   }
   nsFrameList& operator=(nsFrameList&& aOther) {
-    SetFrames(aOther);
+    if (this != &aOther) {
+      MOZ_ASSERT(IsEmpty(), "Assigning to a non-empty list will lose frames!");
+      mFirstChild = aOther.FirstChild();
+      mLastChild = aOther.LastChild();
+      aOther.Clear();
+    }
     return *this;
   }
 
@@ -141,29 +143,18 @@ class nsFrameList {
    * For each frame in this list: remove it from the list then call
    * DestroyFrom(aDestructRoot, aPostDestroyData) on it.
    */
-  void DestroyFramesFrom(
-      nsIFrame* aDestructRoot,
-      mozilla::layout::PostFrameDestroyData& aPostDestroyData);
+  void DestroyFramesFrom(nsIFrame* aDestructRoot,
+                         mozilla::PostFrameDestroyData& aPostDestroyData);
 
   void Clear() { mFirstChild = mLastChild = nullptr; }
-
-  void SetFrames(nsIFrame* aFrameList);
-
-  void SetFrames(nsFrameList& aFrameList) {
-    MOZ_ASSERT(!mFirstChild, "Losing frames");
-
-    mFirstChild = aFrameList.FirstChild();
-    mLastChild = aFrameList.LastChild();
-    aFrameList.Clear();
-  }
 
   /**
    * Append aFrameList to this list.  If aParent is not null,
    * reparents the newly added frames.  Clears out aFrameList and
    * returns a list slice represening the newly-appended frames.
    */
-  Slice AppendFrames(nsContainerFrame* aParent, nsFrameList& aFrameList) {
-    return InsertFrames(aParent, LastChild(), aFrameList);
+  Slice AppendFrames(nsContainerFrame* aParent, nsFrameList&& aFrameList) {
+    return InsertFrames(aParent, LastChild(), std::move(aFrameList));
   }
 
   /**
@@ -171,8 +162,7 @@ class nsFrameList {
    * reparents the newly added frame.
    */
   void AppendFrame(nsContainerFrame* aParent, nsIFrame* aFrame) {
-    nsFrameList temp(aFrame, aFrame);
-    AppendFrames(aParent, temp);
+    AppendFrames(aParent, nsFrameList(aFrame, aFrame));
   }
 
   /**
@@ -250,8 +240,7 @@ class nsFrameList {
    */
   void InsertFrame(nsContainerFrame* aParent, nsIFrame* aPrevSibling,
                    nsIFrame* aFrame) {
-    nsFrameList temp(aFrame, aFrame);
-    InsertFrames(aParent, aPrevSibling, temp);
+    InsertFrames(aParent, aPrevSibling, nsFrameList(aFrame, aFrame));
   }
 
   /**
@@ -261,7 +250,7 @@ class nsFrameList {
    * newly-inserted frames.
    */
   Slice InsertFrames(nsContainerFrame* aParent, nsIFrame* aPrevSibling,
-                     nsFrameList& aFrameList);
+                     nsFrameList&& aFrameList);
 
   /**
    * Split this list just before the first frame that matches aPredicate,
@@ -338,11 +327,13 @@ class nsFrameList {
   /**
    * If this frame list is non-empty then append it to aLists as the
    * aListID child list.
-   * (this method is implemented in FrameChildList.h for dependency reasons)
    */
-  inline void AppendIfNonempty(
-      nsTArray<mozilla::layout::FrameChildList>* aLists,
-      mozilla::layout::FrameChildListID aListID) const;
+  inline void AppendIfNonempty(nsTArray<mozilla::FrameChildList>* aLists,
+                               mozilla::FrameChildListID aListID) const {
+    if (NotEmpty()) {
+      aLists->EmplaceBack(*this, aListID);
+    }
+  }
 
   /**
    * Return the frame before this frame in visual order (after Bidi reordering).
@@ -469,6 +460,20 @@ class nsFrameList {
 };
 
 namespace mozilla {
+
+#ifdef DEBUG_FRAME_DUMP
+extern const char* ChildListName(FrameChildListID aListID);
+#endif
+
+using FrameChildListIDs = EnumSet<FrameChildListID>;
+
+class FrameChildList {
+ public:
+  FrameChildList(const nsFrameList& aList, FrameChildListID aID)
+      : mList(aList.Clone()), mID(aID) {}
+  nsFrameList mList;
+  FrameChildListID mID;
+};
 
 /**
  * Simple "auto_ptr" for nsFrameLists allocated from the shell arena.

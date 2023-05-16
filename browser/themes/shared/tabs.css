@@ -485,6 +485,7 @@
   /* Set height back to equivalent of parent's 1em based
      on the .tab-icon-sound having a reduced font-size */
   height: 1.3333em;
+  white-space: nowrap;
   margin: 0;
 }
 
@@ -621,16 +622,11 @@ toolbar[brighttext] {
 
 .tabbrowser-tab:is([image], [pinned]) > .tab-stack > .tab-content[attention]:not([selected="true"]),
 .tabbrowser-tab > .tab-stack > .tab-content[pinned][titlechanged]:not([selected="true"]),
-#firefox-view-button[attention],
-.webextension-browser-action[attention="true"] {
+#firefox-view-button[attention] {
   background-image: radial-gradient(circle, var(--tab-attention-icon-color), var(--tab-attention-icon-color) 2px, transparent 2px);
   background-position: center bottom calc(6.5px + var(--tabs-navbar-shadow-size));
   background-size: 4px 4px;
   background-repeat: no-repeat;
-}
-
-:root[uidensity="compact"] .webextension-browser-action[attention="true"] {
-  background-position-y: bottom 4.5px;
 }
 
 .tabbrowser-tab[image] > .tab-stack > .tab-content[attention]:not([pinned], [selected="true"]) {
@@ -677,7 +673,8 @@ toolbar[brighttext] {
 
 /* Firefox View button and menu item */
 
-:root:not([privatebrowsingmode=temporary]):not([firefoxviewhidden]) :is(#firefox-view-button, #wrapper-firefox-view-button) + #tabbrowser-tabs {
+:root:not([privatebrowsingmode=temporary]) :is(toolbarbutton, toolbarpaletteitem) + #tabbrowser-tabs,
+:root[privatebrowsingmode=temporary] :is(toolbarbutton:not(#firefox-view-button), toolbarpaletteitem:not(#wrapper-firefox-view-button)) + #tabbrowser-tabs {
   border-inline-start: 1px solid color-mix(in srgb, currentColor 25%, transparent);
   padding-inline-start: calc(var(--tab-overflow-pinned-tabs-width) + 2px);
   margin-inline-start: 2px;

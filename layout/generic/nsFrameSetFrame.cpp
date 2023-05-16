@@ -336,16 +336,16 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 }
 
 void nsHTMLFramesetFrame::SetInitialChildList(ChildListID aListID,
-                                              nsFrameList& aChildList) {
+                                              nsFrameList&& aChildList) {
   // We do this weirdness where we create our child frames in Init().  On the
   // other hand, we're going to get a SetInitialChildList() with an empty list
   // and null list name after the frame constructor is done creating us.  So
   // just ignore that call.
-  if (aListID == kPrincipalList && aChildList.IsEmpty()) {
+  if (aListID == FrameChildListID::Principal && aChildList.IsEmpty()) {
     return;
   }
 
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
 }
 
 // XXX should this try to allocate twips based on an even pixel boundary?
@@ -682,13 +682,13 @@ static nsFrameborder GetFrameBorderHelper(nsGenericHTMLElement* aContent) {
   if (nullptr != aContent) {
     const nsAttrValue* attr = aContent->GetParsedAttr(nsGkAtoms::frameborder);
     if (attr && attr->Type() == nsAttrValue::eEnum) {
-      switch (attr->GetEnumValue()) {
-        case NS_STYLE_FRAME_YES:
-        case NS_STYLE_FRAME_1:
+      switch (static_cast<FrameBorderProperty>(attr->GetEnumValue())) {
+        case FrameBorderProperty::Yes:
+        case FrameBorderProperty::One:
           return eFrameborder_Yes;
 
-        case NS_STYLE_FRAME_NO:
-        case NS_STYLE_FRAME_0:
+        case FrameBorderProperty::No:
+        case FrameBorderProperty::Zero:
           return eFrameborder_No;
       }
     }

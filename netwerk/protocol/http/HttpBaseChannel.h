@@ -66,6 +66,7 @@ class LogCollector;
 namespace net {
 extern mozilla::LazyLogModule gHttpLog;
 
+class OpaqueResponseBlocker;
 class OpaqueResponseBlockingInfo;
 class PreferredAlternativeDataTypeParams;
 
@@ -77,6 +78,8 @@ enum CacheDisposition : uint8_t {
   kCacheMissed = 4,
   kCacheUnknown = 5
 };
+
+enum class OpaqueResponseAllowed { No, Yes };
 
 /*
  * This class is a partial implementation of nsIHttpChannel.  It contains code
@@ -532,6 +535,12 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // https://fetch.spec.whatwg.org/#concept-request-tainted-origin
   bool HasRedirectTaintedOrigin() { return LoadTaintedOriginFlag(); }
 
+  bool ChannelBlockedByOpaqueResponse() {
+    return mChannelBlockedByOpaqueResponse;
+  }
+  bool CachedOpaqueResponseBlockingPref() const {
+    return mCachedOpaqueResponseBlockingPref;
+  }
  protected:
   nsresult GetTopWindowURI(nsIURI* aURIBeingLoaded, nsIURI** aTopWindowURI);
 
@@ -614,12 +623,19 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   nsresult ValidateMIMEType();
 
-  bool EnsureOpaqueResponseIsAllowed();
+  OpaqueResponseAllowed EnsureOpaqueResponseIsAllowed();
 
-  Result<bool, nsresult> EnsureOpaqueResponseIsAllowedAfterSniff();
+  Result<OpaqueResponseAllowed, nsresult>
+  EnsureOpaqueResponseIsAllowedAfterSniff();
 
+  void BlockOpaqueResponseAfterSniff();
+  void AllowOpaqueResponseAfterSniff();
+  void SetChannelBlockedByOpaqueResponse() {
+    mChannelBlockedByOpaqueResponse = true;
+  }
   bool Http3Allowed() const;
 
+  friend class OpaqueResponseBlocker;
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
 
@@ -642,6 +658,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // An instance of nsHTTPCompressConv
   nsCOMPtr<nsIStreamListener> mCompressListener;
   nsCOMPtr<nsIEventTarget> mCurrentThread;
+
+  RefPtr<OpaqueResponseBlocker> mORB;
 
  private:
   // Proxy release all members above on main thread.
@@ -893,9 +911,14 @@ class HttpBaseChannel : public nsHashPropertyBag,
     All
   };
   SnifferCategoryType mSnifferCategoryType = SnifferCategoryType::NetContent;
+
+  // Used to ensure the same pref value is being used across the
+  // lifetime of this http channel.
   const bool mCachedOpaqueResponseBlockingPref;
   bool mBlockOpaqueResponseAfterSniff;
   bool mCheckIsOpaqueResponseAllowedAfterSniff;
+  bool mChannelBlockedByOpaqueResponse;
+
   bool mDummyChannelForImageCache;
 
   // clang-format off

@@ -474,7 +474,12 @@ class nsWindow final : public nsBaseWidget {
 
     nsSizeMode mSizeMode = nsSizeMode_Normal;
     nsSizeMode mLastSizeMode = nsSizeMode_Normal;
+    // The old size mode before going into fullscreen mode. This should never
+    // be nsSizeMode_Fullscreen.
     nsSizeMode mOldSizeMode = nsSizeMode_Normal;
+    // Whether we're in fullscreen. We need to keep this state out of band,
+    // rather than just using mSizeMode, because a window can be minimized
+    // while fullscreen, and we don't store the fullscreen state anywhere else.
     bool mFullscreenMode = false;
     nsWindow* mWindow;
   };
@@ -529,8 +534,7 @@ class nsWindow final : public nsBaseWidget {
   bool AssociateWithNativeWindow();
   void DissociateFromNativeWindow();
   bool CanTakeFocus();
-  bool UpdateNonClientMargins(int32_t aSizeMode = -1,
-                              bool aReflowWindow = true);
+  bool UpdateNonClientMargins(bool aReflowWindow = true);
   void UpdateDarkModeToolbar();
   void UpdateGetWindowInfoCaptionStatus(bool aActiveCaption);
   void ResetLayout();
@@ -588,7 +592,7 @@ class nsWindow final : public nsBaseWidget {
    */
   void OnDestroy() override;
   bool OnResize(const LayoutDeviceIntSize& aSize);
-  void OnSizeModeChange(nsSizeMode aSizeMode);
+  void OnSizeModeChange();
   bool OnGesture(WPARAM wParam, LPARAM lParam);
   bool OnTouch(WPARAM wParam, LPARAM lParam);
   bool OnHotKey(WPARAM wParam, LPARAM lParam);

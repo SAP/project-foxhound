@@ -13,6 +13,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/FileSystemDirectoryHandleBinding.h"
 #include "mozilla/dom/FileSystemHandleBinding.h"
+#include "mozilla/dom/FileSystemLog.h"
 #include "mozilla/dom/FileSystemManager.h"
 #include "mozilla/dom/PFileSystemManager.h"
 #include "mozilla/dom/Promise.h"
@@ -58,6 +59,7 @@ void FileSystemDirectoryHandle::InitAsyncIteratorData(
 
 already_AddRefed<Promise> FileSystemDirectoryHandle::GetNextIterationResult(
     FileSystemDirectoryHandle::iterator_t* aIterator, ErrorResult& aError) {
+  LOG_VERBOSE(("GetNextIterationResult"));
   return aIterator->Data().mImpl->Next(mGlobal, mManager, aError);
 }
 
@@ -73,7 +75,11 @@ already_AddRefed<Promise> FileSystemDirectoryHandle::GetFileHandle(
 
   fs::Name name(aName);
   fs::FileSystemChildMetadata metadata(mMetadata.entryId(), name);
-  mRequestHandler->GetFileHandle(mManager, metadata, aOptions.mCreate, promise);
+  mRequestHandler->GetFileHandle(mManager, metadata, aOptions.mCreate, promise,
+                                 aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }
@@ -91,7 +97,10 @@ already_AddRefed<Promise> FileSystemDirectoryHandle::GetDirectoryHandle(
   fs::Name name(aName);
   fs::FileSystemChildMetadata metadata(mMetadata.entryId(), name);
   mRequestHandler->GetDirectoryHandle(mManager, metadata, aOptions.mCreate,
-                                      promise);
+                                      promise, aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }
@@ -109,8 +118,11 @@ already_AddRefed<Promise> FileSystemDirectoryHandle::RemoveEntry(
   fs::Name name(aName);
   fs::FileSystemChildMetadata metadata(mMetadata.entryId(), name);
 
-  mRequestHandler->RemoveEntry(mManager, metadata, aOptions.mRecursive,
-                               promise);
+  mRequestHandler->RemoveEntry(mManager, metadata, aOptions.mRecursive, promise,
+                               aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }
@@ -122,9 +134,14 @@ already_AddRefed<Promise> FileSystemDirectoryHandle::Resolve(
     return nullptr;
   }
 
+  LOG_VERBOSE(("Resolve"));
+
   fs::FileSystemEntryPair pair(mMetadata.entryId(),
                                aPossibleDescendant.GetId());
-  mRequestHandler->Resolve(mManager, pair, promise);
+  mRequestHandler->Resolve(mManager, pair, promise, aError);
+  if (aError.Failed()) {
+    return nullptr;
+  }
 
   return promise.forget();
 }

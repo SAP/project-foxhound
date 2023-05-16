@@ -16,11 +16,8 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 });
 
 // The various histograms and scalars that we report to.
-const SEARCH_COUNTS_HISTOGRAM_KEY = "SEARCH_COUNTS";
 const SEARCH_CONTENT_SCALAR_BASE = "browser.search.content.";
-const SEARCH_WITH_ADS_SCALAR_OLD = "browser.search.with_ads";
 const SEARCH_WITH_ADS_SCALAR_BASE = "browser.search.withads.";
-const SEARCH_AD_CLICKS_SCALAR_OLD = "browser.search.ad_clicks";
 const SEARCH_AD_CLICKS_SCALAR_BASE = "browser.search.adclicks.";
 const SEARCH_DATA_TRANSFERRED_SCALAR = "browser.search.data_transferred";
 const SEARCH_TELEMETRY_PRIVATE_BROWSING_KEY_SUFFIX = "pb";
@@ -169,6 +166,7 @@ class TelemetryHandler {
    * Handles the TabClose event received from the listeners.
    *
    * @param {object} event
+   *   The event object provided by the listener.
    */
   handleEvent(event) {
     if (event.type != "TabClose") {
@@ -184,7 +182,9 @@ class TelemetryHandler {
    * Test-only function, used to override the provider information, so that
    * unit tests can set it to easy to test values.
    *
-   * @param {array} providerInfo @see search-telemetry-schema.json for type information.
+   * @param {Array} providerInfo
+   *   See {@link https://searchfox.org/mozilla-central/search?q=search-telemetry-schema.json}
+   *   for type information.
    */
   overrideSearchTelemetryForTests(providerInfo) {
     let info = providerInfo ? providerInfo : this._originalProviderInfo;
@@ -197,7 +197,7 @@ class TelemetryHandler {
    * This automatically maps the regexps to RegExp objects so that
    * we don't have to create a new instance each time.
    *
-   * @param {array} providerInfo
+   * @param {Array} providerInfo
    *   A raw array of provider information to set.
    */
   _setSearchProviderInfo(providerInfo) {
@@ -457,7 +457,7 @@ class TelemetryHandler {
    * @param {string} url The url to match for a provider.
    * @param {boolean} useOnlyExtraAdServers If true, this will use the extra
    *   ad server regexp to match instead of the main regexp.
-   * @returns {array|null} Returns an array of provider name and the provider information.
+   * @returns {Array | null} Returns an array of provider name and the provider information.
    */
   _getProviderInfoForURL(url, useOnlyExtraAdServers = false) {
     if (useOnlyExtraAdServers) {
@@ -497,10 +497,6 @@ class TelemetryHandler {
     }
     // Default to organic to simplify things.
     // We override type in the sap cases.
-    // We have an oldType and type split, because the older telemetry uses "sap"
-    // and "sap-follow-on" versus "tagged-sap" and "tagged-follow-on".
-    // The latter is a more accurate description of what we're reporting.
-    let oldType = "organic";
     let type = "organic";
     let code;
     if (searchProviderInfo.codeParamName) {
@@ -508,17 +504,14 @@ class TelemetryHandler {
       if (code) {
         // The code is only included if it matches one of the specific ones.
         if (searchProviderInfo.taggedCodes.includes(code)) {
-          oldType = "sap";
           type = "tagged";
           if (
             searchProviderInfo.followOnParamNames &&
             searchProviderInfo.followOnParamNames.some(p => queries.has(p))
           ) {
-            oldType += "-follow-on";
             type += "-follow-on";
           }
         } else if (searchProviderInfo.organicCodes.includes(code)) {
-          oldType = "organic";
           type = "organic";
         } else if (searchProviderInfo.expectedOrganicCodes?.includes(code)) {
           code = "none";
@@ -556,7 +549,6 @@ class TelemetryHandler {
               cookieParam == followOnCookie.codeParamName &&
               searchProviderInfo.taggedCodes.includes(cookieValue)
             ) {
-              oldType = "sap-follow-on";
               type = "tagged-follow-on";
               code = cookieValue;
               break;
@@ -565,34 +557,27 @@ class TelemetryHandler {
         }
       }
     }
-    return { provider: searchProviderInfo.telemetryId, oldType, type, code };
+    return { provider: searchProviderInfo.telemetryId, type, code };
   }
 
   /**
    * Logs telemetry for a search provider visit.
    *
-   * @param {object} info
+   * @param {object} info The search provider information.
    * @param {string} info.provider The name of the provider.
-   * @param {string} info.oldType The type of search.
+   * @param {string} info.type The type of search.
    * @param {string} [info.code] The code for the provider.
    * @param {string} source Where the search originated from.
    * @param {string} url The url that was matched (for debug logging only).
    */
   _reportSerpPage(info, source, url) {
+    let payload = `${info.provider}:${info.type}:${info.code || "none"}`;
     Services.telemetry.keyedScalarAdd(
       SEARCH_CONTENT_SCALAR_BASE + source,
-      `${info.provider}:${info.type}:${info.code || "none"}`,
+      payload,
       1
     );
 
-    // SEARCH_COUNTS is now obsolete with the new scalar above, but is being
-    // kept whilst data is verified and telemetry is transitioned.
-    let payload = `${info.provider}.in-content:${info.oldType}:${info.code ||
-      "none"}`;
-    let histogram = Services.telemetry.getKeyedHistogramById(
-      SEARCH_COUNTS_HISTOGRAM_KEY
-    );
-    histogram.add(payload);
     lazy.logConsole.debug("Counting", payload, "for", url);
   }
 }
@@ -600,18 +585,17 @@ class TelemetryHandler {
 /**
  * ContentHandler deals with handling telemetry of the content within a tab -
  * when ads detected and when they are selected.
- *
- * It handles the "browser.search.with_ads" and "browser.search.ad_clicks"
- * scalars.
  */
 class ContentHandler {
   /**
    * Constructor.
    *
    * @param {object} options
-   * @param {Map} options.browserInfoByURL The  map of urls from TelemetryHandler.
-   * @param {function} options.getProviderInfoForURL A function that obtains
-   *   the provider information for a url.
+   *   The options for the handler.
+   * @param {Map} options.browserInfoByURL
+   *   The map of urls from TelemetryHandler.
+   * @param {Function} options.getProviderInfoForURL
+   *   A function that obtains the provider information for a url.
    */
   constructor(options) {
     this._browserInfoByURL = options.browserInfoByURL;
@@ -624,7 +608,7 @@ class ContentHandler {
    * Initializes the content handler. This will also set up the shared data that is
    * shared with the SearchTelemetryChild actor.
    *
-   * @param {array} providerInfo
+   * @param {Array} providerInfo
    *  The provider information for the search telemetry to record.
    */
   init(providerInfo) {
@@ -784,11 +768,6 @@ class ContentHandler {
           URL
         );
         Services.telemetry.keyedScalarAdd(
-          SEARCH_AD_CLICKS_SCALAR_OLD,
-          `${info.telemetryId}:${item.info.oldType}`,
-          1
-        );
-        Services.telemetry.keyedScalarAdd(
           SEARCH_AD_CLICKS_SCALAR_BASE + item.source,
           `${info.telemetryId}:${item.info.type}`,
           1
@@ -814,6 +793,7 @@ class ContentHandler {
    * provider pages that we're tracking.
    *
    * @param {object} info
+   *     The search provider information for the page.
    * @param {boolean} info.hasAds
    *     Whether or not the page has adverts.
    * @param {string} info.url
@@ -847,11 +827,6 @@ class ContentHandler {
       item.info.type,
       item.source,
       info.url
-    );
-    Services.telemetry.keyedScalarAdd(
-      SEARCH_WITH_ADS_SCALAR_OLD,
-      `${item.info.provider}:${item.info.oldType}`,
-      1
     );
     Services.telemetry.keyedScalarAdd(
       SEARCH_WITH_ADS_SCALAR_BASE + item.source,

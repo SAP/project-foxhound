@@ -8,7 +8,10 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MIDIAccessManager.h"
 #include "mozilla/dom/MIDIOptionsBinding.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/RandomNum.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsIGlobalObject.h"
 #include "mozilla/Preferences.h"
@@ -50,15 +53,21 @@ NS_IMETHODIMP
 MIDIPermissionRequest::GetTypes(nsIArray** aTypes) {
   NS_ENSURE_ARG_POINTER(aTypes);
   nsTArray<nsString> options;
-  // NB: We always request midi-sysex, and the base |midi| permission is unused.
-  // This could be cleaned up at some point.
-  options.AppendElement(u"sysex"_ns);
+
+  // The previous implementation made no differences between midi and
+  // midi-sysex. The check on the SitePermsAddonProvider pref should be removed
+  // at the same time as the old implementation.
+  if (mNeedsSysex || !StaticPrefs::dom_sitepermsaddon_provider_enabled()) {
+    options.AppendElement(u"sysex"_ns);
+  }
   return nsContentPermissionUtils::CreatePermissionArray(mType, options,
                                                          aTypes);
 }
 
 NS_IMETHODIMP
 MIDIPermissionRequest::Cancel() {
+  mCancelTimer = nullptr;
+
   if (StaticPrefs::dom_sitepermsaddon_provider_enabled()) {
     mPromise->MaybeRejectWithSecurityError(
         "WebMIDI requires a site permission add-on to activate");
@@ -96,23 +105,24 @@ MIDIPermissionRequest::Run() {
     return NS_OK;
   }
 
-  // Both the spec and our original implementation of WebMIDI have two
-  // conceptual permission levels: with and without sysex functionality.
-  // However, our current implementation just has one level, and requires the
-  // more-powerful |midi-sysex| permission irrespective of the mode requested in
-  // requestMIDIAccess.
-  constexpr auto kPermName = "midi-sysex"_ns;
+  nsCString permName = "midi"_ns;
+  // The previous implementation made no differences between midi and
+  // midi-sysex. The check on the SitePermsAddonProvider pref should be removed
+  // at the same time as the old implementation.
+  if (mNeedsSysex || !StaticPrefs::dom_sitepermsaddon_provider_enabled()) {
+    permName.Append("-sysex");
+  }
 
   // First, check for an explicit allow/deny. Note that we want to support
   // granting a permission on the base domain and then using it on a subdomain,
   // which is why we use the non-"Exact" variants of these APIs. See bug
   // 1757218.
-  if (nsContentUtils::IsSitePermAllow(mPrincipal, kPermName)) {
+  if (nsContentUtils::IsSitePermAllow(mPrincipal, permName)) {
     Allow(JS::UndefinedHandleValue);
     return NS_OK;
   }
 
-  if (nsContentUtils::IsSitePermDeny(mPrincipal, kPermName)) {
+  if (nsContentUtils::IsSitePermDeny(mPrincipal, permName)) {
     Cancel();
     return NS_OK;
   }
@@ -121,7 +131,7 @@ MIDIPermissionRequest::Run() {
   // auto-deny (except for localhost).
   if (StaticPrefs::dom_webmidi_gated() &&
       !StaticPrefs::dom_sitepermsaddon_provider_enabled() &&
-      !nsContentUtils::HasSitePerm(mPrincipal, kPermName) &&
+      !nsContentUtils::HasSitePerm(mPrincipal, permName) &&
       !mPrincipal->GetIsLoopbackHost()) {
     Cancel();
     return NS_OK;
@@ -136,9 +146,40 @@ MIDIPermissionRequest::Run() {
     return NS_OK;
   }
 
-  // We can only get here for localhost, if add-on gating is disabled or if the
-  // add-on is installed but the user has subsequently changed the permission
-  // from ALLOW to ASK. In that unusual case, throw up a prompt.
+  // Before we bother the user with a prompt, see if they have any devices. If
+  // they don't, just report denial.
+  MOZ_ASSERT(NS_IsMainThread());
+  mozilla::ipc::PBackgroundChild* actor =
+      mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
+  if (NS_WARN_IF(!actor)) {
+    return NS_ERROR_FAILURE;
+  }
+  RefPtr<MIDIPermissionRequest> self = this;
+  actor->SendHasMIDIDevice(
+      [=](bool aHasDevices) {
+        MOZ_ASSERT(NS_IsMainThread());
+
+        if (aHasDevices) {
+          self->DoPrompt();
+        } else {
+          // For auto-deny, we randomize the response time between 3 and 13
+          // seconds to make it harder for the site to determine if auto-deny
+          // occurred.
+          uint32_t baseDelayMS = 3 * 1000;
+          uint32_t randomDelayMS = RandomUint64OrDie() % (10 * 1000);
+          auto delay =
+              TimeDuration::FromMilliseconds(baseDelayMS + randomDelayMS);
+          NS_NewTimerWithCallback(
+              getter_AddRefs(self->mCancelTimer), [=](auto) { self->Cancel(); },
+              delay, nsITimer::TYPE_ONE_SHOT, __func__);
+        }
+      },
+      [=](auto) { self->Cancel(); });
+
+  return NS_OK;
+}
+
+nsresult MIDIPermissionRequest::DoPrompt() {
   if (NS_FAILED(nsContentPermissionUtils::AskPermission(this, mWindow))) {
     Cancel();
     return NS_ERROR_FAILURE;

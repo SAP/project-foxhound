@@ -25,12 +25,59 @@
 // Enable IS_VK_DOWN debug output
 //#define DEBUG_VK
 
-// Main event loop debug output flags
-#define SHOW_REPEAT_EVENTS true
-#define SHOW_MOUSEMOVE_EVENTS false
+namespace mozilla::widget {
+// Windows message debugging data
+struct EventMsgInfo {
+  const char* mStr;
+  UINT mId;
+  std::function<nsAutoCString(WPARAM, LPARAM, bool)> mParamInfoFn;
+  std::function<void(nsAutoCString&, WPARAM, const char*, bool)> mWParamInfoFn;
+  const char* mWParamName;
+  std::function<void(nsAutoCString&, LPARAM, const char*, bool)> mLParamInfoFn;
+  const char* mLParamName;
+  void LogParameters(nsAutoCString& str, WPARAM wParam, LPARAM lParam,
+                     bool isPreCall);
+};
+extern std::unordered_map<UINT, EventMsgInfo> gAllEvents;
 
-void PrintEvent(UINT msg, uint64_t wParam, uint64_t lParam, uint64_t retValue,
-                bool result, bool aShowAllEvents, bool aShowMouseMoves);
+// RAII-style class to log before and after an event is handled.
+class PrintEvent final {
+ public:
+  PrintEvent(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT retValue);
+  void SetResult(bool result) { mResult = mozilla::Some(result); }
+  ~PrintEvent();
+
+ private:
+  bool PrintEventInternal();
+  const UINT mMsg;
+  const WPARAM mWParam;
+  const LPARAM mLParam;
+  const LRESULT mRetValue;
+  mozilla::Maybe<long> mEventCounter;
+  // not const because it will be set after the event is handled
+  mozilla::Maybe<bool> mResult;
+  bool mShouldLogPostCall;
+};
+
+struct EnumValueAndName {
+  uint64_t mFlag;
+  const char* mName;
+};
+
+// Appends to str a description of the flags passed in.
+// flagsAndNames is a list of flag values with a string description
+// for each one. These are processed in order, so if there are
+// flag values that are combination of individual values (for example
+// something like WS_OVERLAPPEDWINDOW) they need to come first
+// in the flagsAndNames array.
+// A 0 flag value will only be written if the flags input is exactly
+// 0, and it must come last in the flagsAndNames array.
+// Returns whether any info was appended to str.
+bool AppendFlagsInfo(nsAutoCString& str, uint64_t flags,
+                     const nsTArray<EnumValueAndName>& flagsAndNames,
+                     const char* name);
+
+}  // namespace mozilla::widget
 
 #if defined(POPUP_ROLLUP_DEBUG_OUTPUT)
 typedef struct {

@@ -7,11 +7,11 @@
 const kIMig = Ci.nsIBrowserProfileMigrator;
 const kIPStartup = Ci.nsIProfileStartup;
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { MigrationUtils } = ChromeUtils.import(
-  "resource:///modules/MigrationUtils.jsm"
+const { MigrationUtils } = ChromeUtils.importESModule(
+  "resource:///modules/MigrationUtils.sys.mjs"
 );
 
 /**
@@ -220,7 +220,8 @@ var MigrationWizard = {
         var migrator = this.spinResolve(
           MigrationUtils.getMigrator(migratorKey)
         );
-        if (migrator) {
+
+        if (migrator?.enabled) {
           // Save this as the first selectable item, if we don't already have
           // one, or if it is the migrator that was passed to us.
           if (!selectedMigrator || this._source == migratorKey) {

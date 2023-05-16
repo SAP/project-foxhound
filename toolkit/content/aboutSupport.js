@@ -10,8 +10,8 @@ const { Troubleshoot } = ChromeUtils.importESModule(
 const { ResetProfile } = ChromeUtils.importESModule(
   "resource://gre/modules/ResetProfile.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -35,7 +35,13 @@ window.addEventListener("load", function onload(event) {
     window.removeEventListener("load", onload);
     Troubleshoot.snapshot(async function(snapshot) {
       for (let prop in snapshotFormatters) {
-        await snapshotFormatters[prop](snapshot[prop]);
+        try {
+          await snapshotFormatters[prop](snapshot[prop]);
+        } catch (e) {
+          Cu.reportError(
+            "stack of snapshot error for about:support: " + e + ": " + e.stack
+          );
+        }
       }
       if (location.hash) {
         scrollToSection();
@@ -44,13 +50,7 @@ window.addEventListener("load", function onload(event) {
     populateActionBox();
     setupEventListeners();
 
-    let hasWinPackageId = false;
-    try {
-      hasWinPackageId = Services.sysinfo.getProperty("hasWinPackageId");
-    } catch (_ex) {
-      // The hasWinPackageId property doesn't exist; assume it would be false.
-    }
-    if (hasWinPackageId) {
+    if (Services.sysinfo.getProperty("isPackagedApp")) {
       $("update-dir-row").hidden = true;
       $("update-history-row").hidden = true;
     }
@@ -86,7 +86,7 @@ function toFluentID(str) {
     .toLowerCase();
 }
 
-// Each property in this object corresponds to a property in Troubleshoot.jsm's
+// Each property in this object corresponds to a property in Troubleshoot.sys.mjs's
 // snapshot data.  Each function is passed its property's corresponding data,
 // and it's the function's job to update the page with it.
 var snapshotFormatters = {
@@ -432,6 +432,36 @@ var snapshotFormatters = {
     $.append($("locked-prefs-tbody"), prefsTable(data));
   },
 
+  places(data) {
+    if (!AppConstants.MOZ_PLACES) {
+      return;
+    }
+    const statsBody = $("place-database-stats-tbody");
+    $.append(
+      statsBody,
+      data.map(function(entry) {
+        return $.new("tr", [
+          $.new("td", entry.entity),
+          $.new("td", entry.count),
+          $.new("td", entry.sizeBytes / 1024),
+          $.new("td", entry.sizePerc),
+          $.new("td", entry.efficiencyPerc),
+          $.new("td", entry.sequentialityPerc),
+        ]);
+      })
+    );
+    statsBody.style.display = "none";
+    $("place-database-stats-toggle").addEventListener("click", function(event) {
+      if (statsBody.style.display === "none") {
+        document.l10n.setAttributes(event.target, "place-database-stats-hide");
+        statsBody.style.display = "";
+      } else {
+        document.l10n.setAttributes(event.target, "place-database-stats-show");
+        statsBody.style.display = "none";
+      }
+    });
+  },
+
   printingPreferences(data) {
     if (AppConstants.platform == "android") {
       return;
@@ -577,7 +607,7 @@ var snapshotFormatters = {
     // graphics-failures-tbody tbody
     if ("failures" in data) {
       // If indices is there, it should be the same length as failures,
-      // (see Troubleshoot.jsm) but we check anyway:
+      // (see Troubleshoot.sys.mjs) but we check anyway:
       if ("indices" in data && data.failures.length == data.indices.length) {
         let combined = [];
         for (let i = 0; i < data.failures.length; i++) {
@@ -1049,7 +1079,7 @@ var snapshotFormatters = {
 
     // Codec decode/encode support information (inc. HW accel)
     // Currently supported on Windows with Linux/OS X support under development
-    if (AppConstants.platform == "win") {
+    if (AppConstants.platform == "win" || AppConstants.platform == "macosx") {
       insertBasicInfo("media-codec-support-info", data.codecSupportInfo);
     }
   },

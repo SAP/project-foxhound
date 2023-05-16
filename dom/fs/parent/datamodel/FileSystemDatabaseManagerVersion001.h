@@ -12,6 +12,7 @@
 
 namespace mozilla::dom::fs::data {
 
+class FileSystemDataManager;
 class FileSystemFileManager;
 
 /**
@@ -35,10 +36,12 @@ class FileSystemFileManager;
 class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
  public:
   FileSystemDatabaseManagerVersion001(
+      FileSystemDataManager* aDataManager,
       fs::data::FileSystemConnection&& aConnection,
       UniquePtr<FileSystemFileManager>&& aFileManager,
       const EntryId& aRootEntry)
-      : mConnection(aConnection),
+      : mDataManager(aDataManager),
+        mConnection(aConnection),
         mFileManager(std::move(aFileManager)),
         mRootEntry(aRootEntry) {}
 
@@ -79,6 +82,9 @@ class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
 
  private:
   nsresult UpdateUsage(int64_t aDelta);
+
+  // This is a raw pointer since we're owned by the FileSystemDataManager.
+  FileSystemDataManager* MOZ_NON_OWNING_REF mDataManager;
 
   FileSystemConnection mConnection;
 

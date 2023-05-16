@@ -113,6 +113,7 @@
 #include "mozilla/loader/ScriptCacheActors.h"
 #include "mozilla/media/MediaChild.h"
 #include "mozilla/net/CaptivePortalService.h"
+#include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/CookieServiceChild.h"
 #include "mozilla/net/DocumentChannelChild.h"
 #include "mozilla/net/HttpChannelChild.h"
@@ -685,7 +686,11 @@ mozilla::ipc::IPCResult ContentChild::RecvSetXPCOMProcessAttributes(
   InitXPCOM(std::move(aXPCOMInit), aInitialData,
             aIsReadyForBackgroundProcessing);
   InitGraphicsDeviceData(aXPCOMInit.contentDeviceData());
-
+  RefPtr<net::ChildDNSService> dnsServiceChild =
+      dont_AddRef(net::ChildDNSService::GetSingleton());
+  if (dnsServiceChild) {
+    dnsServiceChild->SetTRRDomain(aXPCOMInit.trrDomain());
+  }
   return IPC_OK();
 }
 
@@ -1173,11 +1178,11 @@ nsresult ContentChild::ProvideWindowCommon(
       return;
     }
 
-    ParentShowInfo showInfo(
-        u""_ns, /* fakeShowInfo = */ true, /* isTransparent = */ false,
-        aTabOpener->WebWidget()->GetDPI(),
-        aTabOpener->WebWidget()->RoundsWidgetCoordinatesTo(),
-        aTabOpener->WebWidget()->GetDefaultScale().scale);
+    ParentShowInfo showInfo(u""_ns, /* fakeShowInfo = */ true,
+                            /* isTransparent = */ false,
+                            newChild->WebWidget()->GetDPI(),
+                            newChild->WebWidget()->RoundsWidgetCoordinatesTo(),
+                            newChild->WebWidget()->GetDefaultScale().scale);
 
     newChild->SetMaxTouchPoints(maxTouchPoints);
     newChild->SetHasSiblings(hasSiblings);
@@ -2633,14 +2638,15 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
   }
 
   if (!mRemoteType.IsVoid()) {
-    // Preallocated processes are type PREALLOC_REMOTE_TYPE; they can become
-    // anything except a File: process.
+    // Preallocated processes are type PREALLOC_REMOTE_TYPE; they may not
+    // become a File: process, or Privileged About Content Process
     MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
             ("Changing remoteType of process %d from %s to %s", getpid(),
              mRemoteType.get(), aRemoteType.get()));
     // prealloc->anything (but file) or web->web allowed, and no-change
-    MOZ_RELEASE_ASSERT(aRemoteType != FILE_REMOTE_TYPE &&
-                       mRemoteType == PREALLOC_REMOTE_TYPE);
+    MOZ_RELEASE_ASSERT(mRemoteType == PREALLOC_REMOTE_TYPE &&
+                       aRemoteType != FILE_REMOTE_TYPE &&
+                       aRemoteType != PRIVILEGEDABOUT_REMOTE_TYPE);
   } else {
     // Initial setting of remote type.  Either to 'prealloc' or the actual
     // final type (if we didn't use a preallocated process)
@@ -2665,6 +2671,8 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
     SetProcessName("WebExtensions"_ns, nullptr, &aProfile);
   } else if (aRemoteType == PRIVILEGEDABOUT_REMOTE_TYPE) {
     SetProcessName("Privileged Content"_ns, nullptr, &aProfile);
+  } else if (aRemoteType == PRIVILEGEDMOZILLA_REMOTE_TYPE) {
+    SetProcessName("Privileged Mozilla"_ns, nullptr, &aProfile);
   } else if (remoteTypePrefix == WITH_COOP_COEP_REMOTE_TYPE) {
 #ifdef NIGHTLY_BUILD
     SetProcessName("WebCOOP+COEP Content"_ns, nullptr, &aProfile);
@@ -2692,7 +2700,8 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
       (remoteTypePrefix == FISSION_WEB_REMOTE_TYPE ||
        remoteTypePrefix == SERVICEWORKER_REMOTE_TYPE ||
        remoteTypePrefix == WITH_COOP_COEP_REMOTE_TYPE ||
-       aRemoteType == PRIVILEGEDABOUT_REMOTE_TYPE)) {
+       aRemoteType == PRIVILEGEDABOUT_REMOTE_TYPE ||
+       aRemoteType == PRIVILEGEDMOZILLA_REMOTE_TYPE)) {
     JS::DisableSpectreMitigationsAfterInit();
   }
 

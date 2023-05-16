@@ -738,9 +738,8 @@
   --hover-outline: dashed 2px blue;
   --freetext-line-height: 1.35;
   --freetext-padding: 2px;
-  --editorInk-editing-cursor: url(images/cursor-editorInk.svg) 0 16;
-  --editorFreeText-editing-cursor: url(images/toolbarButton-editorFreeText.svg)
-    8 16;
+  --editorFreeText-editing-cursor: text;
+  --editorInk-editing-cursor: url(images/cursor-editorInk.svg) 0 16, pointer;
 }
 
 @media (forced-colors: active) {
@@ -772,11 +771,11 @@
 }
 
 .annotationEditorLayer.freeTextEditing {
-  cursor: var(--editorFreeText-editing-cursor), text;
+  cursor: var(--editorFreeText-editing-cursor);
 }
 
 .annotationEditorLayer.inkEditing {
-  cursor: var(--editorInk-editing-cursor), pointer;
+  cursor: var(--editorInk-editing-cursor);
 }
 
 .annotationEditorLayer .selectedEditor {
@@ -1231,8 +1230,8 @@ body {
   user-select: none;
 }
 
-.pdfPresentationMode:fullscreen a:not(.internalLink) {
-  display: none;
+.pdfPresentationMode:fullscreen section:not([data-internal-link]) {
+  pointer-events: none;
 }
 
 .pdfPresentationMode:fullscreen .textLayer span {
@@ -1327,6 +1326,7 @@ body {
 .toolbar select,
 .secondaryToolbar input,
 .secondaryToolbar button,
+.secondaryToolbar a,
 .secondaryToolbar select,
 .editorParamsToolbar input,
 .editorParamsToolbar button,
@@ -1926,7 +1926,7 @@ body {
 }
 
 a.secondaryToolbarButton {
-  padding-top: 6px;
+  padding-top: 5px;
   text-decoration: none;
 }
 a.toolbarButton[href="#"],
@@ -1968,8 +1968,8 @@ a.secondaryToolbarButton[href="#"] {
 .pdfSidebarNotification::after {
   position: absolute;
   display: inline-block;
-  top: 1px;
-  inset-inline-start: 17px;
+  top: 2px;
+  inset-inline-end: 2px;
   /* Create a filled circle, with a diameter of 9 pixels, using only CSS: */
   content: "";
   background-color: rgba(112, 219, 85, 1);

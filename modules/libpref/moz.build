@@ -92,7 +92,6 @@ pref_groups = [
     "view_source",
     "webgl",
     "widget",
-    "xul",
     "zoom",
 ]
 if CONFIG["OS_TARGET"] == "Android":
@@ -174,8 +173,5 @@ else:
     FINAL_TARGET_PP_FILES += [
         "greprefs.js",
     ]
-
-if CONFIG["MOZ_BACKGROUNDTASKS"]:
-    DEFINES["MOZ_BACKGROUNDTASKS"] = True
 
 REQUIRES_UNIFIED_BUILD = True

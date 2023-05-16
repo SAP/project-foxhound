@@ -8,6 +8,8 @@
 
 #include "FileSystemEntryMetadataArray.h"
 #include "fs/FileSystemConstants.h"
+#include "mozilla/ResultVariant.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileSystemAccessHandleChild.h"
@@ -15,21 +17,16 @@
 #include "mozilla/dom/FileSystemFileHandle.h"
 #include "mozilla/dom/FileSystemHandle.h"
 #include "mozilla/dom/FileSystemHelpers.h"
+#include "mozilla/dom/FileSystemLog.h"
 #include "mozilla/dom/FileSystemManager.h"
 #include "mozilla/dom/FileSystemManagerChild.h"
 #include "mozilla/dom/FileSystemSyncAccessHandle.h"
+#include "mozilla/dom/FileSystemWritableFileStream.h"
+#include "mozilla/dom/FileSystemWritableFileStreamChild.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
-
-namespace mozilla {
-extern LazyLogModule gOPFSLog;
-}
-
-#define LOG(args) MOZ_LOG(mozilla::gOPFSLog, mozilla::LogLevel::Verbose, args)
-
-#define LOG_DEBUG(args) \
-  MOZ_LOG(mozilla::gOPFSLog, mozilla::LogLevel::Debug, args)
+#include "mozilla/ipc/RandomAccessStreamUtils.h"
 
 namespace mozilla::dom::fs {
 
@@ -94,13 +91,42 @@ RefPtr<FileSystemSyncAccessHandle> MakeResolution(
     const RefPtr<FileSystemSyncAccessHandle>& /* aReturns */,
     const FileSystemEntryMetadata& aMetadata,
     RefPtr<FileSystemManager>& aManager) {
-  auto* const actor = static_cast<FileSystemAccessHandleChild*>(
-      aResponse.get_PFileSystemAccessHandleChild());
+  auto& properties = aResponse.get_FileSystemAccessHandleProperties();
 
-  RefPtr<FileSystemSyncAccessHandle> result =
-      new FileSystemSyncAccessHandle(aGlobal, aManager, actor, aMetadata);
+  QM_TRY_UNWRAP(nsCOMPtr<nsIRandomAccessStream> stream,
+                DeserializeRandomAccessStream(properties.streamParams()),
+                nullptr);
+
+  auto* const actor =
+      static_cast<FileSystemAccessHandleChild*>(properties.accessHandleChild());
+
+  RefPtr<FileSystemSyncAccessHandle> result = new FileSystemSyncAccessHandle(
+      aGlobal, aManager, actor, std::move(stream), aMetadata);
 
   actor->SetAccessHandle(result);
+
+  return result;
+}
+
+RefPtr<FileSystemWritableFileStream> MakeResolution(
+    nsIGlobalObject* aGlobal,
+    FileSystemGetWritableFileStreamResponse&& aResponse,
+    const RefPtr<FileSystemWritableFileStream>& /* aReturns */,
+    const FileSystemEntryMetadata& aMetadata,
+    RefPtr<FileSystemManager>& aManager) {
+  const auto& properties =
+      aResponse.get_FileSystemWritableFileStreamProperties();
+
+  auto* const actor = static_cast<FileSystemWritableFileStreamChild*>(
+      properties.writableFileStreamChild());
+
+  RefPtr<FileSystemWritableFileStream> result =
+      FileSystemWritableFileStream::Create(
+          aGlobal, aManager, actor, properties.fileDescriptor(), aMetadata);
+
+  if (result) {
+    actor->SetStream(result);
+  }
 
   return result;
 }
@@ -131,9 +157,15 @@ void ResolveCallback(
     return;
   }
 
-  aPromise->MaybeResolve(MakeResolution(aPromise->GetParentObject(),
-                                        std::forward<TResponse>(aResponse),
-                                        std::forward<Args>(args)...));
+  auto resolution = MakeResolution(aPromise->GetParentObject(),
+                                   std::forward<TResponse>(aResponse),
+                                   std::forward<Args>(args)...);
+  if (!resolution) {
+    aPromise->MaybeReject(NS_ERROR_UNEXPECTED);
+    return;
+  }
+
+  aPromise->MaybeResolve(resolution);
 }
 
 template <>
@@ -306,10 +338,16 @@ mozilla::ipc::RejectCallback GetRejectCallback(
 
 void FileSystemRequestHandler::GetRootHandle(
     RefPtr<FileSystemManager>
-        aManager,                // NOLINT(performance-unnecessary-value-param)
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+        aManager,              // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(aPromise);
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   aManager->BeginRequest(
       [onResolve = SelectResolveCallback<FileSystemGetHandleResponse,
@@ -326,11 +364,17 @@ void FileSystemRequestHandler::GetRootHandle(
 void FileSystemRequestHandler::GetDirectoryHandle(
     RefPtr<FileSystemManager>& aManager,
     const FileSystemChildMetadata& aDirectory, bool aCreate,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aDirectory.parentId().IsEmpty());
   MOZ_ASSERT(aPromise);
   LOG(("getDirectoryHandle"));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   if (!IsValidName(aDirectory.childName())) {
     aPromise->MaybeRejectWithTypeError("Invalid directory name");
@@ -354,11 +398,17 @@ void FileSystemRequestHandler::GetDirectoryHandle(
 void FileSystemRequestHandler::GetFileHandle(
     RefPtr<FileSystemManager>& aManager, const FileSystemChildMetadata& aFile,
     bool aCreate,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aFile.parentId().IsEmpty());
   MOZ_ASSERT(aPromise);
   LOG(("getFileHandle"));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   if (!IsValidName(aFile.childName())) {
     aPromise->MaybeRejectWithTypeError("Invalid filename");
@@ -381,9 +431,15 @@ void FileSystemRequestHandler::GetFileHandle(
 
 void FileSystemRequestHandler::GetAccessHandle(
     RefPtr<FileSystemManager>& aManager, const FileSystemEntryMetadata& aFile,
-    const RefPtr<Promise>& aPromise) {
+    const RefPtr<Promise>& aPromise, ErrorResult& aError) {
+  MOZ_ASSERT(aManager);
   MOZ_ASSERT(aPromise);
-  LOG(("getAccessHandle"));
+  LOG(("GetAccessHandle %s", NS_ConvertUTF16toUTF8(aFile.entryName()).get()));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   aManager->BeginRequest(
       [request = FileSystemGetAccessHandleRequest(aFile.entryId()),
@@ -399,12 +455,56 @@ void FileSystemRequestHandler::GetAccessHandle(
       });
 }
 
+void FileSystemRequestHandler::GetWritable(RefPtr<FileSystemManager>& aManager,
+                                           const FileSystemEntryMetadata& aFile,
+                                           bool aKeepData,
+                                           const RefPtr<Promise>& aPromise,
+                                           ErrorResult& aError) {
+  MOZ_ASSERT(aManager);
+  MOZ_ASSERT(aPromise);
+  LOG(("GetWritable %s keep %d", NS_ConvertUTF16toUTF8(aFile.entryName()).get(),
+       aKeepData));
+
+  // XXX This should be removed once bug 1798513 is fixed.
+  if (NS_IsMainThread() &&
+      !StaticPrefs::dom_fs_main_thread_writable_file_stream()) {
+    aError.Throw(NS_ERROR_NOT_IMPLEMENTED);
+    return;
+  }
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
+
+  aManager->BeginRequest(
+      [request = FileSystemGetWritableRequest(aFile.entryId(), aKeepData),
+       onResolve =
+           SelectResolveCallback<FileSystemGetWritableFileStreamResponse,
+                                 RefPtr<FileSystemWritableFileStream>>(
+               aPromise, aFile, aManager),
+       onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
+        actor->SendGetWritable(request, std::move(onResolve),
+                               std::move(onReject));
+      },
+      [promise = aPromise](const auto&) {
+        promise->MaybeRejectWithUnknownError("Could not create actor");
+      });
+}
+
 void FileSystemRequestHandler::GetFile(
     RefPtr<FileSystemManager>& aManager, const FileSystemEntryMetadata& aFile,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aFile.entryId().IsEmpty());
   MOZ_ASSERT(aPromise);
+  LOG(("GetFile %s", NS_ConvertUTF16toUTF8(aFile.entryName()).get()));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   aManager->BeginRequest(
       [request = FileSystemGetFileRequest(aFile.entryId()),
@@ -423,10 +523,16 @@ void FileSystemRequestHandler::GetEntries(
     RefPtr<FileSystemManager>& aManager, const EntryId& aDirectory,
     PageNumber aPage,
     RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
-    RefPtr<FileSystemEntryMetadataArray>& aSink) {
+    RefPtr<FileSystemEntryMetadataArray>& aSink, ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aDirectory.IsEmpty());
   MOZ_ASSERT(aPromise);
+  LOG(("GetEntries, page %u", aPage));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   aManager->BeginRequest(
       [request = FileSystemGetEntriesRequest(aDirectory, aPage),
@@ -444,11 +550,17 @@ void FileSystemRequestHandler::GetEntries(
 void FileSystemRequestHandler::RemoveEntry(
     RefPtr<FileSystemManager>& aManager, const FileSystemChildMetadata& aEntry,
     bool aRecursive,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aEntry.parentId().IsEmpty());
   MOZ_ASSERT(aPromise);
   LOG(("removeEntry"));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   if (!IsValidName(aEntry.childName())) {
     aPromise->MaybeRejectWithTypeError("Invalid name");
@@ -472,9 +584,15 @@ void FileSystemRequestHandler::MoveEntry(
     RefPtr<FileSystemManager>& aManager, FileSystemHandle* aHandle,
     const FileSystemEntryMetadata& aEntry,
     const FileSystemChildMetadata& aNewEntry,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(aPromise);
   LOG(("MoveEntry"));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   // reject invalid names: empty, path separators, current & parent directories
   if (!IsValidName(aNewEntry.childName())) {
@@ -498,10 +616,16 @@ void FileSystemRequestHandler::MoveEntry(
 void FileSystemRequestHandler::RenameEntry(
     RefPtr<FileSystemManager>& aManager, FileSystemHandle* aHandle,
     const FileSystemEntryMetadata& aEntry, const Name& aName,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    ErrorResult& aError) {
   MOZ_ASSERT(!aEntry.entryId().IsEmpty());
   MOZ_ASSERT(aPromise);
   LOG(("RenameEntry"));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   // reject invalid names: empty, path separators, current & parent directories
   if (!IsValidName(aName)) {
@@ -525,11 +649,18 @@ void FileSystemRequestHandler::RenameEntry(
 void FileSystemRequestHandler::Resolve(
     RefPtr<FileSystemManager>& aManager,
     // NOLINTNEXTLINE(performance-unnecessary-value-param)
-    const FileSystemEntryPair& aEndpoints, RefPtr<Promise> aPromise) {
+    const FileSystemEntryPair& aEndpoints, RefPtr<Promise> aPromise,
+    ErrorResult& aError) {
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(!aEndpoints.parentId().IsEmpty());
   MOZ_ASSERT(!aEndpoints.childId().IsEmpty());
   MOZ_ASSERT(aPromise);
+  LOG(("Resolve"));
+
+  if (aManager->IsShutdown()) {
+    aError.Throw(NS_ERROR_ILLEGAL_DURING_SHUTDOWN);
+    return;
+  }
 
   aManager->BeginRequest(
       [request = FileSystemResolveRequest(aEndpoints),

@@ -5,9 +5,7 @@
 "use strict";
 
 const SOURCE_MAP_WORKER =
-  "resource://devtools/client/shared/source-map/worker.js";
-const SOURCE_MAP_WORKER_ASSETS =
-  "resource://devtools/client/shared/source-map/assets/";
+  "resource://devtools/client/shared/source-map-loader/worker.js";
 
 const MAX_ORDINAL = 99;
 const SPLITCONSOLE_ENABLED_PREF = "devtools.toolbox.splitconsoleEnabled";
@@ -84,11 +82,9 @@ loader.lazyRequireGetter(
 );
 
 const lazy = {};
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+});
 loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 loader.lazyRequireGetter(
   this,
@@ -684,6 +680,10 @@ Toolbox.prototype = {
     }
   },
 
+  /**
+   * Be careful, this method is synchronous, but highlightTool, raise, selectTool
+   * are all async.
+   */
   _pauseToolbox(reason) {
     // Suppress interrupted events by default because the thread is
     // paused/resumed a lot for various actions.
@@ -1383,7 +1383,7 @@ Toolbox.prototype = {
     }
     // Uses browser loader to access the `Worker` global.
     const service = this.browserRequire(
-      "devtools/client/shared/source-map/index"
+      "devtools/client/shared/source-map-loader/index"
     );
 
     // Provide a wrapper for the service that reports errors more nicely.
@@ -1453,10 +1453,7 @@ Toolbox.prototype = {
       },
     });
 
-    this._sourceMapService.startSourceMapWorker(
-      SOURCE_MAP_WORKER,
-      SOURCE_MAP_WORKER_ASSETS
-    );
+    this._sourceMapService.startSourceMapWorker(SOURCE_MAP_WORKER);
     return this._sourceMapService;
   },
 
@@ -1743,6 +1740,9 @@ Toolbox.prototype = {
     }
     if (event.data?.name === "switched-host-to-tab") {
       this._onSwitchedHostToTab(event.data.browsingContextID);
+    }
+    if (event.data?.name === "host-raised") {
+      this.emit("host-raised");
     }
   },
 
@@ -3211,6 +3211,8 @@ Toolbox.prototype = {
    */
   raise() {
     this.postMessage({ name: "raise-host" });
+
+    return this.once("host-raised");
   },
 
   /**

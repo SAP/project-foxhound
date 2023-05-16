@@ -595,8 +595,6 @@ async function clickSelectorIcon(view, selectorText, index = 0) {
   const { inspector } = view;
   const rule = getRuleViewRule(view, selectorText, index);
 
-  // The icon element is created in response to an async operation.
-  // Wait until the expected node shows up in the DOM. (Bug 1664511)
   info(`Waiting for icon to be available for selector: ${selectorText}`);
   const icon = await waitFor(() => {
     return rule.querySelector(".js-toggle-selector-highlighter");
@@ -1214,9 +1212,9 @@ function checkCSSVariableOutput(
  * @returns {HTMLElement}
  */
 function getRuleViewAncestorRulesDataElementByIndex(view, ruleIndex) {
-  return view.styleDocument.querySelector(
-    `.ruleview-rule:nth-of-type(${ruleIndex + 1}) .ruleview-rule-ancestor-data`
-  );
+  return view.styleDocument
+    .querySelectorAll(`.ruleview-rule`)
+    [ruleIndex]?.querySelector(`.ruleview-rule-ancestor-data`);
 }
 
 /**

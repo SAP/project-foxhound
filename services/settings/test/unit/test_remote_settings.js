@@ -1,12 +1,14 @@
 /* import-globals-from ../../../common/tests/unit/head_helpers.js */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { ObjectUtils } = ChromeUtils.import(
   "resource://gre/modules/ObjectUtils.jsm"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 const { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
@@ -583,6 +585,22 @@ add_task(
     clientWithDump._verifier = backup;
   }
 );
+add_task(clear_state);
+
+add_task(async function test_get_can_force_a_sync() {
+  const step0 = await client.db.getLastModified();
+  await client.get({ forceSync: true });
+  const step1 = await client.db.getLastModified();
+  await client.get();
+  const step2 = await client.db.getLastModified();
+  await client.get({ forceSync: true });
+  const step3 = await client.db.getLastModified();
+
+  equal(step0, null);
+  equal(step1, 3000);
+  equal(step2, 3000);
+  equal(step3, 3001);
+});
 add_task(clear_state);
 
 add_task(async function test_sync_runs_once_only() {
@@ -1464,6 +1482,33 @@ wNuvFqc=
             id: "312cc78d-9c1f-4291-a4fa-a1be56f6cc69",
             last_modified: 3000,
             website: "https://some-website.com",
+            selector: "#webpage[field-pwd]",
+          },
+        ],
+      },
+    },
+    "GET:/v1/buckets/main/collections/password-fields/changeset?_expected=1337&_since=%223000%22": {
+      sampleHeaders: [
+        "Access-Control-Allow-Origin: *",
+        "Access-Control-Expose-Headers: Retry-After, Content-Length, Alert, Backoff",
+        "Content-Type: application/json; charset=UTF-8",
+        "Server: waitress",
+        'Etag: "3001"',
+      ],
+      status: { status: 200, statusText: "OK" },
+      responseBody: {
+        metadata: {
+          signature: {
+            signature: "some-sig",
+            x5u: `http://localhost:${port}/fake-x5u`,
+          },
+        },
+        timestamp: 3001,
+        changes: [
+          {
+            id: "312cc78d-9c1f-4291-a4fa-a1be56f6cc69",
+            last_modified: 3001,
+            website: "https://some-website-2.com",
             selector: "#webpage[field-pwd]",
           },
         ],

@@ -84,7 +84,7 @@ add_task(async function test_simple_search_page_visit() {
     },
     async () => {
       await assertSearchSourcesTelemetry(
-        { "example.in-content:sap:ff": 1 },
+        {},
         {
           "browser.search.content.unknown": { "example:tagged:ff": 1 },
         }
@@ -129,10 +129,7 @@ add_task(async function test_follow_on_visit() {
     },
     async () => {
       await assertSearchSourcesTelemetry(
-        {
-          "example.in-content:sap:ff": 1,
-          "example.in-content:sap-follow-on:ff": 1,
-        },
+        {},
         {
           "browser.search.content.unknown": {
             "example:tagged:ff": 1,
@@ -154,10 +151,9 @@ add_task(async function test_track_ad() {
   );
 
   await assertSearchSourcesTelemetry(
-    { "example.in-content:sap:ff": 1 },
+    {},
     {
       "browser.search.content.unknown": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.unknown": { "example:tagged": 1 },
     }
   );
@@ -191,10 +187,9 @@ add_task(async function test_track_ad_on_DOMContentLoaded() {
   await observeAdPreviouslyRecorded;
 
   await assertSearchSourcesTelemetry(
-    { "slow-page-load.in-content:sap:ff": 1 },
+    {},
     {
       "browser.search.content.unknown": { "slow-page-load:tagged:ff": 1 },
-      "browser.search.with_ads": { "slow-page-load:sap": 1 },
       "browser.search.withads.unknown": { "slow-page-load:tagged": 1 },
     }
   );
@@ -218,10 +213,9 @@ add_task(async function test_track_ad_on_load_event() {
   );
 
   await assertSearchSourcesTelemetry(
-    { "slow-page-load.in-content:sap:ff": 1 },
+    {},
     {
       "browser.search.content.unknown": { "slow-page-load:tagged:ff": 1 },
-      "browser.search.with_ads": { "slow-page-load:sap": 1 },
       "browser.search.withads.unknown": { "slow-page-load:tagged": 1 },
     }
   );
@@ -239,10 +233,9 @@ add_task(async function test_track_ad_organic() {
   );
 
   await assertSearchSourcesTelemetry(
-    { "example.in-content:organic:none": 1 },
+    {},
     {
       "browser.search.content.unknown": { "example:organic:none": 1 },
-      "browser.search.with_ads": { "example:organic": 1 },
       "browser.search.withads.unknown": { "example:organic": 1 },
     }
   );
@@ -265,10 +258,9 @@ add_task(async function test_track_ad_new_window() {
   );
 
   await assertSearchSourcesTelemetry(
-    { "example.in-content:sap:ff": 1 },
+    {},
     {
       "browser.search.content.unknown": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.unknown": { "example:tagged": 1 },
     }
   );
@@ -297,10 +289,9 @@ add_task(async function test_track_ad_pages_without_ads() {
   );
 
   await assertSearchSourcesTelemetry(
-    { "example.in-content:sap:ff": 2 },
+    {},
     {
       "browser.search.content.unknown": { "example:tagged:ff": 2 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.unknown": { "example:tagged": 1 },
     }
   );
@@ -315,11 +306,7 @@ async function track_ad_click(testOrganic) {
   searchCounts.clear();
   Services.telemetry.clearScalars();
 
-  let expectedScalarKeyOld = `example:${testOrganic ? "organic" : "sap"}`;
   let expectedScalarKey = `example:${testOrganic ? "organic" : "tagged"}`;
-  let expectedHistogramKey = `example.in-content:${
-    testOrganic ? "organic:none" : "sap:ff"
-  }`;
   let expectedContentScalarKey = `example:${
     testOrganic ? "organic:none" : "tagged:ff"
   }`;
@@ -330,10 +317,9 @@ async function track_ad_click(testOrganic) {
   );
 
   await assertSearchSourcesTelemetry(
-    { [expectedHistogramKey]: 1 },
+    {},
     {
       "browser.search.content.unknown": { [expectedContentScalarKey]: 1 },
-      "browser.search.with_ads": { [expectedScalarKeyOld]: 1 },
       "browser.search.withads.unknown": {
         [expectedScalarKey.replace("sap", "tagged")]: 1,
       },
@@ -348,12 +334,10 @@ async function track_ad_click(testOrganic) {
   await promiseWaitForAdLinkCheck();
 
   await assertSearchSourcesTelemetry(
-    { [expectedHistogramKey]: 1 },
+    {},
     {
       "browser.search.content.unknown": { [expectedContentScalarKey]: 1 },
-      "browser.search.with_ads": { [expectedScalarKeyOld]: 1 },
       "browser.search.withads.unknown": { [expectedScalarKey]: 1 },
-      "browser.search.ad_clicks": { [expectedScalarKeyOld]: 1 },
       "browser.search.adclicks.unknown": { [expectedScalarKey]: 1 },
     }
   );
@@ -366,14 +350,12 @@ async function track_ad_click(testOrganic) {
 
   // We've gone back, so we register an extra display & if it is with ads or not.
   await assertSearchSourcesTelemetry(
-    { [expectedHistogramKey]: 2 },
+    {},
     {
       "browser.search.content.tabhistory": { [expectedContentScalarKey]: 1 },
       "browser.search.content.unknown": { [expectedContentScalarKey]: 1 },
-      "browser.search.with_ads": { [expectedScalarKeyOld]: 2 },
       "browser.search.withads.tabhistory": { [expectedScalarKey]: 1 },
       "browser.search.withads.unknown": { [expectedScalarKey]: 1 },
-      "browser.search.ad_clicks": { [expectedScalarKeyOld]: 1 },
       "browser.search.adclicks.unknown": { [expectedScalarKey]: 1 },
     }
   );
@@ -386,14 +368,12 @@ async function track_ad_click(testOrganic) {
   await promiseWaitForAdLinkCheck();
 
   await assertSearchSourcesTelemetry(
-    { [expectedHistogramKey]: 2 },
+    {},
     {
       "browser.search.content.tabhistory": { [expectedContentScalarKey]: 1 },
       "browser.search.content.unknown": { [expectedContentScalarKey]: 1 },
-      "browser.search.with_ads": { [expectedScalarKeyOld]: 2 },
       "browser.search.withads.tabhistory": { [expectedScalarKey]: 1 },
       "browser.search.withads.unknown": { [expectedScalarKey]: 1 },
-      "browser.search.ad_clicks": { [expectedScalarKeyOld]: 2 },
       "browser.search.adclicks.tabhistory": { [expectedScalarKey]: 1 },
       "browser.search.adclicks.unknown": { [expectedScalarKey]: 1 },
     }
@@ -417,10 +397,9 @@ add_task(async function test_track_ad_click_with_location_change_other_tab() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
 
   await assertSearchSourcesTelemetry(
-    { "example.in-content:sap:ff": 1 },
+    {},
     {
       "browser.search.content.unknown": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.unknown": { "example:tagged": 1 },
     }
   );
@@ -439,12 +418,10 @@ add_task(async function test_track_ad_click_with_location_change_other_tab() {
   await pageLoadPromise;
 
   await assertSearchSourcesTelemetry(
-    { "example.in-content:sap:ff": 1 },
+    {},
     {
       "browser.search.content.unknown": { "example:tagged:ff": 1 },
-      "browser.search.with_ads": { "example:sap": 1 },
       "browser.search.withads.unknown": { "example:tagged": 1 },
-      "browser.search.ad_clicks": { "example:sap": 1 },
       "browser.search.adclicks.unknown": { "example:tagged": 1 },
     }
   );

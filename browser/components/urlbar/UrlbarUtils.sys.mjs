@@ -14,12 +14,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   KeywordUtils: "resource://gre/modules/KeywordUtils.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSuggestionController:
     "resource://gre/modules/SearchSuggestionController.sys.mjs",
 
+  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
@@ -29,7 +29,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   FormHistory: "resource://gre/modules/FormHistory.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 export var UrlbarUtils = {
@@ -273,9 +272,9 @@ export var UrlbarUtils = {
    * @param {string} url
    *        A string that may begin with a keyword or an alias.
    *
-   * @returns {Promise}
-   * @resolves { url, postData, mayInheritPrincipal }. If it's not possible
-   *           to discern a keyword or an alias, url will be the input string.
+   * @returns {Promise<{ url, postData, mayInheritPrincipal }>}
+   *        If it's not possible to discern a keyword or an alias, url will be
+   *        the input string.
    */
   async getShortcutOrURIAndPostData(url) {
     let mayInheritPrincipal = false;
@@ -362,14 +361,14 @@ export var UrlbarUtils = {
    * matchLength].  matchIndex is the index in the string of the match, and
    * matchLength is the length of the match.
    *
-   * @param {array} tokens The tokens to search for.
+   * @param {Array} tokens The tokens to search for.
    * @param {string} str The string to match against.
    * @param {boolean} highlightType
    *   One of the HIGHLIGHT values:
    *     TYPED: match ranges matching the tokens; or
    *     SUGGESTED: match ranges for words not matching the tokens and the
    *                endings of words that start with a token.
-   * @returns {array} An array: [
+   * @returns {Array} An array: [
    *            [matchIndex_0, matchLength_0],
    *            [matchIndex_1, matchLength_1],
    *            ...
@@ -570,6 +569,7 @@ export var UrlbarUtils = {
 
   /**
    * Extracts an url from a result, if possible.
+   *
    * @param {UrlbarResult} result The result to extract from.
    * @returns {object} a {url, postData} object, or null if a url can't be built
    *          from this result.
@@ -614,7 +614,7 @@ export var UrlbarUtils = {
    *   The engine to generate the query for.
    * @param {string} query
    *   The query string to search for.
-   * @returns {array}
+   * @returns {Array}
    *   Returns an array containing the query url (string) and the
    *    post data (object).
    */
@@ -662,7 +662,9 @@ export var UrlbarUtils = {
 
   /**
    * Gets a default icon for a URL.
+   *
    * @param {string} url
+   *   The URL to get the icon for.
    * @returns {string} A URI pointing to an icon for `url`.
    */
   getIconForUrl(url) {
@@ -709,11 +711,13 @@ export var UrlbarUtils = {
 
   /**
    * Tries to initiate a speculative connection to a given url.
+   *
+   * Note: This is not infallible, if a speculative connection cannot be
+   *       initialized, it will be a no-op.
+   *
    * @param {nsISearchEngine|nsIURI|URL|string} urlOrEngine entity to initiate
    *        a speculative connection for.
    * @param {window} window the window from where the connection is initialized.
-   * @note This is not infallible, if a speculative connection cannot be
-   *       initialized, it will be a no-op.
    */
   setupSpeculativeConnection(urlOrEngine, window) {
     if (!lazy.UrlbarPrefs.get("speculativeConnect.enabled")) {
@@ -755,7 +759,8 @@ export var UrlbarUtils = {
    *
    * @param {string} spec
    *        The text to modify.
-   * @param {object} options
+   * @param {object} [options]
+   *        The options object.
    * @param {boolean} options.stripHttp
    *        Whether to strip http.
    * @param {boolean} options.stripHttps
@@ -770,7 +775,7 @@ export var UrlbarUtils = {
    *        Whether to trim a trailing `#`.
    * @param {boolean} options.trimTrailingDot
    *        Whether to trim a trailing '.'.
-   * @returns {array} [modified, prefix, suffix]
+   * @returns {string[]} [modified, prefix, suffix]
    *          modified: {string} The modified spec.
    *          prefix: {string} The parts stripped from the prefix, if any.
    *          suffix: {string} The parts trimmed from the suffix, if any.
@@ -810,11 +815,13 @@ export var UrlbarUtils = {
 
   /**
    * Strips a PSL verified public suffix from an hostname.
-   * @param {string} host A host name.
-   * @returns {string} Host name without the public suffix.
-   * @note Because stripping the full suffix requires to verify it against the
+   *
+   * Note: Because stripping the full suffix requires to verify it against the
    *   Public Suffix List, this call is not the cheapest, and thus it should
    *   not be used in hot paths.
+   *
+   * @param {string} host A host name.
+   * @returns {string} Host name without the public suffix.
    */
   stripPublicSuffixFromHost(host) {
     try {
@@ -833,6 +840,7 @@ export var UrlbarUtils = {
   /**
    * Used to filter out the javascript protocol from URIs, since we don't
    * support LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL for those.
+   *
    * @param {string} pasteData The data to check for javacript protocol.
    * @returns {string} The modified paste data.
    */
@@ -871,6 +879,7 @@ export var UrlbarUtils = {
 
   /**
    * Whether the passed-in input event is paste event.
+   *
    * @param {DOMEvent} event an input DOM event.
    * @returns {boolean} Whether the event is a paste event.
    */
@@ -885,10 +894,14 @@ export var UrlbarUtils = {
   /**
    * Given a string, checks if it looks like a single word host, not containing
    * spaces nor dots (apart from a possible trailing one).
-   * @note This matching should stay in sync with the related code in
+   *
+   * Note: This matching should stay in sync with the related code in
    * URIFixup::KeywordURIFixup
+   *
    * @param {string} value
-   * @returns {boolean} Whether the value looks like a single word host.
+   *   The string to check.
+   * @returns {boolean}
+   *   Whether the value looks like a single word host.
    */
   looksLikeSingleWordHost(value) {
     let str = value.trim();
@@ -935,7 +948,7 @@ export var UrlbarUtils = {
    * and the string itself is returned.
    *
    * @param   {string} str The possible URL to strip.
-   * @returns {array} If `str` is a URL with a prefix we recognize,
+   * @returns {Array} If `str` is a URL with a prefix we recognize,
    *          then [prefix, remainder].  Otherwise, ["", str].
    */
   stripURLPrefix(str) {
@@ -962,6 +975,7 @@ export var UrlbarUtils = {
 
   /**
    * Runs a search for the given string, and returns the heuristic result.
+   *
    * @param {string} searchString The string to search for.
    * @param {nsIDOMWindow} window The window requesting it.
    * @returns {UrlbarResult} an heuristic result.
@@ -1003,6 +1017,7 @@ export var UrlbarUtils = {
   /**
    * Creates a logger.
    * Logging level can be controlled through browser.urlbar.loglevel.
+   *
    * @param {string} [prefix] Prefix to use for the logged messages, "::" will
    *                 be appended automatically to the prefix.
    * @returns {object} The logger.
@@ -1048,6 +1063,7 @@ export var UrlbarUtils = {
   /**
    * Add the search to form history.  This also updates any existing form
    * history for the search.
+   *
    * @param {UrlbarInput} input The UrlbarInput object requesting the addition.
    * @param {string} value The value to add.
    * @param {string} [source] The source of the addition, usually
@@ -1068,19 +1084,11 @@ export var UrlbarUtils = {
     ) {
       return Promise.resolve();
     }
-    return new Promise((resolve, reject) => {
-      lazy.FormHistory.update(
-        {
-          op: "bump",
-          fieldname: input.formHistoryName,
-          value,
-          source,
-        },
-        {
-          handleError: reject,
-          handleCompletion: resolve,
-        }
-      );
+    return lazy.FormHistory.update({
+      op: "bump",
+      fieldname: input.formHistoryName,
+      value,
+      source,
     });
   },
 
@@ -1090,7 +1098,9 @@ export var UrlbarUtils = {
    * autofill. It should not be used for other types of autofill.
    *
    * @param {string} url
+   *                 The URL to test
    * @param {string} candidate
+   *                 The candidate string to test against
    * @param {string} checkFragmentOnly
    *                 If want to check the fragment only, pass true.
    *                 Otherwise, check whole url.
@@ -1152,11 +1162,12 @@ export var UrlbarUtils = {
    * Extracts a telemetry type from a result, used by scalars and event
    * telemetry.
    *
-   * @param {UrlbarResult} result The result to analyze.
-   * @returns {string} A string type for telemetry.
-   * @note New types should be added to Scalars.yaml under the urlbar.picked
+   * Note: New types should be added to Scalars.yaml under the urlbar.picked
    *       category and documented in the in-tree documentation. A data-review
    *       is always necessary.
+   *
+   * @param {UrlbarResult} result The result to analyze.
+   * @returns {string} A string type for telemetry.
    */
   telemetryTypeFromResult(result) {
     if (!result) {
@@ -1533,6 +1544,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
           "intervention_update_restart",
           "intervention_update_web",
           "searchTip_onboard",
+          "searchTip_persist",
           "searchTip_redirect",
           "test", // for tests only
         ],
@@ -1578,7 +1590,7 @@ export class UrlbarQueryContext {
    *   Whether or not to allow providers to include autofill results.
    * @param {number} options.userContextId
    *   The container id where this context was generated, if any.
-   * @param {array} [options.sources]
+   * @param {Array} [options.sources]
    *   A list of acceptable UrlbarUtils.RESULT_SOURCE for the context.
    * @param {object} [options.searchMode]
    *   The input's current search mode.  See UrlbarInput.setSearchMode for a
@@ -1613,6 +1625,7 @@ export class UrlbarQueryContext {
       ["providers", v => Array.isArray(v) && v.length],
       ["searchMode", v => v && typeof v == "object"],
       ["sources", v => Array.isArray(v) && v.length],
+      ["view", v => true],
     ]) {
       if (prop in options) {
         if (!checkFn(options[prop])) {
@@ -1639,7 +1652,7 @@ export class UrlbarQueryContext {
    * Checks the required options, saving them as it goes.
    *
    * @param {object} options The options object to check.
-   * @param {array} optionNames The names of the options to check for.
+   * @param {Array} optionNames The names of the options to check for.
    * @throws {Error} Throws if there is a missing option.
    */
   _checkRequiredOptions(options, optionNames) {
@@ -1658,6 +1671,8 @@ export class UrlbarQueryContext {
    * Only returns a subset of the properties from URIFixup. This is both to
    * reduce the memory footprint of UrlbarQueryContexts and to keep them
    * serializable so they can be sent to extensions.
+   *
+   * @returns {{ href: string; isSearch: boolean; }?}
    */
   get fixupInfo() {
     if (this.trimmedSearchString && !this._fixupInfo) {
@@ -1689,6 +1704,8 @@ export class UrlbarQueryContext {
    * Returns the error that was thrown when fixupInfo was fetched, if any. If
    * fixupInfo has not yet been fetched for this queryContext, it is fetched
    * here.
+   *
+   * @returns {any?}
    */
   get fixupError() {
     if (!this.fixupInfo) {
@@ -1748,6 +1765,7 @@ export class UrlbarMuxer {
   /**
    * Unique name for the muxer, used by the context to sort results.
    * Not using a unique name will cause the newest registration to win.
+   *
    * @abstract
    */
   get name() {
@@ -1756,6 +1774,7 @@ export class UrlbarMuxer {
 
   /**
    * Sorts queryContext results in-place.
+   *
    * @param {UrlbarQueryContext} queryContext the context to sort results for.
    * @abstract
    */
@@ -1778,6 +1797,7 @@ export class UrlbarProvider {
   /**
    * Unique name for the provider, used by the context to filter on providers.
    * Not using a unique name will cause the newest registration to win.
+   *
    * @abstract
    */
   get name() {
@@ -1786,6 +1806,7 @@ export class UrlbarProvider {
 
   /**
    * The type of the provider, must be one of UrlbarUtils.PROVIDER_TYPE.
+   *
    * @abstract
    */
   get type() {
@@ -1816,6 +1837,7 @@ export class UrlbarProvider {
    * Whether this provider should be invoked for the given context.
    * If this method returns false, the providers manager won't start a query
    * with this provider, to save on resources.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
    * @returns {boolean} Whether this provider should be invoked for the search.
    * @abstract
@@ -1829,6 +1851,7 @@ export class UrlbarProvider {
    * zero and increasing in value.  Smaller values are lower priorities, and
    * larger values are higher priorities.  For a given query, `startQuery` is
    * called on only the active and highest-priority providers.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
    * @returns {number} The provider's priority for the given query.
    * @abstract
@@ -1840,11 +1863,13 @@ export class UrlbarProvider {
 
   /**
    * Starts querying.
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
-   * @note Extended classes should return a Promise resolved when the provider
+   *
+   * Note: Extended classes should return a Promise resolved when the provider
    *       is done searching AND returning results.
+   *
+   * @param {UrlbarQueryContext} queryContext The query context object
+   * @param {Function} addCallback Callback invoked by the provider to add a new
+   *        result. A UrlbarResult should be passed to it.
    * @abstract
    */
   startQuery(queryContext, addCallback) {
@@ -1853,6 +1878,7 @@ export class UrlbarProvider {
 
   /**
    * Cancels a running query,
+   *
    * @param {UrlbarQueryContext} queryContext the query context object to cancel
    *        query for.
    * @abstract
@@ -1883,6 +1909,7 @@ export class UrlbarProvider {
    * provider and the type of result.
    *
    * @param {UrlbarQueryContext} queryContext
+   *   The query context object.
    * @param {UrlbarResult} result
    *   The result that should be blocked.
    * @returns {boolean}
@@ -1901,13 +1928,13 @@ export class UrlbarProvider {
    * @param {string} state
    *   The state of the engagement, one of the following strings:
    *
-   *   * start
+   *   start
    *       A new query has started in the urlbar.
-   *   * engagement
+   *   engagement
    *       The user picked a result in the urlbar or used paste-and-go.
-   *   * abandonment
+   *   abandonment
    *       The urlbar was blurred (i.e., lost focus).
-   *   * discard
+   *   discard
    *       This doesn't correspond to a user action, but it means that the
    *       urlbar has discarded the engagement for some reason, and the
    *       `onEngagement` implementation should ignore it.
@@ -1921,14 +1948,14 @@ export class UrlbarProvider {
    *   it describes the search string and picked result.  For "engagement", it
    *   has the following properties:
    *
-   *   * {string} searchString
+   *   {string} searchString
    *       The search string for the engagement's query.
-   *   * {number} selIndex
+   *   {number} selIndex
    *       The index of the picked result.
-   *   * {string} selType
+   *   {string} selType
    *       The type of the selected result.  See TelemetryEvent.record() in
    *       UrlbarController.jsm.
-   *   * {string} provider
+   *   {string} provider
    *       The name of the provider that produced the picked result.
    *
    *   For "abandonment", only `searchString` is defined.
@@ -2024,11 +2051,12 @@ export class UrlbarProvider {
    * Defines whether the view should defer user selection events while waiting
    * for the first result from this provider.
    *
+   * Note: UrlbarEventBufferer has a timeout after which user events will be
+   *       processed regardless.
+   *
    * @returns {boolean} Whether the provider wants to defer user selection
    *          events.
-   * @see UrlbarEventBufferer
-   * @note UrlbarEventBufferer has a timeout after which user events will be
-   *       processed regardless.
+   * @see {@link UrlbarEventBufferer}
    */
   get deferUserSelection() {
     return false;
@@ -2050,9 +2078,10 @@ export class UrlbarProvider {
 export class SkippableTimer {
   /**
    * Creates a skippable timer for the given callback and time.
+   *
    * @param {object} options An object that configures the timer
    * @param {string} options.name The name of the timer, logged when necessary
-   * @param {function} options.callback To be invoked when requested
+   * @param {Function} options.callback To be invoked when requested
    * @param {number} options.time A delay in milliseconds to wait for
    * @param {boolean} options.reportErrorOnTimeout If true and the timer times
    *                  out, an error will be logged with Cu.reportError
@@ -2250,7 +2279,7 @@ export class L10nCache {
   /**
    * Fetches and caches strings that aren't already cached.
    *
-   * @param {array} idArgs
+   * @param {Array} idArgs
    *   An array of `{ id, args }` objects.
    */
   async ensureAll(idArgs) {
@@ -2291,9 +2320,13 @@ export class L10nCache {
 
   /**
    * Observer method from Services.obs.addObserver.
+   *
    * @param {nsISupports} subject
+   *   The subject of the notification.
    * @param {string} topic
+   *   The topic of the notification.
    * @param {string} data
+   *   The data attached to the notification.
    */
   async observe(subject, topic, data) {
     switch (topic) {
@@ -2358,7 +2391,7 @@ export class TaskQueue {
    * promise that will be resolved after awaiting the callback. The promise will
    * be resolved with the value returned by the callback.
    *
-   * @param {function} callback
+   * @param {Function} callback
    *   The function to queue.
    * @returns {Promise}
    *   Resolved after the task queue calls and awaits `callback`. It will be

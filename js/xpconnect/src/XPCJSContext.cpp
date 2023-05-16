@@ -778,7 +778,7 @@ static mozilla::Atomic<bool> sWeakRefsExposeCleanupSome(false);
 static mozilla::Atomic<bool> sIteratorHelpersEnabled(false);
 static mozilla::Atomic<bool> sShadowRealmsEnabled(false);
 #ifdef NIGHTLY_BUILD
-static mozilla::Atomic<bool> sArrayGroupingEnabled(true);
+static mozilla::Atomic<bool> sArrayGroupingEnabled(false);
 #endif
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 static mozilla::Atomic<bool> sChangeArrayByCopyEnabled(false);
@@ -1413,7 +1413,9 @@ WatchdogManager* XPCJSContext::GetWatchdogManager() {
 XPCJSContext* XPCJSContext::NewXPCJSContext() {
   XPCJSContext* self = new XPCJSContext();
   nsresult rv = self->Initialize();
-  if (NS_FAILED(rv)) {
+  if (rv == NS_ERROR_OUT_OF_MEMORY) {
+    mozalloc_handle_oom(0);
+  } else if (NS_FAILED(rv)) {
     MOZ_CRASH("new XPCJSContext failed to initialize.");
   }
 

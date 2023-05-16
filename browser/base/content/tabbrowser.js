@@ -29,9 +29,6 @@
           "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
         PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
       });
-      XPCOMUtils.defineLazyModuleGetters(this, {
-        E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-      });
       XPCOMUtils.defineLazyServiceGetters(this, {
         MacSharingService: [
           "@mozilla.org/widget/macsharingservice;1",
@@ -106,6 +103,8 @@
     _tabFilters: new Map(),
 
     _isBusy: false,
+
+    _awaitingToggleCaretBrowsingPrompt: false,
 
     arrowKeysShouldWrap: AppConstants == "macosx",
 
@@ -4231,6 +4230,9 @@
       if (!aTab.selected) {
         return null;
       }
+      if (FirefoxViewHandler.tab) {
+        aExcludeTabs.push(FirefoxViewHandler.tab);
+      }
 
       let excludeTabs = new Set(aExcludeTabs);
 
@@ -5431,7 +5433,7 @@
       const kPrefCaretBrowsingOn = "accessibility.browsewithcaret";
 
       var isEnabled = Services.prefs.getBoolPref(kPrefShortcutEnabled);
-      if (!isEnabled) {
+      if (!isEnabled || this._awaitingToggleCaretBrowsingPrompt) {
         return;
       }
 
@@ -5445,20 +5447,28 @@
         var checkValue = { value: false };
         var promptService = Services.prompt;
 
-        var buttonPressed = promptService.confirmEx(
-          window,
-          gTabBrowserBundle.GetStringFromName(
-            "browsewithcaret.checkWindowTitle"
-          ),
-          gTabBrowserBundle.GetStringFromName("browsewithcaret.checkLabel"),
-          // Make "No" the default:
-          promptService.STD_YES_NO_BUTTONS | promptService.BUTTON_POS_1_DEFAULT,
-          null,
-          null,
-          null,
-          gTabBrowserBundle.GetStringFromName("browsewithcaret.checkMsg"),
-          checkValue
-        );
+        try {
+          this._awaitingToggleCaretBrowsingPrompt = true;
+          var buttonPressed = promptService.confirmEx(
+            window,
+            gTabBrowserBundle.GetStringFromName(
+              "browsewithcaret.checkWindowTitle"
+            ),
+            gTabBrowserBundle.GetStringFromName("browsewithcaret.checkLabel"),
+            // Make "No" the default:
+            promptService.STD_YES_NO_BUTTONS |
+              promptService.BUTTON_POS_1_DEFAULT,
+            null,
+            null,
+            null,
+            gTabBrowserBundle.GetStringFromName("browsewithcaret.checkMsg"),
+            checkValue
+          );
+        } catch (ex) {
+          return;
+        } finally {
+          this._awaitingToggleCaretBrowsingPrompt = false;
+        }
         if (buttonPressed != 0) {
           if (checkValue.value) {
             try {
@@ -6765,6 +6775,13 @@
             // Removing the tab's image here causes flickering, wait until the
             // load is complete.
             this.mBrowser.mIconURL = null;
+          }
+
+          if (
+            aRequest instanceof Ci.nsIChannel &&
+            !isBlankPageURL(aRequest.originalURI.spec)
+          ) {
+            this.mBrowser.originalURI = aRequest.originalURI;
           }
         }
 

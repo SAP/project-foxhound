@@ -14,9 +14,11 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WindowButtonType.h"
 #include "nsColor.h"
 #include "nsCoord.h"
 #include "nsMargin.h"
@@ -140,7 +142,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   // MathML  mathvariant support
   mozilla::StyleMathVariant mMathVariant;
   // math-style support (used for MathML displaystyle)
-  uint8_t mMathStyle;
+  mozilla::StyleMathStyle mMathStyle;
 
   // allow different min font-size for certain cases
   uint8_t mMinFontSizeRatio;  // percent * 100
@@ -1359,11 +1361,31 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
   mozilla::StyleShapeOutside mShapeOutside;
 
+  mozilla::Maybe<mozilla::WindowButtonType> GetWindowButtonType() const {
+    if (MOZ_LIKELY(mDefaultAppearance == mozilla::StyleAppearance::None)) {
+      return mozilla::Nothing();
+    }
+    switch (mDefaultAppearance) {
+      case mozilla::StyleAppearance::MozWindowButtonMaximize:
+      case mozilla::StyleAppearance::MozWindowButtonRestore:
+        return Some(mozilla::WindowButtonType::Maximize);
+      case mozilla::StyleAppearance::MozWindowButtonMinimize:
+        return Some(mozilla::WindowButtonType::Minimize);
+      case mozilla::StyleAppearance::MozWindowButtonClose:
+        return Some(mozilla::WindowButtonType::Close);
+      default:
+        return mozilla::Nothing();
+    }
+  }
+
   bool HasAppearance() const {
     return EffectiveAppearance() != mozilla::StyleAppearance::None;
   }
 
   mozilla::StyleAppearance EffectiveAppearance() const {
+    if (MOZ_LIKELY(mAppearance == mozilla::StyleAppearance::None)) {
+      return mAppearance;
+    }
     switch (mAppearance) {
       case mozilla::StyleAppearance::Auto:
       case mozilla::StyleAppearance::Button:
@@ -1705,7 +1727,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     auto contain = mContain;
     // content-visibility and container-type implicitly enable some containment
     // flags.
-    if (MOZ_LIKELY(!mContainerType) &&
+    if (MOZ_LIKELY(mContainerType == mozilla::StyleContainerType::Normal) &&
         MOZ_LIKELY(mContentVisibility == StyleContentVisibility::Visible)) {
       return contain;
     }
@@ -1726,18 +1748,24 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
         break;
     }
 
-    if (mContainerType & mozilla::StyleContainerType::SIZE) {
-      // https://drafts.csswg.org/css-contain-3/#valdef-container-type-size:
-      //     Applies layout containment, style containment, and size containment
-      //     to the principal box.
-      contain |= mozilla::StyleContain::LAYOUT | mozilla::StyleContain::STYLE |
-                 mozilla::StyleContain::SIZE;
-    } else if (mContainerType & mozilla::StyleContainerType::INLINE_SIZE) {
-      // https://drafts.csswg.org/css-contain-3/#valdef-container-type-inline-size:
-      //     Applies layout containment, style containment, and inline-size
-      //     containment to the principal box.
-      contain |= mozilla::StyleContain::LAYOUT | mozilla::StyleContain::STYLE |
-                 mozilla::StyleContain::INLINE_SIZE;
+    switch (mContainerType) {
+      case mozilla::StyleContainerType::Normal:
+        break;
+      case mozilla::StyleContainerType::InlineSize:
+        // https://drafts.csswg.org/css-contain-3/#valdef-container-type-inline-size:
+        //     Applies layout containment, style containment, and inline-size
+        //     containment to the principal box.
+        contain |= mozilla::StyleContain::LAYOUT |
+                   mozilla::StyleContain::STYLE |
+                   mozilla::StyleContain::INLINE_SIZE;
+        break;
+      case mozilla::StyleContainerType::Size:
+        // https://drafts.csswg.org/css-contain-3/#valdef-container-type-size:
+        //     Applies layout containment, style containment, and size
+        //     containment to the principal box.
+        contain |= mozilla::StyleContain::LAYOUT |
+                   mozilla::StyleContain::STYLE | mozilla::StyleContain::SIZE;
+        break;
     }
 
     return contain;

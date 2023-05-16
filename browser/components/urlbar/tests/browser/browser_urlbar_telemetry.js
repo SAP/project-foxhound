@@ -68,7 +68,7 @@ async function clickURLBarSuggestion(resultTitle, button = 1) {
  * Create an engine to generate search suggestions and add it as default
  * for this test.
  *
- * @param {function} taskFn
+ * @param {Function} taskFn
  *   The function to run with the new search engine as default.
  */
 async function withNewSearchEngine(taskFn) {
@@ -96,10 +96,7 @@ add_setup(async function() {
   await SearchTestUtils.installSearchExtension({
     name: "MozSearch",
     keyword: "mozalias",
-    // TODO: Bug 1698568. This should just be `search_url: "https://example.com"`
-    // with the default value of `search_url_get_params`.
-    search_url: "https://example.com/?q={searchTerms}",
-    search_url_get_params: "",
+    search_url: "https://example.com/",
   });
 
   // Make it the default search engine.
@@ -384,6 +381,10 @@ add_task(async function test_oneOff_enterSelection() {
   );
 
   await withNewSearchEngine(async function() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.maxHistoricalSearchSuggestions", 1]],
+    });
+
     let tab = await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
       "about:blank"
@@ -419,6 +420,7 @@ add_task(async function test_oneOff_enterSelection() {
       1
     );
 
+    await SpecialPowers.popPrefEnv();
     BrowserTestUtils.removeTab(tab);
   });
 });
@@ -1057,9 +1059,12 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     1
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  let scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  console.log(scalars);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     1
   );
 
@@ -1076,9 +1081,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     1
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     1
   );
 
@@ -1095,9 +1102,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     2
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     2
   );
 
@@ -1114,9 +1123,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     3
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     3
   );
 
@@ -1138,9 +1149,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     4
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     4
   );
 
@@ -1157,9 +1170,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     5
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     5
   );
 
@@ -1176,9 +1191,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     6
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     6
   );
 
@@ -1195,9 +1212,11 @@ add_task(async function test_privateWindow() {
     "other-MozSearch.urlbar",
     7
   );
-  TelemetryTestUtils.assertKeyedHistogramSum(
-    search_hist,
-    "example.in-content:organic:none",
+  scalars = TelemetryTestUtils.getProcessScalars("parent", true);
+  TelemetryTestUtils.assertKeyedScalar(
+    scalars,
+    "browser.search.content.urlbar",
+    "example:organic:none",
     7
   );
 

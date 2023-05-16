@@ -238,6 +238,16 @@ module.exports = {
       path: "server/protocol.js",
       description: "Measure RDP/protocol.js performance",
     },
+    {
+      name: "source-map-loader",
+      path: "source-map/source-map-loader.js",
+      description: "Measure source map loader performance",
+    },
+    {
+      name: "source-map-library",
+      path: "source-map/source-map-library.js",
+      description: "Measure source map library performance",
+    },
     // ⚠  Adding new individual tests slows down DAMP execution ⚠
     // ⚠  Consider contributing to custom.${tool} rather than adding isolated tests ⚠
     // ⚠  See https://firefox-source-docs.mozilla.org/devtools/tests/writing-perf-tests.html ⚠

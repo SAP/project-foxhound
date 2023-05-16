@@ -136,10 +136,10 @@ add_task(async function notBumped_url() {
 });
 
 /**
- * Performs a search and picks the first result. The search string is assumed
- * to trigger an autofill result.
+ * Performs a search and picks the first result.
  *
  * @param {string} searchString
+ *   The search string. Assumed to trigger an autofill result.
  * @param {string} autofilledValue
  *   The input's expected value after autofill occurs.
  */
@@ -165,9 +165,11 @@ async function triggerAutofillAndPickResult(searchString, autofilledValue) {
 /**
  * Gets the use count of an input history record.
  *
- * @param {string} url
+ * @param {object} options
+ *   Options object.
+ * @param {string} [options.url]
  *   The URL of the `moz_places` row corresponding to the record.
- * @param {string} input
+ * @param {string} [options.input]
  *   The `input` value in the record.
  * @returns {number}
  *   The use count. If no record exists with the URL and/or input, undefined is

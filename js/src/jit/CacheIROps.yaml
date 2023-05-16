@@ -2775,6 +2775,13 @@
     set: ObjId
     obj: ObjId
 
+- name: SetSizeResult
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    set: ObjId
+
 - name: MapHasResult
   shared: true
   transpile: true
@@ -2871,6 +2878,13 @@
     map: ObjId
     obj: ObjId
 
+- name: MapSizeResult
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    map: ObjId
+
 - name: ArrayFromArgumentsObjectResult
   shared: true
   transpile: true
@@ -2921,3 +2935,12 @@
   args:
     val: ValId
     mustBeRecovered: BoolImm
+
+#ifdef FUZZING_JS_FUZZILLI
+- name: FuzzilliHashResult
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    val: ValId
+#endif

@@ -4120,18 +4120,9 @@ void ReportDeprecation(nsIGlobalObject* aGlobal, nsIURI* aURI,
   // as the spec may be arbitrarily long and we would like to avoid
   // copying it.
   nsAutoCString specOrScheme;
-  nsresult rv;
-  if (aURI->SchemeIs("data")) {
-    specOrScheme.Assign("data:..."_ns);
-  } else {
-    // Anonymize the URL.
-    // Strip the URL of any possible username/password and make it ready to be
-    // presented in the UI.
-    nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(aURI);
-    rv = exposableURI->GetSpec(specOrScheme);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return;
-    }
+  nsresult rv = nsContentUtils::AnonymizeURI(aURI, specOrScheme);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
   }
 
   nsAutoString type;
@@ -4369,25 +4360,16 @@ bool IsGetterEnabled(JSContext* aCx, JS::Handle<JSObject*> aObj,
 
 already_AddRefed<Promise> CreateRejectedPromiseFromThrownException(
     JSContext* aCx, ErrorResult& aError) {
-  JS::Rooted<JS::Value> exn(aCx);
-  if (!JS_GetPendingException(aCx, &exn)) {
+  if (!JS_IsExceptionPending(aCx)) {
     // If there is no pending exception here but we're ending up in this code,
     // that means the callee threw an uncatchable exception. Just propagate that
-    // out as-is.
+    // out as-is. Promise::RejectWithExceptionFromContext also checks this, but
+    // we want to bail out here before trying to get the globals.
     aError.ThrowUncatchableException();
     return nullptr;
   }
 
-  JS_ClearPendingException(aCx);
-
-  JS::Rooted<JSObject*> globalObj(aCx, GetEntryGlobal()->GetGlobalJSObject());
-  JSAutoRealm ar(aCx, globalObj);
-  if (!JS_WrapValue(aCx, &exn)) {
-    aError.StealExceptionFromJSContext(aCx);
-    return nullptr;
-  }
-
-  GlobalObject promiseGlobal(aCx, globalObj);
+  GlobalObject promiseGlobal(aCx, GetEntryGlobal()->GetGlobalJSObject());
   if (promiseGlobal.Failed()) {
     aError.StealExceptionFromJSContext(aCx);
     return nullptr;
@@ -4400,7 +4382,7 @@ already_AddRefed<Promise> CreateRejectedPromiseFromThrownException(
     return nullptr;
   }
 
-  return Promise::Reject(global, aCx, exn, aError);
+  return Promise::RejectWithExceptionFromContext(global, aCx, aError);
 }
 
 }  // namespace binding_detail

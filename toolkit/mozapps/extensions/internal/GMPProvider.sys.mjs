@@ -4,21 +4,19 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   GMPInstallManager: "resource://gre/modules/GMPInstallManager.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 import {
@@ -74,6 +72,12 @@ XPCOMUtils.defineLazyGetter(lazy, "gmpService", () =>
   Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(
     Ci.mozIGeckoMediaPluginChromeService
   )
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "gmpProviderEnabled",
+  GMPPrefs.KEY_PROVIDER_ENABLED
 );
 
 var gLogger;
@@ -831,7 +835,7 @@ var GMPProvider = {
   },
 
   get isEnabled() {
-    return GMPPrefs.getBool(GMPPrefs.KEY_PROVIDER_ENABLED, false);
+    return lazy.gmpProviderEnabled;
   },
 
   buildPluginList() {

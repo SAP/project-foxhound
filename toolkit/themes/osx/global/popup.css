@@ -33,7 +33,7 @@ panel[titlebar] {
   appearance: none; /* to disable rounded corners */
 }
 
-panel[type="arrow"] {
+:is(panel, menupopup)[type="arrow"] {
   appearance: none;
   background: transparent;
 }
@@ -48,6 +48,8 @@ panel[type="arrow"] {
   box-shadow: 0 0 0 1px var(--panel-border-color);
   padding: var(--panel-padding);
   width: var(--panel-width);
+  min-width: 0;
+  min-height: 0;
   border: none;
 }
 
@@ -55,7 +57,7 @@ panel[type="arrow"] {
   -moz-box-orient: vertical;
 }
 
-panel[type="arrow"]::part(content) {
+:is(panel, menupopup)[type="arrow"]::part(content) {
   margin: 1px;
 }
 

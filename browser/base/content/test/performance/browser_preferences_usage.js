@@ -112,17 +112,9 @@ add_task(async function startup() {
     "network.loadinfo.skip_type_assertion": {
       // This is accessed in debug only.
     },
-    "extensions.getAddons.cache.enabled": {
-      min: 4,
-      max: 55,
-    },
     "chrome.override_package.global": {
       min: 0,
       max: 50,
-    },
-    "media.gmp-provider.enabled": {
-      min: 0,
-      max: 46,
     },
   };
 
@@ -253,11 +245,11 @@ add_task(async function navigate_around() {
       // The following 2 sandbox prefs are covered by
       // https://bugzilla.mozilla.org/show_bug.cgi?id=1639494
       knownProblematicPrefs["security.sandbox.content.read_path_whitelist"] = {
-        min: 49,
+        min: 48,
         max: 55,
       };
       knownProblematicPrefs["security.sandbox.logging.enabled"] = {
-        min: 49,
+        min: 48,
         max: 55,
       };
     }

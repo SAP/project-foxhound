@@ -1,7 +1,9 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -9,8 +11,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   DoHController: "resource:///modules/DoHController.jsm",
   DoHConfigController: "resource:///modules/DoHConfig.jsm",
   DoHTestUtils: "resource://testing-common/DoHTestUtils.jsm",
-  Preferences: "resource://gre/modules/Preferences.jsm",
-  RegionTestUtils: "resource://testing-common/RegionTestUtils.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
 });
 

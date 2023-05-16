@@ -16,16 +16,17 @@ class FileSystemManagerChild : public PFileSystemManagerChild {
  public:
   NS_INLINE_DECL_REFCOUNTING_WITH_DESTROY(FileSystemManagerChild, Destroy())
 
+  virtual void CloseAll();
+
+  virtual void Shutdown();
+
   already_AddRefed<PFileSystemAccessHandleChild>
-  AllocPFileSystemAccessHandleChild(const FileDescriptor& aFileDescriptor);
+  AllocPFileSystemAccessHandleChild();
+
+  already_AddRefed<PFileSystemWritableFileStreamChild>
+  AllocPFileSystemWritableFileStreamChild();
 
   ::mozilla::ipc::IPCResult RecvCloseAll(CloseAllResolver&& aResolver);
-
-  virtual void Shutdown() {
-    if (CanSend()) {
-      Close();
-    }
-  }
 
  protected:
   virtual ~FileSystemManagerChild() = default;

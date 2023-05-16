@@ -5,8 +5,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { AsyncShutdown } = ChromeUtils.import(
   "resource://gre/modules/AsyncShutdown.jsm"
@@ -14,8 +14,8 @@ const { AsyncShutdown } = ChromeUtils.import(
 const { PromiseUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { DeferredTask } = ChromeUtils.import(
-  "resource://gre/modules/DeferredTask.jsm"
+const { DeferredTask } = ChromeUtils.importESModule(
+  "resource://gre/modules/DeferredTask.sys.mjs"
 );
 const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
@@ -482,20 +482,6 @@ var Impl = {
 
     let pingData = this.assemblePing(aType, aPayload, aOptions);
     this._log.trace("submitExternalPing - ping assembled, id: " + pingData.id);
-
-    if (aType == PING_TYPE_MAIN) {
-      try {
-        Glean.legacyTelemetry.profileSubsessionCounter.set(
-          aPayload?.info?.profileSubsessionCounter
-        );
-        GleanPings.pseudoMain.submit(
-          aPayload?.info?.reason?.replaceAll("-", "_")
-        );
-      } catch (e) {
-        this._log.warn("submitExternalPing - Failed to send 'pseudo-main'", e);
-        // Definitely continue, even if things explode.
-      }
-    }
 
     if (aOptions.useEncryption === true) {
       try {

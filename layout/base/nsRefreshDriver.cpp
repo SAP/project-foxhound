@@ -676,15 +676,32 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
   void NotifyVsyncOnMainThread(const VsyncEvent& aVsyncEvent) {
     MOZ_ASSERT(NS_IsMainThread());
 
-    // This clears the input handling start time.
-    InputTaskManager::Get()->SetInputHandlingStartTime(TimeStamp());
-
     mRecentVsync = aVsyncEvent.mTime;
     mRecentVsyncId = aVsyncEvent.mId;
     if (!mSuspendVsyncPriorityTicksUntil.IsNull() &&
         mSuspendVsyncPriorityTicksUntil > aVsyncEvent.mTime) {
       if (ShouldGiveNonVsyncTasksMoreTime()) {
-        // Wait for the next tick.
+        if (!IsAnyToplevelContentPageLoading()) {
+          // If pages aren't loading and there aren't other tasks to run,
+          // trigger the pending vsync notification.
+          static bool sHasPendingLowPrioTask = false;
+          if (!sHasPendingLowPrioTask) {
+            sHasPendingLowPrioTask = true;
+            NS_DispatchToMainThreadQueue(
+                NS_NewRunnableFunction(
+                    "NotifyVsyncOnMainThread[low priority]",
+                    [self = RefPtr{this}, event = aVsyncEvent]() {
+                      sHasPendingLowPrioTask = false;
+                      if (self->mRecentVsync == event.mTime &&
+                          self->mRecentVsyncId == event.mId &&
+                          !self->ShouldGiveNonVsyncTasksMoreTime()) {
+                        self->mSuspendVsyncPriorityTicksUntil = TimeStamp();
+                        self->NotifyVsyncOnMainThread(event);
+                      }
+                    }),
+                EventQueuePriority::Low);
+          }
+        }
         return;
       }
 
@@ -2876,6 +2893,19 @@ void nsRefreshDriver::Thaw() {
 }
 
 void nsRefreshDriver::FinishedWaitingForTransaction() {
+  if (mSkippedPaints && !IsInRefresh() &&
+      (HasObservers() || HasImageRequests()) && CanDoCatchUpTick()) {
+    NS_DispatchToCurrentThreadQueue(
+        NS_NewRunnableFunction(
+            "nsRefreshDriver::FinishedWaitingForTransaction",
+            [self = RefPtr{this}]() {
+              if (self->CanDoCatchUpTick()) {
+                self->Tick(self->mActiveTimer->MostRecentRefreshVsyncId(),
+                           self->mActiveTimer->MostRecentRefresh());
+              }
+            }),
+        EventQueuePriority::Vsync);
+  }
   mWaitingForTransaction = false;
   mSkippedPaints = false;
 }

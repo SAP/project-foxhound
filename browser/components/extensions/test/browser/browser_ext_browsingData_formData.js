@@ -13,44 +13,18 @@ ChromeUtils.defineESModuleGetters(this, {
 
 const REFERENCE_DATE = Date.now();
 
-function countEntries(fieldname, message, expected) {
-  return new Promise((resolve, reject) => {
-    let callback = {
-      handleResult: result => {
-        is(result, expected, message);
-        resolve();
-      },
-      handleError: reject,
-    };
-
-    FormHistory.count({ fieldname }, callback);
-  });
+async function countEntries(fieldname, message, expected) {
+  let count = await FormHistory.count({ fieldname });
+  is(count, expected, message);
 }
 
 async function setupFormHistory() {
-  function searchEntries(terms, params) {
-    return new Promise((resolve, reject) => {
-      let callback = {
-        handleResult: resolve,
-        handleError: reject,
-      };
-
-      FormHistory.search(terms, params, callback);
-    });
-  }
-
-  function update(changes) {
-    return new Promise((resolve, reject) => {
-      let callback = {
-        handleError: reject,
-        handleCompletion: resolve,
-      };
-      FormHistory.update(changes, callback);
-    });
+  async function searchFirstEntry(terms, params) {
+    return (await FormHistory.search(terms, params))[0];
   }
 
   // Make sure we've got a clean DB to start with, then add the entries we'll be testing.
-  await update([
+  await FormHistory.update([
     { op: "remove" },
     {
       op: "add",
@@ -71,16 +45,28 @@ async function setupFormHistory() {
 
   // Age the entries to the proper vintage.
   let timestamp = PlacesUtils.toPRTime(REFERENCE_DATE);
-  let result = await searchEntries(["guid"], { fieldname: "reference" });
-  await update({ op: "update", firstUsed: timestamp, guid: result.guid });
+  let result = await searchFirstEntry(["guid"], { fieldname: "reference" });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: result.guid,
+  });
 
   timestamp = PlacesUtils.toPRTime(REFERENCE_DATE - 10000);
-  result = await searchEntries(["guid"], { fieldname: "10secondsAgo" });
-  await update({ op: "update", firstUsed: timestamp, guid: result.guid });
+  result = await searchFirstEntry(["guid"], { fieldname: "10secondsAgo" });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: result.guid,
+  });
 
   timestamp = PlacesUtils.toPRTime(REFERENCE_DATE - 10000 * 60);
-  result = await searchEntries(["guid"], { fieldname: "10minutesAgo" });
-  await update({ op: "update", firstUsed: timestamp, guid: result.guid });
+  result = await searchFirstEntry(["guid"], { fieldname: "10minutesAgo" });
+  await FormHistory.update({
+    op: "update",
+    firstUsed: timestamp,
+    guid: result.guid,
+  });
 
   // Sanity check.
   await countEntries(

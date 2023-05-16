@@ -1,4 +1,10 @@
-import { EventEmitter, FakePrefs, GlobalOverrider } from "test/unit/utils";
+import {
+  EventEmitter,
+  FakePrefs,
+  GlobalOverrider,
+  FakeConsoleAPI,
+  FakeLogger,
+} from "test/unit/utils";
 import Adapter from "enzyme-adapter-react-16";
 import { chaiAssertions } from "test/schemas/pings";
 import chaiJsonSchema from "chai-json-schema";
@@ -8,10 +14,8 @@ import FxMSCommonSchema from "../../content-src/asrouter/schemas/FxMSCommon.sche
 enzyme.configure({ adapter: new Adapter() });
 
 // Cause React warnings to make tests that trigger them fail
-const origConsoleError = console.error; // eslint-disable-line no-console
-// eslint-disable-next-line no-console
+const origConsoleError = console.error;
 console.error = function(msg, ...args) {
-  // eslint-disable-next-line no-console
   origConsoleError.apply(console, [msg, ...args]);
 
   if (
@@ -69,22 +73,6 @@ class JSWindowActorChild {
   }
 }
 
-class Logger {
-  constructor(name) {
-    this.name = name;
-  }
-
-  warn() {}
-}
-
-function ConsoleAPI() {}
-ConsoleAPI.prototype.debug = () => {};
-ConsoleAPI.prototype.trace = () => {};
-// Comment out the above prototype assignments and uncomment the ones below to get more
-// ASRouter logging in tests:
-//ConsoleAPI.prototype.debug = console.debug;
-//ConsoleAPI.prototype.trace = console.trace;
-
 // Detect plain object passed to lazy getter APIs, and set its prototype to
 // global object, and return the global object for further modification.
 // Returns the object if it's not plain object.
@@ -132,7 +120,10 @@ const TEST_GLOBAL = {
     platform: "win",
   },
   ASRouterPreferences: {
-    console: new ConsoleAPI(),
+    console: new FakeConsoleAPI({
+      maxLogLevel: "off", // set this to "debug" or "all" to get more ASRouter logging in tests
+      prefix: "ASRouter",
+    }),
   },
   BrowserUtils: {
     sendToDeviceEmailsSupported() {
@@ -185,7 +176,7 @@ const TEST_GLOBAL = {
     },
     isSuccessCode: () => true,
   },
-  ConsoleAPI,
+  ConsoleAPI: FakeConsoleAPI,
   // NB: These are functions/constructors
   // eslint-disable-next-line object-shorthand
   ContentSearchUIController: function() {},
@@ -230,6 +221,15 @@ const TEST_GLOBAL = {
       },
     },
     "@mozilla.org/updates/update-checker;1": { createInstance() {} },
+    "@mozilla.org/widget/useridleservice;1": {
+      getService() {
+        return {
+          idleTime: 0,
+          addIdleObserver() {},
+          removeIdleObserver() {},
+        };
+      },
+    },
     "@mozilla.org/streamConverters;1": {
       getService() {
         return this;
@@ -266,6 +266,8 @@ const TEST_GLOBAL = {
     registerCallback: (id, init, uninit) => {},
     unregisterCallback: id => {},
   },
+  setTimeout: window.setTimeout.bind(window),
+  clearTimeout: window.clearTimeout.bind(window),
   fetch() {},
   // eslint-disable-next-line object-shorthand
   Image: function() {}, // NB: This is a function/constructor
@@ -354,6 +356,7 @@ const TEST_GLOBAL = {
   PrivateBrowsingUtils: {
     isBrowserPrivate: () => false,
     isWindowPrivate: () => false,
+    permanentPrivateBrowsing: false,
   },
   DownloadsViewUI: {
     getDisplayName: () => "filename.ext",
@@ -599,7 +602,7 @@ const TEST_GLOBAL = {
     addExpirationFilter() {},
     removeExpirationFilter() {},
   },
-  Logger,
+  Logger: FakeLogger,
   getFxAccountsSingleton() {},
   AboutNewTab: {},
   Glean: {

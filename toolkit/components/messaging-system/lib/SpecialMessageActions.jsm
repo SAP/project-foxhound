@@ -13,12 +13,16 @@ const NETWORK_TRR_MODE_PREF = "network.trr.mode";
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   UITour: "resource:///modules/UITour.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
-  MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   Spotlight: "resource://activity-stream/lib/Spotlight.jsm",
+  ColorwayClosetOpener: "resource:///modules/ColorwayClosetOpener.jsm",
 });
 
 const SpecialMessageActions = {
@@ -185,6 +189,7 @@ const SpecialMessageActions = {
       "browser.startup.homepage",
       "browser.privateWindowSeparation.enabled",
       "browser.firefox-view.feature-tour",
+      "browser.pdfjs.feature-tour",
     ];
 
     if (!allowedPrefs.includes(pref.name)) {
@@ -403,6 +408,12 @@ const SpecialMessageActions = {
           action.data.selector
         );
         clickElement?.click();
+        break;
+      case "OPEN_FIREFOX_VIEW_AND_COLORWAYS_MODAL":
+        window.FirefoxViewHandler.openTab();
+        lazy.ColorwayClosetOpener.openModal({
+          source: "firefoxview",
+        });
         break;
     }
   },

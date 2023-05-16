@@ -8,8 +8,8 @@
 var gTimeoutSeconds = 45;
 var gConfig;
 
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -212,8 +212,8 @@ function Tester(aTests, structuredLogger, aCallback) {
   this.TestUtils = ChromeUtils.import(
     "resource://testing-common/TestUtils.jsm"
   ).TestUtils;
-  this.PromiseTestUtils = ChromeUtils.import(
-    "resource://testing-common/PromiseTestUtils.jsm"
+  this.PromiseTestUtils = ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
   ).PromiseTestUtils;
   this.Assert = ChromeUtils.import(
     "resource://testing-common/Assert.jsm"

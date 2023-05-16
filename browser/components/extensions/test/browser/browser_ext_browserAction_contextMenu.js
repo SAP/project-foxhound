@@ -81,6 +81,8 @@ async function assertTelemetryMatches(events) {
   });
 }
 
+loadTestSubscript("head_unified_extensions.js");
+
 add_task(async function test_setup() {
   // Clear any previosuly collected telemetry event.
   Services.telemetry.clearEvents();
@@ -90,30 +92,38 @@ add_task(async function test_setup() {
   );
 });
 
-add_task(async function browseraction_popup_contextmenu() {
+async function browseraction_popup_contextmenu_helper(win) {
   let extension = ExtensionTestUtils.loadExtension(extData);
   await extension.startup();
 
-  await clickBrowserAction(extension, window);
+  await clickBrowserAction(extension, win);
 
-  let contentAreaContextMenu = await openContextMenuInPopup(extension);
+  let contentAreaContextMenu = await openContextMenuInPopup(
+    extension,
+    undefined,
+    win
+  );
   let item = contentAreaContextMenu.getElementsByAttribute(
     "label",
     "Click me!"
   );
   is(item.length, 1, "contextMenu item for page was found");
-  await closeContextMenu(contentAreaContextMenu);
+  await closeContextMenu(contentAreaContextMenu, win);
 
   await extension.unload();
-});
+}
 
-add_task(async function browseraction_popup_contextmenu_hidden_items() {
+async function browseraction_popup_contextmenu_hidden_items_helper(win) {
   let extension = ExtensionTestUtils.loadExtension(extData);
   await extension.startup();
 
-  await clickBrowserAction(extension);
+  await clickBrowserAction(extension, win);
 
-  let contentAreaContextMenu = await openContextMenuInPopup(extension, "#text");
+  let contentAreaContextMenu = await openContextMenuInPopup(
+    extension,
+    "#text",
+    win
+  );
 
   let item, state;
   for (const itemID in contextMenuItems) {
@@ -136,17 +146,18 @@ add_task(async function browseraction_popup_contextmenu_hidden_items() {
   await closeContextMenu(contentAreaContextMenu);
 
   await extension.unload();
-});
+}
 
-add_task(async function browseraction_popup_image_contextmenu() {
+async function browseraction_popup_image_contextmenu_helper(win) {
   let extension = ExtensionTestUtils.loadExtension(extData);
   await extension.startup();
 
-  await clickBrowserAction(extension);
+  await clickBrowserAction(extension, win);
 
   let contentAreaContextMenu = await openContextMenuInPopup(
     extension,
-    "#testimg"
+    "#testimg",
+    win
   );
 
   let item = contentAreaContextMenu.querySelector("#context-copyimage");
@@ -156,9 +167,10 @@ add_task(async function browseraction_popup_image_contextmenu() {
   await closeContextMenu(contentAreaContextMenu);
 
   await extension.unload();
-});
+}
 
 function openContextMenu(menuId, targetId, win = window) {
+  info(`Open context menu ${menuId} at ${targetId}`);
   return openChromeContextMenu(menuId, "#" + CSS.escape(targetId), win);
 }
 
@@ -172,15 +184,20 @@ function waitForElementShown(element) {
   });
 }
 
-add_task(async function browseraction_contextmenu_manage_extension() {
+async function browseraction_contextmenu_manage_extension_helper(win) {
   // Do the customize mode shuffle in a separate window, because it interferes
   // with other tests.
-  let win = await BrowserTestUtils.openNewBrowserWindow();
+  // let win = await BrowserTestUtils.openNewBrowserWindow();
+
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
+
   let id = "addon_id@example.com";
-  let buttonId = `${makeWidgetId(id)}-browser-action`;
+  let buttonId = `${makeWidgetId(id)}-BAP`;
+  let nodeId = `${makeWidgetId(id)}-browser-action`;
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: {
+      browser_specific_settings: {
         gecko: { id },
       },
       browser_action: {},
@@ -232,7 +249,7 @@ add_task(async function browseraction_contextmenu_manage_extension() {
   }
 
   async function testContextMenu(menuId, customizing) {
-    info(`Open browserAction context menu in ${menuId}`);
+    info(`Open browserAction context menu in ${menuId} on ${buttonId}`);
     let menu = await openContextMenu(menuId, buttonId, win);
     await checkVisibility(menu, true);
 
@@ -307,7 +324,7 @@ add_task(async function browseraction_contextmenu_manage_extension() {
 
     info("Pin the browserAction and another button to the overflow menu");
     CustomizableUI.addWidgetToArea(
-      buttonId,
+      nodeId,
       CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
     );
     CustomizableUI.addWidgetToArea(
@@ -341,7 +358,7 @@ add_task(async function browseraction_contextmenu_manage_extension() {
     await testContextMenu(overflowMenuCtxMenu.id, customizing);
 
     info("Restore initial state");
-    CustomizableUI.addWidgetToArea(buttonId, CustomizableUI.AREA_NAVBAR);
+    CustomizableUI.addWidgetToArea(nodeId, CustomizableUI.AREA_NAVBAR);
     CustomizableUI.addWidgetToArea(otherButtonId, CustomizableUI.AREA_NAVBAR);
 
     if (customizing) {
@@ -389,15 +406,14 @@ add_task(async function browseraction_contextmenu_manage_extension() {
   win.gBrowser.removeTab(dummyTab);
   await extension.unload();
 
-  await BrowserTestUtils.closeWindow(win);
-});
+  // await BrowserTestUtils.closeWindow(win);
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
+}
 
-async function runTestContextMenu({
-  buttonId,
-  customizing,
-  testContextMenu,
-  win,
-}) {
+async function runTestContextMenu({ id, customizing, testContextMenu, win }) {
+  let widgetId = makeWidgetId(id);
+  let nodeId = `${widgetId}-browser-action`;
   if (customizing) {
     info("Enter customize mode");
     let customizationReady = BrowserTestUtils.waitForEvent(
@@ -413,7 +429,7 @@ async function runTestContextMenu({
 
   info("Pin the browserAction and another button to the overflow menu");
   CustomizableUI.addWidgetToArea(
-    buttonId,
+    nodeId,
     CustomizableUI.AREA_FIXED_OVERFLOW_PANEL
   );
 
@@ -434,7 +450,7 @@ async function runTestContextMenu({
   await testContextMenu("customizationPanelItemContextMenu", customizing);
 
   info("Restore initial state");
-  CustomizableUI.addWidgetToArea(buttonId, CustomizableUI.AREA_NAVBAR);
+  CustomizableUI.addWidgetToArea(nodeId, CustomizableUI.AREA_NAVBAR);
 
   if (customizing) {
     info("Exit customize mode");
@@ -447,17 +463,21 @@ async function runTestContextMenu({
   }
 }
 
-add_task(async function browseraction_contextmenu_remove_extension() {
+async function browseraction_contextmenu_remove_extension_helper(win) {
   // Do the customize mode shuffle in a separate window, because it interferes
   // with other tests.
-  let win = await BrowserTestUtils.openNewBrowserWindow();
+  // let win = await BrowserTestUtils.openNewBrowserWindow();
+
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
+
   let id = "addon_id@example.com";
   let name = "Awesome Add-on";
-  let buttonId = `${makeWidgetId(id)}-browser-action`;
+  let buttonId = `${makeWidgetId(id)}-BAP`;
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       name,
-      applications: {
+      browser_specific_settings: {
         gecko: { id },
       },
       browser_action: {},
@@ -509,7 +529,7 @@ add_task(async function browseraction_contextmenu_remove_extension() {
 
   info("Run tests in normal mode");
   await runTestContextMenu({
-    buttonId,
+    id,
     customizing: false,
     testContextMenu,
     win,
@@ -532,7 +552,7 @@ add_task(async function browseraction_contextmenu_remove_extension() {
 
   info("Run tests in customize mode");
   await runTestContextMenu({
-    buttonId,
+    id,
     customizing: true,
     testContextMenu,
     win,
@@ -583,18 +603,31 @@ add_task(async function browseraction_contextmenu_remove_extension() {
 
   await extension.unload();
 
-  await BrowserTestUtils.closeWindow(win);
-});
+  // We've got a cleanup function registered to restore this, but on debug
+  // builds, it seems that sometimes the cleanup function won't run soon
+  // enough and we'll leak this window because of the fake prompt function
+  // staying alive on Services. We work around this by restoring prompt
+  // here within the test if we've gotten here without throwing.
+  Services.prompt = prompt;
+
+  // await BrowserTestUtils.closeWindow(win);
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
+}
 
 // This test case verify reporting an extension from the browserAction
 // context menu (when the browserAction is in the toolbox and in the
 // overwflow menu, and repeat the test with and without the customize
 // mode enabled).
-add_task(async function browseraction_contextmenu_report_extension() {
+async function browseraction_contextmenu_report_extension_helper(win) {
   SpecialPowers.pushPrefEnv({
     set: [["extensions.abuseReport.enabled", true]],
   });
-  let win;
+  // let win;
+  //
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
+
   let id = "addon_id@example.com";
   let name = "Bad Add-on";
   let buttonId = `${makeWidgetId(id)}-browser-action`;
@@ -602,7 +635,7 @@ add_task(async function browseraction_contextmenu_report_extension() {
     manifest: {
       name,
       author: "Bad author",
-      applications: {
+      browser_specific_settings: {
         gecko: { id },
       },
       browser_action: {},
@@ -698,11 +731,14 @@ add_task(async function browseraction_contextmenu_report_extension() {
 
   await extension.startup();
 
-  win = await BrowserTestUtils.openNewBrowserWindow();
+  // win = await BrowserTestUtils.openNewBrowserWindow();
+  //
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
 
   info("Run tests in normal mode");
   await runTestContextMenu({
-    buttonId,
+    id,
     customizing: false,
     testContextMenu,
     win,
@@ -710,12 +746,43 @@ add_task(async function browseraction_contextmenu_report_extension() {
 
   info("Run tests in customize mode");
   await runTestContextMenu({
-    buttonId,
+    id,
     customizing: true,
     testContextMenu,
     win,
   });
 
-  await BrowserTestUtils.closeWindow(win);
+  // await BrowserTestUtils.closeWindow(win);
+  //
+  // Bug 1799009: ^-- Uncomment this when we remove the non-Unified Extensions
+  // UI variants of these tests.
   await extension.unload();
+}
+
+add_task(async function test_unified_extensions_ui() {
+  Services.telemetry.clearEvents();
+  let win = await promiseEnableUnifiedExtensions();
+
+  await browseraction_popup_contextmenu_helper(win);
+  await browseraction_popup_contextmenu_hidden_items_helper(win);
+  await browseraction_popup_image_contextmenu_helper(win);
+  await browseraction_contextmenu_manage_extension_helper(win);
+  await browseraction_contextmenu_remove_extension_helper(win);
+  await browseraction_contextmenu_report_extension_helper(win);
+
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_non_unified_extensions_ui() {
+  Services.telemetry.clearEvents();
+  let win = await promiseDisableUnifiedExtensions();
+
+  await browseraction_popup_contextmenu_helper(win);
+  await browseraction_popup_contextmenu_hidden_items_helper(win);
+  await browseraction_popup_image_contextmenu_helper(win);
+  await browseraction_contextmenu_manage_extension_helper(win);
+  await browseraction_contextmenu_remove_extension_helper(win);
+  await browseraction_contextmenu_report_extension_helper(win);
+
+  await BrowserTestUtils.closeWindow(win);
 });

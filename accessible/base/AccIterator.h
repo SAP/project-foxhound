@@ -7,8 +7,8 @@
 #ifndef mozilla_a11y_AccIterator_h__
 #define mozilla_a11y_AccIterator_h__
 
-#include "DocAccessible.h"
 #include "Filters.h"
+#include "mozilla/a11y/DocAccessible.h"
 #include "nsTArray.h"
 
 #include <memory>
@@ -262,19 +262,18 @@ class SingleAccIterator : public AccIterable {
  */
 class ItemIterator : public AccIterable {
  public:
-  explicit ItemIterator(const LocalAccessible* aItemContainer)
+  explicit ItemIterator(const Accessible* aItemContainer)
       : mContainer(aItemContainer), mAnchor(nullptr) {}
-  virtual ~ItemIterator() {}
 
-  virtual LocalAccessible* Next() override;
+  virtual Accessible* Next() override;
 
  private:
   ItemIterator() = delete;
   ItemIterator(const ItemIterator&) = delete;
   ItemIterator& operator=(const ItemIterator&) = delete;
 
-  const LocalAccessible* mContainer;
-  LocalAccessible* mAnchor;
+  const Accessible* mContainer;
+  Accessible* mAnchor;
 };
 
 /**

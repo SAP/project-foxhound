@@ -38,6 +38,14 @@
 #  include "mozilla/ipc/ForkServiceChild.h"
 #endif
 
+// We could configure-test for `waitid`, but it's been in POSIX for a
+// long time and OpenBSD seems to be the only Unix we target that
+// doesn't have it.  Note that `waitid` is used to resolve a conflict
+// with the crash reporter, which isn't available on OpenBSD.
+#ifndef __OpenBSD__
+#  define HAVE_WAITID
+#endif
+
 const int kMicrosecondsPerSecond = 1000000;
 
 namespace base {
@@ -187,7 +195,7 @@ void CloseSuperfluousFds(void* aCtx, bool (*aShouldPreserve)(void*, int)) {
   }
 }
 
-bool DidProcessCrash(bool* child_exited, ProcessHandle handle) {
+bool IsProcessDead(ProcessHandle handle, bool blocking) {
 #ifdef MOZ_ENABLE_FORKSERVER
   if (mozilla::ipc::ForkServiceChild::Get()) {
     // We only know if a process exists, but not if it has crashed.
@@ -196,17 +204,23 @@ bool DidProcessCrash(bool* child_exited, ProcessHandle handle) {
     // process any more, it is impossible to use |waitpid()| to wait for
     // them.
     const int r = kill(handle, 0);
-    if (r < 0 && errno == ESRCH) {
-      if (child_exited) *child_exited = true;
-    } else {
-      if (child_exited) *child_exited = false;
-    }
-
-    return false;
+    // FIXME: for unexpected errors we should probably log a warning
+    // and return true, so that the caller doesn't loop / hang /
+    // try to kill the process.  (Bug 1658072 will rewrite this code.)
+    return r < 0 && errno == ESRCH;
   }
 #endif
-  int status;
-  const int result = HANDLE_EINTR(waitpid(handle, &status, WNOHANG));
+
+#ifdef HAVE_WAITID
+
+  // We use `WNOWAIT` to read the process status without
+  // side-effecting it, in case it's something unexpected like a
+  // ptrace-stop for the crash reporter.  If is an exit, the call is
+  // reissued (see the end of this function) without that flag in
+  // order to collect the process.
+  siginfo_t si{};
+  const int wflags = WEXITED | WNOWAIT | (blocking ? 0 : WNOHANG);
+  int result = HANDLE_EINTR(waitid(P_PID, handle, &si, wflags));
   if (result == -1) {
     // This shouldn't happen, but sometimes it does.  The error is
     // probably ECHILD and the reason is probably that a pid was
@@ -218,34 +232,79 @@ bool DidProcessCrash(bool* child_exited, ProcessHandle handle) {
     // So, lacking reliable information, we indicate that the process
     // is dead, in the hope that the caller will give up and stop
     // calling us.  See also bug 943174 and bug 933680.
+    CHROMIUM_LOG(ERROR) << "waitid failed pid:" << handle << " errno:" << errno;
+    return true;
+  }
+
+  if (si.si_pid == 0) {
+    // the child hasn't exited yet.
+    return false;
+  }
+
+  DCHECK(si.si_pid == handle);
+  switch (si.si_code) {
+    case CLD_STOPPED:
+    case CLD_CONTINUED:
+      DCHECK(false) << "waitid returned an event type that it shouldn't have";
+      [[fallthrough]];
+    case CLD_TRAPPED:
+      CHROMIUM_LOG(WARNING) << "ignoring non-exit event for process " << handle;
+      return false;
+
+    case CLD_KILLED:
+    case CLD_DUMPED:
+      CHROMIUM_LOG(WARNING)
+          << "process " << handle << " exited on signal " << si.si_status;
+      break;
+
+    case CLD_EXITED:
+      if (si.si_status != 0) {
+        CHROMIUM_LOG(WARNING)
+            << "process " << handle << " exited with status " << si.si_status;
+      }
+      break;
+
+    default:
+      CHROMIUM_LOG(ERROR) << "unexpected waitid si_code value: " << si.si_code;
+      DCHECK(false);
+      // This shouldn't happen, but assume that the process exited to
+      // avoid the caller possibly ending up in a loop.
+  }
+
+  // Now consume the status / collect the dead process
+  const int old_si_code = si.si_code;
+  si.si_pid = 0;
+  // In theory it shouldn't matter either way if we use `WNOHANG` at
+  // this point, but just in case, avoid unexpected blocking.
+  result = HANDLE_EINTR(waitid(P_PID, handle, &si, WEXITED | WNOHANG));
+  DCHECK(result == 0);
+  DCHECK(si.si_pid == handle);
+  DCHECK(si.si_code == old_si_code);
+  return true;
+
+#else  // no waitid
+
+  int status;
+  const int result = waitpid(handle, &status, blocking ? 0 : WNOHANG);
+  if (result == -1) {
     CHROMIUM_LOG(ERROR) << "waitpid failed pid:" << handle
                         << " errno:" << errno;
-    if (child_exited) *child_exited = true;
-    return false;
-  } else if (result == 0) {
-    // the child hasn't exited yet.
-    if (child_exited) *child_exited = false;
+    return true;
+  }
+  if (result == 0) {
     return false;
   }
 
-  if (child_exited) *child_exited = true;
-
-  if (WIFSIGNALED(status)) {
-    switch (WTERMSIG(status)) {
-      case SIGSYS:
-      case SIGSEGV:
-      case SIGILL:
-      case SIGABRT:
-      case SIGFPE:
-        return true;
-      default:
-        return false;
-    }
+  if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+    CHROMIUM_LOG(WARNING) << "process " << handle << " exited with status "
+                          << WEXITSTATUS(status);
+  } else if (WIFSIGNALED(status)) {
+    CHROMIUM_LOG(WARNING) << "process " << handle << " exited on signal "
+                          << WTERMSIG(status);
   }
+  return true;
 
-  if (WIFEXITED(status)) return WEXITSTATUS(status) != 0;
-
-  return false;
+#endif  // waitid
 }
 
 void FreeEnvVarsArray::operator()(char** array) {

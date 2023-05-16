@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -16,10 +16,10 @@ from __future__ import absolute_import, print_function, unicode_literals
 import sys
 
 major, minor = sys.version_info[:2]
-if (major < 3) or (major == 3 and minor < 5):
+if (major < 3) or (major == 3 and minor < 6):
     print(
-        "Bootstrap currently only runs on Python 3.5+."
-        "Please try re-running with python3.5+."
+        "Bootstrap currently only runs on Python 3.6+."
+        "Please try re-running with python3.6+."
     )
     sys.exit(1)
 
@@ -52,16 +52,16 @@ def which(name):
 
     It returns the path of an executable or None if it couldn't be found.
     """
-    # git-cinnabar.exe doesn't exist, but .exe versions of the other executables
-    # do.
-    if WINDOWS and name != "git-cinnabar":
-        name += ".exe"
     search_dirs = os.environ["PATH"].split(os.pathsep)
+    potential_names = [name]
+    if WINDOWS:
+        potential_names.append(name + ".exe")
 
     for path in search_dirs:
-        test = Path(path) / name
-        if test.is_file() and os.access(test, os.X_OK):
-            return test
+        for executable_name in potential_names:
+            test = Path(path) / executable_name
+            if test.is_file() and os.access(test, os.X_OK):
+                return test
 
     return None
 
@@ -164,24 +164,24 @@ def git_clone_firefox(git: Path, dest: Path, watchman: Path):
     try:
         cinnabar = which("git-cinnabar")
         if not cinnabar:
+            from urllib.request import urlopen
+
             cinnabar_url = "https://github.com/glandium/git-cinnabar/"
             # If git-cinnabar isn't installed already, that's fine; we can
-            # download a temporary copy. `mach bootstrap` will clone a full copy
-            # of the repo in the state dir; we don't want to copy all that logic
-            # to this tiny bootstrapping script.
+            # download a temporary copy. `mach bootstrap` will install a copy
+            # in the state dir; we don't want to copy all that logic to this
+            # tiny bootstrapping script.
             tempdir = Path(tempfile.mkdtemp())
-            cinnabar_dir = tempdir / "git-cinnabar-master"
+            with open(tempdir / "download.py", "wb") as fh:
+                shutil.copyfileobj(
+                    urlopen(f"{cinnabar_url}/raw/master/download.py"), fh
+                )
+
             subprocess.check_call(
-                [str(git), "clone", "--depth=1", str(cinnabar_url), str(cinnabar_dir)],
+                [sys.executable, str(tempdir / "download.py")],
                 cwd=str(tempdir),
-                env=env,
             )
-            env["PATH"] = str(cinnabar_dir) + os.pathsep + env["PATH"]
-            subprocess.check_call(
-                [sys.executable, str(cinnabar_dir / "download.py")],
-                cwd=str(cinnabar_dir),
-                env=env,
-            )
+            env["PATH"] = str(tempdir) + os.pathsep + env["PATH"]
             print(
                 "WARNING! git-cinnabar is required for Firefox development  "
                 "with git. After the clone is complete, the bootstrapper "
@@ -292,28 +292,25 @@ def clone(options):
     no_interactive = options.no_interactive
     no_system_changes = options.no_system_changes
 
-    hg = which("hg")
-    if not hg:
-        print(
-            "Mercurial is not installed. Mercurial is required to clone "
-            "Firefox%s." % (", even when cloning with Git" if vcs == "git" else "")
-        )
-        try:
-            # We're going to recommend people install the Mercurial package with
-            # pip3. That will work if `pip3` installs binaries to a location
-            # that's in the PATH, but it might not be. To help out, if we CAN
-            # import "mercurial" (in which case it's already been installed),
-            # offer that as a solution.
-            import mercurial  # noqa: F401
-
-            print(
-                "Hint: have you made sure that Mercurial is installed to a "
-                "location in your PATH?"
-            )
-        except ImportError:
-            print("Try installing hg with `pip3 install Mercurial`.")
-        return None
     if vcs == "hg":
+        hg = which("hg")
+        if not hg:
+            print("Mercurial is not installed. Mercurial is required to clone Firefox.")
+            try:
+                # We're going to recommend people install the Mercurial package with
+                # pip3. That will work if `pip3` installs binaries to a location
+                # that's in the PATH, but it might not be. To help out, if we CAN
+                # import "mercurial" (in which case it's already been installed),
+                # offer that as a solution.
+                import mercurial  # noqa: F401
+
+                print(
+                    "Hint: have you made sure that Mercurial is installed to a "
+                    "location in your PATH?"
+                )
+            except ImportError:
+                print("Try installing hg with `pip3 install Mercurial`.")
+            return None
         binary = hg
     else:
         binary = which(vcs)

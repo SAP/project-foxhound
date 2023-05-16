@@ -7,6 +7,7 @@
 // provider instead of adding these message
 // into OnboardingMessageProvider.jsm
 const FIREFOX_VIEW_PREF = "browser.firefox-view.feature-tour";
+const PDFJS_PREF = "browser.pdfjs.feature-tour";
 // Empty screens are included as placeholders to ensure step
 // indicator shows the correct number of total steps in the tour
 const EMPTY_SCREEN = { content: {} };
@@ -130,12 +131,13 @@ const MESSAGES = () => {
           },
         ],
       },
-      priority: 1,
-      frequency: {
-        lifetime: 1,
-      },
+      priority: 3,
       trigger: {
         id: "featureCalloutCheck",
+      },
+      frequency: {
+        // Add the highest possible cap to ensure impressions are recorded while allowing the Spotlight to sync across windows/tabs with Firefox View open
+        lifetime: 100,
       },
       targeting: `!inMr2022Holdback && source == "firefoxview" &&
        !'browser.newtabpage.activity-stream.asrouter.providers.cfr'|preferenceIsUserSet &&
@@ -209,7 +211,7 @@ const MESSAGES = () => {
           EMPTY_SCREEN,
         ],
       },
-      priority: 1,
+      priority: 3,
       targeting: `!inMr2022Holdback && source == "firefoxview" && colorwaysActive && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_1"
@@ -280,7 +282,7 @@ const MESSAGES = () => {
           EMPTY_SCREEN,
         ],
       },
-      priority: 1,
+      priority: 3,
       targeting: `!inMr2022Holdback && source == "firefoxview" && !colorwaysActive && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_1"
@@ -347,7 +349,7 @@ const MESSAGES = () => {
           EMPTY_SCREEN,
         ],
       },
-      priority: 1,
+      priority: 3,
       targeting: `!inMr2022Holdback && source == "firefoxview" && colorwaysActive && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_2"
@@ -413,7 +415,7 @@ const MESSAGES = () => {
           },
         ],
       },
-      priority: 1,
+      priority: 3,
       targeting: `!inMr2022Holdback && source == "firefoxview" && !colorwaysActive && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_2"
@@ -486,7 +488,7 @@ const MESSAGES = () => {
           },
         ],
       },
-      priority: 1,
+      priority: 3,
       targeting: `!inMr2022Holdback && source == "firefoxview" && colorwaysActive && ${matchCurrentScreenTargeting(
         FIREFOX_VIEW_PREF,
         "FEATURE_CALLOUT_3"
@@ -505,7 +507,7 @@ const MESSAGES = () => {
         screens: [
           {
             id: "FIREFOX_VIEW_COLORWAYS_REMINDER",
-            parent_selector: "#colorways-collection-description",
+            parent_selector: "#colorways-button",
             content: {
               position: "callout",
               arrow_position: "end",
@@ -521,11 +523,22 @@ const MESSAGES = () => {
                   navigate: true,
                 },
               },
+              page_event_listeners: [
+                {
+                  params: {
+                    type: "click",
+                    selectors: "#colorways-button",
+                  },
+                  action: {
+                    dismiss: true,
+                  },
+                },
+              ],
             },
           },
         ],
       },
-      priority: 3,
+      priority: 1,
       targeting: `!inMr2022Holdback && source == "firefoxview" && "browser.firefox-view.view-count" | preferenceValue > 3 && colorwaysActive && !userEnabledActiveColorway`,
       frequency: { lifetime: 1 },
       trigger: { id: "featureCalloutCheck" },
@@ -590,8 +603,136 @@ const MESSAGES = () => {
       },
       trigger: { id: "featureCalloutCheck" },
     },
+    {
+      id: "PDFJS_FEATURE_TOUR_1",
+      template: "feature_callout",
+      content: {
+        id: "PDFJS_FEATURE_TOUR",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "FEATURE_CALLOUT_1",
+            parent_selector: "#editorFreeText",
+            content: {
+              position: "callout",
+              arrow_position: "top-end",
+              title: {
+                string_id: "callout-pdfjs-edit-title",
+              },
+              subtitle: {
+                string_id: "callout-pdfjs-edit-body-a",
+              },
+              primary_button: {
+                label: {
+                  string_id: "callout-pdfjs-edit-button",
+                },
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "FEATURE_CALLOUT_2",
+                        complete: false,
+                      }),
+                    },
+                  },
+                },
+              },
+              dismiss_button: {
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "",
+                        complete: true,
+                      }),
+                    },
+                  },
+                },
+              },
+            },
+          },
+          EMPTY_SCREEN,
+          EMPTY_SCREEN,
+        ],
+      },
+      priority: 1,
+      // Targeting to be updated in Bug 1797368
+      targeting: "false",
+      trigger: { id: "featureCalloutCheck" },
+    },
+    {
+      id: "PDFJS_FEATURE_TOUR_2",
+      template: "feature_callout",
+      content: {
+        id: "PDFJS_FEATURE_TOUR",
+        startScreen: 1,
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          EMPTY_SCREEN,
+          {
+            id: "FEATURE_CALLOUT_2",
+            parent_selector: "#editorInk",
+            content: {
+              position: "callout",
+              arrow_position: "top-end",
+              title: {
+                string_id: "callout-pdfjs-draw-title",
+              },
+              subtitle: {
+                string_id: "callout-pdfjs-draw-body-a",
+              },
+              primary_button: {
+                label: {
+                  string_id: "callout-pdfjs-draw-button",
+                },
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "",
+                        complete: true,
+                      }),
+                    },
+                  },
+                },
+              },
+              dismiss_button: {
+                action: {
+                  type: "SET_PREF",
+                  data: {
+                    pref: {
+                      name: PDFJS_PREF,
+                      value: JSON.stringify({
+                        screen: "",
+                        complete: true,
+                      }),
+                    },
+                  },
+                },
+              },
+            },
+          },
+          EMPTY_SCREEN,
+        ],
+      },
+      priority: 1,
+      // Targeting to be updated in Bug 1797368 https://bugzilla.mozilla.org/show_bug.cgi?id=1797368
+      targeting: "false",
+      trigger: { id: "featureCalloutCheck" },
+    },
   ];
-
   messages = add24HourImpressionJEXLTargeting(
     ["FIREFOX_VIEW_COLORWAYS_REMINDER", "FIREFOX_VIEW_TAB_PICKUP_REMINDER"],
     "FIREFOX_VIEW",

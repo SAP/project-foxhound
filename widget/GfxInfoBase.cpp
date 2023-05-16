@@ -280,6 +280,11 @@ static bool GetPrefValueForFeature(int32_t aFeature, int32_t& aValue,
     return false;
   }
 
+  if (aValue == nsIGfxInfo::FEATURE_DENIED) {
+    // We should never see the DENIED status with the downloadable blocklist.
+    return false;
+  }
+
   nsCString failureprefname(prefname);
   failureprefname += ".failureid";
   nsAutoCString failureValue;
@@ -303,7 +308,7 @@ static void SetPrefValueForFeature(int32_t aFeature, int32_t aValue,
 
   Preferences::SetInt(prefname, aValue);
   if (!aFailureId.IsEmpty()) {
-    nsCString failureprefname(prefname);
+    nsAutoCString failureprefname(prefname);
     failureprefname += ".failureid";
     Preferences::SetCString(failureprefname.get(), aFailureId);
   }
@@ -810,6 +815,8 @@ GfxInfoBase::GetFeatureStatus(int32_t aFeature, nsACString& aFailureId,
     return NS_OK;
   }
 
+  // This is how we evaluate the downloadable blocklist. If there is no pref,
+  // then we will fallback to checking the static blocklist.
   if (GetPrefValueForFeature(aFeature, *aStatus, aFailureId)) {
     return NS_OK;
   }
@@ -1262,10 +1269,8 @@ bool GfxInfoBase::DoesDriverVendorMatch(const nsAString& aBlocklistVendor,
 }
 
 bool GfxInfoBase::IsFeatureAllowlisted(int32_t aFeature) const {
-  return aFeature == nsIGfxInfo::FEATURE_WEBRENDER ||
-         aFeature == nsIGfxInfo::FEATURE_VIDEO_OVERLAY ||
-         aFeature == nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY ||
-         aFeature == nsIGfxInfo::FEATURE_REUSE_DECODER_DEVICE;
+  return aFeature == nsIGfxInfo::FEATURE_VIDEO_OVERLAY ||
+         aFeature == nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY;
 }
 
 nsresult GfxInfoBase::GetFeatureStatusImpl(
@@ -1308,10 +1313,7 @@ nsresult GfxInfoBase::GetFeatureStatusImpl(
     return NS_OK;
   }
 
-  // Check if the device is blocked from the downloaded blocklist. If not, check
-  // the static list after that. This order is used so that we can later escape
-  // out of static blocks (i.e. if we were wrong or something was patched, we
-  // can back out our static block without doing a release).
+  // We only check either the given blocklist, or the static list, as given.
   int32_t status;
   if (aDriverInfo.Length()) {
     status =
@@ -1374,80 +1376,64 @@ GfxInfoBase::GetFeatureSuggestedDriverVersion(int32_t aFeature,
 
 void GfxInfoBase::EvaluateDownloadedBlocklist(
     nsTArray<GfxDriverInfo>& aDriverInfo) {
-  int32_t features[] = {nsIGfxInfo::FEATURE_DIRECT2D,
-                        nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS,
-                        nsIGfxInfo::FEATURE_DIRECT3D_10_LAYERS,
-                        nsIGfxInfo::FEATURE_DIRECT3D_10_1_LAYERS,
-                        nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
-                        nsIGfxInfo::FEATURE_DIRECT3D_11_ANGLE,
-                        nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
-                        nsIGfxInfo::FEATURE_OPENGL_LAYERS,
-                        nsIGfxInfo::FEATURE_WEBGL_OPENGL,
-                        nsIGfxInfo::FEATURE_WEBGL_ANGLE,
-                        nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_ENCODE,
-                        nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_DECODE,
-                        nsIGfxInfo::UNUSED_FEATURE_WEBGL_MSAA,
-                        nsIGfxInfo::FEATURE_STAGEFRIGHT,
-                        nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_H264,
-                        nsIGfxInfo::FEATURE_CANVAS2D_ACCELERATION,
-                        nsIGfxInfo::FEATURE_VP8_HW_DECODE,
-                        nsIGfxInfo::FEATURE_VP9_HW_DECODE,
-                        nsIGfxInfo::FEATURE_DX_INTEROP2,
-                        nsIGfxInfo::FEATURE_GPU_PROCESS,
-                        nsIGfxInfo::FEATURE_WEBGL2,
-                        nsIGfxInfo::FEATURE_D3D11_KEYED_MUTEX,
-                        nsIGfxInfo::FEATURE_WEBRENDER,
-                        nsIGfxInfo::FEATURE_WEBRENDER_COMPOSITOR,
-                        nsIGfxInfo::FEATURE_DX_NV12,
-                        nsIGfxInfo::FEATURE_DX_P010,
-                        nsIGfxInfo::FEATURE_DX_P016,
-                        nsIGfxInfo::FEATURE_GL_SWIZZLE,
-                        nsIGfxInfo::FEATURE_ALLOW_WEBGL_OUT_OF_PROCESS,
-                        nsIGfxInfo::FEATURE_X11_EGL,
-                        nsIGfxInfo::FEATURE_DMABUF,
-                        nsIGfxInfo::FEATURE_WEBGPU,
-                        nsIGfxInfo::FEATURE_VIDEO_OVERLAY,
-                        nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
-                        nsIGfxInfo::FEATURE_REUSE_DECODER_DEVICE,
-                        nsIGfxInfo::FEATURE_WEBRENDER_PARTIAL_PRESENT,
-                        nsIGfxInfo::FEATURE_BACKDROP_FILTER,
-                        0};
+  // If the list is empty, then we don't actually want to call
+  // GetFeatureStatusImpl since we will use the static list instead. In that
+  // case, all we want to do is make sure the pref is removed.
+  if (aDriverInfo.IsEmpty()) {
+    gfxCriticalNoteOnce << "Evaluate empty downloaded blocklist";
+    return;
+  }
+
+  OperatingSystem os = GetOperatingSystem();
 
   // For every feature we know about, we evaluate whether this blocklist has a
   // non-STATUS_OK status. If it does, we set the pref we evaluate in
   // GetFeatureStatus above, so we don't need to hold on to this blocklist
   // anywhere permanent.
-  int i = 0;
-  while (features[i]) {
-    int32_t status;
+  for (int feature = 1; feature <= nsIGfxInfo::FEATURE_MAX_VALUE; ++feature) {
+    int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
     nsCString failureId;
     nsAutoString suggestedVersion;
-    if (NS_SUCCEEDED(GetFeatureStatusImpl(
-            features[i], &status, suggestedVersion, aDriverInfo, failureId))) {
-      switch (status) {
-        default:
-        case nsIGfxInfo::FEATURE_STATUS_OK:
-          RemovePrefForFeature(features[i]);
-          break;
 
-        case nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION:
-          if (!suggestedVersion.IsEmpty()) {
-            SetPrefValueForDriverVersion(suggestedVersion);
-          } else {
-            RemovePrefForDriverVersion();
-          }
-          [[fallthrough]];
+    // Note that we are careful to call the base class method since we only want
+    // to evaluate the downloadable blocklist for these prefs.
+    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(GfxInfoBase::GetFeatureStatusImpl(
+        feature, &status, suggestedVersion, aDriverInfo, failureId, &os)));
 
-        case nsIGfxInfo::FEATURE_BLOCKED_MISMATCHED_VERSION:
-        case nsIGfxInfo::FEATURE_BLOCKED_DEVICE:
-        case nsIGfxInfo::FEATURE_DISCOURAGED:
-        case nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION:
-          SetPrefValueForFeature(features[i], status, failureId);
-          break;
-      }
+    switch (status) {
+      default:
+        MOZ_FALLTHROUGH_ASSERT("Unhandled feature status!");
+      case nsIGfxInfo::FEATURE_STATUS_UNKNOWN:
+        // This may be returned during shutdown or for invalid features.
+      case nsIGfxInfo::FEATURE_ALLOW_ALWAYS:
+      case nsIGfxInfo::FEATURE_ALLOW_QUALIFIED:
+      case nsIGfxInfo::FEATURE_DENIED:
+        // We cannot use the downloadable blocklist to control the allowlist.
+        // If a feature is allowlisted, then we should also ignore DENIED
+        // statuses from GetFeatureStatusImpl because we don't check the
+        // static list when and this is an expected value. If we wish to
+        // override the allowlist, it is as simple as creating a normal
+        // blocklist rule with a BLOCKED* status code.
+      case nsIGfxInfo::FEATURE_STATUS_OK:
+        RemovePrefForFeature(feature);
+        break;
+
+      case nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION:
+        if (!suggestedVersion.IsEmpty()) {
+          SetPrefValueForDriverVersion(suggestedVersion);
+        } else {
+          RemovePrefForDriverVersion();
+        }
+        [[fallthrough]];
+
+      case nsIGfxInfo::FEATURE_BLOCKED_MISMATCHED_VERSION:
+      case nsIGfxInfo::FEATURE_BLOCKED_DEVICE:
+      case nsIGfxInfo::FEATURE_DISCOURAGED:
+      case nsIGfxInfo::FEATURE_BLOCKED_OS_VERSION:
+      case nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST:
+        SetPrefValueForFeature(feature, status, failureId);
+        break;
     }
-
-    ++i;
   }
 }
 
@@ -1783,20 +1769,12 @@ void GfxInfoBase::DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> aObj) {
       gfxConfig::GetFeature(gfx::Feature::GPU_PROCESS);
   InitFeatureObject(aCx, aObj, "gpuProcess", gpuProcess, &obj);
 
-  gfx::FeatureState& wrQualified =
-      gfxConfig::GetFeature(gfx::Feature::WEBRENDER_QUALIFIED);
-  InitFeatureObject(aCx, aObj, "wrQualified", wrQualified, &obj);
-
   gfx::FeatureState& webrender = gfxConfig::GetFeature(gfx::Feature::WEBRENDER);
   InitFeatureObject(aCx, aObj, "webrender", webrender, &obj);
 
   gfx::FeatureState& wrCompositor =
       gfxConfig::GetFeature(gfx::Feature::WEBRENDER_COMPOSITOR);
   InitFeatureObject(aCx, aObj, "wrCompositor", wrCompositor, &obj);
-
-  gfx::FeatureState& wrSoftware =
-      gfxConfig::GetFeature(gfx::Feature::WEBRENDER_SOFTWARE);
-  InitFeatureObject(aCx, aObj, "wrSoftware", wrSoftware, &obj);
 
   gfx::FeatureState& openglCompositing =
       gfxConfig::GetFeature(gfx::Feature::OPENGL_COMPOSITING);
@@ -1857,12 +1835,6 @@ nsresult GfxInfoBase::GetActiveCrashGuards(JSContext* aCx,
         }
       });
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GfxInfoBase::GetWebRenderEnabled(bool* aWebRenderEnabled) {
-  *aWebRenderEnabled = gfxVars::UseWebRender();
   return NS_OK;
 }
 

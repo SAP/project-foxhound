@@ -2550,7 +2550,7 @@ nsresult nsImageFrame::HandleEvent(nsPresContext* aPresContext,
           nsresult rv = uri->GetSpec(spec);
           NS_ENSURE_SUCCESS(rv, rv);
 
-          spec += nsPrintfCString("?%d,%d", p.x, p.y);
+          spec += nsPrintfCString("?%d,%d", p.x.value, p.y.value);
           rv = NS_MutateURI(uri).SetSpec(spec).Finalize(uri);
           NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2811,28 +2811,6 @@ void nsImageFrame::IconLoad::GetPrefs() {
 
   mPrefShowLoadingPlaceholder = Preferences::GetBool(
       "browser.display.show_loading_image_placeholder", true);
-}
-
-nsresult nsImageFrame::RestartAnimation() {
-  nsCOMPtr<imgIRequest> currentRequest = GetCurrentRequest();
-
-  if (currentRequest) {
-    bool deregister = false;
-    nsLayoutUtils::RegisterImageRequestIfAnimated(PresContext(), currentRequest,
-                                                  &deregister);
-  }
-  return NS_OK;
-}
-
-nsresult nsImageFrame::StopAnimation() {
-  nsCOMPtr<imgIRequest> currentRequest = GetCurrentRequest();
-
-  if (currentRequest) {
-    bool deregister = true;
-    nsLayoutUtils::DeregisterImageRequest(PresContext(), currentRequest,
-                                          &deregister);
-  }
-  return NS_OK;
 }
 
 void nsImageFrame::IconLoad::Notify(imgIRequest* aRequest, int32_t aType,

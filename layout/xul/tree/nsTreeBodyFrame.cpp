@@ -16,6 +16,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/intl/Segmenter.h"
 
 #include "gfxUtils.h"
 #include "nsAlgorithm.h"
@@ -46,6 +47,7 @@
 #include "nsIFrameInlines.h"
 #include "nsBoxFrame.h"
 #include "nsBoxLayoutState.h"
+#include "nsTextBoxFrame.h"
 #include "nsTreeContentView.h"
 #include "nsTreeUtils.h"
 #include "nsStyleConsts.h"
@@ -252,12 +254,13 @@ void nsTreeBodyFrame::DestroyFrom(nsIFrame* aDestructRoot,
     mTree->BodyDestroyed(mTopRowIndex);
   }
 
-  if (mView) {
+  if (nsCOMPtr<nsITreeView> view = std::move(mView)) {
     nsCOMPtr<nsITreeSelection> sel;
-    mView->GetSelection(getter_AddRefs(sel));
-    if (sel) sel->SetTree(nullptr);
-    mView->SetTree(nullptr);
-    mView = nullptr;
+    view->GetSelection(getter_AddRefs(sel));
+    if (sel) {
+      sel->SetTree(nullptr);
+    }
+    view->SetTree(nullptr);
   }
 
   nsLeafBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
@@ -437,13 +440,19 @@ nsresult nsTreeBodyFrame::SetView(nsITreeView* aView) {
   return NS_OK;
 }
 
+already_AddRefed<nsITreeSelection> nsTreeBodyFrame::GetSelection() const {
+  nsCOMPtr<nsITreeSelection> sel;
+  if (nsCOMPtr<nsITreeView> view = GetExistingView()) {
+    view->GetSelection(getter_AddRefs(sel));
+  }
+  return sel.forget();
+}
+
 nsresult nsTreeBodyFrame::SetFocused(bool aFocused) {
   if (mFocused != aFocused) {
     mFocused = aFocused;
-    if (mView) {
-      nsCOMPtr<nsITreeSelection> sel;
-      mView->GetSelection(getter_AddRefs(sel));
-      if (sel) sel->InvalidateSelection();
+    if (nsCOMPtr<nsITreeSelection> sel = GetSelection()) {
+      sel->InvalidateSelection();
     }
   }
   return NS_OK;
@@ -475,9 +484,9 @@ Maybe<CSSIntRegion> nsTreeBodyFrame::GetSelectionRegion() {
     return Nothing();
   }
 
-  nsCOMPtr<nsITreeSelection> selection;
-  mView->GetSelection(getter_AddRefs(selection));
-  if (!selection) {
+  AutoWeakFrame wf(this);
+  nsCOMPtr<nsITreeSelection> selection = GetSelection();
+  if (!selection || !wf.IsAlive()) {
     return Nothing();
   }
 
@@ -1144,7 +1153,9 @@ void nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText, int32_t aRowIndex,
         rv = nextColumn->GetWidthInTwips(this, &width);
         NS_ASSERTION(NS_SUCCEEDED(rv), "nextColumn is invalid");
 
-        if (width != 0) break;
+        if (width != 0) {
+          break;
+        }
 
         nextColumn = nextColumn->GetNext();
       }
@@ -1172,99 +1183,18 @@ void nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText, int32_t aRowIndex,
     }
   }
 
-  nscoord width;
-  if (widthIsGreater) {
-    // See if the width is even smaller than the ellipsis
-    // If so, clear the text completely.
-    const nsDependentString& kEllipsis = nsContentUtils::GetLocalizedEllipsis();
-    aFontMetrics.SetTextRunRTL(false);
-    nscoord ellipsisWidth = nsLayoutUtils::AppUnitWidthOfString(
-        kEllipsis, aFontMetrics, drawTarget);
-
-    width = maxWidth;
-    if (ellipsisWidth > width)
-      aText.SetLength(0);
-    else if (ellipsisWidth == width)
-      aText.Assign(kEllipsis);
-    else {
-      // We will be drawing an ellipsis, thank you very much.
-      // Subtract out the required width of the ellipsis.
-      // This is the total remaining width we have to play with.
-      width -= ellipsisWidth;
-
-      // Now we crop.
-      switch (aColumn->GetCropStyle()) {
-        default:
-        case 0: {
-          // Crop right.
-          nscoord cwidth;
-          nscoord twidth = 0;
-          uint32_t length = aText.Length();
-          uint32_t i;
-          for (i = 0; i < length; ++i) {
-            char16_t ch = aText[i];
-            // XXX this is horrible and doesn't handle clusters
-            cwidth = nsLayoutUtils::AppUnitWidthOfString(ch, aFontMetrics,
-                                                         drawTarget);
-            if (twidth + cwidth > width) break;
-            twidth += cwidth;
-          }
-          aText.Truncate(i);
-          aText.Append(kEllipsis);
-        } break;
-
-        case 2: {
-          // Crop left.
-          nscoord cwidth;
-          nscoord twidth = 0;
-          int32_t length = aText.Length();
-          int32_t i;
-          for (i = length - 1; i >= 0; --i) {
-            char16_t ch = aText[i];
-            cwidth = nsLayoutUtils::AppUnitWidthOfString(ch, aFontMetrics,
-                                                         drawTarget);
-            if (twidth + cwidth > width) break;
-            twidth += cwidth;
-          }
-
-          nsAutoString copy;
-          aText.Right(copy, length - 1 - i);
-          aText.Assign(kEllipsis);
-          aText += copy;
-        } break;
-
-        case 1: {
-          // Crop center.
-          nsAutoString leftStr, rightStr;
-          nscoord cwidth, twidth = 0;
-          int32_t length = aText.Length();
-          int32_t rightPos = length - 1;
-          for (int32_t leftPos = 0; leftPos < rightPos; ++leftPos) {
-            char16_t ch = aText[leftPos];
-            cwidth = nsLayoutUtils::AppUnitWidthOfString(ch, aFontMetrics,
-                                                         drawTarget);
-            twidth += cwidth;
-            if (twidth > width) break;
-            leftStr.Append(ch);
-
-            ch = aText[rightPos];
-            cwidth = nsLayoutUtils::AppUnitWidthOfString(ch, aFontMetrics,
-                                                         drawTarget);
-            twidth += cwidth;
-            if (twidth > width) break;
-            rightStr.Insert(ch, 0);
-            --rightPos;
-          }
-          aText = leftStr;
-          aText.Append(kEllipsis);
-          aText += rightStr;
-        } break;
-      }
-    }
+  using CroppingStyle = nsTextBoxFrame::CroppingStyle;
+  CroppingStyle cropType = CroppingStyle::CropRight;
+  if (aColumn->GetCropStyle() == 1) {
+    cropType = CroppingStyle::CropCenter;
+  } else if (aColumn->GetCropStyle() == 2) {
+    cropType = CroppingStyle::CropLeft;
   }
+  nsTextBoxFrame::CropStringForWidth(aText, aRenderingContext, aFontMetrics,
+                                     maxWidth, cropType);
 
-  width = nsLayoutUtils::AppUnitWidthOfStringBidi(aText, this, aFontMetrics,
-                                                  aRenderingContext);
+  nscoord width = nsLayoutUtils::AppUnitWidthOfStringBidi(
+      aText, this, aFontMetrics, aRenderingContext);
 
   switch (aColumn->GetTextAlignment()) {
     case mozilla::StyleTextAlign::Right:
@@ -1601,10 +1531,7 @@ nsresult nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount) {
   AutoWeakFrame weakFrame(this);
 
   // Adjust our selection.
-  nsCOMPtr<nsITreeView> view = mView;
-  nsCOMPtr<nsITreeSelection> sel;
-  view->GetSelection(getter_AddRefs(sel));
-  if (sel) {
+  if (nsCOMPtr<nsITreeSelection> sel = GetSelection()) {
     sel->AdjustSelection(aIndex, aCount);
   }
 
@@ -1708,9 +1635,7 @@ void nsTreeBodyFrame::PrefillPropertyArray(int32_t aRowIndex,
     if (aRowIndex == mMouseOverRow)
       mScratchArray.AppendElement((nsStaticAtom*)nsGkAtoms::hover);
 
-    nsCOMPtr<nsITreeSelection> selection;
-    mView->GetSelection(getter_AddRefs(selection));
-
+    nsCOMPtr<nsITreeSelection> selection = GetSelection();
     if (selection) {
       // selected
       bool isSelected;

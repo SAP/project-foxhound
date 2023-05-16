@@ -35,6 +35,7 @@ import {
   getPendingBreakpointsForSource,
   getContext,
   getSourceTextContent,
+  getFirstSourceActorForGeneratedSource,
 } from "../../selectors";
 
 import { prefs } from "../../utils/prefs";
@@ -100,8 +101,9 @@ function loadSourceMap(cx, sourceActor) {
       console.error(e);
     }
 
-    if (!data) {
-      // If this source doesn't have a sourcemap, enable it for pretty printing
+    if (!data || !data.length) {
+      // If this source doesn't have a sourcemap or there are no original files
+      // existing, enable it for pretty printing
       dispatch({
         type: "CLEAR_SOURCE_ACTOR_MAP_URL",
         cx,
@@ -172,7 +174,11 @@ function checkPendingBreakpoints(cx, sourceId) {
     }
 
     // load the source text if there is a pending breakpoint for it
-    await dispatch(loadSourceText({ cx, source }));
+    const sourceActor = getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+    await dispatch(loadSourceText({ cx, source, sourceActor }));
 
     await dispatch(setBreakableLines(cx, source.id));
 

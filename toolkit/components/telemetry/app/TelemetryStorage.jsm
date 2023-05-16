@@ -7,8 +7,8 @@
 
 var EXPORTED_SYMBOLS = ["TelemetryStorage", "Policy"];
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { Log } = ChromeUtils.importESModule(
   "resource://gre/modules/Log.sys.mjs"
@@ -20,8 +20,8 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { TelemetryUtils } = ChromeUtils.import(
   "resource://gre/modules/TelemetryUtils.jsm"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const LOGGER_NAME = "Toolkit.Telemetry";
@@ -47,11 +47,6 @@ XPCOMUtils.defineLazyGetter(lazy, "gPingsArchivePath", function() {
 XPCOMUtils.defineLazyGetter(lazy, "gAbortedSessionFilePath", function() {
   return OS.Path.join(lazy.gDataReportingDir, ABORTED_SESSION_FILE_NAME);
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "CommonUtils",
-  "resource://services-common/utils.js"
-);
 ChromeUtils.defineModuleGetter(
   lazy,
   "TelemetryHealthPing",
@@ -828,7 +823,7 @@ var TelemetryStorageImpl = {
       SESSION_STATE_FILE_NAME
     );
     try {
-      await lazy.CommonUtils.writeJSON(sessionData, filePath);
+      await IOUtils.writeJSON(filePath, sessionData);
     } catch (e) {
       this._log.error(
         "_saveSessionData - Failed to write session data to " + filePath,

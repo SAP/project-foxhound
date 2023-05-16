@@ -418,7 +418,7 @@ var StarUI = {
         let element = document.getElementById(id);
         if (
           element &&
-          element.getAttribute("cui-areatype") != "menu-panel" &&
+          element.getAttribute("cui-areatype") != "panel" &&
           element.getAttribute("overflowedItem") != "true"
         ) {
           anchor = element;
@@ -1201,7 +1201,7 @@ var PlacesToolbarHelper = {
     let widget = widgetGroup.forWindow(window);
     if (
       widget.overflowed ||
-      widgetGroup.areaType == CustomizableUI.TYPE_MENU_PANEL
+      widgetGroup.areaType == CustomizableUI.TYPE_PANEL
     ) {
       PlacesCommandHook.showPlacesOrganizer("BookmarksToolbar");
     }
@@ -1396,8 +1396,7 @@ var BookmarkingUI = {
     // Separately, in Photon, if the button is in the dynamic portion of the
     // overflow panel, we want to show a subview instead.
     if (
-      this.button.getAttribute("cui-areatype") ==
-        CustomizableUI.TYPE_MENU_PANEL ||
+      this.button.getAttribute("cui-areatype") == CustomizableUI.TYPE_PANEL ||
       this.button.hasAttribute("overflowedItem")
     ) {
       this._showSubView();
@@ -1695,6 +1694,25 @@ var BookmarkingUI = {
     }
   },
 
+  onWidgetBeforeDOMChange: function BUI_onWidgetBeforeDOMChange(
+    aNode,
+    aNextNode,
+    aContainer,
+    aIsRemoval
+  ) {
+    if (aNode.id == "import-button") {
+      this._updateImportButton(aNode, aIsRemoval ? null : aContainer);
+    }
+  },
+
+  _updateImportButton: function BUI_updateImportButton(aNode, aContainer) {
+    // The import button behaves like a bookmark item when in the bookmarks
+    // toolbar, otherwise like a regular toolbar button.
+    let isBookmarkItem = aContainer == this.toolbar;
+    aNode.classList.toggle("toolbarbutton-1", !isBookmarkItem);
+    aNode.classList.toggle("bookmark-item", isBookmarkItem);
+  },
+
   _onWidgetWasMoved: function BUI_widgetWasMoved() {
     // If we're moved outside of customize mode, we need to uninit
     // our view so it gets reconstructed.
@@ -1712,6 +1730,10 @@ var BookmarkingUI = {
 
   init() {
     CustomizableUI.addListener(this);
+    let importButton = document.getElementById("import-button");
+    if (importButton) {
+      this._updateImportButton(importButton, importButton.parentNode);
+    }
     this.updateEmptyToolbarMessage();
   },
 
@@ -1967,9 +1989,7 @@ var BookmarkingUI = {
     }
 
     // Handle special case when the button is in the panel.
-    if (
-      this.button.getAttribute("cui-areatype") == CustomizableUI.TYPE_MENU_PANEL
-    ) {
+    if (this.button.getAttribute("cui-areatype") == CustomizableUI.TYPE_PANEL) {
       this._showSubView(aEvent);
       return;
     }

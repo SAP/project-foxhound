@@ -57,7 +57,8 @@
 .pane-container {
   /* A workaround to keep the container always float on the `top: 0` (Bug 1377009) */
   display: block;
-  width: var(--main-pane-width);
+  width: min(100%, var(--main-pane-width));
+  min-width: min-content;
 }
 
 #mainPrefPane {
@@ -287,7 +288,7 @@ checkbox {
 #FontsDialog menulist:empty {
   /* When there's no menupopup, while the font builder is running,
    * the height of the menulist would otherwise shrink. This throws
-   * off the height determination SubDialog.jsm does, which then
+   * off the height determination SubDialog.sys.mjs does, which then
    * leads to content being cut off. Fix by enforcing a minimum height
    * when there's no content: */
   min-height: max(32px, calc(1.4em + 16px));
@@ -666,6 +667,11 @@ richlistitem[selected] .actionsMenu:focus-visible {
  * Font group and font dialog menulist fixes
  */
 
+#font-chooser-group {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content max-content;
+}
+
 #defaultFont {
   width: 25ch;
 }
@@ -674,6 +680,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
 #serif,
 #sans-serif,
 #monospace {
+  width: 0; /* Might be able to be removed */
   min-width: 30ch;
 }
 

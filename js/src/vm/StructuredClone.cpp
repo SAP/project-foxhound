@@ -58,6 +58,7 @@
 #include "js/ScalarType.h"          // js::Scalar::Type
 #include "js/SharedArrayBuffer.h"   // JS::IsSharedArrayBufferObject
 #include "js/Wrapper.h"
+#include "util/DifferentialTesting.h"
 #include "vm/BigIntType.h"
 #include "vm/ErrorObject.h"
 #include "vm/JSContext.h"
@@ -1266,6 +1267,13 @@ bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
     return false;
   }
 
+#if FUZZING_JS_FUZZILLI
+  if (js::SupportDifferentialTesting()) {
+    // TODO we could always output a twoByteChar string
+    return true;
+  }
+#endif
+
   static_assert(JSString::MAX_LENGTH <= INT32_MAX,
                 "String length must fit in 31 bits");
 
@@ -1345,6 +1353,15 @@ bool JSStructuredCloneWriter::writeTypedArray(HandleObject obj) {
   Rooted<TypedArrayObject*> tarr(context(),
                                  obj->maybeUnwrapAs<TypedArrayObject>());
   JSAutoRealm ar(context(), tarr);
+
+#ifdef FUZZING_JS_FUZZILLI
+  if (js::SupportDifferentialTesting() && !tarr->hasBuffer()) {
+    // fake oom because differential testing will fail
+    fprintf(stderr, "[unhandlable oom]");
+    _exit(-1);
+    return false;
+  }
+#endif
 
   if (!TypedArrayObject::ensureHasBuffer(context(), tarr)) {
     return false;
@@ -1587,9 +1604,11 @@ static bool TryAppendNativeProperties(JSContext* cx, HandleObject obj,
 bool JSStructuredCloneWriter::traverseObject(HandleObject obj, ESClass cls) {
   size_t count;
   bool optimized = false;
-  if (!TryAppendNativeProperties(context(), obj, &objectEntries, &count,
-                                 &optimized)) {
-    return false;
+  if (!js::SupportDifferentialTesting()) {
+    if (!TryAppendNativeProperties(context(), obj, &objectEntries, &count,
+                                   &optimized)) {
+      return false;
+    }
   }
 
   if (!optimized) {
@@ -1993,6 +2012,9 @@ bool JSStructuredCloneWriter::writePrimitive(HandleValue v) {
   if (v.isString()) {
     return writeString(SCTAG_STRING, v.toString());
   } else if (v.isInt32()) {
+    if (js::SupportDifferentialTesting()) {
+      return out.writeDouble(v.toInt32());
+    }
     return out.writePair(SCTAG_INT32, v.toInt32());
   } else if (v.isDouble()) {
     return out.writeDouble(v.toDouble());
@@ -2414,6 +2436,14 @@ bool JSStructuredCloneWriter::write(HandleValue v) {
         }
 
         if (found) {
+#if FUZZING_JS_FUZZILLI
+          // supress calls into user code
+          if (js::SupportDifferentialTesting()) {
+            fprintf(stderr, "Differential testing: cannot call GetProperty\n");
+            return false;
+          }
+#endif
+
           if (!writePrimitive(key) ||
               !GetProperty(context(), obj, obj, id, &val) || !startWrite(val)) {
             return false;

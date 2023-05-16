@@ -1191,9 +1191,9 @@ static nsIFrame* FindRootNodeFrame(const nsFrameList& aChildList,
 }
 
 void nsTextControlFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList& aChildList) {
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID != kPrincipalList) {
+                                             nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID != FrameChildListID::Principal) {
     return;
   }
 

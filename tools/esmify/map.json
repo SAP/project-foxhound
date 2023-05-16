@@ -41,6 +41,8 @@
     "browser/components/pocket/content/pktApi.jsm",
   "chrome://pocket/content/pktTelemetry.jsm":
     "browser/components/pocket/content/pktTelemetry.jsm",
+  "chrome://remote/content/server/HTTPD.jsm":
+    "netwerk/test/httpserver/httpd.js",
   "resource:///actors/ASRouterChild.jsm":
     "browser/components/newtab/actors/ASRouterChild.jsm",
   "resource:///actors/ASRouterParent.jsm":
@@ -220,7 +222,7 @@
   "resource:///modules/AboutNewTab.jsm": "browser/modules/AboutNewTab.jsm",
   "resource:///modules/AboutNewTabService.jsm":
     "browser/components/newtab/AboutNewTabService.jsm",
-  "resource:///modules/AppUpdater.jsm": "browser/modules/AppUpdater.jsm",
+  "resource://gre/modules/AppUpdater.jsm": "toolkit/mozapps/update/AppUpdater.jsm",
   "resource:///modules/AsyncTabSwitcher.jsm":
     "browser/modules/AsyncTabSwitcher.jsm",
   "resource:///modules/AttributionCode.jsm":
@@ -451,8 +453,6 @@
     "browser/components/urlbar/UrlbarProviderUnitConversion.jsm",
   "resource:///modules/UrlbarProvidersManager.jsm":
     "browser/components/urlbar/UrlbarProvidersManager.jsm",
-  "resource:///modules/UrlbarQuickSuggest.jsm":
-    "browser/components/urlbar/UrlbarQuickSuggest.jsm",
   "resource:///modules/UrlbarResult.jsm":
     "browser/components/urlbar/UrlbarResult.jsm",
   "resource:///modules/UrlbarSearchOneOffs.jsm":
@@ -606,6 +606,8 @@
     "browser/components/newtab/lib/DownloadsManager.jsm",
   "resource://activity-stream/lib/FaviconFeed.jsm":
     "browser/components/newtab/lib/FaviconFeed.jsm",
+  "resource://activity-stream/lib/FeatureCalloutMessages.jsm":
+    "browser/components/newtab/lib/FeatureCalloutMessages.jsm",
   "resource://activity-stream/lib/FilterAdult.jsm":
     "browser/components/newtab/lib/FilterAdult.jsm",
   "resource://activity-stream/lib/HighlightsFeed.jsm":
@@ -823,10 +825,10 @@
     "toolkit/actors/BrowserElementChild.jsm",
   "resource://gre/actors/BrowserElementParent.jsm":
     "toolkit/actors/BrowserElementParent.jsm",
-  "resource://gre/actors/ClipboardReadTextPasteChild.jsm":
-    "toolkit/actors/ClipboardReadTextPasteChild.jsm",
-  "resource://gre/actors/ClipboardReadTextPasteParent.jsm":
-    "toolkit/actors/ClipboardReadTextPasteParent.jsm",
+  "resource://gre/actors/ClipboardReadPasteChild.jsm":
+    "toolkit/actors/ClipboardReadPasteChild.jsm",
+  "resource://gre/actors/ClipboardReadPasteParent.jsm":
+    "toolkit/actors/ClipboardReadPasteParent.jsm",
   "resource://gre/actors/ContentMetaChild.jsm":
     "toolkit/actors/ContentMetaChild.jsm",
   "resource://gre/actors/ContentMetaParent.jsm":
@@ -835,6 +837,10 @@
     "toolkit/actors/ControllersChild.jsm",
   "resource://gre/actors/ControllersParent.jsm":
     "toolkit/actors/ControllersParent.jsm",
+  "resource://gre/actors/CookieBannerChild.jsm.jsm":
+    "toolkit/components/cookiebanners/CookieBannerChild.jsm.jsm",
+  "resource://gre/actors/CookieBannerParent.jsm":
+    "toolkit/components/cookiebanners/CookieBannerParent.jsm",
   "resource://gre/actors/DateTimePickerChild.jsm":
     "toolkit/actors/DateTimePickerChild.jsm",
   "resource://gre/actors/DateTimePickerParent.jsm":
@@ -1078,6 +1084,8 @@
     "toolkit/components/extensions/ExtensionPreferencesManager.jsm",
   "resource://gre/modules/ExtensionProcessScript.jsm":
     "toolkit/components/extensions/ExtensionProcessScript.jsm",
+  "resource://gre/modules/ExtensionScriptingStore.jsm":
+    "toolkit/components/extensions/ExtensionScriptingStore.jsm",
   "resource://gre/modules/ExtensionSearchHandler.jsm":
     "toolkit/components/places/ExtensionSearchHandler.jsm",
   "resource://gre/modules/ExtensionSettingsStore.jsm":
@@ -1208,8 +1216,8 @@
     "mobile/android/modules/geckoview/GeckoViewTab.jsm",
   "resource://gre/modules/GeckoViewTelemetry.jsm":
     "mobile/android/modules/geckoview/GeckoViewTelemetry.jsm",
-  "resource://gre/modules/GeckoViewUtils.jsm":
-    "mobile/android/modules/geckoview/GeckoViewUtils.jsm",
+  "resource://gre/modules/GeckoViewTestUtils.jsm":
+    "mobile/android/modules/geckoview/GeckoViewTestUtils.jsm",
   "resource://gre/modules/GeckoViewWebExtension.jsm":
     "mobile/android/modules/geckoview/GeckoViewWebExtension.jsm",
   "resource://gre/modules/Geometry.jsm": "toolkit/modules/Geometry.jsm",
@@ -1224,7 +1232,6 @@
   "resource://gre/modules/ImageObjectProcessor.jsm":
     "dom/manifest/ImageObjectProcessor.jsm",
   "resource://gre/modules/IndexedDB.jsm": "toolkit/modules/IndexedDB.jsm",
-  "resource://gre/modules/IndexedDBHelper.jsm": "dom/base/IndexedDBHelper.jsm",
   "resource://gre/modules/InlineSpellChecker.jsm":
     "toolkit/modules/InlineSpellChecker.jsm",
   "resource://gre/modules/InlineSpellCheckerContent.jsm":
@@ -1298,8 +1305,6 @@
     "mobile/android/modules/geckoview/MediaUtils.jsm",
   "resource://gre/modules/MessageManagerProxy.jsm":
     "toolkit/components/extensions/MessageManagerProxy.jsm",
-  "resource://gre/modules/Messaging.jsm":
-    "mobile/android/modules/geckoview/Messaging.jsm",
   "resource://gre/modules/ModulesPing.jsm":
     "toolkit/components/telemetry/pings/ModulesPing.jsm",
   "resource://gre/modules/MozProtocolHandler.jsm":
@@ -1391,20 +1396,6 @@
     "toolkit/components/extensions/ProxyChannelFilter.jsm",
   "resource://gre/modules/PurgeTrackerService.jsm":
     "toolkit/components/antitracking/PurgeTrackerService.jsm",
-  "resource://gre/modules/Push.jsm": "dom/push/Push.jsm",
-  "resource://gre/modules/PushBroadcastService.jsm":
-    "dom/push/PushBroadcastService.jsm",
-  "resource://gre/modules/PushComponents.jsm": "dom/push/PushComponents.jsm",
-  "resource://gre/modules/PushCrypto.jsm": "dom/push/PushCrypto.jsm",
-  "resource://gre/modules/PushDB.jsm": "dom/push/PushDB.jsm",
-  "resource://gre/modules/PushRecord.jsm": "dom/push/PushRecord.jsm",
-  "resource://gre/modules/PushService.jsm": "dom/push/PushService.jsm",
-  "resource://gre/modules/PushServiceAndroidGCM.jsm":
-    "dom/push/PushServiceAndroidGCM.jsm",
-  "resource://gre/modules/PushServiceHttp2.jsm":
-    "dom/push/PushServiceHttp2.jsm",
-  "resource://gre/modules/PushServiceWebSocket.jsm":
-    "dom/push/PushServiceWebSocket.jsm",
   "resource://gre/modules/RFPHelper.jsm":
     "toolkit/components/resistfingerprinting/RFPHelper.jsm",
   "resource://gre/modules/ReaderMode.jsm":
@@ -2089,10 +2080,14 @@
     "toolkit/components/backgroundtasks/tests/BackgroundTask_shouldprocessupdates.jsm",
   "resource://testing-common/backgroundtasks/BackgroundTask_wait.jsm":
     "toolkit/components/backgroundtasks/tests/BackgroundTask_wait.jsm",
+  "resource://testing-common/cookie_filtering_helper.jsm":
+    "netwerk/test/browser/cookie_filtering_helper.jsm",
   "resource://testing-common/dom/quota/test/modules/ModuleLoader.jsm":
     "dom/quota/test/modules/system/ModuleLoader.jsm",
   "resource://testing-common/dom/quota/test/modules/StorageUtils.jsm":
     "dom/quota/test/modules/system/StorageUtils.jsm",
+  "resource://testing-common/dom/quota/test/modules/WorkerDriver.jsm":
+    "dom/quota/test/modules/system/WorkerDriver.jsm",
   "resource://testing-common/early_hint_preload_test_helper.jsm":
     "netwerk/test/browser/early_hint_preload_test_helper.jsm",
   "resource://testing-common/httpd.js": "netwerk/test/httpserver/httpd.js",

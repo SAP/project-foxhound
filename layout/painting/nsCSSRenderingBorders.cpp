@@ -2749,8 +2749,10 @@ static void DrawBorderRadius(
 
   if (aFirstColor != aSecondColor) {
     // Start and end angles of corner quadrant
-    Float startAngle = (c * M_PI) / 2.0f - M_PI,
-          endAngle = startAngle + M_PI / 2.0f, outerSplitAngle, innerSplitAngle;
+    constexpr float PIf = M_PI;
+    Float startAngle = (static_cast<float>(c) * PIf) / 2.0f - PIf;
+    Float endAngle = startAngle + PIf / 2.0f;
+    Float outerSplitAngle, innerSplitAngle;
     Point outerSplit, innerSplit;
 
     // Outer half-way point
@@ -3845,7 +3847,7 @@ nsCSSBorderImageRenderer::nsCSSBorderImageRenderer(
     if (value < 0) {
       value = 0;
     }
-    if (value > imgDimension) {
+    if (value > imgDimension && imgDimension > 0) {
       value = imgDimension;
     }
     mSlice.Side(s) = value;

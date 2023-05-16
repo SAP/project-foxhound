@@ -4,9 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -52,11 +50,13 @@ const PREF_DISALLOW_ENTERPRISE = "browser.policies.testing.disallowEnterprise";
 const PREF_POLICIES_APPLIED = "browser.policies.applied";
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   return new ConsoleAPI({
     prefix: "Enterprise Policies",
     // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
-    // messages during development. See LOG_LEVELS in Console.jsm for details.
+    // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
     maxLogLevel: "error",
     maxLogLevelPref: PREF_LOGLEVEL,
   });
@@ -532,12 +532,8 @@ class JSONPoliciesProvider {
     let configFile = null;
 
     if (AppConstants.platform == "linux" && AppConstants.MOZ_SYSTEM_POLICIES) {
-      let systemConfigFile = Cc["@mozilla.org/file/local;1"].createInstance(
-        Ci.nsIFile
-      );
-      systemConfigFile.initWithPath(
-        "/etc/" + Services.appinfo.name.toLowerCase() + "/policies"
-      );
+      let systemConfigFile = Services.dirsvc.get("SysConfD", Ci.nsIFile);
+      systemConfigFile.append("policies");
       systemConfigFile.append(POLICIES_FILENAME);
       if (systemConfigFile.exists()) {
         return systemConfigFile;

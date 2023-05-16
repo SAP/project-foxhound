@@ -10,10 +10,10 @@ let { RemoteSettings } = ChromeUtils.import(
 let { _AboutLogins } = ChromeUtils.import(
   "resource:///actors/AboutLoginsParent.jsm"
 );
-let { OSKeyStoreTestUtils } = ChromeUtils.import(
-  "resource://testing-common/OSKeyStoreTestUtils.jsm"
+let { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
 );
-let { LoginTestUtils } = ChromeUtils.import(
+var { LoginTestUtils } = ChromeUtils.import(
   "resource://testing-common/LoginTestUtils.jsm"
 );
 
@@ -103,7 +103,7 @@ add_setup(async function setup_head() {
     }
 
     if (msg.errorMessage.includes('Unknown event: ["jsonfile", "load"')) {
-      // Ignore telemetry errors from JSONFile.jsm.
+      // Ignore telemetry errors from JSONFile.sys.mjs.
       return;
     }
 
@@ -174,7 +174,7 @@ add_setup(async function setup_head() {
  * @param {string} action Set to "authenticate" to log in or "cancel" to
  *        close the dialog without logging in.
  */
-function waitForMPDialog(action) {
+function waitForMPDialog(action, aWindow = window) {
   const BRAND_BUNDLE = Services.strings.createBundle(
     "chrome://branding/locale/brand.properties"
   );
@@ -192,7 +192,7 @@ function waitForMPDialog(action) {
     } else if (action == "cancel") {
       dialog.ui.button1.click();
     }
-    return BrowserTestUtils.waitForEvent(window, "DOMModalDialogClosed");
+    return BrowserTestUtils.waitForEvent(aWindow, "DOMModalDialogClosed");
   });
 }
 
@@ -205,10 +205,10 @@ function waitForMPDialog(action) {
  *        close the dialog without logging in.
  * @returns {Promise} Resolves after the MP dialog has been presented and actioned upon
  */
-function forceAuthTimeoutAndWaitForMPDialog(action) {
+function forceAuthTimeoutAndWaitForMPDialog(action, aWindow = window) {
   const AUTH_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes (duplicated from AboutLoginsParent.jsm)
   _AboutLogins._authExpirationTime -= AUTH_TIMEOUT_MS + 1;
-  return waitForMPDialog(action);
+  return waitForMPDialog(action, aWindow);
 }
 
 /**

@@ -3,8 +3,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PFileSystemAccessHandle;
+include protocol PFileSystemWritableFileStream;
 
 include IPCBlob;
+include RandomAccessStreamParams;
 
 using mozilla::dom::fs::ContentType from "mozilla/dom/FileSystemTypes.h";
 using mozilla::dom::fs::EntryId from "mozilla/dom/FileSystemTypes.h";
@@ -126,10 +128,37 @@ struct FileSystemGetAccessHandleRequest
   EntryId entryId;
 };
 
+struct FileSystemAccessHandleProperties
+{
+  RandomAccessStreamParams streamParams;
+  PFileSystemAccessHandle accessHandle;
+};
+
 union FileSystemGetAccessHandleResponse
 {
   nsresult;
-  PFileSystemAccessHandle;
+  FileSystemAccessHandleProperties;
+};
+
+/**
+ * Contains entry handle information.
+ */
+struct FileSystemGetWritableRequest
+{
+  EntryId entryId;
+  bool keepData;
+};
+
+struct FileSystemWritableFileStreamProperties
+{
+  FileDescriptor fileDescriptor;
+  PFileSystemWritableFileStream writableFileStream;
+};
+
+union FileSystemGetWritableFileStreamResponse
+{
+  nsresult;
+  FileSystemWritableFileStreamProperties;
 };
 
 /**
@@ -225,6 +254,7 @@ struct FileSystemQuotaRequest
 async protocol PFileSystemManager
 {
   manages PFileSystemAccessHandle;
+  manages PFileSystemWritableFileStream;
 
  parent:
   /**
@@ -303,8 +333,9 @@ async protocol PFileSystemManager
   /**
    * TODO: documentation
    */
-  async GetWritable(FileSystemGetFileRequest request)
-      returns(FileSystemGetAccessHandleResponse fileData);
+  [VirtualSendImpl]
+  async GetWritable(FileSystemGetWritableRequest request)
+      returns(FileSystemGetWritableFileStreamResponse fileData);
 
   /**
    * Initiates an asynchronous request for the file system path
@@ -382,7 +413,8 @@ async protocol PFileSystemManager
       returns (uint64_t aQuotaGranted);
 
  child:
-  async PFileSystemAccessHandle(FileDescriptor fileDescriptor);
+  async PFileSystemAccessHandle();
+  async PFileSystemWritableFileStream();
 
   async CloseAll()
       returns(nsresult rv);

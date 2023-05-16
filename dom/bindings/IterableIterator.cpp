@@ -109,7 +109,16 @@ already_AddRefed<Promise> AsyncIterableNextImpl::NextSteps(
 
   // 4. Let nextPromise be the result of getting the next iteration result with
   //    object’s target and object.
-  RefPtr<Promise> nextPromise = GetNextResult(aRv);
+  RefPtr<Promise> nextPromise;
+  {
+    ErrorResult error;
+    nextPromise = GetNextResult(error);
+
+    error.WouldReportJSException();
+    if (error.Failed()) {
+      nextPromise = Promise::Reject(aGlobalObject, std::move(error), aRv);
+    }
+  }
 
   // 5. Let fulfillSteps be the following steps, given next:
   auto fulfillSteps = [](JSContext* aCx, JS::Handle<JS::Value> aNext,
@@ -195,9 +204,10 @@ already_AddRefed<Promise> AsyncIterableNextImpl::Next(
     auto onSettled = [this](JSContext* aCx, JS::Handle<JS::Value> aValue,
                             ErrorResult& aRv,
                             const RefPtr<AsyncIterableIteratorBase>& aObject,
-                            const nsCOMPtr<nsIGlobalObject>& aGlobalObject) {
-      return NextSteps(aCx, aObject, aGlobalObject, aRv);
-    };
+                            const nsCOMPtr<nsIGlobalObject>& aGlobalObject)
+                         MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION {
+                           return NextSteps(aCx, aObject, aGlobalObject, aRv);
+                         };
 
     // 3. Perform PerformPromiseThen(ongoingPromise, onSettled, onSettled,
     //    afterOngoingPromiseCapability).
@@ -246,7 +256,15 @@ already_AddRefed<Promise> AsyncIterableReturnImpl::ReturnSteps(
 
   // 4. Return the result of running the asynchronous iterator return algorithm
   // for interface, given object’s target, object, and value.
-  return GetReturnPromise(aCx, aValue, aRv);
+  ErrorResult error;
+  RefPtr<Promise> returnPromise = GetReturnPromise(aCx, aValue, error);
+
+  error.WouldReportJSException();
+  if (error.Failed()) {
+    return Promise::Reject(aGlobalObject, std::move(error), aRv);
+  }
+
+  return returnPromise.forget();
 }
 
 already_AddRefed<Promise> AsyncIterableReturnImpl::Return(
@@ -267,13 +285,13 @@ already_AddRefed<Promise> AsyncIterableReturnImpl::Return(
     // aObject is the same object as 'this', so it's fine to capture 'this'
     // without taking a strong reference, because we already take a strong
     // reference to it through aObject.
-    auto onSettled = [this](JSContext* aCx, JS::Handle<JS::Value> aValue,
-                            ErrorResult& aRv,
-                            const RefPtr<AsyncIterableIteratorBase>& aObject,
-                            const nsCOMPtr<nsIGlobalObject>& aGlobalObject,
-                            JS::Handle<JS::Value> aVal) {
-      return ReturnSteps(aCx, aObject, aGlobalObject, aVal, aRv);
-    };
+    auto onSettled =
+        [this](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv,
+               const RefPtr<AsyncIterableIteratorBase>& aObject,
+               const nsCOMPtr<nsIGlobalObject>& aGlobalObject,
+               JS::Handle<JS::Value> aVal) MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION {
+          return ReturnSteps(aCx, aObject, aGlobalObject, aVal, aRv);
+        };
 
     // 3. Perform PerformPromiseThen(ongoingPromise, onSettled, onSettled,
     //    afterOngoingPromiseCapability).

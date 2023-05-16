@@ -109,6 +109,10 @@ export const MultiStageAboutWelcome = props => {
     })();
   }, []);
 
+  // Save the active multi select state containing array of checkbox ids
+  // used in handleAction to update MULTI_ACTION data
+  const [activeMultiSelect, setActiveMultiSelect] = useState(null);
+
   // Get the active theme so the rendering code can make it selected
   // by default.
   const [activeTheme, setActiveTheme] = useState(null);
@@ -207,6 +211,8 @@ export const MultiStageAboutWelcome = props => {
               initialTheme={initialTheme}
               setActiveTheme={setActiveTheme}
               setInitialTheme={setInitialTheme}
+              activeMultiSelect={activeMultiSelect}
+              setActiveMultiSelect={setActiveMultiSelect}
               autoAdvance={screen.auto_advance}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
@@ -242,6 +248,35 @@ export const SecondaryCTA = props => {
           onClick={props.handleAction}
         />
       </Localized>
+    </div>
+  );
+};
+
+export const OnboardingVideo = props => {
+  const vidUrl = props.content.video_url;
+  const autoplay = props.content.autoPlay;
+
+  const handleVideoAction = event => {
+    props.handleAction({
+      currentTarget: {
+        value: event,
+      },
+    });
+  };
+
+  return (
+    <div>
+      <video // eslint-disable-line jsx-a11y/media-has-caption
+        controls={true}
+        autoPlay={autoplay}
+        src={vidUrl}
+        width="604px"
+        height="340px"
+        onPlay={() => handleVideoAction("video_start")}
+        onEnded={() => handleVideoAction("video_end")}
+      >
+        <source src={vidUrl}></source>
+      </video>
     </div>
   );
 };
@@ -313,12 +348,34 @@ export class WelcomeScreen extends React.PureComponent {
 
     let { action } = targetContent;
 
+    if (action.collectSelect) {
+      // Populate MULTI_ACTION data actions property with selected checkbox actions from tiles data
+      action.data = {
+        actions: this.props.activeMultiSelect.map(
+          id => props.content?.tiles?.data.find(ckbx => ckbx.id === id)?.action
+        ),
+      };
+
+      // Send telemetry with selected checkbox ids
+      AboutWelcomeUtils.sendActionTelemetry(
+        props.messageId,
+        props.activeMultiSelect,
+        "SELECT_CHECKBOX"
+      );
+    }
+
     if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
       this.handleOpenURL(action, props.flowParams, props.UTMTerm);
     } else if (action.type) {
       AboutWelcomeUtils.handleUserAction(action);
       // Wait until migration closes to complete the action
-      if (action.type === "SHOW_MIGRATION_WIZARD") {
+      if (
+        action.type === "SHOW_MIGRATION_WIZARD" ||
+        (action.type === "MULTI_ACTION" &&
+          action?.data?.actions.find(
+            subAction => subAction.type === "SHOW_MIGRATION_WIZARD"
+          ))
+      ) {
         await window.AWWaitForMigrationClose();
         AboutWelcomeUtils.sendActionTelemetry(props.messageId, "migrate_close");
       }
@@ -354,6 +411,8 @@ export class WelcomeScreen extends React.PureComponent {
         order={this.props.order}
         stepOrder={this.props.stepOrder}
         activeTheme={this.props.activeTheme}
+        activeMultiSelect={this.props.activeMultiSelect}
+        setActiveMultiSelect={this.props.setActiveMultiSelect}
         totalNumberOfScreens={this.props.totalNumberOfScreens}
         appAndSystemLocaleInfo={this.props.appAndSystemLocaleInfo}
         negotiatedLanguage={this.props.negotiatedLanguage}

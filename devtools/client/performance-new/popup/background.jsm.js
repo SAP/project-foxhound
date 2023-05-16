@@ -18,8 +18,8 @@ const { createLazyLoaders } = ChromeUtils.import(
 );
 // For some reason TypeScript was giving me an error when de-structuring AppConstants. I
 // suspect a bug in TypeScript was at play.
-const AppConstants = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const AppConstants = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 ).AppConstants;
 
 /**
@@ -90,7 +90,7 @@ const lazy = createLazyLoaders({
   Utils: () => require("devtools/client/performance-new/utils"),
   BrowserModule: () => require("devtools/client/performance-new/browser"),
   RecordingUtils: () =>
-    require("devtools/shared/performance-new/recording-utils"),
+    require("resource://devtools/shared/performance-new/recording-utils.js"),
   CustomizableUI: () =>
     ChromeUtils.import("resource:///modules/CustomizableUI.jsm"),
   PerfSymbolication: () =>

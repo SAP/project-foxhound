@@ -197,6 +197,12 @@ builtinNames = [
     Builtin("string", "char *", "*const libc::c_char", False, False),
     Builtin("wchar", "char16_t", "u16", False, False),
     Builtin("wstring", "char16_t *", "*const u16", False, False),
+    # As seen in mfbt/RefCountType.h, this type has special handling to
+    # maintain binary compatibility with MSCOM's IUnknown that cannot be
+    # expressed in XPIDL.
+    Builtin(
+        "MozExternalRefCountType", "MozExternalRefCountType", "MozExternalRefCountType"
+    ),
 ]
 
 builtinMap = {}
@@ -1633,13 +1639,13 @@ class IDLParser(object):
     t_ignore = " \t"
 
     def t_multilinecomment(self, t):
-        r"/\*(?s).*?\*/"
+        r"/\*(\n|.)*?\*/"
         t.lexer.lineno += t.value.count("\n")
         if t.value.startswith("/**"):
             self._doccomments.append(t.value)
 
     def t_singlelinecomment(self, t):
-        r"(?m)//.*?$"
+        r"//[^\n]*"
 
     def t_IID(self, t):
         return t
@@ -1652,7 +1658,7 @@ class IDLParser(object):
         return t
 
     def t_LCDATA(self, t):
-        r"(?s)%\{[ ]*C\+\+[ ]*\n(?P<cdata>.*?\n?)%\}[ ]*(C\+\+)?"
+        r"%\{[ ]*C\+\+[ ]*\n(?P<cdata>(\n|.)*?\n?)%\}[ ]*(C\+\+)?"
         t.type = "CDATA"
         t.value = t.lexer.lexmatch.group("cdata")
         t.lexer.lineno += t.value.count("\n")

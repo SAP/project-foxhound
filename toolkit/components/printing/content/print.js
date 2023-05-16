@@ -8,16 +8,10 @@ const {
   AppConstants,
 } = window.docShell.chromeEventHandler.ownerGlobal;
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DeferredTask",
-  "resource://gre/modules/DeferredTask.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
+});
 
 const PDF_JS_URI = "resource://pdf.js/web/viewer.html";
 const INPUT_DELAY_MS = Cu.isInAutomation ? 100 : 500;
@@ -33,7 +27,9 @@ var logger = (function() {
   const getMaxLogLevel = () =>
     Services.prefs.getBoolPref("print.debug", false) ? "all" : "warn";
 
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
   let _logger = new ConsoleAPI({
     prefix: "printUI",
@@ -196,14 +192,17 @@ var PrintEventHandler = {
     let topWindowContext = sourceBrowsingContext.top.currentWindowContext;
     this.topContentTitle = topWindowContext.documentTitle;
     this.topCurrentURI = topWindowContext.documentURI.spec;
+    this.isReader = this.topCurrentURI.startsWith("about:reader");
 
-    if (!this.hasSelection && !this.isArticle) {
+    let canSimplify = !this.isReader && this.isArticle;
+    if (!this.hasSelection && !canSimplify) {
       document.getElementById("source-version-section").hidden = true;
     } else {
       document.getElementById("source-version-selection").hidden = !this
         .hasSelection;
-      document.getElementById("source-version-simplified").hidden = !this
-        .isArticle;
+      document.getElementById(
+        "source-version-simplified"
+      ).hidden = !canSimplify;
     }
 
     // We don't need the sourceBrowsingContext anymore, get rid of it.
@@ -398,7 +397,7 @@ var PrintEventHandler = {
     await window._initialized;
 
     // This seems like it should be handled automatically but it isn't.
-    Services.prefs.setStringPref("print_printer", settings.printerName);
+    PSSVC.maybeSaveLastUsedPrinterNameToPrefs(settings.printerName);
 
     try {
       // We'll provide our own progress indicator.
@@ -795,7 +794,7 @@ var PrintEventHandler = {
   },
 
   saveSettingsToPrefs(flags) {
-    PSSVC.savePrintSettingsToPrefs(this.settings, true, flags);
+    PSSVC.maybeSavePrintSettingsToPrefs(this.settings, flags);
   },
 
   /**

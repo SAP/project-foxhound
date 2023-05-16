@@ -9,6 +9,7 @@ import {
   SITEPERMS_ADDON_TYPE,
   isGatedPermissionType,
   isKnownPublicSuffix,
+  isPrincipalInSitePermissionsBlocklist,
 } from "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -20,13 +21,58 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
 });
+XPCOMUtils.defineLazyGetter(
+  lazy,
+  "addonsBundle",
+  () => new Localization(["toolkit/about/aboutAddons.ftl"], true)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "SITEPERMS_ADDON_PROVIDER_ENABLED",
+  SITEPERMS_ADDON_PROVIDER_PREF,
+  false
+);
 
 const FIRST_CONTENT_PROCESS_TOPIC = "ipc:first-content-process-created";
 const SITEPERMS_ADDON_ID_SUFFIX = "@siteperms.mozilla.org";
 
+// Generate a per-session random salt, which is then used to generate
+// per-siteOrigin hashed strings used as the addon id in SitePermsAddonWrapper constructor
+// (expected to be matching new addon id generated for the same siteOrigin during
+// the same browsing session and different ones in new browsing sessions).
+//
+// NOTE: `generateSalt` is exported for testing purpose, should not be
+// used outside of tests.
+let SALT;
+export function generateSalt() {
+  //TODO: Use Services.env (See Bug 1541508).
+  let env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  // Throw if we're not in test and SALT is already defined
+  if (typeof SALT !== "undefined" && !env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+    throw new Error("This should only be called from XPCShell tests");
+  }
+  SALT = crypto.getRandomValues(new Uint8Array(12)).join("");
+}
+
+function getSalt() {
+  if (!SALT) {
+    generateSalt();
+  }
+  return SALT;
+}
+
 class SitePermsAddonWrapper {
-  // A <string, nsIPermission> Map, whose keys are permission types.
-  #permissionsByPermissionType = new Map();
+  // An array of nsIPermission granted for the siteOrigin.
+  // We can't use a Set as handlePermissionChange might be called with different
+  // nsIPermission instance for the same permission (in the generic sense)
+  #permissions = [];
+
+  // This will be set to true in the `uninstall` method to recognize when a perm-changed notification
+  // is actually triggered by the SitePermsAddonWrapper uninstall method itself.
+  isUninstalling = false;
 
   /**
    * @param {string} siteOriginNoSuffix: The origin this addon is installed for
@@ -42,13 +88,19 @@ class SitePermsAddonWrapper {
     this.principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       this.siteOrigin
     );
+    // Use a template string for the concat in case `siteOrigin` isn't a string.
+    const saltedValue = `${this.siteOrigin}${getSalt()}`;
     this.id = `${computeSha256HashAsString(
-      this.siteOrigin
+      saltedValue
     )}${SITEPERMS_ADDON_ID_SUFFIX}`;
 
     for (const perm of permissions) {
-      this.#permissionsByPermissionType.set(perm.type, perm);
+      this.#permissions.push(perm);
     }
+  }
+
+  get isUninstalled() {
+    return this.#permissions.length === 0;
   }
 
   /**
@@ -57,11 +109,11 @@ class SitePermsAddonWrapper {
    * @return {Array<String>}
    */
   get sitePermissions() {
-    return Array.from(this.#permissionsByPermissionType.keys());
+    return Array.from(new Set(this.#permissions.map(perm => perm.type)));
   }
 
   /**
-   * Update #permissionsByPermissionType, and calls `uninstall` if there are no remaining gated permissions
+   * Update #permissions, and calls `uninstall` if there are no remaining gated permissions
    * granted. This is called by SitePermsAddonProvider when it gets a "perm-changed" notification for a gated
    * permission.
    *
@@ -70,11 +122,19 @@ class SitePermsAddonWrapper {
    */
   handlePermissionChange(permission, action) {
     if (action == "added") {
-      this.#permissionsByPermissionType.set(permission.type, permission);
+      this.#permissions.push(permission);
     } else if (action == "deleted") {
-      this.#permissionsByPermissionType.delete(permission.type);
+      // We want to remove the registered permission for the right principal (looking into originSuffix so we
+      // can unregister revoked permission on a specific context, private window, ...).
+      this.#permissions = this.#permissions.filter(
+        perm =>
+          !(
+            perm.type == permission.type &&
+            perm.principal.originSuffix === permission.principal.originSuffix
+          )
+      );
 
-      if (this.#permissionsByPermissionType.size === 0) {
+      if (this.#permissions.length === 0) {
         this.uninstall();
       }
     }
@@ -85,8 +145,9 @@ class SitePermsAddonWrapper {
   }
 
   get name() {
-    // TODO: Localize this string (See Bug 1790313).
-    return `Site Permissions for ${this.principal.host}`;
+    return lazy.addonsBundle.formatValueSync("addon-sitepermission-host", {
+      host: this.principal.host,
+    });
   }
 
   get creator() {}
@@ -159,11 +220,33 @@ class SitePermsAddonWrapper {
    * @throws Services.perms.removeFromPrincipal could throw, see PermissionManager::AddInternal.
    */
   async uninstall() {
-    lazy.AddonManagerPrivate.callAddonListeners("onUninstalling", this, false);
-    for (const permission of this.#permissionsByPermissionType.values()) {
-      Services.perms.removeFromPrincipal(permission.principal, permission.type);
+    if (this.isUninstalling) {
+      return;
     }
-    lazy.AddonManagerPrivate.callAddonListeners("onUninstalled", this);
+    try {
+      this.isUninstalling = true;
+      lazy.AddonManagerPrivate.callAddonListeners(
+        "onUninstalling",
+        this,
+        false
+      );
+      const permissions = [...this.#permissions];
+      for (const permission of permissions) {
+        try {
+          Services.perms.removeFromPrincipal(
+            permission.principal,
+            permission.type
+          );
+          // Only remove the permission from the array if it was successfully removed from the principal
+          this.#permissions.splice(this.#permissions.indexOf(permission), 1);
+        } catch (err) {
+          Cu.reportError(err);
+        }
+      }
+      lazy.AddonManagerPrivate.callAddonListeners("onUninstalled", this);
+    } finally {
+      this.isUninstalling = false;
+    }
   }
 
   get isCompatible() {
@@ -203,12 +286,40 @@ class SitePermsAddonInstalling extends SitePermsAddonWrapper {
    *                                         calling this constructor.
    */
   constructor(siteOriginNoSuffix, install) {
-    super(siteOriginNoSuffix);
+    // SitePermsAddonWrapper expect an array of nsIPermission as its second parameter.
+    // Since we don't have a proper permission here, we pass an object with the properties
+    // being used in the class.
+    const permission = {
+      principal: install.principal,
+      type: install.newSitePerm,
+    };
+
+    super(siteOriginNoSuffix, [permission]);
     this.#install = install;
   }
 
-  get sitePermissions() {
-    return Array.from(new Set([this.#install.newSitePerm]));
+  get existingAddon() {
+    return SitePermsAddonProvider.wrappersMapByOrigin.get(this.siteOrigin);
+  }
+
+  uninstall() {
+    // While about:addons tab is already open, new addon cards for newly installed
+    // addons are created from the `onInstalled` AOM events, for the `SitePermsAddonWrapper`
+    // the `onInstalling` and `onInstalled` events are emitted by `SitePermsAddonInstall`
+    // and the addon instance is going to be a `SitePermsAddonInstalling` instance if
+    // there wasn't an AddonCard for the same addon id yet.
+    //
+    // To make sure that all permissions will be uninstalled if a user uninstall the
+    // addon from an AddonCard created from a `SitePermsAddonInstalling` instance,
+    // we forward calls to the uninstall method of the existing `SitePermsAddonWrapper`
+    // instance being tracked by the `SitePermsAddonProvider`.
+    // If there isn't any then removing only the single permission added along with the
+    // `SitePremsAddonInstalling` is going to be enough.
+    if (this.existingAddon) {
+      return this.existingAddon.uninstall();
+    }
+
+    return super.uninstall();
   }
 
   validInstallOrigins() {
@@ -218,10 +329,13 @@ class SitePermsAddonInstalling extends SitePermsAddonWrapper {
   }
 }
 
+// Numeric id included in the install telemetry events to correlate multiple events related
+// to the same install or update flow.
+let nextInstallId = 0;
+
 class SitePermsAddonInstall {
   #listeners = new Set();
   #installEvents = {
-    DOWNLOAD_ENDED: "onDownloadEnded",
     INSTALL_CANCELLED: "onInstallCancelled",
     INSTALL_ENDED: "onInstallEnded",
     INSTALL_FAILED: "onInstallFailed",
@@ -239,6 +353,7 @@ class SitePermsAddonInstall {
       this.principal.siteOriginNoSuffix,
       this
     );
+    this.installId = ++nextInstallId;
   }
 
   get installTelemetryInfo() {
@@ -267,7 +382,7 @@ class SitePermsAddonInstall {
           // to install/uninstall/enable/disable addons.  We may need to
           // do that here in the future.
           this.#callInstallListeners(this.#installEvents.INSTALL_FAILED);
-        } else {
+        } else if (this.state !== lazy.AddonManager.STATE_CANCELLED) {
           this.cancel();
         }
         return;
@@ -299,11 +414,17 @@ class SitePermsAddonInstall {
       return;
     }
 
-    this.#callInstallListeners(this.#installEvents.DOWNLOAD_ENDED);
     this.checkPrompt();
   }
 
   cancel() {
+    // This method can be called if the install is already cancelled.
+    // We don't want to go further in such case as it would lead to duplicated Telemetry events.
+    if (this.state == lazy.AddonManager.STATE_CANCELLED) {
+      console.error("SitePermsAddonInstall#cancel called twice on ", this);
+      return;
+    }
+
     this.state = lazy.AddonManager.STATE_CANCELLED;
     this.#callInstallListeners(this.#installEvents.INSTALL_CANCELLED);
   }
@@ -341,16 +462,11 @@ class SitePermsAddonInstall {
       return;
     }
 
-    for (const listener of this.#listeners) {
-      try {
-        listener[eventName]?.(this);
-      } catch (e) {
-        console.warn(
-          `SitePermsAddonInstall threw exception when calling listener callback for event "${eventName}":`,
-          e
-        );
-      }
-    }
+    lazy.AddonManagerPrivate.callInstallListeners(
+      eventName,
+      Array.from(this.#listeners),
+      this
+    );
   }
 }
 
@@ -376,6 +492,10 @@ const SitePermsAddonProvider = {
     // Gated APIs should probably not be available on non-secure origins,
     // but let's double check here.
     if (permission.principal.scheme !== "https") {
+      return;
+    }
+
+    if (isPrincipalInSitePermissionsBlocklist(permission.principal)) {
       return;
     }
 
@@ -413,9 +533,7 @@ const SitePermsAddonProvider = {
         return;
       }
       // Only remove the addon if it doesn't have any permissions left.
-      if (
-        this.wrappersMapByOrigin.get(siteOriginNoSuffix).sitePermissions.length
-      ) {
+      if (!this.wrappersMapByOrigin.get(siteOriginNoSuffix).isUninstalled) {
         return;
       }
       this.wrappersMapByOrigin.delete(siteOriginNoSuffix);
@@ -444,7 +562,9 @@ const SitePermsAddonProvider = {
   },
 
   shutdown() {
-    Services.obs.removeObserver(this, "perm-changed");
+    if (this._initPromise) {
+      Services.obs.removeObserver(this, "perm-changed");
+    }
     this.wrappersMapByOrigin.clear();
     this._initPromise = null;
   },
@@ -502,7 +622,7 @@ const SitePermsAddonProvider = {
   },
 
   get isEnabled() {
-    return Services.prefs.getBoolPref(SITEPERMS_ADDON_PROVIDER_PREF, false);
+    return lazy.SITEPERMS_ADDON_PROVIDER_ENABLED;
   },
 
   observe(subject, topic, data) {

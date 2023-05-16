@@ -12,10 +12,7 @@ const SEARCH_STRING = "chocolate cake";
 
 add_setup(async function() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.search.widget.inNavBar", false],
-      ["browser.urlbar.showSearchTerms", true],
-    ],
+    set: [["browser.urlbar.showSearchTerms.featureGate", true]],
   });
 
   await SearchTestUtils.installSearchExtension({
@@ -78,9 +75,19 @@ function assertSearchStringIsInUrlbar(searchString) {
     `Search string ${searchString} should be in the url bar`
   );
   Assert.equal(
+    gBrowser.userTypedValue,
+    searchString,
+    `${searchString} should be the userTypedValue`
+  );
+  Assert.equal(
     gURLBar.getAttribute("pageproxystate"),
     "invalid",
     "Pageproxystate should be invalid"
+  );
+  Assert.equal(
+    gBrowser.selectedBrowser.showingSearchTerms,
+    true,
+    "showingSearchTerms should be true"
   );
 }
 
@@ -122,7 +129,7 @@ add_task(async function revert_and_press_enter() {
 });
 
 // Users should be able to revert the URL, and then if they navigate
-// to another tab, the tab that was reverted should remain reverted.
+// to another tab, the tab that was reverted will show the search term again.
 add_task(async function revert_and_change_tab() {
   let { tab, expectedSearchUrl } = await searchWithTab(SEARCH_STRING);
 
@@ -142,18 +149,9 @@ add_task(async function revert_and_change_tab() {
   // Open another tab
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
-  // Switch back to the original tab, it should still be reverted
+  // Switch back to the original tab, it should show the URI again
   await BrowserTestUtils.switchTab(gBrowser, tab);
-  Assert.equal(
-    gURLBar.value,
-    expectedSearchUrl,
-    `Urlbar should still have the reverted URI ${expectedSearchUrl} as its value.`
-  );
-  Assert.equal(
-    gURLBar.getAttribute("pageproxystate"),
-    "valid",
-    "Pageproxystate should be valid"
-  );
+  assertSearchStringIsInUrlbar(SEARCH_STRING);
 
   BrowserTestUtils.removeTab(tab);
   BrowserTestUtils.removeTab(tab2);

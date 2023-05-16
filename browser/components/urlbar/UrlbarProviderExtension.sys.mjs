@@ -22,6 +22,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
 });
 
+// The set of `UrlbarQueryContext` properties that aren't serializable.
+const NONSERIALIZABLE_CONTEXT_PROPERTIES = new Set(["view"]);
+
 /**
  * The browser.urlbar extension API allows extensions to create their own urlbar
  * providers.  The results from extension providers are integrated into the
@@ -72,6 +75,8 @@ export class UrlbarProviderExtension extends UrlbarProvider {
 
   /**
    * The provider's name.
+   *
+   * @returns {string}
    */
   get name() {
     return this._name;
@@ -80,6 +85,8 @@ export class UrlbarProviderExtension extends UrlbarProvider {
   /**
    * The provider's type.  The type of extension providers is always
    * UrlbarUtils.PROVIDER_TYPE.EXTENSION.
+   *
+   * @returns {UrlbarUtils.PROVIDER_TYPE}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.EXTENSION;
@@ -143,7 +150,7 @@ export class UrlbarProviderExtension extends UrlbarProvider {
    *
    * @param {string} eventName
    *   The name of the event to listen to.
-   * @param {function} listener
+   * @param {Function} listener
    *   The function that will be called when the event is fired.
    */
   setEventListener(eventName, listener) {
@@ -166,7 +173,10 @@ export class UrlbarProviderExtension extends UrlbarProvider {
    *   The query context.
    */
   async updateBehavior(context) {
-    let behavior = await this._notifyListener("behaviorRequested", context);
+    let behavior = await this._notifyListener(
+      "behaviorRequested",
+      makeSerializable(context)
+    );
     if (behavior) {
       this.behavior = behavior;
     }
@@ -193,11 +203,14 @@ export class UrlbarProviderExtension extends UrlbarProvider {
    *
    * @param {UrlbarQueryContext} context
    *   The query context.
-   * @param {function} addCallback
+   * @param {Function} addCallback
    *   The callback invoked by this method to add each result.
    */
   async startQuery(context, addCallback) {
-    let extResults = await this._notifyListener("resultsRequested", context);
+    let extResults = await this._notifyListener(
+      "resultsRequested",
+      makeSerializable(context)
+    );
     if (extResults) {
       for (let extResult of extResults) {
         let result = await this._makeUrlbarResult(
@@ -219,7 +232,7 @@ export class UrlbarProviderExtension extends UrlbarProvider {
    *   The query context.
    */
   cancelQuery(context) {
-    this._notifyListener("queryCanceled", context);
+    this._notifyListener("queryCanceled", makeSerializable(context));
   }
 
   /**
@@ -396,3 +409,23 @@ UrlbarProviderExtension.SOURCE_TYPES = {
   tabs: UrlbarUtils.RESULT_SOURCE.TABS,
   actions: UrlbarUtils.RESULT_SOURCE.ACTIONS,
 };
+
+/**
+ * Returns a copy of a query context stripped of non-serializable properties.
+ * This is necessary because query contexts are passed to extensions where they
+ * become `Query` objects, as defined in the urlbar extensions schema. The
+ * WebExtensions framework automatically excludes serializable properties that
+ * aren't defined in the schema, but it chokes on non-serializable properties.
+ *
+ * @param {UrlbarQueryContext} context
+ *   The query context.
+ * @returns {object}
+ *   A copy of `context` with only serializable properties.
+ */
+function makeSerializable(context) {
+  return Object.fromEntries(
+    Object.entries(context).filter(
+      ([key]) => !NONSERIALIZABLE_CONTEXT_PROPERTIES.has(key)
+    )
+  );
+}

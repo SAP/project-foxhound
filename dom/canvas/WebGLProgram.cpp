@@ -332,7 +332,7 @@ webgl::ActiveUniformValidationInfo webgl::ActiveUniformValidationInfo::Make(
 
 // -------------------------
 
-//#define DUMP_SHADERVAR_MAPPINGS
+// #define DUMP_SHADERVAR_MAPPINGS
 
 RefPtr<const webgl::LinkedProgramInfo> QueryProgramInfo(WebGLProgram* prog,
                                                         gl::GLContext* gl) {

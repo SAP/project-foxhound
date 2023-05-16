@@ -7,8 +7,8 @@ var EXPORTED_SYMBOLS = ["UITour"];
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const lazy = {};
@@ -36,7 +36,8 @@ XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
   ).getFxAccountsSingleton();
 });
 
-// See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
+// See LOG_LEVELS in Console.sys.mjs. Common examples: "All", "Info", "Warn", &
+// "Error".
 const PREF_LOG_LEVEL = "browser.uitour.loglevel";
 
 const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
@@ -67,7 +68,9 @@ const TARGET_SEARCHENGINE_PREFIX = "searchEngine-";
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
     maxLogLevelPref: PREF_LOG_LEVEL,
     prefix: "UITour",

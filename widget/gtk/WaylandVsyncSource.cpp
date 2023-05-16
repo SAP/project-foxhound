@@ -38,18 +38,17 @@ namespace mozilla {
 static void WaylandVsyncSourceCallbackHandler(void* aData,
                                               struct wl_callback* aCallback,
                                               uint32_t aTime) {
-  WaylandVsyncSource* context = (WaylandVsyncSource*)aData;
-  wl_callback_destroy(aCallback);
-  context->FrameCallback(aTime);
-}
-
-static void WaylandVsyncSourceCallbackHandler(void* aData, uint32_t aTime) {
-  WaylandVsyncSource* context = (WaylandVsyncSource*)aData;
-  context->FrameCallback(aTime);
+  RefPtr<WaylandVsyncSource> context(static_cast<WaylandVsyncSource*>(aData));
+  context->FrameCallback(aCallback, aTime);
 }
 
 static const struct wl_callback_listener WaylandVsyncSourceCallbackListener = {
     WaylandVsyncSourceCallbackHandler};
+
+static void NativeLayerRootWaylandVsyncCallback(void* aData, uint32_t aTime) {
+  RefPtr<WaylandVsyncSource> context(static_cast<WaylandVsyncSource*>(aData));
+  context->FrameCallback(nullptr, aTime);
+}
 
 static float GetFPS(TimeDuration aVsyncRate) {
   return 1000.0 / aVsyncRate.ToMilliseconds();
@@ -207,7 +206,7 @@ void WaylandVsyncSource::SetupFrameCallback(const MutexAutoLock& aProofOfLock) {
 
   if (mNativeLayerRoot) {
     LOG("  use mNativeLayerRoot");
-    mNativeLayerRoot->RequestFrameCallback(&WaylandVsyncSourceCallbackHandler,
+    mNativeLayerRoot->RequestFrameCallback(&NativeLayerRootWaylandVsyncCallback,
                                            this);
   } else {
     MozContainerSurfaceLock lock(mContainer);
@@ -222,8 +221,9 @@ void WaylandVsyncSource::SetupFrameCallback(const MutexAutoLock& aProofOfLock) {
     }
 
     LOG("  register frame callback");
-    wl_callback* callback = wl_surface_frame(surface);
-    wl_callback_add_listener(callback, &WaylandVsyncSourceCallbackListener,
+    MozClearPointer(mCallback, wl_callback_destroy);
+    mCallback = wl_surface_frame(surface);
+    wl_callback_add_listener(mCallback, &WaylandVsyncSourceCallbackListener,
                              this);
     wl_surface_commit(surface);
     wl_display_flush(WaylandDisplayGet()->GetDisplay());
@@ -248,6 +248,8 @@ void WaylandVsyncSource::IdleCallback() {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
   RefPtr<nsWindow> window;
+  TimeStamp lastVSync;
+  TimeStamp outputTimestamp;
   {
     MutexAutoLock lock(mMutex);
 
@@ -268,13 +270,23 @@ void WaylandVsyncSource::IdleCallback() {
     LOG("  fire idle vsync");
     CalculateVsyncRate(lock, TimeStamp::Now());
     mLastVsyncTimeStamp = TimeStamp::Now();
+
+    lastVSync = mLastVsyncTimeStamp;
+    outputTimestamp = mLastVsyncTimeStamp + mVsyncRate;
     window = mWindow;
   }
+
   // This could disable vsync.
   window->NotifyOcclusionState(OcclusionState::OCCLUDED);
+
+  // Make sure to fire vsync now even if we get disabled afterwards.
+  // This gives an opportunity to clean up after the visibility state change.
+  if (!window->IsDestroyed()) {
+    NotifyVsync(lastVSync, outputTimestamp);
+  }
 }
 
-void WaylandVsyncSource::FrameCallback(uint32_t aTime) {
+void WaylandVsyncSource::FrameCallback(wl_callback* aCallback, uint32_t aTime) {
   LOG("WaylandVsyncSource::FrameCallback");
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
@@ -282,10 +294,20 @@ void WaylandVsyncSource::FrameCallback(uint32_t aTime) {
     // This might enable vsync.
     RefPtr window = mWindow;
     window->NotifyOcclusionState(OcclusionState::VISIBLE);
+    // NotifyOcclusionState can destroy us.
+    if (window->IsDestroyed()) {
+      return;
+    }
   }
 
   MutexAutoLock lock(mMutex);
   mCallbackRequested = false;
+
+  // NotifyOcclusionState() can clear and create new mCallback by
+  // EnableVsync()/Refresh(). So don't delete newly created frame callback.
+  if (aCallback && aCallback == mCallback) {
+    MozClearPointer(mCallback, wl_callback_destroy);
+  }
 
   if (!mVsyncEnabled || !mMonitorEnabled) {
     // We are unwanted by either our creator or our consumer, so we just stop
@@ -392,6 +414,7 @@ void WaylandVsyncSource::Shutdown() {
   mVsyncEnabled = false;
   mCallbackRequested = false;
   MozClearHandleID(mIdleTimerID, g_source_remove);
+  MozClearPointer(mCallback, wl_callback_destroy);
 }
 
 }  // namespace mozilla

@@ -240,7 +240,6 @@ var ctrlTab = {
 
     let label = (preview._label = document.createXULElement("label"));
     label.className = "ctrlTab-label plain";
-    label.setAttribute("crop", "end");
     previewInner.appendChild(label);
 
     return preview;
@@ -281,7 +280,7 @@ var ctrlTab = {
       canvas.style.maxHeight = canvasHeight + "px";
       canvas.appendChild(tabPreviews.get(aTab));
 
-      aPreview._label.setAttribute("value", aTab.label);
+      aPreview._label.textContent = aTab.label;
       aPreview.setAttribute("tooltiptext", aTab.label);
       if (aTab.image) {
         aPreview._favicon.setAttribute("src", aTab.image);
@@ -291,7 +290,7 @@ var ctrlTab = {
       aPreview.hidden = false;
     } else {
       aPreview.hidden = true;
-      aPreview._label.removeAttribute("value");
+      aPreview._label.textContent = "";
       aPreview.removeAttribute("tooltiptext");
       aPreview._favicon.removeAttribute("src");
     }
@@ -408,13 +407,14 @@ var ctrlTab = {
   _openPanel: function ctrlTab_openPanel() {
     tabPreviewPanelHelper.opening(this);
 
-    this.panel.width = Math.min(
+    let width = Math.min(
       screen.availWidth * 0.99,
       this.canvasWidth * 1.25 * this.tabPreviewCount
     );
+    this.panel.style.width = width + "px";
     var estimateHeight = this.canvasHeight * 1.25 + 75;
     this.panel.openPopupAtScreen(
-      screen.availLeft + (screen.availWidth - this.panel.width) / 2,
+      screen.availLeft + (screen.availWidth - width) / 2,
       screen.availTop + (screen.availHeight - estimateHeight) / 2,
       false
     );

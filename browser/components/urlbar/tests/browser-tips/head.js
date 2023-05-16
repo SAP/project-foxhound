@@ -177,7 +177,7 @@ async function initUpdate(params) {
  * Performs steps in a mock update.  Adapted from runAboutDialogUpdateTest:
  * https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/head.js
  *
- * @param {array} steps
+ * @param {Array} steps
  *   See the files in toolkit/mozapps/update/tests/browser.
  */
 async function processUpdateSteps(steps) {
@@ -200,6 +200,18 @@ async function processUpdateStep(step) {
   }
 
   const { panelId, checkActiveUpdate, continueFile, downloadInfo } = step;
+
+  if (
+    panelId == "downloading" &&
+    gAUS.currentState == Ci.nsIApplicationUpdateService.STATE_IDLE
+  ) {
+    // Now that `AUS.downloadUpdate` is async, we start showing the
+    // downloading panel while `AUS.downloadUpdate` is still resolving.
+    // But the below checks assume that this resolution has already
+    // happened. So we need to wait for things to actually resolve.
+    await gAUS.stateTransition;
+  }
+
   if (checkActiveUpdate) {
     let whichUpdate =
       checkActiveUpdate.state == STATE_DOWNLOADING
@@ -277,15 +289,17 @@ async function processUpdateStep(step) {
  * Checks an intervention tip.  This works by starting a search that should
  * trigger a tip, picks the tip, and waits for the tip's action to happen.
  *
- * @param {string} searchString
+ * @param {object} options
+ *   Options for the test
+ * @param {string} options.searchString
  *   The search string.
- * @param {string} tip
+ * @param {string} options.tip
  *   The expected tip type.
- * @param {string/regexp} title
+ * @param {string | RegExp} options.title
  *   The expected tip title.
- * @param {string/regexp} button
+ * @param {string | RegExp} options.button
  *   The expected button title.
- * @param {function} awaitCallback
+ * @param {Function} options.awaitCallback
  *   A function that checks the tip's action.  Should return a promise (or be
  *   async).
  * @returns {object}
@@ -352,7 +366,7 @@ async function doUpdateTest({
  *   The search string.
  * @param {window} win
  *   The window.
- * @returns {[result, element]}
+ * @returns {(result| element)[]}
  *   The result and its element in the DOM.
  */
 async function awaitTip(searchString, win = window) {
@@ -430,15 +444,17 @@ function makeProfileResettable() {
  * Starts a search that should trigger a tip, picks the tip, and waits for the
  * tip's action to happen.
  *
- * @param {string} searchString
+ * @param {object} options
+ *   Options for the test
+ * @param {string} options.searchString
  *   The search string.
- * @param {TIPS} tip
+ * @param {TIPS} options.tip
  *   The expected tip type.
- * @param {string} title
+ * @param {string} options.title
  *   The expected tip title.
- * @param {string} button
+ * @param {string} options.button
  *   The expected button title.
- * @param {function} awaitCallback
+ * @param {Function} options.awaitCallback
  *   A function that checks the tip's action.  Should return a promise (or be
  *   async).
  * @returns {*}
@@ -507,6 +523,7 @@ function checkIntervention({
  * @param {string} searchString
  *   The search string.
  * @param {Window} win
+ *   The host window.
  */
 async function awaitNoTip(searchString, win = window) {
   let context = await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -562,12 +579,21 @@ async function checkTip(win, expectedTip, closeView = true) {
         `Start your search in the address bar to see suggestions from ` +
         `${name} and your browsing history.`;
       break;
+    case UrlbarProviderSearchTips.TIP_TYPE.PERSIST:
+      heuristic = true;
+      title =
+        "Searching just got simpler." +
+        " Try making your search more specific here in the address bar." +
+        " To show the URL instead, visit Search, in settings.";
+      break;
   }
   Assert.equal(result.heuristic, heuristic);
   Assert.equal(result.displayed.title, title);
   Assert.equal(
     result.element.row._elements.get("tipButton").textContent,
-    `Okay, Got It`
+    expectedTip == UrlbarProviderSearchTips.TIP_TYPE.PERSIST
+      ? `Got it`
+      : `Okay, Got It`
   );
   Assert.ok(
     BrowserTestUtils.is_hidden(result.element.row._elements.get("helpButton"))
@@ -638,11 +664,12 @@ async function checkTab(win, url, expectedTip, reset = true) {
 /**
  * This lets us visit www.google.com (for example) and have it redirect to
  * our test HTTP server instead of visiting the actual site.
+ *
  * @param {string} domain
  *   The domain to which we are redirecting.
  * @param {string} path
  *   The pathname on the domain.
- * @param {function} callback
+ * @param {Function} callback
  *   Executed when the test suite thinks `domain` is loaded.
  */
 async function withDNSRedirect(domain, path, callback) {
@@ -694,6 +721,9 @@ async function withDNSRedirect(domain, path, callback) {
 function resetSearchTipsProvider() {
   Services.prefs.clearUserPref(
     `browser.urlbar.tipShownCount.${UrlbarProviderSearchTips.TIP_TYPE.ONBOARD}`
+  );
+  Services.prefs.clearUserPref(
+    `browser.urlbar.tipShownCount.${UrlbarProviderSearchTips.TIP_TYPE.PERSIST}`
   );
   Services.prefs.clearUserPref(
     `browser.urlbar.tipShownCount.${UrlbarProviderSearchTips.TIP_TYPE.REDIRECT}`

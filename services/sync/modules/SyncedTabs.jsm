@@ -13,8 +13,8 @@ const { Log } = ChromeUtils.importESModule(
   "resource://gre/modules/Log.sys.mjs"
 );
 const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 
 const lazy = {};
@@ -107,8 +107,8 @@ let SyncedTabsInternal = {
     let engine = Weave.Service.engineManager.get("tabs");
 
     let ntabs = 0;
-
-    for (let client of Object.values(engine.getAllClients())) {
+    let clientTabList = await engine.getAllClients();
+    for (let client of clientTabList) {
       if (!Weave.Service.clientsEngine.remoteClientExists(client.id)) {
         continue;
       }

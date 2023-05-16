@@ -22,6 +22,7 @@ from taskgraph.decision import (
     _determine_more_accurate_base_rev,
     _get_env_prefix,
 )
+from taskgraph.generator import TaskGraphGenerator
 from taskgraph.parameters import Parameters
 from taskgraph.taskgraph import TaskGraph
 from taskgraph.util.python_path import find_object
@@ -33,7 +34,6 @@ from voluptuous import Any, Optional, Required
 
 from . import GECKO
 from .actions import render_actions_json
-from .generator import TaskGraphGenerator
 from .parameters import get_app_version, get_version
 from .try_option_syntax import parse_message
 from .util.backstop import BACKSTOP_INDEX, is_backstop
@@ -52,6 +52,7 @@ ARTIFACTS_DIR = "artifacts"
 # See `taskcluster/docs/parameters.rst` for information on parameters.
 PER_PROJECT_PARAMETERS = {
     "try": {
+        "enable_always_target": True,
         "target_tasks_method": "try_tasks",
     },
     "kaios-try": {
@@ -96,6 +97,9 @@ PER_PROJECT_PARAMETERS = {
     },
     "kaios": {
         "target_tasks_method": "kaios_tasks",
+    },
+    "toolchains": {
+        "target_tasks_method": "mozilla_central_tasks",
     },
     # the default parameters are used for projects that do not match above.
     "default": {
@@ -333,6 +337,7 @@ def get_decision_parameters(graph_config, options):
     parameters["filters"] = [
         "target_tasks_method",
     ]
+    parameters["enable_always_target"] = False
     parameters["existing_tasks"] = {}
     parameters["do_not_optimize"] = []
     parameters["build_number"] = 1

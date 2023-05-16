@@ -4,10 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+DIRS += [
+    "source-map",
+]
+
 DevToolsModules(
     'fluent-react.js',
     'immutable.js',
     'jszip.js',
+    'md5.js',
     'react-dom-factories.js',
     'react-redux.js',
     'react-router-dom.js',
@@ -15,9 +20,9 @@ DevToolsModules(
     'react-test-renderer.js',
     'redux.js',
     'reselect.js',
-    'seamless-immutable.js',
     'WasmDis.js',
     'WasmParser.js',
+    'whatwg-url.js',
 )
 
 # react dev versions are used if enable-debug-js-modules is set in .mozconfig.

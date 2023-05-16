@@ -912,6 +912,17 @@ void GCMarker::onEdge(T** thingp, const char* name) {
   template void GCMarker::onEdge<type>(type * *thingp, const char* name);
 JS_FOR_EACH_TRACEKIND(INSTANTIATE_ONEDGE_METHOD)
 
+static void TraceEdgeForBarrier(GCMarker* gcmarker, TenuredCell* thing,
+                                JS::TraceKind kind) {
+  // Dispatch to markAndTraverse without checking ShouldMark.
+  ApplyGCThingTyped(thing, kind, [gcmarker](auto thing) {
+    MOZ_ASSERT(ShouldMark(gcmarker, thing));
+    CheckTracedThing(gcmarker, thing);
+    AutoClearTracingSource acts(gcmarker);
+    gcmarker->markAndTraverse(thing);
+  });
+}
+
 JS_PUBLIC_API void js::gc::PerformIncrementalReadBarrier(JS::GCCellPtr thing) {
   // Optimized marking for read barriers. This is called from
   // ExposeGCThingToActiveJS which has already checked the prerequisites for
@@ -928,8 +939,8 @@ JS_PUBLIC_API void js::gc::PerformIncrementalReadBarrier(JS::GCCellPtr thing) {
   MOZ_ASSERT(zone->needsIncrementalBarrier());
 
   // Skip dispatching on known tracer type.
-  BarrierTracer* trc = BarrierTracer::fromTracer(zone->barrierTracer());
-  trc->performBarrier(thing);
+  GCMarker* gcmarker = GCMarker::fromTracer(zone->barrierTracer());
+  TraceEdgeForBarrier(gcmarker, cell, thing.kind());
 }
 
 void js::gc::PerformIncrementalReadBarrier(TenuredCell* cell) {
@@ -946,8 +957,8 @@ void js::gc::PerformIncrementalReadBarrier(TenuredCell* cell) {
   MOZ_ASSERT(zone->needsIncrementalBarrier());
 
   // Skip dispatching on known tracer type.
-  BarrierTracer* trc = BarrierTracer::fromTracer(zone->barrierTracer());
-  trc->performBarrier(JS::GCCellPtr(cell, cell->getTraceKind()));
+  GCMarker* gcmarker = GCMarker::fromTracer(zone->barrierTracer());
+  TraceEdgeForBarrier(gcmarker, cell, cell->getTraceKind());
 }
 
 void js::gc::PerformIncrementalPreWriteBarrier(TenuredCell* cell) {
@@ -976,18 +987,15 @@ void js::gc::PerformIncrementalPreWriteBarrier(TenuredCell* cell) {
   MOZ_ASSERT(!JS::RuntimeHeapIsMajorCollecting());
 
   // Skip dispatching on known tracer type.
-  BarrierTracer* trc = BarrierTracer::fromTracer(zone->barrierTracer());
-
-  trc->performBarrier(JS::GCCellPtr(cell, cell->getTraceKind()));
+  GCMarker* gcmarker = GCMarker::fromTracer(zone->barrierTracer());
+  TraceEdgeForBarrier(gcmarker, cell, cell->getTraceKind());
 }
 
 void js::gc::PerformIncrementalBarrierDuringFlattening(JSString* str) {
   TenuredCell* cell = &str->asTenured();
 
-  // Skip recording ropes. Buffering them is problematic because they will have
-  // their flags temporarily overwritten during flattening. Fortunately their
-  // children will also be barriered by flattening process so we don't need to
-  // traverse them.
+  // Skip eager marking of ropes during flattening. Their children will also be
+  // barriered by flattening process so we don't need to traverse them.
   if (str->isRope()) {
     cell->markBlack();
     return;
@@ -1096,6 +1104,8 @@ void GCMarker::traverse(BaseScript* thing) {
 }
 }  // namespace js
 
+template void js::GCMarker::markAndTraverse<JSObject>(JSObject* thing);
+
 #ifdef DEBUG
 void GCMarker::setCheckAtomMarking(bool check) {
   MOZ_ASSERT(check != checkAtomMarking);
@@ -1183,137 +1193,6 @@ static inline void CallTraceHook(JSTracer* trc, JSObject* obj) {
   }
 }
 
-GCMarker::MarkQueueProgress GCMarker::processMarkQueue() {
-#ifdef DEBUG
-  if (markQueue.empty()) {
-    return QueueComplete;
-  }
-
-  GCRuntime& gcrt = runtime()->gc;
-  if (queueMarkColor == mozilla::Some(MarkColor::Gray) &&
-      gcrt.state() != State::Sweep) {
-    return QueueSuspended;
-  }
-
-  // If the queue wants to be gray marking, but we've pushed a black object
-  // since set-color-gray was processed, then we can't switch to gray and must
-  // again wait until gray marking is possible.
-  //
-  // Remove this code if the restriction against marking gray during black is
-  // relaxed.
-  if (queueMarkColor == mozilla::Some(MarkColor::Gray) && hasBlackEntries()) {
-    return QueueSuspended;
-  }
-
-  // If the queue wants to be marking a particular color, switch to that color.
-  // In any case, restore the mark color to whatever it was when we entered
-  // this function.
-  bool willRevertToGray = markColor() == MarkColor::Gray;
-  AutoSetMarkColor autoRevertColor(*this, queueMarkColor.valueOr(markColor()));
-
-  // Process the mark queue by taking each object in turn, pushing it onto the
-  // mark stack, and processing just the top element with processMarkStackTop
-  // without recursing into reachable objects.
-  while (queuePos < markQueue.length()) {
-    Value val = markQueue[queuePos++].get();
-    if (val.isObject()) {
-      JSObject* obj = &val.toObject();
-      JS::Zone* zone = obj->zone();
-      if (!zone->isGCMarking() || obj->isMarkedAtLeast(markColor())) {
-        continue;
-      }
-
-      // If we have started sweeping, obey sweep group ordering. But note that
-      // we will first be called during the initial sweep slice, when the sweep
-      // group indexes have not yet been computed. In that case, we can mark
-      // freely.
-      if (gcrt.state() == State::Sweep && gcrt.initialState != State::Sweep) {
-        if (zone->gcSweepGroupIndex < gcrt.getCurrentSweepGroupIndex()) {
-          // Too late. This must have been added after we started collecting,
-          // and we've already processed its sweep group. Skip it.
-          continue;
-        }
-        if (zone->gcSweepGroupIndex > gcrt.getCurrentSweepGroupIndex()) {
-          // Not ready yet. Wait until we reach the object's sweep group.
-          queuePos--;
-          return QueueSuspended;
-        }
-      }
-
-      if (markColor() == MarkColor::Gray && zone->isGCMarkingBlackOnly()) {
-        // Have not yet reached the point where we can mark this object, so
-        // continue with the GC.
-        queuePos--;
-        return QueueSuspended;
-      }
-
-      if (markColor() == MarkColor::Black && willRevertToGray) {
-        // If we put any black objects on the stack, we wouldn't be able to
-        // return to gray marking. So delay the marking until we're back to
-        // black marking.
-        queuePos--;
-        return QueueSuspended;
-      }
-
-      // Mark the object and push it onto the stack.
-      size_t oldPosition = stack.position();
-      markAndTraverse(obj);
-
-      // If we overflow the stack here and delay marking, then we won't be
-      // testing what we think we're testing.
-      if (stack.position() == oldPosition) {
-        MOZ_ASSERT(obj->asTenured().arena()->onDelayedMarkingList());
-        AutoEnterOOMUnsafeRegion oomUnsafe;
-        oomUnsafe.crash("Overflowed stack while marking test queue");
-      }
-
-      // Process just the one object that is now on top of the mark stack,
-      // possibly pushing more stuff onto the stack.
-      SliceBudget unlimited = SliceBudget::unlimited();
-      processMarkStackTop(unlimited);
-    } else if (val.isString()) {
-      JSLinearString* str = &val.toString()->asLinear();
-      if (js::StringEqualsLiteral(str, "yield") && gcrt.isIncrementalGc()) {
-        return QueueYielded;
-      } else if (js::StringEqualsLiteral(str, "enter-weak-marking-mode") ||
-                 js::StringEqualsLiteral(str, "abort-weak-marking-mode")) {
-        if (state == MarkingState::RegularMarking) {
-          // We can't enter weak marking mode at just any time, so instead
-          // we'll stop processing the queue and continue on with the GC. Once
-          // we enter weak marking mode, we can continue to the rest of the
-          // queue. Note that we will also suspend for aborting, and then abort
-          // the earliest following weak marking mode.
-          queuePos--;
-          return QueueSuspended;
-        }
-        if (js::StringEqualsLiteral(str, "abort-weak-marking-mode")) {
-          abortLinearWeakMarking();
-        }
-      } else if (js::StringEqualsLiteral(str, "drain")) {
-        auto unlimited = SliceBudget::unlimited();
-        MOZ_RELEASE_ASSERT(
-            markUntilBudgetExhausted(unlimited, DontReportMarkTime));
-      } else if (js::StringEqualsLiteral(str, "set-color-gray")) {
-        queueMarkColor = mozilla::Some(MarkColor::Gray);
-        if (gcrt.state() != State::Sweep || hasBlackEntries()) {
-          // Cannot mark gray yet, so continue with the GC.
-          queuePos--;
-          return QueueSuspended;
-        }
-        setMarkColor(MarkColor::Gray);
-      } else if (js::StringEqualsLiteral(str, "set-color-black")) {
-        queueMarkColor = mozilla::Some(MarkColor::Black);
-        setMarkColor(MarkColor::Black);
-      } else if (js::StringEqualsLiteral(str, "unset-color")) {
-        queueMarkColor.reset();
-      }
-    }
-  }
-#endif
-
-  return QueueComplete;
-}
-
 static gcstats::PhaseKind GrayMarkingPhaseForCurrentPhase(
     const gcstats::Statistics& stats) {
   using namespace gcstats;
@@ -1343,10 +1222,6 @@ bool GCMarker::markUntilBudgetExhausted(SliceBudget& budget,
   AutoSetMarkColor autoSetBlack(*this, MarkColor::Black);
 
   while (!isDrained()) {
-    if (!traceBarrieredCells(budget)) {
-      return false;
-    }
-
     while (hasBlackEntries()) {
       MOZ_ASSERT(markColor() == MarkColor::Black);
       processMarkStackTop(budget);
@@ -1372,15 +1247,8 @@ bool GCMarker::markUntilBudgetExhausted(SliceBudget& budget,
       } while (hasGrayEntries());
     }
 
-    // Bug 1739345: We shouldn't be firing any barriers during marking, but this
-    // does happen at the moment.
-    if (!barrierBuffer().empty()) {
-      continue;
-    }
-
     // All normal marking happens before any delayed marking.
     MOZ_ASSERT(!hasBlackEntries() && !hasGrayEntries());
-    MOZ_ASSERT(barrierBuffer().empty());
 
     // Mark children of things that caused too deep recursion during the above
     // tracing.
@@ -1626,9 +1494,11 @@ struct MapTypeToMarkStackTag<BaseScript*> {
   static const auto value = MarkStack::ScriptTag;
 };
 
+#ifdef DEBUG
 static inline bool TagIsRangeTag(MarkStack::Tag tag) {
   return tag == MarkStack::SlotsOrElementsRangeTag;
 }
+#endif
 
 inline MarkStack::TaggedPtr::TaggedPtr(Tag tag, Cell* ptr)
     : bits(tag | uintptr_t(ptr)) {
@@ -1695,41 +1565,29 @@ inline MarkStack::TaggedPtr MarkStack::SlotsOrElementsRange::ptr() const {
   return ptr_;
 }
 
-MarkStack::MarkStack(size_t maxCapacity)
-    : topIndex_(0),
-      maxCapacity_(maxCapacity)
-#ifdef DEBUG
-      ,
-      iteratorCount_(0)
-#endif
-{
-}
+MarkStack::MarkStack() { MOZ_ASSERT(isEmpty()); }
 
 MarkStack::~MarkStack() {
   MOZ_ASSERT(isEmpty());
   MOZ_ASSERT(iteratorCount_ == 0);
 }
 
-bool MarkStack::init(bool incrementalGCEnabled) {
+bool MarkStack::init() {
   MOZ_ASSERT(isEmpty());
-  return setStackCapacity(incrementalGCEnabled);
+  return resetStackCapacity();
 }
 
-bool MarkStack::setStackCapacity(bool incrementalGCEnabled) {
-  size_t capacity;
-  if (incrementalGCEnabled) {
-    capacity = INCREMENTAL_MARK_STACK_BASE_CAPACITY;
-  } else {
-    capacity = NON_INCREMENTAL_MARK_STACK_BASE_CAPACITY;
-  }
+bool MarkStack::resetStackCapacity() {
+  size_t capacity = MARK_STACK_BASE_CAPACITY;
 
-  if (capacity > maxCapacity_) {
-    capacity = maxCapacity_;
-  }
+#ifdef JS_GC_ZEAL
+  capacity = std::min(capacity, maxCapacity_.ref());
+#endif
 
   return resize(capacity);
 }
 
+#ifdef JS_GC_ZEAL
 void MarkStack::setMaxCapacity(size_t maxCapacity) {
   MOZ_ASSERT(maxCapacity != 0);
   MOZ_ASSERT(isEmpty());
@@ -1740,6 +1598,15 @@ void MarkStack::setMaxCapacity(size_t maxCapacity) {
     // not ideal but better than failing.
     (void)resize(maxCapacity_);
   }
+}
+#endif
+
+void MarkStack::clear() {
+  // Fall back to the smaller initial capacity so we don't hold on to excess
+  // memory between GCs.
+  stack().clearAndFree();
+  topIndex_ = 0;
+  std::ignore = resetStackCapacity();
 }
 
 inline MarkStack::TaggedPtr* MarkStack::topPtr() { return &stack()[topIndex_]; }
@@ -1819,7 +1686,12 @@ inline bool MarkStack::ensureSpace(size_t count) {
 }
 
 MOZ_NEVER_INLINE bool MarkStack::enlarge(size_t count) {
-  size_t newCapacity = std::min(maxCapacity_.ref(), capacity() * 2);
+  size_t newCapacity = capacity() * 2;
+
+#ifdef JS_GC_ZEAL
+  newCapacity = std::min(newCapacity, maxCapacity_.ref());
+#endif
+
   if (newCapacity < capacity() + count) {
     return false;
   }
@@ -1829,6 +1701,8 @@ MOZ_NEVER_INLINE bool MarkStack::enlarge(size_t count) {
 
 bool MarkStack::resize(size_t newCapacity) {
   MOZ_ASSERT(newCapacity != 0);
+  MOZ_ASSERT(newCapacity >= position());
+
   if (!stack().resize(newCapacity)) {
     return false;
   }
@@ -1849,51 +1723,6 @@ inline void MarkStack::poisonUnused() {
 size_t MarkStack::sizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) const {
   return stack().sizeOfExcludingThis(mallocSizeOf);
-}
-
-MarkStackIter::MarkStackIter(MarkStack& stack)
-    : stack_(stack), pos_(stack.position()) {
-#ifdef DEBUG
-  stack.iteratorCount_++;
-#endif
-}
-
-MarkStackIter::~MarkStackIter() {
-#ifdef DEBUG
-  MOZ_ASSERT(stack_.iteratorCount_);
-  stack_.iteratorCount_--;
-#endif
-}
-
-inline size_t MarkStackIter::position() const { return pos_; }
-
-inline bool MarkStackIter::done() const { return position() == 0; }
-
-inline MarkStack::TaggedPtr MarkStackIter::peekPtr() const {
-  MOZ_ASSERT(!done());
-  return stack_.stack()[pos_ - 1];
-}
-
-inline MarkStack::Tag MarkStackIter::peekTag() const { return peekPtr().tag(); }
-
-inline void MarkStackIter::nextPtr() {
-  MOZ_ASSERT(!done());
-  MOZ_ASSERT(!TagIsRangeTag(peekTag()));
-  pos_--;
-}
-
-inline void MarkStackIter::next() {
-  if (TagIsRangeTag(peekTag())) {
-    nextArray();
-  } else {
-    nextPtr();
-  }
-}
-
-inline void MarkStackIter::nextArray() {
-  MOZ_ASSERT(TagIsRangeTag(peekTag()));
-  MOZ_ASSERT(position() >= ValueRangeWords);
-  pos_ -= ValueRangeWords;
 }
 
 /*** GCMarker ***************************************************************/
@@ -1920,31 +1749,19 @@ GCMarker::GCMarker(JSRuntime* rt)
       ,
       markLaterArenas(0),
       checkAtomMarking(true),
-      strictCompartmentChecking(false),
-      markQueue(rt),
-      queuePos(0)
+      strictCompartmentChecking(false)
 #endif
 {
 }
 
-bool GCMarker::init() {
-  bool incrementalGCEnabled = runtime()->gc.isIncrementalGCEnabled();
-  return stack.init(incrementalGCEnabled);
-}
+bool GCMarker::init() { return stack.init(); }
 
-bool GCMarker::isDrained() {
-  return barrierBuffer().empty() && isMarkStackEmpty() && !delayedMarkingList;
-}
+bool GCMarker::isDrained() { return isMarkStackEmpty() && !delayedMarkingList; }
 
 void GCMarker::start() {
   MOZ_ASSERT(state == MarkingState::NotActive);
   state = MarkingState::RegularMarking;
   markColor_ = MarkColor::Black;
-
-#ifdef DEBUG
-  queuePos = 0;
-  queueMarkColor.reset();
-#endif
 
   MOZ_ASSERT(!delayedMarkingList);
   MOZ_ASSERT(markLaterArenas == 0);
@@ -1972,7 +1789,6 @@ void GCMarker::stop() {
   }
   state = MarkingState::NotActive;
 
-  barrierBuffer().clearAndFree();
   stack.clear();
   ClearEphemeronEdges(runtime());
 }
@@ -1991,7 +1807,6 @@ inline void GCMarker::forEachDelayedMarkingArena(F&& f) {
 void GCMarker::reset() {
   markColor_ = MarkColor::Black;
 
-  barrierBuffer().clearAndFree();
   stack.clear();
   ClearEphemeronEdges(runtime());
   MOZ_ASSERT(isMarkStackEmpty());
@@ -2077,12 +1892,6 @@ bool GCMarker::enterWeakMarkingMode() {
   // gcEphemeronEdges and marked according to ephemeron rules.
   state = MarkingState::WeakMarking;
 
-  // If there was an 'enter-weak-marking-mode' token in the queue, then it
-  // and everything after it will still be in the queue so we can process
-  // them now.
-  while (processMarkQueue() == QueueYielded) {
-  };
-
   return true;
 }
 
@@ -2161,21 +1970,20 @@ void GCMarker::delayMarkingChildren(Cell* cell) {
     markLaterArenas++;
 #endif
   }
-  JS::TraceKind kind = MapAllocToTraceKind(arena->getAllocKind());
-  MarkColor colorToMark =
-      TraceKindCanBeMarkedGray(kind) ? markColor() : MarkColor::Black;
-  if (!arena->hasDelayedMarking(colorToMark)) {
-    arena->setHasDelayedMarking(colorToMark, true);
+
+  if (!arena->hasDelayedMarking(markColor())) {
+    arena->setHasDelayedMarking(markColor(), true);
     delayedMarkingWorkAdded = true;
   }
 }
 
 void GCMarker::markDelayedChildren(Arena* arena) {
   JS::TraceKind kind = MapAllocToTraceKind(arena->getAllocKind());
-  MOZ_ASSERT_IF(markColor() == MarkColor::Gray, TraceKindCanBeMarkedGray(kind));
+  MarkColor colorToCheck =
+      TraceKindCanBeMarkedGray(kind) ? markColor() : MarkColor::Black;
 
   for (ArenaCellIterUnderGC cell(arena); !cell.done(); cell.next()) {
-    if (cell->isMarked(markColor())) {
+    if (cell->isMarked(colorToCheck)) {
       JS::TraceChildren(this, JS::GCCellPtr(cell, kind));
     }
   }
@@ -2279,9 +2087,7 @@ void GCMarker::checkZone(void* p) {
 #endif
 
 size_t GCMarker::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-  size_t size = stack.sizeOfExcludingThis(mallocSizeOf);
-  size += barrierBuffer_.ref().sizeOfExcludingThis(mallocSizeOf);
-  return size;
+  return stack.sizeOfExcludingThis(mallocSizeOf);
 }
 
 /*** IsMarked / IsAboutToBeFinalized ****************************************/
@@ -2327,7 +2133,7 @@ template <typename T>
 bool js::gc::IsMarkedInternal(JSRuntime* rt, T* thing) {
   // Don't depend on the mark state of other cells during finalization.
   MOZ_ASSERT(!CurrentThreadIsGCFinalizing());
-  MOZ_ASSERT(!JS::RuntimeHeapIsMinorCollecting());
+  MOZ_ASSERT(rt->heapState() != JS::HeapState::MinorCollecting);
   MOZ_ASSERT(thing);
   CheckIsMarkedThing(thing);
 
@@ -2544,8 +2350,7 @@ void UnmarkGrayTracer::onChild(JS::GCCellPtr thing, const char* name) {
 
   // Cells in the nursery cannot be gray, and nor can certain kinds of tenured
   // cells. These must necessarily point only to black edges.
-  if (!cell->isTenured() ||
-      !TraceKindCanBeMarkedGray(cell->asTenured().getTraceKind())) {
+  if (!cell->isTenured() || !TraceKindCanBeMarkedGray(thing.kind())) {
 #ifdef DEBUG
     MOZ_ASSERT(!cell->isMarkedGray());
     AssertNonGrayTracer nongray(runtime());
@@ -2570,8 +2375,8 @@ void UnmarkGrayTracer::onChild(JS::GCCellPtr thing, const char* name) {
   if (zone->isGCMarking()) {
     if (!cell->isMarkedBlack()) {
       // Skip disptaching on known tracer type.
-      BarrierTracer* trc = &runtime()->gc.barrierTracer;
-      trc->performBarrier(thing);
+      GCMarker* trc = &runtime()->gc.marker;
+      TraceEdgeForBarrier(trc, &tenured, thing.kind());
       unmarkedAny = true;
     }
     return;
@@ -2646,141 +2451,6 @@ bool js::UnmarkGrayShapeRecursively(Shape* shape) {
 #ifdef DEBUG
 Cell* js::gc::UninlinedForwarded(const Cell* cell) { return Forwarded(cell); }
 #endif
-
-#ifdef DEBUG
-static bool CellHasChildren(JS::GCCellPtr cell) {
-  struct Tracer : public JS::CallbackTracer {
-    bool hasChildren = false;
-    explicit Tracer(JSRuntime* runtime) : JS::CallbackTracer(runtime) {}
-    void onChild(JS::GCCellPtr thing, const char* name) { hasChildren = true; }
-  };
-
-  Tracer trc(cell.asCell()->runtimeFromMainThread());
-  JS::TraceChildren(&trc, cell);
-  return trc.hasChildren;
-}
-#endif
-
-static bool CellMayHaveChildren(JS::GCCellPtr cell) {
-  bool mayHaveChildren;
-
-  switch (cell.kind()) {
-    case JS::TraceKind::BigInt:
-      mayHaveChildren = false;
-      break;
-
-    case JS::TraceKind::String: {
-      JSString* string = &cell.as<JSString>();
-      mayHaveChildren = string->hasBase() || string->isRope();
-      break;
-    }
-
-    default:
-      mayHaveChildren = true;
-      break;
-  }
-
-  MOZ_ASSERT_IF(!mayHaveChildren, !CellHasChildren(cell));
-  return mayHaveChildren;
-}
-
-/* static */
-BarrierTracer* BarrierTracer::fromTracer(JSTracer* trc) {
-  MOZ_ASSERT(trc->kind() == JS::TracerKind::Barrier);
-  return static_cast<BarrierTracer*>(trc);
-}
-
-BarrierTracer::BarrierTracer(JSRuntime* rt)
-    : GenericTracerImpl(rt, JS::TracerKind::Barrier,
-                        JS::WeakEdgeTraceAction::Skip),
-      marker(rt->gc.marker) {}
-
-template <typename T>
-void BarrierTracer::onEdge(T** thingp, const char* name) {
-  T* thing = *thingp;
-  PreWriteBarrier(thing);
-}
-
-// If the barrier buffer grows too large, trace all barriered things at that
-// point.
-constexpr static size_t MaxBarrierBufferSize = 4096;
-
-void BarrierTracer::performBarrier(JS::GCCellPtr cell) {
-  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
-  MOZ_ASSERT(!runtime()->gc.isBackgroundMarking());
-  MOZ_ASSERT(!cell.asCell()->isForwarded());
-  MOZ_ASSERT(!cell.asCell()->asTenured().isMarkedBlack());
-
-  // Mark the cell here to prevent us recording it again.
-  cell.asCell()->asTenured().markBlack();
-
-  // NOTE: This assumes that cells that don't have children do not require their
-  // traceChildren method to be called.
-  bool requiresTracing = CellMayHaveChildren(cell);
-  if (!requiresTracing) {
-    return;
-  }
-
-  BarrierBuffer& buffer = marker.barrierBuffer();
-  if (buffer.length() >= MaxBarrierBufferSize || !buffer.append(cell)) {
-    handleBufferFull(cell);
-  }
-}
-
-void BarrierTracer::handleBufferFull(JS::GCCellPtr cell) {
-  SliceBudget budget = SliceBudget::unlimited();
-  marker.traceBarrieredCells(budget);
-  marker.traceBarrieredCell(cell);
-}
-
-bool GCMarker::traceBarrieredCells(SliceBudget& budget) {
-  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()) ||
-             CurrentThreadIsGCMarking());
-  MOZ_ASSERT(markColor() == MarkColor::Black);
-
-  mozilla::Maybe<AutoGeckoProfilerEntry> profilingStackFrame;
-  if (JSContext* cx = TlsContext.get()) {
-    profilingStackFrame.emplace(cx, "GCMarker::traceBarrieredCells",
-                                JS::ProfilingCategoryPair::GCCC_Barrier);
-  }
-
-  BarrierBuffer& buffer = barrierBuffer();
-  while (!buffer.empty()) {
-    traceBarrieredCell(buffer.popCopy());
-    budget.step();
-    if (budget.isOverBudget()) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-void GCMarker::traceBarrieredCell(JS::GCCellPtr cell) {
-  MOZ_ASSERT(markColor() == gc::MarkColor::Black);
-  MOZ_ASSERT(cell.asCell()->isTenured());
-  MOZ_ASSERT(cell.asCell()->isMarkedBlack());
-  MOZ_ASSERT(!cell.asCell()->isForwarded());
-
-  ApplyGCThingTyped(cell, [this](auto thing) {
-    MOZ_ASSERT(ShouldMark(this, thing));
-    MOZ_ASSERT(thing->isMarkedBlack());
-
-    if constexpr (std::is_same_v<decltype(thing), JSString*>) {
-      if (thing->isRope() && thing->asRope().isBeingFlattened()) {
-        // This string is an interior node of a rope that is currently being
-        // flattened. The flattening process invokes the barrier on all nodes in
-        // the tree, so interior nodes need not be traversed.
-        return;
-      }
-    }
-
-    CheckTracedThing(this, thing);
-    AutoClearTracingSource acts(this);
-
-    traverse(thing);
-  });
-}
 
 namespace js {
 namespace debug {

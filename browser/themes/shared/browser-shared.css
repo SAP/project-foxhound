@@ -12,6 +12,7 @@
 @import url("chrome://browser/skin/identity-block/identity-block.css");
 @import url("chrome://browser/skin/notification-icons.css");
 @import url("chrome://browser/skin/addon-notification.css");
+@import url("chrome://browser/skin/identity-credential-notification.css");
 @import url("chrome://browser/skin/urlbarView.css");
 @import url("chrome://browser/skin/translation/infobar.css");
 @import url("chrome://browser/skin/autocomplete.css");
@@ -29,6 +30,7 @@
   --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
   --toolbar-bgimage: var(--toolbar-non-lwt-bgimage);
   --toolbar-color: var(--toolbar-non-lwt-textcolor);
+  --toolbarbutton-border-radius: 4px;
 
   --tab-selected-bgimage: var(--tab-selected-non-lwt-bgimage);
   --tabs-navbar-shadow-size: 1px;
@@ -86,6 +88,8 @@
   --lwt-brighttext-url-color: #00ddff;
 
   --ext-theme-background-transition: background-color 0.1s cubic-bezier(.17,.67,.83,.67);
+
+  -moz-box-layout: flex;
 }
 
 :root:-moz-lwtheme {
@@ -325,7 +329,6 @@ menupopup::part(drop-indicator) {
   background-size: 100% auto;
   background-position: center;
   width: 24px;
-  height: 24px;
   margin-inline: 7px;
   position: relative;
   /* Need to ensure this gets positioned on top of the position:relative #navigator-toolbox

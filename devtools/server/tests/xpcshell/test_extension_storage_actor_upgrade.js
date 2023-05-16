@@ -23,8 +23,8 @@ const {
 } = require("resource://test/webextension-helpers.js");
 
 // Ignore rejection related to the storage.onChanged listener being removed while the extension context is being closed.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Message manager disconnected/
@@ -67,7 +67,7 @@ add_task(async function test_panel_live_reload() {
   const EXTENSION_ID = "test_panel_live_reload@xpcshell.mozilla.org";
   let manifest = {
     version: "1.0",
-    applications: {
+    browser_specific_settings: {
       gecko: {
         id: EXTENSION_ID,
       },

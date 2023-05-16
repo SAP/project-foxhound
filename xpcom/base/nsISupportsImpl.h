@@ -9,7 +9,7 @@
 #define nsISupportsImpl_h__
 
 #include "nscore.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "nsISupportsUtils.h"
 
 #if !defined(XPCOM_GLUE_AVOID_NSPR)
@@ -416,6 +416,18 @@ class ThreadSafeAutoRefCnt {
  protected:                                                               \
   nsAutoRefCnt mRefCnt;                                                   \
   NS_DECL_OWNINGTHREAD                                                    \
+ public:
+
+#define NS_DECL_ISUPPORTS_ONEVENTTARGET                                   \
+ public:                                                                  \
+  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override; \
+  NS_IMETHOD_(MozExternalRefCountType) AddRef(void) override;             \
+  NS_IMETHOD_(MozExternalRefCountType) Release(void) override;            \
+  using HasThreadSafeRefCnt = std::false_type;                            \
+                                                                          \
+ protected:                                                               \
+  nsAutoRefCnt mRefCnt;                                                   \
+  NS_DECL_OWNINGEVENTTARGET                                               \
  public:
 
 #define NS_DECL_THREADSAFE_ISUPPORTS                                      \

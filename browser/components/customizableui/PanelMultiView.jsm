@@ -131,7 +131,6 @@ const TRANSITION_PHASES = Object.freeze({
 
 let gNodeToObjectMap = new WeakMap();
 let gWindowsWithUnloadHandler = new WeakSet();
-let gMultiLineElementsMap = new WeakMap();
 
 /**
  * Allows associating an object to a node lazily using a weak map.
@@ -657,17 +656,6 @@ var PanelMultiView = class extends AssociatedToNode {
    *        subview when a "title" attribute is not specified.
    */
   showSubView(viewIdOrNode, anchor) {
-    // When autoPosition is true, the popup window manager would attempt to re-position
-    // the panel as subviews are opened and it changes size. The resulting popoppositioned
-    // events triggers the binding's arrow position adjustment - and its reflow.
-    // This is not needed here, as we calculated and set maxHeight so it is known
-    // to fit the screen while open.
-    // We do need autoposition for cases where the panel's anchor moves, which can happen
-    // especially with the "page actions" button in the URL bar (see bug 1520607), so
-    // we only set this to false when showing a subview, and set it back to true after we
-    // activate the subview.
-    this._panel.autoPosition = false;
-
     this._showSubView(viewIdOrNode, anchor).catch(Cu.reportError);
   }
   async _showSubView(viewIdOrNode, anchor) {
@@ -827,7 +815,6 @@ var PanelMultiView = class extends AssociatedToNode {
 
     // Ensure the view will be visible once the panel is opened.
     nextPanelView.visible = true;
-    nextPanelView.descriptionHeightWorkaround();
 
     return true;
   }
@@ -896,9 +883,6 @@ var PanelMultiView = class extends AssociatedToNode {
         panelView.focusWhenActive = false;
       }
       panelView.dispatchCustomEvent("ViewShown");
-
-      // Re-enable panel autopositioning.
-      this._panel.autoPosition = true;
     }
   }
 
@@ -961,9 +945,9 @@ var PanelMultiView = class extends AssociatedToNode {
     this._viewContainer.style.height = prevPanelView.knownHeight + "px";
     this._viewContainer.style.width = prevPanelView.knownWidth + "px";
     // Lock the dimensions of the window that hosts the popup panel.
-    let rect = this._panel.getOuterScreenRect();
-    this._panel.setAttribute("width", rect.width);
-    this._panel.setAttribute("height", rect.height);
+    let rect = this._getBoundsWithoutFlushing(this._panel);
+    this._panel.style.width = rect.width + "px";
+    this._panel.style.height = rect.height + "px";
 
     let viewRect;
     if (reverse) {
@@ -991,7 +975,6 @@ var PanelMultiView = class extends AssociatedToNode {
           return this._getBoundsWithoutFlushing(header).height;
         });
       }
-      await nextPanelView.descriptionHeightWorkaround();
       // Bail out if the panel was closed in the meantime.
       if (!nextPanelView.isOpenIn(this)) {
         return;
@@ -1000,10 +983,6 @@ var PanelMultiView = class extends AssociatedToNode {
       this._offscreenViewStack.style.minHeight = olderView.knownHeight + "px";
       this._offscreenViewStack.appendChild(viewNode);
       nextPanelView.visible = true;
-
-      // Now that the subview is visible, we can check the height of the
-      // description elements it contains.
-      await nextPanelView.descriptionHeightWorkaround();
 
       viewRect = await window.promiseDocumentFlushed(() => {
         return this._getBoundsWithoutFlushing(viewNode);
@@ -1059,8 +1038,8 @@ var PanelMultiView = class extends AssociatedToNode {
     // kicks of the height animation.
     this._viewContainer.style.height = viewRect.height + "px";
     this._viewContainer.style.width = viewRect.width + "px";
-    this._panel.removeAttribute("width");
-    this._panel.removeAttribute("height");
+    this._panel.style.removeProperty("width");
+    this._panel.style.removeProperty("height");
     // We're setting the width property to prevent flickering during the
     // sliding animation with smaller views.
     viewNode.style.width = viewRect.width + "px";
@@ -1267,7 +1246,6 @@ var PanelMultiView = class extends AssociatedToNode {
         // minimize flicker we need to allow synchronous reflows, and we still
         // make sure the ViewShown event is dispatched synchronously.
         let mainPanelView = this.openViews[0];
-        mainPanelView.descriptionHeightWorkaround(true).catch(Cu.reportError);
         this._activateView(mainPanelView);
         break;
       case "popuphidden": {
@@ -1465,124 +1443,6 @@ var PanelView = class extends AssociatedToNode {
     let rect = this._getBoundsWithoutFlushing(this.node);
     this.knownWidth = rect.width;
     this.knownHeight = rect.height;
-  }
-
-  /**
-   * If the main view or a subview contains wrapping elements, the attribute
-   * "descriptionheightworkaround" should be set on the view to force all the
-   * wrapping "description", "label" or "toolbarbutton" elements to a fixed
-   * height. If the attribute is set and the visibility, contents, or width
-   * of any of these elements changes, this function should be called to
-   * refresh the calculated heights.
-   *
-   * @param allowSyncReflows
-   *        If set to true, the function takes a path that allows synchronous
-   *        reflows, but minimizes flickering. This is used for the main view
-   *        because we cannot use the workaround off-screen.
-   */
-  async descriptionHeightWorkaround(allowSyncReflows = false) {
-    if (!this.node.hasAttribute("descriptionheightworkaround")) {
-      // This view does not require the workaround.
-      return;
-    }
-
-    const profilerMarkerStartTime = Cu.now();
-
-    // We batch DOM changes together in order to reduce synchronous layouts.
-    // First we reset any change we may have made previously. The first time
-    // this is called, and in the best case scenario, this has no effect.
-    let items = [];
-    let collectItems = () => {
-      // Non-hidden <label> or <description> elements that also aren't empty
-      // and also don't have a value attribute can be multiline (if their
-      // text content is long enough).
-      let isMultiline = ":not([hidden],[value],:empty)";
-      let selector = [
-        "description" + isMultiline,
-        "label" + isMultiline,
-        "toolbarbutton[wrap]:not([hidden])",
-      ].join(",");
-      for (let element of this.node.querySelectorAll(selector)) {
-        // Ignore items in hidden containers.
-        if (element.closest("[hidden]")) {
-          continue;
-        }
-
-        // Ignore content inside a <toolbarbutton>
-        if (
-          element.tagName != "toolbarbutton" &&
-          element.closest("toolbarbutton")
-        ) {
-          continue;
-        }
-
-        // Take the label for toolbarbuttons; it only exists on those elements.
-        element = element.multilineLabel || element;
-
-        let bounds = element.getBoundingClientRect();
-        let previous = gMultiLineElementsMap.get(element);
-        // We don't need to (re-)apply the workaround for invisible elements or
-        // on elements we've seen before and haven't changed in the meantime.
-        if (
-          !bounds.width ||
-          !bounds.height ||
-          (previous &&
-            element.textContent == previous.textContent &&
-            bounds.width == previous.bounds.width)
-        ) {
-          continue;
-        }
-
-        items.push({ element });
-      }
-    };
-    if (allowSyncReflows) {
-      collectItems();
-    } else {
-      await this.window.promiseDocumentFlushed(collectItems);
-      // Bail out if the panel was closed in the meantime.
-      if (!this.node.panelMultiView) {
-        return;
-      }
-    }
-
-    // Removing the 'height' property will only cause a layout flush in the next
-    // loop below if it was set.
-    for (let item of items) {
-      item.element.style.removeProperty("height");
-    }
-
-    // We now read the computed style to store the height of any element that
-    // may contain wrapping text.
-    let measureItems = () => {
-      for (let item of items) {
-        item.bounds = item.element.getBoundingClientRect();
-      }
-    };
-    if (allowSyncReflows) {
-      measureItems();
-    } else {
-      await this.window.promiseDocumentFlushed(measureItems);
-      // Bail out if the panel was closed in the meantime.
-      if (!this.node.panelMultiView) {
-        return;
-      }
-    }
-
-    // Now we can make all the necessary DOM changes at once.
-    for (let { element, bounds } of items) {
-      gMultiLineElementsMap.set(element, {
-        bounds,
-        textContent: element.textContent,
-      });
-      element.style.height = bounds.height + "px";
-    }
-
-    ChromeUtils.addProfilerMarker(
-      "PMV.descriptionHeightWorkaround()",
-      profilerMarkerStartTime,
-      `<${this.node.tagName} id="${this.node.id}">`
-    );
   }
 
   /**

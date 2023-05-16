@@ -39,7 +39,9 @@
 
 /* globals AppConstants, Services, XPCOMUtils */
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -116,7 +118,9 @@ this.pageloader = class extends ExtensionAPI {
       // before continuing.
       async function tryLoad() {
         try {
-          ChromeUtils.import("resource://talos-powers/TalosParentProfiler.jsm");
+          ChromeUtils.importESModule(
+            "resource://talos-powers/TalosParentProfiler.sys.mjs"
+          );
         } catch (err) {
           await new Promise(resolve => setTimeout(resolve, 500));
           return tryLoad();

@@ -9,6 +9,7 @@ complexities of worker implementations, scopes, and treeherder annotations.
 """
 
 
+import datetime
 import hashlib
 import os
 import re
@@ -523,10 +524,13 @@ def build_docker_worker_payload(config, task, task_def):
         expires_policy = get_expiration(
             config, task.get("expiration-policy", "default")
         )
+        now = datetime.datetime.utcnow()
         for artifact in worker["artifacts"]:
             art_exp = artifact.get("expires-after", expires_policy)
             task_exp = task_def["expires"]["relative-datestamp"]
-            expires = art_exp if fromNow(art_exp) < fromNow(task_exp) else task_exp
+            expires = (
+                art_exp if fromNow(art_exp, now) < fromNow(task_exp, now) else task_exp
+            )
             artifacts[artifact["name"]] = {
                 "path": artifact["path"],
                 "type": artifact["type"],
@@ -753,10 +757,13 @@ def build_generic_worker_payload(config, task, task_def):
     artifacts = []
 
     expires_policy = get_expiration(config, task.get("expiration-policy", "default"))
+    now = datetime.datetime.utcnow()
     for artifact in worker.get("artifacts", []):
         art_exp = artifact.get("expires-after", expires_policy)
         task_exp = task_def["expires"]["relative-datestamp"]
-        expires = art_exp if fromNow(art_exp) < fromNow(task_exp) else task_exp
+        expires = (
+            art_exp if fromNow(art_exp, now) < fromNow(task_exp, now) else task_exp
+        )
         a = {
             "path": artifact["path"],
             "type": artifact["type"],
@@ -1457,7 +1464,8 @@ def set_implementation(config, tasks):
         tags = task.setdefault("tags", {})
         tags["worker-implementation"] = impl
         if os:
-            task["tags"]["os"] = os
+            tags["os"] = os
+
         worker = task.setdefault("worker", {})
         worker["implementation"] = impl
         if os:
@@ -1534,12 +1542,11 @@ def setup_raptor(config, tasks):
 @transforms.add
 def task_name_from_label(config, tasks):
     for task in tasks:
+        taskname = task.pop("name", None)
         if "label" not in task:
-            if "name" not in task:
+            if taskname is None:
                 raise Exception("task has neither a name nor a label")
-            task["label"] = "{}-{}".format(config.kind, task["name"])
-        if task.get("name"):
-            del task["name"]
+            task["label"] = "{}-{}".format(config.kind, taskname)
         yield task
 
 
@@ -1793,6 +1800,10 @@ def add_index_routes(config, tasks):
 def try_task_config_env(config, tasks):
     """Set environment variables in the task."""
     env = config.params["try_task_config"].get("env")
+    if not env:
+        yield from tasks
+        return
+
     # Find all implementations that have an 'env' key.
     implementations = {
         name
@@ -1800,7 +1811,7 @@ def try_task_config_env(config, tasks):
         if "env" in builder.schema.schema
     }
     for task in tasks:
-        if env and task["worker"]["implementation"] in implementations:
+        if task["worker"]["implementation"] in implementations:
             task["worker"]["env"].update(env)
         yield task
 
@@ -1809,8 +1820,12 @@ def try_task_config_env(config, tasks):
 def try_task_config_chemspill_prio(config, tasks):
     """Increase the priority from lowest and very-low -> low, but leave others unchanged."""
     chemspill_prio = config.params["try_task_config"].get("chemspill-prio")
+    if not chemspill_prio:
+        yield from tasks
+        return
+
     for task in tasks:
-        if chemspill_prio and task["priority"] in ("lowest", "very-low"):
+        if task["priority"] in ("lowest", "very-low"):
             task["priority"] = "low"
         yield task
 
@@ -1832,25 +1847,24 @@ def set_task_and_artifact_expiry(config, jobs):
 
     These values are read from ci/config.yml
     """
+    now = datetime.datetime.utcnow()
     for job in jobs:
         expires = get_expiration(config, job.get("expiration-policy", "default"))
-        if "expires-after" not in job:
-            job["expires-after"] = expires
-        task_expiry = job["expires-after"]
+        job_expiry = job.setdefault("expires-after", expires)
+        job_expiry_from_now = fromNow(job_expiry)
 
-        if "artifacts" in job["worker"]:
-            for a in job["worker"]["artifacts"]:
-                if "expires-after" not in a:
-                    a["expires-after"] = expires
+        for artifact in job["worker"].get("artifacts", ()):
+            artifact_expiry = artifact.setdefault("expires-after", expires)
 
-                # By using > instead of >=, there's a chance of mismatch
-                #   where the artifact expires sooner than the task.
-                #   There is no chance, however, of mismatch where artifacts
-                #   expire _after_ the task.
-                # Currently this leads to some build tasks having logs
-                #   that expire in 1 year while the task expires in 3 years.
-                if fromNow(a["expires-after"]) > fromNow(task_expiry):
-                    a["expires-after"] = task_expiry
+            # By using > instead of >=, there's a chance of mismatch
+            #   where the artifact expires sooner than the task.
+            #   There is no chance, however, of mismatch where artifacts
+            #   expire _after_ the task.
+            # Currently this leads to some build tasks having logs
+            #   that expire in 1 year while the task expires in 3 years.
+            if fromNow(artifact_expiry, now) > job_expiry_from_now:
+                artifact["expires-after"] = job_expiry
+
         yield job
 
 
@@ -1859,18 +1873,16 @@ def build_task(config, tasks):
     for task in tasks:
         level = str(config.params["level"])
 
-        if task["worker-type"] in config.params["try_task_config"].get(
-            "worker-overrides", {}
-        ):
-            worker_pool = config.params["try_task_config"]["worker-overrides"][
-                task["worker-type"]
-            ]
+        task_worker_type = task["worker-type"]
+        worker_overrides = config.params["try_task_config"].get("worker-overrides", {})
+        if task_worker_type in worker_overrides:
+            worker_pool = worker_overrides[task_worker_type]
             provisioner_id, worker_type = worker_pool.split("/", 1)
         else:
             provisioner_id, worker_type = get_worker_type(
                 config.graph_config,
                 config.params,
-                task["worker-type"],
+                task_worker_type,
             )
         task["worker-type"] = "/".join([provisioner_id, worker_type])
         project = config.params["project"]

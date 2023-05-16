@@ -13,9 +13,6 @@
   --toolbar-non-lwt-textcolor: -moz-dialogtext;
   --toolbar-non-lwt-bgimage: linear-gradient(rgba(255,255,255,.15), rgba(255,255,255,.15));
 
-  --toolbarbutton-vertical-text-padding: calc(var(--toolbarbutton-inner-padding) - 1px);
-  --toolbarbutton-border-radius: 4px;
-
   --panel-separator-color: ThreeDLightShadow;
 
   --chrome-content-separator-color: ThreeDShadow;
@@ -199,11 +196,11 @@
    * it's children visible in order to hide the background but keep the margin and
    * padding that comes from those -moz-window-titlebar rules.
    */
-  :root:not([inDOMFullscreen]) #titlebar:-moz-lwtheme {
+  :root:not([inFullscreen]) #titlebar:-moz-lwtheme {
     visibility: hidden;
   }
-  :root:not([inDOMFullscreen], [chromehidden~="menubar"]) #toolbar-menubar:-moz-lwtheme,
-  :root:not([inDOMFullscreen], [chromehidden~="toolbar"]) #TabsToolbar:-moz-lwtheme {
+  :root:not([inFullscreen], [chromehidden~="menubar"]) #toolbar-menubar:-moz-lwtheme,
+  :root:not([inFullscreen], [chromehidden~="toolbar"]) #TabsToolbar:-moz-lwtheme {
     visibility: visible;
   }
 }
@@ -467,12 +464,10 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 }
 
 /* Make menu items larger when opened through touch. */
-#widget-overflow[touchmode] .toolbarbutton-1,
-panel[touchmode] .PanelUI-subView .subviewbutton,
-menupopup[touchmode] menu,
-menupopup[touchmode] menuitem {
+panel[touchmode],
+menupopup[touchmode] {
   --arrowpanel-menuitem-padding-block: 12px;
-  padding-block: var(--arrowpanel-menuitem-padding-block);
+  --arrowpanel-menuitem-padding: var(--arrowpanel-menuitem-padding-block) var(--arrowpanel-menuitem-padding-inline);
 }
 
 #contentAreaContextMenu[touchmode] > #context-navigation > menuitem {

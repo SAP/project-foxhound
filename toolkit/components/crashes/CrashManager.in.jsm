@@ -7,7 +7,9 @@
 const { PromiseUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PromiseUtils.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
@@ -694,13 +696,10 @@ CrashManager.prototype = Object.freeze({
 
   _filterAnnotations(annotations) {
     let filteredAnnotations = {};
-    let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-      Ci.nsICrashReporter
-    );
 
     for (let line in annotations) {
       try {
-        if (crashReporter.isAnnotationAllowlistedForPing(line)) {
+        if (Services.appinfo.isAnnotationAllowlistedForPing(line)) {
           filteredAnnotations[line] = annotations[line];
         }
       } catch (e) {

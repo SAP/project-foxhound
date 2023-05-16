@@ -83,7 +83,11 @@ void GPUChild::Init() {
 void GPUChild::OnVarChanged(const GfxVarUpdate& aVar) { SendUpdateVar(aVar); }
 
 bool GPUChild::EnsureGPUReady() {
-  if (mGPUReady) {
+  // On our initial process launch, we want to block on the GetDeviceStatus
+  // message. Additionally, we may have updated our compositor configuration
+  // through the gfxVars after fallback, in which case we want to ensure the
+  // GPU process has handled any updates before creating compositor sessions.
+  if (mGPUReady && !mWaitForVarUpdate) {
     return true;
   }
 
@@ -92,10 +96,15 @@ bool GPUChild::EnsureGPUReady() {
     return false;
   }
 
-  gfxPlatform::GetPlatform()->ImportGPUDeviceData(data);
-  Telemetry::AccumulateTimeDelta(Telemetry::GPU_PROCESS_LAUNCH_TIME_MS_2,
-                                 mHost->GetLaunchTime());
-  mGPUReady = true;
+  // Only import and collect telemetry for the initial GPU process launch.
+  if (!mGPUReady) {
+    gfxPlatform::GetPlatform()->ImportGPUDeviceData(data);
+    Telemetry::AccumulateTimeDelta(Telemetry::GPU_PROCESS_LAUNCH_TIME_MS_2,
+                                   mHost->GetLaunchTime());
+    mGPUReady = true;
+  }
+
+  mWaitForVarUpdate = false;
   return true;
 }
 
@@ -224,6 +233,12 @@ mozilla::ipc::IPCResult GPUChild::RecvNotifyDeviceReset(
 mozilla::ipc::IPCResult GPUChild::RecvNotifyOverlayInfo(
     const OverlayInfo aInfo) {
   gfxPlatform::GetPlatform()->SetOverlayInfo(aInfo);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult GPUChild::RecvNotifySwapChainInfo(
+    const SwapChainInfo aInfo) {
+  gfxPlatform::GetPlatform()->SetSwapChainInfo(aInfo);
   return IPC_OK();
 }
 

@@ -240,7 +240,12 @@ class FfiConverterU64 extends FfiConverter {
     static read(dataStream) {
         return dataStream.readUint64()
     }
-}class FfiConverterBool extends FfiConverter {
+}
+
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterU64");
+
+class FfiConverterBool extends FfiConverter {
     static computeSize() {
         return 1;
     }
@@ -261,6 +266,9 @@ class FfiConverterU64 extends FfiConverter {
         return this.lift(dataStream.readUint8())
     }
 }
+
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterBool");
 
 class FfiConverterString extends FfiConverter {
     static lift(buf) {
@@ -287,6 +295,10 @@ class FfiConverterString extends FfiConverter {
     }
 }
 
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterString");
+
+
 
 class ArithmeticError extends Error {}
 EXPORTED_SYMBOLS.push("ArithmeticError");
@@ -312,6 +324,9 @@ class FfiConverterTypeArithmeticError extends FfiConverterArrayBuffer {
     }
 }
 
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterTypeArithmeticError");
+
 
 
 
@@ -323,7 +338,7 @@ function add(a,b) {
         FfiConverterU64.checkType("a", a);
         FfiConverterU64.checkType("b", b);
         return UniFFIScaffolding.callAsync(
-            2, // arithmetic:arithmetic_708a_add
+            22, // arithmetic:arithmetic_906c_add
             FfiConverterU64.lower(a),
             FfiConverterU64.lower(b),
         )
@@ -344,7 +359,7 @@ function sub(a,b) {
         FfiConverterU64.checkType("a", a);
         FfiConverterU64.checkType("b", b);
         return UniFFIScaffolding.callAsync(
-            3, // arithmetic:arithmetic_708a_sub
+            23, // arithmetic:arithmetic_906c_sub
             FfiConverterU64.lower(a),
             FfiConverterU64.lower(b),
         )
@@ -365,7 +380,7 @@ function div(dividend,divisor) {
         FfiConverterU64.checkType("dividend", dividend);
         FfiConverterU64.checkType("divisor", divisor);
         return UniFFIScaffolding.callAsync(
-            4, // arithmetic:arithmetic_708a_div
+            24, // arithmetic:arithmetic_906c_div
             FfiConverterU64.lower(dividend),
             FfiConverterU64.lower(divisor),
         )
@@ -386,7 +401,7 @@ function equal(a,b) {
         FfiConverterU64.checkType("a", a);
         FfiConverterU64.checkType("b", b);
         return UniFFIScaffolding.callAsync(
-            5, // arithmetic:arithmetic_708a_equal
+            25, // arithmetic:arithmetic_906c_equal
             FfiConverterU64.lower(a),
             FfiConverterU64.lower(b),
         )

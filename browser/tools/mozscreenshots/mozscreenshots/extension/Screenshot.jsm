@@ -6,17 +6,22 @@
 
 var EXPORTED_SYMBOLS = ["Screenshot"];
 
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
 // Create a new instance of the ConsoleAPI so we can control the maxLogLevel with a pref.
-// See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
+// See LOG_LEVELS in Console.sys.mjs. Common examples: "All", "Info", "Warn", &
+// "Error".
 const PREF_LOG_LEVEL = "extensions.mozscreenshots@mozilla.org.loglevel";
 const lazy = {};
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let consoleOptions = {
     maxLogLevel: "info",
     maxLogLevelPref: PREF_LOG_LEVEL,

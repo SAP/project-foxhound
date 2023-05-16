@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -91,9 +91,9 @@ function createOverflowableToolbarWithPlacements(id, placements) {
 
   tb.setAttribute("customizable", "true");
   tb.setAttribute("overflowable", "true");
-  tb.setAttribute("overflowpanel", overflowPanel.id);
-  tb.setAttribute("overflowtarget", overflowList.id);
-  tb.setAttribute("overflowbutton", chevron.id);
+  tb.setAttribute("default-overflowpanel", overflowPanel.id);
+  tb.setAttribute("default-overflowtarget", overflowList.id);
+  tb.setAttribute("default-overflowbutton", chevron.id);
 
   gNavToolbox.appendChild(tb);
   CustomizableUI.registerToolbarNode(tb);

@@ -733,7 +733,7 @@ void gfxTextRun::DrawEmphasisMarks(gfxContext* aContext, gfxTextRun* aMark,
   params.direction = GetDirection();
   params.isVertical = IsVertical();
 
-  float& inlineCoord = params.isVertical ? aPt.y : aPt.x;
+  float& inlineCoord = params.isVertical ? aPt.y.value : aPt.x.value;
   float direction = params.direction;
 
   GlyphRunIterator iter(this, aRange);
@@ -1829,7 +1829,8 @@ void gfxTextRun::Dump(FILE* out) {
         line += " offsets=";
         for (uint32_t j = 0; j < count; j++) {
           auto offset = GetDetailedGlyphs(i)[j].mOffset;
-          line.AppendPrintf(j ? ",(%g,%g)" : "(%g,%g)", offset.x, offset.y);
+          line.AppendPrintf(j ? ",(%g,%g)" : "(%g,%g)", offset.x.value,
+                            offset.y.value);
         }
       } else {
         line += " (no glyphs)";
@@ -1884,7 +1885,8 @@ gfxFontGroup::gfxFontGroup(nsPresContext* aPresContext,
                            const gfxFontStyle* aStyle, nsAtom* aLanguage,
                            bool aExplicitLanguage,
                            gfxTextPerfMetrics* aTextPerf,
-                           gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize)
+                           gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize,
+                           StyleFontVariantEmoji aVariantEmoji)
     : mPresContext(aPresContext),  // Note that aPresContext may be null!
       mFamilyList(aFontFamilyList),
       mStyle(*aStyle),
@@ -1899,6 +1901,17 @@ gfxFontGroup::gfxFontGroup(nsPresContext* aPresContext,
       mLastPrefFirstFont(false),
       mSkipDrawing(false),
       mExplicitLanguage(aExplicitLanguage) {
+  switch (aVariantEmoji) {
+    case StyleFontVariantEmoji::Normal:
+    case StyleFontVariantEmoji::Unicode:
+      break;
+    case StyleFontVariantEmoji::Text:
+      mEmojiPresentation = eFontPresentation::Text;
+      break;
+    case StyleFontVariantEmoji::Emoji:
+      mEmojiPresentation = eFontPresentation::EmojiExplicit;
+      break;
+  }
   // We don't use SetUserFontSet() here, as we want to unconditionally call
   // BuildFontList() rather than only do UpdateUserFonts() if it changed.
   mCurrGeneration = GetGeneration();
@@ -3100,24 +3113,27 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFontForChar(
   eFontPresentation presentation = eFontPresentation::Any;
   EmojiPresentation emojiPresentation = GetEmojiPresentation(aCh);
   if (emojiPresentation != TextOnly) {
-    // If the prefer-emoji selector is present, or if it's a default-emoji char
-    // and the prefer-text selector is NOT present, or if there's a skin-tone
-    // modifier, we specifically look for a font with a color glyph.
-    // If the prefer-text selector is present, we specifically look for a font
-    // that will provide a monochrome glyph.
-    // Otherwise, we'll accept either color or monochrome font-family entries,
-    // so that a color font can be explicitly applied via font-family even to
-    // characters that are not inherently emoji-style.
+    // Default presentation from the font-variant-emoji property.
+    presentation = mEmojiPresentation;
+    // If the prefer-emoji selector is present, or if it's a default-emoji
+    // char and the prefer-text selector is NOT present, or if there's a
+    // skin-tone modifier, we specifically look for a font with a color
+    // glyph.
+    // If the prefer-text selector is present, we specifically look for a
+    // font that will provide a monochrome glyph.
+    // Otherwise, we'll accept either color or monochrome font-family
+    // entries, so that a color font can be explicitly applied via font-
+    // family even to characters that are not inherently emoji-style.
     if (aNextCh == kVariationSelector16 ||
         (aNextCh >= kEmojiSkinToneFirst && aNextCh <= kEmojiSkinToneLast)) {
-      // Emoji presentation is explicitly requested by a variation selector or
-      // the presence of a skin-tone codepoint.
+      // Emoji presentation is explicitly requested by a variation selector
+      // or the presence of a skin-tone codepoint.
       presentation = eFontPresentation::EmojiExplicit;
     } else if (emojiPresentation == EmojiPresentation::EmojiDefault &&
                aNextCh != kVariationSelector15) {
       // Emoji presentation is the default for this Unicode character. but we
-      // will allow an explicitly-specified webfont to apply to it, regardless
-      // of its glyph type.
+      // will allow an explicitly-specified webfont to apply to it,
+      // regardless of its glyph type.
       presentation = eFontPresentation::EmojiDefault;
     } else if (aNextCh == kVariationSelector15) {
       // Text presentation is explicitly requested.

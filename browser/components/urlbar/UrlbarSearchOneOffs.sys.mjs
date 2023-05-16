@@ -2,9 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { SearchOneOffs } = ChromeUtils.importESModule(
-  "resource:///modules/SearchOneOffs.sys.mjs"
-);
+import { SearchOneOffs } from "resource:///modules/SearchOneOffs.sys.mjs";
 
 const lazy = {};
 
@@ -36,7 +34,7 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
   /**
    * Returns the local search mode one-off buttons.
    *
-   * @returns {array}
+   * @returns {Array}
    *   The local one-off buttons.
    */
   get localButtons() {
@@ -45,6 +43,7 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
 
   /**
    * Invoked when Web provided search engines list changes.
+   *
    * @param {Array} engines Array of Web provided search engines. Each engine
    *        is defined as  { icon, name, tooltip, uri }.
    */
@@ -146,6 +145,8 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
 
   /**
    * The selected index in the view or -1 if there is no selection.
+   *
+   * @returns {number}
    */
   get selectedViewIndex() {
     return this.view.selectedElementIndex;
@@ -323,7 +324,7 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
   /**
    * Overrides _getAddEngines to return engines that can be added.
    *
-   * @returns {array} engines
+   * @returns {Array} engines
    */
   _getAddEngines() {
     return this._webEngines;
@@ -332,9 +333,9 @@ export class UrlbarSearchOneOffs extends SearchOneOffs {
   /**
    * Overrides _rebuildEngineList to add the local one-offs.
    *
-   * @param {array} engines
+   * @param {Array} engines
    *    The search engines to add.
-   * @param {array} addEngines
+   * @param {Array} addEngines
    *        The engines that can be added.
    */
   _rebuildEngineList(engines, addEngines) {

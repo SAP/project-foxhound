@@ -3,8 +3,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 // A bunch of assumptions we make about the behavior of the parent process,
@@ -421,7 +421,9 @@ async function testAboutProcessesWithConfig({ showAllFrames, showThreads }) {
   // extension process.
   const extension = ExtensionTestUtils.loadExtension({
     manifest: {
-      applications: { gecko: { id: "test-aboutprocesses@mochi.test" } },
+      browser_specific_settings: {
+        gecko: { id: "test-aboutprocesses@mochi.test" },
+      },
     },
     background() {
       // Creates an about:blank iframe in the extension process to make sure that

@@ -199,6 +199,12 @@ void nsFormFillController::NativeAnonymousChildListChange(nsIContent* aContent,
 
 void nsFormFillController::ParentChainChanged(nsIContent* aContent) {}
 
+void nsFormFillController::ARIAAttributeDefaultWillChange(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+
+void nsFormFillController::ARIAAttributeDefaultChanged(
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+
 MOZ_CAN_RUN_SCRIPT_BOUNDARY
 void nsFormFillController::NodeWillBeDestroyed(nsINode* aNode) {
   MOZ_LOG(sLogger, LogLevel::Verbose, ("NodeWillBeDestroyed: %p", aNode));
@@ -1009,13 +1015,17 @@ void nsFormFillController::MaybeStartControllingInput(
     return;
   }
 
+  bool hasList = !!aInput->GetList();
+
   if (!IsTextControl(aInput)) {
+    // Even if this is not a text control yet, it can become one in the future
+    if (hasList) {
+      StartControllingInput(aInput);
+    }
     return;
   }
 
   bool autocomplete = nsContentUtils::IsAutocompleteEnabled(aInput);
-
-  bool hasList = !!aInput->GetList();
 
   bool isPwmgrInput = false;
   if (mPwmgrInputs.Get(aInput) || aInput->HasBeenTypePassword()) {

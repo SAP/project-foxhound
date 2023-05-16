@@ -33,8 +33,8 @@ const MAKE_FILE_OLD_DIFFERENCE = 10 * 3600 * 1000;
 const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 var { FileUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
@@ -87,11 +87,10 @@ ChromeUtils.defineModuleGetter(
   "MockRegistry",
   "resource://testing-common/MockRegistry.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PromiseTestUtils",
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PromiseTestUtils: "resource://testing-common/PromiseTestUtils.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "RemoteSettings",
@@ -101,11 +100,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "TestUtils",
   "resource://testing-common/TestUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -770,14 +764,15 @@ function isExtensionInBootstrappedList(aDir, aId) {
  *          An optional string to override the default installation aId
  * @return  A file pointing to where the extension was installed
  */
-function promiseWriteWebManifestForExtension(
-  aData,
-  aDir,
-  aId = aData.applications.gecko.id
-) {
+function promiseWriteWebManifestForExtension(aData, aDir, aId) {
   let files = {
     "manifest.json": JSON.stringify(aData),
   };
+  if (!aId) {
+    aId =
+      aData?.browser_specific_settings?.gecko?.id ||
+      aData?.applications?.gecko?.id;
+  }
   return AddonTestUtils.promiseWriteFilesToExtension(aDir.path, aId, files);
 }
 
@@ -1286,7 +1281,9 @@ async function setupBuiltinExtension(extensionData, location = "ext-test") {
 async function installBuiltinExtension(extensionData, waitForStartup = true) {
   await setupBuiltinExtension(extensionData);
 
-  let id = extensionData.manifest.applications.gecko.id;
+  let id =
+    extensionData.manifest?.browser_specific_settings?.gecko?.id ||
+    extensionData.manifest?.applications?.gecko?.id;
   let wrapper = ExtensionTestUtils.expectExtension(id);
   await AddonManager.installBuiltinAddon("resource://ext-test/");
   if (waitForStartup) {

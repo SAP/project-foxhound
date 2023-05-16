@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { generatedToOriginalId } from "devtools-source-map";
+import { generatedToOriginalId } from "devtools/client/shared/source-map-loader/index";
 
 import assert from "../../utils/assert";
 import { recordEvent } from "../../utils/telemetry";
@@ -22,6 +22,7 @@ import { createPrettyPrintOriginalSource } from "../../client/firefox/create";
 
 import {
   getSource,
+  getFirstSourceActorForGeneratedSource,
   getSourceFromId,
   getSourceByURL,
   getSelectedLocation,
@@ -121,8 +122,11 @@ export function togglePrettyPrint(cx, sourceId) {
     if (!source.isPrettyPrinted) {
       recordEvent("pretty_print");
     }
-
-    await dispatch(loadSourceText({ cx, source }));
+    const sourceActor = getFirstSourceActorForGeneratedSource(
+      getState(),
+      source.id
+    );
+    await dispatch(loadSourceText({ cx, source, sourceActor }));
     assert(
       isGenerated(source),
       "Pretty-printing only allowed on generated sources"
@@ -142,7 +146,7 @@ export function togglePrettyPrint(cx, sourceId) {
     const threadcx = getThreadContext(getState());
     await dispatch(mapFrames(threadcx));
 
-    await dispatch(setSymbols({ cx, source: newPrettySource }));
+    await dispatch(setSymbols({ cx, source: newPrettySource, sourceActor }));
 
     await dispatch(updateBreakpointsForNewPrettyPrintedSource(cx, sourceId));
 

@@ -159,7 +159,7 @@ html|input.findbar-textbox[flash="true"] {
 }
 
 .findbar-find-status[status="notfound"] {
-  color: var(--error-text-color, color-mix(in srgb, currentColor 40%, #C50042));
+  font-weight: bold;
 }
 
 .find-status-icon {

@@ -6,6 +6,7 @@
 const {
   addGatedPermissionTypesForXpcShellTests,
   SITEPERMS_ADDON_PROVIDER_PREF,
+  SITEPERMS_ADDON_BLOCKEDLIST_PREF,
   SITEPERMS_ADDON_TYPE,
 } = ChromeUtils.importESModule(
   "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs"
@@ -15,8 +16,7 @@ const { PermissionTestUtils } = ChromeUtils.import(
   "resource://testing-common/PermissionTestUtils.jsm"
 );
 
-AddonTestUtils.init(this);
-createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+const addonsBundle = new Localization(["toolkit/about/aboutAddons.ftl"], true);
 
 let ssm = Services.scriptSecurityManager;
 const PRINCIPAL_COM = ssm.createContentPrincipalFromOrigin(
@@ -34,19 +34,47 @@ const PRINCIPAL_UNSECURE = ssm.createContentPrincipalFromOrigin(
 const PRINCIPAL_IP = ssm.createContentPrincipalFromOrigin(
   "https://18.154.122.194"
 );
-const PRINCIPAL_PRIVATEBROWSING = ssm.createContentPrincipalFromOrigin(
-  "https://example.withprivatebrowsing.com",
-  { privateBrowsing: 1 }
+const PRINCIPAL_PRIVATEBROWSING = ssm.createContentPrincipal(
+  Services.io.newURI("https://example.withprivatebrowsing.com"),
+  { privateBrowsingId: 1 }
 );
-const PRINCIPAL_USERCONTEXT = ssm.createContentPrincipalFromOrigin(
-  "https://example.withusercontext.com",
+const PRINCIPAL_USERCONTEXT = ssm.createContentPrincipal(
+  Services.io.newURI("https://example.withusercontext.com"),
   { userContextId: 2 }
+);
+const PRINCIPAL_NULL = ssm.createNullPrincipal({});
+
+const URI_USED_IN_MULTIPLE_CONTEXTS = Services.io.newURI(
+  "https://multiplecontexts.com"
+);
+const PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR = ssm.createContentPrincipal(
+  URI_USED_IN_MULTIPLE_CONTEXTS,
+  {}
+);
+const PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING = ssm.createContentPrincipal(
+  URI_USED_IN_MULTIPLE_CONTEXTS,
+  { privateBrowsingId: 1 }
+);
+const PRINCIPAL_MULTIPLE_CONTEXTS_USERCONTEXT = ssm.createContentPrincipal(
+  URI_USED_IN_MULTIPLE_CONTEXTS,
+  { userContextId: 3 }
+);
+
+const BLOCKED_DOMAIN = "malicious.com";
+const BLOCKED_PRINCIPAL = ssm.createContentPrincipalFromOrigin(
+  `https://${BLOCKED_DOMAIN}`
 );
 
 const GATED_SITE_PERM1 = "test/gatedSitePerm";
 const GATED_SITE_PERM2 = "test/anotherGatedSitePerm";
 addGatedPermissionTypesForXpcShellTests([GATED_SITE_PERM1, GATED_SITE_PERM2]);
 const NON_GATED_SITE_PERM = "test/nonGatedPerm";
+
+// Leave it to throw if the pref doesn't exist anymore, so that a test failure
+// will make us notice and confirm if we have enabled it by default or not.
+const PERMS_ISOLATE_USERCONTEXT_ENABLED = Services.prefs.getBoolPref(
+  "permissions.isolateBy.userContext"
+);
 
 // Observers to bypass panels and continue install.
 const expectAndHandleInstallPrompts = () => {
@@ -63,13 +91,17 @@ const expectAndHandleInstallPrompts = () => {
   );
 };
 
+add_setup(async () => {
+  createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
+  AddonTestUtils.init(this);
+  await promiseStartupManager();
+});
+
 add_task(
   {
     pref_set: [[SITEPERMS_ADDON_PROVIDER_PREF, false]],
   },
   async function test_sitepermsaddon_provider_disabled() {
-    await promiseStartupManager();
-
     // The SitePermsAddonProvider does not register until the first content process
     // is launched, so we simulate that by firing this notification.
     Services.obs.notifyObservers(null, "ipc:first-content-process-created");
@@ -78,18 +110,17 @@ add_task(
       !AddonManager.hasProvider("SitePermsAddonProvider"),
       "Expect no SitePermsAddonProvider to be registered"
     );
-
-    await promiseShutdownManager();
   }
 );
 
 add_task(
   {
-    pref_set: [[SITEPERMS_ADDON_PROVIDER_PREF, true]],
+    pref_set: [
+      [SITEPERMS_ADDON_PROVIDER_PREF, true],
+      [SITEPERMS_ADDON_BLOCKEDLIST_PREF, BLOCKED_DOMAIN],
+    ],
   },
   async function test_sitepermsaddon_provider_enabled() {
-    await promiseStartupManager();
-
     // The SitePermsAddonProvider does not register until the first content process
     // is launched, so we simulate that by firing this notification.
     Services.obs.notifyObservers(null, "ipc:first-content-process-created");
@@ -127,9 +158,17 @@ add_task(
       SITEPERMS_ADDON_TYPE,
       "addon has expected type"
     );
+
+    const localizedExtensionName = await addonsBundle.formatValue(
+      "addon-sitepermission-host",
+      {
+        host: PRINCIPAL_COM.host,
+      }
+    );
+    Assert.ok(!!localizedExtensionName, "retrieved addonName is not falsy");
     Assert.equal(
       comAddon.name,
-      `Site Permissions for example.com`,
+      localizedExtensionName,
       "addon has expected name"
     );
 
@@ -287,6 +326,21 @@ add_task(
       "Adding a gated permission to an unsecure principal shouldn't add a new addon"
     );
 
+    info("Adding a permission to a blocked principal");
+    PermissionTestUtils.add(
+      BLOCKED_PRINCIPAL,
+      GATED_SITE_PERM1,
+      Services.perms.ALLOW_ACTION
+    );
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      0,
+      "Adding a gated permission to a blocked principal shouldn't add a new addon"
+    );
+    // Cleanup
+    PermissionTestUtils.remove(BLOCKED_PRINCIPAL, GATED_SITE_PERM1);
+
     info("Call installSitePermsAddonFromWebpage without proper principal");
     await Assert.rejects(
       AddonManager.installSitePermsAddonFromWebpage(
@@ -334,6 +388,19 @@ add_task(
       ),
       /SitePermsAddon can\'t be installed from public eTLDs/,
       "installSitePermsAddonFromWebpage rejected when called with public principal"
+    );
+
+    info(
+      "Call installSitePermsAddonFromWebpage for a NullPrincipal as installingPrincipal"
+    );
+    await Assert.rejects(
+      AddonManager.installSitePermsAddonFromWebpage(
+        null,
+        PRINCIPAL_NULL,
+        GATED_SITE_PERM1
+      ),
+      /SitePermsAddons can\'t be installed from sandboxed subframes/,
+      "installSitePermsAddonFromWebpage rejected when called with a NullPrincipal as installing principal"
     );
 
     addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
@@ -388,10 +455,34 @@ add_task(
       "installSitePermsAddonFromWebpage with non-gated permission should not add the addon"
     );
 
+    info("Call installSitePermsAddonFromWebpage blocked principal");
+    await Assert.rejects(
+      AddonManager.installSitePermsAddonFromWebpage(
+        null,
+        BLOCKED_PRINCIPAL,
+        GATED_SITE_PERM1
+      ),
+      /SitePermsAddons can\'t be installed/,
+      "installSitePermsAddonFromWebpage rejected when called with blocked domain principal"
+    );
+    await Assert.rejects(
+      AddonManager.installSitePermsAddonFromWebpage(
+        null,
+        ssm.createContentPrincipalFromOrigin(`https://sub.${BLOCKED_DOMAIN}`),
+        GATED_SITE_PERM1
+      ),
+      /SitePermsAddons can\'t be installed/,
+      "installSitePermsAddonFromWebpage rejected when called with blocked subdomain principal "
+    );
+
     info(
       "Call installSitePermsAddonFromWebpage for authorized principal and gated permission"
     );
     expectAndHandleInstallPrompts();
+    const onAddonInstalled = AddonTestUtils.promiseInstallEvent(
+      "onInstallEnded"
+    ).then(installs => installs?.[0]?.addon);
+
     await AddonManager.installSitePermsAddonFromWebpage(
       null,
       PRINCIPAL_COM,
@@ -407,6 +498,14 @@ add_task(
       PermissionTestUtils.testExactPermission(PRINCIPAL_COM, GATED_SITE_PERM1),
       true,
       "...and set the permission"
+    );
+
+    // The addon we get here is a SitePermsAddonInstalling instance, and we want to assert
+    // that its permissions are correct as it may impact addon uninstall later on
+    Assert.deepEqual(
+      (await onAddonInstalled).sitePermissions,
+      [GATED_SITE_PERM1],
+      "Addon has expected sitePermissions"
     );
 
     info(
@@ -490,5 +589,335 @@ add_task(
       false,
       "Uninstalling the addon should clear the permission for the user context isolated principal"
     );
+
+    info(
+      "Check calling installSitePermsAddonFromWebpage for same gated permission and same origin on different contexts"
+    );
+    info("First call installSitePermsAddonFromWebpage on regular context");
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "...and set the permission"
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_USERCONTEXT,
+        GATED_SITE_PERM1
+      ),
+      // We expect the permission to not be set for user context if
+      // perms.isolateBy.userContext is set to true.
+      PERMS_ISOLATE_USERCONTEXT_ENABLED
+        ? Services.perms.UNKNOWN_ACTION
+        : Services.perms.ALLOW_ACTION,
+      `...and ${
+        PERMS_ISOLATE_USERCONTEXT_ENABLED ? "not allowed" : "allowed"
+      } on the context user specific principal`
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+        GATED_SITE_PERM1
+      ),
+      false,
+      "...but not on the private browsing principal"
+    );
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      2,
+      "installSitePermsAddonFromWebpage should add the addon..."
+    );
+    const [addonMultipleContexts] = addons.filter(
+      addon =>
+        addon.siteOrigin ===
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR.siteOriginNoSuffix
+    );
+    Assert.equal(
+      addonMultipleContexts?.siteOrigin,
+      PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR.siteOriginNoSuffix,
+      "Got an addon for the expected siteOriginNoSuffix value"
+    );
+    info("Then call installSitePermsAddonFromWebpage on private context");
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "Permission is set for the private context"
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "...and still set on the regular principal"
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_USERCONTEXT,
+        GATED_SITE_PERM1
+      ),
+      // We expect the permission to not be set for user context if
+      // perms.isolateBy.userContext is set to true.
+      PERMS_ISOLATE_USERCONTEXT_ENABLED
+        ? Services.perms.UNKNOWN_ACTION
+        : Services.perms.ALLOW_ACTION,
+      `...and ${
+        PERMS_ISOLATE_USERCONTEXT_ENABLED ? "not allowed" : "allowed"
+      } on the context user specific principal`
+    );
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      2,
+      "installSitePermsAddonFromWebpage did not add a new addon"
+    );
+    info("Then call installSitePermsAddonFromWebpage on specific user context");
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_MULTIPLE_CONTEXTS_USERCONTEXT,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_USERCONTEXT,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "Permission is set for the user context"
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "...and still set on the regular principal"
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "...and on the private principal"
+    );
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      2,
+      "installSitePermsAddonFromWebpage did not add a new addon"
+    );
+
+    info(
+      "Uninstalling the addon should remove the permission on the different contexts"
+    );
+    await addonMultipleContexts.uninstall();
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+        GATED_SITE_PERM1
+      ),
+      false,
+      "Uninstalling the addon should clear the permission for regular principal..."
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+        GATED_SITE_PERM1
+      ),
+      false,
+      "... as well as the private browsing one..."
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_USERCONTEXT,
+        GATED_SITE_PERM1
+      ),
+      false,
+      "... and the user context one"
+    );
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 1, "addon was properly uninstalled");
+
+    info("Install the addon for the multiple context origin again");
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "...and set the permission"
+    );
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      2,
+      "installSitePermsAddonFromWebpage should add the addon..."
+    );
+
+    info("Then call installSitePermsAddonFromWebpage on private context");
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+        GATED_SITE_PERM1
+      ),
+      true,
+      "Permission is set for the private context"
+    );
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      2,
+      "installSitePermsAddonFromWebpage did not add a new addon"
+    );
+
+    info("Remove the permission for the private context");
+    PermissionTestUtils.remove(
+      PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_PRIVATEBROWSING,
+        GATED_SITE_PERM1
+      ),
+      false,
+      "Permission is removed for the private context..."
+    );
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 2, "... but it didn't uninstall the addon");
+
+    info("Remove the permission for the regular context");
+    PermissionTestUtils.remove(
+      PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+      GATED_SITE_PERM1
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(
+        PRINCIPAL_MULTIPLE_CONTEXTS_REGULAR,
+        GATED_SITE_PERM1
+      ),
+      false,
+      "Permission is removed for the regular context..."
+    );
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 1, "...and addon is uninstalled");
+
+    await addons[0]?.uninstall();
+  }
+);
+
+add_task(
+  {
+    pref_set: [[SITEPERMS_ADDON_PROVIDER_PREF, true]],
+  },
+  async function test_salted_hash_addon_id() {
+    // Make sure the test will also be able to run if it is the only one executed.
+    Services.obs.notifyObservers(null, "ipc:first-content-process-created");
+    ok(
+      AddonManager.hasProvider("SitePermsAddonProvider"),
+      "Expect SitePermsAddonProvider to be registered"
+    );
+    // Make sure no sitepermission addon is already installed.
+    let addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 0, "There's no addons");
+
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_COM,
+      GATED_SITE_PERM1
+    );
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(
+      addons.length,
+      1,
+      "installSitePermsAddonFromWebpage should add the addon..."
+    );
+    Assert.equal(
+      PermissionTestUtils.testExactPermission(PRINCIPAL_COM, GATED_SITE_PERM1),
+      true,
+      "...and set the permission"
+    );
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 1, "There is an addon installed");
+
+    const firstSaltedAddonId = addons[0].id;
+    ok(firstSaltedAddonId, "Got the first addon id");
+
+    info("Verify addon id after mocking new browsing session");
+
+    const { generateSalt } = ChromeUtils.importESModule(
+      "resource://gre/modules/addons/SitePermsAddonProvider.sys.mjs"
+    );
+    generateSalt();
+
+    await promiseRestartManager();
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 1, "There is an addon installed");
+
+    const secondSaltedAddonId = addons[0].id;
+    ok(
+      secondSaltedAddonId,
+      "Got the second addon id after mocking new browsing session"
+    );
+
+    Assert.notEqual(
+      firstSaltedAddonId,
+      secondSaltedAddonId,
+      "The two addon ids are different"
+    );
+
+    // Confirm that new installs from the same siteOrigin will still
+    // belong to the existing addon entry while the salt isn't expected
+    // to have changed.
+    expectAndHandleInstallPrompts();
+    await AddonManager.installSitePermsAddonFromWebpage(
+      null,
+      PRINCIPAL_COM,
+      GATED_SITE_PERM1
+    );
+
+    addons = await promiseAddonsByTypes([SITEPERMS_ADDON_TYPE]);
+    Assert.equal(addons.length, 1, "There is still a single addon installed");
+
+    await addons[0]?.uninstall();
   }
 );

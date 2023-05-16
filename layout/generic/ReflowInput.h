@@ -341,12 +341,18 @@ struct ReflowInput : public SizeComputationInput {
     mAvailableSize.BSize(mWritingMode) = aAvailableBSize;
   }
 
-  nscoord& ComputedISize() { return mComputedSize.ISize(mWritingMode); }
-  nscoord& ComputedBSize() { return mComputedSize.BSize(mWritingMode); }
-  nscoord& ComputedMinISize() { return mComputedMinSize.ISize(mWritingMode); }
-  nscoord& ComputedMaxISize() { return mComputedMaxSize.ISize(mWritingMode); }
-  nscoord& ComputedMinBSize() { return mComputedMinSize.BSize(mWritingMode); }
-  nscoord& ComputedMaxBSize() { return mComputedMaxSize.BSize(mWritingMode); }
+  void SetComputedMinISize(nscoord aMinISize) {
+    mComputedMinSize.ISize(mWritingMode) = aMinISize;
+  }
+  void SetComputedMaxISize(nscoord aMaxISize) {
+    mComputedMaxSize.ISize(mWritingMode) = aMaxISize;
+  }
+  void SetComputedMinBSize(nscoord aMinBSize) {
+    mComputedMinSize.BSize(mWritingMode) = aMinBSize;
+  }
+  void SetComputedMaxBSize(nscoord aMaxBSize) {
+    mComputedMaxSize.BSize(mWritingMode) = aMaxBSize;
+  }
 
   mozilla::LogicalSize AvailableSize() const { return mAvailableSize; }
   mozilla::LogicalSize ComputedSize() const { return mComputedSize; }
@@ -814,14 +820,19 @@ struct ReflowInput : public SizeComputationInput {
     }
   }
 
+  // Use "No" to request SetComputedISize/SetComputedBSize not to reset resize
+  // flags.
+  enum class ResetResizeFlags : bool { No, Yes };
+
   // This method doesn't apply min/max computed inline-sizes to the value passed
   // in.
-  void SetComputedISize(nscoord aComputedISize);
+  void SetComputedISize(nscoord aComputedISize,
+                        ResetResizeFlags aFlags = ResetResizeFlags::Yes);
 
   // These methods don't apply min/max computed block-sizes to the value passed
   // in.
-  void SetComputedBSize(nscoord aComputedBSize);
-  void SetComputedBSizeWithoutResettingResizeFlags(nscoord aComputedBSize);
+  void SetComputedBSize(nscoord aComputedBSize,
+                        ResetResizeFlags aFlags = ResetResizeFlags::Yes);
 
   bool WillReflowAgainForClearance() const {
     return mDiscoveredClearance && *mDiscoveredClearance;

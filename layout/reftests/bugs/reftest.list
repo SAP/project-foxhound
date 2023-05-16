@@ -1270,7 +1270,6 @@ pref(layout.css.caption-side-non-standard.enabled,true) == 478614-7.html 478614-
 == 478811-4.html 478811-4-ref.html
 == 478956-1a.html 478956-1-ref.html
 == 478956-1b.html 478956-1-ref.html
-== chrome://reftest/content/bugs/480017-1.html chrome://reftest/content/bugs/480017-1-ref.html
 == 480880-1a.html 480880-1-ref.html
 == 480880-1b.html 480880-1-ref.html
 == 480880-1c.html 480880-1-ref.html
@@ -1315,7 +1314,6 @@ fuzzy(0-1,0-5) == 482659-1d.html 482659-1-ref.html
 == 488685-1.html 488685-1-ref.html
 == 488692-1.html 488692-1-ref.html
 == 489868-1.svg 489868-1-ref.svg
-== 490173-1.html 490173-1-ref.html
 == 490173-2.html 490173-2-ref.html
 == 490176-1.html 490176-1-ref.html
 == 490177-1.svg 490177-1-ref.svg
@@ -2132,3 +2130,6 @@ pref(layout.css.prefers-color-scheme.content-override,0) == 1787127.html 1787127
 pref(layout.css.prefers-color-scheme.content-override,1) == 1787127.html 1787127-ref.html
 pref(layout.css.prefers-color-scheme.content-override,2) == 1787127.html 1787127-ref.html
 == 1792643-1.html 1792643-1-ref.html
+skip-if(!/^Windows\x20NT\x2010\.0/.test(http.oscpu)) == 1798297-1.html 1798297-1-ref.html
+skip-if(!/^Windows\x20NT\x2010\.0/.test(http.oscpu)) != 1798297-1.html 1798297-1-notref.html
+== 1799425-1.html 1799425-1-ref.html

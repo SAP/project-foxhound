@@ -28,7 +28,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
 
-var EXPORTED_SYMBOLS = ["BridgeWrapperXPCOM", "BridgedEngine", "LogAdapter"];
+var EXPORTED_SYMBOLS = [
+  "BridgeWrapperXPCOM",
+  "BridgedEngine",
+  "BridgedStore",
+  "LogAdapter",
+];
 
 /**
  * A stub store that converts between raw decrypted incoming records and
@@ -149,7 +154,7 @@ class InterruptedError extends Error {
 }
 
 /**
- * Adapts a `Log.jsm` logger to a `mozIServicesLogSink`. This class is copied
+ * Adapts a `Log.sys.mjs` logger to a `mozIServicesLogSink`. This class is copied
  * from `SyncedBookmarksMirror.jsm`.
  */
 class LogAdapter {
@@ -471,7 +476,9 @@ BridgedEngine.prototype = {
    * records from the outgoing table back to the mirror.
    */
   async _onRecordsWritten(succeeded, failed, serverModifiedTime) {
-    await this._bridge.setUploaded(serverModifiedTime, succeeded);
+    // JS uses seconds but Rust uses milliseconds so we'll need to convert
+    let serverModifiedMS = Math.round(serverModifiedTime * 1000);
+    await this._bridge.setUploaded(Math.floor(serverModifiedMS), succeeded);
   },
 
   async _createTombstone() {

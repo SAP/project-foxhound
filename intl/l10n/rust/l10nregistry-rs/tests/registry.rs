@@ -5,7 +5,7 @@ static FTL_RESOURCE_TOOLKIT: &str = "toolkit/global/textActions.ftl";
 static FTL_RESOURCE_BROWSER: &str = "branding/brand.ftl";
 
 #[test]
-fn test_generate_sources_for_file() {
+fn test_get_sources_for_resource() {
     let en_us: LanguageIdentifier = "en-US".parse().unwrap();
     let setup = RegistrySetup::new(
         "test",
@@ -19,13 +19,15 @@ fn test_generate_sources_for_file() {
     let (_, reg) = fetcher.get_registry_and_environment(setup);
 
     {
-        let lock = reg.lock();
+        let metasources = reg
+            .try_borrow_metasources()
+            .expect("Unable to borrow metasources.");
 
-        let toolkit = lock.get_source(0, "toolkit").unwrap();
-        let browser = lock.get_source(0, "browser").unwrap();
+        let toolkit = metasources.file_source_by_name(0, "toolkit").unwrap();
+        let browser = metasources.file_source_by_name(0, "browser").unwrap();
         let toolkit_resource_id = FTL_RESOURCE_TOOLKIT.into();
 
-        let mut i = lock.generate_sources_for_file(0, &en_us, &toolkit_resource_id);
+        let mut i = metasources.get_sources_for_resource(0, &en_us, &toolkit_resource_id);
 
         assert_eq!(i.next(), Some(toolkit));
         assert_eq!(i.next(), Some(browser));
@@ -35,7 +37,7 @@ fn test_generate_sources_for_file() {
             .fetch_file_sync(&en_us, &FTL_RESOURCE_TOOLKIT.into(), false)
             .is_none());
 
-        let mut i = lock.generate_sources_for_file(0, &en_us, &toolkit_resource_id);
+        let mut i = metasources.get_sources_for_resource(0, &en_us, &toolkit_resource_id);
         assert_eq!(i.next(), Some(toolkit));
         assert_eq!(i.next(), None);
 
@@ -43,7 +45,7 @@ fn test_generate_sources_for_file() {
             .fetch_file_sync(&en_us, &FTL_RESOURCE_TOOLKIT.into(), false)
             .is_some());
 
-        let mut i = lock.generate_sources_for_file(0, &en_us, &toolkit_resource_id);
+        let mut i = metasources.get_sources_for_resource(0, &en_us, &toolkit_resource_id);
         assert_eq!(i.next(), Some(toolkit));
         assert_eq!(i.next(), None);
     }
@@ -109,7 +111,9 @@ async fn test_generate_bundles_for_lang() {
     let (_, reg) = fetcher.get_registry_and_environment(setup);
 
     let paths = vec![FTL_RESOURCE_TOOLKIT.into(), FTL_RESOURCE_BROWSER.into()];
-    let mut i = reg.generate_bundles_for_lang(en_us, paths);
+    let mut i = reg
+        .generate_bundles_for_lang(en_us, paths)
+        .expect("Failed to get GenerateBundles.");
 
     assert!(i.next().await.is_some());
     assert!(i.next().await.is_none());
@@ -133,7 +137,9 @@ async fn test_generate_bundles() {
 
     let paths = vec![FTL_RESOURCE_TOOLKIT.into(), FTL_RESOURCE_BROWSER.into()];
     let langs = vec![en_us];
-    let mut i = reg.generate_bundles(langs.into_iter(), paths);
+    let mut i = reg
+        .generate_bundles(langs.into_iter(), paths)
+        .expect("Failed to get GenerateBundles.");
 
     assert!(i.next().await.is_some());
     assert!(i.next().await.is_none());
@@ -288,7 +294,9 @@ async fn test_generate_bundles_with_metasources() {
 
     let paths = vec![FTL_RESOURCE_TOOLKIT.into(), FTL_RESOURCE_BROWSER.into()];
     let langs = vec![en_us];
-    let mut i = reg.generate_bundles(langs.into_iter(), paths);
+    let mut i = reg
+        .generate_bundles(langs.into_iter(), paths)
+        .expect("Failed to get GenerateBundles.");
 
     assert!(i.next().await.is_some());
     assert!(i.next().await.is_some());

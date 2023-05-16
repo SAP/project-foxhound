@@ -41,11 +41,10 @@ class ViewportFrame : public nsContainerFrame {
                     nsIFrame* aPrevInFlow) override;
 
 #ifdef DEBUG
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 #endif
 
@@ -107,8 +106,8 @@ class ViewportFrame : public nsContainerFrame {
   void SetViewInternal(nsView* aView) override { mView = aView; }
 
  private:
-  virtual mozilla::layout::FrameChildListID GetAbsoluteListID() const override {
-    return kFixedList;
+  mozilla::FrameChildListID GetAbsoluteListID() const override {
+    return FrameChildListID::Fixed;
   }
 
   nsView* mView;

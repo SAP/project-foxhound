@@ -83,6 +83,24 @@ a11y:
     release_channel_collection: opt-out
     keyed: false
 
+  invert_colors:
+    bug_numbers:
+      - 1794626
+    description: >
+      Boolean tracking if the user has an invert colors OS
+      setting enabled.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - accessibility@mozilla.com
+      - mreschenberg@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    release_channel_collection: opt-out
+    keyed: false
+
   theme:
     bug_numbers:
       - 1022528
@@ -494,6 +512,24 @@ browser.engagement.navigation:
     description: >
       The count URI loads triggered in a subsession from the urlbar via handoff,
       broken down by the originating action.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
+  urlbar_persisted:
+    bug_numbers:
+      - 1779471
+    description: >
+      The count of URI loads triggered in a subsession from the urlbar after the
+      search term was shown in the urlbar, broken down by the originating action.
     expires: never
     kind: uint
     keyed: true
@@ -1264,7 +1300,7 @@ extensions.startupCache:
       Unlike the related glean metric, this scalar has an expiring date,
       set as a deadline to consider removing the mirrored scalar in
       favor to just use the Glean metric).
-    expires: "109"
+    expires: "118"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -2807,7 +2843,7 @@ devtools.tooltip:
     bug_numbers:
       - 1553471
     description: >
-      Number of times a tooltip was shown, keyed by tooltip type. Currently supported types are "image", "font-family", "inactive-css", "css-compatibility" and "variable."
+      Number of times a tooltip was shown, keyed by tooltip type. Currently supported types are "image", "font-family", "inactive-css", "css-compatibility", "css-query-container" and "variable."
     expires: never
     kind: uint
     keyed: true
@@ -3220,7 +3256,7 @@ mozstorage:
     bug_numbers:
       - 1727261
     description: >
-      Collection of javascript modules that created a Sqlite.jsm transaction
+      Collection of javascript modules that created a Sqlite.sys.mjs transaction
       taking too long and timing out. This can be used to identify and optimize
       those modules transactions.
     expires: never
@@ -5013,46 +5049,6 @@ update:
 
 # The following section contains search counters.
 browser.search:
-  with_ads:
-    bug_numbers:
-      - 1495548
-      - 1505411
-      - 1664849
-    description: >
-      Records counts of SERP pages with adverts displayed. The key format is ‘<provider>:<sap|organic>’.
-    expires: never
-    keyed: true
-    kind: uint
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-      - rev-data@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
-
-  ad_clicks:
-    bug_numbers:
-      - 1495548
-      - 1505411
-      - 1664849
-    description: >
-      Records clicks of adverts on SERP pages. The key format is ‘<provider>:<sap|organic>’.
-    expires: never
-    keyed: true
-    kind: uint
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-      - rev-data@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
-
   data_transferred:
     bug_numbers:
       - 1614777
@@ -5107,6 +5103,23 @@ browser.search.content:
     description: >
       The count URI loads triggered in a subsession from the urlbar via handoff,
       broken down by the originating action.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
+  urlbar_persisted:
+    bug_numbers:
+      - 1779471
+    description: >
+      Records counts for in-content searches where the search was most likely started from the urlbar after the search term was shown in the urlbar. The key format is <provider>:[tagged|tagged-follow-on|organic]:[code|none]
     expires: never
     kind: uint
     keyed: true
@@ -5357,6 +5370,23 @@ browser.search.withads:
     record_in_processes:
       - 'main'
 
+  urlbar_persisted:
+    bug_numbers:
+      - 1779471
+    description: >
+      Records counts of SERP pages with adverts displayed where the search was started from the urlbar after the search term was shown in the urlbar. The key format is ‘<provider>:<tagged|organic>’
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
   urlbar_searchmode:
     bug_numbers:
       - 1664847
@@ -5551,6 +5581,23 @@ browser.search.adclicks:
     description: >
       The count URI loads triggered in a subsession from the urlbar via handoff,
       broken down by the originating action.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+      - rev-data@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
+  urlbar_persisted:
+    bug_numbers:
+      - 1779471
+    description: >
+      Records clicks of adverts on SERP pages where the search was started from the urlbar after the search term was shown in the urlbar. The key format is ‘<provider>:<tagged|organic>’
     expires: never
     kind: uint
     keyed: true
@@ -5999,47 +6046,6 @@ startup:
       - 'firefox'
     record_in_processes:
       - main
-
-  is_run_from_dmg:
-    bug_numbers:
-      - 1700795
-    description: >
-      Recorded on every run of a Firefox install on macOS, with a boolean value
-      indicating whether Firefox is being run directly from .dmg without
-      installing, or not.
-    expires: "108"
-    keyed: false
-    kind: boolean
-    notification_emails:
-      - jwatt@jwatt.org
-      - mbalfanz@mozilla.com
-    operating_systems:
-      - mac
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-
-  is_run_from_app_translocated_location:
-    bug_numbers:
-      - 1745788
-    description: >
-      Recorded on every run of a Firefox install on macOS, with a boolean value
-      indicating whether Firefox is being run from an app translocated location,
-      or not. This is always false when `is_run_from_dmg` is true.
-    expires: "108"
-    keyed: false
-    kind: boolean
-    notification_emails:
-      - spohl@mozilla.com
-    operating_systems:
-      - mac
-    products:
-      - 'firefox'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
 
 script.preloader:
   mainthread_recompile:

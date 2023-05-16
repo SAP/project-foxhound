@@ -10,10 +10,13 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+ChromeUtils.defineESModuleGetters(this, {
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(this, {
-  clearTimeout: "resource://gre/modules/Timer.jsm",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 // Minimum time between two resizes.
@@ -260,6 +263,7 @@ const BrowserListener = {
       docShell.contentViewer.getContentSize(
         this.maxWidth,
         this.maxHeight,
+        /* prefWidth = */ 0,
         w,
         h
       );

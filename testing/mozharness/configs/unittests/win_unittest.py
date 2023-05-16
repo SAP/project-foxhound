@@ -129,7 +129,6 @@ config = {
             "options": [
                 "--self-test",
                 "--symbols-path=%(symbols_path)s",
-                "--test-plugin-path=%(test_plugin_path)s",
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--utility-path=tests/bin",
@@ -273,6 +272,17 @@ config = {
             ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
+            "enabled": True,
+        },
+        {
+            "name": "create scrollbars always show key",
+            "cmd": [
+                "powershell",
+                "-command",
+                "New-ItemProperty -Path 'HKCU:\Control Panel\Accessibility' -Name 'DynamicScrollbars' -Value 0",
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": False,
             "enabled": True,
         },
         {

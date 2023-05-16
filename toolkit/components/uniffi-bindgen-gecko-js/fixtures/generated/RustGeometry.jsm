@@ -233,6 +233,9 @@ class FfiConverterF64 extends FfiConverter {
     }
 }
 
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterF64");
+
 class FfiConverterString extends FfiConverter {
     static lift(buf) {
         const decoder = new TextDecoder();
@@ -257,6 +260,9 @@ class FfiConverterString extends FfiConverter {
         return 4 + encoder.encode(value).length
     }
 }
+
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterString");
 
 class Line {
     constructor(start,end) {
@@ -304,6 +310,9 @@ class FfiConverterTypeLine extends FfiConverter {
 
 EXPORTED_SYMBOLS.push("Line");
 
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterTypeLine");
+
 class Point {
     constructor(coordX,coordY) {
         FfiConverterF64.checkType("coordX", coordX);
@@ -348,7 +357,12 @@ class FfiConverterTypePoint extends FfiConverter {
     }
 }
 
-EXPORTED_SYMBOLS.push("Point");class FfiConverterOptionalTypePoint extends FfiConverterArrayBuffer {
+EXPORTED_SYMBOLS.push("Point");
+
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterTypePoint");
+
+class FfiConverterOptionalTypePoint extends FfiConverterArrayBuffer {
     static checkType(name, value) {
         if (value !== undefined && value !== null) {
             FfiConverterTypePoint.checkType(name, value)
@@ -384,6 +398,11 @@ EXPORTED_SYMBOLS.push("Point");class FfiConverterOptionalTypePoint extends FfiCo
     }
 }
 
+// Export the FFIConverter object to make external types work.
+EXPORTED_SYMBOLS.push("FfiConverterOptionalTypePoint");
+
+
+
 
 function gradient(ln) {
     
@@ -392,7 +411,7 @@ function gradient(ln) {
     const functionCall = () => {
         FfiConverterTypeLine.checkType("ln", ln);
         return UniFFIScaffolding.callAsync(
-            0, // geometry:geometry_631c_gradient
+            20, // geometry:geometry_1cce_gradient
             FfiConverterTypeLine.lower(ln),
         )
     }
@@ -412,7 +431,7 @@ function intersection(ln1,ln2) {
         FfiConverterTypeLine.checkType("ln1", ln1);
         FfiConverterTypeLine.checkType("ln2", ln2);
         return UniFFIScaffolding.callAsync(
-            1, // geometry:geometry_631c_intersection
+            21, // geometry:geometry_1cce_intersection
             FfiConverterTypeLine.lower(ln1),
             FfiConverterTypeLine.lower(ln2),
         )

@@ -204,16 +204,8 @@ bool nsCSPContext::permitsInternal(
       // In CSP 3.0 the effective directive doesn't become the actually used
       // directive in case of a fallback from e.g. script-src-elem to
       // script-src or default-src.
-      // TODO(bug 1779369): Fix this for all directive types.
-      nsAutoString effectiveDirective(violatedDirective);
-      if ((StaticPrefs::security_csp_script_src_attr_elem_enabled() &&
-           (aDir == SCRIPT_SRC_ELEM_DIRECTIVE ||
-            aDir == SCRIPT_SRC_ATTR_DIRECTIVE)) ||
-          (StaticPrefs::security_csp_style_src_attr_elem_enabled() &&
-           (aDir == STYLE_SRC_ELEM_DIRECTIVE ||
-            aDir == STYLE_SRC_ATTR_DIRECTIVE))) {
-        effectiveDirective.AssignASCII(CSP_CSPDirectiveToString(aDir));
-      }
+      nsAutoString effectiveDirective;
+      effectiveDirective.AssignASCII(CSP_CSPDirectiveToString(aDir));
 
       // Callers should set |aSendViolationReports| to false if this is a
       // preload - the decision may be wrong due to the inability to get the
@@ -580,8 +572,9 @@ void nsCSPContext::reportInlineViolation(
 }
 
 NS_IMETHODIMP
-nsCSPContext::GetAllowsInline(CSPDirective aDirective, const nsAString& aNonce,
-                              bool aParserCreated, Element* aTriggeringElement,
+nsCSPContext::GetAllowsInline(CSPDirective aDirective, bool aHasUnsafeHash,
+                              const nsAString& aNonce, bool aParserCreated,
+                              Element* aTriggeringElement,
                               nsICSPEventListener* aCSPEventListener,
                               const nsAString& aContentOfPseudoScript,
                               uint32_t aLineNumber, uint32_t aColumnNumber,
@@ -624,12 +617,20 @@ nsCSPContext::GetAllowsInline(CSPDirective aDirective, const nsAString& aNonce,
         element->GetScriptText(content);
       }
     }
-
     if (content.IsEmpty()) {
       content = aContentOfPseudoScript;
     }
-    allowed =
-        mPolicies[i]->allows(aDirective, CSP_HASH, content, aParserCreated);
+
+    // Per https://w3c.github.io/webappsec-csp/#match-element-to-source-list
+    // Step 5. If type is "script" or "style", or unsafe-hashes flag is true:
+    //
+    // aHasUnsafeHash is true for event handlers (type "script attribute"),
+    // style= attributes (type "style attribute") and the javascript: protocol.
+    if (!aHasUnsafeHash || mPolicies[i]->allows(aDirective, CSP_UNSAFE_HASHES,
+                                                u""_ns, aParserCreated)) {
+      allowed =
+          mPolicies[i]->allows(aDirective, CSP_HASH, content, aParserCreated);
+    }
 
     if (!allowed) {
       // policy is violoated: deny the load unless policy is report only and
@@ -645,16 +646,8 @@ nsCSPContext::GetAllowsInline(CSPDirective aDirective, const nsAString& aNonce,
       // In CSP 3.0 the effective directive doesn't become the actually used
       // directive in case of a fallback from e.g. script-src-elem to
       // script-src or default-src.
-      // TODO(bug 1779369): Fix this for all directive types.
-      nsAutoString effectiveDirective(violatedDirective);
-      if ((StaticPrefs::security_csp_script_src_attr_elem_enabled() &&
-           (aDirective == SCRIPT_SRC_ELEM_DIRECTIVE ||
-            aDirective == SCRIPT_SRC_ATTR_DIRECTIVE)) ||
-          (StaticPrefs::security_csp_style_src_attr_elem_enabled() &&
-           (aDirective == STYLE_SRC_ELEM_DIRECTIVE ||
-            aDirective == STYLE_SRC_ATTR_DIRECTIVE))) {
-        effectiveDirective.AssignASCII(CSP_CSPDirectiveToString(aDirective));
-      }
+      nsAutoString effectiveDirective;
+      effectiveDirective.AssignASCII(CSP_CSPDirectiveToString(aDirective));
 
       reportInlineViolation(aDirective, aTriggeringElement, aCSPEventListener,
                             aNonce, reportSample ? content : EmptyString(),
@@ -753,64 +746,6 @@ nsCSPContext::GetAllowsNavigateTo(nsIURI* aURI, bool aIsFormSubmission,
 }
 
 /**
- * Reduces some code repetition for the various logging situations in
- * LogViolationDetails.
- *
- * Call-sites for the eval/inline checks recieve two return values: allows
- * and violates.  Based on those, they must choose whether to call
- * LogViolationDetails or not.  Policies that are report-only allow the
- * loads/compilations but violations should still be reported.  Not all
- * policies in this nsIContentSecurityPolicy instance will be violated,
- * which is why we must check allows() again here.
- *
- * Note: This macro uses some parameters from its caller's context:
- * p, mPolicies, this, aSourceFile, aScriptSample, aLineNum, aColumnNum,
- * blockedContentSource
- *
- * @param violationType: the VIOLATION_TYPE_* constant (partial symbol)
- *                 such as INLINE_SCRIPT
- * @param contentPolicyType: a constant from nsIContentPolicy such as
- *                           TYPE_STYLESHEET
- * @param nonceOrHash: for NONCE and HASH violations, it's the nonce or content
- *               string. For other violations, it is an empty string.
- * @param keyword: the keyword corresponding to violation (UNSAFE_INLINE for
- *                 most)
- * @param observerTopic: the observer topic string to send with the CSP
- *                 observer notifications.
- *
- * Please note that inline violations for scripts are reported within
- * GetAllowsInline() and do not call this macro, hence we can pass 'false'
- * as the argument _aParserCreated_ to allows().
- */
-#define CASE_CHECK_AND_REPORT(violationType, directive, nonceOrHash, keyword,  \
-                              observerTopic)                                   \
-  case nsIContentSecurityPolicy::VIOLATION_TYPE_##violationType:               \
-    PR_BEGIN_MACRO                                                             \
-    static_assert(directive##_SRC_DIRECTIVE == SCRIPT_SRC_DIRECTIVE ||         \
-                  directive##_SRC_DIRECTIVE == STYLE_SRC_DIRECTIVE);           \
-    if (!mPolicies[p]->allows(directive##_SRC_DIRECTIVE, keyword, nonceOrHash, \
-                              false)) {                                        \
-      nsAutoString violatedDirective;                                          \
-      bool reportSample = false;                                               \
-      mPolicies[p]->getDirectiveStringAndReportSampleForContentType(           \
-          directive##_SRC_DIRECTIVE, violatedDirective, &reportSample);        \
-      nsAutoString effectiveDirective(violatedDirective);                      \
-      if (aViolationType == nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL ||   \
-          aViolationType ==                                                    \
-              nsIContentSecurityPolicy::VIOLATION_TYPE_WASM_EVAL) {            \
-        effectiveDirective = u"script-src"_ns;                                 \
-      }                                                                        \
-      AsyncReportViolation(aTriggeringElement, aCSPEventListener, nullptr,     \
-                           blockedContentSource, nullptr, violatedDirective,   \
-                           effectiveDirective, p,                              \
-                           NS_LITERAL_STRING_FROM_CSTRING(observerTopic),      \
-                           aSourceFile, reportSample ? aScriptSample : u""_ns, \
-                           aLineNum, aColumnNum);                              \
-    }                                                                          \
-    PR_END_MACRO;                                                              \
-    break
-
-/**
  * For each policy, log any violation on the Error Console and send a report
  * if a report-uri is present in the policy
  *
@@ -841,48 +776,40 @@ nsCSPContext::LogViolationDetails(
     const nsAString& aScriptSample, int32_t aLineNum, int32_t aColumnNum,
     const nsAString& aNonce, const nsAString& aContent) {
   EnsureIPCPoliciesRead();
+
+  BlockedContentSource blockedContentSource;
+  enum CSPKeyword keyword;
+  nsAutoString observerSubject;
+  if (aViolationType == nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL) {
+    blockedContentSource = BlockedContentSource::eEval;
+    keyword = CSP_UNSAFE_EVAL;
+    observerSubject.AssignLiteral(EVAL_VIOLATION_OBSERVER_TOPIC);
+  } else {
+    NS_ASSERTION(
+        aViolationType == nsIContentSecurityPolicy::VIOLATION_TYPE_WASM_EVAL,
+        "unexpected aViolationType");
+    blockedContentSource = BlockedContentSource::eWasmEval;
+    keyword = CSP_WASM_UNSAFE_EVAL;
+    observerSubject.AssignLiteral(WASM_EVAL_VIOLATION_OBSERVER_TOPIC);
+  }
+
   for (uint32_t p = 0; p < mPolicies.Length(); p++) {
     NS_ASSERTION(mPolicies[p], "null pointer in nsTArray<nsCSPPolicy>");
 
-    BlockedContentSource blockedContentSource = BlockedContentSource::eUnknown;
-    if (aViolationType == nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL) {
-      blockedContentSource = BlockedContentSource::eEval;
-    } else if (aViolationType ==
-               nsIContentSecurityPolicy::VIOLATION_TYPE_WASM_EVAL) {
-      blockedContentSource = BlockedContentSource::eWasmEval;
-    } else if (aViolationType ==
-                   nsIContentSecurityPolicy::VIOLATION_TYPE_INLINE_SCRIPT ||
-               aViolationType ==
-                   nsIContentSecurityPolicy::VIOLATION_TYPE_INLINE_STYLE) {
-      blockedContentSource = BlockedContentSource::eInline;
-    } else {
-      // All the other types should have a URL, but just in case, let's use
-      // 'self' here.
-      blockedContentSource = BlockedContentSource::eSelf;
+    if (mPolicies[p]->allows(SCRIPT_SRC_DIRECTIVE, keyword, u""_ns, false)) {
+      continue;
     }
 
-    switch (aViolationType) {
-      CASE_CHECK_AND_REPORT(EVAL, SCRIPT, u""_ns, CSP_UNSAFE_EVAL,
-                            EVAL_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(INLINE_STYLE, STYLE, u""_ns, CSP_UNSAFE_INLINE,
-                            INLINE_STYLE_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(INLINE_SCRIPT, SCRIPT, u""_ns, CSP_UNSAFE_INLINE,
-                            INLINE_SCRIPT_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(NONCE_SCRIPT, SCRIPT, aNonce, CSP_UNSAFE_INLINE,
-                            SCRIPT_NONCE_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(NONCE_STYLE, STYLE, aNonce, CSP_UNSAFE_INLINE,
-                            STYLE_NONCE_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(HASH_SCRIPT, SCRIPT, aContent, CSP_UNSAFE_INLINE,
-                            SCRIPT_HASH_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(HASH_STYLE, STYLE, aContent, CSP_UNSAFE_INLINE,
-                            STYLE_HASH_VIOLATION_OBSERVER_TOPIC);
-      CASE_CHECK_AND_REPORT(WASM_EVAL, SCRIPT, u""_ns, CSP_WASM_UNSAFE_EVAL,
-                            WASM_EVAL_VIOLATION_OBSERVER_TOPIC);
+    nsAutoString violatedDirective;
+    bool reportSample = false;
+    mPolicies[p]->getDirectiveStringAndReportSampleForContentType(
+        SCRIPT_SRC_DIRECTIVE, violatedDirective, &reportSample);
 
-      default:
-        NS_ASSERTION(false, "LogViolationDetails with invalid type");
-        break;
-    }
+    AsyncReportViolation(
+        aTriggeringElement, aCSPEventListener, nullptr, blockedContentSource,
+        nullptr, violatedDirective, u"script-src"_ns /* aEffectiveDirective */,
+        p, observerSubject, aSourceFile, reportSample ? aScriptSample : u""_ns,
+        aLineNum, aColumnNum);
   }
   return NS_OK;
 }
@@ -1198,9 +1125,19 @@ nsresult nsCSPContext::SendReports(
   // referrer
   report.mCsp_report.mReferrer = aViolationEventInit.mReferrer;
 
+  // effective-directive
+  report.mCsp_report.mEffective_directive =
+      aViolationEventInit.mEffectiveDirective;
+
   // violated-directive
   report.mCsp_report.mViolated_directive =
-      aViolationEventInit.mViolatedDirective;
+      aViolationEventInit.mEffectiveDirective;
+
+  // disposition
+  report.mCsp_report.mDisposition = aViolationEventInit.mDisposition;
+
+  // status-code
+  report.mCsp_report.mStatus_code = aViolationEventInit.mStatusCode;
 
   // source-file
   if (!aViolationEventInit.mSourceFile.IsEmpty()) {

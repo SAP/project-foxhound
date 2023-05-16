@@ -248,30 +248,33 @@ void nsHTMLScrollFrame::DestroyFrom(nsIFrame* aDestructRoot,
 }
 
 void nsHTMLScrollFrame::SetInitialChildList(ChildListID aListID,
-                                            nsFrameList& aChildList) {
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
+                                            nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
   mHelper.ReloadChildFrames();
 }
 
 void nsHTMLScrollFrame::AppendFrames(ChildListID aListID,
-                                     nsFrameList& aFrameList) {
-  NS_ASSERTION(aListID == kPrincipalList, "Only main list supported");
-  mFrames.AppendFrames(nullptr, aFrameList);
+                                     nsFrameList&& aFrameList) {
+  NS_ASSERTION(aListID == FrameChildListID::Principal,
+               "Only main list supported");
+  mFrames.AppendFrames(nullptr, std::move(aFrameList));
   mHelper.ReloadChildFrames();
 }
 
 void nsHTMLScrollFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                      const nsLineList::iterator* aPrevFrameLine,
-                                     nsFrameList& aFrameList) {
-  NS_ASSERTION(aListID == kPrincipalList, "Only main list supported");
+                                     nsFrameList&& aFrameList) {
+  NS_ASSERTION(aListID == FrameChildListID::Principal,
+               "Only main list supported");
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
-  mFrames.InsertFrames(nullptr, aPrevFrame, aFrameList);
+  mFrames.InsertFrames(nullptr, aPrevFrame, std::move(aFrameList));
   mHelper.ReloadChildFrames();
 }
 
 void nsHTMLScrollFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  NS_ASSERTION(aListID == kPrincipalList, "Only main list supported");
+  NS_ASSERTION(aListID == FrameChildListID::Principal,
+               "Only main list supported");
   mFrames.DestroyFrame(aOldFrame);
   mHelper.ReloadChildFrames();
 }
@@ -817,8 +820,8 @@ void nsHTMLScrollFrame::ReflowScrolledFrame(ScrollReflowInput& aState,
   kidReflowInput.mFlags.mTreatBSizeAsIndefinite =
       aState.mReflowInput.mFlags.mTreatBSizeAsIndefinite;
   kidReflowInput.SetComputedBSize(computedBSize);
-  kidReflowInput.ComputedMinBSize() = computedMinBSize;
-  kidReflowInput.ComputedMaxBSize() = computedMaxBSize;
+  kidReflowInput.SetComputedMinBSize(computedMinBSize);
+  kidReflowInput.SetComputedMaxBSize(computedMaxBSize);
   if (aState.mReflowInput.IsBResizeForWM(kidWM)) {
     kidReflowInput.SetBResize(true);
   }
@@ -1216,7 +1219,7 @@ static void GetScrollableOverflowForPerspective(
     nsPoint aOffset, nsRect& aScrolledFrameOverflowArea) {
   // Iterate over all children except pop-ups.
   for (const auto& [list, listID] : aCurrentFrame->ChildLists()) {
-    if (listID == nsIFrame::kPopupList) {
+    if (listID == FrameChildListID::Popup) {
       continue;
     }
 
@@ -1344,8 +1347,11 @@ nscoord nsHTMLScrollFrame::GetLogicalBaseline(WritingMode aWritingMode) const {
   // because the scrolled frame handles our padding.)
   LogicalMargin border = GetLogicalUsedBorder(aWritingMode);
 
-  return border.BStart(aWritingMode) +
-         mHelper.mScrolledFrame->GetLogicalBaseline(aWritingMode);
+  // Clamp the baseline to the border rect. See bug 1791069.
+  return std::clamp(
+      border.BStart(aWritingMode) +
+          mHelper.mScrolledFrame->GetLogicalBaseline(aWritingMode),
+      0, GetLogicalSize(aWritingMode).BSize(aWritingMode));
 }
 
 void nsHTMLScrollFrame::AdjustForPerspective(nsRect& aScrollableOverflow) {
@@ -1860,23 +1866,24 @@ void nsXULScrollFrame::DestroyFrom(nsIFrame* aDestructRoot,
 }
 
 void nsXULScrollFrame::SetInitialChildList(ChildListID aListID,
-                                           nsFrameList& aChildList) {
-  nsBoxFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID == kPrincipalList) {
+                                           nsFrameList&& aChildList) {
+  nsBoxFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID == FrameChildListID::Principal) {
     mHelper.ReloadChildFrames();
   }
 }
 
 void nsXULScrollFrame::AppendFrames(ChildListID aListID,
-                                    nsFrameList& aFrameList) {
-  nsBoxFrame::AppendFrames(aListID, aFrameList);
+                                    nsFrameList&& aFrameList) {
+  nsBoxFrame::AppendFrames(aListID, std::move(aFrameList));
   mHelper.ReloadChildFrames();
 }
 
 void nsXULScrollFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                     const nsLineList::iterator* aPrevFrameLine,
-                                    nsFrameList& aFrameList) {
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
+                                    nsFrameList&& aFrameList) {
+  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                           std::move(aFrameList));
   mHelper.ReloadChildFrames();
 }
 
@@ -2748,8 +2755,8 @@ static void AdjustViews(nsIFrame* aFrame) {
 
   // Call AdjustViews recursively for all child frames except the popup list as
   // the views for popups are not scrolled.
-  for (auto& [list, listID] : aFrame->ChildLists()) {
-    if (listID == nsIFrame::kPopupList) {
+  for (const auto& [list, listID] : aFrame->ChildLists()) {
+    if (listID == FrameChildListID::Popup) {
       continue;
     }
     for (nsIFrame* child : list) {
@@ -5234,7 +5241,7 @@ static nsSize GetScrollPortSizeExcludingHeadersAndFooters(
     const nsRect& aScrollPort) {
   AutoTArray<TopAndBottom, 10> list;
   if (aViewportFrame) {
-    for (nsIFrame* f : aViewportFrame->GetChildList(nsIFrame::kFixedList)) {
+    for (nsIFrame* f : aViewportFrame->GetChildList(FrameChildListID::Fixed)) {
       AddToListIfHeaderFooter(f, aViewportFrame, aScrollPort, list);
     }
   }
@@ -6814,7 +6821,7 @@ bool ScrollFrameHelper::ReflowFinished() {
     mMayHaveDirtyFixedChildren = false;
     nsIFrame* parentFrame = mOuter->GetParent();
     for (nsIFrame* fixedChild =
-             parentFrame->GetChildList(nsIFrame::kFixedList).FirstChild();
+             parentFrame->GetChildList(FrameChildListID::Fixed).FirstChild();
          fixedChild; fixedChild = fixedChild->GetNextSibling()) {
       // force a reflow of the fixed child
       mOuter->PresShell()->FrameNeedsReflow(fixedChild, IntrinsicDirty::Resize,

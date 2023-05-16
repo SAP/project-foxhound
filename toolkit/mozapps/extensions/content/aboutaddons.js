@@ -11,6 +11,9 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -19,13 +22,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   ClientID: "resource://gre/modules/ClientID.jsm",
   ColorwayClosetOpener: "resource:///modules/ColorwayClosetOpener.jsm",
-  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "browserBundle", () => {
@@ -68,7 +68,10 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "COLORWAY_CLOSET_ENABLED", () => {
-  return NimbusFeatures.majorRelease2022.getVariable("colorwayCloset");
+  return !!(
+    NimbusFeatures.majorRelease2022.getVariable("colorwayCloset") &&
+    BuiltInThemes.findActiveColorwayCollection()
+  );
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -2906,10 +2909,12 @@ class AddonDetails extends HTMLElement {
       "upgrade"
     );
 
-    // By default, all private browsing rows are hidden. Possibly show one.
-    if (addon.type != "extension" && addon.type != "sitepermission") {
-      // All add-addons of this type are allowed in private browsing mode, so
-      // do not show any UI.
+    if (addon.type != "extension") {
+      // Don't show any private browsing related section for non-extension
+      // addon types, because not relevant or they are either always allowed
+      // (e.g. static themes).
+      //
+      // TODO(Bug 1799090): introduce ad-hoc UI for "sitepermission" addon type.
     } else if (addon.incognito == "not_allowed") {
       let pbRowNotAllowed = this.querySelector(
         ".addon-detail-row-private-browsing-disallowed"
@@ -3443,10 +3448,9 @@ class AddonCard extends HTMLElement {
     }
 
     // Set the private browsing badge visibility.
-    if (
-      addon.incognito != "not_allowed" &&
-      (addon.type == "extension" || addon.type == "sitepermission")
-    ) {
+    // TODO: We don't show the badge for SitePermsAddon for now, but this should
+    // be handled in Bug 1799090.
+    if (addon.incognito != "not_allowed" && addon.type == "extension") {
       // Keep update synchronous, the badge can appear later.
       isAllowedInPrivateBrowsing(addon).then(isAllowed => {
         card.querySelector(
@@ -3787,8 +3791,45 @@ class ColorwayClosetCard extends HTMLElement {
     colorwaysButton.onclick = () => {
       ColorwayClosetOpener.openModal({
         source: "aboutaddons",
+        onClosed: ({ colorwayChanged }) => {
+          ColorwayClosetCard.hasModalOpen = false;
+          ColorwayClosetCard.runPendingModalClosedCallbacks(colorwayChanged);
+        },
       });
+      ColorwayClosetCard.hasModalOpen = true;
     };
+  }
+
+  static hasModalOpen = false;
+  static closedModalCallbacks = new Set();
+
+  static callOnModalClosed(fn) {
+    if (!this.hasModalOpen) {
+      try {
+        fn();
+      } catch (err) {
+        Cu.reportError(err);
+      }
+      return;
+    }
+    this.closedModalCallbacks.add(fn);
+  }
+
+  static async runPendingModalClosedCallbacks(colorwayChanged) {
+    // Just drop all pending callbacks if the current active theme didn't change
+    // from when the modal was initially opened to prevent the about:addons page
+    // to be flickering because of the pending callbacks forcing the page from
+    // re-rendering unnecessarily.
+    if (colorwayChanged) {
+      for (const fn of this.closedModalCallbacks) {
+        try {
+          fn();
+        } catch (err) {
+          Cu.reportError(err);
+        }
+      }
+    }
+    this.closedModalCallbacks.clear();
   }
 }
 customElements.define("colorways-card", ColorwayClosetCard);
@@ -4298,12 +4339,34 @@ class AddonList extends HTMLElement {
   }
 
   updateAddon(addon) {
-    if (!this.getCard(addon)) {
+    if (addon.type === "theme" && ColorwayClosetCard.hasModalOpen) {
+      // Queue up theme card changes while the ColorwayCloset modal is still
+      // open to prevent the about:addons page visible behind the colorway
+      // closet modal from flickering when the list is refreshed in response
+      // to a new colorway theme being selected in the modal dialog.
+      ColorwayClosetCard.callOnModalClosed(() => {
+        this.updateAddon(addon);
+      });
+    } else if (!this.getCard(addon)) {
       // Try to add the add-on right away.
       this.addAddon(addon);
     } else if (this._addonSectionIndex(addon) == -1) {
-      // Try to remove the add-on right away.
-      this._updateAddon(addon);
+      // If the theme is a colorways theme from an active collection that is
+      // being disabled, it is expected to not be in any section (it will be
+      // available in the colorway closet dialog instead). But, we still want
+      // to defer moving the card until the list is going to lose focus (to
+      // match the same behavior the user expects for any non-colorways theme
+      // card when the theme is disabled).
+      if (
+        addon.type === "theme" &&
+        BuiltInThemes.isColorwayFromCurrentCollection?.(addon.id) &&
+        this.isUserFocused
+      ) {
+        this.updateLater(addon);
+      } else {
+        // Not a colorways theme, fallback to remove the add-on card right away.
+        this._updateAddon(addon);
+      }
     } else if (this.isUserFocused) {
       // Queue up a change for when the focus is cleared.
       this.updateLater(addon);

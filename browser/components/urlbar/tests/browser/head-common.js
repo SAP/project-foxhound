@@ -5,6 +5,7 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
   UrlbarProvider: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
@@ -14,7 +15,6 @@ ChromeUtils.defineESModuleGetters(this, {
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.js",
-  Preferences: "resource://gre/modules/Preferences.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "TEST_BASE_URL", () =>
@@ -50,8 +50,9 @@ XPCOMUtils.defineLazyGetter(this, "SearchTestUtils", () => {
 
 /**
  * Initializes an HTTP Server, and runs a task with it.
+ *
  * @param {object} details {scheme, host, port}
- * @param {function} taskFn The task to run, gets the server as argument.
+ * @param {Function} taskFn The task to run, gets the server as argument.
  */
 async function withHttpServer(
   details = { scheme: "http", host: "localhost", port: -1 },

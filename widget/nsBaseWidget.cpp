@@ -59,6 +59,7 @@
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/widget/ScreenManager.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -1349,20 +1350,13 @@ already_AddRefed<WebRenderLayerManager> nsBaseWidget::CreateCompositorSession(
     gpu->EnsureGPUReady();
 
     // If widget type does not supports acceleration, we may be allowed to use
-    // software WebRender instead. If not, then we use ClientLayerManager even
-    // when gfxVars::UseWebRender() is true. WebRender could coexist only with
-    // BasicCompositor.
+    // software WebRender instead.
     bool supportsAcceleration = WidgetTypeSupportsAcceleration();
-    bool enableWR;
-    bool enableSWWR;
+    bool enableSWWR = true;
     if (supportsAcceleration ||
         StaticPrefs::gfx_webrender_unaccelerated_widget_force()) {
-      enableWR = gfx::gfxVars::UseWebRender();
       enableSWWR = gfx::gfxVars::UseSoftwareWebRender();
-    } else {
-      enableWR = enableSWWR = gfx::gfxVars::UseWebRender();
     }
-    MOZ_RELEASE_ASSERT(enableWR);
     bool enableAPZ = UseAPZ();
     CompositorOptions options(enableAPZ, enableSWWR);
 
@@ -1606,7 +1600,8 @@ void nsBaseWidget::MoveClient(const DesktopPoint& aOffset) {
     Move(aOffset.x - desktopOffset.x, aOffset.y - desktopOffset.y);
   } else {
     LayoutDevicePoint layoutOffset = aOffset * GetDesktopToDeviceScale();
-    Move(layoutOffset.x - clientOffset.x, layoutOffset.y - clientOffset.y);
+    Move(layoutOffset.x - LayoutDeviceCoord(clientOffset.x),
+         layoutOffset.y - LayoutDeviceCoord(clientOffset.y));
   }
 }
 
@@ -2109,6 +2104,17 @@ void nsIWidget::OnLongTapTimerCallback(nsITimer* aTimer, void* aClosure) {
       self->mLongTapTouchPoint->mPointerId, TOUCH_REMOVE,
       self->mLongTapTouchPoint->mPosition, 0, 0, nullptr);
   self->mLongTapTouchPoint = nullptr;
+}
+
+float nsIWidget::GetFallbackDPI() {
+  RefPtr<const Screen> primaryScreen =
+      ScreenManager::GetSingleton().GetPrimaryScreen();
+  return primaryScreen->GetDPI();
+}
+
+CSSToLayoutDeviceScale nsIWidget::GetFallbackDefaultScale() {
+  RefPtr<const Screen> s = ScreenManager::GetSingleton().GetPrimaryScreen();
+  return s->GetCSSToLayoutDeviceScale(Screen::IncludeOSZoom::No);
 }
 
 nsresult nsIWidget::ClearNativeTouchSequence(nsIObserver* aObserver) {
@@ -3386,7 +3392,8 @@ void nsBaseWidget::debug_DumpEvent(FILE* aFileOut, nsIWidget* aWidget,
 
   fprintf(aFileOut, "%4d %-26s widget=%-8p name=%-12s id=0x%-6x refpt=%d,%d\n",
           _GetPrintCount(), tempString.get(), (void*)aWidget, aWidgetName,
-          aWindowID, aGuiEvent->mRefPoint.x, aGuiEvent->mRefPoint.y);
+          aWindowID, aGuiEvent->mRefPoint.x.value,
+          aGuiEvent->mRefPoint.y.value);
 }
 //////////////////////////////////////////////////////////////
 /* static */

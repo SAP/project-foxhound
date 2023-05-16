@@ -22,8 +22,8 @@ var { ExtensionTestUtils } = ChromeUtils.import(
 var { FileTestUtils } = ChromeUtils.import(
   "resource://testing-common/FileTestUtils.jsm"
 );
-var { MockDocument } = ChromeUtils.import(
-  "resource://testing-common/MockDocument.jsm"
+var { MockDocument } = ChromeUtils.importESModule(
+  "resource://testing-common/MockDocument.sys.mjs"
 );
 var { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 var { TestUtils } = ChromeUtils.import(
@@ -39,11 +39,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "AddonManagerPrivate",
   "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadPaths",
-  "resource://gre/modules/DownloadPaths.jsm"
 );
 ChromeUtils.defineESModuleGetters(this, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
@@ -291,10 +286,10 @@ function getSyncChangeCounter(records, guid) {
  * Performs a partial deep equality check to determine if an object contains
  * the given fields.
  *
- * @param   {Object} object
+ * @param   {object} object
  *          The object to check. Unlike `ObjectUtils.deepEqual`, properties in
  *          `object` that are not in `fields` will be ignored.
- * @param   {Object} fields
+ * @param   {object} fields
  *          The fields to match.
  * @returns {boolean}
  *          Does `object` contain `fields` with matching values?
@@ -353,8 +348,8 @@ add_setup(async function head_initialize() {
 
 let OSKeyStoreTestUtils;
 add_setup(async function os_key_store_setup() {
-  ({ OSKeyStoreTestUtils } = ChromeUtils.import(
-    "resource://testing-common/OSKeyStoreTestUtils.jsm"
+  ({ OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
   ));
   OSKeyStoreTestUtils.setup();
   registerCleanupFunction(async function cleanup() {

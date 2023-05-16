@@ -7,8 +7,8 @@
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const lazy = {};
 ChromeUtils.defineModuleGetter(
@@ -123,10 +123,7 @@ class FeatureGate {
   }
 
   static async annotateCrashReporter() {
-    let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-      Ci.nsICrashReporter
-    );
-    if (!crashReporter?.enabled) {
+    if (!Services.appinfo.crashReporterEnabled) {
       return;
     }
     let features = await FeatureGate.all();
@@ -136,7 +133,7 @@ class FeatureGate {
         enabledFeatures.push(feature.preference);
       }
     }
-    crashReporter.annotateCrashReport(
+    Services.appinfo.annotateCrashReport(
       "ExperimentalFeatures",
       enabledFeatures.join(",")
     );

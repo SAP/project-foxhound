@@ -6,10 +6,12 @@ testEngine_setup();
 
 /**
  * Checks the results of a search for `searchTerm`.
- * @param {array} uris
+ *
+ * @param {Array} uris
  *   A 2-element array containing [{string} uri, {array} tags}], where `tags`
  *   is a comma-separated list of the tags expected to appear in the search.
  * @param {string} searchTerm
+ *   The term to search for
  */
 async function ensure_tag_results(uris, searchTerm) {
   print("Searching for '" + searchTerm + "'");
@@ -48,7 +50,7 @@ const uri6 = "http://site.tld/6";
  *
  * @param {string} url
  *        The URI to tag.
- * @param {array} tags
+ * @param {Array} tags
  *        The tags to add.
  */
 async function tagURI(url, tags) {

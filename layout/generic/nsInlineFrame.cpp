@@ -308,13 +308,13 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
         // wait to do this until we actually reflow the frame. If the overflow
         // list contains thousands of frames this is a big performance issue
         // (see bug #5588)
-        mFrames.SetFrames(*prevOverflowFrames);
+        mFrames = std::move(*prevOverflowFrames);
         lazilySetParentPointer = true;
       } else {
         // Insert the new frames at the beginning of the child list
         // and set their parent pointer
         const nsFrameList::Slice& newFrames =
-            mFrames.InsertFrames(this, nullptr, *prevOverflowFrames);
+            mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
         // If our prev in flow was under the first continuation of a first-line
         // frame then we need to reparent the ComputedStyles to remove the
         // the special first-line styling. In the lazilySetParentPointer case
@@ -401,7 +401,7 @@ bool nsInlineFrame::DrainSelfOverflowListInternal(bool aInFirstLine) {
       nsLayoutUtils::MarkDescendantsDirty(f);
     }
   }
-  mFrames.AppendFrames(nullptr, *overflowFrames);
+  mFrames.AppendFrames(nullptr, std::move(*overflowFrames));
   return true;
 }
 
@@ -437,7 +437,7 @@ void nsInlineFrame::PullOverflowsFromPrevInFlow() {
       // Assume that our prev-in-flow has the same line container that we do.
       nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
                                               this);
-      mFrames.InsertFrames(this, nullptr, *prevOverflowFrames);
+      mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
     }
   }
 }
@@ -739,7 +739,7 @@ nsIFrame* nsInlineFrame::PullOneFrame(nsPresContext* aPresContext,
         }
         // ReparentFloatsForInlineChild needs it to be on a child list -
         // we remove it again below.
-        nextInFlow->mFrames.SetFrames(frame);
+        nextInFlow->mFrames = nsFrameList(frame, frame);
       }
     }
 
@@ -999,7 +999,7 @@ void nsFirstLineFrame::Reflow(nsPresContext* aPresContext,
     if (prevOverflowFrames) {
       // Reparent the new frames and their ComputedStyles.
       const nsFrameList::Slice& newFrames =
-          mFrames.InsertFrames(this, nullptr, *prevOverflowFrames);
+          mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
       ReparentChildListStyle(aPresContext, newFrames, this);
     }
   }
@@ -1061,7 +1061,7 @@ void nsFirstLineFrame::PullOverflowsFromPrevInFlow() {
     if (prevOverflowFrames) {
       // Assume that our prev-in-flow has the same line container that we do.
       const nsFrameList::Slice& newFrames =
-          mFrames.InsertFrames(this, nullptr, *prevOverflowFrames);
+          mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
       ReparentChildListStyle(presContext, newFrames, this);
     }
   }
@@ -1073,7 +1073,7 @@ bool nsFirstLineFrame::DrainSelfOverflowList() {
   if (overflowFrames) {
     bool result = !overflowFrames->IsEmpty();
     const nsFrameList::Slice& newFrames =
-        mFrames.AppendFrames(nullptr, *overflowFrames);
+        mFrames.AppendFrames(nullptr, std::move(*overflowFrames));
     ReparentChildListStyle(PresContext(), newFrames, this);
     return result;
   }

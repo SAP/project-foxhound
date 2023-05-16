@@ -103,6 +103,7 @@
 #include "mozilla/RelativeTo.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ReverseIterator.h"
+#include "mozilla/ScrollTimelineAnimationTracker.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILTimeContainer.h"
 #include "mozilla/ScopeExit.h"
@@ -250,6 +251,7 @@
 #include "mozilla/ipc/IdleSchedulerChild.h"
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/net/ChannelEventQueue.h"
+#include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/RequestContextService.h"
@@ -2084,11 +2086,20 @@ void Document::AccumulatePageLoadTelemetry(
     return;
   }
 
-  nsCString http3Key;
-  nsCString http3WithPriorityKey;
+  nsAutoCString dnsKey("Native");
+  nsAutoCString http3Key;
+  nsAutoCString http3WithPriorityKey;
   nsCOMPtr<nsIHttpChannelInternal> httpChannel =
       do_QueryInterface(GetChannel());
   if (httpChannel) {
+    bool resolvedByTRR = false;
+    Unused << httpChannel->GetIsResolvedByTRR(&resolvedByTRR);
+    if (resolvedByTRR) {
+      RefPtr<net::ChildDNSService> dnsServiceChild =
+          net::ChildDNSService::GetSingleton();
+      dnsServiceChild->GetTRRDomain(dnsKey);
+    }
+
     uint32_t major;
     uint32_t minor;
     if (NS_SUCCEEDED(httpChannel->GetResponseVersion(&major, &minor))) {
@@ -2133,6 +2144,10 @@ void Document::AccumulatePageLoadTelemetry(
           Telemetry::H3P_PERF_FIRST_CONTENTFUL_PAINT_MS, http3WithPriorityKey,
           navigationStart, firstContentfulComposite);
     }
+
+    Telemetry::AccumulateTimeDelta(
+        Telemetry::DNS_PERF_FIRST_CONTENTFUL_PAINT_MS, dnsKey, navigationStart,
+        firstContentfulComposite);
 
     Telemetry::AccumulateTimeDelta(
         Telemetry::PERF_FIRST_CONTENTFUL_PAINT_FROM_RESPONSESTART_MS,
@@ -2504,6 +2519,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCachedEncoder)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentTimeline)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingAnimationTracker)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mScrollTimelineAnimationTracker)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTemplateContentsOwner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChildrenCollection)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImages);
@@ -2629,6 +2645,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCachedEncoder)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentTimeline)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingAnimationTracker)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mScrollTimelineAnimationTracker)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTemplateContentsOwner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChildrenCollection)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mImages);
@@ -2766,6 +2783,8 @@ nsresult Document::Init() {
   mFeaturePolicy->SetDefaultOrigin(NodePrincipal());
 
   mStyleSet = MakeUnique<ServoStyleSet>(*this);
+
+  RecomputeResistFingerprinting();
 
   return NS_OK;
 }
@@ -3769,7 +3788,7 @@ nsresult Document::InitCSP(nsIChannel* aChannel) {
     mCSP->AppendPolicy(addonPolicy->ExtensionPageCSP(), false, false);
     // Bug 1548468: Move CSP off ExpandedPrincipal
     // Currently the LoadInfo holds the source of truth for every resource load
-    // because LoadInfo::GetCSP() queries the CSP from an ExpandedPrincipal
+    // because LoadInfo::GetCsp() queries the CSP from an ExpandedPrincipal
     // (and not from the Client) if the load was triggered by an extension.
     auto* basePrin = BasePrincipal::Cast(principal);
     if (basePrin->Is<ExpandedPrincipal>()) {
@@ -9289,6 +9308,15 @@ PendingAnimationTracker* Document::GetOrCreatePendingAnimationTracker() {
   return mPendingAnimationTracker;
 }
 
+ScrollTimelineAnimationTracker*
+Document::GetOrCreateScrollTimelineAnimationTracker() {
+  if (!mScrollTimelineAnimationTracker) {
+    mScrollTimelineAnimationTracker = new ScrollTimelineAnimationTracker(this);
+  }
+
+  return mScrollTimelineAnimationTracker;
+}
+
 /**
  * Retrieve the "direction" property of the document.
  *
@@ -10177,48 +10205,48 @@ void Document::ParseWidthAndHeightInMetaViewport(const nsAString& aWidthString,
   // 2. Negative number values are dropped
   // 3. device-width and device-height translate to 100vw and 100vh respectively
   // 4. Other keywords and unknown values are also dropped
-  mMinWidth = nsViewportInfo::Auto;
-  mMaxWidth = nsViewportInfo::Auto;
+  mMinWidth = nsViewportInfo::kAuto;
+  mMaxWidth = nsViewportInfo::kAuto;
   if (!aWidthString.IsEmpty()) {
-    mMinWidth = nsViewportInfo::ExtendToZoom;
+    mMinWidth = nsViewportInfo::kExtendToZoom;
     if (aWidthString.EqualsLiteral("device-width")) {
-      mMaxWidth = nsViewportInfo::DeviceSize;
+      mMaxWidth = nsViewportInfo::kDeviceSize;
     } else {
       nsresult widthErrorCode;
       mMaxWidth = aWidthString.ToInteger(&widthErrorCode);
       if (NS_FAILED(widthErrorCode)) {
-        mMaxWidth = nsViewportInfo::Auto;
+        mMaxWidth = nsViewportInfo::kAuto;
       } else if (mMaxWidth >= 0.0f) {
         mMaxWidth = clamped(mMaxWidth, CSSCoord(1.0f), CSSCoord(10000.0f));
       } else {
-        mMaxWidth = nsViewportInfo::Auto;
+        mMaxWidth = nsViewportInfo::kAuto;
       }
     }
   } else if (aHasValidScale) {
     if (aHeightString.IsEmpty()) {
-      mMinWidth = nsViewportInfo::ExtendToZoom;
-      mMaxWidth = nsViewportInfo::ExtendToZoom;
+      mMinWidth = nsViewportInfo::kExtendToZoom;
+      mMaxWidth = nsViewportInfo::kExtendToZoom;
     }
   } else if (aHeightString.IsEmpty() && UseWidthDeviceWidthFallbackViewport()) {
-    mMinWidth = nsViewportInfo::ExtendToZoom;
-    mMaxWidth = nsViewportInfo::DeviceSize;
+    mMinWidth = nsViewportInfo::kExtendToZoom;
+    mMaxWidth = nsViewportInfo::kDeviceSize;
   }
 
-  mMinHeight = nsViewportInfo::Auto;
-  mMaxHeight = nsViewportInfo::Auto;
+  mMinHeight = nsViewportInfo::kAuto;
+  mMaxHeight = nsViewportInfo::kAuto;
   if (!aHeightString.IsEmpty()) {
-    mMinHeight = nsViewportInfo::ExtendToZoom;
+    mMinHeight = nsViewportInfo::kExtendToZoom;
     if (aHeightString.EqualsLiteral("device-height")) {
-      mMaxHeight = nsViewportInfo::DeviceSize;
+      mMaxHeight = nsViewportInfo::kDeviceSize;
     } else {
       nsresult heightErrorCode;
       mMaxHeight = aHeightString.ToInteger(&heightErrorCode);
       if (NS_FAILED(heightErrorCode)) {
-        mMaxHeight = nsViewportInfo::Auto;
+        mMaxHeight = nsViewportInfo::kAuto;
       } else if (mMaxHeight >= 0.0f) {
         mMaxHeight = clamped(mMaxHeight, CSSCoord(1.0f), CSSCoord(10000.0f));
       } else {
-        mMaxHeight = nsViewportInfo::Auto;
+        mMaxHeight = nsViewportInfo::kAuto;
       }
     }
   }
@@ -10377,7 +10405,7 @@ nsViewportInfo Document::GetViewportInfo(const ScreenIntSize& aDisplaySize) {
         if (effectiveValidMaxScale) {
           return effectiveMaxScale.scale;
         }
-        return nsViewportInfo::Auto;
+        return nsViewportInfo::kAuto;
       };
 
       // Resolving 'extend-to-zoom'
@@ -10402,7 +10430,7 @@ nsViewportInfo Document::GetViewportInfo(const ScreenIntSize& aDisplaySize) {
       // Chrome does, in order to maintain web compatibility. Since the
       // default size has a complicated calculation, we fixup the maxWidth
       // value after setting it, above.
-      if (maxWidth == nsViewportInfo::Auto && !mValidScaleFloat) {
+      if (maxWidth == nsViewportInfo::kAuto && !mValidScaleFloat) {
         if (bc && bc->TouchEventsOverride() == TouchEventsOverride::Enabled &&
             bc->InRDMPane()) {
           // If RDM and touch simulation are active, then use the simulated
@@ -10420,64 +10448,64 @@ nsViewportInfo Document::GetViewportInfo(const ScreenIntSize& aDisplaySize) {
 
         // We set minWidth to ExtendToZoom, which will cause our later width
         // calculation to expand to maxWidth, if scale restrictions allow it.
-        minWidth = nsViewportInfo::ExtendToZoom;
+        minWidth = nsViewportInfo::kExtendToZoom;
       }
 
       // Resolve device-width and device-height first.
-      if (maxWidth == nsViewportInfo::DeviceSize) {
+      if (maxWidth == nsViewportInfo::kDeviceSize) {
         maxWidth = displaySize.width;
       }
-      if (maxHeight == nsViewportInfo::DeviceSize) {
+      if (maxHeight == nsViewportInfo::kDeviceSize) {
         maxHeight = displaySize.height;
       }
-      if (extendZoom == nsViewportInfo::Auto) {
-        if (maxWidth == nsViewportInfo::ExtendToZoom) {
-          maxWidth = nsViewportInfo::Auto;
+      if (extendZoom == nsViewportInfo::kAuto) {
+        if (maxWidth == nsViewportInfo::kExtendToZoom) {
+          maxWidth = nsViewportInfo::kAuto;
         }
-        if (maxHeight == nsViewportInfo::ExtendToZoom) {
-          maxHeight = nsViewportInfo::Auto;
+        if (maxHeight == nsViewportInfo::kExtendToZoom) {
+          maxHeight = nsViewportInfo::kAuto;
         }
-        if (minWidth == nsViewportInfo::ExtendToZoom) {
+        if (minWidth == nsViewportInfo::kExtendToZoom) {
           minWidth = maxWidth;
         }
-        if (minHeight == nsViewportInfo::ExtendToZoom) {
+        if (minHeight == nsViewportInfo::kExtendToZoom) {
           minHeight = maxHeight;
         }
       } else {
         CSSSize extendSize = displaySize / extendZoom;
-        if (maxWidth == nsViewportInfo::ExtendToZoom) {
+        if (maxWidth == nsViewportInfo::kExtendToZoom) {
           maxWidth = extendSize.width;
         }
-        if (maxHeight == nsViewportInfo::ExtendToZoom) {
+        if (maxHeight == nsViewportInfo::kExtendToZoom) {
           maxHeight = extendSize.height;
         }
-        if (minWidth == nsViewportInfo::ExtendToZoom) {
+        if (minWidth == nsViewportInfo::kExtendToZoom) {
           minWidth = nsViewportInfo::Max(extendSize.width, maxWidth);
         }
-        if (minHeight == nsViewportInfo::ExtendToZoom) {
+        if (minHeight == nsViewportInfo::kExtendToZoom) {
           minHeight = nsViewportInfo::Max(extendSize.height, maxHeight);
         }
       }
 
       // Resolve initial width and height from min/max descriptors
       // https://drafts.csswg.org/css-device-adapt/#resolve-initial-width-height
-      CSSCoord width = nsViewportInfo::Auto;
-      if (minWidth != nsViewportInfo::Auto ||
-          maxWidth != nsViewportInfo::Auto) {
+      CSSCoord width = nsViewportInfo::kAuto;
+      if (minWidth != nsViewportInfo::kAuto ||
+          maxWidth != nsViewportInfo::kAuto) {
         width = nsViewportInfo::Max(
             minWidth, nsViewportInfo::Min(maxWidth, displaySize.width));
       }
-      CSSCoord height = nsViewportInfo::Auto;
-      if (minHeight != nsViewportInfo::Auto ||
-          maxHeight != nsViewportInfo::Auto) {
+      CSSCoord height = nsViewportInfo::kAuto;
+      if (minHeight != nsViewportInfo::kAuto ||
+          maxHeight != nsViewportInfo::kAuto) {
         height = nsViewportInfo::Max(
             minHeight, nsViewportInfo::Min(maxHeight, displaySize.height));
       }
 
       // Resolve width value
       // https://drafts.csswg.org/css-device-adapt/#resolve-width
-      if (width == nsViewportInfo::Auto) {
-        if (height == nsViewportInfo::Auto || aDisplaySize.height == 0) {
+      if (width == nsViewportInfo::kAuto) {
+        if (height == nsViewportInfo::kAuto || aDisplaySize.height == 0) {
           width = displaySize.width;
         } else {
           width = height * aDisplaySize.width / aDisplaySize.height;
@@ -10486,15 +10514,15 @@ nsViewportInfo Document::GetViewportInfo(const ScreenIntSize& aDisplaySize) {
 
       // Resolve height value
       // https://drafts.csswg.org/css-device-adapt/#resolve-height
-      if (height == nsViewportInfo::Auto) {
+      if (height == nsViewportInfo::kAuto) {
         if (aDisplaySize.width == 0) {
           height = displaySize.height;
         } else {
           height = width * aDisplaySize.height / aDisplaySize.width;
         }
       }
-      MOZ_ASSERT(width != nsViewportInfo::Auto &&
-                 height != nsViewportInfo::Auto);
+      MOZ_ASSERT(width != nsViewportInfo::kAuto &&
+                 height != nsViewportInfo::kAuto);
 
       CSSSize size(width, height);
 
@@ -10504,10 +10532,10 @@ nsViewportInfo Document::GetViewportInfo(const ScreenIntSize& aDisplaySize) {
 
       nsViewportInfo::AutoSizeFlag sizeFlag =
           nsViewportInfo::AutoSizeFlag::FixedSize;
-      if (mMaxWidth == nsViewportInfo::DeviceSize ||
-          (mWidthStrEmpty && (mMaxHeight == nsViewportInfo::DeviceSize ||
+      if (mMaxWidth == nsViewportInfo::kDeviceSize ||
+          (mWidthStrEmpty && (mMaxHeight == nsViewportInfo::kDeviceSize ||
                               mScaleFloat.scale == 1.0f)) ||
-          (!mWidthStrEmpty && mMaxWidth == nsViewportInfo::Auto &&
+          (!mWidthStrEmpty && mMaxWidth == nsViewportInfo::kAuto &&
            mMaxHeight < 0)) {
         sizeFlag = nsViewportInfo::AutoSizeFlag::AutoSize;
       }
@@ -15094,12 +15122,12 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
 
   // The origin which is fullscreen gets changed. Trigger an event so
   // that the chrome knows to pop up a warning UI. Note that
-  // previousFullscreenDoc == nullptr upon first entry, so we always
-  // take this path on the first entry. Also note that, in a multi-
-  // process browser, the code in content process is responsible for
-  // sending message with the origin to its parent, and the parent
-  // shouldn't rely on this event itself.
-  if (aRequest->mShouldNotifyNewOrigin &&
+  // previousFullscreenDoc == nullptr upon first entry, we show the warning UI
+  // directly as soon as chrome document goes into fullscreen state. Also note
+  // that, in a multi-process browser, the code in content process is
+  // responsible for sending message with the origin to its parent, and the
+  // parent shouldn't rely on this event itself.
+  if (aRequest->mShouldNotifyNewOrigin && previousFullscreenDoc &&
       !nsContentUtils::HaveEqualPrincipals(previousFullscreenDoc, this)) {
     DispatchFullscreenNewOriginEvent(this);
   }
@@ -16421,9 +16449,7 @@ void Document::ResetUserInteractionTimer() {
 }
 
 bool Document::IsExtensionPage() const {
-  return Preferences::GetBool("media.autoplay.allow-extension-background-pages",
-                              true) &&
-         BasePrincipal::Cast(NodePrincipal())->AddonPolicy();
+  return BasePrincipal::Cast(NodePrincipal())->AddonPolicy();
 }
 
 void Document::AddResizeObserver(ResizeObserver& aObserver) {

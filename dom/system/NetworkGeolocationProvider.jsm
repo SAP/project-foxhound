@@ -10,10 +10,13 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  clearTimeout: "resource://gre/modules/Timer.jsm",
   LocationHelper: "resource://gre/modules/LocationHelper.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 // GeolocationPositionError has no interface object, so we can't use that here.
@@ -351,7 +354,16 @@ NetworkGeolocationProvider.prototype = {
     this.started = false;
   },
 
-  setHighAccuracy(enable) {},
+  setHighAccuracy(enable) {
+    // Mochitest wants to check this value
+    if (Services.prefs.getBoolPref("geo.provider.testing")) {
+      Services.obs.notifyObservers(
+        null,
+        "testing-geolocation-high-accuracy",
+        enable
+      );
+    }
+  },
 
   onChange(accessPoints) {
     // we got some wifi data, rearm the timer.

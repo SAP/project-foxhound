@@ -17,6 +17,7 @@
 #include "mozilla/dom/nsCSPService.h"
 #include "mozilla/StoragePrincipalHelper.h"
 
+#include "nsContentSecurityUtils.h"
 #include "nsHttp.h"
 #include "nsHttpChannel.h"
 #include "nsHttpChannelAuthProvider.h"
@@ -34,6 +35,7 @@
 #include "nsIStreamListenerTee.h"
 #include "nsISeekableStream.h"
 #include "nsIProtocolProxyService2.h"
+#include "nsIWebTransport.h"
 #include "nsCRT.h"
 #include "nsMimeTypes.h"
 #include "nsNetCID.h"
@@ -664,7 +666,7 @@ nsresult nsHttpChannel::ContinueOnBeforeConnect(bool aShouldUpgrade,
     return aStatus;
   }
 
-  if (aShouldUpgrade) {
+  if (aShouldUpgrade && !mURI->SchemeIs("https")) {
     Telemetry::Accumulate(Telemetry::HTTPS_UPGRADE_WITH_HTTPS_RR,
                           aUpgradeWithHTTPSRR);
     return AsyncCall(&nsHttpChannel::HandleAsyncRedirectChannelToHttps);
@@ -1341,6 +1343,10 @@ nsresult nsHttpChannel::SetupTransaction() {
     mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
   }
 
+  if (mIsForWebTransport) {
+    mCaps |= NS_HTTP_STICKY_CONNECTION;
+  }
+
   nsCOMPtr<nsIHttpPushListener> pushListener;
   NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
                                 NS_GET_IID(nsIHttpPushListener),
@@ -1374,6 +1380,7 @@ nsresult nsHttpChannel::SetupTransaction() {
                                     aResult.closeReason());
     };
   }
+  mTransaction->SetIsForWebTransport(mIsForWebTransport);
   rv = mTransaction->Init(
       mCaps, mConnectionInfo, &mRequestHead, mUploadStream, mReqContentLength,
       LoadUploadStreamHasHeaders(), GetCurrentEventTarget(), callbacks, this,
@@ -1521,10 +1528,9 @@ nsresult nsHttpChannel::CallOnStartRequest() {
   // are the checks for Opaque Response Blocking to ensure that we block as many
   // cross-origin responses with CORS headers as possible that are not either
   // Javascript or media to avoid leaking their contents through side channels.
-  if (!EnsureOpaqueResponseIsAllowed()) {
-    // XXXtt: Return an error code or make the response body null.
-    // We silence the error result now because we only want to get how many
-    // response will get allowed or blocked by ORB.
+  if (EnsureOpaqueResponseIsAllowed() == OpaqueResponseAllowed::No) {
+    mChannelBlockedByOpaqueResponse = true;
+    return NS_ERROR_FAILURE;
   }
 
   // Allow consumers to override our content type
@@ -1579,10 +1585,10 @@ nsresult nsHttpChannel::CallOnStartRequest() {
   // EnsureOpaqueResponseIsAllowedAfterSniff immediately.
   if (!unknownDecoderStarted) {
     auto isAllowedOrErr = EnsureOpaqueResponseIsAllowedAfterSniff();
-    if (isAllowedOrErr.isErr() || !isAllowedOrErr.inspect()) {
-      // XXXtt: Return an error code or make the response body null.
-      // We silence the error result now because we only want to get how many
-      // response will get allowed or blocked by ORB.
+    if (isAllowedOrErr.isErr() ||
+        isAllowedOrErr.inspect() == OpaqueResponseAllowed::No) {
+      mChannelBlockedByOpaqueResponse = true;
+      return NS_ERROR_FAILURE;
     }
   }
 
@@ -1771,9 +1777,6 @@ nsresult nsHttpChannel::ProcessFailedProxyConnect(uint32_t httpStatus) {
 static void GetSTSConsoleErrorTag(uint32_t failureResult,
                                   nsAString& consoleErrorTag) {
   switch (failureResult) {
-    case nsISiteSecurityService::ERROR_UNTRUSTWORTHY_CONNECTION:
-      consoleErrorTag = u"STSUntrustworthyConnection"_ns;
-      break;
     case nsISiteSecurityService::ERROR_COULD_NOT_PARSE_HEADER:
       consoleErrorTag = u"STSCouldNotParseHeader"_ns;
       break;
@@ -1817,6 +1820,23 @@ nsresult nsHttpChannel::ProcessHSTSHeader(nsITransportSecurityInfo* aSecInfo) {
     return rv;
   }
 
+  if (!aSecInfo) {
+    LOG(("nsHttpChannel::ProcessHSTSHeader: no securityInfo?"));
+    return NS_ERROR_INVALID_ARG;
+  }
+  nsITransportSecurityInfo::OverridableErrorCategory overridableErrorCategory;
+  rv = aSecInfo->GetOverridableErrorCategory(&overridableErrorCategory);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  if (overridableErrorCategory !=
+      nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET) {
+    LOG(
+        ("nsHttpChannel::ProcessHSTSHeader: untrustworthy connection - not "
+         "processing header"));
+    return NS_ERROR_FAILURE;
+  }
+
   nsISiteSecurityService* sss = gHttpHandler->GetSSService();
   NS_ENSURE_TRUE(sss, NS_ERROR_OUT_OF_MEMORY);
 
@@ -1827,8 +1847,8 @@ nsresult nsHttpChannel::ProcessHSTSHeader(nsITransportSecurityInfo* aSecInfo) {
   }
 
   uint32_t failureResult;
-  rv = sss->ProcessHeader(mURI, securityHeader, aSecInfo, originAttributes,
-                          nullptr, nullptr, &failureResult);
+  rv = sss->ProcessHeader(mURI, securityHeader, originAttributes, nullptr,
+                          nullptr, &failureResult);
   if (NS_FAILED(rv)) {
     nsAutoString consoleErrorCategory(u"Invalid HSTS Headers"_ns);
     nsAutoString consoleErrorTag;
@@ -1931,6 +1951,10 @@ void nsHttpChannel::ProcessAltService() {
   // alt-authority = quoted-string ;  containing [ uri-host ] ":" port
 
   if (!LoadAllowAltSvc()) {  // per channel opt out
+    return;
+  }
+
+  if (mIsForWebTransport) {
     return;
   }
 
@@ -2335,6 +2359,9 @@ nsresult nsHttpChannel::ContinueProcessResponse3(nsresult rv) {
         // any cached credentials, nor we want to ask the user.
         // It's up to the consumer to re-try w/o setting a custom
         // auth header if cached credentials should be attempted.
+        rv = NS_ERROR_FAILURE;
+      } else if (!nsContentSecurityUtils::CheckCSPFrameAncestorAndXFO(this)) {
+        // CSP Frame Ancestor and X-Frame-Options check has failed
         rv = NS_ERROR_FAILURE;
       } else {
         rv = mAuthProvider->ProcessAuthentication(
@@ -5576,6 +5603,12 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
     StoreChannelClassifierCancellationPending(0);
   }
 
+  // We don't want the content process to see any header values
+  // when the request is blocked by ORB
+  if (mChannelBlockedByOpaqueResponse && mCachedOpaqueResponseBlockingPref) {
+    mResponseHead->ClearHeaders();
+  }
+
   mEarlyHintObserver = nullptr;
   mCanceled = true;
   mStatus = NS_FAILED(status) ? status : NS_ERROR_ABORT;
@@ -5793,6 +5826,10 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
     ReleaseListeners();
     return rv;
   }
+
+  nsCOMPtr<WebTransportSessionEventListener> wt = do_QueryInterface(listener);
+  mIsForWebTransport = !!wt;
+
   MOZ_ASSERT(
       mLoadInfo->GetSecurityMode() == 0 ||
           mLoadInfo->GetInitialSecurityCheckDone() ||
@@ -6101,8 +6138,14 @@ nsresult nsHttpChannel::BeginConnect() {
                                  originAttributes, host, port, true);
   } else {
 #endif
-    connInfo = new nsHttpConnectionInfo(host, port, ""_ns, mUsername, proxyInfo,
-                                        originAttributes, isHttps);
+    if (mIsForWebTransport) {
+      connInfo =
+          new nsHttpConnectionInfo(host, port, "h3"_ns, mUsername, proxyInfo,
+                                   originAttributes, isHttps, true, true);
+    } else {
+      connInfo = new nsHttpConnectionInfo(host, port, ""_ns, mUsername,
+                                          proxyInfo, originAttributes, isHttps);
+    }
 #ifdef FUZZING
   }
 #endif
@@ -6116,7 +6159,8 @@ nsresult nsHttpChannel::BeginConnect() {
 
   RefPtr<AltSvcMapping> mapping;
   if (!mConnectionInfo && LoadAllowAltSvc() &&  // per channel
-      (http2Allowed || http3Allowed) && !(mLoadFlags & LOAD_FRESH_CONNECTION) &&
+      !mIsForWebTransport && (http2Allowed || http3Allowed) &&
+      !(mLoadFlags & LOAD_FRESH_CONNECTION) &&
       AltSvcMapping::AcceptableProxy(proxyInfo) &&
       (scheme.EqualsLiteral("http") || scheme.EqualsLiteral("https")) &&
       (mapping = gHttpHandler->GetAltServiceMapping(
@@ -7656,6 +7700,9 @@ nsresult nsHttpChannel::ContinueOnStopRequest(nsresult aStatus, bool aIsFromNet,
 
   RemoveAsNonTailRequest();
 
+  if (mChannelBlockedByOpaqueResponse && mCachedOpaqueResponseBlockingPref) {
+    mResponseHead->ClearHeaders();
+  }
   // If a preferred alt-data type was set, this signals the consumer is
   // interested in reading and/or writing the alt-data representation.
   // We need to hold a reference to the cache entry in case the listener calls
@@ -7803,15 +7850,6 @@ nsHttpChannel::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
     nsresult rv =
         mListener->OnDataAvailable(this, input, mLogicalOffset, count);
     if (NS_SUCCEEDED(rv)) {
-      auto isAllowedOrErr = EnsureOpaqueResponseIsAllowedAfterSniff();
-      if (isAllowedOrErr.isErr() || !isAllowedOrErr.inspect()) {
-        // XXXechuang:
-        // Return an error code or make the response body null here is too late
-        // some content data had already transferred to children processes.
-        // Currently, it is okay for collecting the correct telemetry data for
-        // further steps. But we should make sure all blocking should be done
-        // when implementing the real blocking.
-      }
       // by contract mListener must read all of "count" bytes, but
       // nsInputStreamPump is tolerant to seekable streams that violate that
       // and it will redeliver incompletely read data. So we need to do
@@ -9504,24 +9542,25 @@ void nsHttpChannel::DisableIsOpaqueResponseAllowedAfterSniffCheck(
         MOZ_ASSERT(isInitialRequest);
 
         if (!isInitialRequest) {
-          mBlockOpaqueResponseAfterSniff = true;
+          BlockOpaqueResponseAfterSniff();
           return;
         }
 
         if (mResponseHead->Status() != 200 && mResponseHead->Status() != 206) {
-          mBlockOpaqueResponseAfterSniff = true;
+          BlockOpaqueResponseAfterSniff();
           return;
         }
 
         if (mResponseHead->Status() == 206 &&
             !IsFirstPartialResponse(*mResponseHead)) {
-          mBlockOpaqueResponseAfterSniff = true;
+          BlockOpaqueResponseAfterSniff();
           return;
         }
       }
     }
 
     mCheckIsOpaqueResponseAllowedAfterSniff = false;
+    AllowOpaqueResponseAfterSniff();
   }
 }
 
@@ -9776,6 +9815,12 @@ nsHttpChannel::EarlyHint(const nsACString& linkHeader) {
     mEarlyHintObserver->EarlyHint(linkHeader);
   }
   return NS_OK;
+}
+
+WebTransportSessionEventListener*
+nsHttpChannel::GetWebTransportSessionEventListener() {
+  nsCOMPtr<WebTransportSessionEventListener> wt = do_QueryInterface(mListener);
+  return wt;
 }
 
 }  // namespace net

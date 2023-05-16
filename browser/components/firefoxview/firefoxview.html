@@ -41,6 +41,7 @@
             <section>
               <p>
                 <span id="error-state-description"></span>
+                <a id="error-state-link" target="_blank" hidden></a>
               </p>
               <button id="error-state-button" class="primary"></button>
             </section>
@@ -103,8 +104,11 @@
             <ol hidden="true" class="synced-tabs-list"></ol>
           </tab-pickup-list>
           <div hidden id="synced-tabs-placeholder" class="placeholder-content">
-            <icon class="icon synced-tabs"></icon>
-            <p data-l10n-id="firefoxview-synced-tabs-placeholder" class="placeholder-text"></p>
+            <img id="tab-pickup-empty-image" src="chrome://browser/content/tab-pickup-empty.svg" role="presentation" alt=""/>
+            <div class="placeholder-text">
+              <h4 data-l10n-id="firefoxview-synced-tabs-placeholder-header" class="placeholder-header"></h4>
+              <p data-l10n-id="firefoxview-synced-tabs-placeholder-body" class="placeholder-body"></p>
+            </div>
           </div>
           <div class="loading-content">
             <icon class="icon sync"></icon>
@@ -115,8 +119,8 @@
 
       <details class="content-container" is="tab-pickup-container" id="tab-pickup-container" open>
         <summary class="page-section-header">
-          <h1 id="collapsible-synced-tabs-header" data-l10n-id="firefoxview-tabpickup-header"></h1>
           <span class="twisty icon" data-l10n-id="firefoxview-collapse-button-hide" aria-role="presentation"></span>
+          <h1 id="collapsible-synced-tabs-header" data-l10n-id="firefoxview-tabpickup-header"></h1>
           <p class="section-description" data-l10n-id="firefoxview-tabpickup-description"></p>
         </summary>
 
@@ -163,8 +167,8 @@
 
       <details class="content-container" is="recently-closed-tabs-container" id="recently-closed-tabs-container" open>
         <summary id="recently-closed-tabs-header-section" class="page-section-header" data-l10n-id="firefoxview-collapse-button-hide">
-          <h1 id="recently-closed-tabs-header" data-l10n-id="firefoxview-closed-tabs-title"></h1>
           <span class="twisty icon" aria-role="presentation"></span>
+          <h1 id="recently-closed-tabs-header" data-l10n-id="firefoxview-closed-tabs-title"></h1>
           <p class="section-description" data-l10n-id="firefoxview-closed-tabs-description2"></p>
         </summary>
         <div id="collapsible-tabs-container" id="recently-closed-tabs" role="region" aria-labelledby="recently-closed-tabs-header">
@@ -172,8 +176,11 @@
             <ol hidden="true" class="closed-tabs-list"></ol>
           </recently-closed-tabs-list>
           <div hidden="true" id="recently-closed-tabs-placeholder" class="placeholder-content">
-            <icon class="icon history"></icon>
-            <p data-l10n-id="firefoxview-closed-tabs-placeholder" class="placeholder-text"></p>
+            <img id="recently-closed-empty-image" src="chrome://browser/content/recently-closed-empty.svg" role="presentation" alt=""/>
+            <div class="placeholder-text">
+              <h4 data-l10n-id="firefoxview-closed-tabs-placeholder-header" class="placeholder-header"></h4>
+              <p data-l10n-id="firefoxview-closed-tabs-placeholder-body" class="placeholder-body"></p>
+            </div>
           </div>
         </div>
       </details>

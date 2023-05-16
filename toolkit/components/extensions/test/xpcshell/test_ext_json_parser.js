@@ -10,7 +10,7 @@ add_task(async function test_json_parser() {
       "manifest.json": String.raw`{
         // This is a manifest.
         "manifest_version": 2,
-        "applications": {"gecko": {"id": "${ID}"}},
+        "browser_specific_settings": {"gecko": {"id": "${ID}"}},
         "name": "This \" is // not a comment",
         "version": "0.1\\" // , "description": "This is not a description"
       }`,
@@ -19,7 +19,7 @@ add_task(async function test_json_parser() {
 
   let expectedManifest = {
     manifest_version: 2,
-    applications: { gecko: { id: ID } },
+    browser_specific_settings: { gecko: { id: ID } },
     name: 'This " is // not a comment',
     version: "0.1\\",
   };
@@ -71,3 +71,38 @@ add_task(async function test_getExtensionVersionWithoutValidation() {
 
   Services.obs.notifyObservers(xpi, "flush-cache-entry");
 });
+
+add_task(
+  {
+    pref_set: [
+      ["extensions.manifestV3.enabled", true],
+      ["extensions.webextensions.warnings-as-errors", false],
+    ],
+  },
+  async function test_applications_no_longer_valid_in_mv3() {
+    let id = "some@id";
+    let xpi = AddonTestUtils.createTempWebExtensionFile({
+      files: {
+        "manifest.json": JSON.stringify({
+          manifest_version: 3,
+          name: "some name",
+          version: "0.1",
+          applications: { gecko: { id } },
+        }),
+      },
+    });
+
+    let fileURI = Services.io.newFileURI(xpi);
+    let uri = NetUtil.newURI(`jar:${fileURI.spec}!/`);
+
+    let extension = new ExtensionData(uri, false);
+
+    const { manifest } = await extension.parseManifest();
+    ok(
+      !Object.keys(manifest).includes("applications"),
+      "expected no applications key in manifest"
+    );
+
+    Services.obs.notifyObservers(xpi, "flush-cache-entry");
+  }
+);

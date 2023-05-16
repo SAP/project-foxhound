@@ -47,22 +47,22 @@ NS_QUERYFRAME_TAIL_INHERITING(SVGContainerFrame)
 NS_IMPL_FRAMEARENA_HELPERS(SVGContainerFrame)
 
 void SVGContainerFrame::AppendFrames(ChildListID aListID,
-                                     nsFrameList& aFrameList) {
-  InsertFrames(aListID, mFrames.LastChild(), nullptr, aFrameList);
+                                     nsFrameList&& aFrameList) {
+  InsertFrames(aListID, mFrames.LastChild(), nullptr, std::move(aFrameList));
 }
 
 void SVGContainerFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                      const nsLineList::iterator* aPrevFrameLine,
-                                     nsFrameList& aFrameList) {
-  NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
+                                     nsFrameList&& aFrameList) {
+  NS_ASSERTION(aListID == FrameChildListID::Principal, "unexpected child list");
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
 
-  mFrames.InsertFrames(this, aPrevFrame, aFrameList);
+  mFrames.InsertFrames(this, aPrevFrame, std::move(aFrameList));
 }
 
 void SVGContainerFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
+  NS_ASSERTION(aListID == FrameChildListID::Principal, "unexpected child list");
 
   mFrames.DestroyFrame(aOldFrame);
 }
@@ -145,7 +145,7 @@ void SVGDisplayContainerFrame::BuildDisplayList(
 
 void SVGDisplayContainerFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aFrameList) {
   // memorize first old frame after insertion point
   // XXXbz once again, this would work a lot better if the nsIFrame
   // methods returned framelist iterators....
@@ -155,7 +155,7 @@ void SVGDisplayContainerFrame::InsertFrames(
 
   // Insert the new frames
   SVGContainerFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
-                                  aFrameList);
+                                  std::move(aFrameList));
 
   // If we are not a non-display SVG frame and we do not have a bounds update
   // pending, then we need to schedule one for our new children:

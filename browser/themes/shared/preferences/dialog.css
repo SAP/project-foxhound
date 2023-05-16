@@ -11,21 +11,14 @@ dialog {
   padding: 0;
 }
 
-/* Put padding around the contents of the dialog, but do that on `body`
- * instead of `html` for HTML cases, to avoid issues with the scroll
- * height of the document, which gets measured to determine the size
- * of the dialog we display. */
-:root:not(html),
-body {
+/* Add some padding around the contents of the dialog */
+dialog {
   padding: 6px;
-}
-
-.contentPane {
-  -moz-box-flex: 1;
 }
 
 .contentPane,
 dialog::part(content-box) {
+  -moz-box-flex: 1;
   /* This allows the focus ring to display fully when scrolling is enabled. */
   padding: 4px;
 }
@@ -33,6 +26,7 @@ dialog::part(content-box) {
 .contentPane.doScroll,
 dialog.doScroll::part(content-box) {
   overflow-y: auto;
+  contain: size;
 }
 
 tree:not(#rejectsTree) {

@@ -31,12 +31,17 @@ if (DEBUG_ALLOCATIONS) {
   // Use a custom loader with `invisibleToDebugger` flag for the allocation tracker
   // as it instantiates custom Debugger API instances and has to be running in a distinct
   // compartments from DevTools and system scopes (JSMs, XPCOM,...)
-  const { DevToolsLoader } = ChromeUtils.importESModule(
-    "resource://devtools/shared/loader/Loader.sys.mjs"
+  const {
+    useDistinctSystemPrincipalLoader,
+    releaseDistinctSystemPrincipalLoader,
+  } = ChromeUtils.importESModule(
+    "resource://devtools/shared/loader/DistinctSystemPrincipalLoader.sys.mjs"
   );
-  const loader = new DevToolsLoader({
-    invisibleToDebugger: true,
-  });
+  const requester = {};
+  const loader = useDistinctSystemPrincipalLoader(requester);
+  registerCleanupFunction(() =>
+    releaseDistinctSystemPrincipalLoader(requester)
+  );
 
   const { allocationTracker } = loader.require(
     "resource://devtools/shared/test-helpers/allocation-tracker.js"
@@ -1520,8 +1525,8 @@ let allDownloads = [];
  *                  screenshot appears in the private window, not the non-private one (See Bug 1783373)
  */
 async function waitUntilScreenshot({ isWindowPrivate = false } = {}) {
-  const { Downloads } = ChromeUtils.import(
-    "resource://gre/modules/Downloads.jsm"
+  const { Downloads } = ChromeUtils.importESModule(
+    "resource://gre/modules/Downloads.sys.mjs"
   );
   const list = await Downloads.getList(Downloads.ALL);
 
@@ -1556,8 +1561,8 @@ async function waitUntilScreenshot({ isWindowPrivate = false } = {}) {
  */
 async function resetDownloads() {
   info("Reset downloads");
-  const { Downloads } = ChromeUtils.import(
-    "resource://gre/modules/Downloads.jsm"
+  const { Downloads } = ChromeUtils.importESModule(
+    "resource://gre/modules/Downloads.sys.mjs"
   );
   const downloadList = await Downloads.getList(Downloads.ALL);
   const downloads = await downloadList.getAll();

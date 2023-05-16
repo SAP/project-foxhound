@@ -14,7 +14,7 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsIIOService.h"
 #include "nsIInputStream.h"
-#include "nsISupportsBase.h"
+#include "nsISupports.h"
 #include "nsISupportsUtils.h"
 #include "nsITimedChannel.h"
 #include "nsIUploadChannel2.h"
@@ -667,6 +667,7 @@ void TRR::SaveAdditionalRecords(
     // Since we're not actually calling NameLookup for this record, we need
     // to set these fields to avoid assertions in CompleteLookup.
     // This is quite hacky, and should be fixed.
+    hostRecord->Reset();
     hostRecord->mResolving++;
     hostRecord->mEffectiveTRRMode = mRec->mEffectiveTRRMode;
     LOG(("Completing lookup for additional: %s",

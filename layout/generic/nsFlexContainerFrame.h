@@ -185,12 +185,18 @@ class nsFlexContainerFrame final : public nsContainerFrame,
     return true;
   }
 
+  // Unions the child overflow from our in-flow children.
+  void UnionInFlowChildOverflow(mozilla::OverflowAreas&);
+
+  // Unions the child overflow from all our children, including out of flows.
+  void UnionChildOverflow(mozilla::OverflowAreas&) final;
+
   // nsContainerFrame overrides
   bool DrainSelfOverflowList() override;
-  void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     const nsLineList::iterator* aPrevFrameLine,
-                    nsFrameList& aFrameList) override;
+                    nsFrameList&& aFrameList) override;
   void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
   mozilla::StyleAlignFlags CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI,
@@ -448,8 +454,7 @@ class nsFlexContainerFrame final : public nsContainerFrame,
                          const FlexboxAxisTracker& aAxisTracker,
                          nscoord aMainGapSize,
                          nsTArray<nsIFrame*>& aPlaceholders,
-                         nsTArray<FlexLine>& aLines,
-                         bool& aHasCollapsedItems);
+                         nsTArray<FlexLine>& aLines, bool& aHasCollapsedItems);
 
   /**
    * Generates and returns a FlexLayoutResult that contains the FlexLines and

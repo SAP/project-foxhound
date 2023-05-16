@@ -730,15 +730,17 @@ void nsRange::ParentChainChanged(nsIContent* aContent) {
 
 bool nsRange::IsPointComparableToRange(const nsINode& aContainer,
                                        uint32_t aOffset,
-                                       ErrorResult& aErrorResult) const {
+                                       ErrorResult& aRv) const {
   // our range is in a good state?
   if (!mIsPositioned) {
-    aErrorResult.Throw(NS_ERROR_NOT_INITIALIZED);
+    aRv.Throw(NS_ERROR_NOT_INITIALIZED);
     return false;
   }
 
   if (!aContainer.IsInclusiveDescendantOf(mRoot)) {
-    aErrorResult.Throw(NS_ERROR_DOM_WRONG_DOCUMENT_ERR);
+    // TODO(emilio): Switch to ThrowWrongDocumentError, but IsPointInRange relies on the
+    // error code right now in order to suppress the exception.
+    aRv.Throw(NS_ERROR_DOM_WRONG_DOCUMENT_ERR);
     return false;
   }
 
@@ -747,17 +749,18 @@ bool nsRange::IsPointComparableToRange(const nsINode& aContainer,
                "Start and end of a range must be either both native anonymous "
                "content or not.");
   if (aContainer.ChromeOnlyAccess() != chromeOnlyAccess) {
-    aErrorResult.Throw(NS_ERROR_DOM_INVALID_NODE_TYPE_ERR);
+    aRv.ThrowInvalidNodeTypeError(
+        "Trying to compare restricted with unrestricted nodes");
     return false;
   }
 
   if (aContainer.NodeType() == nsINode::DOCUMENT_TYPE_NODE) {
-    aErrorResult.Throw(NS_ERROR_DOM_INVALID_NODE_TYPE_ERR);
+    aRv.ThrowInvalidNodeTypeError("Trying to compare with a document");
     return false;
   }
 
   if (aOffset > aContainer.Length()) {
-    aErrorResult.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError("Offset is out of bounds");
     return false;
   }
 
@@ -811,6 +814,10 @@ bool nsRange::IntersectsNode(nsINode& aNode, ErrorResult& aRv) {
 
   const Maybe<uint32_t> nodeIndex = parent->ComputeIndexOf(&aNode);
   if (nodeIndex.isNothing()) {
+    return false;
+  }
+
+  if (!IsPointComparableToRange(*parent, *nodeIndex, IgnoreErrors())) {
     return false;
   }
 

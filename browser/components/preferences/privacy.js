@@ -508,6 +508,13 @@ var gPrivacyPane = {
       httpsOnlyRadioGroup.value = "disabled";
       httpsOnlyExceptionButton.disabled = true;
     }
+
+    if (
+      Services.prefs.prefIsLocked("dom.security.https_only_mode") ||
+      Services.prefs.prefIsLocked("dom.security.https_only_mode_pbm")
+    ) {
+      httpsOnlyRadioGroup.disabled = true;
+    }
   },
 
   syncToHttpsOnlyPref() {
@@ -2075,15 +2082,12 @@ var gPrivacyPane = {
     const bestMatchLearnMoreLink = document.getElementById(
       "firefoxSuggestBestMatchLearnMore"
     );
-    bestMatchLearnMoreLink.setAttribute(
-      "href",
-      UrlbarProviderQuickSuggest.bestMatchHelpUrl
-    );
+    bestMatchLearnMoreLink.setAttribute("href", QuickSuggest.HELP_URL);
 
     // Set the URL of the Firefox Suggest learn-more links.
     let links = document.querySelectorAll(".firefoxSuggestLearnMore");
     for (let link of links) {
-      link.setAttribute("href", UrlbarProviderQuickSuggest.helpUrl);
+      link.setAttribute("href", QuickSuggest.HELP_URL);
     }
 
     this._updateFirefoxSuggestSection(true);

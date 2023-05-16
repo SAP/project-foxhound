@@ -1504,18 +1504,18 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-speedometer-mobile-chrome-m-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-speedometer-mobile-fenix-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-speedometer-mobile-geckoview-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -1912,18 +1912,18 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-speedometer-mobile-chrome-m-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-speedometer-mobile-fenix-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-speedometer-mobile-geckoview-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -2741,12 +2741,12 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-unity-webgl-mobile-chrome-m-nofis**
-        - ❌
+        - ✅
         - ❌
         - ❌
         - ❌
       * - **browsertime-unity-webgl-mobile-fenix-nofis**
-        - ❌
+        - ✅
         - ❌
         - ❌
         - ❌
@@ -2788,18 +2788,18 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-unity-webgl-mobile-chrome-m-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-unity-webgl-mobile-fenix-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-unity-webgl-mobile-geckoview-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -3066,12 +3066,12 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-unity-webgl-mobile-chrome-m-nofis**
-        - ❌
+        - ✅
         - ❌
         - ❌
         - ❌
       * - **browsertime-unity-webgl-mobile-fenix-nofis**
-        - ❌
+        - ✅
         - ❌
         - ❌
         - ❌
@@ -3113,18 +3113,18 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - mozilla-release
         - mozilla-beta
       * - **browsertime-unity-webgl-mobile-chrome-m-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-unity-webgl-mobile-fenix-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-unity-webgl-mobile-geckoview-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
 
@@ -4757,7 +4757,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-mobile-geckoview-youtube-playback-h264-sfr-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -5036,7 +5036,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-mobile-geckoview-youtube-playback-hfr-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -5360,7 +5360,7 @@ Standard benchmarks are third-party tests (i.e. Speedometer) that we have integr
         - ❌
         - ❌
       * - **browsertime-mobile-geckoview-youtube-playback-vp9-sfr-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -6016,7 +6016,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: null.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test script**: None
    * **test url**: `<None>`__
    * **type**: pageload
@@ -6196,7 +6196,7 @@ Browsertime tests that use a custom pageload test script. These use the pageload
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-welcome.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test script**: welcome.js
    * **test url**: `<about:welcome>`__
    * **type**: pageload
@@ -6355,7 +6355,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-amazon.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.amazon.com/Acer-A515-46-R14K-Quad-Core-Processor-Backlit/dp/B08VKNVDDR/ref=sr_1_3?dchild=1&keywords=laptop&qid=1627047187&sr=8-3>`__
    * **test url**: `<https://www.amazon.com/s?k=laptop&ref=nb_sb_noss_1>`__
    * **type**: pageload
@@ -6546,13 +6546,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-amazon**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-amazon-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-amazon-nofis**
@@ -6571,7 +6571,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-profiling-geckoview-amazon-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -7005,7 +7005,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-bing-search.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://www.bing.com/search?q=barack+obama>`__
    * **type**: pageload
    * **unit**: ms
@@ -7318,7 +7318,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-buzzfeed.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.buzzfeed.com/quizzes>`__
    * **test url**: `<https://www.buzzfeed.com/>`__
    * **type**: pageload
@@ -7512,7 +7512,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-cnn.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.cnn.com/weather>`__
    * **test url**: `<https://www.cnn.com/2021/03/22/weather/climate-change-warm-waters-lake-michigan/index.html>`__
    * **type**: pageload
@@ -7703,13 +7703,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-cnn-nofis**
@@ -8107,7 +8107,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-ebay.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.ebay.com/deals>`__
    * **test url**: `<https://www.ebay.com/>`__
    * **type**: pageload
@@ -8381,7 +8381,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-espn.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.espn.com/nba/draft/news>`__
    * **test url**: `<http://www.espn.com/nba/story/_/page/allstarweekend25788027/the-comparison-lebron-james-michael-jordan-their-own-words>`__
    * **type**: pageload
@@ -8572,13 +8572,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-espn**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-espn-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-espn**
@@ -8896,7 +8896,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-expedia.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://groups.expedia.com/Group-Rate/?locale=en_US&ol=1>`__
    * **test url**: `<https://expedia.com/Hotel-Search?destination=New+York%2C+New+York&latLong=40.756680%2C-73.986470&regionId=178293&startDate=&endDate=&rooms=1&_xpid=11905%7C1&adults=2>`__
    * **type**: pageload
@@ -9231,7 +9231,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-facebook.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.facebook.com/marketplace/?ref=bookmark>`__
    * **test url**: `<https://www.facebook.com>`__
    * **type**: pageload
@@ -9422,13 +9422,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-facebook**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-facebook-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-facebook**
@@ -9826,7 +9826,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-fandom.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://www.fandom.com/articles/fallout-76-will-live-and-die-on-the-creativity-of-its-playerbase>`__
    * **type**: pageload
    * **unit**: ms
@@ -10140,7 +10140,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-google-docs.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://docs.google.com/document/d/1vUnn0ePU-ynArE1OdxyEHXR2G0sl74ja_st_4OOzlgE/preview>`__
    * **test url**: `<https://docs.google.com/document/d/1US-07msg12slQtI_xchzYxcKlTs6Fp7WqIc6W5GK5M8/edit?usp=sharing>`__
    * **type**: pageload
@@ -10414,7 +10414,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-google-mail.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://mail.google.com/>`__
    * **type**: pageload
    * **unit**: ms
@@ -10687,7 +10687,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-google-search.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://www.google.com/search?hl=en&q=barack+obama&cad=h>`__
    * **type**: pageload
    * **unit**: ms
@@ -11274,7 +11274,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-imdb.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.imdb.com/title/tt0084967/episodes/?ref_=tt_ov_epl>`__
    * **test url**: `<https://www.imdb.com/title/tt0084967/?ref_=nv_sr_2>`__
    * **type**: pageload
@@ -11465,13 +11465,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-imdb**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-imdb-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-imdb-nofis**
@@ -11869,7 +11869,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-imgur.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **preferences**: {"media.autoplay.default": 5, "media.autoplay.ask-permission": true, "media.autoplay.blocking_policy": 1, "media.autoplay.block-webaudio": true, "media.allowed-to-play.enabled": false, "media.block-autoplay-until-in-foreground": true}
    * **secondary url**: `<https://imgur.com/gallery/L13Ci>`__
    * **test url**: `<https://imgur.com/gallery/m5tYJL6>`__
@@ -12144,7 +12144,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-instagram.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.instagram.com/nobelprize_org/>`__
    * **test url**: `<https://www.instagram.com/>`__
    * **type**: pageload
@@ -12335,13 +12335,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-instagram**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-instagram-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-instagram-nofis**
@@ -12699,7 +12699,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-linkedin.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.linkedin.com/in/thommy-harris-hk-385723106/>`__
    * **test url**: `<https://www.linkedin.com/feed/>`__
    * **type**: pageload
@@ -12973,7 +12973,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-microsoft.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://support.microsoft.com/en-us>`__
    * **test url**: `<https://www.microsoft.com/en-us/>`__
    * **type**: pageload
@@ -13247,7 +13247,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-netflix.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.netflix.com/title/699257>`__
    * **test url**: `<https://www.netflix.com/title/80117263>`__
    * **type**: pageload
@@ -13521,7 +13521,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-nytimes.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.nytimes.com/section/opinion/columnists>`__
    * **test url**: `<https://www.nytimes.com/2020/02/19/opinion/surprise-medical-bill.html>`__
    * **type**: pageload
@@ -13856,7 +13856,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-office.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.office.com/>`__
    * **test url**: `<https://www.office.com/launch/powerpoint?auth=1>`__
    * **type**: pageload
@@ -14050,7 +14050,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-live.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://outlook.live.com/mail/inbox>`__
    * **type**: pageload
    * **unit**: ms
@@ -14323,7 +14323,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-paypal.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://www.paypal.com/myaccount/summary/>`__
    * **type**: pageload
    * **unit**: ms
@@ -14596,7 +14596,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-pinterest.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.pinterest.com/today/best/halloween-costumes-for-your-furry-friends/75787/>`__
    * **test url**: `<https://pinterest.com/>`__
    * **type**: pageload
@@ -14870,7 +14870,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-reddit.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.reddit.com/r/technology/>`__
    * **test url**: `<https://www.reddit.com/r/technology/comments/9sqwyh/we_posed_as_100_senators_to_run_ads_on_facebook/>`__
    * **type**: pageload
@@ -15061,13 +15061,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-reddit**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-reddit-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-reddit-nofis**
@@ -15465,7 +15465,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-linux-firefox-tumblr.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.tumblr.com/tagged/funny+cats?sort=top>`__
    * **test url**: `<https://www.tumblr.com/dashboard>`__
    * **type**: pageload
@@ -15739,7 +15739,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-twitch.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **preferences**: {"media.autoplay.default": 5, "media.autoplay.ask-permission": true, "media.autoplay.blocking_policy": 1, "media.autoplay.block-webaudio": true, "media.allowed-to-play.enabled": false, "media.block-autoplay-until-in-foreground": true}
    * **secondary url**: `<https://www.twitch.tv/gmashley>`__
    * **test url**: `<https://www.twitch.tv/videos/894226211>`__
@@ -16014,7 +16014,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-twitter.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://twitter.com/BarackObama>`__
    * **type**: pageload
    * **unit**: ms
@@ -16327,7 +16327,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-wikia.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://marvel.fandom.com/wiki/Celestials>`__
    * **test url**: `<https://marvel.fandom.com/wiki/Black_Panther>`__
    * **type**: pageload
@@ -16521,7 +16521,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-wikipedia.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://en.wikipedia.org/wiki/Joe_Biden>`__
    * **test url**: `<https://en.wikipedia.org/wiki/Barack_Obama>`__
    * **type**: pageload
@@ -16712,13 +16712,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-wikipedia**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-wikipedia-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-wikipedia-nofis**
@@ -17156,7 +17156,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm5-linux-firefox-yahoo-mail.manifest
-   * **playback version**: 5.1.1
+   * **playback version**: 8.1.1
    * **test url**: `<https://mail.yahoo.com/>`__
    * **type**: pageload
    * **unit**: ms
@@ -17469,7 +17469,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-youtube.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **secondary url**: `<https://www.youtube.com/watch?v=JrdEMERq8MA>`__
    * **test url**: `<https://www.youtube.com>`__
    * **type**: pageload
@@ -17660,13 +17660,13 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-youtube**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-youtube-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-youtube-nofis**
@@ -17685,7 +17685,7 @@ Tests for page-load performance. The links direct to the actual websites that ar
         - ❌
         - ❌
       * - **browsertime-tp6m-profiling-geckoview-youtube-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -18076,7 +18076,7 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
    * **page timeout**: 60000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm7-linux-firefox-cnn-nav.manifest
-   * **playback version**: 7.0.4
+   * **playback version**: 8.1.1
    * **test cmds**:  ["measure.start", "landing"], ["navigate", "https://www.cnn.com"], ["wait.byTime", 4000], ["measure.stop", ""], ["measure.start", "world"], ["click.byXpathAndWait", "/html/body/div[5]/div/div/header/div/div[1]/div/div[2]/nav/ul/li[2]/a"], ["wait.byTime", 1000], ["measure.stop", ""],
    * **test url**: `<https://www.cnn.com/>`__
    * **type**: pageload
@@ -18272,7 +18272,7 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
    * **page timeout**: 90000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-windows-firefox-facebook-nav.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **test cmds**:  ["measure.start", "landing"], ["navigate", "https://www.facebook.com/"], ["wait.byTime", 5000], ["measure.stop", ""], ["measure.start", "marketplace"], ["navigate", "https://www.facebook.com/marketplace"], ["wait.byTime", 5000], ["measure.stop", ""], ["measure.start", "groups"], ["navigate", "https://www.facebook.com/groups/discover/"], ["wait.byTime", 5000], ["measure.stop", ""], ["measure.start", "friends"], ["navigate", "https://www.facebook.com/friends/"], ["wait.byTime", 5000], ["measure.stop", ""],
    * **test url**: `<https://www.facebook.com>`__
    * **type**: pageload
@@ -18468,7 +18468,7 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
    * **page timeout**: 240000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-windows-firefox-reddit-billgates-ama.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **test cmds**:  ["measure.start", "billg-ama"], ["navigate", "https://www.reddit.com/r/IAmA/comments/m8n4vt/im_bill_gates_cochair_of_the_bill_and_melinda/"], ["wait.byTime", 5000], ["measure.stop", ""], ["measure.start", "members"], ["click.byXpathAndWait", "/html/body/div[1]/div/div[2]/div[2]/div/div[3]/div[2]/div/div[1]/div/div[4]/div[1]/div"], ["wait.byTime", 1000], ["measure.stop", ""],
    * **test url**: `<https://www.reddit.com/>`__
    * **type**: pageload
@@ -18664,7 +18664,7 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
    * **page timeout**: 90000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-windows-firefox-reddit-billgates-post.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **test cmds**:  ["measure.start", "billg"], ["navigate", "https://www.reddit.com/user/thisisbillgates/"], ["wait.byTime", 500], ["measure.stop", ""], ["measure.start", "posts"], ["click.byXpathAndWait", "/html/body/div[1]/div/div[2]/div[2]/div/div/div/div[2]/div[2]/div/div/div/a[2]"], ["wait.byTime", 500], ["measure.stop", ""], ["measure.start", "comments"], ["click.byXpathAndWait", "/html/body/div[1]/div/div[2]/div[2]/div/div/div/div[2]/div[2]/div/div/div/a[3]"], ["wait.byTime", 500], ["measure.stop", ""], ["wait.byTime", 500],
    * **test url**: `<https://www.reddit.com/user/thisisbillgates/>`__
    * **type**: pageload
@@ -18860,7 +18860,7 @@ Browsertime tests that interact with the webpage. Includes responsiveness tests 
    * **page timeout**: 90000
    * **playback**: mitmproxy
    * **playback pageset manifest**: mitm6-windows-firefox-reddit-billgates-post.manifest
-   * **playback version**: 6.0.2
+   * **playback version**: 8.1.1
    * **test cmds**:  ["measure.start", "billg"], ["navigate", "https://www.reddit.com/user/thisisbillgates/"], ["wait.byTime", 500], ["measure.stop", ""], ["click.byXpathAndWait", "/html/body/div[1]/div/div[2]/div[2]/div/div/div/div[2]/div[2]/div/div/div/a[3]"], ["wait.byTime", 500], ["measure.start", "hot"], ["click.byXpathAndWait", "/html/body/div[1]/div/div[2]/div[2]/div/div/div/div[2]/div[4]/div[1]/div[1]/div[2]/a[2]"], ["wait.byTime", 500], ["measure.stop", ""], ["measure.start", "top"], ["click.byXpathAndWait", "/html/body/div[1]/div/div[2]/div[2]/div/div/div/div[2]/div[4]/div[1]/div[1]/div[2]/a[3]"], ["wait.byTime", 500], ["measure.stop", ""], ["wait.byTime", 500],
    * **test url**: `<https://www.reddit.com/user/thisisbillgates/>`__
    * **type**: pageload
@@ -19405,13 +19405,13 @@ A set of test pages that are run as live sites instead of recorded versions. The
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-cnn-nofis**
@@ -19994,13 +19994,13 @@ A set of test pages that are run as live sites instead of recorded versions. The
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-ampstories**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-ampstories-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-cnn-ampstories-nofis**
@@ -20015,7 +20015,7 @@ A set of test pages that are run as live sites instead of recorded versions. The
         - ❌
       * - **browsertime-tp6m-live-geckoview-cnn-ampstories-nofis**
         - ❌
-        - ✅
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-refbrow-cnn-ampstories**
@@ -22772,13 +22772,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-allrecipes**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-allrecipes-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-allrecipes**
@@ -23116,13 +23116,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-amazon**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-amazon-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-amazon-nofis**
@@ -23141,7 +23141,7 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-profiling-geckoview-amazon-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -23763,13 +23763,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-amazon-search**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-amazon-search-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-amazon-search**
@@ -24107,13 +24107,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-bing**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-bing-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-bing-nofis**
@@ -24451,13 +24451,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-bing-search-restaurants**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-bing-search-restaurants-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-bing-search-restaurants-nofis**
@@ -24795,13 +24795,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-booking**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-booking-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-booking-nofis**
@@ -25139,13 +25139,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-cnn-nofis**
@@ -25731,13 +25731,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-ampstories**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-cnn-ampstories-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-cnn-ampstories-nofis**
@@ -25752,7 +25752,7 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
       * - **browsertime-tp6m-live-geckoview-cnn-ampstories-nofis**
         - ❌
-        - ✅
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-refbrow-cnn-ampstories**
@@ -26075,13 +26075,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-dailymail**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-dailymail-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-dailymail-nofis**
@@ -26419,13 +26419,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-ebay-kleinanzeigen**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-ebay-kleinanzeigen-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-ebay-kleinanzeigen-nofis**
@@ -26763,13 +26763,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-ebay-kleinanzeigen-search**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-ebay-kleinanzeigen-search-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-ebay-kleinanzeigen-search-nofis**
@@ -27107,13 +27107,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-espn**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-espn-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-espn**
@@ -27620,13 +27620,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-facebook**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-facebook-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-facebook**
@@ -28212,13 +28212,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-facebook-cristiano**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-facebook-cristiano-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-facebook-cristiano-nofis**
@@ -28557,13 +28557,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-google**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-google-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-google**
@@ -28901,13 +28901,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-google-maps**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-google-maps-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-google-maps-nofis**
@@ -29246,13 +29246,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-google-search-restaurants**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-google-search-restaurants-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-google-search-restaurants-nofis**
@@ -29590,13 +29590,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-imdb**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-imdb-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-imdb-nofis**
@@ -30183,13 +30183,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-instagram**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-instagram-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-instagram-nofis**
@@ -30735,13 +30735,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-microsoft-support**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-microsoft-support-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-microsoft-support**
@@ -31079,13 +31079,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-reddit**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-reddit-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-reddit-nofis**
@@ -31636,13 +31636,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-sina**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-sina-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-refbrow-sina**
@@ -31940,13 +31940,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-stackoverflow**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-stackoverflow-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-stackoverflow-nofis**
@@ -32093,8 +32093,8 @@ Page-load performance test suite on Android. The links direct to the actual webs
    * **page cycles**: 25
    * **page timeout**: 60000
    * **playback**: mitmproxy-android
-   * **playback pageset manifest**: mitm6-android-fenix-web-de.manifest
-   * **playback version**: 6.0.2
+   * **playback pageset manifest**: mitm7-android-gve-p2-web-de.manifest
+   * **playback version**: 8.1.1
    * **test url**: `<https://web.de/magazine/politik/politologe-glaubt-grossen-koalition-herbst-knallen-33563566>`__
    * **type**: pageload
    * **unit**: ms
@@ -32284,13 +32284,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-web-de**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-web-de-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-web-de-nofis**
@@ -32628,13 +32628,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-wikipedia**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-wikipedia-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-wikipedia-nofis**
@@ -33260,13 +33260,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-youtube**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-geckoview-youtube-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-live-chrome-m-youtube-nofis**
@@ -33285,7 +33285,7 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-profiling-geckoview-youtube-nofis**
-        - ✅
+        - ❌
         - ❌
         - ❌
         - ❌
@@ -33857,13 +33857,13 @@ Page-load performance test suite on Android. The links direct to the actual webs
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-youtube-watch**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-geckoview-youtube-watch-nofis**
-        - ✅
-        - ✅
+        - ❌
+        - ❌
         - ❌
         - ❌
       * - **browsertime-tp6m-essential-refbrow-youtube-watch**

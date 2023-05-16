@@ -11,8 +11,8 @@ var gChecking;
 var gBroken;
 var gNeedReset;
 
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 function initExceptionDialog() {
@@ -348,7 +348,7 @@ function addException() {
 }
 
 /**
- * @returns {Boolean} Whether this dialog is in private browsing mode.
+ * @returns {boolean} Whether this dialog is in private browsing mode.
  */
 function inPrivateBrowsingMode() {
   return PrivateBrowsingUtils.isWindowPrivate(window);

@@ -1001,9 +1001,6 @@ MsaaAccessible::get_accName(
   nsAutoString name;
   Acc()->Name(name);
 
-  // The name was not provided, e.g. no alt attribute for an image. A screen
-  // reader may choose to invent its own accessible name, e.g. from an image src
-  // attribute. Refer to eNoNameOnPurpose return value.
   if (name.IsVoid()) return S_FALSE;
 
   *pszName = ::SysAllocStringLen(name.get(), name.Length());
@@ -1158,8 +1155,7 @@ MsaaAccessible::get_accRole(
   if (content->IsElement()) {
     nsAutoString roleString;
     // Try the role attribute.
-    content->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::role,
-                                  roleString);
+    nsAccUtils::GetARIAAttr(content->AsElement(), nsGkAtoms::role, roleString);
 
     if (roleString.IsEmpty()) {
       // No role attribute (or it is an empty string).

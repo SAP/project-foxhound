@@ -1,7 +1,7 @@
 "use strict";
 
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Message manager disconnected/
@@ -163,7 +163,7 @@ add_task(async function testDuplicateShortcutOnMacOSCtrlKey() {
     useAddonManager: "temporary",
     manifest: {
       name: "Extension 1",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "extension1@mochi.test" },
       },
       commands: {
@@ -186,7 +186,7 @@ add_task(async function testDuplicateShortcutOnMacOSCtrlKey() {
     useAddonManager: "temporary",
     manifest: {
       name: "Extension 2",
-      applications: {
+      browser_specific_settings: {
         gecko: { id: "extension2@mochi.test" },
       },
       commands: {

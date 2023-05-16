@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -61,7 +60,7 @@ export var FirstStartup = {
       Promise.all(promises).then(() => (initialized = true));
 
       this.elapsed = 0;
-      Services.tm.spinEventLoopUntil("FirstStartup.jsm:init", () => {
+      Services.tm.spinEventLoopUntil("FirstStartup.sys.mjs:init", () => {
         this.elapsed = Date.now() - startingTime;
         if (this.elapsed >= timeout) {
           this._state = this.TIMED_OUT;

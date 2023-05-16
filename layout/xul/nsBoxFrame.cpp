@@ -121,7 +121,7 @@ nsIFrame* nsBoxFrame::SlowOrdinalGroupAwareSibling(nsIFrame* aBox, bool aNext) {
     return nullptr;
   }
   CSSOrderAwareFrameIterator iter(
-      parent, layout::kPrincipalList,
+      parent, FrameChildListID::Principal,
       CSSOrderAwareFrameIterator::ChildFilter::IncludeAll,
       CSSOrderAwareFrameIterator::OrderState::Unknown,
       CSSOrderAwareFrameIterator::OrderingProperty::BoxOrdinalGroup);
@@ -141,9 +141,9 @@ nsIFrame* nsBoxFrame::SlowOrdinalGroupAwareSibling(nsIFrame* aBox, bool aNext) {
 }
 
 void nsBoxFrame::SetInitialChildList(ChildListID aListID,
-                                     nsFrameList& aChildList) {
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID == kPrincipalList) {
+                                     nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID == FrameChildListID::Principal) {
     // initialize our list of infos.
     nsBoxLayoutState state(PresContext());
     if (mLayoutManager)
@@ -202,13 +202,6 @@ void nsBoxFrame::CacheAttributes() {
 
   GetInitialVAlignment(mValign);
   GetInitialHAlignment(mHalign);
-
-  bool equalSize = false;
-  GetInitialEqualSize(equalSize);
-  if (equalSize)
-    AddStateBits(NS_STATE_EQUAL_SIZE);
-  else
-    RemoveStateBits(NS_STATE_EQUAL_SIZE);
 
   bool autostretch = !!(mState & NS_STATE_AUTO_STRETCH);
   GetInitialAutoStretch(autostretch);
@@ -339,22 +332,6 @@ void nsBoxFrame::GetInitialDirection(bool& aIsNormal) {
   if (boxInfo->mBoxDirection == StyleBoxDirection::Reverse) {
     aIsNormal = !aIsNormal;  // Invert our direction.
   }
-}
-
-/* Returns true if it was set.
- */
-bool nsBoxFrame::GetInitialEqualSize(bool& aEqualSize) {
-  // see if we are a vertical or horizontal box.
-  if (!GetContent() || !GetContent()->IsElement()) return false;
-
-  if (GetContent()->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                             nsGkAtoms::equalsize,
-                                             nsGkAtoms::always, eCaseMatters)) {
-    aEqualSize = true;
-    return true;
-  }
-
-  return false;
 }
 
 /* Returns true if it was set.
@@ -736,7 +713,8 @@ void nsBoxFrame::MarkIntrinsicISizesDirty() {
 }
 
 void nsBoxFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  MOZ_ASSERT(aListID == kPrincipalList, "We don't support out-of-flow kids");
+  MOZ_ASSERT(aListID == FrameChildListID::Principal,
+             "We don't support out-of-flow kids");
 
   nsPresContext* presContext = PresContext();
   nsBoxLayoutState state(presContext);
@@ -757,18 +735,19 @@ void nsBoxFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 
 void nsBoxFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                               const nsLineList::iterator* aPrevFrameLine,
-                              nsFrameList& aFrameList) {
+                              nsFrameList&& aFrameList) {
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
   NS_ASSERTION(!aPrevFrame || mFrames.ContainsFrame(aPrevFrame),
                "inserting after sibling frame not in our child list");
-  MOZ_ASSERT(aListID == kPrincipalList, "We don't support out-of-flow kids");
+  MOZ_ASSERT(aListID == FrameChildListID::Principal,
+             "We don't support out-of-flow kids");
 
   nsBoxLayoutState state(PresContext());
 
   // insert the child frames
   const nsFrameList::Slice& newFrames =
-      mFrames.InsertFrames(this, aPrevFrame, aFrameList);
+      mFrames.InsertFrames(this, aPrevFrame, std::move(aFrameList));
 
   // notify the layout manager
   if (mLayoutManager)
@@ -778,13 +757,15 @@ void nsBoxFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 }
 
-void nsBoxFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
-  MOZ_ASSERT(aListID == kPrincipalList, "We don't support out-of-flow kids");
+void nsBoxFrame::AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) {
+  MOZ_ASSERT(aListID == FrameChildListID::Principal,
+             "We don't support out-of-flow kids");
 
   nsBoxLayoutState state(PresContext());
 
   // append the new frames
-  const nsFrameList::Slice& newFrames = mFrames.AppendFrames(this, aFrameList);
+  const nsFrameList::Slice& newFrames =
+      mFrames.AppendFrames(this, std::move(aFrameList));
 
   // notify the layout manager
   if (mLayoutManager) mLayoutManager->ChildrenAppended(this, state, newFrames);
@@ -815,8 +796,7 @@ nsresult nsBoxFrame::AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
       aAttribute == nsGkAtoms::minwidth || aAttribute == nsGkAtoms::maxwidth ||
       aAttribute == nsGkAtoms::minheight ||
       aAttribute == nsGkAtoms::maxheight || aAttribute == nsGkAtoms::orient ||
-      aAttribute == nsGkAtoms::pack || aAttribute == nsGkAtoms::dir ||
-      aAttribute == nsGkAtoms::equalsize) {
+      aAttribute == nsGkAtoms::pack || aAttribute == nsGkAtoms::dir) {
     if (aAttribute == nsGkAtoms::align || aAttribute == nsGkAtoms::valign ||
         aAttribute == nsGkAtoms::orient || aAttribute == nsGkAtoms::pack ||
         aAttribute == nsGkAtoms::dir) {
@@ -839,13 +819,6 @@ nsresult nsBoxFrame::AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
 
       GetInitialVAlignment(mValign);
       GetInitialHAlignment(mHalign);
-
-      bool equalSize = false;
-      GetInitialEqualSize(equalSize);
-      if (equalSize)
-        AddStateBits(NS_STATE_EQUAL_SIZE);
-      else
-        RemoveStateBits(NS_STATE_EQUAL_SIZE);
 
       bool autostretch = !!(mState & NS_STATE_AUTO_STRETCH);
       GetInitialAutoStretch(autostretch);
@@ -877,35 +850,6 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     if (GetContent()->AsElement()->HasAttr(kNameSpaceID_None,
                                            nsGkAtoms::layer)) {
       forceLayer = true;
-    }
-    // Check for frames that are marked as a part of the region used
-    // in calculating glass margins on Windows.
-    const nsStyleDisplay* styles = StyleDisplay();
-    if (styles->EffectiveAppearance() == StyleAppearance::MozWinExcludeGlass) {
-      aBuilder->AddWindowExcludeGlassRegion(
-          this, nsRect(aBuilder->ToReferenceFrame(this), GetSize()));
-    }
-
-    nsStaticAtom* windowButtonTypes[] = {nsGkAtoms::min, nsGkAtoms::max,
-                                         nsGkAtoms::close, nullptr};
-    int32_t buttonTypeIndex = mContent->AsElement()->FindAttrValueIn(
-        kNameSpaceID_None, nsGkAtoms::titlebar_button, windowButtonTypes,
-        eCaseMatters);
-
-    if (buttonTypeIndex >= 0) {
-      MOZ_ASSERT(buttonTypeIndex < 3);
-
-      if (auto* widget = GetNearestWidget()) {
-        using ButtonType = nsIWidget::WindowButtonType;
-        auto buttonType = buttonTypeIndex == 0
-                              ? ButtonType::Minimize
-                              : (buttonTypeIndex == 1 ? ButtonType::Maximize
-                                                      : ButtonType::Close);
-        auto rect = LayoutDevicePixel::FromAppUnitsToNearest(
-            nsRect(aBuilder->ToReferenceFrame(this), GetSize()),
-            PresContext()->AppUnitsPerDevPixel());
-        widget->SetWindowButtonRect(buttonType, rect);
-      }
     }
   }
 
@@ -951,7 +895,7 @@ void nsBoxFrame::BuildDisplayListForChildren(nsDisplayListBuilder* aBuilder,
                                              const nsDisplayListSet& aLists) {
   // Iterate over the children in CSS order.
   auto iter = CSSOrderAwareFrameIterator(
-      this, mozilla::layout::kPrincipalList,
+      this, FrameChildListID::Principal,
       CSSOrderAwareFrameIterator::ChildFilter::IncludeAll,
       CSSOrderAwareFrameIterator::OrderState::Unknown,
       CSSOrderAwareFrameIterator::OrderingProperty::BoxOrdinalGroup);

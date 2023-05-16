@@ -480,21 +480,6 @@ downloads:
     record_in_processes: ["main"]
     release_channel_collection: opt-out
     expiry_version: never
-  helpertype:
-    description: >
-      Sent when a content type is handed off the external helper app service for handling because it cannot
-      be displayed directly.
-    bug_numbers: [1736864, 1754636]
-    extra_keys:
-      reason: The value "attachment", "sniffed" or "other"
-      type: The value "pdf", "octetstream" or "other"
-    notification_emails: ["rtestard@mozilla.com"]
-    objects: ["unknowntype"]
-    products:
-      - "firefox"
-    record_in_processes: ["main"]
-    release_channel_collection: opt-out
-    expiry_version: "109"
 
 form_autocomplete:
   show:
@@ -704,7 +689,8 @@ navigation:
   search:
     objects: ["about_home", "about_newtab", "contextmenu", "oneoff",
               "suggestion", "alias", "enter", "searchbar", "urlbar",
-              "urlbar_handoff", "urlbar_searchmode", "webextension"]
+              "urlbar_handoff", "urlbar_persisted", "urlbar_searchmode",
+              "webextension"]
     release_channel_collection: opt-out
     products:
       - "firefox"
@@ -1223,9 +1209,9 @@ pwmgr:
 jsonfile:
   load:
     description: >
-      Records when JSONFile.jsm consumers are trying to access a missing or corrupt json file.
+      Records when JSONFile.sys.mjs consumers are trying to access a missing or corrupt json file.
       For example, Login Store trying to access logins.json when it has gone missing or corrupt.
-    # Keep synchronized with TELEMETRY_BASENAMES from JSONFile.jsm.
+    # Keep synchronized with TELEMETRY_BASENAMES from JSONFile.sys.mjs.
     objects: ["logins", "autofillprofiles"]
     bug_numbers: [1599567]
     expiry_version: never
@@ -2292,6 +2278,8 @@ security.ui.protectionspopup:
       "settings",
       "full_report",
       "milestone_message",
+      "cookieb_toggle_on",
+      "cookieb_toggle_off",
     ]
     bug_numbers:
       - 1560327
@@ -2301,11 +2289,13 @@ security.ui.protectionspopup:
       - 1678201
       - 1739287
       - 1787249
+      - 1798669
     description: >
       User interaction by click events in the protections panel.
     expiry_version: never
     notification_emails:
       - pbz@mozilla.com
+      - tihuang@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
@@ -2378,13 +2368,19 @@ intl.ui.browserLanguage:
       installId: The id for an install.
     products:
       - firefox
-    expiry_version: "109"
+    expiry_version: "122"
     notification_emails:
       - flod@mozilla.com
       - mstriemer@mozilla.com
     release_channel_collection: opt-out
     record_in_processes: ["main"]
-    bug_numbers: [1486507, 1553311, 1607501, 1672571, 1739288]
+    bug_numbers:
+      - 1486507
+      - 1553311
+      - 1607501
+      - 1672571
+      - 1739288
+      - 1796396
 
 network.dns:
   trrConfirmation:
@@ -3373,22 +3369,6 @@ service_request:
     extra_keys:
       source: the source of the proxy configuration.  e.g. policy, prefs or extension_id
       type: the type for the proxy configuration source.  e.g. api or string version of nsIProtocolProxyService.proxyConfigType
-
-privacy_segmentation:
-  status:
-    description: >
-      Records value changes of the browser.dataFeatureRecommendations.enabled pref.
-      Does not record an event for the initial pref state at startup.
-    objects: ["pref"]
-    methods: ["enable", "disable"]
-    release_channel_collection: opt-out
-    record_in_processes: ["main"]
-    bug_numbers: [1748877, 1781975]
-    notification_emails:
-      - pbz@mozilla.com
-      - rtestard@mozilla.com
-    expiry_version: "109"
-    products: ["firefox"]
 
 synced_tabs:
   click:

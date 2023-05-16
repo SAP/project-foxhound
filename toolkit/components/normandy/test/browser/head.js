@@ -1,5 +1,5 @@
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
@@ -75,7 +75,7 @@ this.withWebExtension = function(
           name: "normandy_fixture",
           version: "1.0",
           description: "Dummy test fixture that's a webextension",
-          applications: {
+          browser_specific_settings: {
             gecko: { id: addonId },
           },
         },

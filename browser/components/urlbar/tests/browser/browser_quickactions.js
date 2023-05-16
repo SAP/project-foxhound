@@ -10,12 +10,12 @@
 requestLongerTimeout(3);
 
 ChromeUtils.defineESModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   UrlbarProviderQuickActions:
     "resource:///modules/UrlbarProviderQuickActions.sys.mjs",
 });
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
-  AppUpdater: "resource:///modules/AppUpdater.jsm",
+  UpdateService: "resource://gre/modules/UpdateService.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
 });
 
@@ -187,10 +187,8 @@ add_task(async function test_disabled() {
 
   EventUtils.synthesizeKey("KEY_ArrowDown");
   Assert.ok(
-    UrlbarTestUtils.getSelectedElement(window).classList.contains(
-      "urlbarView-button-help"
-    ),
-    "The selected element should be the onboarding button."
+    !UrlbarTestUtils.getSelectedElement(window),
+    "There is no selected element."
   );
 
   let disabledButton = window.document.querySelector(
@@ -653,15 +651,19 @@ add_task(async function test_update() {
 
   const sandbox = sinon.createSandbox();
   try {
-    sandbox.stub(AppUpdater.prototype, "isReadyForRestart").get(() => false);
+    sandbox
+      .stub(UpdateService.prototype, "currentState")
+      .get(() => Ci.nsIApplicationUpdateService.STATE_IDLE);
     await doUpdateActionTest(
       false,
-      "Should be disabled since AppUpdater.isReadyForRestart returns false"
+      "Should be disabled since current update state is not pending"
     );
-    sandbox.stub(AppUpdater.prototype, "isReadyForRestart").get(() => true);
+    sandbox
+      .stub(UpdateService.prototype, "currentState")
+      .get(() => Ci.nsIApplicationUpdateService.STATE_PENDING);
     await doUpdateActionTest(
       true,
-      "Should be enabled since AppUpdater.isReadyForRestart returns true"
+      "Should be enabled since current update state is pending"
     );
   } finally {
     sandbox.restore();

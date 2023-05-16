@@ -38,8 +38,8 @@
 // NOTE: Allowing rejections on an entire directory should be avoided.
 //       Normally you should use "expectUncaughtRejection" to flag individual
 //       failures.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Message manager disconnected/
@@ -52,14 +52,14 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
 const { AppUiTestDelegate, AppUiTestInternals } = ChromeUtils.import(
   "resource://testing-common/AppUiTestDelegate.jsm"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { CustomizableUI } = ChromeUtils.import(
   "resource:///modules/CustomizableUI.jsm"
 );
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { ClientEnvironmentBase } = ChromeUtils.import(
   "resource://gre/modules/components-utils/ClientEnvironment.jsm"
@@ -87,6 +87,11 @@ function loadTestSubscript(filePath) {
   Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
 }
 
+// Ensure when we turn off topsites in the next few lines,
+// we don't hit any remote endpoints.
+Services.prefs
+  .getDefaultBranch("browser.newtabpage.activity-stream.")
+  .setStringPref("discoverystream.endpointSpocsClear", "");
 // Leaving Top Sites enabled during these tests would create site screenshots
 // and update pinned Top Sites unnecessarily.
 Services.prefs
@@ -364,11 +369,11 @@ async function triggerBrowserActionWithKeyboard(
   await showBrowserAction(extension, win);
 
   let group = getBrowserActionWidget(extension);
-  let node = group.forWindow(win).node;
+  let node = group.forWindow(win).node.firstElementChild;
 
   if (group.areaType == CustomizableUI.TYPE_TOOLBAR) {
     await focusButtonAndPressKey(key, node, modifiers);
-  } else if (group.areaType == CustomizableUI.TYPE_MENU_PANEL) {
+  } else if (group.areaType == CustomizableUI.TYPE_PANEL) {
     // Use key navigation so that the PanelMultiView doesn't ignore key events
     let panel = win.document.getElementById("widget-overflow");
     while (win.document.activeElement != node) {
@@ -411,11 +416,14 @@ async function toggleBookmarksToolbar(visible = true) {
   );
 }
 
-async function openContextMenuInPopup(extension, selector = "body") {
-  let contentAreaContextMenu = document.getElementById(
-    "contentAreaContextMenu"
-  );
-  let browser = await awaitExtensionPanel(extension);
+async function openContextMenuInPopup(
+  extension,
+  selector = "body",
+  win = window
+) {
+  let doc = win.document;
+  let contentAreaContextMenu = doc.getElementById("contentAreaContextMenu");
+  let browser = await awaitExtensionPanel(extension, win);
 
   // Ensure that the document layout has been flushed before triggering the mouse event
   // (See Bug 1519808 for a rationale).
@@ -513,9 +521,10 @@ async function openContextMenu(selector = "#img1", win = window) {
   return contentAreaContextMenu;
 }
 
-async function closeContextMenu(contextMenu) {
+async function closeContextMenu(contextMenu, win = window) {
+  let doc = win.document;
   let contentAreaContextMenu =
-    contextMenu || document.getElementById("contentAreaContextMenu");
+    contextMenu || doc.getElementById("contentAreaContextMenu");
   let popupHiddenPromise = BrowserTestUtils.waitForEvent(
     contentAreaContextMenu,
     "popuphidden"

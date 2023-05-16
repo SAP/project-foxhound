@@ -13,6 +13,7 @@
 #include "mozilla/dom/FileSystemDirectoryIterator.h"
 #include "mozilla/dom/FileSystemFileHandle.h"
 #include "mozilla/dom/FileSystemHandle.h"
+#include "mozilla/dom/FileSystemLog.h"
 #include "mozilla/dom/FileSystemManager.h"
 #include "mozilla/dom/IterableIterator.h"
 #include "mozilla/dom/Promise.h"
@@ -108,7 +109,10 @@ class DoubleBufferQueueImpl
       return nullptr;
     }
 
-    next(aGlobal, aManager, promise);
+    next(aGlobal, aManager, promise, aError);
+    if (aError.Failed()) {
+      return nullptr;
+    }
 
     return promise.forget();
   }
@@ -117,7 +121,8 @@ class DoubleBufferQueueImpl
 
  protected:
   void next(nsIGlobalObject* aGlobal, RefPtr<FileSystemManager>& aManager,
-            RefPtr<Promise> aResult) {
+            RefPtr<Promise> aResult, ErrorResult& aError) {
+    LOG_VERBOSE(("next"));
     MOZ_ASSERT(aResult);
 
     Maybe<DataType> rawValue;
@@ -126,10 +131,8 @@ class DoubleBufferQueueImpl
     // we hit the end of a page?
     // How likely it is that it would that lead to wasted fetch operations?
     if (0u == mWithinPageIndex) {
-      ErrorResult rv;
-      RefPtr<Promise> promise = Promise::Create(aGlobal, rv);
-      if (rv.Failed()) {
-        aResult->MaybeReject(std::move(rv));
+      RefPtr<Promise> promise = Promise::Create(aGlobal, aError);
+      if (aError.Failed()) {
         return;
       }
 
@@ -158,14 +161,16 @@ class DoubleBufferQueueImpl
               nextInternal(value);
             }
 
-            IgnoredErrorResult rv;
             ResolveValue(global, manager, value, aResult);
           },
-          [](nsresult aRv) {});
+          [aResult](nsresult aRv) { aResult->MaybeReject(aRv); });
       promise->AppendNativeHandler(listener);
 
       FileSystemRequestHandler{}.GetEntries(aManager, mEntryId, mPageNumber,
-                                            promise, newPage);
+                                            promise, newPage, aError);
+      if (aError.Failed()) {
+        return;
+      }
 
       ++mPageNumber;
       return;

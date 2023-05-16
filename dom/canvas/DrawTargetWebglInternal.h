@@ -11,6 +11,7 @@
 
 #include "mozilla/HashFunctions.h"
 #include "mozilla/gfx/PathSkia.h"
+#include "mozilla/gfx/WPFGpuRaster.h"
 
 namespace mozilla::gfx {
 
@@ -106,16 +107,18 @@ class CacheEntryImpl : public CacheEntry, public LinkedListElement<RefPtr<T>> {
 };
 
 // CacheImpl manages a list of CacheEntry.
-template <typename T>
+template <typename T, bool BIG>
 class CacheImpl {
+ protected:
   typedef LinkedList<RefPtr<T>> ListType;
 
-  static constexpr size_t kNumChains = 17;
+  // Whether the cache should be small and space-efficient or prioritize speed.
+  static constexpr size_t kNumChains = BIG ? 499 : 17;
 
  public:
   ~CacheImpl() {
-    for (size_t i = 0; i < kNumChains; ++i) {
-      while (RefPtr<T> entry = mChains[i].popLast()) {
+    for (auto& chain : mChains) {
+      while (RefPtr<T> entry = chain.popLast()) {
         entry->Unlink();
       }
     }
@@ -344,7 +347,7 @@ class GlyphCacheEntry : public CacheEntryImpl<GlyphCacheEntry> {
 // Otherwise, the text run will be rendered to a new texture handle and
 // inserted into a new GlyphCacheEntry to represent it.
 class GlyphCache : public LinkedListElement<GlyphCache>,
-                   public CacheImpl<GlyphCacheEntry> {
+                   public CacheImpl<GlyphCacheEntry, false> {
  public:
   explicit GlyphCache(ScaledFont* aFont);
 
@@ -369,33 +372,62 @@ class GlyphCache : public LinkedListElement<GlyphCache>,
   ScaledFont* mFont;
 };
 
+struct QuantizedPath {
+  explicit QuantizedPath(const WGR::Path& aPath);
+  // Ensure the path can only be moved, but not copied.
+  QuantizedPath(QuantizedPath&&) noexcept;
+  QuantizedPath(const QuantizedPath&) = delete;
+  ~QuantizedPath();
+
+  bool operator==(const QuantizedPath&) const;
+
+  WGR::Path mPath;
+};
+
+struct PathVertexRange {
+  uint32_t mOffset;
+  uint32_t mLength;
+
+  PathVertexRange() : mOffset(0), mLength(0) {}
+  PathVertexRange(uint32_t aOffset, uint32_t aLength)
+      : mOffset(aOffset), mLength(aLength) {}
+
+  bool IsValid() const { return mLength > 0; }
+};
+
 // PathCacheEntry stores a rasterized version of a supplied path with a given
 // pattern.
 class PathCacheEntry : public CacheEntryImpl<PathCacheEntry> {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(PathCacheEntry, override)
 
-  PathCacheEntry(const SkPath& aPath, Pattern* aPattern,
+  PathCacheEntry(QuantizedPath&& aPath, Pattern* aPattern,
                  StoredStrokeOptions* aStrokeOptions, const Matrix& aTransform,
                  const IntRect& aBounds, const Point& aOrigin, HashNumber aHash,
                  float aSigma = -1.0f);
 
-  bool MatchesPath(const SkPath& aPath, const Pattern* aPattern,
+  bool MatchesPath(const QuantizedPath& aPath, const Pattern* aPattern,
                    const StrokeOptions* aStrokeOptions,
                    const Matrix& aTransform, const IntRect& aBounds,
                    const Point& aOrigin, HashNumber aHash, float aSigma);
 
-  static HashNumber HashPath(const SkPath& aPath, const Pattern* aPattern,
-                             const Matrix& aTransform, const IntRect& aBounds);
+  static HashNumber HashPath(const QuantizedPath& aPath,
+                             const Pattern* aPattern, const Matrix& aTransform,
+                             const IntRect& aBounds, const Point& aOrigin);
+
+  const QuantizedPath& GetPath() const { return mPath; }
 
   const Point& GetOrigin() const { return mOrigin; }
 
   // Valid if either a mask (no pattern) or there is valid pattern.
   bool IsValid() const override { return !mPattern || mPattern->IsValid(); }
 
+  const PathVertexRange& GetVertexRange() const { return mVertexRange; }
+  void SetVertexRange(const PathVertexRange& aRange) { mVertexRange = aRange; }
+
  private:
   // The actual path geometry supplied
-  SkPath mPath;
+  QuantizedPath mPath;
   // The transformed origin of the path
   Point mOrigin;
   // The pattern used to rasterize the path, if not a mask
@@ -404,16 +436,20 @@ class PathCacheEntry : public CacheEntryImpl<PathCacheEntry> {
   UniquePtr<StoredStrokeOptions> mStrokeOptions;
   // The shadow blur sigma
   float mSigma;
+  // If the path has cached geometry in the vertex buffer.
+  PathVertexRange mVertexRange;
 };
 
-class PathCache : public CacheImpl<PathCacheEntry> {
+class PathCache : public CacheImpl<PathCacheEntry, true> {
  public:
   PathCache() = default;
 
   already_AddRefed<PathCacheEntry> FindOrInsertEntry(
-      const SkPath& aPath, const Pattern* aPattern,
+      QuantizedPath aPath, const Pattern* aPattern,
       const StrokeOptions* aStrokeOptions, const Matrix& aTransform,
       const IntRect& aBounds, const Point& aOrigin, float aSigma = -1.0f);
+
+  void ClearVertexRanges();
 };
 
 }  // namespace mozilla::gfx

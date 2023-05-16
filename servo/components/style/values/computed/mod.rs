@@ -22,7 +22,9 @@ use crate::media_queries::Device;
 use crate::properties;
 use crate::properties::{ComputedValues, LonghandId, StyleBuilder};
 use crate::rule_cache::RuleCacheConditions;
-use crate::stylesheets::container_rule::ContainerInfo;
+use crate::stylesheets::container_rule::{
+    ContainerInfo, ContainerSizeQuery, ContainerSizeQueryResult,
+};
 use crate::values::specified::length::FontBaseSize;
 use crate::{ArcSlice, Atom, One};
 use euclid::{default, Point2D, Rect, Size2D};
@@ -79,7 +81,7 @@ pub use self::list::ListStyleType;
 pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
-pub use self::page::{PageName, PageOrientation, PageSize, PaperSize};
+pub use self::page::{PageName, PageSize, PageSizeOrientation, PaperSize};
 pub use self::percentage::{NonNegativePercentage, Percentage};
 pub use self::position::AspectRatio;
 pub use self::position::{
@@ -164,8 +166,11 @@ pub struct Context<'a> {
     #[cfg(feature = "servo")]
     pub cached_system_font: Option<()>,
 
-    /// Whether or not we are computing the media list in a media query
+    /// Whether or not we are computing the media list in a media query.
     pub in_media_query: bool,
+
+    /// Whether or not we are computing the container query condition.
+    pub in_container_query: bool,
 
     /// The quirks mode of this context.
     pub quirks_mode: QuirksMode,
@@ -189,9 +194,18 @@ pub struct Context<'a> {
     ///
     /// FIXME(emilio): Drop the refcell.
     pub rule_cache_conditions: RefCell<&'a mut RuleCacheConditions>,
+
+    /// Container size query for this context.
+    container_size_query: RefCell<ContainerSizeQuery<'a>>,
 }
 
 impl<'a> Context<'a> {
+    /// Lazily evaluate the container size query, returning the result.
+    pub fn get_container_size_query(&self) -> ContainerSizeQueryResult {
+        let mut resolved = self.container_size_query.borrow_mut();
+        resolved.get().clone()
+    }
+
     /// Creates a suitable context for media query evaluation, in which
     /// font-relative units compute against the system_font, and executes `f`
     /// with it.
@@ -204,11 +218,13 @@ impl<'a> Context<'a> {
             builder: StyleBuilder::for_inheritance(device, None, None),
             cached_system_font: None,
             in_media_query: true,
+            in_container_query: true,
             quirks_mode,
             for_smil_animation: false,
             container_info: None,
             for_non_inherited_property: None,
             rule_cache_conditions: RefCell::new(&mut conditions),
+            container_size_query: RefCell::new(ContainerSizeQuery::none()),
         };
         f(&context)
     }
@@ -218,6 +234,7 @@ impl<'a> Context<'a> {
     pub fn for_container_query_evaluation<F, R>(
         device: &Device,
         container_info_and_style: Option<(ContainerInfo, Arc<ComputedValues>)>,
+        container_size_query: ContainerSizeQuery,
         f: F,
     ) -> R
     where
@@ -235,15 +252,60 @@ impl<'a> Context<'a> {
         let context = Context {
             builder: StyleBuilder::for_inheritance(device, style, None),
             cached_system_font: None,
-            in_media_query: true,
+            in_media_query: false,
+            in_container_query: true,
             quirks_mode,
             for_smil_animation: false,
             container_info,
             for_non_inherited_property: None,
             rule_cache_conditions: RefCell::new(&mut conditions),
+            container_size_query: RefCell::new(container_size_query),
         };
 
         f(&context)
+    }
+
+    /// Creates a context suitable for more general cases.
+    pub fn new(
+        builder: StyleBuilder<'a>,
+        quirks_mode: QuirksMode,
+        rule_cache_conditions: &'a mut RuleCacheConditions,
+        container_size_query: ContainerSizeQuery<'a>,
+    ) -> Self {
+        Self {
+            builder,
+            cached_system_font: None,
+            in_media_query: false,
+            in_container_query: false,
+            quirks_mode,
+            container_info: None,
+            for_smil_animation: false,
+            for_non_inherited_property: None,
+            rule_cache_conditions: RefCell::new(rule_cache_conditions),
+            container_size_query: RefCell::new(container_size_query),
+        }
+    }
+
+    /// Creates a context suitable for computing animations.
+    pub fn new_for_animation(
+        builder: StyleBuilder<'a>,
+        for_smil_animation: bool,
+        quirks_mode: QuirksMode,
+        rule_cache_conditions: &'a mut RuleCacheConditions,
+        container_size_query: ContainerSizeQuery<'a>,
+    ) -> Self {
+        Self {
+            builder,
+            cached_system_font: None,
+            in_media_query: false,
+            in_container_query: false,
+            quirks_mode,
+            container_info: None,
+            for_smil_animation,
+            for_non_inherited_property: None,
+            rule_cache_conditions: RefCell::new(rule_cache_conditions),
+            container_size_query: RefCell::new(container_size_query),
+        }
     }
 
     /// The current device.
@@ -289,7 +351,7 @@ impl<'a> Context<'a> {
             vertical,
             font,
             size,
-            self.in_media_query,
+            self.in_media_or_container_query(),
             retrieve_math_scales,
         )
     }
@@ -300,8 +362,15 @@ impl<'a> Context<'a> {
         variant: ViewportVariant,
     ) -> default::Size2D<Au> {
         self.builder
+            .add_flags(ComputedValueFlags::USES_VIEWPORT_UNITS);
+        self.builder
             .device
             .au_viewport_size_for_viewport_unit_resolution(variant)
+    }
+
+    /// Whether we're in a media or container query.
+    pub fn in_media_or_container_query(&self) -> bool {
+        self.in_media_query || self.in_container_query
     }
 
     /// The default computed style we're getting our reset style from.

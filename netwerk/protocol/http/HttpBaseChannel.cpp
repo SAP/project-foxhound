@@ -98,6 +98,7 @@
 #include "nsServerTiming.h"
 #include "nsStreamListenerWrapper.h"
 #include "nsStreamUtils.h"
+#include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsURLHelper.h"
 #include "mozilla/RemoteLazyInputStreamChild.h"
@@ -106,6 +107,10 @@
 #include "nsQueryObject.h"
 
 using mozilla::dom::RequestMode;
+extern mozilla::LazyLogModule gORBLog;
+#define LOGORB(msg, ...)            \
+  MOZ_LOG(gORBLog, LogLevel::Debug, \
+          ("%s: %p " msg, __func__, this, ##__VA_ARGS__))
 
 namespace mozilla {
 namespace net {
@@ -222,6 +227,7 @@ HttpBaseChannel::HttpBaseChannel()
           StaticPrefs::browser_opaqueResponseBlocking()),
       mBlockOpaqueResponseAfterSniff(false),
       mCheckIsOpaqueResponseAllowedAfterSniff(false),
+      mChannelBlockedByOpaqueResponse(false),
       mDummyChannelForImageCache(false) {
   StoreApplyConversion(true);
   StoreAllowSTS(true);
@@ -295,6 +301,7 @@ void HttpBaseChannel::ReleaseMainThreadOnlyReferences() {
   arrayToRelease.AppendElement(mPrincipal.forget());
   arrayToRelease.AppendElement(mListener.forget());
   arrayToRelease.AppendElement(mCompressListener.forget());
+  arrayToRelease.AppendElement(mORB.forget());
 
   if (LoadAddedAsNonTailRequest()) {
     // RemoveNonTailRequest() on our request context must be called on the main
@@ -3004,24 +3011,24 @@ nsresult HttpBaseChannel::ValidateMIMEType() {
   return NS_OK;
 }
 
-bool HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
+OpaqueResponseAllowed HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   if (!mCachedOpaqueResponseBlockingPref) {
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   if (!mURI || !mResponseHead || !mLoadInfo) {
     // if there is no uri, no response head or no loadInfo, then there is
     // nothing to do
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   nsCOMPtr<nsIPrincipal> principal = mLoadInfo->GetLoadingPrincipal();
   if (!principal || principal->IsSystemPrincipal()) {
     // If it's a top-level load or a system principal, then there is nothing to
     // do.
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   // Check if the response is a opaque response, which means requestMode should
@@ -3035,7 +3042,7 @@ bool HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
       // Skip the RequestMode would be RequestMode::Same_origin
       contentPolicy == nsIContentPolicy::TYPE_INTERNAL_WORKER ||
       contentPolicy == nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER) {
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   uint32_t securityMode = mLoadInfo->GetSecurityMode();
@@ -3043,39 +3050,56 @@ bool HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
   if (securityMode !=
           nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT &&
       securityMode != nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL) {
-    return true;
+    LOGORB("Allowed: not no_cors requests");
+    return OpaqueResponseAllowed::Yes;
   }
 
   // Only continue when ResponseType would be ResponseType::Opaque
   if (mLoadInfo->GetTainting() != mozilla::LoadTainting::Opaque) {
-    return true;
+    LOGORB("Allowed: not opaque response");
+    return OpaqueResponseAllowed::Yes;
   }
 
-  // Exclude object/embed element loading
   auto extContentPolicyType = mLoadInfo->GetExternalContentPolicyType();
   if (extContentPolicyType == ExtContentPolicy::TYPE_OBJECT ||
-      extContentPolicyType == ExtContentPolicy::TYPE_OBJECT_SUBREQUEST) {
-    return true;
+      extContentPolicyType == ExtContentPolicy::TYPE_OBJECT_SUBREQUEST ||
+      extContentPolicyType == ExtContentPolicy::TYPE_WEBSOCKET ||
+      extContentPolicyType == ExtContentPolicy::TYPE_SAVEAS_DOWNLOAD) {
+    LOGORB("Allowed: object || websocket request || save as download");
+    return OpaqueResponseAllowed::Yes;
   }
 
   // Ignore the request from object or embed elements
   if (mLoadInfo->GetIsFromObjectOrEmbed()) {
-    return true;
+    LOGORB("Allowed: Request From <object> or <embed>");
+    return OpaqueResponseAllowed::Yes;
+  }
+
+  // Exclude no_cors System XHR
+  if (extContentPolicyType == ExtContentPolicy::TYPE_XMLHTTPREQUEST) {
+    if (securityMode ==
+        nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT) {
+      LOGORB("Allowed: System XHR");
+      return OpaqueResponseAllowed::Yes;
+    }
   }
 
   switch (GetOpaqueResponseBlockedReason(*mResponseHead)) {
     case OpaqueResponseBlockedReason::ALLOWED_SAFE_LISTED:
-      return true;
+      return OpaqueResponseAllowed::Yes;
     case OpaqueResponseBlockedReason::BLOCKED_BLOCKLISTED_NEVER_SNIFFED:
-      // XXXtt: Report To Console.
-      return false;
+      LOGORB("Blocked: BLOCKED_BLOCKLISTED_NEVER_SNIFFED");
+      LogORBError(mLoadInfo, mURI);
+      return OpaqueResponseAllowed::No;
     case OpaqueResponseBlockedReason::BLOCKED_206_AND_BLOCKLISTED:
-      // XXXtt: Report To Console.
-      return false;
+      LOGORB("Blocked: BLOCKED_206_AND_BLOCKEDLISTED");
+      LogORBError(mLoadInfo, mURI);
+      return OpaqueResponseAllowed::No;
     case OpaqueResponseBlockedReason::
         BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN:
-      // XXXtt: Report To Console.
-      return false;
+      LOGORB("Blocked: BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN");
+      LogORBError(mLoadInfo, mURI);
+      return OpaqueResponseAllowed::No;
     default:
       break;
   }
@@ -3088,7 +3112,7 @@ bool HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
     bool isMediaInitialRequest;
     mLoadInfo->GetIsMediaInitialRequest(&isMediaInitialRequest);
     if (!isMediaInitialRequest) {
-      return true;
+      return OpaqueResponseAllowed::Yes;
     }
   }
 
@@ -3102,15 +3126,18 @@ bool HttpBaseChannel::EnsureOpaqueResponseIsAllowed() {
                  nsIChannel::LOAD_MEDIA_SNIFFER_OVERRIDES_CONTENT_TYPE);
   mCheckIsOpaqueResponseAllowedAfterSniff = true;
 
-  return true;
+  mORB = new OpaqueResponseBlocker(mListener, this);
+  mListener = mORB;
+
+  return OpaqueResponseAllowed::Yes;
 }
 
-Result<bool, nsresult>
+Result<OpaqueResponseAllowed, nsresult>
 HttpBaseChannel::EnsureOpaqueResponseIsAllowedAfterSniff() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   if (!mCheckIsOpaqueResponseAllowedAfterSniff) {
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   MOZ_ASSERT(mCachedOpaqueResponseBlockingPref);
@@ -3126,15 +3153,17 @@ HttpBaseChannel::EnsureOpaqueResponseIsAllowedAfterSniff() {
   mCheckIsOpaqueResponseAllowedAfterSniff = false;
 
   if (mBlockOpaqueResponseAfterSniff) {
-    // XXXtt: Report To Console.
-    return false;
+    LOGORB("Blocked: blocked after sniff");
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponseAllowed::No;
   }
 
   bool isMediaRequest;
   mLoadInfo->GetIsMediaRequest(&isMediaRequest);
   if (isMediaRequest) {
-    // XXXtt: Report To Console.
-    return false;
+    LOGORB("Blocked: media request");
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponseAllowed::No;
   }
 
   nsAutoCString contentType;
@@ -3144,31 +3173,35 @@ HttpBaseChannel::EnsureOpaqueResponseIsAllowedAfterSniff() {
   }
 
   if (!mResponseHead) {
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   nsAutoCString contentTypeOptionsHeader;
   if (mResponseHead->GetContentTypeOptionsHeader(contentTypeOptionsHeader) &&
       contentTypeOptionsHeader.EqualsIgnoreCase("nosniff")) {
-    // XXXtt: Report To Console.
-    return false;
+    LOGORB("Blocked: nosniff");
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponseAllowed::No;
   }
 
   if (mResponseHead->Status() < 200 || mResponseHead->Status() > 299) {
-    // XXXtt: Report To Console.
-    return false;
+    LOGORB("Blocked: status code (%d) is not allowed ",
+           mResponseHead->Status());
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponseAllowed::No;
   }
 
   if (contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE) ||
       contentType.EqualsLiteral(APPLICATION_OCTET_STREAM)) {
-    return true;
+    return OpaqueResponseAllowed::Yes;
   }
 
   if (StringBeginsWith(contentType, "image/"_ns) ||
       StringBeginsWith(contentType, "video/"_ns) ||
       StringBeginsWith(contentType, "audio/"_ns)) {
-    // XXXtt: Report To Console.
-    return false;
+    LOGORB("Blocked: ContentType is image/video/audio");
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponseAllowed::No;
   }
 
   // XXXtt: If response's body parses as JavaScript and does not parse as JSON,
@@ -3177,11 +3210,26 @@ HttpBaseChannel::EnsureOpaqueResponseIsAllowedAfterSniff() {
   int64_t contentLength;
   rv = GetContentLength(&contentLength);
   if (NS_FAILED(rv)) {
-    // XXXtt: Report To Console.
-    return false;
+    LOGORB("Blocked: NO Content Length");
+    LogORBError(mLoadInfo, mURI);
+    return OpaqueResponseAllowed::No;
   }
 
-  return true;
+  return OpaqueResponseAllowed::Yes;
+}
+
+void HttpBaseChannel::BlockOpaqueResponseAfterSniff() {
+  mBlockOpaqueResponseAfterSniff = true;
+
+  if (mORB) {
+    mORB->BlockResponse(this, NS_ERROR_FAILURE);
+  }
+}
+
+void HttpBaseChannel::AllowOpaqueResponseAfterSniff() {
+  if (mORB) {
+    mORB->AllowResponse();
+  }
 }
 
 NS_IMETHODIMP
@@ -4101,6 +4149,7 @@ void HttpBaseChannel::ReleaseListeners() {
   mCallbacks = nullptr;
   mProgressSink = nullptr;
   mCompressListener = nullptr;
+  mORB = nullptr;
 }
 
 void HttpBaseChannel::DoNotifyListener() {
@@ -4437,8 +4486,10 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
     TimeStamp newRedirectEnd;
     if (shouldHideTiming) {
       newRedirectEnd = config.timedChannelInfo->redirectEnd();
-    } else {
+    } else if (!config.timedChannelInfo->responseEnd().IsNull()) {
       newRedirectEnd = config.timedChannelInfo->responseEnd();
+    } else {
+      newRedirectEnd = TimeStamp::Now();
     }
     newTimedChannel->SetRedirectEnd(newRedirectEnd);
 
@@ -5748,6 +5799,24 @@ NS_IMETHODIMP HttpBaseChannel::ComputeCrossOriginOpenerPolicy(
     bool isCoepCredentiallessEnabled;
     rv = mLoadInfo->GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(
         &isCoepCredentiallessEnabled);
+    if (!isCoepCredentiallessEnabled) {
+      nsAutoCString originTrialToken;
+      Unused << mResponseHead->GetHeader(nsHttp::OriginTrial, originTrialToken);
+      if (!originTrialToken.IsEmpty()) {
+        nsCOMPtr<nsIPrincipal> resultPrincipal;
+        rv = nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
+            this, getter_AddRefs(resultPrincipal));
+        if (!NS_WARN_IF(NS_FAILED(rv))) {
+          OriginTrials trials;
+          trials.UpdateFromToken(NS_ConvertASCIItoUTF16(originTrialToken),
+                                 resultPrincipal);
+          if (trials.IsEnabled(OriginTrial::CoepCredentialless)) {
+            isCoepCredentiallessEnabled = true;
+          }
+        }
+      }
+    }
+
     NS_ENSURE_SUCCESS(rv, rv);
     if (NS_SUCCEEDED(
             GetResponseEmbedderPolicy(isCoepCredentiallessEnabled, &coep)) &&

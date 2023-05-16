@@ -75,8 +75,8 @@ class ServoStyleSet;
 
 /*
  * Base class for block and inline frames.
- * The block frame has an additional child list, kAbsoluteList, which
- * contains the absolutely positioned frames.
+ * The block frame has an additional child list, FrameChildListID::Absolute,
+ * which contains the absolutely positioned frames.
  */
 class nsBlockFrame : public nsContainerFrame {
   using BlockReflowState = mozilla::BlockReflowState;
@@ -116,11 +116,11 @@ class nsBlockFrame : public nsContainerFrame {
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
             nsIFrame* aPrevInFlow) override;
   void SetInitialChildList(ChildListID aListID,
-                           nsFrameList& aChildList) override;
-  void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
+                           nsFrameList&& aChildList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                     const nsLineList::iterator* aPrevFrameLine,
-                    nsFrameList& aFrameList) override;
+                    nsFrameList&& aFrameList) override;
   void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
   nsContainerFrame* GetContentInsertionFrame() override;
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
@@ -513,7 +513,7 @@ class nsBlockFrame : public nsContainerFrame {
    * aPrevSiblingLine, if present, must be the line containing aPrevSibling.
    * Providing it will make this function faster.
    */
-  void AddFrames(nsFrameList& aFrameList, nsIFrame* aPrevSibling,
+  void AddFrames(nsFrameList&& aFrameList, nsIFrame* aPrevSibling,
                  const nsLineList::iterator* aPrevSiblingLine);
 
   // Return the :-moz-block-ruby-content child frame, if any.
@@ -780,6 +780,15 @@ class nsBlockFrame : public nsContainerFrame {
                              nsIFrame* aFrame);
 
   /**
+   * Set line-break-before status in aState.mReflowStatus because aLine cannot
+   * be placed on this page/column and we don't want to break within ourselves.
+   * Also, mark the aLine dirty, and set aKeepReflowGoing to false;
+   */
+  void SetBreakBeforeStatusBeforeLine(BlockReflowState& aState,
+                                      LineIterator aLine,
+                                      bool* aKeepReflowGoing);
+
+  /**
    * Push aLine (and any after it), since it cannot be placed on this
    * page/column.  Set aKeepReflowGoing to false and set
    * flag aState.mReflowStatus as incomplete.
@@ -861,10 +870,12 @@ class nsBlockFrame : public nsContainerFrame {
     explicit nsAutoOOFFrameList(nsBlockFrame* aBlock)
         : mPropValue(aBlock->GetOverflowOutOfFlows()), mBlock(aBlock) {
       if (mPropValue) {
-        mList = *mPropValue;
+        mList = std::move(*mPropValue);
       }
     }
-    ~nsAutoOOFFrameList() { mBlock->SetOverflowOutOfFlows(mList, mPropValue); }
+    ~nsAutoOOFFrameList() {
+      mBlock->SetOverflowOutOfFlows(std::move(mList), mPropValue);
+    }
 
    protected:
     nsFrameList* const mPropValue;
@@ -873,7 +884,9 @@ class nsBlockFrame : public nsContainerFrame {
   friend struct nsAutoOOFFrameList;
 
   nsFrameList* GetOverflowOutOfFlows() const;
-  void SetOverflowOutOfFlows(const nsFrameList& aList, nsFrameList* aPropValue);
+
+  // This takes ownership of the frames in aList.
+  void SetOverflowOutOfFlows(nsFrameList&& aList, nsFrameList* aPropValue);
 
   /**
    * @return the inside ::marker frame or nullptr if we don't have one.

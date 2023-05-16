@@ -155,9 +155,7 @@ bool Realm::ensureJitRealmExists(JSContext* cx) {
     return false;
   }
 
-  if (!jitRealm->initialize(cx, zone()->allocNurseryStrings)) {
-    return false;
-  }
+  jitRealm->initialize(zone()->allocNurseryStrings);
 
   jitRealm_ = std::move(jitRealm);
   return true;
@@ -166,7 +164,7 @@ bool Realm::ensureJitRealmExists(JSContext* cx) {
 #ifdef JSGC_HASH_TABLE_CHECKS
 
 void js::DtoaCache::checkCacheAfterMovingGC() {
-  MOZ_ASSERT(!s || !IsForwarded(s));
+  MOZ_ASSERT(!str || !IsForwarded(str));
 }
 
 #endif  // JSGC_HASH_TABLE_CHECKS

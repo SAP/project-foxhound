@@ -15,10 +15,13 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.sys.mjs",
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   LoadURIDelegate: "resource://gre/modules/LoadURIDelegate.jsm",
-  GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "ReferrerInfo", () =>

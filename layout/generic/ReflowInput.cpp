@@ -271,7 +271,8 @@ bool ReflowInput::ShouldReflowAllKids() const {
           mFrame->HasAnyStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE));
 }
 
-void ReflowInput::SetComputedISize(nscoord aComputedISize) {
+void ReflowInput::SetComputedISize(nscoord aComputedISize,
+                                   ResetResizeFlags aFlags) {
   // It'd be nice to assert that |frame| is not in reflow, but this fails for
   // two reasons:
   //
@@ -287,38 +288,33 @@ void ReflowInput::SetComputedISize(nscoord aComputedISize) {
 
   NS_WARNING_ASSERTION(aComputedISize >= 0, "Invalid computed inline-size!");
   if (ComputedISize() != aComputedISize) {
-    ComputedISize() = std::max(0, aComputedISize);
-    const LayoutFrameType frameType = mFrame->Type();
-    if (frameType != LayoutFrameType::Viewport) {
-      InitResizeFlags(mFrame->PresContext(), frameType);
+    mComputedSize.ISize(mWritingMode) = std::max(0, aComputedISize);
+    if (aFlags == ResetResizeFlags::Yes) {
+      InitResizeFlags(mFrame->PresContext(), mFrame->Type());
     }
   }
 }
 
-void ReflowInput::SetComputedBSize(nscoord aComputedBSize) {
+void ReflowInput::SetComputedBSize(nscoord aComputedBSize,
+                                   ResetResizeFlags aFlags) {
   // It'd be nice to assert that |frame| is not in reflow, but this fails
-  // because:
+  // for two reasons:
   //
-  //    nsIFrame::BoxReflow creates a reflow input for its parent.  This reflow
+  // 1) Viewport frames reset the computed block size on a copy of their reflow
+  //    input when reflowing fixed-pos kids. In that case we actually don't want
+  //    to mess with the resize flags, because comparing the frame's rect to the
+  //    munged computed bsize is pointless.
+  // 2) nsIFrame::BoxReflow creates a reflow input for its parent.  This reflow
   //    input is not used to reflow the parent, but just as a parent for the
   //    frame's own reflow input.  So given a nsBoxFrame inside some non-XUL
   //    (like a text control, for example), we'll end up creating a reflow
   //    input for the parent while the parent is reflowing.
 
+  NS_WARNING_ASSERTION(aComputedBSize >= 0, "Invalid computed block-size!");
   if (ComputedBSize() != aComputedBSize) {
-    SetComputedBSizeWithoutResettingResizeFlags(aComputedBSize);
+    mComputedSize.BSize(mWritingMode) = std::max(0, aComputedBSize);
     InitResizeFlags(mFrame->PresContext(), mFrame->Type());
   }
-}
-
-void ReflowInput::SetComputedBSizeWithoutResettingResizeFlags(
-    nscoord aComputedBSize) {
-  // Viewport frames reset the computed block size on a copy of their reflow
-  // input when reflowing fixed-pos kids.  In that case we actually don't
-  // want to mess with the resize flags, because comparing the frame's rect
-  // to the munged computed isize is pointless.
-  NS_WARNING_ASSERTION(aComputedBSize >= 0, "Invalid computed block-size!");
-  ComputedBSize() = std::max(0, aComputedBSize);
 }
 
 void ReflowInput::Init(nsPresContext* aPresContext,
@@ -354,7 +350,7 @@ void ReflowInput::Init(nsPresContext* aPresContext,
   if (type == mozilla::LayoutFrameType::Placeholder) {
     // Placeholders have a no-op Reflow method that doesn't need the rest of
     // this initialization, so we bail out early.
-    ComputedBSize() = ComputedISize() = 0;
+    mComputedSize.SizeTo(mWritingMode, 0, 0);
     return;
   }
 
@@ -423,7 +419,7 @@ void ReflowInput::Init(nsPresContext* aPresContext,
     // columns in the container's block direction
     if (type == LayoutFrameType::ColumnSet &&
         mStylePosition->ISize(mWritingMode).IsAuto()) {
-      ComputedISize() = NS_UNCONSTRAINEDSIZE;
+      SetComputedISize(NS_UNCONSTRAINEDSIZE, ResetResizeFlags::No);
     } else {
       SetAvailableBSize(NS_UNCONSTRAINEDSIZE);
     }
@@ -1766,8 +1762,7 @@ void ReflowInput::InitAbsoluteConstraints(nsPresContext* aPresContext,
         ComputedLogicalMargin(wm).Size(wm) +
             ComputedLogicalOffsets(wm).Size(wm),
         ComputedLogicalBorderPadding(wm).Size(wm), {}, mComputeSizeFlags);
-    ComputedISize() = sizeResult.mLogicalSize.ISize(wm);
-    ComputedBSize() = sizeResult.mLogicalSize.BSize(wm);
+    mComputedSize = sizeResult.mLogicalSize;
     NS_ASSERTION(ComputedISize() >= 0, "Bogus inline-size");
     NS_ASSERTION(
         ComputedBSize() == NS_UNCONSTRAINEDSIZE || ComputedBSize() >= 0,
@@ -1915,8 +1910,7 @@ void ReflowInput::InitAbsoluteConstraints(nsPresContext* aPresContext,
     ComputeAbsPosBlockAutoMargin(availMarginSpace, cbwm, marginBStartIsAuto,
                                  marginBEndIsAuto, margin, offsets);
   }
-  ComputedBSize() = computedSize.ConvertTo(wm, cbwm).BSize(wm);
-  ComputedISize() = computedSize.ConvertTo(wm, cbwm).ISize(wm);
+  mComputedSize = computedSize.ConvertTo(wm, cbwm);
 
   SetComputedLogicalOffsets(cbwm, offsets);
   SetComputedLogicalMargin(cbwm, margin);
@@ -2174,21 +2168,18 @@ void ReflowInput::InitConstraints(
     SetComputedLogicalOffsets(wm, LogicalMargin(wm));
 
     const auto borderPadding = ComputedLogicalBorderPadding(wm);
-    ComputedISize() = AvailableISize() - borderPadding.IStartEnd(wm);
-    if (ComputedISize() < 0) {
-      ComputedISize() = 0;
-    }
-    if (AvailableBSize() != NS_UNCONSTRAINEDSIZE) {
-      ComputedBSize() = AvailableBSize() - borderPadding.BStartEnd(wm);
-      if (ComputedBSize() < 0) {
-        ComputedBSize() = 0;
-      }
-    } else {
-      ComputedBSize() = NS_UNCONSTRAINEDSIZE;
-    }
+    SetComputedISize(
+        std::max(0, AvailableISize() - borderPadding.IStartEnd(wm)),
+        ResetResizeFlags::No);
+    SetComputedBSize(
+        AvailableBSize() != NS_UNCONSTRAINEDSIZE
+            ? std::max(0, AvailableBSize() - borderPadding.BStartEnd(wm))
+            : NS_UNCONSTRAINEDSIZE,
+        ResetResizeFlags::No);
 
-    ComputedMinISize() = ComputedMinBSize() = 0;
-    ComputedMaxBSize() = ComputedMaxBSize() = NS_UNCONSTRAINEDSIZE;
+    mComputedMinSize.SizeTo(mWritingMode, 0, 0);
+    mComputedMaxSize.SizeTo(mWritingMode, NS_UNCONSTRAINEDSIZE,
+                            NS_UNCONSTRAINEDSIZE);
   } else {
     // Get the containing block's reflow input
     const ReflowInput* cbri = mCBReflowInput;
@@ -2304,19 +2295,22 @@ void ReflowInput::InitConstraints(
       // calc() with both percentages and lengths act like auto on internal
       // table elements
       if (isAutoISize || inlineSize.HasLengthAndPercentage()) {
-        ComputedISize() = AvailableISize();
-
-        if ((ComputedISize() != NS_UNCONSTRAINEDSIZE) && !rowOrRowGroup) {
+        if (AvailableISize() != NS_UNCONSTRAINEDSIZE && !rowOrRowGroup) {
           // Internal table elements don't have margins. Only tables and
           // cells have border and padding
-          ComputedISize() -= ComputedLogicalBorderPadding(wm).IStartEnd(wm);
-          if (ComputedISize() < 0) ComputedISize() = 0;
+          SetComputedISize(
+              std::max(0, AvailableISize() -
+                              ComputedLogicalBorderPadding(wm).IStartEnd(wm)),
+              ResetResizeFlags::No);
+        } else {
+          SetComputedISize(AvailableISize(), ResetResizeFlags::No);
         }
         NS_ASSERTION(ComputedISize() >= 0, "Bogus computed isize");
 
       } else {
-        ComputedISize() =
-            ComputeISizeValue(cbSize, mStylePosition->mBoxSizing, inlineSize);
+        SetComputedISize(
+            ComputeISizeValue(cbSize, mStylePosition->mBoxSizing, inlineSize),
+            ResetResizeFlags::No);
       }
 
       // Calculate the computed block size
@@ -2328,17 +2322,18 @@ void ReflowInput::InitConstraints(
       // calc() with both percentages and lengths acts like 'auto' on internal
       // table elements
       if (isAutoBSize || blockSize.HasLengthAndPercentage()) {
-        ComputedBSize() = NS_UNCONSTRAINEDSIZE;
+        SetComputedBSize(NS_UNCONSTRAINEDSIZE, ResetResizeFlags::No);
       } else {
-        ComputedBSize() =
+        SetComputedBSize(
             ComputeBSizeValue(cbSize.BSize(wm), mStylePosition->mBoxSizing,
-                              blockSize.AsLengthPercentage());
+                              blockSize.AsLengthPercentage()),
+            ResetResizeFlags::No);
       }
 
       // Doesn't apply to internal table elements
-      ComputedMinISize() = ComputedMinBSize() = 0;
-      ComputedMaxISize() = ComputedMaxBSize() = NS_UNCONSTRAINEDSIZE;
-
+      mComputedMinSize.SizeTo(mWritingMode, 0, 0);
+      mComputedMaxSize.SizeTo(mWritingMode, NS_UNCONSTRAINEDSIZE,
+                              NS_UNCONSTRAINEDSIZE);
     } else if (mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
                mStyleDisplay->IsAbsolutelyPositionedStyle() &&
                // XXXfr hack for making frames behave properly when in overflow
@@ -2957,28 +2952,28 @@ void ReflowInput::ComputeMinMaxValues(const LogicalSize& aCBSize) {
   // even there, it's supposed to be ignored (i.e. treated as 0) until
   // the flex container explicitly resolves & considers it.)
   if (minISize.IsAuto()) {
-    ComputedMinISize() = 0;
+    SetComputedMinISize(0);
   } else {
-    ComputedMinISize() =
-        ComputeISizeValue(aCBSize, mStylePosition->mBoxSizing, minISize);
+    SetComputedMinISize(
+        ComputeISizeValue(aCBSize, mStylePosition->mBoxSizing, minISize));
   }
 
   if (mIsThemed) {
-    ComputedMinISize() = std::max(ComputedMinISize(), minWidgetSize.ISize(wm));
+    SetComputedMinISize(std::max(ComputedMinISize(), minWidgetSize.ISize(wm)));
   }
 
   if (maxISize.IsNone()) {
     // Specified value of 'none'
-    ComputedMaxISize() = NS_UNCONSTRAINEDSIZE;  // no limit
+    SetComputedMaxISize(NS_UNCONSTRAINEDSIZE);
   } else {
-    ComputedMaxISize() =
-        ComputeISizeValue(aCBSize, mStylePosition->mBoxSizing, maxISize);
+    SetComputedMaxISize(
+        ComputeISizeValue(aCBSize, mStylePosition->mBoxSizing, maxISize));
   }
 
   // If the computed value of 'min-width' is greater than the value of
   // 'max-width', 'max-width' is set to the value of 'min-width'
   if (ComputedMinISize() > ComputedMaxISize()) {
-    ComputedMaxISize() = ComputedMinISize();
+    SetComputedMaxISize(ComputedMinISize());
   }
 
   // Check for percentage based values and a containing block height that
@@ -3001,30 +2996,30 @@ void ReflowInput::ComputeMinMaxValues(const LogicalSize& aCBSize) {
   // even there, it's supposed to be ignored (i.e. treated as 0) until
   // the flex container explicitly resolves & considers it.)
   if (BSizeBehavesAsInitialValue(minBSize)) {
-    ComputedMinBSize() = 0;
+    SetComputedMinBSize(0);
   } else {
-    ComputedMinBSize() =
-        ComputeBSizeValue(bPercentageBasis, mStylePosition->mBoxSizing,
-                          minBSize.AsLengthPercentage());
+    SetComputedMinBSize(ComputeBSizeValue(bPercentageBasis,
+                                          mStylePosition->mBoxSizing,
+                                          minBSize.AsLengthPercentage()));
   }
 
   if (mIsThemed) {
-    ComputedMinBSize() = std::max(ComputedMinBSize(), minWidgetSize.BSize(wm));
+    SetComputedMinBSize(std::max(ComputedMinBSize(), minWidgetSize.BSize(wm)));
   }
 
   if (BSizeBehavesAsInitialValue(maxBSize)) {
     // Specified value of 'none'
-    ComputedMaxBSize() = NS_UNCONSTRAINEDSIZE;  // no limit
+    SetComputedMaxBSize(NS_UNCONSTRAINEDSIZE);
   } else {
-    ComputedMaxBSize() =
-        ComputeBSizeValue(bPercentageBasis, mStylePosition->mBoxSizing,
-                          maxBSize.AsLengthPercentage());
+    SetComputedMaxBSize(ComputeBSizeValue(bPercentageBasis,
+                                          mStylePosition->mBoxSizing,
+                                          maxBSize.AsLengthPercentage()));
   }
 
   // If the computed value of 'min-height' is greater than the value of
   // 'max-height', 'max-height' is set to the value of 'min-height'
   if (ComputedMinBSize() > ComputedMaxBSize()) {
-    ComputedMaxBSize() = ComputedMinBSize();
+    SetComputedMaxBSize(ComputedMinBSize());
   }
 }
 

@@ -18,6 +18,15 @@ ChromeUtils.defineModuleGetter(
   "OriginControls",
   "resource://gre/modules/ExtensionPermissions.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  lazy,
+  "ExtensionPermissions",
+  "resource://gre/modules/ExtensionPermissions.jsm"
+);
+ChromeUtils.defineESModuleGetters(lazy, {
+  SITEPERMS_ADDON_TYPE:
+    "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
+});
 
 customElements.define(
   "addon-progress-notification",
@@ -631,8 +640,19 @@ var gXPInstallObserver = {
           progressNotification.remove();
         }
 
+        // The informational content differs somewhat for site permission
+        // add-ons. AOM no longer supports installing multiple addons,
+        // so the array handling here is vestigial.
+        let isSitePermissionAddon = installInfo.installs.every(
+          ({ addon }) => addon?.type === lazy.SITEPERMS_ADDON_TYPE
+        );
         let hasHost = !!options.displayURI;
-        if (hasHost) {
+
+        if (isSitePermissionAddon) {
+          messageString = gNavigatorBundle.getString(
+            "sitePermissionInstallFirstPrompt.header"
+          );
+        } else if (hasHost) {
           messageString = gNavigatorBundle.getFormattedString(
             "xpinstallPromptMessage.header",
             ["<>"]
@@ -657,7 +677,12 @@ var gXPInstallObserver = {
           while (message.firstChild) {
             message.firstChild.remove();
           }
-          if (hasHost) {
+
+          if (isSitePermissionAddon) {
+            message.textContent = gNavigatorBundle.getString(
+              "sitePermissionInstallFirstPrompt.message"
+            );
+          } else if (hasHost) {
             let text = gNavigatorBundle.getString(
               "xpinstallPromptMessage.message"
             );
@@ -670,14 +695,17 @@ var gXPInstallObserver = {
               "xpinstallPromptMessage.message.unknown"
             );
           }
+
+          let article = isSitePermissionAddon
+            ? "site-permission-addons"
+            : "unlisted-extensions-risks";
           let learnMore = doc.getElementById("addon-install-blocked-info");
           learnMore.textContent = gNavigatorBundle.getString(
             "xpinstallPromptMessage.learnMore"
           );
           learnMore.setAttribute(
             "href",
-            Services.urlFormatter.formatURLPref("app.support.baseURL") +
-              "unlisted-extensions-risks"
+            Services.urlFormatter.formatURLPref("app.support.baseURL") + article
           );
         };
 
@@ -1336,7 +1364,7 @@ customElements.define(
       this.setAttribute("extension-id", this.addon.id);
 
       let policy = WebExtensionPolicy.getByID(this.addon.id);
-      this.setAttribute(
+      this.toggleAttribute(
         "attention",
         lazy.OriginControls.getAttention(policy, this.ownerGlobal)
       );
@@ -1377,9 +1405,6 @@ var gUnifiedExtensions = {
     }
 
     if (this.isEnabled) {
-      MozXULElement.insertFTLIfNeeded("preview/originControls.ftl");
-      MozXULElement.insertFTLIfNeeded("preview/unifiedExtensions.ftl");
-
       this._button = document.getElementById("unified-extensions-button");
       // TODO: Bug 1778684 - Auto-hide button when there is no active extension.
       this._button.hidden = false;
@@ -1387,9 +1412,22 @@ var gUnifiedExtensions = {
       document
         .getElementById("nav-bar")
         .setAttribute("unifiedextensionsbuttonshown", true);
+
+      gBrowser.addTabsProgressListener(this);
+      window.addEventListener("TabSelect", () => this.updateAttention());
+
+      this.permListener = () => this.updateAttention();
+      lazy.ExtensionPermissions.addListener(this.permListener);
     }
 
     this._initialized = true;
+  },
+
+  uninit() {
+    if (this.permListener) {
+      lazy.ExtensionPermissions.removeListener(this.permListener);
+      this.permListener = null;
+    }
   },
 
   get isEnabled() {
@@ -1397,6 +1435,34 @@ var gUnifiedExtensions = {
       "extensions.unifiedExtensions.enabled",
       false
     );
+  },
+
+  onLocationChange(browser, webProgress, _request, _uri, flags) {
+    // Only update on top-level cross-document navigations in the selected tab.
+    if (
+      webProgress.isTopLevel &&
+      browser === gBrowser.selectedBrowser &&
+      !(flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT)
+    ) {
+      this.updateAttention();
+    }
+  },
+
+  // Update the attention indicator for the whole unified extensions button.
+  async updateAttention() {
+    for (let addon of await this.getActiveExtensions()) {
+      let policy = WebExtensionPolicy.getByID(addon.id);
+      let widget = this.browserActionFor(policy)?.widget;
+
+      // Only show for extensions which are not already visible in the toolbar.
+      if (!widget || widget.areaType !== CustomizableUI.TYPE_TOOLBAR) {
+        if (lazy.OriginControls.getAttention(policy, window)) {
+          this.button.toggleAttribute("attention", true);
+          return;
+        }
+      }
+    }
+    this.button.toggleAttribute("attention", false);
   },
 
   getPopupAnchorID(aBrowser, aWindow) {
@@ -1407,7 +1473,7 @@ var gUnifiedExtensions = {
       if (!aBrowser[attr]) {
         // A hacky way of setting the popup anchor outside the usual url bar
         // icon box, similar to how it was done for CFR.
-        // See: https://searchfox.org/mozilla-central/rev/847b64cc28b74b44c379f9bff4f415b97da1c6d7/toolkit/modules/PopupNotifications.jsm#42
+        // See: https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/PopupNotifications.sys.mjs#40
         aBrowser[attr] = aWindow.document.getElementById(
           anchorID
           // Anchor on the toolbar icon to position the popup right below the
@@ -1474,8 +1540,34 @@ var gUnifiedExtensions = {
     }
   },
 
+  _panel: null,
+  get panel() {
+    // Lazy load the unified-extensions-panel panel the first time we need to display it.
+    if (!this._panel) {
+      let template = document.getElementById(
+        "unified-extensions-panel-template"
+      );
+      template.replaceWith(template.content);
+      this._panel = document.getElementById("unified-extensions-panel");
+      let customizationArea = this._panel.querySelector(
+        "#unified-extensions-area"
+      );
+      CustomizableUI.registerPanelNode(
+        customizationArea,
+        CustomizableUI.AREA_ADDONS
+      );
+      CustomizableUI.addPanelCloseListeners(this._panel);
+    }
+    return this._panel;
+  },
+
   async togglePanel(aEvent) {
     if (!CustomizationHandler.isCustomizing()) {
+      if (aEvent && aEvent.button !== 0) {
+        return;
+      }
+
+      let panel = this.panel;
       // The button should directly open `about:addons` when there is no active
       // extension to show in the panel.
       if ((await this.getActiveExtensions()).length === 0) {
@@ -1505,10 +1597,13 @@ var gUnifiedExtensions = {
       }
 
       if (this._button.open) {
-        PanelMultiView.hidePopup(this._listView.closest("panel"));
+        PanelMultiView.hidePopup(panel);
         this._button.open = false;
       } else {
-        PanelUI.showSubView("unified-extensions-view", this._button, aEvent);
+        panel.hidden = false;
+        PanelMultiView.openPopup(panel, this._button, {
+          triggerEvent: aEvent,
+        });
       }
     }
 
@@ -1541,15 +1636,18 @@ var gUnifiedExtensions = {
 
     ExtensionsUI.originControlsMenu(menu, id);
 
-    // Ideally, we wouldn't do that because `browserActionFor()` will only be
-    // defined in `global` when at least one extension has required loading the
-    // `ext-browserAction` code.
-    const browserAction = lazy.ExtensionParent.apiManager.global.browserActionFor?.(
-      WebExtensionPolicy.getByID(id)?.extension
-    );
+    const browserAction = this.browserActionFor(WebExtensionPolicy.getByID(id));
     if (browserAction) {
       browserAction.updateContextMenu(menu);
     }
+  },
+
+  browserActionFor(policy) {
+    // Ideally, we wouldn't do that because `browserActionFor()` will only be
+    // defined in `global` when at least one extension has required loading the
+    // `ext-browserAction` code.
+    let method = lazy.ExtensionParent.apiManager.global.browserActionFor;
+    return method?.(policy?.extension);
   },
 
   async manageExtension(menu) {

@@ -59,20 +59,21 @@ void nsFrameManager::Destroy() {
 
 //----------------------------------------------------------------------
 void nsFrameManager::AppendFrames(nsContainerFrame* aParentFrame,
-                                  ChildListID aListID,
-                                  nsFrameList& aFrameList) {
+                                  FrameChildListID aListID,
+                                  nsFrameList&& aFrameList) {
   if (aParentFrame->IsAbsoluteContainer() &&
       aListID == aParentFrame->GetAbsoluteListID()) {
     aParentFrame->GetAbsoluteContainingBlock()->AppendFrames(
-        aParentFrame, aListID, aFrameList);
+        aParentFrame, aListID, std::move(aFrameList));
   } else {
-    aParentFrame->AppendFrames(aListID, aFrameList);
+    aParentFrame->AppendFrames(aListID, std::move(aFrameList));
   }
 }
 
 void nsFrameManager::InsertFrames(nsContainerFrame* aParentFrame,
-                                  ChildListID aListID, nsIFrame* aPrevFrame,
-                                  nsFrameList& aFrameList) {
+                                  FrameChildListID aListID,
+                                  nsIFrame* aPrevFrame,
+                                  nsFrameList&& aFrameList) {
   MOZ_ASSERT(
       !aPrevFrame ||
           (!aPrevFrame->GetNextContinuation() ||
@@ -84,13 +85,15 @@ void nsFrameManager::InsertFrames(nsContainerFrame* aParentFrame,
   if (aParentFrame->IsAbsoluteContainer() &&
       aListID == aParentFrame->GetAbsoluteListID()) {
     aParentFrame->GetAbsoluteContainingBlock()->InsertFrames(
-        aParentFrame, aListID, aPrevFrame, aFrameList);
+        aParentFrame, aListID, aPrevFrame, std::move(aFrameList));
   } else {
-    aParentFrame->InsertFrames(aListID, aPrevFrame, nullptr, aFrameList);
+    aParentFrame->InsertFrames(aListID, aPrevFrame, nullptr,
+                               std::move(aFrameList));
   }
 }
 
-void nsFrameManager::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
+void nsFrameManager::RemoveFrame(FrameChildListID aListID,
+                                 nsIFrame* aOldFrame) {
   // In case the reflow doesn't invalidate anything since it just leaves
   // a gap where the old frame was, we invalidate it here.  (This is
   // reasonably likely to happen when removing a last child in a way

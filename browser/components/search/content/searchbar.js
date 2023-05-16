@@ -41,7 +41,7 @@
         </hbox>
         <html:input class="searchbar-textbox" is="autocomplete-input" type="search" data-l10n-id="searchbar-input" autocompletepopup="PopupSearchAutoComplete" autocompletesearch="search-autocomplete" autocompletesearchparam="searchbar-history" maxrows="10" completeselectedindex="true" minresultsforpopup="0"/>
         <menupopup class="textbox-contextmenu"></menupopup>
-        <hbox class="search-go-container">
+        <hbox class="search-go-container" align="center">
           <image class="search-go-button urlbar-icon" hidden="true" onclick="handleSearchCommand(event);" data-l10n-id="searchbar-submit"></image>
         </hbox>
       `;
@@ -191,9 +191,12 @@
       // Return a dummy engine if there is no currentEngine
       return currentEngine || { name: "", uri: null };
     }
+
     /**
      * textbox is used by sanitize.js to clear the undo history when
      * clearing form information.
+     *
+     * @returns {HTMLInputElement}
      */
     get textbox() {
       return this._textbox;
@@ -399,20 +402,15 @@
         aData.length <=
           lazy.SearchSuggestionController.SEARCH_HISTORY_MAX_VALUE_LENGTH
       ) {
-        lazy.FormHistory.update(
-          {
-            op: "bump",
-            fieldname: textBox.getAttribute("autocompletesearchparam"),
-            value: aData,
-            source: engine.name,
-          },
-          {
-            handleError(aError) {
-              Cu.reportError(
-                "Saving search to form history failed: " + aError.message
-              );
-            },
-          }
+        lazy.FormHistory.update({
+          op: "bump",
+          fieldname: textBox.getAttribute("autocompletesearchparam"),
+          value: aData,
+          source: engine.name,
+        }).catch(error =>
+          Cu.reportError(
+            "Saving search to form history failed: " + error.message
+          )
         );
       }
 
@@ -885,7 +883,7 @@
             break;
           case clearHistoryItem:
             let param = this.textbox.getAttribute("autocompletesearchparam");
-            lazy.FormHistory.update({ op: "remove", fieldname: param }, null);
+            lazy.FormHistory.update({ op: "remove", fieldname: param });
             this.textbox.value = "";
             break;
           default:

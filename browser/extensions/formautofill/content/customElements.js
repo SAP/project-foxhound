@@ -205,7 +205,7 @@
        * the exact category that we're going to fill in.
        *
        * @private
-       * @param {Object} data
+       * @param {object} data
        *        Message data
        * @param {string[]} data.categories
        *        The categories of all the fields contained in the selected address.
@@ -272,10 +272,6 @@
     _adjustAcItem() {
       this._adjustAutofillItemLayout();
       this.setAttribute("formautofillattached", "true");
-
-      let { AppConstants } = ChromeUtils.import(
-        "resource://gre/modules/AppConstants.jsm"
-      );
 
       let buttonTextBundleKey;
       if (this._itemBox.getAttribute("size") == "small") {

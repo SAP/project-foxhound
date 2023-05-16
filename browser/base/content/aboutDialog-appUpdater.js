@@ -16,9 +16,16 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AppUpdater: "resource:///modules/AppUpdater.jsm",
+  AppUpdater: "resource://gre/modules/AppUpdater.jsm",
   DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
 });
+
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "AUS",
+  "@mozilla.org/updates/update-service;1",
+  "nsIApplicationUpdateService"
+);
 
 var UPDATING_MIN_DISPLAY_TIME_MS = 1500;
 
@@ -101,9 +108,17 @@ appUpdater.prototype = {
       case AppUpdater.STATUS.DOWNLOADING: {
         let downloadStatus = document.getElementById("downloadStatus");
         if (!args.length) {
+          // Very early in the DOWNLOADING state, `selectedPatch` may not be
+          // available yet. But this function will be called again when it is
+          // available. A `maxSize < 0` indicates that the max size is not yet
+          // available.
+          let maxSize = -1;
+          if (this.update.selectedPatch) {
+            maxSize = this.update.selectedPatch.size;
+          }
           downloadStatus.textContent = DownloadUtils.getTransferTotal(
             0,
-            this.update.selectedPatch.size
+            maxSize
           );
           this.selectPanel("downloading");
         } else {
@@ -159,6 +174,9 @@ appUpdater.prototype = {
         break;
       case AppUpdater.STATUS.INTERNAL_ERROR:
         this.selectPanel("internalError");
+        break;
+      case AppUpdater.STATUS.NEVER_CHECKED:
+        this.selectPanel("checkForUpdates");
         break;
       case AppUpdater.STATUS.NO_UPDATER:
       default:
@@ -219,7 +237,7 @@ appUpdater.prototype = {
    * Check for updates
    */
   checkForUpdates() {
-    this._appUpdater.checkForUpdates();
+    this._appUpdater.check();
   },
 
   /**
@@ -227,7 +245,7 @@ appUpdater.prototype = {
    * which is presented after the download has been downloaded.
    */
   buttonRestartAfterDownload() {
-    if (!this._appUpdater.isReadyForRestart) {
+    if (AUS.currentState != Ci.nsIApplicationUpdateService.STATE_PENDING) {
       return;
     }
 
@@ -269,6 +287,6 @@ appUpdater.prototype = {
    * Starts the download of an update mar.
    */
   startDownload() {
-    this._appUpdater.startDownload();
+    this._appUpdater.allowUpdateDownload();
   },
 };

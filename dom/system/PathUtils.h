@@ -13,6 +13,7 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Result.h"
+#include "mozilla/dom/PathUtilsBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceDefs.h"
@@ -50,6 +51,20 @@ class PathUtils final {
   static void Join(const GlobalObject&, const Sequence<nsString>& aComponents,
                    nsString& aResult, ErrorResult& aErr);
 
+  /**
+   * Join a sequence of path components and return an nsIFile with the resulting
+   * path.
+   *
+   * @param aComponents  A sequence of path components. The first component must
+   *                     be an absolute path.
+   * @param aErr  The error result, if any.
+   *
+   * @return An nsIFile with the resulting path, if there were no errors.
+   * Otherwise, nullptr is returned.
+   */
+  static already_AddRefed<nsIFile> Join(const Span<const nsString>& aComponents,
+                                        ErrorResult& aErr);
+
   static void JoinRelative(const GlobalObject&, const nsAString& aBasePath,
                            const nsAString& aRelativePath, nsString& aResult,
                            ErrorResult& aErr);
@@ -62,6 +77,10 @@ class PathUtils final {
 
   static void Split(const GlobalObject&, const nsAString& aPath,
                     nsTArray<nsString>& aResult, ErrorResult& aErr);
+
+  static void SplitRelative(const GlobalObject& aGlobal, const nsAString& aPath,
+                            const SplitRelativeOptions& aOptions,
+                            nsTArray<nsString>& aResult, ErrorResult& aErr);
 
   static void ToFileURI(const GlobalObject&, const nsAString& aPath,
                         nsCString& aResult, ErrorResult& aErr);

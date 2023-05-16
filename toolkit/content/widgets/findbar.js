@@ -7,8 +7,8 @@
 // This is loaded into chrome windows with the subscript loader. Wrap in
 // a block to prevent accidentally leaking globals onto `window`.
 {
-  const { AppConstants } = ChromeUtils.import(
-    "resource://gre/modules/AppConstants.jsm"
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
 
   const PREFS_TO_OBSERVE_BOOL = new Map([
@@ -100,7 +100,7 @@
       }
 
       /**
-       * Please keep in sync with toolkit/modules/FindBarContent.jsm
+       * Please keep in sync with toolkit/modules/FindBarContent.sys.mjs
        */
       this.FIND_NORMAL = 0;
 
@@ -399,9 +399,9 @@
     }
 
     /**
-     * This is necessary because the destructor isn't called when we are removed
-     * from a document that is not destroyed. This needs to be explicitly called
-     * in this case.
+     * This is necessary because custom elements don't have a "real" destructor.
+     * This method is called explicitly from disconnectedCallback, and from
+     * an unload event handler that we add.
      */
     destroy() {
       if (this._destroyed) {

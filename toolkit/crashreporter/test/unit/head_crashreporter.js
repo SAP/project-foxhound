@@ -2,8 +2,8 @@ var { OS, require } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { makeFakeAppDir } = ChromeUtils.import(
   "resource://testing-common/AppData.jsm"
 );
-var { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+var { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 function getEventDir() {
@@ -185,10 +185,7 @@ async function do_content_crash(setup, callback) {
 
   // Setting the minidump path won't work in the child, so we need to do
   // that here.
-  let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-    Ci.nsICrashReporter
-  );
-  crashReporter.minidumpPath = do_get_tempdir();
+  Services.appinfo.minidumpPath = do_get_tempdir();
 
   /* import-globals-from ../unit/crasher_subprocess_head.js */
   /* import-globals-from ../unit/crasher_subprocess_tail.js */
@@ -232,10 +229,7 @@ async function do_triggered_content_crash(trigger, callback) {
 
   // Setting the minidump path won't work in the child, so we need to do
   // that here.
-  let crashReporter = Cc["@mozilla.org/toolkit/crash-reporter;1"].getService(
-    Ci.nsICrashReporter
-  );
-  crashReporter.minidumpPath = do_get_tempdir();
+  Services.appinfo.minidumpPath = do_get_tempdir();
 
   /* import-globals-from ../unit/crasher_subprocess_head.js */
 

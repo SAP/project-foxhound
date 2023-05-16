@@ -6,7 +6,7 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<?xml-stylesheet href="chrome://mozapps/skin/profile/profileSelection.css" type="text/css"?>
+<?xml-stylesheet href="chrome://mozapps/skin/profileSelection.css" type="text/css"?>
 
 <!DOCTYPE window>
 
@@ -16,7 +16,8 @@
   class="non-resizable"
   data-l10n-id="profile-selection-window"
   orient="vertical"
-  style="width: 30em;"
+  prefwidth="min-width"
+  style="min-width: 30em;"
   onload="startup();">
 <dialog id="profileWindow"
   buttons="accept,cancel"

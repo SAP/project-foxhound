@@ -5622,6 +5622,15 @@
               StrCpy $AddStartMenuSC "1"
             ${EndIf}
 
+            !ifdef MOZ_PRIVATE_BROWSING
+              ReadINIStr $R8 $R7 "Install" "PrivateBrowsingShortcut"
+              ${If} $R8 == "false"
+                StrCpy $AddPrivateBrowsingSC "0"
+              ${ElseIfNot} ${Errors}
+                StrCpy $AddPrivateBrowsingSC "1"
+              ${EndIf}
+            !endif
+
             ReadINIStr $R8 $R7 "Install" "TaskbarShortcut"
             ${If} $R8 == "false"
               StrCpy $AddTaskbarSC "0"
@@ -5686,6 +5695,9 @@
         ; We still accept the plural version for backwards compatibility,
         ; but the singular version takes priority.
         ${InstallGetOption} $R8 "StartMenuShortcut" $AddStartMenuSC
+        !ifdef MOZ_PRIVATE_BROWSING
+          ${InstallGetOption} $R8 "PrivateBrowsingShortcut" $AddPrivateBrowsingSC
+        !endif
         ${InstallGetOption} $R8 "TaskbarShortcut" $AddTaskbarSC
         ${InstallGetOption} $R8 "MaintenanceService" $InstallMaintenanceService
         ${InstallGetOption} $R8 "RegisterDefaultAgent" $RegisterDefaultAgent

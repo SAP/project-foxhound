@@ -107,6 +107,7 @@ class Perftest(object):
         verbose=False,
         python=None,
         fission=True,
+        extra_summary_methods=[],
         **kwargs
     ):
         self._remote_test_root = None
@@ -152,6 +153,7 @@ class Perftest(object):
             "environment": environment,
             "project": project,
             "verbose": verbose,
+            "extra_summary_methods": extra_summary_methods,
         }
 
         self.firefox_android_apps = FIREFOX_ANDROID_APPS
@@ -563,7 +565,7 @@ class Perftest(object):
         self.config.update(
             {
                 "playback_tool": test.get("playback"),
-                "playback_version": test.get("playback_version", "7.0.4"),
+                "playback_version": test.get("playback_version", "8.1.1"),
                 "playback_files": [
                     os.path.join(playback_dir, test.get("playback_pageset_manifest"))
                 ],

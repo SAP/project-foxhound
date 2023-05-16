@@ -666,8 +666,18 @@ JSObject* mozJSModuleLoader::GetSharedGlobal(JSContext* aCx) {
 nsresult mozJSModuleLoader::LoadSingleModuleScript(
     ComponentModuleLoader* aModuleLoader, JSContext* aCx,
     JS::loader::ModuleLoadRequest* aRequest, MutableHandleScript aScriptOut) {
+  nsAutoCString spec;
+  nsresult rv = aRequest->mURI->GetSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  AUTO_PROFILER_MARKER_TEXT(
+      "ChromeUtils.importESModule static import", JS,
+      MarkerOptions(MarkerStack::Capture(),
+                    MarkerInnerWindowIdFromJSContext(aCx)),
+      spec);
+
   ModuleLoaderInfo info(aRequest);
-  nsresult rv = info.EnsureResolvedURI();
+  rv = info.EnsureResolvedURI();
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIFile> sourceFile;
@@ -1570,11 +1580,14 @@ nsresult mozJSModuleLoader::Import(JSContext* aCx, const nsACString& aLocation,
         return NS_ERROR_FAILURE;
       }
 
-      if (rv == NS_ERROR_FILE_NOT_FOUND) {
+      if (rv == NS_ERROR_FILE_NOT_FOUND || rv == NS_ERROR_FILE_ACCESS_DENIED) {
+        // NS_ERROR_FILE_ACCESS_DENIED happens if the access is blocked by
+        // sandbox.
         rv = TryFallbackToImportESModule(aCx, aLocation, aModuleGlobal,
                                          aModuleExports, aIgnoreExports);
 
-        if (rv == NS_ERROR_FILE_NOT_FOUND) {
+        if (rv == NS_ERROR_FILE_NOT_FOUND ||
+            rv == NS_ERROR_FILE_ACCESS_DENIED) {
           // Both JSM and ESM are not found, with the check inside necko
           // skipped (See EnsureScriptChannel and mSkipCheck).
           //
@@ -1649,8 +1662,9 @@ nsresult mozJSModuleLoader::TryFallbackToImportESModule(
   // error message, the crash, and also the telemetry event for the failure.
   nsresult rv = ImportESModule(aCx, mjsLocation, &moduleNamespace,
                                SkipCheckForBrokenURLOrZeroSized::Yes);
-  if (rv == NS_ERROR_FILE_NOT_FOUND) {
-    // The error for ESModule shouldn't be exposed if the file does not exist.
+  if (rv == NS_ERROR_FILE_NOT_FOUND || rv == NS_ERROR_FILE_ACCESS_DENIED) {
+    // The error for ESModule shouldn't be exposed if the file does not exist,
+    // or the access is blocked by sandbox.
     if (JS_IsExceptionPending(aCx)) {
       JS_ClearPendingException(aCx);
     }

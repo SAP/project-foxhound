@@ -1,10 +1,10 @@
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { ChromeMigrationUtils } = ChromeUtils.import(
-  "resource:///modules/ChromeMigrationUtils.jsm"
+const { ChromeMigrationUtils } = ChromeUtils.importESModule(
+  "resource:///modules/ChromeMigrationUtils.sys.mjs"
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 

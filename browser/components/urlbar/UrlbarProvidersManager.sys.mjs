@@ -114,11 +114,16 @@ class ProvidersManager {
       let { [symbol]: muxer } = ChromeUtils.importESModule(module);
       this.registerMuxer(muxer);
     }
+
+    // This is defined as a property so tests can override it.
+    this._chunkResultsDelayMs = CHUNK_RESULTS_DELAY_MS;
   }
 
   /**
    * Registers a provider object with the manager.
+   *
    * @param {object} provider
+   *   The provider object to register.
    */
   registerProvider(provider) {
     if (!provider || !(provider instanceof lazy.UrlbarProvider)) {
@@ -146,7 +151,9 @@ class ProvidersManager {
 
   /**
    * Unregisters a previously registered provider object.
+   *
    * @param {object} provider
+   *   The provider object to unregister.
    */
   unregisterProvider(provider) {
     lazy.logger.info(`Unregistering provider ${provider.name}`);
@@ -158,7 +165,9 @@ class ProvidersManager {
 
   /**
    * Returns the provider with the given name.
-   * @param {string} name The provider name.
+   *
+   * @param {string} name
+   *   The provider name.
    * @returns {UrlbarProvider} The provider.
    */
   getProvider(name) {
@@ -167,7 +176,9 @@ class ProvidersManager {
 
   /**
    * Registers a muxer object with the manager.
-   * @param {object} muxer a UrlbarMuxer object
+   *
+   * @param {object} muxer
+   *   a UrlbarMuxer object
    */
   registerMuxer(muxer) {
     if (!muxer || !(muxer instanceof lazy.UrlbarMuxer)) {
@@ -179,7 +190,9 @@ class ProvidersManager {
 
   /**
    * Unregisters a previously registered muxer object.
-   * @param {object} muxer a UrlbarMuxer object or name.
+   *
+   * @param {object} muxer
+   *   a UrlbarMuxer object or name.
    */
   unregisterMuxer(muxer) {
     let muxerName = typeof muxer == "string" ? muxer : muxer.name;
@@ -189,8 +202,11 @@ class ProvidersManager {
 
   /**
    * Starts querying.
-   * @param {object} queryContext The query context object
-   * @param {object} [controller] a UrlbarController instance
+   *
+   * @param {object} queryContext
+   *   The query context object
+   * @param {object} [controller]
+   *   a UrlbarController instance
    */
   async startQuery(queryContext, controller = null) {
     lazy.logger.info(`Query start ${queryContext.searchString}`);
@@ -268,7 +284,8 @@ class ProvidersManager {
 
   /**
    * Cancels a running query.
-   * @param {object} queryContext
+   *
+   * @param {object} queryContext The query context object
    */
   cancelQuery(queryContext) {
     lazy.logger.info(`Query cancel "${queryContext.searchString}"`);
@@ -290,7 +307,8 @@ class ProvidersManager {
    * A provider can use this util when it needs to run a SQL query that can't
    * be interrupted. Otherwise, when a query is canceled any running SQL query
    * is interrupted abruptly.
-   * @param {function} taskFn a Task to execute in the critical section.
+   *
+   * @param {Function} taskFn a Task to execute in the critical section.
    */
   async runInCriticalSection(taskFn) {
     this.interruptLevel++;
@@ -339,6 +357,7 @@ export var UrlbarProvidersManager = new ProvidersManager();
 class Query {
   /**
    * Initializes the query object.
+   *
    * @param {object} queryContext
    *        The query context
    * @param {object} controller
@@ -482,8 +501,7 @@ class Query {
   }
 
   /**
-   * Cancels this query.
-   * @note Invoking cancel multiple times is a no-op.
+   * Cancels this query. Note: Invoking cancel multiple times is a no-op.
    */
   cancel() {
     if (this.canceled) {
@@ -512,8 +530,9 @@ class Query {
 
   /**
    * Adds a result returned from a provider to the results set.
-   * @param {object} provider
-   * @param {object} result
+   *
+   * @param {UrlbarProvider} provider The provider that returned the result.
+   * @param {object} result The result object.
    */
   add(provider, result) {
     if (!(provider instanceof lazy.UrlbarProvider)) {
@@ -590,7 +609,7 @@ class Query {
         this._heuristicProviderTimer = new lazy.SkippableTimer({
           name: "Heuristic provider timer",
           callback: () => this._notifyResults(),
-          time: CHUNK_RESULTS_DELAY_MS,
+          time: UrlbarProvidersManager._chunkResultsDelayMs,
           logger: provider.logger,
         });
       }
@@ -598,7 +617,7 @@ class Query {
       this._chunkTimer = new lazy.SkippableTimer({
         name: "Query chunk timer",
         callback: () => this._notifyResults(),
-        time: CHUNK_RESULTS_DELAY_MS,
+        time: UrlbarProvidersManager._chunkResultsDelayMs,
         logger: provider.logger,
       });
     }
@@ -651,6 +670,7 @@ class Query {
 
 /**
  * Updates in place the sources for a given UrlbarQueryContext.
+ *
  * @param {UrlbarQueryContext} context The query context to examine
  * @returns {object} The restriction token that was used to set sources, or
  *          undefined if there's no restriction token.

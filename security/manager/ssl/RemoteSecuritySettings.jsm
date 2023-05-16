@@ -33,11 +33,13 @@ const lazy = {};
 XPCOMUtils.defineLazyGetter(lazy, "gTextDecoder", () => new TextDecoder());
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   return new ConsoleAPI({
     prefix: "RemoteSecuritySettings.jsm",
     // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
-    // messages during development. See LOG_LEVELS in Console.jsm for details.
+    // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
     maxLogLevel: "error",
     maxLogLevelPref: LOGLEVEL_PREF,
   });
@@ -122,7 +124,7 @@ function setRevocations(certStorage, revocations) {
  * @param {Integer} dataType a Ci.nsICertStorage.DATA_TYPE_* constant
  *                           indicating the type of data
 
- * @return {Promise} a promise that will resolve with true if the data type is
+ * @returns {Promise} a promise that will resolve with true if the data type is
  *                   present
  */
 function hasPriorData(dataType) {
@@ -145,7 +147,12 @@ function hasPriorData(dataType) {
 /**
  * Revoke the appropriate certificates based on the records from the blocklist.
  *
- * @param {Object} data   Current records in the local db.
+ * @param {object} options
+ * @param {object} options.data Current records in the local db.
+ * @param {Array} options.data.current
+ * @param {Array} options.data.created
+ * @param {Array} options.data.updated
+ * @param {Array} options.data.deleted
  */
 const updateCertBlocklist = async function({
   data: { current, created, updated, deleted },
@@ -165,7 +172,8 @@ const updateCertBlocklist = async function({
     created = current;
   }
 
-  for (let item of deleted) {
+  let toDelete = deleted.concat(updated.map(u => u.old));
+  for (let item of toDelete) {
     if (item.issuerName && item.serialNumber) {
       items.push(
         new IssuerAndSerialRevocationState(
@@ -227,7 +235,7 @@ var RemoteSecuritySettings = {
    * Initialize the clients (cheap instantiation) and setup their sync event.
    * This static method is called from BrowserGlue.jsm soon after startup.
    *
-   * @returns {Object} instantiated clients for security remote settings.
+   * @returns {object} instantiated clients for security remote settings.
    */
   init() {
     // Avoid repeated initialization (work-around for bug 1730026).
@@ -420,8 +428,9 @@ class IntermediatePreloads {
    * Attempts to download the attachment, assuming it's not been processed
    * already. Does not retry, and always resolves (e.g., does not reject upon
    * failure.) Errors are reported via Cu.reportError.
+   *
    * @param  {AttachmentRecord} record defines which data to obtain
-   * @return {Promise}          a Promise that will resolve to an object with the properties
+   * @returns {Promise}          a Promise that will resolve to an object with the properties
    *                            record, cert, and subject. record is the original record.
    *                            cert is the base64-encoded bytes of the downloaded certificate (if
    *                            downloading was successful), and null otherwise.

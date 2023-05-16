@@ -150,6 +150,14 @@ notes = "We're not shipping this and have no plans to ship it."
 audit-as-crates-io = false
 notes = "This is a first-party crate which is entirely unrelated to the crates.io package of the same name."
 
+[policy.tabs]
+audit-as-crates-io = false
+notes = "This is a first-party crate, maintained by the appservices team, which is entirely unrelated to the crates.io package of the same name."
+
+[policy.uniffi_bindgen]
+audit-as-crates-io = false
+notes = "This is a first-party crate, normally vendored, but currently patched in-tree until next update."
+
 [policy.viaduct]
 audit-as-crates-io = false
 notes = "This is a first-party crate, maintained by the appservices team, which is entirely unrelated to the crates.io package of the same name."
@@ -247,10 +255,6 @@ criteria = "safe-to-deploy"
 version = "0.13.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.binary-space-partition]]
-version = "0.1.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.bincode]]
 version = "1.3.3"
 criteria = "safe-to-deploy"
@@ -342,10 +346,6 @@ criteria = "safe-to-deploy"
 [[exemptions.cookie]]
 version = "0.16.0"
 criteria = "safe-to-run"
-
-[[exemptions.copyless]]
-version = "0.1.5"
-criteria = "safe-to-deploy"
 
 [[exemptions.core-foundation]]
 version = "0.9.3"
@@ -1011,10 +1011,6 @@ criteria = "safe-to-deploy"
 version = "0.2.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.plane-split]]
-version = "0.17.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.plist]]
 version = "1.3.1"
 criteria = "safe-to-run"
@@ -1097,10 +1093,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.ringbuf]]
 version = "0.2.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.rkv]]
-version = "0.17.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ron]]

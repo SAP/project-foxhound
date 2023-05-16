@@ -4,6 +4,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+interface nsIFile;
+
 /**
  * IOUtils is a simple, efficient interface for performing file I/O from a
  * privileged chrome-only context. All asynchronous I/O tasks are run on
@@ -334,6 +336,30 @@ namespace IOUtils {
   [NewObject]
   Promise<undefined> delMacXAttr(DOMString path, UTF8String attr);
 #endif
+
+  /**
+   * Return a nsIFile whose parent directory exists. The parent directory of the
+   * file will be created off main thread if it does not already exist.
+   *
+   * @param components The path components. The first component must be an
+   *                   absolute path.
+   *
+   * @return A promise that resolves to an nsIFile for the requested file.
+   */
+  [NewObject]
+  Promise<nsIFile> getFile(DOMString... components);
+
+  /**
+   * Return an nsIFile corresponding to a directory. It will be created
+   * off-main-thread if it does not already exist.
+   *
+   * @param components The path components. The first component must be an
+   *                   absolute path.
+   *
+   * @return A promise that resolves to an nsIFile for the requested directory.
+   */
+  [NewObject]
+  Promise<nsIFile> getDirectory(DOMString... components);
 };
 
 [Exposed=Window]
@@ -373,7 +399,7 @@ partial namespace IOUtils {
    * but it would use u16-based strings, so it would basically be a separate
    * copy of the bindings.)
    *
-   * This interface was added for use by `Subprocess.jsm`; other would-be
+   * This interface was added for use by `Subprocess.sys.jsm`; other would-be
    * callers may want to just use Subprocess instead of calling this directly.
    *
    * @param argv The command to run and its arguments.
@@ -466,6 +492,10 @@ enum WriteMode {
    * This mode will refuse to create the file if it does not exist.
    */
   "append",
+  /**
+   * Append to the end of the file, or create it if it does not exist.
+   */
+  "appendOrCreate",
   /**
    * Create a new file.
    *

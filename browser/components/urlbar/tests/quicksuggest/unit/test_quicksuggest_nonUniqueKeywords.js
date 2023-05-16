@@ -19,17 +19,17 @@ let SUGGESTIONS_DATA = [
   {
     keywords: ["aaa", "bbb"],
     isSponsored: false,
-    score: 2 * UrlbarQuickSuggest.DEFAULT_SUGGESTION_SCORE,
+    score: 2 * RemoteSettingsClient.DEFAULT_SUGGESTION_SCORE,
   },
   {
     keywords: ["bbb"],
     isSponsored: true,
-    score: 4 * UrlbarQuickSuggest.DEFAULT_SUGGESTION_SCORE,
+    score: 4 * RemoteSettingsClient.DEFAULT_SUGGESTION_SCORE,
   },
   {
     keywords: ["bbb"],
     isSponsored: false,
-    score: 3 * UrlbarQuickSuggest.DEFAULT_SUGGESTION_SCORE,
+    score: 3 * RemoteSettingsClient.DEFAULT_SUGGESTION_SCORE,
   },
   {
     keywords: ["ccc"],
@@ -38,7 +38,7 @@ let SUGGESTIONS_DATA = [
 ];
 
 // Test cases. In this object, keywords map to subtest cases. For each keyword,
-// the test calls `query(keyword)` and checks that the indexes (relative to
+// the test calls `fetch(keyword)` and checks that the indexes (relative to
 // `SUGGESTIONS_DATA`) of the returned quick suggest results are the ones in
 // `expectedIndexes`. Then the test does a series of urlbar searches using the
 // keyword as the search string, one search per object in `searches`. Sponsored
@@ -158,10 +158,11 @@ add_task(async function() {
       ...qsResult,
       block_id: qsResult.id,
       is_sponsored: isSponsored,
+      is_top_pick: false,
       score:
         typeof score == "number"
           ? score
-          : UrlbarQuickSuggest.DEFAULT_SUGGESTION_SCORE,
+          : RemoteSettingsClient.DEFAULT_SUGGESTION_SCORE,
       source: "remote-settings",
       icon: null,
       position: undefined,
@@ -188,7 +189,7 @@ add_task(async function() {
         sponsoredAdvertiser: qsResult.advertiser,
         sponsoredIabCategory: qsResult.iab_category,
         icon: null,
-        helpUrl: UrlbarProviderQuickSuggest.helpUrl,
+        helpUrl: QuickSuggest.HELP_URL,
         helpL10nId: "firefox-suggest-urlbar-learn-more",
         source: "remote-settings",
       },
@@ -203,18 +204,20 @@ add_task(async function() {
 
     let { expectedIndexes, searches } = test;
 
-    // Call `query()`.
+    // Call `fetch()`.
     Assert.deepEqual(
-      await UrlbarQuickSuggest.query(keyword),
+      await QuickSuggest.remoteSettings.fetch(keyword),
       expectedIndexes.map(i => ({
         ...qsSuggestions[i],
         full_keyword: keyword,
       })),
-      `query() for ${keyword}`
+      `fetch() for ${keyword}`
     );
 
     // Make sure the expected result object(s) are stored correctly.
-    let mapValue = UrlbarQuickSuggest._resultsByKeyword.get(keyword);
+    let mapValue = QuickSuggest.remoteSettings._test_resultsByKeyword.get(
+      keyword
+    );
     if (expectedIndexes.length == 1) {
       Assert.ok(!Array.isArray(mapValue), "The map value is not an array");
       Assert.deepEqual(

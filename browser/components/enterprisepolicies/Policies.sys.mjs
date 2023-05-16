@@ -4,9 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -46,11 +44,13 @@ let env = Cc["@mozilla.org/process/environment;1"].getService(
 const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   return new ConsoleAPI({
     prefix: "Policies.jsm",
     // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
-    // messages during development. See LOG_LEVELS in Console.jsm for details.
+    // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
     maxLogLevel: "error",
     maxLogLevelPref: PREF_LOGLEVEL,
   });
@@ -846,23 +846,18 @@ export var Policies = {
 
   DisplayBookmarksToolbar: {
     onBeforeUIStartup(manager, param) {
-      let value = (!param).toString();
+      let visibility;
+      if (typeof param === "boolean") {
+        visibility = param ? "always" : "newtab";
+      } else {
+        visibility = param;
+      }
       // This policy is meant to change the default behavior, not to force it.
-      // If this policy was alreay applied and the user chose to re-hide the
+      // If this policy was already applied and the user chose to re-hide the
       // bookmarks toolbar, do not show it again.
-      runOncePerModification("displayBookmarksToolbar", value, () => {
-        // Set the preference to keep the bookmarks bar open and also
-        // declaratively open the bookmarks toolbar. Otherwise, default
-        // to showing it on the New Tab Page.
+      runOncePerModification("displayBookmarksToolbar", visibility, () => {
         let visibilityPref = "browser.toolbars.bookmarks.visibility";
-        let visibility = param ? "always" : "newtab";
         Services.prefs.setCharPref(visibilityPref, visibility);
-        lazy.gXulStore.setValue(
-          BROWSER_DOCUMENT_URL,
-          "PersonalToolbar",
-          "collapsed",
-          value
-        );
       });
     },
   },
@@ -2007,6 +2002,10 @@ export var Policies = {
     },
     onAllWindowsRestored(manager, param) {
       Services.search.init().then(async () => {
+        // Adding of engines is handled by the SearchService in the init().
+        // Remove can happen after those are added - no engines are allowed
+        // to replace the application provided engines, even if they have been
+        // removed.
         if (param.Remove) {
           // Only rerun if the list of engine names has changed.
           await runOncePerModification(
@@ -2020,46 +2019,6 @@ export var Policies = {
                     await Services.search.removeEngine(engine);
                   } catch (ex) {
                     lazy.log.error("Unable to remove the search engine", ex);
-                  }
-                }
-              }
-            }
-          );
-        }
-        if (param.Add) {
-          // Rerun if any engine info has changed.
-          let engineInfoHash = md5Hash(JSON.stringify(param.Add));
-          await runOncePerModification(
-            "addSearchEngines",
-            engineInfoHash,
-            async function() {
-              for (let newEngine of param.Add) {
-                let manifest = {
-                  description: newEngine.Description,
-                  iconURL: newEngine.IconURL ? newEngine.IconURL.href : null,
-                  name: newEngine.Name,
-                  // If the encoding is not specified or is falsy, the
-                  // search service will fall back to the default encoding.
-                  encoding: newEngine.Encoding,
-                  search_url: encodeURI(newEngine.URLTemplate),
-                  keyword: newEngine.Alias,
-                  search_url_post_params:
-                    newEngine.Method == "POST" ? newEngine.PostData : undefined,
-                  suggest_url: newEngine.SuggestURLTemplate,
-                };
-
-                let engine = Services.search.getEngineByName(newEngine.Name);
-                if (engine) {
-                  try {
-                    await Services.search.updatePolicyEngine(manifest);
-                  } catch (ex) {
-                    lazy.log.error("Unable to update the search engine", ex);
-                  }
-                } else {
-                  try {
-                    await Services.search.addPolicyEngine(manifest);
-                  } catch (ex) {
-                    lazy.log.error("Unable to add search engine", ex);
                   }
                 }
               }
@@ -2799,33 +2758,4 @@ function processMIMEInfo(mimeInfo, realMIMEInfo) {
     realMIMEInfo.alwaysAskBeforeHandling = mimeInfo.ask;
   }
   lazy.gHandlerService.store(realMIMEInfo);
-}
-
-// Copied from PlacesUIUtils.jsm
-
-// Keep a hasher for repeated hashings
-let gCryptoHash = null;
-
-/**
- * Run some text through md5 and return the base64 result.
- * @param {string} data The string to hash.
- * @returns {string} md5 hash of the input string.
- */
-function md5Hash(data) {
-  // Lazily create a reusable hasher
-  if (gCryptoHash === null) {
-    gCryptoHash = Cc["@mozilla.org/security/hash;1"].createInstance(
-      Ci.nsICryptoHash
-    );
-  }
-
-  gCryptoHash.init(gCryptoHash.MD5);
-
-  // Convert the data to a byte array for hashing
-  gCryptoHash.update(
-    data.split("").map(c => c.charCodeAt(0)),
-    data.length
-  );
-  // Request the has result as ASCII base64
-  return gCryptoHash.finish(true);
 }

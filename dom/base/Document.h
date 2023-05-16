@@ -204,6 +204,7 @@ struct LangGroupFontPrefs;
 class PendingAnimationTracker;
 class PermissionDelegateHandler;
 class PresShell;
+class ScrollTimelineAnimationTracker;
 class ServoStyleSet;
 enum class StyleOrigin : uint8_t;
 class SMILAnimationController;
@@ -2765,6 +2766,19 @@ class Document : public nsINode,
   // will never be nullptr.
   PendingAnimationTracker* GetOrCreatePendingAnimationTracker();
 
+  // Gets the tracker for scroll-linked animations that are waiting to start.
+  // Returns nullptr if there is no scroll-linked animation tracker for this
+  // document which will be the case if there have never been any scroll-linked
+  // animations in the document.
+  ScrollTimelineAnimationTracker* GetScrollTimelineAnimationTracker() {
+    return mScrollTimelineAnimationTracker;
+  }
+
+  // Gets the tracker for scroll-linked animations that are waiting to start and
+  // creates it if it doesn't already exist. As a result, the return value
+  // will never be nullptr.
+  ScrollTimelineAnimationTracker* GetOrCreateScrollTimelineAnimationTracker();
+
   /**
    * Prevents user initiated events from being dispatched to the document and
    * subdocuments.
@@ -5149,6 +5163,10 @@ class Document : public nsINode,
   // nullptr until GetOrCreatePendingAnimationTracker is called.
   RefPtr<PendingAnimationTracker> mPendingAnimationTracker;
 
+  // Tracker for scroll-linked animations that are waiting to start.
+  // nullptr until GetOrCreateScrollTimelineAnimationTracker is called.
+  RefPtr<ScrollTimelineAnimationTracker> mScrollTimelineAnimationTracker;
+
   // A document "without a browsing context" that owns the content of
   // HTMLTemplateElement.
   RefPtr<Document> mTemplateContentsOwner;
@@ -5464,8 +5482,6 @@ nsresult NS_NewDOMDocument(
     const nsAString& aQualifiedName, mozilla::dom::DocumentType* aDoctype,
     nsIURI* aDocumentURI, nsIURI* aBaseURI, nsIPrincipal* aPrincipal,
     bool aLoadedAsData, nsIGlobalObject* aEventObject, DocumentFlavor aFlavor);
-
-nsresult NS_NewPluginDocument(mozilla::dom::Document** aInstancePtrResult);
 
 inline mozilla::dom::Document* nsINode::GetOwnerDocument() const {
   mozilla::dom::Document* ownerDoc = OwnerDoc();

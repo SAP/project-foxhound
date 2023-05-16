@@ -3,11 +3,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+});
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -21,8 +19,8 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/GeckoViewWebExtension.jsm"
 );
 
-var { EventDispatcher } = ChromeUtils.import(
-  "resource://gre/modules/Messaging.jsm"
+var { EventDispatcher } = ChromeUtils.importESModule(
+  "resource://gre/modules/Messaging.sys.mjs"
 );
 
 var { ExtensionCommon } = ChromeUtils.import(

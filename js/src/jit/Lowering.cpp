@@ -4605,9 +4605,10 @@ void LIRGenerator::visitMegamorphicStoreSlot(MMegamorphicStoreSlot* ins) {
 void LIRGenerator::visitMegamorphicHasProp(MMegamorphicHasProp* ins) {
   MOZ_ASSERT(ins->object()->type() == MIRType::Object);
   MOZ_ASSERT(ins->idVal()->type() == MIRType::Value);
-  auto* lir = new (alloc()) LMegamorphicHasProp(
-      useRegisterAtStart(ins->object()), useBoxAtStart(ins->idVal()),
-      tempFixed(CallTempReg0), tempFixed(CallTempReg1));
+  auto* lir = new (alloc())
+      LMegamorphicHasProp(useRegisterAtStart(ins->object()),
+                          useBoxAtStart(ins->idVal()), tempFixed(CallTempReg0),
+                          tempFixed(CallTempReg1), tempFixed(CallTempReg2));
   assignSnapshot(lir, ins->bailoutKind());
   defineReturn(lir, ins);
 }
@@ -6262,6 +6263,11 @@ void LIRGenerator::visitSetObjectHasValueVMCall(MSetObjectHasValueVMCall* ins) {
   assignSafepoint(lir, ins);
 }
 
+void LIRGenerator::visitSetObjectSize(MSetObjectSize* ins) {
+  auto* lir = new (alloc()) LSetObjectSize(useRegisterAtStart(ins->set()));
+  define(lir, ins);
+}
+
 void LIRGenerator::visitMapObjectHasNonBigInt(MMapObjectHasNonBigInt* ins) {
   auto* lir = new (alloc())
       LMapObjectHasNonBigInt(useRegister(ins->map()), useBox(ins->value()),
@@ -6316,6 +6322,11 @@ void LIRGenerator::visitMapObjectGetValueVMCall(MMapObjectGetValueVMCall* ins) {
       useRegisterAtStart(ins->map()), useBoxAtStart(ins->value()));
   defineReturn(lir, ins);
   assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitMapObjectSize(MMapObjectSize* ins) {
+  auto* lir = new (alloc()) LMapObjectSize(useRegisterAtStart(ins->map()));
+  define(lir, ins);
 }
 
 void LIRGenerator::visitConstant(MConstant* ins) {
@@ -6755,6 +6766,44 @@ void LIRGenerator::visitWasmStoreObjectDataRefField(
   add(new (alloc()) LWasmStoreRef(instance, valueAddr, value, temp()), ins);
   add(new (alloc()) LKeepAliveObject(useKeepalive(ins->obj())), ins);
 }
+
+#ifdef FUZZING_JS_FUZZILLI
+void LIRGenerator::visitFuzzilliHash(MFuzzilliHash* ins) {
+  MDefinition* value = ins->getOperand(0);
+
+  if (value->type() == MIRType::Undefined || value->type() == MIRType::Null) {
+    define(new (alloc()) LFuzzilliHashT(LAllocation(), temp(), tempDouble()),
+           ins);
+  } else if (value->type() == MIRType::Int32 ||
+             value->type() == MIRType::Double ||
+             value->type() == MIRType::Float32 ||
+             value->type() == MIRType::Boolean ||
+             value->type() == MIRType::BigInt) {
+    define(new (alloc())
+               LFuzzilliHashT(useRegister(value), temp(), tempDouble()),
+           ins);
+  } else if (value->type() == MIRType::Object) {
+    LFuzzilliHashT* lir =
+        new (alloc()) LFuzzilliHashT(useRegister(value), temp(), tempDouble());
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+  } else if (value->type() == MIRType::Value) {
+    LFuzzilliHashV* lir =
+        new (alloc()) LFuzzilliHashV(useBox(value), temp(), tempDouble());
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+  } else {
+    define(new (alloc()) LInteger(0), ins);
+  }
+}
+
+void LIRGenerator::visitFuzzilliHashStore(MFuzzilliHashStore* ins) {
+  MDefinition* value = ins->getOperand(0);
+  MOZ_ASSERT(value->type() == MIRType::Int32);
+  add(new (alloc()) LFuzzilliHashStore(useRegister(value), temp(), temp()),
+      ins);
+}
+#endif
 
 static_assert(!std::is_polymorphic_v<LIRGenerator>,
               "LIRGenerator should not have any virtual methods");

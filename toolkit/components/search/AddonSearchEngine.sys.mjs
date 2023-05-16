@@ -29,16 +29,24 @@ export class AddonSearchEngine extends SearchEngine {
    * Creates a AddonSearchEngine.
    *
    * @param {object} options
+   * @param {boolean} options.isAppProvided
+   *   Indicates whether the engine is provided by Firefox, either
+   *   shipped in omni.ja or via Normandy. If it is, it will
+   *   be treated as read-only.
    * @param {object} [options.details]
    *   An object that simulates the manifest object from a WebExtension.
    * @param {object} [options.json]
    *   An object that represents the saved JSON settings for the engine.
    */
   constructor({ isAppProvided, details, json } = {}) {
+    let extensionId =
+      details?.extensionID ?? json.extensionID ?? json._extensionID;
+    let id = extensionId + (details?.locale ?? json._locale);
+
     super({
-      loadPath:
-        "[other]addEngineWithDetails:" +
-        (details?.extensionID ?? json.extensionID ?? json._extensionID ?? null),
+      loadPath: "[other]addEngineWithDetails:" + extensionId,
+      isAppProvided,
+      id,
     });
 
     this.#isAppProvided = isAppProvided;
@@ -110,6 +118,21 @@ export class AddonSearchEngine extends SearchEngine {
   }
 
   /**
+   * Whether or not this engine is an in-memory only search engine.
+   * These engines are typically application provided or policy engines,
+   * where they are loaded every time on SearchService initialization
+   * using the policy JSON or the extension manifest. Minimal details of the
+   * in-memory engines are saved to disk, but they are never loaded
+   * from the user's saved settings file.
+   *
+   * @returns {boolean}
+   *   Only returns true for application provided engines.
+   */
+  get inMemory() {
+    return this.#isAppProvided;
+  }
+
+  /**
    * Creates a JavaScript object that represents this engine.
    *
    * @returns {object}
@@ -120,6 +143,7 @@ export class AddonSearchEngine extends SearchEngine {
     // file so just store the relevant metadata.
     if (this.#isAppProvided) {
       return {
+        id: this.id,
         _name: this.name,
         _isAppProvided: true,
         _metaData: this._metaData,

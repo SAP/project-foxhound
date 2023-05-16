@@ -2730,7 +2730,8 @@ LayoutDeviceIntPoint nsWindow::GetClientOffset() {
   RECT r1;
   GetWindowRect(mWnd, &r1);
   LayoutDeviceIntPoint pt = WidgetToScreenOffset();
-  return LayoutDeviceIntPoint(pt.x - r1.left, pt.y - r1.top);
+  return LayoutDeviceIntPoint(pt.x - LayoutDeviceIntCoord(r1.left),
+                              pt.y - LayoutDeviceIntCoord(r1.top));
 }
 
 void nsWindow::SetDrawsInTitlebar(bool aState) {
@@ -2850,14 +2851,12 @@ void nsWindow::UpdateDarkModeToolbar() {
  * For non-glass windows, we only allow frames to be their default size
  * or removed entirely.
  */
-bool nsWindow::UpdateNonClientMargins(int32_t aSizeMode, bool aReflowWindow) {
+bool nsWindow::UpdateNonClientMargins(bool aReflowWindow) {
   if (!mCustomNonClient) {
     return false;
   }
 
-  if (aSizeMode == -1) {
-    aSizeMode = mFrameState->GetSizeMode();
-  }
+  const nsSizeMode sizeMode = mFrameState->GetSizeMode();
 
   bool hasCaption = (mBorderStyle & (eBorderStyle_all | eBorderStyle_title |
                                      eBorderStyle_menu | eBorderStyle_default));
@@ -2909,13 +2908,13 @@ bool nsWindow::UpdateNonClientMargins(int32_t aSizeMode, bool aReflowWindow) {
                     : 0);
   }
 
-  if (aSizeMode == nsSizeMode_Minimized) {
+  if (sizeMode == nsSizeMode_Minimized) {
     // Use default frame size for minimized windows
     mNonClientOffset.top = 0;
     mNonClientOffset.left = 0;
     mNonClientOffset.right = 0;
     mNonClientOffset.bottom = 0;
-  } else if (aSizeMode == nsSizeMode_Fullscreen) {
+  } else if (sizeMode == nsSizeMode_Fullscreen) {
     // Remove the default frame from the top of our fullscreen window.  This
     // makes the whole caption part of our client area, allowing us to draw
     // in the whole caption area.  Additionally remove the default frame from
@@ -2924,7 +2923,7 @@ bool nsWindow::UpdateNonClientMargins(int32_t aSizeMode, bool aReflowWindow) {
     mNonClientOffset.bottom = mVertResizeMargin;
     mNonClientOffset.left = mHorResizeMargin;
     mNonClientOffset.right = mHorResizeMargin;
-  } else if (aSizeMode == nsSizeMode_Maximized) {
+  } else if (sizeMode == nsSizeMode_Maximized) {
     // On Windows 10+, we make the entire frame part of the client area.
     // We leave the default frame sizes for left, right and bottom since
     // Windows will automagically position the edges "offscreen" for maximized
@@ -3738,7 +3737,7 @@ void nsWindow::OnFullscreenWillChange(bool aFullScreen) {
 void nsWindow::OnFullscreenChanged(bool aFullScreen) {
   // If we are going fullscreen, the window size continues to change
   // and the window will be reflow again then.
-  UpdateNonClientMargins(mFrameState->GetSizeMode(), /* Reflow */ !aFullScreen);
+  UpdateNonClientMargins(/* Reflow */ !aFullScreen);
 
   // Will call hide chrome, reposition window. Note this will
   // also cache dimensions for restoration, so it should only
@@ -3752,7 +3751,7 @@ void nsWindow::OnFullscreenChanged(bool aFullScreen) {
     DispatchFocusToTopLevelWindow(true);
   }
 
-  OnSizeModeChange(mFrameState->GetSizeMode());
+  OnSizeModeChange();
 
   if (mWidgetListener) {
     mWidgetListener->FullscreenChanged(aFullScreen);
@@ -4513,8 +4512,8 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
   // so that we update sLastMouseMovePoint even for touch-induced mousemove
   // events.
   if (aEventMessage == eMouseMove) {
-    if ((sLastMouseMovePoint.x == mpScreen.x) &&
-        (sLastMouseMovePoint.y == mpScreen.y)) {
+    if ((sLastMouseMovePoint.x == mpScreen.x.value) &&
+        (sLastMouseMovePoint.y == mpScreen.y.value)) {
       return result;
     }
     sLastMouseMovePoint.x = mpScreen.x;
@@ -4621,9 +4620,9 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
   static BYTE sLastMouseButton = 0;
 
   bool insideMovementThreshold =
-      (DeprecatedAbs(sLastMousePoint.x - eventPoint.x) <
+      (DeprecatedAbs(sLastMousePoint.x - eventPoint.x.value) <
        (short)::GetSystemMetrics(SM_CXDOUBLECLK)) &&
-      (DeprecatedAbs(sLastMousePoint.y - eventPoint.y) <
+      (DeprecatedAbs(sLastMousePoint.y - eventPoint.y.value) <
        (short)::GetSystemMetrics(SM_CYDOUBLECLK));
 
   BYTE eventButton;
@@ -5173,13 +5172,11 @@ bool nsWindow::ExternalHandlerProcessMessage(UINT aMessage, WPARAM& aWParam,
 // we can log aRetValue.
 bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
                               LRESULT* aRetValue) {
+  // For some events we might change the parameter values, so log
+  // before and after we process them.
+  PrintEvent printEvent(msg, wParam, lParam, *aRetValue);
   bool result = ProcessMessageInternal(msg, wParam, lParam, aRetValue);
-
-  // SHOW_REPEAT_EVENTS indicates whether to show all (repeating) events,
-  // SHOW_MOUSEMOVE_EVENTS indicates whether to show mouse move events.
-  // See nsWindowDbg for details.
-  PrintEvent(msg, wParam, lParam, *aRetValue, result, SHOW_REPEAT_EVENTS,
-             SHOW_MOUSEMOVE_EVENTS);
+  printEvent.SetResult(result);
 
   return result;
 }
@@ -6660,7 +6657,8 @@ int32_t nsWindow::ClientMarginHitTestPoint(int32_t aX, int32_t aY) {
       POINT pt = {aX, aY};
       ::ScreenToClient(mWnd, &pt);
 
-      if (pt.x == mCachedHitTestPoint.x && pt.y == mCachedHitTestPoint.y &&
+      if (pt.x == mCachedHitTestPoint.x.value &&
+          pt.y == mCachedHitTestPoint.y.value &&
           TimeStamp::Now() - mCachedHitTestTime <
               TimeDuration::FromMilliseconds(HITTEST_CACHE_LIFETIME_MS)) {
         return mCachedHitTestResult;
@@ -7061,7 +7059,7 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp) {
 
     // If a maximized window is resized, recalculate the non-client margins.
     if (mFrameState->GetSizeMode() == nsSizeMode_Maximized) {
-      if (UpdateNonClientMargins(nsSizeMode_Maximized, true)) {
+      if (UpdateNonClientMargins(true)) {
         // gecko resize event already sent by UpdateNonClientMargins.
         return;
       }
@@ -7596,29 +7594,31 @@ bool nsWindow::OnResize(const LayoutDeviceIntSize& aSize) {
   return result;
 }
 
-void nsWindow::OnSizeModeChange(nsSizeMode aSizeMode) {
+void nsWindow::OnSizeModeChange() {
+  const nsSizeMode mode = mFrameState->GetSizeMode();
+
   MOZ_LOG(gWindowsLog, LogLevel::Info,
-          ("nsWindow::OnSizeModeChange() aSizeMode %d", aSizeMode));
+          ("nsWindow::OnSizeModeChange() sizeMode %d", mode));
 
   if (NeedsToTrackWindowOcclusionState()) {
     WinWindowOcclusionTracker::Get()->OnWindowVisibilityChanged(
-        this, aSizeMode != nsSizeMode_Minimized);
+        this, mode != nsSizeMode_Minimized);
 
     wr::DebugFlags flags{0};
     flags.bits = gfx::gfxVars::WebRenderDebugFlags();
     bool debugEnabled = bool(flags & wr::DebugFlags::WINDOW_VISIBILITY_DBG);
     if (debugEnabled && mCompositorWidgetDelegate) {
-      mCompositorWidgetDelegate->NotifyVisibilityUpdated(aSizeMode,
+      mCompositorWidgetDelegate->NotifyVisibilityUpdated(mode,
                                                          mIsFullyOccluded);
     }
   }
 
   if (mCompositorWidgetDelegate) {
-    mCompositorWidgetDelegate->OnWindowModeChange(aSizeMode);
+    mCompositorWidgetDelegate->OnWindowModeChange(mode);
   }
 
   if (mWidgetListener) {
-    mWidgetListener->SizeModeChanged(aSizeMode);
+    mWidgetListener->SizeModeChanged(mode);
   }
 }
 
@@ -7956,14 +7956,6 @@ void nsWindow::SetWindowTranslucencyInner(nsTransparencyMode aMode) {
     ::FillRect(hdc, &rect,
                reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
     ReleaseDC(mWnd, hdc);
-  }
-
-  // Disable double buffering with D3D compositor for disabling compositor
-  // window usage.
-  if (HasGlass() && !gfxVars::UseWebRender() &&
-      gfxVars::UseDoubleBufferingWithCompositor()) {
-    gfxVars::SetUseDoubleBufferingWithCompositor(false);
-    GPUProcessManager::Get()->ResetCompositors();
   }
 }
 
@@ -8903,11 +8895,11 @@ bool nsWindow::OnPointerEvents(UINT msg, WPARAM aWParam, LPARAM aLParam) {
         LayoutDeviceIntPoint eventPoint(GET_X_LPARAM(aLParam),
                                         GET_Y_LPARAM(aLParam));
         int32_t movementX = sLastPointerDownPoint.x > eventPoint.x
-                                ? sLastPointerDownPoint.x - eventPoint.x
-                                : eventPoint.x - sLastPointerDownPoint.x;
+                                ? sLastPointerDownPoint.x - eventPoint.x.value
+                                : eventPoint.x.value - sLastPointerDownPoint.x;
         int32_t movementY = sLastPointerDownPoint.y > eventPoint.y
-                                ? sLastPointerDownPoint.y - eventPoint.y
-                                : eventPoint.y - sLastPointerDownPoint.y;
+                                ? sLastPointerDownPoint.y - eventPoint.y.value
+                                : eventPoint.y.value - sLastPointerDownPoint.y;
         bool insideMovementThreshold =
             movementX < (int32_t)::GetSystemMetrics(SM_CXDRAG) &&
             movementY < (int32_t)::GetSystemMetrics(SM_CYDRAG);
@@ -9398,8 +9390,8 @@ void nsWindow::FrameState::EnsureSizeMode(nsSizeMode aMode) {
 
   if (aMode == nsSizeMode_Fullscreen) {
     EnsureFullscreenMode(true);
-  } else if ((mSizeMode == nsSizeMode_Fullscreen) &&
-             (aMode == nsSizeMode_Normal)) {
+    MOZ_ASSERT(mSizeMode == nsSizeMode_Fullscreen);
+  } else if (mSizeMode == nsSizeMode_Fullscreen && aMode == nsSizeMode_Normal) {
     // If we are in fullscreen mode, minimize should work like normal and
     // return us to fullscreen mode when unminimized. Maximize isn't really
     // available and won't do anything. "Restore" should do the same thing as
@@ -9412,19 +9404,22 @@ void nsWindow::FrameState::EnsureSizeMode(nsSizeMode aMode) {
 
 void nsWindow::FrameState::EnsureFullscreenMode(bool aFullScreen) {
   if (mFullscreenMode == aFullScreen) {
+    if (aFullScreen) {
+      // NOTE(emilio): When minimizing a fullscreen window we remain with
+      // mFullscreenMode = true, but mSizeMode = nsSizeMode_Minimized. Make
+      // sure we actually end up with a fullscreen sizemode when restoring a
+      // window from that state.
+      SetSizeModeInternal(nsSizeMode_Fullscreen);
+    }
     return;
   }
 
   mWindow->OnFullscreenWillChange(aFullScreen);
-
   mFullscreenMode = aFullScreen;
   if (aFullScreen) {
     mOldSizeMode = mSizeMode;
-    SetSizeModeInternal(nsSizeMode_Fullscreen);
-  } else {
-    SetSizeModeInternal(mOldSizeMode);
   }
-
+  SetSizeModeInternal(aFullScreen ? nsSizeMode_Fullscreen : mOldSizeMode);
   mWindow->OnFullscreenChanged(aFullScreen);
 }
 
@@ -9433,16 +9428,11 @@ void nsWindow::FrameState::OnFrameChanging() {
     return;
   }
 
-  WINDOWPLACEMENT pl;
-  pl.length = sizeof(pl);
-  ::GetWindowPlacement(mWindow->mWnd, &pl);
-
   const nsSizeMode newSizeMode =
       GetSizeModeForWindowFrame(mWindow->mWnd, mFullscreenMode);
-
-  mWindow->OnSizeModeChange(newSizeMode);
-
-  mWindow->UpdateNonClientMargins(newSizeMode, false);
+  EnsureSizeMode(newSizeMode);
+  mWindow->OnSizeModeChange();
+  mWindow->UpdateNonClientMargins(false);
 }
 
 void nsWindow::FrameState::OnFrameChanged() {
@@ -9452,19 +9442,18 @@ void nsWindow::FrameState::OnFrameChanged() {
 
   const nsSizeMode previousSizeMode = mSizeMode;
 
-  // Windows has just changed the size mode of this window. The call to
-  // SizeModeChanged will trigger a call into SetSizeMode where we will
-  // set the min/max window state again or for nsSizeMode_Normal, call
-  // SetWindow with a parameter of SW_RESTORE. There's no need however as
-  // this window's mode has already changed. Updating SizeMode here
-  // insures the SetSizeMode call is a no-op. Addresses a bug on Win7 related
-  // to window docking. (bug 489258)
+  // Windows has just changed the size mode of this window. We don't want to go
+  // through EnsureSizeMode because there we would set the min/max window state
+  // again or for nsSizeMode_Normal, call SetWindow with a parameter of
+  // SW_RESTORE.
+  // There's no need as this window's mode has already changed.
+  // This addresses a bug on Win7 related to window docking. (bug 489258)
   mSizeMode = GetSizeModeForWindowFrame(mWindow->mWnd, mFullscreenMode);
 
   MaybeLogSizeMode(mSizeMode);
 
   if (mSizeMode != previousSizeMode) {
-    mWindow->OnSizeModeChange(mSizeMode);
+    mWindow->OnSizeModeChange();
   }
 
   // If window was restored, window activation was bypassed during the

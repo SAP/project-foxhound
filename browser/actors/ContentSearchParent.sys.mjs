@@ -8,16 +8,14 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
-
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSuggestionController:
     "resource://gre/modules/SearchSuggestionController.sys.mjs",
-
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   FormHistory: "resource://gre/modules/FormHistory.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 const MAX_LOCAL_SUGGESTIONS = 3;
@@ -338,20 +336,12 @@ export let ContentSearch = {
       return false;
     }
     let browserData = this._suggestionDataForBrowser(browser, true);
-    lazy.FormHistory.update(
-      {
-        op: "bump",
-        fieldname: browserData.controller.formHistoryParam,
-        value: entry.value,
-        source: entry.engineName,
-      },
-      {
-        handleCompletion: () => {},
-        handleError: err => {
-          Cu.reportError("Error adding form history entry: " + err);
-        },
-      }
-    );
+    lazy.FormHistory.update({
+      op: "bump",
+      fieldname: browserData.controller.formHistoryParam,
+      value: entry.value,
+      source: entry.engineName,
+    }).catch(err => Cu.reportError("Error adding form history entry: " + err));
     return true;
   },
 

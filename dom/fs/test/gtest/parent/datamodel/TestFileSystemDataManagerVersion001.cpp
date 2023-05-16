@@ -21,11 +21,13 @@
 #include "mozilla/Result.h"
 #include "mozilla/dom/FileSystemTypes.h"
 #include "mozilla/dom/PFileSystemManager.h"
+#include "mozilla/dom/quota/CommonMetadata.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsContentUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsLiteralString.h"
+#include "nsNetCID.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsStringFwd.h"
@@ -37,13 +39,25 @@ namespace mozilla::dom::fs::test {
 using data::FileSystemDatabaseManagerVersion001;
 using data::FileSystemFileManager;
 
-static const Origin& getTestOrigin() {
-  static const Origin orig = "testOrigin"_ns;
-  return orig;
-}
+// This is a minimal mock  to allow us to safely call the lock methods
+// while avoiding assertions
+class MockFileSystemDataManager final : public data::FileSystemDataManager {
+ public:
+  MockFileSystemDataManager(const quota::OriginMetadata& aOriginMetadata,
+                            MovingNotNull<nsCOMPtr<nsIEventTarget>> aIOTarget,
+                            MovingNotNull<RefPtr<TaskQueue>> aIOTaskQueue)
+      : FileSystemDataManager(aOriginMetadata, std::move(aIOTarget),
+                              std::move(aIOTaskQueue)) {}
+
+  virtual ~MockFileSystemDataManager() {
+    // Need to avoid assertions
+    mState = State::Closed;
+  }
+};
 
 static void MakeDatabaseManagerVersion001(
-    FileSystemDatabaseManagerVersion001*& aResult) {
+    RefPtr<MockFileSystemDataManager>& aDataManager,
+    FileSystemDatabaseManagerVersion001*& aDatabaseManager) {
   TEST_TRY_UNWRAP(auto storageService,
                   MOZ_TO_RESULT_GET_TYPED(nsCOMPtr<mozIStorageService>,
                                           MOZ_SELECT_OVERLOAD(do_GetService),
@@ -57,7 +71,7 @@ static void MakeDatabaseManagerVersion001(
                                                     getter_AddRefs(connection));
   ASSERT_NSEQ(NS_OK, rv);
 
-  const Origin& testOrigin = getTestOrigin();
+  const Origin& testOrigin = GetTestOrigin();
 
   TEST_TRY_UNWRAP(
       DatabaseVersion version,
@@ -69,27 +83,46 @@ static void MakeDatabaseManagerVersion001(
                               getter_AddRefs(testPath));
   ASSERT_NSEQ(NS_OK, rv);
 
-  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(getTestOrigin()));
+  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(GetTestOrigin()));
 
   auto fmRes =
       FileSystemFileManager::CreateFileSystemFileManager(std::move(testPath));
   ASSERT_FALSE(fmRes.isErr());
 
-  aResult = new FileSystemDatabaseManagerVersion001(
-      std::move(connection), MakeUnique<FileSystemFileManager>(fmRes.unwrap()),
-      rootId);
+  QM_TRY_UNWRAP(auto streamTransportService,
+                MOZ_TO_RESULT_GET_TYPED(nsCOMPtr<nsIEventTarget>,
+                                        MOZ_SELECT_OVERLOAD(do_GetService),
+                                        NS_STREAMTRANSPORTSERVICE_CONTRACTID),
+                QM_VOID);
+
+  quota::OriginMetadata originMetadata = GetTestOriginMetadata();
+
+  nsCString taskQueueName("OPFS "_ns + originMetadata.mOrigin);
+
+  RefPtr<TaskQueue> ioTaskQueue =
+      TaskQueue::Create(do_AddRef(streamTransportService), taskQueueName.get());
+
+  aDataManager = MakeRefPtr<MockFileSystemDataManager>(
+      originMetadata, WrapMovingNotNull(streamTransportService),
+      WrapMovingNotNull(ioTaskQueue));
+
+  aDatabaseManager = new FileSystemDatabaseManagerVersion001(
+      aDataManager, std::move(connection),
+      MakeUnique<FileSystemFileManager>(fmRes.unwrap()), rootId);
 }
 
 TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateRemoveDirectories)
 {
   nsresult rv = NS_OK;
+  // Ensure that FileSystemDataManager lives for the lifetime of the test
+  RefPtr<MockFileSystemDataManager> dataManager;
   FileSystemDatabaseManagerVersion001* rdm = nullptr;
-  ASSERT_NO_FATAL_FAILURE(MakeDatabaseManagerVersion001(rdm));
+  ASSERT_NO_FATAL_FAILURE(MakeDatabaseManagerVersion001(dataManager, rdm));
   UniquePtr<FileSystemDatabaseManagerVersion001> dm(rdm);
   // if any of these exit early, we have to close
   auto autoClose = MakeScopeExit([rdm] { rdm->Close(); });
 
-  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(getTestOrigin()));
+  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(GetTestOrigin()));
 
   FileSystemChildMetadata firstChildMeta(rootId, u"First"_ns);
   TEST_TRY_UNWRAP_ERR(
@@ -163,12 +196,13 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateRemoveDirectories)
 TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateRemoveFiles)
 {
   nsresult rv = NS_OK;
-  // Create data manager
+  // Ensure that FileSystemDataManager lives for the lifetime of the test
+  RefPtr<MockFileSystemDataManager> datamanager;
   FileSystemDatabaseManagerVersion001* rdm = nullptr;
-  ASSERT_NO_FATAL_FAILURE(MakeDatabaseManagerVersion001(rdm));
+  ASSERT_NO_FATAL_FAILURE(MakeDatabaseManagerVersion001(datamanager, rdm));
   UniquePtr<FileSystemDatabaseManagerVersion001> dm(rdm);
 
-  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(getTestOrigin()));
+  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(GetTestOrigin()));
 
   FileSystemChildMetadata firstChildMeta(rootId, u"First"_ns);
   // If creating is not allowed, getting a file from empty root fails
@@ -294,12 +328,14 @@ TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateRemoveFiles)
 
 TEST(TestFileSystemDatabaseManagerVersion001, smokeTestCreateMoveDirectories)
 {
+  // Ensure that FileSystemDataManager lives for the lifetime of the test
+  RefPtr<MockFileSystemDataManager> datamanager;
   FileSystemDatabaseManagerVersion001* rdm = nullptr;
-  ASSERT_NO_FATAL_FAILURE(MakeDatabaseManagerVersion001(rdm));
+  ASSERT_NO_FATAL_FAILURE(MakeDatabaseManagerVersion001(datamanager, rdm));
   UniquePtr<FileSystemDatabaseManagerVersion001> dm(rdm);
   auto closeAtExit = MakeScopeExit([&dm]() { dm->Close(); });
 
-  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(getTestOrigin()));
+  TEST_TRY_UNWRAP(EntryId rootId, data::GetRootHandle(GetTestOrigin()));
 
   FileSystemEntryMetadata rootMeta{rootId, u"root"_ns, /* is directory */ true};
 

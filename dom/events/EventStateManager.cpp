@@ -36,6 +36,7 @@
 #include "mozilla/dom/DragEvent.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FrameLoaderBinding.h"
+#include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/PointerEventHandler.h"
@@ -113,7 +114,6 @@
 #include "nsIController.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/Selection.h"
 
@@ -2033,15 +2033,19 @@ bool EventStateManager::IsEventOutsideDragThreshold(
         LookAndFeel::GetInt(LookAndFeel::IntID::DragThresholdX, 0);
     sPixelThresholdY =
         LookAndFeel::GetInt(LookAndFeel::IntID::DragThresholdY, 0);
-    if (!sPixelThresholdX) sPixelThresholdX = 5;
-    if (!sPixelThresholdY) sPixelThresholdY = 5;
+    if (sPixelThresholdX <= 0) {
+      sPixelThresholdX = 5;
+    }
+    if (sPixelThresholdY <= 0) {
+      sPixelThresholdY = 5;
+    }
   }
 
   LayoutDeviceIntPoint pt =
       aEvent->mWidget->WidgetToScreenOffset() + GetEventRefPoint(aEvent);
   LayoutDeviceIntPoint distance = pt - mGestureDownPoint;
-  return Abs(distance.x) > AssertedCast<uint32_t>(sPixelThresholdX) ||
-         Abs(distance.y) > AssertedCast<uint32_t>(sPixelThresholdY);
+  return Abs(distance.x) > sPixelThresholdX ||
+         Abs(distance.y) > sPixelThresholdY;
 }
 
 //
@@ -2974,14 +2978,16 @@ void EventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
   nsIntSize devPixelPageSize(pc->AppUnitsToDevPixels(pageSize.width),
                              pc->AppUnitsToDevPixels(pageSize.height));
   if (!WheelPrefs::GetInstance()->IsOverOnePageScrollAllowedX(aEvent) &&
-      DeprecatedAbs(actualDevPixelScrollAmount.x) > devPixelPageSize.width) {
+      DeprecatedAbs(actualDevPixelScrollAmount.x.value) >
+          devPixelPageSize.width) {
     actualDevPixelScrollAmount.x = (actualDevPixelScrollAmount.x >= 0)
                                        ? devPixelPageSize.width
                                        : -devPixelPageSize.width;
   }
 
   if (!WheelPrefs::GetInstance()->IsOverOnePageScrollAllowedY(aEvent) &&
-      DeprecatedAbs(actualDevPixelScrollAmount.y) > devPixelPageSize.height) {
+      DeprecatedAbs(actualDevPixelScrollAmount.y.value) >
+          devPixelPageSize.height) {
     actualDevPixelScrollAmount.y = (actualDevPixelScrollAmount.y >= 0)
                                        ? devPixelPageSize.height
                                        : -devPixelPageSize.height;
@@ -3480,7 +3486,7 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
 
           // If the mousedown happened inside a popup, don't try to set focus on
           // one of its containing elements
-          if (frame->StyleDisplay()->mDisplay == StyleDisplay::MozPopup) {
+          if (frame->IsMenuPopupFrame()) {
             newFocus = nullptr;
             break;
           }
@@ -3938,6 +3944,15 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       break;
 
     case eKeyUp:
+      // If space key is released, we need to inactivate the element which was
+      // activated by preceding space key down.
+      // XXX Currently, we don't store the reason of activation.  Therefore,
+      //     this may cancel what is activated by a mousedown, but it must not
+      //     cause actual problem in web apps in the wild since it must be
+      //     rare case that users release space key during a mouse click/drag.
+      if (aEvent->AsKeyboardEvent()->ShouldWorkAsSpaceKey()) {
+        ClearGlobalActiveContent(this);
+      }
       break;
 
     case eKeyPress: {
@@ -4101,13 +4116,13 @@ static gfx::IntPoint ComputeHotspot(imgIContainer* aContainer,
     aContainer->GetWidth(&imgWidth);
     aContainer->GetHeight(&imgHeight);
     auto hotspot = gfx::IntPoint::Round(*aHotspot);
-    return {std::max(std::min(hotspot.x, imgWidth - 1), 0),
-            std::max(std::min(hotspot.y, imgHeight - 1), 0)};
+    return {std::max(std::min(hotspot.x.value, imgWidth - 1), 0),
+            std::max(std::min(hotspot.y.value, imgHeight - 1), 0)};
   }
 
   gfx::IntPoint hotspot;
-  aContainer->GetHotspotX(&hotspot.x);
-  aContainer->GetHotspotY(&hotspot.y);
+  aContainer->GetHotspotX(&hotspot.x.value);
+  aContainer->GetHotspotY(&hotspot.y.value);
   return hotspot;
 }
 
@@ -4387,8 +4402,8 @@ nsresult EventStateManager::SetCursor(StyleCursorKind aCursor,
       break;
   }
 
-  uint32_t x = aHotspot ? aHotspot->x : 0;
-  uint32_t y = aHotspot ? aHotspot->y : 0;
+  uint32_t x = aHotspot ? aHotspot->x.value : 0;
+  uint32_t y = aHotspot ? aHotspot->y.value : 0;
   aWidget->SetCursor(nsIWidget::Cursor{c, aContainer, x, y, aResolution});
   return NS_OK;
 }

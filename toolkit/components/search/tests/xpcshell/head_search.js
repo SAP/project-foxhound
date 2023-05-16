@@ -14,13 +14,13 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  clearTimeout: "resource://gre/modules/Timer.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
   sinon: "resource://testing-common/Sinon.jsm",
 });
@@ -45,8 +45,6 @@ var XULRuntime = Cc["@mozilla.org/xre/runtime;1"].getService(Ci.nsIXULRuntime);
 Services.prefs.setBoolPref("browser.search.log", true);
 Services.prefs.setBoolPref("browser.region.log", true);
 
-Services.prefs.setBoolPref("browser.search.modernConfig", true);
-
 AddonTestUtils.init(this, false);
 AddonTestUtils.createAppInfo(
   "xpcshell@tests.mozilla.org",
@@ -67,13 +65,13 @@ SearchSettings.SETTNGS_INVALIDATION_DELAY = 250;
 
 async function promiseSettingsData() {
   let path = PathUtils.join(PathUtils.profileDir, SETTINGS_FILENAME);
-  return JSON.parse(await IOUtils.readUTF8(path, { decompress: true }));
+  return IOUtils.readJSON(path, { decompress: true });
 }
 
 function promiseSaveSettingsData(data) {
-  return IOUtils.write(
+  return IOUtils.writeJSON(
     PathUtils.join(PathUtils.profileDir, SETTINGS_FILENAME),
-    new TextEncoder().encode(JSON.stringify(data)),
+    data,
     { compress: true }
   );
 }

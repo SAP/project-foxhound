@@ -20,13 +20,15 @@ const {
   PREF_BRANCH_WAS_REGISTERED,
   PREF_BRANCH_PREVIOUS_ACTION,
   PREF_BRANCH_PREVIOUS_ASK,
-} = ChromeUtils.import("resource:///modules/DownloadsViewableInternally.jsm");
+} = ChromeUtils.importESModule(
+  "resource:///modules/DownloadsViewableInternally.sys.mjs"
+);
 
 /* global DownloadIntegration */
-Integration.downloads.defineModuleGetter(
+Integration.downloads.defineESModuleGetter(
   this,
   "DownloadIntegration",
-  "resource://gre/modules/DownloadIntegration.jsm"
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 const HandlerService = Cc[

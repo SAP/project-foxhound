@@ -89,23 +89,23 @@ void nsMathMLTokenFrame::MarkTextFramesAsTokenMathML() {
 }
 
 void nsMathMLTokenFrame::SetInitialChildList(ChildListID aListID,
-                                             nsFrameList& aChildList) {
+                                             nsFrameList&& aChildList) {
   // First, let the base class do its work
-  nsMathMLContainerFrame::SetInitialChildList(aListID, aChildList);
+  nsMathMLContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
   MarkTextFramesAsTokenMathML();
 }
 
 void nsMathMLTokenFrame::AppendFrames(ChildListID aListID,
-                                      nsFrameList& aChildList) {
-  nsMathMLContainerFrame::AppendFrames(aListID, aChildList);
+                                      nsFrameList&& aChildList) {
+  nsMathMLContainerFrame::AppendFrames(aListID, std::move(aChildList));
   MarkTextFramesAsTokenMathML();
 }
 
 void nsMathMLTokenFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aChildList) {
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aChildList) {
   nsMathMLContainerFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
-                                       aChildList);
+                                       std::move(aChildList));
   MarkTextFramesAsTokenMathML();
 }
 

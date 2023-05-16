@@ -2,11 +2,11 @@
   "manifest_version": 2,
   "name": "Web Compatibility Interventions",
   "description": "Urgent post-release fixes for web compatibility.",
-  "version": "107.1.0",
+  "version": "108.1.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "webcompat@mozilla.org",
-      "strict_min_version": "59.0b5"
+      "strict_min_version": "102.0"
     }
   },
 
@@ -140,7 +140,6 @@
     "shims/private-browsing-web-api-fixes.js",
     "shims/rambler-authenticator.js",
     "shims/rich-relevance.js",
-    "shims/stackblitz.js",
     "shims/tracking-pixel.png",
     "shims/vast2.xml",
     "shims/vast3.xml",

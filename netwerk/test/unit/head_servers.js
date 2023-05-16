@@ -236,12 +236,13 @@ class BaseProxyCode {
             proxyresp.statusMessage,
             proxyresp.headers
           );
-          let rawData = "";
           proxyresp.on("data", chunk => {
-            rawData += chunk;
+            if (!res.writableEnded) {
+              res.write(chunk);
+            }
           });
           proxyresp.on("end", () => {
-            res.end(rawData);
+            res.end();
           });
         }
       )
@@ -251,7 +252,11 @@ class BaseProxyCode {
     if (req.method != "POST") {
       preq.end();
     } else {
-      req.on("data", chunk => preq.write(chunk));
+      req.on("data", chunk => {
+        if (!preq.writableEnded) {
+          preq.write(chunk);
+        }
+      });
       req.on("end", () => preq.end());
     }
   }
@@ -399,8 +404,8 @@ class HTTPSProxyCode {
   static async startServer(port) {
     const fs = require("fs");
     const options = {
-      key: fs.readFileSync(__dirname + "/http2-cert.key"),
-      cert: fs.readFileSync(__dirname + "/http2-cert.pem"),
+      key: fs.readFileSync(__dirname + "/proxy-cert.key"),
+      cert: fs.readFileSync(__dirname + "/proxy-cert.pem"),
     };
     const https = require("https");
     global.proxy = https.createServer(options, BaseProxyCode.proxyHandler);
@@ -437,8 +442,8 @@ class HTTP2ProxyCode {
   static async startServer(port) {
     const fs = require("fs");
     const options = {
-      key: fs.readFileSync(__dirname + "/http2-cert.key"),
-      cert: fs.readFileSync(__dirname + "/http2-cert.pem"),
+      key: fs.readFileSync(__dirname + "/proxy-cert.key"),
+      cert: fs.readFileSync(__dirname + "/proxy-cert.pem"),
     };
     const http2 = require("http2");
     global.proxy = http2.createSecureServer(options);
@@ -479,11 +484,23 @@ class HTTP2ProxyCode {
                   delete proxyheaders[prop];
                 }
               );
-              stream.respond(
-                Object.assign({ ":status": proxyresp.statusCode }, proxyheaders)
-              );
+              try {
+                stream.respond(
+                  Object.assign(
+                    { ":status": proxyresp.statusCode },
+                    proxyheaders
+                  )
+                );
+              } catch (e) {
+                // The channel may have been closed already.
+                if (e.message != "The stream has been destroyed") {
+                  throw e;
+                }
+              }
               proxyresp.on("data", chunk => {
-                stream.write(chunk);
+                if (stream.writable) {
+                  stream.write(chunk);
+                }
               });
               proxyresp.on("end", () => {
                 stream.end();
@@ -497,7 +514,11 @@ class HTTP2ProxyCode {
         if (headers[":method"] != "POST") {
           req.end();
         } else {
-          stream.on("data", chunk => req.write(chunk));
+          stream.on("data", chunk => {
+            if (!req.writableEnded) {
+              req.write(chunk);
+            }
+          });
           stream.on("end", () => req.end());
         }
         return;
@@ -587,13 +608,13 @@ class NodeHTTP2ProxyServer extends BaseHTTPProxy {
 // websocket server
 
 class NodeWebSocketServerCode extends BaseNodeHTTPServerCode {
-  static messageHandler(data) {
+  static messageHandler(data, ws) {
     if (global.wsInputHandler) {
-      global.wsInputHandler(data);
+      global.wsInputHandler(data, ws);
       return;
     }
 
-    global.ws.send("test");
+    ws.send("test");
   }
 
   static async startServer(port) {
@@ -613,8 +634,9 @@ class NodeWebSocketServerCode extends BaseNodeHTTPServerCode {
     WebSocket.Server = require(`${node_ws_root}/lib/websocket-server`);
     global.webSocketServer = new WebSocket.Server({ server: global.server });
     global.webSocketServer.on("connection", function connection(ws) {
-      global.ws = ws;
-      ws.on("message", NodeWebSocketServerCode.messageHandler);
+      ws.on("message", data =>
+        NodeWebSocketServerCode.messageHandler(data, ws)
+      );
     });
 
     await global.server.listen(port);
@@ -674,11 +696,10 @@ class NodeWebSocketHttp2ServerCode extends BaseNodeHTTPServerCode {
         const ws = new WebSocket(null);
         stream.setNoDelay = () => {};
         ws.setSocket(stream, Buffer.from(""), 100 * 1024 * 1024);
-        global.ws = ws;
 
         ws.on("message", data => {
           if (global.wsInputHandler) {
-            global.wsInputHandler(data);
+            global.wsInputHandler(data, ws);
             return;
           }
 
@@ -751,4 +772,91 @@ function getTestServerCertificate() {
     }
   }
   return null;
+}
+
+class WebSocketConnection {
+  constructor() {
+    this._openPromise = new Promise(resolve => {
+      this._openCallback = resolve;
+    });
+
+    this._stopPromise = new Promise(resolve => {
+      this._stopCallback = resolve;
+    });
+
+    this._msgPromise = new Promise(resolve => {
+      this._msgCallback = resolve;
+    });
+    this._messages = [];
+    this._ws = null;
+  }
+
+  get QueryInterface() {
+    return ChromeUtils.generateQI(["nsIWebSocketListener"]);
+  }
+
+  onAcknowledge(aContext, aSize) {}
+  onBinaryMessageAvailable(aContext, aMsg) {
+    info(`received binary ${aMsg}`);
+    this._messages.push(aMsg);
+    this._msgCallback();
+  }
+  onMessageAvailable(aContext, aMsg) {}
+  onServerClose(aContext, aCode, aReason) {}
+  onWebSocketListenerStart(aContext) {}
+  onStart(aContext) {
+    this._openCallback();
+  }
+  onStop(aContext, aStatusCode) {
+    this._stopCallback({ status: aStatusCode });
+    this._ws = null;
+  }
+  static makeWebSocketChan() {
+    let chan = Cc["@mozilla.org/network/protocol;1?name=wss"].createInstance(
+      Ci.nsIWebSocketChannel
+    );
+    chan.initLoadInfo(
+      null, // aLoadingNode
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      null, // aTriggeringPrincipal
+      Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+      Ci.nsIContentPolicy.TYPE_WEBSOCKET
+    );
+    return chan;
+  }
+  // Returns a promise that resolves when the websocket channel is opened.
+  open(url) {
+    this._ws = WebSocketConnection.makeWebSocketChan();
+    let uri = Services.io.newURI(url);
+    this._ws.asyncOpen(uri, url, {}, 0, this, null);
+    return this._openPromise;
+  }
+  // Closes the inner websocket. code and reason arguments are optional.
+  close(code, reason) {
+    this._ws.close(code || Ci.nsIWebSocketChannel.CLOSE_NORMAL, reason || "");
+  }
+  // Sends a message to the server.
+  send(msg) {
+    this._ws.sendMsg(msg);
+  }
+  // Returns a promise that resolves when the channel's onStop is called.
+  // Promise resolves with an `{status}` object, where status is the
+  // result passed to onStop.
+  finished() {
+    return this._stopPromise;
+  }
+
+  // Returned promise resolves with an array of received messages
+  // If messages have been received in the the past before calling
+  // receiveMessages, the promise will immediately resolve. Otherwise
+  // it will resolve when the first message is received.
+  async receiveMessages() {
+    await this._msgPromise;
+    this._msgPromise = new Promise(resolve => {
+      this._msgCallback = resolve;
+    });
+    let messages = this._messages;
+    this._messages = [];
+    return messages;
+  }
 }

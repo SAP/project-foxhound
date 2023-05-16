@@ -457,6 +457,8 @@ struct JSRuntime {
   js::MainThreadData<JSDestroyPrincipalsOp> destroyPrincipals;
   js::MainThreadData<JSReadPrincipalsOp> readPrincipals;
 
+  js::MainThreadData<JS::EnsureCanAddPrivateElementOp> canAddPrivateElement;
+
   /* Optional warning reporter. */
   js::MainThreadData<JS::WarningReporter> warningReporter;
 
@@ -680,6 +682,10 @@ struct JSRuntime {
   /* Strong references on scripts held for PCCount profiling API. */
   js::MainThreadData<JS::PersistentRooted<js::ScriptAndCountsVector>*>
       scriptAndCountsVector;
+
+  using RootedPlainObjVec = JS::PersistentRooted<
+      JS::GCVector<js::PlainObject*, 0, js::SystemAllocPolicy>>;
+  js::MainThreadData<js::UniquePtr<RootedPlainObjVec>> watchtowerTestingLog;
 
  private:
   /* Code coverage output. */

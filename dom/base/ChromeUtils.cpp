@@ -949,6 +949,9 @@ void ChromeUtils::GetPartitionKeyFromURL(dom::GlobalObject& aGlobal,
                                          ErrorResult& aRv) {
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL);
+  if (NS_SUCCEEDED(rv) && uri->SchemeIs("chrome")) {
+    rv = NS_ERROR_FAILURE;
+  }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aPartitionKey.Truncate();
@@ -1012,7 +1015,7 @@ static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
       "In order for this static cast to be okay, "
       "WebIDLProcType must match ProcType exactly");
 
-  // These must match the similar ones in E10SUtils.jsm, RemoteTypes.h,
+  // These must match the similar ones in E10SUtils.sys.mjs, RemoteTypes.h,
   // ProcInfo.h and ChromeUtils.webidl
   switch (aType) {
     PROCTYPE_TO_WEBIDL_CASE(Web, Web);

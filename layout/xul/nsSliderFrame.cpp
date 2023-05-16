@@ -123,17 +123,19 @@ void nsSliderFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 
 void nsSliderFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                  const nsLineList::iterator* aPrevFrameLine,
-                                 nsFrameList& aFrameList) {
+                                 nsFrameList&& aFrameList) {
   bool wasEmpty = mFrames.IsEmpty();
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
+  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                           std::move(aFrameList));
   if (wasEmpty) AddListener();
 }
 
-void nsSliderFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
+void nsSliderFrame::AppendFrames(ChildListID aListID,
+                                 nsFrameList&& aFrameList) {
   // if we have no children and on was added then make sure we add the
   // listener
   bool wasEmpty = mFrames.IsEmpty();
-  nsBoxFrame::AppendFrames(aListID, aFrameList);
+  nsBoxFrame::AppendFrames(aListID, std::move(aFrameList));
   if (wasEmpty) AddListener();
 }
 
@@ -1044,9 +1046,9 @@ void nsSliderFrame::SetCurrentPositionInternal(nsIContent* aScrollbar,
 }
 
 void nsSliderFrame::SetInitialChildList(ChildListID aListID,
-                                        nsFrameList& aChildList) {
-  nsBoxFrame::SetInitialChildList(aListID, aChildList);
-  if (aListID == kPrincipalList) {
+                                        nsFrameList&& aChildList) {
+  nsBoxFrame::SetInitialChildList(aListID, std::move(aChildList));
+  if (aListID == FrameChildListID::Principal) {
     AddListener();
   }
 }

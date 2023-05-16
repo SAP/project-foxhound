@@ -2651,12 +2651,12 @@
     "record_in_processes": ["content"],
     "products": ["firefox"],
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "expires_in_version": "109",
+    "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "kind": "exponential",
     "high": 50000,
     "n_buckets": 100,
-    "bug_numbers": [1743965],
+    "bug_numbers": [1743965, 1796398],
     "keyed": true,
     "description": "Time in milliseconds from navigationStart to loadEventStart for the foreground http or https root content document. This is collected only on page load where the main document uses HTTP3. It is keyed based on whether a \"priority\" header has been received."
   },
@@ -2664,12 +2664,12 @@
     "record_in_processes": ["content"],
     "products": ["firefox"],
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "expires_in_version": "109",
+    "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "kind": "exponential",
     "high": 50000,
     "n_buckets": 100,
-    "bug_numbers": [1743965],
+    "bug_numbers": [1743965, 1796398],
     "keyed": true,
     "description": "The time between navigationStart and the first contentful paint of a foreground http or https root content document, in milliseconds. The contentful paint timestamp is taken during display list building and does not include rasterization or compositing of that paint. This is collected only on page load where the main document uses HTTP3. It is keyed based on whether a \"priority\" header has been received."
   },
@@ -3078,41 +3078,53 @@
     "description": "Count of the HTTP redirection that triggered by top-level document or by subresource, keyed by the URL scheme redirected to.",
     "labels": ["topLevel", "subresource"]
   },
-  "NETWORK_ASYNC_OPEN_CHILD_TO_TRANSACTION_PENDING_MS" :{
+  "NETWORK_ASYNC_OPEN_CHILD_TO_TRANSACTION_PENDING_EXP_MS" :{
     "record_in_processes": ["content"],
     "products": [ "firefox", "fennec" ],
     "alert_emails": ["necko@mozilla.com", "acreskey@mozilla.com"],
     "bug_numbers": [1789468],
     "expires_in_version": "never",
     "keyed": true,
-    "kind": "linear",
-    "high": 5000,
+    "kind": "exponential",
+    "high": 2000,
     "n_buckets": 50,
-    "description": "The time spent from HttpChannelChild::AsyncOpen to adding the transactionto the nsHttpConnectionMgr, in milliseconds, keyed by classOfService"
+    "description": "The time spent from HttpChannelChild::AsyncOpen to adding the transactionto the nsHttpConnectionMgr, in milliseconds, keyed by the classOfService flags"
   },
-  "NETWORK_RESPONSE_START_PARENT_TO_CONTENT_MS" :{
+  "NETWORK_RESPONSE_START_PARENT_TO_CONTENT_EXP_MS" :{
       "record_in_processes": ["content"],
       "products": [ "firefox", "fennec" ],
       "alert_emails": ["necko@mozilla.com", "acreskey@mozilla.com"],
       "bug_numbers": [1793975],
       "expires_in_version": "never",
       "keyed": true,
-      "kind": "linear",
-      "high": 5000,
+      "kind": "exponential",
+      "high": 2000,
       "n_buckets": 50,
-      "description": "The time spent relaying response start from the socket thread of the parent process to the content process, in milliseconds, keyed by classOfService"
+      "description": "The time spent relaying response start from the socket thread of the parent process to the content process, in milliseconds, keyed by the classOfService flags"
     },
-  "NETWORK_DNS_END_TO_CONNECT_START_MS" :{
+  "NETWORK_DNS_END_TO_CONNECT_START_EXP_MS" :{
     "record_in_processes": ["main"],
     "products": [ "firefox", "fennec" ],
     "alert_emails": ["necko@mozilla.com", "acreskey@mozilla.com"],
     "bug_numbers": [1791077],
     "expires_in_version": "never",
     "keyed": true,
-    "kind": "linear",
-    "high": 5000,
+    "kind": "exponential",
+    "high": 2000,
     "n_buckets": 50,
-    "description": "The time spent from dns resolution to connect start, in milliseconds, keyed by protocol version and classOfService"
+    "description": "The time spent from dns resolution to connect start, in milliseconds, keyed by protocol version and the classOfService flags"
+  },
+  "NETWORK_RESPONSE_END_PARENT_TO_CONTENT_MS" :{
+    "record_in_processes": ["content"],
+    "products": [ "firefox", "fennec" ],
+    "alert_emails": ["necko@mozilla.com", "acreskey@mozilla.com"],
+    "bug_numbers": [1795775],
+    "expires_in_version": "never",
+    "keyed": true,
+    "kind": "exponential",
+    "high": 2000,
+    "n_buckets": 50,
+    "description": "The time spent relaying response completion from the socket thread of the parent process to the content process, in milliseconds, keyed by the classOfService flags"
   },
   "HTTP_AUTH_DIALOG_STATS_3": {
     "record_in_processes": ["main", "content"],
@@ -5230,6 +5242,19 @@
     "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
     "kind": "enumerated",
     "description": "The reason why we failed to connect with an HTTPSSVC record"
+  },
+  "DNS_PERF_FIRST_CONTENTFUL_PAINT_MS": {
+    "record_in_processes": ["content"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "acreskey@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 50000,
+    "n_buckets": 100,
+    "bug_numbers": [1796639],
+    "keyed": true,
+    "description": "The time between navigationStart and the first contentful paint of a foreground http or https root content document, in milliseconds. The contentful paint timestamp is taken during display list building and does not include rasterization or compositing of that paint. Keyed by TRR domain for DoH or 'Native' otherwise"
   },
   "REFRESH_DRIVER_TICK" : {
     "record_in_processes": ["main", "content"],
@@ -7583,7 +7608,7 @@
     "kind": "count",
     "releaseChannelCollection": "opt-out",
     "bug_numbers": [1137447],
-    "description": "Update: count of when getAppUpdateAutoEnabled from UpdateUtils.jsm does not return the default value of true (true values are not submitted)"
+    "description": "Update: count of when getAppUpdateAutoEnabled from UpdateUtils.sys.mjs does not return the default value of true (true values are not submitted)"
   },
   "UPDATE_NOT_PREF_UPDATE_AUTO_NOTIFY": {
     "record_in_processes": ["main"],
@@ -7593,7 +7618,7 @@
     "kind": "count",
     "releaseChannelCollection": "opt-out",
     "bug_numbers": [1137447],
-    "description": "Update: count of when getAppUpdateAutoEnabled from UpdateUtils.jsm does not return the default value of true (true values are not submitted)"
+    "description": "Update: count of when getAppUpdateAutoEnabled from UpdateUtils.sys.mjs does not return the default value of true (true values are not submitted)"
   },
   "UPDATE_NOT_PREF_UPDATE_AUTO_SUBSEQUENT": {
     "record_in_processes": ["main"],
@@ -7603,7 +7628,7 @@
     "kind": "count",
     "releaseChannelCollection": "opt-out",
     "bug_numbers": [353804],
-    "description": "Update: count of when getAppUpdateAutoEnabled from UpdateUtils.jsm does not return the default value of true (true values are not submitted)"
+    "description": "Update: count of when getAppUpdateAutoEnabled from UpdateUtils.sys.mjs does not return the default value of true (true values are not submitted)"
   },
   "UPDATE_NOT_PREF_UPDATE_STAGING_ENABLED_EXTERNAL": {
     "record_in_processes": ["main"],
@@ -10321,7 +10346,7 @@
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["fx-search-telemetry@mozilla.com", "rev-data@mozilla.com"],
     "bug_numbers": [1089670, 1475571, 1482158, 1499193, 1545172, 1572500, 1654680],
-    "description": "Records search counts for search access points and in-content searches. For search access points in general, the format is: <engine-name>.<search-access-point> For the urlbar when in search mode, the format is <engine name>.urlbar-searchmode For the urlbar when an internal @engine shortcut is used, the format is: <engine-name>.alias For in-content searches, the format is <provider>.in-content:[sap|sap-follow-on|organic]:[code|none]",
+    "description": "Records search counts for search access points. The format is: <engine-name>.<search-access-point>. For the urlbar when in search mode, the format is <engine name>.urlbar-searchmode. For the urlbar when an internal @engine shortcut is used, the format is: <engine-name>.alias.",
     "record_into_store": ["main", "account-ecosystem"]
   },
   "SEARCH_SERVICE_INIT_MS": {
@@ -17033,22 +17058,22 @@
   "HTTP_PRELOAD_IMAGE_STARTREQUEST_DELAY": {
     "record_in_processes": ["content"],
     "products": ["firefox"],
-    "expires_in_version": "109",
+    "expires_in_version": "116",
     "kind": "exponential",
     "high": 5000,
     "n_buckets": 50,
-    "bug_numbers": [1713489],
+    "bug_numbers": [1713489, 1796398],
     "alert_emails": ["necko@mozilla.com", "mwoodrow@mozilla.com"],
     "description": "Time spent waiting on the main-thread to be available to process OnStartRequest, for image preload requests"
   },
   "DOCUMENT_PRELOAD_IMAGE_ASYNCOPEN_DELAY": {
     "record_in_processes": ["content"],
     "products": ["firefox"],
-    "expires_in_version": "109",
+    "expires_in_version": "116",
     "kind": "exponential",
     "high": 5000,
     "n_buckets": 50,
-    "bug_numbers": [1713489],
+    "bug_numbers": [1713489, 1796398],
     "alert_emails": ["necko@mozilla.com", "mwoodrow@mozilla.com"],
     "description": "Time spent waiting on the main-thread to be available to run AsyncOpen, for image preload requests"
   },
@@ -17057,7 +17082,7 @@
     "products": ["firefox"],
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["gtatum@mozilla.com", "nordzilla@mozilla.com"],
-    "expires_in_version": "109",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": 120000,
     "n_buckets": 20,
@@ -17069,7 +17094,7 @@
     "products": ["firefox"],
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["gtatum@mozilla.com", "nordzilla@mozilla.com"],
-    "expires_in_version": "109",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": 120000,
     "n_buckets": 20,
@@ -17081,7 +17106,7 @@
     "products": ["firefox"],
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["gtatum@mozilla.com", "nordzilla@mozilla.com"],
-    "expires_in_version": "109",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": 50000,
     "n_buckets": 20,
@@ -17104,8 +17129,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "bug_numbers": [1743630],
-    "expires_in_version": "109",
+    "bug_numbers": [1743630, 1796398],
+    "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "kind": "exponential",
     "high": 30,
@@ -17116,8 +17141,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "bug_numbers": [1743630],
-    "expires_in_version": "109",
+    "bug_numbers": [1743630, 1796398],
+    "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "kind": "categorical",
     "labels": ["R2xx", "R3xx", "R4xx", "Other", "Cancel"],
@@ -17127,8 +17152,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "bug_numbers": [1743630],
-    "expires_in_version": "109",
+    "bug_numbers": [1743630, 1796398],
+    "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "kind": "exponential",
     "high": 3000,

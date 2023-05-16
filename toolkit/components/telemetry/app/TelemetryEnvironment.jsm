@@ -15,8 +15,8 @@ const { TelemetryUtils } = ChromeUtils.import(
 const { ObjectUtils } = ChromeUtils.import(
   "resource://gre/modules/ObjectUtils.jsm"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { UpdateUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/UpdateUtils.sys.mjs"
@@ -270,6 +270,7 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
     { what: RECORD_DEFAULTPREF_VALUE },
   ],
   ["browser.urlbar.showSearchSuggestionsFirst", { what: RECORD_PREF_VALUE }],
+  ["browser.urlbar.showSearchTerms.enabled", { what: RECORD_PREF_VALUE }],
   [
     "browser.urlbar.suggest.quicksuggest.nonsponsored",
     { what: RECORD_DEFAULTPREF_VALUE },
@@ -382,6 +383,8 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ],
   ["xpinstall.signatures.required", { what: RECORD_PREF_VALUE }],
   ["nimbus.debug", { what: RECORD_PREF_VALUE }],
+  ["nimbus.qa.pref-1", { what: RECORD_DEFAULTPREF_VALUE }],
+  ["nimbus.qa.pref-2", { what: RECORD_DEFAULTPREF_VALUE }],
 ]);
 
 const LOGGER_NAME = "Toolkit.Telemetry";

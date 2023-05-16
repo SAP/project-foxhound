@@ -511,10 +511,31 @@ class MediaDecoderStateMachine
   // If media was in looping and had reached to the end before, then we need
   // to adjust sample time from clock time to media time.
   void AdjustByLooping(media::TimeUnit& aTime) const;
-  Maybe<media::TimeUnit> mAudioDecodedDuration;
+
+  // These are used for seamless looping. When looping has been enable at least
+  // once, `mOriginalDecodedDuration` would be set to the larger duration
+  // between two tracks.
+  media::TimeUnit mOriginalDecodedDuration;
+  Maybe<media::TimeUnit> mAudioTrackDecodedDuration;
+  Maybe<media::TimeUnit> mVideoTrackDecodedDuration;
+
+  bool HasLastDecodedData(MediaData::Type aType);
 
   // Current playback position in the stream in bytes.
   int64_t mPlaybackOffset = 0;
+
+  // For seamless looping video, we don't want to trigger skip-to-next-keyframe
+  // after reaching video EOS. Because we've reset the demuxer to 0, and are
+  // going to request data from start. If playback hasn't looped back, the media
+  // time would still be too large, which makes the reader think the playback is
+  // way behind and performs unnecessary skipping. Eg. Media is 10s long,
+  // reaching EOS at 8s, requesting data at 9s. Assume media's keyframe interval
+  // is 3s, which means keyframes will appear on 0s, 3s, 6s and 9s. If we use
+  // current time as a threshold, the reader sees the next key frame is 3s but
+  // the threashold is 9s, which usually happens when the decoding is too slow.
+  // But that is not the case for us, we should by pass thskip-to-next-keyframe
+  // logic until the media loops back.
+  bool mBypassingSkipToNextKeyFrameCheck = false;
 
  private:
   // Audio stream name

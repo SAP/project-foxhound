@@ -9,22 +9,23 @@ const { isWindowGlobalPartOfContext } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
 );
 const { WatcherRegistry } = ChromeUtils.importESModule(
-  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs"
+  "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs",
+  {
+    // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
+    // which also has to be a true singleton.
+    loadInDevToolsLoader: false,
+  }
 );
 const Targets = require("resource://devtools/server/actors/targets/index.js");
 
-loader.lazyRequireGetter(
-  this,
-  "NetworkObserver",
-  "resource://devtools/server/actors/network-monitor/network-observer.js",
-  true
-);
+const lazy = {};
 
-loader.lazyRequireGetter(
-  this,
-  "NetworkUtils",
-  "resource://devtools/server/actors/network-monitor/utils/network-utils.js"
-);
+ChromeUtils.defineESModuleGetters(lazy, {
+  NetworkObserver:
+    "resource://devtools/shared/network-observer/NetworkObserver.sys.mjs",
+  NetworkUtils:
+    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
+});
 
 loader.lazyRequireGetter(
   this,
@@ -60,15 +61,11 @@ class NetworkEventWatcher {
     this.onNetworkEventUpdated = onUpdated;
     // Boolean to know if we keep previous document network events or not.
     this.persist = false;
-    this.listener = new NetworkObserver(
-      { sessionContext: watcherActor.sessionContext },
-      {
-        onNetworkEvent: this.onNetworkEvent.bind(this),
-        shouldIgnoreChannel: this.shouldIgnoreChannel.bind(this),
-      }
+    this.listener = new lazy.NetworkObserver(
+      this.shouldIgnoreChannel.bind(this),
+      this.onNetworkEvent.bind(this)
     );
 
-    this.listener.init();
     Services.obs.addObserver(this, "window-global-destroyed");
   }
 
@@ -105,7 +102,7 @@ class NetworkEventWatcher {
    *
    */
   getThrottleData() {
-    return this.listener.throttleData;
+    return this.listener.getThrottleData();
   }
 
   /**
@@ -115,7 +112,7 @@ class NetworkEventWatcher {
    *
    */
   setThrottleData(data) {
-    this.listener.throttleData = data;
+    this.listener.setThrottleData(data);
   }
 
   /**
@@ -123,7 +120,7 @@ class NetworkEventWatcher {
    * @param {Boolean} save
    */
   setSaveRequestAndResponseBodies(save) {
-    this.listener.saveRequestAndResponseBodies = save;
+    this.listener.setSaveRequestAndResponseBodies(save);
   }
 
   /**
@@ -222,6 +219,12 @@ class NetworkEventWatcher {
    * Called by NetworkObserver in order to know if the channel should be ignored
    */
   shouldIgnoreChannel(channel) {
+    // First of all, check if the channel matches the watcherActor's session.
+    const filters = { sessionContext: this.watcherActor.sessionContext };
+    if (!lazy.NetworkUtils.matchRequest(channel, filters)) {
+      return true;
+    }
+
     // When we are in the browser toolbox in parent process scope,
     // the session context is still "all", but we are no longer watching frame and process targets.
     // In this case, we should ignore all requests belonging to a BrowsingContext that isn't in the parent process
@@ -234,7 +237,7 @@ class NetworkEventWatcher {
       );
     if (isParentProcessOnlyBrowserToolbox) {
       // We should ignore all requests coming from BrowsingContext running in another process
-      const browsingContextID = NetworkUtils.getChannelBrowsingContextID(
+      const browsingContextID = lazy.NetworkUtils.getChannelBrowsingContextID(
         channel
       );
       const browsingContext = BrowsingContext.get(browsingContextID);

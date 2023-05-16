@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
+const { PromiseTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 PromiseTestUtils.allowMatchingRejectionsGlobally(
   /Unable to arm timer, the object has been finalized\./
@@ -11,8 +11,8 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
   /IOUtils\.profileBeforeChange getter: IOUtils: profileBeforeChange phase has already finished/
 );
 
-const { Preferences } = ChromeUtils.import(
-  "resource://gre/modules/Preferences.jsm"
+const { Preferences } = ChromeUtils.importESModule(
+  "resource://gre/modules/Preferences.sys.mjs"
 );
 const { PrefRec, getPrefsGUIDForTest } = ChromeUtils.import(
   "resource://services-sync/engines/prefs.js"

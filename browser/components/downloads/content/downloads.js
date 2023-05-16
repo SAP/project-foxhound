@@ -35,12 +35,8 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "DownloadsViewUI",
-  "resource:///modules/DownloadsViewUI.jsm"
-);
 ChromeUtils.defineESModuleGetters(this, {
+  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
@@ -55,10 +51,10 @@ const { Integration } = ChromeUtils.importESModule(
 );
 
 /* global DownloadIntegration */
-Integration.downloads.defineModuleGetter(
+Integration.downloads.defineESModuleGetter(
   this,
   "DownloadIntegration",
-  "resource://gre/modules/DownloadIntegration.jsm"
+  "resource://gre/modules/DownloadIntegration.sys.mjs"
 );
 
 // DownloadsPanel

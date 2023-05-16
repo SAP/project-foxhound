@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ThreadEventTarget.h"
 #include "XPCOMModule.h"
 
 #include "base/basictypes.h"
@@ -146,8 +147,6 @@ nsresult nsLocalFileConstructor(const nsIID& aIID, void** aInstancePtr) {
 
 nsComponentManagerImpl* nsComponentManagerImpl::gComponentManager = nullptr;
 bool gXPCOMShuttingDown = false;
-mozilla::Atomic<bool, mozilla::SequentiallyConsistent> gXPCOMThreadsShutDown(
-    false);
 bool gXPCOMMainThreadEventsAreDoomed = false;
 char16_t* gGREBinPath = nullptr;
 
@@ -190,10 +189,6 @@ class ICUReporter final : public nsIMemoryReporter,
 
 NS_IMPL_ISUPPORTS(ICUReporter, nsIMemoryReporter)
 
-/* static */ template <>
-mozilla::CountingAllocatorBase<ICUReporter>::AmountType
-    mozilla::CountingAllocatorBase<ICUReporter>::sAmount(0);
-
 class OggReporter final : public nsIMemoryReporter,
                           public mozilla::CountingAllocatorBase<OggReporter> {
  public:
@@ -215,10 +210,6 @@ class OggReporter final : public nsIMemoryReporter,
 };
 
 NS_IMPL_ISUPPORTS(OggReporter, nsIMemoryReporter)
-
-/* static */ template <>
-mozilla::CountingAllocatorBase<OggReporter>::AmountType
-    mozilla::CountingAllocatorBase<OggReporter>::sAmount(0);
 
 static bool sInitializedJS = false;
 
@@ -599,7 +590,11 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
     mozilla::AppShutdown::AdvanceShutdownPhase(
         mozilla::ShutdownPhase::XPCOMShutdownThreads);
-    gXPCOMThreadsShutDown = true;
+#ifdef DEBUG
+    // Prime an assertion at ThreadEventTarget::Dispatch to avoid late
+    // dispatches to non main-thread threads.
+    ThreadEventTarget::XPCOMShutdownThreadsNotificationFinished();
+#endif
     NS_ProcessPendingEvents(thread);
 
     // Shutdown the timer thread and all timers that might still be alive

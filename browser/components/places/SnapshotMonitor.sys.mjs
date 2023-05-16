@@ -10,11 +10,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DomainGroupBuilder: "resource:///modules/DomainGroupBuilder.sys.mjs",
   PinnedGroupBuilder: "resource:///modules/PinnedGroupBuilder.sys.mjs",
   Snapshots: "resource:///modules/Snapshots.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  clearTimeout: "resource://gre/modules/Timer.jsm",
-  setTimeout: "resource://gre/modules/Timer.jsm",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -159,6 +156,13 @@ export const SnapshotMonitor = new (class SnapshotMonitor {
   /**
    * Test-only function used to override the delay values to provide shorter
    * delays for tests.
+   *
+   * @param {object} [options]
+   *   The object containing the delay values.
+   * @param {number} [options.added]
+   *   The delay for added snapshots.
+   * @param {number} [options.removed]
+   *   The delay for removed snapshots.
    */
   setTimerDelaysForTests({
     added = lazy.SNAPSHOT_ADDED_TIMER_DELAY,
@@ -308,8 +312,11 @@ export const SnapshotMonitor = new (class SnapshotMonitor {
    * tests and know that the triggerBuilders for idle-daily has finished.
    *
    * @param {object} subject
+   *   Notification specific interface pointer
    * @param {string} topic
-   * @param {nsISupports} data
+   *   The topic of the notification
+   * @param {string} data
+   *   The data attached to the notification
    */
   async observe(subject, topic, data) {
     switch (topic) {

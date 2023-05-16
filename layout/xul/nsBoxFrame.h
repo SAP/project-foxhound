@@ -82,13 +82,12 @@ class nsBoxFrame : public nsContainerFrame {
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) override;
 
-  virtual void SetInitialChildList(ChildListID aListID,
-                                   nsFrameList& aChildList) override;
-  virtual void AppendFrames(ChildListID aListID,
-                            nsFrameList& aFrameList) override;
-  virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
-                            const nsLineList::iterator* aPrevFrameLine,
-                            nsFrameList& aFrameList) override;
+  void SetInitialChildList(ChildListID aListID,
+                           nsFrameList&& aChildList) override;
+  void AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) override;
+  void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
+                    nsFrameList&& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
   virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
@@ -150,7 +149,6 @@ class nsBoxFrame : public nsContainerFrame {
   nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext, ClassID aID);
   virtual ~nsBoxFrame();
 
-  virtual bool GetInitialEqualSize(bool& aEqualSize);
   virtual void GetInitialOrientation(bool& aIsHorizontal);
   virtual void GetInitialDirection(bool& aIsNormal);
   virtual bool GetInitialHAlignment(Halignment& aHalign);

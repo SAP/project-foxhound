@@ -5,8 +5,8 @@
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -162,7 +162,7 @@ class LoginManagerPrompter {
   }
 
   /**
-   * Displays the PopupNotifications.jsm doorhanger for password save or change.
+   * Displays the PopupNotifications.sys.mjs doorhanger for password save or change.
    *
    * @param {Element} browser
    *        The browser to show the doorhanger on.

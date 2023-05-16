@@ -98,9 +98,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   void OnMemoryPressure() override;
   void OnBeforePaintTransaction() override;
   void OnDidPaintTransaction() override;
-  layers::PersistentBufferProvider* GetBufferProvider() override {
-    return mBufferProvider;
-  }
+  layers::PersistentBufferProvider* GetBufferProvider() override;
 
   Maybe<layers::SurfaceDescriptor> GetFrontBuffer(
       WebGLFramebufferJS*, const bool webvr = false) override;
@@ -372,18 +370,6 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                double aRotation, double aStartAngle, double aEndAngle,
                bool aAnticlockwise, ErrorResult& aError) override;
 
-  void GetMozCurrentTransform(JSContext* aCx,
-                              JS::MutableHandle<JSObject*> aResult,
-                              mozilla::ErrorResult& aError);
-  void SetMozCurrentTransform(JSContext* aCx,
-                              JS::Handle<JSObject*> aCurrentTransform,
-                              mozilla::ErrorResult& aError);
-  void GetMozCurrentTransformInverse(JSContext* aCx,
-                                     JS::MutableHandle<JSObject*> aResult,
-                                     mozilla::ErrorResult& aError);
-  void SetMozCurrentTransformInverse(JSContext* aCx,
-                                     JS::Handle<JSObject*> aCurrentTransform,
-                                     mozilla::ErrorResult& aError);
   void GetFillRule(nsAString& aFillRule);
   void SetFillRule(const nsAString& aFillRule);
 
@@ -445,7 +431,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   virtual void SetOpaqueValueFromOpaqueAttr(bool aOpaqueAttrValue) override;
   bool GetIsOpaque() override { return mOpaque; }
-  void ResetBitmap() override;
+  void ResetBitmap(bool aFreeBuffer);
+  void ResetBitmap() override { ResetBitmap(true); }
 
   bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                  WebRenderCanvasData* aCanvasData) override;
@@ -630,6 +617,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
    */
   bool EnsureTarget(const gfx::Rect* aCoveredRect = nullptr,
                     bool aWillClear = false);
+  // Attempt to borrow a new target from an existing buffer provider.
+  bool BorrowTarget(const gfx::IntRect& aPersistedRect, bool aNeedsClear);
 
   void RestoreClipsAndTransformToTarget();
 
@@ -752,6 +741,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   RefPtr<mozilla::gfx::DrawTarget> mTarget;
 
   RefPtr<mozilla::layers::PersistentBufferProvider> mBufferProvider;
+  bool mBufferNeedsClear = false;
 
   // Whether we should try to create an accelerated buffer provider.
   bool mAllowAcceleration = true;

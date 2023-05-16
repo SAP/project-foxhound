@@ -13,15 +13,15 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NLP: "resource://gre/modules/NLP.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AppUpdater: "resource:///modules/AppUpdater.jsm",
+  AppUpdater: "resource://gre/modules/AppUpdater.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
 });
 
@@ -174,9 +174,11 @@ class Node {
  */
 export class QueryScorer {
   /**
-   * @param {number} distanceThreshold
+   * @param {object} options
+   *   Constructor options.
+   * @param {number} [options.distanceThreshold]
    *   Edit distances no larger than this value are considered matches.
-   * @param {Map} variations
+   * @param {Map} [options.variations]
    *   For convenience, the scorer can augment documents by replacing certain
    *   words with other words and phrases. This mechanism is called variations.
    *   This keys of this map are words that should be replaced, and the values
@@ -202,7 +204,7 @@ export class QueryScorer {
    *   The document.
    * @param {string} doc.id
    *   The document's ID.
-   * @param {array} doc.phrases
+   * @param {Array} doc.phrases
    *   The set of phrases in the document.  Each phrase should be a string.
    */
   addDocument(doc) {
@@ -241,7 +243,7 @@ export class QueryScorer {
    *
    * @param {string} queryString
    *   The query string to score.
-   * @returns {array}
+   * @returns {Array}
    *   An array of objects: { document, score }.  Each element in the array is a
    *   a document and its score against the query string.  The elements are
    *   ordered by score from low to high.  Scores represent edit distance, so
@@ -283,7 +285,7 @@ export class QueryScorer {
    *   The current node being visited.
    * @param {object} doc
    *   The document whose phrases are being added to the tree.
-   * @param {array} phrase
+   * @param {Array} phrase
    *   The phrase to add to the tree.
    * @param {number} wordIndex
    *   The index in the phrase of the current word.
@@ -310,16 +312,18 @@ export class QueryScorer {
    * Traverses a path in the phrase tree in order to score a query.  See
    * `_buildPhraseTree` for a description of how this works.
    *
-   * @param {array} queryWords
+   * @param {object} options
+   *   Options.
+   * @param {Array} options.queryWords
    *   The query being scored, split into words.
-   * @param {Node} node
+   * @param {Node} [options.node]
    *   The node currently being visited.
-   * @param {Map} minDistanceByDoc
+   * @param {Map} [options.minDistanceByDoc]
    *   Keeps track of the minimum edit distance for each document as the
    *   traversal continues.
-   * @param {number} queryWordsIndex
+   * @param {number} [options.queryWordsIndex]
    *   The current index in the query words array.
-   * @param {number} phraseDistance
+   * @param {number} [options.phraseDistance]
    *   The total edit distance between the query and the path in the tree that's
    *   been traversed so far.
    * @returns {Map} minDistanceByDoc
@@ -380,6 +384,7 @@ export class QueryScorer {
 
 /**
  * Gets appropriate l10n values for each tip's payload.
+ *
  * @param {string} tip a value from the TIPS enum
  * @returns {object} an Object shaped as { textData, buttonTextData, helpUrl }
  */
@@ -460,6 +465,8 @@ class ProviderInterventions extends UrlbarProvider {
 
   /**
    * Enum of the types of intervention tips.
+   *
+   * @returns {{ NONE: string; CLEAR: string; REFRESH: string; UPDATE_ASK: string; UPDATE_CHECKING: string; UPDATE_REFRESH: string; UPDATE_RESTART: string; UPDATE_WEB: string; }}
    */
   get TIP_TYPE() {
     return TIPS;
@@ -467,6 +474,8 @@ class ProviderInterventions extends UrlbarProvider {
 
   /**
    * Unique name for the provider, used by the context to filter on providers.
+   *
+   * @returns {string}
    */
   get name() {
     return "UrlbarProviderInterventions";
@@ -474,6 +483,8 @@ class ProviderInterventions extends UrlbarProvider {
 
   /**
    * The type of the provider, must be one of UrlbarUtils.PROVIDER_TYPE.
+   *
+   * @returns {UrlbarUtils.PROVIDER_TYPE}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
@@ -483,6 +494,7 @@ class ProviderInterventions extends UrlbarProvider {
    * Whether this provider should be invoked for the given context.
    * If this method returns false, the providers manager won't start a query
    * with this provider, to save on resources.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
    * @returns {boolean} Whether this provider should be invoked for the search.
    */
@@ -590,8 +602,9 @@ class ProviderInterventions extends UrlbarProvider {
 
   /**
    * Starts querying.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {function} addCallback Callback invoked by the provider to add a new
+   * @param {Function} addCallback Callback invoked by the provider to add a new
    *        result. A UrlbarResult should be passed to it.
    */
   async startQuery(queryContext, addCallback) {
@@ -663,6 +676,7 @@ class ProviderInterventions extends UrlbarProvider {
 
   /**
    * Cancels a running query,
+   *
    * @param {UrlbarQueryContext} queryContext the query context object to cancel
    *        query for.
    */
@@ -678,6 +692,7 @@ class ProviderInterventions extends UrlbarProvider {
   /**
    * Called when a result from the provider without a URL is picked, but
    * currently only for tip results.  The provider should handle the pick.
+   *
    * @param {UrlbarResult} result
    *   The result that was picked.
    */
@@ -759,7 +774,7 @@ function installBrowserUpdateAndRestart() {
   }
   return new Promise(resolve => {
     let listener = () => {
-      // Once we call startDownload, there are two possible end
+      // Once we call allowUpdateDownload, there are two possible end
       // states: DOWNLOAD_FAILED and READY_FOR_RESTART.
       if (
         lazy.appUpdater.status != lazy.AppUpdater.STATUS.READY_FOR_RESTART &&
@@ -774,7 +789,7 @@ function installBrowserUpdateAndRestart() {
       resolve();
     };
     lazy.appUpdater.addListener(listener);
-    lazy.appUpdater.startDownload();
+    lazy.appUpdater.allowUpdateDownload();
   });
 }
 

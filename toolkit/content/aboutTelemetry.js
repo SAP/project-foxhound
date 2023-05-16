@@ -20,14 +20,12 @@ const { TelemetrySend } = ChromeUtils.import(
   "resource://gre/modules/TelemetrySend.jsm"
 );
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
+ChromeUtils.defineESModuleGetters(this, {
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+});
 ChromeUtils.defineModuleGetter(
   this,
   "ObjectUtils",
@@ -178,8 +176,8 @@ var Settings = {
       el.parentElement.addEventListener("click", function(event) {
         if (event.target.localName === "a") {
           if (AppConstants.platform == "android") {
-            var { EventDispatcher } = ChromeUtils.import(
-              "resource://gre/modules/Messaging.jsm"
+            var { EventDispatcher } = ChromeUtils.importESModule(
+              "resource://gre/modules/Messaging.sys.mjs"
             );
             EventDispatcher.instance.sendRequest({
               type: "Settings:Show",

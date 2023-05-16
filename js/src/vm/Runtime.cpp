@@ -80,6 +80,9 @@ const JSSecurityCallbacks js::NullSecurityCallbacks = {};
 static const JSWrapObjectCallbacks DefaultWrapObjectCallbacks = {
     TransparentObjectWrapper, nullptr};
 
+extern bool DefaultHostEnsureCanAddPrivateElementCallback(JSContext* cx,
+                                                          HandleValue val);
+
 static size_t ReturnZeroSize(const void* p) { return 0; }
 
 JSRuntime::JSRuntime(JSRuntime* parentRuntime)
@@ -103,6 +106,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       DOMcallbacks(nullptr),
       destroyPrincipals(nullptr),
       readPrincipals(nullptr),
+      canAddPrivateElement(&DefaultHostEnsureCanAddPrivateElementCallback),
       warningReporter(nullptr),
       selfHostedLazyScript(),
       geckoProfiler_(thisFromCtor()),
@@ -124,6 +128,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       defaultLocale(nullptr),
       profilingScripts(false),
       scriptAndCountsVector(nullptr),
+      watchtowerTestingLog(nullptr),
       lcovOutput_(),
       jitRuntime_(nullptr),
       gc(thisFromCtor()),
@@ -222,6 +227,8 @@ void JSRuntime::destroyRuntime() {
 #ifdef JS_HAS_INTL_API
   sharedIntlData.ref().destroyInstance();
 #endif
+
+  watchtowerTestingLog.ref().reset();
 
   // Caches might hold on ScriptData which are saved in the ScriptDataTable.
   // Clear all stencils from caches to remove ScriptDataTable entries.

@@ -80,7 +80,7 @@ class AccessibilityTest : BaseSessionTest() {
 
     private fun createNodeInfo(id: Int): AccessibilityNodeInfo {
         val node = provider.createAccessibilityNodeInfo(id);
-        nodeInfos.add(node)
+        nodeInfos.add(node!!)
         return node;
     }
 
@@ -152,7 +152,12 @@ class AccessibilityTest : BaseSessionTest() {
     @After fun teardown() {
         sessionRule.runtime.settings.forceEnableAccessibility = false
         mainSession.accessibility.view = null
-        nodeInfos.forEach { node -> node.recycle() }
+        if (Build.VERSION.SDK_INT < 33){
+            nodeInfos.forEach { node ->
+                @Suppress("DEPRECATION")
+                node.recycle()
+            }
+        }
     }
 
     private fun waitForInitialFocus(moveToFirstChild: Boolean = false) {
@@ -938,6 +943,18 @@ class AccessibilityTest : BaseSessionTest() {
 
         provider.performAction(nodeId, AccessibilityNodeInfo.ACTION_SELECT, null)
         waitUntilSelect(false)
+
+        // Ensure that querying an option outside of a selectable container
+        // doesn't crash (bug 1801879).
+        mainSession.evaluateJS("document.getElementById('outsideSelectable').focus()")
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onFocused(event: AccessibilityEvent) {
+                nodeId = getSourceId(event)
+                val node = createNodeInfo(nodeId)
+                assertThat("Focused outsideSelectable", node.text.toString(), equalTo("outside selectable"))
+            }
+        })
     }
 
     @Test fun testMutation() {
@@ -1320,6 +1337,7 @@ class AccessibilityTest : BaseSessionTest() {
         var rootBounds = Rect()
         rootNode.getBoundsInScreen(rootBounds)
         assertThat("Root node bounds are not empty", rootBounds.isEmpty, equalTo(false))
+        assertThat("Root node is visible to user", rootNode.isVisibleToUser, equalTo(true))
 
         var labelBounds = Rect()
         val labelNode = createNodeInfo(rootNode.getChildId(0))
@@ -1328,11 +1346,13 @@ class AccessibilityTest : BaseSessionTest() {
         assertThat("Label bounds are in parent", rootBounds.contains(labelBounds), equalTo(true))
         assertThat("First node is a label", labelNode.className.toString(), equalTo("android.view.View"))
         assertThat("Label has text", labelNode.text.toString(), equalTo("Name:"))
+         assertThat("Label node is visible to user", labelNode.isVisibleToUser, equalTo(true))
 
         val entryNode = createNodeInfo(rootNode.getChildId(1))
         assertThat("Second node is an entry", entryNode.className.toString(), equalTo("android.widget.EditText"))
         assertThat("Entry has vieIdwResourceName of 'name'", entryNode.viewIdResourceName, equalTo("name"))
         assertThat("Entry value is text", entryNode.text.toString(), equalTo("Julie"))
+        assertThat("Entry node is visible to user", entryNode.isVisibleToUser, equalTo(true))
         if (Build.VERSION.SDK_INT >= 19) {
             assertThat("Entry hint is label",
                     entryNode.extras.getString("AccessibilityNodeInfo.hint"),
@@ -1346,8 +1366,28 @@ class AccessibilityTest : BaseSessionTest() {
         // The child text leaf is pruned, so this button is childless.
         assertThat("Button has a single text leaf", buttonNode.childCount, equalTo(0))
         assertThat("Button has correct text", buttonNode.text.toString(), equalTo("Submit"))
+        assertThat("Button is visible to user", buttonNode.isVisibleToUser, equalTo(true))
     }
 
+    @Test fun testLoadUnloadIframeDoc() {
+        mainSession.loadTestPath(REMOTE_IFRAME)
+        waitForInitialFocus()
+
+        loadTestPage("test-tree")
+        waitForInitialFocus()
+
+        mainSession.loadTestPath(REMOTE_IFRAME)
+        waitForInitialFocus()
+
+        loadTestPage("test-tree")
+        waitForInitialFocus()
+
+        mainSession.loadTestPath(REMOTE_IFRAME)
+        waitForInitialFocus()
+
+        loadTestPage("test-tree")
+        waitForInitialFocus()
+    }
 
     private fun testAccessibilityFocusIframe(page: String) {
         var nodeId = AccessibilityNodeProvider.HOST_VIEW_ID

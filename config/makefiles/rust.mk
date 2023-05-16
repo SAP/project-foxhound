@@ -41,9 +41,7 @@ endif
 # of cargo when running via `mach`.
 ifdef MACH_STDOUT_ISATTY
 ifeq (,$(findstring --color,$(cargo_build_flags)))
-ifeq (WINNT,$(HOST_OS_ARCH))
-# Bug 1417003: color codes are non-trivial on Windows.  For now,
-# prefer black and white to broken color codes.
+ifdef NO_ANSI
 cargo_build_flags += --color=never
 else
 cargo_build_flags += --color=always
@@ -324,6 +322,7 @@ endef
 cargo_host_linker_env_var := CARGO_TARGET_$(call varize,$(RUST_HOST_TARGET))_LINKER
 cargo_linker_env_var := CARGO_TARGET_$(call varize,$(RUST_TARGET))_LINKER
 
+export MOZ_CLANG_NEWER_THAN_RUSTC_LLVM
 export MOZ_CARGO_WRAP_LDFLAGS
 export MOZ_CARGO_WRAP_LD
 export MOZ_CARGO_WRAP_LD_CXX

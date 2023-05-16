@@ -45,9 +45,13 @@
 //! ```
 
 use anyhow::{bail, Result};
+use uniffi_meta::Checksum;
 
-use super::literal::{convert_default_value, Literal};
 use super::types::{Type, TypeIterator};
+use super::{
+    convert_type,
+    literal::{convert_default_value, Literal},
+};
 use super::{APIConverter, ComponentInterface};
 
 /// Represents a "data class" style object, for passing around complex values.
@@ -55,7 +59,7 @@ use super::{APIConverter, ComponentInterface};
 /// In the FFI these are represented as a byte buffer, which one side explicitly
 /// serializes the data into and the other serializes it out of. So I guess they're
 /// kind of like "pass by clone" values.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Checksum)]
 pub struct Record {
     pub(super) name: String,
     pub(super) fields: Vec<Field>,
@@ -72,12 +76,21 @@ impl Record {
         Type::Record(self.name.clone())
     }
 
-    pub fn fields(&self) -> Vec<&Field> {
-        self.fields.iter().collect()
+    pub fn fields(&self) -> &[Field] {
+        &self.fields
     }
 
     pub fn iter_types(&self) -> TypeIterator<'_> {
         Box::new(self.fields.iter().flat_map(Field::iter_types))
+    }
+}
+
+impl From<uniffi_meta::RecordMetadata> for Record {
+    fn from(meta: uniffi_meta::RecordMetadata) -> Self {
+        Self {
+            name: meta.name,
+            fields: meta.fields.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -97,7 +110,7 @@ impl APIConverter<Record> for weedle::DictionaryDefinition<'_> {
 }
 
 // Represents an individual field on a Record.
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Checksum)]
 pub struct Field {
     pub(super) name: String,
     pub(super) type_: Type,
@@ -110,16 +123,27 @@ impl Field {
         &self.name
     }
 
-    pub fn type_(&self) -> Type {
-        self.type_.clone()
+    pub fn type_(&self) -> &Type {
+        &self.type_
     }
 
-    pub fn default_value(&self) -> Option<Literal> {
-        self.default.clone()
+    pub fn default_value(&self) -> Option<&Literal> {
+        self.default.as_ref()
     }
 
     pub fn iter_types(&self) -> TypeIterator<'_> {
         self.type_.iter_types()
+    }
+}
+
+impl From<uniffi_meta::FieldMetadata> for Field {
+    fn from(meta: uniffi_meta::FieldMetadata) -> Self {
+        Self {
+            name: meta.name,
+            type_: convert_type(&meta.ty),
+            required: true,
+            default: None,
+        }
     }
 }
 

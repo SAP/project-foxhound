@@ -28,7 +28,7 @@
 
 namespace mozilla {
 enum class MediaFeatureChangeReason : uint16_t;
-enum class StylePageOrientation : uint8_t;
+enum class StylePageSizeOrientation : uint8_t;
 enum class StyleRuleChangeKind : uint32_t;
 
 template <typename Integer, typename Number, typename LinearStops>
@@ -236,7 +236,15 @@ class ServoStyleSet {
   // Get a ComputedStyle for an anonymous box. The pseudo type must be
   // a non-inheriting anon box.
   already_AddRefed<ComputedStyle> ResolveNonInheritingAnonymousBoxStyle(
-      PseudoStyleType);
+      PseudoStyleType aType) {
+    return ResolveNonInheritingAnonymousBoxStyle(aType, nullptr);
+  }
+
+  already_AddRefed<ComputedStyle> ResolvePageContentStyle(
+      const nsAtom* aPageName) {
+    return ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType::pageContent,
+                                                 aPageName);
+  }
 
   already_AddRefed<ComputedStyle> ResolveXULTreePseudoStyle(
       dom::Element* aParentElement, nsCSSAnonBoxPseudoStaticAtom* aPseudoTag,
@@ -250,7 +258,7 @@ class ServoStyleSet {
   // value to page-size, as well as for an explicit size or paper name which
   // is not square.
   // If the value is auto or square, then returns nothing.
-  Maybe<StylePageOrientation> GetDefaultPageOrientation();
+  Maybe<StylePageSizeOrientation> GetDefaultPageSizeOrientation();
 
   void AppendAllNonDocumentAuthorSheets(nsTArray<StyleSheet*>& aArray) const;
 
@@ -586,6 +594,9 @@ class ServoStyleSet {
   EnumeratedArray<nsCSSAnonBoxes::NonInheriting,
                   nsCSSAnonBoxes::NonInheriting::_Count, RefPtr<ComputedStyle>>
       mNonInheritingComputedStyles;
+
+  already_AddRefed<ComputedStyle> ResolveNonInheritingAnonymousBoxStyle(
+      PseudoStyleType aType, const nsAtom* aPageName);
 
  public:
   void PutCachedAnonymousContentStyles(

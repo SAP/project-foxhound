@@ -35,7 +35,13 @@ class WebGLParent : public PWebGLParent, public SupportsWeakPtr {
 
   using IPCResult = mozilla::ipc::IPCResult;
 
-  IPCResult RecvDispatchCommands(mozilla::ipc::Shmem&&, uint64_t);
+  template <class ResolveT>
+  IPCResult RecvPing(const ResolveT& Resolve) {
+    Resolve(void_t{});
+    return IPC_OK();
+  }
+
+  IPCResult RecvDispatchCommands(mozilla::ipc::BigBuffer&&, uint64_t);
   IPCResult RecvTexImage(uint32_t level, uint32_t respecFormat,
                          const uvec3& offset, const webgl::PackingInfo&,
                          webgl::TexUnpackBlobDesc&&);

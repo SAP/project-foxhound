@@ -3,10 +3,12 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { setTimeout } = ChromeUtils.import("resource://gre/modules/Timer.jsm");
+const { setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
+);
 const { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
 );
@@ -308,7 +310,7 @@ add_task(async function test_gifft_timespan() {
     10 * NANOS_IN_MILLIS - EPSILON
   );
   // Mirrored to milliseconds.
-  Assert.greaterOrEqual(scalarValue("telemetry.test.mirror_for_timespan"), 10);
+  Assert.greaterOrEqual(scalarValue("telemetry.test.mirror_for_timespan"), 9);
 });
 
 add_task(async function test_gifft_timespan_raw() {

@@ -20,13 +20,19 @@
 
 var EXPORTED_SYMBOLS = ["TestUtils"];
 
-const { clearTimeout, setTimeout } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
+const { clearTimeout, setTimeout } = ChromeUtils.importESModule(
+  "resource://gre/modules/Timer.sys.mjs"
 );
 const ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"].getService(
   Ci.nsIConsoleAPIStorage
 );
 
+/**
+ * TestUtils provides generally useful test utilities.
+ * It can be used from mochitests, browser mochitests and xpcshell tests alike.
+ *
+ * @class
+ */
 var TestUtils = {
   executeSoon(callbackFn) {
     Services.tm.dispatchToMainThread(callbackFn);
@@ -213,9 +219,9 @@ var TestUtils = {
   /**
    * Takes a screenshot of an area and returns it as a data URL.
    *
-   * @param eltOrRect
+   * @param eltOrRect {Element|Rect}
    *        The DOM node or rect ({left, top, width, height}) to screenshot.
-   * @param win
+   * @param win {Window}
    *        The current window.
    */
   screenshotArea(eltOrRect, win) {

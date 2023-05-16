@@ -17,8 +17,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const lazy = {};
 ChromeUtils.defineModuleGetter(
@@ -1278,8 +1278,8 @@ function showOrCreateMenuForWindow(aWindow) {
 
     let container, insertionPoint;
     if (AppConstants.platform == "macosx") {
-      container = document.getElementById("windowPopup");
-      insertionPoint = document.getElementById("sep-window-list");
+      container = document.getElementById("menu_ToolsPopup");
+      insertionPoint = document.getElementById("devToolsSeparator");
       let separator = document.createXULElement("menuseparator");
       separator.id = "tabSharingSeparator";
       container.insertBefore(separator, insertionPoint);

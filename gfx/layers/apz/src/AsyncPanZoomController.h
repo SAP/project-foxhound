@@ -903,12 +903,11 @@ class AsyncPanZoomController {
       RepaintUpdateType aUpdateType = RepaintUpdateType::eUserAction);
 
   /**
-   * Send the provided metrics to Gecko to trigger a repaint. This function
-   * may filter duplicate calls with the same metrics. This function must be
-   * called on the main thread.
+   * Send Metrics() to Gecko to trigger a repaint. This function may filter
+   * duplicate calls with the same metrics. This function must be called on the
+   * main thread.
    */
-  void RequestContentRepaint(const FrameMetrics& aFrameMetrics,
-                             const ParentLayerPoint& aVelocity,
+  void RequestContentRepaint(const ParentLayerPoint& aVelocity,
                              const ScreenMargin& aDisplayportMargins,
                              RepaintUpdateType aUpdateType);
 
@@ -1367,7 +1366,22 @@ class AsyncPanZoomController {
   AxisX mX;
   AxisY mY;
 
+  /**
+   * Returns wheter the given input state is a user pan-gesture.
+   *
+   * Note: momentum pan gesture states are not considered a panning state.
+   */
   static bool IsPanningState(PanZoomState aState);
+
+  /**
+   * Returns wheter a delayed transform end is queued.
+   */
+  bool IsDelayedTransformEndSet();
+
+  /**
+   * Returns wheter a delayed transform end is queued.
+   */
+  void SetDelayedTransformEnd(bool aDelayedTransformEnd);
 
   /**
    * Returns whether the specified PanZoomState does not need to be reset when
@@ -1397,11 +1411,18 @@ class AsyncPanZoomController {
   int mNotificationBlockers;
 
   /**
+   * Helper to set the current state, without content controller events
+   * for the state change. This is useful in cases where the content
+   * controller events may need to be delayed.
+   */
+  PanZoomState SetStateNoContentControllerDispatch(PanZoomState aNewState);
+
+  /**
    * Helper to set the current state. Holds the monitor before actually setting
    * it and fires content controller events based on state changes. Always set
    * the state using this call, do not set it directly.
    */
-  void SetState(PanZoomState aState);
+  void SetState(PanZoomState aNewState);
   /**
    * Fire content controller notifications about state changes, assuming no
    * StateChangeNotificationBlocker has been activated.
@@ -1505,6 +1526,11 @@ class AsyncPanZoomController {
   // Indicates if the repaint-during-pinch timer is currently set
   bool mPinchPaintTimerSet;
 
+  // Indicates a delayed transform end notification is queued, and the
+  // transform-end timer is currently set. mRecursiveMutex must be held
+  // when using or modifying this member.
+  bool mDelayedTransformEnd;
+
   // Deal with overscroll resulting from a fling animation. This is only ever
   // called on APZC instances that were actually performing a fling.
   // The overscroll is handled by trying to hand the fling off to an APZC
@@ -1537,6 +1563,11 @@ class AsyncPanZoomController {
 
   // Invoked by the pinch repaint timer.
   void DoDelayedRequestContentRepaint();
+
+  // Invoked by the on pan-end handler to ensure that scrollend is only
+  // fired once when a momentum pan or scroll snap is triggered as a
+  // result of the pan gesture.
+  void DoDelayedTransformEndNotification(PanZoomState aOldState);
 
   // Compute the number of ParentLayer pixels per (Screen) inch at the given
   // point and in the given direction.

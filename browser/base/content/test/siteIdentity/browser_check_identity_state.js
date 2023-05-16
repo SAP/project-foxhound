@@ -4,8 +4,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const DUMMY = "browser/browser/base/content/test/siteIdentity/dummy_page.html";
 const INSECURE_ICON_PREF = "security.insecure_connection_icon.enabled";
@@ -35,7 +35,7 @@ function getSecurityConnectionBG() {
         .getElementById("identity-popup-mainView")
         .getElementsByClassName("identity-popup-security-connection")[0]
     )
-    .getPropertyValue("background-image");
+    .getPropertyValue("list-style-image");
 }
 
 async function getReaderModeURL() {

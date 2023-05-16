@@ -236,10 +236,10 @@ function makeActionUrl(type, params) {
  * This means we could sort these wrongly, the muxer should take care of it.
  *
  * @param {UrlbarQueryContext} context the query context.
- * @param {array} matches The match objects.
+ * @param {Array} matches The match objects.
  * @param {set} urls a Set containing all the found urls, used to discard
  *        already added results.
- * @returns {array} converted results
+ * @returns {Array} converted results
  */
 function convertLegacyMatches(context, matches, urls) {
   let results = [];
@@ -275,7 +275,8 @@ function convertLegacyMatches(context, matches, urls) {
 
 /**
  * Creates a new UrlbarResult from the provided data.
- * @param {array} tokens the search tokens.
+ *
+ * @param {Array} tokens the search tokens.
  * @param {object} info includes properties from the legacy result.
  * @returns {object} an UrlbarResult
  */
@@ -408,8 +409,11 @@ const MATCH_TYPE = {
  * Manages a single instance of a Places search.
  *
  * @param {UrlbarQueryContext} queryContext
- * @param {function} listener Called as: `listener(matches, searchOngoing)`
+ *   The query context.
+ * @param {Function} listener
+ *   Called as: `listener(matches, searchOngoing)`
  * @param {PlacesProvider} provider
+ *   The singleton that contains Places information
  */
 function Search(queryContext, listener, provider) {
   // We want to store the original string for case sensitive searches.
@@ -572,9 +576,9 @@ Search.prototype = {
    * Given an array of tokens, this function determines which query should be
    * ran.  It also removes any special search tokens.
    *
-   * @param {array} tokens
+   * @param {Array} tokens
    *        An array of search tokens.
-   * @returns {array} A new, filtered array of tokens.
+   * @returns {Array} A new, filtered array of tokens.
    */
   filterTokens(tokens) {
     let foundToken = false;
@@ -634,6 +638,7 @@ Search.prototype = {
 
   /**
    * Execute the search and populate results.
+   *
    * @param {mozIStorageAsyncConnection} conn
    *        The Sqlite connection.
    */
@@ -752,13 +757,15 @@ Search.prototype = {
   /**
    * Adds a search engine match.
    *
-   * @param {nsISearchEngine} engine
+   * @param {object} options
+   *   The options object.
+   * @param {nsISearchEngine} options.engine
    *        The search engine associated with the match.
-   * @param {string} [query]
+   * @param {string} [options.query]
    *        The search query string.
-   * @param {string} [alias]
+   * @param {string} [options.alias]
    *        The search engine alias associated with the match, if any.
-   * @param {boolean} [historical]
+   * @param {boolean} [options.historical]
    *        True if you're adding a suggestion match and the suggestion is from
    *        the user's local history (and not the search engine).
    */
@@ -824,13 +831,15 @@ Search.prototype = {
    * indicate the search is not a first-page web SERP (as opposed to a image or
    * other non-web SERP).
    *
-   * @param {object} match
-   * @returns {boolean} True if the match can be restyled, false otherwise.
-   * @note We will mistakenly dedupe SERPs for engines that have the same
+   * Note: We will mistakenly dedupe SERPs for engines that have the same
    *   hostname as another engine. One example is if the user installed a
    *   Google Image Search engine. That engine's search URLs might only be
    *   distinguished by query params from search URLs from the default Google
    *   engine.
+   *
+   * @param {object} match
+   *   The match to maybe restyle.
+   * @returns {boolean} True if the match can be restyled, false otherwise.
    */
   _maybeRestyleSearchMatch(match) {
     // Return if the URL does not represent a search result.
@@ -933,20 +942,25 @@ Search.prototype = {
   },
 
   /**
+   * @typedef {object} MatchPositionInformation
+   * @property {number} index
+   *   The index the match should take in the results. Return -1 if the match
+   *   should be discarded.
+   * @property {boolean} replace
+   *   True if the match should replace the result already at
+   *   matchPosition.index.
+   */
+
+  /**
    * Check for duplicates and either discard the duplicate or replace the
    * original match, in case the new one is more specific. For example,
    * a Remote Tab wins over History, and a Switch to Tab wins over a Remote Tab.
    * We must check both id and url for duplication, because keywords may change
    * the url by replacing the %s placeholder.
-   * @param {object} match
-   * @returns {object} matchPosition
-   * @returns {number} matchPosition.index
-   *   The index the match should take in the results. Return -1 if the match
-   *   should be discarded.
-   * @returns {boolean} matchPosition.replace
-   *   True if the match should replace the result already at
-   *   matchPosition.index.
    *
+   * @param {object} match
+   *   The match to insert.
+   * @returns {MatchPositionInformation}
    */
   _getInsertIndexForMatch(match) {
     let [urlMapKey, prefix, action] = makeKeyForMatch(match);
@@ -1279,6 +1293,7 @@ Search.prototype = {
   /**
    * If the user-provided string starts with a keyword that gave a heuristic
    * result, this will strip it.
+   *
    * @returns {string} The filtered search string.
    */
   get _keywordFilteredSearchString() {
@@ -1293,7 +1308,7 @@ Search.prototype = {
    * Obtains the search query to be used based on the previously set search
    * preferences (accessed by this.hasBehavior).
    *
-   * @returns {array}
+   * @returns {Array}
    *   An array consisting of the correctly optimized query to search the
    *   database with and an object containing the params to bound.
    */
@@ -1320,7 +1335,7 @@ Search.prototype = {
   /**
    * Obtains the query to search for switch-to-tab entries.
    *
-   * @returns {array}
+   * @returns {Array}
    *   An array consisting of the correctly optimized query to search the
    *   database with and an object containing the params to bound.
    */
@@ -1390,6 +1405,7 @@ class ProviderPlaces extends UrlbarProvider {
 
   /**
    * Returns the name of this provider.
+   *
    * @returns {string} the name of this provider.
    */
   get name() {
@@ -1398,6 +1414,7 @@ class ProviderPlaces extends UrlbarProvider {
 
   /**
    * Returns the type of this provider.
+   *
    * @returns {integer} one of the types from UrlbarUtils.PROVIDER_TYPE.*
    */
   get type() {
@@ -1407,9 +1424,9 @@ class ProviderPlaces extends UrlbarProvider {
   /**
    * Gets a Sqlite database handle.
    *
-   * @returns {Promise}
-   * @resolves to the Sqlite database handle (according to Sqlite.jsm).
-   * @rejects javascript exception.
+   * @returns {Promise<OpenedConnection>}
+   *   A connection to the Sqlite database handle (according to {@link Sqlite.sys.mjs}).
+   * @throws A javascript exception
    */
   getDatabaseHandle() {
     if (!this._promiseDatabase) {
@@ -1437,6 +1454,7 @@ class ProviderPlaces extends UrlbarProvider {
    * Whether this provider should be invoked for the given context.
    * If this method returns false, the providers manager won't start a query
    * with this provider, to save on resources.
+   *
    * @param {UrlbarQueryContext} queryContext The query context object
    * @returns {boolean} Whether this provider should be invoked for the search.
    */
@@ -1453,8 +1471,9 @@ class ProviderPlaces extends UrlbarProvider {
 
   /**
    * Starts querying.
+   *
    * @param {object} queryContext The query context object
-   * @param {function} addCallback Callback invoked by the provider to add a new
+   * @param {Function} addCallback Callback invoked by the provider to add a new
    *        result.
    * @returns {Promise} resolved when the query stops.
    */
@@ -1475,6 +1494,7 @@ class ProviderPlaces extends UrlbarProvider {
 
   /**
    * Cancels a running query.
+   *
    * @param {object} queryContext The query context object
    */
   cancelQuery(queryContext) {

@@ -404,12 +404,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "binary-space-partition"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88ceb0d16c4fd0e42876e298d7d3ce3780dd9ebdcbe4199816a32c77e08597ff"
-
-[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -572,6 +566,16 @@ dependencies = [
  "crossbeam-utils 0.8.11",
  "jobserver",
  "num_cpus",
+]
+
+[[package]]
+name = "builtins-static"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+ "nom 7.1.1",
+ "pkcs11-bindings",
+ "smallvec",
 ]
 
 [[package]]
@@ -830,12 +834,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "copyless"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2df960f5d869b2dd8532793fde43eb5427cceb126c929747a26823ab0eeb536"
-
-[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -900,7 +898,7 @@ dependencies = [
 [[package]]
 name = "coreaudio-sys-utils"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/cubeb-coreaudio-rs?rev=369c45504c45d74ebb19845506fb1596a471c7c9#369c45504c45d74ebb19845506fb1596a471c7c9"
+source = "git+https://github.com/mozilla/cubeb-coreaudio-rs?rev=93b5c01a131f65c83c11aeb317f4583405c5eb79#93b5c01a131f65c83c11aeb317f4583405c5eb79"
 dependencies = [
  "core-foundation-sys",
  "coreaudio-sys",
@@ -1146,7 +1144,7 @@ dependencies = [
 [[package]]
 name = "cubeb-coreaudio"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/cubeb-coreaudio-rs?rev=369c45504c45d74ebb19845506fb1596a471c7c9#369c45504c45d74ebb19845506fb1596a471c7c9"
+source = "git+https://github.com/mozilla/cubeb-coreaudio-rs?rev=93b5c01a131f65c83c11aeb317f4583405c5eb79#93b5c01a131f65c83c11aeb317f4583405c5eb79"
 dependencies = [
  "atomic",
  "audio-mixer",
@@ -1199,6 +1197,20 @@ name = "dap_ffi"
 version = "0.1.0"
 dependencies = [
  "prio",
+ "rand 0.7.999",
+ "thin-vec",
+]
+
+[[package]]
+name = "dap_ffi-gtest"
+version = "0.1.0"
+dependencies = [
+ "dap_ffi",
+ "hex",
+ "prio",
+ "serde",
+ "serde_json",
+ "thin-vec",
 ]
 
 [[package]]
@@ -1521,7 +1533,7 @@ dependencies = [
 [[package]]
 name = "error-support"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "log",
 ]
@@ -1773,6 +1785,8 @@ name = "fog-gtest"
 version = "0.1.0"
 dependencies = [
  "fog",
+ "jog",
+ "nsstring",
 ]
 
 [[package]]
@@ -2023,6 +2037,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tempfile",
+ "unicode-segmentation",
  "url",
  "uuid",
  "webdriver",
@@ -2090,6 +2105,7 @@ name = "gkrust-gtest"
 version = "0.1.0"
 dependencies = [
  "bench-collections-gtest",
+ "dap_ffi-gtest",
  "fog-gtest",
  "gecko-fuzz-targets",
  "gkrust-shared",
@@ -2171,6 +2187,7 @@ dependencies = [
  "rust_minidump_writer_linux",
  "static_prefs",
  "storage",
+ "tabs",
  "tokio-reactor",
  "tokio-threadpool",
  "unic-langid",
@@ -2181,11 +2198,13 @@ dependencies = [
  "uniffi-example-rondpoint",
  "uniffi-example-sprites",
  "uniffi-example-todolist",
+ "uniffi-fixture-external-types",
  "url",
  "viaduct",
  "webext_storage_bridge",
  "webrender_bindings",
  "wgpu_bindings",
+ "wpf-gpu-raster",
  "xpcom",
  "xulstore",
 ]
@@ -2220,9 +2239,9 @@ dependencies = [
 
 [[package]]
 name = "glean"
-version = "51.4.0"
+version = "51.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bb26e81939b071ae23dfa27fcbda5d5766684ac0f546bd37103b6fac47a4e6a"
+checksum = "43db04e51b1b7e796177e3bda4fdbeb3b649d6e429524863b1ecf699fabc7d6c"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -2240,9 +2259,9 @@ dependencies = [
 
 [[package]]
 name = "glean-core"
-version = "51.4.0"
+version = "51.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8013c5aced55a42f509e108378097f486ebff428a8f2537e7ea615b70c94f00a"
+checksum = "b223c24117a769c9d13e3d9a349187113c364f8ca2831b42651f35d0edba4a5f"
 dependencies = [
  "android_logger",
  "bincode",
@@ -2253,6 +2272,7 @@ dependencies = [
  "log",
  "once_cell",
  "oslog",
+ "remove_dir_all",
  "rkv",
  "serde",
  "serde_json",
@@ -2488,6 +2508,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2641,7 +2670,7 @@ dependencies = [
 [[package]]
 name = "interrupt-support"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "lazy_static",
  "parking_lot 0.12.999",
@@ -2688,7 +2717,6 @@ name = "ipcclientcerts-static"
 version = "0.1.0"
 dependencies = [
  "byteorder",
- "once_cell",
  "pkcs11-bindings",
  "rsclientcerts",
  "sha2",
@@ -3161,7 +3189,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 
 [[package]]
 name = "mdns_service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "byteorder",
  "dns-parser",
@@ -3545,8 +3573,8 @@ checksum = "a2983372caf4480544083767bf2d27defafe32af49ab4df3a0b7fc90793a3664"
 
 [[package]]
 name = "naga"
-version = "0.9.0"
-source = "git+https://github.com/gfx-rs/naga?rev=b209d911#b209d911681c4ef563f7d9048623667743e6248f"
+version = "0.10.0"
+source = "git+https://github.com/gfx-rs/naga?rev=c52d9102#c52d91023d43092323615fcc746162e478033f26"
 dependencies = [
  "bit-set",
  "bitflags",
@@ -3728,7 +3756,7 @@ dependencies = [
 [[package]]
 name = "nss_build_common"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 
 [[package]]
 name = "nsstring"
@@ -4071,9 +4099,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkcs11-bindings"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054f65db435bb7cf99db2f38bbcf568dfa66c342201df54e700c772b178e2f20"
+checksum = "780bf71a814823f87d50b5bfbfd4ba5f2af46819a01f0ac31238f650693eb592"
 dependencies = [
  "bindgen",
 ]
@@ -4092,14 +4120,13 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "plane-split"
-version = "0.17.1"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3f7075ec146b897b6e0faca47adeb7ed3d4f6eaa8145bf19db17311081b3f63"
+checksum = "8c1f7d82649829ecdef8e258790b0587acf0a8403f0ce963473d8e918acc1643"
 dependencies = [
- "binary-space-partition",
  "euclid",
  "log",
- "num-traits",
+ "smallvec",
 ]
 
 [[package]]
@@ -4438,9 +4465,9 @@ dependencies = [
 
 [[package]]
 name = "rkv"
-version = "0.17.1"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6006704273063c72952370ad236b8d58556dcc4f99a95ced4d9ad40f3e80a69"
+checksum = "2c3b196786090b5b57c9bb0f4afca6ac6a5bfb6182c0161ef32f1ecade43ac47"
 dependencies = [
  "arrayref",
  "bincode",
@@ -4461,9 +4488,9 @@ dependencies = [
 
 [[package]]
 name = "ron"
-version = "0.7.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88073939a61e5b7680558e6be56b419e208420c2adb92be54921fa6b72283f1a"
+checksum = "300a51053b1cb55c80b7a9fde4120726ddf25ca241a1cbb926626f62fb136bff"
 dependencies = [
  "base64",
  "bitflags",
@@ -4907,7 +4934,7 @@ dependencies = [
 [[package]]
 name = "sql-support"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "ffi-support",
  "interrupt-support",
@@ -5089,7 +5116,7 @@ dependencies = [
 [[package]]
 name = "sync-guid"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "base64",
  "rand 0.8.5",
@@ -5100,7 +5127,7 @@ dependencies = [
 [[package]]
 name = "sync15"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "anyhow",
  "error-support",
@@ -5125,6 +5152,30 @@ dependencies = [
  "quote",
  "syn",
  "unicode-xid",
+]
+
+[[package]]
+name = "tabs"
+version = "0.1.0"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
+dependencies = [
+ "anyhow",
+ "error-support",
+ "interrupt-support",
+ "lazy_static",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "sql-support",
+ "sync-guid",
+ "sync15",
+ "thiserror",
+ "uniffi",
+ "uniffi_build",
+ "uniffi_macros",
+ "url",
 ]
 
 [[package]]
@@ -5508,6 +5559,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-arena-nomut"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfc9d8d4e8c94375df96d6ac01a18c263d3d529bc4a53a207580ae9bc30e87c1"
+
+[[package]]
 name = "typenum"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5626,9 +5683,9 @@ checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
 
 [[package]]
 name = "uniffi"
-version = "0.20.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ff9d73a665e4e94d566f069fc0c6b92d13fc7de25ae128dd20402023884b551"
+checksum = "b983553c0d1ad73547c65fa0c399aa800bee4a70ad330198e1c7a523212da5ee"
 dependencies = [
  "anyhow",
  "bytes 1.2.1",
@@ -5724,10 +5781,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "uniffi-fixture-external-types"
+version = "0.21.0"
+dependencies = [
+ "thiserror",
+ "uniffi",
+ "uniffi-example-geometry",
+ "uniffi_build",
+ "uniffi_macros",
+]
+
+[[package]]
 name = "uniffi_bindgen"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "195251b1b0dbb221759ea4d79e3090e5c08a60fc4040c9e945b255def155ea90"
+version = "0.21.1"
 dependencies = [
  "anyhow",
  "askama",
@@ -5748,9 +5814,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_build"
-version = "0.20.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74b65ae1c0bac70369bb0d9df6fae578b1ca130bf4cb6203e2636e2d6969dba5"
+checksum = "d035e50433ee3d52ab0dcdcf3b9b26f2cc2ec39294b3c07d95865a518709455f"
 dependencies = [
  "anyhow",
  "camino",
@@ -5758,10 +5824,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "uniffi_macros"
-version = "0.20.0"
+name = "uniffi_checksum_derive"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5efddfb993c5b394a75042c0d144665388af2ad3db628401ab8f4fb6f6d07e54"
+checksum = "78b6e16d46caf942016997af8bbdf4b163bf8ae3deb0b667d9643de7b7ffd4c9"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "uniffi_macros"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c96a574677566f83ea8458dac1dd7792fd63e7c3f9dbcd865f0e8d6f8057b127"
 dependencies = [
  "bincode",
  "camino",
@@ -5778,11 +5854,13 @@ dependencies = [
 
 [[package]]
 name = "uniffi_meta"
-version = "0.20.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe1767e693cbd11fc22c37a4033d82eb9d891c3862e45329b4a891c1d8395df5"
+checksum = "729835442da829c9b6f7c111c76cf87b2498e129101203bec94f0c39a3296a38"
 dependencies = [
  "serde",
+ "siphasher",
+ "uniffi_checksum_derive",
 ]
 
 [[package]]
@@ -5835,7 +5913,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "viaduct"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "ffi-support",
  "log",
@@ -5991,7 +6069,7 @@ dependencies = [
 [[package]]
 name = "webext-storage"
 version = "0.1.0"
-source = "git+https://github.com/mozilla/application-services?rev=d8503475f43dbf1d78eef4e23b0578d0fada3f39#d8503475f43dbf1d78eef4e23b0578d0fada3f39"
+source = "git+https://github.com/mozilla/application-services?rev=b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb#b09ffe23ee60a066176e5d7f9f2c6cd95c528ceb"
 dependencies = [
  "error-support",
  "ffi-support",
@@ -6118,6 +6196,7 @@ dependencies = [
  "webrender",
  "winapi",
  "wr_malloc_size_of",
+ "remove_dir_all",
 ]
 
 [[package]]
@@ -6150,15 +6229,14 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core"
-version = "0.13.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=b752c7d2#b752c7d248a1668ffd954685259b80902307af94"
+version = "0.14.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=261069d04fc1263d8e587c18936b9db90b077abb#261069d04fc1263d8e587c18936b9db90b077abb"
 dependencies = [
  "arrayvec",
  "bit-vec",
  "bitflags",
  "cfg_aliases",
  "codespan-reporting",
- "copyless",
  "fxhash",
  "log",
  "naga",
@@ -6175,8 +6253,8 @@ dependencies = [
 
 [[package]]
 name = "wgpu-hal"
-version = "0.13.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=b752c7d2#b752c7d248a1668ffd954685259b80902307af94"
+version = "0.14.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=261069d04fc1263d8e587c18936b9db90b077abb#261069d04fc1263d8e587c18936b9db90b077abb"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -6213,8 +6291,8 @@ dependencies = [
 
 [[package]]
 name = "wgpu-types"
-version = "0.13.0"
-source = "git+https://github.com/gfx-rs/wgpu?rev=b752c7d2#b752c7d248a1668ffd954685259b80902307af94"
+version = "0.14.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=261069d04fc1263d8e587c18936b9db90b077abb#261069d04fc1263d8e587c18936b9db90b077abb"
 dependencies = [
  "bitflags",
  "bitflags_serde_shim",
@@ -6302,6 +6380,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d129932f4644ac2396cb456385cbf9e63b5b30c6e8dc4820bdca4eb082037a5"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "wpf-gpu-raster"
+version = "0.1.0"
+source = "git+https://github.com/FirefoxGraphics/wpf-gpu-raster?rev=f0d95ce14af8a8de74f469dbad715c4064fca2e1#f0d95ce14af8a8de74f469dbad715c4064fca2e1"
+dependencies = [
+ "typed-arena-nomut",
 ]
 
 [[package]]

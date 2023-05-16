@@ -7,9 +7,7 @@
  * diverse inputs which drive the Firefox View synced tabs setup flow
  */
 
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
@@ -190,13 +188,12 @@ export const TabsSetupFlowManager = new (class {
     const errorStates = {
       "network-offline": !this.networkIsOnline,
       "fxa-admin-disabled": Services.prefs.prefIsLocked(FXA_ENABLED),
+      "password-locked": this.isPrimaryPasswordLocked,
       "sync-disconnected":
         !this.syncIsConnected ||
         (this.syncIsConnected &&
           lazy.UIState.get().status === lazy.UIState.STATUS_LOGIN_FAILED),
-      "sync-error":
-        (!this.syncIsWorking && !this.syncHasWorked) ||
-        this.isPrimaryPasswordLocked,
+      "sync-error": !this.syncIsWorking && !this.syncHasWorked,
     };
 
     for (let [type, value] of Object.entries(errorStates)) {
@@ -411,7 +408,7 @@ export const TabsSetupFlowManager = new (class {
       this.logger.debug("onSignedInChange, no recentTabs, calling syncTabs");
       // If the syncTabs call rejects or resolves false we need to clear the waiting
       // flag and update UI
-      lazy.SyncedTabs.syncTabs()
+      this.syncTabs()
         .catch(ex => {
           this.logger.debug("onSignedInChange, syncTabs rejected:", ex);
           this.stopWaitingForTabs();
@@ -563,7 +560,7 @@ export const TabsSetupFlowManager = new (class {
   async syncOnPageReload() {
     if (lazy.UIState.isReady() && this.fxaSignedIn) {
       this.startWaitingForTabs();
-      await lazy.SyncedTabs.syncTabs(true);
+      await this.syncTabs(true);
     }
   }
 
@@ -572,7 +569,7 @@ export const TabsSetupFlowManager = new (class {
       this.startWaitingForTabs();
       Services.tm.dispatchToMainThread(() => {
         this.logger.debug("tryToClearError: triggering new tab sync");
-        lazy.Weave.Service.sync({ why: "tabs", engines: ["tabs"] });
+        this.startFullTabsSync();
       });
     } else {
       this.logger.debug(
@@ -581,5 +578,13 @@ export const TabsSetupFlowManager = new (class {
         }`
       );
     }
+  }
+  // For easy overriding in tests
+  syncTabs(force = false) {
+    return lazy.SyncedTabs.syncTabs(force);
+  }
+
+  startFullTabsSync() {
+    lazy.Weave.Service.sync({ why: "tabs", engines: ["tabs"] });
   }
 })();

@@ -877,7 +877,7 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
 
 // This list should be kept up-to-date with the spec:
 // https://html.spec.whatwg.org/multipage/system-state.html#custom-handlers
-// If you change this list, please also update the copy in E10SUtils.jsm.
+// If you change this list, please also update the copy in E10SUtils.sys.mjs.
 static const char* const kSafeSchemes[] = {
     // clang-format off
     "bitcoin",
@@ -1855,10 +1855,6 @@ size_t Navigator::SizeOfIncludingThis(
   // TODO: add SizeOfIncludingThis() to DesktopNotificationCenter, bug 674116.
 
   return n;
-}
-
-void Navigator::SetWindow(nsPIDOMWindowInner* aInnerWindow) {
-  mWindow = aInnerWindow;
 }
 
 void Navigator::OnNavigation() {

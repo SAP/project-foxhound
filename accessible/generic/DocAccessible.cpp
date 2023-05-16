@@ -12,6 +12,7 @@
 #include "DocAccessibleChild.h"
 #include "EventTree.h"
 #include "HTMLImageMapAccessible.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "nsAccCache.h"
 #include "nsAccessiblePivot.h"
 #include "nsAccUtils.h"
@@ -272,31 +273,7 @@ void DocAccessible::ApplyARIAState(uint64_t* aState) const {
 Accessible* DocAccessible::FocusedChild() {
   // Return an accessible for the current global focus, which does not have to
   // be contained within the current document.
-  if (Accessible* focusedAcc = FocusMgr()->FocusedAccessible()) {
-    return focusedAcc;
-  }
-  nsFocusManager* focusManagerDOM = nsFocusManager::GetFocusManager();
-
-  if (!focusManagerDOM) {
-    return nullptr;
-  }
-
-  if (!XRE_IsParentProcess()) {
-    // DocAccessibleParent's don't exist in the content
-    // process, so we can't return anything useful if this
-    // is the case.
-    return nullptr;
-  }
-  // If we call GetFocusedBrowsingContext from the chrome process
-  // it returns the BrowsingContext for the focused _window_, which
-  // is not helpful here. Instead use GetFocusedBrowsingContextInChrome
-  // which returns the content BrowsingContext that has focus.
-  dom::BrowsingContext* focusedContext =
-      focusManagerDOM->GetFocusedBrowsingContextInChrome();
-
-  DocAccessibleParent* focusedDoc =
-      DocAccessibleParent::GetFrom(focusedContext);
-  return focusedDoc ? focusedDoc->GetFocusedAcc() : nullptr;
+  return FocusMgr()->FocusedAccessible();
 }
 
 void DocAccessible::TakeFocus() const {
@@ -866,10 +843,36 @@ void DocAccessible::AttributeChanged(dom::Element* aElement,
   }
 }
 
+void DocAccessible::ARIAAttributeDefaultWillChange(dom::Element* aElement,
+                                                   nsAtom* aAttribute,
+                                                   int32_t aModType) {
+  NS_ASSERTION(!IsDefunct(),
+               "Attribute changed called on defunct document accessible!");
+
+  if (aElement->HasAttr(aAttribute)) {
+    return;
+  }
+
+  AttributeWillChange(aElement, kNameSpaceID_None, aAttribute, aModType);
+}
+
+void DocAccessible::ARIAAttributeDefaultChanged(dom::Element* aElement,
+                                                nsAtom* aAttribute,
+                                                int32_t aModType) {
+  NS_ASSERTION(!IsDefunct(),
+               "Attribute changed called on defunct document accessible!");
+
+  if (aElement->HasAttr(aAttribute)) {
+    return;
+  }
+
+  AttributeChanged(aElement, kNameSpaceID_None, aAttribute, aModType, nullptr);
+}
+
 void DocAccessible::ARIAActiveDescendantChanged(LocalAccessible* aAccessible) {
   if (dom::Element* elm = aAccessible->Elm()) {
     nsAutoString id;
-    if (elm->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_activedescendant, id)) {
+    if (elm->GetAttr(nsGkAtoms::aria_activedescendant, id)) {
       dom::Element* activeDescendantElm = IDRefsIterator::GetElem(elm, id);
       if (activeDescendantElm) {
         LocalAccessible* activeDescendant = GetAccessible(activeDescendantElm);
@@ -930,6 +933,9 @@ void DocAccessible::ElementStateChanged(dom::Document* aDocument,
   if (aStateMask.HasState(dom::ElementState::CHECKED)) {
     LocalAccessible* widget = accessible->ContainerWidget();
     if (widget && widget->IsSelect()) {
+      // Changing selection here changes what we cache for
+      // the viewport.
+      SetViewportCacheDirty(true);
       AccSelChangeEvent::SelChangeType selChangeType =
           aElement->State().HasState(dom::ElementState::CHECKED)
               ? AccSelChangeEvent::eSelectionAdd
@@ -1136,8 +1142,8 @@ void DocAccessible::BindToDocument(LocalAccessible* aAccessible,
     AddDependentIDsFor(aAccessible);
 
     nsIContent* content = aAccessible->GetContent();
-    if (content->IsElement() && content->AsElement()->HasAttr(
-                                    kNameSpaceID_None, nsGkAtoms::aria_owns)) {
+    if (content->IsElement() &&
+        content->AsElement()->HasAttr(nsGkAtoms::aria_owns)) {
       mNotificationController->ScheduleRelocation(aAccessible);
     }
   }
@@ -1550,6 +1556,9 @@ void DocAccessible::NotifyOfLoading(bool aIsReloading) {
 }
 
 void DocAccessible::DoInitialUpdate() {
+  AUTO_PROFILER_MARKER_TEXT("DocAccessible::DoInitialUpdate", A11Y, {}, ""_ns);
+  // DO NOT ADD CODE ABOVE THIS BLOCK: THIS CODE IS MEASURING TIMINGS.
+
   if (nsCoreUtils::IsTopLevelContentDocInProcess(mDocumentNode)) {
     mDocFlags |= eTopLevelContentDocInProcess;
     if (IPCAccessibilityActive()) {
@@ -1811,6 +1820,21 @@ bool DocAccessible::UpdateAccessibleOnAttrChange(dom::Element* aElement,
   if (aAttribute == nsGkAtoms::type) {
     // If the input[type] changes, we should recreate the accessible.
     RecreateAccessible(aElement);
+    return true;
+  }
+
+  if (aElement->IsHTMLElement(nsGkAtoms::img) && aAttribute == nsGkAtoms::alt) {
+    // If alt text changes on an img element, we may want to create or remove an
+    // accessible for that img.
+    if (nsAccessibilityService::ShouldCreateImgAccessible(aElement, this)) {
+      if (GetAccessible(aElement)) {
+        // If the accessible already exists, there's no need to create one.
+        return false;
+      }
+      ContentInserted(aElement, aElement->GetNextSibling());
+    } else {
+      ContentRemoved(aElement);
+    }
     return true;
   }
 

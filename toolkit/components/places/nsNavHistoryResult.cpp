@@ -65,6 +65,10 @@
 // requested the node will switch to full refresh mode.
 #define MAX_BATCH_CHANGES_BEFORE_REFRESH 5
 
+// Number of Page_removed events to handle by simply refreshing all containers,
+// because doing so is much faster than incremental updates.
+#define MAX_PAGE_REMOVES_BEFORE_REFRESH 10
+
 using namespace mozilla;
 using namespace mozilla::places;
 
@@ -3518,10 +3522,7 @@ nsresult nsNavHistoryFolderResultNode::OnItemMoved(
   // moving between two different folders, just do a remove and an add
   nsCOMPtr<nsIURI> itemURI;
   if (aItemType == nsINavBookmarksService::TYPE_BOOKMARK) {
-    nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksService();
-    NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-    nsresult rv = bookmarks->GetBookmarkURI(aItemId, getter_AddRefs(itemURI));
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsresult rv = NS_NewURI(getter_AddRefs(itemURI), aURI);
     NS_ENSURE_SUCCESS(rv, rv);
   }
   if (aOldParentGUID.Equals(mTargetFolderGuid)) {
@@ -4212,7 +4213,23 @@ void nsNavHistoryResult::OnIconChanged(nsIURI* aURI, nsIURI* aFaviconURI,
   }
 }
 
+bool nsNavHistoryResult::IsBulkPageRemovedEvent(
+    const PlacesEventSequence& aEvents) {
+  if (IsBatching() || aEvents.Length() <= MAX_PAGE_REMOVES_BEFORE_REFRESH) {
+    return false;
+  }
+  for (const auto& event : aEvents) {
+    if (event->Type() != PlacesEventType::Page_removed) return false;
+  }
+  return true;
+}
+
 void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
+  if (IsBulkPageRemovedEvent(aEvents)) {
+    ENUMERATE_HISTORY_OBSERVERS(Refresh());
+    return;
+  }
+
   for (const auto& event : aEvents) {
     switch (event->Type()) {
       case PlacesEventType::Favicon_changed: {

@@ -878,6 +878,11 @@ class RawBuffer final {
   RawBuffer& operator=(RawBuffer&&) = default;
 };
 
+template <class T>
+inline Range<T> ShmemRange(const mozilla::ipc::Shmem& shmem) {
+  return {shmem.get<T>(), shmem.Size<T>()};
+}
+
 // -
 
 template <typename C, typename K>
@@ -1166,6 +1171,17 @@ inline void Memcpy(const RangedPtr<uint8_t>& destBytes,
   memcpy(destBytes.get(), srcBytes.get(), byteSize);
 }
 
+template <class T, class U>
+inline void Memcpy(const Range<T>* const destRange,
+                   const RangedPtr<U>& srcBegin) {
+  Memcpy(destRange->begin(), srcBegin, destRange->length());
+}
+template <class T, class U>
+inline void Memcpy(const RangedPtr<T>* const destBegin,
+                   const Range<U>& srcRange) {
+  Memcpy(destBegin, srcRange->begin(), srcRange->length());
+}
+
 // -
 
 namespace webgl {
@@ -1175,6 +1191,13 @@ namespace webgl {
 // now.
 // (http://opengl.gpuinfo.org/gl_stats_caps_single.php?listreportsbycap=GL_MAX_COLOR_ATTACHMENTS)
 inline constexpr size_t kMaxDrawBuffers = 8;
+
+union UniformDataVal {
+  float f32;
+  int32_t i32;
+  uint32_t u32;
+};
+
 }  // namespace webgl
 
 }  // namespace mozilla

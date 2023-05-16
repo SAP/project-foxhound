@@ -161,6 +161,7 @@ class ProtectionCategory {
       return false;
     }
     this.categoryItem.classList.toggle("blocked", this.enabled);
+    this.categoryItem.classList.toggle("subviewbutton-nav", this.enabled);
     return true;
   }
 
@@ -457,7 +458,6 @@ let TrackingProtection = new (class TrackingProtection extends ProtectionCategor
     // still show the panel. To reduce the confusion, tell the user that we have
     // not detected any tracker.
     if (!items.childNodes.length) {
-      let emptyBox = document.createXULElement("vbox");
       let emptyImage = document.createXULElement("image");
       emptyImage.classList.add("protections-popup-trackersView-empty-image");
       emptyImage.classList.add("trackers-icon");
@@ -468,9 +468,8 @@ let TrackingProtection = new (class TrackingProtection extends ProtectionCategor
         "contentBlocking.trackersView.empty.label"
       );
 
-      emptyBox.appendChild(emptyImage);
-      emptyBox.appendChild(emptyLabel);
-      items.appendChild(emptyBox);
+      items.appendChild(emptyImage);
+      items.appendChild(emptyLabel);
 
       this.subViewList.classList.add("empty");
     } else {
@@ -1059,6 +1058,187 @@ let SocialTracking = new (class SocialTrackingProtection extends ProtectionCateg
 })();
 
 /**
+ * Singleton to manage the cookie banner feature section in the protections
+ * panel.
+ */
+let cookieBannerSection = new (class {
+  // Check if this is a private window. We don't expect PBM state to change
+  // during the lifetime of this window.
+  #isPrivateBrowsing = PrivateBrowsingUtils.isWindowPrivate(window);
+
+  constructor() {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_serviceModePref",
+      "cookiebanners.service.mode",
+      Ci.nsICookieBannerService.MODE_DISABLED
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_serviceModePrefPrivateBrowsing",
+      "cookiebanners.service.mode.privateBrowsing",
+      Ci.nsICookieBannerService.MODE_DISABLED
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_uiDisabled",
+      "cookiebanners.ui.desktop.enabled",
+      false
+    );
+  }
+
+  /**
+   * Initialize or update the cookie banner handling section state. To be called
+   * initially or whenever the panel opens for a new site.
+   */
+  updateSection({ hostForDisplay }) {
+    let showSection = this.#shouldShowSection();
+
+    for (let el of [
+      this.#cookieBannerSection,
+      this.#cookieBannerSectionSeparator,
+    ]) {
+      el.toggleAttribute("uiDisabled", !showSection);
+    }
+
+    if (showSection) {
+      // If section is visible also update the switch.
+      this.#updateSwitchState({ hostForDisplay });
+    }
+  }
+
+  /**
+   * Handler for clicks on the cookie banner per-site toggle.
+   */
+  onCookieBannerSwitchCommand() {
+    // Update the switch UI state.
+    let newState = this.#cookieBannerSwitch.toggleAttribute("enabled");
+    // Update the switch label UI state.
+    this.#cookieBannerSection.toggleAttribute("hasException", !newState);
+
+    if (newState) {
+      // Enable the feature for the current site, this means clearing the
+      // per-site preference so we revert to global settings.
+      Services.cookieBanners.removeDomainPref(
+        gBrowser.currentURI,
+        this.#isPrivateBrowsing
+      );
+
+      gProtectionsHandler.recordClick("cookieb_toggle_on");
+    } else {
+      // Disable the feature for the current site by setting an exception.
+      Services.cookieBanners.setDomainPref(
+        gBrowser.currentURI,
+        Ci.nsICookieBannerService.MODE_DISABLED,
+        this.#isPrivateBrowsing
+      );
+
+      gProtectionsHandler.recordClick("cookieb_toggle_off");
+    }
+
+    this.#updateSwitchState({ hasException: !newState });
+  }
+
+  /**
+   * Update the UI state of the cookie banner feature switch.
+   * @param {*} options
+   * @param {boolean} [options.hasException] - Whether the current site has an
+   * exception from the cookie banner mechanism.
+   * @param {string} [options.hostForDisplay] - The host to expose via the switch
+   * label.
+   */
+  #updateSwitchState({
+    hasException = this.#hasException,
+    hostForDisplay = gIdentityHandler.getHostForDisplay(),
+  }) {
+    // Switch state
+    this.#cookieBannerSwitch.toggleAttribute("enabled", !hasException);
+    // Switch label
+    this.#cookieBannerSection.toggleAttribute("hasException", hasException);
+
+    // Give the button an accessible label for screen readers.
+    // TODO: integrate this with fluent for the final UX.
+    if (hasException) {
+      this.#cookieBannerSwitch.setAttribute(
+        "aria-label",
+        "Enable cookie banner handling for " + hostForDisplay
+      );
+    } else {
+      this.#cookieBannerSwitch.setAttribute(
+        "aria-label",
+        "Disable cookie banner handling for " + hostForDisplay
+      );
+    }
+  }
+
+  /**
+   * Determines whether the cookie banner handling section should be shown.
+   * @returns {boolean} - true if the section should be shown, false otherwise.
+   */
+  #shouldShowSection() {
+    // UI is globally disabled by pref.
+    if (!this._uiDisabled) {
+      return false;
+    }
+
+    let mode;
+
+    if (this.#isPrivateBrowsing) {
+      mode = this._serviceModePrefPrivateBrowsing;
+    } else {
+      mode = this._serviceModePref;
+    }
+
+    // Only show the section if the feature is enabled for the normal or PBM
+    // window.
+    return mode != Ci.nsICookieBannerService.MODE_DISABLED;
+  }
+
+  /**
+   * Tests if the current site has an exception from the default cookie banner
+   * handling mode. Currently that means the feature is disabled for that site.
+   */
+  get #hasException() {
+    let pref = Services.cookieBanners.getDomainPref(
+      gBrowser.currentURI,
+      this.#isPrivateBrowsing
+    );
+    return pref == Ci.nsICookieBannerService.MODE_DISABLED;
+  }
+
+  // Element getters
+  #cookieBannerSectionEl;
+  get #cookieBannerSection() {
+    if (this.#cookieBannerSectionEl) {
+      return this.#cookieBannerSectionEl;
+    }
+    return (this.#cookieBannerSectionEl = document.getElementById(
+      "protections-popup-cookie-banner-section"
+    ));
+  }
+
+  #cookieBannerSectionSeparatorEl;
+  get #cookieBannerSectionSeparator() {
+    if (this.#cookieBannerSectionSeparatorEl) {
+      return this.#cookieBannerSectionSeparatorEl;
+    }
+    return (this.#cookieBannerSectionSeparatorEl = document.getElementById(
+      "protections-popup-cookie-banner-section-separator"
+    ));
+  }
+
+  #cookieBannerSwitchEl;
+  get #cookieBannerSwitch() {
+    if (this.#cookieBannerSwitchEl) {
+      return this.#cookieBannerSwitchEl;
+    }
+    return (this.#cookieBannerSwitchEl = document.getElementById(
+      "protections-popup-cookie-banner-switch"
+    ));
+  }
+})();
+
+/**
  * Utility object to handle manipulations of the protections indicators in the UI
  */
 var gProtectionsHandler = {
@@ -1621,7 +1801,7 @@ var gProtectionsHandler = {
    * Update the in-panel UI given a blocking event. Called when the popup
    * is being shown, or when the popup is open while a new event comes in.
    */
-  updatePanelForBlockingEvent(event, isShown) {
+  updatePanelForBlockingEvent(event) {
     // Update the categories:
     for (let blocker of Object.values(this.blockers)) {
       if (blocker.categoryItem.hasAttribute("uidisabled")) {
@@ -1630,6 +1810,10 @@ var gProtectionsHandler = {
       blocker.categoryItem.classList.toggle(
         "notFound",
         !blocker.isDetected(event)
+      );
+      blocker.categoryItem.classList.toggle(
+        "subviewbutton-nav",
+        blocker.isDetected(event)
       );
     }
 
@@ -1643,16 +1827,6 @@ var gProtectionsHandler = {
     if (this.anyDetected) {
       // Reorder categories if any are in use.
       this.reorderCategoryItems();
-
-      if (isShown) {
-        // Until we encounter a site that triggers them, category elements might
-        // be invisible when descriptionHeightWorkaround gets called, i.e. they
-        // are omitted from the workaround and the content overflows the panel.
-        // Solution: call it manually here.
-        PanelMultiView.forNode(
-          this._protectionsPopupMainView
-        ).descriptionHeightWorkaround();
-      }
     }
   },
 
@@ -1756,7 +1930,7 @@ var gProtectionsHandler = {
       this._protectionsPopup?.state
     );
     if (isPanelOpen) {
-      this.updatePanelForBlockingEvent(event, true);
+      this.updatePanelForBlockingEvent(event);
     }
 
     // Notify other consumers, like CFR.
@@ -1873,6 +2047,8 @@ var gProtectionsHandler = {
     } else {
       this._protectionsPopup.removeAttribute("milestone");
     }
+
+    cookieBannerSection.updateSection({ hostForDisplay: host });
 
     this._protectionsPopup.toggleAttribute("detected", this.anyDetected);
     this._protectionsPopup.toggleAttribute("blocking", this.anyBlocking);
@@ -2023,6 +2199,10 @@ var gProtectionsHandler = {
     gBrowser.reloadTab(targetTab);
 
     delete this._TPSwitchCommanding;
+  },
+
+  onCookieBannerSwitchCommand() {
+    cookieBannerSection.onCookieBannerSwitchCommand();
   },
 
   setTrackersBlockedCounter(trackerCount) {

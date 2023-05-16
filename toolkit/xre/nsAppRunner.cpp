@@ -284,6 +284,13 @@ static const char kPrefBrowserStartupBlankWindow[] =
 static const char kPrefPreXulSkeletonUI[] = "browser.startup.preXulSkeletonUI";
 #endif  // defined(XP_WIN)
 
+#if defined(MOZ_WIDGET_GTK)
+constexpr nsLiteralCString kStartupTokenNames[] = {
+    "XDG_ACTIVATION_TOKEN"_ns,
+    "DESKTOP_STARTUP_ID"_ns,
+};
+#endif
+
 int gArgc;
 char** gArgv;
 
@@ -295,6 +302,7 @@ extern const char gToolkitBuildID[];
 static nsIProfileLock* gProfileLock;
 #if defined(MOZ_HAS_REMOTE)
 static nsRemoteService* gRemoteService;
+bool gRestartWithoutRemote = false;
 #endif
 
 int gRestartArgc;
@@ -743,16 +751,6 @@ nsIXULRuntime::ContentWin32kLockdownState GetLiveWin32kLockdownState() {
       return nsIXULRuntime::ContentWin32kLockdownState::
           IncompatibleMitigationPolicy;
     }
-  }
-
-  // Win32k Lockdown requires WebRender, but WR is not currently guaranteed
-  // on all computers. It can also fail to initialize and fallback to
-  // non-WR render path.
-  //
-  // We don't want a situation where "Win32k Lockdown + No WR" occurs
-  // without the user explicitly requesting unsupported behavior.
-  if (!gfx::gfxVars::UseWebRender()) {
-    return nsIXULRuntime::ContentWin32kLockdownState::MissingWebRender;
   }
 
   // Non-native theming is required as well
@@ -1787,7 +1785,7 @@ nsXULAppInfo::GetUserCanElevate(bool* aUserCanElevate) {
 #endif
 
 NS_IMETHODIMP
-nsXULAppInfo::GetEnabled(bool* aEnabled) {
+nsXULAppInfo::GetCrashReporterEnabled(bool* aEnabled) {
   *aEnabled = CrashReporter::GetEnabled();
   return NS_OK;
 }
@@ -2240,7 +2238,7 @@ static void DumpHelp() {
 }
 
 static inline void DumpVersion() {
-  if (gAppData->vendor) {
+  if (gAppData->vendor && *gAppData->vendor) {
     printf("%s ", (const char*)gAppData->vendor);
   }
   printf("%s ", (const char*)gAppData->name);
@@ -2249,14 +2247,14 @@ static inline void DumpVersion() {
   // For example, for beta, we would display 42.0b2 instead of 42.0
   printf("%s", MOZ_STRINGIFY(MOZ_APP_VERSION_DISPLAY));
 
-  if (gAppData->copyright) {
+  if (gAppData->copyright && *gAppData->copyright) {
     printf(", %s", (const char*)gAppData->copyright);
   }
   printf("\n");
 }
 
 static inline void DumpFullVersion() {
-  if (gAppData->vendor) {
+  if (gAppData->vendor && *gAppData->vendor) {
     printf("%s ", (const char*)gAppData->vendor);
   }
   printf("%s ", (const char*)gAppData->name);
@@ -2267,7 +2265,7 @@ static inline void DumpFullVersion() {
 
   printf("%s ", (const char*)gAppData->buildID);
   printf("%s ", (const char*)PlatformBuildID());
-  if (gAppData->copyright) {
+  if (gAppData->copyright && *gAppData->copyright) {
     printf(", %s", (const char*)gAppData->copyright);
   }
   printf("\n");
@@ -2615,6 +2613,12 @@ nsresult LaunchChild(bool aBlankCommandLine, bool aTryExec) {
     gRestartArgc = 1;
     gRestartArgv[gRestartArgc] = nullptr;
   }
+
+#if defined(MOZ_HAS_REMOTE)
+  if (gRestartWithoutRemote) {
+    SaveToEnv("MOZ_NO_REMOTE=1");
+  }
+#endif
 
   SaveToEnv("MOZ_LAUNCHED_CHILD=1");
 #if defined(MOZ_LAUNCHER_PROCESS)
@@ -3765,19 +3769,7 @@ bool fire_glxtest_process();
 // Encapsulates startup and shutdown state for XRE_main
 class XREMain {
  public:
-  XREMain()
-      : mStartOffline(false),
-        mShuttingDown(false)
-#ifdef MOZ_HAS_REMOTE
-        ,
-        mDisableRemoteClient(false),
-        mDisableRemoteServer(false)
-#endif
-#if defined(MOZ_WIDGET_GTK)
-        ,
-        mGdkDisplay(nullptr)
-#endif
-            {};
+  XREMain() = default;
 
   ~XREMain() {
     mScopedXPCOM = nullptr;
@@ -3804,17 +3796,17 @@ class XREMain {
   UniquePtr<XREAppData> mAppData;
 
   nsXREDirProvider mDirProvider;
-  nsAutoCString mDesktopStartupID;
 
-  bool mStartOffline;
-  bool mShuttingDown;
-#if defined(MOZ_HAS_REMOTE)
-  bool mDisableRemoteClient;
-  bool mDisableRemoteServer;
+#ifdef MOZ_WIDGET_GTK
+  nsAutoCString mXDGActivationToken;
+  nsAutoCString mDesktopStartupID;
 #endif
 
-#if defined(MOZ_WIDGET_GTK)
-  GdkDisplay* mGdkDisplay;
+  bool mStartOffline = false;
+  bool mShuttingDown = false;
+#if defined(MOZ_HAS_REMOTE)
+  bool mDisableRemoteClient = false;
+  bool mDisableRemoteServer = false;
 #endif
 };
 
@@ -4385,9 +4377,10 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
   if (ar == ARG_FOUND || EnvHasValue("MOZ_NO_REMOTE")) {
     mDisableRemoteClient = true;
     mDisableRemoteServer = true;
-    if (!EnvHasValue("MOZ_NO_REMOTE")) {
-      SaveToEnv("MOZ_NO_REMOTE=1");
-    }
+    gRestartWithoutRemote = true;
+    // We don't want to propagate MOZ_NO_REMOTE to potential child
+    // process.
+    SaveToEnv("MOZ_NO_REMOTE=");
   }
 
   ar = CheckArg("new-instance");
@@ -4712,13 +4705,14 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
 #endif /* XP_WIN */
 
-#if defined(MOZ_WIDGET_GTK)
-  // Stash DESKTOP_STARTUP_ID in malloc'ed memory because gtk_init will clear
-  // it.
-#  define HAVE_DESKTOP_STARTUP_ID
-  const char* desktopStartupIDEnv = PR_GetEnv("DESKTOP_STARTUP_ID");
-  if (desktopStartupIDEnv) {
-    mDesktopStartupID.Assign(desktopStartupIDEnv);
+#ifdef MOZ_WIDGET_GTK
+  // Stash startup token in owned memory because gtk_init will clear
+  // DESKTOP_STARTUP_ID it.
+  if (const char* v = PR_GetEnv("DESKTOP_STARTUP_ID")) {
+    mDesktopStartupID.Assign(v);
+  }
+  if (const char* v = PR_GetEnv("XDG_ACTIVATION_TOKEN")) {
+    mXDGActivationToken.Assign(v);
   }
 #endif
 
@@ -4832,17 +4826,17 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     }
 
     if (display_name) {
-      mGdkDisplay = gdk_display_open(display_name);
-      if (!mGdkDisplay) {
+      GdkDisplay* disp = gdk_display_open(display_name);
+      if (!disp) {
         PR_fprintf(PR_STDERR, "Error: cannot open display: %s\n", display_name);
         return 1;
       }
       if (saveDisplayArg) {
-        if (GdkIsX11Display(mGdkDisplay)) {
+        if (GdkIsX11Display(disp)) {
           SaveWordToEnv("DISPLAY", nsDependentCString(display_name));
         }
 #  ifdef MOZ_WAYLAND
-        else if (GdkIsWaylandDisplay(mGdkDisplay)) {
+        else if (GdkIsWaylandDisplay(disp)) {
           SaveWordToEnv("WAYLAND_DISPLAY", nsDependentCString(display_name));
         }
 #  endif
@@ -4850,8 +4844,7 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     }
 #  ifdef MOZ_WIDGET_GTK
     else {
-      mGdkDisplay =
-          gdk_display_manager_open_display(gdk_display_manager_get(), nullptr);
+      gdk_display_manager_open_display(gdk_display_manager_get(), nullptr);
     }
 #  endif
   }
@@ -4884,15 +4877,17 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     return 1;
   }
 
-#if defined(HAVE_DESKTOP_STARTUP_ID) && defined(MOZ_WIDGET_GTK)
-  // DESKTOP_STARTUP_ID is cleared now,
-  // we recover it in case we need a restart.
+#ifdef MOZ_WIDGET_GTK
+  // startup token might be cleared now, we recover it in case we need a
+  // restart.
   if (!mDesktopStartupID.IsEmpty()) {
-    nsAutoCString desktopStartupEnv;
-    desktopStartupEnv.AssignLiteral("DESKTOP_STARTUP_ID=");
-    desktopStartupEnv.Append(mDesktopStartupID);
     // Leak it with extreme prejudice!
-    PR_SetEnv(ToNewCString(desktopStartupEnv));
+    PR_SetEnv(ToNewCString("DESKTOP_STARTUP_ID="_ns + mDesktopStartupID));
+  }
+
+  if (!mXDGActivationToken.IsEmpty()) {
+    // Leak it with extreme prejudice!
+    PR_SetEnv(ToNewCString("XDG_ACTIVATION_TOKEN="_ns + mXDGActivationToken));
   }
 #endif
 
@@ -4946,10 +4941,14 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     if (!mDisableRemoteClient) {
       // Try to remote the entire command line. If this fails, start up
       // normally.
-      const char* desktopStartupIDPtr =
-          mDesktopStartupID.IsEmpty() ? nullptr : mDesktopStartupID.get();
-
-      RemoteResult rr = mRemoteService->StartClient(desktopStartupIDPtr);
+#  ifdef MOZ_WIDGET_GTK
+      const auto& startupToken =
+          GdkIsWaylandDisplay() ? mXDGActivationToken : mDesktopStartupID;
+#  else
+      const nsCString startupToken;
+#  endif
+      RemoteResult rr = mRemoteService->StartClient(
+          startupToken.IsEmpty() ? nullptr : startupToken.get());
       if (rr == REMOTE_FOUND) {
         *aExitFlag = true;
         mRemoteService->UnlockStartup();
@@ -5221,14 +5220,26 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
 
 #if defined(MOZ_SANDBOX)
 void AddSandboxAnnotations() {
-  // Include the sandbox content level, regardless of platform
-  int level = GetEffectiveContentSandboxLevel();
+  {
+    // Include the sandbox content level, regardless of platform
+    int level = GetEffectiveContentSandboxLevel();
 
-  nsAutoCString levelString;
-  levelString.AppendInt(level);
+    nsAutoCString levelString;
+    levelString.AppendInt(level);
 
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::ContentSandboxLevel, levelString);
+    CrashReporter::AnnotateCrashReport(
+        CrashReporter::Annotation::ContentSandboxLevel, levelString);
+  }
+
+  {
+    int level = GetEffectiveGpuSandboxLevel();
+
+    nsAutoCString levelString;
+    levelString.AppendInt(level);
+
+    CrashReporter::AnnotateCrashReport(
+        CrashReporter::Annotation::GpuSandboxLevel, levelString);
+  }
 
   // Include whether or not this instance is capable of content sandboxing
   bool sandboxCapable = false;
@@ -5584,10 +5595,12 @@ nsresult XREMain::XRE_mainRun() {
 #  endif  // defined(MOZ_DEFAULT_BROWSER_AGENT)
 #endif
 
-#if defined(HAVE_DESKTOP_STARTUP_ID) && defined(MOZ_WIDGET_GTK)
-      // Clear the environment variable so it won't be inherited by
-      // child processes and confuse things.
-      g_unsetenv("DESKTOP_STARTUP_ID");
+#if defined(MOZ_WIDGET_GTK)
+      // Clear the environment variables so they won't be inherited by child
+      // processes and confuse things.
+      for (const auto& name : kStartupTokenNames) {
+        g_unsetenv(name.get());
+      }
 #endif
 
 #ifdef XP_MACOSX

@@ -27,8 +27,8 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
@@ -138,6 +138,7 @@ var gTestID;
 // This default value will be overridden when using the http server.
 var gURLData = URL_HOST + "/";
 var gTestserver;
+var gUpdateCheckCount = 0;
 
 var gIncrementalDownloadErrorType;
 
@@ -1907,6 +1908,7 @@ function logUpdateLog(aLogLeafName) {
   if (updateLog.exists()) {
     // xpcshell tests won't display the entire contents so log each line.
     let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+    updateLogContents = removeTimeStamps(updateLogContents);
     updateLogContents = replaceLogPaths(updateLogContents);
     let aryLogContents = updateLogContents.split("\n");
     logTestInfo("contents of " + updateLog.path + ":");
@@ -1925,6 +1927,7 @@ function logUpdateLog(aLogLeafName) {
     if (updateLog.exists()) {
       // xpcshell tests won't display the entire contents so log each line.
       let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+      updateLogContents = removeTimeStamps(updateLogContents);
       updateLogContents = replaceLogPaths(updateLogContents);
       let aryLogContents = updateLogContents.split("\n");
       logTestInfo("contents of " + updateLog.path + ":");
@@ -3346,6 +3349,20 @@ function replaceLogPaths(aLogContents) {
 }
 
 /**
+ * Helper function that removes the timestamps in the update log
+ *
+ * @param   aLogContents
+ *          The update log file's contents.
+ * @return  the log contents without timestamps
+ */
+function removeTimeStamps(aLogContents) {
+  return aLogContents.replace(
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[+-]\d{4}: /gm,
+    ""
+  );
+}
+
+/**
  * Helper function for updater binary tests for verifying the contents of the
  * update log after a successful update.
  *
@@ -3373,6 +3390,9 @@ function checkUpdateLogContents(
 
   let updateLog = getUpdateDirFile(FILE_LAST_UPDATE_LOG);
   let updateLogContents = readFileBytes(updateLog);
+
+  // Remove leading timestamps
+  updateLogContents = removeTimeStamps(updateLogContents);
 
   // The channel-prefs.js is defined in gTestFilesCommon which will always be
   // located to the end of gTestFiles when it is present.
@@ -3476,6 +3496,9 @@ function checkUpdateLogContents(
     compareLogContents = PERFORMING_STAGED_UPDATE + "\n" + compareLogContents;
   }
 
+  // Remove leading timestamps
+  compareLogContents = removeTimeStamps(compareLogContents);
+
   // The channel-prefs.js is defined in gTestFilesCommon which will always be
   // located to the end of gTestFiles.
   if (
@@ -3527,8 +3550,9 @@ function checkUpdateLogContents(
           "the first incorrect line is line #" +
             i +
             " and the " +
-            "value is: " +
-            aryLog[i]
+            "value is: '" +
+            aryLog[i] +
+            "'"
         );
         Assert.equal(
           aryLog[i],
@@ -3551,11 +3575,16 @@ function checkUpdateLogContents(
 function checkUpdateLogContains(aCheckString) {
   let updateLog = getUpdateDirFile(FILE_LAST_UPDATE_LOG);
   let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+  updateLogContents = removeTimeStamps(updateLogContents);
   updateLogContents = replaceLogPaths(updateLogContents);
   Assert.notEqual(
     updateLogContents.indexOf(aCheckString),
     -1,
-    "the update log contents should contain value: " + aCheckString
+    "the update log '" +
+      updateLog +
+      "' contents should contain value: '" +
+      aCheckString +
+      "'"
   );
 }
 
@@ -4085,50 +4114,42 @@ function checkFilesInDirRecursive(aDir, aCallback) {
 }
 
 /**
- * Waits for an update check request to complete.
+ * Waits for an update check request to complete and asserts that the results
+ * are as-expected.
  *
  * @param   aSuccess
  *          Whether the update check succeeds or not. If aSuccess is true then
- *          onCheckComplete should be called and if aSuccess is false then
- *          onError should be called.
+ *          the check should succeed and if aSuccess is false then the check
+ *          should fail.
  * @param   aExpectedValues
  *          An object with common values to check.
- * @return  A promise which will resolve the first time either the update check
- *          onCheckComplete or onError occurs and returns the arguments from
- *          onCheckComplete or onError.
+ * @return  A promise which will resolve with the nsIUpdateCheckResult object
+ *          once the update check is complete.
  */
-function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
-  return new Promise(resolve =>
-    gUpdateChecker.checkForUpdates(
-      {
-        onProgress: (aRequest, aPosition, aTotalSize) => {},
-        onCheckComplete: async (request, updates) => {
-          Assert.ok(aSuccess, "the update check should succeed");
-          if (aExpectedValues.updateCount) {
-            Assert.equal(
-              aExpectedValues.updateCount,
-              updates.length,
-              "the update count" + MSG_SHOULD_EQUAL
-            );
-          }
-          resolve({ request, updates });
-        },
-        onError: async (request, update) => {
-          Assert.ok(!aSuccess, "the update check should error");
-          if (aExpectedValues.url) {
-            Assert.equal(
-              aExpectedValues.url,
-              request.channel.originalURI.spec,
-              "the url" + MSG_SHOULD_EQUAL
-            );
-          }
-          resolve({ request, update });
-        },
-        QueryInterface: ChromeUtils.generateQI(["nsIUpdateCheckListener"]),
-      },
-      true
-    )
+async function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
+  let check = gUpdateChecker.checkForUpdates(gUpdateChecker.FOREGROUND_CHECK);
+  let result = await check.result;
+  Assert.ok(result.checksAllowed, "We should be able to check for updates");
+  Assert.equal(
+    result.succeeded,
+    aSuccess,
+    "the update check should " + (aSuccess ? "succeed" : "error")
   );
+  if (aExpectedValues.updateCount) {
+    Assert.equal(
+      aExpectedValues.updateCount,
+      result.updates.length,
+      "the update count" + MSG_SHOULD_EQUAL
+    );
+  }
+  if (aExpectedValues.url) {
+    Assert.equal(
+      aExpectedValues.url,
+      result.request.channel.originalURI.spec,
+      "the url" + MSG_SHOULD_EQUAL
+    );
+  }
+  return result;
 }
 
 /**
@@ -4143,9 +4164,9 @@ function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
  * @return  A promise which will resolve the first time the update download
  *          onStopRequest occurs and returns the arguments from onStopRequest.
  */
-function waitForUpdateDownload(aUpdates, aExpectedStatus) {
+async function waitForUpdateDownload(aUpdates, aExpectedStatus) {
   let bestUpdate = gAUS.selectUpdate(aUpdates);
-  let success = gAUS.downloadUpdate(bestUpdate, false);
+  let success = await gAUS.downloadUpdate(bestUpdate, false);
   if (!success) {
     do_throw("nsIApplicationUpdateService:downloadUpdate returned " + success);
   }
@@ -4206,6 +4227,7 @@ function start_httpserver() {
  *          The http response for the request.
  */
 function pathHandler(aMetadata, aResponse) {
+  gUpdateCheckCount += 1;
   aResponse.setHeader("Content-Type", "text/xml", false);
   aResponse.setStatusLine(aMetadata.httpVersion, 200, "OK");
   aResponse.bodyOutputStream.write(gResponseBody, gResponseBody.length);

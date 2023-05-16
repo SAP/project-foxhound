@@ -58,10 +58,10 @@
 //! ```
 
 use std::convert::TryFrom;
-use std::hash::{Hash, Hasher};
 use std::{collections::HashSet, iter};
 
 use anyhow::{bail, Result};
+use uniffi_meta::Checksum;
 
 use super::ffi::{FFIArgument, FFIFunction, FFIType};
 use super::function::Argument;
@@ -86,12 +86,20 @@ use super::{APIConverter, ComponentInterface};
 ///
 /// TODO:
 ///  - maybe "Class" would be a better name than "Object" here?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Checksum)]
 pub struct Object {
     pub(super) name: String,
     pub(super) constructors: Vec<Constructor>,
     pub(super) methods: Vec<Method>,
+    // We don't include the FFIFunc in the hash calculation, because:
+    //  - it is entirely determined by the other fields,
+    //    so excluding it is safe.
+    //  - its `name` property includes a checksum derived from  the very
+    //    hash value we're trying to calculate here, so excluding it
+    //    avoids a weird circular depenendency in the calculation.
+    #[checksum_ignore]
     pub(super) ffi_func_free: FFIFunction,
+    #[checksum_ignore]
     pub(super) uses_deprecated_threadsafe_attribute: bool,
 }
 
@@ -158,18 +166,24 @@ impl Object {
     }
 
     pub fn derive_ffi_funcs(&mut self, ci_prefix: &str) -> Result<()> {
-        self.ffi_func_free.name = format!("ffi_{ci_prefix}_{}_object_free", self.name);
+        // The name is already set if the function is defined through a proc-macro invocation
+        // rather than in UDL. Don't overwrite it in that case.
+        if self.ffi_func_free.name().is_empty() {
+            self.ffi_func_free.name = format!("ffi_{ci_prefix}_{}_object_free", self.name);
+        }
         self.ffi_func_free.arguments = vec![FFIArgument {
             name: "ptr".to_string(),
             type_: FFIType::RustArcPtr(self.name().to_string()),
         }];
         self.ffi_func_free.return_type = None;
+
         for cons in self.constructors.iter_mut() {
-            cons.derive_ffi_func(ci_prefix, &self.name)
+            cons.derive_ffi_func(ci_prefix, &self.name);
         }
         for meth in self.methods.iter_mut() {
-            meth.derive_ffi_func(ci_prefix, &self.name)?
+            meth.derive_ffi_func(ci_prefix, &self.name)?;
         }
+
         Ok(())
     }
 
@@ -181,20 +195,6 @@ impl Object {
                 .chain(self.constructors.iter().map(Constructor::iter_types))
                 .flatten(),
         )
-    }
-}
-
-impl Hash for Object {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // We don't include the FFIFunc in the hash calculation, because:
-        //  - it is entirely determined by the other fields,
-        //    so excluding it is safe.
-        //  - its `name` property includes a checksum derived from  the very
-        //    hash value we're trying to calculate here, so excluding it
-        //    avoids a weird circular depenendency in the calculation.
-        self.name.hash(state);
-        self.constructors.hash(state);
-        self.methods.hash(state);
     }
 }
 
@@ -239,10 +239,17 @@ impl APIConverter<Object> for weedle::InterfaceDefinition<'_> {
 //
 // In the FFI, this will be a function that returns a pointer to an instance
 // of the corresponding object type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Checksum)]
 pub struct Constructor {
     pub(super) name: String,
     pub(super) arguments: Vec<Argument>,
+    // We don't include the FFIFunc in the hash calculation, because:
+    //  - it is entirely determined by the other fields,
+    //    so excluding it is safe.
+    //  - its `name` property includes a checksum derived from  the very
+    //    hash value we're trying to calculate here, so excluding it
+    //    avoids a weird circular depenendency in the calculation.
+    #[checksum_ignore]
     pub(super) ffi_func: FFIFunction,
     pub(super) attributes: ConstructorAttributes,
 }
@@ -264,7 +271,11 @@ impl Constructor {
         &self.ffi_func
     }
 
-    pub fn throws(&self) -> Option<&str> {
+    pub fn throws(&self) -> bool {
+        self.attributes.get_throws_err().is_some()
+    }
+
+    pub fn throws_name(&self) -> Option<&str> {
         self.attributes.get_throws_err()
     }
 
@@ -286,20 +297,6 @@ impl Constructor {
 
     pub fn iter_types(&self) -> TypeIterator<'_> {
         Box::new(self.arguments.iter().flat_map(Argument::iter_types))
-    }
-}
-
-impl Hash for Constructor {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // We don't include the FFIFunc in the hash calculation, because:
-        //  - it is entirely determined by the other fields,
-        //    so excluding it is safe.
-        //  - its `name` property includes a checksum derived from  the very
-        //    hash value we're trying to calculate here, so excluding it
-        //    avoids a weird circular depenendency in the calculation.
-        self.name.hash(state);
-        self.arguments.hash(state);
-        self.attributes.hash(state);
     }
 }
 
@@ -333,12 +330,19 @@ impl APIConverter<Constructor> for weedle::interface::ConstructorInterfaceMember
 //
 // The FFI will represent this as a function whose first/self argument is a
 // `FFIType::RustArcPtr` to the instance.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Checksum)]
 pub struct Method {
     pub(super) name: String,
     pub(super) object_name: String,
-    pub(super) return_type: Option<Type>,
     pub(super) arguments: Vec<Argument>,
+    pub(super) return_type: Option<Type>,
+    // We don't include the FFIFunc in the hash calculation, because:
+    //  - it is entirely determined by the other fields,
+    //    so excluding it is safe.
+    //  - its `name` property includes a checksum derived from  the very
+    //    hash value we're trying to calculate here, so excluding it
+    //    avoids a weird circular depenendency in the calculation.
+    #[checksum_ignore]
     pub(super) ffi_func: FFIFunction,
     pub(super) attributes: MethodAttributes,
 }
@@ -377,7 +381,11 @@ impl Method {
         &self.ffi_func
     }
 
-    pub fn throws(&self) -> Option<&str> {
+    pub fn throws(&self) -> bool {
+        self.attributes.get_throws_err().is_some()
+    }
+
+    pub fn throws_name(&self) -> Option<&str> {
         self.attributes.get_throws_err()
     }
 
@@ -433,22 +441,6 @@ impl From<uniffi_meta::MethodMetadata> for Method {
             ffi_func,
             attributes: Default::default(),
         }
-    }
-}
-
-impl Hash for Method {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // We don't include the FFIFunc in the hash calculation, because:
-        //  - it is entirely determined by the other fields,
-        //    so excluding it is safe.
-        //  - its `name` property includes a checksum derived from  the very
-        //    hash value we're trying to calculate here, so excluding it
-        //    avoids a weird circular depenendency in the calculation.
-        self.name.hash(state);
-        self.object_name.hash(state);
-        self.arguments.hash(state);
-        self.return_type.hash(state);
-        self.attributes.hash(state);
     }
 }
 

@@ -103,41 +103,19 @@ add_task(async function test_execute() {
 });
 
 function addFormHistory() {
-  return new Promise(resolve => {
-    let now = Date.now() * 1000;
-    FormHistory.update(
-      {
-        op: "add",
-        fieldname: "testfield",
-        value: "test",
-        timesUsed: 1,
-        firstUsed: now,
-        lastUsed: now,
-      },
-      {
-        handleCompletion(reason) {
-          resolve();
-        },
-      }
-    );
+  let now = Date.now() * 1000;
+  return FormHistory.update({
+    op: "add",
+    fieldname: "testfield",
+    value: "test",
+    timesUsed: 1,
+    firstUsed: now,
+    lastUsed: now,
   });
 }
 
-function getFormHistoryCount() {
-  return new Promise((resolve, reject) => {
-    let count = -1;
-    FormHistory.count(
-      { fieldname: "testfield" },
-      {
-        handleResult(result) {
-          count = result;
-        },
-        handleCompletion(reason) {
-          resolve(count);
-        },
-      }
-    );
-  });
+async function getFormHistoryCount() {
+  return FormHistory.count({ fieldname: "testfield" });
 }
 
 function storeCache(aURL, aContent) {

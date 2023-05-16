@@ -3,20 +3,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { EventEmitter } = ChromeUtils.import(
-  "resource://gre/modules/EventEmitter.jsm"
-);
+import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   SnapshotScorer: "resource:///modules/SnapshotScorer.sys.mjs",
   Snapshots: "resource:///modules/Snapshots.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   FilterAdult: "resource://activity-stream/lib/FilterAdult.jsm",
 });
 
@@ -116,6 +114,7 @@ export class SnapshotSelector extends EventEmitter {
 
   /**
    * @param {object} options
+   *   Options for the selector.
    * @param {number} [options.count]
    *   The maximum number of snapshots we ever need to generate. This should not
    *   affect the actual snapshots generated and their order but may speed up
@@ -187,6 +186,7 @@ export class SnapshotSelector extends EventEmitter {
    * Called internally when the set of snapshots has been generated.
    *
    * @param {Recommendation[]} recommendations
+   *   The generated recommendations.
    */
   #snapshotsGenerated(recommendations) {
     // If this instance has been destroyed then do nothing.
@@ -312,6 +312,7 @@ export class SnapshotSelector extends EventEmitter {
    * Undefined properties are ignored, thus pass null to nullify a property.
    *
    * @param {object} context
+   *   The new context.
    * @param {string} [context.url]
    *  The url of the current context.
    * @param {number} [context.time]

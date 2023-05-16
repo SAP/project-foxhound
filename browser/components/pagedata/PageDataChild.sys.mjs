@@ -8,10 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   PageDataSchema: "resource:///modules/pagedata/PageDataSchema.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 // We defer any attempt to check for page data for a short time after a page
@@ -30,6 +27,7 @@ export class PageDataChild extends JSWindowActorChild {
   #isContentWindowPrivate = true;
   /**
    * Used to debounce notifications about a page being ready.
+   *
    * @type {Timer | null}
    */
   #deferTimer = null;

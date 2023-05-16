@@ -295,6 +295,7 @@ class nsWindow final : public nsBaseWidget {
                          const LayoutDeviceIntPoint& aRefPoint, guint aTime);
   static void UpdateDragStatus(GdkDragContext* aDragContext,
                                nsIDragService* aDragService);
+  void SetDragSource(GdkDragContext* aSourceDragContext);
 
   WidgetEventTime GetWidgetEventTime(guint32 aEventTime);
   mozilla::TimeStamp GetEventTimeStamp(guint32 aEventTime);
@@ -460,6 +461,8 @@ class nsWindow final : public nsBaseWidget {
   bool ApplyEnterLeaveMutterWorkaround();
 
   void NotifyOcclusionState(mozilla::widget::OcclusionState aState) override;
+
+  static nsWindow* GetWindow(GdkWindow* window);
 
  protected:
   virtual ~nsWindow();
@@ -872,6 +875,8 @@ class nsWindow final : public nsBaseWidget {
 
 #ifdef MOZ_LOGGING
   void LogPopupHierarchy();
+  void LogPopupAnchorHints(int aHints);
+  void LogPopupGravity(GdkGravity aGravity);
 #endif
 
   // mPopupPosition is the original popup position/size from layout, set by
@@ -964,6 +969,8 @@ class nsWindow final : public nsBaseWidget {
   void DispatchRestoreEventAccessible();
 #endif
 
+  void SetUserTimeAndStartupTokenForActivatedWindow();
+
 #ifdef MOZ_X11
   typedef enum {GTK_WIDGET_COMPOSIDED_DEFAULT = 0,
                 GTK_WIDGET_COMPOSIDED_DISABLED = 1,
@@ -979,7 +986,11 @@ class nsWindow final : public nsBaseWidget {
   zwp_relative_pointer_v1* mRelativePointer = nullptr;
   xdg_activation_token_v1* mXdgToken = nullptr;
 #endif
+  // An activation token from our environment (see handling of the
+  // XDG_ACTIVATION_TOKEN/DESKTOP_STARTUP_ID) env vars.
+  nsCString mWindowActivationTokenFromEnv;
   mozilla::widget::WindowSurfaceProvider mSurfaceProvider;
+  GdkDragContext* mSourceDragContext = nullptr;
 };
 
 #endif /* __nsWindow_h__ */

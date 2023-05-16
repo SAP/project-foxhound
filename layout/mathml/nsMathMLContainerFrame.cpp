@@ -702,23 +702,23 @@ nsresult nsMathMLContainerFrame::ChildListChanged(int32_t aModType) {
 }
 
 void nsMathMLContainerFrame::AppendFrames(ChildListID aListID,
-                                          nsFrameList& aFrameList) {
-  MOZ_ASSERT(aListID == kPrincipalList);
-  mFrames.AppendFrames(this, aFrameList);
+                                          nsFrameList&& aFrameList) {
+  MOZ_ASSERT(aListID == FrameChildListID::Principal);
+  mFrames.AppendFrames(this, std::move(aFrameList));
   ChildListChanged(dom::MutationEvent_Binding::ADDITION);
 }
 
 void nsMathMLContainerFrame::InsertFrames(
     ChildListID aListID, nsIFrame* aPrevFrame,
-    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
-  MOZ_ASSERT(aListID == kPrincipalList);
-  mFrames.InsertFrames(this, aPrevFrame, aFrameList);
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList&& aFrameList) {
+  MOZ_ASSERT(aListID == FrameChildListID::Principal);
+  mFrames.InsertFrames(this, aPrevFrame, std::move(aFrameList));
   ChildListChanged(dom::MutationEvent_Binding::ADDITION);
 }
 
 void nsMathMLContainerFrame::RemoveFrame(ChildListID aListID,
                                          nsIFrame* aOldFrame) {
-  MOZ_ASSERT(aListID == kPrincipalList);
+  MOZ_ASSERT(aListID == FrameChildListID::Principal);
   mFrames.DestroyFrame(aOldFrame);
   ChildListChanged(dom::MutationEvent_Binding::REMOVAL);
 }

@@ -115,7 +115,7 @@ class MediaMemoryTracker : public nsIMemoryReporter {
     }
   }
 
-  static RefPtr<MediaMemoryPromise> GetSizes() {
+  static RefPtr<MediaMemoryPromise> GetSizes(dom::Document* aDoc) {
     MOZ_ASSERT(NS_IsMainThread());
     DecodersArray& decoders = Decoders();
 
@@ -133,9 +133,11 @@ class MediaMemoryTracker : public nsIMemoryReporter {
     size_t audioSize = 0;
 
     for (auto&& decoder : decoders) {
-      videoSize += decoder->SizeOfVideoQueue();
-      audioSize += decoder->SizeOfAudioQueue();
-      decoder->AddSizeOfResources(resourceSizes);
+      if (decoder->GetOwner() && decoder->GetOwner()->GetDocument() == aDoc) {
+        videoSize += decoder->SizeOfVideoQueue();
+        audioSize += decoder->SizeOfAudioQueue();
+        decoder->AddSizeOfResources(resourceSizes);
+      }
     }
 
     return resourceSizes->Promise()->Then(
@@ -153,8 +155,8 @@ class MediaMemoryTracker : public nsIMemoryReporter {
 
 StaticRefPtr<MediaMemoryTracker> MediaMemoryTracker::sUniqueInstance;
 
-RefPtr<MediaMemoryPromise> GetMediaMemorySizes() {
-  return MediaMemoryTracker::GetSizes();
+RefPtr<MediaMemoryPromise> GetMediaMemorySizes(dom::Document* aDoc) {
+  return MediaMemoryTracker::GetSizes(aDoc);
 }
 
 LazyLogModule gMediaTimerLog("MediaTimer");
@@ -963,8 +965,7 @@ MediaDecoder::PositionUpdate MediaDecoder::GetPositionUpdateReason(
     double aPrevPos, double aCurPos) const {
   MOZ_ASSERT(NS_IsMainThread());
   // If current position is earlier than previous position and we didn't do
-  // seek, that means we looped back to the start position, which currently
-  // happens on audio only.
+  // seek, that means we looped back to the start position.
   const bool notSeeking = !mSeekRequest.Exists();
   if (mLooping && notSeeking && aCurPos < aPrevPos) {
     return PositionUpdate::eSeamlessLoopingSeeking;

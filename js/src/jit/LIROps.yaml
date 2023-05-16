@@ -2522,7 +2522,7 @@
   operands:
     object: WordSized
     id: BoxedValue
-  num_temps: 2
+  num_temps: 3
   call_instruction: true
   mir_op: true
 
@@ -3303,6 +3303,11 @@
     setObject: WordSized
     input: BoxedValue
 
+- name: SetObjectSize
+  result_type: WordSized
+  operands:
+    setObject: WordSized
+
 - name: MapObjectHasNonBigInt
   result_type: WordSized
   operands:
@@ -3364,6 +3369,11 @@
   operands:
     mapObject: WordSized
     input: BoxedValue
+
+- name: MapObjectSize
+  result_type: WordSized
+  operands:
+    mapObject: WordSized
 
 - name: BigIntAsUintN
   result_type: WordSized
@@ -3750,5 +3760,16 @@
   gen_boilerplate: false
 
 - name: WasmAtomicExchangeI64
+  gen_boilerplate: false
+#endif
+
+#ifdef FUZZING_JS_FUZZILLI
+- name: FuzzilliHashT
+  gen_boilerplate: false
+
+- name: FuzzilliHashV
+  gen_boilerplate: false
+
+- name: FuzzilliHashStore
   gen_boilerplate: false
 #endif

@@ -10,6 +10,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RangeUtils.h"
@@ -1310,14 +1311,28 @@ nsresult ContentEventHandler::HandleQueryContentEvent(
 
 // Similar to nsFrameSelection::GetFrameForNodeOffset,
 // but this is more flexible for OnQueryTextRect to use
-static nsresult GetFrameForTextRect(const nsINode* aNode, int32_t aNodeOffset,
-                                    bool aHint, nsIFrame** aReturnFrame) {
-  NS_ENSURE_TRUE(aNode && aNode->IsContent(), NS_ERROR_UNEXPECTED);
-  nsIFrame* frame = aNode->AsContent()->GetPrimaryFrame();
-  NS_ENSURE_TRUE(frame, NS_ERROR_FAILURE);
+static Result<nsIFrame*, nsresult> GetFrameForTextRect(const nsINode* aNode,
+                                                       int32_t aNodeOffset,
+                                                       bool aHint) {
+  const nsIContent* content = nsIContent::FromNodeOrNull(aNode);
+  if (NS_WARN_IF(!content)) {
+    return Err(NS_ERROR_UNEXPECTED);
+  }
+  nsIFrame* frame = content->GetPrimaryFrame();
+  // The node may be invisible, e.g., `display: none`, invisible text node
+  // around block elements, etc.  Therefore, don't warn when we don't find
+  // a primary frame.
+  if (!frame) {
+    return nullptr;
+  }
   int32_t childNodeOffset = 0;
-  return frame->GetChildFrameContainingOffset(aNodeOffset, aHint,
-                                              &childNodeOffset, aReturnFrame);
+  nsIFrame* returnFrame = nullptr;
+  nsresult rv = frame->GetChildFrameContainingOffset(
+      aNodeOffset, aHint, &childNodeOffset, &returnFrame);
+  if (NS_FAILED(rv)) {
+    return Err(rv);
+  }
+  return returnFrame;
 }
 
 nsresult ContentEventHandler::OnQuerySelectedText(
@@ -1403,15 +1418,16 @@ nsresult ContentEventHandler::OnQuerySelectedText(
                                            OffsetAndDataFor::SelectedString);
   }
 
-  nsIFrame* frame = nullptr;
-  rv = GetFrameForTextRect(
+  Result<nsIFrame*, nsresult> frameForTextRectOrError = GetFrameForTextRect(
       focusRef.Container(),
       focusRef.Offset(RangeBoundary::OffsetFilter::kValidOffsets).valueOr(0),
-      true, &frame);
-  if (NS_SUCCEEDED(rv) && frame) {
-    aEvent->mReply->mWritingMode = frame->GetWritingMode();
-  } else {
+      true);
+  if (NS_WARN_IF(frameForTextRectOrError.isErr()) ||
+      !frameForTextRectOrError.inspect()) {
     aEvent->mReply->mWritingMode = WritingMode();
+  } else {
+    aEvent->mReply->mWritingMode =
+        frameForTextRectOrError.inspect()->GetWritingMode();
   }
 
   MOZ_ASSERT(aEvent->Succeeded());
@@ -1490,17 +1506,26 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
       break;
     }
 
-    if (!node->IsContent()) {
+    auto* content = nsIContent::FromNode(node);
+    if (MOZ_UNLIKELY(!content)) {
       continue;
     }
 
-    if (node->IsText()) {
+    // If the node is invisible (e.g., the node is or is in an invisible node or
+    // it's a white-space only text node around a block boundary), we should
+    // ignore it.
+    if (!content->GetPrimaryFrame()) {
+      continue;
+    }
+
+    if (auto* textNode = Text::FromNode(content)) {
       // If the range starts at the end of a text node, we need to find
       // next node which causes text.
-      const uint32_t offsetInNode =
-          node == aRawRange.GetStartContainer() ? aRawRange.StartOffset() : 0u;
-      if (offsetInNode < node->Length()) {
-        nodePosition = {node, offsetInNode};
+      const uint32_t offsetInNode = textNode == aRawRange.GetStartContainer()
+                                        ? aRawRange.StartOffset()
+                                        : 0u;
+      if (offsetInNode < textNode->TextDataLength()) {
+        nodePosition = {textNode, offsetInNode};
         break;
       }
       continue;
@@ -1508,9 +1533,9 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
 
     // If the element node causes a line break before it, it's the first
     // node causing text.
-    if (ShouldBreakLineBefore(*node->AsContent(), mRootElement) ||
-        IsPaddingBR(*node->AsContent())) {
-      nodePosition = {node, 0u};
+    if (ShouldBreakLineBefore(*content, mRootElement) ||
+        IsPaddingBR(*content)) {
+      nodePosition = {content, 0u};
     }
   }
 
@@ -1518,13 +1543,14 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
     return FrameAndNodeOffset();
   }
 
-  nsIFrame* firstFrame = nullptr;
-  GetFrameForTextRect(
+  Result<nsIFrame*, nsresult> firstFrameOrError = GetFrameForTextRect(
       nodePosition.Container(),
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true,
-      &firstFrame);
+      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true);
+  if (NS_WARN_IF(firstFrameOrError.isErr()) || !firstFrameOrError.inspect()) {
+    return FrameAndNodeOffset();
+  }
   return FrameAndNodeOffset(
-      firstFrame,
+      firstFrameOrError.inspect(),
       *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets));
 }
 
@@ -1576,14 +1602,26 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
       break;
     }
 
-    if (!node->IsContent() || node == nextNodeOfRangeEnd) {
+    if (node == nextNodeOfRangeEnd) {
       continue;
     }
 
-    if (node->IsText()) {
-      nodePosition = {node, node == aRawRange.GetEndContainer()
-                                ? aRawRange.EndOffset()
-                                : node->Length()};
+    auto* content = nsIContent::FromNode(node);
+    if (MOZ_UNLIKELY(!content)) {
+      continue;
+    }
+
+    // If the node is invisible (e.g., the node is or is in an invisible node or
+    // it's a white-space only text node around a block boundary), we should
+    // ignore it.
+    if (!content->GetPrimaryFrame()) {
+      continue;
+    }
+
+    if (auto* textNode = Text::FromNode(node)) {
+      nodePosition = {textNode, textNode == aRawRange.GetEndContainer()
+                                    ? aRawRange.EndOffset()
+                                    : textNode->TextDataLength()};
 
       // If the text node is empty or the last node of the range but the index
       // is 0, we should store current position but continue looking for
@@ -1596,9 +1634,9 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
       break;
     }
 
-    if (ShouldBreakLineBefore(*node->AsContent(), mRootElement) ||
-        IsPaddingBR(*node->AsContent())) {
-      nodePosition = {node, 0u};
+    if (ShouldBreakLineBefore(*content, mRootElement) ||
+        IsPaddingBR(*content)) {
+      nodePosition = {content, 0u};
       break;
     }
   }
@@ -1607,25 +1645,23 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
     return FrameAndNodeOffset();
   }
 
-  nsIFrame* lastFrame = nullptr;
-  GetFrameForTextRect(
+  Result<nsIFrame*, nsresult> lastFrameOrError = GetFrameForTextRect(
       nodePosition.Container(),
-      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true,
-      &lastFrame);
-  if (!lastFrame) {
+      *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true);
+  if (NS_WARN_IF(lastFrameOrError.isErr()) || !lastFrameOrError.inspect()) {
     return FrameAndNodeOffset();
   }
 
   // If the last frame is a text frame, we need to check if the range actually
   // includes at least one character in the range.  Therefore, if it's not a
   // text frame, we need to do nothing anymore.
-  if (!lastFrame->IsTextFrame()) {
+  if (!lastFrameOrError.inspect()->IsTextFrame()) {
     return FrameAndNodeOffset(
-        lastFrame,
+        lastFrameOrError.inspect(),
         *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets));
   }
 
-  int32_t start = lastFrame->GetOffsets().first;
+  int32_t start = lastFrameOrError.inspect()->GetOffsets().first;
 
   // If the start offset in the node is same as the computed offset in the
   // node and it's not 0, the frame shouldn't be added to the text rect.  So,
@@ -1638,17 +1674,16 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
         *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets);
     MOZ_ASSERT(newNodePositionOffset != 0);
     nodePosition = {nodePosition.Container(), newNodePositionOffset - 1u};
-    GetFrameForTextRect(
+    lastFrameOrError = GetFrameForTextRect(
         nodePosition.Container(),
-        *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true,
-        &lastFrame);
-    if (NS_WARN_IF(!lastFrame)) {
+        *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets), true);
+    if (NS_WARN_IF(lastFrameOrError.isErr()) || !lastFrameOrError.inspect()) {
       return FrameAndNodeOffset();
     }
   }
 
   return FrameAndNodeOffset(
-      lastFrame,
+      lastFrameOrError.inspect(),
       *nodePosition.Offset(NodePosition::OffsetFilter::kValidOffsets));
 }
 
@@ -1741,13 +1776,14 @@ ContentEventHandler::GuessLineBreakerRectAfter(const Text& aTextNode) {
   // a text node can cause multiple text frames, e.g., the text is too long
   // and wrapped by its parent block or the text has line breakers and its
   // white-space property respects the line breakers (e.g., |pre|).
-  nsIFrame* lastTextFrame = nullptr;
-  nsresult rv = GetFrameForTextRect(&aTextNode, length, true, &lastTextFrame);
-  if (NS_WARN_IF(NS_FAILED(rv)) || NS_WARN_IF(!lastTextFrame)) {
+  Result<nsIFrame*, nsresult> lastTextFrameOrError =
+      GetFrameForTextRect(&aTextNode, length, true);
+  if (NS_WARN_IF(lastTextFrameOrError.isErr()) ||
+      !lastTextFrameOrError.inspect()) {
     return result;
   }
-  const nsRect kLastTextFrameRect = lastTextFrame->GetRect();
-  if (lastTextFrame->GetWritingMode().IsVertical()) {
+  const nsRect kLastTextFrameRect = lastTextFrameOrError.inspect()->GetRect();
+  if (lastTextFrameOrError.inspect()->GetWritingMode().IsVertical()) {
     // Below of the last text frame.
     result.mRect.SetRect(0, kLastTextFrameRect.height, kLastTextFrameRect.width,
                          0);
@@ -1756,7 +1792,7 @@ ContentEventHandler::GuessLineBreakerRectAfter(const Text& aTextNode) {
     result.mRect.SetRect(kLastTextFrameRect.width, 0, 0,
                          kLastTextFrameRect.height);
   }
-  result.mBaseFrame = lastTextFrame;
+  result.mBaseFrame = lastTextFrameOrError.unwrap();
   return result;
 }
 
@@ -1803,6 +1839,72 @@ ContentEventHandler::GuessFirstCaretRectIn(nsIFrame* aFrame) {
   return FrameRelativeRect(caretRect, aFrame);
 }
 
+//  static
+LayoutDeviceIntRect ContentEventHandler::GetCaretRectBefore(
+    const LayoutDeviceIntRect& aCharRect, const WritingMode& aWritingMode) {
+  LayoutDeviceIntRect caretRectBefore(aCharRect);
+  if (aWritingMode.IsVertical()) {
+    caretRectBefore.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    caretRectBefore.width = 1;
+  }
+  return caretRectBefore;
+}
+
+//  static
+nsRect ContentEventHandler::GetCaretRectBefore(
+    const nsRect& aCharRect, const WritingMode& aWritingMode) {
+  nsRect caretRectBefore(aCharRect);
+  if (aWritingMode.IsVertical()) {
+    // For making the height 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectBefore.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    // For making the width 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectBefore.width = 1;
+  }
+  return caretRectBefore;
+}
+
+//  static
+LayoutDeviceIntRect ContentEventHandler::GetCaretRectAfter(
+    const LayoutDeviceIntRect& aCharRect, const WritingMode& aWritingMode) {
+  LayoutDeviceIntRect caretRectAfter(aCharRect);
+  if (aWritingMode.IsVertical()) {
+    caretRectAfter.y = aCharRect.YMost() + 1;
+    caretRectAfter.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    caretRectAfter.x = aCharRect.XMost() + 1;
+    caretRectAfter.width = 1;
+  }
+  return caretRectAfter;
+}
+
+//  static
+nsRect ContentEventHandler::GetCaretRectAfter(nsPresContext& aPresContext,
+                                              const nsRect& aCharRect,
+                                              const WritingMode& aWritingMode) {
+  nsRect caretRectAfter(aCharRect);
+  const nscoord onePixel = aPresContext.AppUnitsPerDevPixel();
+  if (aWritingMode.IsVertical()) {
+    caretRectAfter.y = aCharRect.YMost() + onePixel;
+    // For making the height 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectAfter.height = 1;
+  } else {
+    // TODO: Make here bidi-aware.
+    caretRectAfter.x = aCharRect.XMost() + onePixel;
+    // For making the width 1 device pixel after aligning the rect edges to
+    // device pixels, don't add one device pixel in app units here.
+    caretRectAfter.width = 1;
+  }
+  return caretRectAfter;
+}
+
 nsresult ContentEventHandler::OnQueryTextRectArray(
     WidgetQueryContentEvent* aEvent) {
   nsresult rv = Init(aEvent);
@@ -1815,16 +1917,22 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
   LineBreakType lineBreakType = GetLineBreakType(aEvent);
   const uint32_t kBRLength = GetBRLength(lineBreakType);
 
-  bool isVertical = false;
+  WritingMode lastVisibleFrameWritingMode;
   LayoutDeviceIntRect rect;
   uint32_t offset = aEvent->mInput.mOffset;
-  const uint32_t kEndOffset = offset + aEvent->mInput.mLength;
+  const uint32_t kEndOffset = aEvent->mInput.EndOffset();
   bool wasLineBreaker = false;
   // lastCharRect stores the last charRect value (see below for the detail of
   // charRect).
   nsRect lastCharRect;
   // lastFrame is base frame of lastCharRect.
+  // TODO: We should look for this if the first text is not visible.  However,
+  //       users cannot put caret invisible text and users cannot type in it
+  //       at least only with user's operations.  Therefore, we don't need to
+  //       fix this immediately.
   nsIFrame* lastFrame = nullptr;
+  nsAutoString flattenedAllText;
+  flattenedAllText.SetIsVoid(true);
   while (offset < kEndOffset) {
     RefPtr<Text> lastTextNode;
     RawRange rawRange;
@@ -1834,6 +1942,10 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
+
+    // TODO: When we crossed parent block boundary now, we should fill pending
+    //       character rects with caret rect after the last visible character
+    //       rect.
 
     // If the range is collapsed, offset has already reached the end of the
     // contents.
@@ -1845,23 +1957,57 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     FrameAndNodeOffset firstFrame = GetFirstFrameInRangeForTextRect(rawRange);
 
     // If GetFirstFrameInRangeForTextRect() does not return valid frame, that
-    // means that there are no visible frames having text or the offset reached
-    // the end of contents.
+    // means that the offset reached the end of contents or there is no visible
+    // frame in the range generating flattened text.
     if (!firstFrame.IsValid()) {
-      nsAutoString allText;
-      rv = GenerateFlatTextContent(mRootElement, allText, lineBreakType);
-      // If the offset doesn't reach the end of contents yet but there is no
-      // frames for the node, that means that current offset's node is hidden
-      // by CSS or something.  Ideally, we should handle it with the last
-      // visible text node's last character's rect, but it's not usual cases
-      // in actual web services.  Therefore, currently, we should make this
-      // case fail.
-      if (NS_WARN_IF(NS_FAILED(rv)) || offset < allText.Length()) {
-        return NS_ERROR_FAILURE;
+      if (flattenedAllText.IsVoid()) {
+        flattenedAllText.SetIsVoid(false);
+        if (NS_WARN_IF(NS_FAILED(GenerateFlatTextContent(
+                mRootElement, flattenedAllText, lineBreakType)))) {
+          NS_WARNING("ContentEventHandler::GenerateFlatTextContent() failed");
+          return NS_ERROR_FAILURE;
+        }
       }
-      // Otherwise, we should append caret rect at the end of the contents
-      // later.
-      break;
+      // If we've reached end of the root, append caret rect at the end of
+      // the root later.
+      if (offset >= flattenedAllText.Length()) {
+        break;
+      }
+      // Otherwise, we're in an invisible node. If the node is followed by a
+      // block boundary causing a line break, we can use the boundary.
+      // Otherwise, if the node follows a block boundary of a parent block, we
+      // can use caret rect at previous visible frame causing flattened text.
+      const uint32_t remainingLengthInCurrentRange = [&]() {
+        if (lastTextNode) {
+          if (rawRange.GetStartContainer() == lastTextNode) {
+            if (rawRange.StartOffset() < lastTextNode->TextDataLength()) {
+              return lastTextNode->TextDataLength() - rawRange.StartOffset();
+            }
+            return 0u;
+          }
+          // Must be there are not nodes which may cause generating text.
+          // Therefore, we can skip all nodes before the last found text node
+          // and all text in the last text node.
+          return lastTextNode->TextDataLength();
+        }
+        if (rawRange.GetStartContainer() &&
+            rawRange.GetStartContainer()->IsContent() &&
+            ShouldBreakLineBefore(*rawRange.GetStartContainer()->AsContent(),
+                                  mRootElement)) {
+          if (kBRLength != 1u && offset - aEvent->mInput.mOffset < kBRLength) {
+            // Don't return kBRLength if start position is less than the length
+            // of a line-break because the offset may be between CRLF on
+            // Windows.  In the case, we will be again here and gets same
+            // result and we need to pay the penalty only once.  Therefore, we
+            // can keep going without complicated check.
+            return 1u;
+          }
+          return kBRLength;
+        }
+        return 0u;
+      }();
+      offset += std::max(1u, remainingLengthInCurrentRange);
+      continue;
     }
 
     nsIContent* firstContent = firstFrame.mFrame->GetContent();
@@ -1871,8 +2017,7 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
 
     bool startsBetweenLineBreaker = false;
     nsAutoString chars;
-    // XXX not bidi-aware this class...
-    isVertical = firstFrame->GetWritingMode().IsVertical();
+    lastVisibleFrameWritingMode = firstFrame->GetWritingMode();
 
     nsIFrame* baseFrame = firstFrame;
     // charRect should have each character rect or line breaker rect relative
@@ -1948,25 +2093,19 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
       // compute it with the cached last character's rect.  (However, don't
       // use this path if it's a <br> frame because trusting <br> frame's rect
       // is better than guessing the rect from the previous character.)
-      if (!firstFrame->IsBrFrame() && aEvent->mInput.mOffset != offset) {
+      if (!firstFrame->IsBrFrame() && !aEvent->mReply->mRectArray.IsEmpty()) {
         baseFrame = lastFrame;
         brRect = lastCharRect;
         if (!wasLineBreaker) {
-          if (isVertical) {
-            // Right of the last character.
-            brRect.y = brRect.YMost() + 1;
-            brRect.height = 1;
-          } else {
-            // Under the last character.
-            brRect.x = brRect.XMost() + 1;
-            brRect.width = 1;
-          }
+          brRect = GetCaretRectAfter(*baseFrame->PresContext(), brRect,
+                                     lastVisibleFrameWritingMode);
         }
       }
       // If it's not a <br> frame and it's the first character rect at the
-      // queried range, we need to the previous character of the start of
-      // the queried range if there is a text node.
-      else if (!firstFrame->IsBrFrame() && lastTextNode) {
+      // queried range, we need the previous character rect of the start of
+      // the queried range if there is a visible text node.
+      else if (!firstFrame->IsBrFrame() && lastTextNode &&
+               lastTextNode->GetPrimaryFrame()) {
         FrameRelativeRect brRectRelativeToLastTextFrame =
             GuessLineBreakerRectAfter(*lastTextNode);
         if (NS_WARN_IF(!brRectRelativeToLastTextFrame.IsValid())) {
@@ -2045,6 +2184,25 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
       // return non-empty rect.
       EnsureNonEmptyRect(rect);
 
+      // If we found some invisible characters followed by current visible
+      // character, make their rects same as caret rect before the first visible
+      // character because IME may want to put their UI next to the rect of the
+      // invisible character for next input.
+      // Note that chars do not contain the invisible characters.
+      if (i == 0u && MOZ_LIKELY(offset > aEvent->mInput.mOffset)) {
+        const uint32_t offsetInRange =
+            offset - CheckedInt<uint32_t>(aEvent->mInput.mOffset).value();
+        if (offsetInRange > aEvent->mReply->mRectArray.Length()) {
+          LayoutDeviceIntRect caretRectBefore =
+              GetCaretRectBefore(rect, lastVisibleFrameWritingMode);
+          for ([[maybe_unused]] uint32_t index : IntegerRange<uint32_t>(
+                   offsetInRange - aEvent->mReply->mRectArray.Length())) {
+            aEvent->mReply->mRectArray.AppendElement(caretRectBefore);
+          }
+          MOZ_ASSERT(aEvent->mReply->mRectArray.Length() == offsetInRange);
+        }
+      }
+
       aEvent->mReply->mRectArray.AppendElement(rect);
       offset++;
 
@@ -2079,6 +2237,23 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     }
   }
 
+  // If we've not handled some invisible character rects, fill them as caret
+  // rect after the last visible character.
+  if (!aEvent->mReply->mRectArray.IsEmpty()) {
+    const uint32_t offsetInRange =
+        offset - CheckedInt<uint32_t>(aEvent->mInput.mOffset).value();
+    if (offsetInRange > aEvent->mReply->mRectArray.Length()) {
+      LayoutDeviceIntRect caretRectAfter =
+          GetCaretRectAfter(aEvent->mReply->mRectArray.LastElement(),
+                            lastVisibleFrameWritingMode);
+      for ([[maybe_unused]] uint32_t index : IntegerRange<uint32_t>(
+               offsetInRange - aEvent->mReply->mRectArray.Length())) {
+        aEvent->mReply->mRectArray.AppendElement(caretRectAfter);
+      }
+      MOZ_ASSERT(aEvent->mReply->mRectArray.Length() == offsetInRange);
+    }
+  }
+
   // If the query range is longer than actual content length, we should append
   // caret rect at the end of the content as the last character rect because
   // native IME may want to query character rect at the end of contents for
@@ -2090,16 +2265,8 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     // we can guess the last rect from the last character's rect unless it's a
     // line breaker.  (If it's a line breaker, the caret rect is in next line.)
     if (!aEvent->mReply->mRectArray.IsEmpty() && !wasLineBreaker) {
-      rect = aEvent->mReply->mRectArray.LastElement();
-      if (isVertical) {
-        rect.y = rect.YMost() + 1;
-        rect.height = 1;
-        MOZ_ASSERT(rect.width);
-      } else {
-        rect.x = rect.XMost() + 1;
-        rect.width = 1;
-        MOZ_ASSERT(rect.height);
-      }
+      rect = GetCaretRectAfter(aEvent->mReply->mRectArray.LastElement(),
+                               lastVisibleFrameWritingMode);
       aEvent->mReply->mRectArray.AppendElement(rect);
     } else {
       // Note that don't use eQueryCaretRect here because if caret is at the
@@ -2307,10 +2474,11 @@ nsresult ContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent) {
   //  +-<p>--------------------------------+
   //  |def                                 |
   //  +------------------------------------+
-  // Therefore, if the first frame isn't a <br> frame and there is a text
-  // node before the first node in the queried range, we should compute the
+  // Therefore, if the first frame isn't a <br> frame and there is a visible
+  // text node before the first node in the queried range, we should compute the
   // first rect with the previous character's rect.
-  else if (!firstFrame->IsBrFrame() && lastTextNode) {
+  else if (!firstFrame->IsBrFrame() && lastTextNode &&
+           lastTextNode->GetPrimaryFrame()) {
     FrameRelativeRect brRectAfterLastChar =
         GuessLineBreakerRectAfter(*lastTextNode);
     if (NS_WARN_IF(!brRectAfterLastChar.IsValid())) {
@@ -2524,14 +2692,10 @@ nsresult ContentEventHandler::OnQueryCaretRect(
   queryTextRectEvent.mReply->TruncateData();
   aEvent->mReply->mOffsetAndData =
       std::move(queryTextRectEvent.mReply->mOffsetAndData);
-  aEvent->mReply->mRect = std::move(queryTextRectEvent.mReply->mRect);
   aEvent->mReply->mWritingMode =
       std::move(queryTextRectEvent.mReply->mWritingMode);
-  if (aEvent->mReply->WritingModeRef().IsVertical()) {
-    aEvent->mReply->mRect.height = 1;
-  } else {
-    aEvent->mReply->mRect.width = 1;
-  }
+  aEvent->mReply->mRect = GetCaretRectBefore(queryTextRectEvent.mReply->mRect,
+                                             aEvent->mReply->mWritingMode);
 
   MOZ_ASSERT(aEvent->Succeeded());
   return NS_OK;

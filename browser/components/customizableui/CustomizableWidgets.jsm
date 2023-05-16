@@ -12,11 +12,11 @@ const { CustomizableUI } = ChromeUtils.import(
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
-const { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 const lazy = {};
@@ -42,7 +42,9 @@ const kPrefCustomizationDebug = "browser.uiCustomization.debug";
 const kPrefScreenshots = "extensions.screenshots.disabled";
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
+  let { ConsoleAPI } = ChromeUtils.importESModule(
+    "resource://gre/modules/Console.sys.mjs"
+  );
   let debug = Services.prefs.getBoolPref(kPrefCustomizationDebug, false);
   let consoleOptions = {
     maxLogLevel: debug ? "all" : "log",
@@ -293,21 +295,6 @@ const CustomizableWidgets = [
 
       aNode.appendChild(obChecked);
       aNode.appendChild(obPosition);
-    },
-  },
-  {
-    id: "add-ons-button",
-    shortcutId: "key_openAddons",
-    l10nId: "toolbar-addons-themes-button",
-    onBeforeCreated() {
-      // If the pref is set to `true`, we won't create this widget.
-      return !Services.prefs.getBoolPref(
-        "extensions.unifiedExtensions.enabled"
-      );
-    },
-    onCommand(aEvent) {
-      let win = aEvent.target.ownerGlobal;
-      win.BrowserOpenAddonsMgr();
     },
   },
   {
@@ -635,6 +622,19 @@ if (PrivateBrowsingUtils.enabled) {
     onCommand(e) {
       let win = e.target.ownerGlobal;
       win.OpenBrowserWindow({ private: true });
+    },
+  });
+}
+
+// If the pref is set to `true`, we don't register this widget.
+if (!Services.prefs.getBoolPref("extensions.unifiedExtensions.enabled")) {
+  CustomizableWidgets.push({
+    id: "add-ons-button",
+    shortcutId: "key_openAddons",
+    l10nId: "toolbar-addons-themes-button",
+    onCommand(aEvent) {
+      let win = aEvent.target.ownerGlobal;
+      win.BrowserOpenAddonsMgr();
     },
   });
 }

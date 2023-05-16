@@ -43,14 +43,17 @@ var EXPORTED_SYMBOLS = [
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
+  SITEPERMS_ADDON_TYPE:
+    "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
@@ -58,7 +61,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.jsm",
@@ -1253,10 +1255,16 @@ class ExtensionData {
 
     manifest = normalized.value;
 
-    // browser_specific_settings is documented, but most internal code is written
-    // using applications.  Use browser_specific_settings if it is in the manifest.  If
-    // both are set, we probably should make it an error, but we don't know if addons
-    // in the wild have done that, so let the chips fall where they may.
+    // `browser_specific_settings` is the recommended key to use in the
+    // manifest, and the only possible choice in MV3+. For MV2 extensions, we
+    // still allow `applications`, though. Because `applications` used to be
+    // the only key in the distant past, most internal code is written using
+    // applications. That's why we end up re-assigning `browser_specific_settings`
+    // to `applications` below.
+    //
+    // Also, when a MV3+ extension specifies `applications`, the key isn't
+    // recognized and therefore filtered out from the normalized manifest as
+    // part of the JSONSchema normalization.
     if (manifest.browser_specific_settings?.gecko) {
       if (manifest.applications) {
         this.manifestWarning(
@@ -1988,13 +1996,32 @@ class ExtensionData {
       );
     }
 
-    // Generate a map of site_permission names to permission strings for site
-    // permissions.  Since SitePermission addons cannot have regular permissions,
-    // we reuse msgs to pass the strings to the permissions panel.
+    // Synthetic addon install can only grant access to a single permission so we can have
+    // a less-generic message than addons with site permissions.
     // NOTE: this is used as part of the synthetic addon install flow implemented for the
     // SitePermissionAddonProvider.
     // (and so it should not be removed as part of Bug 1789718 changes, while this additional note should be).
+    if (info.addon?.type === lazy.SITEPERMS_ADDON_TYPE) {
+      // We simplify the origin to make it more user friendly. The origin is assured to be
+      // available because the SitePermsAddon install is always expected to be triggered
+      // from a website, making the siteOrigin always available through the installing principal.
+      const host = new URL(info.siteOrigin).hostname;
+
+      // messages are specific to the type of gated permission being installed
+      result.header = bundle.formatStringFromName(
+        `webextSitePerms.headerWithGatedPerms.${info.sitePermissions[0]}`,
+        [host]
+      );
+      result.text = bundle.GetStringFromName(
+        `webextSitePerms.descriptionGatedPerms`
+      );
+
+      return result;
+    }
+
+    // TODO(Bug 1789718): Remove after the deprecated XPIProvider-based implementation is also removed.
     if (info.sitePermissions) {
+      // Generate a map of site_permission names to permission strings for site permissions.
       for (let permission of info.sitePermissions) {
         try {
           result.msgs.push(
@@ -2014,16 +2041,15 @@ class ExtensionData {
         }
       }
 
-      // Generate header message
+      // We simplify the origin to make it more user friendly.  The origin is
+      // assured to be available via schema requirement.
+      const host = new URL(info.siteOrigin).hostname;
+
       headerKey = info.unsigned
         ? "webextSitePerms.headerUnsignedWithPerms"
         : "webextSitePerms.headerWithPerms";
-      // We simplify the origin to make it more user friendly.  The origin is
-      // assured to be available via schema requirement.
-      result.header = bundle.formatStringFromName(headerKey, [
-        "<>",
-        new URL(info.siteOrigin).hostname,
-      ]);
+      result.header = bundle.formatStringFromName(headerKey, ["<>", host]);
+
       return result;
     }
 

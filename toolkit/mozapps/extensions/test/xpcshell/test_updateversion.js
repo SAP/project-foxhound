@@ -11,7 +11,7 @@ async function serverRegisterUpdate({ id, version, actualVersion }) {
   let xpi = await createTempWebExtensionFile({
     manifest: {
       version: actualVersion,
-      applications: { gecko: { id } },
+      browser_specific_settings: { gecko: { id } },
     },
   });
 
@@ -34,7 +34,7 @@ add_task(async function test_update_version_mismatch() {
   await promiseInstallWebExtension({
     manifest: {
       version: "1.0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
           update_url: "http://example.com/update.json",
@@ -45,8 +45,8 @@ add_task(async function test_update_version_mismatch() {
 
   await serverRegisterUpdate({
     id: ID,
-    version: "2.00",
-    actualVersion: "2.000",
+    version: "2.0",
+    actualVersion: "2.0.0",
   });
 
   let addon = await promiseAddonByID(ID);
@@ -59,7 +59,7 @@ add_task(async function test_update_version_mismatch() {
   );
   let install = update.updateAvailable;
   Assert.notEqual(install, false, "Found available update");
-  Assert.equal(install.version, "2.00");
+  Assert.equal(install.version, "2.0");
   Assert.equal(install.state, AddonManager.STATE_AVAILABLE);
   Assert.equal(install.existingAddon, addon);
 
@@ -79,7 +79,7 @@ add_task(async function test_update_version_empty() {
   await promiseInstallWebExtension({
     manifest: {
       version: "0",
-      applications: {
+      browser_specific_settings: {
         gecko: {
           id: ID,
           update_url: "http://example.com/update.json",

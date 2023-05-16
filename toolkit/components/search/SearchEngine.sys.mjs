@@ -6,9 +6,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -336,7 +334,7 @@ export class EngineURL {
   rels = [];
 
   /**
-   * Constructor
+   * Creates an EngineURL.
    *
    * @param {string} mimeType
    *   The name of the MIME type of the search results returned by this URL.
@@ -506,8 +504,21 @@ export class EngineURL {
   }
 
   _getTermsParameterName() {
-    let queryParam = this.params.find(p => p.value == "{" + USER_DEFINED + "}");
-    return queryParam ? queryParam.name : "";
+    let searchTerms = "{" + USER_DEFINED + "}";
+    let paramName = this.params.find(p => p.value == searchTerms)?.name;
+    // Some query params might not be added to this.params
+    // in the engine construction process, so try checking the URL
+    // template for the existence of the query parameter value.
+    if (!paramName) {
+      let urlParms = new URL(this.template).searchParams;
+      for (let [name, value] of urlParms.entries()) {
+        if (value == searchTerms) {
+          paramName = name;
+          break;
+        }
+      }
+    }
+    return paramName ?? "";
   }
 
   _hasRelation(rel) {
@@ -612,16 +623,27 @@ export class SearchEngine {
   // The known public suffix of the search url, cached in memory to avoid
   // repeated look-ups.
   _searchUrlPublicSuffix = null;
+  /**
+   * The unique id of the Search Engine.
+   * The id is an UUID.
+   *
+   * @type {string}
+   */
+  #id;
 
   /**
-   * Constructor.
+   *  Creates a Search Engine.
    *
    * @param {object} options
    *   The options for this search engine.
+   * @param {string} [options.id]
+   *   The identifier to use for this engine, if none is specified a random
+   *   uuid is created.
    * @param {string} options.loadPath
    *   The path of the engine was originally loaded from. Should be anonymized.
    */
   constructor(options = {}) {
+    this.#id = options.id ?? this.#uuid();
     if (!("loadPath" in options)) {
       throw new Error("loadPath missing from options.");
     }
@@ -1088,6 +1110,7 @@ export class SearchEngine {
    *   The json record to use.
    */
   _initWithJSON(json) {
+    this.#id = json.id ?? this.#id;
     this._name = json._name;
     this._description = json.description;
     this._hasPreferredIcon = json._hasPreferredIcon == undefined;
@@ -1130,6 +1153,7 @@ export class SearchEngine {
    */
   toJSON() {
     const fieldsToCopy = [
+      "id",
       "_name",
       "_loadPath",
       "description",
@@ -1302,6 +1326,22 @@ export class SearchEngine {
    *   engine types, such as add-on engines which are used by the application.
    */
   get isAppProvided() {
+    return false;
+  }
+
+  /**
+   * Whether or not this engine is an in-memory only search engine.
+   * These engines are typically application provided or policy engines,
+   * where they are loaded every time on SearchService initialization
+   * using the policy JSON or the extension manifest. Minimal details of the
+   * in-memory engines are saved to disk, but they are never loaded
+   * from the user's saved settings file.
+   *
+   * @returns {boolean}
+   *   This results false for most engines, but may be overridden by particular
+   *   engine types, such as add-on engines and policy engines.
+   */
+  get inMemory() {
     return false;
   }
 
@@ -1642,6 +1682,25 @@ export class SearchEngine {
         }
       }
     }
+  }
+
+  /**
+   * @returns {string}
+   *   The identifier of the Search Engine.
+   */
+  get id() {
+    return this.#id;
+  }
+
+  /**
+   * Generates an UUID.
+   *
+   * @returns {string}
+   *   An UUID string, without leading or trailing braces.
+   */
+  #uuid() {
+    let uuid = Services.uuid.generateUUID().toString();
+    return uuid.slice(1, uuid.length - 1);
   }
 }
 

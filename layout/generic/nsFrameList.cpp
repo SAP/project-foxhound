@@ -42,21 +42,14 @@ void nsFrameList::DestroyFrames() {
   mLastChild = nullptr;
 }
 
-void nsFrameList::DestroyFramesFrom(
-    nsIFrame* aDestructRoot, layout::PostFrameDestroyData& aPostDestroyData) {
+void nsFrameList::DestroyFramesFrom(nsIFrame* aDestructRoot,
+                                    PostFrameDestroyData& aPostDestroyData) {
   MOZ_ASSERT(aDestructRoot, "Missing destruct root");
 
   while (nsIFrame* frame = RemoveFirstChild()) {
     frame->DestroyFrom(aDestructRoot, aPostDestroyData);
   }
   mLastChild = nullptr;
-}
-
-void nsFrameList::SetFrames(nsIFrame* aFrameList) {
-  MOZ_ASSERT(!mFirstChild, "Losing frames");
-
-  mFirstChild = aFrameList;
-  mLastChild = nsLayoutUtils::GetLastSibling(mFirstChild);
 }
 
 void nsFrameList::RemoveFrame(nsIFrame* aFrame) {
@@ -120,7 +113,7 @@ void nsFrameList::DestroyFrame(nsIFrame* aFrame) {
 
 nsFrameList::Slice nsFrameList::InsertFrames(nsContainerFrame* aParent,
                                              nsIFrame* aPrevSibling,
-                                             nsFrameList& aFrameList) {
+                                             nsFrameList&& aFrameList) {
   MOZ_ASSERT(aFrameList.NotEmpty(), "Unexpected empty list");
 
   if (aParent) {
@@ -444,6 +437,46 @@ void nsFrameList::VerifyList() const {
 #endif
 
 namespace mozilla {
+
+#ifdef DEBUG_FRAME_DUMP
+const char* ChildListName(FrameChildListID aListID) {
+  switch (aListID) {
+    case FrameChildListID::Principal:
+      return "";
+    case FrameChildListID::Popup:
+      return "PopupList";
+    case FrameChildListID::Caption:
+      return "CaptionList";
+    case FrameChildListID::ColGroup:
+      return "ColGroupList";
+    case FrameChildListID::Absolute:
+      return "AbsoluteList";
+    case FrameChildListID::Fixed:
+      return "FixedList";
+    case FrameChildListID::Overflow:
+      return "OverflowList";
+    case FrameChildListID::OverflowContainers:
+      return "OverflowContainersList";
+    case FrameChildListID::ExcessOverflowContainers:
+      return "ExcessOverflowContainersList";
+    case FrameChildListID::OverflowOutOfFlow:
+      return "OverflowOutOfFlowList";
+    case FrameChildListID::Float:
+      return "FloatList";
+    case FrameChildListID::Bullet:
+      return "BulletList";
+    case FrameChildListID::PushedFloats:
+      return "PushedFloatsList";
+    case FrameChildListID::Backdrop:
+      return "BackdropList";
+    case FrameChildListID::NoReflowPrincipal:
+      return "NoReflowPrincipalList";
+  }
+
+  MOZ_ASSERT_UNREACHABLE("unknown list");
+  return "UNKNOWN_FRAME_CHILD_LIST";
+}
+#endif
 
 AutoFrameListPtr::~AutoFrameListPtr() {
   if (mFrameList) {

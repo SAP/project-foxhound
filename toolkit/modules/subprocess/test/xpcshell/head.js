@@ -3,11 +3,11 @@
 var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
 );
 
 // eslint-disable-next-line no-unused-vars
-XPCOMUtils.defineLazyModuleGetters(this, {
-  Subprocess: "resource://gre/modules/Subprocess.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
 });

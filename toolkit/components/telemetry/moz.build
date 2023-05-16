@@ -19,10 +19,6 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
 
 DEFINES["MOZ_APP_VERSION"] = '"%s"' % CONFIG["MOZ_APP_VERSION"]
 
-for var in ("MOZ_BACKGROUNDTASKS",):
-    if CONFIG[var]:
-        DEFINES[var] = True
-
 LOCAL_INCLUDES += [
     "/xpcom/build",
     "/xpcom/threads",
@@ -38,9 +34,12 @@ if CONFIG["ENABLE_TESTS"]:
     # is no longer true and we could probably move it to tests/gtest.
     DIRS += ["geckoview/gtest", "tests/gtest"]
 
-TEST_DIRS += ["tests"]
+TEST_DIRS += ["tests", "dap/ffi-gtest"]
 
-XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.ini"]
+XPCSHELL_TESTS_MANIFESTS += [
+    "dap/tests/xpcshell/xpcshell.ini",
+    "tests/unit/xpcshell.ini",
+]
 BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
 
 XPIDL_SOURCES += [
@@ -59,6 +58,7 @@ EXPORTS.mozilla += [
     "core/ipc/TelemetryIPC.h",
     "core/Telemetry.h",
     "dap/DAPTelemetry.h",
+    "dap/DAPTelemetryBindings.h",
     "other/CombinedStacks.h",
     "other/ProcessedStack.h",
     "TelemetryOriginEnums.h",
@@ -115,6 +115,7 @@ EXTRA_JS_MODULES += [
     "app/TelemetryStorage.jsm",
     "app/TelemetryTimestamps.jsm",
     "app/TelemetryUtils.jsm",
+    "dap/DAPTelemetrySender.sys.mjs",
     "pings/CoveragePing.jsm",
     "pings/EventPing.jsm",
     "pings/HealthPing.jsm",

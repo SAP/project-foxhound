@@ -388,7 +388,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     if (prevOverflowFrames) {
       nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
                                               this);
-      mFrames.InsertFrames(this, nullptr, *prevOverflowFrames);
+      mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
     }
   }
 
@@ -585,13 +585,13 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     }
 
     if (aReflowInput.ComputedMinBSize() > 0) {
-      kidReflowInput.ComputedMinBSize() =
-          std::max(0, aReflowInput.ComputedMinBSize() - mLegendSpace);
+      kidReflowInput.SetComputedMinBSize(
+          std::max(0, aReflowInput.ComputedMinBSize() - mLegendSpace));
     }
 
     if (aReflowInput.ComputedMaxBSize() != NS_UNCONSTRAINEDSIZE) {
-      kidReflowInput.ComputedMaxBSize() =
-          std::max(0, aReflowInput.ComputedMaxBSize() - mLegendSpace);
+      kidReflowInput.SetComputedMaxBSize(
+          std::max(0, aReflowInput.ComputedMaxBSize() - mLegendSpace));
     }
 
     ReflowOutput kidDesiredSize(kidReflowInput);
@@ -782,36 +782,38 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
 }
 
 void nsFieldSetFrame::SetInitialChildList(ChildListID aListID,
-                                          nsFrameList& aChildList) {
-  nsContainerFrame::SetInitialChildList(aListID, aChildList);
+                                          nsFrameList&& aChildList) {
+  nsContainerFrame::SetInitialChildList(aListID, std::move(aChildList));
   if (nsBlockFrame* legend = do_QueryFrame(GetLegend())) {
     // A rendered legend always establish a new formatting context.
     // https://html.spec.whatwg.org/multipage/rendering.html#rendered-legend
     legend->AddStateBits(NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS);
   }
-  MOZ_ASSERT(aListID != kPrincipalList || GetInner() || GetLegend(),
-             "Setting principal child list should populate our inner frame "
-             "or our rendered legend");
+  MOZ_ASSERT(
+      aListID != FrameChildListID::Principal || GetInner() || GetLegend(),
+      "Setting principal child list should populate our inner frame "
+      "or our rendered legend");
 }
 
 void nsFieldSetFrame::AppendFrames(ChildListID aListID,
-                                   nsFrameList& aFrameList) {
-  MOZ_ASSERT(aListID == kNoReflowPrincipalList &&
+                                   nsFrameList&& aFrameList) {
+  MOZ_ASSERT(aListID == FrameChildListID::NoReflowPrincipal &&
                  HasAnyStateBits(NS_FRAME_FIRST_REFLOW),
              "AppendFrames should only be used from "
              "nsCSSFrameConstructor::ConstructFieldSetFrame");
-  nsContainerFrame::AppendFrames(aListID, aFrameList);
+  nsContainerFrame::AppendFrames(aListID, std::move(aFrameList));
   MOZ_ASSERT(GetInner(), "at this point we should have an inner frame");
 }
 
 void nsFieldSetFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
                                    const nsLineList::iterator* aPrevFrameLine,
-                                   nsFrameList& aFrameList) {
-  MOZ_ASSERT(aListID == kPrincipalList && !aPrevFrame && !GetLegend(),
-             "InsertFrames should only be used to prepend a rendered legend "
-             "from nsCSSFrameConstructor::ConstructFramesFromItemList");
+                                   nsFrameList&& aFrameList) {
+  MOZ_ASSERT(
+      aListID == FrameChildListID::Principal && !aPrevFrame && !GetLegend(),
+      "InsertFrames should only be used to prepend a rendered legend "
+      "from nsCSSFrameConstructor::ConstructFramesFromItemList");
   nsContainerFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
-                                 aFrameList);
+                                 std::move(aFrameList));
   MOZ_ASSERT(GetLegend());
   if (nsBlockFrame* legend = do_QueryFrame(GetLegend())) {
     // A rendered legend always establish a new formatting context.
@@ -908,7 +910,7 @@ void nsFieldSetFrame::EnsureChildContinuation(nsIFrame* aChild,
   if (aStatus.IsFullyComplete()) {
     if (nif) {
       // NOTE: we want to avoid our DEBUG version of RemoveFrame above.
-      nsContainerFrame::RemoveFrame(kNoReflowPrincipalList, nif);
+      nsContainerFrame::RemoveFrame(FrameChildListID::NoReflowPrincipal, nif);
       MOZ_ASSERT(!aChild->GetNextInFlow());
     }
   } else {
@@ -935,13 +937,13 @@ void nsFieldSetFrame::EnsureChildContinuation(nsIFrame* aChild,
     }
     if (aStatus.IsOverflowIncomplete()) {
       if (nsFrameList* eoc = GetExcessOverflowContainers()) {
-        eoc->AppendFrames(nullptr, nifs);
+        eoc->AppendFrames(nullptr, std::move(nifs));
       } else {
         SetExcessOverflowContainers(std::move(nifs));
       }
     } else {
       if (nsFrameList* oc = GetOverflowFrames()) {
-        oc->AppendFrames(nullptr, nifs);
+        oc->AppendFrames(nullptr, std::move(nifs));
       } else {
         SetOverflowFrames(std::move(nifs));
       }

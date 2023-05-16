@@ -21,6 +21,7 @@
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
+class nsIURI;
 
 namespace mozilla {
 
@@ -40,6 +41,7 @@ class OffscreenCanvas;
 class OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer;
 class Promise;
 class SVGImageElement;
+class StructuredCloneHolder;
 class VideoColorSpace;
 class VideoFrame;
 enum class VideoPixelFormat : uint8_t;
@@ -51,6 +53,11 @@ struct VideoFrameCopyToOptions;
 }  // namespace mozilla
 
 namespace mozilla::dom {
+
+struct VideoFrameImageData {
+  const RefPtr<layers::Image> mImage;
+  const nsCOMPtr<nsIURI> mURI;
+};
 
 class VideoFrame final : public nsISupports, public nsWrapperCache {
  public:
@@ -135,6 +142,14 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
   already_AddRefed<VideoFrame> Clone(ErrorResult& aRv);
 
   void Close();
+
+  // [Serializable] implementations: {Read, Write}StructuredClone
+  static JSObject* ReadStructuredClone(JSContext* aCx, nsIGlobalObject* aGlobal,
+                                       JSStructuredCloneReader* aReader,
+                                       const VideoFrameImageData& aImage);
+
+  bool WriteStructuredClone(JSStructuredCloneWriter* aWriter,
+                            StructuredCloneHolder* aHolder) const;
 
  public:
   // A VideoPixelFormat wrapper providing utilities for VideoFrame.
